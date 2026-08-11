@@ -208,6 +208,14 @@ Claude Code's primary watcher protocol is Stop-owned: the auto-arm hook fires on
 | Interrupt | single Escape |
 | Skill invocation | `$<skill>` (e.g. `$no-mistakes`); `/<skill>` is claude-only and codex rejects it as "Unrecognized command" |
 
+**Primary-lock compatibility (verified 2026-08-11, codex-cli 0.147.0).**
+Codex CLI 0.147.0 and later cannot acquire Firstmate's PRIMARY session lock.
+Shell tools run in a Bubblewrap PID namespace where the visible ancestry is `bash -> bwrap` at namespace-local PID 1, while the durable host-side `codex -> codex-code-mode-host` chain is invisible.
+`fm-harness.sh` therefore reports `unknown`, and `fm-lock.sh` safely refuses with `error: cannot locate harness process in ancestry`.
+Do not widen lock or harness detection to match `bwrap`, its argv, or `CODEX_*` environment variables, because none identifies a durable, unspoofable host session owner.
+Codex crewmate, scout, and secondmate dispatch through `fm-spawn.sh` remains supported because those workers do not acquire the primary session lock.
+Restoring Codex-as-primary support requires a Codex-provided verifiable bridge to a durable host-session identity, which is a captain decision rather than an adapter change.
+
 A `$<skill>` invocation opens a `$`-autocomplete (skill) popup, the same hazard as the `/` slash popup: submitting too fast lets the popup swallow the Enter, so the invocation never lands.
 `fm-send` handles it the same way it handles `/` - it gives the popup a longer settle (1.2s) between typing and the first Enter, with the target backend's submit retry as the safety net - but the `$` settle is scoped to `harness=codex`, read from the target metadata for exact task ids or legacy `fm-<id>` labels.
 That scope matters because, unlike `/`, a leading `$` commonly starts ordinary text (`$5/month`, `$HOME`), so a universal `$` rule would needlessly slow plain steers to claude/opencode/pi; only a codex target receiving a `$...` message gets the popup-settle.
