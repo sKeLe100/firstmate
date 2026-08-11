@@ -354,6 +354,32 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock() {
   pass "session-lock e2e: a version-named session under a harness-named daemon keeps its own lock"
 }
 
+# Codex CLI 0.147.0+ runs shell tools in a Bubblewrap PID namespace.
+# Recreate its relevant real-process shape without requiring either Codex or a
+# Bubblewrap binary: the namespace's PID 1 is a bash executable reached through
+# a bwrap-named symlink, and its child is the shell that invokes fm-lock.sh.
+test_e2e_namespace_local_bwrap_refuses_primary_lock() {
+  local dir bwrap out rc
+  dir="$TMP_ROOT/e2e-codex-bwrap"
+  bwrap="$dir/bwrap"
+  mkdir -p "$dir/state"
+  ln -s /bin/bash "$bwrap"
+
+  rc=0
+  out=$(unshare --user --map-root-user --pid --fork --mount-proc "$bwrap" -c '
+    fm_home=$1
+    fm_lock=$2
+    rc=0
+    /bin/bash -c "FM_HOME=\"$fm_home\" \"$fm_lock\"" || rc=$?
+    exit "$rc"
+  ' bash "$dir" "$ROOT/bin/fm-lock.sh" 2>&1) || rc=$?
+
+  expect_code 1 "$rc" "a namespace-local bwrap PID 1 must not acquire the primary lock"
+  assert_contains "$out" "cannot locate harness process in ancestry" \
+    "the Codex namespace shape did not fail closed"
+  pass "session-lock e2e: namespace-local bwrap PID 1 refuses the primary lock"
+}
+
 test_version_named_session_is_identified_on_both_platforms
 test_ordinary_paths_are_never_harness_processes
 test_harness_beyond_a_gap_never_owns_the_lock
@@ -361,3 +387,4 @@ test_competing_version_named_session_is_seen_as_live
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock
+test_e2e_namespace_local_bwrap_refuses_primary_lock

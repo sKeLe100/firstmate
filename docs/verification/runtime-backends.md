@@ -87,6 +87,31 @@ Run the live guard after any harness upgrade and before trusting or refreshing t
 FM_HARNESS_LIVENESS_DRIFT=1 bin/fm-test-run.sh tests/fm-harness-liveness-drift-live-e2e.test.sh
 ```
 
+### Codex primary-lock compatibility
+
+Codex CLI 0.147.0 was verified on 2026-08-11 on Linux with the standalone executable, launched normally from an isolated firstmate home.
+
+```sh
+codex --version
+env -u CLAUDECODE FM_HOME="$fixture_home" codex
+# From a Codex shell tool:
+bin/fm-harness.sh
+FM_HOME="$fixture_home" bin/fm-lock.sh
+```
+
+Observed output:
+
+```text
+codex-cli 0.147.0
+unknown
+error: cannot locate harness process in ancestry
+```
+
+Codex shell tools now run inside a Bubblewrap PID namespace, so their real `bash -> bwrap` ancestry ends at namespace-local PID 1 and cannot reach the host-side `codex -> codex-code-mode-host` session owner.
+This is an unsupported PRIMARY-lock path only, not a limitation on ordinary Codex crewmate, scout, or secondmate launches through `fm-spawn.sh`.
+`tests/fm-session-lock-ancestry.test.sh` recreates the namespace shape with real processes and pins the required refusal.
+The Codex adapter section in `.agents/skills/harness-adapters/SKILL.md` owns the operational compatibility boundary and the rule against widening identity detection.
+
 Bounded output from the run that produced the table:
 
 ```text
