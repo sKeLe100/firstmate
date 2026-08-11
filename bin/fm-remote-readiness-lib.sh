@@ -21,6 +21,50 @@
 # shellcheck disable=SC2034
 FM_REMOTE_READINESS_OUT=
 
+# fm_wsl2_mirrored_networking_hint: prints one hint line when THIS host is the
+# likely reason a remote route went unreachable, empty otherwise.
+#
+# SSH timing out to a remote LAN host this session previously reached is a
+# known local-side failure mode on WSL2: the mirrored-networking mode that
+# gives WSL2 a real LAN address needs a per-user .wslconfig
+# (`[wsl2]` / `networkingMode=mirrored`), and that file can go missing (a
+# Windows update, a profile reset) without any local error - WSL2 just falls
+# back to isolated NAT, which still has a default route but no path to the
+# LAN. This is a heuristic, additive hint only: it never replaces the
+# existing unreachable-host message and a false negative (missed hint) is
+# harmless, so detection stays deliberately simple rather than exhaustive.
+# FM_WSL_CONFIG_PATH overrides the .wslconfig path this checks (tests only);
+# unset or empty uses the real per-user Windows path.
+# FM_WSL_USERS_DIR overrides the /mnt/c/Users base directory used to resolve
+# that per-user path (tests only); unset or empty uses the real mount.
+fm_wsl2_mirrored_networking_hint() {
+  case "$(uname -r 2>/dev/null)" in
+    *microsoft*|*WSL2*) ;;
+    *) return 0 ;;
+  esac
+  local cfg="${FM_WSL_CONFIG_PATH:-}"
+  if [ -z "$cfg" ]; then
+    local users_dir="${FM_WSL_USERS_DIR:-/mnt/c/Users}" winuser
+    winuser=$(cmd.exe /c 'echo %USERNAME%' 2>/dev/null | tr -d '\r\n')
+    if [ -n "$winuser" ] && [ -f "$users_dir/$winuser/.wslconfig" ]; then
+      cfg="$users_dir/$winuser/.wslconfig"
+    else
+      local matches=("$users_dir"/*/.wslconfig)
+      if [ "${#matches[@]}" -eq 1 ] && [ -f "${matches[0]}" ]; then
+        cfg="${matches[0]}"
+      elif [ -n "${USER:-}" ]; then
+        cfg="$users_dir/${USER}/.wslconfig"
+      else
+        return 0
+      fi
+    fi
+  fi
+  if [ -f "$cfg" ] && grep -Eiq '^[[:space:]]*networkingMode[[:space:]]*=[[:space:]]*mirrored[[:space:]]*$' "$cfg" 2>/dev/null; then
+    return 0
+  fi
+  printf 'this host is WSL2 without networkingMode=mirrored in %s - if this route was reachable before, WSL2 likely reverted to isolated NAT networking; recreate that file with [wsl2] / networkingMode=mirrored, then run "wsl --shutdown" from Windows (not from inside WSL) and relaunch' "$cfg"
+}
+
 fm_remote_readiness_ensure() { # <bin-dir> <secondmate-id>
   local bin_dir=$1 id=$2 out rc
 
