@@ -365,6 +365,12 @@ test_e2e_namespace_local_bwrap_refuses_primary_lock() {
   mkdir -p "$dir/state"
   ln -s /bin/bash "$bwrap"
 
+  if ! unshare --user --map-root-user --pid --fork --mount-proc "$bwrap" -c 'exit 0' \
+    >/dev/null 2>&1; then
+    echo "skip: unshare user PID namespaces are unavailable for the Codex namespace fixture"
+    return 0
+  fi
+
   rc=0
   out=$(unshare --user --map-root-user --pid --fork --mount-proc "$bwrap" -c '
     fm_home=$1
