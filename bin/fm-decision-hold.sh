@@ -197,23 +197,110 @@ verify_hold_resolved() {  # <hold-id>
   return 1
 }
 
-verify_hold_durable() {  # <hold-id>
-  local id=$1 show state held kind hold_kind body
-  show=$(task_show "$id") || fail "captain decision $id is absent from $FM_HOME/data/backlog.md"
-  state=$(show_field "$show" state)
-  held=$(show_field "$show" held)
-  kind=$(show_field "$show" kind)
-  hold_kind=$(show_field "$show" hold_kind)
-  body=$(show_field "$show" body)
-  if [ "$state" = queued ] && [ "$held" = yes ] && [ "$kind" = captain ] && [ "$hold_kind" = captain ]; then
-    return 0
+# Done-retention (tasks-axi prune) moves resolved holds out of data/backlog.md
+# into the archive file, which tasks-axi itself cannot read back (its "##
+# Archived <date>" sections are opaque to `show`). A durable resolved hold must
+# still verify after that move, so an id absent from the live backlog falls
+# back to a direct read of the archive's own markdown bullet, using the same
+# raw-bullet convention as backlog_key_section in fm-backlog-handoff.sh.
+decision_archive_path() {
+  local toml="$FM_HOME/.tasks.toml" value=''
+  if [ -f "$toml" ]; then
+    value=$(awk '
+      /^\[markdown\]/ { in_md = 1; next }
+      /^\[/ { in_md = 0 }
+      in_md && /^[[:space:]]*archive[[:space:]]*=/ {
+        sub(/^[[:space:]]*archive[[:space:]]*=[[:space:]]*"/, "")
+        sub(/".*/, "")
+        print
+        exit
+      }
+    ' "$toml")
   fi
-  if [ "$state" = "done" ] && [ "$kind" = captain ]; then
-    case "$body" in
-      *"Resolution recorded by fm-decision-hold."*"Routed work:"*) return 0 ;;
+  if [ -n "$value" ]; then
+    case "$value" in
+      /*) printf '%s\n' "$value" ;;
+      *) printf '%s/%s\n' "$FM_HOME" "$value" ;;
     esac
+  else
+    printf '%s/done-archive.md\n' "$DATA"
   fi
-  fail "captain decision $id is neither actively held nor durably resolved"
+}
+
+archive_entry_header() {  # <archive-file> <id>
+  local file=$1 id=$2
+  [ -f "$file" ] || return 1
+  awk -v id="$id" '
+    /^- \[[ xX]\] / {
+      rest = $0
+      sub(/^- \[[ xX]\] +/, "", rest)
+      entry_id = rest
+      sub(/[ \t].*/, "", entry_id)
+      if (entry_id == id) { print $0; found = 1; exit }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$file"
+}
+
+archive_entry_body() {  # <archive-file> <id>
+  local file=$1 id=$2
+  [ -f "$file" ] || return 1
+  awk -v id="$id" '
+    /^- \[[ xX]\] / {
+      rest = $0
+      sub(/^- \[[ xX]\] +/, "", rest)
+      entry_id = rest
+      sub(/[ \t].*/, "", entry_id)
+      if (capturing) exit
+      if (entry_id == id) { capturing = 1 }
+      next
+    }
+    capturing && /^##[[:space:]]+/ { exit }
+    capturing && /^  / { print substr($0, 3); next }
+    capturing && /^[[:space:]]*$/ { print ""; next }
+    capturing { exit }
+  ' "$file"
+}
+
+verify_hold_archived() {  # <hold-id> <archive-path>
+  local id=$1 archive=$2 header body
+  header=$(archive_entry_header "$archive" "$id") || return 1
+  case "$header" in
+    "- [x] "*) : ;;
+    *) fail "archived backlog entry $id in $archive is not marked done" ;;
+  esac
+  case "$header" in
+    *"(kind: captain)"*) : ;;
+    *) fail "archived backlog entry $id in $archive is not kind captain" ;;
+  esac
+  body=$(archive_entry_body "$archive" "$id")
+  case "$body" in
+    *"Resolution recorded by fm-decision-hold."*"Routed work:"*) return 0 ;;
+  esac
+  fail "archived captain decision $id in $archive lacks a durable resolution record"
+}
+
+verify_hold_durable() {  # <hold-id>
+  local id=$1 show state held kind hold_kind body archive
+  if show=$(task_show "$id"); then
+    state=$(show_field "$show" state)
+    held=$(show_field "$show" held)
+    kind=$(show_field "$show" kind)
+    hold_kind=$(show_field "$show" hold_kind)
+    body=$(show_field "$show" body)
+    if [ "$state" = queued ] && [ "$held" = yes ] && [ "$kind" = captain ] && [ "$hold_kind" = captain ]; then
+      return 0
+    fi
+    if [ "$state" = "done" ] && [ "$kind" = captain ]; then
+      case "$body" in
+        *"Resolution recorded by fm-decision-hold."*"Routed work:"*) return 0 ;;
+      esac
+    fi
+    fail "captain decision $id is neither actively held nor durably resolved"
+  fi
+  archive=$(decision_archive_path)
+  verify_hold_archived "$id" "$archive" \
+    || fail "captain decision $id is absent from $FM_HOME/data/backlog.md and $archive"
 }
 
 verify_resolution_identity() {

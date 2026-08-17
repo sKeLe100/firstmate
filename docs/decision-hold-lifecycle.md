@@ -22,6 +22,8 @@ For an open keyed status decision, it appends a `captain-held [key=<key>]: ...` 
 
 Scout teardown calls the script's read-only `verify` subcommand after checking for the report and before removing any source state.
 The `--force` path remains the explicit captain-approved discard escape hatch.
+When an identity is absent from the live backlog, `verify` falls back to a read-only parse of the Done-retention archive (`tasks-axi prune`'s target, read from `.tasks.toml`'s `[markdown] archive` field or defaulting to `data/done-archive.md`), since tasks-axi's own `show`/`list` cannot read its own archived `## Archived <date>` sections back.
+It accepts an archived entry only when checked off, kind `captain`, and carrying the same durable resolution record required of a live Done hold; a genuinely open or improperly closed hold, or an identity missing from both surfaces, still fails verify exactly as before, naming both searched paths.
 
 The `resolve` subcommand requires a decision file and at least one existing dependent task whose structured `blocked-by` edge points to the hold.
 It records the decision digest and routed task identities as a retry identity in the hold body, clears each dependency edge through tasks-axi, and marks the hold Done only after those writes succeed.
@@ -88,4 +90,29 @@ $ git diff --check
 
 $ for test_script in tests/*.test.sh; do bash "$test_script"; done
 ALL 71 TEST SCRIPTS PASSED
+```
+
+Done-retention archive-fallback verification date: 2026-08-17.
+`verify_hold_durable`'s new read-only archive fallback (`decision_archive_path`, `archive_entry_header`, `archive_entry_body`, `verify_hold_archived`) was regressed against a resolved hold that Done retention (`tasks-axi prune`) moved into `data/done-archive.md`, an unheld/unresolved hold (must still fail with the unchanged diagnostic), and a hold identity absent from both the live backlog and the archive (must still fail loudly naming both paths).
+
+```text
+$ bash tests/fm-decision-hold-lifecycle.test.sh
+ok - report-only unresolved decision is reproduced and completion refuses before loss
+ok - verify accepts a resolved captain hold archived by Done retention
+ok - verify still rejects a genuinely open, improperly tracked hold
+ok - verify fails loudly naming both surfaces when a hold is absent from both
+ok - non-forced scout teardown always requires durable inventory verification
+ok - captain holds are idempotent, distinct, teardown-safe, Bearings-visible, and durably routed before close
+ok - completion and verification validate origins before constructing paths
+ok - ended visual review follows the same decision-hold completion owner
+ok - resolved findings and decision-like prose do not create false holds
+ok - terminal single-owner stale status decisions do not block empty inventory
+ok - main-home and secondmate-home captain holds remain correctly routed
+ok - resolve matches first/middle/last in quoted blocked_by and rejects a genuinely absent id
+
+$ bin/fm-lint.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+
+$ git diff --check
+(no output)
 ```

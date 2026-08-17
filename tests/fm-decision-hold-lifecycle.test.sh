@@ -550,8 +550,113 @@ test_resolve_matches_quoted_blocked_by_edges() {
   pass "resolve matches first/middle/last in quoted blocked_by and rejects a genuinely absent id"
 }
 
+# Done retention (tasks-axi prune) moves resolved holds out of data/backlog.md
+# into data/done-archive.md, which tasks-axi's own `show` cannot read back. A
+# durably resolved hold must keep passing verify (and therefore scout teardown)
+# after that move, never wedge teardown just because retention already ran.
+test_verify_accepts_archived_resolved_hold() {
+  local home id hold
+  home=$(make_home archived-resolved-hold)
+  id=sample-archive-review
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Investigate sample archive scenario" --kind scout --repo sample --start >/dev/null \
+    || fail "could not create investigation backlog fixture"
+  write_origin_meta "$home" "$id"
+  printf 'done: report complete\n' > "$home/state/$id.status"
+  printf '# Sample archive review\n\nOne captain choice remains.\n' > "$home/data/$id/report.md"
+
+  hold=$(run_decisions "$home" hold "$id" archive-choice \
+    --title "Choose the archive sample outcome" --reason "captain archive choice pending" --repo sample) \
+    || fail "could not register hold for archive scenario"
+  run_decisions "$home" complete "$id" archive-choice >/dev/null \
+    || fail "completion failed before resolution"
+
+  tasks_in "$home" add sample-archive-followup "Apply the archived decision" --kind ship --repo sample >/dev/null \
+    || fail "could not create dependent work fixture"
+  tasks_in "$home" block sample-archive-followup --by "$hold" >/dev/null \
+    || fail "could not route dependent work behind the decision hold"
+  printf 'Use the archived outcome.\n' > "$home/archive-decision.txt"
+  run_decisions "$home" resolve "$id" archive-choice --decision-file "$home/archive-decision.txt" \
+    --routed-to sample-archive-followup >/dev/null \
+    || fail "could not resolve the archive-scenario hold"
+
+  run_decisions "$home" verify "$id" >/dev/null \
+    || fail "verify refused a resolved hold still present in the live backlog"
+
+  tasks_in "$home" prune --state "done" --keep 0 >/dev/null \
+    || fail "could not archive the resolved hold via Done retention"
+  ! grep -E "^- \[x\] $hold -" "$home/data/backlog.md" >/dev/null \
+    || fail "resolved hold fixture was not pruned out of the live backlog"
+  grep -E "^- \[x\] $hold -" "$home/data/done-archive.md" >/dev/null \
+    || fail "resolved hold fixture was not archived"
+
+  run_decisions "$home" verify "$id" >/dev/null \
+    || fail "verify wrongly refused a resolved hold archived by Done retention"
+  run_teardown "$home" "$id" >/dev/null 2> "$home/archive-teardown.err" \
+    || fail "scout teardown refused after its hold was archived: $(cat "$home/archive-teardown.err")"
+  pass "verify accepts a resolved captain hold archived by Done retention"
+}
+
+# A hold that decayed out of its durable held state (unheld without ever being
+# resolved through fm-decision-hold.sh resolve) must keep failing verify exactly
+# as before the archive fallback was added - the archive lookup must never
+# paper over a genuinely open, improperly tracked decision.
+test_verify_rejects_unheld_unresolved_hold() {
+  local home id hold
+  home=$(make_home unheld-unresolved-hold)
+  id=sample-decay-review
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Investigate sample decay scenario" --kind scout --repo sample --start >/dev/null \
+    || fail "could not create investigation backlog fixture"
+  write_origin_meta "$home" "$id"
+  printf 'done: report complete\n' > "$home/state/$id.status"
+  printf '# Sample decay review\n\nOne captain choice remains.\n' > "$home/data/$id/report.md"
+
+  hold=$(run_decisions "$home" hold "$id" decay-choice \
+    --title "Choose the decay sample outcome" --reason "captain decay choice pending" --repo sample) \
+    || fail "could not register hold for decay scenario"
+  run_decisions "$home" complete "$id" decay-choice >/dev/null \
+    || fail "completion failed while the hold was actively held"
+
+  tasks_in "$home" unhold "$hold" >/dev/null || fail "could not unhold the decay-scenario fixture"
+  if run_decisions "$home" verify "$id" > "$home/decay-verify.out" 2> "$home/decay-verify.err"; then
+    fail "verify accepted an unheld, unresolved decision hold"
+  fi
+  assert_grep "neither actively held nor durably resolved" "$home/decay-verify.err" \
+    "decayed hold must fail with the unchanged not-held-not-resolved diagnostic"
+  pass "verify still rejects a genuinely open, improperly tracked hold"
+}
+
+# A decision key attested in metadata with no matching backlog identity in
+# either the live backlog or the archive must fail loudly, naming both
+# surfaces, rather than silently passing.
+test_verify_rejects_hold_missing_from_both_surfaces() {
+  local home id
+  home=$(make_home missing-both-surfaces)
+  id=sample-ghost-review
+  mkdir -p "$home/data/$id"
+  write_origin_meta "$home" "$id"
+  printf 'done: report complete\n' > "$home/state/$id.status"
+  printf '# Sample ghost review\n\nNo captain choice remains.\n' > "$home/data/$id/report.md"
+  printf 'decisions_reviewed=1\ndecision_keys=ghost-choice\n' >> "$home/state/$id.meta"
+
+  if run_decisions "$home" verify "$id" > "$home/ghost-verify.out" 2> "$home/ghost-verify.err"; then
+    fail "verify accepted a decision key absent from both the backlog and the archive"
+  fi
+  assert_grep "$id-decision-ghost-choice" "$home/ghost-verify.err" \
+    "diagnostic must name the missing hold identity"
+  assert_grep "$home/data/backlog.md" "$home/ghost-verify.err" \
+    "diagnostic must name the live backlog surface"
+  assert_grep "$home/data/done-archive.md" "$home/ghost-verify.err" \
+    "diagnostic must name the archive surface"
+  pass "verify fails loudly naming both surfaces when a hold is absent from both"
+}
+
 test_uninventoried_report_decision_refuses_completion
 
+test_verify_accepts_archived_resolved_hold
+test_verify_rejects_unheld_unresolved_hold
+test_verify_rejects_hold_missing_from_both_surfaces
 test_scout_teardown_always_requires_inventory_verification
 test_structured_holds_survive_teardown_and_route_resolution
 test_origin_slug_validation_precedes_path_construction
