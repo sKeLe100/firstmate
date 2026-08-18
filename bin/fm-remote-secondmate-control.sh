@@ -42,6 +42,16 @@ CONTROL_STATE="$TARGET_HOME/state/parent-route"
 CONTROL_DATA="$TARGET_HOME/data/.parent-route"
 REMOTE_HERDR_SESSION=fm-remote
 
+# A freshly launched endpoint's Herdr target can take a moment to become
+# queryable while the host is still bringing it up (docs/remote-secondmates.md
+# "Endpoint settle"): bounded retry here, in cmd_launch only, absorbs that
+# startup race instead of a launch's own print_route racing a not-yet-settled
+# endpoint into returning success with empty route metadata. After the bound,
+# the refusal stays loud - never a silently accepted malformed route.
+REMOTE_LAUNCH_SETTLE_ATTEMPTS=${FM_REMOTE_LAUNCH_SETTLE_ATTEMPTS:-10}
+REMOTE_LAUNCH_SETTLE_SLEEP=${FM_REMOTE_LAUNCH_SETTLE_SLEEP:-0.5}
+case "$REMOTE_LAUNCH_SETTLE_ATTEMPTS" in ''|*[!0-9]*) REMOTE_LAUNCH_SETTLE_ATTEMPTS=10 ;; esac
+
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
@@ -96,6 +106,22 @@ remote_endpoint_require() {
   remote_endpoint_load "$1" || die "$REMOTE_ENDPOINT_ERROR"
 }
 
+# remote_endpoint_settle: bounded retry of remote_endpoint_load for a launch
+# that just wrote endpoint metadata, so a transiently-not-yet-queryable target
+# is retried instead of read once and either refused or, worse, accepted with
+# an empty target. Succeeds the moment a read validates; on exhausting the
+# bound, returns 1 with REMOTE_ENDPOINT_ERROR set to the last refusal so the
+# caller's own die reports it. Never sleeps after the final attempt.
+remote_endpoint_settle() {  # <id>
+  local id=$1 attempt=1
+  while :; do
+    remote_endpoint_load "$id" && return 0
+    [ "$attempt" -lt "$REMOTE_LAUNCH_SETTLE_ATTEMPTS" ] || return 1
+    attempt=$((attempt + 1))
+    sleep "$REMOTE_LAUNCH_SETTLE_SLEEP"
+  done
+}
+
 state_value() { # <id>; prints recovery-grade state
   local id=$1 meta
   meta=$(meta_path "$id")
@@ -134,7 +160,7 @@ cmd_route() {
 
 cmd_launch() {
   local id=$1 harness=$2 model=$3 effort=$4 selected_backend=$5 traceparent=${6:-}
-  local current meta out herdr_session
+  local current meta out
 
   validate_id "$id"
   validate_home "$id"
@@ -174,9 +200,7 @@ cmd_launch() {
     die "remote host-local secondmate launch failed"
   fi
   [ -f "$meta" ] || die "remote launch returned without endpoint metadata"
-  herdr_session=$(fm_meta_get "$meta" herdr_session)
-  [ "$herdr_session" = "$REMOTE_HERDR_SESSION" ] \
-    || die "remote launch recorded Herdr session '${herdr_session:-missing}', expected '$REMOTE_HERDR_SESSION'"
+  remote_endpoint_settle "$id" || die "$REMOTE_ENDPOINT_ERROR"
   print_route "$id"
 }
 

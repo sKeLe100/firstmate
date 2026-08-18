@@ -101,7 +101,16 @@ meta_value() {  # <key>
 WT=$(meta_value worktree)
 KIND=$(meta_value kind)
 HARNESS=$(meta_value harness)
+REMOTE_HOST=$(meta_value remote_host)
 [ -n "$KIND" ] || KIND=ship
+
+# A remote secondmate's recorded worktree is a path on the remote host, never
+# on this filesystem, so its local absence is expected and never a torn-down
+# signal; querying its real state means reading the remote route instead
+# (bin/fm-remote-secondmate-control.sh route).
+if [ -n "$REMOTE_HOST" ]; then
+  emit unknown none "remote secondmate on $REMOTE_HOST; not locally observable"
+fi
 
 # A torn-down (or never-created) worktree has no current state to read.
 if [ -z "$WT" ] || [ ! -d "$WT" ]; then
