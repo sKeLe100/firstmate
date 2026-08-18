@@ -15,7 +15,11 @@
 # and escalate once if the recovery turn also completes without a correlated
 # report. Never loop, never repeatedly inject, never silently expire unresolved
 # records, and never treat wrong-home or structured-home heuristics as
-# acknowledgement.
+# acknowledgement. For a remote secondmate, a correlated reply can still be in
+# ingest transit when the recovery window lapses (fm-procevent-remote-reply.sh);
+# fm_pending_reply_maybe_escalate forces one bounded poll of that source right
+# before it would otherwise escalate, so an already-arrived-or-arriving reply
+# resolves locally instead of triggering a false repost demand.
 #
 # Record location (parent FM_HOME):
 #   state/pending-replies/<corr_id>
@@ -75,6 +79,11 @@
 #   FM_PENDING_REPLY_SEND_HOOK    optional command template for recovery delivery
 #                                 (tests); receives task_id and full message as args
 #   FM_PENDING_REPLY_NOW          optional fixed epoch for deterministic tests
+#   FM_PENDING_REPLY_FORCE_INGEST_WAIT_SECS  bounded wait for the pre-escalation
+#                                 forced remote-reply poll, default 5
+#   FM_PENDING_REPLY_FORCE_INGEST_HOOK  optional command template replacing that
+#                                 poll (tests); receives state-dir, corr_id, and
+#                                 task_id as args
 
 # shellcheck source=bin/fm-marker-lib.sh
 _FM_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _FM_PENDING_REPLY_LIB_DIR="."
@@ -939,6 +948,58 @@ EOF
   fm_pending_reply_set "$rec" escalation_closed_epoch "$now"
 }
 
+# True when <record-path>'s current phase means the next maybe_escalate call
+# would actually attempt an escalation rather than a no-op. Read-only, so it is
+# safe to call without the per-correlation lock. The one owner of that
+# eligibility test: both the forced pre-escalation reply check below and the
+# real escalation decision use it, so they cannot silently drift apart.
+fm_pending_reply_escalation_pending() {  # <record-path>
+  local rec=$1 phase completed
+  phase=$(fm_pending_reply_get "$rec" phase)
+  case "$phase" in
+    recovery_sent)
+      completed=$(fm_pending_reply_get "$rec" recovery_turn_completed_epoch)
+      [ -n "$completed" ]
+      ;;
+    delivery_unknown|recovery_failed|recovery_unknown) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Force one bounded ingest attempt of a remote secondmate's correlated-reply
+# source immediately before an escalation would otherwise fire. A reply that
+# already crossed the wire - or is only moments from doing so - must not read
+# as genuinely missing just because the source's own poll cycle has not yet
+# noticed it; this closes that gap without ever blocking a healthy live poll
+# (fm-procevent.sh start no-ops instantly when a runner already owns the
+# source, so the bounded wait below is only ever paid in the gap this exists
+# to close). Local secondmates and ordinary tasks have no remote-reply source
+# and are a silent no-op. Uses FM_PENDING_REPLY_FORCE_INGEST_HOOK when set
+# (tests; receives state-dir, corr_id, and task_id), otherwise the real
+# process-event runner.
+fm_pending_reply_force_remote_reply_ingest() {  # <state-dir> <corr_id>
+  local state=$1 corr=$2 rec task_id meta remote_host sid wait_secs rc=0
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ -f "$rec" ] || return 1
+  task_id=$(fm_pending_reply_get "$rec" task_id)
+  [ -n "$task_id" ] || return 1
+  meta="$state/${task_id}.meta"
+  [ -f "$meta" ] || return 1
+  remote_host=$(fm_meta_get "$meta" remote_host)
+  [ -n "$remote_host" ] || return 1
+  if [ -n "${FM_PENDING_REPLY_FORCE_INGEST_HOOK:-}" ]; then
+    # shellcheck disable=SC2086
+    eval "$FM_PENDING_REPLY_FORCE_INGEST_HOOK" \
+      "$(printf '%q' "$state")" "$(printf '%q' "$corr")" "$(printf '%q' "$task_id")"
+    return $?
+  fi
+  sid=$("$_FM_PENDING_REPLY_LIB_DIR/fm-procevent-remote-reply.sh" source-id "$task_id" 2>/dev/null) || return 1
+  wait_secs=${FM_PENDING_REPLY_FORCE_INGEST_WAIT_SECS:-5}
+  FM_REMOTE_REPLY_WAIT_SECONDS=$wait_secs \
+    "$_FM_PENDING_REPLY_LIB_DIR/fm-procevent.sh" start "$sid" >/dev/null 2>&1 || rc=$?
+  return "$rc"
+}
+
 # Escalate once after a missed recovery report or failed delivery outcome.
 # Retains the durable unresolved record. Never loops.
 fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
@@ -949,9 +1010,17 @@ fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
   # subshell that would make every later use of them read as a lost write.
   # The lock is released explicitly rather than from an EXIT trap, because a trap
   # in a plain function would clobber the caller's own.
-  local state=$1 corr=$2 lock rc=0
+  local state=$1 corr=$2 lock rc=0 rec
   local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   STATE=$state
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  # Unlocked and before the corr lock below: fm-procevent.sh start ingests
+  # through fm-procevent-remote-reply.sh, which takes this same per-corr lock
+  # itself for every correlated reply it finds, so this must never run while
+  # this call already holds it.
+  if [ -f "$rec" ] && fm_pending_reply_escalation_pending "$rec"; then
+    fm_pending_reply_force_remote_reply_ingest "$state" "$corr" 2>/dev/null || true
+  fi
   lock="$state/.pending-reply-$corr.lock"
   # shellcheck source=bin/fm-wake-lib.sh
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
@@ -963,7 +1032,7 @@ fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
 
 _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   local state=$1 corr=$2
-  local rec phase completed now payload parent_status line kind
+  local rec phase now payload parent_status line kind
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   phase=$(fm_pending_reply_get "$rec" phase)
@@ -972,15 +1041,9 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
     phase=$(fm_pending_reply_get "$rec" phase)
     [ "$phase" = delivery_unknown ] || return 0
   fi
-  case "$phase" in
-    recovery_sent)
-      completed=$(fm_pending_reply_get "$rec" recovery_turn_completed_epoch)
-      [ -n "$completed" ] || return 1
-      ;;
-    delivery_unknown|recovery_failed|recovery_unknown) ;;
-    *) return 1 ;;
-  esac
-  # Resolve wins if a late report arrived between completion and this call.
+  fm_pending_reply_escalation_pending "$rec" || return 1
+  # Resolve wins if a late report arrived between completion and this call,
+  # including one the forced ingest above just pulled in.
   if _fm_pending_reply_try_resolve_locked "$state" "$corr"; then
     return 0
   fi
