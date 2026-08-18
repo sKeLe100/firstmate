@@ -132,6 +132,62 @@ test_answer_send_closes_open_decision() {
   pass "fm-send --resolve-key: the answer send itself closes the open decision"
 }
 
+test_key_after_colon_folds_to_default_not_named_key() {
+  # Regression for the field defect (2026-08-16, hit twice): a crewmate wrote
+  # the more English-sounding `needs-decision: [key=<slug>] ...` - the token
+  # placed AFTER the colon, in the note - instead of the classifier's actual
+  # grammar, which requires it BETWEEN the verb and the colon
+  # (bin/fm-classify-lib.sh's "Decision key grammar"). The classifier has no
+  # token-before-colon in that shape, so it silently folds the whole line
+  # under the bare "default" key, and --resolve-key targeting the intended
+  # slug can never find it. This pins the classifier's actual (authoritative)
+  # behavior on that exact malformed shape, matching a resolved: line in the
+  # same malformed shape, so the fix (teaching crews the correct shape in
+  # bin/fm-brief.sh) cannot silently regress back to leaving this trap
+  # unguarded.
+  local dir fb log home rc out
+  dir="$TMP_ROOT/key-after-colon"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home key-after-colon)
+  fm_write_meta "$home/state/t1b.meta" "window=sess:fm-t1b" "kind=ship"
+  printf 'needs-decision: [key=widget-scope] pick a shape\n' > "$home/state/t1b.status"
+
+  out=$(drain_out "$home")
+  # The drain only prints a "[key=<slug>]" annotation before the verb for a
+  # NON-default key (fm-wake-drain.sh's print_open_decisions_section), so the
+  # absence of "t1b [key=" here proves the line folded under default even
+  # though the literal text "[key=widget-scope]" still appears inside the note.
+  printf '%s' "$out" | grep -F 't1b [key=' >/dev/null \
+    && fail "the malformed line was folded under its intended key instead of default: $out"
+  printf '%s' "$out" | grep -F 't1b needs-decision: [key=widget-scope] pick a shape' >/dev/null \
+    || fail "the malformed line should have folded under the default key with its note untouched: $out"
+
+  run_send "$fb" "$home" "$log" t1b --resolve-key widget-scope "answer"; rc=$?
+  [ "$rc" -ne 0 ] || fail "--resolve-key widget-scope should refuse: the malformed line never opened that key"
+  [ ! -s "$log" ] || fail "a refused resolve-key attempt still typed text: $(cat "$log")"
+
+  run_send "$fb" "$home" "$log" t1b --resolve-key default "go with REST"; rc=$?
+  expect_code 0 "$rc" "--resolve-key default should close the line the malformed shape actually opened"
+  grep -F 'resolved [key=default]: answered: go with REST' "$home/state/t1b.status" >/dev/null \
+    || fail "fm-send did not append the closing resolved line for the default key:"$'\n'"$(cat "$home/state/t1b.status")"
+  out=$(drain_out "$home")
+  if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
+    fail "the default-key decision still lists as open after being answered: $out"
+  fi
+
+  # A resolved: line in the same malformed (key-after-colon) shape is symmetric:
+  # it also folds under default rather than closing the intended key, so a
+  # worker cannot self-close a malformed-key blocker by mirroring the malformed
+  # open shape either.
+  printf 'blocked: [key=widget-scope] stuck on choice\n' >> "$home/state/t1b.status"
+  printf 'resolved: [key=widget-scope] cleared on its own\n' >> "$home/state/t1b.status"
+  out=$(drain_out "$home")
+  if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
+    fail "a malformed blocked:/resolved: pair should still fold and close under default: $out"
+  fi
+  pass "fm-classify-lib: '<verb>: [key=x] ...' (key after the colon) folds under default, not the intended key"
+}
+
 test_answer_starts_work_never_orphans() {
   local dir fb log home rc out
   dir="$TMP_ROOT/starts-work"; mkdir -p "$dir"
@@ -396,6 +452,7 @@ test_flag_misuse_refuses() {
 }
 
 test_answer_send_closes_open_decision
+test_key_after_colon_folds_to_default_not_named_key
 test_answer_starts_work_never_orphans
 test_routine_steer_never_closes
 test_not_open_key_refuses_before_send
