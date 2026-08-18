@@ -11,6 +11,8 @@
 #   2. Completed turn with no report triggers one recovery only
 #   3. Recovery reply resolves the original expectation
 #   4. Second missed turn escalates once and remains durable
+#   4a. A remote reply still in ingest transit resolves locally instead of a
+#       false repost demand, while a genuinely missing one still escalates
 #   5. Transport success cannot masquerade as reply success
 #   6. Unrelated events and stale correlation ids cannot resolve a request
 #   7. Restart/compaction preserves the expectation and exact parent destination
@@ -304,6 +306,101 @@ test_second_missed_turn_escalates_once_and_stays_durable() {
   fi
   [ "$(phase_of "$state" "$corr")" = escalated ] || fail "must remain escalated after unrelated status"
   pass "second missed turn escalates once and remains durable"
+}
+
+test_remote_reply_in_transit_resolves_without_escalation() {
+  local home state corr rec status_line
+  home=$(setup_parent remote-in-transit)
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=4200
+  fm_write_meta "$state/hibit.meta" \
+    "kind=secondmate" "mode=secondmate" "home=$home/sm" "remote_host=pc02-llm-lab"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "why is phase 7 stuck")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  export FM_PENDING_REPLY_SEND_HOOK='true'
+  fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  # The ingest hook stands in for fm-procevent-remote-reply.sh: the reply
+  # already crossed the wire and is applied here exactly as real ingest would,
+  # by appending the correlated line and letting the shared resolver see it.
+  # shellcheck disable=SC2329
+  ingest_hook() {
+    printf 'done [corr=%s]: build verified\n' "$2" >> "$1/hibit.status"
+  }
+  export -f ingest_hook
+  export FM_PENDING_REPLY_FORCE_INGEST_HOOK='ingest_hook'
+  fm_pending_reply_maybe_escalate "$state" "$corr" 2>/dev/null || true
+  unset -f ingest_hook
+  unset FM_PENDING_REPLY_FORCE_INGEST_HOOK
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] \
+    || fail "an in-transit reply pulled in by the forced poll should resolve the record"
+  if grep -Fq "blocked [key=pending-reply-$corr]:" "$state/hibit.status"; then
+    status_line=$(grep -F "blocked [key=pending-reply-$corr]:" "$state/hibit.status")
+    fail "an in-transit reply must not trigger a repost demand"$'\n'"$status_line"
+  fi
+  pass "a remote reply still in ingest transit resolves locally instead of escalating"
+}
+
+test_remote_genuinely_missing_reply_still_escalates() {
+  local home state corr rec status_line
+  home=$(setup_parent remote-genuinely-missing)
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=4300
+  fm_write_meta "$state/hibit.meta" \
+    "kind=secondmate" "mode=secondmate" "home=$home/sm" "remote_host=pc02-llm-lab"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "why is phase 7 stuck")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  export FM_PENDING_REPLY_SEND_HOOK='true'
+  fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  # The forced poll runs but finds nothing: the reply is genuinely missing, not
+  # merely delayed, so the escalation guarantee must still fire.
+  # shellcheck disable=SC2329
+  empty_ingest_hook() { return 1; }
+  export -f empty_ingest_hook
+  export FM_PENDING_REPLY_FORCE_INGEST_HOOK='empty_ingest_hook'
+  fm_pending_reply_maybe_escalate "$state" "$corr" || fail "genuine miss should still escalate"
+  unset -f empty_ingest_hook
+  unset FM_PENDING_REPLY_FORCE_INGEST_HOOK
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ "$(fm_pending_reply_get "$rec" phase)" = escalated ] \
+    || fail "a genuinely missing reply must still escalate after the forced poll finds nothing"
+  status_line=$(tail -1 "$state/hibit.status")
+  case "$status_line" in
+    "blocked [key=pending-reply-$corr]:"*pending-reply-missed*) : ;;
+    *) fail "genuinely missing reply should still publish one blocked line"$'\n'"$status_line" ;;
+  esac
+  pass "a genuinely missing remote reply still escalates after the forced poll finds nothing"
+}
+
+test_local_secondmate_escalation_skips_forced_ingest() {
+  local home state corr rec
+  home=$(setup_parent local-secondmate-escalate)
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=4400
+  fm_write_secondmate_meta "$state/hibit.meta" "$home/sm"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "why is phase 7 stuck")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  export FM_PENDING_REPLY_SEND_HOOK='true'
+  fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  # No remote_host in this meta, so the forced-ingest hook must never run.
+  # shellcheck disable=SC2329
+  unexpected_hook() { printf 'should not run\n' >> "$TMP_ROOT/unexpected.log"; }
+  export -f unexpected_hook
+  export FM_PENDING_REPLY_FORCE_INGEST_HOOK='unexpected_hook'
+  fm_pending_reply_maybe_escalate "$state" "$corr" || fail "local secondmate escalation should fire"
+  unset -f unexpected_hook
+  unset FM_PENDING_REPLY_FORCE_INGEST_HOOK
+  [ ! -e "$TMP_ROOT/unexpected.log" ] \
+    || fail "a local secondmate has no remote-reply source and must not force an ingest poll"
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ "$(fm_pending_reply_get "$rec" phase)" = escalated ] || fail "local secondmate escalation must still commit"
+  pass "a local secondmate's escalation never forces a remote-reply poll"
 }
 
 test_escalation_publication_failure_retries() {
@@ -1046,6 +1143,9 @@ test_completed_turn_no_report_triggers_one_recovery
 test_recovery_attempt_is_never_reinjected
 test_recovery_reply_resolves_original
 test_second_missed_turn_escalates_once_and_stays_durable
+test_remote_reply_in_transit_resolves_without_escalation
+test_remote_genuinely_missing_reply_still_escalates
+test_local_secondmate_escalation_skips_forced_ingest
 test_escalation_publication_failure_retries
 test_legacy_escalation_closes_default_decision
 test_legacy_escalation_does_not_close_taken_default_decision
