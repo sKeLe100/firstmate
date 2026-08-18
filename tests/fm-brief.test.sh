@@ -690,6 +690,47 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   pass "fm-brief.sh: investigation and visual-review completions load the shared decision policy"
 }
 
+# Regression for the field defect (2026-08-16, hit twice): a crewmate wrote
+# needs-decision: [key=<slug>] ... (the token AFTER the colon), which
+# bin/fm-classify-lib.sh's documented grammar folds under the bare "default"
+# key rather than the intended slug, breaking --resolve-key targeting. Rule 6
+# previously showed no example of the key syntax at all when opening a
+# decision, only when closing one, so a crewmate had nothing correct to copy.
+# This pins that both the ship and scout scaffolds now teach the exact
+# classifier-authoritative shape - the [key=<slug>] token BETWEEN the verb and
+# the colon - for both needs-decision and blocked.
+test_ship_and_scout_teach_correct_key_placement() {
+  local home brief
+  home="$TMP_ROOT/key-placement-home"
+  mkdir -p "$home/data"
+  write_registry "$home"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-key-ship some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  brief="$home/data/brief-key-ship/brief.md"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'needs-decision [key=<slug>]: {summary}' "$brief" \
+    "ship brief did not show the correct needs-decision key placement"
+  # shellcheck disable=SC2016
+  assert_grep 'blocked [key=<slug>]: {why}' "$brief" \
+    "ship brief did not show the correct blocked key placement"
+  assert_grep "never after the colon" "$brief" \
+    "ship brief did not warn against the malformed key-after-colon shape"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-key-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh scout scaffold exited non-zero"
+  brief="$home/data/brief-key-scout/brief.md"
+  # shellcheck disable=SC2016
+  assert_grep 'needs-decision [key=<slug>]: {summary}' "$brief" \
+    "scout brief did not show the correct needs-decision key placement"
+  # shellcheck disable=SC2016
+  assert_grep 'blocked [key=<slug>]: {why}' "$brief" \
+    "scout brief did not show the correct blocked key placement"
+  assert_grep "never after the colon" "$brief" \
+    "scout brief did not warn against the malformed key-after-colon shape"
+  pass "fm-brief.sh: ship and scout scaffolds teach the classifier's authoritative key placement"
+}
+
 # Scout and secondmate paths still scaffold well-formed briefs.
 test_scout_and_secondmate_scaffold() {
   local brief
@@ -729,4 +770,5 @@ test_secondmate_marked_request_reporting_contract
 test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
+test_ship_and_scout_teach_correct_key_placement
 test_scout_and_secondmate_scaffold
