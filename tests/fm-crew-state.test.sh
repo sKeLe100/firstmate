@@ -1150,6 +1150,29 @@ test_torn_down_worktree() {
   pass "torn-down worktree is handled gracefully"
 }
 
+# A remote secondmate's recorded worktree is a path on the remote host, never
+# on this filesystem: before this fix its expected local absence fell through
+# to the same "worktree gone (torn down?)" message a genuinely torn-down local
+# crew reports, a false negative that obscured diagnosis of a real remote
+# endpoint issue. remote_host in meta must short-circuit to a distinct,
+# clearly-labeled unknown before the worktree-existence check ever runs.
+test_remote_secondmate_not_locally_observable() {
+  reset_fakes
+  local d; d=$(new_case remotehost)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/pc02-llm-lab.meta" "window=remote:pc02-llm-lab" \
+    "worktree=$d/no-such-worktree" "kind=secondmate" "remote_host=pc02"
+  local out rc
+  out=$(run_crew_state "$d" pc02-llm-lab); rc=$?
+  expect_code 0 "$rc" "remote secondmate exits 0"
+  assert_contains "$out" "state: unknown" "remote secondmate -> unknown"
+  assert_contains "$out" "source: none" "remote secondmate -> none source"
+  assert_contains "$out" "remote secondmate on pc02" "remote secondmate names its host"
+  assert_not_contains "$out" "torn down" \
+    "a remote secondmate's expected local worktree absence must never read as torn down"
+  pass "remote secondmate reports a distinct not-locally-observable state instead of a false torn-down negative"
+}
+
 test_missing_meta() {
   reset_fakes
   local d; d=$(new_case nometa)
@@ -1350,6 +1373,7 @@ test_dead_window_still_reports_active_run_step
 test_no_timeout_uses_perl_bound
 test_scout_skips_run_lookup
 test_torn_down_worktree
+test_remote_secondmate_not_locally_observable
 test_missing_meta
 test_provably_working_via_runs_list_fallback
 test_not_provably_working_when_stopped

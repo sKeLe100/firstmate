@@ -162,6 +162,12 @@ Backends that already refuse secondmate launch, currently Orca and cmux, remain 
 
 Startup liveness recovery relaunches a dead or missing remote second mate through this same command, so recovery passes the same readiness gate rather than a weaker one.
 
+### Endpoint settle
+
+A freshly launched endpoint's Herdr metadata can take a moment to become fully readable while the host is still bringing it up.
+`bin/fm-remote-secondmate-control.sh`'s launch command retries reading that metadata with a bounded wait (`FM_REMOTE_LAUNCH_SETTLE_ATTEMPTS`, `FM_REMOTE_LAUNCH_SETTLE_SLEEP`) before reporting the route, so a transient not-yet-settled read is absorbed instead of racing into a malformed route.
+Exhausting the bound still refuses loudly rather than reporting success with incomplete route metadata.
+
 Send routed requests normally:
 
 ```sh
