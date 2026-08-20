@@ -31,6 +31,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
 
 1. **Gather live fleet state with one deterministic command.**
    Run `bin/fm-bearings-snapshot.sh` at invocation time and read its compact output.
+   In the same gather step, also run `bin/fm-context-usage.sh` to read this session's real context usage; its output is the only context-usage source the digest may report, because the live token countdown can stick and is never trusted alone.
    It is the single bounded, deterministic fleet-state source for Bearings and renders TOON by default.
    Do not create or consult a second fleet-state reader, parser contract, status-event-tail interpretation, visible-session recap, ad-hoc project probe, or ad-hoc `gh-axi`/`gh` query.
    The command's header and `--help` output own its exact fields, bounds, opt-ins, and output contract.
@@ -67,7 +68,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
 ## Chat-response contract
 
 This skill is the one owner of the `/bearings` chat-response format; the snapshot and classifier own the data that feeds it, and no other file restates this contract.
-Every `/bearings` chat response renders EXACTLY these four sections, in THIS order, and nothing else structural (there is no At Anchor section):
+Every `/bearings` chat response renders EXACTLY these four sections, in THIS order, plus the single non-structural context-usage closing line defined below, and nothing else structural (there is no At Anchor section):
 
 1. **Captain's Call** - ONLY items that need the captain's own action now: a decision to make, a PR to approve or merge, a credential or login to provide, or a blocker only the captain can clear.
    Empty-state: "Nothing needs your action right now."
@@ -88,6 +89,7 @@ Rules that keep the contract unambiguous:
 - A secondmate's own row appears Underway only for `active_child_work`; `externally_held` belongs in Charted Next, and `unknown` belongs there as an unavailable-state gate unless its reason requires the captain's action.
 - Do not suppress separately projected decisions, landed records, or gates from a `partial-structured` home merely because that secondmate's own row is `unknown`.
 - Include the required direct address to the captain inside one item or empty-state sentence.
+- After Charted Next, append exactly one closing line reporting the session's real context usage from the gather step's `bin/fm-context-usage.sh` output - tokens and percent of window, flagging it only when it crosses the captain's configured warning threshold; when the helper fails, that one line says the reading is unavailable rather than guessing, and the file-mode report ends with the same line.
 - Every PR appears as the full `https://...` URL; a shorthand `#number` is fine only as a back-reference after the full URL has already appeared in the same digest.
 - The chat follows `AGENTS.md` section 9 and carries one scannable line per item.
 - Detailed decisions, plans, full gate reasons, and evidence belong in the file only when file mode is explicit, so plain chat stays concise and file-mode chat stays materially shorter than that file.
