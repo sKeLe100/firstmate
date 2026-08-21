@@ -124,7 +124,7 @@ and have no outcome to record).
 | `mode` | delivery mode |
 | `result` | `landed` \| `abandoned` |
 | `pr_url` | the task's PR, when one existed |
-| `retried` | `"true"` when a `bin/fm-control.sh relaunch` occurred on this task before teardown, else absent |
+| `retried` | `"true"` when a `bin/fm-control.sh relaunch` completed on this task before teardown (a refused or rolled-back attempt does not count), else absent |
 
 `result=landed` means teardown's own landed-work proof passed (the same
 proof `fm-teardown.sh` already requires before an ordinary, non-`--force`

@@ -285,7 +285,55 @@ test_real_relaunch_records_delegation_event() {
     found=1
   done < <(archive_records "$home")
   [ "$found" -eq 1 ] || fail "no delegation record was written for a real fm-control.sh relaunch"
+  grep -q '^relaunched=true$' "$home/state/$task_id.control-relaunch" \
+    || fail "a completed relaunch should record relaunched=true in its durable journal"
   pass "fm-control.sh relaunch: a real harness switch records the delegation chain, reusing --note as reason"
+}
+
+test_rolled_back_relaunch_journal_does_not_claim_a_relaunch() {
+  local dir home out task_id
+  dir="$TMP_ROOT/relaunch-rollback-$RANDOM"
+  home="$dir/home"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  task_id=relaunch-t2
+  fm_git_worktree "$dir/proj" "$dir/wt" "task-$task_id"
+  mkdir -p "$home/data/$task_id"
+  printf '# brief for %s\n\nDo the thing.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  {
+    echo "window=fmses:fm-$task_id"
+    echo "endpoint_task_id=$task_id"
+    echo "worktree=$dir/wt"
+    echo "project=$dir/proj"
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "mode=no-mistakes"
+    echo "yolo=off"
+    echo "tasktmp=/tmp/fm-$task_id"
+    echo "model=default"
+    echo "effort=default"
+  } > "$home/state/$task_id.meta"
+  printf '%s\n' "fm-$task_id" > "$dir/fake/windows"
+  printf '%s' "$dir/wt" > "$dir/fake/cwd"
+  : > "$dir/fake/literal"
+  : > "$dir/fake/keys"
+  printf 'claude' > "$dir/fake/command"
+  # The replacement agent never comes up, so the relaunch is rolled back after
+  # its journal already exists.
+  printf 'zsh' > "$dir/fake/becomes"
+
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 \
+    FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
+    "$CONTROL" "$task_id" relaunch --harness codex \
+      --note "trying codex" 2>&1)
+  local rc=$?
+  [ "$rc" -ne 0 ] || fail "the relaunch should have failed when the replacement never came up: $out"
+  [ -f "$home/state/$task_id.control-relaunch" ] \
+    || fail "expected the rolled-back relaunch to leave its durable journal behind"
+  grep -q '^relaunched=true$' "$home/state/$task_id.control-relaunch" \
+    && fail "a rolled-back relaunch must not record relaunched=true in its journal"
+  pass "fm-control.sh relaunch: a rolled-back relaunch leaves a journal that does not claim a relaunch happened"
 }
 
 # --- 4: real fm-teardown.sh -------------------------------------------------
@@ -400,9 +448,62 @@ test_teardown_records_abandoned_outcome_on_force() {
   pass "fm-teardown.sh: a real --force teardown of unlanded work records an outcome=abandoned archive record"
 }
 
+test_teardown_outcome_reports_retried_only_for_a_completed_relaunch() {
+  require_python3
+  local dir out rc line found=0
+  dir=$(make_teardown_case retried)
+  # The journal a completed fm-control.sh relaunch leaves behind.
+  {
+    echo "v1"
+    echo "task=task-x1"
+    echo "phase=complete"
+    echo "relaunched=true"
+  } > "$dir/home/state/task-x1.control-relaunch"
+  out=$(run_teardown "$dir")
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "teardown should succeed: $out"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$(field "$line" event_type)" = outcome ] || continue
+    [ "$(field "$line" retried)" = true ] || fail "outcome after a completed relaunch should say retried=true: $line"
+    found=1
+  done < <(archive_records "$dir/home")
+  [ "$found" -eq 1 ] || fail "no outcome record was written"
+  pass "fm-teardown.sh: an outcome after a completed relaunch records retried=true"
+}
+
+test_teardown_outcome_omits_retried_after_a_rolled_back_relaunch() {
+  require_python3
+  local dir out rc line found=0
+  dir=$(make_teardown_case not-retried)
+  # The journal a refused/rolled-back relaunch leaves behind: it exists, but no
+  # replacement agent was ever confirmed.
+  {
+    echo "v1"
+    echo "task=task-x1"
+    echo "phase=failed:checkpoint"
+    echo "rollback=instructions-restored"
+  } > "$dir/home/state/task-x1.control-relaunch"
+  out=$(run_teardown "$dir")
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "teardown should succeed: $out"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$(field "$line" event_type)" = outcome ] || continue
+    [ -z "$(field "$line" retried)" ] \
+      || fail "a rolled-back relaunch must not be reported as a retry: $line"
+    found=1
+  done < <(archive_records "$dir/home")
+  [ "$found" -eq 1 ] || fail "no outcome record was written"
+  pass "fm-teardown.sh: a rolled-back relaunch is not reported as retried"
+}
+
 test_fresh_spawn_records_purpose_in_meta_and_dispatch_event
 test_fresh_spawn_with_redelegation_records_delegation_event
 test_fresh_spawn_rejects_path_traversal_redelegated_from
 test_real_relaunch_records_delegation_event
 test_teardown_records_landed_outcome
 test_teardown_records_abandoned_outcome_on_force
+test_rolled_back_relaunch_journal_does_not_claim_a_relaunch
+test_teardown_outcome_reports_retried_only_for_a_completed_relaunch
+test_teardown_outcome_omits_retried_after_a_rolled_back_relaunch

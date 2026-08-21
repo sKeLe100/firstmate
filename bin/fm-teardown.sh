@@ -462,7 +462,7 @@ LLM_USAGE_HARNESS=$(fm_meta_get "$META" harness)
 LLM_USAGE_MODEL=$(fm_meta_get "$META" model)
 LLM_USAGE_PURPOSE=$(fm_meta_get "$META" purpose)
 LLM_USAGE_RETRIED=
-[ ! -e "$STATE/$ID.control-relaunch" ] || LLM_USAGE_RETRIED=true
+[ "$(fm_meta_get "$STATE/$ID.control-relaunch" relaunched)" != true ] || LLM_USAGE_RETRIED=true
 PUBLIC_FOLLOWUP_HOME=$FM_HOME
 PUBLIC_FOLLOWUP_STATE=$STATE
 PUBLIC_FOLLOWUP_WORK_HOME=main

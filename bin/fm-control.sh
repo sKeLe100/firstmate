@@ -513,8 +513,10 @@ TARGET_MODEL=
 TARGET_EFFORT=
 
 journal_write() {  # <phase> [extra-line]...
-  local phase=$1
+  local phase=$1 relaunched
   shift
+  relaunched=$(fm_meta_get "$JOURNAL" relaunched 2>/dev/null || true)
+  [ "$phase" != complete ] || relaunched=true
   if {
     echo "v1"
     echo "task=$ID"
@@ -530,6 +532,7 @@ journal_write() {  # <phase> [extra-line]...
     echo "to_harness=$TARGET_HARNESS"
     echo "to_model=$TARGET_MODEL"
     echo "to_effort=$TARGET_EFFORT"
+    [ -z "$relaunched" ] || echo "relaunched=$relaunched"
     local line
     for line in "$@"; do
       echo "$line"
