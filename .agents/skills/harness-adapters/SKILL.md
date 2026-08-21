@@ -248,8 +248,14 @@ The checkpoint is deliberately foreground and bounded so Codex regains control r
 
 No trust dialog.
 Opencode can auto-upgrade itself in the background and the running TUI can exit mid-task, observed live from 1.15.7 to 1.17.3.
+
 If a pane shows the exit banner, relaunch with `--continue` to resume the session.
 `--prompt` does not auto-submit alongside `--continue`, so send the next instruction via `fm-send` once the TUI is up.
+
+**Self-hosted OpenAI-compatible providers (verified 2026-08-21).**
+A custom provider block in `opencode.jsonc` (`"npm": "@ai-sdk/openai-compatible"`, a `baseURL`, and a `models` map) lets `--model <provider/model>` reach any self-hosted OpenAI-compatible endpoint, including an ollama install, with no `fm-spawn.sh` change: this is the same model-flag mechanic as any other opencode provider, not a new adapter.
+Before trusting such a lane for real dispatch, always verify with a real file-mutating multi-tool turn and confirm the file actually changed on disk - never trust the transcript alone, and never trust the model's advertised capability list: ollama's `/api/tags` can report `"capabilities":["tools",...]` for a model whose `/v1/chat/completions` output never populates a real `tool_calls` array for a given GGUF quant/template, instead narrating a fake tool call as plain text with `finish_reason: "stop"`.
+That failure is a model/template property of the serving stack, not an opencode bug, and it silently defeats any multi-tool crew task while a narrated fake tool call looks superficially like a normal completion.
 
 **Busy-queued Enter (opencode 1.18.4, tmux backend fix, herdr known gap).**
 While opencode is mid-turn, the composer accepts Enter as a "send when the turn
