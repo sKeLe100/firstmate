@@ -183,6 +183,17 @@
 #   identity is owned by the parent home that holds its task metadata, while the
 #   pane export happens on the remote host (bin/fm-remote-secondmate-control.sh).
 #   Local spawns never pass it and resolve their own carrier exactly as before.
+#   --purpose <code|planning|review|summarize|mechanical|investigation> tags a
+#   fresh ship/scout/secondmate dispatch for the LLM usage telemetry archive
+#   (docs/llm-usage-telemetry.md); omitted records "unspecified" and never
+#   blocks the spawn. A relaunch carries its task's existing purpose forward
+#   unchanged and refuses an explicit --purpose.
+#   --redelegated-from <prior-task-id> --redelegation-reason <text> record a
+#   delegation-chain event (docs/llm-usage-telemetry.md) when this fresh
+#   ship/scout spawn replaces a failed attempt on the same backlog item under
+#   a NEW task id; both are optional but must be given together, and are
+#   refused on --relaunch, whose own delegation event is recorded by
+#   bin/fm-control.sh instead.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -245,6 +256,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-trace-context-lib.sh
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
+# shellcheck source=bin/fm-llm-usage-lib.sh
+. "$SCRIPT_DIR/fm-llm-usage-lib.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
@@ -262,6 +275,9 @@ BACKEND_ARG=
 MODE=
 YOLO=
 TRACEPARENT_ARG=
+PURPOSE=
+REDELEGATED_FROM=
+REDELEGATION_REASON=
 HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
@@ -269,6 +285,9 @@ BACKEND_SET=0
 MODE_SET=0
 YOLO_SET=0
 TRACEPARENT_SET=0
+PURPOSE_SET=0
+REDELEGATED_FROM_SET=0
+REDELEGATION_REASON_SET=0
 RELAUNCH=0
 POS=()
 want_value=
@@ -285,6 +304,9 @@ for a in "$@"; do
       mode) MODE=$a; MODE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
+      purpose) PURPOSE=$a; PURPOSE_SET=1 ;;
+      redelegated-from) REDELEGATED_FROM=$a; REDELEGATED_FROM_SET=1 ;;
+      redelegation-reason) REDELEGATION_REASON=$a; REDELEGATION_REASON_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -294,6 +316,12 @@ for a in "$@"; do
     --scout) KIND=scout; KIND_SET=1 ;;
     --secondmate) KIND=secondmate; KIND_SET=1 ;;
     --relaunch) RELAUNCH=1 ;;
+    --purpose) want_value=purpose ;;
+    --purpose=*) PURPOSE=${a#--purpose=}; PURPOSE_SET=1 ;;
+    --redelegated-from) want_value=redelegated-from ;;
+    --redelegated-from=*) REDELEGATED_FROM=${a#--redelegated-from=}; REDELEGATED_FROM_SET=1 ;;
+    --redelegation-reason) want_value=redelegation-reason ;;
+    --redelegation-reason=*) REDELEGATION_REASON=${a#--redelegation-reason=}; REDELEGATION_REASON_SET=1 ;;
     --harness) want_value=harness ;;
     --harness=*) HARNESS_ARG=${a#--harness=}; HARNESS_SET=1 ;;
     --model) want_value=model ;;
@@ -336,6 +364,27 @@ case "$EFFORT" in
   ''|low|medium|high|xhigh|max) ;;
   *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
 esac
+# --purpose classifies this dispatch for the LLM usage telemetry archive
+# (docs/llm-usage-telemetry.md); it never blocks a spawn on its own, so an
+# omitted value records "unspecified" rather than refusing.
+case "$PURPOSE" in
+  ''|code|planning|review|summarize|mechanical|investigation) ;;
+  *) echo "error: --purpose must be one of code, planning, review, summarize, mechanical, investigation" >&2; exit 1 ;;
+esac
+# --redelegated-from/--redelegation-reason record a delegation-chain event
+# (docs/llm-usage-telemetry.md) when this fresh spawn replaces a failed
+# attempt on the same backlog item; both are optional but must be given
+# together, and only apply to a fresh ship/scout dispatch.
+if [ "$REDELEGATED_FROM_SET" -eq 1 ] || [ "$REDELEGATION_REASON_SET" -eq 1 ]; then
+  [ "$REDELEGATED_FROM_SET" -eq 1 ] && [ "$REDELEGATION_REASON_SET" -eq 1 ] || {
+    echo "error: --redelegated-from and --redelegation-reason must be given together" >&2
+    exit 1
+  }
+  [ "$RELAUNCH" -eq 0 ] || {
+    echo "error: --redelegated-from/--redelegation-reason apply only to a fresh spawn, not --relaunch (fm-control.sh relaunch already records that delegation)" >&2
+    exit 1
+  }
+fi
 
 # --relaunch reuses an existing task's endpoint, worktree, project, and kind,
 # so every axis this block resolves for a fresh spawn instead comes from that
@@ -344,6 +393,7 @@ esac
 if [ "$RELAUNCH" -eq 1 ]; then
   [ "$BACKEND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded backend; --backend cannot override it" >&2; exit 1; }
   [ "$KIND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded kind; --scout/--secondmate cannot override it" >&2; exit 1; }
+  [ "$PURPOSE_SET" -eq 0 ] || { echo "error: --relaunch carries the task's recorded purpose forward; --purpose cannot override it" >&2; exit 1; }
   [ "$MODE_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded delivery mode; --mode cannot override it" >&2; exit 1; }
   [ "$YOLO_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded yolo posture; --yolo cannot override it" >&2; exit 1; }
 else
@@ -2611,6 +2661,10 @@ preserve_relaunch_meta() {
     echo "home=$PROJ_ABS"
     echo "projects=$SECONDMATE_PROJECTS"
   fi
+  # purpose= is written fresh only for a first-time spawn; a relaunch carries
+  # its task's existing purpose forward untouched via preserve_relaunch_meta
+  # below rather than resetting it to "unspecified" (docs/llm-usage-telemetry.md).
+  [ "$RELAUNCH" -eq 1 ] || echo "purpose=${PURPOSE:-unspecified}"
   if [ "$RELAUNCH" -eq 1 ]; then
     preserve_relaunch_meta
   fi
@@ -2635,6 +2689,28 @@ if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   fm_lock_release "$SPAWN_TASK_SET_LOCK"
 fi
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
+
+# LLM usage telemetry (docs/llm-usage-telemetry.md): a fresh spawn records a
+# dispatch event, plus a delegation event when it explicitly replaces a
+# failed attempt on the same backlog item. A relaunch's delegation event is
+# recorded by bin/fm-control.sh instead, once the replacement is confirmed
+# alive, so it is not duplicated here. Best-effort: never blocks the spawn.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+  fm_llm_usage_emit "$FM_HOME" dispatch \
+    "task_id=$ID" "kind=$KIND" "purpose=${PURPOSE:-unspecified}" \
+    "harness=$HARNESS" "model=${MODEL:-default}" "effort=${EFFORT:-default}" \
+    "backend=${BACKEND:-tmux}" "mode=${MODE:-}" "project=${PROJ_ABS:-}" || true
+  if [ "$REDELEGATED_FROM_SET" -eq 1 ]; then
+    prior_meta="$STATE/$REDELEGATED_FROM.meta"
+    prior_harness=$(fm_meta_get "$prior_meta" harness)
+    prior_model=$(fm_meta_get "$prior_meta" model)
+    fm_llm_usage_emit "$FM_HOME" delegation \
+      "task_id=$ID" "from_task_id=$REDELEGATED_FROM" \
+      "from_harness=$prior_harness" "from_model=$prior_model" \
+      "to_harness=$HARNESS" "to_model=${MODEL:-default}" \
+      "had_issue=true" "reason=$REDELEGATION_REASON" "trigger=redispatch" || true
+  fi
+fi
 
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")

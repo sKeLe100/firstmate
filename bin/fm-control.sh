@@ -134,6 +134,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-llm-usage-lib.sh
+. "$SCRIPT_DIR/fm-llm-usage-lib.sh"
 
 POLL=${FM_CONTROL_POLL:-0.5}
 SETTLE_WAIT=${FM_CONTROL_SETTLE_WAIT:-5}
@@ -827,6 +829,17 @@ do_relaunch() {
     die "the replacement agent for $ID did not come up within ${LAUNCH_WAIT}s (endpoint reads '$state')"
   }
   RELAUNCH_AGENT_CONFIRMED=1
+
+  # LLM usage telemetry (docs/llm-usage-telemetry.md): the relaunch's own
+  # required --note/--note-file text doubles as the delegation reason, since
+  # it already exists to tell the replacement worker what happened. A
+  # harness/model relaunch is always a re-delegation in the telemetry sense,
+  # whether triggered by a failure or a deliberate captain-directed switch.
+  # Best-effort: never blocks or unwinds a confirmed relaunch.
+  fm_llm_usage_emit "$FM_HOME" delegation \
+    "task_id=$ID" "from_harness=$PRIOR_RECORDED_HARNESS" "from_model=$PRIOR_MODEL" \
+    "to_harness=$TARGET_HARNESS" "to_model=$TARGET_MODEL" \
+    "had_issue=true" "reason=$NOTE" "trigger=relaunch" || true
 
   journal_write complete "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
   RELAUNCH_ACTIVE=0
