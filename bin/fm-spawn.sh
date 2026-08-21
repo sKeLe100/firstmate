@@ -384,6 +384,10 @@ if [ "$REDELEGATED_FROM_SET" -eq 1 ] || [ "$REDELEGATION_REASON_SET" -eq 1 ]; th
     echo "error: --redelegated-from/--redelegation-reason apply only to a fresh spawn, not --relaunch (fm-control.sh relaunch already records that delegation)" >&2
     exit 1
   }
+  fm_task_id_path_safe "$REDELEGATED_FROM" || {
+    echo "error: --redelegated-from must be a task id, not a path" >&2
+    exit 1
+  }
 fi
 
 # --relaunch reuses an existing task's endpoint, worktree, project, and kind,

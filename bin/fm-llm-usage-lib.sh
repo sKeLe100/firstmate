@@ -14,12 +14,23 @@
 #   alter the dispatch, relaunch, or teardown it is called from.
 
 fm_llm_usage_json_escape() {  # <string>
-  local s=$1
+  local s=$1 c i
   s=${s//\\/\\\\}
   s=${s//\"/\\\"}
   s=${s//$'\t'/\\t}
   s=${s//$'\r'/\\r}
   s=${s//$'\n'/\\n}
+  s=${s//$'\b'/\\b}
+  s=${s//$'\f'/\\f}
+  for i in $(seq 1 31); do
+    case "$i" in
+      8|9|10|12|13) continue ;;
+    esac
+    printf -v c '%b' "\\$(printf '%03o' "$i")"
+    case "$s" in
+      *"$c"*) s=${s//"$c"/$(printf '\\u%04x' "$i")} ;;
+    esac
+  done
   printf '%s' "$s"
 }
 
@@ -40,9 +51,22 @@ fm_llm_usage_emit() {  # <fm-home> <event-type> <field=value>...
       body="$body,\"$(fm_llm_usage_json_escape "$k")\":\"$(fm_llm_usage_json_escape "$v")\""
     done
     body="$body}"
-    exec 9>>"$lockfile"
-    flock -w 2 9 || exit 1
+    held=0
+    if declare -f fm_lock_try_acquire >/dev/null 2>&1; then
+      attempt=0
+      while [ "$attempt" -lt 20 ]; do
+        if fm_lock_try_acquire "$lockfile"; then
+          held=1
+          break
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.1
+      done
+    fi
     printf '%s\n' "$body" >> "$file"
+    status=$?
+    [ "$held" -eq 1 ] && fm_lock_release "$lockfile"
+    exit "$status"
   ) 2>>"$home/state/llm-usage-write-errors.log"
   return 0
 }

@@ -195,6 +195,43 @@ test_fresh_spawn_with_redelegation_records_delegation_event() {
   pass "fm-spawn.sh: a real redelegated spawn records the issue, the prior model, and the new model"
 }
 
+test_fresh_spawn_rejects_path_traversal_redelegated_from() {
+  local dir home out rc new_id secret
+  dir="$TMP_ROOT/spawn-redelegate-unsafe-$RANDOM"
+  home="$dir/home"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+
+  secret="$dir/secret.meta"
+  printf 'harness=stolen\nmodel=stolen-model\n' > "$secret"
+
+  new_id=unsafe-attempt
+  fm_git_worktree "$dir/proj" "$dir/wt" "task-$new_id"
+  mkdir -p "$home/data/$new_id"
+  printf '# brief\n\nRetry.\n' > "$home/data/$new_id/brief.md"
+  printf '%s' "$dir/wt" > "$dir/fake/cwd"
+
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 \
+    "$SPAWN" "$new_id" "$dir/proj" --mode no-mistakes --yolo off \
+      --harness claude \
+      --redelegated-from "../../$(basename "$dir")/secret" \
+      --redelegation-reason "traversal attempt" 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "fm-spawn.sh accepted a path-traversing --redelegated-from: $out"
+  case "$out" in
+    *"--redelegated-from"*) : ;;
+    *) fail "refusal did not name the offending flag: $out" ;;
+  esac
+  if [ -f "$home/data/llm-usage/firstmate.jsonl" ] \
+    && grep -q stolen-model "$home/data/llm-usage/firstmate.jsonl"; then
+    fail "an out-of-state meta file leaked into the archive"
+  fi
+  pass "fm-spawn.sh: a path-traversing --redelegated-from is refused before any meta is read"
+}
+
 # --- 3: real fm-control.sh relaunch -----------------------------------------
 
 test_real_relaunch_records_delegation_event() {
@@ -365,6 +402,7 @@ test_teardown_records_abandoned_outcome_on_force() {
 
 test_fresh_spawn_records_purpose_in_meta_and_dispatch_event
 test_fresh_spawn_with_redelegation_records_delegation_event
+test_fresh_spawn_rejects_path_traversal_redelegated_from
 test_real_relaunch_records_delegation_event
 test_teardown_records_landed_outcome
 test_teardown_records_abandoned_outcome_on_force

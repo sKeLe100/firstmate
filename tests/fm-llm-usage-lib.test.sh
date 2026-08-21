@@ -117,8 +117,28 @@ test_emit_writes_are_append_only_across_calls() {
   pass "fm_llm_usage_emit: prior records are never rewritten, only appended to"
 }
 
+test_emit_escapes_c0_control_characters_as_json_escapes() {
+  require_python3
+  local home archive reason
+  home=$(fm_test_tmproot fm-llm-usage) || fail "could not create a temp home"
+  mkdir -p "$home/state"
+  archive="$home/data/llm-usage/firstmate.jsonl"
+
+  reason=$(printf 'form\ffeed esc\033 bell\a low\001 back\bspace')
+  fm_llm_usage_emit "$home" delegation "task_id=t6" "reason=$reason"
+
+  python3 - "$archive" <<'PY' || fail "a reason carrying C0 control bytes produced an unparseable record"
+import json, sys
+obj = json.loads(open(sys.argv[1]).readline())
+expected = "form\ffeed esc\x1b bell\a low\x01 back\bspace"
+assert obj["reason"] == expected, repr(obj["reason"])
+PY
+  pass "fm_llm_usage_emit: C0 control characters stay parseable and round-trip exactly"
+}
+
 test_emit_writes_one_valid_json_line_per_call
 test_emit_omits_empty_fields_rather_than_writing_empty_strings
 test_emit_escapes_quotes_and_newlines_safely
 test_emit_never_fails_when_home_is_unwritable
 test_emit_writes_are_append_only_across_calls
+test_emit_escapes_c0_control_characters_as_json_escapes
