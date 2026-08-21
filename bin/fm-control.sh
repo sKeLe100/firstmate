@@ -516,7 +516,7 @@ journal_write() {  # <phase> [extra-line]...
   local phase=$1 relaunched
   shift
   relaunched=$(fm_meta_get "$JOURNAL" relaunched 2>/dev/null || true)
-  [ "$phase" != complete ] || relaunched=true
+  [ "$RELAUNCH_AGENT_CONFIRMED" != 1 ] || relaunched=true
   if {
     echo "v1"
     echo "task=$ID"
@@ -839,7 +839,7 @@ do_relaunch() {
   # harness/model relaunch is always a re-delegation in the telemetry sense,
   # whether triggered by a failure or a deliberate captain-directed switch.
   # Best-effort: never blocks or unwinds a confirmed relaunch.
-  fm_llm_usage_emit "$FM_HOME" delegation \
+  fm_llm_usage_emit "$DATA" "$STATE" delegation \
     "task_id=$ID" "from_harness=$PRIOR_RECORDED_HARNESS" "from_model=$PRIOR_MODEL" \
     "to_harness=$TARGET_HARNESS" "to_model=$TARGET_MODEL" \
     "had_issue=true" "reason=$NOTE" "trigger=relaunch" || true

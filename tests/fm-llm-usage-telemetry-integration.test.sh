@@ -498,6 +498,30 @@ test_teardown_outcome_omits_retried_after_a_rolled_back_relaunch() {
   pass "fm-teardown.sh: a rolled-back relaunch is not reported as retried"
 }
 
+test_teardown_archives_into_the_overridden_data_dir() {
+  require_python3
+  local dir out rc line found=0
+  dir=$(make_teardown_case dataoverride)
+  mkdir -p "$dir/elsewhere/data" "$dir/elsewhere/state"
+  out=$(env FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$dir/home/state" \
+    FM_DATA_OVERRIDE="$dir/elsewhere/data" \
+    FM_CONFIG_OVERRIDE="$dir/home/config" FM_HOME="$dir/home" \
+    PATH="$dir/fakebin:$PATH" \
+    "$TEARDOWN" task-x1 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "teardown should succeed: $out"
+  [ ! -e "$dir/home/data/llm-usage/firstmate.jsonl" ] \
+    || fail "telemetry was archived under FM_HOME/data while FM_DATA_OVERRIDE pointed elsewhere"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$(field "$line" event_type)" = outcome ] || continue
+    [ "$(field "$line" task_id)" = task-x1 ] || continue
+    found=1
+  done < "$dir/elsewhere/data/llm-usage/firstmate.jsonl"
+  [ "$found" -eq 1 ] || fail "no outcome record landed in the overridden data dir"
+  pass "fm-teardown.sh: telemetry follows FM_DATA_OVERRIDE instead of FM_HOME/data"
+}
+
 test_fresh_spawn_records_purpose_in_meta_and_dispatch_event
 test_fresh_spawn_with_redelegation_records_delegation_event
 test_fresh_spawn_rejects_path_traversal_redelegated_from
@@ -507,3 +531,4 @@ test_teardown_records_abandoned_outcome_on_force
 test_rolled_back_relaunch_journal_does_not_claim_a_relaunch
 test_teardown_outcome_reports_retried_only_for_a_completed_relaunch
 test_teardown_outcome_omits_retried_after_a_rolled_back_relaunch
+test_teardown_archives_into_the_overridden_data_dir

@@ -2700,7 +2700,7 @@ fi
 # recorded by bin/fm-control.sh instead, once the replacement is confirmed
 # alive, so it is not duplicated here. Best-effort: never blocks the spawn.
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
-  fm_llm_usage_emit "$FM_HOME" dispatch \
+  fm_llm_usage_emit "$DATA" "$STATE" dispatch \
     "task_id=$ID" "kind=$KIND" "purpose=${PURPOSE:-unspecified}" \
     "harness=$HARNESS" "model=${MODEL:-default}" "effort=${EFFORT:-default}" \
     "backend=${BACKEND:-tmux}" "mode=${MODE:-}" "project=${PROJ_ABS:-}" || true
@@ -2708,7 +2708,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
     prior_meta="$STATE/$REDELEGATED_FROM.meta"
     prior_harness=$(fm_meta_get "$prior_meta" harness)
     prior_model=$(fm_meta_get "$prior_meta" model)
-    fm_llm_usage_emit "$FM_HOME" delegation \
+    fm_llm_usage_emit "$DATA" "$STATE" delegation \
       "task_id=$ID" "from_task_id=$REDELEGATED_FROM" \
       "from_harness=$prior_harness" "from_model=$prior_model" \
       "to_harness=$HARNESS" "to_model=${MODEL:-default}" \

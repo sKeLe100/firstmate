@@ -2550,7 +2550,7 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 if [ "$KIND" != secondmate ]; then
   llm_usage_result=landed
   [ "$FORCE" != "--force" ] || llm_usage_result=abandoned
-  fm_llm_usage_emit "$FM_HOME" outcome \
+  fm_llm_usage_emit "$DATA" "$STATE" outcome \
     "task_id=$ID" "kind=$KIND" "purpose=$LLM_USAGE_PURPOSE" \
     "harness=$LLM_USAGE_HARNESS" "model=$LLM_USAGE_MODEL" "mode=$MODE" \
     "result=$llm_usage_result" "pr_url=$PR_URL" "retried=$LLM_USAGE_RETRIED" || true

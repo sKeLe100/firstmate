@@ -25,18 +25,20 @@ this archive without either collector knowing it exists.
 - Each source writes its own file; there is no shared file lock between
   processes on different machines. A record's `source` field, not its file
   path, is the authoritative origin.
-- Firstmate's own file: `<FM_HOME>/data/llm-usage/firstmate.jsonl`, written
-  by `fm_llm_usage_emit` in `bin/fm-llm-usage-lib.sh`. Every persistent
-  firstmate home (the primary and each secondmate) writes its own copy under
-  its own `data/`; a renderer that wants a fleet-wide view merges them by
-  `ts`.
+- Firstmate's own file: `<data-dir>/llm-usage/firstmate.jsonl`, written by
+  `fm_llm_usage_emit` in `bin/fm-llm-usage-lib.sh`, where `<data-dir>` is the
+  home's resolved data directory (`<FM_HOME>/data`, or `FM_DATA_OVERRIDE` when
+  a caller redirects it). Every persistent firstmate home (the primary and
+  each secondmate) writes its own copy under its own data directory; a
+  renderer that wants a fleet-wide view merges them by `ts`.
 - PC02's file is PC02's own choice of path; document it in `pc02-llm-lab`'s
   own project material so the renderer can find it. This document only binds
   the record shape below, not PC02's file location.
 - A missing, unwritable, or partially-written archive is never a dispatch,
   relaunch, or teardown failure on the firstmate side: every write goes
   through `fm_llm_usage_emit`, which is silent on success and logs to
-  `state/llm-usage-write-errors.log` on failure without propagating an error.
+  the home's `llm-usage-write-errors.log` under its resolved state directory
+  on failure, without propagating an error.
 - No field is ever required to be present with an empty-string value; an
   unknown or not-applicable field is simply absent from that record, and a
   reader must treat a missing key as "unknown", never as false, zero, or

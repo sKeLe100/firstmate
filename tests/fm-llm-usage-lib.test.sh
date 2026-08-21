@@ -21,9 +21,9 @@ test_emit_writes_one_valid_json_line_per_call() {
   mkdir -p "$home/state"
   archive="$home/data/llm-usage/firstmate.jsonl"
 
-  fm_llm_usage_emit "$home" dispatch \
+  fm_llm_usage_emit "$home/data" "$home/state" dispatch \
     "task_id=t1" "kind=ship" "purpose=code" "harness=claude" "model=default"
-  fm_llm_usage_emit "$home" outcome \
+  fm_llm_usage_emit "$home/data" "$home/state" outcome \
     "task_id=t1" "kind=ship" "result=landed"
 
   [ -f "$archive" ] || fail "fm_llm_usage_emit did not create the archive file"
@@ -48,7 +48,7 @@ test_emit_omits_empty_fields_rather_than_writing_empty_strings() {
   mkdir -p "$home/state"
   archive="$home/data/llm-usage/firstmate.jsonl"
 
-  fm_llm_usage_emit "$home" dispatch "task_id=t2" "mode=" "purpose=planning"
+  fm_llm_usage_emit "$home/data" "$home/state" dispatch "task_id=t2" "mode=" "purpose=planning"
 
   python3 - "$archive" <<'PY' || fail "empty-valued field was not omitted"
 import json, sys
@@ -66,7 +66,7 @@ test_emit_escapes_quotes_and_newlines_safely() {
   mkdir -p "$home/state"
   archive="$home/data/llm-usage/firstmate.jsonl"
 
-  fm_llm_usage_emit "$home" delegation "task_id=t3" 'reason=said "hello"
+  fm_llm_usage_emit "$home/data" "$home/state" delegation "task_id=t3" 'reason=said "hello"
 and a new line'
 
   [ "$(wc -l < "$archive" | tr -d ' ')" = 1 ] \
@@ -91,7 +91,7 @@ test_emit_never_fails_when_home_is_unwritable() {
     pass "fm_llm_usage_emit: skipped (unwritable-home check not enforceable as this user)"
     return 0
   fi
-  fm_llm_usage_emit "$home" dispatch "task_id=t4"
+  fm_llm_usage_emit "$home/data" "$home/state" dispatch "task_id=t4"
   local status=$?
   chmod 755 "$home"
   [ "$status" -eq 0 ] \
@@ -106,9 +106,9 @@ test_emit_writes_are_append_only_across_calls() {
   mkdir -p "$home/state"
   archive="$home/data/llm-usage/firstmate.jsonl"
 
-  fm_llm_usage_emit "$home" dispatch "task_id=t5" "purpose=review"
+  fm_llm_usage_emit "$home/data" "$home/state" dispatch "task_id=t5" "purpose=review"
   first_line=$(cat "$archive")
-  fm_llm_usage_emit "$home" outcome "task_id=t5" "result=abandoned"
+  fm_llm_usage_emit "$home/data" "$home/state" outcome "task_id=t5" "result=abandoned"
 
   [ "$(sed -n '1p' "$archive")" = "$first_line" ] \
     || fail "an earlier record was rewritten instead of a new one appended"
@@ -125,7 +125,7 @@ test_emit_escapes_c0_control_characters_as_json_escapes() {
   archive="$home/data/llm-usage/firstmate.jsonl"
 
   reason=$(printf 'form\ffeed esc\033 bell\a low\001 back\bspace')
-  fm_llm_usage_emit "$home" delegation "task_id=t6" "reason=$reason"
+  fm_llm_usage_emit "$home/data" "$home/state" delegation "task_id=t6" "reason=$reason"
 
   python3 - "$archive" <<'PY' || fail "a reason carrying C0 control bytes produced an unparseable record"
 import json, sys

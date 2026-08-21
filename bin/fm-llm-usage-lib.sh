@@ -3,13 +3,16 @@
 # archive. Full record schema and the cross-source contract PC02's
 # serving-side collector implements against: docs/llm-usage-telemetry.md.
 #
-# fm_llm_usage_emit <fm-home> <event-type> <field=value>...
-#   Appends one JSON object per line to <fm-home>/data/llm-usage/firstmate.jsonl
-#   (created on first use). A field whose value is empty is omitted from the
+# fm_llm_usage_emit <data-dir> <state-dir> <event-type> <field=value>...
+#   Appends one JSON object per line to <data-dir>/llm-usage/firstmate.jsonl
+#   (created on first use). Callers pass the data and state directories they
+#   already resolved, so a home running under FM_DATA_OVERRIDE/FM_STATE_OVERRIDE
+#   archives beside its own records rather than beside FM_HOME's.
+#   A field whose value is empty is omitted from the
 #   record rather than written as "". Every value is escaped as a JSON string;
 #   this library never attempts numeric or boolean JSON types.
 #   Best-effort and silent on the happy path: a write failure is appended to
-#   <fm-home>/state/llm-usage-write-errors.log (itself best-effort) and this
+#   <state-dir>/llm-usage-write-errors.log (itself best-effort) and this
 #   function still returns 0, because a telemetry failure must never block or
 #   alter the dispatch, relaunch, or teardown it is called from.
 
@@ -34,11 +37,11 @@ fm_llm_usage_json_escape() {  # <string>
   printf '%s' "$s"
 }
 
-fm_llm_usage_emit() {  # <fm-home> <event-type> <field=value>...
-  local home=$1 event_type=$2
-  shift 2 || return 0
+fm_llm_usage_emit() {  # <data-dir> <state-dir> <event-type> <field=value>...
+  local data_dir=$1 state_dir=$2 event_type=$3
+  shift 3 || return 0
   (
-    dir="$home/data/llm-usage"
+    dir="$data_dir/llm-usage"
     mkdir -p "$dir" || exit 1
     file="$dir/firstmate.jsonl"
     lockfile="$dir/.firstmate.jsonl.lock"
@@ -67,6 +70,6 @@ fm_llm_usage_emit() {  # <fm-home> <event-type> <field=value>...
     status=$?
     [ "$held" -eq 1 ] && fm_lock_release "$lockfile"
     exit "$status"
-  ) 2>>"$home/state/llm-usage-write-errors.log"
+  ) 2>>"$state_dir/llm-usage-write-errors.log"
   return 0
 }
