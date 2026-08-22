@@ -44,7 +44,10 @@
 #
 # Usage: fm-queue-snapshot.sh [--limit N]   (default N=30)
 #
-# Output (TOON-style, stable field order):
+# Output (stable field order; the rows are RFC4180 CSV, so an embedded quote is
+# doubled - "" - not backslash-escaped as tasks-axi's own TOON input is, and a
+# newline, carriage return, or tab inside a value is written back as the literal
+# two-character \n, \r, or \t so every item stays on exactly one line):
 #   count: <n>
 #   items[<n>]{id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
 #     <csv row>...
@@ -55,7 +58,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -129,6 +132,11 @@ project_mode_bin = os.environ["FM_QUEUE_PROJECT_MODE_BIN"]
 dispatch_status = os.environ["FM_QUEUE_DISPATCH_STATUS"]
 
 TOON_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", '"': '"'}
+
+
+def one_line(value):
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace(
+        "\r", "\\r").replace("\t", "\\t")
 
 
 def split_toon_row(line):
@@ -249,6 +257,7 @@ if out_rows:
     print(f"items[{len(out_rows)}]{{{cols}}}:")
     writer = csv.writer(sys.stdout)
     for row in out_rows:
-        writer.writerow(["  " + str(row[0])] + [str(v) for v in row[1:]])
+        cells = [one_line(str(v)) for v in row]
+        writer.writerow(["  " + cells[0]] + cells[1:])
 print(f"dispatch_config: {dispatch_status}")
 PY

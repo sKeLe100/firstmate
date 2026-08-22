@@ -371,4 +371,22 @@ case "$out" in
   *) fail "the quoted title was not preserved: $out" ;;
 esac
 
+# 12. tasks-axi accepts a tab inside a title (it only rejects line breaks), and
+#     the snapshot decodes TOON's \t while parsing. The emitted row must write
+#     it back as the literal two-character escape so each item stays exactly one
+#     CSV line and the columns after it are not split by a stray control char.
+home=$(make_home control-chars)
+printf '%s\n' '- ctl-proj [direct-PR +yolo] - test project (added 2026-08-20)' > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add ctl-a "$(printf 'tabbed\ttitle')" --kind ship --repo ctl-proj >/dev/null
+)
+out=$(run_snapshot "$home")
+case "$out" in
+  *'ctl-a,tabbed\ttitle,ship,ctl-proj,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,'*) ;;
+  *) fail "a tab in the title was not written back as a literal escape: $out" ;;
+esac
+raw_tab=$(printf '%s\n' "$out" | grep -cP '\t') || true
+[ "$raw_tab" = 0 ] || fail "a raw control character reached the emitted rows: $out"
+
 echo "PASS fm-queue-snapshot.test.sh"
