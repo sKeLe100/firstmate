@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+# Tests for bin/fm-upstream-behind-check.sh: the read-only daily check of a
+# home's tracked code root against its configured `upstream` remote.
+#
+# Guarantees under test:
+#   - Reports correct behind/ahead counts and the newest upstream commit date,
+#     and never mutates the checked repo (no branch, HEAD, or worktree change).
+#   - A missing `upstream` remote degrades quietly to status=unknown.
+#   - An unreachable `upstream` remote degrades quietly to status=unknown.
+#   - A reachable `upstream` that lacks the default branch is reported as
+#     no-default-branch, distinctly from an unreachable network.
+#   - A normal invocation is a no-op once a report already exists within the
+#     gate interval; it only redoes the work once that interval has elapsed
+#     (or --force is passed).
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+CHECK="$ROOT/bin/fm-upstream-behind-check.sh"
+
+fm_git_identity fmtest fmtest@example.invalid
+
+TMP_ROOT=$(fm_test_tmproot fm-upstream-behind-check-tests)
+HOME_N=0
+
+# new_home: fresh isolated FM_HOME with an empty state/ dir. Echoes the home dir.
+new_home() {
+  HOME_N=$((HOME_N + 1))
+  local h="$TMP_ROOT/home-$HOME_N"
+  mkdir -p "$h/state"
+  printf '%s\n' "$h"
+}
+
+# new_repo <dir>: a fresh repo at <dir> on branch main with one commit. The
+# branch is forced to "main" via symbolic-ref before the first commit, so the
+# fixture never depends on the host's init.defaultBranch setting.
+new_repo() {
+  local dir=$1
+  mkdir -p "$dir"
+  git init -q "$dir"
+  git -C "$dir" symbolic-ref HEAD refs/heads/main
+  printf 'seed\n' > "$dir/seed.txt"
+  git -C "$dir" add seed.txt
+  git -C "$dir" commit -qm seed
+}
+
+run_check() {  # <home> <root> [args...]
+  local home=$1 root=$2
+  shift 2
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$CHECK" "$@"
+}
+
+test_reports_behind_and_ahead() {
+  set -e
+  local home root upstream_src upstream_bare out before_head
+  home=$(new_home)
+  root="$TMP_ROOT/repo-behind-ahead"
+  upstream_src="$TMP_ROOT/upstream-src-1"
+
+  new_repo "$upstream_src"
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-1.git"
+  upstream_bare="$TMP_ROOT/upstream-1.git"
+
+  # Two more commits land upstream after the clone point.
+  printf 'u2\n' >> "$upstream_src/seed.txt"
+  git -C "$upstream_src" commit -qam u2
+  printf 'u3\n' >> "$upstream_src/seed.txt"
+  git -C "$upstream_src" commit -qam u3
+  git -C "$upstream_src" push --quiet "$upstream_bare" main
+
+  # Local clone reset to the original (pre-u2/u3) commit, plus one commit of
+  # its own, and an `upstream` remote pointing at the bare repo.
+  git clone --quiet "$upstream_src" "$root"
+  git -C "$root" reset -q --hard "$(git -C "$upstream_src" rev-list --max-parents=0 HEAD)"
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$upstream_bare"
+  printf 'local\n' >> "$root/seed.txt"
+  git -C "$root" commit -qam local1
+
+  before_head=$(git -C "$root" rev-parse HEAD)
+
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "status=ok" "behind/ahead: reports ok status"
+  assert_contains "$out" "behind=2" "behind/ahead: two upstream-only commits reported as behind"
+  assert_contains "$out" "ahead=1" "behind/ahead: one local-only commit reported as ahead"
+  printf '%s' "$out" | grep -Eq 'newest_upstream_date=[0-9]{4}-[0-9]{2}-[0-9]{2}' \
+    || fail "behind/ahead: newest_upstream_date missing or malformed: $out"
+
+  [ "$(git -C "$root" rev-parse HEAD)" = "$before_head" ] || fail "behind/ahead: HEAD moved - check must never mutate the repo"
+  [ -z "$(git -C "$root" status --porcelain)" ] || fail "behind/ahead: working tree left dirty"
+  assert_present "$home/state/.upstream-behind-check.report" "behind/ahead: durable report was not written"
+  pass "reports behind/ahead counts and newest upstream date without mutating the repo"
+}
+
+test_missing_upstream_remote() {
+  set -e
+  local home root out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-no-upstream"
+  new_repo "$root"
+
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "status=unknown" "no-remote: degrades to unknown status"
+  assert_contains "$out" "reason=no-upstream-remote" "no-remote: names the missing-remote reason"
+  pass "a missing upstream remote degrades quietly to status=unknown"
+}
+
+test_unreachable_upstream() {
+  set -e
+  local home root out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-unreachable"
+  new_repo "$root"
+  git -C "$root" remote add upstream "file://$TMP_ROOT/does-not-exist.git"
+
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "status=unknown" "unreachable: degrades to unknown status"
+  assert_contains "$out" "reason=unreachable" "unreachable: names the unreachable reason"
+  pass "an unreachable upstream remote degrades quietly to status=unknown"
+}
+
+test_once_daily_noop_then_refreshes_after_interval() {
+  set -e
+  local home root upstream_src upstream_bare first second third
+  home=$(new_home)
+  root="$TMP_ROOT/repo-daily-gate"
+  upstream_src="$TMP_ROOT/upstream-src-2"
+  new_repo "$upstream_src"
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-2.git"
+  upstream_bare="$TMP_ROOT/upstream-2.git"
+
+  git clone --quiet "$upstream_src" "$root"
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  first=$(run_check "$home" "$root" --force)
+  assert_contains "$first" "behind=0" "daily-gate: starts even"
+
+  # A new upstream commit lands, but an ordinary (non-forced) call within the
+  # gate interval must stay a no-op and keep reporting the stale snapshot.
+  printf 'u2\n' >> "$upstream_src/seed.txt"
+  git -C "$upstream_src" commit -qam u2
+  git -C "$upstream_src" push --quiet "$upstream_bare" main
+
+  second=$(run_check "$home" "$root")
+  [ "$second" = "$first" ] || fail "daily-gate: an ordinary call inside the interval must not redo the check (first=$first second=$second)"
+
+  # Force the gate open by pretending the cached report is old, then confirm
+  # an ordinary call now redoes the work and picks up the new upstream commit.
+  third=$(FM_UPSTREAM_CHECK_INTERVAL=0 run_check "$home" "$root")
+  assert_contains "$third" "behind=1" "daily-gate: once the interval elapses, an ordinary call refreshes and sees the new commit"
+  pass "does real work at most once per day and refreshes once the interval elapses"
+}
+
+test_summarizes_drift_by_area_and_skill() {
+  set -e
+  local home root upstream_src upstream_bare out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-drift-summary"
+  upstream_src="$TMP_ROOT/upstream-src-3"
+
+  new_repo "$upstream_src"
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-3.git"
+  upstream_bare="$TMP_ROOT/upstream-3.git"
+
+  git clone --quiet "$upstream_src" "$root"
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  # Two upstream-only commits: one touching a skill file, one touching bin/.
+  mkdir -p "$upstream_src/.agents/skills/example-skill"
+  printf 'skill body\n' > "$upstream_src/.agents/skills/example-skill/SKILL.md"
+  git -C "$upstream_src" add .agents/skills/example-skill/SKILL.md
+  git -C "$upstream_src" commit -qm "add example-skill"
+  mkdir -p "$upstream_src/bin"
+  printf 'echo hi\n' > "$upstream_src/bin/tool.sh"
+  git -C "$upstream_src" add bin/tool.sh
+  git -C "$upstream_src" commit -qm "add tool.sh"
+  git -C "$upstream_src" push --quiet "$upstream_bare" main
+
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "area_count_agents_skills=1" "drift-summary: one file changed under .agents/skills/"
+  assert_contains "$out" "area_count_bin=1" "drift-summary: one file changed under bin/"
+  assert_contains "$out" "skill=example-skill" "drift-summary: names the changed skill"
+  assert_contains "$out" "detail_hint=" "drift-summary: includes a pointer command for the full commit list"
+  assert_not_contains "$out" "add example-skill" "drift-summary: never inlines individual commit subjects"
+  pass "groups pending upstream drift by area and names changed skills, bounded with a detail pointer"
+}
+
+test_bounds_skill_list_and_discloses_the_cut() {
+  set -e
+  local home root upstream_src upstream_bare out i
+  home=$(new_home)
+  root="$TMP_ROOT/repo-drift-bound"
+  upstream_src="$TMP_ROOT/upstream-src-4"
+
+  new_repo "$upstream_src"
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-4.git"
+  upstream_bare="$TMP_ROOT/upstream-4.git"
+
+  git clone --quiet "$upstream_src" "$root"
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  i=1
+  while [ "$i" -le 3 ]; do
+    mkdir -p "$upstream_src/.agents/skills/skill-$i"
+    printf 'body\n' > "$upstream_src/.agents/skills/skill-$i/SKILL.md"
+    git -C "$upstream_src" add ".agents/skills/skill-$i/SKILL.md"
+    git -C "$upstream_src" commit -qm "add skill-$i"
+    i=$((i + 1))
+  done
+  git -C "$upstream_src" push --quiet "$upstream_bare" main
+
+  out=$(FM_UPSTREAM_SKILLS_SHOWN=2 run_check "$home" "$root" --force)
+
+  assert_contains "$out" "skills_total=3" "drift-bound: total reflects every changed skill"
+  assert_contains "$out" "skills_shown=2" "drift-bound: shown count respects the bound"
+  [ "$(printf '%s' "$out" | grep -c '^skill=')" -eq 2 ] || fail "drift-bound: expected exactly 2 skill= lines, got: $out"
+  pass "bounds the skill list and discloses how many were cut"
+}
+
+test_upstream_missing_default_branch() {
+  set -e
+  local home root upstream_src upstream_bare out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-missing-default"
+  upstream_src="$TMP_ROOT/upstream-src-missing-default"
+
+  # Upstream is perfectly reachable but publishes only `master`, while this
+  # home's default branch is `main` - a naming mismatch, not a network fault.
+  new_repo "$upstream_src"
+  git -C "$upstream_src" branch -m main master
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-missing-default.git"
+  upstream_bare="$TMP_ROOT/upstream-missing-default.git"
+
+  new_repo "$root"
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "status=unknown" "missing-default: degrades to unknown status"
+  assert_contains "$out" "reason=no-default-branch" "missing-default: names the missing branch, not a network fault"
+  pass "a reachable upstream without the default branch reports no-default-branch"
+}
+
+test_files_directly_under_skills_dir_are_not_named_as_skills() {
+  set -e
+  local home root upstream_src upstream_bare out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-skills-root-file"
+  upstream_src="$TMP_ROOT/upstream-src-skills-root"
+  new_repo "$upstream_src"
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-skills-root.git"
+  upstream_bare="$TMP_ROOT/upstream-skills-root.git"
+
+  git clone --quiet "$upstream_src" "$root"
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  # A file living directly at .agents/skills/ is not a skill directory.
+  mkdir -p "$upstream_src/.agents/skills/real-skill"
+  printf 'index\n' > "$upstream_src/.agents/skills/README.md"
+  printf 'body\n' > "$upstream_src/.agents/skills/real-skill/SKILL.md"
+  git -C "$upstream_src" add .agents
+  git -C "$upstream_src" commit -qm "skills index plus a real skill"
+  git -C "$upstream_src" push --quiet "$upstream_bare" main
+
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "area_count_agents_skills=2" "skills-root: both files count toward the area"
+  assert_contains "$out" "skill=real-skill" "skills-root: the real skill is named"
+  assert_contains "$out" "skills_total=1" "skills-root: only the real skill is totalled"
+  printf '%s' "$out" | grep -q '^skill=README.md$' && fail "skills-root: a bare file must not be named as a skill: $out"
+  pass "files directly under .agents/skills are counted but never named as skills"
+}
+
+test_degrade_preserves_last_known_good_and_retries() {
+  set -e
+  local home root upstream_src upstream_bare report ok_checked fresh aged out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-stale-carry"
+  upstream_src="$TMP_ROOT/upstream-src-stale"
+  new_repo "$upstream_src"
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-stale.git"
+  upstream_bare="$TMP_ROOT/upstream-stale.git"
+
+  printf 'u2\n' >> "$upstream_src/seed.txt"
+  git -C "$upstream_src" commit -qam u2
+  git -C "$upstream_src" push --quiet "$upstream_bare" main
+
+  git clone --quiet "$upstream_bare" "$root"
+  git -C "$root" reset -q --hard HEAD~1
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  out=$(run_check "$home" "$root" --force)
+  assert_contains "$out" "behind=1" "stale-carry: the good result is recorded first"
+  report="$home/state/.upstream-behind-check.report"
+  ok_checked=$(sed -n 's/^checked_at=//p' "$report" | tail -1)
+
+  # The remote disappears from under the home; the next check must degrade.
+  git -C "$root" remote set-url upstream "file://$TMP_ROOT/vanished.git"
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "status=unknown" "stale-carry: degrades to unknown"
+  assert_contains "$out" "reason=unreachable" "stale-carry: names the reason"
+  assert_contains "$out" "stale_behind=1" "stale-carry: last-known behind survives the degrade"
+  assert_contains "$out" "stale_ahead=0" "stale-carry: last-known ahead survives the degrade"
+  assert_contains "$out" "stale_checked_at=$ok_checked" "stale-carry: discloses when the good result was taken"
+  [ "$(sed -n 's/^checked_at=//p' "$report" | tail -1)" = "$ok_checked" ] \
+    || fail "stale-carry: a degrade must not advance the gate stamp past the good result: $(cat "$report")"
+
+  # Because the stamp did not advance, an ordinary (non-forced) call retries
+  # rather than sitting on the unknown for the rest of the day.
+  out=$(FM_UPSTREAM_CHECK_INTERVAL=1 run_check "$home" "$root")
+  assert_contains "$out" "reason=unreachable" "stale-carry: an unforced call retries instead of caching the unknown"
+  assert_contains "$out" "stale_behind=1" "stale-carry: repeated degrades keep carrying the last-known result"
+
+  # A sustained outage must not retry forever: once the carried-forward good
+  # result has itself aged past the interval, the degrade stamps the current
+  # time again so the once-per-interval work ceiling still holds. Age the
+  # cached report's own stamps to simulate the outage lasting past the window.
+  aged=$((ok_checked - 200000))
+  sed -i.bak "s/^checked_at=.*/checked_at=$aged/; s/^stale_checked_at=.*/stale_checked_at=$aged/" "$report"
+  out=$(run_check "$home" "$root")
+  fresh=$(sed -n 's/^checked_at=//p' "$report" | tail -1)
+  assert_contains "$out" "stale_checked_at=$aged" "stale-carry: the aged good result is still disclosed"
+  assert_contains "$out" "stale_behind=1" "stale-carry: the aged good counts are still carried"
+  [ "$fresh" -gt "$aged" ] \
+    || fail "stale-carry: a degrade past the good result's window must restamp: $(cat "$report")"
+  # With the stamp restored to now, the next ordinary call is a cached no-op.
+  run_check "$home" "$root" >/dev/null
+  [ "$(sed -n 's/^checked_at=//p' "$report" | tail -1)" = "$fresh" ] \
+    || fail "stale-carry: the restamped degrade must close the gate again"
+
+  # Once the remote is reachable again, the report goes back to a fresh ok.
+  git -C "$root" remote set-url upstream "$upstream_bare"
+  out=$(run_check "$home" "$root" --force)
+  assert_contains "$out" "status=ok" "stale-carry: recovery republishes a live result"
+  printf '%s' "$out" | grep -q '^stale_' && fail "stale-carry: a recovered ok must not keep stale fields: $out"
+  pass "a degrade preserves the last-known-good counts and leaves the gate open for a retry"
+}
+
+test_reports_behind_and_ahead
+test_missing_upstream_remote
+test_unreachable_upstream
+test_once_daily_noop_then_refreshes_after_interval
+test_summarizes_drift_by_area_and_skill
+test_bounds_skill_list_and_discloses_the_cut
+test_upstream_missing_default_branch
+test_files_directly_under_skills_dir_are_not_named_as_skills
+test_degrade_preserves_last_known_good_and_retries

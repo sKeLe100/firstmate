@@ -900,6 +900,9 @@ test_toon_json_parity() {
   local home fakebin toon json keys k
   home=$(make_home parity); write_fixture "$home"
   fakebin=$(make_fakebin "$home")
+  write_upstream_report "$home" "status=ok" "behind=57" "ahead=8" \
+    "area_count_bin=9" "skill=bearings" "skill=stow" "skills_total=2" "skills_shown=2" \
+    "checked_at=1787000000"
   toon=$(run "$home" "$fakebin")
   json=$(run "$home" "$fakebin" --json)
   # Same top-level keys in both representations.
@@ -920,6 +923,17 @@ test_toon_json_parity() {
         tfields=$(printf '%s' "$hdr" | sed -E 's/^[^{]*\{//; s/\}:.*$//; s/"//g')
         [ "$jfields" = "$tfields" ] || fail "TOON $k fields ($tfields) must equal JSON fields ($jfields)"
       fi
+    elif printf '%s' "$json" | jq -e --arg k "$k" '.[$k] | type == "object"' >/dev/null; then
+      # Nested object: an indented block, one line per subfield, never a
+      # flattened JSON blob.
+      local sk
+      assert_contains "$toon" "
+$k:
+" "TOON must open a block for object field $k"
+      while IFS= read -r sk; do
+        printf '%s' "$toon" | grep -qE "^  $sk(\[[0-9]+\])?:( |$)" \
+          || fail "TOON $k block must carry subfield $sk, got: $toon"
+      done < <(printf '%s' "$json" | jq -r --arg k "$k" '.[$k] | keys_unsorted[]')
     else
       # Scalar: the key must appear as a "key: value" line.
       assert_contains "$toon" "$k: " "TOON must carry scalar field $k"
@@ -1889,6 +1903,100 @@ EOF
   pass "main and secondmate captain actionability use the same blocker readiness"
 }
 
+# The cached upstream report file is this script's only upstream input - a
+# serialized, explicitly owned key=value contract published by
+# bin/fm-upstream-behind-check.sh. These cases write that contract and assert
+# the semantic `upstream` object the projection emits from it.
+write_upstream_report() {  # <home> <content...>
+  local home=$1; shift
+  printf '%s\n' "$@" > "$home/state/.upstream-behind-check.report"
+}
+
+test_upstream_report_projects_drift_areas_and_skills() {
+  local home fakebin json
+  home=$(make_home upstream-drift); write_fixture "$home"
+  fakebin=$(make_fakebin "$home"); : > "$home/net.log"
+  write_upstream_report "$home" \
+    "status=ok" "behind=57" "ahead=8" "newest_upstream_date=2026-08-20" \
+    "area_count_agents_skills=12" "area_count_bin=9" "area_count_other=3" \
+    "skill=bearings" "skill=stow" "skills_total=5" "skills_shown=2" \
+    "detail_hint=git -C /home/x log --oneline a..b" "checked_at=1787000000"
+
+  json=$(run "$home" "$fakebin" --json)
+
+  printf '%s' "$json" | jq -e '
+    .upstream.status == "ok" and .upstream.behind == 57 and .upstream.ahead == 8
+      and .upstream.newest_upstream_date == "2026-08-20"
+      and .upstream.checked_at == 1787000000
+      and .upstream.areas == {agents_skills:12, bin:9, other:3}
+      and .upstream.skills == ["bearings","stow"]
+      and .upstream.skills_total == 5 and .upstream.skills_shown == 2
+      and (.upstream.detail_hint == "git -C /home/x log --oneline a..b")
+      and (.upstream | has("reason") | not)
+  ' >/dev/null || fail "upstream drift was not projected faithfully: $(printf '%s' "$json" | jq -c .upstream)"
+  [ ! -s "$home/net.log" ] || fail "reading the cached upstream report must make no network call"
+
+  # The default (TOON) output is what the bearings gather step consumes: the
+  # same fields must be readable there, not collapsed into one escaped blob.
+  local toon
+  toon=$(run "$home" "$fakebin")
+  assert_contains "$toon" "
+upstream:
+  status: ok
+  behind: 57
+  ahead: 8" "TOON must render the upstream block as fields"
+  assert_contains "$toon" "  skills[2]: bearings,stow" "TOON must render the skill list as a scalar list"
+  assert_contains "$toon" "
+  areas:
+" "TOON must open a nested block for the area counts"
+  assert_contains "$toon" "    bin: 9" "TOON must render each area count as its own field"
+  printf '%s' "$toon" | grep -q 'upstream: "{' && fail "upstream must not render as an escaped JSON blob: $toon"
+  pass "a cached ok upstream report projects counts, areas, and skills in both formats"
+}
+
+test_upstream_unknown_and_absent_report_are_distinct() {
+  local home fakebin json
+  home=$(make_home upstream-unknown); write_fixture "$home"
+  fakebin=$(make_fakebin "$home")
+
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '.upstream == null' >/dev/null \
+    || fail "absent report must project a null upstream, got: $(printf '%s' "$json" | jq -c .upstream)"
+
+  write_upstream_report "$home" "status=unknown" "reason=no-upstream-remote" "checked_at=1787000000"
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    .upstream.status == "unknown" and .upstream.reason == "no-upstream-remote"
+      and (.upstream | has("behind") | not) and (.upstream | has("areas") | not)
+      and (.upstream | has("skills") | not)
+  ' >/dev/null || fail "unknown report was not projected as a reasoned unknown: $(printf '%s' "$json" | jq -c .upstream)"
+  write_upstream_report "$home" "status=unknown" "reason=unreachable" \
+    "stale_behind=57" "stale_ahead=8" "stale_newest_upstream_date=2026-08-20" \
+    "stale_checked_at=1786900000" "checked_at=1786900000"
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    .upstream.status == "unknown" and .upstream.reason == "unreachable"
+      and .upstream.stale_behind == 57 and .upstream.stale_ahead == 8
+      and .upstream.stale_newest_upstream_date == "2026-08-20"
+      and .upstream.stale_checked_at == 1786900000
+      and (.upstream | has("behind") | not)
+  ' >/dev/null || fail "a degraded report must carry its last-known counts: $(printf '%s' "$json" | jq -c .upstream)"
+  pass "an unknown upstream report is distinct from an absent one and carries stale counts"
+}
+
+test_corrupt_upstream_report_degrades_without_breaking_the_snapshot() {
+  local home fakebin json
+  home=$(make_home upstream-corrupt); write_fixture "$home"
+  fakebin=$(make_fakebin "$home")
+  write_upstream_report "$home" "status=ok" "behind=not-a-number" "ahead=8" "checked_at=1787000000"
+
+  json=$(run "$home" "$fakebin" --json) \
+    || fail "a corrupt upstream report must not fail the whole snapshot"
+  printf '%s' "$json" | jq -e '.schema == "fm-bearings.v1" and .upstream == null' >/dev/null \
+    || fail "corrupt report must degrade to a null upstream: $(printf '%s' "$json" | jq -c .upstream)"
+  pass "a corrupt upstream report degrades to null instead of breaking the snapshot"
+}
+
 test_domain_alpha_stale_parent_event_does_not_become_current_work
 test_gnu_stat_uses_file_formats_without_bsd_fallback_pollution
 test_parent_activity_evidence_is_bounded_and_disclosed
@@ -1930,3 +2038,6 @@ test_section_caps_and_expansion_flags
 test_pr_repository_cap_and_expansion
 test_per_repository_pr_cap_is_disclosed
 test_projection_and_toon_fail_closed
+test_upstream_report_projects_drift_areas_and_skills
+test_upstream_unknown_and_absent_report_are_distinct
+test_corrupt_upstream_report_degrades_without_breaking_the_snapshot

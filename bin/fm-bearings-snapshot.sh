@@ -23,6 +23,12 @@
 # backlog roles, unresolved blockers, and captain actionability. It never infers
 # decisions from report or visual-review prose or reimplements snapshot semantics.
 #
+# The optional `upstream` field is a local read of the cached report bin/fm-
+# upstream-behind-check.sh already published to state/.upstream-behind-check.report;
+# reading a cache file is not a network call, so it stays inside the LOCAL-ONLY
+# contract above. This script never runs that check itself and never fetches.
+# The field is omitted entirely when no cached report exists yet.
+#
 # Main-home inventory validity comes from the canonical snapshot's main_inventory
 # object (orphan structured in-flight without meta, unstructured current rows).
 # Bearings never invents Underway rows from backlog-only ids; it discloses those
@@ -109,7 +115,12 @@ Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
   decisions_open{id,key,verb,summary,owner}, landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner}, reports{id,path}, recorded_prs{id,url},
-  unhealthy_endpoints{...} (only when non-empty), omitted{surface,reveal}.
+  unhealthy_endpoints{...} (only when non-empty),
+  upstream{status,behind,ahead,newest_upstream_date,reason,checked_at,
+  areas{agents_skills,bin,docs,tests,other},skills,skills_total,skills_shown,
+  detail_hint} (only when a cached bin/fm-upstream-behind-check.sh report
+  exists; areas/skills/detail_hint appear only on an ok result with behind>0),
+  omitted{surface,reveal}.
 landed merges this home's Done with registered secondmate homes' Done, bounded by
   a per-home cap (FM_BEARINGS_LANDED_PER_HOME) and an overall cap (FM_BEARINGS_LANDED),
   with omitted[] disclosure. Default selection is balanced across deterministic home
@@ -178,6 +189,76 @@ else
 fi
 HOME_LABEL=$(printf '%s' "$SNAP" | jq -er '.fm_home | strings | split("/") | (.[-2:] | join("/"))') \
   || { echo "fm-bearings-snapshot: invalid canonical snapshot" >&2; exit 1; }
+
+# --- cached upstream-position read (local file, no network) -----------------
+UPSTREAM_JSON=null
+UPSTREAM_REPORT="$(printf '%s' "$SNAP" | jq -r '.fm_home')/state/.upstream-behind-check.report"
+if [ -f "$UPSTREAM_REPORT" ]; then
+  ustatus='' ubehind='' uahead='' unewest='' ureason='' uchecked=''
+  uarea_skills='' uarea_bin='' uarea_docs='' uarea_tests='' uarea_other=''
+  uskills_total='' uskills_shown='' udetail_hint=''
+  ustale_behind='' ustale_ahead='' ustale_newest='' ustale_checked=''
+  UPSTREAM_SKILLS_JSON='[]'
+  skill_names=()
+  while IFS= read -r kv || [ -n "$kv" ]; do
+    case "$kv" in
+      status=*) ustatus=${kv#status=} ;;
+      behind=*) ubehind=${kv#behind=} ;;
+      ahead=*) uahead=${kv#ahead=} ;;
+      newest_upstream_date=*) unewest=${kv#newest_upstream_date=} ;;
+      reason=*) ureason=${kv#reason=} ;;
+      checked_at=*) uchecked=${kv#checked_at=} ;;
+      area_count_agents_skills=*) uarea_skills=${kv#area_count_agents_skills=} ;;
+      area_count_bin=*) uarea_bin=${kv#area_count_bin=} ;;
+      area_count_docs=*) uarea_docs=${kv#area_count_docs=} ;;
+      area_count_tests=*) uarea_tests=${kv#area_count_tests=} ;;
+      area_count_other=*) uarea_other=${kv#area_count_other=} ;;
+      skills_total=*) uskills_total=${kv#skills_total=} ;;
+      skills_shown=*) uskills_shown=${kv#skills_shown=} ;;
+      detail_hint=*) udetail_hint=${kv#detail_hint=} ;;
+      stale_behind=*) ustale_behind=${kv#stale_behind=} ;;
+      stale_ahead=*) ustale_ahead=${kv#stale_ahead=} ;;
+      stale_newest_upstream_date=*) ustale_newest=${kv#stale_newest_upstream_date=} ;;
+      stale_checked_at=*) ustale_checked=${kv#stale_checked_at=} ;;
+      skill=*) skill_names+=("${kv#skill=}") ;;
+    esac
+  done < "$UPSTREAM_REPORT"
+  if [ ${#skill_names[@]} -gt 0 ]; then
+    UPSTREAM_SKILLS_JSON=$(printf '%s\n' "${skill_names[@]}" | jq -R . | jq -s .)
+  fi
+  if [ -n "$ustatus" ]; then
+    UPSTREAM_JSON=$(jq -n \
+      --arg status "$ustatus" --arg behind "$ubehind" --arg ahead "$uahead" \
+      --arg newest "$unewest" --arg reason "$ureason" --arg checked_at "$uchecked" \
+      --arg a_skills "$uarea_skills" --arg a_bin "$uarea_bin" --arg a_docs "$uarea_docs" \
+      --arg a_tests "$uarea_tests" --arg a_other "$uarea_other" \
+      --arg skills_total "$uskills_total" --arg skills_shown "$uskills_shown" \
+      --arg detail_hint "$udetail_hint" \
+      --arg s_behind "$ustale_behind" --arg s_ahead "$ustale_ahead" \
+      --arg s_newest "$ustale_newest" --arg s_checked "$ustale_checked" \
+      --argjson skills "$UPSTREAM_SKILLS_JSON" '
+      ({status:$status}
+       + (if $behind != "" then {behind:($behind|tonumber)} else {} end)
+       + (if $ahead != "" then {ahead:($ahead|tonumber)} else {} end)
+       + (if $newest != "" then {newest_upstream_date:$newest} else {} end)
+       + (if $reason != "" then {reason:$reason} else {} end)
+       + (if $checked_at != "" then {checked_at:($checked_at|tonumber)} else {} end)
+       + (if $skills_total != "" then {skills_total:($skills_total|tonumber)} else {} end)
+       + (if $skills_shown != "" then {skills_shown:($skills_shown|tonumber)} else {} end)
+       + (if $detail_hint != "" then {detail_hint:$detail_hint} else {} end)
+       + (if ($skills|length) > 0 then {skills:$skills} else {} end)
+       + (if $s_behind != "" then {stale_behind:($s_behind|tonumber)} else {} end)
+       + (if $s_ahead != "" then {stale_ahead:($s_ahead|tonumber)} else {} end)
+       + (if $s_newest != "" then {stale_newest_upstream_date:$s_newest} else {} end)
+       + (if $s_checked != "" then {stale_checked_at:($s_checked|tonumber)} else {} end)
+      ) as $base
+      | ([{k:"agents_skills",v:$a_skills},{k:"bin",v:$a_bin},{k:"docs",v:$a_docs},
+          {k:"tests",v:$a_tests},{k:"other",v:$a_other}]
+         | map(select(.v != "")) | map({(.k):(.v|tonumber)}) | add) as $areas
+      | $base + (if $areas != null then {areas:$areas} else {} end)' 2>/dev/null) || UPSTREAM_JSON=null
+    [ -n "$UPSTREAM_JSON" ] || UPSTREAM_JSON=null
+  fi
+fi
 
 # --- optional live PR enrichment (the ONLY network path) --------------------
 PR_STATUS='not_requested (run: /bearings include PRs)'
@@ -298,7 +379,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --argjson pr_repos_shown "$PR_REPOS_SHOWN" \
   --argjson pr_rows_capped "$PR_ROWS_CAPPED" \
   --argjson pr_rows_min_total "$PR_ROWS_MIN_TOTAL" \
-  --argjson candidate_prs "$CANDIDATE_PRS" '
+  --argjson candidate_prs "$CANDIDATE_PRS" \
+  --argjson upstream "$UPSTREAM_JSON" '
   def trunc($n): if . == null then null else
     (tostring | gsub("\\s+"; " ") | if (length > $n) then (.[:$n] + "…") else . end) end;
   def round_robin_landed($n):
@@ -436,6 +518,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
            {unhealthy_endpoints:(if $all_unhealthy == 1 then $unhealthy_all else $unhealthy_all[:$unhealthy_n] end)}
          else {} end)
   | . + (if $include_prs == 1 then {candidate_prs:$candidate_prs} else {} end)
+  | . + (if $upstream != null then {upstream:$upstream} else {} end)
   | . + (if $f_bodies then {bodies:[ $snap.backlog.records[] | select(.structured and (.state == "queued" or .state == "done")) | {id, body:((.body_excerpt // .raw // "-") | trunc(200))} ]} else {} end)
   | . + (if $f_paths then {paths:[ $snap.tasks[] | {id, worktree:(.paths.worktree.path // "-"), home:(.paths.home.path // "-"), status:.paths.status_log.path, report:.paths.report.path} ]} else {} end)
   | . + (if $f_actions then {actions:[ $snap.tasks[] | {id, watch:(.actions.watch // .actions.send // "-"), steer:(.actions.steer // .actions.send // "-")} ]} else {} end)
@@ -479,10 +562,13 @@ if [ "$FORMAT" = json ]; then
 fi
 
 # --- TOON renderer (output boundary; parity with the JSON model) ------------
-# The model is a flat object of scalar fields plus arrays of uniform scalar
-# objects, so the encoder only needs object scalars, the tabular array form
-# (key[N]{fields}: + comma rows at +2 indent), and the empty-array form (key: []),
-# per the TOON spec. Quoting follows the spec exactly.
+# The model is scalar fields, arrays of uniform scalar objects, and (for the
+# cached upstream position) nested objects holding scalars and scalar arrays, so
+# the encoder covers object scalars, the tabular array form (key[N]{fields}: +
+# comma rows at +2 indent), the scalar-list form (key[N]: a,b), the empty-array
+# form (key: []), and nested objects rendered as an indented block. Quoting
+# follows the TOON spec exactly, and every form nests at +2 indent so TOON and
+# the JSON model stay parity representations.
 TOON=$(printf '%s\n' "$MODEL" | jq -r '
   def q:
     tostring
@@ -500,16 +586,20 @@ TOON=$(printf '%s\n' "$MODEL" | jq -r '
     elif type == "boolean" then (if . then "true" else "false" end)
     elif type == "number" then tostring
     else q end;
-  def emit($k; $v):
+  def emit($k; $v; $ind):
     if ($v | type) == "array" then
-      if ($v | length) == 0 then "\($k): []"
-      else
+      if ($v | length) == 0 then "\($ind)\($k): []"
+      elif ($v[0] | type) == "object" then
         ($v[0] | keys_unsorted) as $ks
-        | ( "\($k)[\($v | length)]{\($ks | map(q) | join(","))}:",
-            ($v[] as $row | "  " + ([ $ks[] as $kk | ($row[$kk] | scal) ] | join(","))) )
+        | ( "\($ind)\($k)[\($v | length)]{\($ks | map(q) | join(","))}:",
+            ($v[] as $row | $ind + "  " + ([ $ks[] as $kk | ($row[$kk] | scal) ] | join(","))) )
+      else "\($ind)\($k)[\($v | length)]: " + ([ $v[] | scal ] | join(","))
       end
-    else "\($k): " + ($v | scal)
+    elif ($v | type) == "object" then
+      ( "\($ind)\($k):",
+        ($v | to_entries[] | emit(.key; .value; $ind + "  ")) )
+    else "\($ind)\($k): " + ($v | scal)
     end;
-  [ to_entries[] | emit(.key; .value) ] | join("\n")
+  [ to_entries[] | emit(.key; .value; "") ] | join("\n")
 ') || { echo "fm-bearings-snapshot: TOON rendering failed" >&2; exit 1; }
 printf '%s\n' "$TOON"
