@@ -35,7 +35,7 @@ It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the b
    State plainly, once, that concrete profile-array selection happens at dispatch time via `quota-array-dispatch`, not in this listing.
 
 4. **Report autonomy exactly as the snapshot derived it, translated to plain language.**
-   The snapshot's `autonomy` field is already derived, never guessed: `captain-gated` when the item's own kind is `captain` or it carries a captain-kind hold, or when its project's registry posture has yolo off; `autonomous-eligible` when none of those hold and yolo is on; `unclear` only when the item carries no project to check (repo empty), which this skill must render as an honest "unclear" rather than picking a side.
+   The snapshot's `autonomy` field is already derived, never guessed: `captain-gated` when the item's own kind is `captain` or it carries a captain-kind hold, or when its project's registry posture has yolo off; `autonomous-eligible` when none of those hold and yolo is on; `unclear` only when the item carries no captain-kind signal and no project to check (repo empty), which this skill must render as an honest "unclear" rather than picking a side.
    Render `autonomous-eligible` as "clears itself", `captain-gated` as "needs you", and `unclear` as "unclear - ask me about it".
    Never override or re-derive this verdict from the title or your own read of the situation; a wrong "clears itself" is worse than an honest "unclear".
 
@@ -52,7 +52,7 @@ It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the b
 
 - Zero queued items: say plainly that nothing is queued right now.
 - `tasks-axi` missing or erroring: the snapshot script fails loudly; relay that the backlog could not be read rather than showing an empty list.
-- No project recorded on an item: its posture is `n/a` and its autonomy is `unclear`; say so rather than assuming either way.
+- No project recorded on an item: its posture is `n/a`, and its autonomy is `unclear` unless the item is captain-kind or carries a captain-kind hold, which stays `captain-gated`; say so rather than assuming either way.
 
 ## Tone
 

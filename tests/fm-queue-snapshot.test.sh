@@ -17,7 +17,6 @@ SNAPSHOT="$ROOT/bin/fm-queue-snapshot.sh"
 TMP_ROOT=$(fm_test_tmproot fm-queue-snapshot)
 
 command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
-command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -95,17 +94,30 @@ case "$out" in
   *) fail "unregistered project did not default to captain-gated: $out" ;;
 esac
 
-# 3. An item with no project recorded is unclear, never guessed either way.
+# 3. An item with no project recorded is unclear, never guessed either way -
+#    unless it carries a captain-kind signal, which is captain-gated on its
+#    own regardless of whether a project is recorded.
 home=$(make_home no-project)
 : > "$home/data/projects.md"
 (
   cd "$home" || exit 1
   tasks-axi add demo-d "no project item" --kind docs >/dev/null
+  tasks-axi add demo-g "captain call with no project" --kind captain >/dev/null
+  tasks-axi add demo-h "held for captain with no project" --kind docs >/dev/null
+  tasks-axi hold demo-h --reason "needs a captain call" --kind captain >/dev/null
 )
 out=$(run_snapshot "$home")
 case "$out" in
   *"demo-d,no project item,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item"*) ;;
   *) fail "no-project item was not reported unclear: $out" ;;
+esac
+case "$out" in
+  *"demo-g,captain call with no project,captain,-,-,no,none,no,-,-,-,n/a,captain-gated,captain kind or captain-kind hold"*) ;;
+  *) fail "captain-kind item with no project was not captain-gated: $out" ;;
+esac
+case "$out" in
+  *"demo-h,held for captain with no project,docs,-,-,no,none,yes,captain,needs a captain call,-,n/a,captain-gated,captain kind or captain-kind hold"*) ;;
+  *) fail "captain-kind hold with no project was not captain-gated: $out" ;;
 esac
 
 # 4. --limit is honored and applied before enrichment.

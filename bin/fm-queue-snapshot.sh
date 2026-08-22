@@ -19,8 +19,9 @@
 #               "captain" or it carries a captain-kind hold, OR when its
 #               project's registry posture has yolo off; autonomous-eligible
 #               when none of those hold and yolo is on; unclear only when the
-#               item carries no project (repo empty/"-"), the one case this
-#               script cannot resolve deterministically.
+#               item carries no captain-kind signal AND no project (repo
+#               empty/"-"), the one case this script cannot resolve
+#               deterministically.
 #
 # Tier/model/effort resolution is deliberately OUT of scope: matching an
 # item's description against config/crew-dispatch.json's natural-language
@@ -48,7 +49,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -84,7 +85,7 @@ fi
 CFG="$FM_HOME/config/crew-dispatch.json"
 if [ ! -f "$CFG" ]; then
   dispatch_status=absent
-elif command -v jq >/dev/null 2>&1 && jq empty "$CFG" >/dev/null 2>&1; then
+elif python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$CFG" >/dev/null 2>&1; then
   dispatch_status=present
 else
   dispatch_status=invalid
@@ -152,15 +153,15 @@ out_rows = []
 for r in rows:
     captain_kind = r["kind"] == "captain" or r["hold_kind"] == "captain"
     repo = r["repo"]
-    if not repo or repo == "-":
-        posture = "n/a"
+    has_repo = bool(repo) and repo != "-"
+    posture = posture_for(repo) if has_repo else "n/a"
+    if captain_kind:
+        autonomy, reason = "captain-gated", "captain kind or captain-kind hold"
+    elif not has_repo:
         autonomy, reason = "unclear", "no project recorded on this item"
     else:
-        posture = posture_for(repo)
         yolo = posture.split()[-1] if posture else "off"
-        if captain_kind:
-            autonomy, reason = "captain-gated", "captain kind or captain-kind hold"
-        elif yolo == "off":
+        if yolo == "off":
             autonomy, reason = "captain-gated", "project registry posture has yolo off"
         else:
             autonomy, reason = "autonomous-eligible", "project registry posture has yolo on"
