@@ -18,7 +18,7 @@ It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the b
    Run `bin/fm-queue-snapshot.sh` (default 30 items) and read its output.
    It is the single bounded, deterministic source for this listing: it shells out to `tasks-axi list --state queued` for the next N queued items in tasks-axi's own return order - the same order `tasks-axi ready` draws its dispatchable subset from - and enriches each row with two more deterministic facts tasks-axi does not itself carry: `posture` (that item's project delivery mode/yolo, from `bin/fm-project-mode.sh`, the single owner of `data/projects.md` parsing) and a derived `autonomy` verdict.
    Do not create or consult a second backlog reader, a second `data/projects.md` parser, or a raw `tasks-axi list`/`data/backlog.md` read as a substitute.
-   Its `items[...]` rows are RFC4180 CSV, one line per item, with any newline or tab inside a value written as the literal `\n`/`\t` and any literal backslash doubled to `\\`; read them as CSV, not as TOON, and undo that escaping before showing a title or reason to the captain (`C:\\path` is really `C:\path`).
+   Its `items[...]` rows are RFC4180 CSV, one line per item, with any newline, carriage return, or tab inside a value written as the literal `\n`/`\r`/`\t` and any literal backslash doubled to `\\`; read them as CSV, not as TOON, and undo that escaping before showing a title or reason to the captain (`C:\\path` is really `C:\path`).
    The script's own header owns its exact fields and derivation rules; do not restate its logic here beyond what this skill needs to render.
 
 2. **Ordering and gating: show all 30, mark gated ones inline, never drop them silently.**
