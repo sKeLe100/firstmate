@@ -5,8 +5,10 @@
 # autonomy label must match kind/hold-kind/yolo exactly, gated items must
 # carry their blocked/held facts rather than being dropped, an unregistered
 # project must default to captain-gated (never a guessed autonomous label),
-# and dispatch_config must reflect absent/present/invalid without this
-# script ever reading crew-dispatch.json's rule content itself.
+# and dispatch_config must report the shared crew-dispatch validity verdict
+# (absent/present/invalid/unverified) that bin/fm-crew-dispatch-lib.sh owns and
+# bin/fm-bootstrap.sh reports as CREW_DISPATCH, so a config that parses as JSON
+# but breaks the contract is never published as a usable tier source.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -19,6 +21,24 @@ TMP_ROOT=$(fm_test_tmproot fm-queue-snapshot)
 command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+
+# Build an explicit PATH holding every tool the snapshot needs EXCEPT the named
+# one, so "tool missing" is simulated additively. Subtracting the tool's
+# directory from PATH would take its neighbours (python3, mktemp, awk...) with
+# it wherever the tool shares a bin dir with coreutils.
+path_without() {  # <tool-to-omit>
+  local omit=$1 dir tool src
+  dir="$TMP_ROOT/nopath-$omit"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  for tool in awk basename bash cat cut dirname env grep head jq mktemp node paste \
+    python3 rm sed sh tr tasks-axi uname wc; do
+    [ "$tool" = "$omit" ] && continue
+    src=$(command -v "$tool" 2>/dev/null) || continue
+    [ -n "$src" ] && ln -s "$src" "$dir/$tool"
+  done
+  printf '%s\n' "$dir"
+}
 
 make_home() {  # <name>
   local home="$TMP_ROOT/$1"
@@ -164,15 +184,23 @@ case "$out" in
   *"dispatch_config: invalid"*) ;;
   *) fail "expected dispatch_config: invalid, got: $out" ;;
 esac
-jq_dir=$(command -v jq >/dev/null 2>&1 && dirname "$(command -v jq)" || printf '%s' "")
-if [ -n "$jq_dir" ]; then
-  nojq_path=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$jq_dir" | paste -sd: -)
-  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$nojq_path" "$SNAPSHOT")
-  case "$out" in
-    *"dispatch_config: invalid"*) ;;
-    *) fail "malformed JSON was not invalid without jq: $out" ;;
-  esac
-fi
+nojq_path=$(path_without jq)
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$nojq_path" "$SNAPSHOT")
+case "$out" in
+  *"dispatch_config: invalid"*) ;;
+  *) fail "malformed JSON was not invalid without jq: $out" ;;
+esac
+
+# A config that parses but cannot be checked against the contract because jq is
+# missing is reported as unverified, never as a usable present.
+home=$(make_home dispatch-unverified)
+: > "$home/data/projects.md"
+printf '%s\n' '{"rules":[],"default":[{"harness":"codex"}]}' > "$home/config/crew-dispatch.json"
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$nojq_path" "$SNAPSHOT")
+case "$out" in
+  *"dispatch_config: unverified"*) ;;
+  *) fail "expected dispatch_config: unverified without jq, got: $out" ;;
+esac
 
 # 5b. A config that parses as JSON but breaks the crew-dispatch validity
 #     contract (the same contract bin/fm-bootstrap.sh reports as
@@ -239,8 +267,7 @@ esac
 # 7. A missing tasks-axi on PATH fails loudly rather than reporting an empty queue.
 home=$(make_home missing-tool)
 : > "$home/data/projects.md"
-tasks_axi_dir=$(dirname "$(command -v tasks-axi)")
-filtered_path=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$tasks_axi_dir" | paste -sd: -)
+filtered_path=$(path_without tasks-axi)
 out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$filtered_path" "$SNAPSHOT" 2>&1)
 rc=$?
 [ "$rc" -ne 0 ] || fail "expected non-zero exit when tasks-axi is absent from PATH"
