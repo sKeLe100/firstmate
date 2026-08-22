@@ -133,11 +133,19 @@ WANTED = ("id", "title", "kind", "repo", "priority", "blocked", "blocked_by",
 
 rows = []
 columns = None
+reported_count = None
 in_block = False
 with open(sys.argv[1], encoding="utf-8") as fh:
     lines = fh.readlines()
 for line in lines:
     line = line.rstrip("\n")
+    if not in_block and line.startswith("count:"):
+        head = line.split(":", 1)[1].strip().split()
+        try:
+            reported_count = int(head[0]) if head else None
+        except ValueError:
+            reported_count = None
+        continue
     if line.startswith("tasks["):
         header = line[line.index("{") + 1:line.rindex("}")] if "{" in line and "}" in line else ""
         columns = [c.strip() for c in header.split(",") if c.strip()]
@@ -158,6 +166,14 @@ for line in lines:
     if len(fields) < len(columns):
         continue
     rows.append({name: fields[columns.index(name)] for name in WANTED})
+
+if reported_count is None:
+    sys.exit("fm-queue-snapshot: tasks-axi list printed no count line")
+if reported_count != len(rows):
+    sys.exit(
+        "fm-queue-snapshot: parsed %d of tasks-axi's %d queued items; refusing to "
+        "report a short queue" % (len(rows), reported_count)
+    )
 
 posture_cache = {}
 

@@ -302,20 +302,18 @@ case "$out" in
   *) fail "an extra base column shifted the parsed fields: $out" ;;
 esac
 
-# 9. A warning on tasks-axi's stderr is not folded into the parsed listing:
-#    a stray `help[` line there must not truncate the block or drop an item.
+# 9. A warning on tasks-axi's stderr is not folded into the parsed listing.
+#    The stub writes it BETWEEN two rows, so a merged-fd capture would end the
+#    block early and report a short queue.
 cat > "$stub_dir/tasks-axi" <<'STUB'
 #!/usr/bin/env bash
+echo "count: 2"
+echo 'tasks[2]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority}:'
+echo '  warn-a,queued,ship,warn-proj,first item,no,none,no,"-","-","-","-"'
 echo "help[1]: warn: backlog cache rebuilt" >&2
-echo "  noise,that,is,not,a,row" >&2
-cat <<'OUT'
-count: 2
-tasks[2]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority}:
-  warn-a,queued,ship,warn-proj,first item,no,none,no,"-","-","-","-"
-  warn-b,queued,ship,warn-proj,second item,no,none,no,"-","-","-","-"
-help[2]:
-  - Run `tasks-axi show <id>` for full notes on a task
-OUT
+echo '  warn-b,queued,ship,warn-proj,second item,no,none,no,"-","-","-","-"'
+echo "help[1]:"
+echo "  - Run \`tasks-axi show <id>\` for full notes on a task"
 STUB
 home=$(make_home stderr-noise)
 printf '%s\n' '- warn-proj [direct-PR +yolo] - test project (added 2026-08-20)' > "$home/data/projects.md"
@@ -327,6 +325,29 @@ esac
 case "$out" in
   *warn-b*) ;;
   *) fail "stderr noise truncated the listing: $out" ;;
+esac
+
+# 10. A row tasks-axi counted but this parser could not read is a loud failure,
+#     never a silently shorter queue that looks complete.
+cat > "$stub_dir/tasks-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'OUT'
+count: 2
+tasks[2]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority}:
+  drop-a,queued,ship,drop-proj,first item,no,none,no,"-","-","-","-"
+  drop-b,queued,ship,drop-proj
+help[1]:
+  - Run `tasks-axi show <id>` for full notes on a task
+OUT
+STUB
+home=$(make_home short-row)
+: > "$home/data/projects.md"
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir" "$SNAPSHOT" 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] || fail "expected non-zero exit when a counted row could not be parsed"
+case "$out" in
+  *"parsed 1 of tasks-axi's 2 queued items"*) ;;
+  *) fail "missing loud short-queue message: $out" ;;
 esac
 
 echo "PASS fm-queue-snapshot.test.sh"
