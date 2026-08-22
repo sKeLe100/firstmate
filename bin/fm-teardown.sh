@@ -166,6 +166,8 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/fm-llm-usage-lib.sh
+. "$SCRIPT_DIR/fm-llm-usage-lib.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
@@ -454,6 +456,13 @@ KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=no-mistakes
+# Captured before the meta file is removed below, for the outcome telemetry
+# event (docs/llm-usage-telemetry.md).
+LLM_USAGE_HARNESS=$(fm_meta_get "$META" harness)
+LLM_USAGE_MODEL=$(fm_meta_get "$META" model)
+LLM_USAGE_PURPOSE=$(fm_meta_get "$META" purpose)
+LLM_USAGE_RETRIED=
+[ "$(fm_meta_get "$STATE/$ID.control-relaunch" relaunched)" != true ] || LLM_USAGE_RETRIED=true
 PUBLIC_FOLLOWUP_HOME=$FM_HOME
 PUBLIC_FOLLOWUP_STATE=$STATE
 PUBLIC_FOLLOWUP_WORK_HOME=main
@@ -2533,6 +2542,19 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
+# LLM usage telemetry (docs/llm-usage-telemetry.md): recorded once teardown's
+# own landed-work proof (or explicit --force discard) has already decided the
+# outcome, and before the records read above are removed. Secondmates are
+# persistent infrastructure, not backlog work, so they record no outcome.
+# Best-effort: never blocks teardown.
+if [ "$KIND" != secondmate ]; then
+  llm_usage_result=landed
+  [ "$FORCE" != "--force" ] || llm_usage_result=abandoned
+  fm_llm_usage_emit "$DATA" "$STATE" outcome \
+    "task_id=$ID" "kind=$KIND" "purpose=$LLM_USAGE_PURPOSE" \
+    "harness=$LLM_USAGE_HARNESS" "model=$LLM_USAGE_MODEL" "mode=$MODE" \
+    "result=$llm_usage_result" "pr_url=$PR_URL" "retried=$LLM_USAGE_RETRIED" || true
+fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \

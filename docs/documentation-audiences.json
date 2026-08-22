@@ -217,6 +217,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/llm-usage-telemetry.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/calm-mode-feasibility.md",
       "audience": "maintainer-verification"
     },
