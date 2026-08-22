@@ -29,9 +29,15 @@
 # firstmate at real dispatch time, and a profile array's concrete pick
 # additionally needs live quota-axi evidence this script must not spend on a
 # listing. This script only reports whether config/crew-dispatch.json is
-# present/absent/invalid so the caller knows whether tier matching is even
-# possible; the caller (the /queue skill) reads the file itself and does the
-# matching.
+# present/absent/invalid/unverified so the caller knows whether tier matching is
+# even possible; the caller (the /queue skill) reads the file itself and does
+# the matching. "present" means the file passes the shared crew-dispatch
+# validity contract in bin/fm-crew-dispatch-lib.sh - the same verdict
+# bin/fm-bootstrap.sh reports as CREW_DISPATCH - not merely that it parses as
+# JSON, so the skill never publishes tiers from a config real dispatch would
+# refuse. "unverified" means that contract could not be evaluated here because
+# jq is unavailable; the caller must treat it as untrustworthy for tiers rather
+# than guessing.
 #
 # This script is READ-ONLY: it runs no tasks-axi mutation, writes no file,
 # and never spends quota or network.
@@ -42,14 +48,14 @@
 #   count: <n>
 #   items[<n>]{id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
 #     <csv row>...
-#   dispatch_config: absent|present|invalid
+#   dispatch_config: absent|present|invalid|unverified
 #
 # Fails loudly (exit 1) when tasks-axi is missing or its list call errors,
 # rather than reporting an empty queue that might just be a broken lookup.
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -82,13 +88,28 @@ if ! raw="$(cd "$FM_HOME" && tasks-axi list --state queued --fields "$FIELDS" --
   exit 1
 fi
 
+# shellcheck source=bin/fm-crew-dispatch-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-crew-dispatch-lib.sh"
+
 CFG="$FM_HOME/config/crew-dispatch.json"
 if [ ! -f "$CFG" ]; then
   dispatch_status=absent
-elif python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$CFG" >/dev/null 2>&1; then
-  dispatch_status=present
 else
-  dispatch_status=invalid
+  set +e
+  fm_crew_dispatch_validate "$CFG" >/dev/null 2>&1
+  cfg_rc=$?
+  set -e
+  case "$cfg_rc" in
+    0) dispatch_status=present ;;
+    2)
+      if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$CFG" >/dev/null 2>&1; then
+        dispatch_status=unverified
+      else
+        dispatch_status=invalid
+      fi
+      ;;
+    *) dispatch_status=invalid ;;
+  esac
 fi
 
 PROJECT_MODE_BIN="$SCRIPT_DIR/fm-project-mode.sh"

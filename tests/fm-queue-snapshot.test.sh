@@ -144,10 +144,17 @@ home=$(make_home dispatch-present)
 : > "$home/data/projects.md"
 printf '%s\n' '{"rules":[],"default":[{"harness":"codex"}]}' > "$home/config/crew-dispatch.json"
 out=$(run_snapshot "$home")
-case "$out" in
-  *"dispatch_config: present"*) ;;
-  *) fail "expected dispatch_config: present, got: $out" ;;
-esac
+if command -v jq >/dev/null 2>&1; then
+  case "$out" in
+    *"dispatch_config: present"*) ;;
+    *) fail "expected dispatch_config: present, got: $out" ;;
+  esac
+else
+  case "$out" in
+    *"dispatch_config: unverified"*) ;;
+    *) fail "expected dispatch_config: unverified without jq, got: $out" ;;
+  esac
+fi
 
 home=$(make_home dispatch-invalid)
 : > "$home/data/projects.md"
@@ -157,6 +164,68 @@ case "$out" in
   *"dispatch_config: invalid"*) ;;
   *) fail "expected dispatch_config: invalid, got: $out" ;;
 esac
+jq_dir=$(command -v jq >/dev/null 2>&1 && dirname "$(command -v jq)" || printf '%s' "")
+if [ -n "$jq_dir" ]; then
+  nojq_path=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$jq_dir" | paste -sd: -)
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$nojq_path" "$SNAPSHOT")
+  case "$out" in
+    *"dispatch_config: invalid"*) ;;
+    *) fail "malformed JSON was not invalid without jq: $out" ;;
+  esac
+fi
+
+# 5b. A config that parses as JSON but breaks the crew-dispatch validity
+#     contract (the same contract bin/fm-bootstrap.sh reports as
+#     CREW_DISPATCH: invalid) is invalid here too, so the skill never matches
+#     tiers against a config real dispatch would refuse.
+if command -v jq >/dev/null 2>&1; then
+  home=$(make_home dispatch-contract-empty-when)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"rules":[{"when":"","use":{"harness":"codex"}}]}' > "$home/config/crew-dispatch.json"
+  out=$(run_snapshot "$home")
+  case "$out" in
+    *"dispatch_config: invalid"*) ;;
+    *) fail "a rule with an empty when was not reported invalid: $out" ;;
+  esac
+
+  home=$(make_home dispatch-contract-empty-default)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"rules":[],"default":[]}' > "$home/config/crew-dispatch.json"
+  out=$(run_snapshot "$home")
+  case "$out" in
+    *"dispatch_config: invalid"*) ;;
+    *) fail "an empty default array was not reported invalid: $out" ;;
+  esac
+
+  home=$(make_home dispatch-contract-bad-harness)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"nope"}}' > "$home/config/crew-dispatch.json"
+  out=$(run_snapshot "$home")
+  case "$out" in
+    *"dispatch_config: invalid"*) ;;
+    *) fail "an unverified harness was not reported invalid: $out" ;;
+  esac
+
+  # And the bootstrap diagnostic that owns this contract agrees with the
+  # snapshot on the very same file.
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_BOOTSTRAP_NETWORK=skip \
+    FM_BOOTSTRAP_DETECT_ONLY=1 "$ROOT/bin/fm-bootstrap.sh" 2>/dev/null)
+  case "$out" in
+    *"CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: nope"*) ;;
+    *) fail "bootstrap diagnostic disagreed with the snapshot verdict: $out" ;;
+  esac
+else
+  # Without jq the contract cannot be evaluated, and the snapshot must say so
+  # rather than claiming a valid config.
+  home=$(make_home dispatch-unverified)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"rules":[],"default":[{"harness":"codex"}]}' > "$home/config/crew-dispatch.json"
+  out=$(run_snapshot "$home")
+  case "$out" in
+    *"dispatch_config: unverified"*) ;;
+    *) fail "expected dispatch_config: unverified without jq, got: $out" ;;
+  esac
+fi
 
 # 6. An empty queue reports count: 0 rather than erroring.
 home=$(make_home empty)
