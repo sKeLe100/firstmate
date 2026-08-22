@@ -1,0 +1,60 @@
+---
+name: queue
+description: Show the next queued work items at a glance - project, dispatch tier, and whether each clears itself or needs the captain. Use when the captain invokes /queue or asks "what's queued", "what's next", "show me the queue", or similar.
+user-invocable: true
+metadata:
+  internal: true
+---
+
+# queue
+
+Give the captain a concise, scannable list of the next queued work so they can see at a glance what is coming and decide what to dispatch.
+This skill is read-only.
+It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the backlog or any task state.
+
+## What it does
+
+1. **Gather with one deterministic command.**
+   Run `bin/fm-queue-snapshot.sh` (default 30 items) and read its output.
+   It is the single bounded, deterministic source for this listing: it shells out to `tasks-axi list --state queued` for the next N queued items in tasks-axi's own return order - the same order `tasks-axi ready` draws its dispatchable subset from - and enriches each row with two more deterministic facts tasks-axi does not itself carry: `posture` (that item's project delivery mode/yolo, from `bin/fm-project-mode.sh`, the single owner of `data/projects.md` parsing) and a derived `autonomy` verdict.
+   Do not create or consult a second backlog reader, a second `data/projects.md` parser, or a raw `tasks-axi list`/`data/backlog.md` read as a substitute.
+   The script's own header owns its exact fields and derivation rules; do not restate its logic here beyond what this skill needs to render.
+
+2. **Ordering and gating: show all 30, mark gated ones inline, never drop them silently.**
+   Render every item the snapshot returns, in the order it returns them.
+   Do not exclude a blocked or held item from the list: the captain asked for "the next 30 queued items in order", and quietly dropping some would make the list's count and order misleading about the true shape of the queue.
+   Instead, mark a gated item inline right on its bullet: blocked items name what they are blocked by, held items give the hold's reason (and its `hold_until` date when set).
+   An item with neither `blocked: yes` nor `held: yes` needs no gate note.
+
+3. **Resolve each item's dispatch tier by the same judgment real dispatch uses - never by running quota.**
+   If the snapshot reports `dispatch_config: absent`, no per-item tier can be resolved; say so once for the whole list rather than repeating a caveat on every bullet, and note that a spawn without configured profiles falls back to `config/crew-harness`.
+   If it reports `dispatch_config: invalid`, say once that the dispatch profile file is present but invalid and tiers are unavailable until it is fixed, per `docs/configuration.md`'s `CREW_DISPATCH: invalid` diagnostic.
+   If it reports `dispatch_config: present`, read `config/crew-dispatch.json` yourself and, for each item, match its title/kind against the rules' natural-language `when` conditions exactly as `AGENTS.md` section 4 has firstmate do at real dispatch time; use the first rule that fits, or `default` when none fits.
+   Render the matched profile(s) as the tier: a single profile shows its harness, model (if given), and effort; a profile array shows every candidate separated by `|`, labelled as candidates, e.g. `senior tier: codex gpt-5.5 high | claude sonnet-5 high`.
+   Do NOT call `quota-axi` to narrow an array down to one pick for this listing - that is a per-item live quota read the captain explicitly asked this listing to avoid, and thirty of them is not worth the cost for a view.
+   State plainly, once, that concrete profile-array selection happens at dispatch time via `quota-array-dispatch`, not in this listing.
+
+4. **Report autonomy exactly as the snapshot derived it, translated to plain language.**
+   The snapshot's `autonomy` field is already derived, never guessed: `captain-gated` when the item's own kind is `captain` or it carries a captain-kind hold, or when its project's registry posture has yolo off; `autonomous-eligible` when none of those hold and yolo is on; `unclear` only when the item carries no project to check (repo empty), which this skill must render as an honest "unclear" rather than picking a side.
+   Render `autonomous-eligible` as "clears itself", `captain-gated` as "needs you", and `unclear` as "unclear - ask me about it".
+   Never override or re-derive this verdict from the title or your own read of the situation; a wrong "clears itself" is worse than an honest "unclear".
+
+5. **Render one bullet per item, minimal fields, nothing extra.**
+   Template: `- <id>: <short title> - <project> - tier: <candidates or the once-stated absent/invalid note> - <autonomy>[ - gated: <reason>]`.
+   Truncate a long title to stay scannable; the id is always exact so the captain can ask about it by name.
+   Put no other field on the line - no dates, no hold details beyond the one-line gate note, no body text, no links.
+   End the list with one short line making clear that any item can be asked about by id or description for full detail (body, blockers, dependencies, links) via `tasks-axi show <id> --full`, and that the list above is deliberately everything-else-omitted.
+
+6. **Answer follow-up questions about one item read-only.**
+   When the captain asks about a specific item, run `tasks-axi show <id> --full` (or `tasks-axi list --repo <name>` for "what else is queued for X") and answer from that, still without mutating anything.
+
+## Empty and degraded cases
+
+- Zero queued items: say plainly that nothing is queued right now.
+- `tasks-axi` missing or erroring: the snapshot script fails loudly; relay that the backlog could not be read rather than showing an empty list.
+- No project recorded on an item: its posture is `n/a` and its autonomy is `unclear`; say so rather than assuming either way.
+
+## Tone
+
+Follow `AGENTS.md` section 9: plain outcomes, the captain's own nouns, full `https://...` PR links if any item's note references one, and the mandatory direct address to the captain.
+Task ids, project names, and dispatch tier details are the literal content the captain asked this listing for, not internal jargon to translate away.
