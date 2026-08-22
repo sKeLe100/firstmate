@@ -61,9 +61,12 @@
 #   checked_at=<epoch>
 #
 # A degrade never blanks a last-known-good result: it carries the previous ok
-# report's counts forward as stale_* fields, and keeps that report's own
-# checked_at as its gate stamp, so a single offline morning neither erases the
-# digest's drift summary nor suppresses the next attempt for the rest of the day.
+# report's counts forward as stale_* fields, and while that result is still
+# inside its own gate window it keeps that result's checked_at as the gate
+# stamp, so a transient outage neither erases the digest's drift summary nor
+# burns the retry. Once the good result has itself aged past the interval the
+# degrade stamps the current time again, so a sustained outage still does real
+# work at most once per interval rather than on every invocation.
 #
 # bin/fm-bearings-snapshot.sh reads that cached report file directly (a local
 # read, no network) to surface it in the morning debrief; it never invokes
@@ -178,7 +181,14 @@ degrade() {  # <reason> - publish an unknown that carries any last-known-good fo
   [ -z "$s_newest" ] || fields+=("stale_newest_upstream_date=$s_newest")
   if [ -n "$s_checked" ]; then
     fields+=("stale_checked_at=$s_checked")
-    PUBLISH_CHECKED_AT=$s_checked
+    case "$s_checked" in
+      *[!0-9]*) ;;
+      *)
+        if [ "$(( $(now) - s_checked ))" -lt "$interval" ]; then
+          PUBLISH_CHECKED_AT=$s_checked
+        fi
+        ;;
+    esac
   fi
   publish unknown "${fields[@]}"
 }

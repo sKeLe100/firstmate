@@ -282,7 +282,7 @@ test_files_directly_under_skills_dir_are_not_named_as_skills() {
 
 test_degrade_preserves_last_known_good_and_retries() {
   set -e
-  local home root upstream_src upstream_bare report ok_checked out
+  local home root upstream_src upstream_bare report ok_checked fresh aged out
   home=$(new_home)
   root="$TMP_ROOT/repo-stale-carry"
   upstream_src="$TMP_ROOT/upstream-src-stale"
@@ -321,6 +321,23 @@ test_degrade_preserves_last_known_good_and_retries() {
   out=$(FM_UPSTREAM_CHECK_INTERVAL=1 run_check "$home" "$root")
   assert_contains "$out" "reason=unreachable" "stale-carry: an unforced call retries instead of caching the unknown"
   assert_contains "$out" "stale_behind=1" "stale-carry: repeated degrades keep carrying the last-known result"
+
+  # A sustained outage must not retry forever: once the carried-forward good
+  # result has itself aged past the interval, the degrade stamps the current
+  # time again so the once-per-interval work ceiling still holds. Age the
+  # cached report's own stamps to simulate the outage lasting past the window.
+  aged=$((ok_checked - 200000))
+  sed -i.bak "s/^checked_at=.*/checked_at=$aged/; s/^stale_checked_at=.*/stale_checked_at=$aged/" "$report"
+  out=$(run_check "$home" "$root")
+  fresh=$(sed -n 's/^checked_at=//p' "$report" | tail -1)
+  assert_contains "$out" "stale_checked_at=$aged" "stale-carry: the aged good result is still disclosed"
+  assert_contains "$out" "stale_behind=1" "stale-carry: the aged good counts are still carried"
+  [ "$fresh" -gt "$aged" ] \
+    || fail "stale-carry: a degrade past the good result's window must restamp: $(cat "$report")"
+  # With the stamp restored to now, the next ordinary call is a cached no-op.
+  run_check "$home" "$root" >/dev/null
+  [ "$(sed -n 's/^checked_at=//p' "$report" | tail -1)" = "$fresh" ] \
+    || fail "stale-carry: the restamped degrade must close the gate again"
 
   # Once the remote is reachable again, the report goes back to a fresh ok.
   git -C "$root" remote set-url upstream "$upstream_bare"
