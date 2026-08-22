@@ -32,6 +32,8 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
 1. **Gather live fleet state with one deterministic command.**
    Run `bin/fm-bearings-snapshot.sh` at invocation time and read its compact output.
    In the same gather step, also run `bin/fm-context-usage.sh` to read this session's real context usage; its output is the only context-usage source the digest may report, because the live token countdown can stick and is never trusted alone.
+   In the same gather step, also run `bin/fm-upstream-behind-check.sh` to refresh this home's cached position relative to its `upstream` remote; it is read-only, bounded, does real work at most once per day, and degrades quietly, so calling it here adds no meaningful cost.
+   Do not read its output directly - `fm-bearings-snapshot.sh`'s own `upstream` field is the only source the digest may report, since that field reads the same cached file locally with no network call.
    It is the single bounded, deterministic fleet-state source for Bearings and renders TOON by default.
    Do not create or consult a second fleet-state reader, parser contract, status-event-tail interpretation, visible-session recap, ad-hoc project probe, or ad-hoc `gh-axi`/`gh` query.
    The command's header and `--help` output own its exact fields, bounds, opt-ins, and output contract.
@@ -44,6 +46,11 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    Until then it stays queued with the reason.
    The `(main-inventory)` gate is an action-free integrity warning rather than queued work.
    Render it under Charted Next with the related `omitted` disclosure, never invent an Underway row from backlog-only state, and never move it into Captain's Call.
+   When the snapshot's `upstream` field reports `status: ok` with `behind` or `ahead` greater than zero, render one Charted Next line naming both counts and the `newest_upstream_date`, the same action-free-warning treatment as the main-inventory gate: it is a status note, not a decision, since closing the gap is separately tracked work.
+   When `upstream.areas` is present, add the per-area changed-file counts (`agents_skills`, `bin`, `docs`, `tests`, `other`) to that same line so the captain sees WHERE the drift is, not just its size.
+   When `upstream.skills` is present, name those changed skills explicitly right after the area breakdown - they are what the captain most wants visibility on - and if `skills_total` exceeds `skills_shown`, say how many more were cut.
+   Point to `upstream.detail_hint`'s command for the full commit list rather than ever enumerating individual commits in the digest.
+   Omit the whole line when `upstream` is absent, its `status` is `unknown`, or both counts are zero.
 
 2. **Compose the four-section chat digest from the fresh snapshot.**
    The gather step is deterministic; your judgment is scoped to ranking the command's facts by what matters right now and writing scannable captain-facing prose.
@@ -61,7 +68,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    - **Captain's Call** - every open decision summarized with its options from the structured decision record, plus each PR ready to merge and each needed credential or login, every PR with the full `https://...` URL, never a bare `#number`.
    - **Recently Landed** - the bounded current recent-completions baseline from structured state across the main fleet and every registered secondmate home, rendered in full on every run.
    - **Underway** - each live direct report making progress, with its current state, and the plans or main pickup pointers worth reopening (`data/<id>/report.md` files, `.lavish/*.html` boards).
-   - **Charted Next** - queued or gated work, including any main-inventory integrity warning, with each item's blocker, date, or integrity reason.
+   - **Charted Next** - queued or gated work, including any main-inventory or upstream-drift integrity warning, with each item's blocker, date, or integrity reason.
    After writing the file, return the concise four-section chat digest and include the report path or link without adding a fifth section.
    For a richer review surface, optionally offer a Lavish board with `lavish-axi` when the report has enough structure to deserve one, but only after the required digest is ready.
 

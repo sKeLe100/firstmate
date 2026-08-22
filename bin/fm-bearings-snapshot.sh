@@ -23,6 +23,12 @@
 # backlog roles, unresolved blockers, and captain actionability. It never infers
 # decisions from report or visual-review prose or reimplements snapshot semantics.
 #
+# The optional `upstream` field is a local read of the cached report bin/fm-
+# upstream-behind-check.sh already published to state/.upstream-behind-check.report;
+# reading a cache file is not a network call, so it stays inside the LOCAL-ONLY
+# contract above. This script never runs that check itself and never fetches.
+# The field is omitted entirely when no cached report exists yet.
+#
 # Main-home inventory validity comes from the canonical snapshot's main_inventory
 # object (orphan structured in-flight without meta, unstructured current rows).
 # Bearings never invents Underway rows from backlog-only ids; it discloses those
@@ -109,7 +115,12 @@ Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
   decisions_open{id,key,verb,summary,owner}, landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner}, reports{id,path}, recorded_prs{id,url},
-  unhealthy_endpoints{...} (only when non-empty), omitted{surface,reveal}.
+  unhealthy_endpoints{...} (only when non-empty),
+  upstream{status,behind,ahead,newest_upstream_date,reason,checked_at,
+  areas{agents_skills,bin,docs,tests,other},skills,skills_total,skills_shown,
+  detail_hint} (only when a cached bin/fm-upstream-behind-check.sh report
+  exists; areas/skills/detail_hint appear only on an ok result with behind>0),
+  omitted{surface,reveal}.
 landed merges this home's Done with registered secondmate homes' Done, bounded by
   a per-home cap (FM_BEARINGS_LANDED_PER_HOME) and an overall cap (FM_BEARINGS_LANDED),
   with omitted[] disclosure. Default selection is balanced across deterministic home
@@ -178,6 +189,63 @@ else
 fi
 HOME_LABEL=$(printf '%s' "$SNAP" | jq -er '.fm_home | strings | split("/") | (.[-2:] | join("/"))') \
   || { echo "fm-bearings-snapshot: invalid canonical snapshot" >&2; exit 1; }
+
+# --- cached upstream-position read (local file, no network) -----------------
+UPSTREAM_JSON=null
+UPSTREAM_REPORT="$(printf '%s' "$SNAP" | jq -r '.fm_home')/state/.upstream-behind-check.report"
+if [ -f "$UPSTREAM_REPORT" ]; then
+  ustatus='' ubehind='' uahead='' unewest='' ureason='' uchecked=''
+  uarea_skills='' uarea_bin='' uarea_docs='' uarea_tests='' uarea_other=''
+  uskills_total='' uskills_shown='' udetail_hint=''
+  UPSTREAM_SKILLS_JSON='[]'
+  skill_names=()
+  while IFS= read -r kv || [ -n "$kv" ]; do
+    case "$kv" in
+      status=*) ustatus=${kv#status=} ;;
+      behind=*) ubehind=${kv#behind=} ;;
+      ahead=*) uahead=${kv#ahead=} ;;
+      newest_upstream_date=*) unewest=${kv#newest_upstream_date=} ;;
+      reason=*) ureason=${kv#reason=} ;;
+      checked_at=*) uchecked=${kv#checked_at=} ;;
+      area_count_agents_skills=*) uarea_skills=${kv#area_count_agents_skills=} ;;
+      area_count_bin=*) uarea_bin=${kv#area_count_bin=} ;;
+      area_count_docs=*) uarea_docs=${kv#area_count_docs=} ;;
+      area_count_tests=*) uarea_tests=${kv#area_count_tests=} ;;
+      area_count_other=*) uarea_other=${kv#area_count_other=} ;;
+      skills_total=*) uskills_total=${kv#skills_total=} ;;
+      skills_shown=*) uskills_shown=${kv#skills_shown=} ;;
+      detail_hint=*) udetail_hint=${kv#detail_hint=} ;;
+      skill=*) skill_names+=("${kv#skill=}") ;;
+    esac
+  done < "$UPSTREAM_REPORT"
+  if [ ${#skill_names[@]} -gt 0 ]; then
+    UPSTREAM_SKILLS_JSON=$(printf '%s\n' "${skill_names[@]}" | jq -R . | jq -s .)
+  fi
+  if [ -n "$ustatus" ]; then
+    UPSTREAM_JSON=$(jq -n \
+      --arg status "$ustatus" --arg behind "$ubehind" --arg ahead "$uahead" \
+      --arg newest "$unewest" --arg reason "$ureason" --arg checked_at "$uchecked" \
+      --arg a_skills "$uarea_skills" --arg a_bin "$uarea_bin" --arg a_docs "$uarea_docs" \
+      --arg a_tests "$uarea_tests" --arg a_other "$uarea_other" \
+      --arg skills_total "$uskills_total" --arg skills_shown "$uskills_shown" \
+      --arg detail_hint "$udetail_hint" --argjson skills "$UPSTREAM_SKILLS_JSON" '
+      ({status:$status}
+       + (if $behind != "" then {behind:($behind|tonumber)} else {} end)
+       + (if $ahead != "" then {ahead:($ahead|tonumber)} else {} end)
+       + (if $newest != "" then {newest_upstream_date:$newest} else {} end)
+       + (if $reason != "" then {reason:$reason} else {} end)
+       + (if $checked_at != "" then {checked_at:($checked_at|tonumber)} else {} end)
+       + (if $skills_total != "" then {skills_total:($skills_total|tonumber)} else {} end)
+       + (if $skills_shown != "" then {skills_shown:($skills_shown|tonumber)} else {} end)
+       + (if $detail_hint != "" then {detail_hint:$detail_hint} else {} end)
+       + (if ($skills|length) > 0 then {skills:$skills} else {} end)
+      ) as $base
+      | ([{k:"agents_skills",v:$a_skills},{k:"bin",v:$a_bin},{k:"docs",v:$a_docs},
+          {k:"tests",v:$a_tests},{k:"other",v:$a_other}]
+         | map(select(.v != "")) | map({(.k):(.v|tonumber)}) | add) as $areas
+      | $base + (if $areas != null then {areas:$areas} else {} end)')
+  fi
+fi
 
 # --- optional live PR enrichment (the ONLY network path) --------------------
 PR_STATUS='not_requested (run: /bearings include PRs)'
@@ -298,7 +366,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --argjson pr_repos_shown "$PR_REPOS_SHOWN" \
   --argjson pr_rows_capped "$PR_ROWS_CAPPED" \
   --argjson pr_rows_min_total "$PR_ROWS_MIN_TOTAL" \
-  --argjson candidate_prs "$CANDIDATE_PRS" '
+  --argjson candidate_prs "$CANDIDATE_PRS" \
+  --argjson upstream "$UPSTREAM_JSON" '
   def trunc($n): if . == null then null else
     (tostring | gsub("\\s+"; " ") | if (length > $n) then (.[:$n] + "…") else . end) end;
   def round_robin_landed($n):
@@ -436,6 +505,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
            {unhealthy_endpoints:(if $all_unhealthy == 1 then $unhealthy_all else $unhealthy_all[:$unhealthy_n] end)}
          else {} end)
   | . + (if $include_prs == 1 then {candidate_prs:$candidate_prs} else {} end)
+  | . + (if $upstream != null then {upstream:$upstream} else {} end)
   | . + (if $f_bodies then {bodies:[ $snap.backlog.records[] | select(.structured and (.state == "queued" or .state == "done")) | {id, body:((.body_excerpt // .raw // "-") | trunc(200))} ]} else {} end)
   | . + (if $f_paths then {paths:[ $snap.tasks[] | {id, worktree:(.paths.worktree.path // "-"), home:(.paths.home.path // "-"), status:.paths.status_log.path, report:.paths.report.path} ]} else {} end)
   | . + (if $f_actions then {actions:[ $snap.tasks[] | {id, watch:(.actions.watch // .actions.send // "-"), steer:(.actions.steer // .actions.send // "-")} ]} else {} end)
