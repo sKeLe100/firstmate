@@ -158,8 +158,8 @@ case "$out" in
   *lim-c*) fail "--limit 2 unexpectedly included a third item: $out" ;;
 esac
 
-# 5. dispatch_config reflects present vs invalid crew-dispatch.json without
-#    this script needing to interpret the rule content.
+# 5. dispatch_config reflects the shared crew-dispatch validity verdict for a
+#    valid file and for one that is not even parseable JSON.
 home=$(make_home dispatch-present)
 : > "$home/data/projects.md"
 printf '%s\n' '{"rules":[],"default":[{"harness":"codex"}]}' > "$home/config/crew-dispatch.json"
@@ -386,8 +386,9 @@ case "$out" in
   *'ctl-a,tabbed\ttitle,ship,ctl-proj,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,'*) ;;
   *) fail "a tab in the title was not written back as a literal escape: $out" ;;
 esac
-raw_tab=$(printf '%s\n' "$out" | grep -cP '\t') || true
-[ "$raw_tab" = 0 ] || fail "a raw control character reached the emitted rows: $out"
+case "$out" in
+  *$'\t'*) fail "a raw control character reached the emitted rows: $out" ;;
+esac
 
 # 13. Every line of the snapshot is LF-terminated: an item row must not carry a
 #     trailing CR that a consumer splitting on newlines would read as part of

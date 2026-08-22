@@ -87,8 +87,8 @@ if ! command -v tasks-axi >/dev/null 2>&1; then
   exit 1
 fi
 
-TMP_LIST="$(mktemp)"
-TMP_ERR="$(mktemp)"
+TMP_LIST="$(mktemp "${TMPDIR:-/tmp}/fm-queue-snapshot.XXXXXX")"
+TMP_ERR="$(mktemp "${TMPDIR:-/tmp}/fm-queue-snapshot-err.XXXXXX")"
 trap 'rm -f "$TMP_LIST" "$TMP_ERR"' EXIT
 
 FIELDS="blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority"
