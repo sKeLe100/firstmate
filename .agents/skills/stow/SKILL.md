@@ -60,6 +60,10 @@ Every `/stow` invocation performs this complete pass, even when the session cont
    The helper's stable estimate is the documented conservative local approximation, not provider-exact accounting.
    If it rejects the setting or a memory file, do not infer a default or silently continue.
    Report that concrete exception and do not call the session reset-safe.
+   Also run `bin/fm-context-usage.sh` once per pass to read this session's real context usage; its output is the only context-usage source this pass may report, because the live token countdown can stick and is never trusted alone or used as a substitute.
+   This reading is a different fact from the startup-memory budget above: the budget is this home's durable per-home memory cost, while the context reading is this session's live window, and neither may be merged, conflated, or described as the other.
+   When the helper fails or the reading is unavailable, report exactly that in the completion receipt rather than guessing or falling back to the countdown.
+   The context reading is reported information only: it is never a gate on reset-safety, which keeps exactly its existing conditions below.
 2. Read every current memory file completely: `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`.
    Treat an absent local file as absent, not as an invitation to manufacture content.
    In a primary home, all three are curation inputs under their existing ownership rules.
@@ -223,6 +227,7 @@ The first pass after adoption performs a one-time revalidation sweep of editable
 Report the outcome in plain captain-facing language with all of these facts:
 
 - effective startup-memory budget and total estimated tokens before and after;
+- this session's real context usage from `bin/fm-context-usage.sh`, reported as tokens and percent of window, kept clearly distinct from the startup-memory budget above; when the helper fails or the reading is unavailable, say exactly that instead of guessing or substituting the live token countdown;
 - one or more actions for each of `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`, using only `unchanged`, `added`, `rewritten`, `pruned`, `routed`, `archived`, or `proposed-offload`; adding or replacing a migration marker is `rewritten`, never a new action verb such as `migrated`;
 - each durable finding filed outside memory and its authoritative owner;
 - each archived entry's reason, each autonomous offload's live destination and actual relief, and, when a pinned candidate was proposed, the `proposed-offload` section with every candidate's fields;
@@ -245,18 +250,23 @@ Every home is judged against its own `config/startup-memory-budget` allowance, s
 Act on each home by its reported `transport`:
 
 - `agent` - send the marked request with `bin/fm-send.sh fm-<id> "<request>"` so the live secondmate performs its own `/stow`, including the uncaptured knowledge that exists only in its session.
-  Ask it for the same completion receipt this skill defines, and read its reply from its status file or the document it points to, never from its chat.
+  Ask it for the same completion receipt this skill defines, plus that session's own real context reading obtained the same way, `bin/fm-context-usage.sh` run in that session, and read its reply from its status file or the document it points to, never from its chat.
 - `direct` - curate that local home's editable memory files yourself under the same retention plan, then re-run the cascade to confirm the after totals.
   `data/captain-shared.md` stays a read-only counted input there, exactly as it is in any secondmate home.
+  There is no live session there to ask, so this home's context reading is unavailable in the receipt.
 - `deferred` - a remote home with no live agent. Its memory is accounted read-only and cannot be curated from here, because there is no generic remote write path for a home's own memory files.
   Report it as an unresolved exception and leave it to its next cascade.
   Relaunching that secondmate is a separate decision owned by `secondmate-provisioning`, never something `/stow` does on its own.
+  There is no live session there to ask, so this home's context reading is unavailable in the receipt.
 - `unavailable` - that home's own accounting did not complete. Report the concrete exception and continue; a slow or unreachable home never blocks this home's `/stow`.
+  There is no live session confirmed there either, so this home's context reading is unavailable in the receipt.
 
 A newly discovered shared captain preference still routes to the primary's `data/captain-shared.md` under the existing primary-authoritative contract, whichever home found it.
 Offload proposals and the cold archive are per-home: file proposals only in the home whose pass produced them, and never cascade either to another home.
 
-Extend the completion receipt with one entry per secondmate alongside the primary's own, carrying that home's budget before and after, its per-file actions, its exceptions, and whether that home swept itself or was curated from here.
+Extend the completion receipt with one entry per secondmate alongside the primary's own, carrying that home's budget before and after, its per-file actions, its exceptions, whether that home swept itself or was curated from here, and its reported context reading alongside the same tokens-and-percent-of-window shape as the primary's own.
+An `agent`-transport home's context reading is whatever that session reported back; a `direct`, `deferred`, or `unavailable` home has no live session to ask, so its entry states the reading is unavailable rather than inventing, inferring, or reusing another home's number.
+A home that does not report a context reading never blocks this home's `/stow`: it is a reported field on the existing entry, not a new gate on the cascade bound or on that home's own reset-safety.
 Keep those entries in the same plain captain-facing language the rest of the receipt uses.
 The session is reset-safe only when every home is within its own budget with no unresolved exception.
 
