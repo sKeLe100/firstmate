@@ -562,10 +562,13 @@ if [ "$FORMAT" = json ]; then
 fi
 
 # --- TOON renderer (output boundary; parity with the JSON model) ------------
-# The model is a flat object of scalar fields plus arrays of uniform scalar
-# objects, so the encoder only needs object scalars, the tabular array form
-# (key[N]{fields}: + comma rows at +2 indent), and the empty-array form (key: []),
-# per the TOON spec. Quoting follows the spec exactly.
+# The model is scalar fields, arrays of uniform scalar objects, and (for the
+# cached upstream position) nested objects holding scalars and scalar arrays, so
+# the encoder covers object scalars, the tabular array form (key[N]{fields}: +
+# comma rows at +2 indent), the scalar-list form (key[N]: a,b), the empty-array
+# form (key: []), and nested objects rendered as an indented block. Quoting
+# follows the TOON spec exactly, and every form nests at +2 indent so TOON and
+# the JSON model stay parity representations.
 TOON=$(printf '%s\n' "$MODEL" | jq -r '
   def q:
     tostring
@@ -583,16 +586,20 @@ TOON=$(printf '%s\n' "$MODEL" | jq -r '
     elif type == "boolean" then (if . then "true" else "false" end)
     elif type == "number" then tostring
     else q end;
-  def emit($k; $v):
+  def emit($k; $v; $ind):
     if ($v | type) == "array" then
-      if ($v | length) == 0 then "\($k): []"
-      else
+      if ($v | length) == 0 then "\($ind)\($k): []"
+      elif ($v[0] | type) == "object" then
         ($v[0] | keys_unsorted) as $ks
-        | ( "\($k)[\($v | length)]{\($ks | map(q) | join(","))}:",
-            ($v[] as $row | "  " + ([ $ks[] as $kk | ($row[$kk] | scal) ] | join(","))) )
+        | ( "\($ind)\($k)[\($v | length)]{\($ks | map(q) | join(","))}:",
+            ($v[] as $row | $ind + "  " + ([ $ks[] as $kk | ($row[$kk] | scal) ] | join(","))) )
+      else "\($ind)\($k)[\($v | length)]: " + ([ $v[] | scal ] | join(","))
       end
-    else "\($k): " + ($v | scal)
+    elif ($v | type) == "object" then
+      ( "\($ind)\($k):",
+        ($v | to_entries[] | emit(.key; .value; $ind + "  ")) )
+    else "\($ind)\($k): " + ($v | scal)
     end;
-  [ to_entries[] | emit(.key; .value) ] | join("\n")
+  [ to_entries[] | emit(.key; .value; "") ] | join("\n")
 ') || { echo "fm-bearings-snapshot: TOON rendering failed" >&2; exit 1; }
 printf '%s\n' "$TOON"

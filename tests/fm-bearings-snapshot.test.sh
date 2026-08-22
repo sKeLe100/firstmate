@@ -900,6 +900,9 @@ test_toon_json_parity() {
   local home fakebin toon json keys k
   home=$(make_home parity); write_fixture "$home"
   fakebin=$(make_fakebin "$home")
+  write_upstream_report "$home" "status=ok" "behind=57" "ahead=8" \
+    "area_count_bin=9" "skill=bearings" "skill=stow" "skills_total=2" "skills_shown=2" \
+    "checked_at=1787000000"
   toon=$(run "$home" "$fakebin")
   json=$(run "$home" "$fakebin" --json)
   # Same top-level keys in both representations.
@@ -920,6 +923,17 @@ test_toon_json_parity() {
         tfields=$(printf '%s' "$hdr" | sed -E 's/^[^{]*\{//; s/\}:.*$//; s/"//g')
         [ "$jfields" = "$tfields" ] || fail "TOON $k fields ($tfields) must equal JSON fields ($jfields)"
       fi
+    elif printf '%s' "$json" | jq -e --arg k "$k" '.[$k] | type == "object"' >/dev/null; then
+      # Nested object: an indented block, one line per subfield, never a
+      # flattened JSON blob.
+      local sk
+      assert_contains "$toon" "
+$k:
+" "TOON must open a block for object field $k"
+      while IFS= read -r sk; do
+        printf '%s' "$toon" | grep -qE "^  $sk(\[[0-9]+\])?:( |$)" \
+          || fail "TOON $k block must carry subfield $sk, got: $toon"
+      done < <(printf '%s' "$json" | jq -r --arg k "$k" '.[$k] | keys_unsorted[]')
     else
       # Scalar: the key must appear as a "key: value" line.
       assert_contains "$toon" "$k: " "TOON must carry scalar field $k"
@@ -1921,7 +1935,23 @@ test_upstream_report_projects_drift_areas_and_skills() {
       and (.upstream | has("reason") | not)
   ' >/dev/null || fail "upstream drift was not projected faithfully: $(printf '%s' "$json" | jq -c .upstream)"
   [ ! -s "$home/net.log" ] || fail "reading the cached upstream report must make no network call"
-  pass "a cached ok upstream report projects counts, areas, and skills"
+
+  # The default (TOON) output is what the bearings gather step consumes: the
+  # same fields must be readable there, not collapsed into one escaped blob.
+  local toon
+  toon=$(run "$home" "$fakebin")
+  assert_contains "$toon" "
+upstream:
+  status: ok
+  behind: 57
+  ahead: 8" "TOON must render the upstream block as fields"
+  assert_contains "$toon" "  skills[2]: bearings,stow" "TOON must render the skill list as a scalar list"
+  assert_contains "$toon" "
+  areas:
+" "TOON must open a nested block for the area counts"
+  assert_contains "$toon" "    bin: 9" "TOON must render each area count as its own field"
+  printf '%s' "$toon" | grep -q 'upstream: "{' && fail "upstream must not render as an escaped JSON blob: $toon"
+  pass "a cached ok upstream report projects counts, areas, and skills in both formats"
 }
 
 test_upstream_unknown_and_absent_report_are_distinct() {
