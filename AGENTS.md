@@ -545,6 +545,12 @@ A promised final public reply is durable state, never conversation memory.
 Load `fmx-respond` before promising one, on a `public-followup ...` check wake, and whenever the session-start digest lists a public commitment awaiting delivery.
 Only the home holding the relay consent and thread binding ever posts it, so never ask a secondmate or crewmate to find the thread or send the reply, and never recover a terminal result by reading a `done:` sentence.
 
+## Third-party skill precedence
+
+Where an installed third-party or plugin skill covers ground firstmate's own skills, lifecycle, delivery path, or merge authority already own, the firstmate-owned contract wins and the third-party skill does not fire in its place.
+The recurring overlap areas are review, bug diagnosis, session handoff, intake and task shaping, captain questions, context restoration, and agent spawning; each has a firstmate owner named elsewhere in this file, and section 13 or the relevant operating section is the single owner of exactly which skill to load.
+This is not a ban: a third-party skill remains the right tool for work firstmate does not own.
+
 ## Captain instruction precedence
 
 A current, explicit, concrete captain instruction overrides any conflicting standing rule written above.
