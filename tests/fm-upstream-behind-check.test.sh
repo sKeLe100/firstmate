@@ -249,6 +249,37 @@ test_upstream_missing_default_branch() {
   pass "a reachable upstream without the default branch reports no-default-branch"
 }
 
+test_files_directly_under_skills_dir_are_not_named_as_skills() {
+  set -e
+  local home root upstream_src upstream_bare out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-skills-root-file"
+  upstream_src="$TMP_ROOT/upstream-src-skills-root"
+  new_repo "$upstream_src"
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-skills-root.git"
+  upstream_bare="$TMP_ROOT/upstream-skills-root.git"
+
+  git clone --quiet "$upstream_src" "$root"
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  # A file living directly at .agents/skills/ is not a skill directory.
+  mkdir -p "$upstream_src/.agents/skills/real-skill"
+  printf 'index\n' > "$upstream_src/.agents/skills/README.md"
+  printf 'body\n' > "$upstream_src/.agents/skills/real-skill/SKILL.md"
+  git -C "$upstream_src" add .agents
+  git -C "$upstream_src" commit -qm "skills index plus a real skill"
+  git -C "$upstream_src" push --quiet "$upstream_bare" main
+
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "area_count_agents_skills=2" "skills-root: both files count toward the area"
+  assert_contains "$out" "skill=real-skill" "skills-root: the real skill is named"
+  assert_contains "$out" "skills_total=1" "skills-root: only the real skill is totalled"
+  printf '%s' "$out" | grep -q '^skill=README.md$' && fail "skills-root: a bare file must not be named as a skill: $out"
+  pass "files directly under .agents/skills are counted but never named as skills"
+}
+
 test_reports_behind_and_ahead
 test_missing_upstream_remote
 test_unreachable_upstream
@@ -256,3 +287,4 @@ test_once_daily_noop_then_refreshes_after_interval
 test_summarizes_drift_by_area_and_skill
 test_bounds_skill_list_and_discloses_the_cut
 test_upstream_missing_default_branch
+test_files_directly_under_skills_dir_are_not_named_as_skills

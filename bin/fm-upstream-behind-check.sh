@@ -196,7 +196,7 @@ if [ "$behind" -gt 0 ]; then
   while IFS= read -r changed_file; do
     [ -n "$changed_file" ] || continue
     case "$changed_file" in
-      .agents/skills/*)
+      .agents/skills/*/*)
         area_agents_skills=$((area_agents_skills + 1))
         skill_name=${changed_file#.agents/skills/}
         skill_name=${skill_name%%/*}
@@ -205,6 +205,7 @@ if [ "$behind" -gt 0 ]; then
           *) skills_list="$skills_list $skill_name" ;;
         esac
         ;;
+      .agents/skills/*) area_agents_skills=$((area_agents_skills + 1)) ;;
       bin/*) area_bin=$((area_bin + 1)) ;;
       docs/*) area_docs=$((area_docs + 1)) ;;
       tests/*) area_tests=$((area_tests + 1)) ;;

@@ -243,7 +243,8 @@ if [ -f "$UPSTREAM_REPORT" ]; then
       | ([{k:"agents_skills",v:$a_skills},{k:"bin",v:$a_bin},{k:"docs",v:$a_docs},
           {k:"tests",v:$a_tests},{k:"other",v:$a_other}]
          | map(select(.v != "")) | map({(.k):(.v|tonumber)}) | add) as $areas
-      | $base + (if $areas != null then {areas:$areas} else {} end)')
+      | $base + (if $areas != null then {areas:$areas} else {} end)' 2>/dev/null) || UPSTREAM_JSON=null
+    [ -n "$UPSTREAM_JSON" ] || UPSTREAM_JSON=null
   fi
 fi
 
