@@ -82,9 +82,14 @@ if ! command -v tasks-axi >/dev/null 2>&1; then
   exit 1
 fi
 
+TMP_LIST="$(mktemp)"
+TMP_ERR="$(mktemp)"
+trap 'rm -f "$TMP_LIST" "$TMP_ERR"' EXIT
+
 FIELDS="blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority"
-if ! raw="$(cd "$FM_HOME" && tasks-axi list --state queued --fields "$FIELDS" --limit "$LIMIT" 2>&1)"; then
-  echo "fm-queue-snapshot: tasks-axi list failed: $raw" >&2
+if ! (cd "$FM_HOME" && tasks-axi list --state queued --fields "$FIELDS" --limit "$LIMIT") \
+  > "$TMP_LIST" 2> "$TMP_ERR"; then
+  echo "fm-queue-snapshot: tasks-axi list failed: $(cat "$TMP_ERR")" >&2
   exit 1
 fi
 
@@ -114,10 +119,6 @@ fi
 
 PROJECT_MODE_BIN="$SCRIPT_DIR/fm-project-mode.sh"
 
-TMP_LIST="$(mktemp)"
-trap 'rm -f "$TMP_LIST"' EXIT
-printf '%s\n' "$raw" > "$TMP_LIST"
-
 FM_QUEUE_PROJECT_MODE_BIN="$PROJECT_MODE_BIN" FM_QUEUE_DISPATCH_STATUS="$dispatch_status" python3 - "$TMP_LIST" <<'PY'
 import csv
 import os
@@ -127,31 +128,36 @@ import sys
 project_mode_bin = os.environ["FM_QUEUE_PROJECT_MODE_BIN"]
 dispatch_status = os.environ["FM_QUEUE_DISPATCH_STATUS"]
 
+WANTED = ("id", "title", "kind", "repo", "priority", "blocked", "blocked_by",
+          "held", "hold_kind", "hold_reason", "hold_until")
+
 rows = []
+columns = None
 in_block = False
 with open(sys.argv[1], encoding="utf-8") as fh:
     lines = fh.readlines()
 for line in lines:
     line = line.rstrip("\n")
     if line.startswith("tasks["):
+        header = line[line.index("{") + 1:line.rindex("}")] if "{" in line and "}" in line else ""
+        columns = [c.strip() for c in header.split(",") if c.strip()]
+        missing = [c for c in WANTED if c not in columns]
+        if missing:
+            sys.exit(
+                "fm-queue-snapshot: tasks-axi list header is missing "
+                + ", ".join(missing)
+            )
         in_block = True
         continue
     if line.startswith("help["):
         in_block = False
         continue
-    if not in_block or not line.startswith("  "):
+    if not in_block or not line.startswith("  ") or columns is None:
         continue
     fields = next(csv.reader([line.strip()]))
-    if len(fields) < 12:
+    if len(fields) < len(columns):
         continue
-    (task_id, _state, kind, repo, title, blocked, blocked_by,
-     held, hold_kind, hold_reason, hold_until, priority) = fields[:12]
-    rows.append({
-        "id": task_id, "title": title, "kind": kind, "repo": repo,
-        "priority": priority, "blocked": blocked, "blocked_by": blocked_by,
-        "held": held, "hold_kind": hold_kind, "hold_reason": hold_reason,
-        "hold_until": hold_until,
-    })
+    rows.append({name: fields[columns.index(name)] for name in WANTED})
 
 posture_cache = {}
 

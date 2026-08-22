@@ -276,4 +276,57 @@ case "$out" in
   *) fail "missing loud tasks-axi-not-found message: $out" ;;
 esac
 
+# 8. The row parser indexes columns by the header tasks-axi prints, not by
+#    fixed position, so an added base column cannot silently shift every value
+#    (project, kind, and therefore the autonomy verdict) into the wrong field.
+#    The stub speaks tasks-axi's documented list output contract.
+stub_dir="$TMP_ROOT/stub-bin"
+rm -rf "$stub_dir"
+cp -r "$(path_without tasks-axi)" "$stub_dir"
+cat > "$stub_dir/tasks-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'OUT'
+count: 1
+tasks[1]{id,state,epic,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority}:
+  shift-a,queued,none,ship,shift-proj,shifted item,no,none,no,"-","-","-","3"
+help[1]:
+  - Run `tasks-axi show <id>` for full notes on a task
+OUT
+STUB
+chmod +x "$stub_dir/tasks-axi"
+home=$(make_home header-indexed)
+printf '%s\n' '- shift-proj [direct-PR +yolo] - test project (added 2026-08-20)' > "$home/data/projects.md"
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir" "$SNAPSHOT")
+case "$out" in
+  *"shift-a,shifted item,ship,shift-proj,3,no,none,no,-,-,-,direct-PR on,autonomous-eligible,"*) ;;
+  *) fail "an extra base column shifted the parsed fields: $out" ;;
+esac
+
+# 9. A warning on tasks-axi's stderr is not folded into the parsed listing:
+#    a stray `help[` line there must not truncate the block or drop an item.
+cat > "$stub_dir/tasks-axi" <<'STUB'
+#!/usr/bin/env bash
+echo "help[1]: warn: backlog cache rebuilt" >&2
+echo "  noise,that,is,not,a,row" >&2
+cat <<'OUT'
+count: 2
+tasks[2]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority}:
+  warn-a,queued,ship,warn-proj,first item,no,none,no,"-","-","-","-"
+  warn-b,queued,ship,warn-proj,second item,no,none,no,"-","-","-","-"
+help[2]:
+  - Run `tasks-axi show <id>` for full notes on a task
+OUT
+STUB
+home=$(make_home stderr-noise)
+printf '%s\n' '- warn-proj [direct-PR +yolo] - test project (added 2026-08-20)' > "$home/data/projects.md"
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir" "$SNAPSHOT" 2>/dev/null)
+case "$out" in
+  *"count: 2"*) ;;
+  *) fail "stderr noise changed the reported count: $out" ;;
+esac
+case "$out" in
+  *warn-b*) ;;
+  *) fail "stderr noise truncated the listing: $out" ;;
+esac
+
 echo "PASS fm-queue-snapshot.test.sh"
