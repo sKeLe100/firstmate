@@ -7,6 +7,8 @@
 #     and never mutates the checked repo (no branch, HEAD, or worktree change).
 #   - A missing `upstream` remote degrades quietly to status=unknown.
 #   - An unreachable `upstream` remote degrades quietly to status=unknown.
+#   - A reachable `upstream` that lacks the default branch is reported as
+#     no-default-branch, distinctly from an unreachable network.
 #   - A normal invocation is a no-op once a report already exists within the
 #     gate interval; it only redoes the work once that interval has elapsed
 #     (or --force is passed).
@@ -223,9 +225,34 @@ test_bounds_skill_list_and_discloses_the_cut() {
   pass "bounds the skill list and discloses how many were cut"
 }
 
+test_upstream_missing_default_branch() {
+  set -e
+  local home root upstream_src upstream_bare out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-missing-default"
+  upstream_src="$TMP_ROOT/upstream-src-missing-default"
+
+  # Upstream is perfectly reachable but publishes only `master`, while this
+  # home's default branch is `main` - a naming mismatch, not a network fault.
+  new_repo "$upstream_src"
+  git -C "$upstream_src" branch -m main master
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-missing-default.git"
+  upstream_bare="$TMP_ROOT/upstream-missing-default.git"
+
+  new_repo "$root"
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "status=unknown" "missing-default: degrades to unknown status"
+  assert_contains "$out" "reason=no-default-branch" "missing-default: names the missing branch, not a network fault"
+  pass "a reachable upstream without the default branch reports no-default-branch"
+}
+
 test_reports_behind_and_ahead
 test_missing_upstream_remote
 test_unreachable_upstream
 test_once_daily_noop_then_refreshes_after_interval
 test_summarizes_drift_by_area_and_skill
 test_bounds_skill_list_and_discloses_the_cut
+test_upstream_missing_default_branch

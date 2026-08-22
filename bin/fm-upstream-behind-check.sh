@@ -71,8 +71,6 @@ REPORT_FILE="$STATE/.upstream-behind-check.report"
 
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 # fm-ff-lib.sh's default_branch() is the one owner of "which branch is this
 # repo's default", already used by the self-update fast-forward; reused here
 # read-only, never through any of that library's mutating helpers.
@@ -80,7 +78,7 @@ REPORT_FILE="$STATE/.upstream-behind-check.report"
 . "$SCRIPT_DIR/fm-ff-lib.sh"
 
 usage() {
-  sed -n '2,32p' "$SCRIPT_DIR/fm-upstream-behind-check.sh" | sed 's/^# \{0,1\}//'
+  sed -n '2,63p' "$SCRIPT_DIR/fm-upstream-behind-check.sh" | sed 's/^# \{0,1\}//'
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -110,7 +108,7 @@ write_atomic() {  # <dest>, content on stdin
 
 report_field() {  # <key>
   [ -f "$REPORT_FILE" ] || return 0
-  tr ' ' '\n' < "$REPORT_FILE" | sed -n "s/^$1=//p" | tail -1
+  sed -n "s/^$1=//p" "$REPORT_FILE" | tail -1
 }
 
 interval="${FM_UPSTREAM_CHECK_INTERVAL:-86400}"
@@ -155,7 +153,17 @@ timeout="${FM_UPSTREAM_CHECK_TIMEOUT:-20}"
 case "$timeout" in ''|*[!0-9]*|0) timeout=20 ;; esac
 
 if ! fm_run_timed "$timeout" git -C "$FM_ROOT" fetch --quiet --no-tags upstream "$default" >/dev/null 2>&1; then
-  publish unknown "reason=unreachable"
+  # A fetch failure is ambiguous: the remote may be unreachable, or reachable
+  # but simply missing this branch (the default branch is resolved from
+  # *origin*'s HEAD, which need not match upstream's). Probe the ref itself so
+  # each degrade case gets its own honest reason.
+  if fm_run_timed "$timeout" git -C "$FM_ROOT" ls-remote --quiet --exit-code upstream "refs/heads/$default" >/dev/null 2>&1; then
+    publish unknown "reason=unreachable"
+  elif fm_run_timed "$timeout" git -C "$FM_ROOT" ls-remote --quiet upstream >/dev/null 2>&1; then
+    publish unknown "reason=no-default-branch"
+  else
+    publish unknown "reason=unreachable"
+  fi
   exit 0
 fi
 
