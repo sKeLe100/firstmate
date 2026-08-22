@@ -280,6 +280,56 @@ test_files_directly_under_skills_dir_are_not_named_as_skills() {
   pass "files directly under .agents/skills are counted but never named as skills"
 }
 
+test_degrade_preserves_last_known_good_and_retries() {
+  set -e
+  local home root upstream_src upstream_bare report ok_checked out
+  home=$(new_home)
+  root="$TMP_ROOT/repo-stale-carry"
+  upstream_src="$TMP_ROOT/upstream-src-stale"
+  new_repo "$upstream_src"
+  git clone --quiet --bare "$upstream_src" "$TMP_ROOT/upstream-stale.git"
+  upstream_bare="$TMP_ROOT/upstream-stale.git"
+
+  printf 'u2\n' >> "$upstream_src/seed.txt"
+  git -C "$upstream_src" commit -qam u2
+  git -C "$upstream_src" push --quiet "$upstream_bare" main
+
+  git clone --quiet "$upstream_bare" "$root"
+  git -C "$root" reset -q --hard HEAD~1
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$upstream_bare"
+
+  out=$(run_check "$home" "$root" --force)
+  assert_contains "$out" "behind=1" "stale-carry: the good result is recorded first"
+  report="$home/state/.upstream-behind-check.report"
+  ok_checked=$(sed -n 's/^checked_at=//p' "$report" | tail -1)
+
+  # The remote disappears from under the home; the next check must degrade.
+  git -C "$root" remote set-url upstream "file://$TMP_ROOT/vanished.git"
+  out=$(run_check "$home" "$root" --force)
+
+  assert_contains "$out" "status=unknown" "stale-carry: degrades to unknown"
+  assert_contains "$out" "reason=unreachable" "stale-carry: names the reason"
+  assert_contains "$out" "stale_behind=1" "stale-carry: last-known behind survives the degrade"
+  assert_contains "$out" "stale_ahead=0" "stale-carry: last-known ahead survives the degrade"
+  assert_contains "$out" "stale_checked_at=$ok_checked" "stale-carry: discloses when the good result was taken"
+  [ "$(sed -n 's/^checked_at=//p' "$report" | tail -1)" = "$ok_checked" ] \
+    || fail "stale-carry: a degrade must not advance the gate stamp past the good result: $(cat "$report")"
+
+  # Because the stamp did not advance, an ordinary (non-forced) call retries
+  # rather than sitting on the unknown for the rest of the day.
+  out=$(FM_UPSTREAM_CHECK_INTERVAL=1 run_check "$home" "$root")
+  assert_contains "$out" "reason=unreachable" "stale-carry: an unforced call retries instead of caching the unknown"
+  assert_contains "$out" "stale_behind=1" "stale-carry: repeated degrades keep carrying the last-known result"
+
+  # Once the remote is reachable again, the report goes back to a fresh ok.
+  git -C "$root" remote set-url upstream "$upstream_bare"
+  out=$(run_check "$home" "$root" --force)
+  assert_contains "$out" "status=ok" "stale-carry: recovery republishes a live result"
+  printf '%s' "$out" | grep -q '^stale_' && fail "stale-carry: a recovered ok must not keep stale fields: $out"
+  pass "a degrade preserves the last-known-good counts and leaves the gate open for a retry"
+}
+
 test_reports_behind_and_ahead
 test_missing_upstream_remote
 test_unreachable_upstream
@@ -288,3 +338,4 @@ test_summarizes_drift_by_area_and_skill
 test_bounds_skill_list_and_discloses_the_cut
 test_upstream_missing_default_branch
 test_files_directly_under_skills_dir_are_not_named_as_skills
+test_degrade_preserves_last_known_good_and_retries

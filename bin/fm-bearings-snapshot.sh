@@ -197,6 +197,7 @@ if [ -f "$UPSTREAM_REPORT" ]; then
   ustatus='' ubehind='' uahead='' unewest='' ureason='' uchecked=''
   uarea_skills='' uarea_bin='' uarea_docs='' uarea_tests='' uarea_other=''
   uskills_total='' uskills_shown='' udetail_hint=''
+  ustale_behind='' ustale_ahead='' ustale_newest='' ustale_checked=''
   UPSTREAM_SKILLS_JSON='[]'
   skill_names=()
   while IFS= read -r kv || [ -n "$kv" ]; do
@@ -215,6 +216,10 @@ if [ -f "$UPSTREAM_REPORT" ]; then
       skills_total=*) uskills_total=${kv#skills_total=} ;;
       skills_shown=*) uskills_shown=${kv#skills_shown=} ;;
       detail_hint=*) udetail_hint=${kv#detail_hint=} ;;
+      stale_behind=*) ustale_behind=${kv#stale_behind=} ;;
+      stale_ahead=*) ustale_ahead=${kv#stale_ahead=} ;;
+      stale_newest_upstream_date=*) ustale_newest=${kv#stale_newest_upstream_date=} ;;
+      stale_checked_at=*) ustale_checked=${kv#stale_checked_at=} ;;
       skill=*) skill_names+=("${kv#skill=}") ;;
     esac
   done < "$UPSTREAM_REPORT"
@@ -228,7 +233,10 @@ if [ -f "$UPSTREAM_REPORT" ]; then
       --arg a_skills "$uarea_skills" --arg a_bin "$uarea_bin" --arg a_docs "$uarea_docs" \
       --arg a_tests "$uarea_tests" --arg a_other "$uarea_other" \
       --arg skills_total "$uskills_total" --arg skills_shown "$uskills_shown" \
-      --arg detail_hint "$udetail_hint" --argjson skills "$UPSTREAM_SKILLS_JSON" '
+      --arg detail_hint "$udetail_hint" \
+      --arg s_behind "$ustale_behind" --arg s_ahead "$ustale_ahead" \
+      --arg s_newest "$ustale_newest" --arg s_checked "$ustale_checked" \
+      --argjson skills "$UPSTREAM_SKILLS_JSON" '
       ({status:$status}
        + (if $behind != "" then {behind:($behind|tonumber)} else {} end)
        + (if $ahead != "" then {ahead:($ahead|tonumber)} else {} end)
@@ -239,6 +247,10 @@ if [ -f "$UPSTREAM_REPORT" ]; then
        + (if $skills_shown != "" then {skills_shown:($skills_shown|tonumber)} else {} end)
        + (if $detail_hint != "" then {detail_hint:$detail_hint} else {} end)
        + (if ($skills|length) > 0 then {skills:$skills} else {} end)
+       + (if $s_behind != "" then {stale_behind:($s_behind|tonumber)} else {} end)
+       + (if $s_ahead != "" then {stale_ahead:($s_ahead|tonumber)} else {} end)
+       + (if $s_newest != "" then {stale_newest_upstream_date:$s_newest} else {} end)
+       + (if $s_checked != "" then {stale_checked_at:($s_checked|tonumber)} else {} end)
       ) as $base
       | ([{k:"agents_skills",v:$a_skills},{k:"bin",v:$a_bin},{k:"docs",v:$a_docs},
           {k:"tests",v:$a_tests},{k:"other",v:$a_other}]

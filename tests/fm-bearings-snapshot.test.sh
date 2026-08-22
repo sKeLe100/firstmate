@@ -1940,7 +1940,18 @@ test_upstream_unknown_and_absent_report_are_distinct() {
       and (.upstream | has("behind") | not) and (.upstream | has("areas") | not)
       and (.upstream | has("skills") | not)
   ' >/dev/null || fail "unknown report was not projected as a reasoned unknown: $(printf '%s' "$json" | jq -c .upstream)"
-  pass "an unknown upstream report is distinct from an absent one"
+  write_upstream_report "$home" "status=unknown" "reason=unreachable" \
+    "stale_behind=57" "stale_ahead=8" "stale_newest_upstream_date=2026-08-20" \
+    "stale_checked_at=1786900000" "checked_at=1786900000"
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    .upstream.status == "unknown" and .upstream.reason == "unreachable"
+      and .upstream.stale_behind == 57 and .upstream.stale_ahead == 8
+      and .upstream.stale_newest_upstream_date == "2026-08-20"
+      and .upstream.stale_checked_at == 1786900000
+      and (.upstream | has("behind") | not)
+  ' >/dev/null || fail "a degraded report must carry its last-known counts: $(printf '%s' "$json" | jq -c .upstream)"
+  pass "an unknown upstream report is distinct from an absent one and carries stale counts"
 }
 
 test_corrupt_upstream_report_degrades_without_breaking_the_snapshot() {

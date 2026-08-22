@@ -50,7 +50,8 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    When `upstream.areas` is present, add the per-area changed-file counts (`agents_skills`, `bin`, `docs`, `tests`, `other`) to that same line so the captain sees WHERE the drift is, not just its size.
    When `upstream.skills` is present, name those changed skills explicitly right after the area breakdown - they are what the captain most wants visibility on - and if `skills_total` exceeds `skills_shown`, say how many more were cut.
    Point to `upstream.detail_hint`'s command for the full commit list rather than ever enumerating individual commits in the digest.
-   Omit the whole line when `upstream` is absent, its `status` is `unknown`, or both counts are zero.
+   When `status: unknown` carries `stale_behind`/`stale_ahead`, still render the line from those last-known counts, but mark it explicitly as a stale reading with the `reason` and the `stale_checked_at` date, never as a current one.
+   Omit the whole line when `upstream` is absent, both counts are zero, or its `status` is `unknown` with no `stale_*` counts to fall back on.
 
 2. **Compose the four-section chat digest from the fresh snapshot.**
    The gather step is deterministic; your judgment is scoped to ranking the command's facts by what matters right now and writing scannable captain-facing prose.

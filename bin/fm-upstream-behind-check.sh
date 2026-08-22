@@ -54,7 +54,16 @@
 # or, degrading quietly:
 #   status=unknown
 #   reason=<no-upstream-remote|no-default-branch|unreachable>
+#   stale_behind=<N>               (last known ok result, when there was one)
+#   stale_ahead=<N>
+#   stale_newest_upstream_date=<YYYY-MM-DD>
+#   stale_checked_at=<epoch>
 #   checked_at=<epoch>
+#
+# A degrade never blanks a last-known-good result: it carries the previous ok
+# report's counts forward as stale_* fields, and keeps that report's own
+# checked_at as its gate stamp, so a single offline morning neither erases the
+# digest's drift summary nor suppresses the next attempt for the rest of the day.
 #
 # bin/fm-bearings-snapshot.sh reads that cached report file directly (a local
 # read, no network) to surface it in the morning debrief; it never invokes
@@ -78,7 +87,8 @@ REPORT_FILE="$STATE/.upstream-behind-check.report"
 . "$SCRIPT_DIR/fm-ff-lib.sh"
 
 usage() {
-  sed -n '2,63p' "$SCRIPT_DIR/fm-upstream-behind-check.sh" | sed 's/^# \{0,1\}//'
+  sed -n '2,/^[^#]/p' "$SCRIPT_DIR/fm-upstream-behind-check.sh" \
+    | sed -n 's/^# \{0,1\}//p'
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -127,25 +137,59 @@ if [ "$force" -ne 1 ] && [ -f "$REPORT_FILE" ]; then
   esac
 fi
 
+PUBLISH_CHECKED_AT=""
+
 publish() {  # <status> [key=value...] - one line per field, newline-joined.
-  local status=$1 block
+  local status=$1 block stamp
   shift
+  stamp=${PUBLISH_CHECKED_AT:-$(now)}
   block="status=$status"
   for kv in "$@"; do block="$block
 $kv"; done
   block="$block
-checked_at=$(now)"
+checked_at=$stamp"
   printf '%s\n' "$block" | write_atomic "$REPORT_FILE" || true
   printf '%s\n' "$block"
 }
 
+PRIOR_STATUS=$(report_field status)
+PRIOR_BEHIND=$(report_field behind)
+PRIOR_AHEAD=$(report_field ahead)
+PRIOR_NEWEST=$(report_field newest_upstream_date)
+PRIOR_CHECKED=$(report_field checked_at)
+PRIOR_STALE_BEHIND=$(report_field stale_behind)
+PRIOR_STALE_AHEAD=$(report_field stale_ahead)
+PRIOR_STALE_NEWEST=$(report_field stale_newest_upstream_date)
+PRIOR_STALE_CHECKED=$(report_field stale_checked_at)
+
+degrade() {  # <reason> - publish an unknown that carries any last-known-good forward.
+  local fields
+  fields=("reason=$1")
+  local s_behind=$PRIOR_STALE_BEHIND s_ahead=$PRIOR_STALE_AHEAD
+  local s_newest=$PRIOR_STALE_NEWEST s_checked=$PRIOR_STALE_CHECKED
+  if [ "$PRIOR_STATUS" = ok ]; then
+    s_behind=$PRIOR_BEHIND
+    s_ahead=$PRIOR_AHEAD
+    s_newest=$PRIOR_NEWEST
+    s_checked=$PRIOR_CHECKED
+  fi
+  [ -z "$s_behind" ] || fields+=("stale_behind=$s_behind")
+  [ -z "$s_ahead" ] || fields+=("stale_ahead=$s_ahead")
+  [ -z "$s_newest" ] || fields+=("stale_newest_upstream_date=$s_newest")
+  if [ -n "$s_checked" ]; then
+    fields+=("stale_checked_at=$s_checked")
+    PUBLISH_CHECKED_AT=$s_checked
+  fi
+  publish unknown "${fields[@]}"
+}
+
 if ! git -C "$FM_ROOT" remote get-url upstream >/dev/null 2>&1; then
-  publish unknown "reason=no-upstream-remote"
+  degrade no-upstream-remote
   exit 0
 fi
 
 default=$(default_branch "$FM_ROOT") || {
-  publish unknown "reason=no-default-branch"
+  degrade no-default-branch
   exit 0
 }
 
@@ -155,28 +199,28 @@ case "$timeout" in ''|*[!0-9]*|0) timeout=20 ;; esac
 if ! fm_run_timed "$timeout" git -C "$FM_ROOT" fetch --quiet --no-tags upstream "$default" >/dev/null 2>&1; then
   # A fetch failure is ambiguous: the remote may be unreachable, or reachable
   # but simply missing this branch (the default branch is resolved from
-  # *origin*'s HEAD, which need not match upstream's). Probe the ref itself so
-  # each degrade case gets its own honest reason.
-  if fm_run_timed "$timeout" git -C "$FM_ROOT" ls-remote --quiet --exit-code upstream "refs/heads/$default" >/dev/null 2>&1; then
-    publish unknown "reason=unreachable"
-  elif fm_run_timed "$timeout" git -C "$FM_ROOT" ls-remote --quiet upstream >/dev/null 2>&1; then
-    publish unknown "reason=no-default-branch"
-  else
-    publish unknown "reason=unreachable"
-  fi
+  # *origin*'s HEAD, which need not match upstream's). One bounded ls-remote
+  # settles it - exit status 2 means the remote answered and has no such ref,
+  # anything else leaves the remote itself in doubt - so the offline worst case
+  # stays at two bounds, not three.
+  fm_run_timed "$timeout" git -C "$FM_ROOT" ls-remote --quiet --exit-code upstream "refs/heads/$default" >/dev/null 2>&1
+  case $? in
+    2) degrade no-default-branch ;;
+    *) degrade unreachable ;;
+  esac
   exit 0
 fi
 
 if ! git -C "$FM_ROOT" show-ref --verify --quiet "refs/remotes/upstream/$default" \
   || ! git -C "$FM_ROOT" show-ref --verify --quiet "refs/heads/$default"; then
-  publish unknown "reason=no-default-branch"
+  degrade no-default-branch
   exit 0
 fi
 
 counts=$(git -C "$FM_ROOT" rev-list --left-right --count \
   "refs/remotes/upstream/$default...refs/heads/$default" 2>/dev/null) || counts=
 if [ -z "$counts" ]; then
-  publish unknown "reason=unreachable"
+  degrade unreachable
   exit 0
 fi
 behind=${counts%%$'\t'*}
