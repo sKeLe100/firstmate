@@ -350,4 +350,25 @@ case "$out" in
   *) fail "missing loud short-queue message: $out" ;;
 esac
 
+# 11. tasks-axi renders rows in TOON, which escapes an embedded quote as \"
+#     rather than doubling it. A title carrying both a quote and a comma must
+#     not shift the later columns, or a captain-kind hold reads as no hold and
+#     the item flips to "clears itself".
+home=$(make_home quoted-title)
+printf '%s\n' '- quote-proj [direct-PR +yolo] - test project (added 2026-08-20)' > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add quote-a 'add "queue" skill, read-only' --kind ship --repo quote-proj >/dev/null
+  tasks-axi hold quote-a --reason "needs a call" --kind captain >/dev/null
+)
+out=$(run_snapshot "$home")
+case "$out" in
+  *'yes,captain,needs a call,-,direct-PR on,captain-gated,captain kind or captain-kind hold'*) ;;
+  *) fail "a quoted, comma-bearing title shifted the parsed columns: $out" ;;
+esac
+case "$out" in
+  *'add ""queue"" skill, read-only'*) ;;
+  *) fail "the quoted title was not preserved: $out" ;;
+esac
+
 echo "PASS fm-queue-snapshot.test.sh"

@@ -128,6 +128,34 @@ import sys
 project_mode_bin = os.environ["FM_QUEUE_PROJECT_MODE_BIN"]
 dispatch_status = os.environ["FM_QUEUE_DISPATCH_STATUS"]
 
+TOON_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", '"': '"'}
+
+
+def split_toon_row(line):
+    fields = []
+    value = []
+    quoted = False
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if ch == '"' and not value and not quoted:
+            quoted = True
+        elif quoted and ch == "\\" and i + 1 < len(line):
+            nxt = line[i + 1]
+            value.append(TOON_ESCAPES.get(nxt, nxt))
+            i += 1
+        elif quoted and ch == '"':
+            quoted = False
+        elif not quoted and ch == ",":
+            fields.append("".join(value))
+            value = []
+        else:
+            value.append(ch)
+        i += 1
+    fields.append("".join(value))
+    return fields
+
+
 WANTED = ("id", "title", "kind", "repo", "priority", "blocked", "blocked_by",
           "held", "hold_kind", "hold_reason", "hold_until")
 
@@ -162,7 +190,7 @@ for line in lines:
         continue
     if not in_block or not line.startswith("  ") or columns is None:
         continue
-    fields = next(csv.reader([line.strip()]))
+    fields = split_toon_row(line.strip())
     if len(fields) < len(columns):
         continue
     rows.append({name: fields[columns.index(name)] for name in WANTED})
