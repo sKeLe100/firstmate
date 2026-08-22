@@ -389,4 +389,24 @@ esac
 raw_tab=$(printf '%s\n' "$out" | grep -cP '\t') || true
 [ "$raw_tab" = 0 ] || fail "a raw control character reached the emitted rows: $out"
 
+# 13. Every line of the snapshot is LF-terminated: an item row must not carry a
+#     trailing CR that a consumer splitting on newlines would read as part of
+#     autonomy_reason. A literal backslash in a title is doubled, as documented.
+home=$(make_home line-endings)
+printf '%s\n' '- crlf-proj [direct-PR +yolo] - test project (added 2026-08-20)' > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add crlf-a 'fix C:\path' --kind captain --repo crlf-proj >/dev/null
+)
+run_snapshot "$home" > "$TMP_ROOT/line-endings.out"
+carriage=$(grep -c $'\r' "$TMP_ROOT/line-endings.out") || true
+[ "$carriage" = 0 ] || fail "the snapshot emitted CR characters: $(cat -A "$TMP_ROOT/line-endings.out")"
+last_field=$(grep '^  crlf-a' "$TMP_ROOT/line-endings.out" | sed 's/.*,//')
+[ "$last_field" = "captain kind or captain-kind hold" ] \
+  || fail "autonomy_reason was not the documented value: [$last_field]"
+case "$(cat "$TMP_ROOT/line-endings.out")" in
+  *'crlf-a,fix C:\\path,captain,crlf-proj'*) ;;
+  *) fail "a literal backslash was not doubled as documented: $(cat "$TMP_ROOT/line-endings.out")" ;;
+esac
+
 echo "PASS fm-queue-snapshot.test.sh"

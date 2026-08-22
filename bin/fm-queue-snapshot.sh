@@ -47,7 +47,9 @@
 # Output (stable field order; the rows are RFC4180 CSV, so an embedded quote is
 # doubled - "" - not backslash-escaped as tasks-axi's own TOON input is, and a
 # newline, carriage return, or tab inside a value is written back as the literal
-# two-character \n, \r, or \t so every item stays on exactly one line):
+# two-character \n, \r, or \t - with any literal backslash doubled to \\ so those
+# escapes stay unambiguous - so every item stays on exactly one LF-terminated
+# line):
 #   count: <n>
 #   items[<n>]{id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
 #     <csv row>...
@@ -58,7 +60,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,59p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -255,7 +257,7 @@ if out_rows:
     cols = ("id,title,kind,repo,priority,blocked,blocked_by,held,"
             "hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason")
     print(f"items[{len(out_rows)}]{{{cols}}}:")
-    writer = csv.writer(sys.stdout)
+    writer = csv.writer(sys.stdout, lineterminator="\n")
     for row in out_rows:
         cells = [one_line(str(v)) for v in row]
         writer.writerow(["  " + cells[0]] + cells[1:])
