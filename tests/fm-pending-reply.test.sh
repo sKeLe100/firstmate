@@ -331,6 +331,11 @@ test_remote_reply_in_transit_resolves_without_escalation() {
   corr=$(fm_pending_reply_create "$home" "$state" "hibit" "why is phase 7 stuck")
   fm_pending_reply_mark_delivered "$state" "$corr"
   fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  # The mirror polls continuously in the background even while we wait for the
+  # request turn to complete, so its watermark is already caught up by the
+  # time the grace period elapses; simulate that instead of leaving the
+  # recovery send blocked on stale reply-channel evidence.
+  fm_pending_reply_note_remote_channel_caught_up "$state" hibit "$FM_PENDING_REPLY_NOW"
   export FM_PENDING_REPLY_SEND_HOOK='true'
   fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
   fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
@@ -366,6 +371,11 @@ test_remote_genuinely_missing_reply_still_escalates() {
   corr=$(fm_pending_reply_create "$home" "$state" "hibit" "why is phase 7 stuck")
   fm_pending_reply_mark_delivered "$state" "$corr"
   fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  # The mirror polls continuously in the background even while we wait for the
+  # request turn to complete, so its watermark is already caught up by the
+  # time the grace period elapses; simulate that instead of leaving the
+  # recovery send blocked on stale reply-channel evidence.
+  fm_pending_reply_note_remote_channel_caught_up "$state" hibit "$FM_PENDING_REPLY_NOW"
   export FM_PENDING_REPLY_SEND_HOOK='true'
   fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
   fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
