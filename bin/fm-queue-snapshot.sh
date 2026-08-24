@@ -84,8 +84,9 @@
 #     model-scoped and no account-wide effectiveAvailability entry) - never
 #     guessed as yes or no from any other window. A lane with a model is bound
 #     by whichever is lower of that model's own "model:<name>" scoped
-#     availability and the account-wide number ("all_models" or
-#     "all_products"), and the reason names that binding scope, so neither a
+#     availability and the account-wide number (every "all_models" and
+#     "all_products" entry the provider publishes, whichever of them is
+#     lowest), and the reason names that binding scope, so neither a
 #     model-exhausted lane nor an exhausted account is ever reported
 #     available on the other one's headroom. A "model:<name>" scope binds a
 #     lane only when its token equals the lane's model exactly, or is one of
@@ -443,11 +444,9 @@ def availability_for(harness, model, quota_data):
     scoped = pick_model_scoped(availability, model) if model else None
     if scoped:
         candidates.extend(scoped)
-    account = next(
-        (a for a in availability if a.get("scope") in ACCOUNT_WIDE_SCOPES), None
+    candidates.extend(
+        a for a in availability if a.get("scope") in ACCOUNT_WIDE_SCOPES
     )
-    if account is not None:
-        candidates.append(account)
     numeric = [
         a for a in candidates
         if isinstance(a.get("effectivePercentRemaining"), (int, float))

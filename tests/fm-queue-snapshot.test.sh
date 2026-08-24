@@ -649,8 +649,9 @@ STUB
   esac
 
   # An account-wide scope spelled "all_products" bounds the lane exactly like
-  # "all_models", and an exhausted one is never reported available on the
-  # strength of some other window the provider happens to publish.
+  # "all_models": when a provider publishes both, the lower of the two binds
+  # whatever order they are listed in, and an exhausted one is never reported
+  # available on the strength of the other or of some other window.
   home=$(make_home hierarchy-all-products)
   : > "$home/data/projects.md"
   printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
@@ -661,6 +662,7 @@ cat <<'JSON'
 {"providers":[{"provider":"claude",
   "windows":[{"kind":"session","label":"session","percentRemaining":80}],
   "quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
   {"scope":"all_products","effectivePercentRemaining":0}
 ]}}]}
 JSON
