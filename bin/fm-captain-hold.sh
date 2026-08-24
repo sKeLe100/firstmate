@@ -413,8 +413,8 @@ verify_hold_archived() {  # <hold-id> <archive-path>
     *) fail "archived backlog entry $id in $archive is not marked done" ;;
   esac
   case "$header" in
-    *"(kind: captain)"*) : ;;
-    *) fail "archived backlog entry $id in $archive is not kind captain" ;;
+    *"(hold-kind: captain)"*) : ;;
+    *) fail "archived backlog entry $id in $archive is not hold-kind captain" ;;
   esac
   body=$(archive_entry_body "$archive" "$id")
   if body_has_resolution_record "$body"; then
