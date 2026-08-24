@@ -68,7 +68,9 @@
 #     <csv row>...
 #   dispatch_config: absent|present|invalid|unverified
 #   hierarchy_lanes: unavailable (dispatch_config: <status>)
-#     -- OR, only when dispatch_config is "present" --
+#     -- OR "unavailable (config defines no dispatch profiles)" when the
+#     config is present but names no rule/default profile at all --
+#     -- OR, only when dispatch_config is "present" and it names profiles --
 #   hierarchy_lanes[<n>]{source,for,harness,model,effort,available,availability_reason}:
 #     <csv row>...
 #     `source` is "rule" (one row per config rule, `for` = that rule's own
@@ -78,7 +80,9 @@
 #     omits them. `available` is yes/no/unknown: unknown means quota-axi
 #     produced no evidence for that harness (not installed/authenticated, or
 #     this script has no provider mapping for it) - never guessed as yes or
-#     no. This block never lists a lane firstmate's dispatch config does not
+#     no. A lane with a model prefers that model's own "model:<name>" scoped
+#     availability when quota-axi reports one, so a model-exhausted lane is
+#     never reported available on the account-wide all_models number. This block never lists a lane firstmate's dispatch config does not
 #     itself configure, so a harness with no configured rule (a retired
 #     subscription, for example) never appears here.
 #   live_slots: <n>
@@ -95,7 +99,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,94p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,98p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -369,6 +373,16 @@ def quota_lookup():
         return None
 
 
+def scope_matches_model(scope, model):
+    if not isinstance(scope, str) or not scope.startswith("model:"):
+        return False
+    token = scope.split(":", 1)[1].strip().lower()
+    if not token:
+        return False
+    name = model.strip().lower()
+    return token == name or token in name or name in token
+
+
 def availability_for(harness, model, quota_data):
     provider_name = HARNESS_TO_PROVIDER.get(harness)
     if provider_name is None:
@@ -385,13 +399,7 @@ def availability_for(harness, model, quota_data):
     scoped = None
     if model:
         scoped = next(
-            (
-                a for a in availability
-                if a.get("scope") == "model"
-                and model.lower() in ",".join(
-                    (a.get("boundedBy") or []) + (a.get("limitingWindowIds") or [])
-                ).lower()
-            ),
+            (a for a in availability if scope_matches_model(a.get("scope"), model)),
             None,
         )
     if scoped is None:
@@ -434,11 +442,14 @@ else:
         )
         lane_rows.append([source, for_text, harness, model, effort, available, avail_reason])
 
-    print(f"hierarchy_lanes[{len(lane_rows)}]{{source,for,harness,model,effort,available,availability_reason}}:")
-    writer = csv.writer(sys.stdout, lineterminator="\n")
-    for row in lane_rows:
-        cells = [one_line(str(v)) for v in row]
-        writer.writerow(["  " + cells[0]] + cells[1:])
+    if lane_rows:
+        print(f"hierarchy_lanes[{len(lane_rows)}]{{source,for,harness,model,effort,available,availability_reason}}:")
+        writer = csv.writer(sys.stdout, lineterminator="\n")
+        for row in lane_rows:
+            cells = [one_line(str(v)) for v in row]
+            writer.writerow(["  " + cells[0]] + cells[1:])
+    else:
+        print("hierarchy_lanes: unavailable (config defines no dispatch profiles)")
 
 live_slots = len(glob.glob(os.path.join(state_dir, "*.meta")))
 print(f"live_slots: {live_slots}")

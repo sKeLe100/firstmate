@@ -564,6 +564,53 @@ EOF
     *"default,default (no rule matched),claude,-,low,no,0% remaining"*) ;;
     *) fail "an exhausted window was not reported unavailable: $out" ;;
   esac
+
+  # A lane whose own model window is exhausted is reported unavailable even
+  # when the account-wide all_models number still has headroom, matching
+  # quota-axi's real "model:<name>" availability scope.
+  home=$(make_home hierarchy-model-scope)
+  : > "$home/data/projects.md"
+  cat > "$home/config/crew-dispatch.json" <<'CFG'
+{
+  "rules": [
+    { "when": "hard work", "use": { "harness": "claude", "model": "claude-opus-5", "effort": "high" },
+      "why": "senior" }
+  ],
+  "default": { "harness": "claude", "model": "claude-fable-5", "effort": "low" }
+}
+CFG
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":28},
+  {"scope":"model:opus","effectivePercentRemaining":0},
+  {"scope":"model:fable","effectivePercentRemaining":28}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"rule,hard work,claude,claude-opus-5,high,no,0% remaining (model:opus)"*) ;;
+    *) fail "model-scoped exhaustion was not preferred over the all_models number: $out" ;;
+  esac
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-fable-5,low,yes,28% remaining (model:fable)"*) ;;
+    *) fail "a lane with headroom in its own model scope was not reported available: $out" ;;
+  esac
+
+  # A present config that names no rule/default profile reports the header as
+  # unavailable rather than emitting a row-less hierarchy_lanes block.
+  home=$(make_home hierarchy-no-profiles)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"rules":[]}' > "$home/config/crew-dispatch.json"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"hierarchy_lanes[0]"*) fail "empty lane set emitted a row-less header: $out" ;;
+    *"hierarchy_lanes: unavailable"*) ;;
+    *) fail "expected hierarchy_lanes unavailable for a profile-less config: $out" ;;
+  esac
 fi
 
 # 18. live_slots counts state/*.meta entries currently tracked in this home,
