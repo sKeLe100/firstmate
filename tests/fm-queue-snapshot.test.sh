@@ -600,6 +600,52 @@ STUB
     *) fail "a lane with headroom in its own model scope was not reported available: $out" ;;
   esac
 
+  # An exhausted account-wide window binds the lane even when its own model
+  # window still has headroom, and vice versa: the lower of the two wins and
+  # the reason names that binding scope.
+  home=$(make_home hierarchy-account-exhausted)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":0},
+  {"scope":"model:opus","effectivePercentRemaining":40}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-opus-5,high,no,0% remaining (all_models)"*) ;;
+    *) fail "an exhausted account was reported available on model-window headroom: $out" ;;
+  esac
+
+  # A more specific scope for a different model never binds a lane whose own
+  # model scope is present: the exact token match wins over a substring one.
+  home=$(make_home hierarchy-scope-exact)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"gpt-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"model:gpt-5-codex","effectivePercentRemaining":3},
+  {"scope":"model:gpt-5","effectivePercentRemaining":55}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,gpt-5,high,yes,55% remaining (model:gpt-5)"*) ;;
+    *) fail "a lane bound to another model's scope instead of its own exact scope: $out" ;;
+  esac
+
   # A present config that names no rule/default profile reports the header as
   # unavailable rather than emitting a row-less hierarchy_lanes block.
   home=$(make_home hierarchy-no-profiles)

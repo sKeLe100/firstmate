@@ -80,9 +80,11 @@
 #     omits them. `available` is yes/no/unknown: unknown means quota-axi
 #     produced no evidence for that harness (not installed/authenticated, or
 #     this script has no provider mapping for it) - never guessed as yes or
-#     no. A lane with a model prefers that model's own "model:<name>" scoped
-#     availability when quota-axi reports one, so a model-exhausted lane is
-#     never reported available on the account-wide all_models number. This block never lists a lane firstmate's dispatch config does not
+#     no. A lane with a model is bound by whichever is lower of that model's
+#     own "model:<name>" scoped availability and the account-wide all_models
+#     number, and the reason names that binding scope, so neither a
+#     model-exhausted lane nor an exhausted account is ever reported
+#     available on the other one's headroom. This block never lists a lane firstmate's dispatch config does not
 #     itself configure, so a harness with no configured rule (a retired
 #     subscription, for example) never appears here.
 #   live_slots: <n>
@@ -99,7 +101,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,98p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,100p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -373,14 +375,26 @@ def quota_lookup():
         return None
 
 
-def scope_matches_model(scope, model):
+def model_scope_token(scope):
     if not isinstance(scope, str) or not scope.startswith("model:"):
-        return False
-    token = scope.split(":", 1)[1].strip().lower()
-    if not token:
-        return False
+        return ""
+    return scope.split(":", 1)[1].strip().lower()
+
+
+def pick_model_scoped(availability, model):
     name = model.strip().lower()
-    return token == name or token in name or name in token
+    if not name:
+        return None
+    loose = None
+    for entry in availability:
+        token = model_scope_token(entry.get("scope"))
+        if not token:
+            continue
+        if token == name:
+            return entry
+        if loose is None and (token in name or name in token):
+            loose = entry
+    return loose
 
 
 def availability_for(harness, model, quota_data):
@@ -396,18 +410,23 @@ def availability_for(harness, model, quota_data):
     if provider is None:
         return "unknown", f"no live quota data for {provider_name}"
     availability = (provider.get("quotaSemantics") or {}).get("effectiveAvailability") or []
-    scoped = None
-    if model:
-        scoped = next(
-            (a for a in availability if scope_matches_model(a.get("scope"), model)),
-            None,
-        )
-    if scoped is None:
-        scoped = next((a for a in availability if a.get("scope") == "all_models"), None)
-    if scoped is not None and scoped.get("effectivePercentRemaining") is not None:
-        remaining = scoped["effectivePercentRemaining"]
+    candidates = []
+    scoped = pick_model_scoped(availability, model) if model else None
+    if scoped is not None:
+        candidates.append(scoped)
+    account = next((a for a in availability if a.get("scope") == "all_models"), None)
+    if account is not None:
+        candidates.append(account)
+    numeric = [
+        a for a in candidates
+        if isinstance(a.get("effectivePercentRemaining"), (int, float))
+        and not isinstance(a.get("effectivePercentRemaining"), bool)
+    ]
+    if numeric:
+        binding = min(numeric, key=lambda a: a["effectivePercentRemaining"])
+        remaining = binding["effectivePercentRemaining"]
         verdict = "yes" if remaining > 0 else "no"
-        return verdict, f"{remaining}% remaining ({scoped.get('scope')})"
+        return verdict, f"{remaining}% remaining ({binding.get('scope')})"
     windows = provider.get("windows") or []
     session = next((w for w in windows if w.get("kind") == "session"), None)
     window = session or (windows[0] if windows else None)
