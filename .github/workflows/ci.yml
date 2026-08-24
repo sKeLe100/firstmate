@@ -324,12 +324,27 @@ jobs:
             herdr session list --json || true
             exit 1
           }
-      - name: Stop background default Herdr server
+      - name: Stop this job's Herdr servers and drop its config root
         if: always()
         run: |
           set -eu
-          # Unlike a GitHub-hosted VM, this host survives the job: leaving the
-          # default-session server running would leak into the next run.
+          # Unlike a GitHub-hosted VM, this host survives the job: any server
+          # still bound inside this job's private config root would outlive it,
+          # and removing the root first would strip the sockets and session
+          # dirs needed to ever find it again. So stop everything in this root
+          # before deleting it. Every name listed here belongs to this job by
+          # construction - the registry lives under the per-run
+          # XDG_CONFIG_HOME - so no host-wide pattern is ever matched, and this
+          # runs whether or not the lab-session cleanup step above succeeded.
+          if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+            herdr session list --json 2>/dev/null \
+              | jq -r '.sessions[]? | select(.default == false and .running == true) | .name' \
+              | while IFS= read -r name; do
+                  [ -n "$name" ] || continue
+                  echo "stopping leftover session in job-owned Herdr root: $name"
+                  herdr session stop "$name" --json >/dev/null 2>&1 || true
+                done
+          fi
           pid_file="$RUNNER_TEMP/fm-herdr/default-server.pid"
           if [ -f "$pid_file" ]; then
             kill "$(cat "$pid_file")" 2>/dev/null || true
