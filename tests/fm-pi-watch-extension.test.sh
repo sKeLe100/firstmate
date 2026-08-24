@@ -858,7 +858,7 @@ printf 'arm\n' >> "${FM_ARM_LOG:?}"
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" node --input-type=module 2>&1 <<'EOF'
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
@@ -913,10 +913,12 @@ const owned = await callArm();
 if (owned.details?.ok !== true || !owned.details.message.includes("started Pi extension arm child")) {
   throw new Error(`owned lock did not arm: ${JSON.stringify(owned.details)}`);
 }
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+const armLogged = () => existsSync(process.env.FM_ARM_LOG)
+  && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("arm");
+for (let i = 0; i < 250 && !armLogged(); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
-if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("owned lock did not run the watcher arm");
+if (!armLogged()) throw new Error("owned lock did not run the watcher arm");
 EOF
 )
   status=$?
@@ -1361,7 +1363,7 @@ printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(env -u BASH_ENV -u ENV HOME="$(pi_arm_shell_home)" PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
@@ -1381,10 +1383,12 @@ if (existsSync(process.env.FM_ARM_LOG)) {
 }
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+const armLogged = () => existsSync(process.env.FM_ARM_LOG)
+  && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("arm");
+for (let i = 0; i < 250 && !armLogged(); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
-if (!existsSync(process.env.FM_ARM_LOG)) {
+if (!armLogged()) {
   console.error("watch arm did not run after the session lock matched");
   process.exit(1);
 }
