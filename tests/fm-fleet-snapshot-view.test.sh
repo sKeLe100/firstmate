@@ -464,6 +464,57 @@ test_large_backlog_survives_argv_limit() {
   pass "a backlog whose JSON exceeds the exec argv limit still produces a full snapshot"
 }
 
+# The registered-secondmate loop accumulates one record per home. Each valid
+# home summary is well under the per-home byte cap, but their concatenation is
+# not: folding the growing array through jq argv overflowed the exec argument
+# list and lost the entire snapshot instead of degrading.
+test_many_secondmate_summaries_survive_argv_limit() {
+  local home mates mate id i j out records_bytes
+  home=$(make_home many-secondmates)
+  mates=$TMP_ROOT/many-secondmate-homes
+  mkdir -p "$mates"
+  : > "$home/data/secondmates.md"
+  for i in $(seq 1 20); do
+    id=$(printf 'mate-%02d' "$i")
+    mate=$mates/$id
+    mkdir -p "$mate/state" "$mate/data" "$mate/projects" "$mate/config" "$mate/bin"
+    printf '# Firstmate\n' > "$mate/AGENTS.md"
+    printf '%s\n' "$id" > "$mate/.fm-secondmate-home"
+    {
+      printf '## In flight\n\n## Queued\n'
+      for j in $(seq 1 20); do
+        printf -- '- [ ] %s-queued-%02d - Delegated queued item %02d for %s covering a realistically long backlog title that survives truncation at the summary boundary (repo: alpha) (kind: ship) (since 2026-08-01)\n' \
+          "$id" "$j" "$j" "$id"
+      done
+      printf '\n## Done\n'
+      for j in $(seq 1 10); do
+        printf -- '- [x] %s-done-%02d - Delegated landed item %02d for %s with a realistically long completion title recorded by the secondmate home https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-%02d)\n' \
+          "$id" "$j" "$j" "$id" "$((i * 100 + j))" "$(((j % 28) + 1))"
+      done
+    } > "$mate/data/backlog.md"
+    printf -- '- %s - delegated scope (home: %s; scope: delegated scope; projects: alpha; added 2026-08-01)\n' \
+      "$id" "$mate" >> "$home/data/secondmates.md"
+  done
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/many-secondmates.err")
+  [ -s "$TMP_ROOT/many-secondmates.err" ] \
+    && fail "many-secondmate snapshot must not error: $(cat "$TMP_ROOT/many-secondmates.err")"
+  printf '%s' "$out" | jq -e '
+    .schema == "fm-fleet-snapshot.v1"
+    and (.secondmate_current.records | length) == 20
+    and (.secondmate_current.shown) == 20
+    and ([.secondmate_current.records[]
+          | select(.provenance.selected == "structured-home"
+                   and .provenance.summary_valid == true
+                   and (.queued | length) == 20)] | length) == 20
+  ' >/dev/null || fail "every registered secondmate record must survive the snapshot: $out"
+  # Guard the premise: the accumulated records really are larger than a single
+  # jq argv argument can carry, so this stays a regression for the argv limit.
+  records_bytes=$(printf '%s' "$out" | jq -c '.secondmate_current.records' | LC_ALL=C wc -c | tr -d ' ')
+  [ "$records_bytes" -gt 200000 ] \
+    || fail "fixture no longer stresses the argv limit ($records_bytes bytes of records)"
+  pass "twenty registered secondmate summaries accumulate past the exec argv limit"
+}
+
 test_backlog_tasks_axi_forms_and_overrides() {
   local home data projects fakebin out view
   home=$(make_home overrides)
@@ -816,6 +867,7 @@ test_completed_scout_report_is_pointer_not_pending
 test_parked_scout_decision_stays_pending
 test_scout_reports_include_teardown_reports
 test_large_backlog_survives_argv_limit
+test_many_secondmate_summaries_survive_argv_limit
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status

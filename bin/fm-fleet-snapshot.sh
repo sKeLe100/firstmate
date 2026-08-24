@@ -1142,7 +1142,7 @@ secondmate_current_json() {  # <parent-tasks-json>
   local tasks=$1 registry union rows total_registered total shown truncated
   local row id home host remote registered registry_error task status_file event_raw event_note event_epoch event_age
   local activity_scan activities decisions reconciliation provenance freshness reason summary summary_rc summary_bytes summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
-  local records='[]' seen_homes=''
+  local records_file out rc seen_homes=''
   registry=$(registry_secondmates_json) || return 1
   union=$(jq -n --argjson registry "$registry" --argjson tasks "$tasks" '
     ($registry.records // []) as $registered
@@ -1164,6 +1164,10 @@ secondmate_current_json() {  # <parent-tasks-json>
   rows=$(printf '%s' "$union" | jq -c --argjson cap "$FM_SNAPSHOT_SECONDMATES" '(if $cap == 0 then .records else .records[:$cap] end)[]')
   shown=$(printf '%s\n' "$rows" | grep -c . || true)
   truncated=$((total - shown))
+  # Records accumulate on disk as NDJSON: folding them through `--argjson` once
+  # per home puts the whole growing array in jq's exec argv and hits E2BIG
+  # (the same scaling failure as the backlog call sites).
+  records_file=$(umask 077 && mktemp "${TMPDIR:-/tmp}/fm-fleet-snapshot-secondmate-records.XXXXXX") || return 1
 
   while IFS= read -r row; do
     [ -n "$row" ] || continue
@@ -1326,23 +1330,30 @@ secondmate_current_json() {  # <parent-tasks-json>
          parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan},
          terminal_evidence:$terminal,contradiction:false}')
     fi
-    records=$(jq -n --argjson records "$records" --argjson record "$record" '$records + [$record]')
+    printf '%s\n' "$record" >> "$records_file" || { rm -f "$records_file"; return 1; }
   done <<EOF
 $rows
 EOF
-  jq -n \
+  out=$(jq -n \
     --argjson registry "$(printf '%s' "$union" | jq '.registry')" \
-    --argjson records "$records" \
+    --slurpfile records "$records_file" \
     --argjson total_registered "$total_registered" \
     --argjson total "$total" \
     --argjson shown "$shown" \
     --argjson truncated "$truncated" \
-    '{registry:$registry,records:$records,total_registered:$total_registered,total:$total,shown:$shown,truncated:$truncated}'
+    '{registry:$registry,records:$records,total_registered:$total_registered,total:$total,shown:$shown,truncated:$truncated}')
+  rc=$?
+  rm -f "$records_file"
+  [ "$rc" -eq 0 ] || return "$rc"
+  printf '%s\n' "$out"
 }
 
 secondmate_landed_from_current_json() {  # <secondmate-current-json>
-  jq -n --argjson current "$1" '
-    {records:[ $current.records[]
+  local current_file rc
+  current_file=$(json_tmpfile secondmate-current "$1") || return 1
+  jq -n --rawfile current_raw "$current_file" '
+    ($current_raw | fromjson) as $current
+    | {records:[ $current.records[]
       | select(.provenance.selected == "structured-home") as $mate
       | $mate.landed[]
       | . + {home:$mate.home,home_id:$mate.id}],
@@ -1356,6 +1367,9 @@ secondmate_landed_from_current_json() {  # <secondmate-current-json>
        | select(.current.state == "unknown" and .provenance.selected == "structured-home")
        | .home // ("<" + .id + ": partial>")]}
     | .records |= sort_by([(.completion.date // ""), .id]) | .records |= reverse'
+  rc=$?
+  rm -f "$current_file"
+  return $rc
 }
 
 scout_report_lines() {
@@ -1394,7 +1408,11 @@ FINAL_BACKLOG_FILE=$(json_tmpfile final-backlog "$BACKLOG_JSON") \
   || { echo "fm-fleet-snapshot: backlog tmpfile write failed" >&2; exit 1; }
 FINAL_TASKS_FILE=$(json_tmpfile final-tasks "$TASKS_JSON") \
   || { rm -f "$FINAL_BACKLOG_FILE"; echo "fm-fleet-snapshot: tasks tmpfile write failed" >&2; exit 1; }
-trap 'rm -f "$FINAL_BACKLOG_FILE" "$FINAL_TASKS_FILE"' EXIT
+trap 'rm -f "$FINAL_BACKLOG_FILE" "$FINAL_TASKS_FILE" "${FINAL_SECONDMATE_CURRENT_FILE:-}" "${FINAL_SECONDMATE_LANDED_FILE:-}"' EXIT
+FINAL_SECONDMATE_CURRENT_FILE=$(json_tmpfile final-secondmate-current "$SECONDMATE_CURRENT_JSON") \
+  || { echo "fm-fleet-snapshot: secondmate current tmpfile write failed" >&2; exit 1; }
+FINAL_SECONDMATE_LANDED_FILE=$(json_tmpfile final-secondmate-landed "$SECONDMATE_LANDED_JSON") \
+  || { echo "fm-fleet-snapshot: secondmate landed tmpfile write failed" >&2; exit 1; }
 
 jq -n \
   --arg generated "$SNAPSHOT_NOW" \
@@ -1408,10 +1426,12 @@ jq -n \
   --rawfile tasks_raw "$FINAL_TASKS_FILE" \
   --argjson main_inventory "$MAIN_INVENTORY_JSON" \
   --argjson scout_reports "$SCOUT_REPORTS_JSON" \
-  --argjson secondmate_current "$SECONDMATE_CURRENT_JSON" \
-  --argjson secondmate_landed "$SECONDMATE_LANDED_JSON" \
+  --rawfile secondmate_current_raw "$FINAL_SECONDMATE_CURRENT_FILE" \
+  --rawfile secondmate_landed_raw "$FINAL_SECONDMATE_LANDED_FILE" \
   '($backlog_raw | fromjson) as $backlog
    | ($tasks_raw | fromjson) as $tasks
+   | ($secondmate_current_raw | fromjson) as $secondmate_current
+   | ($secondmate_landed_raw | fromjson) as $secondmate_landed
    | def backlog_by_id($id): ($backlog.records[]? | select(.structured == true and .id == $id) | .) // null;
    def task_by_id($id): ($tasks[]? | select(.id == $id) | .) // null;
    def report_kind($id): (task_by_id($id).kind // backlog_by_id($id).kind // "scout");
