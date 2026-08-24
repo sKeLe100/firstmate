@@ -88,12 +88,18 @@
 #     "all_products"), and the reason names that binding scope, so neither a
 #     model-exhausted lane nor an exhausted account is ever reported
 #     available on the other one's headroom. A "model:<name>" scope binds a
-#     lane only when its token equals the lane's model or names a whole
-#     segment run of it (so "model:opus" bounds "claude-opus-5"); a scope for
-#     a more specific different model ("model:gpt-5-codex" against a "gpt-5"
-#     lane) never does, and that lane reads the account-wide number instead. This block never lists a lane firstmate's dispatch config does not
+#     lane only when its token equals the lane's model exactly, or is one of
+#     the vendor family short names (opus/sonnet/haiku/fable) appearing as a
+#     whole segment of the lane's model, so "model:opus" bounds
+#     "claude-opus-5". A scope naming any other distinct model
+#     ("model:gpt-5-codex" against a "gpt-5" lane, or "model:gpt-5" against a
+#     "gpt-5-codex" lane) never binds, and that lane reads the account-wide
+#     number instead. This block never lists a lane firstmate's dispatch config does not
 #     itself configure, so a harness with no configured rule (a retired
 #     subscription, for example) never appears here.
+#     When the dispatch config becomes unreadable between the validity check
+#     and this read, the block reports
+#     "hierarchy_lanes: unavailable (dispatch_config: unreadable)".
 #   live_slots: <n>
 #     count of state/*.meta entries currently tracked (spawned, not yet torn
 #     down) in this FM_HOME - not a live/dead endpoint check, which is a
@@ -108,7 +114,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,101p' "$0" | sed 's/^# \{0,1\}//'
+  awk 'NR > 1 { if ($0 !~ /^#/) exit; print }' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -392,35 +398,33 @@ def model_scope_token(scope):
     return scope.split(":", 1)[1].strip().lower()
 
 
+FAMILY_ALIAS_SCOPES = frozenset({"opus", "sonnet", "haiku", "fable"})
+
+
 def scope_segments(text):
     return [seg for seg in re.split(r"[^a-z0-9]+", text) if seg]
 
 
 def scope_names_model(token, name):
-    token_segs = scope_segments(token)
-    name_segs = scope_segments(name)
-    if not token_segs or len(token_segs) > len(name_segs):
+    if token not in FAMILY_ALIAS_SCOPES:
         return False
-    return any(
-        name_segs[i:i + len(token_segs)] == token_segs
-        for i in range(len(name_segs) - len(token_segs) + 1)
-    )
+    return token in scope_segments(name)
 
 
 def pick_model_scoped(availability, model):
     name = model.strip().lower()
     if not name:
         return None
-    family = None
+    matches = []
     for entry in availability:
         token = model_scope_token(entry.get("scope"))
         if not token:
             continue
         if token == name:
-            return entry
-        if family is None and scope_names_model(token, name):
-            family = entry
-    return family
+            return [entry]
+        if scope_names_model(token, name):
+            matches.append(entry)
+    return matches or None
 
 
 def availability_for(harness, model, quota_data):
@@ -438,8 +442,8 @@ def availability_for(harness, model, quota_data):
     availability = (provider.get("quotaSemantics") or {}).get("effectiveAvailability") or []
     candidates = []
     scoped = pick_model_scoped(availability, model) if model else None
-    if scoped is not None:
-        candidates.append(scoped)
+    if scoped:
+        candidates.extend(scoped)
     account = next(
         (a for a in availability if a.get("scope") in ACCOUNT_WIDE_SCOPES), None
     )
@@ -461,14 +465,17 @@ def availability_for(harness, model, quota_data):
 if dispatch_status != "present":
     print(f"hierarchy_lanes: unavailable (dispatch_config: {dispatch_status})")
 else:
-    with open(cfg_path, encoding="utf-8") as fh:
-        cfg = json.load(fh)
+    try:
+        with open(cfg_path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, ValueError):
+        cfg = None
     lanes = []
-    for rule in cfg.get("rules") or []:
+    for rule in (cfg or {}).get("rules") or []:
         when = rule.get("when") or ""
         for profile in profiles_of(rule.get("use")):
             lanes.append(("rule", when, profile))
-    for profile in profiles_of(cfg.get("default")):
+    for profile in profiles_of((cfg or {}).get("default")):
         lanes.append(("default", "default (no rule matched)", profile))
 
     quota_data = quota_lookup() if lanes else None
@@ -488,6 +495,8 @@ else:
         for row in lane_rows:
             cells = [one_line(str(v)) for v in row]
             writer.writerow(["  " + cells[0]] + cells[1:])
+    elif cfg is None:
+        print("hierarchy_lanes: unavailable (dispatch_config: unreadable)")
     else:
         print("hierarchy_lanes: unavailable (config defines no dispatch profiles)")
 

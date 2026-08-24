@@ -716,6 +716,51 @@ STUB
     *) fail "another model's tighter scope bound a lane that has none of its own: $out" ;;
   esac
 
+  # The mirror direction of the same rule: a scope naming a SHORTER sibling
+  # model ("model:gpt-5" against a "gpt-5-codex" lane) never binds either.
+  home=$(make_home hierarchy-sibling-scope)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"gpt-5-codex","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"model:gpt-5","effectivePercentRemaining":0}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,gpt-5-codex,high,yes,90% remaining (all_models)"*) ;;
+    *) fail "a sibling model's exhausted scope bound an unrelated lane: $out" ;;
+  esac
+
+  # When several vendor family scopes match, the tightest one binds, not
+  # whichever quota-axi happened to list first.
+  home=$(make_home hierarchy-tightest-family)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"model:opus","effectivePercentRemaining":45},
+  {"scope":"model:sonnet","effectivePercentRemaining":1}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-opus-5,high,yes,45% remaining (model:opus)"*) ;;
+    *) fail "an unrelated family scope bound the lane instead of its own: $out" ;;
+  esac
+
   # A present config that names no rule/default profile reports the header as
   # unavailable rather than emitting a row-less hierarchy_lanes block.
   home=$(make_home hierarchy-no-profiles)
