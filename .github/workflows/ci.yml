@@ -64,11 +64,12 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install tasks-axi
+      - name: Install pinned tasks-axi
         run: |
           set -eu
-          npm install -g tasks-axi
-          tasks-axi --version
+          npm install -g --prefix "$RUNNER_TEMP/npm-global" tasks-axi@0.2.5
+          echo "$RUNNER_TEMP/npm-global/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/npm-global/bin/tasks-axi" --version
       - name: Run portable parallel shard 1
         run: |
           set -eu
@@ -102,11 +103,12 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install tasks-axi
+      - name: Install pinned tasks-axi
         run: |
           set -eu
-          npm install -g tasks-axi
-          tasks-axi --version
+          npm install -g --prefix "$RUNNER_TEMP/npm-global" tasks-axi@0.2.5
+          echo "$RUNNER_TEMP/npm-global/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/npm-global/bin/tasks-axi" --version
       - name: Run portable parallel shard 2
         run: |
           set -eu
@@ -132,11 +134,6 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: [self-hosted, linux]
-    # Encode the "never two stateful jobs at once" invariant in GitHub itself
-    # instead of relying on the self-hosted fleet having a single runner.
-    concurrency:
-      group: fm-self-hosted-stateful
-      cancel-in-progress: false
     # Measured whole remainder is ~42 min of serial work; the balanced shards
     # are ~10.6 min each. Cap is a hang tripwire with roughly 2x margin, not the
     # expected healthy end of the lane.
@@ -168,11 +165,12 @@ jobs:
             exit 1
           }
           tmux -V
-      - name: Install tasks-axi for backlog-handoff delegation
+      - name: Install pinned tasks-axi for backlog-handoff delegation
         run: |
           set -eu
-          npm install -g tasks-axi
-          tasks-axi --version
+          npm install -g --prefix "$RUNNER_TEMP/npm-global" tasks-axi@0.2.5
+          echo "$RUNNER_TEMP/npm-global/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/npm-global/bin/tasks-axi" --version
       - name: Run portable serial shard ${{ matrix.shard }}
         env:
           # job-total rather than a literal, so shrinking or growing the matrix
@@ -201,16 +199,15 @@ jobs:
   tests-herdr:
     name: Behavior tests (Herdr)
     runs-on: [self-hosted, linux]
-    concurrency:
-      group: fm-self-hosted-stateful
-      cancel-in-progress: false
     env:
-      # Private Herdr namespace for this job: its server, its "default"
-      # session, and every fm-lab-* session live behind a socket unique to this
-      # run and attempt, so nothing here can reach the host's real Herdr server
-      # shared with the live fleet running as the same user.
-      FM_CI_HERDR_DIR: /tmp/fm-ci-herdr-${{ github.run_id }}-${{ github.run_attempt }}
-      HERDR_SOCKET_PATH: /tmp/fm-ci-herdr-${{ github.run_id }}-${{ github.run_attempt }}/herdr.sock
+      # Private Herdr config root for this job. XDG_CONFIG_HOME is what moves
+      # the whole session registry - the "default" session and every fm-lab-*
+      # session dir and socket - so nothing here can see or disturb the real
+      # Herdr state of the live fleet running as the same user on this host.
+      # Kept short and under /tmp rather than $RUNNER_TEMP: the `runner` context
+      # is not available in job-level env, and Herdr's session sockets live
+      # under this root where the AF_UNIX path limit is tight.
+      XDG_CONFIG_HOME: /tmp/fm-ci-herdr-home-${{ github.run_id }}-${{ github.run_attempt }}
     # Healthy runs finish around 7 minutes. This job cap is a last-resort hang
     # tripwire, not the expected end of the lane. The family-run step owns the
     # tighter bound so a wedged suite fails fast with always() cleanup and
@@ -225,11 +222,11 @@ jobs:
           set -eu
           # This runner's _work/_temp directory persists across jobs, unlike a
           # GitHub-hosted VM that is destroyed after every run. Only this job's
-          # own scratch state is cleared; the per-run HERDR_SOCKET_PATH means
+          # own scratch state is cleared; the per-run XDG_CONFIG_HOME means
           # there is no foreign server to reset and no host-wide process is
           # ever signalled on this shared machine.
-          rm -rf "$RUNNER_TEMP/fm-herdr" "$FM_CI_HERDR_DIR"
-          mkdir -p "$RUNNER_TEMP/fm-herdr" "$FM_CI_HERDR_DIR"
+          rm -rf "$RUNNER_TEMP/fm-herdr" "$XDG_CONFIG_HOME"
+          mkdir -p "$RUNNER_TEMP/fm-herdr" "$XDG_CONFIG_HOME"
       - name: Require tools for real Herdr
         run: |
           set -eu
@@ -337,7 +334,6 @@ jobs:
           if [ -f "$pid_file" ]; then
             kill "$(cat "$pid_file")" 2>/dev/null || true
           fi
-          rm -rf "$FM_CI_HERDR_DIR"
       - name: Upload Herdr timing and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
