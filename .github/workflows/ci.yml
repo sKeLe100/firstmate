@@ -132,6 +132,11 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: [self-hosted, linux]
+    # Encode the "never two stateful jobs at once" invariant in GitHub itself
+    # instead of relying on the self-hosted fleet having a single runner.
+    concurrency:
+      group: fm-self-hosted-stateful
+      cancel-in-progress: false
     # Measured whole remainder is ~42 min of serial work; the balanced shards
     # are ~10.6 min each. Cap is a hang tripwire with roughly 2x margin, not the
     # expected healthy end of the lane.
@@ -196,6 +201,16 @@ jobs:
   tests-herdr:
     name: Behavior tests (Herdr)
     runs-on: [self-hosted, linux]
+    concurrency:
+      group: fm-self-hosted-stateful
+      cancel-in-progress: false
+    env:
+      # Private Herdr namespace for this job: its server, its "default"
+      # session, and every fm-lab-* session live behind a socket unique to this
+      # run and attempt, so nothing here can reach the host's real Herdr server
+      # shared with the live fleet running as the same user.
+      FM_CI_HERDR_DIR: /tmp/fm-ci-herdr-${{ github.run_id }}-${{ github.run_attempt }}
+      HERDR_SOCKET_PATH: /tmp/fm-ci-herdr-${{ github.run_id }}-${{ github.run_attempt }}/herdr.sock
     # Healthy runs finish around 7 minutes. This job cap is a last-resort hang
     # tripwire, not the expected end of the lane. The family-run step owns the
     # tighter bound so a wedged suite fails fast with always() cleanup and
@@ -205,6 +220,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Reset this job's Herdr scratch state (self-hosted host reuse guard)
+        run: |
+          set -eu
+          # This runner's _work/_temp directory persists across jobs, unlike a
+          # GitHub-hosted VM that is destroyed after every run. Only this job's
+          # own scratch state is cleared; the per-run HERDR_SOCKET_PATH means
+          # there is no foreign server to reset and no host-wide process is
+          # ever signalled on this shared machine.
+          rm -rf "$RUNNER_TEMP/fm-herdr" "$FM_CI_HERDR_DIR"
+          mkdir -p "$RUNNER_TEMP/fm-herdr" "$FM_CI_HERDR_DIR"
       - name: Require tools for real Herdr
         run: |
           set -eu
@@ -248,15 +273,6 @@ jobs:
             echo "::error::herdr protocol $protocol is below the required floor 16"
             exit 1
           }
-      - name: Reset stale default Herdr server (self-hosted host reuse guard)
-        run: |
-          set -eu
-          # This runner's _work/_temp directory and any background processes it
-          # left behind persist across jobs, unlike a GitHub-hosted VM that is
-          # destroyed after every run. A prior job's "herdr server" can outlive
-          # a cancelled or crashed run, so clear it before claiming "default".
-          pkill -f 'herdr server' 2>/dev/null || true
-          rm -rf "$RUNNER_TEMP/fm-herdr"
       - name: Start default Herdr session for fleet-state tripwire
         run: |
           set -eu
@@ -321,7 +337,7 @@ jobs:
           if [ -f "$pid_file" ]; then
             kill "$(cat "$pid_file")" 2>/dev/null || true
           fi
-          pkill -f 'herdr server' 2>/dev/null || true
+          rm -rf "$FM_CI_HERDR_DIR"
       - name: Upload Herdr timing and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
