@@ -91,7 +91,8 @@
 #     lane only when its token equals the lane's model exactly, or is one of
 #     the vendor family short names (opus/sonnet/haiku/fable) appearing as a
 #     whole segment of the lane's model, so "model:opus" bounds
-#     "claude-opus-5". A scope naming any other distinct model
+#     "claude-opus-5". When more than one such scope binds a lane, the tightest
+#     of them is the one reported, whatever order quota-axi listed them in. A scope naming any other distinct model
 #     ("model:gpt-5-codex" against a "gpt-5" lane, or "model:gpt-5" against a
 #     "gpt-5-codex" lane) never binds, and that lane reads the account-wide
 #     number instead. This block never lists a lane firstmate's dispatch config does not
@@ -420,9 +421,7 @@ def pick_model_scoped(availability, model):
         token = model_scope_token(entry.get("scope"))
         if not token:
             continue
-        if token == name:
-            return [entry]
-        if scope_names_model(token, name):
+        if token == name or scope_names_model(token, name):
             matches.append(entry)
     return matches or None
 

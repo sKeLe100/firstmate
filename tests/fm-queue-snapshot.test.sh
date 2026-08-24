@@ -738,8 +738,10 @@ STUB
     *) fail "a sibling model's exhausted scope bound an unrelated lane: $out" ;;
   esac
 
-  # When several vendor family scopes match, the tightest one binds, not
-  # whichever quota-axi happened to list first.
+  # When more than one scope binds the same lane - its exact "model:<name>"
+  # scope and the vendor family scope that also names it - the tightest binds,
+  # whatever order quota-axi listed them in. A family scope for a different
+  # family (model:sonnet here) still binds nothing.
   home=$(make_home hierarchy-tightest-family)
   : > "$home/data/projects.md"
   printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
@@ -749,7 +751,8 @@ STUB
 cat <<'JSON'
 {"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
   {"scope":"all_models","effectivePercentRemaining":90},
-  {"scope":"model:opus","effectivePercentRemaining":45},
+  {"scope":"model:claude-opus-5","effectivePercentRemaining":60},
+  {"scope":"model:opus","effectivePercentRemaining":10},
   {"scope":"model:sonnet","effectivePercentRemaining":1}
 ]}}]}
 JSON
@@ -757,8 +760,8 @@ STUB
   chmod +x "$stub_dir_q/quota-axi"
   out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
   case "$out" in
-    *"default,default (no rule matched),claude,claude-opus-5,high,yes,45% remaining (model:opus)"*) ;;
-    *) fail "an unrelated family scope bound the lane instead of its own: $out" ;;
+    *"default,default (no rule matched),claude,claude-opus-5,high,yes,10% remaining (model:opus)"*) ;;
+    *) fail "the tightest binding scope did not win: $out" ;;
   esac
 
   # A present config that names no rule/default profile reports the header as
