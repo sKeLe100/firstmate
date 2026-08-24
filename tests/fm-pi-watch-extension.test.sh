@@ -252,10 +252,13 @@ if (/^watcher: healthy\b/.test(redundant.content[0]?.text)) {
 if (!redundant.content[0]?.text.includes("only after a later notification says the cycle is missing, failed, or unhealthy")) {
   throw new Error(`redundant call omitted the repair-only condition: ${redundant.content[0]?.text}`);
 }
-for (let i = 0; i < 100 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+const armRows = () => (existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").split("\n").filter((row) => row === "arm")
+  : []);
+for (let i = 0; i < 100 && armRows().length === 0; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
-if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("initial arm child did not start");
+if (armRows().length === 0) throw new Error("initial arm child did not start");
 await new Promise((resolve) => setTimeout(resolve, 100));
 const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
 if (rows.length !== 1) throw new Error(`redundant call spawned ${rows.length} arm children`);
@@ -1267,10 +1270,12 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+const armLogged = () => existsSync(process.env.FM_ARM_LOG)
+  && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("home=");
+for (let i = 0; i < 250 && !armLogged(); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
-if (!existsSync(process.env.FM_ARM_LOG)) {
+if (!armLogged()) {
   console.error("watch arm did not run");
   process.exit(1);
 }
@@ -1317,10 +1322,12 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 1500 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+const armLogged = () => existsSync(process.env.FM_ARM_LOG)
+  && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("poll=");
+for (let i = 0; i < 1500 && !armLogged(); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
-if (!existsSync(process.env.FM_ARM_LOG)) {
+if (!armLogged()) {
   console.error("watch arm did not run");
   process.exit(1);
 }
@@ -2035,7 +2042,9 @@ const hooks = await mod.FmPrimaryWatchArm({
 const lock = `${process.env.FM_HOME}/state/.lock`;
 writeFileSync(lock, `${process.pid}\n`);
 const eventPromise = hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+const armLogged = () => existsSync(process.env.FM_ARM_LOG)
+  && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("arm=");
+for (let i = 0; i < 250 && !armLogged(); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -2183,10 +2192,14 @@ const guardHooks = await guardMod.FmPrimaryTurnendGuard({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await guardHooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.FM_GUARD_LOG); i += 1) {
+const armLogged = () => existsSync(process.env.FM_ARM_LOG)
+  && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("args=");
+const guardLogged = () => existsSync(process.env.FM_GUARD_LOG)
+  && readFileSync(process.env.FM_GUARD_LOG, "utf8").includes("guard");
+for (let i = 0; i < 250 && !(armLogged() && guardLogged()); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
-if (!existsSync(process.env.FM_ARM_LOG)) {
+if (!armLogged()) {
   console.error("watch arm did not run");
   process.exit(1);
 }
