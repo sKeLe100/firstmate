@@ -464,6 +464,34 @@ test_large_backlog_survives_argv_limit() {
   pass "a backlog whose JSON exceeds the exec argv limit still produces a full snapshot"
 }
 
+# Snapshot temp files hold whole backlog- and task-sized payloads. An
+# interrupted run (a captain hitting Ctrl-C on /bearings) must not leave them
+# behind in TMPDIR.
+test_interrupted_snapshot_leaves_no_temp_files() {
+  local home tmp pid i leftovers
+  home=$(make_home interrupted-snapshot)
+  tmp=$TMP_ROOT/interrupted-tmpdir
+  mkdir -p "$tmp"
+  {
+    printf '## In flight\n\n## Queued\n\n## Done\n'
+    for i in $(seq 1 3000); do
+      printf -- '- [x] slow-task-%04d - Synthetic backlog record %04d keeping the snapshot busy long enough to interrupt https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-01)\n' \
+        "$i" "$i" "$i"
+    done
+  } > "$home/data/backlog.md"
+  TMPDIR="$tmp" FM_HOME="$home" "$SNAPSHOT" --json >/dev/null 2>&1 &
+  pid=$!
+  for i in $(seq 1 200); do
+    [ -n "$(find "$tmp" -mindepth 1 -print -quit 2>/dev/null)" ] && break
+    sleep 0.05
+  done
+  kill -TERM "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  leftovers=$(find "$tmp" -mindepth 1 2>/dev/null)
+  [ -z "$leftovers" ] || fail "interrupted snapshot left temp files behind: $leftovers"
+  pass "an interrupted snapshot cleans up its temp files"
+}
+
 # The registered-secondmate loop accumulates one record per home. Each valid
 # home summary is well under the per-home byte cap, but their concatenation is
 # not: folding the growing array through jq argv overflowed the exec argument
@@ -868,6 +896,7 @@ test_parked_scout_decision_stays_pending
 test_scout_reports_include_teardown_reports
 test_large_backlog_survives_argv_limit
 test_many_secondmate_summaries_survive_argv_limit
+test_interrupted_snapshot_leaves_no_temp_files
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status

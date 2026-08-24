@@ -177,6 +177,20 @@ esac
 
 command -v jq >/dev/null 2>&1 || { echo "fm-fleet-snapshot: jq not found" >&2; exit 1; }
 
+# Every temp file this run creates lives in one private directory, so a single
+# trap can clear them all on normal exit and on interrupts.
+FM_SNAPSHOT_TMPDIR=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/fm-fleet-snapshot.XXXXXX") \
+  || { echo "fm-fleet-snapshot: temp directory creation failed" >&2; exit 1; }
+snapshot_cleanup() {  # <signal-exit-code-or-empty>
+  rm -rf "$FM_SNAPSHOT_TMPDIR"
+  [ -n "${1:-}" ] && exit "$1"
+  return 0
+}
+trap 'snapshot_cleanup' EXIT
+trap 'snapshot_cleanup 130' INT
+trap 'snapshot_cleanup 143' TERM
+trap 'snapshot_cleanup 129' HUP
+
 bool_json() {
   if [ "$1" = 1 ]; then printf 'true'; else printf 'false'; fi
 }
@@ -188,7 +202,7 @@ bool_json() {
 # argument-list limit (E2BIG); a file has no such ceiling.
 json_tmpfile() {  # <prefix> <json>
   local f
-  f=$(umask 077 && mktemp "${TMPDIR:-/tmp}/fm-fleet-snapshot-$1.XXXXXX") || return 1
+  f=$(umask 077 && mktemp "$FM_SNAPSHOT_TMPDIR/$1.XXXXXX") || return 1
   printf '%s' "$2" > "$f" || { rm -f "$f"; return 1; }
   printf '%s\n' "$f"
 }
@@ -1180,7 +1194,7 @@ secondmate_current_json() {  # <parent-tasks-json>
   # Records accumulate on disk as NDJSON: folding them through `--argjson` once
   # per home puts the whole growing array in jq's exec argv and hits E2BIG
   # (the same scaling failure as the backlog call sites).
-  records_file=$(umask 077 && mktemp "${TMPDIR:-/tmp}/fm-fleet-snapshot-secondmate-records.XXXXXX") || return 1
+  records_file=$(umask 077 && mktemp "$FM_SNAPSHOT_TMPDIR/secondmate-records.XXXXXX") || return 1
 
   while IFS= read -r row; do
     [ -n "$row" ] || continue
@@ -1430,7 +1444,6 @@ FINAL_BACKLOG_FILE=$(json_tmpfile final-backlog "$BACKLOG_JSON") \
   || { echo "fm-fleet-snapshot: backlog tmpfile write failed" >&2; exit 1; }
 FINAL_TASKS_FILE=$(json_tmpfile final-tasks "$TASKS_JSON") \
   || { rm -f "$FINAL_BACKLOG_FILE"; echo "fm-fleet-snapshot: tasks tmpfile write failed" >&2; exit 1; }
-trap 'rm -f "$FINAL_BACKLOG_FILE" "$FINAL_TASKS_FILE" "${FINAL_SECONDMATE_CURRENT_FILE:-}" "${FINAL_SECONDMATE_LANDED_FILE:-}"' EXIT
 FINAL_SECONDMATE_CURRENT_FILE=$(json_tmpfile final-secondmate-current "$SECONDMATE_CURRENT_JSON") \
   || { echo "fm-fleet-snapshot: secondmate current tmpfile write failed" >&2; exit 1; }
 FINAL_SECONDMATE_LANDED_FILE=$(json_tmpfile final-secondmate-landed "$SECONDMATE_LANDED_JSON") \
