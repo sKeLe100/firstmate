@@ -108,6 +108,16 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --limit)
       LIMIT="${2:?--limit needs a value}"
+      case "$LIMIT" in
+        ''|*[!0-9]*)
+          echo "fm-queue-snapshot: --limit needs a positive integer, got: $LIMIT" >&2
+          exit 2
+          ;;
+      esac
+      if [ "$LIMIT" -lt 1 ]; then
+        echo "fm-queue-snapshot: --limit needs a positive integer, got: $LIMIT" >&2
+        exit 2
+      fi
       shift 2
       ;;
     *)
@@ -286,10 +296,7 @@ def priority_key(value):
 # Stable sort by descending priority; equal-priority items (including "-",
 # the lowest bucket) keep tasks-axi's own return order as the tiebreak, since
 # `rows` is already in that order and Python's sort is stable.
-ranked_rows = sorted(
-    enumerate(rows), key=lambda pair: -priority_key(pair[1]["priority"])
-)
-ranked_rows = [r for _, r in ranked_rows][:limit]
+ranked_rows = sorted(rows, key=lambda r: -priority_key(r["priority"]))[:limit]
 
 out_rows = []
 for rank, r in enumerate(ranked_rows, start=1):
@@ -335,6 +342,9 @@ HARNESS_TO_PROVIDER = {
 }
 
 
+QUOTA_TIMEOUT_SECONDS = 10
+
+
 def profiles_of(value):
     if isinstance(value, list):
         return value
@@ -346,9 +356,10 @@ def profiles_of(value):
 def quota_lookup():
     try:
         proc = subprocess.run(
-            ["quota-axi", "--json"], capture_output=True, text=True, check=False
+            ["quota-axi", "--json"], capture_output=True, text=True,
+            check=False, timeout=QUOTA_TIMEOUT_SECONDS,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
     if proc.returncode != 0:
         return None
@@ -377,8 +388,9 @@ def availability_for(harness, model, quota_data):
             (
                 a for a in availability
                 if a.get("scope") == "model"
-                and model.lower() in ",".join(a.get("boundedBy") or []).lower()
-                + ",".join(a.get("limitingWindowIds") or []).lower()
+                and model.lower() in ",".join(
+                    (a.get("boundedBy") or []) + (a.get("limitingWindowIds") or [])
+                ).lower()
             ),
             None,
         )

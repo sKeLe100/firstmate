@@ -485,7 +485,26 @@ case "$out" in
   *lim-low*) fail "--limit kept a lower-priority item once the highest was included: $out" ;;
 esac
 
-# 15. Missing crew-dispatch.json reports hierarchy_lanes as unavailable, tied
+# 15. A non-positive or non-numeric --limit is rejected with exit 2 rather
+#     than silently reporting an empty/short queue or dying in the enrichment
+#     step, since --limit is now applied after the priority sort.
+home=$(make_home limit-invalid)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add badlim-1 "one" --kind docs --priority 1 >/dev/null
+)
+for bad in 0 -1 abc 2.5; do
+  err=$(run_snapshot "$home" --limit "$bad" 2>&1)
+  rc=$?
+  [ "$rc" = 2 ] || fail "--limit '$bad' exited $rc, expected 2 (output: $err)"
+  case "$err" in
+    *"positive integer"*) ;;
+    *) fail "--limit '$bad' gave no usable error message: $err" ;;
+  esac
+done
+
+# 16. Missing crew-dispatch.json reports hierarchy_lanes as unavailable, tied
 #     to the same dispatch_config verdict the item tiers already use, rather
 #     than a second independent gating check.
 home=$(make_home hierarchy-absent)
@@ -496,7 +515,7 @@ case "$out" in
   *) fail "expected hierarchy_lanes unavailable for absent config, got: $out" ;;
 esac
 
-# 16. A present crew-dispatch.json yields one hierarchy row per rule/default
+# 17. A present crew-dispatch.json yields one hierarchy row per rule/default
 #     profile, using the rule's own `when` text - never a hardcoded task-class
 #     label - and a profile array yields one row per candidate rather than a
 #     collapsed summary.
@@ -547,7 +566,7 @@ EOF
   esac
 fi
 
-# 17. live_slots counts state/*.meta entries currently tracked in this home,
+# 18. live_slots counts state/*.meta entries currently tracked in this home,
 #     regardless of the queue's own contents.
 home=$(make_home live-slots)
 : > "$home/data/projects.md"
