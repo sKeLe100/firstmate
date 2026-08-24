@@ -180,7 +180,9 @@ esac
 home=$(make_home dispatch-present)
 : > "$home/data/projects.md"
 printf '%s\n' '{"rules":[],"default":[{"harness":"codex"}]}' > "$home/config/crew-dispatch.json"
-out=$(run_snapshot "$home")
+stub_dir_present=$(path_without quota-axi)
+stub_quota_axi "$stub_dir_present" 50
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_present" "$SNAPSHOT")
 if command -v jq >/dev/null 2>&1; then
   case "$out" in
     *"dispatch_config: present"*) ;;

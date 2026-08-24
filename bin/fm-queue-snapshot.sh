@@ -4,11 +4,12 @@
 #
 # tasks-axi (bin/fm-tasks-axi-lib.sh's compatible binary) remains the single
 # backlog source; this script never parses data/backlog.md itself and never
-# reorders, filters, or mutates what tasks-axi returns. It shells out to
-# `tasks-axi list --state queued --limit <N>` for the first N queued items in
-# tasks-axi's own return order (the same order `tasks-axi ready` surfaces for
-# the unblocked subset) and enriches each row with two more deterministic
-# facts tasks-axi does not itself carry:
+# filters or mutates what tasks-axi returns, and reorders it only by the
+# priority sort documented under "Ranking and priority" below. It shells out
+# to `tasks-axi list --state queued` for EVERY queued item (no --limit, so
+# the sort sees the whole queue), sorts that set, keeps the top N, and
+# enriches each surviving row with two more deterministic facts tasks-axi
+# does not itself carry:
 #
 #   posture   - this item's project delivery mode/yolo, from
 #               bin/fm-project-mode.sh (the single owner of data/projects.md
@@ -101,7 +102,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,100p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,101p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
