@@ -1164,11 +1164,13 @@ secondmate_current_json() {  # <parent-tasks-json>
   local tasks=$1 registry union rows total_registered total shown truncated
   local row id home host remote registered registry_error task status_file event_raw event_note event_epoch event_age
   local activity_scan activities decisions reconciliation provenance freshness reason summary summary_rc summary_bytes summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
-  local records_file tasks_file summary_file record_rc out rc seen_homes=''
+  local records_file registry_file tasks_file summary_file record_rc out rc seen_homes=''
   registry=$(registry_secondmates_json) || return 1
-  tasks_file=$(json_tmpfile secondmate-current-tasks "$tasks") || return 1
-  union=$(jq -n --argjson registry "$registry" --rawfile tasks_raw "$tasks_file" '
-    ($tasks_raw | fromjson) as $tasks
+  registry_file=$(json_tmpfile secondmate-current-registry "$registry") || return 1
+  tasks_file=$(json_tmpfile secondmate-current-tasks "$tasks") || { rm -f "$registry_file"; return 1; }
+  union=$(jq -n --rawfile registry_raw "$registry_file" --rawfile tasks_raw "$tasks_file" '
+    ($registry_raw | fromjson) as $registry
+    | ($tasks_raw | fromjson) as $tasks
     | ($registry.records // []) as $registered
     | (($registered | map(.id)) // []) as $registered_ids
     | ([ $registered[] as $r
@@ -1185,7 +1187,7 @@ secondmate_current_json() {  # <parent-tasks-json>
     | {registry:$registry,records:.}')
   rc=$?
   rm -f "$tasks_file"
-  [ "$rc" -eq 0 ] || return 1
+  [ "$rc" -eq 0 ] || { rm -f "$registry_file"; return 1; }
   total_registered=$(printf '%s' "$union" | jq '[.records[] | select(.registered)] | length')
   total=$(printf '%s' "$union" | jq '.records | length')
   rows=$(printf '%s' "$union" | jq -c --argjson cap "$FM_SNAPSHOT_SECONDMATES" '(if $cap == 0 then .records else .records[:$cap] end)[]')
@@ -1194,7 +1196,8 @@ secondmate_current_json() {  # <parent-tasks-json>
   # Records accumulate on disk as NDJSON: folding them through `--argjson` once
   # per home puts the whole growing array in jq's exec argv and hits E2BIG
   # (the same scaling failure as the backlog call sites).
-  records_file=$(umask 077 && mktemp "$FM_SNAPSHOT_TMPDIR/secondmate-records.XXXXXX") || return 1
+  records_file=$(umask 077 && mktemp "$FM_SNAPSHOT_TMPDIR/secondmate-records.XXXXXX") \
+    || { rm -f "$registry_file"; return 1; }
 
   while IFS= read -r row; do
     [ -n "$row" ] || continue
@@ -1314,7 +1317,7 @@ secondmate_current_json() {  # <parent-tasks-json>
           '{provenance:"parent-direct-report-terminal",trust:"untrusted-supplement",captured:false,observed_at:$observed,freshness:"not-collected",reason:"no useful contradiction check",lines:0,bytes:0,event_note_seen:false,contradiction:false}')
       fi
       if printf '%s' "$terminal" | jq -e '.contradiction == true' >/dev/null; then contradiction=true; fi
-      summary_file=$(json_tmpfile secondmate-record-summary "$summary") || { rm -f "$records_file"; return 1; }
+      summary_file=$(json_tmpfile secondmate-record-summary "$summary") || { rm -f "$records_file" "$registry_file"; return 1; }
       record=$(jq -n \
         --arg id "$id" --arg home "$home" --arg host "$host" --argjson remote "$remote" --arg state "$state" --arg current_reason "$current_reason" --arg observed "$SNAPSHOT_NOW" \
         --argjson registered "$registered" --rawfile summary_raw "$summary_file" --argjson summary_valid "$summary_valid" --argjson decisions "$decisions" \
@@ -1363,23 +1366,23 @@ secondmate_current_json() {  # <parent-tasks-json>
       record_rc=$?
     fi
     if [ "$record_rc" -ne 0 ] || [ -z "$record" ]; then
-      rm -f "$records_file"
+      rm -f "$records_file" "$registry_file"
       return 1
     fi
-    printf '%s\n' "$record" >> "$records_file" || { rm -f "$records_file"; return 1; }
+    printf '%s\n' "$record" >> "$records_file" || { rm -f "$records_file" "$registry_file"; return 1; }
   done <<EOF
 $rows
 EOF
   out=$(jq -n \
-    --argjson registry "$(printf '%s' "$union" | jq '.registry')" \
+    --rawfile registry_raw "$registry_file" \
     --slurpfile records "$records_file" \
     --argjson total_registered "$total_registered" \
     --argjson total "$total" \
     --argjson shown "$shown" \
     --argjson truncated "$truncated" \
-    '{registry:$registry,records:$records,total_registered:$total_registered,total:$total,shown:$shown,truncated:$truncated}')
+    '{registry:($registry_raw | fromjson),records:$records,total_registered:$total_registered,total:$total,shown:$shown,truncated:$truncated}')
   rc=$?
-  rm -f "$records_file"
+  rm -f "$records_file" "$registry_file"
   [ "$rc" -eq 0 ] || return "$rc"
   printf '%s\n' "$out"
 }

@@ -517,7 +517,10 @@ test_interrupted_snapshot_leaves_no_temp_files() {
     wait "$pid" 2>/dev/null
     fail "snapshot never created a temp file to interrupt; the test proved nothing"
   }
-  kill -0 "$pid" 2>/dev/null || fail "snapshot exited before it could be interrupted; the test proved nothing"
+  kill -0 "$pid" 2>/dev/null || {
+    wait "$pid" 2>/dev/null
+    fail "snapshot exited before it could be interrupted; the test proved nothing"
+  }
   kill -TERM "$pid" 2>/dev/null
   wait "$pid" 2>/dev/null
   leftovers=$(find "$tmp" -mindepth 1 2>/dev/null)
