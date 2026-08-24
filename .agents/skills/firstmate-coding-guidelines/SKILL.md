@@ -119,6 +119,7 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 - Never add an agent name as a commit co-author.
 - `bin/*.sh` and `bin/backends/*.sh` must pass `shellcheck`.
 - Run `bin/fm-lint.sh` before treating a script change as done; it is the single owner of the lint definition (file set, config, and pinned shellcheck version) that CI and the no-mistakes pre-push gate both invoke, and it refuses to run under any other shellcheck version.
+- Never pass data that grows with fleet or backlog size through `jq` argv (`--arg`/`--argjson`), because the whole value lands in the exec argument list and fails with `E2BIG` once it is large enough; feed it on stdin or from a temp file via `--slurpfile`/`--rawfile` instead, as `json_tmpfile` in `bin/fm-fleet-snapshot.sh` does and `tests/fm-fleet-snapshot-view.test.sh` guards at scale.
 - Colocate tests with the existing pattern in `tests/`, name them `<subject>.test.sh`, and extend an existing script rather than inventing a new runner.
 - Tests must exercise behavior through an executable or public interface and must never assert implementation-source bytes, including through parsers, regexes, snapshots, or indirect wrappers.
 - A maintainer-verification record under `docs/verification/` records active empirical facts, not assumptions or task chronology.
