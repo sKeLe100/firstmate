@@ -347,6 +347,10 @@ The report is the only thing that survives, so anything worth keeping must be in
    known external wait you expect to clear on its own (an upstream release, a rate-limit reset):
    firstmate then leaves your idle pane alone and rechecks it on a long cadence instead of
    treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+   After every append, verify with \`ls -la $STATUS_FILE\` that the line landed at that exact
+   path with recent content; do not trust the append, and do not report \`done\`, until that
+   verification succeeds - a write tool can silently place the file somewhere else, and that
+   failure is itself a \`blocked:\` condition to report.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
@@ -363,6 +367,9 @@ $INBOX_SECTION
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
+After writing it, verify with \`ls -la $DATA/$ID/report.md\` that the report exists at that
+exact path with recent content before continuing; if it doesn't, the write landed somewhere
+else, and that is itself a \`blocked:\` condition to report.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
 If your deliverable is a visual artifact the captain will review and iterate on, you may host the Lavish review loop yourself (poll, revise, re-serve, staying alive) instead of handing it back to firstmate.
 Before reporting done, read and follow \`$FM_ROOT/.agents/skills/captain-hold-lifecycle/SKILL.md\` and pass its shared completion gate for the report and any visual review.
@@ -469,6 +476,10 @@ $RULE1
    known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
    a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+   After every append, verify with \`ls -la $STATUS_FILE\` that the line landed at that exact
+   path with recent content; do not trust the append, and do not report \`done\`, until that
+   verification succeeds - a write tool can silently place the file somewhere else, and that
+   failure is itself a \`blocked:\` condition to report.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
