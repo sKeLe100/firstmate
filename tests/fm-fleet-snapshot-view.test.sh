@@ -440,6 +440,30 @@ EOF
   pass "snapshot includes durable scout reports after teardown"
 }
 
+# Regression coverage for the argv-limit failure: a backlog large enough that
+# its JSON encoding exceeds the kernel's per-argument exec limit (E2BIG) used
+# to crash every jq call that passed the whole backlog through --argjson.
+# 3000 synthetic Done records comfortably clears that threshold while staying
+# fast to generate and parse.
+test_large_backlog_survives_argv_limit() {
+  local home out i
+  home=$(make_home large-backlog)
+  {
+    printf '## In flight\n\n## Queued\n\n## Done\n'
+    for i in $(seq 1 3000); do
+      printf -- '- [x] big-task-%04d - Synthetic backlog record %04d for argv-limit regression coverage https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-%02d)\n' \
+        "$i" "$i" "$i" "$(((i % 28) + 1))"
+    done
+  } > "$home/data/backlog.md"
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/large-backlog.err")
+  [ -s "$TMP_ROOT/large-backlog.err" ] \
+    && fail "large backlog snapshot must not error: $(cat "$TMP_ROOT/large-backlog.err")"
+  printf '%s' "$out" | jq -e '
+    .schema == "fm-fleet-snapshot.v1" and (.backlog.records | length) == 3000
+  ' >/dev/null || fail "large backlog snapshot must still emit the full record set: $out"
+  pass "a backlog whose JSON exceeds the exec argv limit still produces a full snapshot"
+}
+
 test_backlog_tasks_axi_forms_and_overrides() {
   local home data projects fakebin out view
   home=$(make_home overrides)
@@ -791,6 +815,7 @@ test_open_decision_clears_on_keyed_resolution
 test_completed_scout_report_is_pointer_not_pending
 test_parked_scout_decision_stays_pending
 test_scout_reports_include_teardown_reports
+test_large_backlog_survives_argv_limit
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status

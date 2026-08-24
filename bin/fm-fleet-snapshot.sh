@@ -181,6 +181,18 @@ bool_json() {
   if [ "$1" = 1 ]; then printf 'true'; else printf 'false'; fi
 }
 
+# Writes $2 (a JSON blob that can grow with backlog or task history size) to a
+# private temp file and prints its path, so callers can hand it to
+# `jq --rawfile ... | fromjson` instead of `--argjson`. A large backlog passed
+# through --argjson lands in jq's exec argv and can exceed the kernel's
+# argument-list limit (E2BIG); a file has no such ceiling.
+json_tmpfile() {  # <prefix> <json>
+  local f
+  f=$(umask 077 && mktemp "${TMPDIR:-/tmp}/fm-fleet-snapshot-$1.XXXXXX") || return 1
+  printf '%s' "$2" > "$f" || { rm -f "$f"; return 1; }
+  printf '%s\n' "$f"
+}
+
 path_present_json() {  # <path>
   local present=0
   [ -e "$1" ] && present=1
@@ -608,10 +620,15 @@ task_json_lines() {
 # Meta inventory remains the sole source of live workers; this object only
 # discloses backlog↔task inconsistency for renderers (Bearings omitted/gates).
 main_inventory_json() {  # <backlog-json> <tasks-json>
+  local backlog_file tasks_file rc
+  backlog_file=$(json_tmpfile main-inventory-backlog "$1") || return 1
+  tasks_file=$(json_tmpfile main-inventory-tasks "$2") || { rm -f "$backlog_file"; return 1; }
   jq -n \
-    --argjson backlog "$1" \
-    --argjson tasks "$2" '
-    ([ $backlog.records[]?
+    --rawfile backlog_raw "$backlog_file" \
+    --rawfile tasks_raw "$tasks_file" '
+    ($backlog_raw | fromjson) as $backlog
+    | ($tasks_raw | fromjson) as $tasks
+    | ([ $backlog.records[]?
        | select((.state == "in_flight" or .state == "queued") and (.structured | not)) ]) as $unstructured_current
     | ([ $backlog.records[]?
          | select(.state == "in_flight" and .structured and .requires_child_metadata) ]) as $owned_in_flight
@@ -629,6 +646,9 @@ main_inventory_json() {  # <backlog-json> <tasks-json>
         orphan_in_flight:$orphan_in_flight,
         unstructured_current_count:($unstructured_current | length)
       }'
+  rc=$?
+  rm -f "$backlog_file" "$tasks_file"
+  return $rc
 }
 
 # Project one home's canonical structured inventory into the bounded shape a
@@ -636,6 +656,9 @@ main_inventory_json() {  # <backlog-json> <tasks-json>
 # This mode never reads parent events or terminal text and never aggregates
 # nested secondmates.
 secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
+  local backlog_file tasks_file rc
+  backlog_file=$(json_tmpfile home-summary-backlog "$1") || return 1
+  tasks_file=$(json_tmpfile home-summary-tasks "$2") || { rm -f "$backlog_file"; return 1; }
   jq -n \
     --arg generated "$SNAPSHOT_NOW" \
     --arg home "$FM_HOME" \
@@ -643,9 +666,11 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
     --argjson queued_n "$FM_SNAPSHOT_SECONDMATE_QUEUED" \
     --argjson decisions_n "$FM_SNAPSHOT_SECONDMATE_DECISIONS" \
     --argjson landed_n "$FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME" \
-    --argjson backlog "$1" \
-    --argjson tasks "$2" '
-    def trunc($n):
+    --rawfile backlog_raw "$backlog_file" \
+    --rawfile tasks_raw "$tasks_file" '
+    ($backlog_raw | fromjson) as $backlog
+    | ($tasks_raw | fromjson) as $tasks
+    | def trunc($n):
       tostring | gsub("\\s+"; " ")
       | if length > $n then .[:$n] + "…" else . end;
     ([ $backlog.records[]?
@@ -779,6 +804,9 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
           (if $landed_n > 0 and ($landed_all | length) > $landed_n then {surface:"landed",count:(($landed_all | length) - $landed_n)} else empty end)
         ]
       }'
+  rc=$?
+  rm -f "$backlog_file" "$tasks_file"
+  return $rc
 }
 
 # Current registered-secondmate aggregation.
@@ -1362,6 +1390,12 @@ SECONDMATE_CURRENT_JSON=$(secondmate_current_json "$TASKS_JSON") \
 SECONDMATE_LANDED_JSON=$(secondmate_landed_from_current_json "$SECONDMATE_CURRENT_JSON") \
   || { echo "fm-fleet-snapshot: secondmate landed projection failed" >&2; exit 1; }
 
+FINAL_BACKLOG_FILE=$(json_tmpfile final-backlog "$BACKLOG_JSON") \
+  || { echo "fm-fleet-snapshot: backlog tmpfile write failed" >&2; exit 1; }
+FINAL_TASKS_FILE=$(json_tmpfile final-tasks "$TASKS_JSON") \
+  || { rm -f "$FINAL_BACKLOG_FILE"; echo "fm-fleet-snapshot: tasks tmpfile write failed" >&2; exit 1; }
+trap 'rm -f "$FINAL_BACKLOG_FILE" "$FINAL_TASKS_FILE"' EXIT
+
 jq -n \
   --arg generated "$SNAPSHOT_NOW" \
   --arg fm_home "$FM_HOME" \
@@ -1370,13 +1404,15 @@ jq -n \
   --arg data "$DATA" \
   --arg config "$CONFIG" \
   --arg projects "$PROJECTS" \
-  --argjson backlog "$BACKLOG_JSON" \
-  --argjson tasks "$TASKS_JSON" \
+  --rawfile backlog_raw "$FINAL_BACKLOG_FILE" \
+  --rawfile tasks_raw "$FINAL_TASKS_FILE" \
   --argjson main_inventory "$MAIN_INVENTORY_JSON" \
   --argjson scout_reports "$SCOUT_REPORTS_JSON" \
   --argjson secondmate_current "$SECONDMATE_CURRENT_JSON" \
   --argjson secondmate_landed "$SECONDMATE_LANDED_JSON" \
-  'def backlog_by_id($id): ($backlog.records[]? | select(.structured == true and .id == $id) | .) // null;
+  '($backlog_raw | fromjson) as $backlog
+   | ($tasks_raw | fromjson) as $tasks
+   | def backlog_by_id($id): ($backlog.records[]? | select(.structured == true and .id == $id) | .) // null;
    def task_by_id($id): ($tasks[]? | select(.id == $id) | .) // null;
    def report_kind($id): (task_by_id($id).kind // backlog_by_id($id).kind // "scout");
    {
