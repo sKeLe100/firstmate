@@ -32,12 +32,29 @@ path_without() {  # <tool-to-omit>
   rm -rf "$dir"
   mkdir -p "$dir"
   for tool in awk basename bash cat cut dirname env grep head jq mktemp node paste \
-    python3 rm sed sh tr tasks-axi uname wc; do
+    python3 rm sed sh tr tasks-axi uname wc quota-axi; do
     [ "$tool" = "$omit" ] && continue
     src=$(command -v "$tool" 2>/dev/null) || continue
     [ -n "$src" ] && ln -s "$src" "$dir/$tool"
   done
   printf '%s\n' "$dir"
+}
+
+# Writes a stub quota-axi into the given PATH-shim directory that reports one
+# provider ("claude") at the given effective percent remaining for
+# "all_models", so hierarchy availability tests never depend on the real
+# account's live quota.
+stub_quota_axi() {  # <dir> <percent-remaining>
+  local dir=$1 pct=$2
+  cat > "$dir/quota-axi" <<STUB
+#!/usr/bin/env bash
+cat <<JSON
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":$pct}
+]}}]}
+JSON
+STUB
+  chmod +x "$dir/quota-axi"
 }
 
 make_home() {  # <name>
@@ -402,12 +419,149 @@ printf '%s\n' '- crlf-proj [direct-PR +yolo] - test project (added 2026-08-20)' 
 run_snapshot "$home" > "$TMP_ROOT/line-endings.out"
 carriage=$(grep -c $'\r' "$TMP_ROOT/line-endings.out") || true
 [ "$carriage" = 0 ] || fail "the snapshot emitted CR characters: $(cat -A "$TMP_ROOT/line-endings.out")"
-last_field=$(grep '^  crlf-a' "$TMP_ROOT/line-endings.out" | sed 's/.*,//')
+last_field=$(grep ',crlf-a,' "$TMP_ROOT/line-endings.out" | sed 's/.*,//')
 [ "$last_field" = "captain kind or captain-kind hold" ] \
   || fail "autonomy_reason was not the documented value: [$last_field]"
 case "$(cat "$TMP_ROOT/line-endings.out")" in
   *'crlf-a,fix C:\\path,captain,crlf-proj'*) ;;
   *) fail "a literal backslash was not doubled as documented: $(cat "$TMP_ROOT/line-endings.out")" ;;
+esac
+
+# 14. Items are sorted by descending priority with rank starting at 1;
+#     unset priority ("-") sorts last; equal-priority items keep tasks-axi's
+#     own return order as the tiebreak. --limit is applied AFTER the sort, so
+#     a high-priority item outside the first N in tasks-axi's raw order still
+#     survives.
+home=$(make_home priority-sort)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add pri-low "low" --kind docs --priority 0 >/dev/null
+  tasks-axi add pri-tie-1 "tie one" --kind docs --priority 2 >/dev/null
+  tasks-axi add pri-tie-2 "tie two" --kind docs --priority 2 >/dev/null
+  tasks-axi add pri-none "unset" --kind docs >/dev/null
+  tasks-axi add pri-high "high" --kind docs --priority 4 >/dev/null
+)
+out=$(run_snapshot "$home")
+case "$out" in
+  *"1,pri-high,high,docs,-,4,"*) ;;
+  *) fail "highest priority did not rank 1: $out" ;;
+esac
+case "$out" in
+  *"2,pri-tie-1,tie one,docs,-,2,"*) ;;
+  *) fail "equal-priority items did not keep insertion order (tie-1 expected rank 2): $out" ;;
+esac
+case "$out" in
+  *"3,pri-tie-2,tie two,docs,-,2,"*) ;;
+  *) fail "equal-priority items did not keep insertion order (tie-2 expected rank 3): $out" ;;
+esac
+case "$out" in
+  *"4,pri-low,low,docs,-,0,"*) ;;
+  *) fail "explicit priority 0 did not outrank unset priority: $out" ;;
+esac
+case "$out" in
+  *"5,pri-none,unset,docs,-,-,"*) ;;
+  *) fail "unset priority did not sort last: $out" ;;
+esac
+
+home=$(make_home priority-limit)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add lim-low-1 "low 1" --kind docs --priority 0 >/dev/null
+  tasks-axi add lim-low-2 "low 2" --kind docs --priority 0 >/dev/null
+  tasks-axi add lim-high "high" --kind docs --priority 4 >/dev/null
+)
+out=$(run_snapshot "$home" --limit 1)
+case "$out" in
+  *"count: 1"*) ;;
+  *) fail "expected count: 1 under --limit 1 after sorting, got: $out" ;;
+esac
+case "$out" in
+  *"1,lim-high,high,docs"*) ;;
+  *) fail "--limit did not keep the highest-priority item after sorting: $out" ;;
+esac
+case "$out" in
+  *lim-low*) fail "--limit kept a lower-priority item once the highest was included: $out" ;;
+esac
+
+# 15. Missing crew-dispatch.json reports hierarchy_lanes as unavailable, tied
+#     to the same dispatch_config verdict the item tiers already use, rather
+#     than a second independent gating check.
+home=$(make_home hierarchy-absent)
+: > "$home/data/projects.md"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"hierarchy_lanes: unavailable (dispatch_config: absent)"*) ;;
+  *) fail "expected hierarchy_lanes unavailable for absent config, got: $out" ;;
+esac
+
+# 16. A present crew-dispatch.json yields one hierarchy row per rule/default
+#     profile, using the rule's own `when` text - never a hardcoded task-class
+#     label - and a profile array yields one row per candidate rather than a
+#     collapsed summary.
+if command -v jq >/dev/null 2>&1; then
+  home=$(make_home hierarchy-present)
+  : > "$home/data/projects.md"
+  cat > "$home/config/crew-dispatch.json" <<'EOF'
+{
+  "rules": [
+    { "when": "hard or ambiguous work", "use": [
+        { "harness": "claude", "model": "claude-opus-5", "effort": "high" },
+        { "harness": "codex", "model": "gpt-5.5", "effort": "high" }
+      ], "why": "senior" }
+  ],
+  "default": [ { "harness": "claude", "model": "claude-sonnet-5", "effort": "medium" } ]
+}
+EOF
+  stub_dir_q=$(path_without quota-axi)
+  stub_quota_axi "$stub_dir_q" 62
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"hierarchy_lanes[3]{source,for,harness,model,effort,available,availability_reason}:"*) ;;
+    *) fail "expected 3 hierarchy lane rows (2 rule candidates + 1 default), got: $out" ;;
+  esac
+  case "$out" in
+    *"rule,hard or ambiguous work,claude,claude-opus-5,high,yes,62% remaining"*) ;;
+    *) fail "missing/incorrect claude rule lane row: $out" ;;
+  esac
+  case "$out" in
+    *"rule,hard or ambiguous work,codex,gpt-5.5,high,unknown,no live quota data for codex"*) ;;
+    *) fail "codex lane (no quota evidence stubbed) was not reported unknown: $out" ;;
+  esac
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-sonnet-5,medium,yes,62% remaining"*) ;;
+    *) fail "missing/incorrect default lane row: $out" ;;
+  esac
+
+  # An exhausted window (0% remaining) is reported unavailable, not silently
+  # dropped from the listing.
+  home=$(make_home hierarchy-exhausted)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","effort":"low"}}' > "$home/config/crew-dispatch.json"
+  stub_quota_axi "$stub_dir_q" 0
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,-,low,no,0% remaining"*) ;;
+    *) fail "an exhausted window was not reported unavailable: $out" ;;
+  esac
+fi
+
+# 17. live_slots counts state/*.meta entries currently tracked in this home,
+#     regardless of the queue's own contents.
+home=$(make_home live-slots)
+: > "$home/data/projects.md"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"live_slots: 0"*) ;;
+  *) fail "expected live_slots: 0 with no tracked tasks, got: $out" ;;
+esac
+: > "$home/state/task-a.meta"
+: > "$home/state/task-b.meta"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"live_slots: 2"*) ;;
+  *) fail "expected live_slots: 2 with two tracked meta files, got: $out" ;;
 esac
 
 echo "PASS fm-queue-snapshot.test.sh"

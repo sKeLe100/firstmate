@@ -23,24 +23,37 @@
 #               empty/"-"), the one case this script cannot resolve
 #               deterministically.
 #
-# Tier/model/effort resolution is deliberately OUT of scope: matching an
-# item's description against config/crew-dispatch.json's natural-language
-# `when` rules is judgment, the same judgment AGENTS.md section 4 gives to
-# firstmate at real dispatch time, and a profile array's concrete pick
-# additionally needs live quota-axi evidence this script must not spend on a
-# listing. This script only reports whether config/crew-dispatch.json is
-# present/absent/invalid/unverified so the caller knows whether tier matching is
-# even possible; the caller (the /queue skill) reads the file itself and does
-# the matching. "present" means the file passes the shared crew-dispatch
-# validity contract in bin/fm-crew-dispatch-lib.sh - the same verdict
-# bin/fm-bootstrap.sh reports as CREW_DISPATCH - not merely that it parses as
-# JSON, so the skill never publishes tiers from a config real dispatch would
-# refuse. "unverified" means that contract could not be evaluated here because
-# jq is unavailable; the caller must treat it as untrustworthy for tiers rather
-# than guessing.
+# Tier/model/effort resolution against a single item is deliberately OUT of
+# scope: matching an item's description against config/crew-dispatch.json's
+# natural-language `when` rules is judgment, the same judgment AGENTS.md
+# section 4 gives to firstmate at real dispatch time, and a profile array's
+# concrete pick additionally needs live quota-axi evidence this script must
+# not spend PER ITEM on a 30-row listing. This script only reports whether
+# config/crew-dispatch.json is present/absent/invalid/unverified so the caller
+# knows whether tier matching is even possible; the caller (the /queue skill)
+# reads the file itself and does the per-item matching. "present" means the
+# file passes the shared crew-dispatch validity contract in
+# bin/fm-crew-dispatch-lib.sh - the same verdict bin/fm-bootstrap.sh reports as
+# CREW_DISPATCH - not merely that it parses as JSON, so the skill never
+# publishes tiers from a config real dispatch would refuse. "unverified" means
+# that contract could not be evaluated here because jq is unavailable; the
+# caller must treat it as untrustworthy for tiers rather than guessing.
 #
-# This script is READ-ONLY: it runs no tasks-axi mutation, writes no file,
-# and never spends quota or network.
+# This script DOES spend one bounded, aggregate quota-axi read per invocation
+# for the hierarchy header below (never per queued item): a single
+# `quota-axi --json` call to report live lane availability. It runs no
+# tasks-axi mutation and writes no file.
+#
+# Ranking and priority: items are sorted by tasks-axi's own `priority` field
+# (0-4, higher = more urgent), descending, BEFORE --limit is applied, so a
+# high-priority item outside the first N in tasks-axi's raw return order is
+# never dropped from view. An item with no priority set ("-") sorts as the
+# lowest priority. Equal-priority items (including all items when none set a
+# priority) keep tasks-axi's own return order as a stable tiebreak - this
+# script never reorders same-priority items by title, id, or any other guess.
+# `rank` is the resulting 1-based position after that sort, the same number
+# the /queue skill renders so the captain's item numbers match this script's
+# order exactly.
 #
 # Usage: fm-queue-snapshot.sh [--limit N]   (default N=30)
 #
@@ -51,16 +64,38 @@
 # escapes stay unambiguous - so every item stays on exactly one LF-terminated
 # line):
 #   count: <n>
-#   items[<n>]{id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
+#   items[<n>]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
 #     <csv row>...
 #   dispatch_config: absent|present|invalid|unverified
+#   hierarchy_lanes: unavailable (dispatch_config: <status>)
+#     -- OR, only when dispatch_config is "present" --
+#   hierarchy_lanes[<n>]{source,for,harness,model,effort,available,availability_reason}:
+#     <csv row>...
+#     `source` is "rule" (one row per config rule, `for` = that rule's own
+#     `when` text) or "default" (`for` = "default (no rule matched)"); a rule
+#     or default with a profile array yields one row per candidate profile,
+#     never a collapsed summary. `model`/`effort` are "-" when the profile
+#     omits them. `available` is yes/no/unknown: unknown means quota-axi
+#     produced no evidence for that harness (not installed/authenticated, or
+#     this script has no provider mapping for it) - never guessed as yes or
+#     no. This block never lists a lane firstmate's dispatch config does not
+#     itself configure, so a harness with no configured rule (a retired
+#     subscription, for example) never appears here.
+#   live_slots: <n>
+#     count of state/*.meta entries currently tracked (spawned, not yet torn
+#     down) in this FM_HOME - not a live/dead endpoint check, which is a
+#     heavier, backend-process-dependent read already owned by
+#     bin/fm-crew-state.sh and bin/fm-session-start.sh's own fleet-state
+#     digest; this script deliberately does not duplicate that classifier.
+#     Firstmate has no configured concurrency cap by default (AGENTS.md
+#     section 7), so this script never reports one.
 #
 # Fails loudly (exit 1) when tasks-axi is missing or its list call errors,
 # rather than reporting an empty queue that might just be a broken lookup.
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,59p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,94p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -92,7 +127,11 @@ TMP_ERR="$(mktemp "${TMPDIR:-/tmp}/fm-queue-snapshot-err.XXXXXX")"
 trap 'rm -f "$TMP_LIST" "$TMP_ERR"' EXIT
 
 FIELDS="blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority"
-if ! (cd "$FM_HOME" && tasks-axi list --state queued --fields "$FIELDS" --limit "$LIMIT") \
+# Fetch every queued item (no --limit) so priority sorting below considers
+# the full queue before the requested N is applied; --limit here would
+# truncate to tasks-axi's raw return order first and could drop a
+# high-priority item that falls outside the first N in that raw order.
+if ! (cd "$FM_HOME" && tasks-axi list --state queued --fields "$FIELDS") \
   > "$TMP_LIST" 2> "$TMP_ERR"; then
   echo "fm-queue-snapshot: tasks-axi list failed: $(cat "$TMP_ERR")" >&2
   exit 1
@@ -124,14 +163,24 @@ fi
 
 PROJECT_MODE_BIN="$SCRIPT_DIR/fm-project-mode.sh"
 
-FM_QUEUE_PROJECT_MODE_BIN="$PROJECT_MODE_BIN" FM_QUEUE_DISPATCH_STATUS="$dispatch_status" python3 - "$TMP_LIST" <<'PY'
+FM_QUEUE_PROJECT_MODE_BIN="$PROJECT_MODE_BIN" \
+FM_QUEUE_DISPATCH_STATUS="$dispatch_status" \
+FM_QUEUE_LIMIT="$LIMIT" \
+FM_QUEUE_CFG="$CFG" \
+FM_QUEUE_STATE_DIR="$FM_HOME/state" \
+python3 - "$TMP_LIST" <<'PY'
 import csv
+import glob
+import json
 import os
 import subprocess
 import sys
 
 project_mode_bin = os.environ["FM_QUEUE_PROJECT_MODE_BIN"]
 dispatch_status = os.environ["FM_QUEUE_DISPATCH_STATUS"]
+limit = int(os.environ["FM_QUEUE_LIMIT"])
+cfg_path = os.environ["FM_QUEUE_CFG"]
+state_dir = os.environ["FM_QUEUE_STATE_DIR"]
 
 TOON_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", '"': '"'}
 
@@ -230,8 +279,20 @@ def posture_for(repo):
     return posture
 
 
+def priority_key(value):
+    return int(value) if value.isdigit() else -1
+
+
+# Stable sort by descending priority; equal-priority items (including "-",
+# the lowest bucket) keep tasks-axi's own return order as the tiebreak, since
+# `rows` is already in that order and Python's sort is stable.
+ranked_rows = sorted(
+    enumerate(rows), key=lambda pair: -priority_key(pair[1]["priority"])
+)
+ranked_rows = [r for _, r in ranked_rows][:limit]
+
 out_rows = []
-for r in rows:
+for rank, r in enumerate(ranked_rows, start=1):
     captain_kind = r["kind"] == "captain" or r["hold_kind"] == "captain"
     repo = r["repo"]
     has_repo = bool(repo) and repo != "-"
@@ -247,14 +308,14 @@ for r in rows:
         else:
             autonomy, reason = "autonomous-eligible", "project registry posture has yolo on"
     out_rows.append([
-        r["id"], r["title"], r["kind"], repo, r["priority"],
+        rank, r["id"], r["title"], r["kind"], repo, r["priority"],
         r["blocked"], r["blocked_by"], r["held"], r["hold_kind"],
         r["hold_reason"], r["hold_until"], posture, autonomy, reason,
     ])
 
 print(f"count: {len(out_rows)}")
 if out_rows:
-    cols = ("id,title,kind,repo,priority,blocked,blocked_by,held,"
+    cols = ("rank,id,title,kind,repo,priority,blocked,blocked_by,held,"
             "hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason")
     print(f"items[{len(out_rows)}]{{{cols}}}:")
     writer = csv.writer(sys.stdout, lineterminator="\n")
@@ -262,4 +323,111 @@ if out_rows:
         cells = [one_line(str(v)) for v in row]
         writer.writerow(["  " + cells[0]] + cells[1:])
 print(f"dispatch_config: {dispatch_status}")
+
+# --- hierarchy lanes: config/crew-dispatch.json rules/default enriched with
+# one bounded, aggregate quota-axi read (never per queued item). -----------
+
+HARNESS_TO_PROVIDER = {
+    "claude": "claude",
+    "codex": "codex",
+    "grok": "grok",
+    "kimi": "kimi",
+}
+
+
+def profiles_of(value):
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
+def quota_lookup():
+    try:
+        proc = subprocess.run(
+            ["quota-axi", "--json"], capture_output=True, text=True, check=False
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        return json.loads(proc.stdout)
+    except (ValueError, TypeError):
+        return None
+
+
+def availability_for(harness, model, quota_data):
+    provider_name = HARNESS_TO_PROVIDER.get(harness)
+    if provider_name is None:
+        return "unknown", "no quota-axi provider mapping for this worker runtime"
+    if quota_data is None:
+        return "unknown", "quota-axi produced no evidence"
+    provider = next(
+        (p for p in quota_data.get("providers", []) if p.get("provider") == provider_name),
+        None,
+    )
+    if provider is None:
+        return "unknown", f"no live quota data for {provider_name}"
+    availability = (provider.get("quotaSemantics") or {}).get("effectiveAvailability") or []
+    scoped = None
+    if model:
+        scoped = next(
+            (
+                a for a in availability
+                if a.get("scope") == "model"
+                and model.lower() in ",".join(a.get("boundedBy") or []).lower()
+                + ",".join(a.get("limitingWindowIds") or []).lower()
+            ),
+            None,
+        )
+    if scoped is None:
+        scoped = next((a for a in availability if a.get("scope") == "all_models"), None)
+    if scoped is not None and scoped.get("effectivePercentRemaining") is not None:
+        remaining = scoped["effectivePercentRemaining"]
+        verdict = "yes" if remaining > 0 else "no"
+        return verdict, f"{remaining}% remaining ({scoped.get('scope')})"
+    windows = provider.get("windows") or []
+    session = next((w for w in windows if w.get("kind") == "session"), None)
+    window = session or (windows[0] if windows else None)
+    if window is not None and window.get("percentRemaining") is not None:
+        remaining = window["percentRemaining"]
+        verdict = "yes" if remaining > 0 else "no"
+        return verdict, f"{remaining}% remaining ({window.get('label', window.get('id'))})"
+    return "unknown", f"no window evidence for {provider_name}"
+
+
+if dispatch_status != "present":
+    print(f"hierarchy_lanes: unavailable (dispatch_config: {dispatch_status})")
+else:
+    with open(cfg_path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    lanes = []
+    for rule in cfg.get("rules") or []:
+        when = rule.get("when") or ""
+        for profile in profiles_of(rule.get("use")):
+            lanes.append(("rule", when, profile))
+    for profile in profiles_of(cfg.get("default")):
+        lanes.append(("default", "default (no rule matched)", profile))
+
+    quota_data = quota_lookup() if lanes else None
+    lane_rows = []
+    for source, for_text, profile in lanes:
+        harness = profile.get("harness", "")
+        model = profile.get("model") or "-"
+        effort = profile.get("effort") or "-"
+        available, avail_reason = availability_for(
+            harness, model if model != "-" else "", quota_data
+        )
+        lane_rows.append([source, for_text, harness, model, effort, available, avail_reason])
+
+    print(f"hierarchy_lanes[{len(lane_rows)}]{{source,for,harness,model,effort,available,availability_reason}}:")
+    writer = csv.writer(sys.stdout, lineterminator="\n")
+    for row in lane_rows:
+        cells = [one_line(str(v)) for v in row]
+        writer.writerow(["  " + cells[0]] + cells[1:])
+
+live_slots = len(glob.glob(os.path.join(state_dir, "*.meta")))
+print(f"live_slots: {live_slots}")
 PY
