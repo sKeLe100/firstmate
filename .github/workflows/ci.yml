@@ -134,6 +134,12 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: [self-hosted, linux]
+    env:
+      # Defense in depth: this lane holds no real-Herdr family, but it does run
+      # on a host where herdr is on PATH and the live fleet's registry sits in
+      # the same user's config. A private per-run config root means a test that
+      # drifts back into this lane still cannot reach that registry.
+      XDG_CONFIG_HOME: /tmp/fm-ci-herdr-home-serial-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
     # Measured whole remainder is ~42 min of serial work; the balanced shards
     # are ~10.6 min each. Cap is a hang tripwire with roughly 2x margin, not the
     # expected healthy end of the lane.
@@ -180,10 +186,29 @@ jobs:
           FM_SERIAL_SHARD: ${{ matrix.shard }}
         run: |
           set -eu
-          rm -rf "$RUNNER_TEMP/fm-test"
-          mkdir -p "$RUNNER_TEMP/fm-test"
+          rm -rf "$RUNNER_TEMP/fm-test" "$XDG_CONFIG_HOME"
+          mkdir -p "$RUNNER_TEMP/fm-test" "$XDG_CONFIG_HOME"
           bin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"
+      - name: Drop this shard's Herdr config root
+        if: always()
+        run: |
+          set -eu
+          # Never remove the root out from under a server still bound inside
+          # it: that would strip the socket and session dir needed to find it
+          # again. Nothing in this lane should create one, so say so loudly
+          # rather than deleting the evidence.
+          leftover=
+          if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+            leftover=$(herdr session list --json 2>/dev/null \
+              | jq -r '[.sessions[]? | select(.default == false and .running == true) | .name] | join(" ")' \
+              || true)
+          fi
+          if [ -n "$leftover" ]; then
+            echo "::warning::leaving $XDG_CONFIG_HOME in place; sessions still running: $leftover"
+          else
+            rm -rf "$XDG_CONFIG_HOME"
+          fi
       - name: Upload portable serial shard ${{ matrix.shard }} timing artifact
         if: always()
         uses: actions/upload-artifact@v4
