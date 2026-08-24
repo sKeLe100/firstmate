@@ -1448,6 +1448,8 @@ FINAL_SECONDMATE_CURRENT_FILE=$(json_tmpfile final-secondmate-current "$SECONDMA
   || { echo "fm-fleet-snapshot: secondmate current tmpfile write failed" >&2; exit 1; }
 FINAL_SECONDMATE_LANDED_FILE=$(json_tmpfile final-secondmate-landed "$SECONDMATE_LANDED_JSON") \
   || { echo "fm-fleet-snapshot: secondmate landed tmpfile write failed" >&2; exit 1; }
+FINAL_SCOUT_REPORTS_FILE=$(json_tmpfile final-scout-reports "$SCOUT_REPORTS_JSON") \
+  || { echo "fm-fleet-snapshot: scout reports tmpfile write failed" >&2; exit 1; }
 
 jq -n \
   --arg generated "$SNAPSHOT_NOW" \
@@ -1460,13 +1462,14 @@ jq -n \
   --rawfile backlog_raw "$FINAL_BACKLOG_FILE" \
   --rawfile tasks_raw "$FINAL_TASKS_FILE" \
   --argjson main_inventory "$MAIN_INVENTORY_JSON" \
-  --argjson scout_reports "$SCOUT_REPORTS_JSON" \
+  --rawfile scout_reports_raw "$FINAL_SCOUT_REPORTS_FILE" \
   --rawfile secondmate_current_raw "$FINAL_SECONDMATE_CURRENT_FILE" \
   --rawfile secondmate_landed_raw "$FINAL_SECONDMATE_LANDED_FILE" \
   '($backlog_raw | fromjson) as $backlog
    | ($tasks_raw | fromjson) as $tasks
    | ($secondmate_current_raw | fromjson) as $secondmate_current
    | ($secondmate_landed_raw | fromjson) as $secondmate_landed
+   | ($scout_reports_raw | fromjson) as $scout_reports
    | def backlog_by_id($id): ($backlog.records[]? | select(.structured == true and .id == $id) | .) // null;
    def task_by_id($id): ($tasks[]? | select(.id == $id) | .) // null;
    def report_kind($id): (task_by_id($id).kind // backlog_by_id($id).kind // "scout");

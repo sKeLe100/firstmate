@@ -464,6 +464,28 @@ test_large_backlog_survives_argv_limit() {
   pass "a backlog whose JSON exceeds the exec argv limit still produces a full snapshot"
 }
 
+# Scout report pointers accumulate durably in data/<id>/report.md and were the
+# last data-scaling payload still handed to the final jq through --argjson.
+# 1400 pointers push that single argument past the kernel per-argument limit.
+test_many_scout_reports_survive_argv_limit() {
+  local home out i id
+  home=$(make_home many-scout-reports)
+  for i in $(seq 1 1400); do
+    id=$(printf 'scout-report-with-a-realistically-long-identifier-%04d' "$i")
+    mkdir -p "$home/data/$id"
+    printf '# Report %s\n' "$id" > "$home/data/$id/report.md"
+  done
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/many-scout-reports.err")
+  [ -s "$TMP_ROOT/many-scout-reports.err" ] \
+    && fail "many-scout-report snapshot must not error: $(cat "$TMP_ROOT/many-scout-reports.err")"
+  printf '%s' "$out" | jq -e '
+    .schema == "fm-fleet-snapshot.v1"
+    and (.scout_reports | length) == 1400
+    and (.scout_reports | all(.kind == "scout"))
+  ' >/dev/null || fail "many-scout-report snapshot must emit every pointer with its kind"
+  pass "scout report pointers exceeding the exec argv limit still produce a full snapshot"
+}
+
 # Snapshot temp files hold whole backlog- and task-sized payloads. An
 # interrupted run (a captain hitting Ctrl-C on /bearings) must not leave them
 # behind in TMPDIR.
@@ -481,10 +503,21 @@ test_interrupted_snapshot_leaves_no_temp_files() {
   } > "$home/data/backlog.md"
   TMPDIR="$tmp" FM_HOME="$home" "$SNAPSHOT" --json >/dev/null 2>&1 &
   pid=$!
+  local observed=0
   for i in $(seq 1 200); do
-    [ -n "$(find "$tmp" -mindepth 1 -print -quit 2>/dev/null)" ] && break
+    if [ -n "$(find "$tmp" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+      observed=1
+      break
+    fi
+    kill -0 "$pid" 2>/dev/null || break
     sleep 0.05
   done
+  [ "$observed" = 1 ] || {
+    kill -TERM "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    fail "snapshot never created a temp file to interrupt; the test proved nothing"
+  }
+  kill -0 "$pid" 2>/dev/null || fail "snapshot exited before it could be interrupted; the test proved nothing"
   kill -TERM "$pid" 2>/dev/null
   wait "$pid" 2>/dev/null
   leftovers=$(find "$tmp" -mindepth 1 2>/dev/null)
@@ -896,6 +929,7 @@ test_parked_scout_decision_stays_pending
 test_scout_reports_include_teardown_reports
 test_large_backlog_survives_argv_limit
 test_many_secondmate_summaries_survive_argv_limit
+test_many_scout_reports_survive_argv_limit
 test_interrupted_snapshot_leaves_no_temp_files
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
