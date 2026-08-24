@@ -648,6 +648,74 @@ STUB
     *) fail "a lane bound to another model's scope instead of its own exact scope: $out" ;;
   esac
 
+  # An account-wide scope spelled "all_products" bounds the lane exactly like
+  # "all_models", and an exhausted one is never reported available on the
+  # strength of some other window the provider happens to publish.
+  home=$(make_home hierarchy-all-products)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude",
+  "windows":[{"kind":"session","label":"session","percentRemaining":80}],
+  "quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_products","effectivePercentRemaining":0}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-opus-5,high,no,0% remaining (all_products)"*) ;;
+    *) fail "an exhausted all_products account was not reported unavailable: $out" ;;
+  esac
+
+  # With no model-scoped and no account-wide entry, the verdict is unknown -
+  # an unrelated provider window (a code-review workload, say) is never used
+  # as a stand-in for model availability.
+  home=$(make_home hierarchy-no-scope-evidence)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude",
+  "windows":[{"kind":"code_review","label":"code review","percentRemaining":70}],
+  "quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-opus-5,high,unknown,no model or account-wide quota evidence for claude"*) ;;
+    *) fail "a lane with no scoped quota evidence was not reported unknown: $out" ;;
+  esac
+
+  # A scope naming a DIFFERENT, more specific model never binds a lane that
+  # has no exact scope of its own: it reads the account-wide number instead.
+  home=$(make_home hierarchy-other-model-scope)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"gpt-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"model:gpt-5-codex","effectivePercentRemaining":3}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,gpt-5,high,yes,90% remaining (all_models)"*) ;;
+    *) fail "another model's tighter scope bound a lane that has none of its own: $out" ;;
+  esac
+
   # A present config that names no rule/default profile reports the header as
   # unavailable rather than emitting a row-less hierarchy_lanes block.
   home=$(make_home hierarchy-no-profiles)

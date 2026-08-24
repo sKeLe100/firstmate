@@ -79,13 +79,19 @@
 #     or default with a profile array yields one row per candidate profile,
 #     never a collapsed summary. `model`/`effort` are "-" when the profile
 #     omits them. `available` is yes/no/unknown: unknown means quota-axi
-#     produced no evidence for that harness (not installed/authenticated, or
-#     this script has no provider mapping for it) - never guessed as yes or
-#     no. A lane with a model is bound by whichever is lower of that model's
-#     own "model:<name>" scoped availability and the account-wide all_models
-#     number, and the reason names that binding scope, so neither a
+#     produced no evidence for that harness (not installed/authenticated, this
+#     script has no provider mapping for it, or the provider reported no
+#     model-scoped and no account-wide effectiveAvailability entry) - never
+#     guessed as yes or no from any other window. A lane with a model is bound
+#     by whichever is lower of that model's own "model:<name>" scoped
+#     availability and the account-wide number ("all_models" or
+#     "all_products"), and the reason names that binding scope, so neither a
 #     model-exhausted lane nor an exhausted account is ever reported
-#     available on the other one's headroom. This block never lists a lane firstmate's dispatch config does not
+#     available on the other one's headroom. A "model:<name>" scope binds a
+#     lane only when its token equals the lane's model or names a whole
+#     segment run of it (so "model:opus" bounds "claude-opus-5"); a scope for
+#     a more specific different model ("model:gpt-5-codex" against a "gpt-5"
+#     lane) never does, and that lane reads the account-wide number instead. This block never lists a lane firstmate's dispatch config does not
 #     itself configure, so a harness with no configured rule (a retired
 #     subscription, for example) never appears here.
 #   live_slots: <n>
@@ -190,6 +196,7 @@ import csv
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -376,26 +383,44 @@ def quota_lookup():
         return None
 
 
+ACCOUNT_WIDE_SCOPES = ("all_models", "all_products")
+
+
 def model_scope_token(scope):
     if not isinstance(scope, str) or not scope.startswith("model:"):
         return ""
     return scope.split(":", 1)[1].strip().lower()
 
 
+def scope_segments(text):
+    return [seg for seg in re.split(r"[^a-z0-9]+", text) if seg]
+
+
+def scope_names_model(token, name):
+    token_segs = scope_segments(token)
+    name_segs = scope_segments(name)
+    if not token_segs or len(token_segs) > len(name_segs):
+        return False
+    return any(
+        name_segs[i:i + len(token_segs)] == token_segs
+        for i in range(len(name_segs) - len(token_segs) + 1)
+    )
+
+
 def pick_model_scoped(availability, model):
     name = model.strip().lower()
     if not name:
         return None
-    loose = None
+    family = None
     for entry in availability:
         token = model_scope_token(entry.get("scope"))
         if not token:
             continue
         if token == name:
             return entry
-        if loose is None and (token in name or name in token):
-            loose = entry
-    return loose
+        if family is None and scope_names_model(token, name):
+            family = entry
+    return family
 
 
 def availability_for(harness, model, quota_data):
@@ -415,7 +440,9 @@ def availability_for(harness, model, quota_data):
     scoped = pick_model_scoped(availability, model) if model else None
     if scoped is not None:
         candidates.append(scoped)
-    account = next((a for a in availability if a.get("scope") == "all_models"), None)
+    account = next(
+        (a for a in availability if a.get("scope") in ACCOUNT_WIDE_SCOPES), None
+    )
     if account is not None:
         candidates.append(account)
     numeric = [
@@ -428,14 +455,7 @@ def availability_for(harness, model, quota_data):
         remaining = binding["effectivePercentRemaining"]
         verdict = "yes" if remaining > 0 else "no"
         return verdict, f"{remaining}% remaining ({binding.get('scope')})"
-    windows = provider.get("windows") or []
-    session = next((w for w in windows if w.get("kind") == "session"), None)
-    window = session or (windows[0] if windows else None)
-    if window is not None and window.get("percentRemaining") is not None:
-        remaining = window["percentRemaining"]
-        verdict = "yes" if remaining > 0 else "no"
-        return verdict, f"{remaining}% remaining ({window.get('label', window.get('id'))})"
-    return "unknown", f"no window evidence for {provider_name}"
+    return "unknown", f"no model or account-wide quota evidence for {provider_name}"
 
 
 if dispatch_status != "present":
