@@ -1079,7 +1079,11 @@ terminal_evidence_json() {  # <parent-task-json> <event-note> <evidence-contradi
 }
 
 parent_evidence_reconciliation_json() {  # <summary-json> <activities-json> <decisions-json>
-  jq -n --argjson summary "$1" --argjson activities "$2" --argjson decisions "$3" '
+  local summary_file out rc
+  summary_file=$(json_tmpfile reconciliation-summary "$1") || return 1
+  out=$(jq -n --rawfile summary_raw "$summary_file" --argjson activities "$2" --argjson decisions "$3" '
+    ($summary_raw | fromjson) as $summary
+    |
     def keyed: . != null and . != "" and . != "default";
     def result($e; $matches; $complete; $surface):
       $e + {
@@ -1135,17 +1139,23 @@ parent_evidence_reconciliation_json() {  # <summary-json> <activities-json> <dec
     | {provenance:"parent-status-keyed-fold",trust:"untrusted-supplement",
        activities:$activity_results,decisions:$decision_results,
        contradiction:any(($activity_results + $decision_results)[]; .verdict == "contradicts"),
-       inconclusive:any(($activity_results + $decision_results)[]; .verdict == "inconclusive")}'
+       inconclusive:any(($activity_results + $decision_results)[]; .verdict == "inconclusive")}')
+  rc=$?
+  rm -f "$summary_file"
+  [ "$rc" -eq 0 ] || return "$rc"
+  printf '%s\n' "$out"
 }
 
 secondmate_current_json() {  # <parent-tasks-json>
   local tasks=$1 registry union rows total_registered total shown truncated
   local row id home host remote registered registry_error task status_file event_raw event_note event_epoch event_age
   local activity_scan activities decisions reconciliation provenance freshness reason summary summary_rc summary_bytes summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
-  local records_file out rc seen_homes=''
+  local records_file tasks_file summary_file record_rc out rc seen_homes=''
   registry=$(registry_secondmates_json) || return 1
-  union=$(jq -n --argjson registry "$registry" --argjson tasks "$tasks" '
-    ($registry.records // []) as $registered
+  tasks_file=$(json_tmpfile secondmate-current-tasks "$tasks") || return 1
+  union=$(jq -n --argjson registry "$registry" --rawfile tasks_raw "$tasks_file" '
+    ($tasks_raw | fromjson) as $tasks
+    | ($registry.records // []) as $registered
     | (($registered | map(.id)) // []) as $registered_ids
     | ([ $registered[] as $r
          | $r + {parent_task:([$tasks[] | select(.id == $r.id)][0] // null)} ]
@@ -1158,7 +1168,10 @@ secondmate_current_json() {  # <parent-tasks-json>
                               else "secondmate registration is unknown because the registry read is incomplete or unavailable" end),
               parent_task:$t} ])
     | sort_by(.id)
-    | {registry:$registry,records:.}') || return 1
+    | {registry:$registry,records:.}')
+  rc=$?
+  rm -f "$tasks_file"
+  [ "$rc" -eq 0 ] || return 1
   total_registered=$(printf '%s' "$union" | jq '[.records[] | select(.registered)] | length')
   total=$(printf '%s' "$union" | jq '.records | length')
   rows=$(printf '%s' "$union" | jq -c --argjson cap "$FM_SNAPSHOT_SECONDMATES" '(if $cap == 0 then .records else .records[:$cap] end)[]')
@@ -1287,13 +1300,15 @@ secondmate_current_json() {  # <parent-tasks-json>
           '{provenance:"parent-direct-report-terminal",trust:"untrusted-supplement",captured:false,observed_at:$observed,freshness:"not-collected",reason:"no useful contradiction check",lines:0,bytes:0,event_note_seen:false,contradiction:false}')
       fi
       if printf '%s' "$terminal" | jq -e '.contradiction == true' >/dev/null; then contradiction=true; fi
+      summary_file=$(json_tmpfile secondmate-record-summary "$summary") || { rm -f "$records_file"; return 1; }
       record=$(jq -n \
         --arg id "$id" --arg home "$home" --arg host "$host" --argjson remote "$remote" --arg state "$state" --arg current_reason "$current_reason" --arg observed "$SNAPSHOT_NOW" \
-        --argjson registered "$registered" --argjson summary "$summary" --argjson summary_valid "$summary_valid" --argjson decisions "$decisions" \
+        --argjson registered "$registered" --rawfile summary_raw "$summary_file" --argjson summary_valid "$summary_valid" --argjson decisions "$decisions" \
         --argjson activities "$activities" --argjson activity_scan "$activity_scan" \
         --argjson reconciliation "$reconciliation" --argjson terminal "$terminal" --argjson contradiction "$contradiction" \
         --arg event_raw "$event_raw" --arg event_note "$event_note" --argjson event_age "$event_age" '
-        {id:$id,home:$home,host:($host | if . == "" then null else . end),remote:$remote,registered:$registered,
+        ($summary_raw | fromjson) as $summary
+        | {id:$id,home:$home,host:($host | if . == "" then null else . end),remote:$remote,registered:$registered,
          current:{state:$state,reason:($current_reason | if . == "" then null else . end)},invalidity:$summary.invalidity,
          provenance:{selected:"structured-home",structured_home:$home,summary_valid:$summary_valid,
            trust:(if $summary_valid then "complete" else "partial-structured" end),parent_event_role:"historical-only"},
@@ -1303,6 +1318,8 @@ secondmate_current_json() {  # <parent-tasks-json>
          landed:$summary.landed,endpoints:$summary.endpoints,counts:$summary.counts,omitted:$summary.omitted,
          parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan,reconciliation:$reconciliation},
          terminal_evidence:$terminal,contradiction:$contradiction}')
+      record_rc=$?
+      rm -f "$summary_file"
     else
       if [ -n "$event_raw" ]; then
         provenance='parent-event-fallback'
@@ -1329,6 +1346,11 @@ secondmate_current_json() {  # <parent-tasks-json>
          active_children:[],decisions_open:[],holds:[],queued:[],landed:[],endpoints:[],counts:{active_children:0,decisions_open:0,holds:0,queued:0,landed:0,endpoints:0},omitted:[],
          parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan},
          terminal_evidence:$terminal,contradiction:false}')
+      record_rc=$?
+    fi
+    if [ "$record_rc" -ne 0 ] || [ -z "$record" ]; then
+      rm -f "$records_file"
+      return 1
     fi
     printf '%s\n' "$record" >> "$records_file" || { rm -f "$records_file"; return 1; }
   done <<EOF
