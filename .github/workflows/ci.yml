@@ -334,6 +334,7 @@ jobs:
           if [ -f "$pid_file" ]; then
             kill "$(cat "$pid_file")" 2>/dev/null || true
           fi
+          rm -rf "$XDG_CONFIG_HOME"
       - name: Upload Herdr timing and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
