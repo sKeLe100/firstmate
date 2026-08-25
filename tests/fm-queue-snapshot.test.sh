@@ -777,6 +777,44 @@ STUB
     *"hierarchy_lanes: unavailable"*) ;;
     *) fail "expected hierarchy_lanes unavailable for a profile-less config: $out" ;;
   esac
+  # A quota-axi payload of an unexpected JSON shape degrades the lane to
+  # unknown instead of failing the whole read-only listing.
+  for payload in \
+    '[]' \
+    '{"providers":{"claude":{}}}' \
+    '{"providers":["claude"]}' \
+    '{"providers":[{"provider":"claude","quotaSemantics":[]}]}' \
+    '{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":"none"}}]}' \
+    '{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":["all_models"]}}]}'; do
+    home=$(make_home hierarchy-odd-shape)
+    : > "$home/data/projects.md"
+    printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+      > "$home/config/crew-dispatch.json"
+    cat > "$stub_dir_q/quota-axi" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' '$payload'
+STUB
+    chmod +x "$stub_dir_q/quota-axi"
+    if ! out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT"); then
+      fail "an odd quota-axi payload ($payload) failed the whole snapshot: $out"
+    fi
+    case "$out" in
+      *"default,default (no rule matched),claude,claude-opus-5,high,unknown,"*) ;;
+      *) fail "an odd quota-axi payload ($payload) did not degrade to unknown: $out" ;;
+    esac
+  done
+
+  # A dispatch config that parses but is not an object reports the same
+  # unreadable-config lane branch rather than crashing.
+  home=$(make_home hierarchy-nonobject-config)
+  : > "$home/data/projects.md"
+  printf '%s\n' '["not","an","object"]' > "$home/config/crew-dispatch.json"
+  if out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT"); then
+    case "$out" in
+      *"hierarchy_lanes: unavailable"*) ;;
+      *) fail "a non-object dispatch config did not report lanes unavailable: $out" ;;
+    esac
+  fi
 fi
 
 # 18. live_slots counts state/*.meta entries currently tracked in this home,

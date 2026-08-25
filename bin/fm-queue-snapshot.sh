@@ -373,7 +373,7 @@ QUOTA_TIMEOUT_SECONDS = 10
 
 def profiles_of(value):
     if isinstance(value, list):
-        return value
+        return [v for v in value if isinstance(v, dict)]
     if isinstance(value, dict):
         return [value]
     return []
@@ -390,9 +390,10 @@ def quota_lookup():
     if proc.returncode != 0:
         return None
     try:
-        return json.loads(proc.stdout)
+        parsed = json.loads(proc.stdout)
     except (ValueError, TypeError):
         return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 ACCOUNT_WIDE_SCOPES = ("all_models", "all_products")
@@ -437,13 +438,21 @@ def availability_for(harness, model, quota_data):
         return "unknown", "no quota-axi provider mapping for this worker runtime"
     if quota_data is None:
         return "unknown", "quota-axi produced no evidence"
+    providers = quota_data.get("providers")
+    if not isinstance(providers, list):
+        providers = []
     provider = next(
-        (p for p in quota_data.get("providers", []) if p.get("provider") == provider_name),
+        (
+            p for p in providers
+            if isinstance(p, dict) and p.get("provider") == provider_name
+        ),
         None,
     )
     if provider is None:
         return "unknown", f"no live quota data for {provider_name}"
-    availability = (provider.get("quotaSemantics") or {}).get("effectiveAvailability") or []
+    semantics = provider.get("quotaSemantics")
+    entries = semantics.get("effectiveAvailability") if isinstance(semantics, dict) else None
+    availability = [a for a in entries if isinstance(a, dict)] if isinstance(entries, list) else []
     candidates = []
     scoped = pick_model_scoped(availability, model) if model else None
     if scoped:
@@ -472,8 +481,13 @@ else:
             cfg = json.load(fh)
     except (OSError, ValueError):
         cfg = None
+    if not isinstance(cfg, dict):
+        cfg = None
     lanes = []
-    for rule in (cfg or {}).get("rules") or []:
+    rules = (cfg or {}).get("rules")
+    for rule in rules if isinstance(rules, list) else []:
+        if not isinstance(rule, dict):
+            continue
         when = rule.get("when") or ""
         for profile in profiles_of(rule.get("use")):
             lanes.append(("rule", when, profile))
