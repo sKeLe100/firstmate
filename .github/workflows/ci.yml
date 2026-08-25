@@ -166,8 +166,11 @@ jobs:
       # drifts back into this lane still cannot reach that registry.
       XDG_CONFIG_HOME: /tmp/fm-ci-herdr-home-serial-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
     # Measured whole remainder is ~42 min of serial work; the balanced shards
-    # are ~10.6 min each. Cap is a hang tripwire with roughly 2x margin, not the
-    # expected healthy end of the lane.
+    # are ~10.6 min each (docs/fm-test-portable-shards.md). Cap is a hang
+    # tripwire with roughly 2x margin, not the expected healthy end of the lane.
+    # Scripts without a measured hint carry the placeholder weight, so real wall
+    # time can run above the estimate; refresh the hints from a green CI run
+    # before reading this margin as firm.
     timeout-minutes: 20
     strategy:
       # Every shard reports so one failure never hides another shard's result.

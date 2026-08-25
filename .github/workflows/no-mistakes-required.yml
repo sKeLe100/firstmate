@@ -22,9 +22,14 @@ jobs:
   check:
     name: PR must be raised via no-mistakes
     runs-on: [self-hosted, linux]
+    # Same policy as every self-hosted job in .github/workflows/ci.yml: a fork
+    # PR must never be scheduled onto the maintainer's own machines, even for a
+    # job that only reads the PR body and never checks out the head code.
     if: >-
       github.event.pull_request.user.login != 'github-actions[bot]' &&
-      github.event.pull_request.user.login != 'dependabot[bot]'
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Verify no-mistakes signature in PR body
         env:
