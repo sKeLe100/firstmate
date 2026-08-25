@@ -28,7 +28,7 @@ Scout teardown calls the read-only `verify` subcommand after checking for the re
 `verify` requires the recorded attestation, requires every recorded inventory entry to still be durable (actively captain-held, or carrying a recorded answer), and fails on any keyed status decision that opened after the last `complete`, which makes re-running `complete` the repair.
 The `--force` path remains the explicit captain-approved discard escape hatch.
 When an id is absent from the live backlog, `verify_hold_durable` falls back to a read-only parse of the Done-retention archive (`tasks-axi prune`'s target, read from `.tasks.toml`'s `[markdown] archive` field or defaulting to `data/done-archive.md`), since tasks-axi's own `show`/`list` cannot read its own archived `## Archived <date>` sections back.
-It accepts an archived entry only when checked off, kind `captain`, and carrying the same durable resolution record required of a live closed hold; a genuinely open or improperly closed hold, or an id missing from both surfaces, still fails verify exactly as before, naming both searched paths.
+It accepts an archived entry only when checked off, `hold-kind: captain`, and carrying the same durable resolution record required of a live closed hold; a genuinely open or improperly closed hold, or an id missing from both surfaces, still fails verify exactly as before, naming both searched paths.
 
 ## Answer-time closure
 
