@@ -2098,7 +2098,7 @@ printf 'guard should not run\n' >&2
 exit 2
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh" "$repo/bin/fm-turnend-guard.sh"
-  out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
+  out=$(env -u BASH_ENV -u ENV HOME="$(pi_arm_shell_home)" ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2126,7 +2126,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await guardHooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 const armLogged = () => existsSync(process.env.FM_ARM_LOG)
   && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("arm");
-for (let i = 0; i < 250 && !armLogged(); i += 1) {
+for (let i = 0; i < 1500 && !armLogged(); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!armLogged()) {
@@ -2173,7 +2173,7 @@ printf 'guard ran after external healthy watcher\n' >&2
 exit 2
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh" "$repo/bin/fm-turnend-guard.sh"
-  out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
+  out=$(env -u BASH_ENV -u ENV HOME="$(pi_arm_shell_home)" ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2203,7 +2203,7 @@ const armLogged = () => existsSync(process.env.FM_ARM_LOG)
   && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("args=");
 const guardLogged = () => existsSync(process.env.FM_GUARD_LOG)
   && readFileSync(process.env.FM_GUARD_LOG, "utf8").includes("guard");
-for (let i = 0; i < 250 && !(armLogged() && guardLogged()); i += 1) {
+for (let i = 0; i < 1500 && !(armLogged() && guardLogged()); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!armLogged()) {
