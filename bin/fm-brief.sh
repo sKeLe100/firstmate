@@ -246,6 +246,7 @@ Marked requests also carry a privacy-safe \`corr=<id>\` token after the marker; 
 Optional helper: \`bin/fm-secondmate-report.sh\` can append a correlated status line for you, but a plain \`echo\` that includes the same \`corr=<id>\` is equally valid - do not depend on the helper being present.
 For a terse result, a status line is the whole answer.
 For a detailed answer (an investigation, a plan, an audit), write it to a doc under your home's \`data/\` and append a status line that points to that doc - the scout-report pattern - so the main firstmate is woken and can read it.
+After writing that doc, verify with \`ls -la {path}\` that it exists at that exact path with recent content before pointing to it in your status line; a write tool can silently place the file somewhere else, and that failure is itself a \`blocked:\` condition to report.
 Before treating an investigation or visual review as complete, load \`captain-hold-lifecycle\` from this home's \`.agents/skills/\` and pass its shared completion gate.
 A message with NO marker is the captain typing directly into your pane: treat it as authoritative captain intervention and stay conversational exactly as you would for any captain message; do not force it onto the status path.
 A request arriving through the instruction inbox below follows the same marker and reply rules.
@@ -256,6 +257,10 @@ $INBOX_SECTION
 Handle routine work yourself.
 Report only true captain-relevant outcomes or a declared external wait by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
+   After every append, verify with \`ls -la $STATUS_FILE\` that the line landed at that exact
+   path with recent content; do not trust the append until that verification succeeds - a write
+   tool can silently place the file somewhere else, and that failure is itself a \`blocked:\`
+   condition to report.
 States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
 Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own; use \`blocked:\` when you are stuck and need firstmate to act.
 Use this only for material phase changes, a captain decision, a real blocker, a failure, or work ready for review.
