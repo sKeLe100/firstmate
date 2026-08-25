@@ -2382,23 +2382,59 @@ test_procevent_surface_serializes_with_drain() {
   pass "queue revalidation, proactive output, and marker commit serialize with drain"
 }
 
+# Pause the watcher at the point where it hashes a queued process-event key into
+# its seen-marker path (`od -An -tx1` on stdin, from procevent_surfaced_marker).
+# That call happens after the watcher has opened its stdout but before it writes
+# any proactive output, so it is a deterministic pre-output boundary a test can
+# hold the watcher at.
+install_procevent_marker_hash_pause() {  # <dir>
+  local dir=$1
+  REAL_OD=$(command -v od)
+  export REAL_OD
+  cat > "$dir/fakebin/od" <<'SH'
+#!/usr/bin/env bash
+if [ -n "${FM_PROCEVENT_OD_READY:-}" ] && [ -n "${FM_PROCEVENT_OD_RELEASE:-}" ] \
+  && [ ! -e "$FM_PROCEVENT_OD_READY" ] && [ "$*" = "-An -tx1" ]; then
+  printf '1\n' > "$FM_PROCEVENT_OD_READY"
+  while [ ! -e "$FM_PROCEVENT_OD_RELEASE" ]; do sleep 0.02; done
+fi
+exec "$REAL_OD" "$@"
+SH
+  chmod +x "$dir/fakebin/od"
+}
+
 test_procevent_surface_crash_boundaries() {
-  local dir state out fifo pid reader marker exit_status replay_err sequence generation
+  local dir state out fifo pid marker exit_status replay_err sequence generation ready release
   dir=$(make_case procevent-output-fail); state="$dir/state"; out="$dir/watch.out"; fifo="$dir/output.fifo"
+  ready="$dir/od-ready"; release="$dir/od-release"
   append_wake "$state" check "procevent:output-fail:1" "check: procevent fixture output-fail 1"
   mkfifo "$fifo"
-  sh -c ': < "$1"' _ "$fifo" & reader=$!
+  install_procevent_marker_hash_pause "$dir"
+  # This shell holds the only read end (fd 3, opened read-write so the open
+  # itself cannot block waiting for a writer). A reader therefore always exists
+  # when the watcher opens the fifo for writing, so its open(2) can never block
+  # forever - the deadlock the earlier instantaneous `sh -c ': < fifo'` reader
+  # could hit. The watcher launches with fd 3 closed, so once this shell drops
+  # it at the pre-output pause below the fifo has no readers at all and the
+  # watcher's first actionable write is a deterministic EPIPE - not a wall-clock
+  # gamble on whether the write beat the reader's death.
+  exec 3<>"$fifo"
   PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_PROCEVENT_CLAIM_ROOT="$dir/claims" \
     FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" FM_POLL=0.2 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$fifo" &
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_PROCEVENT_OD_READY="$ready" FM_PROCEVENT_OD_RELEASE="$release" \
+    "$WATCH" > "$fifo" 3>&- &
   pid=$!
-  wait "$reader" || true
+  wait_numeric_file "$ready" 200 || fail "the watcher never reached its pre-output marker hash"
+  exec 3>&-
+  touch "$release"
   wait_for_exit "$pid" 100
   exit_status=$?
   [ "$exit_status" -ne 124 ] || fail "the watcher survived a failed actionable output write"
   marker=$(find "$state" -maxdepth 1 -name '.seen-procevent-*' -type f | head -1)
   [ -z "$marker" ] || fail "failed output committed a suppression marker"
   [ -s "$state/.wake-queue" ] || fail "failed output consumed the durable queue record"
+  rm -f "$dir/fakebin/od"
   procevent_watch_bg "$dir" "$out"; pid=$!
   wait_for_exit "$pid" 100 || fail "the record was not replayable after output failure"
   grep -F "procevent:output-fail:1" "$out" >/dev/null || fail "output failure lost proactive replay"

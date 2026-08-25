@@ -38,7 +38,10 @@ this archive without either collector knowing it exists.
   relaunch, or teardown failure on the firstmate side: every write goes
   through `fm_llm_usage_emit`, which is silent on success and logs to
   the home's `llm-usage-write-errors.log` under its resolved state directory
-  on failure, without propagating an error.
+  on failure, without propagating an error. When that log itself cannot be
+  opened - an unwritable or missing state directory - the diagnostics are
+  discarded rather than falling back to the caller's stderr, so telemetry
+  never writes to a dispatch's own output stream.
 - No field is ever required to be present with an empty-string value; an
   unknown or not-applicable field is simply absent from that record, and a
   reader must treat a missing key as "unknown", never as false, zero, or

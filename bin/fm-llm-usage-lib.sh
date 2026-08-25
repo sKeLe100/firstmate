@@ -41,6 +41,11 @@ fm_llm_usage_emit() {  # <data-dir> <state-dir> <event-type> <field=value>...
   local data_dir=$1 state_dir=$2 event_type=$3
   shift 3 || return 0
   (
+    if : 2>/dev/null >>"$state_dir/llm-usage-write-errors.log"; then
+      exec 2>>"$state_dir/llm-usage-write-errors.log"
+    else
+      exec 2>/dev/null
+    fi
     dir="$data_dir/llm-usage"
     mkdir -p "$dir" || exit 1
     file="$dir/firstmate.jsonl"
@@ -70,6 +75,6 @@ fm_llm_usage_emit() {  # <data-dir> <state-dir> <event-type> <field=value>...
     status=$?
     [ "$held" -eq 1 ] && fm_lock_release "$lockfile"
     exit "$status"
-  ) 2>>"$state_dir/llm-usage-write-errors.log"
+  )
   return 0
 }

@@ -11,8 +11,11 @@
 # use `IFS= read -r -d '' VAR <<EOF || true` instead, which removes the `$(...)`
 # wrapper and eliminates the whole defect class regardless of future prose.
 # test_no_heredoc_in_command_substitution guards that structure directly.
-# Ambient `bash -n` here is Bash 5 and cannot see the bug, so the real
-# cross-version enforcement lives in the macos-stock-bash CI job.
+# Ambient `bash -n` here is Bash 5 and cannot see the bug. The macos-stock-bash
+# CI job that used to run `/bin/bash -n` under 3.2.57 was removed 2026-08-24
+# (captain ruling: no Apple hardware - the removal stands on hardware absence,
+# not runner cost), so no Bash 3.2 parse coverage exists anywhere right now and
+# test_no_heredoc_in_command_substitution is the only guard left. Restore that job if Apple support matters again.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -24,8 +27,9 @@ mkdir -p "$BRIEF_HOME/data"
 
 # The script itself must always parse under the ambient bash. That is Bash 5 in
 # CI and locally, where the issue #958/#1069 parser bug does not fire, so this
-# is a weak guard on its own; test_no_heredoc_in_command_substitution and the
-# macos-stock-bash CI job carry the real cross-version enforcement.
+# is a weak guard on its own, and since the macos-stock-bash CI job was removed
+# 2026-08-24 nothing exercises Bash 3.2 - test_no_heredoc_in_command_substitution
+# is the remaining structural guard.
 test_script_parses() {
   local out rc
   out=$(bash -n "$ROOT/bin/fm-brief.sh" 2>&1); rc=$?
