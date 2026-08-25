@@ -1823,8 +1823,17 @@ test_wedge_escalation_backoff_resets_to_prompt_on_activity() {
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   wait_live "$pid" 30 || { reap "$pid"; fail "watcher exited on a fresh (changed) pane hash: $(cat "$out")"; }
+  # Only the escalation counter is checked here, matching the established
+  # sibling reset test (test_wedge_escalation_resets_when_pane_becomes_active):
+  # the hash-changed reset always clears .stale-since-$key too, but a provably-
+  # working pane can legitimately observe two more stable polls within this
+  # same wait window and restart its OWN fresh wedge timer before this check
+  # runs (the correct, pre-existing absorb-and-start-timer behavior for a
+  # provably-working non-terminal stale) - asserting the timer file's absence
+  # here would race that intentional restart. The real reset-to-prompt proof is
+  # below: reprime a heavily backed-off state and confirm the next escalation
+  # still fires at the base threshold.
   [ ! -e "$state/.wedge-escalations-$key" ] || fail "a changed pane hash did not reset the wedge-escalation counter"
-  [ ! -e "$state/.stale-since-$key" ] || fail "a changed pane hash did not reset the wedge timer"
   reap "$pid"
   ack_stopped_cycle "$state" || fail "could not acknowledge the activity-reset round"
 
