@@ -1,0 +1,9 @@
+=== worker status log (what a crew appended) ===
+needs-decision [key=api-shape]: which serializer do we ship
+blocked: [key=creds-missing] no vault token in the sandbox
+needs-decision: pick a name, maybe reuse [key=late-token] from the old note
+
+=== OPEN DECISIONS the captain can answer (key<TAB>verb<TAB>note) ===
+api-shape	needs-decision	which serializer do we ship
+creds-missing	blocked	no vault token in the sandbox
+default	needs-decision	pick a name, maybe reuse [key=late-token] from the old note

@@ -1,0 +1,16 @@
+Reproduction: bin/fm-captain-hold.sh verify_hold_archived reverted to the retired '(kind: captain)' substring (case pattern only; the fail() text still reads hold-kind).
+Command: bin/fm-test-run.sh tests/fm-captain-hold-lifecycle.test.sh
+
+ok - the chat channel feeds the same keyed-answer intake a captured review does
+ok - completion and verification validate origins before constructing paths
+ok - a status resolution over a still-open captain-held task is signalled, not closed
+ok - a captain call with no routed work, a verified transfer, an open decision, and an answered call all stay silent
+fm-captain-hold: archived backlog entry sample-archive-call in /tmp/fm-captain-hold.Dy81df/archived-answered-hold/data/done-archive.md is not hold-kind captain
+not ok - verify wrongly refused an answered task archived by Done retention
+FM_TEST_END 2026-08-25T02:42:26Z tests/fm-captain-hold-lifecycle.test.sh exit=1 duration_ms=201702 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=201758
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=201702 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-captain-hold-lifecycle.test.sh duration_ms=201702
+
+After restoring the fix, the same test reports:
+ok - verify accepts an answered captain-held task archived by Done retention

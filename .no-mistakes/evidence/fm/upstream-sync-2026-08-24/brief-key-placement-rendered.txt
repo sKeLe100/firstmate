@@ -1,0 +1,12 @@
+=== ship brief (data/demo-task/brief.md, lines 40-44) ===
+   append `needs-decision: {summary of options}` and stop. Firstmate will apply the configured authority and reply with the decision.
+   To let firstmate target its answer at this exact decision (`--resolve-key`), give it a stable key:
+   put `[key=<slug>]` BETWEEN the verb and the colon, e.g. `needs-decision [key=<slug>]: {summary}`
+   or `blocked [key=<slug>]: {why}` - a complete token at the head of the note is accepted as an equivalent position, but a token further inside the note is prose and folds under the default key instead.
+   A decision or blocker you opened stays open until a `resolved` line carrying its exact key lands; a later `done:` or `working:` line never closes it, even when the answer is what started that work.
+
+=== scout brief (data/demo-scout/brief.md) ===
+33-   append `needs-decision: {summary of options}` and stop. Firstmate will reply with the decision.
+34-   To let firstmate target its answer at this exact decision (`--resolve-key`), give it a stable key:
+35:   put `[key=<slug>]` BETWEEN the verb and the colon, e.g. `needs-decision [key=<slug>]: {summary}`
+36-   or `blocked [key=<slug>]: {why}` - a complete token at the head of the note is accepted as an equivalent position, but a token further inside the note is prose and folds under the default key instead.
