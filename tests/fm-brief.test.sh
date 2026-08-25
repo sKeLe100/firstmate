@@ -13,9 +13,9 @@
 # test_no_heredoc_in_command_substitution guards that structure directly.
 # Ambient `bash -n` here is Bash 5 and cannot see the bug. The macos-stock-bash
 # CI job that used to run `/bin/bash -n` under 3.2.57 was removed 2026-08-24
-# (no Apple hardware, billing-blocked), so no Bash 3.2 parse coverage exists
-# anywhere right now and test_no_heredoc_in_command_substitution is the only
-# guard left. Restore that job if Apple support matters again.
+# (captain ruling: no Apple hardware - the removal stands on hardware absence,
+# not runner cost), so no Bash 3.2 parse coverage exists anywhere right now and
+# test_no_heredoc_in_command_substitution is the only guard left. Restore that job if Apple support matters again.
 set -u
 
 # shellcheck source=tests/lib.sh
