@@ -359,6 +359,7 @@ print(f"dispatch_config: {dispatch_status}")
 HARNESS_TO_PROVIDER = {
     "claude": "claude",
     "codex": "codex",
+    "cursor": "cursor",
     "grok": "grok",
     "kimi": "kimi",
 }
