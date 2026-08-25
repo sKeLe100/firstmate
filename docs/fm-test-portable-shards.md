@@ -79,6 +79,11 @@ Refresh the hints whenever the serial lane gains scripts, rather than waiting fo
 | `portable-serial-4of4` | 30 | 638591 ms (~638.6 s) |
 | imbalance | | 16 ms |
 
+Scripts without a measured hint carry the `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS`
+default, so the estimates above are a partition of the current hint table rather
+than measured shard wall time. Refresh them from a green CI run using the
+procedure below.
+
 The single longest script, `tests/fm-pr-check-security.test.sh` at 250417 ms, is the floor for any shard count.
 
 Refresh the hints by downloading the per-shard timing artifacts from a green CI run, replacing the `portable_serial_weight_hints` table in `bin/fm-test-run.sh` with the measured `path`/`duration_ms` pairs, and updating the table above:
