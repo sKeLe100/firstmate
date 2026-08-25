@@ -1520,6 +1520,37 @@ test_wedge_escalation_prompt_first_fire() {
   pass "the first wedge escalation for a fresh quiet spell fires promptly at the unbacked-off base threshold"
 }
 
+test_wedge_escalation_reset_on_nonterminal_surface() {
+  local dir state fakebin out capture_file window key pane_hash sig pid
+  dir=$(make_case wedge-backoff-surface-reset); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-wedge-surface"
+  printf 'inconclusive quiet pane' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-surface.meta"
+  printf 'working: still monitoring ci\n' > "$state/wedge-surface.status"
+  sig=$(seen_sig "$state/wedge-surface.status"); printf '%s' "$sig" > "$state/.seen-wedge-surface_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "inconclusive quiet pane")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  # A backed-off quiet spell carried in from an earlier phase (e.g. a busy pane
+  # past BUSY_TURN_MAX_SECS that routed through the same wedge timer).
+  printf '5\n' > "$state/.wedge-escalations-$key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "watcher did not surface the inconclusive non-terminal stale: $(cat "$out")"
+  grep -F "stale: $window" "$out" >/dev/null || fail "watcher did not print the non-terminal stale wake: $(cat "$out")"
+  [ ! -e "$state/.stale-since-$key" ] || fail "surfacing a non-terminal stale did not clear the wedge timer"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "surfacing a non-terminal stale did not clear the wedge-escalation counter"
+  unset FM_FAKE_CREW_STATE
+  pass "surfacing a non-terminal stale clears the backoff counter so the next quiet spell escalates promptly"
+}
+
 test_wedge_escalation_backs_off_after_first_fire() {
   local dir state fakebin out capture_file window key pane_hash sig pid
   dir=$(make_case wedge-backoff-growth); state="$dir/state"; fakebin="$dir/fakebin"
@@ -2885,6 +2916,7 @@ test_nonterminal_stale_provably_working_absorbed_then_escalated
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold
 test_wedge_escalation_resets_when_pane_becomes_active
 test_wedge_escalation_prompt_first_fire
+test_wedge_escalation_reset_on_nonterminal_surface
 test_wedge_escalation_backs_off_after_first_fire
 test_wedge_escalation_backoff_is_capped
 test_wedge_escalation_backoff_resets_to_prompt_on_activity
