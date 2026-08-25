@@ -1792,6 +1792,28 @@ EOF
   pass "a declared next-session priority stops being called out once it is done"
 }
 
+test_backlog_declared_next_session_priority_tolerates_heading_and_newline_variants() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-declared-priority-variants)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  printf '## In flight\n\n##\t Done\n- [x] old-priority - Already handled (repo: firstmate) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: handled last session) (hold-kind: captain)\n\n##  Queued\n- [ ] token-burn-planning - Plan the token burn-down (repo: firstmate) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: run as first item next session) (hold-kind: captain)' \
+    > "$home/data/backlog.md"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "CAPTAIN DECLARED PRIORITY: token-burn-planning - run as first item next session" \
+    "a declared priority on an unterminated final line must still be called out"
+  assert_not_contains "$out" "CAPTAIN DECLARED PRIORITY: old-priority" \
+    "a Done heading with irregular whitespace must still suppress completed declarations"
+
+  pass "the declared-priority callout normalizes section headings and reads an unterminated final line"
+}
+
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback() {
   local rec root home fakebin out
   rec=$(new_world backlog-compact-unavailable)
@@ -2549,6 +2571,7 @@ test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_declared_next_session_priority_is_called_out
 test_backlog_declared_next_session_priority_drops_once_done
+test_backlog_declared_next_session_priority_tolerates_heading_and_newline_variants
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence

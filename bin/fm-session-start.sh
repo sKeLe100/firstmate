@@ -389,29 +389,38 @@ print_backlog_pointer() {
 # regardless of backlog backend, and is a proactive callout only: it never
 # replaces the full listing below, and an absent marker prints nothing.
 print_declared_next_session_priority() {
-  local path=$1 line id rest section=''
+  local path=$1
   [ -f "$path" ] || return 0
-  while IFS= read -r line; do
-    case $line in
-      '## '*)
-        section=${line#\#\# }
-        section=${section%%"${section##*[![:space:]]}"}
-        continue
-        ;;
-    esac
-    [ "$section" != 'Done' ] || continue
-    if printf '%s\n' "$line" | grep -Eq '^[-*][[:space:]]+\[[xX]\]'; then continue; fi
-    printf '%s\n' "$line" | grep -Eq '(\(|,[[:space:]]*)priority:[[:space:]]*0([,)]|$)' || continue
-    printf '%s\n' "$line" | grep -Eq '(\(|,[[:space:]]*)hold:[[:space:]]*NEXT-SESSION PRIORITY:' || continue
-    rest=${line#*"NEXT-SESSION PRIORITY:"}
-    rest=${rest%%,*}
-    rest=${rest%%)*}
-    id=$(printf '%s\n' "$line" | sed -nE \
-      's/^[-*][[:space:]]+\[[ xX]\][[:space:]]+([^[:space:]]+)[[:space:]]+-.*$/\1/p;
-       s/^[-*][[:space:]]+\*\*([^*]+)\*\*[[:space:]]+-.*$/\1/p')
-    [ -n "$id" ] || id='(unparsed id)'
-    printf 'CAPTAIN DECLARED PRIORITY: %s -%s\n' "$id" "$rest"
-  done < "$path"
+  awk '
+    function heading_of(line,   h) {
+      h = line
+      sub(/^##[[:space:]]+/, "", h)
+      sub(/[[:space:]]+$/, "", h)
+      return h
+    }
+    /^##[[:space:]]+/ { section = heading_of($0); next }
+    section == "Done" { next }
+    /^[-*][[:space:]]+\[[xX]\]/ { next }
+    $0 !~ /(\(|,[[:space:]]*)priority:[[:space:]]*0([,)]|$)/ { next }
+    $0 !~ /(\(|,[[:space:]]*)hold:[[:space:]]*NEXT-SESSION PRIORITY:/ { next }
+    {
+      marker = "NEXT-SESSION PRIORITY:"
+      rest = substr($0, index($0, marker) + length(marker))
+      cut = index(rest, ","); if (cut > 0) rest = substr(rest, 1, cut - 1)
+      cut = index(rest, ")"); if (cut > 0) rest = substr(rest, 1, cut - 1)
+      id = $0
+      if (id ~ /^[-*][[:space:]]+\[[ xX]\][[:space:]]+[^[:space:]]+[[:space:]]+-/) {
+        sub(/^[-*][[:space:]]+\[[ xX]\][[:space:]]+/, "", id)
+        sub(/[[:space:]].*$/, "", id)
+      } else if (id ~ /^[-*][[:space:]]+\*\*[^*]+\*\*[[:space:]]+-/) {
+        sub(/^[-*][[:space:]]+\*\*/, "", id)
+        sub(/\*\*.*$/, "", id)
+      } else {
+        id = "(unparsed id)"
+      }
+      printf "CAPTAIN DECLARED PRIORITY: %s -%s\n", id, rest
+    }
+  ' < "$path"
 }
 
 # A queued title line whose own text already marks it held or blocked. The
