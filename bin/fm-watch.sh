@@ -181,10 +181,12 @@ STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provabl
 # uninterrupted quiet spell backs off exponentially - STALE_ESCALATE_SECS * 2^n
 # for the nth re-escalation - capped at WEDGE_ESCALATE_MAX_SECS, so a pane that
 # stays stuck stops re-waking the primary model every 240s and instead re-fires
-# at a growing interval (240s, 480s, 960s, ... up to the cap). The backoff state
-# is the same per-window escalation counter used for demand-deep-inspection
-# (FM_WEDGE_DEMAND_INSPECT_COUNT above) and resets to prompt (n=0) wherever that
-# counter is cleared - i.e. wherever the pane shows genuine activity again.
+# at a growing interval (240s, 480s, 960s, ... up to the cap). The backoff pace
+# lives in its own per-window counter (.wedge-backoff-<key>), advanced alongside
+# the escalation counter used for demand-deep-inspection
+# (FM_WEDGE_DEMAND_INSPECT_COUNT above) but cleared independently of it: it
+# resets to prompt (n=0) wherever a quiet spell is reset, and also on a
+# worktree-write deferral, where the escalation history is deliberately kept.
 WEDGE_ESCALATE_MAX_SECS=${FM_WEDGE_ESCALATE_MAX_SECS:-3600}  # backoff cap for wedge re-escalation
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
@@ -534,14 +536,6 @@ clear_write_tracking() {  # <window-key>
   rm -f "$STATE/.writing-since-$key" "$STATE/.writing-resurfaced-$key"
 }
 
-# Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
-# absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
-# watcher restart between recording the hash and recording the timer), or
-# escalates once STALE_ESCALATE_SECS have elapsed. Never re-reads the crew
-# state (the costly check already ran once, at classification time). Shared by
-# both places a hash can be absorbed this way: the plain non-terminal path,
-# and the stale_is_terminal-overridden path (a captain-relevant status-log
-# line that an active run/busy pane outranked).
 # Reset the wedge escalation state for a window: the quiet-spell timer, the
 # escalation history counter and the backoff exponent always clear together, so a
 # fresh quiet spell always escalates at the prompt STALE_ESCALATE_SECS threshold.
@@ -558,6 +552,14 @@ wedge_start_timer() {  # <window-key>
   rm -f "$STATE/.wedge-escalations-$key" "$STATE/.wedge-backoff-$key"
 }
 
+# Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
+# absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
+# watcher restart between recording the hash and recording the timer), or
+# escalates once the current backoff threshold has elapsed. Never re-reads the
+# crew state (the costly check already ran once, at classification time). Shared
+# by both places a hash can be absorbed this way: the plain non-terminal path,
+# and the stale_is_terminal-overridden path (a captain-relevant status-log line
+# that an active run/busy pane outranked).
 # The worktree write probe runs ONLY here, inside the at-threshold branch that is
 # about to escalate: at most one bounded walk per window per escalation
 # threshold, never per poll.
