@@ -12,13 +12,7 @@ permissions:
 jobs:
   lint:
     name: Lint
-    runs-on: [self-hosted, linux]
-    # Self-hosted runners are the maintainer's own machines with a persistent
-    # _work tree and the live fleet's user account, so a fork PR's code must
-    # never execute here. A fork PR skips this job instead of running on it.
-    if: >-
-      github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Install pinned ShellCheck
@@ -42,10 +36,7 @@ jobs:
   # and that the portable serial CI shards partition that serial lane exactly.
   test-coverage:
     name: Test coverage guard
-    runs-on: [self-hosted, linux]
-    if: >-
-      github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Prove complete regression partition
@@ -55,10 +46,7 @@ jobs:
   # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
   tests-portable-parallel-1:
     name: Behavior portable parallel 1
-    runs-on: [self-hosted, linux]
-    if: >-
-      github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     # Measured shard wall is ~1 min of serial sum on proven scripts; this cap is
     # a hang tripwire with margin, not the expected healthy end of the lane.
     timeout-minutes: 10
@@ -66,6 +54,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install pinned ShellCheck
         run: |
           set -eu
@@ -76,16 +67,14 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install pinned tasks-axi
+      - name: Install tasks-axi
         run: |
           set -eu
-          npm install -g --prefix "$RUNNER_TEMP/npm-global" tasks-axi@0.2.5
-          echo "$RUNNER_TEMP/npm-global/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/npm-global/bin/tasks-axi" --version
+          npm install -g tasks-axi
+          tasks-axi --version
       - name: Run portable parallel shard 1
         run: |
           set -eu
-          rm -rf "$RUNNER_TEMP/fm-test"
           mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane portable-parallel-1 \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-1.json"
@@ -99,15 +88,15 @@ jobs:
 
   tests-portable-parallel-2:
     name: Behavior portable parallel 2
-    runs-on: [self-hosted, linux]
-    if: >-
-      github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install pinned ShellCheck
         run: |
           set -eu
@@ -118,16 +107,14 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install pinned tasks-axi
+      - name: Install tasks-axi
         run: |
           set -eu
-          npm install -g --prefix "$RUNNER_TEMP/npm-global" tasks-axi@0.2.5
-          echo "$RUNNER_TEMP/npm-global/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/npm-global/bin/tasks-axi" --version
+          npm install -g tasks-axi
+          tasks-axi --version
       - name: Run portable parallel shard 2
         run: |
           set -eu
-          rm -rf "$RUNNER_TEMP/fm-test"
           mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane portable-parallel-2 \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-2.json"
@@ -141,36 +128,16 @@ jobs:
 
   # Required portable serial remainder: watcher, lock, AFK, tmux, daemon,
   # ambiguous, and other stateful tests. Real Herdr stays in tests-herdr.
-  # Each shard is strictly serial in itself. The self-hosted pool holds several
-  # linux runners, so these shards do run concurrently with each other, and two
-  # runner processes can sit on one physical host under the same user and the
-  # same $HOME. Nothing serializes them, so the isolation that matters is
-  # per-job, not per-machine: XDG_CONFIG_HOME below is keyed on shard, run id,
-  # and run attempt, which is unique across every concurrent job on any host,
-  # and RUNNER_TEMP belongs to a single runner process rather than the machine.
-  # Serial here means serial within a shard - one stateful script at a time in
-  # its own config root - not a promise that only one shard is on the host.
-  # Shard membership and the shard count both belong to bin/fm-test-run.sh,
-  # which refuses a lane whose "ofN" disagrees with it
-  # (docs/fm-test-portable-shards.md).
+  # Split across separate runners so no two of these stateful scripts ever share
+  # a machine: each shard is still strictly serial in itself. Shard membership
+  # and the shard count both belong to bin/fm-test-run.sh, which refuses a lane
+  # whose "ofN" disagrees with it (docs/fm-test-portable-shards.md).
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
-    runs-on: [self-hosted, linux]
-    if: >-
-      github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository
-    env:
-      # Defense in depth: this lane holds no real-Herdr family, but it does run
-      # on a host where herdr is on PATH and the live fleet's registry sits in
-      # the same user's config. A private per-run config root means a test that
-      # drifts back into this lane still cannot reach that registry.
-      XDG_CONFIG_HOME: /tmp/fm-ci-herdr-home-serial-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: ubuntu-latest
     # Measured whole remainder is ~42 min of serial work; the balanced shards
-    # are ~10.6 min each (docs/fm-test-portable-shards.md). Cap is a hang
-    # tripwire with roughly 2x margin, not the expected healthy end of the lane.
-    # Scripts without a measured hint carry the placeholder weight, so real wall
-    # time can run above the estimate; refresh the hints from a green CI run
-    # before reading this margin as firm.
+    # are ~10.6 min each. Cap is a hang tripwire with roughly 2x margin, not the
+    # expected healthy end of the lane.
     timeout-minutes: 20
     strategy:
       # Every shard reports so one failure never hides another shard's result.
@@ -181,6 +148,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install pinned ShellCheck
         run: |
           set -eu
@@ -199,12 +169,11 @@ jobs:
             exit 1
           }
           tmux -V
-      - name: Install pinned tasks-axi for backlog-handoff delegation
+      - name: Install tasks-axi for backlog-handoff delegation
         run: |
           set -eu
-          npm install -g --prefix "$RUNNER_TEMP/npm-global" tasks-axi@0.2.5
-          echo "$RUNNER_TEMP/npm-global/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/npm-global/bin/tasks-axi" --version
+          npm install -g tasks-axi
+          tasks-axi --version
       - name: Run portable serial shard ${{ matrix.shard }}
         env:
           # job-total rather than a literal, so shrinking or growing the matrix
@@ -214,29 +183,9 @@ jobs:
           FM_SERIAL_SHARD: ${{ matrix.shard }}
         run: |
           set -eu
-          rm -rf "$RUNNER_TEMP/fm-test" "$XDG_CONFIG_HOME"
-          mkdir -p "$RUNNER_TEMP/fm-test" "$XDG_CONFIG_HOME"
+          mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"
-      - name: Drop this shard's Herdr config root
-        if: always()
-        run: |
-          set -eu
-          # Never remove the root out from under a server still bound inside
-          # it: that would strip the socket and session dir needed to find it
-          # again. Nothing in this lane should create one, so say so loudly
-          # rather than deleting the evidence.
-          leftover=
-          if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-            leftover=$(herdr session list --json 2>/dev/null \
-              | jq -r '[.sessions[]? | select(.default == false and .running == true) | .name] | join(" ")' \
-              || true)
-          fi
-          if [ -n "$leftover" ]; then
-            echo "::warning::leaving $XDG_CONFIG_HOME in place; sessions still running: $leftover"
-          else
-            rm -rf "$XDG_CONFIG_HOME"
-          fi
       - name: Upload portable serial shard ${{ matrix.shard }} timing artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -251,19 +200,7 @@ jobs:
   # the failure evidence and move the job to macOS rather than skip assertions.
   tests-herdr:
     name: Behavior tests (Herdr)
-    runs-on: [self-hosted, linux]
-    if: >-
-      github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository
-    env:
-      # Private Herdr config root for this job. XDG_CONFIG_HOME is what moves
-      # the whole session registry - the "default" session and every fm-lab-*
-      # session dir and socket - so nothing here can see or disturb the real
-      # Herdr state of the live fleet running as the same user on this host.
-      # Kept short and under /tmp rather than $RUNNER_TEMP: the `runner` context
-      # is not available in job-level env, and Herdr's session sockets live
-      # under this root where the AF_UNIX path limit is tight.
-      XDG_CONFIG_HOME: /tmp/fm-ci-herdr-home-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: ubuntu-latest
     # Healthy runs finish around 7 minutes. This job cap is a last-resort hang
     # tripwire, not the expected end of the lane. The family-run step owns the
     # tighter bound so a wedged suite fails fast with always() cleanup and
@@ -273,16 +210,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Reset this job's Herdr scratch state (self-hosted host reuse guard)
-        run: |
-          set -eu
-          # This runner's _work/_temp directory persists across jobs, unlike a
-          # GitHub-hosted VM that is destroyed after every run. Only this job's
-          # own scratch state is cleared; the per-run XDG_CONFIG_HOME means
-          # there is no foreign server to reset and no host-wide process is
-          # ever signalled on this shared machine.
-          rm -rf "$RUNNER_TEMP/fm-herdr" "$XDG_CONFIG_HOME"
-          mkdir -p "$RUNNER_TEMP/fm-herdr" "$XDG_CONFIG_HOME"
       - name: Require tools for real Herdr
         run: |
           set -eu
@@ -363,7 +290,6 @@ jobs:
         timeout-minutes: 20
         run: |
           set -eu
-          rm -rf "$RUNNER_TEMP/fm-test"
           mkdir -p "$RUNNER_TEMP/fm-test"
           # Serial only. Fail if any script reports herdr not found. Live
           # harness credential tests stay outside this family (opt-in env only).
@@ -380,32 +306,6 @@ jobs:
             herdr session list --json || true
             exit 1
           }
-      - name: Stop this job's Herdr servers and drop its config root
-        if: always()
-        run: |
-          set -eu
-          # Unlike a GitHub-hosted VM, this host survives the job: any server
-          # still bound inside this job's private config root would outlive it,
-          # and removing the root first would strip the sockets and session
-          # dirs needed to ever find it again. So stop everything in this root
-          # before deleting it. Every name listed here belongs to this job by
-          # construction - the registry lives under the per-run
-          # XDG_CONFIG_HOME - so no host-wide pattern is ever matched, and this
-          # runs whether or not the lab-session cleanup step above succeeded.
-          if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-            herdr session list --json 2>/dev/null \
-              | jq -r '.sessions[]? | select(.default == false and .running == true) | .name' \
-              | while IFS= read -r name; do
-                  [ -n "$name" ] || continue
-                  echo "stopping leftover session in job-owned Herdr root: $name"
-                  herdr session stop "$name" --json >/dev/null 2>&1 || true
-                done
-          fi
-          pid_file="$RUNNER_TEMP/fm-herdr/default-server.pid"
-          if [ -f "$pid_file" ]; then
-            kill "$(cat "$pid_file")" 2>/dev/null || true
-          fi
-          rm -rf "$XDG_CONFIG_HOME"
       - name: Upload Herdr timing and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -420,20 +320,15 @@ jobs:
   # Aggregate per-lane timing into one summary artifact for critical-path review.
   tests-timing-aggregate:
     name: Behavior timing aggregate
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     needs:
       - tests-portable-parallel-1
       - tests-portable-parallel-2
       - tests-portable-serial
       - tests-herdr
-    if: >-
-      always()
-      && (github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository)
+    if: always()
     steps:
       - uses: actions/checkout@v6
-      - name: Reset aggregate scratch dir
-        run: rm -rf "$RUNNER_TEMP/fm-test-aggregate"
       - name: Download lane timing artifacts
         uses: actions/download-artifact@v4
         with:
@@ -443,7 +338,6 @@ jobs:
       - name: Build aggregate timing summary
         run: |
           set -eu
-          rm -rf "$RUNNER_TEMP/fm-test"
           mkdir -p "$RUNNER_TEMP/fm-test"
           shopt -s nullglob
           inputs=("$RUNNER_TEMP"/fm-test-aggregate/fm-test-timing-*.json)
@@ -463,14 +357,23 @@ jobs:
           if-no-files-found: warn
 
   # Stock macOS Bash snapshot compatibility job removed 2026-08-24 (captain
-  # owns no Apple devices); restore it if Apple support ever matters again.
+  # ruling: no Apple hardware, and the runner minutes were billing-blocked at
+  # the time). The captain later confirmed the removal stands even after the
+  # repo went public and hosted-runner minutes became free again - the
+  # underlying reason is hardware absence, not cost. This left no CI coverage
+  # anywhere for a Bash 3.2 parse defect class (heredoc-in-command-substitution
+  # breaking the rest of a script under Bash 3.2, not just Bash 5); the only
+  # remaining guard is tests/fm-brief.test.sh's
+  # test_no_heredoc_in_command_substitution, which structurally prevents that
+  # one known defect class. Captain reviewed and accepted that residual gap.
+  # Restore this job (runs-on: macos-latest, /bin/bash -n over
+  # bin/fm-lint.sh --list-files, plus the fm-fleet-snapshot-view.test.sh
+  # smoke run, plus the fm-bearings-snapshot.test.sh smoke run) if
+  # Apple hardware or a hosted macOS runner becomes available.
 
   invariants:
     name: Repo invariants
-    runs-on: [self-hosted, linux]
-    if: >-
-      github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Compatibility pointers must stay intact

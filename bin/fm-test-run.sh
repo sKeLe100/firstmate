@@ -62,13 +62,10 @@
 # owned by bin/fm-test-isolation-proof.sh; portable parallel shards are a
 # duration-balanced partition of that exact set (see docs/fm-test-portable-shards.md).
 #
-# portable-serial stays strictly serial within a shard. Its CI shards
-# (portable-serial-<k>of<n>) run concurrently and may land on one physical host
-# under the same user and the same $HOME, so the split isolates per job - each
-# shard gets its own XDG_CONFIG_HOME and RUNNER_TEMP - rather than by scheduling
-# (see .github/workflows/ci.yml and docs/fm-test-portable-shards.md). This
-# script owns <n>: a lane whose <n> disagrees with the configured shard count is
-# refused, so a CI matrix cannot silently drop a shard.
+# portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
+# split it across separate runners, so two of its stateful scripts still never
+# share a machine. This script owns <n>: a lane whose <n> disagrees with the
+# configured shard count is refused, so a CI matrix cannot silently drop a shard.
 # --changed is conservative: it over-selects related families rather than
 # under-selecting, and never expands to the complete suite unless --all.
 set -eu
@@ -92,7 +89,7 @@ FAIL_ON_GATE_SKIP=
 JOBS=1
 JOBS_MAX=8
 
-# How many shards the portable serial remainder splits into.
+# How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
 PORTABLE_SERIAL_SHARDS=4
 
@@ -165,8 +162,7 @@ family_for_basename() {
       printf '%s\n' watcher-wake-lock
       ;;
     fm-afk-inject-herdr-e2e.test.sh|fm-afk-launch.test.sh|fm-backend-autodetect-smoke.test.sh|\
-    fm-backend-herdr-eventwait-smoke.test.sh|fm-backend-herdr-focus-flash-e2e.test.sh|\
-    fm-backend-herdr-presentation-e2e.test.sh|\
+    fm-backend-herdr-eventwait-smoke.test.sh|fm-backend-herdr-presentation-e2e.test.sh|\
     fm-backend-herdr-launcher-workspace-e2e.test.sh|\
     fm-backend-herdr-prune-safety-e2e.test.sh|fm-backend-herdr-respawn-idem-e2e.test.sh|\
     fm-herdr-session-cleanup-e2e.test.sh|\
@@ -394,6 +390,7 @@ tests/fm-afk-return.test.sh 3974
 tests/fm-ask-user-authority.test.sh 83
 tests/fm-backend-cmux-smoke.test.sh 30
 tests/fm-backend-cmux.test.sh 3351
+tests/fm-backend-herdr-focus-flash-e2e.test.sh 21
 tests/fm-backend-orca.test.sh 14681
 tests/fm-backend-tmux-smoke.test.sh 361
 tests/fm-backend-zellij-smoke.test.sh 22
@@ -613,7 +610,7 @@ select_lane() {
       done < <(list_portable_serial)
       ;;
     portable-serial-*)
-      # One shard of the same remainder, still serial in itself.
+      # One separate-runner shard of the same remainder, still serial in itself.
       shard=$(portable_serial_shard_index "$want")
       while IFS=$'\t' read -r idx s; do
         [ -n "$s" ] || continue

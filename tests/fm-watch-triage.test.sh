@@ -2387,12 +2387,21 @@ test_procevent_surface_crash_boundaries() {
   dir=$(make_case procevent-output-fail); state="$dir/state"; out="$dir/watch.out"; fifo="$dir/output.fifo"
   append_wake "$state" check "procevent:output-fail:1" "check: procevent fixture output-fail 1"
   mkfifo "$fifo"
-  sh -c ': < "$1"' _ "$fifo" & reader=$!
+  # A persistent reader guarantees a reader is present when the watcher opens
+  # the fifo for writing below, so that open(2) can never block forever - the
+  # deadlock the previous version of this test could hit if its instantaneous
+  # `sh -c ': < fifo'` reader opened and exited before the watcher attached.
+  # Killing this reader once the watcher is running (ample margin below)
+  # induces a deterministic SIGPIPE/EPIPE on its next write instead.
+  cat "$fifo" > /dev/null &
+  reader=$!
   PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_PROCEVENT_CLAIM_ROOT="$dir/claims" \
     FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" FM_POLL=0.2 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$fifo" &
   pid=$!
-  wait "$reader" || true
+  sleep 0.5
+  kill "$reader" 2>/dev/null
+  wait "$reader" 2>/dev/null
   wait_for_exit "$pid" 100
   exit_status=$?
   [ "$exit_status" -ne 124 ] || fail "the watcher survived a failed actionable output write"

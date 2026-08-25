@@ -21,12 +21,7 @@ concurrency:
 jobs:
   check:
     name: PR must be raised via no-mistakes
-    runs-on: [self-hosted, linux]
-    # Deliberately unguarded against fork PRs, unlike the self-hosted jobs in
-    # .github/workflows/ci.yml: this job never checks out head code and reads
-    # the body through env rather than an inline expression, and skipping it on
-    # a fork would let branch protection count the required provenance check as
-    # satisfied without it ever running.
+    runs-on: ubuntu-latest
     if: >-
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]'
