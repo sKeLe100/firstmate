@@ -1,0 +1,25 @@
+$ git merge-base --is-ancestor origin/main HEAD; echo $?
+0 -> origin/main (b40c9b0 'fix(bin): avoid jq argv limit on large backlogs in fleet snapshot (#12)') is fully contained in HEAD
+
+$ git merge-tree --write-tree HEAD origin/main  # conflict-free => PR 16 mergeable
+72376d30daa41c328b92664e13ffa8f6c7ae95cd
+exit=0
+
+$ grep -rIl '^<<<<<<< ' . --exclude-dir=.git   # no leftover conflict markers
+(none)
+
+--- .agents/skills/firstmate-coding-guidelines/SKILL.md: merged Repo style rules (both sides kept) ---
+## Repo style rules
+
+- Put one full sentence per line in tracked Markdown.
+- Never wrap multiple sentences onto one physical line.
+- Plain dash `-`, never an em dash.
+- Never add an agent name as a commit co-author.
+- `bin/*.sh` and `bin/backends/*.sh` must pass `shellcheck`.
+- Run `bin/fm-lint.sh` before treating a script change as done; it is the single owner of the lint definition (file set, config, pinned shellcheck version, and pinned actionlint workflow lint) that CI and the no-mistakes pre-push gate both invoke, and it refuses to run under any other version of either linter.
+- When a task names a specific tool, implement the work with that tool, or explicitly flag the substitution and its new dependency footprint for review before shipping.
+- Never pass a non-constant JSON value through `jq --argjson`, because the whole value lands in the exec argument list and fails with `E2BIG` once it is large enough, and "this one stays small" is not a safe assumption; only literal constants are exempt.
+- Feed such values from a private temp file via `--rawfile`/`--slurpfile` instead, as `json_tmpfile` (one blob) and `json_args_tmpfile` (a `{"<name>":<json>,...}` bundle a jq program rebinds) in `bin/fm-fleet-snapshot.sh` do and `tests/fm-fleet-snapshot-view.test.sh` guards at scale.
+- Colocate tests with the existing pattern in `tests/`, name them `<subject>.test.sh`, and extend an existing script rather than inventing a new runner.
+- Tests must exercise behavior through an executable or public interface and must never assert implementation-source bytes, including through parsers, regexes, snapshots, or indirect wrappers.
+- A maintainer-verification record under `docs/verification/` records active empirical facts, not assumptions or task chronology.
