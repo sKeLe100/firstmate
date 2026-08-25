@@ -2341,6 +2341,50 @@ test_wedge_escalation_deferred_while_worktree_is_written() {
   [ ! -e "$state/.writing-since-$key" ] || fail "the write-deferral chain outlived a real escalation"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the stalled-crew escalation failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "the stalled-crew escalation was not queued"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the phase-B escalation"
+
+  # Phase C: a deferral is genuine activity, so it restarts the quiet spell at
+  # the PROMPT base threshold while keeping the demand-deep-inspection history.
+  # Seeded 3 escalations deep: an un-reset backoff would need 240 * 2^3 = 1920s
+  # before the next re-fire, so the 500s spell below would stay absorbed.
+  : > "$state/.wake-queue"
+  printf '%s' "$pane_hash" > "$state/.stale-$key"
+  printf '3\n' > "$state/.wedge-escalations-$key"
+  printf '3\n' > "$state/.wedge-backoff-$key"
+  back=$(( $(date +%s) - 2000 ))
+  echo "$back" > "$state/.stale-since-$key"
+  set_mtime "$back" "$state/.stale-since-$key"
+  printf 'int main(void) { return 1; }\n' > "$wt/src/main.c"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 \
+    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "watcher wedge-escalated a backed-off pane whose worktree was being written: $(cat "$out")"
+  fi
+  [ -e "$state/.writing-since-$key" ] \
+    || { reap "$pid"; fail "the backed-off quiet spell never reached the deferral branch"; }
+  [ "$(cat "$state/.wedge-escalations-$key" 2>/dev/null || true)" = 3 ] \
+    || { reap "$pid"; fail "a deferral dropped the demand-deep-inspection escalation history"; }
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the phase-C deferral"
+
+  # The pane goes truly silent for the SAME 500s: the post-deferral spell must
+  # fire at the base threshold, and still report the carried-over count.
+  set_mtime "$(( $(date +%s) - 900 ))" "$wt/src/main.c"
+  back=$(( $(date +%s) - 500 ))
+  echo "$back" > "$state/.stale-since-$key"
+  set_mtime "$back" "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 \
+    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "a deferral did not reset the backoff pace to the prompt base threshold: $(cat "$out")"
+  grep -F "escalation 4" "$out" >/dev/null || fail "the post-deferral escalation lost its carried-over count: $(cat "$out")"
   pass "a quiet pane writing its own worktree is deferred, while one writing nothing still wedge-escalates on the unchanged schedule"
 }
 

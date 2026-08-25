@@ -299,7 +299,7 @@ window_label() {
 # The ONE derivation of a window's per-window marker key: `:`, `/` and `.` become
 # `_` so a window name is usable as a filename suffix. Every per-window file the
 # watcher keeps is named by it (.hash-, .count-, .stale-, .stale-since-,
-# .wedge-escalations-, .paused-*, .writing-*), and live homes hold those markers on
+# .wedge-escalations-, .wedge-backoff-, .paused-*, .writing-*), and live homes hold those markers on
 # disk under the current format, so the format lives here alone: a second copy is
 # how a future change to it silently orphans a window's markers instead of clearing
 # them. The helpers below take the derived key rather than re-deriving it, so one
@@ -509,11 +509,15 @@ resurface_absorbed() {  # <window> <throttle-marker> <age> <reason>
 # worktree churns without real progress cannot stay invisible. The escalation
 # counter is left alone: it is neither advanced (this is not an escalation) nor
 # reset (a later genuine escalation must still carry the demand-deep-inspection
-# history it had already earned).
+# history it had already earned). The separate backoff exponent IS reset: the
+# worktree writes are genuine activity, so the restarted quiet spell must
+# re-escalate promptly at the base threshold rather than at the pace the
+# previous spell had backed off to.
 wedge_defer_writing() {  # <window> <since-file> <triage-label> <idle-age>
   local win=$1 since_file=$2 label=$3 age=$4 key wsf wage
   key=$(window_key "$win")
   wsf="$STATE/.writing-since-$key"
+  echo 0 > "$STATE/.wedge-backoff-$key"
   [ -e "$wsf" ] || date +%s > "$wsf"
   wage=$(age_of "$wsf")
   date +%s > "$since_file"
@@ -538,24 +542,28 @@ clear_write_tracking() {  # <window-key>
 # both places a hash can be absorbed this way: the plain non-terminal path,
 # and the stale_is_terminal-overridden path (a captain-relevant status-log
 # line that an active run/busy pane outranked).
-# Reset the wedge escalation state for a window: the quiet-spell timer and its
-# backoff counter always clear together, so a fresh quiet spell always escalates
-# at the prompt STALE_ESCALATE_SECS threshold.
-wedge_reset_backoff() {  # <since-file> <escalation-file>
-  rm -f "$1" "$2"
+# Reset the wedge escalation state for a window: the quiet-spell timer, the
+# escalation history counter and the backoff exponent always clear together, so a
+# fresh quiet spell always escalates at the prompt STALE_ESCALATE_SECS threshold.
+wedge_reset_backoff() {  # <window-key>
+  local key=$1
+  rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" "$STATE/.wedge-backoff-$key"
 }
 
-# Start a fresh quiet spell: seed the timer and drop any carried-over backoff.
-wedge_start_timer() {  # <since-file> <escalation-file>
-  date +%s > "$1"
-  rm -f "$2"
+# Start a fresh quiet spell: seed the timer and drop any carried-over escalation
+# history and backoff pace.
+wedge_start_timer() {  # <window-key>
+  local key=$1
+  date +%s > "$STATE/.stale-since-$key"
+  rm -f "$STATE/.wedge-escalations-$key" "$STATE/.wedge-backoff-$key"
 }
 
 # The worktree write probe runs ONLY here, inside the at-threshold branch that is
 # about to escalate: at most one bounded walk per window per escalation
 # threshold, never per poll.
 wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> <task>
-  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 since age n shift_n threshold reason
+  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 since age n b shift_n threshold reason backoff_file
+  backoff_file="$STATE/.wedge-backoff-$(window_key "$win")"
   since=$(cat "$since_file" 2>/dev/null || true)
   case "$since" in
     ''|*[!0-9]*)
@@ -568,10 +576,12 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
     *)
       n=$(cat "$escalation_file" 2>/dev/null || echo 0)
       case "$n" in ''|*[!0-9]*) n=0 ;; esac
-      if [ "$n" -le 0 ]; then
+      b=$(cat "$backoff_file" 2>/dev/null || echo "$n")
+      case "$b" in ''|*[!0-9]*) b=0 ;; esac
+      if [ "$b" -le 0 ]; then
         threshold=$STALE_ESCALATE_SECS
       else
-        shift_n=$n
+        shift_n=$b
         [ "$shift_n" -gt 20 ] && shift_n=20
         threshold=$(( STALE_ESCALATE_SECS * (1 << shift_n) ))
         [ "$threshold" -gt "$WEDGE_ESCALATE_MAX_SECS" ] && threshold=$WEDGE_ESCALATE_MAX_SECS
@@ -584,6 +594,7 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
         fi
         n=$(( n + 1 ))
         echo "$n" > "$escalation_file"
+        echo "$(( b + 1 ))" > "$backoff_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
         if [ "$n" -ge "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
           reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
@@ -631,7 +642,7 @@ handle_paused_stale() {  # <window> <task> <hash>
   key=$(window_key "$win")
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
-  wedge_reset_backoff "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  wedge_reset_backoff "$key"
   clear_write_tracking "$key"
   statusf="$STATE/$task.status"
   mtime=$(stat_mtime "$statusf")
@@ -682,7 +693,7 @@ clear_pause_tracking() {  # <window-key>
   clear_pause_state "$key"
   clear_write_tracking "$key"
   rm -f "$STATE/.stale-$key"
-  wedge_reset_backoff "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  wedge_reset_backoff "$key"
 }
 
 # Reconcile a declared pause or captain-held status with authoritative crew state.
@@ -750,7 +761,7 @@ surface_nonterminal_stale() {  # <window> <hash>
   key=$(window_key "$win")
   fm_wake_append stale "$win" "stale: $win" || exit 1
   printf '%s' "$h" > "$STATE/.stale-$key"
-  wedge_reset_backoff "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  wedge_reset_backoff "$key"
   clear_write_tracking "$key"
   task=$(window_to_task "$win" "$STATE")
   last=$(last_status_line "$STATE/$task.status")
@@ -1407,13 +1418,13 @@ EOF
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
               printf '%s' "$h" > "$sf"
-              wedge_start_timer "$ssf" "$ewf"
+              wedge_start_timer "$key"
               clear_write_tracking "$key"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
             else
               fm_wake_append stale "$w" "stale: $w" || exit 1
               printf '%s' "$h" > "$sf"
-              wedge_reset_backoff "$ssf" "$ewf"
+              wedge_reset_backoff "$key"
               clear_write_tracking "$key"
               mark_surfaced "$STATE/$(window_to_task "$w" "$STATE").status"
               wake "stale: $w"
@@ -1449,7 +1460,7 @@ EOF
               working)
                 clear_pause_tracking "$key"
                 printf '%s' "$h" > "$sf"
-                wedge_start_timer "$ssf" "$ewf"
+                wedge_start_timer "$key"
                 triage_log "absorbed non-terminal stale (provably working): $w"
                 ;;
               paused)
@@ -1484,7 +1495,7 @@ EOF
         if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
           busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" && paused_bound=0
         else
-          wedge_reset_backoff "$ssf" "$ewf"
+          wedge_reset_backoff "$key"
           clear_write_tracking "$key"
         fi
         # A busy pane normally means real work resumed, so stale pause bookkeeping
@@ -1502,7 +1513,7 @@ EOF
       if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
         busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" && paused_bound=0
       else
-        wedge_reset_backoff "$ssf" "$ewf"
+        wedge_reset_backoff "$key"
         clear_write_tracking "$key"
       fi
       task=$(window_to_task "$w" "$STATE")
