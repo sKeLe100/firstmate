@@ -567,6 +567,11 @@ mkdir -p "$CASE_HOME/.local/bin"
 for tool in herdr tasks-axi treehouse claude; do
   ln -s "$CASE_BIN/$tool" "$CASE_HOME/.local/bin/$tool"
 done
+# The refreshed worker probes tools on the doctor's own fixed runtime PATH,
+# which keeps ~/.local/bin but not this fixture's $TOOLS dir, so every required
+# tool has to be staged through the documented wrapper directory - including
+# the ones this host happens to provide system-wide.
+ln -s "$TOOLS/jq" "$CASE_HOME/.local/bin/jq"
 HOME="$CASE_HOME" FM_ROOT_OVERRIDE="$ROOT" FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
   "$ROOT/bin/fm-remote-job-worker.sh" > "$CASE_STATE/worker.out" 2> "$CASE_STATE/worker.err" &
 DOCTOR_WORKER_PID=$!

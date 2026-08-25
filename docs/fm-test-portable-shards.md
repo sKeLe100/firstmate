@@ -58,7 +58,10 @@ Membership is derived rather than enumerated, so a newly added test lands here b
 On green CI run [30725985757](https://github.com/kunchenguid/firstmate/actions/runs/30725985757), that remainder accumulated 19m04s of script time against a 20-minute job timeout.
 On [PR 1495](https://github.com/kunchenguid/firstmate/pull/1495), its main step ran about 19m51s before the job was cancelled at that boundary.
 `portable-serial-<k>of<n>` splits it across `n` CI jobs.
-Each shard is still strictly serial in itself, and the Linux lanes run on a single self-hosted runner where GitHub queues the matrix jobs one at a time, so no two of these stateful scripts ever run concurrently and the split needs no concurrency isolation proof.
+Each shard is still strictly serial in itself, so one stateful script runs at a time inside a shard.
+The shards themselves do run concurrently: the self-hosted pool holds several linux runners, and two of those runner processes can share one physical host, one user, and one `$HOME`.
+The split therefore rests on per-job isolation rather than on serialized scheduling - `.github/workflows/ci.yml` gives each shard an `XDG_CONFIG_HOME` keyed on shard, run id, and run attempt, which no concurrent job on any host can collide with, and `RUNNER_TEMP` belongs to a single runner process rather than to the machine.
+What the split does not claim is that two shards are isolated from each other the way the Phase 2 proof isolates the parallel set; it claims only that a script never runs beside another script from its own shard.
 
 `bin/fm-test-run.sh` owns `n` and refuses any lane whose `of<n>` disagrees with it.
 `.github/workflows/ci.yml` derives the same `n` from `strategy.job-total` rather than a literal, so changing the shard count in either file without the other fails the lane loudly instead of leaving part of the required suite unrun.

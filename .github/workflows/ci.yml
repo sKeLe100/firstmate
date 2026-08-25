@@ -126,11 +126,18 @@ jobs:
 
   # Required portable serial remainder: watcher, lock, AFK, tmux, daemon,
   # ambiguous, and other stateful tests. Real Herdr stays in tests-herdr.
-  # Each shard is strictly serial in itself; on the single self-hosted Linux
-  # runner, GitHub queues the matrix jobs one at a time on that same machine,
-  # so no two of these stateful scripts ever run concurrently. Shard membership
-  # and the shard count both belong to bin/fm-test-run.sh, which refuses a lane
-  # whose "ofN" disagrees with it (docs/fm-test-portable-shards.md).
+  # Each shard is strictly serial in itself. The self-hosted pool holds several
+  # linux runners, so these shards do run concurrently with each other, and two
+  # runner processes can sit on one physical host under the same user and the
+  # same $HOME. Nothing serializes them, so the isolation that matters is
+  # per-job, not per-machine: XDG_CONFIG_HOME below is keyed on shard, run id,
+  # and run attempt, which is unique across every concurrent job on any host,
+  # and RUNNER_TEMP belongs to a single runner process rather than the machine.
+  # Serial here means serial within a shard - one stateful script at a time in
+  # its own config root - not a promise that only one shard is on the host.
+  # Shard membership and the shard count both belong to bin/fm-test-run.sh,
+  # which refuses a lane whose "ofN" disagrees with it
+  # (docs/fm-test-portable-shards.md).
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: [self-hosted, linux]
