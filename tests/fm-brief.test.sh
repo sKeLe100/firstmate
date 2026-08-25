@@ -749,8 +749,8 @@ test_ship_and_scout_teach_correct_key_placement() {
   # shellcheck disable=SC2016
   assert_grep 'blocked [key=<slug>]: {why}' "$brief" \
     "ship brief did not show the correct blocked key placement"
-  assert_grep "never after the colon" "$brief" \
-    "ship brief did not warn against the malformed key-after-colon shape"
+  assert_grep "folds under the default key" "$brief" \
+    "ship brief did not warn that a key buried in the note folds under default"
 
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-key-scout some-proj --scout >/dev/null 2>&1 \
     || fail "fm-brief.sh scout scaffold exited non-zero"
@@ -761,8 +761,8 @@ test_ship_and_scout_teach_correct_key_placement() {
   # shellcheck disable=SC2016
   assert_grep 'blocked [key=<slug>]: {why}' "$brief" \
     "scout brief did not show the correct blocked key placement"
-  assert_grep "never after the colon" "$brief" \
-    "scout brief did not warn against the malformed key-after-colon shape"
+  assert_grep "folds under the default key" "$brief" \
+    "scout brief did not warn that a key buried in the note folds under default"
   pass "fm-brief.sh: ship and scout scaffolds teach the classifier's authoritative key placement"
 }
 

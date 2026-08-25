@@ -352,7 +352,7 @@ The report is the only thing that survives, so anything worth keeping must be in
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
    To let firstmate target its answer at this exact decision (\`--resolve-key\`), give it a stable key:
    put \`[key=<slug>]\` BETWEEN the verb and the colon, e.g. \`needs-decision [key=<slug>]: {summary}\`
-   or \`blocked [key=<slug>]: {why}\` - never after the colon, which folds under the default key instead.
+   or \`blocked [key=<slug>]: {why}\` - a complete token at the head of the note is accepted as an equivalent position, but a token further inside the note is prose and folds under the default key instead.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
@@ -474,7 +474,7 @@ $RULE1
    append \`needs-decision: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
    To let firstmate target its answer at this exact decision (\`--resolve-key\`), give it a stable key:
    put \`[key=<slug>]\` BETWEEN the verb and the colon, e.g. \`needs-decision [key=<slug>]: {summary}\`
-   or \`blocked [key=<slug>]: {why}\` - never after the colon, which folds under the default key instead.
+   or \`blocked [key=<slug>]: {why}\` - a complete token at the head of the note is accepted as an equivalent position, but a token further inside the note is prose and folds under the default key instead.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
