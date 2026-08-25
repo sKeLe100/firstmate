@@ -41,7 +41,9 @@ fm_llm_usage_emit() {  # <data-dir> <state-dir> <event-type> <field=value>...
   local data_dir=$1 state_dir=$2 event_type=$3
   shift 3 || return 0
   (
-    if ! { exec 2>>"$state_dir/llm-usage-write-errors.log"; } 2>/dev/null; then
+    if : 2>/dev/null >>"$state_dir/llm-usage-write-errors.log"; then
+      exec 2>>"$state_dir/llm-usage-write-errors.log"
+    else
       exec 2>/dev/null
     fi
     dir="$data_dir/llm-usage"

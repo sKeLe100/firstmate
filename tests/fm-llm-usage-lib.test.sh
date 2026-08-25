@@ -136,9 +136,37 @@ PY
   pass "fm_llm_usage_emit: C0 control characters stay parseable and round-trip exactly"
 }
 
+test_emit_diverts_write_failures_into_the_error_log_not_the_caller_stderr() {
+  local home stderr_file
+  home=$(fm_test_tmproot fm-llm-usage) || fail "could not create a temp home"
+  mkdir -p "$home/state" "$home/data"
+  stderr_file="$home/caller-stderr"
+  chmod 500 "$home/data"
+  # Root and some CI sandboxes bypass permission bits entirely; skip rather
+  # than assert a guarantee the environment cannot actually exercise.
+  if [ -w "$home/data" ]; then
+    chmod 755 "$home/data"
+    pass "fm_llm_usage_emit: skipped (unwritable-archive-dir check not enforceable as this user)"
+    return 0
+  fi
+
+  fm_llm_usage_emit "$home/data" "$home/state" dispatch "task_id=t7" 2>"$stderr_file"
+  local status=$?
+  chmod 755 "$home/data"
+
+  [ "$status" -eq 0 ] \
+    || fail "fm_llm_usage_emit must return success even when the archive directory cannot be created"
+  [ ! -s "$stderr_file" ] \
+    || fail "a telemetry write failure leaked to the caller's stderr: $(cat "$stderr_file")"
+  [ -s "$home/state/llm-usage-write-errors.log" ] \
+    || fail "a telemetry write failure was not recorded in llm-usage-write-errors.log"
+  pass "fm_llm_usage_emit: a write failure lands in the error log and never on the caller's stderr"
+}
+
 test_emit_writes_one_valid_json_line_per_call
 test_emit_omits_empty_fields_rather_than_writing_empty_strings
 test_emit_escapes_quotes_and_newlines_safely
 test_emit_never_fails_when_home_is_unwritable
 test_emit_writes_are_append_only_across_calls
 test_emit_escapes_c0_control_characters_as_json_escapes
+test_emit_diverts_write_failures_into_the_error_log_not_the_caller_stderr
