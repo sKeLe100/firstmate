@@ -120,6 +120,8 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 - `bin/*.sh` and `bin/backends/*.sh` must pass `shellcheck`.
 - Run `bin/fm-lint.sh` before treating a script change as done; it is the single owner of the lint definition (file set, config, pinned shellcheck version, and pinned actionlint workflow lint) that CI and the no-mistakes pre-push gate both invoke, and it refuses to run under any other version of either linter.
 - When a task names a specific tool, implement the work with that tool, or explicitly flag the substitution and its new dependency footprint for review before shipping.
+- Never pass a non-constant JSON value through `jq --argjson`, because the whole value lands in the exec argument list and fails with `E2BIG` once it is large enough, and "this one stays small" is not a safe assumption; only literal constants are exempt.
+- Feed such values from a private temp file via `--rawfile`/`--slurpfile` instead, as `json_tmpfile` (one blob) and `json_args_tmpfile` (a `{"<name>":<json>,...}` bundle a jq program rebinds) in `bin/fm-fleet-snapshot.sh` do and `tests/fm-fleet-snapshot-view.test.sh` guards at scale.
 - Colocate tests with the existing pattern in `tests/`, name them `<subject>.test.sh`, and extend an existing script rather than inventing a new runner.
 - Tests must exercise behavior through an executable or public interface and must never assert implementation-source bytes, including through parsers, regexes, snapshots, or indirect wrappers.
 - A maintainer-verification record under `docs/verification/` records active empirical facts, not assumptions or task chronology.
