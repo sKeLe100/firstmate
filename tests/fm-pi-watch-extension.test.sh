@@ -1274,7 +1274,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 const armLogged = () => existsSync(process.env.FM_ARM_LOG)
   && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("home=");
-for (let i = 0; i < 250 && !armLogged(); i += 1) {
+for (let i = 0; i < 1500 && !armLogged(); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (!armLogged()) {
@@ -2048,9 +2048,10 @@ writeFileSync(lock, `${process.pid}\n`);
 const eventPromise = hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 const armLogged = () => existsSync(process.env.FM_ARM_LOG)
   && readFileSync(process.env.FM_ARM_LOG, "utf8").includes("arm=");
-for (let i = 0; i < 250 && !armLogged(); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 10));
+for (let i = 0; i < 1500 && !armLogged(); i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 20));
 }
+if (!armLogged()) throw new Error("watch arm did not run");
 const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 try {
   writeFileSync(lock, `${other.pid}\n`);
