@@ -8,9 +8,11 @@
 # priority sort documented under "Ranking and priority" below. It shells out
 # to `tasks-axi list --state queued` for EVERY queued item (no --limit, so
 # the sort sees the whole queue), sorts that set, keeps the top N, and
-# enriches each surviving row with two more deterministic facts tasks-axi
+# enriches each surviving row with more deterministic facts tasks-axi
 # does not itself carry:
 #
+#   rank      - the 1-based position after that sort (see "Ranking and
+#               priority" below).
 #   posture   - this item's project delivery mode/yolo, from
 #               bin/fm-project-mode.sh (the single owner of data/projects.md
 #               registry parsing; this script does not read that file
