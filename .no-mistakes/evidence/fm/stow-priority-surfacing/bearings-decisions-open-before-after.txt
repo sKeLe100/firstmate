@@ -1,0 +1,31 @@
+=== BEFORE (base b370856) decisions_open ===
+{"id":"backlog-decision-01","declared_priority":null}
+{"id":"backlog-decision-02","declared_priority":null}
+{"id":"backlog-decision-03","declared_priority":null}
+{"id":"backlog-decision-04","declared_priority":null}
+{"id":"backlog-decision-05","declared_priority":null}
+{"id":"backlog-decision-06","declared_priority":null}
+{"id":"token-burn-planning","declared_priority":null}
+{"id":"backlog-decision-07","declared_priority":null}
+{"id":"backlog-decision-08","declared_priority":null}
+{"id":"backlog-decision-09","declared_priority":null}
+{"id":"backlog-decision-10","declared_priority":null}
+{"id":"backlog-decision-11","declared_priority":null}
+{"id":"backlog-decision-12","declared_priority":null}
+{"id":"backlog-decision-13","declared_priority":null}
+
+=== AFTER (3d0d6f6) decisions_open ===
+{"id":"token-burn-planning","declared_priority":true}
+{"id":"backlog-decision-01","declared_priority":false}
+{"id":"backlog-decision-02","declared_priority":false}
+{"id":"backlog-decision-03","declared_priority":false}
+{"id":"backlog-decision-04","declared_priority":false}
+{"id":"backlog-decision-05","declared_priority":false}
+{"id":"backlog-decision-06","declared_priority":false}
+{"id":"backlog-decision-07","declared_priority":false}
+{"id":"backlog-decision-08","declared_priority":false}
+{"id":"backlog-decision-09","declared_priority":false}
+{"id":"backlog-decision-10","declared_priority":false}
+{"id":"backlog-decision-11","declared_priority":false}
+{"id":"backlog-decision-12","declared_priority":false}
+{"id":"backlog-decision-13","declared_priority":false}

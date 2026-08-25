@@ -1,0 +1,77 @@
+### AFTER (this change): fm-session-start.sh FLEET STATE excerpt
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+CAPTAIN DECLARED PRIORITY: token-burn-planning - plan the token burn-down first
+compact backlog listing (manual backend; done rows omitted; every in-flight, held, and blocked title line kept; other queued bounded to 20; indented task bodies omitted)
+## In flight
+## Queued
+- [ ] pick-release-lane - Pick the release lane (repo: firstmate) (kind: captain) (priority: 1) (hold: captain choice pending) (hold-kind: captain)
+- [ ] rename-fleet-doc - Rename the fleet doc (repo: firstmate) (kind: captain) (priority: 1) (hold: waiting on captain) (hold-kind: captain)
+- [ ] urgent-decoy - Sounds urgent but unmarked (repo: firstmate) (kind: captain) (priority: 0) (hold: this is urgent) (hold-kind: captain)
+- [ ] token-burn-planning - Plan the token burn-down (repo: firstmate) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: plan the token burn-down first) (hold-kind: captain)
+- [ ] audit-secondmates - Audit secondmate homes (repo: firstmate) (kind: captain) (priority: 1) (hold: captain call) (hold-kind: captain)
+(shown 0 in-flight, 5 held or blocked queued, 0 of 0 other queued title line(s); 0 done row(s) omitted)
+Full task bodies remain available on demand: tasks-axi show <id> --full when compatible tasks-axi is available, or data/backlog.md.
+
+Work under way (state/*.meta)
+--------------------------------------------------------------------------------
+(none)
+
+Orphan status logs (state/*.status without matching .meta)
+--------------------------------------------------------------------------------
+(none)
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 1s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, and project clone refresh with its drift reporting.
+(silent - no problems found)
+
+================================================================================
+CONTEXT
+
+### BEFORE (base commit b370856): same backlog, same command
+/tmp/basebin/fm-supervision-instructions.sh: line 107: /tmp/docs/supervision-protocols/unknown.md: No such file or directory
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+compact backlog listing (manual backend; done rows omitted; every in-flight, held, and blocked title line kept; other queued bounded to 20; indented task bodies omitted)
+## In flight
+## Queued
+- [ ] pick-release-lane - Pick the release lane (repo: firstmate) (kind: captain) (priority: 1) (hold: captain choice pending) (hold-kind: captain)
+- [ ] rename-fleet-doc - Rename the fleet doc (repo: firstmate) (kind: captain) (priority: 1) (hold: waiting on captain) (hold-kind: captain)
+- [ ] urgent-decoy - Sounds urgent but unmarked (repo: firstmate) (kind: captain) (priority: 0) (hold: this is urgent) (hold-kind: captain)
+- [ ] token-burn-planning - Plan the token burn-down (repo: firstmate) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: plan the token burn-down first) (hold-kind: captain)
+- [ ] audit-secondmates - Audit secondmate homes (repo: firstmate) (kind: captain) (priority: 1) (hold: captain call) (hold-kind: captain)
+(shown 0 in-flight, 5 held or blocked queued, 0 of 0 other queued title line(s); 0 done row(s) omitted)
+Full task bodies remain available on demand: tasks-axi show <id> --full when compatible tasks-axi is available, or data/backlog.md.
+
+Work under way (state/*.meta)
+--------------------------------------------------------------------------------
+(none)
+
+Orphan status logs (state/*.status without matching .meta)
+--------------------------------------------------------------------------------
+(none)
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 1s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, and project clone refresh with its drift reporting.
+(silent - no problems found)
+
+================================================================================
+CONTEXT

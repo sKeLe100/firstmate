@@ -1,0 +1,27 @@
+=== BEFORE (base b370856): fm-session-start.sh FLEET STATE ===
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+compact backlog listing (manual backend; done rows omitted; every in-flight, held, and blocked title line kept; other queued bounded to 20; indented task bodies omitted)
+## In flight
+## Queued
+- [ ] backlog-decision-01 - Decide lane 01 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 01) (hold-kind: captain)
+- [ ] backlog-decision-02 - Decide lane 02 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 02) (hold-kind: captain)
+- [ ] backlog-decision-03 - Decide lane 03 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 03) (hold-kind: captain)
+- [ ] backlog-decision-04 - Decide lane 04 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 04) (hold-kind: captain)
+- [ ] backlog-decision-05 - Decide lane 05 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 05) (hold-kind: captain)
+- [ ] backlog-decision-06 - Decide lane 06 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 06) (hold-kind: captain)
+- [ ] token-burn-planning - Plan the token burn-down (repo: firstmate) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: run the token burn-down plan as the first item next session) (hold-kind: captain)
+- [ ] backlog-decision-07 - Decide lane 07 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 07) (hold-kind: captain)
+- [ ] backlog-decision-08 - Decide lane 08 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 08) (hold-kind: captain)
+- [ ] backlog-decision-09 - Decide lane 09 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 09) (hold-kind: captain)
+- [ ] backlog-decision-10 - Decide lane 10 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 10) (hold-kind: captain)
+- [ ] backlog-decision-11 - Decide lane 11 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 11) (hold-kind: captain)
+- [ ] backlog-decision-12 - Decide lane 12 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 12) (hold-kind: captain)
+- [ ] backlog-decision-13 - Decide lane 13 (repo: firstmate) (kind: captain) (priority: 2) (hold: awaiting captain call 13) (hold-kind: captain)
+(shown 0 in-flight, 14 held or blocked queued, 0 of 0 other queued title line(s); 0 done row(s) omitted)
+Full task bodies remain available on demand: tasks-axi show <id> --full when compatible tasks-axi is available, or data/backlog.md.
+
+Work under way (state/*.meta)

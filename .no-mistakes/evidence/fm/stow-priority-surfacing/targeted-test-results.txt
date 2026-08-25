@@ -1,0 +1,9 @@
+tests/fm-bearings-snapshot.test.sh - full suite, exit 0
+ok - a declared next-session priority sorts first in decisions_open and is machine-distinguishable from an ordinary hold
+ok - a declared next-session priority recorded on a secondmate sorts first too
+ok - a secondmate declared priority survives the secondmate decisions_open truncation cap
+
+tests/fm-session-start.test.sh - declared-priority cases (isolated runner)
+ok - a captain-declared next-session priority is named proactively at session start, ahead of the ordinary listing
+ok - a declared next-session priority stops being called out once it is done
+ok - the declared-priority callout normalizes section headings and reads an unterminated final line
