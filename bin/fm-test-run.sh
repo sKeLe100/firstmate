@@ -62,10 +62,13 @@
 # owned by bin/fm-test-isolation-proof.sh; portable parallel shards are a
 # duration-balanced partition of that exact set (see docs/fm-test-portable-shards.md).
 #
-# portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
-# split it across separate runners, so two of its stateful scripts still never
-# share a machine. This script owns <n>: a lane whose <n> disagrees with the
-# configured shard count is refused, so a CI matrix cannot silently drop a shard.
+# portable-serial stays strictly serial within a shard. Its CI shards
+# (portable-serial-<k>of<n>) run concurrently and may land on one physical host
+# under the same user and the same $HOME, so the split isolates per job - each
+# shard gets its own XDG_CONFIG_HOME and RUNNER_TEMP - rather than by scheduling
+# (see .github/workflows/ci.yml and docs/fm-test-portable-shards.md). This
+# script owns <n>: a lane whose <n> disagrees with the configured shard count is
+# refused, so a CI matrix cannot silently drop a shard.
 # --changed is conservative: it over-selects related families rather than
 # under-selecting, and never expands to the complete suite unless --all.
 set -eu
@@ -89,7 +92,7 @@ FAIL_ON_GATE_SKIP=
 JOBS=1
 JOBS_MAX=8
 
-# How many separate-runner shards the portable serial remainder splits into.
+# How many shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
 PORTABLE_SERIAL_SHARDS=4
 
@@ -610,7 +613,7 @@ select_lane() {
       done < <(list_portable_serial)
       ;;
     portable-serial-*)
-      # One separate-runner shard of the same remainder, still serial in itself.
+      # One shard of the same remainder, still serial in itself.
       shard=$(portable_serial_shard_index "$want")
       while IFS=$'\t' read -r idx s; do
         [ -n "$s" ] || continue
