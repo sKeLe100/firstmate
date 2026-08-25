@@ -1085,6 +1085,26 @@ EOF
   pass "a declared next-session priority recorded on a secondmate sorts first too"
 }
 
+test_declared_next_session_priority_survives_secondmate_truncation() {
+  local home mate fakebin json i
+  home=$(make_home declared-priority-truncation)
+  mate="$TMP_ROOT/declared-priority-truncation-home"
+  write_domain_alpha_fixture "$home" "$mate"
+  for i in $(seq -w 1 25); do
+    sed -i "/^## Done/i - [ ] bulk-call-$i - Bulk captain call $i (repo: sample) (kind: captain) (priority: 1) (hold: pick a lane $i) (hold-kind: captain)" \
+      "$mate/data/backlog.md"
+  done
+  sed -i '/^## Done/i - [ ] mate-priority-task - Finish the migration first (repo: sample) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: finish the migration first) (hold-kind: captain)' \
+    "$mate/data/backlog.md"
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    (.decisions_open[0].id == "domain-alpha/mate-priority-task")
+      and (.decisions_open[0].declared_priority == true)
+  ' >/dev/null || fail "a declared priority behind more holds than the secondmate decisions cap must still reach the parent: $json"
+  pass "a secondmate declared priority survives the secondmate decisions_open truncation cap"
+}
+
 test_include_prs_is_the_only_fetch_path() {
   local home fakebin json
   home=$(make_home prs); write_fixture "$home"
@@ -2137,6 +2157,7 @@ test_completed_scout_report_not_pending
 test_open_decision_surfaces_end_to_end
 test_declared_next_session_priority_sorts_first
 test_declared_next_session_priority_from_secondmate_sorts_first
+test_declared_next_session_priority_survives_secondmate_truncation
 test_report_pointers_surface
 test_superseded_queued_item_dropped_by_default
 test_include_prs_is_the_only_fetch_path

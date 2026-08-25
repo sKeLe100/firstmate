@@ -1766,6 +1766,32 @@ EOF
   pass "a captain-declared next-session priority is named proactively at session start, ahead of the ordinary listing"
 }
 
+test_backlog_declared_next_session_priority_drops_once_done() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-declared-priority-done)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] ordinary-call - Ordinary captain call (repo: firstmate) (kind: captain) (priority: 1) (hold: pick a lane) (hold-kind: captain)
+
+## Done
+- [x] token-burn-planning - Plan the token burn-down (repo: firstmate) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: run as first item next session) (hold-kind: captain)
+EOF
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_not_contains "$out" "CAPTAIN DECLARED PRIORITY:"     "a completed declared priority must not keep being called out"
+
+  pass "a declared next-session priority stops being called out once it is done"
+}
+
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback() {
   local rec root home fakebin out
   rec=$(new_world backlog-compact-unavailable)
@@ -2522,6 +2548,7 @@ test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_declared_next_session_priority_is_called_out
+test_backlog_declared_next_session_priority_drops_once_done
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence

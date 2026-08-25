@@ -389,9 +389,18 @@ print_backlog_pointer() {
 # regardless of backlog backend, and is a proactive callout only: it never
 # replaces the full listing below, and an absent marker prints nothing.
 print_declared_next_session_priority() {
-  local path=$1 line id rest
+  local path=$1 line id rest section=''
   [ -f "$path" ] || return 0
   while IFS= read -r line; do
+    case $line in
+      '## '*)
+        section=${line#\#\# }
+        section=${section%%"${section##*[![:space:]]}"}
+        continue
+        ;;
+    esac
+    [ "$section" != 'Done' ] || continue
+    if printf '%s\n' "$line" | grep -Eq '^[-*][[:space:]]+\[[xX]\]'; then continue; fi
     printf '%s\n' "$line" | grep -Eq '(\(|,[[:space:]]*)priority:[[:space:]]*0([,)]|$)' || continue
     printf '%s\n' "$line" | grep -Eq '(\(|,[[:space:]]*)hold:[[:space:]]*NEXT-SESSION PRIORITY:' || continue
     rest=${line#*"NEXT-SESSION PRIORITY:"}
