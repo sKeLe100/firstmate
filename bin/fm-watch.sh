@@ -176,6 +176,16 @@ SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trai
 # daemon owns triage, so this watcher reverts to one-shot (enqueue + exit on every
 # wake) and never double-triages - and never runs the costly provably-working read.
 STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+# A provably-working stale's FIRST escalation always fires at STALE_ESCALATE_SECS
+# (a real wedge must surface promptly). Every subsequent escalation for the SAME
+# uninterrupted quiet spell backs off exponentially - STALE_ESCALATE_SECS * 2^n
+# for the nth re-escalation - capped at WEDGE_ESCALATE_MAX_SECS, so a pane that
+# stays stuck stops re-waking the primary model every 240s and instead re-fires
+# at a growing interval (240s, 480s, 960s, ... up to the cap). The backoff state
+# is the same per-window escalation counter used for demand-deep-inspection
+# (FM_WEDGE_DEMAND_INSPECT_COUNT above) and resets to prompt (n=0) wherever that
+# counter is cleared - i.e. wherever the pane shows genuine activity again.
+WEDGE_ESCALATE_MAX_SECS=${FM_WEDGE_ESCALATE_MAX_SECS:-3600}  # backoff cap for wedge re-escalation
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
 # footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
@@ -529,10 +539,10 @@ clear_write_tracking() {  # <window-key>
 # and the stale_is_terminal-overridden path (a captain-relevant status-log
 # line that an active run/busy pane outranked).
 # The worktree write probe runs ONLY here, inside the at-threshold branch that is
-# about to escalate: at most one bounded walk per window per STALE_ESCALATE_SECS,
-# never per poll.
+# about to escalate: at most one bounded walk per window per escalation
+# threshold, never per poll.
 wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> <task>
-  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 since age n reason
+  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 since age n shift_n threshold reason
   since=$(cat "$since_file" 2>/dev/null || true)
   case "$since" in
     ''|*[!0-9]*)
@@ -543,13 +553,23 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       triage_log "absorbed $label timer reset: $win"
       ;;
     *)
+      n=$(cat "$escalation_file" 2>/dev/null || echo 0)
+      case "$n" in ''|*[!0-9]*) n=0 ;; esac
+      if [ "$n" -le 0 ]; then
+        threshold=$STALE_ESCALATE_SECS
+      else
+        shift_n=$n
+        [ "$shift_n" -gt 20 ] && shift_n=20
+        threshold=$(( STALE_ESCALATE_SECS * (1 << shift_n) ))
+        [ "$threshold" -gt "$WEDGE_ESCALATE_MAX_SECS" ] && threshold=$WEDGE_ESCALATE_MAX_SECS
+      fi
       age=$(( $(date +%s) - since ))
-      if [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
+      if [ "$age" -ge "$threshold" ]; then
         if crew_worktree_written_since "$task" "$STATE" "$since_file"; then
           wedge_defer_writing "$win" "$since_file" "$label" "$age"
           return 0
         fi
-        n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
+        n=$(( n + 1 ))
         echo "$n" > "$escalation_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
         if [ "$n" -ge "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
