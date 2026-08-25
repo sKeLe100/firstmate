@@ -222,7 +222,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
+  out=$(env -u BASH_ENV -u ENV HOME="$(pi_arm_shell_home)" PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -255,8 +255,8 @@ if (!redundant.content[0]?.text.includes("only after a later notification says t
 const armRows = () => (existsSync(process.env.FM_ARM_LOG)
   ? readFileSync(process.env.FM_ARM_LOG, "utf8").split("\n").filter((row) => row === "arm")
   : []);
-for (let i = 0; i < 100 && armRows().length === 0; i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 10));
+for (let i = 0; i < 1500 && armRows().length === 0; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 20));
 }
 if (armRows().length === 0) throw new Error("initial arm child did not start");
 await new Promise((resolve) => setTimeout(resolve, 100));
