@@ -32,12 +32,29 @@ path_without() {  # <tool-to-omit>
   rm -rf "$dir"
   mkdir -p "$dir"
   for tool in awk basename bash cat cut dirname env grep head jq mktemp node paste \
-    python3 rm sed sh tr tasks-axi uname wc; do
+    python3 rm sed sh tr tasks-axi uname wc quota-axi; do
     [ "$tool" = "$omit" ] && continue
     src=$(command -v "$tool" 2>/dev/null) || continue
     [ -n "$src" ] && ln -s "$src" "$dir/$tool"
   done
   printf '%s\n' "$dir"
+}
+
+# Writes a stub quota-axi into the given PATH-shim directory that reports one
+# provider ("claude") at the given effective percent remaining for
+# "all_models", so hierarchy availability tests never depend on the real
+# account's live quota.
+stub_quota_axi() {  # <dir> <percent-remaining>
+  local dir=$1 pct=$2
+  cat > "$dir/quota-axi" <<STUB
+#!/usr/bin/env bash
+cat <<JSON
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":$pct}
+]}}]}
+JSON
+STUB
+  chmod +x "$dir/quota-axi"
 }
 
 make_home() {  # <name>
@@ -163,7 +180,9 @@ esac
 home=$(make_home dispatch-present)
 : > "$home/data/projects.md"
 printf '%s\n' '{"rules":[],"default":[{"harness":"codex"}]}' > "$home/config/crew-dispatch.json"
-out=$(run_snapshot "$home")
+stub_dir_present=$(path_without quota-axi)
+stub_quota_axi "$stub_dir_present" 50
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_present" "$SNAPSHOT")
 if command -v jq >/dev/null 2>&1; then
   case "$out" in
     *"dispatch_config: present"*) ;;
@@ -402,12 +421,430 @@ printf '%s\n' '- crlf-proj [direct-PR +yolo] - test project (added 2026-08-20)' 
 run_snapshot "$home" > "$TMP_ROOT/line-endings.out"
 carriage=$(grep -c $'\r' "$TMP_ROOT/line-endings.out") || true
 [ "$carriage" = 0 ] || fail "the snapshot emitted CR characters: $(cat -A "$TMP_ROOT/line-endings.out")"
-last_field=$(grep '^  crlf-a' "$TMP_ROOT/line-endings.out" | sed 's/.*,//')
+last_field=$(grep ',crlf-a,' "$TMP_ROOT/line-endings.out" | sed 's/.*,//')
 [ "$last_field" = "captain kind or captain-kind hold" ] \
   || fail "autonomy_reason was not the documented value: [$last_field]"
 case "$(cat "$TMP_ROOT/line-endings.out")" in
   *'crlf-a,fix C:\\path,captain,crlf-proj'*) ;;
   *) fail "a literal backslash was not doubled as documented: $(cat "$TMP_ROOT/line-endings.out")" ;;
+esac
+
+# 14. Items are sorted by descending priority with rank starting at 1;
+#     unset priority ("-") sorts last; equal-priority items keep tasks-axi's
+#     own return order as the tiebreak. --limit is applied AFTER the sort, so
+#     a high-priority item outside the first N in tasks-axi's raw order still
+#     survives.
+home=$(make_home priority-sort)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add pri-low "low" --kind docs --priority 0 >/dev/null
+  tasks-axi add pri-tie-1 "tie one" --kind docs --priority 2 >/dev/null
+  tasks-axi add pri-tie-2 "tie two" --kind docs --priority 2 >/dev/null
+  tasks-axi add pri-none "unset" --kind docs >/dev/null
+  tasks-axi add pri-high "high" --kind docs --priority 4 >/dev/null
+)
+out=$(run_snapshot "$home")
+case "$out" in
+  *"1,pri-high,high,docs,-,4,"*) ;;
+  *) fail "highest priority did not rank 1: $out" ;;
+esac
+case "$out" in
+  *"2,pri-tie-1,tie one,docs,-,2,"*) ;;
+  *) fail "equal-priority items did not keep insertion order (tie-1 expected rank 2): $out" ;;
+esac
+case "$out" in
+  *"3,pri-tie-2,tie two,docs,-,2,"*) ;;
+  *) fail "equal-priority items did not keep insertion order (tie-2 expected rank 3): $out" ;;
+esac
+case "$out" in
+  *"4,pri-low,low,docs,-,0,"*) ;;
+  *) fail "explicit priority 0 did not outrank unset priority: $out" ;;
+esac
+case "$out" in
+  *"5,pri-none,unset,docs,-,-,"*) ;;
+  *) fail "unset priority did not sort last: $out" ;;
+esac
+
+home=$(make_home priority-limit)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add lim-low-1 "low 1" --kind docs --priority 0 >/dev/null
+  tasks-axi add lim-low-2 "low 2" --kind docs --priority 0 >/dev/null
+  tasks-axi add lim-high "high" --kind docs --priority 4 >/dev/null
+)
+out=$(run_snapshot "$home" --limit 1)
+case "$out" in
+  *"count: 1"*) ;;
+  *) fail "expected count: 1 under --limit 1 after sorting, got: $out" ;;
+esac
+case "$out" in
+  *"1,lim-high,high,docs"*) ;;
+  *) fail "--limit did not keep the highest-priority item after sorting: $out" ;;
+esac
+case "$out" in
+  *lim-low*) fail "--limit kept a lower-priority item once the highest was included: $out" ;;
+esac
+
+# 15. A non-positive or non-numeric --limit is rejected with exit 2 rather
+#     than silently reporting an empty/short queue or dying in the enrichment
+#     step, since --limit is now applied after the priority sort.
+home=$(make_home limit-invalid)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add badlim-1 "one" --kind docs --priority 1 >/dev/null
+)
+for bad in 0 -1 abc 2.5; do
+  err=$(run_snapshot "$home" --limit "$bad" 2>&1)
+  rc=$?
+  [ "$rc" = 2 ] || fail "--limit '$bad' exited $rc, expected 2 (output: $err)"
+  case "$err" in
+    *"positive integer"*) ;;
+    *) fail "--limit '$bad' gave no usable error message: $err" ;;
+  esac
+done
+
+# 16. Missing crew-dispatch.json reports hierarchy_lanes as unavailable, tied
+#     to the same dispatch_config verdict the item tiers already use, rather
+#     than a second independent gating check.
+home=$(make_home hierarchy-absent)
+: > "$home/data/projects.md"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"hierarchy_lanes: unavailable (dispatch_config: absent)"*) ;;
+  *) fail "expected hierarchy_lanes unavailable for absent config, got: $out" ;;
+esac
+
+# 17. A present crew-dispatch.json yields one hierarchy row per rule/default
+#     profile, using the rule's own `when` text - never a hardcoded task-class
+#     label - and a profile array yields one row per candidate rather than a
+#     collapsed summary.
+if command -v jq >/dev/null 2>&1; then
+  home=$(make_home hierarchy-present)
+  : > "$home/data/projects.md"
+  cat > "$home/config/crew-dispatch.json" <<'EOF'
+{
+  "rules": [
+    { "when": "hard or ambiguous work", "use": [
+        { "harness": "claude", "model": "claude-opus-5", "effort": "high" },
+        { "harness": "codex", "model": "gpt-5.5", "effort": "high" }
+      ], "why": "senior" }
+  ],
+  "default": [ { "harness": "claude", "model": "claude-sonnet-5", "effort": "medium" } ]
+}
+EOF
+  stub_dir_q=$(path_without quota-axi)
+  stub_quota_axi "$stub_dir_q" 62
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"hierarchy_lanes[3]{source,for,harness,model,effort,available,availability_reason}:"*) ;;
+    *) fail "expected 3 hierarchy lane rows (2 rule candidates + 1 default), got: $out" ;;
+  esac
+  case "$out" in
+    *"rule,hard or ambiguous work,claude,claude-opus-5,high,yes,62% remaining"*) ;;
+    *) fail "missing/incorrect claude rule lane row: $out" ;;
+  esac
+  case "$out" in
+    *"rule,hard or ambiguous work,codex,gpt-5.5,high,unknown,no live quota data for codex"*) ;;
+    *) fail "codex lane (no quota evidence stubbed) was not reported unknown: $out" ;;
+  esac
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-sonnet-5,medium,yes,62% remaining"*) ;;
+    *) fail "missing/incorrect default lane row: $out" ;;
+  esac
+
+  # An exhausted window (0% remaining) is reported unavailable, not silently
+  # dropped from the listing.
+  home=$(make_home hierarchy-exhausted)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","effort":"low"}}' > "$home/config/crew-dispatch.json"
+  stub_quota_axi "$stub_dir_q" 0
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,-,low,no,0% remaining"*) ;;
+    *) fail "an exhausted window was not reported unavailable: $out" ;;
+  esac
+
+  # A lane whose own model window is exhausted is reported unavailable even
+  # when the account-wide all_models number still has headroom, matching
+  # quota-axi's real "model:<name>" availability scope.
+  home=$(make_home hierarchy-model-scope)
+  : > "$home/data/projects.md"
+  cat > "$home/config/crew-dispatch.json" <<'CFG'
+{
+  "rules": [
+    { "when": "hard work", "use": { "harness": "claude", "model": "claude-opus-5", "effort": "high" },
+      "why": "senior" }
+  ],
+  "default": { "harness": "claude", "model": "claude-fable-5", "effort": "low" }
+}
+CFG
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":28},
+  {"scope":"model:opus","effectivePercentRemaining":0},
+  {"scope":"model:fable","effectivePercentRemaining":28}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"rule,hard work,claude,claude-opus-5,high,no,0% remaining (model:opus)"*) ;;
+    *) fail "model-scoped exhaustion was not preferred over the all_models number: $out" ;;
+  esac
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-fable-5,low,yes,28% remaining (model:fable)"*) ;;
+    *) fail "a lane with headroom in its own model scope was not reported available: $out" ;;
+  esac
+
+  # An exhausted account-wide window binds the lane even when its own model
+  # window still has headroom, and vice versa: the lower of the two wins and
+  # the reason names that binding scope.
+  home=$(make_home hierarchy-account-exhausted)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":0},
+  {"scope":"model:opus","effectivePercentRemaining":40}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-opus-5,high,no,0% remaining (all_models)"*) ;;
+    *) fail "an exhausted account was reported available on model-window headroom: $out" ;;
+  esac
+
+  # A more specific scope for a different model never binds a lane whose own
+  # model scope is present: the exact token match wins over a substring one.
+  home=$(make_home hierarchy-scope-exact)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"gpt-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"model:gpt-5-codex","effectivePercentRemaining":3},
+  {"scope":"model:gpt-5","effectivePercentRemaining":55}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,gpt-5,high,yes,55% remaining (model:gpt-5)"*) ;;
+    *) fail "a lane bound to another model's scope instead of its own exact scope: $out" ;;
+  esac
+
+  # An account-wide scope spelled "all_products" bounds the lane exactly like
+  # "all_models": when a provider publishes both, the lower of the two binds
+  # whatever order they are listed in, and an exhausted one is never reported
+  # available on the strength of the other or of some other window.
+  home=$(make_home hierarchy-all-products)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude",
+  "windows":[{"kind":"session","label":"session","percentRemaining":80}],
+  "quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"all_products","effectivePercentRemaining":0}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-opus-5,high,no,0% remaining (all_products)"*) ;;
+    *) fail "an exhausted all_products account was not reported unavailable: $out" ;;
+  esac
+
+  # With no model-scoped and no account-wide entry, the verdict is unknown -
+  # an unrelated provider window (a code-review workload, say) is never used
+  # as a stand-in for model availability.
+  home=$(make_home hierarchy-no-scope-evidence)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude",
+  "windows":[{"kind":"code_review","label":"code review","percentRemaining":70}],
+  "quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-opus-5,high,unknown,no model or account-wide quota evidence for claude"*) ;;
+    *) fail "a lane with no scoped quota evidence was not reported unknown: $out" ;;
+  esac
+
+  # A scope naming a DIFFERENT, more specific model never binds a lane that
+  # has no exact scope of its own: it reads the account-wide number instead.
+  home=$(make_home hierarchy-other-model-scope)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"gpt-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"model:gpt-5-codex","effectivePercentRemaining":3}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,gpt-5,high,yes,90% remaining (all_models)"*) ;;
+    *) fail "another model's tighter scope bound a lane that has none of its own: $out" ;;
+  esac
+
+  # The mirror direction of the same rule: a scope naming a SHORTER sibling
+  # model ("model:gpt-5" against a "gpt-5-codex" lane) never binds either.
+  home=$(make_home hierarchy-sibling-scope)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"gpt-5-codex","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"model:gpt-5","effectivePercentRemaining":0}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,gpt-5-codex,high,yes,90% remaining (all_models)"*) ;;
+    *) fail "a sibling model's exhausted scope bound an unrelated lane: $out" ;;
+  esac
+
+  # When more than one scope binds the same lane - its exact "model:<name>"
+  # scope and the vendor family scope that also names it - the tightest binds,
+  # whatever order quota-axi listed them in. A family scope for a different
+  # family (model:sonnet here) still binds nothing.
+  home=$(make_home hierarchy-tightest-family)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+    > "$home/config/crew-dispatch.json"
+  cat > "$stub_dir_q/quota-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":[
+  {"scope":"all_models","effectivePercentRemaining":90},
+  {"scope":"model:claude-opus-5","effectivePercentRemaining":60},
+  {"scope":"model:opus","effectivePercentRemaining":10},
+  {"scope":"model:sonnet","effectivePercentRemaining":1}
+]}}]}
+JSON
+STUB
+  chmod +x "$stub_dir_q/quota-axi"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"default,default (no rule matched),claude,claude-opus-5,high,yes,10% remaining (model:opus)"*) ;;
+    *) fail "the tightest binding scope did not win: $out" ;;
+  esac
+
+  # A present config that names no rule/default profile reports the header as
+  # unavailable rather than emitting a row-less hierarchy_lanes block.
+  home=$(make_home hierarchy-no-profiles)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"rules":[]}' > "$home/config/crew-dispatch.json"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT")
+  case "$out" in
+    *"hierarchy_lanes[0]"*) fail "empty lane set emitted a row-less header: $out" ;;
+    *"hierarchy_lanes: unavailable"*) ;;
+    *) fail "expected hierarchy_lanes unavailable for a profile-less config: $out" ;;
+  esac
+  # A quota-axi payload of an unexpected JSON shape degrades the lane to
+  # unknown instead of failing the whole read-only listing.
+  for payload in \
+    '[]' \
+    '{"providers":{"claude":{}}}' \
+    '{"providers":["claude"]}' \
+    '{"providers":[{"provider":"claude","quotaSemantics":[]}]}' \
+    '{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":"none"}}]}' \
+    '{"providers":[{"provider":"claude","quotaSemantics":{"effectiveAvailability":["all_models"]}}]}'; do
+    home=$(make_home hierarchy-odd-shape)
+    : > "$home/data/projects.md"
+    printf '%s\n' '{"default":{"harness":"claude","model":"claude-opus-5","effort":"high"}}' \
+      > "$home/config/crew-dispatch.json"
+    cat > "$stub_dir_q/quota-axi" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' '$payload'
+STUB
+    chmod +x "$stub_dir_q/quota-axi"
+    if ! out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT"); then
+      fail "an odd quota-axi payload ($payload) failed the whole snapshot: $out"
+    fi
+    case "$out" in
+      *"default,default (no rule matched),claude,claude-opus-5,high,unknown,"*) ;;
+      *) fail "an odd quota-axi payload ($payload) did not degrade to unknown: $out" ;;
+    esac
+  done
+
+  # A dispatch config that parses but is not an object reports the same
+  # unreadable-config lane branch rather than crashing.
+  home=$(make_home hierarchy-nonobject-config)
+  : > "$home/data/projects.md"
+  printf '%s\n' '["not","an","object"]' > "$home/config/crew-dispatch.json"
+  if out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir_q" "$SNAPSHOT"); then
+    case "$out" in
+      *"hierarchy_lanes: unavailable"*) ;;
+      *) fail "a non-object dispatch config did not report lanes unavailable: $out" ;;
+    esac
+  fi
+fi
+
+# 18. live_slots counts state/*.meta entries currently tracked in this home,
+#     regardless of the queue's own contents.
+home=$(make_home live-slots)
+: > "$home/data/projects.md"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"live_slots: 0"*) ;;
+  *) fail "expected live_slots: 0 with no tracked tasks, got: $out" ;;
+esac
+: > "$home/state/task-a.meta"
+: > "$home/state/task-b.meta"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"live_slots: 2"*) ;;
+  *) fail "expected live_slots: 2 with two tracked meta files, got: $out" ;;
+esac
+printf 'kind=ship\n' > "$home/state/task-a.meta"
+printf 'kind=secondmate\n' > "$home/state/pc02.meta"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"live_slots: 2"*) ;;
+  *) fail "expected live_slots: 2 excluding the secondmate record, got: $out" ;;
+esac
+rm "$home/state/task-b.meta"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"live_slots: 1"*) ;;
+  *) fail "expected live_slots: 1 with one ship and one secondmate, got: $out" ;;
 esac
 
 echo "PASS fm-queue-snapshot.test.sh"
