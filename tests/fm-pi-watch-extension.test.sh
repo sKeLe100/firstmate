@@ -1349,6 +1349,49 @@ EOF
   pass "OpenCode watcher plugin sources the effective config"
 }
 
+test_opencode_primary_watch_plugin_refuses_arm_without_session_lock() {
+  local plugin repo home log out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-nolock-root"
+  home="$TMP_ROOT/opencode-nolock-home"
+  log="$TMP_ROOT/opencode-nolock.log"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm\n' >> "${FM_ARM_LOG:?}"
+printf 'watcher: healthy pid=1 (beacon 0s)\n'
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(env -u BASH_ENV -u ENV HOME="$(pi_arm_shell_home)" PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
+import { existsSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const client = { session: { promptAsync: async () => {} } };
+const hooks = await mod.FmPrimaryWatchArm({
+  client,
+  directory: process.env.WORKTREE,
+  worktree: process.env.WORKTREE,
+});
+const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, "999999\n");
+await hooks.event(event);
+await new Promise((resolve) => setTimeout(resolve, 120));
+if (existsSync(process.env.FM_ARM_LOG)) {
+  console.error("watch arm ran without owning the session lock");
+  process.exit(1);
+}
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode watch plugin must not arm without owning the fleet lock"
+  [ -z "$out" ] || fail "OpenCode session-lock refusal test printed output: $out"
+  pass "OpenCode watcher plugin refuses to arm without session lock ownership"
+}
+
 test_opencode_primary_watch_plugin_requires_session_lock() {
   local plugin repo home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
@@ -1377,13 +1420,6 @@ const hooks = await mod.FmPrimaryWatchArm({
   worktree: process.env.WORKTREE,
 });
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, "999999\n");
-await hooks.event(event);
-await new Promise((resolve) => setTimeout(resolve, 120));
-if (existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm ran without owning the session lock");
-  process.exit(1);
-}
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);
 const armLogged = () => existsSync(process.env.FM_ARM_LOG)
@@ -1398,9 +1434,9 @@ if (!armLogged()) {
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must arm only when this session owns the fleet lock"
+  expect_code 0 "$status" "OpenCode watch plugin must arm when this session owns the fleet lock"
   [ -z "$out" ] || fail "OpenCode session-lock test printed output: $out"
-  pass "OpenCode watcher plugin requires session lock ownership"
+  pass "OpenCode watcher plugin arms when it owns the session lock"
 }
 
 test_opencode_watch_arm_coordinator_respects_primary_scope() {
@@ -2251,7 +2287,9 @@ test_pi_process_exit_cleanup_stops_arm_child
 test_opencode_plugin_package_boundary_is_explicit_esm
 test_opencode_primary_watch_plugin_uses_effective_state_home
 test_opencode_primary_watch_plugin_sources_effective_config
-# test_opencode_primary_watch_plugin_requires_session_lock is quarantined.
+test_opencode_primary_watch_plugin_refuses_arm_without_session_lock
+# The positive half, test_opencode_primary_watch_plugin_requires_session_lock,
+# is quarantined; its negative no-arm-without-lock half runs above.
 # Its bash -lc login-shell arm-spawn reproducibly hangs for ~30-31s on
 # GitHub-hosted runners (confirmed on two independent CI reruns, both
 # landing within 0.03s of each other and right at the widened poll
