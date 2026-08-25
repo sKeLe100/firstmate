@@ -381,6 +381,30 @@ print_backlog_pointer() {
   printf 'Full task bodies remain available on demand: tasks-axi show <id> --full when compatible tasks-axi is available, or data/backlog.md.\n'
 }
 
+# A captain-declared next-session priority is a captain hold recorded per the
+# stow skill's Open-record persistence section: priority:0 AND a hold reason
+# beginning with the literal marker "NEXT-SESSION PRIORITY:" - the same two
+# conditions bin/fm-bearings-snapshot.sh sorts first and flags as
+# declared_priority. This reads the raw markdown directly so it works
+# regardless of backlog backend, and is a proactive callout only: it never
+# replaces the full listing below, and an absent marker prints nothing.
+print_declared_next_session_priority() {
+  local path=$1 line id rest
+  [ -f "$path" ] || return 0
+  while IFS= read -r line; do
+    printf '%s\n' "$line" | grep -Eq '(\(|,[[:space:]]*)priority:[[:space:]]*0([,)]|$)' || continue
+    printf '%s\n' "$line" | grep -Eq '(\(|,[[:space:]]*)hold:[[:space:]]*NEXT-SESSION PRIORITY:' || continue
+    rest=${line#*"NEXT-SESSION PRIORITY:"}
+    rest=${rest%%,*}
+    rest=${rest%%)*}
+    id=$(printf '%s\n' "$line" | sed -nE \
+      's/^[-*][[:space:]]+\[[ xX]\][[:space:]]+([^[:space:]]+)[[:space:]]+-.*$/\1/p;
+       s/^[-*][[:space:]]+\*\*([^*]+)\*\*[[:space:]]+-.*$/\1/p')
+    [ -n "$id" ] || id='(unparsed id)'
+    printf 'CAPTAIN DECLARED PRIORITY: %s -%s\n' "$id" "$rest"
+  done < "$path"
+}
+
 # A queued title line whose own text already marks it held or blocked. The
 # manual renderer has no task model, so this is the only signal it gets, and it
 # is the one tasks-axi's markdown backend writes: "(hold: ...)", "(hold-kind:
@@ -499,6 +523,7 @@ print_backlog_compact() {
   subsection "$label"
   if [ -f "$path" ]; then
     if [ -s "$path" ]; then
+      print_declared_next_session_priority "$path"
       if fm_tasks_axi_backend_available "$CONFIG"; then
         print_backlog_tasks_axi_compact "$path"
       elif fm_backlog_backend_manual "$CONFIG"; then

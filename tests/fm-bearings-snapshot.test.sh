@@ -1030,6 +1030,61 @@ EOF
   pass "captain-held tasks of any kind reach Captain's Call, deferral is honored, and landed excludes answered calls"
 }
 
+test_declared_next_session_priority_sorts_first() {
+  local home mate fakebin json
+  home=$(make_home declared-priority)
+  mate="$TMP_ROOT/declared-priority-home"
+  write_domain_alpha_fixture "$home" "$mate"
+  sed -i '/^## Done/i - [ ] mate-decision-race - Choose the release lane (repo: sample) (kind: captain) (priority: 1) (hold: captain choice pending) (hold-kind: captain)' \
+    "$mate/data/backlog.md"
+  cat >> "$home/data/backlog.md" <<'EOF'
+
+## Queued
+- [ ] ordinary-call-a - Ordinary captain call A (repo: firstmate) (kind: captain) (priority: 1) (hold: pick a lane) (hold-kind: captain)
+- [ ] priority-decoy - Priority zero but no marker (repo: firstmate) (kind: captain) (priority: 0) (hold: just an urgent-sounding reason) (hold-kind: captain)
+- [ ] marker-decoy - Marker text but not priority zero (repo: firstmate) (kind: captain) (priority: 2) (hold: NEXT-SESSION PRIORITY: fake without priority 0) (hold-kind: captain)
+- [ ] declared-priority-task - Run the token-burn plan first (repo: firstmate) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: run as first item next session) (hold-kind: captain)
+- [ ] ordinary-call-b - Ordinary captain call B (repo: firstmate) (kind: captain) (priority: 1) (hold: pick a repo) (hold-kind: captain)
+EOF
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    (.decisions_open[0].id == "declared-priority-task")
+      and (.decisions_open[0].declared_priority == true)
+      and ([.decisions_open[] | select(.id == "declared-priority-task")] | length == 1)
+      and (.decisions_open[1:] | any(.[]; .declared_priority == true) | not)
+      and (.decisions_open | any(.[]; .id == "priority-decoy" and .declared_priority == true) | not)
+      and (.decisions_open | any(.[]; .id == "marker-decoy" and .declared_priority == true) | not)
+      and (
+        [.decisions_open[] | select(.declared_priority != true) | .id]
+        == ["ordinary-call-a","priority-decoy","marker-decoy","ordinary-call-b","domain-alpha/mate-decision-race"]
+      )
+  ' >/dev/null || fail "a captain-declared next-session priority must sort first, be flagged, and leave other holds' relative order unchanged: $json"
+  pass "a declared next-session priority sorts first in decisions_open and is machine-distinguishable from an ordinary hold"
+}
+
+test_declared_next_session_priority_from_secondmate_sorts_first() {
+  local home mate fakebin json
+  home=$(make_home declared-priority-secondmate)
+  mate="$TMP_ROOT/declared-priority-secondmate-home"
+  write_domain_alpha_fixture "$home" "$mate"
+  sed -i '/^## Done/i - [ ] mate-priority-task - Finish the migration first (repo: sample) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: finish the migration first) (hold-kind: captain)' \
+    "$mate/data/backlog.md"
+  cat >> "$home/data/backlog.md" <<'EOF'
+
+## Queued
+- [ ] ordinary-call - Ordinary captain call (repo: firstmate) (kind: captain) (priority: 1) (hold: pick a lane) (hold-kind: captain)
+EOF
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    (.decisions_open[0].id == "domain-alpha/mate-priority-task")
+      and (.decisions_open[0].declared_priority == true)
+      and (.decisions_open[1:] | any(.[]; .declared_priority == true) | not)
+  ' >/dev/null || fail "a secondmate-recorded declared priority must also sort first and be flagged: $json"
+  pass "a declared next-session priority recorded on a secondmate sorts first too"
+}
+
 test_include_prs_is_the_only_fetch_path() {
   local home fakebin json
   home=$(make_home prs); write_fixture "$home"
@@ -2080,6 +2135,8 @@ test_mixed_secondmate_roles_partial_state_and_captain_readiness
 test_main_captain_readiness_matches_secondmate_projection
 test_completed_scout_report_not_pending
 test_open_decision_surfaces_end_to_end
+test_declared_next_session_priority_sorts_first
+test_declared_next_session_priority_from_secondmate_sorts_first
 test_report_pointers_surface
 test_superseded_queued_item_dropped_by_default
 test_include_prs_is_the_only_fetch_path

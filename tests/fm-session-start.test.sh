@@ -1730,6 +1730,42 @@ EOF
   pass "manual backlog rendering drops done rows, keeps every held or blocked title line, and bounds the rest"
 }
 
+test_backlog_declared_next_session_priority_is_called_out() {
+  local rec root home fakebin out callout_line listing_line
+  rec=$(new_world backlog-declared-priority)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] ordinary-call - Ordinary captain call (repo: firstmate) (kind: captain) (priority: 1) (hold: pick a lane) (hold-kind: captain)
+- [ ] priority-decoy - Priority zero but no marker (repo: firstmate) (kind: captain) (priority: 0) (hold: just urgent) (hold-kind: captain)
+- [ ] token-burn-planning - Plan the token burn-down (repo: firstmate) (kind: captain) (priority: 0) (hold: NEXT-SESSION PRIORITY: run as first item next session) (hold-kind: captain)
+
+## Done
+EOF
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "CAPTAIN DECLARED PRIORITY: token-burn-planning - run as first item next session" \
+    "the declared next-session priority was not called out at session start"
+  callout_line=$(printf '%s\n' "$out" | grep -n '^CAPTAIN DECLARED PRIORITY:' | head -1 | cut -d: -f1)
+  listing_line=$(printf '%s\n' "$out" | grep -n '^compact backlog listing' | head -1 | cut -d: -f1)
+  [ -n "$callout_line" ] && [ -n "$listing_line" ] && [ "$callout_line" -lt "$listing_line" ] \
+    || fail "the callout must lead the compact backlog listing, not follow it: $out"
+  assert_not_contains "$out" "CAPTAIN DECLARED PRIORITY: priority-decoy" \
+    "priority:0 alone without the marker must not be called out"
+  assert_not_contains "$out" "CAPTAIN DECLARED PRIORITY: ordinary-call" \
+    "an ordinary hold must not be called out"
+
+  pass "a captain-declared next-session priority is named proactively at session start, ahead of the ordinary listing"
+}
+
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback() {
   local rec root home fakebin out
   rec=$(new_world backlog-compact-unavailable)
@@ -2485,6 +2521,7 @@ test_non_pi_session_start_leaves_branch_state_untouched
 test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
+test_backlog_declared_next_session_priority_is_called_out
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence
