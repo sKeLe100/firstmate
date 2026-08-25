@@ -795,5 +795,18 @@ case "$out" in
   *"live_slots: 2"*) ;;
   *) fail "expected live_slots: 2 with two tracked meta files, got: $out" ;;
 esac
+printf 'kind=ship\n' > "$home/state/task-a.meta"
+printf 'kind=secondmate\n' > "$home/state/pc02.meta"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"live_slots: 2"*) ;;
+  *) fail "expected live_slots: 2 excluding the secondmate record, got: $out" ;;
+esac
+rm "$home/state/task-b.meta"
+out=$(run_snapshot "$home")
+case "$out" in
+  *"live_slots: 1"*) ;;
+  *) fail "expected live_slots: 1 with one ship and one secondmate, got: $out" ;;
+esac
 
 echo "PASS fm-queue-snapshot.test.sh"

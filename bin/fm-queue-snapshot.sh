@@ -103,8 +103,11 @@
 #     and this read, the block reports
 #     "hierarchy_lanes: unavailable (dispatch_config: unreadable)".
 #   live_slots: <n>
-#     count of state/*.meta entries currently tracked (spawned, not yet torn
-#     down) in this FM_HOME - not a live/dead endpoint check, which is a
+#     count of dispatched worker slots currently tracked (spawned, not yet torn
+#     down) in this FM_HOME - one per state/*.meta entry, except that
+#     kind=secondmate records are excluded because a secondmate is persistent
+#     infrastructure rather than dispatched backlog work and holds no dispatch
+#     slot. This is not a live/dead endpoint check, which is a
 #     heavier, backend-process-dependent read already owned by
 #     bin/fm-crew-state.sh and bin/fm-session-start.sh's own fleet-state
 #     digest; this script deliberately does not duplicate that classifier.
@@ -499,6 +502,21 @@ else:
     else:
         print("hierarchy_lanes: unavailable (config defines no dispatch profiles)")
 
-live_slots = len(glob.glob(os.path.join(state_dir, "*.meta")))
+def meta_kind(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                key, sep, value = line.partition("=")
+                if sep and key.strip() == "kind":
+                    return value.strip()
+    except OSError:
+        return ""
+    return ""
+
+
+live_slots = sum(
+    1 for meta in glob.glob(os.path.join(state_dir, "*.meta"))
+    if meta_kind(meta) != "secondmate"
+)
 print(f"live_slots: {live_slots}")
 PY
