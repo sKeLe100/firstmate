@@ -60,6 +60,10 @@ It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the b
 7. **Answer follow-up questions about one item read-only.**
    When the captain asks about a specific item, run `tasks-axi show <id> --full` (or `tasks-axi list --repo <name>` for "what else is queued for X") and answer from that, still without mutating anything.
 
+## Not covered
+
+- Per-host local lane detail (the PC02 local dispatch tier) is deliberately out of scope for this header: the `pc02-local-dispatch-tier-rule` it would depend on is not verified in `config/crew-dispatch.json`, so the lane hierarchy reports only the account-wide lanes the config actually defines. Do not synthesize a local PC02 lane from host knowledge.
+
 ## Empty and degraded cases
 
 - Zero queued items: say plainly that nothing is queued right now.
