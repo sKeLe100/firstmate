@@ -440,6 +440,145 @@ EOF
   pass "snapshot includes durable scout reports after teardown"
 }
 
+# Regression coverage for the argv-limit failure: a backlog large enough that
+# its JSON encoding exceeds the kernel's per-argument exec limit (E2BIG) used
+# to crash every jq call that passed the whole backlog through --argjson.
+# 3000 synthetic Done records comfortably clears that threshold while staying
+# fast to generate and parse.
+test_large_backlog_survives_argv_limit() {
+  local home out i
+  home=$(make_home large-backlog)
+  {
+    printf '## In flight\n\n## Queued\n\n## Done\n'
+    for i in $(seq 1 3000); do
+      printf -- '- [x] big-task-%04d - Synthetic backlog record %04d for argv-limit regression coverage https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-%02d)\n' \
+        "$i" "$i" "$i" "$(((i % 28) + 1))"
+    done
+  } > "$home/data/backlog.md"
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/large-backlog.err")
+  [ -s "$TMP_ROOT/large-backlog.err" ] \
+    && fail "large backlog snapshot must not error: $(cat "$TMP_ROOT/large-backlog.err")"
+  printf '%s' "$out" | jq -e '
+    .schema == "fm-fleet-snapshot.v1" and (.backlog.records | length) == 3000
+  ' >/dev/null || fail "large backlog snapshot must still emit the full record set: $out"
+  pass "a backlog whose JSON exceeds the exec argv limit still produces a full snapshot"
+}
+
+# Scout report pointers accumulate durably in data/<id>/report.md and were the
+# last data-scaling payload still handed to the final jq through --argjson.
+# 1400 pointers push that single argument past the kernel per-argument limit.
+test_many_scout_reports_survive_argv_limit() {
+  local home out i id
+  home=$(make_home many-scout-reports)
+  for i in $(seq 1 1400); do
+    id=$(printf 'scout-report-with-a-realistically-long-identifier-%04d' "$i")
+    mkdir -p "$home/data/$id"
+    printf '# Report %s\n' "$id" > "$home/data/$id/report.md"
+  done
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/many-scout-reports.err")
+  [ -s "$TMP_ROOT/many-scout-reports.err" ] \
+    && fail "many-scout-report snapshot must not error: $(cat "$TMP_ROOT/many-scout-reports.err")"
+  printf '%s' "$out" | jq -e '
+    .schema == "fm-fleet-snapshot.v1"
+    and (.scout_reports | length) == 1400
+    and (.scout_reports | all(.kind == "scout"))
+  ' >/dev/null || fail "many-scout-report snapshot must emit every pointer with its kind"
+  pass "scout report pointers exceeding the exec argv limit still produce a full snapshot"
+}
+
+# Snapshot temp files hold whole backlog- and task-sized payloads. An
+# interrupted run (a captain hitting Ctrl-C on /bearings) must not leave them
+# behind in TMPDIR.
+test_interrupted_snapshot_leaves_no_temp_files() {
+  local home tmp pid i leftovers
+  home=$(make_home interrupted-snapshot)
+  tmp=$TMP_ROOT/interrupted-tmpdir
+  mkdir -p "$tmp"
+  {
+    printf '## In flight\n\n## Queued\n\n## Done\n'
+    for i in $(seq 1 3000); do
+      printf -- '- [x] slow-task-%04d - Synthetic backlog record %04d keeping the snapshot busy long enough to interrupt https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-01)\n' \
+        "$i" "$i" "$i"
+    done
+  } > "$home/data/backlog.md"
+  TMPDIR="$tmp" FM_HOME="$home" "$SNAPSHOT" --json >/dev/null 2>&1 &
+  pid=$!
+  local observed=0
+  for i in $(seq 1 200); do
+    if [ -n "$(find "$tmp" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+      observed=1
+      break
+    fi
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.05
+  done
+  [ "$observed" = 1 ] || {
+    kill -TERM "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    fail "snapshot never created a temp file to interrupt; the test proved nothing"
+  }
+  kill -0 "$pid" 2>/dev/null || {
+    wait "$pid" 2>/dev/null
+    fail "snapshot exited before it could be interrupted; the test proved nothing"
+  }
+  kill -TERM "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  leftovers=$(find "$tmp" -mindepth 1 2>/dev/null)
+  [ -z "$leftovers" ] || fail "interrupted snapshot left temp files behind: $leftovers"
+  pass "an interrupted snapshot cleans up its temp files"
+}
+
+# The registered-secondmate loop accumulates one record per home. Each valid
+# home summary is well under the per-home byte cap, but their concatenation is
+# not: folding the growing array through jq argv overflowed the exec argument
+# list and lost the entire snapshot instead of degrading.
+test_many_secondmate_summaries_survive_argv_limit() {
+  local home mates mate id i j out records_bytes
+  home=$(make_home many-secondmates)
+  mates=$TMP_ROOT/many-secondmate-homes
+  mkdir -p "$mates"
+  : > "$home/data/secondmates.md"
+  for i in $(seq 1 20); do
+    id=$(printf 'mate-%02d' "$i")
+    mate=$mates/$id
+    mkdir -p "$mate/state" "$mate/data" "$mate/projects" "$mate/config" "$mate/bin"
+    printf '# Firstmate\n' > "$mate/AGENTS.md"
+    printf '%s\n' "$id" > "$mate/.fm-secondmate-home"
+    {
+      printf '## In flight\n\n## Queued\n'
+      for j in $(seq 1 20); do
+        printf -- '- [ ] %s-queued-%02d - Delegated queued item %02d for %s covering a realistically long backlog title that survives truncation at the summary boundary (repo: alpha) (kind: ship) (since 2026-08-01)\n' \
+          "$id" "$j" "$j" "$id"
+      done
+      printf '\n## Done\n'
+      for j in $(seq 1 10); do
+        printf -- '- [x] %s-done-%02d - Delegated landed item %02d for %s with a realistically long completion title recorded by the secondmate home https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-%02d)\n' \
+          "$id" "$j" "$j" "$id" "$((i * 100 + j))" "$(((j % 28) + 1))"
+      done
+    } > "$mate/data/backlog.md"
+    printf -- '- %s - delegated scope (home: %s; scope: delegated scope; projects: alpha; added 2026-08-01)\n' \
+      "$id" "$mate" >> "$home/data/secondmates.md"
+  done
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/many-secondmates.err")
+  [ -s "$TMP_ROOT/many-secondmates.err" ] \
+    && fail "many-secondmate snapshot must not error: $(cat "$TMP_ROOT/many-secondmates.err")"
+  printf '%s' "$out" | jq -e '
+    .schema == "fm-fleet-snapshot.v1"
+    and (.secondmate_current.records | length) == 20
+    and (.secondmate_current.shown) == 20
+    and ([.secondmate_current.records[]
+          | select(.provenance.selected == "structured-home"
+                   and .provenance.summary_valid == true
+                   and (.queued | length) == 20)] | length) == 20
+  ' >/dev/null || fail "every registered secondmate record must survive the snapshot: $out"
+  # Guard the premise: the accumulated records really are larger than a single
+  # jq argv argument can carry, so this stays a regression for the argv limit.
+  records_bytes=$(printf '%s' "$out" | jq -c '.secondmate_current.records' | LC_ALL=C wc -c | tr -d ' ')
+  [ "$records_bytes" -gt 200000 ] \
+    || fail "fixture no longer stresses the argv limit ($records_bytes bytes of records)"
+  pass "twenty registered secondmate summaries accumulate past the exec argv limit"
+}
+
 test_backlog_tasks_axi_forms_and_overrides() {
   local home data projects fakebin out view
   home=$(make_home overrides)
@@ -791,6 +930,10 @@ test_open_decision_clears_on_keyed_resolution
 test_completed_scout_report_is_pointer_not_pending
 test_parked_scout_decision_stays_pending
 test_scout_reports_include_teardown_reports
+test_large_backlog_survives_argv_limit
+test_many_secondmate_summaries_survive_argv_limit
+test_many_scout_reports_survive_argv_limit
+test_interrupted_snapshot_leaves_no_temp_files
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
