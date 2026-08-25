@@ -1626,6 +1626,53 @@ test_wedge_escalation_reset_on_terminal_surface() {
   pass "surfacing a terminal stale clears the backoff counter so the next quiet spell escalates promptly"
 }
 
+test_wedge_escalation_reset_on_nonterminal_working_absorb() {
+  local dir state fakebin out capture_file window key pane_hash sig pid
+  dir=$(make_case wedge-backoff-nonterminal-absorb); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-wedge-nonterm-absorb"
+  printf 'quiet pane waiting on ci' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-nonterm-absorb.meta"
+  printf 'working: still monitoring ci\n' > "$state/wedge-nonterm-absorb.status"
+  sig=$(seen_sig "$state/wedge-nonterm-absorb.status"); printf '%s' "$sig" > "$state/.seen-wedge-nonterm-absorb_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "quiet pane waiting on ci")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  # Already stably stale, so this poll reaches the non-terminal triage branch
+  # (first sight of this stale hash) rather than the not-yet-stable reset path.
+  printf '2\n' > "$state/.count-$key"
+  # A backed-off counter carried in from an earlier phase (e.g. a busy pane past
+  # BUSY_TURN_MAX_SECS that routed through the same wedge timer).
+  printf '5\n' > "$state/.wedge-escalations-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "watcher exited while absorbing a provably-working non-terminal stale: $(cat "$out")"
+  fi
+  [ -s "$state/.stale-since-$key" ] || { reap "$pid"; fail "non-terminal working absorb did not start the wedge timer"; }
+  [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "non-terminal working absorb did not clear the wedge-escalation counter"; }
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the non-terminal-absorb phase stop"
+
+  # The fresh quiet spell escalates at the prompt 240s threshold, not at the
+  # backed-off pacing the leftover counter would have implied.
+  echo $(( $(date +%s) - 300 )) > "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_WEDGE_ESCALATE_MAX_SECS=3600 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "the fresh quiet spell after a non-terminal absorb did not escalate promptly: $(cat "$out")"
+  grep -F "stale: $window" "$out" >/dev/null || fail "prompt escalation did not print a stale wake: $(cat "$out")"
+  grep -F "escalation 1" "$out" >/dev/null || fail "prompt escalation did not report a first escalation: $(cat "$out")"
+  unset FM_FAKE_CREW_STATE
+  pass "absorbing a provably-working non-terminal stale clears the backoff counter so the fresh quiet spell escalates promptly"
+}
+
 test_wedge_escalation_backs_off_after_first_fire() {
   local dir state fakebin out capture_file window key pane_hash sig pid
   dir=$(make_case wedge-backoff-growth); state="$dir/state"; fakebin="$dir/fakebin"
@@ -2994,6 +3041,7 @@ test_wedge_escalation_prompt_first_fire
 test_wedge_escalation_reset_on_nonterminal_surface
 test_wedge_escalation_reset_on_terminal_absorb
 test_wedge_escalation_reset_on_terminal_surface
+test_wedge_escalation_reset_on_nonterminal_working_absorb
 test_wedge_escalation_backs_off_after_first_fire
 test_wedge_escalation_backoff_is_capped
 test_wedge_escalation_backoff_resets_to_prompt_on_activity
