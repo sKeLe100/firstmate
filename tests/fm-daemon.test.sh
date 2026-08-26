@@ -1752,12 +1752,76 @@ test_discover_supervisor_target_herdr() {
   out=$(FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV=1 HERDR_PANE_ID=w1:p9 HERDR_SESSION=iso1 discover_supervisor_target)
   [ "$out" = "iso1:w1:p9" ] || fail "herdr target should use an explicit HERDR_SESSION: $out"
 
-  if out=$(FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target); then
+  # Isolated from any real tmux the test host happens to be running under
+  # (this suite itself may run inside a session literally named "firstmate"):
+  # with no tmux binary reachable at all, the bare fallback still prints the
+  # legacy literal string unchanged. The pinned-pane-id case (tmux reachable
+  # and able to resolve the default target) is covered separately by
+  # test_discover_supervisor_target_fallback_pins_concrete_pane.
+  if out=$(PATH="" FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target); then
     fail "bare fallback should return non-zero"
   fi
-  [ "$out" = "firstmate:0" ] || fail "bare fallback should still print firstmate:0: $out"
+  [ "$out" = "firstmate:0" ] || fail "bare fallback should still print firstmate:0 when tmux cannot resolve it: $out"
 
   pass "discover_supervisor_target: override > TMUX_PANE > herdr '<session>:<pane-id>' composition > firstmate:0 fallback"
+}
+
+# Root cause of the 2026-08-26 away-mode inject wedge: with no FM_SUPERVISOR_TARGET
+# and no TMUX_PANE (daemon started detached from a pane's own env), discovery fell
+# back to the bare WINDOW target "firstmate:0". A window target resolves to
+# whichever pane is currently ACTIVE in that window - with multiple splits, a later
+# focus change silently redirects every subsequent capture/composer read to a
+# different pane's content, which then reads "unknown" forever since the daemon
+# never notices the redirect. Prove the fallback instead pins a CONCRETE pane id at
+# discovery time, and that the pinned id keeps pointing at the same pane even after
+# the window's active pane changes.
+test_discover_supervisor_target_fallback_pins_concrete_pane() {
+  local dir fakebin out
+  dir="$TMP_ROOT/fm-daemon-target-pin"
+  fakebin="$dir/fakebin"
+  mkdir -p "$fakebin"
+  # Fake tmux: `display-message -p -t firstmate:0 '#{pane_id}'` returns whatever
+  # pane is "currently active" per a state file, simulating a real window target
+  # resolving to the live-focused pane at query time.
+  cat > "$fakebin/tmux" <<EOF
+#!/usr/bin/env bash
+# display-message on a WINDOW target resolves to whatever pane is active at
+# query time; capture-pane returns that pane's own content, so a capture
+# through the bare window target follows focus while a pinned pane id does not.
+target=\${4:-}
+if [ "\$1" = display-message ]; then
+  cat "$dir/active-pane"
+  exit 0
+fi
+if [ "\$1" = capture-pane ]; then
+  case "\$target" in
+    firstmate:0) printf 'content-of-%s\\n' "\$(cat "$dir/active-pane")" ;;
+    *) printf 'content-of-%s\\n' "\$target" ;;
+  esac
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "$fakebin/tmux"
+
+  echo '%182' > "$dir/active-pane"
+  out=$(PATH="$fakebin:$PATH" FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target)
+  [ "$out" = '%182' ] || fail "fallback should pin the concrete active pane id, not the bare window target: $out"
+
+  local pinned="$out"
+
+  # Simulate a focus change to a different split in the same window AFTER
+  # discovery, then read through a real reader (the tmux backend capture the
+  # daemon itself uses). The stored pinned id must still return the ORIGINAL
+  # pane's content, while the bare window target follows focus - which is
+  # exactly the silent redirect that wedged away-mode.
+  echo '%183' > "$dir/active-pane"
+  out=$(PATH="$fakebin:$PATH" fm_backend_capture tmux "$pinned" 5)
+  [ "$out" = 'content-of-%182' ] || fail "pinned target must still read the originally pinned pane after a focus change: $out"
+  out=$(PATH="$fakebin:$PATH" fm_backend_capture tmux "$FM_SUPERVISOR_TARGET_DEFAULT" 5)
+  [ "$out" = 'content-of-%183' ] || fail "bare window target should have followed focus (fake tmux is not simulating the redirect): $out"
+
+  pass "discover_supervisor_target: bare fallback pins a concrete pane id that survives a later focus change"
 }
 
 test_pane_is_busy_herdr_native_busy_state() {
@@ -2016,6 +2080,7 @@ test_fm_send_exits_nonzero_on_initial_send_failure
 test_fm_send_exits_nonzero_on_unproven_submit
 test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
+test_discover_supervisor_target_fallback_pins_concrete_pane
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_guard_is_harness_scoped
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted

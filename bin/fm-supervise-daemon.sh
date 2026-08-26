@@ -1436,6 +1436,13 @@ fm_super_main() {
   if discovered=$(discover_supervisor_target); then
     : # resolved cleanly
   else
+    # The bare-fallback branch now pins the concrete active pane id of
+    # firstmate:0 when tmux can resolve it, and only prints the literal
+    # window target when it cannot. Keep this log field distinguishing the
+    # two: FALLBACK(firstmate:0) is the still-redirectable window target.
+    if [ "$target_source" = "FALLBACK(firstmate:0)" ] && [ "$discovered" != "$FM_SUPERVISOR_TARGET_DEFAULT" ]; then
+      target_source="FALLBACK(pinned:$discovered)"
+    fi
     echo "warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, or HERDR_ENV/HERDR_PANE_ID); falling back to '$discovered' — verify this is firstmate's pane" >&2
   fi
   FM_SUPERVISOR_TARGET="$discovered"

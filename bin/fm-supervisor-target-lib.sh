@@ -48,6 +48,23 @@ discover_supervisor_target() {
     printf '%s:%s' "${HERDR_SESSION:-default}" "$HERDR_PANE_ID"
     return 0
   fi
+  # Legacy bare fallback: FM_SUPERVISOR_TARGET_DEFAULT ("firstmate:0") is a
+  # tmux session:WINDOW target, not a pane. A window target resolves to
+  # whichever pane is ACTIVE in that window at read time, so once the daemon
+  # stores this into FM_SUPERVISOR_TARGET, a later focus change to a
+  # different split in that window silently redirects every subsequent
+  # composer read to the wrong pane forever (confirmed root cause of the
+  # 2026-08-26 away-mode inject wedge: the daemon logged
+  # target_source=FALLBACK(firstmate:0) and read an unrelated split's
+  # content as "unknown" indefinitely). Resolve and pin the CONCRETE active
+  # pane id now, at discovery time, so the caller stores an id a later focus
+  # change cannot redirect. If tmux can't resolve it (not installed, no such
+  # session), fall through to the legacy bare string unchanged.
+  local pinned
+  if pinned=$(tmux display-message -p -t "$FM_SUPERVISOR_TARGET_DEFAULT" '#{pane_id}' 2>/dev/null) && [ -n "$pinned" ]; then
+    printf '%s' "$pinned"
+    return 1
+  fi
   printf '%s' "$FM_SUPERVISOR_TARGET_DEFAULT"
   return 1
 }
