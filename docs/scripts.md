@@ -66,6 +66,9 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-queue-snapshot.sh`   | Backlog-read-only snapshot of the top queued backlog items ranked by descending priority, with project posture, derived autonomy, the configured lane hierarchy, and one bounded aggregate quota read, for the `queue` skill |
 | `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `fm-review-diff.sh`      | Review a crewmate branch or resolved PR head against the authoritative base          |
+| `fm-roundtable-factsheet.sh` | Generate a deterministic, read-only fact sheet of one project clone at HEAD, with an optional delta since that project's last roundtable mark ([roundtable-instrumentation.md](roundtable-instrumentation.md)) |
+| `fm-roundtable-coverage.sh` | Report how much of a project's tracked tree a roundtable actually read, as the ledger its report ends with ([roundtable-instrumentation.md](roundtable-instrumentation.md)) |
+| `fm-roundtable-lib.sh`   | Shared HEAD-only tracked-file walk, depth collapse, and test-file classifier both roundtable scripts source |
 | `fm-marker-lib.sh`       | Compatibility entry point for the from-firstmate carrier owned by `fm-operational-input.sh` |
 | `fm-task-inbox-lib.sh`   | Single owner of durable steering-inbox records, acknowledgement, doorbells, and the delivery-attempt ladder |
 | `fm-pending-reply-lib.sh` | Parent-owned secondmate pending-reply expectations, recovery, and keyed escalation lifecycle |

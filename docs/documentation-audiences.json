@@ -313,6 +313,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/roundtable-instrumentation.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/scripts.md",
       "audience": "operator-current"
     },
