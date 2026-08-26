@@ -135,11 +135,13 @@ test_deep_dirs_match_factsheet_tree() {
 
   tree="$TMP_ROOT/deep-tree.txt"
   FM_ROUNDTABLE_MARKS_FILE="$TMP_ROOT/deep-marks.tsv" \
-    "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" | awk '{print $1}' > "$tree"
+    "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" |
+    awk '/^## File tree/ { intree = 1; next } intree && NF == 0 { intree = 0 } intree { print $1 }' > "$tree"
   cov=$("$ROOT/bin/fm-roundtable-coverage.sh" "$dir")
   unread=${cov#*unread dirs: }
+  [ "$unread" != none ] || fail "fixture must have unread dirs to check the invariant: $cov"
   for entry in $(printf '%s' "$unread" | tr ',' ' '); do
-    grep -qx -- "$entry" "$tree" ||
+    grep -qxF -- "$entry" "$tree" ||
       fail "coverage named unread dir '$entry' which the factsheet tree never prints: $cov"
   done
 

@@ -178,6 +178,31 @@ test_doc_name_match_is_literal() {
   pass "fm-roundtable-factsheet: key-doc names match literally, not as regexes"
 }
 
+test_delta_paths_are_not_quoted() {
+  local dir out
+  dir=$(mktemp -d "$TMP_ROOT/nonascii-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  printf 'a = 1
+' > "$dir/a.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+  mkdir -p "$dir/café"
+  printf 'b = 2
+' > "$dir/café/é.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m add-nonascii
+
+  out="$TMP_ROOT/nonascii-out.txt"
+  "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" --since HEAD~1 > "$out"
+
+  assert_grep "café/é.py" "$out"     "the delta must name non-ASCII paths literally, matching the tree walk"
+  grep -qF '\303' "$out" &&
+    fail "the delta must not C-quote non-ASCII paths: $(grep -F '\303' "$out")"
+
+  pass "fm-roundtable-factsheet: delta paths are not C-quoted"
+}
+
 test_basic_output
 test_since_delta
 test_mark_round_trip
@@ -185,3 +210,4 @@ test_root_docs_preferred
 test_test_classification_is_anchored
 test_absent_docs_do_not_abort
 test_doc_name_match_is_literal
+test_delta_paths_are_not_quoted

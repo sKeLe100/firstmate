@@ -105,12 +105,12 @@ if [ -n "$SINCE" ]; then
   if git -C "$CLONE" rev-parse --verify -q "$SINCE^{commit}" >/dev/null; then
     echo "## Delta since $SINCE"
     echo "Files changed:"
-    git -C "$CLONE" diff --name-only "$SINCE" HEAD | sed 's/^/  /'
+    git -C "$CLONE" -c core.quotePath=false diff --name-only "$SINCE" HEAD | sed 's/^/  /'
     echo "Commits since:"
     git -C "$CLONE" log --oneline "$SINCE..HEAD"
     echo "${ROADMAP_PATH:-ROADMAP.md} diff stat:"
     if [ -n "$ROADMAP_PATH" ]; then
-      git -C "$CLONE" diff --stat "$SINCE" HEAD -- "$ROADMAP_PATH" || true
+      git -C "$CLONE" -c core.quotePath=false diff --stat "$SINCE" HEAD -- "$ROADMAP_PATH" || true
     fi
   else
     echo "## Delta since $SINCE"
