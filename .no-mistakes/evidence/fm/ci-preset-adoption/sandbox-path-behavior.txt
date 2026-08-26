@@ -1,0 +1,19 @@
+sandbox dir: /tmp/.fm-test-sandbox-base-path.1000.379237775426355
+-- excluded fake-able tools must be ABSENT from sandbox:
+  absent (good): node
+  absent (good): npm
+  absent (good): gh
+  absent (good): herdr
+  absent (good): codex
+-- real host tools that fixtures need must RESOLVE:
+  python3 -> /tmp/.fm-test-sandbox-base-path.1000.379237775426355/python3
+  git -> /tmp/.fm-test-sandbox-base-path.1000.379237775426355/git
+  grep -> /tmp/.fm-test-sandbox-base-path.1000.379237775426355/grep
+  sed -> /tmp/.fm-test-sandbox-base-path.1000.379237775426355/sed
+  awk -> /tmp/.fm-test-sandbox-base-path.1000.379237775426355/awk
+  bash -> /tmp/.fm-test-sandbox-base-path.1000.379237775426355/bash
+-- cache key changes when the exclusion list changes:
+  before: /tmp/.fm-test-sandbox-base-path.1000.379237775426355
+  after : /tmp/.fm-test-sandbox-base-path.1000.205177995626363
+  distinct cache dirs (good): stale sandbox cannot be reused
+  python3 in new sandbox: absent-as-expected

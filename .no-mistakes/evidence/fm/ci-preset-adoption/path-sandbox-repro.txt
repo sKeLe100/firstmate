@@ -1,0 +1,17 @@
+sandbox dir: /tmp/.fm-test-sandbox-base-path.1000.379237775426355
+host node:    /usr/bin/node
+host python3: /usr/bin/python3
+--- with fake node present ---
+/tmp/tmp.s9yZcPeHld/node
+FAKE-NODE
+--- fixture deletes the fake (tool must look genuinely absent) ---
+node: not found (correct)
+--- ordinary host tools still resolve through the sandbox ---
+/tmp/.fm-test-sandbox-base-path.1000.379237775426355/grep
+/tmp/.fm-test-sandbox-base-path.1000.379237775426355/sed
+/tmp/.fm-test-sandbox-base-path.1000.379237775426355/awk
+/tmp/.fm-test-sandbox-base-path.1000.379237775426355/python3
+--- cache keying: changing the exclusion list lands on a new dir ---
+new sandbox dir: /tmp/.fm-test-sandbox-base-path.1000.40744747126359
+keyed correctly: different cache dir
+sed: now absent in re-keyed sandbox (correct)
