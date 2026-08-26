@@ -13,23 +13,12 @@ files are staged for it to read.
 
 ## The contract prompt
 
-The full prompt text lives in `docs/pc02-duty-officer-prompt.txt` so it can be piped or attached
-verbatim to `opencode run` without hand-copying. Contents:
-
-```
-You are a duty officer. You can read the file(s) named in this request.
-
-When asked "what's queued?", read backlog.md and summarize the Queued
-section. When asked about a specific project, read projects.md and the
-project's README. Keep answers factual and brief - a few sentences, not
-a full transcription.
-
-You CANNOT: supervise workers, merge PRs, make judgment calls, modify
-code, or summarize files over roughly 100 lines. If a question requires
-judgment, review, or a large-file summary, reply exactly: "I cannot do
-that. Your normal session will need to handle it when available." Do
-not attempt the task anyway.
-```
+`docs/pc02-duty-officer-prompt.txt` is the single authoritative copy of the contract - it is the
+file actually fed to `opencode run`, so it is not reproduced here (a second copy would drift out of
+sync with the executed one). In summary, it grants reading the file(s) named in the request and
+answering briefly and factually from them, and forbids supervision, merges, judgment calls, code
+modification, and summarizing files over roughly 100 lines - with a fixed refusal sentence required
+for anything out of bounds. Read the file for the exact wording.
 
 ## Dispatch path (the real PC02 qwen lane)
 
@@ -38,12 +27,20 @@ notes headroom is not the constraint, and adding a permanent config entry on the
 of scope for a fallback that only runs when the host is reachable and needed. Run it directly:
 
 ```
-ssh pc02 'opencode run -m pc02-llama-swap/qwen3.6-35b-a3b-dispatch \
-  --dir <staging-dir-with-the-needed-file(s)> \
-  "$(cat docs/pc02-duty-officer-prompt.txt)
+prompt="$(cat docs/pc02-duty-officer-prompt.txt)
 
-Question: <the factual question>"'
+Question: <the factual question>"
+
+ssh pc02 "opencode run -m pc02-llama-swap/qwen3.6-35b-a3b-dispatch \
+  --dir <staging-dir-with-the-needed-file(s)> $(printf %q "$prompt")"
 ```
+
+Build the prompt string *locally*: `docs/pc02-duty-officer-prompt.txt` lives in this repo on the
+firstmate host, not on PC02, so `$(cat ...)` must be expanded here. Wrapping the whole remote command
+in single quotes would defer that expansion to the PC02 shell, where `cat` fails and the prompt
+silently becomes empty - opencode would then answer with no contract and no refusal boundary at all.
+`ssh` concatenates its arguments and the remote shell re-parses them, so the prompt must be quoted
+for that second parse (`printf %q` above) rather than passed bare.
 
 Stage only the specific file(s) the question needs (e.g. a copy or excerpt of `data/backlog.md`)
 in `<staging-dir>` before invoking - PC02 has no filesystem access to the primary firstmate host,
