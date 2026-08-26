@@ -16,7 +16,7 @@ FM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=bin/fm-roundtable-lib.sh
 . "$FM_ROOT/bin/fm-roundtable-lib.sh"
 
-MAX_DEPTH=2
+MAX_DEPTH=$FM_ROUNDTABLE_MAX_DEPTH
 
 usage() {
   echo "Usage: $(basename "$0") <project-clone-path> <file>..." >&2

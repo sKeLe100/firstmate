@@ -43,6 +43,11 @@ fm_roundtable_is_test_file() {
   esac
 }
 
+# Single source of the bounded tree depth both scripts walk at. The
+# cross-script invariant only holds while they apply the collapse rule with
+# the same cap, so neither may declare its own.
+FM_ROUNDTABLE_MAX_DEPTH=2
+
 # Single source of the depth-collapse rule, as an awk function both this
 # library and bin/fm-roundtable-coverage.sh prepend to their own awk program.
 # Neither may reimplement it: every dir the coverage ledger names must be a dir

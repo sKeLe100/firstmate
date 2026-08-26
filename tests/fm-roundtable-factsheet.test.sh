@@ -203,6 +203,29 @@ test_delta_paths_are_not_quoted() {
   pass "fm-roundtable-factsheet: delta paths are not C-quoted"
 }
 
+test_absent_roadmap_has_no_diff_stat_header() {
+  local dir out
+  dir=$(mktemp -d "$TMP_ROOT/noroadmap-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  printf 'a = 1\n' > "$dir/a.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+  printf 'b = 2\n' > "$dir/b.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m second
+
+  out="$TMP_ROOT/noroadmap-out.txt"
+  "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" --since HEAD~1 > "$out"
+
+  assert_grep "ROADMAP.md: absent" "$out" "the fixture has no ROADMAP"
+  assert_grep "## Delta since HEAD~1" "$out" "the delta section must still be produced"
+  grep -q "diff stat:" "$out" &&
+    fail "the delta must not advertise a diff stat for an absent ROADMAP"
+
+  pass "fm-roundtable-factsheet: absent ROADMAP prints no diff-stat header"
+}
+
 test_basic_output
 test_since_delta
 test_mark_round_trip
@@ -211,3 +234,4 @@ test_test_classification_is_anchored
 test_absent_docs_do_not_abort
 test_doc_name_match_is_literal
 test_delta_paths_are_not_quoted
+test_absent_roadmap_has_no_diff_stat_header

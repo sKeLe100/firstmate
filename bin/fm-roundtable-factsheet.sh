@@ -26,7 +26,7 @@ FM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 . "$FM_ROOT/bin/fm-roundtable-lib.sh"
 
 MARKS_FILE="${FM_ROUNDTABLE_MARKS_FILE:-$FM_ROOT/data/roundtable-marks.tsv}"
-MAX_DEPTH=2
+MAX_DEPTH=$FM_ROUNDTABLE_MAX_DEPTH
 
 usage() {
   echo "Usage: $(basename "$0") <project-clone-path> [--since <ref-or-tag>] [--mark]" >&2
@@ -108,8 +108,8 @@ if [ -n "$SINCE" ]; then
     git -C "$CLONE" -c core.quotePath=false diff --name-only "$SINCE" HEAD | sed 's/^/  /'
     echo "Commits since:"
     git -C "$CLONE" log --oneline "$SINCE..HEAD"
-    echo "${ROADMAP_PATH:-ROADMAP.md} diff stat:"
     if [ -n "$ROADMAP_PATH" ]; then
+      echo "$ROADMAP_PATH diff stat:"
       git -C "$CLONE" -c core.quotePath=false diff --stat "$SINCE" HEAD -- "$ROADMAP_PATH" || true
     fi
   else
