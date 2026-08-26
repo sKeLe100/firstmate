@@ -720,6 +720,7 @@ FM_UPSTREAM_SKILLS_SHOWN=12    # changed upstream skill names listed in the repo
 FM_UPSTREAM_DRIFT_THRESHOLD=25   # commits behind upstream that make the armed upstream-drift check ask for a sync task; see bin/fm-upstream-behind-check.sh
 FM_PROCEVENT_MAX_OUTPUT_BYTES=1048576   # bound on one captured process-to-event result
 FM_PROCEVENT_CLAIM_ROOT=                # machine-wide source claim root; default $XDG_STATE_HOME/firstmate/procevent-claims
+FM_PROCEVENT_SIGNAL_DEFER_GRACE=300     # seconds a status signal may stay deferred behind an unacknowledged process-event generation before it is delivered anyway
 FM_WHEN_OUTPUT_TAIL_BYTES=8192          # bound on the command-output tail inside one condition->action outcome document
 FM_CODEX_WATCH_CHECKPOINT=180   # seconds per foreground watcher checkpoint in Codex primary supervision
 FM_CREW_STATE_NM_TIMEOUT=10   # seconds allowed per no-mistakes query inside fm-crew-state.sh
