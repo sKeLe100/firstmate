@@ -29,7 +29,6 @@ fi
 unset NO_MISTAKES_GATE
 
 TMP_ROOT=$(fm_test_tmproot fm-sessionstart-nudge)
-NUDGE="$ROOT/bin/fm-sessionstart-nudge.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-operational-input.sh"
 NUDGE_TEXT="Run \`bin/fm-session-start.sh\` now, exactly once, before executing any other instructions."
@@ -87,8 +86,9 @@ test_genuine_primary_nudges() {
 test_gate_env_is_silent() {
   local root="$TMP_ROOT/gate-env"
   make_primary "$root"
+  stage_nudge_bin "$root"
   expect_silent_zero "gate env nudge" env NO_MISTAKES_GATE=1 FM_GATE_REFUSE_BYPASS=0 \
-    FM_ROOT_OVERRIDE="$root" FM_HOME="$root" "$NUDGE"
+    FM_ROOT_OVERRIDE="$root" FM_HOME="$root" "$root/bin/fm-sessionstart-nudge.sh"
   pass "fm-sessionstart-nudge: NO_MISTAKES_GATE is silent"
 }
 
@@ -102,8 +102,9 @@ test_gate_common_dir_is_silent() {
   mkdir -p "$root/bin" "$root/state"
   : > "$root/AGENTS.md"
   printf 'gate-test\n' > "$root/.fm-secondmate-home"
+  stage_nudge_bin "$root"
   expect_silent_zero "gate common-dir nudge" env FM_GATE_REFUSE_BYPASS=0 \
-    FM_ROOT_OVERRIDE="$root" FM_HOME="$root" "$NUDGE"
+    FM_ROOT_OVERRIDE="$root" FM_HOME="$root" "$root/bin/fm-sessionstart-nudge.sh"
   pass "fm-sessionstart-nudge: .no-mistakes gate common-dir is silent"
 }
 

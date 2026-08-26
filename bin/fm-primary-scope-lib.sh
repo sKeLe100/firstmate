@@ -48,7 +48,7 @@ fm_resolve_git_path() {
 # to a genuine primary checkout.
 fm_primary_scope_matches() {
   local root=$1 state=$2 git_common_dir actual_dir actual_git_dir root_git_dir
-  actual_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P) || return 1
+  actual_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P) || return 1
   actual_git_dir=$(fm_resolve_git_path "$actual_dir" --git-dir) || return 1
   root_git_dir=$(fm_resolve_git_path "$root" --git-dir) || return 1
   [ "$actual_git_dir" = "$root_git_dir" ] || return 1
