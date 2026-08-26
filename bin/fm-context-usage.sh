@@ -25,7 +25,7 @@
 # The window defaults to 1000000 and can be overridden with FM_CONTEXT_WINDOW
 # when a harness or model change alters the real window.
 #
-# Bands implement the captain's session-context policy (directive 2026-08-25):
+# Bands implement the captain's session-context policy (directive 2026-08-26):
 #   ok      - below the warning threshold; keep working.
 #   warn    - at or past the warning threshold (default 150000); surface the
 #             level in the next natural report.
