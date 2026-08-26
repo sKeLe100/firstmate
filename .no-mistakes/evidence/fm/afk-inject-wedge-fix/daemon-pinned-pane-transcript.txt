@@ -1,0 +1,16 @@
+== tmux window firstmate:0 has two splits ==
+  %0 active=0 first-line=""
+  %1 active=1 first-line=""
+  %0 content: OTHER-SPLIT-SHELL
+  %1 content: PRIMARY-CLAUDE-PANE
+
+== FIXED (500eed3): daemon startup with no FM_SUPERVISOR_TARGET / TMUX_PANE ==
+daemon starting (pid 877924); target=%1; target_source=FALLBACK(pinned:%1); backend=tmux; backend_source=FALLBACK(tmux); afk=off; inject_skip='heartbeat'; stale_escalate=240s; batch=90s
+
+== simulate a focus change in that window AFTER daemon startup ==
+  now active: %0 (ACTIVE)
+  read through PINNED pane id %1  -> PRIMARY-CLAUDE-PANE
+  read through window target firstmate:0 -> OTHER-SPLIT-SHELL   <-- silently redirected
+
+== BASE (bb69fc5) for contrast: same startup, unpinned window target ==
+daemon starting (pid 879128); target=firstmate:0; target_source=FALLBACK(firstmate:0); backend=tmux; backend_source=FALLBACK(tmux); afk=off; inject_skip='heartbeat'; stale_escalate=240s; batch=90s
