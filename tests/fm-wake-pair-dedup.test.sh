@@ -248,6 +248,53 @@ test_deferred_signal_is_delivered_when_no_acknowledgement_arrives() {
   pass "a signal deferred behind an unacknowledged generation is delayed, never dropped"
 }
 
+# --- Test 3b: a deferred signal co-pending with a benign one keeps its marker ---
+
+test_deferred_signal_survives_a_benign_cycle() {
+  local dir state out1 out2 out3 pid
+  dir=$(make_case procevent-defer-benign); state="$dir/state"
+  out1="$dir/watch1.out"; out2="$dir/watch2.out"; out3="$dir/watch3.out"
+
+  # An open decision the annotation would present, under a routine last line:
+  # coverable (so deferrable) but NOT captain-relevant, which is what lets the
+  # cycle below take the benign-absorb branch.
+  printf 'needs-decision: [key=api-shape] pick REST or RPC\nworking: still drafting\n' \
+    > "$state/delivery-src.status"
+  seed_captured_procevent_result "$dir" delivery-src \
+    || fail "the fixture captured no process-event result"
+
+  watch_bg "$dir" "$out1"
+  wait_for_exit "$!" 150 || fail "the watcher never surfaced the queued process-event result"
+
+  # A second, unrelated change lands in the same cycle. With every crew provably
+  # working and no captain verb anywhere, the cycle absorbs as benign - and must
+  # still not advance the DEFERRED file's .seen marker.
+  printf 'x\n' > "$state/crewb.turn-ended"
+  export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy'
+  watch_bg "$dir" "$out2" 1
+  pid=$!
+  sleep 3
+  is_live_non_zombie "$pid" \
+    || { wait "$pid" 2>/dev/null || true; fail "the benign cycle woke: $(cat "$out2")"; }
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  unset FM_FAKE_CREW_STATE
+
+  # The generation is still unacknowledged. Once the deferral bound lapses and
+  # the crew is no longer provably working, the deferred change must still be
+  # visible to the signal scan - i.e. its marker never moved during the benign
+  # cycle - and must be delivered in full.
+  FM_PROCEVENT_SIGNAL_DEFER_GRACE=0 watch_bg "$dir" "$out3" 1
+  wait_for_exit "$!" 150 \
+    || fail "a signal deferred across a benign cycle was lost: $(cat "$out3")"
+  grep -F "$state/delivery-src.status" "$out3" >/dev/null \
+    || fail "the deferred signal did not survive the benign cycle: $(cat "$out3")"
+  [ "$(queue_kind_count "$state" signal)" -ge 1 ] \
+    || fail "the deferred signal was not enqueued: $(cat "$state/.wake-queue")"
+
+  pass "a deferred signal keeps its marker when a benign signal shares the cycle"
+}
+
 # --- Test 4: no process-event at all - the signal path is untouched ---
 
 test_signal_without_any_procevent_wakes_normally() {
@@ -270,6 +317,7 @@ test_procevent_generation_absorbs_its_own_status_signal
 test_routine_status_line_is_never_absorbed
 test_distinct_status_change_after_procevent_still_wakes
 test_deferred_signal_is_delivered_when_no_acknowledgement_arrives
+test_deferred_signal_survives_a_benign_cycle
 test_signal_without_any_procevent_wakes_normally
 
 echo ""

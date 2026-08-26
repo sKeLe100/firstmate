@@ -916,6 +916,15 @@ fm_watch_signal_procevent_coverage() {  # <status-file>
   fi
   status_ns=$(stat_mtime_ns "$file")
   case "$status_ns" in ''|*[!0-9]*) printf 'deliver\n'; return 0 ;; esac
+  # Only a change that the signal annotation alone would present can ever be
+  # accounted for by a process-event wake. A routine line is never "covered",
+  # so deferring it behind an unacknowledged generation could only ever end in
+  # "deliver" - pure latency. Decide that here, before touching the inbox.
+  if [ -z "$(status_open_decisions "$file" 2>/dev/null)" ] \
+    && ! status_line_is_unread_surface "$(last_status_line "$file")"; then
+    printf 'deliver\n'
+    return 0
+  fi
   now=$(date +%s)
   for result in "$(fm_procevent_inbox_dir "$STATE")/$task".*.result; do
     [ -f "$result" ] && [ ! -L "$result" ] || continue
@@ -928,12 +937,8 @@ fm_watch_signal_procevent_coverage() {  # <status-file>
     case "$marker_ns" in ''|*[!0-9]*) continue ;; esac
     [ "$status_ns" -lt "$marker_ns" ] || continue
     if fm_procevent_is_handled "$STATE" "$task" "$seq"; then
-      if [ -n "$(status_open_decisions "$file" 2>/dev/null)" ] \
-        || status_line_is_unread_surface "$(last_status_line "$file")"; then
-        printf 'covered\n'
-        return 0
-      fi
-      continue
+      printf 'covered\n'
+      return 0
     fi
     [ $(( now - $(stat_mtime "$marker") )) -lt "$PROCEVENT_SIGNAL_DEFER_GRACE" ] && deferred=1
   done
@@ -1485,6 +1490,7 @@ EOF
     else
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
+        case " $signal_deferred " in *" $f "*) continue ;; esac
         printf '%s' "$sig" > "$sf"
       done <<EOF
 $pending
