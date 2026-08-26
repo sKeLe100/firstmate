@@ -67,6 +67,11 @@
 # escapes stay unambiguous - so every item stays on exactly one LF-terminated
 # line):
 #   count: <n>
+#   total_queued: <n>
+#     -- present ONLY when --limit truncated the full queued set (count is
+#     smaller than the total number of queued items tasks-axi returned), so a
+#     capped listing is never mistaken for the whole queue; absent entirely
+#     when nothing was truncated --
 #   items[<n>]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
 #     <csv row>...
 #   dispatch_config: absent|present|invalid|unverified
@@ -348,6 +353,8 @@ for rank, r in enumerate(ranked_rows, start=1):
     ])
 
 print(f"count: {len(out_rows)}")
+if len(out_rows) < len(rows):
+    print(f"total_queued: {len(rows)}")
 if out_rows:
     cols = ("rank,id,title,kind,repo,priority,blocked,blocked_by,held,"
             "hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason")

@@ -30,13 +30,16 @@ It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the b
    A harness with no configured rule (for example a retired subscription with no matching entry in `config/crew-dispatch.json`) never appears here - the snapshot only ever reports lanes the config itself defines, so there is nothing to filter out on this side.
    Render `live_slots` as the count of dispatched worker slots currently tracked (persistent secondmates are excluded, since they hold no dispatch slot); firstmate has no configured concurrency cap by default, so state that plainly rather than inventing or asking about a cap that may not exist.
 
-3. **Number the list from the snapshot's own `rank`, and never drop a gated item silently.**
+3. **When the snapshot reports `total_queued`, say so up front so a capped list is never mistaken for the whole queue.**
+   That field is present only when the requested limit truncated the full queued set; when present, open the list with a line such as "showing N of M queued" (N = `count`, M = `total_queued`) before the numbered items. When it is absent, nothing was truncated - render the list exactly as before, with no such line.
+
+4. **Number the list from the snapshot's own `rank`, and never drop a gated item silently.**
    Render every item the snapshot returns, numbered by its `rank` field starting at 1 - never renumber, re-sort, or re-order by your own judgment, since the snapshot already sorted by priority with a documented tiebreak.
    Do not exclude a blocked or held item from the list: the captain asked for "the next 30 queued items in priority order", and quietly dropping some would make the list's count and order misleading about the true shape of the queue.
    Instead, mark a gated item inline on its detail line: blocked items name what they are blocked by, held items give the hold's reason (and its `hold_until` date when set).
    An item with neither `blocked: yes` nor `held: yes` needs no gate note.
 
-4. **Resolve each item's dispatch tier by the same judgment real dispatch uses - never by running quota.**
+5. **Resolve each item's dispatch tier by the same judgment real dispatch uses - never by running quota.**
    If the snapshot reports `dispatch_config: absent`, no per-item tier can be resolved; say so once for the whole list rather than repeating a caveat on every bullet, and note that a spawn without configured profiles falls back to `config/crew-harness`.
    If it reports `dispatch_config: invalid`, say once that the dispatch profile file is present but invalid and tiers are unavailable until it is fixed, per `docs/configuration.md`'s `CREW_DISPATCH: invalid` diagnostic - the snapshot applies that same validity contract, so a file that merely parses as JSON but breaks a rule (missing `when`, empty `default`, unverified harness, unsupported effort) reports `invalid` here too. Do not match tiers against a config in that state; a tier real dispatch would refuse is worse than no tier.
    If it reports `dispatch_config: unverified`, `jq` is missing so the config's validity could not be checked; say that once and skip tier matching for the same reason, and note that `jq` is a bootstrap-required tool.
@@ -45,19 +48,19 @@ It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the b
    Do NOT call `quota-axi` to narrow an array down to one pick for this listing - that is a per-item live quota read the captain explicitly asked this listing to avoid, and thirty of them is not worth the cost for a view.
    State plainly, once, that concrete profile-array selection happens at dispatch time via `quota-array-dispatch`, not in this listing.
 
-5. **Report autonomy exactly as the snapshot derived it, translated to plain language.**
+6. **Report autonomy exactly as the snapshot derived it, translated to plain language.**
    The snapshot's `autonomy` field is already derived, never guessed: `captain-gated` when the item's own kind is `captain` or it carries a captain-kind hold, or when its project's registry posture has yolo off; `autonomous-eligible` when none of those hold and yolo is on; `unclear` only when the item carries no captain-kind signal and no project to check (repo empty), which this skill must render as an honest "unclear" rather than picking a side.
    Render `autonomous-eligible` as "clears itself", `captain-gated` as "needs you", and `unclear` as "unclear - ask me about it".
    Never override or re-derive this verdict from the title or your own read of the situation; a wrong "clears itself" is worse than an honest "unclear".
 
-6. **Render one numbered, two-line entry per item - a title line and a detail line.**
+7. **Render one numbered, two-line entry per item - a title line and a detail line.**
    Title line: `<rank>. <id>: <short title>`.
    Detail line, indented under it: `project: <project> - tier: <candidates or the once-stated absent/invalid note> - <autonomy>[ - gated: <reason>]`.
    Truncate a long title to stay scannable; the id is always exact so the captain can ask about it by name.
    Put no other field on either line - no dates, no hold details beyond the one-line gate note, no body text, no links.
    End the list with one short line making clear that any item can be asked about by id or description for full detail (body, blockers, dependencies, links) via `tasks-axi show <id> --full`, and that the list above is deliberately everything-else-omitted.
 
-7. **Answer follow-up questions about one item read-only.**
+8. **Answer follow-up questions about one item read-only.**
    When the captain asks about a specific item, run `tasks-axi show <id> --full` (or `tasks-axi list --repo <name>` for "what else is queued for X") and answer from that, still without mutating anything.
 
 ## Not covered
