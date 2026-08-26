@@ -792,6 +792,58 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+# A prior opencode task's write tool silently rebased an absolute host path
+# onto its own worktree root, so a status-file append and a scout report both
+# landed inside the disposable worktree instead of surviving teardown. Every
+# scaffold must instruct the worker to verify the real absolute path with
+# `ls -la` before trusting a status append or a report write, so a silent
+# misplace becomes a loud `blocked:` instead of lost work.
+test_status_and_report_writes_require_verification() {
+  local home id brief status_file report_file
+  home="$TMP_ROOT/write-verification-home"
+  mkdir -p "$home/data"
+
+  id="brief-verify-scout-r1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh scout scaffold exited non-zero"
+  brief="$home/data/$id/brief.md"
+  status_file="$home/state/$id.status"
+  report_file="$home/data/$id/report.md"
+  assert_present "$brief" "scout brief was not scaffolded"
+  assert_grep "After every append, verify with \`ls -la '$status_file'\`" "$brief" \
+    "scout brief must require ls -la verification of the real status file after every append"
+  assert_grep "a write tool can silently place the file somewhere else" "$brief" \
+    "scout brief status-append rule must explain why verification is required"
+  assert_grep "After writing it, verify with \`ls -la $report_file\`" "$brief" \
+    "scout brief must require ls -la verification of the real report path after writing it"
+  assert_grep "the write landed somewhere" "$brief" \
+    "scout brief report verification must explain the failure is a blocked condition"
+
+  id="brief-verify-ship-r1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" alpha --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  brief="$home/data/$id/brief.md"
+  status_file="$home/state/$id.status"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "After every append, verify with \`ls -la '$status_file'\`" "$brief" \
+    "ship brief must require ls -la verification of the real status file after every append"
+
+  id="brief-verify-sm-r1"
+  FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --secondmate alpha >/dev/null 2>&1 \
+    || fail "fm-brief.sh secondmate scaffold exited non-zero"
+  brief="$home/data/$id/brief.md"
+  status_file="$home/state/$id.status"
+  assert_present "$brief" "secondmate charter was not scaffolded"
+  assert_grep "After writing that doc, verify with \`ls -la {path}\`" "$brief" \
+    "secondmate charter must require ls -la verification of a written doc before pointing to it"
+  assert_grep "After every append, verify with \`ls -la '$status_file'\`" "$brief" \
+    "secondmate charter must require ls -la verification of the real status file after every append"
+  assert_grep "a write tool can silently place the file somewhere else" "$brief" \
+    "secondmate charter status-append rule must explain why verification is required"
+  pass "fm-brief.sh: status appends and scout reports require ls -la verification before trust"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -814,3 +866,4 @@ test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_ship_and_scout_teach_correct_key_placement
 test_scout_and_secondmate_scaffold
+test_status_and_report_writes_require_verification

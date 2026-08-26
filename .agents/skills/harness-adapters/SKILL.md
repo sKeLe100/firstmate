@@ -282,6 +282,12 @@ Throwing from `session.idle` does not block `opencode run`, so the primary adapt
 The companion `.opencode/plugins/fm-primary-watch-arm.js` owns normal TUI watcher wake supervision and coordinates with the guard plugin before the guard tries a blind-turn follow-up.
 The follow-up was verified in the interactive TUI; `opencode run` can exit before displaying a queued follow-up, so the adapter is fail-open in headless mode.
 
+**Absolute-path write/edit rebasing onto a worktree root (verified 2026-08-24, opencode 1.18.21).**
+Opencode's write/edit tool was observed to silently rebase an absolute path onto the current worktree root when that path's suffix matches `<worktree-repo-root>/...` and the worktree is a checkout of that same repo.
+Reproduced in task `pc02-duty-officer-check3-opencode` in this home (`fm-pc02-llm-lab`): a report and a status-file write both landed inside the task's own treehouse worktree instead of the real absolute host path the brief specified.
+The read tool was not observed to have this problem; it correctly read the real host file at the same path.
+This is stated exactly as reproduced - a broader claim about all opencode file operations or all repos is not established.
+
 ## pi and pi-signed (VERIFIED 2026-07-27)
 
 | Fact | Value |
