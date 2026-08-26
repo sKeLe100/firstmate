@@ -175,6 +175,20 @@ case "$out" in
   *lim-c*) fail "--limit 2 unexpectedly included a third item: $out" ;;
 esac
 
+# 4b. A truncated listing (--limit < total queued) discloses the total queued
+#     count so a capped listing never looks like the whole queue.
+case "$out" in
+  *"total_queued: 3"*) ;;
+  *) fail "expected total_queued: 3 to disclose truncation under --limit 2, got: $out" ;;
+esac
+
+# 4c. An untruncated listing (--limit >= total queued) stays unchanged: no
+#     total_queued line at all.
+out_full=$(run_snapshot "$home" --limit 30)
+case "$out_full" in
+  *"total_queued:"*) fail "untruncated listing unexpectedly disclosed total_queued: $out_full" ;;
+esac
+
 # 5. dispatch_config reflects the shared crew-dispatch validity verdict for a
 #    valid file and for one that is not even parseable JSON.
 home=$(make_home dispatch-present)
