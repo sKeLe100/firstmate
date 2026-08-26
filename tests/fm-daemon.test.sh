@@ -1785,8 +1785,19 @@ test_discover_supervisor_target_fallback_pins_concrete_pane() {
   # resolving to the live-focused pane at query time.
   cat > "$fakebin/tmux" <<EOF
 #!/usr/bin/env bash
+# display-message on a WINDOW target resolves to whatever pane is active at
+# query time; capture-pane returns that pane's own content, so a capture
+# through the bare window target follows focus while a pinned pane id does not.
+target=\${4:-}
 if [ "\$1" = display-message ]; then
   cat "$dir/active-pane"
+  exit 0
+fi
+if [ "\$1" = capture-pane ]; then
+  case "\$target" in
+    firstmate:0) printf 'content-of-%s\\n' "\$(cat "$dir/active-pane")" ;;
+    *) printf 'content-of-%s\\n' "\$target" ;;
+  esac
   exit 0
 fi
 exit 1
@@ -1797,12 +1808,18 @@ EOF
   out=$(PATH="$fakebin:$PATH" FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target)
   [ "$out" = '%182' ] || fail "fallback should pin the concrete active pane id, not the bare window target: $out"
 
+  local pinned="$out"
+
   # Simulate a focus change to a different split in the same window AFTER
-  # discovery. A caller that stored the pinned id (as the daemon does, into
-  # FM_SUPERVISOR_TARGET) must keep resolving to the originally pinned pane.
+  # discovery, then read through a real reader (the tmux backend capture the
+  # daemon itself uses). The stored pinned id must still return the ORIGINAL
+  # pane's content, while the bare window target follows focus - which is
+  # exactly the silent redirect that wedged away-mode.
   echo '%183' > "$dir/active-pane"
-  out=$(PATH="$fakebin:$PATH" FM_SUPERVISOR_TARGET='%182' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target)
-  [ "$out" = '%182' ] || fail "pinned target must survive a later focus change in the source window: $out"
+  out=$(PATH="$fakebin:$PATH" fm_backend_capture tmux "$pinned" 5)
+  [ "$out" = 'content-of-%182' ] || fail "pinned target must still read the originally pinned pane after a focus change: $out"
+  out=$(PATH="$fakebin:$PATH" fm_backend_capture tmux "$FM_SUPERVISOR_TARGET_DEFAULT" 5)
+  [ "$out" = 'content-of-%183' ] || fail "bare window target should have followed focus (fake tmux is not simulating the redirect): $out"
 
   pass "discover_supervisor_target: bare fallback pins a concrete pane id that survives a later focus change"
 }
