@@ -117,6 +117,11 @@ mkdir -p "$STATE"
 # gate and the wake emission (inbox_steer_check below).
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
+# Process-event inbox semantics (pending vs. acknowledged captured results) are
+# owned by the runner library; the wake-pair dedup below reads them through it
+# rather than re-deriving inbox paths or handled markers.
+# shellcheck source=bin/fm-procevent-lib.sh
+. "$SCRIPT_DIR/fm-procevent-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -858,38 +863,39 @@ procevent_surface_queued() {
   wake "$reason"
 }
 
-# fm_watch_procevent_covered <source-id>
-# True when there is an unhandled procevent result for <source-id> in this home's
-# procevent inbox.  An unhandled result means a check wake for that source is
-# already queued (or was queued on a previous cycle and is still outstanding),
-# so the signal path for this home's status files would be a duplicate of the
-# procevent path.
-# Returns 0 (covered) when at least one result file exists without its matching
-# .handled marker, 1 otherwise.
-fm_watch_procevent_covered() {  # <source-id>
-  local inbox result handled_marker
-  inbox="$STATE/procevent-inbox"
-  [ -d "$inbox" ] || return 1
-  for result in "$inbox/$1".*.result; do
-    [ -f "$result" ] && [ ! -L "$result" ] || continue
-    handled_marker="${result%.result}.handled"
-    [ -f "$handled_marker" ] && [ ! -L "$handled_marker" ] && continue
-    return 0
-  done
-  return 1
-}
-
 # fm_watch_signal_procevent_covered <status-file>
-# True when the status file's task has an unhandled procevent result in the
-# procevent inbox.  The task is derived by stripping the ".status" suffix from
-# the basename.  Returns 0 when procevent covers the event (skip the signal
-# append), 1 when there is no procevent coverage.
+# True when this specific status change has already been delivered to the
+# supervisor as a process-event check wake, so appending a signal for it would
+# enqueue the same underlying event twice.
+#
+# Coverage is bound to a specific captured generation, never to the source id as
+# a whole. It holds only when the inbox has a pending (unacknowledged) result
+# for this task whose check wake was ALREADY surfaced - its .seen-procevent
+# marker exists, so firstmate was woken for that generation - and whose capture
+# is at least as new as this status write. A status change strictly newer than
+# every such generation is a genuinely distinct event and is never absorbed
+# here; that direction is the safe one, because an uncovered signal costs a
+# drain turn while a wrongly covered one would be lost.
 fm_watch_signal_procevent_covered() {  # <status-file>
-  local file=$1 task
-  task=$(basename "$file"); task="${task%.status}"
-  [ -n "$task" ] && [ "$task" != "$file" ] || return 1
-  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
-  fm_watch_procevent_covered "$task"
+  local file=$1 base task result seq status_mtime result_mtime
+  base=$(basename "$file")
+  task="${base%.status}"
+  [ "$task" != "$base" ] || return 1
+  fm_procevent_source_id_valid "$task" || return 1
+  status_mtime=$(stat_mtime "$file") || return 1
+  while IFS= read -r result; do
+    [ -n "$result" ] || continue
+    [ "$(fm_procevent_result_source_id "$result")" = "$task" ] || continue
+    seq=$(fm_procevent_result_sequence "$result")
+    case "$seq" in ''|*[!0-9]*) continue ;; esac
+    [ -e "$(procevent_surfaced_marker "procevent:$task:$seq")" ] || continue
+    result_mtime=$(stat_mtime "$result") || continue
+    [ "$result_mtime" -ge "$status_mtime" ] || continue
+    return 0
+  done <<EOF
+$(fm_procevent_pending "$STATE")
+EOF
+  return 1
 }
 
 run_check_process() {
@@ -1378,16 +1384,27 @@ EOF
     # ordering evaluates it ONLY for a non-afk, no-captain-verb signal.
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
     if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
+      signal_appended=0
+      signal_covered=
+      signal_enqueued=
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
-        # Skip signal append when a procevent result for this task is already
-        # queued or outstanding: the procevent path will surface the same
-        # underlying event, so emitting both wastes a drain turn.  The seen
-        # marker and surfaced flag still advance so the file is not replayed
-        # on later cycles; absorption is silent because the procevent check
-        # is the authoritative delivery path for this event.
-        fm_watch_signal_procevent_covered "$f" && continue
+        # $pending concatenates the pre- and post-grace scans, so the same file
+        # can appear twice for one change; enqueue each file at most once.
+        case " $signal_enqueued " in *" $f "*) continue ;; esac
+        signal_enqueued="$signal_enqueued $f"
+        # Skip the signal append when this exact status change was already
+        # delivered as a process-event check wake: the supervisor has the event,
+        # so a second queue record would only cost an extra drain turn. The seen
+        # marker still advances below because the event WAS delivered - just by
+        # the other path - and coverage is generation-bound, so a distinct later
+        # status change is never absorbed here.
+        if fm_watch_signal_procevent_covered "$f"; then
+          signal_covered="$signal_covered $f"
+          continue
+        fi
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+        signal_appended=1
       done <<EOF
 $pending
 EOF
@@ -1398,7 +1415,14 @@ EOF
       done <<EOF
 $pending
 EOF
-      wake "$reason"
+      if [ "$signal_appended" -eq 1 ]; then
+        wake "$reason"
+      else
+        # Every pending signal was already covered by a process-event check
+        # wake. Nothing was enqueued, so waking would spend a drain turn on an
+        # empty queue - keep the cycle running instead.
+        triage_log "absorbed procevent-covered signal:$signal_covered"
+      fi
     else
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
