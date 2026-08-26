@@ -217,6 +217,7 @@ The restart mechanics reuse the existing owners rather than a parallel mechanism
 
 To read another session's usage, run the helper with `FM_HOME` set to that session's working directory (a task worktree or secondmate home); thresholds then resolve against that home's own `config/context-thresholds`.
 The live `<total_tokens>` countdown can stick at 0 and is never evidence of exhausted context; the helper's transcript-derived reading is the only trusted source.
+Ship briefs scaffolded by `bin/fm-brief.sh` carry that same instruction as a standing rule, so a crewmate reads its context with `/context` or the helper instead of the countdown without being told per task.
 The helper's header owns exact parsing and output mechanics.
 
 ## Stow pass horizon (config/stow-pass-horizon)

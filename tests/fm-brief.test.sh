@@ -867,3 +867,42 @@ test_scout_and_secondmate_load_decision_hold_policy
 test_ship_and_scout_teach_correct_key_placement
 test_scout_and_secondmate_scaffold
 test_status_and_report_writes_require_verification
+
+# The generated brief is fm-brief.sh's public output artifact - the prompt a
+# claude-harness worker is actually launched with - so its Rules block is an
+# owned text contract. This checks two behaviors of that emitted contract:
+# the context-policy rule names a helper path that really resolves and runs,
+# and the Rules list is numbered contiguously so cross-references elsewhere
+# (bin/fm-classify-lib.sh cites "rule 7") point at the rule they claim.
+test_ship_brief_context_rule_and_rule_numbering() {
+  local home id brief helper nums expected n
+  home="$TMP_ROOT/context-rule-home"
+  mkdir -p "$home/data"
+  id="brief-context-r1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded"
+
+  assert_grep "padded-countdown token counter" "$brief" \
+    "ship brief lost the unreliable-token-counter rule"
+  assert_grep "/context" "$brief" "ship brief lost the /context fallback instruction"
+
+  # The helper the rule points workers at must be a real absolute executable.
+  helper=$(sed -n 's#.*use /context or \(/[^ ]*fm-context-usage\.sh\).*#\1#p' "$brief" | head -1)
+  [ -n "$helper" ] || fail "context rule does not name an absolute fm-context-usage.sh path"
+  [ -x "$helper" ] || fail "context rule points at a non-executable helper: $helper"
+  "$helper" --help >/dev/null 2>&1 || fail "helper named by the context rule does not run: $helper"
+
+  # Rules are numbered 1..N with no gaps or repeats.
+  nums=$(sed -n '/^# Rules$/,/^# /p' "$brief" | sed -n 's/^ *\([0-9][0-9]*\)\. .*/\1/p')
+  [ -n "$nums" ] || fail "no numbered rules found in the generated brief"
+  n=0
+  expected=1
+  for n in $nums; do
+    [ "$n" = "$expected" ] || fail "brief rule numbering is not contiguous: expected $expected, got $n"
+    expected=$((expected + 1))
+  done
+  [ "$n" -ge 8 ] || fail "brief lost rules; last rule number is $n"
+  pass "fm-brief.sh: ship brief names a runnable context helper and numbers rules contiguously"
+}
+test_ship_brief_context_rule_and_rule_numbering
