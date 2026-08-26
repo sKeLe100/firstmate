@@ -87,6 +87,59 @@ test_mark_round_trip() {
 # real firstmate data/roundtable-marks.tsv.
 export FM_ROUNDTABLE_MARKS_FILE="$TMP_ROOT/roundtable-marks.tsv"
 
+# Fixture with a nested README/ROADMAP that sorts before the root ones and
+# code files whose paths merely contain "test"/"spec" as a substring.
+make_tricky_fixture() {
+  local dir
+  dir=$(mktemp -d "$TMP_ROOT/tricky-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  mkdir -p "$dir/AGENTS" "$dir/src/protest" "$dir/a/b/c"
+  printf 'nested\nreadme\n' > "$dir/AGENTS/README.md"
+  printf 'nested\nroadmap\n' > "$dir/AGENTS/ROADMAP.md"
+  printf '# Fixture\n' > "$dir/README.md"
+  printf '# Roadmap\n- item1\n- item2\n' > "$dir/ROADMAP.md"
+  printf 'x = 1\n' > "$dir/src/latest.py"
+  printf 'x = 2\n' > "$dir/src/protest/x.py"
+  printf 'def test_x(): pass\n' > "$dir/src/test_real.py"
+  printf 'y = 1\n' > "$dir/a/b/c/f.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+  printf '%s\n' "$dir"
+}
+
+test_root_docs_preferred() {
+  local dir out
+  dir=$(make_tricky_fixture)
+  out="$TMP_ROOT/tricky-docs.txt"
+  "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" > "$out"
+
+  assert_grep "README.md: 1 lines" "$out" \
+    "must report the root README.md, not a nested one that sorts earlier"
+  assert_grep "ROADMAP.md: 3 lines" "$out" \
+    "must report the root ROADMAP.md, not a nested one that sorts earlier"
+  assert_no_grep "AGENTS/README.md: 2 lines" "$out" \
+    "must not present a nested README as the project README"
+
+  pass "fm-roundtable-factsheet: prefers root-level key docs"
+}
+
+test_test_classification_is_anchored() {
+  local dir out
+  dir=$(make_tricky_fixture)
+  out="$TMP_ROOT/tricky-classify.txt"
+  "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" > "$out"
+
+  assert_grep "test: 1" "$out" \
+    "only src/test_real.py is a test file; latest.py and protest/x.py are not"
+  assert_grep "code: 7" "$out" \
+    "every other tracked file must be counted as code"
+
+  pass "fm-roundtable-factsheet: test detection is anchored, not a substring match"
+}
+
 test_basic_output
 test_since_delta
 test_mark_round_trip
+test_root_docs_preferred
+test_test_classification_is_anchored

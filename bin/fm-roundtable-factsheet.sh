@@ -82,8 +82,10 @@ git -C "$CLONE" log -15 --oneline
 echo
 
 echo "## Key docs (paths + line counts only, not contents)"
+ROADMAP_PATH=""
 for doc in README.md ROADMAP.md; do
-  path=$(fm_roundtable_files "$CLONE" | grep -m1 -E "(^|/)$doc\$" || true)
+  path=$(fm_roundtable_files "$CLONE" | grep -E "(^|/)$doc\$" | awk '{ if ($0 !~ /\//) { print; exit } if (best == "") best = $0 } END { if (best != "") print best }' | head -1)
+  if [ "$doc" = ROADMAP.md ]; then ROADMAP_PATH=$path; fi
   if [ -n "$path" ]; then
     lines=$(git -C "$CLONE" show "HEAD:$path" | wc -l)
     printf '%s: %s lines\n' "$path" "$lines"
@@ -104,8 +106,10 @@ if [ -n "$SINCE" ]; then
     git -C "$CLONE" diff --name-only "$SINCE" HEAD | sed 's/^/  /'
     echo "Commits since:"
     git -C "$CLONE" log --oneline "$SINCE..HEAD"
-    echo "ROADMAP.md diff stat:"
-    git -C "$CLONE" diff --stat "$SINCE" HEAD -- ROADMAP.md || true
+    echo "${ROADMAP_PATH:-ROADMAP.md} diff stat:"
+    if [ -n "$ROADMAP_PATH" ]; then
+      git -C "$CLONE" diff --stat "$SINCE" HEAD -- "$ROADMAP_PATH" || true
+    fi
   else
     echo "## Delta since $SINCE"
     echo "error: ref not found in this clone, skipping delta"

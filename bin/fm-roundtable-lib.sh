@@ -29,18 +29,28 @@ fm_roundtable_file_sizes() {
 }
 
 # True (exit 0) when $1 looks like a test file by common naming convention.
+# Anchored on the basename (test_x, x_test.y, x.test.y, x.spec.y) or a
+# tests/ or spec/ path component, never a bare substring of the path.
 fm_roundtable_is_test_file() {
-  case "$1" in
-    *test*|*spec*) return 0 ;;
+  local rel=$1 base=${1##*/}
+  case "$rel" in
+    tests/*|test/*|spec/*|specs/*|*/tests/*|*/test/*|*/spec/*|*/specs/*) return 0 ;;
+  esac
+  case "$base" in
+    test_*|test-*|spec_*|spec-*) return 0 ;;
+    *_test|*_test.*|*-test.*|*.test.*|*_spec|*_spec.*|*-spec.*|*.spec.*) return 0 ;;
+    *Test.*|*Tests.*|*Spec.*) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-# Collapses a relative dir path to at most max_depth segments.
+# Collapses a relative dir path to at most max_depth segments. Must stay in
+# exact agreement with the depth cap in bin/fm-roundtable-coverage.sh so every
+# dir the coverage ledger names is a dir the fact sheet could have printed.
 fm_roundtable_collapse_dir() {
   local dir=$1 max_depth=$2
-  [ -z "$dir" ] && { printf '.\n'; return; }
-  printf '%s\n' "$dir" | cut -d/ -f"1-$((max_depth + 1))"
+  { [ -z "$dir" ] || [ "$max_depth" -lt 1 ]; } && { printf '.\n'; return; }
+  printf '%s\n' "$dir" | cut -d/ -f"1-$max_depth"
 }
 
 # Prints "dir<TAB>file_count<TAB>total_bytes" for every directory up to
