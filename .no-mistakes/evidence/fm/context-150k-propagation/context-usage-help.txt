@@ -1,0 +1,21 @@
+Output is one data-only line; callers act on the reported band rather than
+re-deriving thresholds:
+  context_tokens=<N> window=<W> percent=<P> warn_tokens=<W1> \
+    restart_tokens=<W2> band=<ok|warn|restart> transcript=<path> age_seconds=<S>
+The window defaults to 1000000 and can be overridden with FM_CONTEXT_WINDOW
+when a harness or model change alters the real window.
+
+Bands implement the captain's session-context policy (directive 2026-08-26):
+  ok      - below the warning threshold; keep working.
+  warn    - at or past the warning threshold (default 150000); surface the
+            level in the next natural report.
+  restart - at or past the restart threshold (default 250000); the session
+            must not keep grinding: checkpoint durable state (/stow for a
+            firstmate home), restart with a carryover handoff
+            (bin/fm-control.sh <id> relaunch --note for a crewmate, or a
+            fresh session for a primary), and wake/advise the main session.
+            Never send /clear through the steer channel - it is mechanically
+            broken.
+Thresholds come from config/context-thresholds under the same home used for
+transcript discovery: optional `warn=<N>` and `restart=<N>` lines, one per
+line, each a positive base-10 integer, warn <= restart. A malformed file is

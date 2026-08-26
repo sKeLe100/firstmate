@@ -1,0 +1,7 @@
+$ # no config/context-thresholds file -> built-in policy defaults
+$ bin/fm-context-usage.sh /tmp/tmp.etZitGHLLG/ok.jsonl
+context_tokens=90000 window=1000000 percent=9.0 warn_tokens=150000 restart_tokens=250000 band=ok transcript=TMP/ok.jsonl age_seconds=0
+$ bin/fm-context-usage.sh /tmp/tmp.etZitGHLLG/warn.jsonl
+context_tokens=150000 window=1000000 percent=15.0 warn_tokens=150000 restart_tokens=250000 band=warn transcript=TMP/warn.jsonl age_seconds=0
+$ bin/fm-context-usage.sh /tmp/tmp.etZitGHLLG/restart.jsonl
+context_tokens=260000 window=1000000 percent=26.0 warn_tokens=150000 restart_tokens=250000 band=restart transcript=TMP/restart.jsonl age_seconds=0
