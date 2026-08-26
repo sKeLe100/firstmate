@@ -20,6 +20,10 @@ The guard remains a backstop; [`watcher-continuity.md`](watcher-continuity.md) o
 ## Guard predicates
 
 The guard first calls the shared primary scope.
+The scope root and state directory come from `FM_ROOT_OVERRIDE`/`FM_HOME`, which a crewmate task worktree that is itself a checkout of the firstmate repo can inherit unchanged from the environment it was launched in.
+So before anything else the predicate requires the physical location it is actually running from - the resolved parent of the sourced `bin/fm-primary-scope-lib.sh`, never the possibly-overridden root - to share a git dir with the scope root.
+Every worktree and clone of firstmate has its own physical `bin/`, so a leaked-env task worktree never matches even though its inherited root still resolves to a genuine primary checkout, while a genuine primary session running in its own checkout still matches.
+Both the git dir and the git common dir are compared as physical paths, so a symlinked home, lease, or temp directory cannot defeat either comparison.
 A secondmate home runs its own primary Firstmate session, so a genuine `.fm-secondmate-home` marker includes it whether the home is a linked worktree or plain clone.
 The marker must be a regular non-symlink file whose whitespace-stripped first line is a non-empty identifier containing only letters, digits, dots, underscores, and dashes.
 An unmarked checkout or invalid marker falls through to the git-dir check.
