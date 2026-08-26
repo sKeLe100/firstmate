@@ -1,0 +1,27 @@
+=== Fixture ===
+primary: /tmp/fm-scope-e2e/primary  (plain checkout of firstmate, .git is a directory)
+crew   : /tmp/fm-scope-e2e/crew     (linked git worktree of the SAME firstmate repo = crewmate task worktree)
+Both runs export the leaked env of the real primary home:
+  FM_ROOT_OVERRIDE=/tmp/fm-scope-e2e/primary  FM_HOME=/tmp/fm-scope-e2e/primary
+
+############ bin/fm-primary-scope-lib.sh = BASE (bb69fc5, pre-fix) ############
+--- $ cd /tmp/fm-scope-e2e/primary && bin/fm-subagent-pretool-check.sh --claude --tool Agent
+exit: 2  (guard FIRED - classified PRIMARY)
+stderr:
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[subagent-dispatch] the firstmate primary dispatches through the fleet, not the harness's own delegation tools: work started that way has no durable fleet record, leaves every firstmate guard inert, and dies with this session. Instead, first classify the work under the AGENTS.md intake contract, then 
+
+--- $ cd /tmp/fm-scope-e2e/crew && bin/fm-subagent-pretool-check.sh --claude --tool Agent
+exit: 2  (guard FIRED - classified PRIMARY)
+stderr:
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[subagent-dispatch] the firstmate primary dispatches through the fleet, not the harness's own delegation tools: work started that way has no durable fleet record, leaves every firstmate guard inert, and dies with this session. Instead, first classify the work under the AGENTS.md intake contract, then 
+
+############ bin/fm-primary-scope-lib.sh = FIXED (763caf0, this change) ############
+--- $ cd /tmp/fm-scope-e2e/primary && bin/fm-subagent-pretool-check.sh --claude --tool Agent
+exit: 2  (guard FIRED - classified PRIMARY)
+stderr:
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[subagent-dispatch] the firstmate primary dispatches through the fleet, not the harness's own delegation tools: work started that way has no durable fleet record, leaves every firstmate guard inert, and dies with this session. Instead, first classify the work under the AGENTS.md intake contract, then 
+
+--- $ cd /tmp/fm-scope-e2e/crew && bin/fm-subagent-pretool-check.sh --claude --tool Agent
+exit: 0  (inert - NOT primary)
+
+Expected: primary FIRES in both; crew worktree FIRES under BASE (the bug) and is INERT under FIXED.
