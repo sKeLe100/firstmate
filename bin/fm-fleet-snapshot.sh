@@ -1601,8 +1601,8 @@ scout_report_lines() {
   fi
   LC_ALL=C find "$DATA" -mindepth 2 -maxdepth 2 -type f -name report.md -print \
     | sort \
-    | jq -Rs --arg data "$DATA" '
-        split("\n") | map(select(length > 0) | (. as $p | ($p | sub("^" + ($data + "/"); "")) | split("/") | {id: .[-2], path: $p}))
+    | jq -Rs '
+        split("\n") | map(select(length > 0) | . as $p | {id: ($p | split("/") | .[-2]), path: $p})
         | sort_by(.id)'
 }
 
