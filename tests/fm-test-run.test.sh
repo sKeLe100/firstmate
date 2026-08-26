@@ -703,6 +703,95 @@ assert len(doc["scripts"])==3
   pass "aggregate-json merges lane timing artifacts"
 }
 
+# --fail-fast is opt-in: CI relies on the default continuing through every
+# selected script so it sees the complete result set. Exercise both the flag
+# and its env var against a two-script selection whose first script fails, and
+# assert on the second script's own FM_TEST_BEGIN marker - the runner only
+# emits that once it actually starts a script.
+test_fail_fast_stops_after_first_failure() {
+  local tmp fail_f pass_f rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-ff.XXXXXX")
+  fail_f="$tmp/afail.test.sh"
+  pass_f="$tmp/bpass.test.sh"
+  cat >"$fail_f" <<'SH'
+#!/usr/bin/env bash
+echo "not ok - fail"
+exit 1
+SH
+  cat >"$pass_f" <<'SH'
+#!/usr/bin/env bash
+echo "ok - pass"
+exit 0
+SH
+  chmod +x "$fail_f" "$pass_f"
+
+  # Default (off): the second script still runs.
+  set +e
+  "$RUNNER" "$fail_f" "$pass_f" >"$tmp/default.txt" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { rm -rf "$tmp"; fail "default run must still exit non-zero"; }
+  grep -Fq "FM_TEST_BEGIN" "$tmp/default.txt" \
+    || { rm -rf "$tmp"; fail "runner emitted no FM_TEST_BEGIN markers at all"; }
+  grep -F "FM_TEST_BEGIN" "$tmp/default.txt" | grep -Fq "bpass.test.sh" \
+    || { rm -rf "$tmp"; fail "without --fail-fast the second script must still run"; }
+  grep -q 'FM_TEST_SUMMARY total=2 failed=1' "$tmp/default.txt" \
+    || { rm -rf "$tmp"; fail "default run should report total=2 failed=1"; }
+
+  # --fail-fast: the second script is never started.
+  set +e
+  "$RUNNER" --fail-fast "$fail_f" "$pass_f" >"$tmp/ff.txt" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { rm -rf "$tmp"; fail "--fail-fast run must exit non-zero"; }
+  grep -F "FM_TEST_BEGIN" "$tmp/ff.txt" | grep -Fq "afail.test.sh" \
+    || { rm -rf "$tmp"; fail "--fail-fast must still run the first script"; }
+  if grep -F "FM_TEST_BEGIN" "$tmp/ff.txt" | grep -Fq "bpass.test.sh"; then
+    rm -rf "$tmp"
+    fail "--fail-fast must not start the second script after a failure"
+  fi
+
+  # FM_TEST_FAIL_FAST is the equivalent env var.
+  set +e
+  FM_TEST_FAIL_FAST=1 "$RUNNER" "$fail_f" "$pass_f" >"$tmp/env.txt" 2>&1
+  set -e
+  if grep -F "FM_TEST_BEGIN" "$tmp/env.txt" | grep -Fq "bpass.test.sh"; then
+    rm -rf "$tmp"
+    fail "FM_TEST_FAIL_FAST=1 must behave like --fail-fast"
+  fi
+
+  # A truthy spelling is honored rather than silently behaving as off.
+  set +e
+  FM_TEST_FAIL_FAST=true "$RUNNER" "$fail_f" "$pass_f" >"$tmp/true.txt" 2>&1
+  set -e
+  if grep -F "FM_TEST_BEGIN" "$tmp/true.txt" | grep -Fq "bpass.test.sh"; then
+    rm -rf "$tmp"
+    fail "FM_TEST_FAIL_FAST=true must behave like --fail-fast, not as off"
+  fi
+  grep -Fq 'integer expression expected' "$tmp/true.txt" \
+    && { rm -rf "$tmp"; fail "FM_TEST_FAIL_FAST=true must not emit shell arithmetic errors"; }
+
+  # A falsy spelling keeps the default continue-through behavior.
+  set +e
+  FM_TEST_FAIL_FAST=false "$RUNNER" "$fail_f" "$pass_f" >"$tmp/false.txt" 2>&1
+  set -e
+  grep -F "FM_TEST_BEGIN" "$tmp/false.txt" | grep -Fq "bpass.test.sh" \
+    || { rm -rf "$tmp"; fail "FM_TEST_FAIL_FAST=false must leave fail-fast off"; }
+
+  # An unparseable value is a hard usage error, not a silent no-op.
+  set +e
+  FM_TEST_FAIL_FAST=maybe "$RUNNER" "$fail_f" "$pass_f" >"$tmp/bad.txt" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] \
+    || { rm -rf "$tmp"; fail "FM_TEST_FAIL_FAST=maybe must exit 2, got $rc"; }
+  grep -Fq "FM_TEST_FAIL_FAST" "$tmp/bad.txt" \
+    || { rm -rf "$tmp"; fail "rejection should name FM_TEST_FAIL_FAST"; }
+
+  rm -rf "$tmp"
+  pass "--fail-fast stops after the first failure and is off by default"
+}
+
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
@@ -721,3 +810,4 @@ test_jobs_requires_proven_isolated
 test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
+test_fail_fast_stops_after_first_failure

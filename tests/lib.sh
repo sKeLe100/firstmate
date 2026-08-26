@@ -79,7 +79,7 @@ FM_TEST_CLEANUP_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/.fm-test-cleanup.$$.XXXXXX") 
 # Excludes only tools tests actually fake to observe absence; "git" stays a
 # real host tool because fixtures perform real git operations on throwaway
 # repos, never faking git itself.
-FM_TEST_FAKED_TOOL_NAMES="node npm npx tmux zellij orca herdr cmux gh no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi treehouse grok kimi codex opencode pi python3"
+FM_TEST_FAKED_TOOL_NAMES="node npm npx tmux zellij orca herdr cmux gh no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi treehouse grok kimi codex opencode pi"
 
 # fm_test_base_path echoes a sandbox directory of symlinks standing in for the
 # host's real /usr/bin:/bin:/usr/sbin:/sbin. Naively prepending a test's
@@ -91,19 +91,49 @@ FM_TEST_FAKED_TOOL_NAMES="node npm npx tmux zellij orca herdr cmux gh no-mistake
 # - excluding names in FM_TEST_FAKED_TOOL_NAMES - so those specific tools stay
 # genuinely absent whenever a fixture removes their fake, while ordinary
 # coreutils (grep, sed, awk, find, bash, ...) still resolve to the real host
-# copy. The directory is cached under TMPDIR and shared across the whole test
-# run, keyed by content so a stale cache from a different host image is never
-# reused silently.
+# copy. The cache directory name carries a digest of the exclusion list and of
+# the source directories' own contents, so changing either one lands on a
+# fresh directory instead of silently reusing a stale sandbox that still holds
+# links to the very binaries an exclusion was added to remove.
+#
+# Callers use `BASE_PATH=$(fm_test_base_path)`, a command substitution, so a
+# plain `return 1` here would be swallowed and leave BASE_PATH empty - every
+# fixture would then run with no system binaries at all and fail in confusing
+# ways far from the real cause. Build failures therefore signal the invoking
+# shell directly via `kill -s TERM $$` ($$ stays the caller's PID inside a
+# subshell, the same property fm_test_tmproot relies on above).
+FM_TEST_BASE_PATH_SOURCE_DIRS="/usr/bin /bin /usr/sbin /sbin"
+
+fm_test_base_path_die() {
+  printf 'not ok - fm_test_base_path: %s\n' "$1" >&2
+  kill -s TERM $$ 2>/dev/null
+  exit 1
+}
+
 fm_test_base_path() {
-  local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path"
+  local dir key
+  key=$(
+    printf '%s\n' "$FM_TEST_FAKED_TOOL_NAMES"
+    for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
+      printf '%s\n' "$dir"
+      [ -d "$dir" ] && ls -1 "$dir" 2>/dev/null
+    done
+  ) || fm_test_base_path_die 'could not enumerate system binary directories'
+  key=$(printf '%s' "$key" | cksum | tr -d ' \n') \
+    || fm_test_base_path_die 'could not digest the sandbox cache key'
+
+  local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$key"
   local marker="$cache_dir/.complete"
   if [ -f "$marker" ]; then
     printf '%s\n' "$cache_dir"
     return 0
   fi
-  mkdir -p "$cache_dir" || return 1
-  local dir path name excluded f
-  for dir in /usr/bin /bin /usr/sbin /sbin; do
+
+  mkdir -p "$cache_dir" \
+    || fm_test_base_path_die "could not create sandbox cache dir $cache_dir"
+
+  local path name excluded f linked=0
+  for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
     [ -d "$dir" ] || continue
     for path in "$dir"/*; do
       [ -x "$path" ] || continue
@@ -118,10 +148,17 @@ fm_test_base_path() {
         fi
       done
       [ "$excluded" -eq 1 ] && continue
-      ln -s "$path" "$cache_dir/$name" 2>/dev/null || true
+      if ln -s "$path" "$cache_dir/$name" 2>/dev/null; then
+        linked=$((linked + 1))
+      fi
     done
   done
-  : > "$marker"
+
+  [ "$linked" -gt 0 ] \
+    || fm_test_base_path_die "linked no system binaries into $cache_dir"
+
+  : > "$marker" \
+    || fm_test_base_path_die "could not mark $cache_dir complete"
   printf '%s\n' "$cache_dir"
 }
 

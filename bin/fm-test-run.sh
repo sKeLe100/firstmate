@@ -45,7 +45,9 @@
 #   --fail-fast     opt-in; stop the run at the first failing script instead of
 #                   continuing through every remaining selected script. Off by
 #                   default so CI keeps seeing the complete result set.
-#                   FM_TEST_FAIL_FAST=1 is the equivalent env var. Under
+#                   FM_TEST_FAIL_FAST is the equivalent env var; it accepts
+#                   1/true/yes/on and 0/false/no/off, and any other value is a
+#                   hard error rather than a silent no-op. Under
 #                   --jobs>1, in-flight workers still finish but no new worker
 #                   is scheduled once a failure is seen.
 #   -h, --help      print this header
@@ -93,7 +95,7 @@ SCRIPTS=()
 EXCLUDE_FAMILIES=()
 FAIL_ON_GATE_SKIP=
 JOBS=1
-FAIL_FAST=${FM_TEST_FAIL_FAST:-0}
+FAIL_FAST=
 JOBS_MAX=8
 
 # How many separate-runner shards the portable serial remainder splits into.
@@ -121,6 +123,16 @@ die() {
 log() {
   printf 'fm-test-run: %s\n' "$*" >&2
 }
+
+# FAIL_FAST is compared with `-eq`, so a non-numeric FM_TEST_FAIL_FAST=true
+# would spray "integer expression expected" once per script and silently
+# behave as off. Normalize the usual truthy/falsy spellings and reject
+# anything else outright.
+case "$(printf '%s' "${FM_TEST_FAIL_FAST:-0}" | tr '[:upper:]' '[:lower:]')" in
+  1 | true | yes | on) FAIL_FAST=1 ;;
+  0 | false | no | off | '') FAIL_FAST=0 ;;
+  *) die "FM_TEST_FAIL_FAST: expected one of 1/true/yes/on or 0/false/no/off, got '$FM_TEST_FAIL_FAST'" ;;
+esac
 
 now_iso() {
   date -u +%Y-%m-%dT%H:%M:%SZ
