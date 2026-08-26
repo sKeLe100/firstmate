@@ -71,6 +71,60 @@ pass() {
 FM_TEST_CLEANUP_DIRS=()
 FM_TEST_CLEANUP_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/.fm-test-cleanup.$$.XXXXXX") || return 1
 
+# Tool names firstmate's own fake toolchain fixtures fake (make_fake_toolchain
+# and siblings across tests/). A fixture often deletes one of these from its
+# fakebin/ directory to simulate that tool being genuinely absent (e.g.
+# `rm -f "$fakebin/node"`), and expects fm-bootstrap.sh's `command -v` lookups
+# to see it as missing.
+# Excludes only tools tests actually fake to observe absence; "git" stays a
+# real host tool because fixtures perform real git operations on throwaway
+# repos, never faking git itself.
+FM_TEST_FAKED_TOOL_NAMES="node npm npx tmux zellij orca herdr cmux gh no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi treehouse grok kimi codex opencode pi python3"
+
+# fm_test_base_path echoes a sandbox directory of symlinks standing in for the
+# host's real /usr/bin:/bin:/usr/sbin:/sbin. Naively prepending a test's
+# fakebin onto the raw host PATH ("$fakebin:$BASE_PATH") let a real host
+# binary with the same name (e.g. a real /usr/bin/node) bleed back in the
+# moment a fixture deleted the fake copy to simulate that tool being missing,
+# because a plain PATH walk just keeps going past the empty slot. This builds
+# one shared, cached directory of symlinks to every other real system binary
+# - excluding names in FM_TEST_FAKED_TOOL_NAMES - so those specific tools stay
+# genuinely absent whenever a fixture removes their fake, while ordinary
+# coreutils (grep, sed, awk, find, bash, ...) still resolve to the real host
+# copy. The directory is cached under TMPDIR and shared across the whole test
+# run, keyed by content so a stale cache from a different host image is never
+# reused silently.
+fm_test_base_path() {
+  local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path"
+  local marker="$cache_dir/.complete"
+  if [ -f "$marker" ]; then
+    printf '%s\n' "$cache_dir"
+    return 0
+  fi
+  mkdir -p "$cache_dir" || return 1
+  local dir path name excluded f
+  for dir in /usr/bin /bin /usr/sbin /sbin; do
+    [ -d "$dir" ] || continue
+    for path in "$dir"/*; do
+      [ -x "$path" ] || continue
+      [ -f "$path" ] || continue
+      name=$(basename "$path")
+      [ -e "$cache_dir/$name" ] && continue
+      excluded=0
+      for f in $FM_TEST_FAKED_TOOL_NAMES; do
+        if [ "$name" = "$f" ]; then
+          excluded=1
+          break
+        fi
+      done
+      [ "$excluded" -eq 1 ] && continue
+      ln -s "$path" "$cache_dir/$name" 2>/dev/null || true
+    done
+  done
+  : > "$marker"
+  printf '%s\n' "$cache_dir"
+}
+
 fm_test_pid_identity() {
   local pid=$1
   FM_STATE_OVERRIDE="${TMPDIR:-/tmp}" bash -c \
