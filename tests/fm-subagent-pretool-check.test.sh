@@ -6,7 +6,17 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-CHECK="$ROOT/bin/fm-subagent-pretool-check.sh"
+# fm_primary_scope_matches keys classification off the guard's own on-disk
+# location (never the caller's possibly-overridden root), matching how a real
+# hook runs the copy of bin/ that physically lives in the home it guards.
+# Mirror that here by running each fixture's own staged copy of the entrypoint
+# instead of invoking the real repo's bin/ against a disconnected root.
+stage_check_bin() {
+  local dir=$1
+  mkdir -p "$dir/bin"
+  cp "$ROOT/bin/fm-subagent-pretool-check.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/"
+  printf '%s\n' "$dir/bin/fm-subagent-pretool-check.sh"
+}
 TMP_ROOT=$(fm_test_tmproot fm-subagent-pretool-tests)
 PRIMARY="$TMP_ROOT/primary"
 STATE="$PRIMARY/state"
@@ -16,6 +26,7 @@ ERR="$TMP_ROOT/err"
 mkdir -p "$PRIMARY/bin" "$STATE"
 printf '# fixture\n' > "$PRIMARY/AGENTS.md"
 git -C "$PRIMARY" init -q
+CHECK=$(stage_check_bin "$PRIMARY")
 
 BRIEF_ONLY_ROUTE='first classify the work under the AGENTS.md intake contract, then use bin/fm-brief.sh followed by bin/fm-spawn.sh for dispatched work'
 SCOUT_ROUTE='first classify the work under the AGENTS.md intake contract: work already classified as a scout goes to bin/fm-scout.sh "<question>" [project], while authorized ship work and its bounded research go to bin/fm-brief.sh then bin/fm-spawn.sh'
@@ -180,7 +191,7 @@ test_escape_hatch_allows_deliberate_use() {
 }
 
 test_task_worktree_and_non_firstmate_repo_are_inert() {
-  local child="$TMP_ROOT/child" plain="$TMP_ROOT/plain" rc=0
+  local child="$TMP_ROOT/child" plain="$TMP_ROOT/plain" child_check plain_check rc=0
   git -C "$PRIMARY" config user.name fixture
   git -C "$PRIMARY" config user.email fixture@example.test
   git -C "$PRIMARY" add AGENTS.md
@@ -188,31 +199,34 @@ test_task_worktree_and_non_firstmate_repo_are_inert() {
   git -C "$PRIMARY" worktree add -q -b fixture-child "$child"
   mkdir -p "$child/bin" "$child/state"
   printf '# fixture\n' > "$child/AGENTS.md"
+  child_check=$(stage_check_bin "$child")
   : > "$OUT"
   : > "$ERR"
   FM_ROOT_OVERRIDE="$child" FM_HOME="$child" FM_STATE_OVERRIDE="$child/state" \
-    "$CHECK" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
+    "$child_check" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 0 ] || fail "a crewmate task worktree must be out of scope, got exit $rc: $(cat "$ERR")"
   [ ! -s "$OUT" ] || fail "task-worktree no-op wrote stdout: $(cat "$OUT")"
   [ ! -s "$ERR" ] || fail "task-worktree no-op wrote stderr: $(cat "$ERR")"
 
   mkdir -p "$plain/bin"
   git -C "$plain" init -q
+  plain_check=$(stage_check_bin "$plain")
   rc=0
   FM_ROOT_OVERRIDE="$plain" FM_HOME="$plain" FM_STATE_OVERRIDE="$plain/state" \
-    "$CHECK" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
+    "$plain_check" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 0 ] || fail "a non-firstmate repo must be out of scope, got exit $rc"
   pass "the guard is inert in a crewmate task worktree and in a non-firstmate repo"
 }
 
 test_secondmate_home_is_in_scope() {
-  local second="$TMP_ROOT/second" rc=0
+  local second="$TMP_ROOT/second" second_check rc=0
   git -C "$PRIMARY" worktree add -q -b fixture-second "$second"
   mkdir -p "$second/bin" "$second/state"
   printf '# fixture\n' > "$second/AGENTS.md"
   printf 'sm-fixture\n' > "$second/.fm-secondmate-home"
+  second_check=$(stage_check_bin "$second")
   FM_ROOT_OVERRIDE="$second" FM_HOME="$second" FM_STATE_OVERRIDE="$second/state" \
-    "$CHECK" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
+    "$second_check" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 2 ] || fail "a marked secondmate home operates a fleet and must be guarded, got exit $rc"
   pass "a marked secondmate home is guarded even though it is a linked worktree"
 }
