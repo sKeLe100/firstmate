@@ -827,6 +827,20 @@ test_status_and_report_writes_require_verification() {
   assert_present "$brief" "ship brief was not scaffolded"
   assert_grep "After every append, verify with \`ls -la '$status_file'\`" "$brief" \
     "ship brief must require ls -la verification of the real status file after every append"
+
+  id="brief-verify-sm-r1"
+  FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --secondmate alpha >/dev/null 2>&1 \
+    || fail "fm-brief.sh secondmate scaffold exited non-zero"
+  brief="$home/data/$id/brief.md"
+  status_file="$home/state/$id.status"
+  assert_present "$brief" "secondmate charter was not scaffolded"
+  assert_grep "After writing that doc, verify with \`ls -la {path}\`" "$brief" \
+    "secondmate charter must require ls -la verification of a written doc before pointing to it"
+  assert_grep "After every append, verify with \`ls -la '$status_file'\`" "$brief" \
+    "secondmate charter must require ls -la verification of the real status file after every append"
+  assert_grep "a write tool can silently place the file somewhere else" "$brief" \
+    "secondmate charter status-append rule must explain why verification is required"
   pass "fm-brief.sh: status appends and scout reports require ls -la verification before trust"
 }
 
