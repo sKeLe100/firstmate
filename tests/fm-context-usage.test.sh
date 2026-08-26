@@ -81,4 +81,68 @@ if HOME="$tmp/claude_home" FM_HOME="$tmp/other_home" "$bin" 2>"$tmp/err3"; then
 fi
 grep -q "no Claude transcript directory" "$tmp/err3" || fail "missing loud absent-directory message"
 
+# 7. Default bands: 70002 tokens is below the 150000 default warn threshold.
+out="$(FM_HOME="$tmp/no_config_home" "$bin" "$t")"
+case "$out" in
+  *"warn_tokens=150000 restart_tokens=250000 band=ok "*) ;;
+  *) fail "expected default thresholds and band=ok, got: $out" ;;
+esac
+
+# 8. Default warn band at/above 150000, restart band at/above 250000.
+warn_t="$tmp/warn.jsonl"; mk_line assistant false 2 100000 60000 > "$warn_t"
+out="$(FM_HOME="$tmp/no_config_home" "$bin" "$warn_t")"
+case "$out" in
+  *"band=warn "*) ;;
+  *) fail "expected band=warn at 160002 tokens, got: $out" ;;
+esac
+over_t="$tmp/over.jsonl"; mk_line assistant false 2 200000 60000 > "$over_t"
+out="$(FM_HOME="$tmp/no_config_home" "$bin" "$over_t")"
+case "$out" in
+  *"band=restart "*) ;;
+  *) fail "expected band=restart at 260002 tokens, got: $out" ;;
+esac
+
+# 9. config/context-thresholds under FM_HOME overrides the defaults, including
+#    with an explicit transcript argument.
+cfg_home="$tmp/cfg_home"
+mkdir -p "$cfg_home/config"
+printf 'warn=50000\nrestart=65000\n' > "$cfg_home/config/context-thresholds"
+out="$(FM_HOME="$cfg_home" "$bin" "$t")"
+case "$out" in
+  *"warn_tokens=50000 restart_tokens=65000 band=restart "*) ;;
+  *) fail "expected configured thresholds and band=restart at 70002, got: $out" ;;
+esac
+printf 'restart=300000\n' > "$cfg_home/config/context-thresholds"
+out="$(FM_HOME="$cfg_home" "$bin" "$t")"
+case "$out" in
+  *"warn_tokens=150000 restart_tokens=300000 band=ok "*) ;;
+  *) fail "expected partial config to keep the other default, got: $out" ;;
+esac
+
+# 10. A malformed thresholds file is rejected loudly, never silently defaulted.
+printf 'warn=abc\n' > "$cfg_home/config/context-thresholds"
+if FM_HOME="$cfg_home" "$bin" "$t" 2>"$tmp/err4"; then
+  fail "expected failure on malformed warn value"
+fi
+grep -q "malformed warn value" "$tmp/err4" || fail "missing loud malformed-warn message"
+printf 'bogus line\n' > "$cfg_home/config/context-thresholds"
+if FM_HOME="$cfg_home" "$bin" "$t" 2>"$tmp/err5"; then
+  fail "expected failure on unrecognized config line"
+fi
+grep -q "unrecognized line" "$tmp/err5" || fail "missing loud unrecognized-line message"
+printf 'warn=200000\nrestart=100000\n' > "$cfg_home/config/context-thresholds"
+if FM_HOME="$cfg_home" "$bin" "$t" 2>"$tmp/err6"; then
+  fail "expected failure when warn exceeds restart"
+fi
+grep -q "warn <= restart" "$tmp/err6" || fail "missing loud warn-exceeds-restart message"
+
+# 11. context-thresholds must be in FM_INHERITABLE_CONFIG so the primary's
+#     thresholds propagate to secondmate homes.
+# shellcheck source=/dev/null
+. "$here/../bin/fm-config-inherit-lib.sh"
+case " $FM_INHERITABLE_CONFIG " in
+  *" context-thresholds "*) ;;
+  *) fail "config/context-thresholds must be in FM_INHERITABLE_CONFIG so secondmate homes inherit the thresholds" ;;
+esac
+
 echo "PASS fm-context-usage.test.sh"
