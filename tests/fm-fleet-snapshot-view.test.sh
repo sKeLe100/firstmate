@@ -440,6 +440,50 @@ EOF
   pass "snapshot includes durable scout reports after teardown"
 }
 
+# Verify that the batched jq in scout_report_lines produces the same output
+# as the per-file fork approach: multiple scout reports must appear sorted by
+# id with the correct path and kind.
+test_batched_scout_reports_byte_identical() {
+  local home out
+  home=$(make_home batched-scout-reports)
+  mkdir -p "$home/data/alpha-scout" "$home/data/beta-scout" "$home/data/gamma-scout" \
+           "$home/data/delta-scout" "$home/data/epsilon-scout"
+  printf '# Alpha\n' > "$home/data/alpha-scout/report.md"
+  printf '# Beta\n' > "$home/data/beta-scout/report.md"
+  printf '# Gamma\n' > "$home/data/gamma-scout/report.md"
+  printf '# Delta\n' > "$home/data/delta-scout/report.md"
+  printf '# Epsilon\n' > "$home/data/epsilon-scout/report.md"
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s\n' "$out" | jq -e --arg home "$home" '
+    (.scout_reports | length == 5)
+      and (.scout_reports | map(.kind) | all(. == "scout"))
+      and (.scout_reports | map(.id) == ["alpha-scout","beta-scout","delta-scout","epsilon-scout","gamma-scout"])
+      and (.scout_reports | map(select(.id == "beta-scout")) | .[0].path == ($home + "/data/beta-scout/report.md"))
+      and (.scout_reports | map(select(.id == "gamma-scout")) | .[0].path == ($home + "/data/gamma-scout/report.md"))
+  ' >/dev/null || fail "batched scout reports must be sorted by id with correct paths"
+  # Verify deterministic output: two runs must produce identical JSON.
+  local tmp1=$TMP_ROOT/batch-1.json tmp2=$TMP_ROOT/batch-2.json
+  FM_HOME="$home" "$SNAPSHOT" --json | jq -S '.scout_reports' > "$tmp1"
+  FM_HOME="$home" "$SNAPSHOT" --json | jq -S '.scout_reports' > "$tmp2"
+  diff "$tmp1" "$tmp2" >/dev/null || fail "two snapshot runs must emit byte-identical scout reports"
+  pass "batched jq in scout_report_lines produces byte-identical output for multiple reports"
+}
+
+# A home path containing regex metacharacters must not disturb scout report
+# ids or paths: the batched jq treats paths as plain strings, not patterns.
+test_scout_reports_home_with_regex_metacharacters() {
+  local home
+  home=$(make_home 'regex+meta.home')
+  mkdir -p "$home/data/alpha-scout"
+  printf '# Alpha\n' > "$home/data/alpha-scout/report.md"
+  FM_HOME="$home" "$SNAPSHOT" --json | jq -e --arg home "$home" '
+    .scout_reports == [
+      {id:"alpha-scout",path:($home + "/data/alpha-scout/report.md"),kind:"scout"}
+    ]
+  ' >/dev/null || fail "regex metacharacters in home path must not affect scout reports"
+  pass "scout reports survive regex metacharacters in the home path"
+}
+
 # Regression coverage for the argv-limit failure: a backlog large enough that
 # its JSON encoding exceeds the kernel's per-argument exec limit (E2BIG) used
 # to crash every jq call that passed the whole backlog through --argjson.
@@ -950,6 +994,8 @@ test_open_decision_clears_on_keyed_resolution
 test_completed_scout_report_is_pointer_not_pending
 test_parked_scout_decision_stays_pending
 test_scout_reports_include_teardown_reports
+test_batched_scout_reports_byte_identical
+test_scout_reports_home_with_regex_metacharacters
 test_large_backlog_survives_argv_limit
 test_many_secondmate_summaries_survive_argv_limit
 test_many_scout_reports_survive_argv_limit
