@@ -1,0 +1,33 @@
+$ fm-queue-snapshot.sh --limit 2      # truncated: total is disclosed
+count: 2
+total_queued: 5
+items[2]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
+  1,demo-a,task a,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  2,demo-b,task b,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
+
+$ fm-queue-snapshot.sh --limit 5      # limit == total: no total_queued line
+count: 5
+items[5]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
+  1,demo-a,task a,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  2,demo-b,task b,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  3,demo-c,task c,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  4,demo-d,task d,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  5,demo-e,task e,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
+
+$ fm-queue-snapshot.sh                # no limit: unchanged output
+count: 5
+items[5]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
+  1,demo-a,task a,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  2,demo-b,task b,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  3,demo-c,task c,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  4,demo-d,task d,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+  5,demo-e,task e,docs,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
