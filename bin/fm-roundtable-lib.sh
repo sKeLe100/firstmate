@@ -52,6 +52,7 @@ fm_roundtable_is_test_file() {
 # Single source of the bounded tree depth both scripts walk at. The
 # cross-script invariant only holds while they apply the collapse rule with
 # the same cap, so neither may declare its own.
+# shellcheck disable=SC2034  # consumed by the scripts that source this library.
 FM_ROUNDTABLE_MAX_DEPTH=2
 
 # Single source of the depth-collapse rule, as an awk function both this
