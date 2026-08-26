@@ -1,43 +1,12 @@
-### BEFORE - base 6b916d6
---- crewmate reports one event ---
-$ cat state/delivery-src.status
-blocked: waiting on lavish review
---- watcher cycle 1: process-event result captured -> wake ---
-check: process-event result captured: procevent:delivery-src:1
---- supervisor DRAIN TURN 1 (woken by cycle 1) ---
-    | 1787764784	2	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
-    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
-    | delivery-src blocked: waiting on lavish review
-    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
---- watcher cycle 2: signal scan sees the SAME event's status change ---
-signal: /tmp/dedup-demo-BEFORE.uzvVcP/demo/state/delivery-src.status
---- durable wake queue after both cycles ---
-  kind=signal  reason=delivery-src.status
-  kind=signal  reason=delivery-src.status
---- supervisor DRAIN TURN 2 (only needed if cycle 2 woke again) ---
-    | 1787764786	4	signal	delivery-src.status	signal: /tmp/dedup-demo-BEFORE.uzvVcP/demo/state/delivery-src.status
-    | wake annotation: latest wake-EVENT observed at drain, not current state: delivery-src.status: blocked: waiting on lavish review
-    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
-    | delivery-src blocked: waiting on lavish review
-    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
-DRAIN TURNS SPENT ON ONE EVENT: 2
+### BEFORE FIX (bin/fm-watch.sh reverted to base e6d03bd)
+not ok - the watcher woke for a covered signal: signal: /tmp/fm-wake-pair-dedup-tests.G4p2jE/procevent-dedup/state/delivery-src.status
 
+### AFTER FIX (head 95dbdd8)
+ok - one event enqueues once: its status signal never becomes a second wake
+ok - a routine status line keeps its signal wake rather than being silently absorbed
+ok - a status change written after the check wake, in the same second, is never coalesced
+ok - a signal deferred behind an unacknowledged generation is delayed, never dropped
+ok - a deferred signal keeps its marker when a benign signal shares the cycle
+ok - a status signal with no process-event coverage wakes normally
 
-### AFTER - fix 904b4d1
---- crewmate reports one event ---
-$ cat state/delivery-src.status
-blocked: waiting on lavish review
---- watcher cycle 1: process-event result captured -> wake ---
-check: process-event result captured: procevent:delivery-src:1
---- supervisor DRAIN TURN 1 (woken by cycle 1) ---
-    | 1787764795	2	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
-    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
-    | delivery-src blocked: waiting on lavish review
-    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
---- watcher cycle 2: signal scan sees the SAME event's status change ---
-(no second wake emitted)
---- durable wake queue after both cycles ---
-  (empty)
---- supervisor DRAIN TURN 2 (only needed if cycle 2 woke again) ---
-    (nothing queued - no second turn spent)
-DRAIN TURNS SPENT ON ONE EVENT: 1
+All wake-pair-dedup tests passed.

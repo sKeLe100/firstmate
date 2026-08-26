@@ -1,0 +1,27 @@
+=== BEFORE FIX (base e6d03bd bin/fm-watch.sh) ===
+cycle 1 (process-event check wake surfaced to the captain):
+    check: process-event result captured: procevent:delivery-src:1
+cycle 2 (same event's status write reaches the signal scan):
+    signal: /tmp/fm-wake-pair-repro.FT4Nl4/repro/state/delivery-src.status
+durable wake queue the captain drains:
+    1787787276	1	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    1787787277	2	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    1787787278	3	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    1787787279	4	signal	delivery-src.status	signal: /tmp/fm-wake-pair-repro.FT4Nl4/repro/state/delivery-src.status
+    1787787279	5	signal	delivery-src.status	signal: /tmp/fm-wake-pair-repro.FT4Nl4/repro/state/delivery-src.status
+  check records:  3
+  signal records: 2
+
+=== AFTER FIX (head 95dbdd8) ===
+cycle 1 (process-event check wake surfaced to the captain):
+    check: process-event result captured: procevent:delivery-src:1
+cycle 2 (same event's status write reaches the signal scan):
+    (no wake reported - watcher kept running)
+durable wake queue the captain drains:
+    1787787281	1	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    1787787283	2	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    1787787284	3	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    1787787284	4	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    1787787285	5	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+  check records:  5
+  signal records: 0
