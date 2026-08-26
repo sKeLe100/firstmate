@@ -1,0 +1,14 @@
+--- cycle 1 (process-event captured for crewmate delivery-src) ---
+check: process-event result captured: procevent:delivery-src:1
+--- cycle 2 (same crewmate's status write) ---
+signal: /tmp/fm-evid-before.wQkmC1/dedup/state/delivery-src.status
+--- distinct wake kinds queued for this one event ---
+  check	procevent:delivery-src:1
+  signal	delivery-src.status
+--- what the supervisor actually receives (bin/fm-wake-drain.sh) ---
+1787782010	3	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+1787782011	5	signal	delivery-src.status	signal: /tmp/fm-evid-before.wQkmC1/dedup/state/delivery-src.status
+wake annotation: latest wake-EVENT observed at drain, not current state: delivery-src.status: blocked: waiting on lavish review
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+delivery-src blocked: waiting on lavish review
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
