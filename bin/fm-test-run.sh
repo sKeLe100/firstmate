@@ -42,6 +42,12 @@
 #                   selected script is in the proven-isolated set
 #                   (bin/fm-test-isolation-proof.sh --list). Cap is 8. Stateful
 #                   families never schedule under --jobs.
+#   --fail-fast     opt-in; stop the run at the first failing script instead of
+#                   continuing through every remaining selected script. Off by
+#                   default so CI keeps seeing the complete result set.
+#                   FM_TEST_FAIL_FAST=1 is the equivalent env var. Under
+#                   --jobs>1, in-flight workers still finish but no new worker
+#                   is scheduled once a failure is seen.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -87,6 +93,7 @@ SCRIPTS=()
 EXCLUDE_FAMILIES=()
 FAIL_ON_GATE_SKIP=
 JOBS=1
+FAIL_FAST=${FM_TEST_FAIL_FAST:-0}
 JOBS_MAX=8
 
 # How many separate-runner shards the portable serial remainder splits into.
@@ -1328,6 +1335,10 @@ while [ "$#" -gt 0 ]; do
       JOBS=${1#--jobs=}
       shift
       ;;
+    --fail-fast)
+      FAIL_FAST=1
+      shift
+      ;;
     --list)
       LIST_ONLY=1
       shift
@@ -1625,6 +1636,10 @@ run_one_serial() {
 if [ "$JOBS" -eq 1 ]; then
   for script in "${SCRIPTS[@]}"; do
     run_one_serial "$script"
+    if [ "$FAIL_FAST" -eq 1 ] && [ "$FAILED" -gt 0 ]; then
+      log "fail-fast: stopping after first failing script ($script)"
+      break
+    fi
   done
 else
   # Bounded concurrent execution for proven-isolated scripts only. Each worker
@@ -1695,6 +1710,10 @@ else
   }
 
   for script in "${SCRIPTS[@]}"; do
+    if [ "$FAIL_FAST" -eq 1 ] && [ "$FAILED" -gt 0 ]; then
+      log "fail-fast: not scheduling remaining scripts after a failure"
+      break
+    fi
     while [ "$active_workers" -ge "$JOBS" ]; do
       wait_one_completed_job_worker
     done
