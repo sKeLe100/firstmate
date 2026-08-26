@@ -858,6 +858,40 @@ procevent_surface_queued() {
   wake "$reason"
 }
 
+# fm_watch_procevent_covered <source-id>
+# True when there is an unhandled procevent result for <source-id> in this home's
+# procevent inbox.  An unhandled result means a check wake for that source is
+# already queued (or was queued on a previous cycle and is still outstanding),
+# so the signal path for this home's status files would be a duplicate of the
+# procevent path.
+# Returns 0 (covered) when at least one result file exists without its matching
+# .handled marker, 1 otherwise.
+fm_watch_procevent_covered() {  # <source-id>
+  local inbox result handled_marker
+  inbox="$STATE/procevent-inbox"
+  [ -d "$inbox" ] || return 1
+  for result in "$inbox/$1".*.result; do
+    [ -f "$result" ] && [ ! -L "$result" ] || continue
+    handled_marker="${result%.result}.handled"
+    [ -f "$handled_marker" ] && [ ! -L "$handled_marker" ] && continue
+    return 0
+  done
+  return 1
+}
+
+# fm_watch_signal_procevent_covered <status-file>
+# True when the status file's task has an unhandled procevent result in the
+# procevent inbox.  The task is derived by stripping the ".status" suffix from
+# the basename.  Returns 0 when procevent covers the event (skip the signal
+# append), 1 when there is no procevent coverage.
+fm_watch_signal_procevent_covered() {  # <status-file>
+  local file=$1 task
+  task=$(basename "$file"); task="${task%.status}"
+  [ -n "$task" ] && [ "$task" != "$file" ] || return 1
+  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  fm_watch_procevent_covered "$task"
+}
+
 run_check_process() {
   local c=$1
   shift
@@ -1346,6 +1380,13 @@ EOF
     if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
+        # Skip signal append when a procevent result for this task is already
+        # queued or outstanding: the procevent path will surface the same
+        # underlying event, so emitting both wastes a drain turn.  The seen
+        # marker and surfaced flag still advance so the file is not replayed
+        # on later cycles; absorption is silent because the procevent check
+        # is the authoritative delivery path for this event.
+        fm_watch_signal_procevent_covered "$f" && continue
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
       done <<EOF
 $pending
