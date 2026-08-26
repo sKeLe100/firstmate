@@ -928,8 +928,12 @@ fm_watch_signal_procevent_coverage() {  # <status-file>
     case "$marker_ns" in ''|*[!0-9]*) continue ;; esac
     [ "$status_ns" -lt "$marker_ns" ] || continue
     if fm_procevent_is_handled "$STATE" "$task" "$seq"; then
-      printf 'covered\n'
-      return 0
+      if [ -n "$(status_open_decisions "$file" 2>/dev/null)" ] \
+        || status_line_is_unread_surface "$(last_status_line "$file")"; then
+        printf 'covered\n'
+        return 0
+      fi
+      continue
     fi
     [ $(( now - $(stat_mtime "$marker") )) -lt "$PROCEVENT_SIGNAL_DEFER_GRACE" ] && deferred=1
   done
@@ -1421,11 +1425,26 @@ EOF
     # will not re-fire, log, and keep blocking without enqueuing. The provably-working
     # check is the only costly one (it may run a bounded no-mistakes call), so the ||
     # ordering evaluates it ONLY for a non-afk, no-captain-verb signal.
+    signal_deferred=
+    for f in $files; do
+      [ "$(fm_watch_signal_procevent_coverage "$f")" = defer ] || continue
+      signal_deferred="$signal_deferred $f"
+    done
+    if [ -n "$signal_deferred" ]; then
+      remaining=
+      for f in $files; do
+        case " $signal_deferred " in *" $f "*) continue ;; esac
+        remaining="$remaining $f"
+      done
+      files=$remaining
+      reason="signal:$files"
+    fi
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
-    if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
+    if [ -z "$files" ]; then
+      triage_log "deferred behind process-event generation signal:$signal_deferred"
+    elif afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
       signal_appended=0
       signal_covered=
-      signal_deferred=
       signal_enqueued=
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
@@ -1437,10 +1456,11 @@ EOF
         # supervisor. "covered" means an acknowledged wake proves it did, so the
         # marker advances below without a second queue record; "defer" means the
         # proof is still outstanding, so nothing is decided and no marker moves.
-        case "$(fm_watch_signal_procevent_coverage "$f")" in
-          covered) signal_covered="$signal_covered $f"; continue ;;
-          defer) signal_deferred="$signal_deferred $f"; continue ;;
-        esac
+        case " $signal_deferred " in *" $f "*) continue ;; esac
+        if [ "$(fm_watch_signal_procevent_coverage "$f")" = covered ]; then
+          signal_covered="$signal_covered $f"
+          continue
+        fi
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
         signal_appended=1
       done <<EOF
@@ -1456,11 +1476,6 @@ $pending
 EOF
       if [ "$signal_appended" -eq 1 ]; then
         wake "$reason"
-      elif [ -n "$signal_deferred" ]; then
-        # Waiting on the acknowledgement that decides whether an outstanding
-        # process-event wake already delivered this change. Markers were left
-        # untouched, so the change re-scans until that decision is provable.
-        triage_log "deferred behind process-event generation signal:$signal_deferred"
       else
         # Every pending signal was already delivered by an acknowledged
         # process-event wake. Nothing was enqueued, so waking would spend a

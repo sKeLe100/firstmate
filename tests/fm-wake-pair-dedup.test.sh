@@ -129,6 +129,36 @@ test_procevent_generation_absorbs_its_own_status_signal() {
   pass "one event enqueues once: its status signal never becomes a second wake"
 }
 
+# --- Test 1b: a routine status line is never absorbed - only the signal
+# annotation would ever present it, so no-loss outweighs the duplicate ---
+
+test_routine_status_line_is_never_absorbed() {
+  local dir state out1 out2
+  dir=$(make_case procevent-routine); state="$dir/state"
+  out1="$dir/watch1.out"; out2="$dir/watch2.out"
+
+  # "done:" is not an OPEN DECISION and is not an unread surface, so the drain
+  # presents it only through a signal row's annotation.
+  printf 'done: pushed the branch, awaiting review\n' > "$state/delivery-src.status"
+  seed_captured_procevent_result "$dir" delivery-src \
+    || fail "the fixture captured no process-event result"
+
+  watch_bg "$dir" "$out1"
+  wait_for_exit "$!" 150 || fail "the watcher never surfaced the queued process-event result"
+  pe_case "$dir" handled delivery-src 1 >/dev/null \
+    || fail "the captured generation could not be acknowledged"
+
+  watch_bg "$dir" "$out2" 1
+  wait_for_exit "$!" 150 \
+    || fail "a routine status line was absorbed under process-event coverage: $(cat "$out2")"
+  grep -F "signal: $state/delivery-src.status" "$out2" >/dev/null \
+    || fail "the routine status line lost its only delivery channel: $(cat "$out2")"
+  [ "$(queue_kind_count "$state" signal)" -eq 1 ] \
+    || fail "the routine status line was not enqueued: $(cat "$state/.wake-queue")"
+
+  pass "a routine status line keeps its signal wake rather than being silently absorbed"
+}
+
 # --- Test 2: a genuinely distinct later status change is never coalesced ---
 
 test_distinct_status_change_after_procevent_still_wakes() {
@@ -159,7 +189,7 @@ test_distinct_status_change_after_procevent_still_wakes() {
   marker=$(find "$state" -maxdepth 1 -name '.seen-procevent-*' -type f | head -1)
   [ -n "$marker" ] || fail "the surfaced process-event marker was not written"
   marker_s=$(stat -c %Y "$marker" 2>/dev/null || stat -f %m "$marker")
-  touch -d "@$marker_s.500000000" "$state/delivery-src.status" 2>/dev/null \
+  touch -d "@$marker_s.999000000" "$state/delivery-src.status" 2>/dev/null \
     || touch -t "$(date -d "@$marker_s" +%Y%m%d%H%M.%S 2>/dev/null)" "$state/delivery-src.status" 2>/dev/null \
     || true
   [ "$(stat -c %Y "$state/delivery-src.status" 2>/dev/null || stat -f %m "$state/delivery-src.status")" \
@@ -237,6 +267,7 @@ test_signal_without_any_procevent_wakes_normally() {
 }
 
 test_procevent_generation_absorbs_its_own_status_signal
+test_routine_status_line_is_never_absorbed
 test_distinct_status_change_after_procevent_still_wakes
 test_deferred_signal_is_delivered_when_no_acknowledgement_arrives
 test_signal_without_any_procevent_wakes_normally
