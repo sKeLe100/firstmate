@@ -46,9 +46,23 @@ make_primary() {
   : > "$dir/AGENTS.md"
 }
 
+# fm_primary_scope_matches keys classification off its own on-disk location
+# (never the caller's possibly-overridden root), matching how a real hook
+# sources the neighboring copy of the lib from wherever it physically runs.
+# Mirror that here by running each fixture's own copy of the entrypoint
+# instead of invoking the real repo's bin/ against a disconnected root.
+stage_nudge_bin() {
+  local dir=$1
+  mkdir -p "$dir/bin"
+  cp "$ROOT/bin/fm-sessionstart-nudge.sh" "$ROOT/bin/fm-gate-refuse-lib.sh" \
+    "$ROOT/bin/fm-primary-scope-lib.sh" "$ROOT/bin/fm-operational-input.sh" \
+    "$dir/bin/"
+}
+
 run_nudge() {
   local root=$1
-  FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" "$NUDGE"
+  stage_nudge_bin "$root"
+  FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" "$root/bin/fm-sessionstart-nudge.sh"
 }
 
 expect_silent_zero() {
