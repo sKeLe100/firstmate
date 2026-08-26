@@ -863,39 +863,78 @@ procevent_surface_queued() {
   wake "$reason"
 }
 
-# fm_watch_signal_procevent_covered <status-file>
-# True when this specific status change has already been delivered to the
-# supervisor as a process-event check wake, so appending a signal for it would
-# enqueue the same underlying event twice.
+# Nanosecond mtime, as an integer, for ordering two writes that can land in the
+# same epoch second. stat_mtime's whole-second resolution cannot decide which of
+# a status write and a wake delivery came first, and the dedup below is only
+# sound with a strict ordering. Platforms without sub-second stat fall back to
+# seconds scaled to nanoseconds, which makes same-second writes compare equal -
+# and every comparison here is strict, so an undecidable pair is always treated
+# as "not covered", the direction that keeps the wake.
+_stat_mtime_ns_normalize() {
+  awk -F. 'NF { printf "%s%s\n", $1, substr(($2 "000000000"), 1, 9) }'
+}
+if [ "$(uname)" = Darwin ]; then
+  stat_mtime_ns() { stat -f %Fm "$1" 2>/dev/null | _stat_mtime_ns_normalize; }
+else
+  stat_mtime_ns() { stat -c %.9Y "$1" 2>/dev/null | _stat_mtime_ns_normalize; }
+fi
+
+# How long a status signal may stay deferred behind an unacknowledged
+# process-event generation before it is delivered anyway. Deferral never
+# advances a .seen-* marker, so the signal is only ever delayed; this bound
+# stops a generation that is never acknowledged from delaying it forever.
+PROCEVENT_SIGNAL_DEFER_GRACE=${FM_PROCEVENT_SIGNAL_DEFER_GRACE:-300}
+
+# fm_watch_signal_procevent_coverage <status-file>
+# Decide what the signal scan owes a status change that a process-event
+# generation for the same task may already have delivered. Prints one of:
 #
-# Coverage is bound to a specific captured generation, never to the source id as
-# a whole. It holds only when the inbox has a pending (unacknowledged) result
-# for this task whose check wake was ALREADY surfaced - its .seen-procevent
-# marker exists, so firstmate was woken for that generation - and whose capture
-# is at least as new as this status write. A status change strictly newer than
-# every such generation is a genuinely distinct event and is never absorbed
-# here; that direction is the safe one, because an uncovered signal costs a
-# drain turn while a wrongly covered one would be lost.
-fm_watch_signal_procevent_covered() {  # <status-file>
-  local file=$1 base task result seq status_mtime result_mtime
+#   deliver - no generation can account for this change. Append and wake.
+#   defer   - a generation whose check wake was surfaced AFTER this status
+#             write is still unacknowledged. The supervisor already holds a
+#             wake that will show it this status content, but has not proved it
+#             consumed one yet, so decide nothing: skip the append AND leave
+#             the .seen-* marker alone, so the change re-scans every cycle and
+#             is delivered in full if the acknowledgement never arrives.
+#   covered - such a generation has been acknowledged through
+#             fm_procevent_mark_handled. That acknowledgement is the positive
+#             link: the supervisor drained a wake naming this task at a moment
+#             when this exact status content was already on disk, so appending
+#             a signal now would enqueue the same event a second time.
+#
+# The ordering test is strict and nanosecond-resolved: a status change written
+# at or after the wake that could have carried it is never covered, so a
+# genuinely distinct event - including one written in the same epoch second as
+# the delivery - always keeps its own wake.
+fm_watch_signal_procevent_coverage() {  # <status-file>
+  local file=$1 base task result seq marker status_ns marker_ns deferred=0 now
   base=$(basename "$file")
   task="${base%.status}"
-  [ "$task" != "$base" ] || return 1
-  fm_procevent_source_id_valid "$task" || return 1
-  status_mtime=$(stat_mtime "$file") || return 1
-  while IFS= read -r result; do
-    [ -n "$result" ] || continue
+  if [ "$task" = "$base" ] || ! fm_procevent_source_id_valid "$task"; then
+    printf 'deliver\n'
+    return 0
+  fi
+  status_ns=$(stat_mtime_ns "$file")
+  case "$status_ns" in ''|*[!0-9]*) printf 'deliver\n'; return 0 ;; esac
+  now=$(date +%s)
+  for result in "$(fm_procevent_inbox_dir "$STATE")/$task".*.result; do
+    [ -f "$result" ] && [ ! -L "$result" ] || continue
     [ "$(fm_procevent_result_source_id "$result")" = "$task" ] || continue
     seq=$(fm_procevent_result_sequence "$result")
     case "$seq" in ''|*[!0-9]*) continue ;; esac
-    [ -e "$(procevent_surfaced_marker "procevent:$task:$seq")" ] || continue
-    result_mtime=$(stat_mtime "$result") || continue
-    [ "$result_mtime" -ge "$status_mtime" ] || continue
-    return 0
-  done <<EOF
-$(fm_procevent_pending "$STATE")
-EOF
-  return 1
+    marker=$(procevent_surfaced_marker "procevent:$task:$seq")
+    [ -e "$marker" ] || continue
+    marker_ns=$(stat_mtime_ns "$marker")
+    case "$marker_ns" in ''|*[!0-9]*) continue ;; esac
+    [ "$status_ns" -lt "$marker_ns" ] || continue
+    if fm_procevent_is_handled "$STATE" "$task" "$seq"; then
+      printf 'covered\n'
+      return 0
+    fi
+    [ $(( now - $(stat_mtime "$marker") )) -lt "$PROCEVENT_SIGNAL_DEFER_GRACE" ] && deferred=1
+  done
+  [ "$deferred" -eq 1 ] && printf 'defer\n' || printf 'deliver\n'
+  return 0
 }
 
 run_check_process() {
@@ -1386,6 +1425,7 @@ EOF
     if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
       signal_appended=0
       signal_covered=
+      signal_deferred=
       signal_enqueued=
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
@@ -1393,16 +1433,14 @@ EOF
         # can appear twice for one change; enqueue each file at most once.
         case " $signal_enqueued " in *" $f "*) continue ;; esac
         signal_enqueued="$signal_enqueued $f"
-        # Skip the signal append when this exact status change was already
-        # delivered as a process-event check wake: the supervisor has the event,
-        # so a second queue record would only cost an extra drain turn. The seen
-        # marker still advances below because the event WAS delivered - just by
-        # the other path - and coverage is generation-bound, so a distinct later
-        # status change is never absorbed here.
-        if fm_watch_signal_procevent_covered "$f"; then
-          signal_covered="$signal_covered $f"
-          continue
-        fi
+        # A process-event generation may already have carried this change to the
+        # supervisor. "covered" means an acknowledged wake proves it did, so the
+        # marker advances below without a second queue record; "defer" means the
+        # proof is still outstanding, so nothing is decided and no marker moves.
+        case "$(fm_watch_signal_procevent_coverage "$f")" in
+          covered) signal_covered="$signal_covered $f"; continue ;;
+          defer) signal_deferred="$signal_deferred $f"; continue ;;
+        esac
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
         signal_appended=1
       done <<EOF
@@ -1410,6 +1448,7 @@ $pending
 EOF
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
+        case " $signal_deferred " in *" $f "*) continue ;; esac
         printf '%s' "$sig" > "$sf"
         mark_surfaced "$f"
       done <<EOF
@@ -1417,10 +1456,15 @@ $pending
 EOF
       if [ "$signal_appended" -eq 1 ]; then
         wake "$reason"
+      elif [ -n "$signal_deferred" ]; then
+        # Waiting on the acknowledgement that decides whether an outstanding
+        # process-event wake already delivered this change. Markers were left
+        # untouched, so the change re-scans until that decision is provable.
+        triage_log "deferred behind process-event generation signal:$signal_deferred"
       else
-        # Every pending signal was already covered by a process-event check
-        # wake. Nothing was enqueued, so waking would spend a drain turn on an
-        # empty queue - keep the cycle running instead.
+        # Every pending signal was already delivered by an acknowledged
+        # process-event wake. Nothing was enqueued, so waking would spend a
+        # drain turn on an empty queue - keep the cycle running instead.
         triage_log "absorbed procevent-covered signal:$signal_covered"
       fi
     else

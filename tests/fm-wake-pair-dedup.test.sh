@@ -58,6 +58,7 @@ watch_bg() {  # <dir> <out> [successor]
   PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_PROCEVENT_CLAIM_ROOT="$dir/claims" \
     FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
     FM_WATCH_HANDLING_SUCCESSOR="$successor" \
+    FM_PROCEVENT_SIGNAL_DEFER_GRACE="${FM_PROCEVENT_SIGNAL_DEFER_GRACE:-300}" \
     FM_POLL=0.2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     "$WATCH" > "$out" 2>"$dir/watch.err" &
 }
@@ -72,9 +73,9 @@ queue_kind_count() {  # <state> <kind>
 # --- Test 1: the reported duplicate pair - one event, one wake ---
 
 test_procevent_generation_absorbs_its_own_status_signal() {
-  local dir state out1 out2 pid
+  local dir state out1 out2 out3 pid
   dir=$(make_case procevent-dedup); state="$dir/state"
-  out1="$dir/watch1.out"; out2="$dir/watch2.out"
+  out1="$dir/watch1.out"; out2="$dir/watch2.out"; out3="$dir/watch3.out"
 
   # The crewmate's status write comes first, then its process-event result is
   # captured - one event, both surfaces.
@@ -108,13 +109,30 @@ test_procevent_generation_absorbs_its_own_status_signal() {
   [ "$(queue_kind_count "$state" check)" -ge 1 ] \
     || fail "the process-event check record did not survive: $(cat "$state/.wake-queue")"
 
-  pass "one event enqueues once: the covered status signal is absorbed and no wake fires"
+  # The supervisor acknowledges the generation it drained. That proves it
+  # consumed a wake naming this task while this status content was already on
+  # disk, so the change is now settled - still no second record, and no wake.
+  pe_case "$dir" handled delivery-src 1 >/dev/null \
+    || fail "the captured generation could not be acknowledged"
+  watch_bg "$dir" "$out3" 1
+  pid=$!
+  sleep 3
+  is_live_non_zombie "$pid" \
+    || { wait "$pid" 2>/dev/null || true; fail "the watcher woke for a settled signal: $(cat "$out3")"; }
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  grep -F 'signal:' "$out3" >/dev/null \
+    && fail "the acknowledged event was re-reported as a signal wake: $(cat "$out3")"
+  [ "$(queue_kind_count "$state" signal)" -eq 0 ] \
+    || fail "a duplicate signal record was enqueued after acknowledgement: $(cat "$state/.wake-queue")"
+
+  pass "one event enqueues once: its status signal never becomes a second wake"
 }
 
 # --- Test 2: a genuinely distinct later status change is never coalesced ---
 
 test_distinct_status_change_after_procevent_still_wakes() {
-  local dir state out1 out2 drain_out drain_err
+  local dir state out1 out2 drain_out drain_err marker marker_s
   dir=$(make_case procevent-distinct); state="$dir/state"
   out1="$dir/watch1.out"; out2="$dir/watch2.out"
   drain_out="$dir/drain.out"; drain_err="$dir/drain.err"
@@ -128,10 +146,25 @@ test_distinct_status_change_after_procevent_still_wakes() {
   grep -F "procevent:delivery-src:1" "$out1" >/dev/null \
     || fail "cycle 1 did not surface the process-event check wake: $(cat "$out1")"
 
-  # The result stays unhandled, but the crewmate now reports a NEW, distinct
-  # event strictly after that capture. It must still be delivered.
-  sleep 1.1
+  # The crewmate now reports a NEW, distinct event immediately after that wake
+  # was delivered - inside the same epoch second, so only a sub-second ordering
+  # test can tell it apart from the change the wake carried. It must still be
+  # delivered on its own.
   printf 'blocked: need a decision\n' > "$state/delivery-src.status"
+
+  # The fixture is only meaningful if whole-second mtimes cannot separate the
+  # two writes; that is the boundary a coarse comparison silently absorbs. Pin
+  # the status write a millisecond after the delivery, inside its second, so
+  # the case is exercised on every run rather than whenever timing obliges.
+  marker=$(find "$state" -maxdepth 1 -name '.seen-procevent-*' -type f | head -1)
+  [ -n "$marker" ] || fail "the surfaced process-event marker was not written"
+  marker_s=$(stat -c %Y "$marker" 2>/dev/null || stat -f %m "$marker")
+  touch -d "@$marker_s.500000000" "$state/delivery-src.status" 2>/dev/null \
+    || touch -t "$(date -d "@$marker_s" +%Y%m%d%H%M.%S 2>/dev/null)" "$state/delivery-src.status" 2>/dev/null \
+    || true
+  [ "$(stat -c %Y "$state/delivery-src.status" 2>/dev/null || stat -f %m "$state/delivery-src.status")" \
+    = "$marker_s" ] \
+    || fail "fixture did not land the distinct status write in the delivery's epoch second"
 
   watch_bg "$dir" "$out2" 1
   wait_for_exit "$!" 150 \
@@ -147,35 +180,42 @@ test_distinct_status_change_after_procevent_still_wakes() {
     || fail "the distinct blocked event was not delivered to the drain: $(cat "$drain_out")"
   ack_drain_err "$state" "$drain_err" || fail "acknowledgement failed"
 
-  pass "a distinct status change after an unhandled process-event result is never coalesced"
+  pass "a status change written after the check wake, in the same second, is never coalesced"
 }
 
-# --- Test 3: an acknowledged generation stops covering later signals ---
+# --- Test 3: deferral never loses a signal - the markers do not advance ---
 
-test_handled_generation_stops_covering_signals() {
-  local dir state out1 out2
-  dir=$(make_case procevent-handled); state="$dir/state"
-  out1="$dir/watch1.out"; out2="$dir/watch2.out"
+test_deferred_signal_is_delivered_when_no_acknowledgement_arrives() {
+  local dir state out1 out2 out3 pid
+  dir=$(make_case procevent-defer-bound); state="$dir/state"
+  out1="$dir/watch1.out"; out2="$dir/watch2.out"; out3="$dir/watch3.out"
 
-  printf 'blocked: waiting on lavish review\n' > "$state/delivery-src.status"
+  printf 'blocked: need a decision\n' > "$state/delivery-src.status"
   seed_captured_procevent_result "$dir" delivery-src \
     || fail "the fixture captured no process-event result"
 
   watch_bg "$dir" "$out1"
   wait_for_exit "$!" 150 || fail "the watcher never surfaced the queued process-event result"
 
-  # The supervisor acknowledges the generation: it no longer stands in for any
-  # undelivered status change.
-  pe_case "$dir" handled delivery-src 1 >/dev/null \
-    || fail "the captured generation could not be acknowledged"
-
+  # The generation is never acknowledged, so the watcher can never prove the
+  # status change was delivered. Deferral must leave the .seen marker alone:
+  # once the bounded deferral lapses, the signal is delivered in full.
   watch_bg "$dir" "$out2" 1
-  wait_for_exit "$!" 150 \
-    || fail "the status signal was suppressed after its generation was handled: $(cat "$out2")"
-  grep -F "signal: $state/delivery-src.status" "$out2" >/dev/null \
-    || fail "the status signal did not wake once the generation was handled: $(cat "$out2")"
+  pid=$!
+  sleep 2
+  is_live_non_zombie "$pid" || { wait "$pid" 2>/dev/null || true; fail "the watcher did not defer: $(cat "$out2")"; }
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
 
-  pass "an acknowledged process-event generation no longer covers a status signal"
+  FM_PROCEVENT_SIGNAL_DEFER_GRACE=0 watch_bg "$dir" "$out3" 1
+  wait_for_exit "$!" 150 \
+    || fail "a signal deferred behind an unacknowledged generation was lost: $(cat "$out3")"
+  grep -F "signal: $state/delivery-src.status" "$out3" >/dev/null \
+    || fail "the deferred signal was never delivered: $(cat "$out3")"
+  [ "$(queue_kind_count "$state" signal)" -eq 1 ] \
+    || fail "the deferred signal was not enqueued: $(cat "$state/.wake-queue")"
+
+  pass "a signal deferred behind an unacknowledged generation is delayed, never dropped"
 }
 
 # --- Test 4: no process-event at all - the signal path is untouched ---
@@ -198,7 +238,7 @@ test_signal_without_any_procevent_wakes_normally() {
 
 test_procevent_generation_absorbs_its_own_status_signal
 test_distinct_status_change_after_procevent_still_wakes
-test_handled_generation_stops_covering_signals
+test_deferred_signal_is_delivered_when_no_acknowledgement_arrives
 test_signal_without_any_procevent_wakes_normally
 
 echo ""
