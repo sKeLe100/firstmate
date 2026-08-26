@@ -1,0 +1,55 @@
+$ time bin/fm-roundtable-factsheet.sh <firstmate-clone>   # real project, no marks file yet
+# Roundtable factsheet: 01M0ZBPNN8QDQ1SN0DSCVNWVCC
+HEAD: 8bb75b6e915b8beae04d03ccfb860742cbcc78b6
+Commit date: 2026-08-26
+
+## File tree (depth <= 2, files/bytes per dir)
+.                                           11 files    123951 bytes
+.agents/skills                              23 files    355715 bytes
+.claude                                      2 files      1584 bytes
+.codex                                       1 files      2791 bytes
+.cursor                                      1 files       796 bytes
+.github/workflows                            3 files     44151 bytes
+.greptile                                    1 files      2180 bytes
+.grok/hooks                                  4 files      1328 bytes
+.opencode/plugins                            7 files     29051 bytes
+.pi/extensions                              10 files    136428 bytes
+assets                                       1 files   3011594 bytes
+bin                                        162 files   3012971 bytes
+bin/backends                                 7 files    283553 bytes
+docs                                        33 files    598941 bytes
+docs/examples                                3 files      3200 bytes
+docs/supervision-protocols                   7 files     19559 bytes
+docs/verification                            8 files    158559 bytes
+skills/stow                                  1 files     20350 bytes
+tests                                      179 files   5870816 bytes
+
+## Code vs test files
+code: 285
+test: 179
+
+## Last 15 commits
+8bb75b6 no-mistakes(review): pin C collation, join ledger lists without comma rewrite
+05a8c75 no-mistakes(review): share max-depth constant, drop absent-ROADMAP stat header
+57d2d83 no-mistakes(review): unquote delta paths, tighten tree-row invariant test
+345aa47 no-mistakes(review): fix phantom unread dir, literal doc match, single-source collapse
+9316f92 no-mistakes(review): single-pass tree walk, unquoted paths, unmatched-arg ledger
+aba76a9 no-mistakes(review): treat missing key docs as absent, not fatal
+5c63a91 no-mistakes(review): align tree depth, anchor test detection, prefer root docs
+5cf274d feat(bin): add roundtable evidence instrumentation
+6b916d6 feat(bin): report session-context warn/restart bands and inherit thresholds (#24)
+fe7fa4f perf(bin): batch scout report collection into a single jq invocation (#23)
+59f6480 fix(daemon): pin a concrete pane id for the bare supervisor-target fallback (#21)
+5de922c fix(bin): disclose total queued count when /queue truncates the listing (#20)
+8e7b0f4 fix(bin): key primary-scope guard on physical location, not inherited env (#22)
+bb69fc5 feat(bin): make daily upstream drift an actionable once-per-episode trigger (#19)
+dbfa7c2 fix(brief): require verified proof before trusting a report or status write (#14)
+
+## Key docs (paths + line counts only, not contents)
+README.md: 232 lines
+ROADMAP.md: absent
+
+
+real	0m0.076s
+user	0m0.051s
+sys	0m0.044s

@@ -1,0 +1,17 @@
+--- coverage ledger for a realistic partial read list ---
+$ fm-roundtable-coverage.sh /tmp/rt-demo/firstmate README.md AGENTS.md bin/fm-roundtable-lib.sh docs/roundtable-instrumentation.md
+read 4 of 464 files, unread dirs: .agents/skills, .claude, .codex, .cursor, .github/workflows, .greptile, .grok/hooks, .opencode/plugins, .pi/extensions, assets, bin/backends, docs/examples, docs/supervision-protocols, docs/verification, skills/stow, tests
+
+--- a mistyped / stale read arg is disclosed separately from the N-of-M count ---
+$ fm-roundtable-coverage.sh /tmp/rt-demo/firstmate README.md bin/does-not-exist.sh /abs/path/README.md
+read 1 of 464 files, unread dirs: .agents/skills, .claude, .codex, .cursor, .github/workflows, .greptile, .grok/hooks, .opencode/plugins, .pi/extensions, assets, bin, bin/backends, docs, docs/examples, docs/supervision-protocols, docs/verification, skills/stow, tests
+unmatched read args (not tracked at HEAD, expected clone-relative paths): /abs/path/README.md, bin/does-not-exist.sh
+
+--- cross-script invariant: every dir the ledger names is a dir the factsheet printed ---
+ledger dirs not present in factsheet tree: []
+
+--- determinism: two runs byte-identical, and unaffected by a dirty working tree ---
+identical across runs, and README edit/untracked file ignored (HEAD-only walk)
+
+--- no network: run with network syscalls denied ---
+factsheet succeeded inside an empty network namespace
