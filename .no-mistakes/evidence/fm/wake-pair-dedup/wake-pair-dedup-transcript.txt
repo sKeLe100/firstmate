@@ -1,0 +1,22 @@
+Duplicate wake pair (audit finding 3): one crewmate event (status write + captured process-event result)
+driven through two real fm-watch.sh cycles against the same home; the durable wake queue is shown.
+
+### BEFORE FIX (base e6d03bd)
+--- cycle 1 (process-event check wake surfaced to the supervisor)
+check: process-event result captured: procevent:delivery-src:1
+--- cycle 2 (crewmate's own status change re-scanned)
+signal: $HOME/state/delivery-src.status
+--- durable wake queue: signal records enqueued for this one event
+  signal	delivery-src.status
+  signal	delivery-src.status
+--- signal record count: 2 (check records for the same event: 3)
+
+### AFTER FIX (9f54682)
+--- cycle 1 (process-event check wake surfaced to the supervisor)
+check: process-event result captured: procevent:delivery-src:1
+--- cycle 2 (crewmate's own status change re-scanned)
+(no wake reported)
+--- durable wake queue: signal records enqueued for this one event
+--- signal record count: 0 (check records for the same event: 5)
+
+Note: repeated 'check' records are the same unacknowledged generation re-surfacing each cycle (pre-existing on both sides); the fix targets the extra 'signal' record.
