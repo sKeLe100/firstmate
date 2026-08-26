@@ -109,6 +109,10 @@ Discover tests by listing `tests/*.test.sh`: each is a self-contained bash scrip
 A fixture may shorten a production timeout to keep a failure path prompt, but never below what the real work inside that window costs on a loaded machine: a fork, an exec, a lock acquisition, a beacon publication, or a first-poll check.
 Where a case's assertion is not about the timeout itself, give that window headroom over the measured loaded cost, and bound the test's own waiting with iteration-counted poll loops, which stretch under load where a wall-clock budget does not.
 Tests that need a real optional backend or an explicit opt-in (real herdr/zellij/cmux smoke tests, the live Pi regression) skip themselves and print the tool or environment gate needed to enable them, so the portable suite remains safe on machines without those tools.
+
+In an inner dev loop, micro-target the single `tests/<subject>.test.sh` under change: `bin/fm-test-run.sh tests/<subject>.test.sh`, never a full-suite or `--all` rerun, so each iteration stays cheap in time and tokens.
+`bin/fm-test-run.sh --fail-fast` (or `FM_TEST_FAIL_FAST=1`) stops a multi-script local run at the first failing script instead of continuing through everything selected; it is off by default so CI still sees the complete result set.
+Apply a 3-strike rule to a single failing test: after 3 consecutive failed fix attempts on the same test, stop iterating blindly and report the diff, the exact failure signature, and a hypothesis instead of continuing to guess.
 The [Herdr backend guide](docs/herdr-backend.md#destructive-lab-safety) owns the lane's isolation boundary, while [runtime backend verification](docs/verification/runtime-backends.md#herdr) owns active empirical evidence; live harness credential tests remain opt-in.
 
 ## Questions
