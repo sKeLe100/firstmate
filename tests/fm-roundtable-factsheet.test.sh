@@ -138,8 +138,31 @@ test_test_classification_is_anchored() {
   pass "fm-roundtable-factsheet: test detection is anchored, not a substring match"
 }
 
+test_absent_docs_do_not_abort() {
+  local dir out status
+  dir=$(mktemp -d "$TMP_ROOT/nodocs-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  printf 'a = 1\n' > "$dir/a.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+
+  out="$TMP_ROOT/nodocs-out.txt"
+  status=0
+  "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" --mark > "$out" 2>&1 || status=$?
+  [ "$status" -eq 0 ] || fail "a project with no README/ROADMAP must not abort the fact sheet (exit $status)"
+
+  assert_grep "README.md: absent" "$out" "must report a missing README as absent"
+  assert_grep "ROADMAP.md: absent" "$out" "must report a missing ROADMAP as absent"
+  assert_grep "## Mark recorded: $(basename "$dir")" "$out" \
+    "the run must continue past the key-docs section and still record the mark"
+
+  pass "fm-roundtable-factsheet: missing key docs are an absent case, not an abort"
+}
+
 test_basic_output
 test_since_delta
 test_mark_round_trip
 test_root_docs_preferred
 test_test_classification_is_anchored
+test_absent_docs_do_not_abort
