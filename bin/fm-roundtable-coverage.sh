@@ -56,11 +56,11 @@ UNREAD_DIRS=$(
       if (rel in read) readcount[dir] = 1
     }
     END { for (d in total) if (!(d in readcount)) print d }
-  ' "$READ_LIST_FILE" - <<<"$ALL_FILES" | sort | paste -sd',' - | sed 's/,/, /g'
+  ' "$READ_LIST_FILE" - <<<"$ALL_FILES" | sort | fm_roundtable_join_list
 )
 [ -z "$UNREAD_DIRS" ] && UNREAD_DIRS="none"
 
-UNMATCHED=$(comm -13 <(printf '%s\n' "$ALL_FILES" | sort -u) "$READ_LIST_FILE" | grep . | paste -sd',' - | sed 's/,/, /g' || true)
+UNMATCHED=$(comm -13 <(printf '%s\n' "$ALL_FILES" | sort -u) "$READ_LIST_FILE" | grep . | fm_roundtable_join_list || true)
 
 echo "read $READ_N of $TOTAL files, unread dirs: $UNREAD_DIRS"
 [ -n "$UNMATCHED" ] && echo "unmatched read args (not tracked at HEAD, expected clone-relative paths): $UNMATCHED"

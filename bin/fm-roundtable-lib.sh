@@ -13,6 +13,12 @@
 
 set -u
 
+# Byte-wise collation everywhere: sort/comm must agree with each other and
+# with git's byte-ordered output, and the fact sheet must render identically
+# on any machine regardless of the caller's locale.
+export LC_ALL=C
+
+
 # Prints every HEAD-tracked file path in the clone, one per line, relative to
 # the clone root.
 fm_roundtable_files() {
@@ -77,4 +83,11 @@ fm_roundtable_dir_tree() {
     }
     END { for (d in c) printf "%s\t%d\t%d\n", d, c[d], s[d] }
   ' | sort
+}
+
+# Joins stdin lines into one ", "-separated line. The separator is written
+# directly, never substituted, so a comma inside a path is not mistaken for
+# one.
+fm_roundtable_join_list() {
+  awk 'NR > 1 { printf ", " } { printf "%s", $0 } END { if (NR > 0) print "" }'
 }

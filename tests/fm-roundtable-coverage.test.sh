@@ -165,6 +165,55 @@ test_empty_tree_names_no_unread_dirs() {
   pass "fm-roundtable-coverage: empty HEAD tree names no unread dirs"
 }
 
+# Regression: distinct tracked paths that a locale collation would fold
+# together must stay distinct in the read/unmatched bookkeeping.
+test_punctuation_paths_are_not_collapsed() {
+  local dir out
+  dir=$(mktemp -d "$TMP_ROOT/punct-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  mkdir -p "$dir/src"
+  printf 'a = 1\n' > "$dir/src/a-b.py"
+  printf 'a = 2\n' > "$dir/src/ab.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+
+  local loc
+  loc=$(locale -a 2>/dev/null | grep -iE '\.(utf-?8)$' | grep -viE '^(C|POSIX)' | head -1)
+  out="$TMP_ROOT/punct-out.txt"
+  LC_ALL="${loc:-C}" "$ROOT/bin/fm-roundtable-coverage.sh" "$dir" src/ab.py > "$out"
+
+  assert_grep "read 1 of 2 files" "$out" \
+    "a tracked path must count as read even when a locale collation would fold it with a sibling"
+  grep -q "unmatched read args" "$out" &&
+    fail "a tracked path must not also be reported as unmatched: $(cat "$out")"
+
+  pass "fm-roundtable-coverage: punctuation-differing paths are not collapsed"
+}
+
+# Regression: the ", " list separator must not be confused with a comma that
+# is part of a directory name.
+test_comma_in_dirname_is_one_entry() {
+  local dir out
+  dir=$(mktemp -d "$TMP_ROOT/comma-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  mkdir -p "$dir/a,b"
+  printf 'f = 1\n' > "$dir/a,b/f.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+
+  out="$TMP_ROOT/comma-out.txt"
+  "$ROOT/bin/fm-roundtable-coverage.sh" "$dir" > "$out"
+
+  assert_grep "unread dirs: a,b" "$out" \
+    "a directory named 'a,b' must be named as it is"
+  assert_no_grep "unread dirs: a, b" "$out" \
+    "a directory named 'a,b' must be one unread entry, not two"
+
+  pass "fm-roundtable-coverage: a comma inside a dir name is not a list separator"
+}
+
 test_partial_coverage
 test_full_coverage
 test_empty_tree_names_no_unread_dirs
@@ -172,3 +221,5 @@ test_deep_dirs_match_factsheet_tree
 test_unmatched_args_are_reported
 test_non_ascii_paths
 test_large_tree_is_bounded
+test_punctuation_paths_are_not_collapsed
+test_comma_in_dirname_is_one_entry
