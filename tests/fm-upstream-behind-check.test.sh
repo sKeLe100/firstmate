@@ -16,6 +16,9 @@
 #     threshold, stays silent while the gap grows by less than another full
 #     threshold, fires again once that much genuinely new drift has landed (with
 #     the baseline advancing), and clears the episode when the gap closes.
+#   - An `ok` refresh reading a lower count than the record holds corrects the
+#     baseline downward silently, so the next firing is one threshold step above
+#     the real gap rather than above a stale higher one.
 #   - When the watcher's per-check bound leaves no room for a network probe,
 #     `check` skips the probe and still publishes a degraded report, so the
 #     once-daily gate is stamped rather than the run being killed mid-probe.
@@ -451,6 +454,41 @@ test_drift_trigger_fires_once_per_episode() {
   pass "the drift trigger reports one threshold-sized block of new drift at a time, re-baselining each firing"
 }
 
+test_drift_baseline_tracks_a_shrinking_gap_downward() {
+  set -e
+  local home root bare out record i
+
+  home=$(new_home)
+  root="$TMP_ROOT/drift-lower"
+  bare="$TMP_ROOT/drift-lower-upstream.git"
+  drift_fixture "$root" "$bare" 9
+  record="$home/state/.upstream-drift"
+
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=3 run_drift "$home" "$root" check)
+  assert_contains "$out" "9 commits behind upstream" "drift-lower: the first episode must fire at the real gap"
+  assert_contains "$(cat "$record")" "reported_behind=9" "drift-lower: the first firing baselines at 9"
+
+  # A partial sync lands as a true merge: the gap shrinks but stays above the
+  # threshold, so the clear-on-gap-closed path does not apply and the stale
+  # higher baseline would otherwise delay the next report far past one step.
+  git -C "$root" merge -q --ff-only "$(git -C "$root" rev-list --reverse upstream/main | sed -n '6p')"
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=3 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-lower: correcting the baseline down is not news: $out"
+  assert_contains "$(cat "$record")" "reported_behind=4" "drift-lower: the record must track the smaller real gap"
+
+  # One threshold step above the CORRECTED baseline is news again; against the
+  # stale baseline of 9 this run would still be silent.
+  for i in 10 11 12; do
+    printf 'u%s\n' "$i" >> "$root.src/seed.txt"
+    git -C "$root.src" commit -qam "u$i"
+  done
+  git -C "$root.src" push --quiet "$bare" main
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=3 run_drift "$home" "$root" check)
+  assert_contains "$out" "7 commits behind upstream" "drift-lower: the next firing is one step above the corrected baseline"
+  assert_contains "$(cat "$record")" "reported_behind=7" "drift-lower: a firing re-baselines to the current gap"
+  pass "the drift baseline tracks a shrinking gap downward so the next report is not delayed"
+}
+
 test_drift_check_skips_the_probe_when_no_bound_fits() {
   set -e
   local home root bare out report
@@ -592,6 +630,7 @@ test_files_directly_under_skills_dir_are_not_named_as_skills
 test_degrade_preserves_last_known_good_and_retries
 test_drift_trigger_fires_once_per_episode
 test_drift_episode_resets_after_a_sync_lands
+test_drift_baseline_tracks_a_shrinking_gap_downward
 test_drift_check_skips_the_probe_when_no_bound_fits
 test_drift_check_degrades_quietly_offline
 test_drift_arm_registers_a_shim_the_watcher_accepts

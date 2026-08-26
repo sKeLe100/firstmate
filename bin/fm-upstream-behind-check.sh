@@ -48,7 +48,10 @@
 # once when the gap first crosses the threshold and then stays silent until
 # another full threshold of genuinely NEW upstream work has accumulated -
 # `behind - reported_behind >= threshold` - at which point it fires again and
-# re-baselines the record to the current count. Baselining on new drift rather
+# re-baselines the record to the current count. The baseline tracks the observed
+# gap downward too: an `ok` refresh that reads a lower count than the record
+# holds rewrites the record silently, so a baseline left above the real gap
+# never delays the next report by more than one threshold step. Baselining on new drift rather
 # than only on the absolute count is what keeps this reachable on a fork that
 # lands its syncs as squash merges: `behind` is a hash-reachability count, so
 # replayed upstream content never brings it back down, and a reset keyed purely
@@ -262,6 +265,13 @@ action_check() {
   # work has landed; each firing re-baselines, so one report covers one
   # threshold-sized block of drift.
   if [ -n "$DRIFT_REPORTED_BEHIND" ]; then
+    if [ "$behind" -lt "$DRIFT_REPORTED_BEHIND" ]; then
+      # A baseline above the real gap would delay the next report by far more
+      # than one threshold step, so it is corrected down silently - a record
+      # correction, never a firing.
+      drift_record_write "$behind" || true
+      return 0
+    fi
     [ "$(( behind - DRIFT_REPORTED_BEHIND ))" -ge "$threshold" ] || return 0
   fi
 
