@@ -12,6 +12,20 @@
 #   - A normal invocation is a no-op once a report already exists within the
 #     gate interval; it only redoes the work once that interval has elapsed
 #     (or --force is passed).
+#   - `check` fires one actionable drift line once the cached count reaches the
+#     threshold, stays silent while the gap grows by less than another full
+#     threshold, fires again once that much genuinely new drift has landed (with
+#     the baseline advancing), and clears the episode when the gap closes.
+#   - An `ok` refresh reading a lower count than the record holds corrects the
+#     baseline downward silently, so the next firing is one threshold step above
+#     the real gap rather than above a stale higher one.
+#   - When the watcher's per-check bound leaves no room for a network probe,
+#     `check` skips the probe and still publishes a degraded report, so the
+#     once-daily gate is stamped rather than the run being killed mid-probe.
+#   - `check` degrades silently when the refresh cannot reach upstream, and a
+#     degrade never closes or reopens an episode.
+#   - `arm` leaves a registered shim the watcher will accept, and `disarm`
+#     removes the shim, its binding, and the episode record.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -19,15 +33,26 @@ set -u
 
 CHECK="$ROOT/bin/fm-upstream-behind-check.sh"
 
+# fm_custom_check_registered and fm_pr_file_mode are how the watcher itself
+# decides an armed shim is authentic, so the arm test asserts through them
+# rather than restating the trust format.
+# shellcheck source=bin/fm-pr-lib.sh
+. "$ROOT/bin/fm-pr-lib.sh"
+# shellcheck source=bin/fm-check-lib.sh
+. "$ROOT/bin/fm-check-lib.sh"
+
 fm_git_identity fmtest fmtest@example.invalid
 
 TMP_ROOT=$(fm_test_tmproot fm-upstream-behind-check-tests)
-HOME_N=0
 
 # new_home: fresh isolated FM_HOME with an empty state/ dir. Echoes the home dir.
+# The directory is minted with mktemp rather than a counter, because every
+# caller runs this in a command substitution, so a counter would be incremented
+# in a subshell and every test would silently share one home - and a durable
+# record one test leaves behind would then decide the next test's outcome.
 new_home() {
-  HOME_N=$((HOME_N + 1))
-  local h="$TMP_ROOT/home-$HOME_N"
+  local h
+  h=$(mktemp -d "$TMP_ROOT/home-XXXXXX") || return 1
   mkdir -p "$h/state"
   printf '%s\n' "$h"
 }
@@ -347,6 +372,253 @@ test_degrade_preserves_last_known_good_and_retries() {
   pass "a degrade preserves the last-known-good counts and leaves the gate open for a retry"
 }
 
+# drift_fixture <root> <upstream-bare> <n>: a repo whose main is <n> commits
+# behind the bare upstream and shares its history, so the behind count is real
+# rather than simulated by editing the cached report.
+drift_fixture() {
+  local root=$1 bare=$2 n=$3 src i
+  src="$root.src"
+  new_repo "$src"
+  git clone --quiet --bare "$src" "$bare"
+  for ((i = 1; i <= n; i++)); do
+    printf 'u%s\n' "$i" >> "$src/seed.txt"
+    git -C "$src" commit -qam "u$i"
+  done
+  git -C "$src" push --quiet "$bare" main
+  git clone --quiet "$src" "$root"
+  git -C "$root" reset -q --hard "$(git -C "$src" rev-list --max-parents=0 HEAD)"
+  git -C "$root" remote remove origin
+  git -C "$root" remote add upstream "$bare"
+}
+
+# run_drift <home> <root> [args...]: a `check` run with the daily gate disabled,
+# so a test can drive several refreshes without waiting a day between them.
+run_drift() {
+  local home=$1 root=$2
+  shift 2
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_UPSTREAM_CHECK_INTERVAL=0 "$CHECK" "$@"
+}
+
+test_drift_trigger_fires_once_per_episode() {
+  set -e
+  local home root bare out record i
+
+  home=$(new_home)
+  root="$TMP_ROOT/drift-episode"
+  bare="$TMP_ROOT/drift-episode-upstream.git"
+  drift_fixture "$root" "$bare" 6
+
+  # Under the threshold: the gap is real but not yet worth a dispatch.
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=8 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-episode: a gap under the threshold must stay silent: $out"
+  assert_absent "$home/state/.upstream-drift" "drift-episode: a silent run must open no episode"
+
+  # Crossing the threshold is news exactly once.
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "6 commits behind upstream" "drift-episode: the fired line names the real gap"
+  assert_contains "$out" "threshold 6" "drift-episode: the fired line names the threshold it crossed"
+  assert_contains "$out" "dispatch an upstream sync task" "drift-episode: the fired line asks for the sync task"
+  [ "$(printf '%s\n' "$out" | wc -l | tr -d '[:space:]')" = 1 ] \
+    || fail "drift-episode: the watcher contract allows exactly one line: $out"
+  record="$home/state/.upstream-drift"
+  assert_present "$record" "drift-episode: a fired episode must be recorded durably"
+
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-episode: the same open episode must not report twice: $out"
+
+  # A growing gap is the same episode, not a fresh one: the point of the record
+  # is that a persistent drift stops being news after the first report.
+  printf 'u7\n' >> "$root.src/seed.txt"
+  git -C "$root.src" commit -qam u7
+  git -C "$root.src" push --quiet "$bare" main
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-episode: a gap growing by less than a threshold must stay silent: $out"
+  assert_contains "$(cat "$record")" "reported_behind=6" "drift-episode: the record still names the reported episode"
+
+  # Another full threshold of genuinely new upstream work IS news again: this
+  # fork lands syncs as squash merges, so the absolute count never falls and a
+  # reset keyed only on that would latch the trigger silent forever.
+  for i in 8 9 10 11 12 13; do
+    printf 'u%s\n' "$i" >> "$root.src/seed.txt"
+    git -C "$root.src" commit -qam "u$i"
+  done
+  git -C "$root.src" push --quiet "$bare" main
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "13 commits behind upstream" "drift-episode: a new threshold-sized block of drift must fire again"
+  [ "$(printf '%s\n' "$out" | wc -l | tr -d '[:space:]')" = 1 ] \
+    || fail "drift-episode: the watcher contract allows exactly one line: $out"
+  assert_contains "$(cat "$record")" "reported_behind=13" "drift-episode: each firing re-baselines the record"
+
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-episode: the re-baselined episode must go quiet again: $out"
+  pass "the drift trigger reports one threshold-sized block of new drift at a time, re-baselining each firing"
+}
+
+test_drift_baseline_tracks_a_shrinking_gap_downward() {
+  set -e
+  local home root bare out record i
+
+  home=$(new_home)
+  root="$TMP_ROOT/drift-lower"
+  bare="$TMP_ROOT/drift-lower-upstream.git"
+  drift_fixture "$root" "$bare" 9
+  record="$home/state/.upstream-drift"
+
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=3 run_drift "$home" "$root" check)
+  assert_contains "$out" "9 commits behind upstream" "drift-lower: the first episode must fire at the real gap"
+  assert_contains "$(cat "$record")" "reported_behind=9" "drift-lower: the first firing baselines at 9"
+
+  # A partial sync lands as a true merge: the gap shrinks but stays above the
+  # threshold, so the clear-on-gap-closed path does not apply and the stale
+  # higher baseline would otherwise delay the next report far past one step.
+  git -C "$root" merge -q --ff-only "$(git -C "$root" rev-list --reverse upstream/main | sed -n '6p')"
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=3 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-lower: correcting the baseline down is not news: $out"
+  assert_contains "$(cat "$record")" "reported_behind=4" "drift-lower: the record must track the smaller real gap"
+
+  # One threshold step above the CORRECTED baseline is news again; against the
+  # stale baseline of 9 this run would still be silent.
+  for i in 10 11 12; do
+    printf 'u%s\n' "$i" >> "$root.src/seed.txt"
+    git -C "$root.src" commit -qam "u$i"
+  done
+  git -C "$root.src" push --quiet "$bare" main
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=3 run_drift "$home" "$root" check)
+  assert_contains "$out" "7 commits behind upstream" "drift-lower: the next firing is one step above the corrected baseline"
+  assert_contains "$(cat "$record")" "reported_behind=7" "drift-lower: a firing re-baselines to the current gap"
+  pass "the drift baseline tracks a shrinking gap downward so the next report is not delayed"
+}
+
+test_drift_check_skips_the_probe_when_no_bound_fits() {
+  set -e
+  local home root bare out report
+
+  home=$(new_home)
+  root="$TMP_ROOT/drift-budget"
+  bare="$TMP_ROOT/drift-budget-upstream.git"
+  drift_fixture "$root" "$bare" 6
+
+  # FM_CHECK_TIMEOUT is the watcher's own per-check kill. At 3s there is no
+  # room for two bounded network probes, so the refresh must not attempt one:
+  # a killed run would print nothing AND stamp nothing, making the next
+  # watcher cycle repeat the same doomed probe instead of honoring the gate.
+  out=$(FM_CHECK_TIMEOUT=3 FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-budget: a skipped probe must print nothing: $out"
+  report="$home/state/.upstream-behind-check.report"
+  assert_present "$report" "drift-budget: the refresh must still publish a report"
+  assert_contains "$(cat "$report")" "status=unknown" "drift-budget: a skipped probe degrades quietly"
+  assert_contains "$(cat "$report")" "reason=timeout-budget" "drift-budget: the degrade names why the probe was skipped"
+  assert_contains "$(cat "$report")" "checked_at=" "drift-budget: the once-daily gate must still be stamped"
+  assert_absent "$home/state/.upstream-drift" "drift-budget: a degrade must not open an episode"
+
+  # With the watcher's normal bound the same home does the real probe and fires.
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "dispatch an upstream sync task" "drift-budget: a fitting bound must still do the real check"
+  pass "check skips the network probe and still stamps the gate when no bound fits the watcher's budget"
+}
+
+test_drift_episode_resets_after_a_sync_lands() {
+  set -e
+  local home root bare out
+
+  home=$(new_home)
+  root="$TMP_ROOT/drift-reset"
+  bare="$TMP_ROOT/drift-reset-upstream.git"
+  drift_fixture "$root" "$bare" 6
+
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "dispatch an upstream sync task" "drift-reset: the first episode must fire"
+
+  # The sync lands: fast-forwarding main onto upstream closes the gap.
+  git -C "$root" merge -q --ff-only upstream/main
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-reset: a closed gap must report nothing: $out"
+  assert_absent "$home/state/.upstream-drift" "drift-reset: a landed sync must clear the episode record"
+
+  # A fresh gap past the threshold is news again, which is the whole point of
+  # clearing the record rather than latching the trigger permanently.
+  local i
+  for ((i = 1; i <= 6; i++)); do
+    printf 'n%s\n' "$i" >> "$root.src/seed.txt"
+    git -C "$root.src" commit -qam "n$i"
+  done
+  git -C "$root.src" push --quiet "$bare" main
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "dispatch an upstream sync task" "drift-reset: a new episode must fire again"
+  pass "a landed sync closes the episode and the next drift episode fires again"
+}
+
+test_drift_check_degrades_quietly_offline() {
+  set -e
+  local home root bare out
+
+  home=$(new_home)
+  root="$TMP_ROOT/drift-offline"
+  bare="$TMP_ROOT/drift-offline-upstream.git"
+  drift_fixture "$root" "$bare" 6
+
+  # Offline before any episode opened: silent, and nothing recorded.
+  git -C "$root" remote set-url upstream "$TMP_ROOT/drift-offline-absent.git"
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 FM_UPSTREAM_CHECK_TIMEOUT=2 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-offline: an unreachable upstream must print nothing: $out"
+  assert_absent "$home/state/.upstream-drift" "drift-offline: a degrade must not open an episode"
+
+  # Reachable again: the real gap fires normally.
+  git -C "$root" remote set-url upstream "$bare"
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "dispatch an upstream sync task" "drift-offline: recovery must fire the real episode"
+
+  # Offline mid-episode must not close it, or the next reachable run would
+  # report the same drift a second time.
+  git -C "$root" remote set-url upstream "$TMP_ROOT/drift-offline-absent.git"
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 FM_UPSTREAM_CHECK_TIMEOUT=2 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-offline: a degrade mid-episode must print nothing: $out"
+  assert_present "$home/state/.upstream-drift" "drift-offline: a degrade must not close an open episode"
+
+  git -C "$root" remote set-url upstream "$bare"
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-offline: coming back online must not re-report an open episode: $out"
+  pass "the drift check degrades silently offline and a degrade never opens or closes an episode"
+}
+
+test_drift_arm_registers_a_shim_the_watcher_accepts() {
+  set -e
+  local home root bare out shim
+
+  home=$(new_home)
+  root="$TMP_ROOT/drift-arm"
+  bare="$TMP_ROOT/drift-arm-upstream.git"
+  drift_fixture "$root" "$bare" 6
+
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$CHECK" arm)
+  assert_contains "$out" "armed: state/upstream-drift.check.sh" "drift-arm: arm must report what it armed"
+  shim="$home/state/upstream-drift.check.sh"
+  assert_present "$shim" "drift-arm: the poll shim was not written"
+  assert_present "$home/state/upstream-drift.check-trust" "drift-arm: the shim was left without a trust binding"
+  [ "$(fm_pr_file_mode "$shim")" = 700 ] || fail "drift-arm: the shim must be mode 0700"
+
+  # The binding is over the shim's exact bytes, so the watcher accepts the armed
+  # shim as authentic and would reject an edited one.
+  fm_custom_check_registered "$home/state" upstream-drift \
+    || fail "drift-arm: the armed shim is not registered as a trusted check"
+  printf '\n# edited\n' >> "$shim"
+  ! fm_custom_check_registered "$home/state" upstream-drift \
+    || fail "drift-arm: an edited shim must stop authenticating"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$CHECK" arm >/dev/null \
+    || fail "drift-arm: re-arming must restore the bound shim"
+
+  # Re-arming an already-armed home is idempotent rather than an error.
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$CHECK" arm >/dev/null \
+    || fail "drift-arm: re-arming an armed home must succeed"
+
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$CHECK" disarm)
+  assert_contains "$out" "disarmed: state/upstream-drift.check.sh" "drift-arm: disarm must report what it removed"
+  assert_absent "$shim" "drift-arm: disarm must remove the shim"
+  assert_absent "$home/state/upstream-drift.check-trust" "drift-arm: disarm must remove the trust binding"
+  assert_absent "$home/state/.upstream-drift" "drift-arm: disarm must remove the episode record"
+  pass "arm registers a drift poll shim the watcher accepts and disarm removes every artifact"
+}
+
 test_reports_behind_and_ahead
 test_missing_upstream_remote
 test_unreachable_upstream
@@ -356,3 +628,9 @@ test_bounds_skill_list_and_discloses_the_cut
 test_upstream_missing_default_branch
 test_files_directly_under_skills_dir_are_not_named_as_skills
 test_degrade_preserves_last_known_good_and_retries
+test_drift_trigger_fires_once_per_episode
+test_drift_episode_resets_after_a_sync_lands
+test_drift_baseline_tracks_a_shrinking_gap_downward
+test_drift_check_skips_the_probe_when_no_bound_fits
+test_drift_check_degrades_quietly_offline
+test_drift_arm_registers_a_shim_the_watcher_accepts
