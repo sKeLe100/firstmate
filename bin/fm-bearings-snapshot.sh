@@ -29,6 +29,15 @@
 # (deferred_marker) leaves the default decisions and gates views and is
 # disclosed in omitted[], revealed by --all-decisions / --all-queued.
 #
+# A captain hold recorded with priority:0 AND a hold reason beginning with the
+# literal marker "NEXT-SESSION PRIORITY:" is a captain-declared next-session
+# priority (see .agents/skills/stow/SKILL.md's Open-record persistence
+# section). This script is the single owner of surfacing it: every
+# decisions_open row carries a declared_priority boolean, and the array is
+# stable-sorted so every declared_priority row sorts before ordinary holds
+# while preserving each group's original relative order. An ordinary,
+# unmarked hold is unaffected and keeps today's behavior exactly.
+#
 # The optional `upstream` field is a local read of the cached report bin/fm-
 # upstream-behind-check.sh already published to state/.upstream-behind-check.report;
 # reading a cache file is not a network call, so it stays inside the LOCAL-ONLY
@@ -119,7 +128,7 @@ Default is LOCAL-ONLY (no network); --include-prs is the only path that fetches.
 
 Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
-  decisions_open{id,key,verb,summary,owner}, landed{id,what,artifact,owner},
+  decisions_open{id,key,verb,summary,owner,declared_priority}, landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty),
   upstream{status,behind,ahead,newest_upstream_date,reason,checked_at,
@@ -474,16 +483,22 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | select(.bearings_state == "active_child_work")
          | {id,kind:"secondmate",state:.bearings_state,
             doing:([.active_children[] | .id + ": " + (.doing // .state)] | join("; ") | trunc(90))} ]) as $in_flight_all
-  | ([ .backlog.records[]
+  | def is_declared_next_session_priority:
+      (.priority // null) == "0"
+      and ((.hold_reason // "") | test("^NEXT-SESSION PRIORITY:"));
+    ([ .backlog.records[]
          | select(.structured and .captain_actionable == true)
          | select(($all_decisions == 1) or (.deferred_marker != true))
          | {id,key:.id,verb:"captain-hold",
-            summary:((.title + ": " + .hold_reason) | trunc(90)),owner:"(main)"} ]
+            summary:((.title + ": " + .hold_reason) | trunc(90)),owner:"(main)",
+            declared_priority:is_declared_next_session_priority} ]
      + [ (.secondmate_current.records // [])[] as $m | $m.decisions_open[]?
          | select(.source == "backlog" and .verb == "captain-hold")
          | select(($all_decisions == 1) or (.deferred_marker != true))
          | {id:($m.id + "/" + .id),key,verb,
-            summary:(((.summary // .id) + ": " + (.reason // "captain decision pending")) | trunc(90)),owner:$m.id} ]) as $decisions_all
+            summary:(((.summary // .id) + ": " + (.reason // "captain decision pending")) | trunc(90)),owner:$m.id,
+            declared_priority:(.declared_priority // false)} ]
+     | sort_by(if .declared_priority then 0 else 1 end)) as $decisions_all
   | ([ .backlog.records[]
          | select(.structured and .captain_actionable == true and .deferred_marker == true) ]
      + [ (.secondmate_current.records // [])[] | .decisions_open[]?

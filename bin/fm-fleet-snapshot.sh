@@ -169,9 +169,16 @@ validated registered-home handoff. It is local-only, skips nested secondmate
 aggregation, and marks inventory contradictions or unavailable child state invalid.
 Its invalidity object names the normalized failure kind and affected ids.
 Actionable tasks-axi captain holds appear as decisions_open and stay visible in
-queued with hold_reason, hold_kind, hold_until, deferred_marker, and plural
-blocker fields for downstream projections. A captain hold is actionable only
-when every blocker is Done and any hold-until date has arrived.
+queued with hold_reason, hold_kind, hold_until, deferred_marker, declared_priority,
+and plural blocker fields for downstream projections. A captain hold is actionable
+only when every blocker is Done and any hold-until date has arrived.
+declared_priority is true only when the hold's priority field is "0" AND its
+hold_reason begins with the literal marker "NEXT-SESSION PRIORITY:" - both
+together, so a plain priority:0 task or a reason that merely mentions the phrase
+never counts. bin/fm-bearings-snapshot.sh is the single owner of what a
+declared_priority record means downstream (stable-sorted first in decisions_open);
+this summary applies the same stable declared-first sort before decisions_open is
+bounded, so a declaration is never lost to truncation on a busy home.
 Cross-home reads use FM_SNAPSHOT_SECONDMATES (default 20, 0 lifts the count
 bound), FM_SNAPSHOT_SECONDMATE_TIMEOUT, and FM_SNAPSHOT_SECONDMATE_MAX_BYTES.
 Terminal contradiction evidence uses
@@ -790,12 +797,16 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
               (.state == "in_flight" and .current_role == "held"
                and (.id as $id
                     | any($tasks[]; .id == $id and .current_state.state == "working") | not)))) ]) as $queued_all
-    | ([ $queued_all[]
+    | def is_declared_next_session_priority:
+        (.priority // null) == "0"
+        and ((.hold_reason // "") | test("^NEXT-SESSION PRIORITY:"));
+    ([ $queued_all[]
          | select(.captain_actionable == true)
          | {id,key:.id,verb:"captain-hold",summary:(.title | trunc(160)),
             reason:(.hold_reason | trunc(160)),
             hold_until:(.hold_until // null),
-            deferred_marker:(.deferred_marker // false),source:"backlog"} ]) as $captain_holds_all
+            deferred_marker:(.deferred_marker // false),
+            declared_priority:is_declared_next_session_priority,source:"backlog"} ]) as $captain_holds_all
     | ([ $backlog.records[]? | select(.state == "done" and .structured and .hold_kind != "captain")
          | {id:(.id | trunc(120)),title:(.title | trunc(120)),
             pr_url:((.pr_url // null) | if . == null then null else trunc(500) end),
@@ -841,7 +852,9 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
             doing:((.current_state.detail // "") | trunc(120))} ]) as $active_all
     | ($captain_holds_all
        + ([ $tasks[] as $t | ($t.hints.open_decisions // [])[]
-            | {id:$t.id,key,verb,summary:(.summary | trunc(160)),reason:null,source:"status"} ])) as $decisions_all
+            | {id:$t.id,key,verb,summary:(.summary | trunc(160)),reason:null,
+               declared_priority:false,source:"status"} ])
+       | sort_by(if .declared_priority then 0 else 1 end)) as $decisions_all
     | ([ $queued_all[]
          | select((.unresolved_blocker_ids | length) > 0 or (.hold_reason != null and .hold_kind != null))
          | {id:(.id | trunc(120)),title:(.title | trunc(90)),

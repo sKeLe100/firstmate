@@ -45,6 +45,7 @@ Board answers are acted on later under the normal authority rules; this skill's 
    For registered secondmates, use the snapshot's structured-home classification and provenance.
    A parent event or bounded terminal contradiction is fallback evidence, never authority over readable structured home state.
    A decision is simply a task held for the captain (`captain-hold-lifecycle`); every due, unblocked captain-held task appears under `decisions_open`, whatever its kind.
+   `decisions_open` is already stable-sorted by the snapshot so any row carrying `declared_priority: true` - a hold the captain explicitly declared as next session's first priority, per the `stow` skill's Open-record persistence section - leads the array; render Captain's Call in the order given rather than re-sorting it yourself.
    A captain hold deferred by date sits under `gates` with its `until <date>:` reason until it is due, and a hold whose reason or body carries an explicit deferred/superseded marker is suppressed from the default view with an `omitted` disclosure.
    Do not scrape reports, visual-review artifacts, raw status-event tails, or visible conversation history to supplement current state.
    A queued item under `gates` only becomes "next work" when its blocker is gone and its time/date gate has arrived.
@@ -71,7 +72,7 @@ Board answers are acted on later under the normal authority rules; this skill's 
    This is the only file-mode write allowed by the skill.
    The detailed report includes:
    - **Title** - `# Bearings - <day> <YYYY-MM-DD>` (use "Morning status" only when the captain specifically asks for a morning brief), followed by two or three sentences framing where things stand.
-   - **Captain's Call** - every open decision summarized with its options from the structured decision record, plus each PR ready to merge and each needed credential or login, every PR with the full `https://...` URL, never a bare `#number`.
+   - **Captain's Call** - LEAD with any `declared_priority: true` row, named explicitly as the captain's declared priority for this session (e.g. "Captain's declared priority: ..."), before every other item in the section; then every other open decision summarized with its options from the structured decision record, plus each PR ready to merge and each needed credential or login, every PR with the full `https://...` URL, never a bare `#number`.
    - **Recently Landed** - the bounded current recent-completions baseline from structured state across the main fleet and every registered secondmate home, rendered in full on every run.
    - **Underway** - each live direct report making progress, with its current state, and the plans or main pickup pointers worth reopening (`data/<id>/report.md` files, `.lavish/*.html` boards).
    - **Charted Next** - queued or gated work, including any main-inventory or upstream-drift integrity warning, with each item's blocker, date, or integrity reason.
@@ -120,6 +121,7 @@ This skill is the one owner of the `/bearings` chat-response format; the snapsho
 Every `/bearings` chat response renders EXACTLY these four sections, in THIS order, plus the single non-structural context-usage closing line defined below, and nothing else structural (there is no At Anchor section):
 
 1. **Captain's Call** - ONLY items that need the captain's own action now: a decision to make, a PR to approve or merge, a credential or login to provide, or a blocker only the captain can clear.
+   When `decisions_open` carries a `declared_priority: true` row, LEAD the section with it, named explicitly as the captain's declared priority for this session, before any other Captain's Call item.
    Empty-state: "Nothing needs your action right now."
 2. **Recently Landed** - the bounded current recent-completions baseline: merged PRs, completed scouts, and finished local-only merges across the main fleet and every registered secondmate home.
    Empty-state: "No recent completions are in the current baseline."

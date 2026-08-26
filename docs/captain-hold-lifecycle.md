@@ -53,6 +53,7 @@ It also emits a presentation-only `deferred_marker` when a hold's reason or body
 Its secondmate-home summary classifies an actionable captain hold as `captain_decision` and preserves blocked or deferred captain holds as queued work in the owning home.
 
 `bin/fm-bearings-snapshot.sh` projects actionable captain holds into `decisions_open` and leaves blocked captain holds in ordinary queued gates.
+It is also the single owner of the captain-declared next-session priority: a hold recorded with `priority: 0` and a hold reason beginning with `NEXT-SESSION PRIORITY:` (both together, per the `stow` skill) carries `declared_priority: true` and stable-sorts ahead of ordinary holds, while `bin/fm-fleet-snapshot.sh` computes the same flag so a secondmate-recorded declaration survives bounding, and `bin/fm-session-start.sh` prints it as a callout ahead of its compact backlog listing.
 A date-deferred captain hold renders as a gate with its `until <date>:` reason; a prose-deferred one leaves the default views with an `omitted[]` disclosure, revealed by `--all-decisions` / `--all-queued`.
 Recently Landed excludes a record that closed while still held for the captain (surviving `hold-kind: captain` on a Done row), so answered questions do not masquerade as shipped work; a work item released before completion keeps no hold annotations and lands normally.
 The projection remains read-only and does not inspect historical prose beyond the canonical snapshot's marker.
@@ -93,5 +94,5 @@ It proves: the reconstructed silent-divergence case is signalled - a status reso
 
 `tests/fm-classify-decision-key.test.sh` pins `status_key_closing_verb` itself: it separates a resolution from the durable-transfer close and from a still-open key, reports the last real transition across re-openings and both key positions, and treats a prose mention as no transition.
 
-Projection regressions live in `tests/fm-fleet-snapshot-view.test.sh` (hold-until parsing, the due gate, kind-independent captain actionability, deferred_marker, title stripping) and `tests/fm-bearings-snapshot.test.sh` (Captain's Call membership, the dated-gate rendering, prose-deferral suppression with disclosure, and the landed exclusion by surviving captain-hold annotations).
+Projection regressions live in `tests/fm-fleet-snapshot-view.test.sh` (hold-until parsing, the due gate, kind-independent captain actionability, deferred_marker, title stripping) and `tests/fm-bearings-snapshot.test.sh` (Captain's Call membership, the dated-gate rendering, prose-deferral suppression with disclosure, the landed exclusion by surviving captain-hold annotations, and declared-priority sorting for main and secondmate rows including single-condition decoys).
 The exact commands and their summarized outputs are recorded in the shipping PR's evidence; run the four suites above plus `tests/fm-send-resolve-key.test.sh`, `tests/fm-bearings-board.test.sh`, and `bin/fm-lint.sh` to refresh this record.

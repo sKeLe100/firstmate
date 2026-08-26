@@ -248,6 +248,18 @@ One bound holds: this covers the open work you are actually holding in context, 
 It is not a reconciliation of durable records against repository or forge reality, cannot become one on input this volatile, and must never be reported as one.
 Where the right correction is a judgment you cannot make, leave the record alone and raise the question instead of guessing.
 
+### Captain-declared next-session priority
+
+When the captain has declared, in this session, which item is the first priority for the next session, record it as a captain-declared next-session priority, not an ordinary captain hold - an ordinary hold is buried among every other open decision at the next session's start, which is exactly the loss this section exists to prevent.
+Resolve or create the backlog task for that item, then record the declaration in one `tasks-axi hold` (or `tasks-axi add ... --queue` followed by `hold`, for a task that does not exist yet) call that sets BOTH of these together, because `bin/fm-bearings-snapshot.sh` and `bin/fm-fleet-snapshot.sh` treat only their combination as machine-distinguishable from a plain hold:
+
+- `--priority 0` (the field's highest value), and
+- `--reason` beginning with the literal marker `NEXT-SESSION PRIORITY:` followed by the captain's own words, with no comma or parenthesis in the reason text (`tasks-axi hold` already forbids parentheses in `--reason`; a comma truncates the parsed reason early, so avoid it too).
+
+Example: `tasks-axi update token-burn-planning --priority 0 && tasks-axi hold token-burn-planning --reason "NEXT-SESSION PRIORITY: run as first item next session" --kind captain`.
+Only one declared priority should be live at a time; if a new one supersedes an older one, clear the old one's marker (rewrite its hold reason without the prefix, or `tasks-axi unhold` it) in the same pass rather than leaving two declared priorities to race for first place.
+The snapshot layer, not this skill, owns exactly what "sorts first" and "is flagged" mean downstream (`bin/fm-bearings-snapshot.sh`); this skill only owns getting the two fields recorded correctly at declaration time.
+
 ## One-time migration of unmarked entries
 
 Legacy entries carry no markers; an unmarked entry is its file's default tier with unknown age, and unknown age is not guilt.

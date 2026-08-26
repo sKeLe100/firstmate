@@ -43,7 +43,8 @@
 #                       detected primary harness.
 #   5. read-once contract - the do-not-re-read contract covering every source
 #                       represented by the two digests below.
-#   6. fleet digest   - a compact data/backlog.md identity/metadata listing,
+#   6. fleet digest   - any captain-declared next-session priority callout, then
+#                       a compact data/backlog.md identity/metadata listing,
 #                       every state/*.meta, a bounded state/*.status tail,
 #                       state/.afk, and a cheap per-task endpoint-liveness read:
 #                       read-only, always runs.
@@ -381,6 +382,48 @@ print_backlog_pointer() {
   printf 'Full task bodies remain available on demand: tasks-axi show <id> --full when compatible tasks-axi is available, or data/backlog.md.\n'
 }
 
+# A captain-declared next-session priority is a captain hold recorded per the
+# stow skill's Open-record persistence section: priority:0 AND a hold reason
+# beginning with the literal marker "NEXT-SESSION PRIORITY:" - the same two
+# conditions bin/fm-bearings-snapshot.sh sorts first and flags as
+# declared_priority. This reads the raw markdown directly so it works
+# regardless of backlog backend, and is a proactive callout only: it never
+# replaces the full listing below, and an absent marker prints nothing.
+print_declared_next_session_priority() {
+  local path=$1
+  [ -f "$path" ] || return 0
+  awk '
+    function heading_of(line,   h) {
+      h = line
+      sub(/^##[[:space:]]+/, "", h)
+      sub(/[[:space:]]+$/, "", h)
+      return h
+    }
+    /^##[[:space:]]+/ { section = heading_of($0); next }
+    section == "Done" { next }
+    /^[-*][[:space:]]+\[[xX]\]/ { next }
+    $0 !~ /(\(|,[[:space:]]*)priority:[[:space:]]*0([,)]|$)/ { next }
+    $0 !~ /(\(|,[[:space:]]*)hold:[[:space:]]*NEXT-SESSION PRIORITY:/ { next }
+    {
+      marker = "NEXT-SESSION PRIORITY:"
+      rest = substr($0, index($0, marker) + length(marker))
+      cut = index(rest, ","); if (cut > 0) rest = substr(rest, 1, cut - 1)
+      cut = index(rest, ")"); if (cut > 0) rest = substr(rest, 1, cut - 1)
+      id = $0
+      if (id ~ /^[-*][[:space:]]+\[[ xX]\][[:space:]]+[^[:space:]]+[[:space:]]+-/) {
+        sub(/^[-*][[:space:]]+\[[ xX]\][[:space:]]+/, "", id)
+        sub(/[[:space:]].*$/, "", id)
+      } else if (id ~ /^[-*][[:space:]]+\*\*[^*]+\*\*[[:space:]]+-/) {
+        sub(/^[-*][[:space:]]+\*\*/, "", id)
+        sub(/\*\*.*$/, "", id)
+      } else {
+        id = "(unparsed id)"
+      }
+      printf "CAPTAIN DECLARED PRIORITY: %s -%s\n", id, rest
+    }
+  ' < "$path"
+}
+
 # A queued title line whose own text already marks it held or blocked. The
 # manual renderer has no task model, so this is the only signal it gets, and it
 # is the one tasks-axi's markdown backend writes: "(hold: ...)", "(hold-kind:
@@ -499,6 +542,7 @@ print_backlog_compact() {
   subsection "$label"
   if [ -f "$path" ]; then
     if [ -s "$path" ]; then
+      print_declared_next_session_priority "$path"
       if fm_tasks_axi_backend_available "$CONFIG"; then
         print_backlog_tasks_axi_compact "$path"
       elif fm_backlog_backend_manual "$CONFIG"; then
