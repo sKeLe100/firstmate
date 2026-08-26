@@ -1,0 +1,43 @@
+### BEFORE - base 6b916d6
+--- crewmate reports one event ---
+$ cat state/delivery-src.status
+blocked: waiting on lavish review
+--- watcher cycle 1: process-event result captured -> wake ---
+check: process-event result captured: procevent:delivery-src:1
+--- supervisor DRAIN TURN 1 (woken by cycle 1) ---
+    | 1787764784	2	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | delivery-src blocked: waiting on lavish review
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+--- watcher cycle 2: signal scan sees the SAME event's status change ---
+signal: /tmp/dedup-demo-BEFORE.uzvVcP/demo/state/delivery-src.status
+--- durable wake queue after both cycles ---
+  kind=signal  reason=delivery-src.status
+  kind=signal  reason=delivery-src.status
+--- supervisor DRAIN TURN 2 (only needed if cycle 2 woke again) ---
+    | 1787764786	4	signal	delivery-src.status	signal: /tmp/dedup-demo-BEFORE.uzvVcP/demo/state/delivery-src.status
+    | wake annotation: latest wake-EVENT observed at drain, not current state: delivery-src.status: blocked: waiting on lavish review
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | delivery-src blocked: waiting on lavish review
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+DRAIN TURNS SPENT ON ONE EVENT: 2
+
+
+### AFTER - fix 904b4d1
+--- crewmate reports one event ---
+$ cat state/delivery-src.status
+blocked: waiting on lavish review
+--- watcher cycle 1: process-event result captured -> wake ---
+check: process-event result captured: procevent:delivery-src:1
+--- supervisor DRAIN TURN 1 (woken by cycle 1) ---
+    | 1787764795	2	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | delivery-src blocked: waiting on lavish review
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+--- watcher cycle 2: signal scan sees the SAME event's status change ---
+(no second wake emitted)
+--- durable wake queue after both cycles ---
+  (empty)
+--- supervisor DRAIN TURN 2 (only needed if cycle 2 woke again) ---
+    (nothing queued - no second turn spent)
+DRAIN TURNS SPENT ON ONE EVENT: 1

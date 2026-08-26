@@ -1,0 +1,7 @@
+ok - one event enqueues once: its status signal never becomes a second wake
+ok - a routine status line keeps its signal wake rather than being silently absorbed
+ok - a status change written after the check wake, in the same second, is never coalesced
+ok - a signal deferred behind an unacknowledged generation is delayed, never dropped
+ok - a status signal with no process-event coverage wakes normally
+
+All wake-pair-dedup tests passed.
