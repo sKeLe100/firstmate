@@ -276,7 +276,7 @@ The first pass after adoption performs a one-time revalidation sweep of editable
 Report the outcome in plain captain-facing language with all of these facts:
 
 - effective startup-memory budget and total estimated tokens before and after;
-- this session's real context usage from `bin/fm-context-usage.sh`, reported as tokens and percent of window, kept clearly distinct from the startup-memory budget above; when the helper fails or the reading is unavailable, say exactly that instead of guessing or substituting the live token countdown;
+- this session's real context usage from `bin/fm-context-usage.sh`, reported as tokens and percent of window plus the reported `band`, kept clearly distinct from the startup-memory budget above; a `restart` band means this session must follow the checkpoint-then-restart policy in docs/configuration.md "Session context thresholds" after the pass completes rather than keep grinding; when the helper fails or the reading is unavailable, say exactly that instead of guessing or substituting the live token countdown;
 - one or more actions for each of `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`, using only `unchanged`, `added`, `rewritten`, `pruned`, `routed`, `archived`, or `proposed-offload`; adding or replacing a migration marker is `rewritten`, never a new action verb such as `migrated`;
 - each durable finding filed outside memory and its authoritative owner;
 - each archived entry's reason, each autonomous offload's live destination and actual relief, and, when a pinned candidate was proposed, the `proposed-offload` section with every candidate's fields;

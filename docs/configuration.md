@@ -195,6 +195,30 @@ An inherited `data/captain-shared.md` counts in a secondmate's total but remains
 The internal [`/stow` skill](../.agents/skills/stow/SKILL.md) owns curation and its automatic secondmate cascade, which accounts every home against this same per-home allowance separately rather than against a fleet total.
 The helper's header owns exact parsing, publication, and report output mechanics.
 
+## Session context thresholds (config/context-thresholds)
+
+`config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-25).
+The format is at most one `warn=<N>` line and one `restart=<N>` line, each a positive base-10 integer with `warn <= restart`; an absent file or absent key means the built-in defaults of `warn=150000` and `restart=250000`, and a malformed file is rejected loudly rather than silently replaced by defaults.
+The helper reports the resolved thresholds and a `band=ok|warn|restart` field on its one data-only output line; supervision, [`/stow`](../.agents/skills/stow/SKILL.md), and [`/bearings`](../.agents/skills/bearings/SKILL.md) act on that band rather than re-deriving thresholds.
+The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so the primary's thresholds propagate on every convergence.
+
+The bands mean:
+
+- `ok` - keep working.
+- `warn` - surface the context level in the next natural report to the captain; no restart yet.
+- `restart` - the session must not keep grinding: checkpoint durable state first (`/stow` for a firstmate home; a crewmate commits work in progress and appends a status note), then restart with a carryover handoff, then wake or advise the main session.
+
+The restart mechanics reuse the existing owners rather than a parallel mechanism:
+
+- A crewmate or secondmate agent is restarted with `bin/fm-control.sh <task-id> relaunch --note "carryover: what is done, what run/branch is live, exact pickup commands - YOU are the replacement"`; the relaunch carries the brief plus that note into the fresh agent.
+- A primary firstmate session runs `/stow`, then advises the captain to reset the session; the replacement session recovers from durable state per AGENTS.md section 5.
+- The wake back to the main session is the ordinary status/wake channel: a relaunched worker's next status append, or a secondmate's routed status line, wakes its supervisor.
+- Never send `/clear` through the steer channel: it is mechanically broken and the steer becomes chat the worker reasons about.
+
+To read another session's usage, run the helper with `FM_HOME` set to that session's working directory (a task worktree or secondmate home); thresholds then resolve against that home's own `config/context-thresholds`.
+The live `<total_tokens>` countdown can stick at 0 and is never evidence of exhausted context; the helper's transcript-derived reading is the only trusted source.
+The helper's header owns exact parsing and output mechanics.
+
 ## Stow pass horizon (config/stow-pass-horizon)
 
 `config/stow-pass-horizon` is an optional local, gitignored presence flag that opts this home in to the pass-count decay horizon in the internal [`/stow` skill](../.agents/skills/stow/SKILL.md).
@@ -371,7 +395,7 @@ When a running home advances and its loaded instruction surface (`AGENTS.md`, `b
 If that send fails, bootstrap keeps an idempotent retry marker and emits `NUDGE_SECONDMATES:` with the failure reason.
 The same bootstrap run emits `SECONDMATE_LIVENESS:` only when a registered secondmate is skipped or its relaunch fails; already-live and successfully relaunched secondmates are handled silently.
 For a mid-session inherited local-material edit where tracked-file sync is not needed, run `bin/fm-config-push.sh`.
-It uses the same live secondmate discovery and propagation helper as bootstrap, prints each live home's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `startup-memory-budget`, `trace-context`, and `data/captain-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
+It uses the same live secondmate discovery and propagation helper as bootstrap, prints each live home's result for every declared inherited item - the `FM_INHERITABLE_CONFIG` set owned by `bin/fm-config-inherit-lib.sh` plus `data/captain-shared.md` - as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
 When an allowlisted config item changes for an already-running local home, it sends the literal-content reread pointer described in [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md); unchanged allowlisted config sends no pointer unless a previous delivery is pending.
 A changed remote home instead receives one durably recorded marked re-read instruction after the allowlisted bytes have transferred because primary-local generation paths are not meaningful on another host.
 The locked bootstrap inheritance pass uses the same placement-specific behavior; see `secondmate-provisioning` for the single contract owner.
