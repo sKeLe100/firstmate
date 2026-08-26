@@ -91,10 +91,14 @@ FM_TEST_FAKED_TOOL_NAMES="node npm npx tmux zellij orca herdr cmux gh no-mistake
 # - excluding names in FM_TEST_FAKED_TOOL_NAMES - so those specific tools stay
 # genuinely absent whenever a fixture removes their fake, while ordinary
 # coreutils (grep, sed, awk, find, bash, ...) still resolve to the real host
-# copy. The cache directory name carries a digest of the exclusion list and of
-# the source directories' own contents, so changing either one lands on a
-# fresh directory instead of silently reusing a stale sandbox that still holds
-# links to the very binaries an exclusion was added to remove.
+# copy. The cache directory name carries the current uid plus a digest of the
+# exclusion list and of the source directories' own contents, so changing
+# either one lands on a fresh directory instead of silently reusing a stale
+# sandbox that still holds links to the very binaries an exclusion was added
+# to remove. Because the path under a shared TMPDIR is predictable and every
+# fixture then executes binaries resolved through it, the directory is trusted
+# only when it is a real directory owned by the current user - never a symlink
+# or another user's plant.
 #
 # Callers use `BASE_PATH=$(fm_test_base_path)`, a command substitution, so a
 # plain `return 1` here would be swallowed and leave BASE_PATH empty - every
@@ -110,35 +114,68 @@ fm_test_base_path_die() {
   exit 1
 }
 
+# A missing source dir is normal (slim containers routinely ship no /sbin), so
+# it must contribute to the key without deciding the subshell's exit status.
+fm_test_base_path_key_input() {
+  local dir
+  printf '%s\n' "$FM_TEST_FAKED_TOOL_NAMES"
+  for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
+    printf '%s\n' "$dir"
+    if [ -d "$dir" ]; then
+      ls -1 "$dir" 2>/dev/null || :
+    fi
+  done
+  :
+}
+
+# Trustworthy means: a real directory (not a symlink another user pointed
+# elsewhere) that the current user owns.
+fm_test_base_path_owned() {
+  [ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]
+}
+
+# The sandbox is usable when it actually holds links, not when this particular
+# call created them. An earlier run interrupted between the link loop and the
+# marker leaves a fully populated directory; re-entering the build then skips
+# every name as already present, so a "did I create anything" count would
+# reject a complete sandbox forever.
+fm_test_base_path_populated() {
+  local entry
+  for entry in "$1"/*; do
+    [ -e "$entry" ] && return 0
+  done
+  return 1
+}
+
 fm_test_base_path() {
-  local dir key
-  key=$(
-    printf '%s\n' "$FM_TEST_FAKED_TOOL_NAMES"
-    for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
-      printf '%s\n' "$dir"
-      [ -d "$dir" ] && ls -1 "$dir" 2>/dev/null
-    done
-  ) || fm_test_base_path_die 'could not enumerate system binary directories'
+  local key
+  key=$(fm_test_base_path_key_input) \
+    || fm_test_base_path_die 'could not enumerate system binary directories'
   key=$(printf '%s' "$key" | cksum | tr -d ' \n') \
     || fm_test_base_path_die 'could not digest the sandbox cache key'
 
-  local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$key"
+  local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$(id -u).$key"
   local marker="$cache_dir/.complete"
+
+  if [ -e "$cache_dir" ] && ! fm_test_base_path_owned "$cache_dir"; then
+    fm_test_base_path_die \
+      "refusing sandbox cache dir not owned by this user: $cache_dir"
+  fi
   if [ -f "$marker" ]; then
     printf '%s\n' "$cache_dir"
     return 0
   fi
 
-  mkdir -p "$cache_dir" \
+  (umask 077 && mkdir -p "$cache_dir") \
     || fm_test_base_path_die "could not create sandbox cache dir $cache_dir"
 
-  local path name excluded f linked=0
+  local dir path name excluded f
   for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
     [ -d "$dir" ] || continue
     for path in "$dir"/*; do
       [ -x "$path" ] || continue
       [ -f "$path" ] || continue
-      name=$(basename "$path")
+      name=${path##*/}
       [ -e "$cache_dir/$name" ] && continue
       excluded=0
       for f in $FM_TEST_FAKED_TOOL_NAMES; do
@@ -148,14 +185,12 @@ fm_test_base_path() {
         fi
       done
       [ "$excluded" -eq 1 ] && continue
-      if ln -s "$path" "$cache_dir/$name" 2>/dev/null; then
-        linked=$((linked + 1))
-      fi
+      ln -s "$path" "$cache_dir/$name" 2>/dev/null || :
     done
   done
 
-  [ "$linked" -gt 0 ] \
-    || fm_test_base_path_die "linked no system binaries into $cache_dir"
+  fm_test_base_path_populated "$cache_dir" \
+    || fm_test_base_path_die "sandbox cache dir is empty: $cache_dir"
 
   : > "$marker" \
     || fm_test_base_path_die "could not mark $cache_dir complete"
