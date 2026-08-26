@@ -154,7 +154,9 @@ fm_test_base_path() {
   key=$(printf '%s' "$key" | cksum | tr -d ' \n') \
     || fm_test_base_path_die 'could not digest the sandbox cache key'
 
-  local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$(id -u).$key"
+  local uid
+  uid=$(id -u) || fm_test_base_path_die 'could not determine the current user id'
+  local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$uid.$key"
   local marker="$cache_dir/.complete"
 
   if [ -e "$cache_dir" ] && ! fm_test_base_path_owned "$cache_dir"; then
