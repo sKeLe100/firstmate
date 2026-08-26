@@ -432,7 +432,7 @@ When starting no-mistakes, make \`--intent\` preserve all relevant content from 
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
 
 Two firstmate-specific rules layer on top of that guidance:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop.
+- ask-user findings are never yours to answer: escalate to firstmate (rule 7) and stop.
   Firstmate applies \`ask-user-authority\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
@@ -467,7 +467,7 @@ If the top-level path is the primary checkout or not the worktree you were launc
 # Rules
 $RULE1
  2. Stay inside this worktree; modify nothing outside it.
- 3. The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or bin/fm-context-usage.sh for actual context numbers.
+ 3. The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or $FM_ROOT/bin/fm-context-usage.sh for actual context numbers.
  4. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
  5. Report status by appending one line:
     \`echo "{state}: {one short line}" >> $STATUS_FILE\`
