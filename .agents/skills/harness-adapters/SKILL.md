@@ -268,7 +268,7 @@ A custom provider block in `opencode.jsonc` (`"npm": "@ai-sdk/openai-compatible"
 Before trusting such a lane for real dispatch, always verify with a real file-mutating multi-tool turn and confirm the file actually changed on disk - never trust the transcript alone, and never trust the model's advertised capability list: ollama's `/api/tags` can report `"capabilities":["tools",...]` for a model whose `/v1/chat/completions` output never populates a real `tool_calls` array for a given GGUF quant/template, instead narrating a fake tool call as plain text with `finish_reason: "stop"`.
 That failure is a model/template property of the serving stack, not an opencode bug, and it silently defeats any multi-tool crew task while a narrated fake tool call looks superficially like a normal completion.
 
-**Busy-queued Enter (opencode 1.18.4, tmux backend fix, herdr known gap).**
+**Busy-queued Enter (opencode 1.18.4).**
 While opencode is mid-turn, the composer accepts Enter as a "send when the turn
 ends" keystroke but does not clear the typed text from the composer until the
 turn actually finishes.
