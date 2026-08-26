@@ -1,0 +1,26 @@
+=== 1. A healthy session: band=ok, keep working ===
+context_tokens=90002 window=1000000 percent=9.0 warn_tokens=150000 restart_tokens=250000 band=ok transcript=TMP/ok.jsonl age_seconds=0
+
+=== 2. Session crosses the 150k warning threshold ===
+context_tokens=160002 window=1000000 percent=16.0 warn_tokens=150000 restart_tokens=250000 band=warn transcript=TMP/warn.jsonl age_seconds=0
+
+=== 3. Session enters the 250-300k restart band (must not keep grinding) ===
+context_tokens=262002 window=1000000 percent=26.2 warn_tokens=150000 restart_tokens=250000 band=restart transcript=TMP/restart.jsonl age_seconds=0
+supervision decision -> band=restart
+action path: checkpoint (/stow) -> bin/fm-control.sh <id> relaunch --note 'carryover: ...' -> wake main session via status channel
+
+=== 4. Captain retunes thresholds on the PRIMARY home ===
+context_tokens=160002 window=1000000 percent=16.0 warn_tokens=120000 restart_tokens=200000 band=warn transcript=TMP/warn.jsonl age_seconds=0
+
+=== 5. Secondmate home BEFORE convergence still uses defaults ===
+context_tokens=160002 window=1000000 percent=16.0 warn_tokens=150000 restart_tokens=250000 band=warn transcript=TMP/warn.jsonl age_seconds=0
+
+=== 6. Run the real inheritance convergence (FM_INHERITABLE_CONFIG path) ===
+secondmate config/context-thresholds now:
+    warn=120000
+    restart=200000
+context_tokens=160002 window=1000000 percent=16.0 warn_tokens=120000 restart_tokens=200000 band=warn transcript=TMP/warn.jsonl age_seconds=0
+
+=== 7. Malformed thresholds file fails loudly instead of silently defaulting ===
+fm-context-usage: malformed warn value in /tmp/tmp.YSrlNhl0XR/primary/config/context-thresholds: warn=lots
+exit=1 (rejected, as designed)
