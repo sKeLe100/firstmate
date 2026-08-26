@@ -13,8 +13,12 @@
 #     gate interval; it only redoes the work once that interval has elapsed
 #     (or --force is passed).
 #   - `check` fires one actionable drift line once the cached count reaches the
-#     threshold, stays silent while that episode persists however far the gap
-#     grows, and fires again only after a landed sync closes the gap.
+#     threshold, stays silent while the gap grows by less than another full
+#     threshold, fires again once that much genuinely new drift has landed (with
+#     the baseline advancing), and clears the episode when the gap closes.
+#   - When the watcher's per-check bound leaves no room for a network probe,
+#     `check` skips the probe and still publishes a degraded report, so the
+#     once-daily gate is stamped rather than the run being killed mid-probe.
 #   - `check` degrades silently when the refresh cannot reach upstream, and a
 #     degrade never closes or reopens an episode.
 #   - `arm` leaves a registered shim the watcher will accept, and `disarm`
@@ -394,7 +398,7 @@ run_drift() {
 
 test_drift_trigger_fires_once_per_episode() {
   set -e
-  local home root bare out record
+  local home root bare out record i
 
   home=$(new_home)
   root="$TMP_ROOT/drift-episode"
@@ -425,9 +429,54 @@ test_drift_trigger_fires_once_per_episode() {
   git -C "$root.src" commit -qam u7
   git -C "$root.src" push --quiet "$bare" main
   out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
-  [ -z "$out" ] || fail "drift-episode: a widening gap is the same episode and must stay silent: $out"
+  [ -z "$out" ] || fail "drift-episode: a gap growing by less than a threshold must stay silent: $out"
   assert_contains "$(cat "$record")" "reported_behind=6" "drift-episode: the record still names the reported episode"
-  pass "the drift trigger fires once when the gap crosses the threshold and stays silent while it persists"
+
+  # Another full threshold of genuinely new upstream work IS news again: this
+  # fork lands syncs as squash merges, so the absolute count never falls and a
+  # reset keyed only on that would latch the trigger silent forever.
+  for i in 8 9 10 11 12 13; do
+    printf 'u%s\n' "$i" >> "$root.src/seed.txt"
+    git -C "$root.src" commit -qam "u$i"
+  done
+  git -C "$root.src" push --quiet "$bare" main
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "13 commits behind upstream" "drift-episode: a new threshold-sized block of drift must fire again"
+  [ "$(printf '%s\n' "$out" | wc -l | tr -d '[:space:]')" = 1 ] \
+    || fail "drift-episode: the watcher contract allows exactly one line: $out"
+  assert_contains "$(cat "$record")" "reported_behind=13" "drift-episode: each firing re-baselines the record"
+
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-episode: the re-baselined episode must go quiet again: $out"
+  pass "the drift trigger reports one threshold-sized block of new drift at a time, re-baselining each firing"
+}
+
+test_drift_check_skips_the_probe_when_no_bound_fits() {
+  set -e
+  local home root bare out report
+
+  home=$(new_home)
+  root="$TMP_ROOT/drift-budget"
+  bare="$TMP_ROOT/drift-budget-upstream.git"
+  drift_fixture "$root" "$bare" 6
+
+  # FM_CHECK_TIMEOUT is the watcher's own per-check kill. At 3s there is no
+  # room for two bounded network probes, so the refresh must not attempt one:
+  # a killed run would print nothing AND stamp nothing, making the next
+  # watcher cycle repeat the same doomed probe instead of honoring the gate.
+  out=$(FM_CHECK_TIMEOUT=3 FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  [ -z "$out" ] || fail "drift-budget: a skipped probe must print nothing: $out"
+  report="$home/state/.upstream-behind-check.report"
+  assert_present "$report" "drift-budget: the refresh must still publish a report"
+  assert_contains "$(cat "$report")" "status=unknown" "drift-budget: a skipped probe degrades quietly"
+  assert_contains "$(cat "$report")" "reason=timeout-budget" "drift-budget: the degrade names why the probe was skipped"
+  assert_contains "$(cat "$report")" "checked_at=" "drift-budget: the once-daily gate must still be stamped"
+  assert_absent "$home/state/.upstream-drift" "drift-budget: a degrade must not open an episode"
+
+  # With the watcher's normal bound the same home does the real probe and fires.
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "dispatch an upstream sync task" "drift-budget: a fitting bound must still do the real check"
+  pass "check skips the network probe and still stamps the gate when no bound fits the watcher's budget"
 }
 
 test_drift_episode_resets_after_a_sync_lands() {
@@ -543,5 +592,6 @@ test_files_directly_under_skills_dir_are_not_named_as_skills
 test_degrade_preserves_last_known_good_and_retries
 test_drift_trigger_fires_once_per_episode
 test_drift_episode_resets_after_a_sync_lands
+test_drift_check_skips_the_probe_when_no_bound_fits
 test_drift_check_degrades_quietly_offline
 test_drift_arm_registers_a_shim_the_watcher_accepts

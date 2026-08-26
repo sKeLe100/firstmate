@@ -42,15 +42,22 @@
 # own; `arm` writes state/upstream-drift.check.sh and binds its bytes with
 # fm-check-register.sh so the watcher turns that one line into a `check:` wake.
 #
-# ONCE PER DRIFT EPISODE. A gap that stays open is not news every day. The
-# report record state/.upstream-drift holds the episode the last report was
-# made from, so the trigger fires once when the gap crosses the threshold and
-# stays silent while it persists, however much further it grows. The episode
-# ends when a sync lands and the refresh reads the fork back under the
-# threshold: the record is cleared then, so the next episode fires again. Only
-# an `ok` refresh moves episode state - a degraded (status=unknown) refresh
-# neither fires nor clears, so going offline mid-episode cannot manufacture a
-# repeat report when the network returns.
+# ONE REPORT PER THRESHOLD-SIZED BLOCK OF DRIFT. A gap that stays open is not
+# news every day. The report record state/.upstream-drift holds the behind
+# count the last report was made from (reported_behind), so the trigger fires
+# once when the gap first crosses the threshold and then stays silent until
+# another full threshold of genuinely NEW upstream work has accumulated -
+# `behind - reported_behind >= threshold` - at which point it fires again and
+# re-baselines the record to the current count. Baselining on new drift rather
+# than only on the absolute count is what keeps this reachable on a fork that
+# lands its syncs as squash merges: `behind` is a hash-reachability count, so
+# replayed upstream content never brings it back down, and a reset keyed purely
+# on `behind < threshold` would latch the trigger silent forever after one
+# firing. That clear-on-gap-closed path is still kept - it is correct and does
+# fire when a sync lands as a true merge - it is simply no longer the only way
+# back to reporting. Only an `ok` refresh moves episode state - a degraded
+# (status=unknown) refresh neither fires nor clears, so going offline
+# mid-episode cannot manufacture a repeat report when the network returns.
 #
 # The refresh runs as a bounded child rather than inline, so the proven
 # degrade-and-publish path above stays byte-for-byte the path a plain
@@ -59,7 +66,12 @@
 # per-check bound, because a run the watcher kills prints nothing and writes no
 # record: a configured FM_UPSTREAM_CHECK_TIMEOUT larger than FM_CHECK_TIMEOUT
 # (default 30, read from this check's own environment because the watcher runs
-# it as a direct child) allows is cut down to what fits, never raised.
+# it as a direct child) allows is cut down to what fits, never raised - all the
+# way down to no probe at all. When the watcher's bound leaves room for no
+# usable network bound, the child skips the probe entirely and still publishes a
+# degraded report (reason=timeout-budget), so checked_at is stamped and the
+# once-daily gate is honored, instead of the run being killed mid-probe having
+# written nothing.
 #
 # A bare behind/ahead count does not say WHAT changed, and skill changes are
 # what the captain most wants visibility on, so an ok result also groups the
@@ -89,7 +101,7 @@
 #   checked_at=<epoch>
 # or, degrading quietly:
 #   status=unknown
-#   reason=<no-upstream-remote|no-default-branch|unreachable>
+#   reason=<no-upstream-remote|no-default-branch|unreachable|timeout-budget>
 #   stale_behind=<N>               (last known ok result, when there was one)
 #   stale_ahead=<N>
 #   stale_newest_upstream_date=<YYYY-MM-DD>
@@ -168,7 +180,9 @@ drift_refresh_timeout() {
   check_timeout="${FM_CHECK_TIMEOUT:-30}"
   case "$check_timeout" in ''|*[!0-9]*|0) check_timeout=30 ;; esac
   fits=$(( (check_timeout - 2) / 2 ))
-  [ "$fits" -ge 5 ] || fits=5
+  # Never raised: a bound below 1s is not a shorter probe, it is no probe, and
+  # the caller skips the network entirely rather than being killed mid-fetch.
+  [ "$fits" -ge 1 ] || fits=0
   [ "$want" -le "$fits" ] || want=$fits
   printf '%s\n' "$want"
 }
@@ -215,13 +229,19 @@ drift_record_write() {  # <behind>
 }
 
 action_check() {
-  local threshold behind status detail line
+  local threshold behind status detail line refresh_timeout
   threshold=$(drift_threshold)
 
   # Discarded output: a plain refresh prints the whole report, and this check
   # may print only its own one line, or nothing.
-  FM_UPSTREAM_CHECK_TIMEOUT="$(drift_refresh_timeout)" \
-    "$SCRIPT_DIR/fm-upstream-behind-check.sh" >/dev/null 2>&1 || true
+  refresh_timeout=$(drift_refresh_timeout)
+  if [ "$refresh_timeout" -eq 0 ]; then
+    FM_UPSTREAM_NO_PROBE=1 \
+      "$SCRIPT_DIR/fm-upstream-behind-check.sh" >/dev/null 2>&1 || true
+  else
+    FM_UPSTREAM_CHECK_TIMEOUT="$refresh_timeout" \
+      "$SCRIPT_DIR/fm-upstream-behind-check.sh" >/dev/null 2>&1 || true
+  fi
 
   status=$(report_field status)
   # A degrade neither fires nor closes an open episode: an unknown carries no
@@ -238,8 +258,12 @@ action_check() {
     return 0
   fi
 
-  # Already reported: the episode stays open however much further it grows.
-  [ -z "$DRIFT_REPORTED_BEHIND" ] || return 0
+  # An open episode stays silent until another full threshold of new upstream
+  # work has landed; each firing re-baselines, so one report covers one
+  # threshold-sized block of drift.
+  if [ -n "$DRIFT_REPORTED_BEHIND" ]; then
+    [ "$(( behind - DRIFT_REPORTED_BEHIND ))" -ge "$threshold" ] || return 0
+  fi
 
   detail=$(report_field detail_hint)
   line="upstream drift: this home is $behind commits behind upstream (threshold $threshold) - dispatch an upstream sync task"
@@ -466,6 +490,11 @@ degrade() {  # <reason> - publish an unknown that carries any last-known-good fo
   fi
   publish unknown "${fields[@]}"
 }
+
+if [ "${FM_UPSTREAM_NO_PROBE:-0}" = 1 ]; then
+  degrade timeout-budget
+  exit 0
+fi
 
 if ! git -C "$FM_ROOT" remote get-url upstream >/dev/null 2>&1; then
   degrade no-upstream-remote
