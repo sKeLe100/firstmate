@@ -62,4 +62,8 @@ UNREAD_DIRS=$(
 )
 [ -z "$UNREAD_DIRS" ] && UNREAD_DIRS="none"
 
+UNMATCHED=$(comm -13 <(printf '%s\n' "$ALL_FILES" | sort -u) "$READ_LIST_FILE" | grep . | paste -sd',' - | sed 's/,/, /g' || true)
+
 echo "read $READ_N of $TOTAL files, unread dirs: $UNREAD_DIRS"
+[ -n "$UNMATCHED" ] && echo "unmatched read args (not tracked at HEAD, expected clone-relative paths): $UNMATCHED"
+exit 0

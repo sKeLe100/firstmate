@@ -26,6 +26,62 @@ make_fixture() {
   printf '%s\n' "$dir"
 }
 
+test_unmatched_args_are_reported() {
+  local dir out
+  dir=$(make_fixture)
+  out="$TMP_ROOT/unmatched-out.txt"
+  "$ROOT/bin/fm-roundtable-coverage.sh" "$dir" src/main.py "$dir/src/other.py" nope.py > "$out"
+
+  assert_grep "read 1 of 5 files" "$out" "only the clone-relative tracked path counts as read"
+  assert_grep "unmatched read args" "$out" \
+    "arguments that match no tracked file must be reported, not silently dropped"
+  assert_grep "nope.py" "$out" "the misspelled argument must be named"
+  assert_grep "$dir/src/other.py" "$out" "the absolute-path argument must be named"
+
+  pass "fm-roundtable-coverage: unmatched read arguments are disclosed"
+}
+
+test_non_ascii_paths() {
+  local dir out
+  dir=$(mktemp -d "$TMP_ROOT/utf8-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  mkdir -p "$dir/café"
+  printf 'x = 1\n' > "$dir/café/é.py"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+
+  out="$TMP_ROOT/utf8-out.txt"
+  "$ROOT/bin/fm-roundtable-coverage.sh" "$dir" 'café/é.py' > "$out"
+
+  assert_grep "read 1 of 1 files, unread dirs: none" "$out" \
+    "a non-ASCII path the reviewer read must count as read, not as a quoted mismatch"
+  assert_no_grep '\\303' "$out" "paths must not be reported in git's C-quoted form"
+
+  pass "fm-roundtable-coverage: non-ASCII tracked paths are matched byte-accurately"
+}
+
+test_large_tree_is_bounded() {
+  local dir i start elapsed
+  dir=$(mktemp -d "$TMP_ROOT/big-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  mkdir -p "$dir/a/b/c"
+  for i in $(seq 1 2000); do printf 'x\n' > "$dir/a/b/c/f$i.py"; done
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+
+  start=$SECONDS
+  FM_ROUNDTABLE_MARKS_FILE="$TMP_ROOT/big-marks.tsv" \
+    "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" > "$TMP_ROOT/big-out.txt"
+  elapsed=$((SECONDS - start))
+  [ "$elapsed" -lt 20 ] ||
+    fail "factsheet on a 2000-file clone must stay bounded in seconds, took ${elapsed}s"
+  assert_grep "a/b " "$TMP_ROOT/big-out.txt" "the collapsed dir row must still be emitted"
+
+  pass "fm-roundtable-factsheet: tree walk stays bounded on a large clone (${elapsed}s)"
+}
+
 test_partial_coverage() {
   local dir out out_file unread entry
   dir=$(make_fixture)
@@ -93,3 +149,6 @@ test_deep_dirs_match_factsheet_tree() {
 test_partial_coverage
 test_full_coverage
 test_deep_dirs_match_factsheet_tree
+test_unmatched_args_are_reported
+test_non_ascii_paths
+test_large_tree_is_bounded
