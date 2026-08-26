@@ -1,0 +1,46 @@
+
+=== fork is 30 commits behind upstream; default threshold is 25 ===
+
+=== $ fm-upstream-behind-check.sh check   (day 1) ===
+upstream drift: this home is 30 commits behind upstream (threshold 25) - dispatch an upstream sync task; pending commits: git -C /tmp/drift-demo-fxo0/fork log --oneline refs/heads/main..refs/remotes/upstream/main
+
+=== $ fm-upstream-behind-check.sh check   (day 2, gap still open) ===
+(no output - not news twice)
+
+=== report record state/.upstream-drift ===
+fm-upstream-drift-v1
+reported_behind=30
+reported_at=1787712990
+
+=== captain lands the upstream sync as a real merge ===
+
+=== $ fm-upstream-behind-check.sh check   (day 3, after the sync) ===
+(no output - gap closed)
+
+=== record after the sync ===
+(record removed - episode cleared)
+
+=== upstream moves 26 more commits ahead: a genuinely new drift episode ===
+
+=== $ fm-upstream-behind-check.sh check ===
+upstream drift: this home is 26 commits behind upstream (threshold 25) - dispatch an upstream sync task; pending commits: git -C /tmp/drift-demo-fxo0/fork log --oneline refs/heads/main..refs/remotes/upstream/main
+
+=== offline: upstream remote unreachable ===
+stdout: (none)   exit: 0
+record unchanged: reported_behind=26
+
+=== $ fm-upstream-behind-check.sh arm ===
+armed: state/upstream-drift.check.sh
+  upstream-drift.check-trust
+  upstream-drift.check.sh
+
+=== watcher acceptance of the armed shim ===
+fm_custom_check_registered: YES (watcher will run it)
+after editing the shim: rejected as unauthenticated
+
+=== the watcher executes the armed shim; a fresh drift episode is one wake line ===
+upstream drift: this home is 26 commits behind upstream (threshold 25) - dispatch an upstream sync task; pending commits: git -C /tmp/drift-demo-fxo0/fork log --oneline refs/heads/main..refs/remotes/upstream/main
+(watcher would wake with: check: upstream-drift.check.sh: <that line>)
+
+=== $ fm-upstream-behind-check.sh disarm ===
+disarmed: state/upstream-drift.check.sh
