@@ -45,15 +45,13 @@ fi
 # same bounded depth as the fact sheet. One awk pass over all tracked files
 # (not an O(dirs*files) shell loop) so this stays fast on large clones.
 UNREAD_DIRS=$(
-  awk -v maxd="$MAX_DEPTH" -F'\t' '
+  awk -v maxd="$MAX_DEPTH" -F'\t' \
+    "$FM_ROUNDTABLE_COLLAPSE_AWK"'
     NR == FNR { read[$0] = 1; next }
+    $0 == "" { next }
     {
       rel = $0
-      n = split(rel, parts, "/")
-      depth = n - 1
-      if (depth > maxd) depth = maxd
-      dir = (depth < 1) ? "." : parts[1]
-      for (i = 2; i <= depth; i++) dir = dir "/" parts[i]
+      dir = fm_collapse_dir(rel, maxd)
       total[dir] = 1
       if (rel in read) readcount[dir] = 1
     }

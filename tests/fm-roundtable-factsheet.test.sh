@@ -160,9 +160,28 @@ test_absent_docs_do_not_abort() {
   pass "fm-roundtable-factsheet: missing key docs are an absent case, not an abort"
 }
 
+test_doc_name_match_is_literal() {
+  local dir out
+  dir=$(mktemp -d "$TMP_ROOT/dotdoc-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  printf 'not a readme\n' > "$dir/READMEXmd"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m init
+
+  out="$TMP_ROOT/dotdoc-out.txt"
+  "$ROOT/bin/fm-roundtable-factsheet.sh" "$dir" > "$out"
+
+  assert_grep "README.md: absent" "$out" \
+    "a file named READMEXmd must not be reported as the project README"
+
+  pass "fm-roundtable-factsheet: key-doc names match literally, not as regexes"
+}
+
 test_basic_output
 test_since_delta
 test_mark_round_trip
 test_root_docs_preferred
 test_test_classification_is_anchored
 test_absent_docs_do_not_abort
+test_doc_name_match_is_literal

@@ -43,26 +43,30 @@ fm_roundtable_is_test_file() {
   esac
 }
 
-# Collapses a relative dir path to at most max_depth segments. Must stay in
-# exact agreement with the depth cap in bin/fm-roundtable-coverage.sh so every
-# dir the coverage ledger names is a dir the fact sheet could have printed.
-fm_roundtable_collapse_dir() {
-  local dir=$1 max_depth=$2
-  { [ -z "$dir" ] || [ "$max_depth" -lt 1 ]; } && { printf '.\n'; return; }
-  printf '%s\n' "$dir" | cut -d/ -f"1-$max_depth"
+# Single source of the depth-collapse rule, as an awk function both this
+# library and bin/fm-roundtable-coverage.sh prepend to their own awk program.
+# Neither may reimplement it: every dir the coverage ledger names must be a dir
+# the fact sheet could have printed.
+FM_ROUNDTABLE_COLLAPSE_AWK='
+function fm_collapse_dir(rel, maxd,   n, parts, depth, dir, i) {
+  n = split(rel, parts, "/")
+  depth = n - 1
+  if (depth > maxd) depth = maxd
+  dir = (depth < 1) ? "." : parts[1]
+  for (i = 2; i <= depth; i++) dir = dir "/" parts[i]
+  return dir
 }
+'
 
 # Prints "dir<TAB>file_count<TAB>total_bytes" for every directory up to
 # max_depth (0 = root only, files bucketed by their collapsed ancestor dir).
 fm_roundtable_dir_tree() {
   local clone=$1 max_depth=$2
-  fm_roundtable_file_sizes "$clone" | awk -F'\t' -v maxd="$max_depth" '
+  fm_roundtable_file_sizes "$clone" | awk -F'\t' -v maxd="$max_depth" \
+    "$FM_ROUNDTABLE_COLLAPSE_AWK"'
+    $1 == "" { next }
     {
-      n = split($1, parts, "/")
-      depth = n - 1
-      if (depth > maxd) depth = maxd
-      dir = (depth < 1) ? "." : parts[1]
-      for (i = 2; i <= depth; i++) dir = dir "/" parts[i]
+      dir = fm_collapse_dir($1, maxd)
       c[dir]++
       s[dir] += $2 + 0
     }

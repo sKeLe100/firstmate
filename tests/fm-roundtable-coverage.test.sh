@@ -146,8 +146,26 @@ test_deep_dirs_match_factsheet_tree() {
   pass "fm-roundtable-coverage: unread dirs match the factsheet tree at nested depth"
 }
 
+# Regression: an empty HEAD tree has no dirs at all, so the ledger must not
+# invent a "." unread dir from the trailing newline of its input.
+test_empty_tree_names_no_unread_dirs() {
+  local dir out
+  dir=$(mktemp -d "$TMP_ROOT/empty-XXXXXX")
+  rmdir "$dir"
+  git init -q -b main "$dir"
+  git -C "$dir" commit -q --allow-empty -m init
+  out="$TMP_ROOT/empty-out.txt"
+  "$ROOT/bin/fm-roundtable-coverage.sh" "$dir" foo.py > "$out"
+
+  assert_grep "read 0 of 0 files, unread dirs: none" "$out" \
+    "an empty tracked tree must report no unread dirs, not a phantom '.'"
+
+  pass "fm-roundtable-coverage: empty HEAD tree names no unread dirs"
+}
+
 test_partial_coverage
 test_full_coverage
+test_empty_tree_names_no_unread_dirs
 test_deep_dirs_match_factsheet_tree
 test_unmatched_args_are_reported
 test_non_ascii_paths

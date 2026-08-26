@@ -84,7 +84,8 @@ echo
 echo "## Key docs (paths + line counts only, not contents)"
 ROADMAP_PATH=""
 for doc in README.md ROADMAP.md; do
-  matches=$(fm_roundtable_files "$CLONE" | grep -E "(^|/)$doc\$" || true)
+  doc_re=${doc//./\\.}
+  matches=$(fm_roundtable_files "$CLONE" | grep -E "(^|/)$doc_re\$" || true)
   path=$(printf '%s\n' "$matches" | awk 'NF { if ($0 !~ /\//) { root = $0 } else if (best == "") best = $0 } END { print (root != "") ? root : best }')
   if [ "$doc" = ROADMAP.md ]; then ROADMAP_PATH=$path; fi
   if [ -n "$path" ]; then
