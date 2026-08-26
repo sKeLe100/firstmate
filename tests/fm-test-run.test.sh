@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Contract tests for bin/fm-test-run.sh - the single owner of behavior suite
-# selection, portable lane composition, proven-isolated --jobs, timing markers,
-# JSON artifacts, coverage guard, and aggregate exit status.
+# selection, portable lane composition, proven-isolated --jobs, opt-in
+# --fail-fast, timing markers, JSON artifacts, coverage guard, and aggregate
+# exit status.
 #
 # These tests intentionally exercise the runner with fixtures, --list, and
 # focused scheduler checks, not the complete Firstmate suite.
@@ -631,8 +632,10 @@ test_herdr_ci_family_run_has_a_step_timeout() {
   # The required Herdr lane's hang tripwire is the family-run *step* bound, not
   # the 75-minute job cap. Parse the workflow as YAML so nested `with.name`
   # artifact keys cannot masquerade as the step contract.
-  command -v ruby >/dev/null 2>&1 \
-    || fail "ruby is required to parse .github/workflows/ci.yml as YAML"
+  if ! command -v ruby >/dev/null 2>&1; then
+    echo "skip: ruby not found (required to parse .github/workflows/ci.yml as YAML)"
+    return 0
+  fi
   local json job_timeout step_timeout
   json=$(ruby -ryaml -rjson -e '
 doc = YAML.load_file(ARGV[0])
@@ -703,6 +706,201 @@ assert len(doc["scripts"])==3
   pass "aggregate-json merges lane timing artifacts"
 }
 
+# --fail-fast is opt-in: CI relies on the default continuing through every
+# selected script so it sees the complete result set. Exercise both the flag
+# and its env var against a two-script selection whose first script fails, and
+# assert on the second script's own FM_TEST_BEGIN marker - the runner only
+# emits that once it actually starts a script.
+test_fail_fast_stops_after_first_failure() {
+  local tmp fail_f pass_f rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-ff.XXXXXX")
+  fail_f="$tmp/afail.test.sh"
+  pass_f="$tmp/bpass.test.sh"
+  cat >"$fail_f" <<'SH'
+#!/usr/bin/env bash
+echo "not ok - fail"
+exit 1
+SH
+  cat >"$pass_f" <<'SH'
+#!/usr/bin/env bash
+echo "ok - pass"
+exit 0
+SH
+  chmod +x "$fail_f" "$pass_f"
+
+  # Default (off): the second script still runs.
+  set +e
+  "$RUNNER" "$fail_f" "$pass_f" >"$tmp/default.txt" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { rm -rf "$tmp"; fail "default run must still exit non-zero"; }
+  grep -Fq "FM_TEST_BEGIN" "$tmp/default.txt" \
+    || { rm -rf "$tmp"; fail "runner emitted no FM_TEST_BEGIN markers at all"; }
+  grep -F "FM_TEST_BEGIN" "$tmp/default.txt" | grep -Fq "bpass.test.sh" \
+    || { rm -rf "$tmp"; fail "without --fail-fast the second script must still run"; }
+  grep -q 'FM_TEST_SUMMARY total=2 failed=1' "$tmp/default.txt" \
+    || { rm -rf "$tmp"; fail "default run should report total=2 failed=1"; }
+
+  # --fail-fast: the second script is never started.
+  set +e
+  "$RUNNER" --fail-fast "$fail_f" "$pass_f" >"$tmp/ff.txt" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { rm -rf "$tmp"; fail "--fail-fast run must exit non-zero"; }
+  grep -F "FM_TEST_BEGIN" "$tmp/ff.txt" | grep -Fq "afail.test.sh" \
+    || { rm -rf "$tmp"; fail "--fail-fast must still run the first script"; }
+  if grep -F "FM_TEST_BEGIN" "$tmp/ff.txt" | grep -Fq "bpass.test.sh"; then
+    rm -rf "$tmp"
+    fail "--fail-fast must not start the second script after a failure"
+  fi
+
+  # FM_TEST_FAIL_FAST is the equivalent env var.
+  set +e
+  FM_TEST_FAIL_FAST=1 "$RUNNER" "$fail_f" "$pass_f" >"$tmp/env.txt" 2>&1
+  set -e
+  if grep -F "FM_TEST_BEGIN" "$tmp/env.txt" | grep -Fq "bpass.test.sh"; then
+    rm -rf "$tmp"
+    fail "FM_TEST_FAIL_FAST=1 must behave like --fail-fast"
+  fi
+
+  # A truthy spelling is honored rather than silently behaving as off.
+  set +e
+  FM_TEST_FAIL_FAST=true "$RUNNER" "$fail_f" "$pass_f" >"$tmp/true.txt" 2>&1
+  set -e
+  if grep -F "FM_TEST_BEGIN" "$tmp/true.txt" | grep -Fq "bpass.test.sh"; then
+    rm -rf "$tmp"
+    fail "FM_TEST_FAIL_FAST=true must behave like --fail-fast, not as off"
+  fi
+  grep -Fq 'integer expression expected' "$tmp/true.txt" \
+    && { rm -rf "$tmp"; fail "FM_TEST_FAIL_FAST=true must not emit shell arithmetic errors"; }
+
+  # A falsy spelling keeps the default continue-through behavior.
+  set +e
+  FM_TEST_FAIL_FAST=false "$RUNNER" "$fail_f" "$pass_f" >"$tmp/false.txt" 2>&1
+  set -e
+  grep -F "FM_TEST_BEGIN" "$tmp/false.txt" | grep -Fq "bpass.test.sh" \
+    || { rm -rf "$tmp"; fail "FM_TEST_FAIL_FAST=false must leave fail-fast off"; }
+
+  # An unparseable value is a hard usage error, not a silent no-op.
+  set +e
+  FM_TEST_FAIL_FAST=maybe "$RUNNER" "$fail_f" "$pass_f" >"$tmp/bad.txt" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] \
+    || { rm -rf "$tmp"; fail "FM_TEST_FAIL_FAST=maybe must exit 2, got $rc"; }
+  grep -Fq "FM_TEST_FAIL_FAST" "$tmp/bad.txt" \
+    || { rm -rf "$tmp"; fail "rejection should name FM_TEST_FAIL_FAST"; }
+
+  rm -rf "$tmp"
+  pass "--fail-fast stops after the first failure and is off by default"
+}
+
+# The --jobs>1 early-break lives in the scheduler loop and reads FAILED, which
+# record_script_result updates in the PARENT shell when a worker is reaped -
+# workers themselves run in subshells and cannot affect it. A refactor that
+# moved the increment worker-side would make fail-fast a silent no-op under
+# --jobs while every serial test still passed, so this drives the parallel
+# path specifically.
+#
+# Scheduling is asserted through the runner's own FM_TEST_BEGIN marker, which
+# the parent prints immediately before forking a worker, so its absence means
+# the script was never scheduled. With --jobs 2 the first two scripts are
+# always in flight before any reap can happen, and the break is evaluated once
+# per remaining script, so the exact cut-off point is not pinned - the
+# contract is that scheduling stops rather than running the whole selection.
+# Every follower blocks until the failing script has published its evidence,
+# which keeps the failure the first result available to reap.
+test_fail_fast_jobs_stops_scheduling() {
+  local tmp repo runner evidence fake_bin rc begin_n last s
+  local -a proven
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-ff-jobs.XXXXXX")
+  repo="$tmp/repo"
+  runner="$repo/bin/fm-test-run.sh"
+  evidence="$tmp/evidence"
+  fake_bin="$tmp/fake-bin"
+  proven=(
+    tests/fm-brief.test.sh
+    tests/fm-composer-lib.test.sh
+    tests/fm-lint.test.sh
+    tests/fm-crew-state.test.sh
+    tests/fm-composer-ghost.test.sh
+    tests/fm-herdr-lab.test.sh
+  )
+  last=${proven[$(( ${#proven[@]} - 1 ))]}
+  mkdir -p "$repo/bin" "$repo/tests" "$evidence" "$fake_bin"
+  cp "$RUNNER" "$runner"
+  cat >"$fake_bin/stat" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "-c" ] && [ "$2" = "%a" ]; then
+  printf '700\n'
+  exit 0
+fi
+if [ "$1" = "-f" ] && [ "$2" = "%Lp" ]; then
+  printf '  File: "%s"\n    ID: fake Namelen: 255 Type: ext2/ext3\n700\n' "$3"
+  exit 0
+fi
+exit 1
+SH
+  # First script fails and publishes the evidence the followers wait on.
+  cat >"$repo/${proven[0]}" <<'SH'
+#!/usr/bin/env bash
+touch "$FF_EVIDENCE/first-failed"
+echo "not ok - deliberate first failure"
+exit 1
+SH
+  for s in "${proven[@]:1}"; do
+    cat >"$repo/$s" <<'SH'
+#!/usr/bin/env bash
+waited=0
+while [ ! -e "$FF_EVIDENCE/first-failed" ] && [ "$waited" -lt 600 ]; do
+  sleep 0.05
+  waited=$((waited + 1))
+done
+echo "ok - follower"
+SH
+  done
+  chmod +x "$runner" "$fake_bin/stat"
+  for s in "${proven[@]}"; do chmod +x "$repo/$s"; done
+
+  # --fail-fast: scheduling stops; the last script is never started.
+  set +e
+  PATH="$fake_bin:$PATH" FF_EVIDENCE="$evidence" \
+    "$runner" --jobs 2 --fail-fast "${proven[@]}" >"$tmp/ff" 2>"$tmp/fferr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] \
+    || { cat "$tmp/ff" "$tmp/fferr"; rm -rf "$tmp"; fail "--jobs --fail-fast run must exit non-zero"; }
+  grep -F 'FM_TEST_BEGIN' "$tmp/ff" | grep -Fq "${proven[0]}" \
+    || { cat "$tmp/ff" "$tmp/fferr"; rm -rf "$tmp"; fail "the failing script must still be scheduled"; }
+  begin_n=$(grep -c '^FM_TEST_BEGIN ' "$tmp/ff" || true)
+  [ "$begin_n" -lt "${#proven[@]}" ] \
+    || { rm -rf "$tmp"; fail "--jobs --fail-fast scheduled all ${#proven[@]} scripts (FAILED not seen by the scheduler)"; }
+  if grep -F 'FM_TEST_BEGIN' "$tmp/ff" | grep -Fq "$last"; then
+    rm -rf "$tmp"
+    fail "--jobs --fail-fast must not schedule $last after a failure"
+  fi
+  grep -Fq 'fail-fast: not scheduling remaining scripts' "$tmp/fferr" \
+    || { rm -rf "$tmp"; fail "--jobs --fail-fast should log why it stopped"; }
+
+  # Default off: every script is scheduled even though the first one failed.
+  # FM_TEST_FAIL_FAST is pinned so an ambient value cannot decide the result.
+  rm -f "$evidence/first-failed"
+  set +e
+  PATH="$fake_bin:$PATH" FF_EVIDENCE="$evidence" FM_TEST_FAIL_FAST=0 \
+    "$runner" --jobs 2 "${proven[@]}" >"$tmp/all" 2>"$tmp/allerr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { rm -rf "$tmp"; fail "default --jobs run must still exit non-zero"; }
+  begin_n=$(grep -c '^FM_TEST_BEGIN ' "$tmp/all" || true)
+  [ "$begin_n" -eq "${#proven[@]}" ] \
+    || { cat "$tmp/all" "$tmp/allerr"; rm -rf "$tmp"; fail "without --fail-fast all ${#proven[@]} scripts must run, got $begin_n"; }
+  grep -Fq "FM_TEST_SUMMARY total=${#proven[@]} failed=1" "$tmp/all" \
+    || { rm -rf "$tmp"; fail "default --jobs summary wrong: $(grep FM_TEST_SUMMARY "$tmp/all")"; }
+
+  rm -rf "$tmp"
+  pass "--fail-fast stops the --jobs scheduler after the first failure"
+}
+
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
@@ -721,3 +919,5 @@ test_jobs_requires_proven_isolated
 test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
+test_fail_fast_stops_after_first_failure
+test_fail_fast_jobs_stops_scheduling

@@ -71,6 +71,134 @@ pass() {
 FM_TEST_CLEANUP_DIRS=()
 FM_TEST_CLEANUP_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/.fm-test-cleanup.$$.XXXXXX") || return 1
 
+# Tool names firstmate's own fake toolchain fixtures fake (make_fake_toolchain
+# and siblings across tests/). A fixture often deletes one of these from its
+# fakebin/ directory to simulate that tool being genuinely absent (e.g.
+# `rm -f "$fakebin/node"`), and expects fm-bootstrap.sh's `command -v` lookups
+# to see it as missing.
+# Excludes only tools tests actually fake to observe absence; "git" stays a
+# real host tool because fixtures perform real git operations on throwaway
+# repos, never faking git itself.
+FM_TEST_FAKED_TOOL_NAMES="node npm npx tmux zellij orca herdr cmux gh no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi treehouse grok kimi codex opencode pi"
+
+# fm_test_base_path echoes a sandbox directory of symlinks standing in for the
+# host's real /usr/bin:/bin:/usr/sbin:/sbin. Naively prepending a test's
+# fakebin onto the raw host PATH ("$fakebin:$BASE_PATH") let a real host
+# binary with the same name (e.g. a real /usr/bin/node) bleed back in the
+# moment a fixture deleted the fake copy to simulate that tool being missing,
+# because a plain PATH walk just keeps going past the empty slot. This builds
+# one shared, cached directory of symlinks to every other real system binary
+# - excluding names in FM_TEST_FAKED_TOOL_NAMES - so those specific tools stay
+# genuinely absent whenever a fixture removes their fake, while ordinary
+# coreutils (grep, sed, awk, find, bash, ...) still resolve to the real host
+# copy. The cache directory name carries the current uid plus a digest of the
+# exclusion list and of the source directories' own contents, so changing
+# either one lands on a fresh directory instead of silently reusing a stale
+# sandbox that still holds links to the very binaries an exclusion was added
+# to remove. Because the path under a shared TMPDIR is predictable and every
+# fixture then executes binaries resolved through it, the directory is trusted
+# only when it is a real directory owned by the current user - never a symlink
+# or another user's plant.
+#
+# Callers use `BASE_PATH=$(fm_test_base_path)`, a command substitution, so a
+# plain `return 1` here would be swallowed and leave BASE_PATH empty - every
+# fixture would then run with no system binaries at all and fail in confusing
+# ways far from the real cause. Build failures therefore signal the invoking
+# shell directly via `kill -s TERM $$` ($$ stays the caller's PID inside a
+# subshell, the same property fm_test_tmproot relies on above).
+FM_TEST_BASE_PATH_SOURCE_DIRS="/usr/bin /bin /usr/sbin /sbin"
+
+fm_test_base_path_die() {
+  printf 'not ok - fm_test_base_path: %s\n' "$1" >&2
+  kill -s TERM $$ 2>/dev/null
+  exit 1
+}
+
+# A missing source dir is normal (slim containers routinely ship no /sbin), so
+# it must contribute to the key without deciding the subshell's exit status.
+fm_test_base_path_key_input() {
+  local dir
+  printf '%s\n' "$FM_TEST_FAKED_TOOL_NAMES"
+  for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
+    printf '%s\n' "$dir"
+    if [ -d "$dir" ]; then
+      ls -1 "$dir" 2>/dev/null || :
+    fi
+  done
+  :
+}
+
+# Trustworthy means: a real directory (not a symlink another user pointed
+# elsewhere) that the current user owns.
+fm_test_base_path_owned() {
+  [ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]
+}
+
+# The sandbox is usable when it actually holds links, not when this particular
+# call created them. An earlier run interrupted between the link loop and the
+# marker leaves a fully populated directory; re-entering the build then skips
+# every name as already present, so a "did I create anything" count would
+# reject a complete sandbox forever.
+fm_test_base_path_populated() {
+  local entry
+  for entry in "$1"/*; do
+    [ -e "$entry" ] && return 0
+  done
+  return 1
+}
+
+fm_test_base_path() {
+  local key
+  key=$(fm_test_base_path_key_input) \
+    || fm_test_base_path_die 'could not enumerate system binary directories'
+  key=$(printf '%s' "$key" | cksum | tr -d ' \n') \
+    || fm_test_base_path_die 'could not digest the sandbox cache key'
+
+  local uid
+  uid=$(id -u) || fm_test_base_path_die 'could not determine the current user id'
+  local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$uid.$key"
+  local marker="$cache_dir/.complete"
+
+  if [ -e "$cache_dir" ] && ! fm_test_base_path_owned "$cache_dir"; then
+    fm_test_base_path_die \
+      "refusing sandbox cache dir not owned by this user: $cache_dir"
+  fi
+  if [ -f "$marker" ]; then
+    printf '%s\n' "$cache_dir"
+    return 0
+  fi
+
+  (umask 077 && mkdir -p "$cache_dir") \
+    || fm_test_base_path_die "could not create sandbox cache dir $cache_dir"
+
+  local dir path name excluded f
+  for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
+    [ -d "$dir" ] || continue
+    for path in "$dir"/*; do
+      [ -x "$path" ] || continue
+      [ -f "$path" ] || continue
+      name=${path##*/}
+      [ -e "$cache_dir/$name" ] && continue
+      excluded=0
+      for f in $FM_TEST_FAKED_TOOL_NAMES; do
+        if [ "$name" = "$f" ]; then
+          excluded=1
+          break
+        fi
+      done
+      [ "$excluded" -eq 1 ] && continue
+      ln -s "$path" "$cache_dir/$name" 2>/dev/null || :
+    done
+  done
+
+  fm_test_base_path_populated "$cache_dir" \
+    || fm_test_base_path_die "sandbox cache dir is empty: $cache_dir"
+
+  : > "$marker" \
+    || fm_test_base_path_die "could not mark $cache_dir complete"
+  printf '%s\n' "$cache_dir"
+}
+
 fm_test_pid_identity() {
   local pid=$1
   FM_STATE_OVERRIDE="${TMPDIR:-/tmp}" bash -c \

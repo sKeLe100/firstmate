@@ -42,6 +42,14 @@
 #                   selected script is in the proven-isolated set
 #                   (bin/fm-test-isolation-proof.sh --list). Cap is 8. Stateful
 #                   families never schedule under --jobs.
+#   --fail-fast     opt-in; stop the run at the first failing script instead of
+#                   continuing through every remaining selected script. Off by
+#                   default so CI keeps seeing the complete result set.
+#                   FM_TEST_FAIL_FAST is the equivalent env var; it accepts
+#                   1/true/yes/on and 0/false/no/off, and any other value is a
+#                   hard error rather than a silent no-op. Under
+#                   --jobs>1, in-flight workers still finish but no new worker
+#                   is scheduled once a failure is seen.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -87,6 +95,7 @@ SCRIPTS=()
 EXCLUDE_FAMILIES=()
 FAIL_ON_GATE_SKIP=
 JOBS=1
+FAIL_FAST=
 JOBS_MAX=8
 
 # How many separate-runner shards the portable serial remainder splits into.
@@ -114,6 +123,16 @@ die() {
 log() {
   printf 'fm-test-run: %s\n' "$*" >&2
 }
+
+# FAIL_FAST is compared with `-eq`, so a non-numeric FM_TEST_FAIL_FAST=true
+# would spray "integer expression expected" once per script and silently
+# behave as off. Normalize the usual truthy/falsy spellings and reject
+# anything else outright.
+case "$(printf '%s' "${FM_TEST_FAIL_FAST:-0}" | tr '[:upper:]' '[:lower:]')" in
+  1 | true | yes | on) FAIL_FAST=1 ;;
+  0 | false | no | off | '') FAIL_FAST=0 ;;
+  *) die "FM_TEST_FAIL_FAST: expected one of 1/true/yes/on or 0/false/no/off, got '$FM_TEST_FAIL_FAST'" ;;
+esac
 
 now_iso() {
   date -u +%Y-%m-%dT%H:%M:%SZ
@@ -1328,6 +1347,10 @@ while [ "$#" -gt 0 ]; do
       JOBS=${1#--jobs=}
       shift
       ;;
+    --fail-fast)
+      FAIL_FAST=1
+      shift
+      ;;
     --list)
       LIST_ONLY=1
       shift
@@ -1625,6 +1648,10 @@ run_one_serial() {
 if [ "$JOBS" -eq 1 ]; then
   for script in "${SCRIPTS[@]}"; do
     run_one_serial "$script"
+    if [ "$FAIL_FAST" -eq 1 ] && [ "$FAILED" -gt 0 ]; then
+      log "fail-fast: stopping after first failing script ($script)"
+      break
+    fi
   done
 else
   # Bounded concurrent execution for proven-isolated scripts only. Each worker
@@ -1695,6 +1722,10 @@ else
   }
 
   for script in "${SCRIPTS[@]}"; do
+    if [ "$FAIL_FAST" -eq 1 ] && [ "$FAILED" -gt 0 ]; then
+      log "fail-fast: not scheduling remaining scripts after a failure"
+      break
+    fi
     while [ "$active_workers" -ge "$JOBS" ]; do
       wait_one_completed_job_worker
     done
