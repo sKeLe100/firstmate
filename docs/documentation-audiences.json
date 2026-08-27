@@ -305,6 +305,14 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/pc02-duty-officer-prompt.txt",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "docs/pc02-duty-officer.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/pi-supervision-branch.md",
       "audience": "maintainer-architecture"
     },
