@@ -1,0 +1,7 @@
+$ # Same command, primary running inside a real tmux pane
+$ tmux new-session -d "bin/fm-afk-start.sh"
+afk: starting supervise daemon in foreground; keep this command as a tracked background session
+$ ls -l state/.afk
+-rw------- 1 sean_ sean_ 11 Aug 27 01:24 /tmp/afk-pass.tImx/state/.afk
+$ head -1 state/.supervise-daemon.log
+[2026-08-27T01:24:10-0400] daemon starting (pid 139038); target=%0; target_source=TMUX_PANE; backend=tmux; backend_source=TMUX_PANE; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=90s
