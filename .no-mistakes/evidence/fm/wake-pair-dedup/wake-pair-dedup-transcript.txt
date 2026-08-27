@@ -1,22 +1,13 @@
-Duplicate wake pair (audit finding 3): one crewmate event (status write + captured process-event result)
-driven through two real fm-watch.sh cycles against the same home; the durable wake queue is shown.
+$ bash tests/fm-wake-pair-dedup.test.sh
+ok - one event enqueues once: its status signal never becomes a second wake
+ok - a routine status line keeps its signal wake rather than being silently absorbed
+ok - a routine line beside a still-open decision keeps its own signal wake
+ok - a status change written after the check wake, in the same second, is never coalesced
+ok - a signal deferred behind an unacknowledged generation is delayed, never dropped
+ok - a deferred signal keeps its marker when a benign signal shares the cycle
+ok - a status signal with no process-event coverage wakes normally
 
-### BEFORE FIX (base e6d03bd)
---- cycle 1 (process-event check wake surfaced to the supervisor)
-check: process-event result captured: procevent:delivery-src:1
---- cycle 2 (crewmate's own status change re-scanned)
-signal: $HOME/state/delivery-src.status
---- durable wake queue: signal records enqueued for this one event
-  signal	delivery-src.status
-  signal	delivery-src.status
---- signal record count: 2 (check records for the same event: 3)
+All wake-pair-dedup tests passed.
 
-### AFTER FIX (9f54682)
---- cycle 1 (process-event check wake surfaced to the supervisor)
-check: process-event result captured: procevent:delivery-src:1
---- cycle 2 (crewmate's own status change re-scanned)
-(no wake reported)
---- durable wake queue: signal records enqueued for this one event
---- signal record count: 0 (check records for the same event: 5)
-
-Note: repeated 'check' records are the same unacknowledged generation re-surfacing each cycle (pre-existing on both sides); the fix targets the extra 'signal' record.
+$ bash bin/fm-test-run.sh --list --family watcher-wake-lock | grep wake-pair
+tests/fm-wake-pair-dedup.test.sh
