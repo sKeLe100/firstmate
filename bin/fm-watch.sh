@@ -885,6 +885,54 @@ fi
 # stops a generation that is never acknowledged from delaying it forever.
 PROCEVENT_SIGNAL_DEFER_GRACE=${FM_PROCEVENT_SIGNAL_DEFER_GRACE:-300}
 
+# The bytes appended to <status-file> since its .seen-* signature was recorded.
+# The signature's size field is the durable record of how much of the file has
+# already been surfaced or absorbed, so it is also the only honest boundary for
+# "what changed". Fails (no span) when the marker is unreadable or the file
+# shrank, which keeps every such change deliverable.
+fm_watch_status_new_span() {  # <status-file>
+  local file=$1 seen prev size
+  seen=$(cat "$(fm_wake_signal_seen_path "$STATE" "$file")" 2>/dev/null)
+  prev=${seen%%:*}
+  case "$prev" in ''|*[!0-9]*) prev=0 ;; esac
+  size=$(wc -c < "$file" 2>/dev/null | tr -d ' ')
+  case "$size" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$size" -ge "$prev" ] || return 1
+  tail -c "+$((prev + 1))" "$file" 2>/dev/null
+}
+
+# 0 when EVERY line in that span is one a drain of a process-event wake would
+# have shown the supervisor: an unread informational surface line, or a
+# decision-opening line whose keyed decision is still open verbatim in the
+# file's current fold (so OPEN DECISIONS reprints it). Anything else - a done:,
+# a failed:, a superseded decision line - is presented nowhere, so its status
+# signal is the only delivery it will ever get.
+fm_watch_status_change_is_coverable() {  # <status-file>
+  local file=$1 span open line verb key note saw=1
+  span=$(fm_watch_status_new_span "$file") || return 1
+  open=$(status_open_decisions "$file" 2>/dev/null)
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "${line//[[:space:]]/}" ] || continue
+    saw=0
+    status_line_is_unread_surface "$line" && continue
+    verb=$(status_line_verb "$line")
+    case "$verb" in needs-decision|blocked) ;; *) return 1 ;; esac
+    key=$(_fm_decision_key "$line") || return 1
+    note=$(status_line_note "$line")
+    _fm_decision_key_transition_allowed "$key" "$note" || return 1
+    case "$open" in
+      "$key"$'\t'"$verb"$'\t'"$note") ;;
+      "$key"$'\t'"$verb"$'\t'"$note"$'\n'*) ;;
+      *$'\n'"$key"$'\t'"$verb"$'\t'"$note") ;;
+      *$'\n'"$key"$'\t'"$verb"$'\t'"$note"$'\n'*) ;;
+      *) return 1 ;;
+    esac
+  done <<EOF
+$span
+EOF
+  return "$saw"
+}
+
 # fm_watch_signal_procevent_coverage <status-file>
 # Decide what the signal scan owes a status change that a process-event
 # generation for the same task may already have delivered. Prints one of:
@@ -916,12 +964,13 @@ fm_watch_signal_procevent_coverage() {  # <status-file>
   fi
   status_ns=$(stat_mtime_ns "$file")
   case "$status_ns" in ''|*[!0-9]*) printf 'deliver\n'; return 0 ;; esac
-  # Only a change that the signal annotation alone would present can ever be
-  # accounted for by a process-event wake. A routine line is never "covered",
-  # so deferring it behind an unacknowledged generation could only ever end in
-  # "deliver" - pure latency. Decide that here, before touching the inbox.
-  if [ -z "$(status_open_decisions "$file" 2>/dev/null)" ] \
-    && ! status_line_is_unread_surface "$(last_status_line "$file")"; then
+  # Only a change the drain itself would present can ever be "covered" by a
+  # process-event wake, and the change is the span appended since this file's
+  # .seen-* signature - not the file as a whole. A routine line anywhere in
+  # that span (a done: beside a still-open decision from an earlier turn, or
+  # beside a trailing note:) is never presented, so it always keeps its own
+  # wake. Decide that here, before touching the inbox.
+  if ! fm_watch_status_change_is_coverable "$file"; then
     printf 'deliver\n'
     return 0
   fi

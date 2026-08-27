@@ -159,6 +159,46 @@ test_routine_status_line_is_never_absorbed() {
   pass "a routine status line keeps its signal wake rather than being silently absorbed"
 }
 
+# --- Test 1c: a routine line appended BESIDE a still-open decision from an
+# earlier turn is judged on the newly appended span, not on the whole file ---
+
+test_routine_line_beside_an_open_decision_is_never_absorbed() {
+  local dir state out0 out1 out2
+  dir=$(make_case procevent-open-decision); state="$dir/state"
+  out0="$dir/watch0.out"; out1="$dir/watch1.out"; out2="$dir/watch2.out"
+
+  # An earlier turn opened a decision and was delivered on its own cycle, so
+  # its marker is current. OPEN DECISIONS keeps reprinting that line on every
+  # later drain.
+  printf 'needs-decision: [key=api-shape] pick REST or RPC\n' > "$state/delivery-src.status"
+  watch_bg "$dir" "$out0"
+  wait_for_exit "$!" 150 || fail "the watcher never delivered the opening decision: $(cat "$out0")"
+
+  # The crewmate now appends a routine line. The still-open decision above is
+  # NOT evidence that this line will be presented anywhere.
+  printf 'done: pushed the branch, awaiting review\n' >> "$state/delivery-src.status"
+  # That first wake was delivered; start the process-event capture from an
+  # empty queue so the fixture waits for its OWN queued result.
+  : > "$state/.wake-queue"
+  seed_captured_procevent_result "$dir" delivery-src \
+    || fail "the fixture captured no process-event result"
+
+  watch_bg "$dir" "$out1" 1
+  wait_for_exit "$!" 150 || fail "the watcher never surfaced the queued process-event result"
+  pe_case "$dir" handled delivery-src 1 >/dev/null \
+    || fail "the captured generation could not be acknowledged"
+
+  watch_bg "$dir" "$out2" 1
+  wait_for_exit "$!" 150 \
+    || fail "a routine line beside an open decision was absorbed: $(cat "$out2")"
+  grep -F "signal: $state/delivery-src.status" "$out2" >/dev/null \
+    || fail "the appended done: line lost its only delivery channel: $(cat "$out2")"
+  [ "$(queue_kind_count "$state" signal)" -ge 1 ] \
+    || fail "the appended done: line was not enqueued: $(cat "$state/.wake-queue")"
+
+  pass "a routine line beside a still-open decision keeps its own signal wake"
+}
+
 # --- Test 2: a genuinely distinct later status change is never coalesced ---
 
 test_distinct_status_change_after_procevent_still_wakes() {
@@ -255,10 +295,11 @@ test_deferred_signal_survives_a_benign_cycle() {
   dir=$(make_case procevent-defer-benign); state="$dir/state"
   out1="$dir/watch1.out"; out2="$dir/watch2.out"; out3="$dir/watch3.out"
 
-  # An open decision the annotation would present, under a routine last line:
-  # coverable (so deferrable) but NOT captain-relevant, which is what lets the
-  # cycle below take the benign-absorb branch.
-  printf 'needs-decision: [key=api-shape] pick REST or RPC\nworking: still drafting\n' \
+  # Informational lines only: every appended line is one the drain's unread
+  # surface presents, so the change is coverable (hence deferrable), and no
+  # captain verb appears anywhere - which is what lets the cycle below take the
+  # benign-absorb branch.
+  printf 'note: drafting the API shape\nnote: still drafting\n' \
     > "$state/delivery-src.status"
   seed_captured_procevent_result "$dir" delivery-src \
     || fail "the fixture captured no process-event result"
@@ -315,6 +356,7 @@ test_signal_without_any_procevent_wakes_normally() {
 
 test_procevent_generation_absorbs_its_own_status_signal
 test_routine_status_line_is_never_absorbed
+test_routine_line_beside_an_open_decision_is_never_absorbed
 test_distinct_status_change_after_procevent_still_wakes
 test_deferred_signal_is_delivered_when_no_acknowledgement_arrives
 test_deferred_signal_survives_a_benign_cycle
