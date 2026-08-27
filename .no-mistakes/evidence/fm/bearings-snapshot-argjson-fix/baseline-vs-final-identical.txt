@@ -1,0 +1,12 @@
+=== B) BASELINE (680cbed, pre-sweep) vs FINAL (2c65d77): same fixture home, byte compare ===
+IDENTICAL  no-upstream-toon                               ()
+IDENTICAL  no-upstream-json                               (--json)
+IDENTICAL  no-upstream-alllanded                          (--json --all-landed)
+IDENTICAL  no-upstream-fields                             (--json --fields bodies,paths,actions,endpoints)
+IDENTICAL  no-upstream-alldec                             (--all-decisions --all-queued)
+IDENTICAL  upstream-ok-toon                               ()
+IDENTICAL  upstream-ok-json                               (--json)
+IDENTICAL  upstream-corrupt-json                          (--json)
+IDENTICAL  percap-json                                    (--json)
+IDENTICAL  percap-toon                                    ()
+differing scenarios: 0

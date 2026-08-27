@@ -1,0 +1,31 @@
+schema: fm-bearings.v1
+home: fm-bearings-diff.VplK5p/s1
+generated: <ts>
+prs: "not_requested (run: /bearings include PRs)"
+in_flight[3]{id,kind,state,doing}:
+  external-wait,ship,paused,declared external-wait for upstream release
+  scout-x,scout,done,report ready
+  ship-task,ship,working,harness busy (claude-hook)
+secondmates[1]{id,state,doing,provenance,freshness,age_seconds,contradiction,reason}:
+  mate,captain_decision,Choose subscription order,structured-home,fresh,0,false,"-"
+decisions_open[1]{id,key,verb,summary,owner,declared_priority}:
+  mate/mate-decision-race,mate-decision-race,captain-hold,"Choose subscription order: captain choice pending",mate,false
+landed[2]{id,what,artifact,owner}:
+  done-a,Landed thing,"https://github.com/kunchenguid/firstmate/pull/7",(main)
+  mate-landed,Secondmate-managed fix,"https://github.com/kunchenguid/firstmate/pull/50",mate
+gates[1]{id,title,blocked_by,reason,owner}:
+  live-gate,Real queued work,ship-task,"-",(main)
+reports[1]{id,path}:
+  scout-x,/tmp/fm-bearings-diff.VplK5p/s1/data/scout-x/report.md
+recorded_prs[1]{id,url}:
+  ship-task,"https://github.com/kunchenguid/firstmate/pull/9"
+unhealthy_endpoints[1]{id,backend,target,exists,agent}:
+  mate,tmux,"firstmate:fm-mate",true,dead
+omitted[7]{surface,reveal}:
+  backlog item bodies,"--fields bodies"
+  task paths,"--fields paths"
+  watch/steer actions,"--fields actions"
+  healthy endpoint detail,"--fields endpoints"
+  full scout-report inventory,"--all-reports"
+  superseded or prose-deferred queued items,"--all-queued"
+  live PR discovery + checks,"--include-prs"

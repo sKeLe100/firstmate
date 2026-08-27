@@ -1,0 +1,38 @@
+=== A) PRE-FIX (3b10170) vs FINAL (2c65d77): same fixture home, byte compare ===
+DIFFERENT  no-upstream-toon                               ()
+24d23
+< upstream: null
+DIFFERENT  no-upstream-json                               (--json)
+92d91
+<   "upstream": null,
+DIFFERENT  no-upstream-alllanded                          (--json --all-landed)
+92d91
+<   "upstream": null,
+DIFFERENT  no-upstream-fields                             (--json --fields bodies,paths,actions,endpoints)
+92d91
+<   "upstream": null,
+DIFFERENT  no-upstream-alldec                             (--all-decisions --all-queued)
+25d24
+< upstream: null
+IDENTICAL  upstream-ok-toon                               ()
+IDENTICAL  upstream-ok-json                               (--json)
+DIFFERENT  upstream-corrupt-json                          (--json)
+92d91
+<   "upstream": null,
+DIFFERENT  percap-json                                    (--json)
+89d88
+<   "upstream": null,
+113a113,116
+>     },
+>     {
+>       "surface": "landed per-home capped at 2 for 1 home(s)",
+>       "reveal": "--all-landed"
+DIFFERENT  percap-toon                                    ()
+24,25c24
+< upstream: null
+< omitted[7]{surface,reveal}:
+---
+> omitted[8]{surface,reveal}:
+31a31
+>   landed per-home capped at 2 for 1 home(s),"--all-landed"
+differing scenarios: 8
