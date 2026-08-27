@@ -638,8 +638,9 @@ SH
   chmod +x "$fakebin/ssh"
   printf -- '- ios - delegated scope (host: ios-host; root: /opt/firstmate; home: /opt/fm-home; scope: delegated scope; projects: alpha; added 2026-08-01)\n' \
     > "$home/data/secondmates.md"
-  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/unreadable-remote.err")
-  [ "$?" -eq 0 ] || fail "an unreadable remote summary must not fail the snapshot: $(cat "$TMP_ROOT/unreadable-remote.err")"
+  if ! out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/unreadable-remote.err"); then
+    fail "an unreadable remote summary must not fail the snapshot: $(cat "$TMP_ROOT/unreadable-remote.err")"
+  fi
   printf '%s' "$out" | jq -e '
     (.secondmate_current.records | length) == 1
     and (.secondmate_current.records[0]
