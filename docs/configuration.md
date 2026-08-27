@@ -197,7 +197,7 @@ The helper's header owns exact parsing, publication, and report output mechanics
 
 ## Session context thresholds (config/context-thresholds)
 
-`config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-25).
+`config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-26).
 The format is at most one `warn=<N>` line and one `restart=<N>` line, each a positive base-10 integer with `warn <= restart`; an absent file or absent key means the built-in defaults of `warn=150000` and `restart=250000`, and a malformed file is rejected loudly rather than silently replaced by defaults.
 The helper reports the resolved thresholds and a `band=ok|warn|restart` field on its one data-only output line; supervision, [`/stow`](../.agents/skills/stow/SKILL.md), and [`/bearings`](../.agents/skills/bearings/SKILL.md) act on that band rather than re-deriving thresholds.
 The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so the primary's thresholds propagate on every convergence.
@@ -217,6 +217,7 @@ The restart mechanics reuse the existing owners rather than a parallel mechanism
 
 To read another session's usage, run the helper with `FM_HOME` set to that session's working directory (a task worktree or secondmate home); thresholds then resolve against that home's own `config/context-thresholds`.
 The live `<total_tokens>` countdown can stick at 0 and is never evidence of exhausted context; the helper's transcript-derived reading is the only trusted source.
+Ship briefs scaffolded by `bin/fm-brief.sh` carry that same instruction as a standing rule, so a crewmate reads its context with `/context` or the helper instead of the countdown without being told per task.
 The helper's header owns exact parsing and output mechanics.
 
 ## Stow pass horizon (config/stow-pass-horizon)
