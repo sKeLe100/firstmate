@@ -1,0 +1,14 @@
+# Operator-visible bin/fm-bootstrap.sh secondmate liveness sweep (backend=herdr)
+
+=== TARGET (d2749d5) ===
+husk-pane      SECONDMATE_LIVENESS: secondmate sm1: respawn failed after confirmed agent absence on existing endpoint: error: refusing fleet lifecycle from inside a no-mistakes gate worktree
+stopped-server SECONDMATE_LIVENESS: secondmate sm1: respawn failed after recorded endpoint confidently missing: error: refusing fleet lifecycle from inside a no-mistakes gate worktree
+ambiguous-read SECONDMATE_LIVENESS: secondmate sm1: skipped: endpoint probe unreadable (backend=herdr)
+
+(the two recovery lines show the dead/missing recovery branch is now entered with the correct
+ cause; the actual respawn is blocked only by fm-spawn.sh's unrelated no-mistakes gate-worktree guard)
+
+=== BASE (e6d03bd) ===
+husk-pane      SECONDMATE_LIVENESS: secondmate sm1: skipped: endpoint probe unreadable (backend=herdr)
+stopped-server SECONDMATE_LIVENESS: secondmate sm1: skipped: endpoint probe unreadable (backend=herdr)
+ambiguous-read SECONDMATE_LIVENESS: secondmate sm1: skipped: endpoint probe unreadable (backend=herdr)

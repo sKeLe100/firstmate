@@ -1,0 +1,15 @@
+# fm_backend_agent_state (herdr) — real dispatcher + fake herdr CLI + a real live bare idle shell
+
+$ fm_backend_agent_state herdr fmtest:w1:p2   (per post-shutdown scenario)
+
+--- TARGET (d2749d5) ---
+live             -> alive
+husk-pane        -> dead        # pane present, agent_status "unknown", proven bare idle shell
+stopped-server   -> missing     # status --json server.running=false; all other calls ConnectionRefused
+ambiguous-read   -> unreadable  # truncated/failed process-info probe -> still refuses
+
+--- BASE (e6d03bd, before the fix) ---
+live             -> alive
+husk-pane        -> unreadable  # permanently blocked relaunch
+stopped-server   -> unreadable  # permanently blocked relaunch
+ambiguous-read   -> unreadable
