@@ -367,6 +367,15 @@ EOF
 fi
 
 # --- projection: canonical snapshot -> fm-bearings.v1 model (JSON) ----------
+# Every jq binding below is passed with `--arg` (never the JSON-typed variant;
+# see the jq rule in .agents/skills/firstmate-coding-guidelines/SKILL.md), so
+# each one arrives inside jq as a *string*. That makes the obvious spellings
+# silently wrong: numeric bounds need an explicit `|tonumber` (in jq every
+# number sorts below every string, so `length > $n` against a string bound is
+# always false), and 0/1 flags must be compared against `"0"`/`"1"`. JSON blobs
+# must be reinflated with `fromjson`, and a blob that may be the literal `null`
+# has to be reinflated *before* the null test, or the test sees the non-null
+# string "null". Keep this in mind when adding a binding here.
 BEARINGS_TODAY=${NOW%%T*}
 case "$BEARINGS_TODAY" in
   [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) : ;;
