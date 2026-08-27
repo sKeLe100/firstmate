@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # Steer a task by durable record: write the message into the task's steering
 # inbox and ring a constant doorbell line into its terminal, best-effort.
-# Usage: fm-send.sh <target> [--resolve-key <key>]... [--fire-and-forget <delivery-id>] <text...>
+# Usage: fm-send.sh <target> [--resolve-key <key>]... [--fire-and-forget <delivery-id>]
+#            [--steer-stale] <text...>
 #   <target> may be an exact task id, a legacy fm-<id> task label resolved
 #   through this home's state/<id>.meta, or an explicit well-formed backend
 #   target. fm-send refuses unresolved guesses rather than falling back to a
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
+#   An ordinary steer to a LOCAL worker idle past the prompt-cache TTL is
+#   refused with the relaunch command it should use instead (a --resolve-key
+#   answer and a remote target are never guarded); pass --steer-stale to
+#   deliberately resume it anyway. docs/configuration.md "Prompt-cache steer
+#   guard" owns the threshold and its config/cache-ttl-seconds override.
 # Special keys instead of text: fm-send.sh <target> --key Enter
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
@@ -306,6 +312,41 @@ fm_send_count_colons() {  # <string>
   printf '%s' $(( ${#s} - ${#no_colons} ))
 }
 
+# Cache-stale steer guard (docs/configuration.md "Prompt-cache steer guard"
+# owns the threshold/knob contract; this is its sole implementation). A LOCAL
+# worker's idle age is read from state/<id>.turn-ended's mtime: it is touched
+# by every turn-end hook regardless of harness, so it is the cheapest signal
+# already available for every backend without a new probe or daemon. A
+# missing or unreadable marker is NOT staleness - it means idle age is
+# unknown, and the guard must fail open rather than block a steer on a broken
+# stat.
+fm_send_idle_seconds() {  # <state-dir> <task-id> -> echoes idle seconds; nonzero rc = unknown
+  local state=$1 id=$2 marker mtime now
+  marker="$state/$id.turn-ended"
+  [ -e "$marker" ] || return 1
+  if [ "$(uname)" = Darwin ]; then
+    mtime=$(stat -f %m "$marker" 2>/dev/null) || return 1
+  else
+    mtime=$(stat -c %Y "$marker" 2>/dev/null) || return 1
+  fi
+  case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
+  now=$(date +%s)
+  [ "$now" -ge "$mtime" ] || return 1
+  printf '%s' $(( now - mtime ))
+}
+
+fm_send_cache_ttl_seconds() {  # -> echoes the configured TTL, default 3600
+  local file="$FM_HOME/config/cache-ttl-seconds" val
+  if [ -f "$file" ]; then
+    val=$(head -n1 "$file" 2>/dev/null | tr -d '[:space:]')
+    case "$val" in
+      ''|*[!0-9]*) ;;
+      *) printf '%s' "$val"; return 0 ;;
+    esac
+  fi
+  printf '%s' 3600
+}
+
 fm_send_resolve_target() {  # <raw-target>
   local raw=$1 meta pane_meta target backend assumed colons id session hint
 
@@ -450,6 +491,7 @@ fm_send_add_resolve_key() {  # <key>
   esac
   RESOLVE_KEYS="${RESOLVE_KEYS}${RESOLVE_KEYS:+ }$k"
 }
+STEER_STALE=0
 while :; do
   case "${1:-}" in
     --resolve-key)
@@ -470,6 +512,10 @@ while :; do
     --fire-and-forget=*)
       [ -z "$FIRE_AND_FORGET_ID" ] || { echo "error: duplicate --fire-and-forget" >&2; exit 1; }
       FIRE_AND_FORGET_ID=${1#--fire-and-forget=}
+      shift
+      ;;
+    --steer-stale)
+      STEER_STALE=1
       shift
       ;;
     *) break ;;
@@ -843,6 +889,25 @@ else
   fi
   if [ "$INBOX_PLANE" = 1 ]; then
     INBOX_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
+    # Ordinary local steers only: a --resolve-key answer closes an open
+    # decision and must never be blocked by this guard, and --steer-stale is
+    # the explicit deliberate-resume override.
+    if [ -z "$RESOLVE_KEYS" ] && [ "$STEER_STALE" != 1 ] && [ -n "$INBOX_TASK_ID" ]; then
+      if idle_secs=$(fm_send_idle_seconds "$STATE" "$INBOX_TASK_ID"); then
+        cache_ttl=$(fm_send_cache_ttl_seconds)
+        if [ "$idle_secs" -gt "$cache_ttl" ]; then
+          if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
+            fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
+          fi
+          echo "error: steer refused for $INBOX_TASK_ID: its session has been idle ${idle_secs}s (> ${cache_ttl}s prompt-cache TTL), so resuming it now would burn a full context reload instead of hitting the warm cache. Relaunch it fresh instead:" >&2
+          echo "  $SCRIPT_DIR/fm-control.sh $INBOX_TASK_ID relaunch --note '<why>'" >&2
+          echo "To steer the stale session anyway, re-run with --steer-stale." >&2
+          exit 1
+        fi
+      fi
+      # idle_secs unreadable (no marker yet, unsupported stat): fail open,
+      # never block a steer on a signal that cannot be read.
+    fi
     INBOX_META_LOCK=$(fm_meta_lock_path "$TARGET_META") || exit 1
     if ! fm_task_inbox_lock_acquire "$INBOX_META_LOCK"; then
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then

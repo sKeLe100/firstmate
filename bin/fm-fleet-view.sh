@@ -34,9 +34,11 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
     if $t.endpoint.exists == null then "unknown"
     elif $t.endpoint.exists then "present"
     else "absent" end;
+  def cache_flag($t):
+    if $t.endpoint.cache_expiring == true then " (cache expiring)" else "" end;
   def endpoint_of($t):
-    if $t.kind == "secondmate" then "\(endpoint_exists($t)) / \($t.endpoint.agent_alive)"
-    else endpoint_exists($t) end;
+    (if $t.kind == "secondmate" then "\(endpoint_exists($t)) / \($t.endpoint.agent_alive)"
+     else endpoint_exists($t) end) + cache_flag($t);
   def artifact($t):
     if $t.pr.url != null then $t.pr.url
     elif $t.paths.report.present then $t.paths.report.path

@@ -184,6 +184,15 @@ A Secondmate on a remote route is covered the same way: the primary resolves and
 The presence flag is session-scoped enablement, so it transfers at launch and is left unchanged by live convergence into a running home.
 See [`trace-context.md`](trace-context.md) for carrier semantics, supported routes, the manual fleet-restart requirement, the session boundary, and safety limits; `bin/fm-trace-context-lib.sh`'s header owns the exact mechanics, and [`verification/trace-context.md`](verification/trace-context.md) records repeatable evidence.
 
+## Prompt-cache steer guard (config/cache-ttl-seconds)
+
+`bin/fm-send.sh` refuses an ordinary text steer to a LOCAL task whose session has been idle longer than the prompt-cache TTL, because resuming it past that point burns a full context reload instead of a warm-cache resume.
+The idle signal is that task's `state/<id>.turn-ended` mtime, touched by every turn-end hook regardless of harness - the cheapest already-available idle proxy, with no new probe or daemon.
+The TTL defaults to 3600 seconds and is overridden by the first non-empty numeric line of local, gitignored `config/cache-ttl-seconds`; an absent or non-numeric file keeps the default.
+A refused steer prints the exact `bin/fm-control.sh <task> relaunch --note ...` command to use instead; pass `--steer-stale` to fm-send to deliberately resume the stale session anyway.
+The guard never applies to a `--resolve-key` decision answer, a remote secondmate send, or any typed-plane delivery (a leading `/`, a leading `$` to codex, or an explicit backend target); it fails open (steers proceed) whenever the idle marker is missing or unreadable.
+`bin/fm-fleet-snapshot.sh` surfaces the same idle age per local task as `endpoint.idle_seconds` / `endpoint.cache_expiring` (true at 3000s, 50 minutes, ahead of the hour), and `bin/fm-fleet-view.sh` renders it as a `(cache expiring)` suffix so the heartbeat's fleet review catches a session before its cache lapses.
+
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked `.no-mistakes.yaml` sets `test.evidence.store_in_repo: true` and pins `commands.lint` to `bin/fm-lint.sh` so local lint matches CI.

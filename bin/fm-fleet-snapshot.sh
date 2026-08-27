@@ -274,6 +274,27 @@ path_present_json() {  # <path>
   printf '%s\n' "$out"
 }
 
+# Prompt-cache near-expiry surfacing (docs/configuration.md "Prompt-cache
+# steer guard" owns the TTL/knob contract this flags against). state/<id>.turn-ended
+# is touched by every turn-end hook regardless of harness, so its mtime is the
+# cheapest already-available idle signal for a LOCAL task; a missing or
+# unreadable marker means idle age is unknown, not expiring, so it prints
+# empty rather than guessing.
+idle_seconds_of() {  # <id> -> echoes idle seconds, or empty if unknown
+  local id=$1 marker mtime now
+  marker="$STATE/$id.turn-ended"
+  [ -e "$marker" ] || return 0
+  if [ "$(uname)" = Darwin ]; then
+    mtime=$(stat -f %m "$marker" 2>/dev/null) || return 0
+  else
+    mtime=$(stat -c %Y "$marker" 2>/dev/null) || return 0
+  fi
+  case "$mtime" in ''|*[!0-9]*) return 0 ;; esac
+  now=$(date +%s)
+  [ "$now" -ge "$mtime" ] || return 0
+  printf '%s' $(( now - mtime ))
+}
+
 meta_value() {  # <meta-file> <key>
   fm_meta_get "$1" "$2"
 }
@@ -502,6 +523,7 @@ task_json_lines() {
   local meta id kind harness mode yolo project worktree home projects spawn_gen backend target status_log report_path
   local remote_host remote_root remote_state remote_rc remote_home_present
   local pr pr_source event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
+  local idle_secs cache_expiring
   local last_event_raw current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
   local home_args_file record_args_file record_rc pipeline_rc
@@ -616,6 +638,15 @@ task_json_lines() {
       fi
     fi
 
+    idle_secs=
+    cache_expiring=0
+    if [ -z "$remote_host" ]; then
+      idle_secs=$(idle_seconds_of "$id")
+      if [ -n "$idle_secs" ] && [ "$idle_secs" -ge 3000 ]; then
+        cache_expiring=1
+      fi
+    fi
+
     [ -f "$report_path" ] && report_present=1 || report_present=0
     meta_json=$(path_present_json "$meta")
     status_json=$event_json
@@ -665,6 +696,8 @@ task_json_lines() {
       --arg pr "$pr" \
       --arg pr_source "$pr_source" \
       --arg agent_alive "$agent_alive" \
+      --arg idle_seconds "$idle_secs" \
+      --arg cache_expiring "$(bool_json "$cache_expiring")" \
       --arg observed_at "$SNAPSHOT_NOW" \
       --arg last_event_raw "$last_event_raw" \
       --rawfile fm_args_raw "$record_args_file" \
@@ -703,6 +736,8 @@ task_json_lines() {
           status:(if $endpoint_exists == false then "absent"
                   elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
                   else "unknown" end),
+          idle_seconds:($idle_seconds | if . == "" then null else tonumber end),
+          cache_expiring:($cache_expiring | fromjson),
           observed_at:$observed_at,freshness:"fresh"},
         pr:{url:($pr | if . == "" then null else . end),source:$pr_source},
         hints:{

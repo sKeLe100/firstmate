@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# tests/fm-send-cache-stale-guard.test.sh - fm-send's prompt-cache steer guard.
+#
+# An ordinary local steer is refused when the target's state/<id>.turn-ended
+# marker shows it idle past the prompt-cache TTL (docs/configuration.md
+# "Prompt-cache steer guard"). These tests drive the real fm-send executable:
+#   1. A fresh (no marker) task is never refused: an unknown idle age fails
+#      open rather than blocking the steer.
+#   2. A task idle under the default TTL is not refused.
+#   3. A task idle past the default TTL is refused, prints the relaunch
+#      command, and never touches the inbox.
+#   4. --steer-stale overrides the refusal and the steer is durably sent.
+#   5. config/cache-ttl-seconds overrides the default threshold.
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+SEND="$ROOT/bin/fm-send.sh"
+
+TMP_ROOT=$(fm_test_tmproot fm-send-cache-stale-guard)
+TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
+
+make_stubs() {  # <dir> -> echoes fakebin dir
+  local dir=$1 fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat > "$fb/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  send-keys) exit 0 ;;
+  capture-pane) printf '' ;;
+  list-panes) exit 0 ;;
+  *) exit 0 ;;
+esac
+SH
+  chmod +x "$fb/tmux"
+  printf '%s\n' "$fb"
+}
+
+setup_case() {  # <name> -> echoes case dir with home/state + t1 meta
+  local name=$1 dir
+  dir="$TMP_ROOT/$name"
+  mkdir -p "$dir/home/state"
+  make_stubs "$dir" >/dev/null
+  fm_write_meta "$dir/home/state/t1.meta" "window=sess:fm-t1" "kind=ship" "harness=claude"
+  printf '%s\n' "$dir"
+}
+
+age_marker() {  # <path> <seconds-ago>
+  local path=$1 ago=$2 stamp
+  stamp=$(date -d "@$(( $(date +%s) - ago ))" +%Y%m%d%H%M.%S 2>/dev/null) \
+    || stamp=$(date -r "$(( $(date +%s) - ago ))" +%Y%m%d%H%M.%S)
+  : > "$path"
+  touch -t "$stamp" "$path"
+}
+
+run_send() {  # <case-dir> <err-file> [env...] -- <fm-send args...>
+  local dir=$1 err=$2
+  shift 2
+  local envs=()
+  while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+    envs+=("$1")
+    shift
+  done
+  shift
+  env PATH="$dir/fakebin:$PATH" \
+    FM_ROOT_OVERRIDE="$dir/home" FM_HOME="$dir/home" FM_SEND_SETTLE=0 \
+    ${envs[@]+"${envs[@]}"} \
+    "$SEND" "$@" >/dev/null 2>"$err"
+}
+
+test_no_marker_fails_open() {
+  local dir err rc
+  dir=$(setup_case no-marker); err="$dir/send.err"
+  run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+  expect_code 0 "$rc" "an unreadable idle signal must fail open, not block the steer"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer should have been durably recorded"
+  pass "fm-send cache-stale guard: missing idle marker fails open"
+}
+
+test_fresh_marker_not_refused() {
+  local dir err rc
+  dir=$(setup_case fresh); err="$dir/send.err"
+  age_marker "$dir/home/state/t1.turn-ended" 60
+  run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+  expect_code 0 "$rc" "a session idle well under the TTL must not be refused"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer should have been durably recorded"
+  pass "fm-send cache-stale guard: idle-under-TTL steer proceeds"
+}
+
+test_stale_marker_refused() {
+  local dir err rc
+  dir=$(setup_case stale); err="$dir/send.err"
+  age_marker "$dir/home/state/t1.turn-ended" 4000
+  run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+  expect_code 1 "$rc" "a session idle past the TTL must be refused"
+  [ -e "$dir/home/state/t1.inbox/001.msg" ] && fail "a refused steer must never write an inbox record"
+  assert_contains "$(cat "$err")" "fm-control.sh t1 relaunch" \
+    "the refusal must print the exact relaunch command"
+  assert_contains "$(cat "$err")" "--steer-stale" \
+    "the refusal must mention the override flag"
+  pass "fm-send cache-stale guard: idle-past-TTL steer is refused with the relaunch hint"
+}
+
+test_override_flag_sends_anyway() {
+  local dir err rc
+  dir=$(setup_case override); err="$dir/send.err"
+  age_marker "$dir/home/state/t1.turn-ended" 4000
+  run_send "$dir" "$err" -- t1 --steer-stale "resume anyway"; rc=$?
+  expect_code 0 "$rc" "--steer-stale must override the guard"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the overridden steer should have been durably recorded"
+  pass "fm-send cache-stale guard: --steer-stale overrides the refusal"
+}
+
+test_config_ttl_override() {
+  local dir err rc
+  dir=$(setup_case configttl); err="$dir/send.err"
+  mkdir -p "$dir/home/config"
+  printf '60\n' > "$dir/home/config/cache-ttl-seconds"
+  age_marker "$dir/home/state/t1.turn-ended" 120
+  run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+  expect_code 1 "$rc" "a lowered config/cache-ttl-seconds must refuse a steer the default TTL would allow"
+  pass "fm-send cache-stale guard: config/cache-ttl-seconds overrides the default threshold"
+}
+
+test_resolve_key_answer_ignores_guard() {
+  local dir err rc
+  dir=$(setup_case resolvekey); err="$dir/send.err"
+  age_marker "$dir/home/state/t1.turn-ended" 4000
+  run_send "$dir" "$err" -- t1 --resolve-key some-key "the answer"; rc=$?
+  [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || fail "unexpected exit $rc"
+  case "$(cat "$err")" in
+    *"is not resolvable as an open decision"*) : ;;
+    *"no open decision"*) : ;;
+    *) [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a --resolve-key answer must not be blocked by the cache-stale guard" ;;
+  esac
+  pass "fm-send cache-stale guard: --resolve-key path is unaffected by staleness"
+}
+
+test_no_marker_fails_open
+test_fresh_marker_not_refused
+test_stale_marker_refused
+test_override_flag_sends_anyway
+test_config_ttl_override
+test_resolve_key_answer_ignores_guard
