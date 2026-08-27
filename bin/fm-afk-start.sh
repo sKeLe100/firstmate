@@ -133,7 +133,7 @@ fm_afk_flag_write() {  # <state-dir>
 # fm_afk_host_confirmed: mirrors bin/fm-supervise-daemon.sh's own target_source
 # determination just enough to know, BEFORE the away-mode flag is written,
 # whether this process is hosted somewhere the daemon can verify (an explicit
-# FM_SUPERVISOR_TARGET/FM_SUPERVISOR_BACKEND override, a tmux pane, or a herdr
+# FM_SUPERVISOR_TARGET override, a tmux pane, or a herdr
 # pane). A non-prepared start with none of these would arm state/.afk and then
 # have the daemon refuse to start (see fm-supervise-daemon.sh's FALLBACK
 # refusal), leaving .afk set with no daemon alive - firstmate would then treat
@@ -141,7 +141,6 @@ fm_afk_flag_write() {  # <state-dir>
 # keeps that flag from ever being written for a target the daemon cannot verify.
 fm_afk_host_confirmed() {
   [ -n "${FM_SUPERVISOR_TARGET:-}" ] && return 0
-  [ -n "${FM_SUPERVISOR_BACKEND:-}" ] && return 0
   [ -n "${TMUX_PANE:-}" ] && return 0
   [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ] && return 0
   return 1
@@ -159,7 +158,7 @@ fm_afk_start_main() {
     [ -f "$FM_AFK_STATE/.afk" ] || { echo "afk: launcher-prepared state is missing" >&2; return 1; }
   else
     if ! fm_afk_host_confirmed; then
-      echo "error: cannot verify this away-mode session's primary is hosted in tmux or herdr (no FM_SUPERVISOR_TARGET/FM_SUPERVISOR_BACKEND override, and neither \$TMUX_PANE nor \$HERDR_ENV/\$HERDR_PANE_ID is set) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET/FM_SUPERVISOR_BACKEND explicitly, to use away mode" >&2
+      echo "error: cannot verify this away-mode session's primary is hosted in tmux or herdr (no FM_SUPERVISOR_TARGET override, and neither \$TMUX_PANE nor \$HERDR_ENV/\$HERDR_PANE_ID is set) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET explicitly, to use away mode" >&2
       return 1
     fi
     fm_afk_flag_write "$FM_AFK_STATE" || { echo "afk: failed to write away-mode flag" >&2; return 1; }
