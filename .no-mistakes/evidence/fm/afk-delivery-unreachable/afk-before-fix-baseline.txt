@@ -1,0 +1,5 @@
+$ # BEFORE the fix (base commit 7b43a43), same non-tmux primary:
+afk: starting supervise daemon in foreground; keep this command as a tracked background session
+warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, or HERDR_ENV/HERDR_PANE_ID); falling back to '%0' — verify this is firstmate's pane
+Terminated                 sleep 1
+(.afk present? YES)

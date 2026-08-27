@@ -1,0 +1,5 @@
+$ # tmux-hosted primary (TMUX_PANE set): host check passes; resolution proceeds via TMUX_PANE as before
+afk: starting supervise daemon in foreground; keep this command as a tracked background session
+Terminated                 sleep 1
+--- state/.supervise-daemon.log ---
+[2026-08-27T04:47:41-0400] daemon starting (pid 2428105); target=%no-such-pane-9999; target_source=TMUX_PANE; backend=tmux; backend_source=TMUX_PANE; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=90s

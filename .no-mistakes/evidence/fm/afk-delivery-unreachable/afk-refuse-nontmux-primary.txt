@@ -1,0 +1,12 @@
+$ # Captain runs /afk from a Claude primary that is NOT inside tmux/herdr
+$ env -u TMUX_PANE -u HERDR_ENV -u HERDR_PANE_ID -u FM_SUPERVISOR_TARGET bin/fm-afk-start.sh
+error: cannot verify this away-mode session's primary is hosted in tmux or herdr (no FM_SUPERVISOR_TARGET override, and neither $TMUX_PANE nor $HERDR_ENV/$HERDR_PANE_ID is set) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET explicitly, to use away mode
+exit=1
+$ ls /tmp/afkdemo/state   # away-mode flag must NOT be armed
+(.afk present? no)
+
+$ # Same captain, via the harness-native arm path documented in .agents/skills/afk/SKILL.md
+$ env -u TMUX_PANE ... bin/fm-afk-launch.sh start-native
+fm-afk-launch: cannot verify this away-mode session's primary is hosted in tmux or herdr (no FM_SUPERVISOR_TARGET override, and neither $TMUX_PANE nor $HERDR_ENV/$HERDR_PANE_ID is set) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET explicitly, to use away mode
+exit=1
+(.afk present? no; terminal record? no)
