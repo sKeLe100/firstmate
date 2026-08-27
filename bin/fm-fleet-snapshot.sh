@@ -1509,7 +1509,7 @@ secondmate_current_json() {  # <parent-tasks-json>
         | $fm_args.event_age as $event_age
         | ($summary_raw | fromjson) as $summary
         | {id:$id,home:$home,host:($host | if . == "" then null else . end),remote:$remote,registered:$registered,
-         spawn_gen:($spawn_gen | if . == \"\" then null else . end),
+         spawn_gen:($spawn_gen | if . == "" then null else . end),
          current:{state:$state,reason:($current_reason | if . == "" then null else . end)},invalidity:$summary.invalidity,
          reconcile_inventory:$summary.invalidity,
          provenance:{selected:"structured-home",structured_home:$home,summary_valid:$summary_valid,
@@ -1544,6 +1544,7 @@ secondmate_current_json() {  # <parent-tasks-json>
       record=$(jq -n \
         --arg id "$id" --arg home "$home" --arg host "$host" --arg reason "$reason" --arg observed "$SNAPSHOT_NOW" \
         --arg provenance "$provenance" --arg freshness "$freshness" --arg spawn_gen "$sampled_spawn_gen" --arg event_raw "$event_raw" --arg event_note "$event_note" \
+        --argjson summary "$summary" --argjson summary_sampled "$summary_sampled" \
         --rawfile fm_args_raw "$record_args_file" '
         ($fm_args_raw | fromjson) as $fm_args
         | $fm_args.remote as $remote
@@ -1554,7 +1555,7 @@ secondmate_current_json() {  # <parent-tasks-json>
         | $fm_args.decisions as $decisions
         | $fm_args.terminal as $terminal
         | {id:$id,home:($home | if . == "" then null else . end),host:($host | if . == "" then null else . end),remote:$remote,registered:$registered,
-         spawn_gen:($spawn_gen | if . == \"\" then null else . end),
+         spawn_gen:($spawn_gen | if . == "" then null else . end),
          current:{state:"unknown",reason:$reason},invalidity:null,
          reconcile_inventory:(if $summary_sampled then $summary.invalidity else null end),
          provenance:{selected:$provenance,structured_home:($home | if . == "" then null else . end),parent_event_role:"fallback-only-not-current"},
