@@ -93,10 +93,33 @@ test_afk_start_refuses_when_primary_not_hosted_in_tmux_or_herdr() {
   status=$?
 
   [ "$status" -ne 0 ] || fail "fm-afk-start.sh should refuse to arm when the primary is not hosted in tmux or herdr"
+  assert_contains "$out" "cannot verify this away-mode session's primary is hosted in tmux or herdr" \
+    "fm-afk-start.sh did not refuse the unverifiable non-tmux/non-herdr host"
+  assert_not_contains "$out" "does not resolve to a" "away-mode startup pinned a fallback target instead of refusing at arming time"
+  if [ -e "$state/.afk" ]; then
+    fail "refusing to arm still left state/.afk set with no daemon running"
+  fi
+  pass "fm-afk-start.sh refuses to arm when the primary session is not hosted in tmux or herdr"
+}
+
+test_daemon_refuses_unverifiable_target_when_started_directly() {
+  local dir state out status
+  dir=$(make_supercase daemon-no-tmux-primary)
+  state="$dir/state"
+  mkdir -p "$state"
+
+  # The daemon keeps its own refusal for the same condition, since it can be
+  # started directly (or by a launcher-prepared start) without passing through
+  # fm-afk-start.sh's earlier host check.
+  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' \
+        TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' "$DAEMON" 2>&1)
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "fm-supervise-daemon.sh should refuse an unverifiable non-tmux/non-herdr target"
   assert_contains "$out" "cannot verify this away-mode daemon's target pane hosts the live firstmate primary session" \
     "daemon startup did not refuse the unverifiable non-tmux/non-herdr target"
   assert_not_contains "$out" "does not resolve to a" "daemon startup pinned a fallback target instead of refusing at discovery"
-  pass "fm-afk-start.sh refuses to arm when the primary session is not hosted in tmux or herdr"
+  pass "fm-supervise-daemon.sh refuses to start against an unverifiable target"
 }
 
 test_afk_start_tmux_hosted_primary_reaches_target_validation_unchanged() {
@@ -2053,6 +2076,7 @@ test_afk_start_refuses_when_flag_cannot_be_written
 test_afk_start_ignores_stale_pidfile_without_lock
 test_afk_start_reclaims_stale_daemon_lock_reused_pid
 test_afk_start_refuses_when_primary_not_hosted_in_tmux_or_herdr
+test_daemon_refuses_unverifiable_target_when_started_directly
 test_afk_start_tmux_hosted_primary_reaches_target_validation_unchanged
 test_daemon_state_root_uses_fm_home
 test_classify_routine_signal_self
