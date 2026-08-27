@@ -938,24 +938,11 @@ EOF
   return "$saw"
 }
 
-# Coverability is a pure function of the status file's bytes and its .seen-*
-# signature, so one cycle's repeated asks about the same file reuse one answer.
-# The key carries the file's mtime, size and signature: any change between asks
-# misses the memo and recomputes, so a mid-cycle append is never absorbed by a
-# verdict taken before it landed. Reset per cycle to keep the memo bounded.
-FM_WATCH_COVERABLE_MEMO=$'\n'
-
-fm_watch_status_change_is_coverable_memo() {  # <status-file>
-  local file=$1 key verdict
-  key="$file"$'\t'"$(stat_mtime_ns "$file")"$'\t'"$(wc -c < "$file" 2>/dev/null | tr -d ' ')"
-  key="$key"$'\t'"$(cat "$(fm_wake_signal_seen_path "$STATE" "$file")" 2>/dev/null)"
-  case "$FM_WATCH_COVERABLE_MEMO" in
-    *$'\n'"$key"$'\t'0$'\n'*) return 0 ;;
-    *$'\n'"$key"$'\t'1$'\n'*) return 1 ;;
-  esac
-  fm_watch_status_change_is_coverable "$file" && verdict=0 || verdict=1
-  FM_WATCH_COVERABLE_MEMO="$FM_WATCH_COVERABLE_MEMO$key"$'\t'"$verdict"$'\n'
-  return "$verdict"
+# The bytes a coverage verdict was taken against: its mtime and size. A verdict
+# may only be reused while this is unchanged, so an append that lands after the
+# verdict was taken is never absorbed by it.
+fm_watch_signal_coverage_stamp() {  # <status-file>
+  printf '%s:%s' "$(stat_mtime_ns "$1")" "$(wc -c < "$1" 2>/dev/null | tr -d ' ')"
 }
 
 # fm_watch_signal_procevent_coverage <status-file>
@@ -995,7 +982,7 @@ fm_watch_signal_procevent_coverage() {  # <status-file>
   # that span (a done: beside a still-open decision from an earlier turn, or
   # beside a trailing note:) is never presented, so it always keeps its own
   # wake. Decide that here, before touching the inbox.
-  if ! fm_watch_status_change_is_coverable_memo "$file"; then
+  if ! fm_watch_status_change_is_coverable "$file"; then
     printf 'deliver\n'
     return 0
   fi
@@ -1504,10 +1491,15 @@ EOF
     # will not re-fire, log, and keep blocking without enqueuing. The provably-working
     # check is the only costly one (it may run a bounded no-mistakes call), so the ||
     # ordering evaluates it ONLY for a non-afk, no-captain-verb signal.
+    # Coverage is decided once per file here, in THIS shell. The decision runs
+    # in a command substitution, so it cannot cache anything itself; the verdict
+    # is recorded alongside the bytes it judged and reused below.
     signal_deferred=
-    FM_WATCH_COVERABLE_MEMO=$'\n'
+    signal_coverage=
     for f in $files; do
-      [ "$(fm_watch_signal_procevent_coverage "$f")" = defer ] || continue
+      signal_verdict=$(fm_watch_signal_procevent_coverage "$f")
+      signal_coverage="$signal_coverage $f|$(fm_watch_signal_coverage_stamp "$f")|$signal_verdict"
+      [ "$signal_verdict" = defer ] || continue
       signal_deferred="$signal_deferred $f"
     done
     if [ -n "$signal_deferred" ]; then
@@ -1537,7 +1529,18 @@ EOF
         # marker advances below without a second queue record; "defer" means the
         # proof is still outstanding, so nothing is decided and no marker moves.
         case " $signal_deferred " in *" $f "*) continue ;; esac
-        if [ "$(fm_watch_signal_procevent_coverage "$f")" = covered ]; then
+        # Reuse the pre-scan verdict, but only while the file still holds the
+        # bytes it judged; anything appended since is decided fresh.
+        signal_stamp=$(fm_watch_signal_coverage_stamp "$f")
+        signal_verdict=
+        case "$signal_coverage " in
+          *" $f|$signal_stamp|"*)
+            signal_verdict=${signal_coverage##*" $f|$signal_stamp|"}
+            signal_verdict=${signal_verdict%% *}
+            ;;
+        esac
+        [ -n "$signal_verdict" ] || signal_verdict=$(fm_watch_signal_procevent_coverage "$f")
+        if [ "$signal_verdict" = covered ]; then
           signal_covered="$signal_covered $f"
           continue
         fi
