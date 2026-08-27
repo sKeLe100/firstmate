@@ -31,6 +31,30 @@ pe_case() {  # <dir> <command>...
    FM_PROCEVENT_CLAIM_ROOT="$dir/claims" FM_HOME="$dir" "$ROOT/bin/fm-procevent.sh" "$@")
 }
 
+# Set <path>'s mtime to <epoch>.<nanos> portably. GNU touch -d accepts a
+# fractional epoch, BSD touch cannot express sub-second times at all, so the
+# portable paths go through python/perl utime. Returns non-zero when no
+# mechanism on this host can set a sub-second mtime.
+set_mtime_ns() {  # <path> <epoch-seconds> <nanoseconds>
+  local path=$1 sec=$2 ns=$3
+  if touch -d "@$sec.$(printf '%09d' "$ns")" "$path" 2>/dev/null; then
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import os,sys; t=int(sys.argv[2])*10**9+int(sys.argv[3]); os.utime(sys.argv[1], ns=(t,t))' \
+      "$path" "$sec" "$ns" 2>/dev/null && return 0
+  fi
+  if command -v perl >/dev/null 2>&1; then
+    perl -MTime::HiRes=utime -e 'my $t=$ARGV[1]+$ARGV[2]/1e9; utime $t,$t,$ARGV[0] or exit 1' \
+      "$path" "$sec" "$ns" 2>/dev/null && return 0
+  fi
+  return 1
+}
+
+mtime_seconds() {  # <path>
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"
+}
+
 # Capture one real process-event result for <source-id> into <dir>'s home and
 # retire the source, leaving exactly one durably captured, unhandled, queued
 # result.
@@ -228,13 +252,13 @@ test_distinct_status_change_after_procevent_still_wakes() {
   # the case is exercised on every run rather than whenever timing obliges.
   marker=$(find "$state" -maxdepth 1 -name '.seen-procevent-*' -type f | head -1)
   [ -n "$marker" ] || fail "the surfaced process-event marker was not written"
-  marker_s=$(stat -c %Y "$marker" 2>/dev/null || stat -f %m "$marker")
-  touch -d "@$marker_s.999000000" "$state/delivery-src.status" 2>/dev/null \
-    || touch -t "$(date -d "@$marker_s" +%Y%m%d%H%M.%S 2>/dev/null)" "$state/delivery-src.status" 2>/dev/null \
-    || true
-  [ "$(stat -c %Y "$state/delivery-src.status" 2>/dev/null || stat -f %m "$state/delivery-src.status")" \
-    = "$marker_s" ] \
-    || fail "fixture did not land the distinct status write in the delivery's epoch second"
+  marker_s=$(mtime_seconds "$marker")
+  if set_mtime_ns "$marker" "$marker_s" 200000000 \
+     && set_mtime_ns "$state/delivery-src.status" "$marker_s" 201000000; then
+    [ "$(mtime_seconds "$state/delivery-src.status")" = "$marker_s" ] \
+      && [ "$(mtime_seconds "$marker")" = "$marker_s" ] \
+      || fail "fixture did not land both writes in one epoch second"
+  fi
 
   watch_bg "$dir" "$out2" 1
   wait_for_exit "$!" 150 \
