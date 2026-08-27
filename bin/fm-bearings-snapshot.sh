@@ -423,7 +423,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
        | sort_by([(.completion.date // ""), .id]) | reverse
        | (if $all_landed == "1" then . else .[:$landed_per_home_n|tonumber] end) ]) as $per_home_groups
   | ($per_home_groups | add // []) as $per_home_capped
-  | ([ $all_landed_rows | group_by(.home_id)[] | select(length > $landed_per_home_n) ] | length) as $home_cap_dropped
+  | ([ $all_landed_rows | group_by(.home_id)[] | select(length > ($landed_per_home_n|tonumber)) ] | length) as $home_cap_dropped
   | ($per_home_capped | sort_by([(.completion.date // ""), .id]) | reverse) as $landed_sorted
   | (if $all_landed == "1" then $landed_sorted else ($per_home_groups | round_robin_landed($landed_n)) end) as $done
   | ($done | map(.id)) as $done_ids
@@ -559,7 +559,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
            {unhealthy_endpoints:(if $all_unhealthy == "1" then $unhealthy_all else $unhealthy_all[:$unhealthy_n|tonumber] end)}
          else {} end)
   | . + (if $include_prs == "1" then {candidate_prs:($candidate_prs|fromjson)} else {} end)
-  | . + (if $upstream != null then {upstream:($upstream|fromjson)} else {} end)
+  | . + (($upstream|fromjson) as $u | if $u != null then {upstream:$u} else {} end)
   | . + (if $f_bodies then {bodies:[ $snap.backlog.records[] | select(.structured and (.state == "queued" or .state == "done")) | {id, body:((.body_excerpt // .raw // "-") | trunc(200))} ]} else {} end)
   | . + (if $f_paths then {paths:[ $snap.tasks[] | {id, worktree:(.paths.worktree.path // "-"), home:(.paths.home.path // "-"), status:.paths.status_log.path, report:.paths.report.path} ]} else {} end)
   | . + (if $f_actions then {actions:[ $snap.tasks[] | {id, watch:(.actions.watch // .actions.send // "-"), steer:(.actions.steer // .actions.send // "-")} ]} else {} end)
