@@ -77,6 +77,56 @@ test_afk_start_reclaims_stale_daemon_lock_reused_pid() {
   pass "fm-afk-start.sh reclaims stale daemon locks whose live pid identity no longer matches"
 }
 
+test_afk_start_refuses_when_primary_not_hosted_in_tmux_or_herdr() {
+  local dir state out status
+  dir=$(make_supercase afk-start-no-tmux-primary)
+  state="$dir/state"
+  mkdir -p "$state"
+
+  # No FM_SUPERVISOR_TARGET override, no $TMUX_PANE, no $HERDR_ENV/$HERDR_PANE_ID:
+  # nothing identifies the pane hosting this primary as tmux- or herdr-backed, so
+  # the daemon must refuse to arm rather than fall back to guessing a "firstmate:0"
+  # tmux session that may belong to someone else's pane entirely (2026-08-22
+  # incident: an 8-hour away-mode run silently delivered nothing this way).
+  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' \
+        TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' "$AFK_START" 2>&1)
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "fm-afk-start.sh should refuse to arm when the primary is not hosted in tmux or herdr"
+  assert_contains "$out" "cannot verify this away-mode daemon's target pane hosts the live firstmate primary session" \
+    "daemon startup did not refuse the unverifiable non-tmux/non-herdr target"
+  assert_not_contains "$out" "does not resolve to a" "daemon startup pinned a fallback target instead of refusing at discovery"
+  pass "fm-afk-start.sh refuses to arm when the primary session is not hosted in tmux or herdr"
+}
+
+test_afk_start_tmux_hosted_primary_reaches_target_validation_unchanged() {
+  local dir state pid log deadline
+  dir=$(make_supercase afk-start-tmux-primary-unchanged)
+  state="$dir/state"
+  mkdir -p "$state"
+  log="$state/.supervise-daemon.log"
+
+  # $TMUX_PANE set (as tmux sets it for every real pane) must still resolve the
+  # target via the normal TMUX_PANE path, unaffected by the new refusal. Run in
+  # the background and check the log directly rather than the target-existence
+  # error text, whose exact wording depends on the ambient tmux server/pane
+  # this test happens to run under; what must hold regardless of that ambient
+  # state is that the new FALLBACK refusal never fires once TMUX_PANE is set.
+  FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' \
+    TMUX_PANE='%no-such-pane-9999' HERDR_ENV='' HERDR_PANE_ID='' "$AFK_START" >/dev/null 2>&1 &
+  pid=$!
+  deadline=$(( $(date +%s) + 10 ))
+  while [ ! -s "$log" ] && [ "$(date +%s)" -lt "$deadline" ] && kill -0 "$pid" 2>/dev/null; do
+    sleep 0.2
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+
+  assert_not_contains "$(cat "$log" 2>/dev/null)" "primary session not confirmed hosted in tmux or herdr" \
+    "tmux-hosted primary (TMUX_PANE set) was wrongly refused by the new non-tmux/non-herdr check"
+  pass "fm-afk-start.sh: a tmux-hosted primary's target resolution is unchanged"
+}
+
 test_daemon_state_root_uses_fm_home() {
   local dir home override out
   dir=$(make_supercase daemon-fm-home)
@@ -1990,6 +2040,8 @@ test_inject_msg_defers_on_unrecognized_composer_state() {
 test_afk_start_refuses_when_flag_cannot_be_written
 test_afk_start_ignores_stale_pidfile_without_lock
 test_afk_start_reclaims_stale_daemon_lock_reused_pid
+test_afk_start_refuses_when_primary_not_hosted_in_tmux_or_herdr
+test_afk_start_tmux_hosted_primary_reaches_target_validation_unchanged
 test_daemon_state_root_uses_fm_home
 test_classify_routine_signal_self
 test_classify_terminal_signal_escalates

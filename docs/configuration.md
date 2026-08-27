@@ -133,9 +133,11 @@ It currently supports only `tmux` and `herdr` supervisor panes.
 Set `FM_SUPERVISOR_BACKEND=tmux|herdr` and `FM_SUPERVISOR_TARGET=<target>` to override both axes explicitly; for herdr the target is `"<session>:<pane-id>"`.
 Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then falls back to `tmux`.
 That keeps a tmux pane nested inside herdr on the tmux transport, matching the runtime backend's innermost-first rule.
-Target detection uses `FM_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then the legacy `firstmate:0` tmux fallback with a warning.
-That last fallback resolves and pins the concrete active pane id of `firstmate:0` at discovery time, because `firstmate:0` is a session:WINDOW target whose reads follow whichever pane is active in that window, so a later focus change would otherwise silently redirect every composer read to a different split.
-When tmux cannot resolve the pane id (tmux missing, or no such session) it stays the literal `firstmate:0` string; the startup log distinguishes the two as `target_source=FALLBACK(pinned:<pane-id>)` versus `target_source=FALLBACK(firstmate:0)`.
+Target detection uses `FM_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr.
+None of those three identify the primary's pane only when the primary session is not hosted in tmux or herdr at all - for example a primary running in a plain terminal or IDE integration with no tmux/herdr pane underneath it.
+In that case the daemon REFUSES to arm rather than falling back to a guessed `firstmate:0` tmux session: an unrelated tmux session that merely happens to be named `firstmate:0` is not proof the primary lives there, and injecting into it types escalations into a pane nobody reads while the composer guard silently discards them (confirmed root cause of an 8-hour away-mode run in 2026-08-22 that delivered nothing).
+There is currently no verified delivery path for a non-tmux, non-herdr primary; `bin/fm-supervise-daemon.sh` prints `error: cannot verify this away-mode daemon's target pane hosts the live firstmate primary session ...` and exits nonzero at arm time, so `/afk` fails loudly instead of arming into a void.
+Run the primary inside tmux (or herdr), or set `FM_SUPERVISOR_TARGET`/`FM_SUPERVISOR_BACKEND` explicitly to the primary's own pane, to use away mode in that configuration.
 Selecting any other supervisor backend, including `zellij`, `orca`, or `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
