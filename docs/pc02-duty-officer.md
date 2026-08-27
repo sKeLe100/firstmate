@@ -31,8 +31,10 @@ prompt="$(cat docs/pc02-duty-officer-prompt.txt)
 
 Question: <the factual question>"
 
-ssh pc02 "opencode run -m pc02-llama-swap/qwen3.6-35b-a3b-dispatch \
+remote="opencode run -m pc02-llama-swap/qwen3.6-35b-a3b-dispatch \
   --dir <staging-dir-with-the-needed-file(s)> $(printf %q "$prompt")"
+
+ssh pc02 "bash -lc $(printf %q "$remote")"
 ```
 
 Build the prompt string *locally*: `docs/pc02-duty-officer-prompt.txt` lives in this repo on the
@@ -40,7 +42,10 @@ firstmate host, not on PC02, so `$(cat ...)` must be expanded here. Wrapping the
 in single quotes would defer that expansion to the PC02 shell, where `cat` fails and the prompt
 silently becomes empty - opencode would then answer with no contract and no refusal boundary at all.
 `ssh` concatenates its arguments and the remote shell re-parses them, so the prompt must be quoted
-for that second parse (`printf %q` above) rather than passed bare.
+for that second parse (`printf %q` above) rather than passed bare. The `bash -lc` wrapper is
+required, not cosmetic: `opencode` lives in `~/.npm-global/bin` on PC02, which only a login shell
+puts on `PATH`, so a bare `ssh pc02 "opencode run ..."` exits 127 with `opencode: command not
+found`. That adds a third parse, hence the second `printf %q` around the whole remote command.
 
 Stage only the specific file(s) the question needs (e.g. a copy or excerpt of `data/backlog.md`)
 in `<staging-dir>` before invoking - PC02 has no filesystem access to the primary firstmate host,
