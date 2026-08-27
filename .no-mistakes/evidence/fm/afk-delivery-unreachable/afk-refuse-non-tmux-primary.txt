@@ -1,0 +1,11 @@
+=== /afk arm from a NON-tmux, non-herdr primary (no TMUX_PANE, no HERDR_ENV) ===
+$ bin/fm-afk-start.sh
+afk: starting supervise daemon in foreground; keep this command as a tracked background session
+error: cannot verify this away-mode daemon's target pane hosts the live firstmate primary session (no FM_SUPERVISOR_TARGET override, and neither $TMUX_PANE nor $HERDR_ENV/$HERDR_PANE_ID is set) - the primary session does not appear to be running inside tmux or herdr, and away mode has no other verified delivery path, so it refuses to arm rather than escalate into an unrelated pane; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET/FM_SUPERVISOR_BACKEND explicitly to the primary's own pane, to use away mode
+exit=1
+
+--- state/.supervise-daemon.log ---
+[2026-08-27T00:07:53-0400] startup refused: primary session not confirmed hosted in tmux or herdr (target_source=FALLBACK, would-be target='%0')
+
+--- daemon pidfile / lock left behind? ---
+.supervise-daemon.log

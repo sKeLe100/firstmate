@@ -1,0 +1,8 @@
+=== BASE COMMIT e6d03bd (before fix): same non-tmux primary ===
+$ bin/fm-afk-start.sh
+afk: starting supervise daemon in foreground; keep this command as a tracked background session
+warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, or HERDR_ENV/HERDR_PANE_ID); falling back to '%0' — verify this is firstmate's pane
+Terminated                 sleep 1
+--- state/.supervise-daemon.log ---
+[2026-08-27T00:12:16-0400] daemon starting (pid 3120753); target=%0; target_source=FALLBACK(pinned:%0); backend=tmux; backend_source=FALLBACK(tmux); afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=90s
+[2026-08-27T00:12:27-0400] daemon shutting down

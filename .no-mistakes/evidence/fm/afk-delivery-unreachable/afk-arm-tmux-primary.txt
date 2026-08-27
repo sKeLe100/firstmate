@@ -1,0 +1,5 @@
+=== /afk arm from a tmux-hosted primary (TMUX_PANE=%201) ===
+$ bin/fm-afk-start.sh   # run with the primary pane env, backgrounded
+afk: starting supervise daemon in foreground; keep this command as a tracked background session
+--- state/.supervise-daemon.log ---
+[2026-08-27T00:08:14-0400] daemon starting (pid 3041474); target=%201; target_source=TMUX_PANE; backend=tmux; backend_source=TMUX_PANE; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=90s
