@@ -1,12 +1,34 @@
-### BEFORE FIX (bin/fm-watch.sh reverted to base e6d03bd)
-not ok - the watcher woke for a covered signal: signal: /tmp/fm-wake-pair-dedup-tests.G4p2jE/procevent-dedup/state/delivery-src.status
+Duplicate wake delivery (audit finding 3) — captain-visible supervisor loop
+One crewmate event: a status write plus its captured process-event result.
 
-### AFTER FIX (head 95dbdd8)
-ok - one event enqueues once: its status signal never becomes a second wake
-ok - a routine status line keeps its signal wake rather than being silently absorbed
-ok - a status change written after the check wake, in the same second, is never coalesced
-ok - a signal deferred behind an unacknowledged generation is delayed, never dropped
-ok - a deferred signal keeps its marker when a benign signal shares the cycle
-ok - a status signal with no process-event coverage wakes normally
+### BEFORE (base e6d03bd) — supervisor loop: wake -> drain -> ack, repeated
 
-All wake-pair-dedup tests passed.
+[turn 1] watcher wakes:
+    check: process-event result captured: procevent:delivery-src:1
+[turn 1] captain drains:
+    | 1787805625	2	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | delivery-src blocked: waiting on lavish review
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+[turn 2] watcher rearms on the SAME event (no new crewmate activity):
+    signal: /tmp/fm-wake-evidence2.hR3dsr/evi2-BEFORE/state/delivery-src.status
+[turn 2] captain is pulled into an EXTRA drain turn:
+    | 1787805628	4	signal	delivery-src.status	signal: /tmp/fm-wake-evidence2.hR3dsr/evi2-BEFORE/state/delivery-src.status
+    | wake annotation: latest wake-EVENT observed at drain, not current state: delivery-src.status: blocked: waiting on lavish review
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | delivery-src blocked: waiting on lavish review
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+### AFTER (e353cf2) — supervisor loop: wake -> drain -> ack, repeated
+
+[turn 1] watcher wakes:
+    check: process-event result captured: procevent:delivery-src:1
+[turn 1] captain drains:
+    | 1787805635	2	check	procevent:delivery-src:1	check: procevent lavish delivery-src 1
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | delivery-src blocked: waiting on lavish review
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+[turn 2] watcher rearms on the SAME event (no new crewmate activity):
+    (watcher stayed asleep — no second wake, no extra drain turn)

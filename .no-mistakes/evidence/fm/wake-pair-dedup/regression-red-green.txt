@@ -1,0 +1,17 @@
+Regression proof for tests/fm-wake-pair-dedup.test.sh (fails before the fix, passes after).
+
+$ git show e6d03bd:bin/fm-watch.sh > bin/fm-watch.sh   # pre-fix watcher
+$ bash tests/fm-wake-pair-dedup.test.sh
+not ok - the watcher woke for a covered signal: signal: .../procevent-dedup/state/delivery-src.status
+
+$ git checkout bin/fm-watch.sh                          # fixed watcher (e353cf2)
+$ bash tests/fm-wake-pair-dedup.test.sh
+ok - one event enqueues once: its status signal never becomes a second wake
+ok - a routine status line keeps its signal wake rather than being silently absorbed
+ok - a routine line beside a still-open decision keeps its own signal wake
+ok - a status change written after the check wake, in the same second, is never coalesced
+ok - a signal deferred behind an unacknowledged generation is delayed, never dropped
+ok - a deferred signal keeps its marker when a benign signal shares the cycle
+ok - a status signal with no process-event coverage wakes normally
+
+All wake-pair-dedup tests passed.
