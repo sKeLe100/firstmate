@@ -662,6 +662,100 @@ EOF
   pass "fm_backend_herdr_create_task: closes and replaces a same-labeled tab whose pane is alive but hosts no registered agent (a restored plain shell)"
 }
 
+# The next tests cover fm_backend_herdr_agent_state's recovery classification
+# of exactly what a WSL/host shutdown leaves behind (found 2026-08-22 during
+# PC02 vhdx compaction): a positively read stopped herdr server, a registered
+# agent whose process the shutdown killed (agent_status literally "unknown",
+# proven dead via the pane's own bare idle shell), a live endpoint, and the
+# genuinely ambiguous reads - a failed or unparseable probe, and "unknown"
+# agent status without the bare-shell proof - which must still refuse.
+
+test_agent_state_stopped_server_is_missing() {
+  local out
+  out=$(ROOT="$ROOT" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_parse_target() {
+      FM_BACKEND_HERDR_SESSION=fmtest; FM_BACKEND_HERDR_PANE=w1:p2
+    }
+    fm_backend_herdr_cli() { printf "{\"server\":{\"running\":false}}"; }
+    fm_backend_herdr_pane_agent_state() { echo "unexpected call" >&2; return 1; }
+    fm_backend_herdr_agent_state fmtest:w1:p2
+  ') || fail "fm_backend_herdr_agent_state must not error on a stopped server"
+  [ "$out" = missing ] || fail "a stopped herdr server (status --json server.running=false) must classify as missing, got '$out'"
+  pass "fm_backend_herdr_agent_state: a stopped server (ConnectionRefused-equivalent) classifies as missing"
+}
+
+test_agent_state_failed_server_probe_is_unreadable() {
+  local out
+  out=$(ROOT="$ROOT" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_parse_target() {
+      FM_BACKEND_HERDR_SESSION=fmtest; FM_BACKEND_HERDR_PANE=w1:p2
+    }
+    fm_backend_herdr_cli() { return 1; }
+    fm_backend_herdr_pane_agent_state() { echo "unexpected call" >&2; return 1; }
+    fm_backend_herdr_agent_state fmtest:w1:p2
+  ') || fail "fm_backend_herdr_agent_state must not error when the server probe itself fails"
+  [ "$out" = unreadable ] || fail "a failed status --json probe is ambiguous and must classify as unreadable, got '$out'"
+  pass "fm_backend_herdr_agent_state: a failed server probe classifies as unreadable (never licenses a relaunch)"
+}
+
+test_agent_state_unparseable_server_probe_is_unreadable() {
+  local out
+  out=$(ROOT="$ROOT" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_parse_target() {
+      FM_BACKEND_HERDR_SESSION=fmtest; FM_BACKEND_HERDR_PANE=w1:p2
+    }
+    fm_backend_herdr_cli() { printf "not json at all"; }
+    fm_backend_herdr_pane_agent_state() { echo "unexpected call" >&2; return 1; }
+    fm_backend_herdr_agent_state fmtest:w1:p2
+  ') || fail "fm_backend_herdr_agent_state must not error on an unparseable server probe"
+  [ "$out" = unreadable ] || fail "an unparseable status --json response must classify as unreadable, got '$out'"
+  pass "fm_backend_herdr_agent_state: a truncated/unparseable server probe classifies as unreadable"
+}
+
+test_agent_state_running_server_with_live_agent_is_alive() {
+  local out
+  out=$(ROOT="$ROOT" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_parse_target() {
+      FM_BACKEND_HERDR_SESSION=fmtest; FM_BACKEND_HERDR_PANE=w1:p2
+    }
+    fm_backend_herdr_cli() { printf "{\"server\":{\"running\":true}}"; }
+    fm_backend_herdr_pane_agent_state() { printf live; }
+    fm_backend_herdr_agent_state fmtest:w1:p2
+  ') || fail "fm_backend_herdr_agent_state must not error on a running server with a live agent"
+  [ "$out" = alive ] || fail "a running server whose pane hosts a registered agent must classify as alive, got '$out'"
+  pass "fm_backend_herdr_agent_state: a running server with a live pane agent classifies as alive"
+}
+
+test_pane_agent_state_unknown_status_with_bare_idle_shell_is_dead() {
+  local out
+  out=$(ROOT="$ROOT" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_pane_presence_state() { printf present; }
+    fm_backend_herdr_cli() { printf "{\"result\":{\"agent\":{\"agent_status\":\"unknown\"}}}"; }
+    fm_backend_herdr_pane_idle_shell_pid() { printf 4242; return 0; }
+    fm_backend_herdr_pane_agent_state fmtest w1:p2
+  ') || fail "fm_backend_herdr_pane_agent_state must not error on a proven bare-idle-shell husk"
+  [ "$out" = no-agent ] || fail "agent_status=unknown proven a bare idle shell must classify as no-agent, got '$out'"
+  pass "fm_backend_herdr_pane_agent_state: agent_status literally 'unknown' with a proven bare idle shell classifies as no-agent (dead overall)"
+}
+
+test_pane_agent_state_unknown_status_without_bare_shell_proof_stays_unknown() {
+  local out
+  out=$(ROOT="$ROOT" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_pane_presence_state() { printf present; }
+    fm_backend_herdr_cli() { printf "{\"result\":{\"agent\":{\"agent_status\":\"unknown\"}}}"; }
+    fm_backend_herdr_pane_idle_shell_pid() { return 1; }
+    fm_backend_herdr_pane_agent_state fmtest w1:p2
+  ') || fail "fm_backend_herdr_pane_agent_state must not error on a genuinely ambiguous unknown status"
+  [ "$out" = unknown ] || fail "agent_status=unknown WITHOUT a bare-idle-shell proof must still refuse as unknown, got '$out'"
+  pass "fm_backend_herdr_pane_agent_state: agent_status 'unknown' without the bare-idle-shell proof still refuses as unknown (unreadable overall)"
+}
+
 test_create_task_closes_all_duplicate_husks_after_replacement() {
   local dir log resp fb out tab pane create_line close_p2_line close_p3_line
   dir="$TMP_ROOT/husk-multiple"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -4604,3 +4698,9 @@ test_wait_transition_stream_absorb_clears_then_timeout
 test_wait_transition_reader_failure_returns_2
 test_wait_transition_bad_ack_returns_2_and_cleans_up
 test_wait_transition_clean_timeout_returns_1
+test_agent_state_stopped_server_is_missing
+test_agent_state_failed_server_probe_is_unreadable
+test_agent_state_unparseable_server_probe_is_unreadable
+test_agent_state_running_server_with_live_agent_is_alive
+test_pane_agent_state_unknown_status_with_bare_idle_shell_is_dead
+test_pane_agent_state_unknown_status_without_bare_shell_proof_stays_unknown

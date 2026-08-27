@@ -161,6 +161,8 @@ Raw launch commands are not accepted for remote secondmates.
 Backends that already refuse secondmate launch, currently Orca and cmux, remain unsupported on the remote host.
 
 Startup liveness recovery relaunches a dead or missing remote second mate through this same command, so recovery passes the same readiness gate rather than a weaker one.
+Two shutdown leftovers now classify as recoverable rather than refusing forever: a recorded Herdr pane whose agent the shutdown killed, proven by the pane's own bare idle shell, is `dead`, and a Herdr server positively read as stopped through `status --json` is `missing`.
+Both take the ordinary recovery branch, while a genuinely ambiguous read - a failed, timed-out, or unparseable probe, or an unknown agent status without that bare-shell proof - still refuses as `unreadable` so recovery never launches a second agent onto a live endpoint.
 
 ### Endpoint settle
 
@@ -181,7 +183,7 @@ If it remains unconfirmed, only the exact `FM_PENDING_REPLY_EXISTING_CORR=<id>` 
 When deduplication finds that the worker already moved the matching record into `handled/`, the resend exits successfully without ringing the doorbell again.
 The remote host runs no doorbell re-ring ladder of its own; a swallowed remote doorbell surfaces through the parent's pending-reply recovery and escalation, whose recovery request rings the doorbell again when it is enqueued.
 `fm-peek.sh` and `fm-crew-state.sh` route remote-secondmate reads to the endpoint's host instead of consulting local worktree or backend state.
-An unreachable or unreadable remote read is unknown, not evidence that the endpoint is dead.
+An unreachable or unreadable remote read is unknown, not evidence that the endpoint is dead; only a positively read stopped server or a provably empty pane counts as such evidence.
 
 Marked requests keep the existing correlation contract.
 The remote charter appends replies to `state/parent-replies.status` in the remote home.

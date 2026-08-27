@@ -260,12 +260,12 @@ No Herdr-specific copy of that protocol exists.
 ## Restart and liveness behavior
 
 Stopping and restarting a named Herdr server preserves workspace, tab, pane, and label ids, but the underlying harness processes and live agent registrations do not survive.
-A restored same-labeled tab with a missing pane or no registered agent is a husk.
+A restored same-labeled tab with a missing pane, no registered agent, or a registration the shutdown outlived - one reporting `unknown` while the pane's own process table proves it holds nothing but a bare idle shell - is a husk.
 Create replaces only a confidently dead or no-agent husk, creates the replacement before closing the old tab, and refuses live or unknown states.
 This prevents closing the workspace's last tab before a replacement exists.
 
 The generic Herdr agent-liveness probe reuses the same classifier.
-A structurally gone pane becomes `missing`, a restored agent-less shell becomes `dead`, a registered agent becomes `alive`, and an unexpected read becomes `unreadable`.
+A server positively read as stopped through `status --json` or a structurally gone pane becomes `missing`, an agent-less pane - including a husk registration proven dead by its bare idle shell - becomes `dead`, a registered agent becomes `alive`, and an unexpected, failed, or unparseable read becomes `unreadable`.
 Unlike tmux process-name inspection, native registration can classify Pi without guessing from a generic interpreter name.
 
 The session-start sweep uses this probe.

@@ -20,6 +20,10 @@
 # fm-spawn/fm-send/fm-teardown keep owning the local endpoint mechanics.
 # The home's own workers keep their ordinary backend selection.
 # bin/fm-remote-doctor.sh owns that host's readiness for Herdr.
+# Liveness recovery reads the endpoint through fm_backend_agent_state: a
+# provably empty pane (bare idle shell) is dead and a positively read stopped
+# Herdr server is missing, so both relaunch here, while a failed, timed-out, or
+# otherwise ambiguous read stays unreadable and still refuses to relaunch.
 # docs/remote-secondmates.md owns why.
 # A private parent-route state directory stores only the remote secondmate
 # agent's endpoint record; the home's own

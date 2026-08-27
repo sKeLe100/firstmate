@@ -1905,6 +1905,22 @@ fm_backend_herdr_pane_agent_state() {  # <session> <pane_id>
   status=$(printf '%s' "$out" | jq -r '.result.agent.agent_status // empty' 2>/dev/null)
   case "$status" in
     working|idle|done|blocked) printf 'live' ;;
+    unknown)
+      # A registered agent reporting the literal agent_status "unknown" is
+      # what a WSL/host shutdown leaves behind: herdr never reaped the
+      # registration, but the process it pointed at is gone. That alone is
+      # not proof - "unknown" is also herdr's own fallback for a transiently
+      # unparseable read - so this only counts as a husk when the pane's
+      # process table independently proves it now holds nothing but a bare
+      # idle shell (fm_backend_herdr_pane_idle_shell_pid, the same structural
+      # proof the presentation-cleanup death check relies on). Anything short
+      # of that proof still refuses via the unknown fallthrough below.
+      if fm_backend_herdr_pane_idle_shell_pid "$session" "$pane_id" >/dev/null 2>&1; then
+        printf 'no-agent'
+      else
+        printf 'unknown'
+      fi
+      ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -1923,12 +1939,37 @@ fm_backend_herdr_tab_is_husk() {  # <session> <pane_id>
 
 # fm_backend_herdr_agent_state: recovery-grade state for the same session-start
 # sweep as the tmux classifier. It reuses the husk classifier rather than
-# creating a second Herdr state machine: a structurally gone pane is `missing`,
-# a confirmed agent-less pane is `dead`, a registered agent is `alive`, and an
-# unexpected or failed API read is `unreadable`.
+# creating a second Herdr state machine: a positively read stopped server or a
+# structurally gone pane is `missing`, a confirmed agent-less pane (including a
+# registered agent whose process the shutdown killed, proven via the pane's own
+# bare idle shell) is `dead`, a registered agent is `alive`, and an unexpected
+# or failed API read is `unreadable`.
 fm_backend_herdr_agent_state() {  # <target>
-  local target=$1
+  local target=$1 running
   fm_backend_herdr_parse_target "$target" || { printf 'unreadable'; return 0; }
+  # A stopped server (a full host shutdown/reboot, not just a dead pane)
+  # makes every pane/agent read below fail with a connection error rather
+  # than structured JSON, which would otherwise fall through to the
+  # catch-all unreadable. `status --json`'s own `.server.running` reports
+  # this without needing a live connection to succeed, so check it first and
+  # treat a POSITIVELY read `running == false` as authoritatively missing -
+  # the same recovery branch a structurally absent pane takes. A failed,
+  # empty, or unparseable probe proves nothing and stays `unreadable`, so an
+  # ambiguous read can never license a duplicate launch onto a live endpoint.
+  local status_json
+  status_json=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" status --json 2>/dev/null) \
+    || { printf 'unreadable'; return 0; }
+  running=$(printf '%s' "$status_json" | jq -r '
+    if .server.running == true then "true"
+    elif .server.running == false then "false"
+    else "unknown"
+    end
+  ' 2>/dev/null) || { printf 'unreadable'; return 0; }
+  case "$running" in
+    true) ;;
+    false) printf 'missing'; return 0 ;;
+    *) printf 'unreadable'; return 0 ;;
+  esac
   case "$(fm_backend_herdr_pane_agent_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")" in
     dead) printf 'missing' ;;
     no-agent) printf 'dead' ;;
