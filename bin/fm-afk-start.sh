@@ -41,6 +41,8 @@ FM_AFK_DAEMON="$FM_AFK_START_DIR/fm-supervise-daemon.sh"
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$FM_AFK_START_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-supervisor-target-lib.sh
+. "$FM_AFK_START_DIR/fm-supervisor-target-lib.sh"
 
 fm_afk_start_usage() {
   sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -130,20 +132,17 @@ fm_afk_flag_write() {  # <state-dir>
   return 1
 }
 
-# fm_afk_host_confirmed: mirrors bin/fm-supervise-daemon.sh's own target_source
-# determination just enough to know, BEFORE the away-mode flag is written,
-# whether this process is hosted somewhere the daemon can verify (an explicit
-# FM_SUPERVISOR_TARGET override, a tmux pane, or a herdr
-# pane). A non-prepared start with none of these would arm state/.afk and then
-# have the daemon refuse to start (see fm-supervise-daemon.sh's FALLBACK
-# refusal), leaving .afk set with no daemon alive - firstmate would then treat
-# itself as away while nothing supervises or escalates. Refusing here instead
-# keeps that flag from ever being written for a target the daemon cannot verify.
+# fm_afk_host_confirmed: decide, BEFORE the away-mode flag is written, whether
+# this process is hosted somewhere the daemon can verify. It delegates to
+# discover_supervisor_target (bin/fm-supervisor-target-lib.sh), the single owner
+# of that precedence, so this refusal, bin/fm-afk-launch.sh's, and the daemon's
+# own startup refusal can never drift apart. A non-prepared start with no
+# resolvable host would arm state/.afk and then have the daemon refuse to start
+# (see fm-supervise-daemon.sh's FALLBACK refusal), leaving .afk set with no
+# daemon alive - firstmate would then treat itself as away while nothing
+# supervises or escalates.
 fm_afk_host_confirmed() {
-  [ -n "${FM_SUPERVISOR_TARGET:-}" ] && return 0
-  [ -n "${TMUX_PANE:-}" ] && return 0
-  [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ] && return 0
-  return 1
+  discover_supervisor_target >/dev/null
 }
 
 fm_afk_start_main() {

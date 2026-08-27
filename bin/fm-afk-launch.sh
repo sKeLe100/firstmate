@@ -534,6 +534,13 @@ fm_afk_launch_start_native() {
     fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
     return 1
   fi
+  # The harness-native daemon inherits THIS pane's env, so the same host check
+  # the daemon applies at startup has to pass here - otherwise this writes
+  # state/.afk and the daemon then refuses, leaving away mode armed with no
+  # daemon alive.
+  discover_supervisor_target >/dev/null || {
+    fm_afk_launch_log "cannot verify this away-mode session's primary is hosted in tmux or herdr (no FM_SUPERVISOR_TARGET override, and neither \$TMUX_PANE nor \$HERDR_ENV/\$HERDR_PANE_ID is set) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET explicitly, to use away mode"
+    return 1; }
   if daemon_lock_held_by_live_daemon; then
     fm_afk_launch_record_validate_if_present || return 1
     fm_afk_launch_flag_write || return 1
