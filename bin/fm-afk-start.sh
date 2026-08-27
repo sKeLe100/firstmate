@@ -12,6 +12,13 @@
 #       execs bin/fm-supervise-daemon.sh in the foreground. A prepared start was
 #       already cleared transactionally by bin/fm-afk-launch.sh.
 #
+# A non-prepared start REFUSES before writing state/.afk when no source
+# (FM_SUPERVISOR_TARGET, $TMUX_PANE, or $HERDR_ENV/$HERDR_PANE_ID) identifies
+# the pane hosting the live primary - away mode has no verified delivery path
+# for a primary that is not running inside tmux or herdr. That refusal, and
+# the identical ones in bin/fm-afk-launch.sh and bin/fm-supervise-daemon.sh,
+# are documented in docs/configuration.md "Away-mode supervisor backend".
+#
 # This file is sourceable: its BASH_SOURCE guard keeps main from running, while
 # exposing the daemon-lock helpers and fm_afk_clear_stale_artifacts. Sourcing it
 # enables nounset and errexit; callers that need different shell options must

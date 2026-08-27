@@ -29,6 +29,12 @@
 #   fm-afk-launch.sh start-native
 #                              Prepare lifecycle state for a harness-native
 #                              background job and record that no terminal exists.
+#                              Refuses before preparing anything when this pane
+#                              does not identify the live primary's own pane
+#                              (see docs/configuration.md "Away-mode supervisor
+#                              backend"): the native daemon inherits THIS env,
+#                              so arming would leave state/.afk set with a
+#                              daemon that then refuses to start.
 #   fm-afk-launch.sh stop      Correct-ordered exit: SIGTERM the daemon so its
 #                              cleanup flushes WHILE state/.afk is still present,
 #                              wait for it, close the recorded terminal by exact
