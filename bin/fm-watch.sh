@@ -907,10 +907,11 @@ fm_watch_status_new_span() {  # <status-file>
 # file's current fold (so OPEN DECISIONS reprints it). Anything else - a done:,
 # a failed:, a superseded decision line - is presented nowhere, so its status
 # signal is the only delivery it will ever get.
+# The whole-file fold is the expensive part (a subshell per status line), so it
+# is computed lazily, only once, and only if the span actually opens a decision.
 fm_watch_status_change_is_coverable() {  # <status-file>
-  local file=$1 span open line verb key note saw=1
+  local file=$1 span open='' folded=1 line verb key note saw=1
   span=$(fm_watch_status_new_span "$file") || return 1
-  open=$(status_open_decisions "$file" 2>/dev/null)
   while IFS= read -r line || [ -n "$line" ]; do
     [ -n "${line//[[:space:]]/}" ] || continue
     saw=0
@@ -920,6 +921,10 @@ fm_watch_status_change_is_coverable() {  # <status-file>
     key=$(_fm_decision_key "$line") || return 1
     note=$(status_line_note "$line")
     _fm_decision_key_transition_allowed "$key" "$note" || return 1
+    if [ "$folded" -eq 1 ]; then
+      open=$(status_open_decisions "$file" 2>/dev/null)
+      folded=0
+    fi
     case "$open" in
       "$key"$'\t'"$verb"$'\t'"$note") ;;
       "$key"$'\t'"$verb"$'\t'"$note"$'\n'*) ;;
@@ -931,6 +936,26 @@ fm_watch_status_change_is_coverable() {  # <status-file>
 $span
 EOF
   return "$saw"
+}
+
+# Coverability is a pure function of the status file's bytes and its .seen-*
+# signature, so one cycle's repeated asks about the same file reuse one answer.
+# The key carries the file's mtime, size and signature: any change between asks
+# misses the memo and recomputes, so a mid-cycle append is never absorbed by a
+# verdict taken before it landed. Reset per cycle to keep the memo bounded.
+FM_WATCH_COVERABLE_MEMO=$'\n'
+
+fm_watch_status_change_is_coverable_memo() {  # <status-file>
+  local file=$1 key verdict
+  key="$file"$'\t'"$(stat_mtime_ns "$file")"$'\t'"$(wc -c < "$file" 2>/dev/null | tr -d ' ')"
+  key="$key"$'\t'"$(cat "$(fm_wake_signal_seen_path "$STATE" "$file")" 2>/dev/null)"
+  case "$FM_WATCH_COVERABLE_MEMO" in
+    *$'\n'"$key"$'\t'0$'\n'*) return 0 ;;
+    *$'\n'"$key"$'\t'1$'\n'*) return 1 ;;
+  esac
+  fm_watch_status_change_is_coverable "$file" && verdict=0 || verdict=1
+  FM_WATCH_COVERABLE_MEMO="$FM_WATCH_COVERABLE_MEMO$key"$'\t'"$verdict"$'\n'
+  return "$verdict"
 }
 
 # fm_watch_signal_procevent_coverage <status-file>
@@ -970,7 +995,7 @@ fm_watch_signal_procevent_coverage() {  # <status-file>
   # that span (a done: beside a still-open decision from an earlier turn, or
   # beside a trailing note:) is never presented, so it always keeps its own
   # wake. Decide that here, before touching the inbox.
-  if ! fm_watch_status_change_is_coverable "$file"; then
+  if ! fm_watch_status_change_is_coverable_memo "$file"; then
     printf 'deliver\n'
     return 0
   fi
@@ -1480,6 +1505,7 @@ EOF
     # check is the only costly one (it may run a bounded no-mistakes call), so the ||
     # ordering evaluates it ONLY for a non-afk, no-captain-verb signal.
     signal_deferred=
+    FM_WATCH_COVERABLE_MEMO=$'\n'
     for f in $files; do
       [ "$(fm_watch_signal_procevent_coverage "$f")" = defer ] || continue
       signal_deferred="$signal_deferred $f"
