@@ -14,7 +14,9 @@
 #   5. config/cache-ttl-seconds overrides the default threshold (reading past
 #      blank and comment lines), and a configured 0 disables the guard
 #      instead of refusing everything.
-#   6. A stale turn-ended marker on a task whose OTHER activity markers are
+#   6. Automated internal wakes (FM_SEND_INTERNAL=1, --fire-and-forget) are
+#      exempt.
+#   7. A stale turn-ended marker on a task whose OTHER activity markers are
 #      fresh, and a task classified busy (mid-turn), are never refused.
 set -u
 
@@ -208,6 +210,17 @@ test_internal_wake_ignores_guard() {
   pass "fm-send cache-stale guard: an automated internal wake is exempt"
 }
 
+test_fire_and_forget_ignores_guard() {
+  local dir err rc
+  dir=$(setup_case fireforget); err="$dir/send.err"
+  fm_write_meta "$dir/home/state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=claude"
+  age_activity "$dir" 40000
+  run_send "$dir" "$err" -- t1 --fire-and-forget 0123456789abcdef "reconcile nudge"; rc=$?
+  expect_code 0 "$rc" "a fire-and-forget nudge is programmatic and must never be refused"$'\n'"$(cat "$err")"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the fire-and-forget nudge should have been durably recorded"
+  pass "fm-send cache-stale guard: a fire-and-forget nudge is exempt"
+}
+
 test_resolve_key_answer_ignores_guard() {
   local dir err rc
   dir=$(setup_case resolvekey); err="$dir/send.err"
@@ -232,4 +245,5 @@ test_zero_ttl_disables_guard
 test_recent_activity_outranks_stale_turn_ended
 test_busy_session_never_refused
 test_internal_wake_ignores_guard
+test_fire_and_forget_ignores_guard
 test_resolve_key_answer_ignores_guard

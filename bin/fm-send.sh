@@ -859,12 +859,13 @@ else
   if [ "$INBOX_PLANE" = 1 ]; then
     INBOX_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
     # Ordinary human-typed local steers only: a --resolve-key answer closes an
-    # open decision, an automated internal wake (FM_SEND_INTERNAL=1, set by
-    # every programmatic caller) has no human to read the relaunch advice, and
-    # --steer-stale is the explicit deliberate-resume override. None of them
-    # may be blocked by this guard.
+    # open decision, an automated internal wake (FM_SEND_INTERNAL=1, or the
+    # purely programmatic --fire-and-forget plane) has no human to read the
+    # relaunch advice, and --steer-stale is the explicit deliberate-resume
+    # override. None of them may be blocked by this guard.
     if [ -z "$RESOLVE_KEYS" ] && [ "$STEER_STALE" != 1 ] \
-      && [ "${FM_SEND_INTERNAL:-0}" != 1 ] && [ -n "$INBOX_TASK_ID" ]; then
+      && [ "${FM_SEND_INTERNAL:-0}" != 1 ] && [ -z "$FIRE_AND_FORGET_ID" ] \
+      && [ -n "$INBOX_TASK_ID" ]; then
       # Cheapest checks first: a disabled knob and a fresh (or unreadable)
       # local idle age both settle the steer without any backend probe, so
       # the busy classification only runs when its verdict can still change
