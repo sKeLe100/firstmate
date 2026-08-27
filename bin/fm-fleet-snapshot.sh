@@ -157,9 +157,15 @@ validate_positive_bound FM_SNAPSHOT_REGISTRY_TIMEOUT "$FM_SNAPSHOT_REGISTRY_TIME
 # shellcheck source=bin/fm-ff-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-ff-lib.sh"  # validate_secondmate_home: shared seeded-home boundary checks
+# shellcheck source=bin/fm-cache-ttl-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"  # fm_cache_near_expiry_seconds: the shared TTL knob
 # shellcheck source=bin/fm-timeout-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"  # fm_run_timed: the shared hard bound
+
+CACHE_TTL_SECONDS=$(fm_cache_ttl_seconds "$CONFIG")
+CACHE_NEAR_EXPIRY_SECONDS=$(fm_cache_near_expiry_seconds "$CONFIG")
 
 usage() {
   cat <<'EOF'
@@ -502,6 +508,7 @@ task_json_lines() {
   local meta id kind harness mode yolo project worktree home projects spawn_gen backend target status_log report_path
   local remote_host remote_root remote_state remote_rc remote_home_present
   local pr pr_source event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
+  local idle_secs cache_expiring
   local last_event_raw current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
   local home_args_file record_args_file record_rc pipeline_rc
@@ -616,6 +623,18 @@ task_json_lines() {
       fi
     fi
 
+    idle_secs=
+    cache_expiring=0
+    if [ -z "$remote_host" ]; then
+      idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$id" || printf '')
+      if [ -n "$idle_secs" ] && [ "$endpoint_exists" = true ] &&
+        [ "$CACHE_NEAR_EXPIRY_SECONDS" -gt 0 ] &&
+        [ "$idle_secs" -ge "$CACHE_NEAR_EXPIRY_SECONDS" ] &&
+        [ "$idle_secs" -lt "$CACHE_TTL_SECONDS" ]; then
+        cache_expiring=1
+      fi
+    fi
+
     [ -f "$report_path" ] && report_present=1 || report_present=0
     meta_json=$(path_present_json "$meta")
     status_json=$event_json
@@ -665,6 +684,8 @@ task_json_lines() {
       --arg pr "$pr" \
       --arg pr_source "$pr_source" \
       --arg agent_alive "$agent_alive" \
+      --arg idle_seconds "$idle_secs" \
+      --arg cache_expiring "$(bool_json "$cache_expiring")" \
       --arg observed_at "$SNAPSHOT_NOW" \
       --arg last_event_raw "$last_event_raw" \
       --rawfile fm_args_raw "$record_args_file" \
@@ -703,6 +724,8 @@ task_json_lines() {
           status:(if $endpoint_exists == false then "absent"
                   elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
                   else "unknown" end),
+          idle_seconds:($idle_seconds | if . == "" then null else tonumber end),
+          cache_expiring:($cache_expiring | fromjson),
           observed_at:$observed_at,freshness:"fresh"},
         pr:{url:($pr | if . == "" then null else . end),source:$pr_source},
         hints:{

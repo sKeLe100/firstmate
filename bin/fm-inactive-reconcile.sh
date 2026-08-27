@@ -64,6 +64,8 @@ CREW_STATE_BIN="${FM_INACTIVE_CREW_STATE_BIN:-$SCRIPT_DIR/fm-crew-state.sh}"
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-secondmate-parent-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
+# shellcheck source=bin/fm-cache-ttl-lib.sh
+. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
@@ -226,17 +228,12 @@ queue_presentation() { # <record> <fingerprint> <payload>
   return 0
 }
 
-last_activity_age() { # <meta> <status> <turn-ended>
-  local meta=$1 status=$2 turn=$3 now m newest=0 file
-  now=$(reconcile_now)
-  for file in "$meta" "$status" "$turn"; do
-    [ -e "$file" ] || continue
-    m=$(file_mtime "$file" 2>/dev/null || true)
-    case "$m" in ''|*[!0-9]*) continue ;; esac
-    [ "$m" -le "$newest" ] || newest=$m
-  done
-  [ "$newest" -gt 0 ] || { printf '0\n'; return; }
-  if [ "$now" -lt "$newest" ]; then printf '0\n'; else printf '%s\n' $((now - newest)); fi
+# Idle age comes from bin/fm-cache-ttl-lib.sh's single activity-age fold, so
+# the reconciler, fm-send's steer guard, and the fleet snapshot can never
+# disagree on what "idle" means. An unknown age is 0 here: with no readable
+# marker there is no evidence of inactivity to act on.
+last_activity_age() { # <id>
+  fm_cache_activity_age_seconds "$STATE" "$1" "$(reconcile_now)" || printf '0'
 }
 
 scan_marker_age() {
@@ -333,15 +330,14 @@ report_to_parent() { # <self-id> <task> <state> <outcome-key> <fingerprint> <pr>
 }
 
 reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeout>
-  local id=$1 meta=$2 self=${3:-} timeout=$4 status turn last age state_line state pr incarnation fingerprint outcome_key payload kind state_rc=0
+  local id=$1 meta=$2 self=${3:-} timeout=$4 status last age state_line state pr incarnation fingerprint outcome_key payload kind state_rc=0
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
   kind=$(meta_field "$meta" kind)
   [ "$kind" = secondmate ] && return 0
   status="$STATE/$id.status"
-  turn="$STATE/$id.turn-ended"
   last=$(last_status_line "$status")
   status_line_verb "$last" | grep -Fx captain-held >/dev/null 2>&1 && return 0
-  age=$(last_activity_age "$meta" "$status" "$turn")
+  age=$(last_activity_age "$id")
   [ "$age" -ge "$FM_INACTIVE_RECONCILE_SECS" ] || return 0
   state_line=$(fm_run_timed "$timeout" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     "$CREW_STATE_BIN" "$id" 2>/dev/null) || state_rc=$?

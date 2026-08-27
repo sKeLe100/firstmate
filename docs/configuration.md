@@ -184,6 +184,17 @@ A Secondmate on a remote route is covered the same way: the primary resolves and
 The presence flag is session-scoped enablement, so it transfers at launch and is left unchanged by live convergence into a running home.
 See [`trace-context.md`](trace-context.md) for carrier semantics, supported routes, the manual fleet-restart requirement, the session boundary, and safety limits; `bin/fm-trace-context-lib.sh`'s header owns the exact mechanics, and [`verification/trace-context.md`](verification/trace-context.md) records repeatable evidence.
 
+## Prompt-cache steer guard (config/cache-ttl-seconds)
+
+`bin/fm-send.sh` refuses an ordinary text steer to a LOCAL task whose session has been idle longer than the prompt-cache TTL, because resuming it past that point burns a full context reload instead of a warm-cache resume.
+Idle age is the age of that task's newest activity marker - `state/<id>.meta`, `state/<id>.status`, or `state/<id>.turn-ended` - folded by the one implementation in `bin/fm-cache-ttl-lib.sh` that the guard, the heartbeat flag, and `bin/fm-inactive-reconcile.sh` all share, since `turn-ended` alone only moves when a turn ends and would misread a worker mid-turn as idle for that whole turn.
+A worker whose semantic busy state (`bin/fm-busy-lib.sh`) is `busy` is mid-turn and its cache is warm by definition, so the guard never applies to it regardless of marker age.
+The TTL defaults to 3600 seconds and is overridden by the first non-empty, non-`#` line of local, gitignored `config/cache-ttl-seconds`; an absent or non-numeric file keeps the default, and a value of `0` or below DISABLES the guard entirely (steers are always allowed, never refused).
+`bin/fm-cache-ttl-lib.sh` is the one implementation of that knob and of the activity-age fold, shared by the guard and the heartbeat flag so they cannot drift apart.
+A refused steer prints the exact `bin/fm-control.sh <task> relaunch --note ...` command to use instead; pass `--steer-stale` to fm-send to deliberately resume the stale session anyway.
+The guard never applies to a `--resolve-key` decision answer, an automated internal wake (a `--fire-and-forget` delivery, or any other programmatic caller, which sets `FM_SEND_INTERNAL=1`, since no human is there to act on the relaunch advice), a remote secondmate send, or any typed-plane delivery (a leading `/`, a leading `$` to codex, or an explicit backend target); it fails open (steers proceed) whenever the idle markers are missing or unreadable.
+`bin/fm-fleet-snapshot.sh` surfaces the same idle age per local task as `endpoint.idle_seconds` / `endpoint.cache_expiring` (true only for a LIVE endpoint whose idle age is between ~83% of the effective TTL and the TTL itself - 3000s to 3600s at the default; past the TTL the steer guard, not the heartbeat, owns the session), and `bin/fm-fleet-view.sh` renders it as a `(cache expiring)` suffix on a present endpoint so the heartbeat's fleet review catches a session before its cache lapses.
+
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked `.no-mistakes.yaml` sets `test.evidence.store_in_repo: true` and pins `commands.lint` to `bin/fm-lint.sh` so local lint matches CI.

@@ -455,7 +455,7 @@ wake_secondmate_receiver() { # <secondmate-id> <correlation-id>
     return 1
   }
   out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_ROOT_OVERRIDE="$FM_ROOT" \
-    FM_PENDING_REPLY_EXISTING_CORR="$corr" \
+    FM_PENDING_REPLY_EXISTING_CORR="$corr" FM_SEND_INTERNAL=1 \
     "$SCRIPT_DIR/fm-send.sh" "$id" "$RECEIVER_WAKE_MESSAGE" 2>&1) || rc=$?
   if [ "$rc" -ne 0 ]; then
     [ -z "$out" ] || printf '%s\n' "$out" >&2
