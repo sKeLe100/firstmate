@@ -100,7 +100,7 @@ test_afk_start_refuses_when_primary_not_hosted_in_tmux_or_herdr() {
 }
 
 test_afk_start_tmux_hosted_primary_reaches_target_validation_unchanged() {
-  local dir state pid log deadline
+  local dir state pid log deadline contents
   dir=$(make_supercase afk-start-tmux-primary-unchanged)
   state="$dir/state"
   mkdir -p "$state"
@@ -108,21 +108,33 @@ test_afk_start_tmux_hosted_primary_reaches_target_validation_unchanged() {
 
   # $TMUX_PANE set (as tmux sets it for every real pane) must still resolve the
   # target via the normal TMUX_PANE path, unaffected by the new refusal. Run in
-  # the background and check the log directly rather than the target-existence
-  # error text, whose exact wording depends on the ambient tmux server/pane
-  # this test happens to run under; what must hold regardless of that ambient
-  # state is that the new FALLBACK refusal never fires once TMUX_PANE is set.
+  # the background and read the startup log directly: whether the daemon then
+  # proceeds into its loop or stops at the pre-existing target-existence check
+  # depends on the ambient tmux server this test happens to run under, but
+  # either way it must get past the host check having resolved the target from
+  # TMUX_PANE, and must never emit the new FALLBACK refusal.
   FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' \
     TMUX_PANE='%no-such-pane-9999' HERDR_ENV='' HERDR_PANE_ID='' "$AFK_START" >/dev/null 2>&1 &
   pid=$!
   deadline=$(( $(date +%s) + 10 ))
-  while [ ! -s "$log" ] && [ "$(date +%s)" -lt "$deadline" ] && kill -0 "$pid" 2>/dev/null; do
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    contents=$(cat "$log" 2>/dev/null || true)
+    case "$contents" in
+      *"daemon starting"*|*"startup "*) break ;;
+    esac
+    kill -0 "$pid" 2>/dev/null || break
     sleep 0.2
   done
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
+  contents=$(cat "$log" 2>/dev/null || true)
 
-  assert_not_contains "$(cat "$log" 2>/dev/null)" "primary session not confirmed hosted in tmux or herdr" \
+  case "$contents" in
+    *"daemon starting (pid "*"target=%no-such-pane-9999; target_source=TMUX_PANE; backend=tmux"*) ;;
+    *"startup failed: target '%no-such-pane-9999' not found (backend=tmux)"*) ;;
+    *) fail "tmux-hosted primary did not resolve its target from TMUX_PANE; startup log was: ${contents:-<empty>}" ;;
+  esac
+  assert_not_contains "$contents" "primary session not confirmed hosted in tmux or herdr" \
     "tmux-hosted primary (TMUX_PANE set) was wrongly refused by the new non-tmux/non-herdr check"
   pass "fm-afk-start.sh: a tmux-hosted primary's target resolution is unchanged"
 }

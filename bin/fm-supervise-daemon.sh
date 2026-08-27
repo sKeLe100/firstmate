@@ -69,10 +69,16 @@
 #          FM_SUPERVISOR_TARGET     supervisor pane target (override; otherwise
 #                                   auto-discovered per backend - $TMUX_PANE
 #                                   under tmux, "<session>:<pane-id>" from
-#                                   $HERDR_PANE_ID under herdr - then
-#                                   firstmate:0 fallback). Accepts either a
-#                                   tmux target or a herdr "<session>:<pane-id>"
-#                                   target; which one it's read as is decided by
+#                                   $HERDR_PANE_ID under herdr). If NONE of
+#                                   those identify the pane hosting the live
+#                                   primary - i.e. the primary session is not
+#                                   running inside tmux or herdr - away mode is
+#                                   unavailable in that configuration and the
+#                                   daemon REFUSES to arm at startup rather
+#                                   than falling back to an unrelated pane
+#                                   (firstmate:0) that no one is reading.
+#                                   Accepts either a tmux target or a herdr
+#                                   "<session>:<pane-id>" target; which one it's read as is decided by
 #                                   FM_SUPERVISOR_BACKEND (below), independently.
 #          FM_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr;
 #                                   override; otherwise auto-discovered the same
