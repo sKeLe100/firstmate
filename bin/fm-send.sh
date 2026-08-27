@@ -220,6 +220,10 @@ fi
 
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-busy-lib.sh
+. "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/fm-cache-ttl-lib.sh
+. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"  # fm_cache_ttl_seconds: the shared TTL knob
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-marker-lib.sh
@@ -314,37 +318,35 @@ fm_send_count_colons() {  # <string>
 
 # Cache-stale steer guard (docs/configuration.md "Prompt-cache steer guard"
 # owns the threshold/knob contract; this is its sole implementation). A LOCAL
-# worker's idle age is read from state/<id>.turn-ended's mtime: it is touched
-# by every turn-end hook regardless of harness, so it is the cheapest signal
-# already available for every backend without a new probe or daemon. A
-# missing or unreadable marker is NOT staleness - it means idle age is
-# unknown, and the guard must fail open rather than block a steer on a broken
-# stat.
-fm_send_idle_seconds() {  # <state-dir> <task-id> -> echoes idle seconds; nonzero rc = unknown
-  local state=$1 id=$2 marker mtime now
-  marker="$state/$id.turn-ended"
-  [ -e "$marker" ] || return 1
+# worker's idle age is the age of its NEWEST activity marker - state/<id>.meta,
+# state/<id>.status, or state/<id>.turn-ended - the same newest-of-three fold
+# bin/fm-inactive-reconcile.sh's last_activity_age uses, because turn-ended
+# alone only moves when a turn ENDS and would label a worker mid-turn as idle
+# for the whole length of that turn. All three markers are already written for
+# every backend, so this needs no new probe or daemon. No readable marker is
+# NOT staleness - it means idle age is unknown, and the guard must fail open
+# rather than block a steer on a broken stat.
+fm_send_marker_mtime() {  # <path>
+  local path=$1
   if [ "$(uname)" = Darwin ]; then
-    mtime=$(stat -f %m "$marker" 2>/dev/null) || return 1
+    stat -f %m "$path" 2>/dev/null || return 1
   else
-    mtime=$(stat -c %Y "$marker" 2>/dev/null) || return 1
+    stat -c %Y "$path" 2>/dev/null || return 1
   fi
-  case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
-  now=$(date +%s)
-  [ "$now" -ge "$mtime" ] || return 1
-  printf '%s' $(( now - mtime ))
 }
 
-fm_send_cache_ttl_seconds() {  # -> echoes the configured TTL, default 3600
-  local file="$FM_HOME/config/cache-ttl-seconds" val
-  if [ -f "$file" ]; then
-    val=$(head -n1 "$file" 2>/dev/null | tr -d '[:space:]')
-    case "$val" in
-      ''|*[!0-9]*) ;;
-      *) printf '%s' "$val"; return 0 ;;
-    esac
-  fi
-  printf '%s' 3600
+fm_send_idle_seconds() {  # <state-dir> <task-id> -> echoes idle seconds; nonzero rc = unknown
+  local state=$1 id=$2 marker mtime now newest=0
+  for marker in "$state/$id.meta" "$state/$id.status" "$state/$id.turn-ended"; do
+    [ -e "$marker" ] || continue
+    mtime=$(fm_send_marker_mtime "$marker") || continue
+    case "$mtime" in ''|*[!0-9]*) continue ;; esac
+    [ "$mtime" -le "$newest" ] || newest=$mtime
+  done
+  [ "$newest" -gt 0 ] || return 1
+  now=$(date +%s)
+  [ "$now" -ge "$newest" ] || return 1
+  printf '%s' $(( now - newest ))
 }
 
 fm_send_resolve_target() {  # <raw-target>
@@ -893,8 +895,10 @@ else
     # decision and must never be blocked by this guard, and --steer-stale is
     # the explicit deliberate-resume override.
     if [ -z "$RESOLVE_KEYS" ] && [ "$STEER_STALE" != 1 ] && [ -n "$INBOX_TASK_ID" ]; then
-      if idle_secs=$(fm_send_idle_seconds "$STATE" "$INBOX_TASK_ID"); then
-        cache_ttl=$(fm_send_cache_ttl_seconds)
+      cache_ttl=$(fm_cache_ttl_seconds "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}")
+      busy_verdict=$(fm_busy_classify_meta "$TARGET_META" "$INBOX_TASK_ID" "$STATE" 2>/dev/null || printf 'unknown error')
+      if [ "$cache_ttl" -gt 0 ] && [ "${busy_verdict%% *}" != busy ] &&
+        idle_secs=$(fm_send_idle_seconds "$STATE" "$INBOX_TASK_ID"); then
         if [ "$idle_secs" -gt "$cache_ttl" ]; then
           if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
             fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
@@ -905,8 +909,10 @@ else
           exit 1
         fi
       fi
-      # idle_secs unreadable (no marker yet, unsupported stat): fail open,
-      # never block a steer on a signal that cannot be read.
+      # A busy endpoint is mid-turn, so its cache is warm by definition and
+      # the guard never applies; an unreadable idle age (no marker yet,
+      # unsupported stat) fails open the same way, because a steer must never
+      # be blocked on a signal that cannot be read.
     fi
     INBOX_META_LOCK=$(fm_meta_lock_path "$TARGET_META") || exit 1
     if ! fm_task_inbox_lock_acquire "$INBOX_META_LOCK"; then

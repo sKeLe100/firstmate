@@ -35,7 +35,8 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
     elif $t.endpoint.exists then "present"
     else "absent" end;
   def cache_flag($t):
-    if $t.endpoint.cache_expiring == true then " (cache expiring)" else "" end;
+    if $t.endpoint.cache_expiring == true and $t.endpoint.exists == true
+    then " (cache expiring)" else "" end;
   def endpoint_of($t):
     (if $t.kind == "secondmate" then "\(endpoint_exists($t)) / \($t.endpoint.agent_alive)"
      else endpoint_exists($t) end) + cache_flag($t);

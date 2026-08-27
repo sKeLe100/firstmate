@@ -187,11 +187,13 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 ## Prompt-cache steer guard (config/cache-ttl-seconds)
 
 `bin/fm-send.sh` refuses an ordinary text steer to a LOCAL task whose session has been idle longer than the prompt-cache TTL, because resuming it past that point burns a full context reload instead of a warm-cache resume.
-The idle signal is that task's `state/<id>.turn-ended` mtime, touched by every turn-end hook regardless of harness - the cheapest already-available idle proxy, with no new probe or daemon.
-The TTL defaults to 3600 seconds and is overridden by the first non-empty numeric line of local, gitignored `config/cache-ttl-seconds`; an absent or non-numeric file keeps the default.
+Idle age is the age of that task's newest activity marker - `state/<id>.meta`, `state/<id>.status`, or `state/<id>.turn-ended` - the same newest-of-three fold `bin/fm-inactive-reconcile.sh` uses, since `turn-ended` alone only moves when a turn ends and would misread a worker mid-turn as idle for that whole turn.
+A worker whose semantic busy state (`bin/fm-busy-lib.sh`) is `busy` is mid-turn and its cache is warm by definition, so the guard never applies to it regardless of marker age.
+The TTL defaults to 3600 seconds and is overridden by the first non-empty numeric line of local, gitignored `config/cache-ttl-seconds`; an absent or non-numeric file keeps the default, and a value of `0` or below DISABLES the guard entirely (steers are always allowed, never refused).
+`bin/fm-cache-ttl-lib.sh` is the one implementation of that knob, shared by the guard and the heartbeat flag so they cannot drift apart.
 A refused steer prints the exact `bin/fm-control.sh <task> relaunch --note ...` command to use instead; pass `--steer-stale` to fm-send to deliberately resume the stale session anyway.
-The guard never applies to a `--resolve-key` decision answer, a remote secondmate send, or any typed-plane delivery (a leading `/`, a leading `$` to codex, or an explicit backend target); it fails open (steers proceed) whenever the idle marker is missing or unreadable.
-`bin/fm-fleet-snapshot.sh` surfaces the same idle age per local task as `endpoint.idle_seconds` / `endpoint.cache_expiring` (true at 3000s, 50 minutes, ahead of the hour), and `bin/fm-fleet-view.sh` renders it as a `(cache expiring)` suffix so the heartbeat's fleet review catches a session before its cache lapses.
+The guard never applies to a `--resolve-key` decision answer, a remote secondmate send, or any typed-plane delivery (a leading `/`, a leading `$` to codex, or an explicit backend target); it fails open (steers proceed) whenever the idle markers are missing or unreadable.
+`bin/fm-fleet-snapshot.sh` surfaces the same idle age per local task as `endpoint.idle_seconds` / `endpoint.cache_expiring` (true once idle reaches ~83% of the effective TTL, so 3000s at the 3600s default), and `bin/fm-fleet-view.sh` renders it as a `(cache expiring)` suffix on a present endpoint so the heartbeat's fleet review catches a session before its cache lapses.
 
 ## Gate defaults (.no-mistakes.yaml)
 

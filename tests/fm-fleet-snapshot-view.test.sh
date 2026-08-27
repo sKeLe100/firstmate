@@ -1013,6 +1013,46 @@ test_parked_scout_decision_stays_pending() {
   pass "a scout still parked at a decision stays pending (terminal clear does not over-fire)"
 }
 
+test_cache_expiring_follows_configured_ttl() {
+  local home fakebin out view stamp
+  home=$(make_home cache-expiring)
+  fakebin=$(make_fakebin "$home")
+  fm_write_meta "$home/state/warm-task.meta" \
+    "window=firstmate:fm-warm-task" "project=alpha" "harness=claude" \
+    "kind=ship" "mode=ship"
+  fm_write_meta "$home/state/gone-task.meta" \
+    "backend=cmux" "window=workspace:surface" "project=alpha" "harness=codex" \
+    "kind=ship" "mode=ship"
+  stamp=$(date -d "@$(( $(date +%s) - 600 ))" +%Y%m%d%H%M.%S 2>/dev/null) \
+    || stamp=$(date -r "$(( $(date +%s) - 600 ))" +%Y%m%d%H%M.%S)
+  : > "$home/state/warm-task.turn-ended"
+  : > "$home/state/gone-task.turn-ended"
+  touch -t "$stamp" "$home/state/warm-task.turn-ended" "$home/state/warm-task.meta" \
+    "$home/state/gone-task.turn-ended" "$home/state/gone-task.meta"
+
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    [.tasks[] | select(.id == "warm-task")] | first
+    | .endpoint.cache_expiring == false
+  ' >/dev/null || fail "the default 3600s TTL must not flag a 600s-idle task: $out"
+
+  printf '600\n' > "$home/config/cache-ttl-seconds"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    ([.tasks[] | select(.id == "warm-task")] | first
+     | .endpoint.cache_expiring == true and .endpoint.exists == true)
+    and ([.tasks[] | select(.id == "gone-task")] | first
+     | .endpoint.cache_expiring == true and .endpoint.exists != true)
+  ' >/dev/null || fail "a lowered config/cache-ttl-seconds must drive the near-expiry flag: $out"
+
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  assert_contains "$view" "present (cache expiring)" \
+    "the view should flag a near-expiry task whose endpoint is present"
+  assert_not_contains "$view" "absent (cache expiring)" \
+    "the view must not flag a near-expiry task whose endpoint is already gone"
+  pass "fleet snapshot near-expiry flag follows config/cache-ttl-seconds and only renders on a live endpoint"
+}
+
 test_empty_fleet_json
 test_fixture_snapshot_json
 test_main_inventory_orphan_and_unstructured_disclosure
@@ -1035,3 +1075,4 @@ test_unreadable_remote_summary_degrades_to_fallback_row
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
+test_cache_expiring_follows_configured_ttl

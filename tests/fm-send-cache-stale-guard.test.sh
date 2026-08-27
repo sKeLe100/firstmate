@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # tests/fm-send-cache-stale-guard.test.sh - fm-send's prompt-cache steer guard.
 #
-# An ordinary local steer is refused when the target's state/<id>.turn-ended
-# marker shows it idle past the prompt-cache TTL (docs/configuration.md
-# "Prompt-cache steer guard"). These tests drive the real fm-send executable:
+# An ordinary local steer is refused when the target's newest activity marker
+# (state/<id>.meta, .status, .turn-ended) shows it idle past the prompt-cache
+# TTL (docs/configuration.md "Prompt-cache steer guard"). These tests drive
+# the real fm-send executable:
 #   1. A fresh (no marker) task is never refused: an unknown idle age fails
 #      open rather than blocking the steer.
 #   2. A task idle under the default TTL is not refused.
 #   3. A task idle past the default TTL is refused, prints the relaunch
 #      command, and never touches the inbox.
 #   4. --steer-stale overrides the refusal and the steer is durably sent.
-#   5. config/cache-ttl-seconds overrides the default threshold.
+#   5. config/cache-ttl-seconds overrides the default threshold, and a
+#      configured 0 disables the guard instead of refusing everything.
+#   6. A stale turn-ended marker on a task whose OTHER activity markers are
+#      fresh, and a task classified busy (mid-turn), are never refused.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -47,12 +51,25 @@ setup_case() {  # <name> -> echoes case dir with home/state + t1 meta
   printf '%s\n' "$dir"
 }
 
-age_marker() {  # <path> <seconds-ago>
+age_activity() {  # <case-dir> <seconds-ago> - age every activity marker
+  local dir=$1 ago=$2 marker
+  for marker in meta status turn-ended; do
+    [ -e "$dir/home/state/t1.$marker" ] || : > "$dir/home/state/t1.$marker"
+    touch_ago "$dir/home/state/t1.$marker" "$ago"
+  done
+}
+
+touch_ago() {  # <path> <seconds-ago>
   local path=$1 ago=$2 stamp
   stamp=$(date -d "@$(( $(date +%s) - ago ))" +%Y%m%d%H%M.%S 2>/dev/null) \
     || stamp=$(date -r "$(( $(date +%s) - ago ))" +%Y%m%d%H%M.%S)
-  : > "$path"
   touch -t "$stamp" "$path"
+}
+
+age_marker() {  # <path> <seconds-ago>
+  local path=$1 ago=$2
+  : > "$path"
+  touch_ago "$path" "$ago"
 }
 
 run_send() {  # <case-dir> <err-file> [env...] -- <fm-send args...>
@@ -82,7 +99,7 @@ test_no_marker_fails_open() {
 test_fresh_marker_not_refused() {
   local dir err rc
   dir=$(setup_case fresh); err="$dir/send.err"
-  age_marker "$dir/home/state/t1.turn-ended" 60
+  age_activity "$dir" 60
   run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
   expect_code 0 "$rc" "a session idle well under the TTL must not be refused"
   [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer should have been durably recorded"
@@ -92,7 +109,7 @@ test_fresh_marker_not_refused() {
 test_stale_marker_refused() {
   local dir err rc
   dir=$(setup_case stale); err="$dir/send.err"
-  age_marker "$dir/home/state/t1.turn-ended" 4000
+  age_activity "$dir" 4000
   run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
   expect_code 1 "$rc" "a session idle past the TTL must be refused"
   [ -e "$dir/home/state/t1.inbox/001.msg" ] && fail "a refused steer must never write an inbox record"
@@ -106,7 +123,7 @@ test_stale_marker_refused() {
 test_override_flag_sends_anyway() {
   local dir err rc
   dir=$(setup_case override); err="$dir/send.err"
-  age_marker "$dir/home/state/t1.turn-ended" 4000
+  age_activity "$dir" 4000
   run_send "$dir" "$err" -- t1 --steer-stale "resume anyway"; rc=$?
   expect_code 0 "$rc" "--steer-stale must override the guard"
   [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the overridden steer should have been durably recorded"
@@ -118,16 +135,53 @@ test_config_ttl_override() {
   dir=$(setup_case configttl); err="$dir/send.err"
   mkdir -p "$dir/home/config"
   printf '60\n' > "$dir/home/config/cache-ttl-seconds"
-  age_marker "$dir/home/state/t1.turn-ended" 120
+  age_activity "$dir" 120
   run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
   expect_code 1 "$rc" "a lowered config/cache-ttl-seconds must refuse a steer the default TTL would allow"
   pass "fm-send cache-stale guard: config/cache-ttl-seconds overrides the default threshold"
 }
 
+test_zero_ttl_disables_guard() {
+  local dir err rc
+  dir=$(setup_case zerottl); err="$dir/send.err"
+  mkdir -p "$dir/home/config"
+  printf '0\n' > "$dir/home/config/cache-ttl-seconds"
+  age_activity "$dir" 40000
+  run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+  expect_code 0 "$rc" "a configured TTL of 0 must disable the guard, not refuse every steer"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer should have been durably recorded"
+  pass "fm-send cache-stale guard: config/cache-ttl-seconds=0 disables the guard"
+}
+
+test_recent_activity_outranks_stale_turn_ended() {
+  local dir err rc
+  dir=$(setup_case recentactivity); err="$dir/send.err"
+  age_activity "$dir" 4000
+  touch_ago "$dir/home/state/t1.status" 30
+  run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+  expect_code 0 "$rc" "idle age is the NEWEST activity marker, so a fresh status must not be refused"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer should have been durably recorded"
+  pass "fm-send cache-stale guard: a fresh activity marker outranks a stale turn-ended"
+}
+
+test_busy_session_never_refused() {
+  local dir err rc
+  dir=$(setup_case busy); err="$dir/send.err"
+  "$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1 --state busy >/dev/null \
+    || fail "could not arm a busy record for the fixture"
+  age_activity "$dir" 40000
+  touch_ago "$dir/home/state/t1.busy-state" 40000
+  touch_ago "$dir/home/state/t1.busy-gen" 40000
+  run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+  expect_code 0 "$rc" "a session mid-turn has a warm cache and must never be refused"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer should have been durably recorded"
+  pass "fm-send cache-stale guard: a busy mid-turn session is never refused"
+}
+
 test_resolve_key_answer_ignores_guard() {
   local dir err rc
   dir=$(setup_case resolvekey); err="$dir/send.err"
-  age_marker "$dir/home/state/t1.turn-ended" 4000
+  age_activity "$dir" 4000
   run_send "$dir" "$err" -- t1 --resolve-key some-key "the answer"; rc=$?
   [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || fail "unexpected exit $rc"
   case "$(cat "$err")" in
@@ -143,4 +197,7 @@ test_fresh_marker_not_refused
 test_stale_marker_refused
 test_override_flag_sends_anyway
 test_config_ttl_override
+test_zero_ttl_disables_guard
+test_recent_activity_outranks_stale_turn_ended
+test_busy_session_never_refused
 test_resolve_key_answer_ignores_guard

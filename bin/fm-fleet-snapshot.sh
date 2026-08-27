@@ -157,9 +157,14 @@ validate_positive_bound FM_SNAPSHOT_REGISTRY_TIMEOUT "$FM_SNAPSHOT_REGISTRY_TIME
 # shellcheck source=bin/fm-ff-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-ff-lib.sh"  # validate_secondmate_home: shared seeded-home boundary checks
+# shellcheck source=bin/fm-cache-ttl-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"  # fm_cache_near_expiry_seconds: the shared TTL knob
 # shellcheck source=bin/fm-timeout-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"  # fm_run_timed: the shared hard bound
+
+CACHE_NEAR_EXPIRY_SECONDS=$(fm_cache_near_expiry_seconds "$CONFIG")
 
 usage() {
   cat <<'EOF'
@@ -275,24 +280,29 @@ path_present_json() {  # <path>
 }
 
 # Prompt-cache near-expiry surfacing (docs/configuration.md "Prompt-cache
-# steer guard" owns the TTL/knob contract this flags against). state/<id>.turn-ended
-# is touched by every turn-end hook regardless of harness, so its mtime is the
-# cheapest already-available idle signal for a LOCAL task; a missing or
-# unreadable marker means idle age is unknown, not expiring, so it prints
-# empty rather than guessing.
+# steer guard" owns the TTL/knob contract this flags against, and
+# bin/fm-cache-ttl-lib.sh owns the threshold it is derived from). Idle age is
+# the age of a LOCAL task's NEWEST activity marker - state/<id>.meta,
+# state/<id>.status, or state/<id>.turn-ended - the same newest-of-three fold
+# the steer guard and bin/fm-inactive-reconcile.sh use, so a worker mid-turn
+# is never reported as idle. No readable marker means idle age is unknown,
+# not expiring, so it prints empty rather than guessing.
 idle_seconds_of() {  # <id> -> echoes idle seconds, or empty if unknown
-  local id=$1 marker mtime now
-  marker="$STATE/$id.turn-ended"
-  [ -e "$marker" ] || return 0
-  if [ "$(uname)" = Darwin ]; then
-    mtime=$(stat -f %m "$marker" 2>/dev/null) || return 0
-  else
-    mtime=$(stat -c %Y "$marker" 2>/dev/null) || return 0
-  fi
-  case "$mtime" in ''|*[!0-9]*) return 0 ;; esac
+  local id=$1 marker mtime now newest=0
+  for marker in "$STATE/$id.meta" "$STATE/$id.status" "$STATE/$id.turn-ended"; do
+    [ -e "$marker" ] || continue
+    if [ "$(uname)" = Darwin ]; then
+      mtime=$(stat -f %m "$marker" 2>/dev/null) || continue
+    else
+      mtime=$(stat -c %Y "$marker" 2>/dev/null) || continue
+    fi
+    case "$mtime" in ''|*[!0-9]*) continue ;; esac
+    [ "$mtime" -le "$newest" ] || newest=$mtime
+  done
+  [ "$newest" -gt 0 ] || return 0
   now=$(date +%s)
-  [ "$now" -ge "$mtime" ] || return 0
-  printf '%s' $(( now - mtime ))
+  [ "$now" -ge "$newest" ] || return 0
+  printf '%s' $(( now - newest ))
 }
 
 meta_value() {  # <meta-file> <key>
@@ -642,7 +652,8 @@ task_json_lines() {
     cache_expiring=0
     if [ -z "$remote_host" ]; then
       idle_secs=$(idle_seconds_of "$id")
-      if [ -n "$idle_secs" ] && [ "$idle_secs" -ge 3000 ]; then
+      if [ -n "$idle_secs" ] && [ "$CACHE_NEAR_EXPIRY_SECONDS" -gt 0 ] &&
+        [ "$idle_secs" -ge "$CACHE_NEAR_EXPIRY_SECONDS" ]; then
         cache_expiring=1
       fi
     fi
