@@ -1,0 +1,40 @@
+=== 1. Captain steers a local worker that has been idle 4000s (default TTL 3600s) ===
+$ bin/fm-send.sh t1 'any update on the migration?'
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: steer refused for t1: its session has been idle 4001s (> 3600s prompt-cache TTL), so resuming it now would burn a full context reload instead of hitting the warm cache. Relaunch it fresh instead:
+  /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M11V6F4FD64ZY615NC6K66F1/bin/fm-control.sh t1 relaunch --note '<why>'
+To steer the stale session anyway, re-run with --steer-stale.
+[exit 1]
+
+inbox records written by the refused steer: 0
+
+=== 2. Same steer with the deliberate-resume override ===
+$ bin/fm-send.sh t1 --steer-stale 'any update on the migration?'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+inbox records now: 2
+
+=== 3. Captain lowers the knob: config/cache-ttl-seconds = 0 (guard disabled) ===
+$ bin/fm-send.sh t1 'still stale, but guard is off'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+inbox records now: 3
+
+=== 4. Watcher heartbeat: near-expiry surfacing in the fleet view ===
+config/cache-ttl-seconds = 600  ->  near-expiry mark = 500s; warm-task idle 550s, gone-task endpoint dead
+$ bin/fm-fleet-view.sh
+| gone-task | unknown / none | ship | alpha | cmux | absent | - | - | bin/fm-peek.sh fm-gone-task |
+| warm-task | unknown / none | ship | alpha | tmux | present (cache expiring) | - | - | bin/fm-peek.sh fm-warm-task |
+
+endpoint JSON from the snapshot the heartbeat consumes:
+{"id":"gone-task","endpoint":{"exists":false,"cache_expiring":false}}
+{"id":"warm-task","endpoint":{"exists":true,"cache_expiring":true}}
+
+=== 5. Same worker idle 5000s (past the 600s TTL) - guard territory, not 'expiring' ===
+{"id":"warm-task","cache_expiring":false}
