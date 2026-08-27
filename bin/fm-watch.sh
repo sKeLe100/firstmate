@@ -131,6 +131,11 @@ mkdir -p "$STATE"
 # gate and the wake emission (inbox_steer_check below).
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
+# Process-event inbox semantics (pending vs. acknowledged captured results) are
+# owned by the runner library; the wake-pair dedup below reads them through it
+# rather than re-deriving inbox paths or handled markers.
+# shellcheck source=bin/fm-procevent-lib.sh
+. "$SCRIPT_DIR/fm-procevent-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -905,6 +910,150 @@ procevent_surface_queued() {
   wake "$reason"
 }
 
+# Nanosecond mtime, as an integer, for ordering two writes that can land in the
+# same epoch second. stat_mtime's whole-second resolution cannot decide which of
+# a status write and a wake delivery came first, and the dedup below is only
+# sound with a strict ordering. Platforms without sub-second stat fall back to
+# seconds scaled to nanoseconds, which makes same-second writes compare equal -
+# and every comparison here is strict, so an undecidable pair is always treated
+# as "not covered", the direction that keeps the wake.
+_stat_mtime_ns_normalize() {
+  awk -F. 'NF { printf "%s%s\n", $1, substr(($2 "000000000"), 1, 9) }'
+}
+if [ "$(uname)" = Darwin ]; then
+  stat_mtime_ns() { stat -f %Fm "$1" 2>/dev/null | _stat_mtime_ns_normalize; }
+else
+  stat_mtime_ns() { stat -c %.9Y "$1" 2>/dev/null | _stat_mtime_ns_normalize; }
+fi
+
+# How long a status signal may stay deferred behind an unacknowledged
+# process-event generation before it is delivered anyway. Deferral never
+# advances a .seen-* marker, so the signal is only ever delayed; this bound
+# stops a generation that is never acknowledged from delaying it forever.
+PROCEVENT_SIGNAL_DEFER_GRACE=${FM_PROCEVENT_SIGNAL_DEFER_GRACE:-300}
+
+# The bytes appended to <status-file> since its .seen-* signature was recorded.
+# The signature's size field is the durable record of how much of the file has
+# already been surfaced or absorbed, so it is also the only honest boundary for
+# "what changed". Fails (no span) when the marker is unreadable or the file
+# shrank, which keeps every such change deliverable.
+fm_watch_status_new_span() {  # <status-file>
+  local file=$1 seen prev size
+  seen=$(cat "$(fm_wake_signal_seen_path "$STATE" "$file")" 2>/dev/null)
+  prev=${seen%%:*}
+  case "$prev" in ''|*[!0-9]*) prev=0 ;; esac
+  size=$(wc -c < "$file" 2>/dev/null | tr -d ' ')
+  case "$size" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$size" -ge "$prev" ] || return 1
+  tail -c "+$((prev + 1))" "$file" 2>/dev/null
+}
+
+# 0 when EVERY line in that span is one a drain of a process-event wake would
+# have shown the supervisor: an unread informational surface line, or a
+# decision-opening line whose keyed decision is still open verbatim in the
+# file's current fold (so OPEN DECISIONS reprints it). Anything else - a done:,
+# a failed:, a superseded decision line - is presented nowhere, so its status
+# signal is the only delivery it will ever get.
+# The whole-file fold is the expensive part (a subshell per status line), so it
+# is computed lazily, only once, and only if the span actually opens a decision.
+fm_watch_status_change_is_coverable() {  # <status-file>
+  local file=$1 span open='' folded=1 line verb key note saw=1
+  span=$(fm_watch_status_new_span "$file") || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "${line//[[:space:]]/}" ] || continue
+    saw=0
+    status_line_is_unread_surface "$line" && continue
+    verb=$(status_line_verb "$line")
+    case "$verb" in needs-decision|blocked) ;; *) return 1 ;; esac
+    key=$(_fm_decision_key "$line") || return 1
+    note=$(status_line_note "$line")
+    _fm_decision_key_transition_allowed "$key" "$note" || return 1
+    if [ "$folded" -eq 1 ]; then
+      open=$(status_open_decisions "$file" 2>/dev/null)
+      folded=0
+    fi
+    case "$open" in
+      "$key"$'\t'"$verb"$'\t'"$note") ;;
+      "$key"$'\t'"$verb"$'\t'"$note"$'\n'*) ;;
+      *$'\n'"$key"$'\t'"$verb"$'\t'"$note") ;;
+      *$'\n'"$key"$'\t'"$verb"$'\t'"$note"$'\n'*) ;;
+      *) return 1 ;;
+    esac
+  done <<EOF
+$span
+EOF
+  return "$saw"
+}
+
+# The bytes a coverage verdict was taken against: its mtime and size. A verdict
+# may only be reused while this is unchanged, so an append that lands after the
+# verdict was taken is never absorbed by it.
+fm_watch_signal_coverage_stamp() {  # <status-file>
+  printf '%s:%s' "$(stat_mtime_ns "$1")" "$(wc -c < "$1" 2>/dev/null | tr -d ' ')"
+}
+
+# fm_watch_signal_procevent_coverage <status-file>
+# Decide what the signal scan owes a status change that a process-event
+# generation for the same task may already have delivered. Prints one of:
+#
+#   deliver - no generation can account for this change. Append and wake.
+#   defer   - a generation whose check wake was surfaced AFTER this status
+#             write is still unacknowledged. The supervisor already holds a
+#             wake that will show it this status content, but has not proved it
+#             consumed one yet, so decide nothing: skip the append AND leave
+#             the .seen-* marker alone, so the change re-scans every cycle and
+#             is delivered in full if the acknowledgement never arrives.
+#   covered - such a generation has been acknowledged through
+#             fm_procevent_mark_handled. That acknowledgement is the positive
+#             link: the supervisor drained a wake naming this task at a moment
+#             when this exact status content was already on disk, so appending
+#             a signal now would enqueue the same event a second time.
+#
+# The ordering test is strict and nanosecond-resolved: a status change written
+# at or after the wake that could have carried it is never covered, so a
+# genuinely distinct event - including one written in the same epoch second as
+# the delivery - always keeps its own wake.
+fm_watch_signal_procevent_coverage() {  # <status-file>
+  local file=$1 base task result seq marker status_ns marker_ns deferred=0 now
+  base=$(basename "$file")
+  task="${base%.status}"
+  if [ "$task" = "$base" ] || ! fm_procevent_source_id_valid "$task"; then
+    printf 'deliver\n'
+    return 0
+  fi
+  status_ns=$(stat_mtime_ns "$file")
+  case "$status_ns" in ''|*[!0-9]*) printf 'deliver\n'; return 0 ;; esac
+  # Only a change the drain itself would present can ever be "covered" by a
+  # process-event wake, and the change is the span appended since this file's
+  # .seen-* signature - not the file as a whole. A routine line anywhere in
+  # that span (a done: beside a still-open decision from an earlier turn, or
+  # beside a trailing note:) is never presented, so it always keeps its own
+  # wake. Decide that here, before touching the inbox.
+  if ! fm_watch_status_change_is_coverable "$file"; then
+    printf 'deliver\n'
+    return 0
+  fi
+  now=$(date +%s)
+  for result in "$(fm_procevent_inbox_dir "$STATE")/$task".*.result; do
+    [ -f "$result" ] && [ ! -L "$result" ] || continue
+    [ "$(fm_procevent_result_source_id "$result")" = "$task" ] || continue
+    seq=$(fm_procevent_result_sequence "$result")
+    case "$seq" in ''|*[!0-9]*) continue ;; esac
+    marker=$(procevent_surfaced_marker "procevent:$task:$seq")
+    [ -e "$marker" ] || continue
+    marker_ns=$(stat_mtime_ns "$marker")
+    case "$marker_ns" in ''|*[!0-9]*) continue ;; esac
+    [ "$status_ns" -lt "$marker_ns" ] || continue
+    if fm_procevent_is_handled "$STATE" "$task" "$seq"; then
+      printf 'covered\n'
+      return 0
+    fi
+    [ $(( now - $(stat_mtime "$marker") )) -lt "$PROCEVENT_SIGNAL_DEFER_GRACE" ] && deferred=1
+  done
+  [ "$deferred" -eq 1 ] && printf 'defer\n' || printf 'deliver\n'
+  return 0
+}
+
 run_check_process() {
   local c=$1
   shift
@@ -1384,25 +1533,85 @@ EOF
     # will not re-fire, log, and keep blocking without enqueuing. The provably-working
     # check is the only costly one (it may run a bounded no-mistakes call), so the ||
     # ordering evaluates it ONLY for a non-afk, no-captain-verb signal.
+    # Coverage is decided once per file here, in THIS shell. The decision runs
+    # in a command substitution, so it cannot cache anything itself; the verdict
+    # is recorded alongside the bytes it judged and reused below.
+    signal_deferred=
+    signal_coverage=
+    for f in $files; do
+      signal_stamp=$(fm_watch_signal_coverage_stamp "$f")
+      signal_verdict=$(fm_watch_signal_procevent_coverage "$f")
+      signal_coverage="$signal_coverage $f|$signal_stamp|$signal_verdict"
+      [ "$signal_verdict" = defer ] || continue
+      signal_deferred="$signal_deferred $f"
+    done
+    if [ -n "$signal_deferred" ]; then
+      remaining=
+      for f in $files; do
+        case " $signal_deferred " in *" $f "*) continue ;; esac
+        remaining="$remaining $f"
+      done
+      files=$remaining
+      reason="signal:$files"
+    fi
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
-    if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
+    if [ -z "$files" ]; then
+      triage_log "deferred behind process-event generation signal:$signal_deferred"
+    elif afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
+      signal_appended=0
+      signal_covered=
+      signal_enqueued=
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
+        # $pending concatenates the pre- and post-grace scans, so the same file
+        # can appear twice for one change; enqueue each file at most once.
+        case " $signal_enqueued " in *" $f "*) continue ;; esac
+        signal_enqueued="$signal_enqueued $f"
+        # A process-event generation may already have carried this change to the
+        # supervisor. "covered" means an acknowledged wake proves it did, so the
+        # marker advances below without a second queue record; "defer" means the
+        # proof is still outstanding, so nothing is decided and no marker moves.
+        case " $signal_deferred " in *" $f "*) continue ;; esac
+        # Reuse the pre-scan verdict, but only while the file still holds the
+        # bytes it judged; anything appended since is decided fresh.
+        signal_stamp=$(fm_watch_signal_coverage_stamp "$f")
+        signal_verdict=
+        case "$signal_coverage " in
+          *" $f|$signal_stamp|"*)
+            signal_verdict=${signal_coverage##*" $f|$signal_stamp|"}
+            signal_verdict=${signal_verdict%% *}
+            ;;
+        esac
+        [ -n "$signal_verdict" ] || signal_verdict=$(fm_watch_signal_procevent_coverage "$f")
+        if [ "$signal_verdict" = covered ]; then
+          signal_covered="$signal_covered $f"
+          continue
+        fi
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+        signal_appended=1
       done <<EOF
 $pending
 EOF
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
+        case " $signal_deferred " in *" $f "*) continue ;; esac
         printf '%s' "$sig" > "$sf"
         mark_surfaced "$f"
       done <<EOF
 $pending
 EOF
-      wake "$reason"
+      if [ "$signal_appended" -eq 1 ]; then
+        wake "$reason"
+      else
+        # Every pending signal was already delivered by an acknowledged
+        # process-event wake. Nothing was enqueued, so waking would spend a
+        # drain turn on an empty queue - keep the cycle running instead.
+        triage_log "absorbed procevent-covered signal:$signal_covered"
+      fi
     else
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
+        case " $signal_deferred " in *" $f "*) continue ;; esac
         printf '%s' "$sig" > "$sf"
       done <<EOF
 $pending

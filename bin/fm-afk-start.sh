@@ -12,6 +12,13 @@
 #       execs bin/fm-supervise-daemon.sh in the foreground. A prepared start was
 #       already cleared transactionally by bin/fm-afk-launch.sh.
 #
+# A non-prepared start REFUSES before writing state/.afk when no source
+# (FM_SUPERVISOR_TARGET, $TMUX_PANE, or $HERDR_ENV/$HERDR_PANE_ID) identifies
+# the pane hosting the live primary - away mode has no verified delivery path
+# for a primary that is not running inside tmux or herdr. That refusal, and
+# the identical ones in bin/fm-afk-launch.sh and bin/fm-supervise-daemon.sh,
+# are documented in docs/configuration.md "Away-mode supervisor backend".
+#
 # This file is sourceable: its BASH_SOURCE guard keeps main from running, while
 # exposing the daemon-lock helpers and fm_afk_clear_stale_artifacts. Sourcing it
 # enables nounset and errexit; callers that need different shell options must
@@ -41,6 +48,8 @@ FM_AFK_DAEMON="$FM_AFK_START_DIR/fm-supervise-daemon.sh"
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$FM_AFK_START_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-supervisor-target-lib.sh
+. "$FM_AFK_START_DIR/fm-supervisor-target-lib.sh"
 
 fm_afk_start_usage() {
   sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -130,6 +139,19 @@ fm_afk_flag_write() {  # <state-dir>
   return 1
 }
 
+# fm_afk_host_confirmed: decide, BEFORE the away-mode flag is written, whether
+# this process is hosted somewhere the daemon can verify. It delegates to
+# discover_supervisor_target (bin/fm-supervisor-target-lib.sh), the single owner
+# of that precedence, so this refusal, bin/fm-afk-launch.sh's, and the daemon's
+# own startup refusal can never drift apart. A non-prepared start with no
+# resolvable host would arm state/.afk and then have the daemon refuse to start
+# (see fm-supervise-daemon.sh's FALLBACK refusal), leaving .afk set with no
+# daemon alive - firstmate would then treat itself as away while nothing
+# supervises or escalates.
+fm_afk_host_confirmed() {
+  discover_supervisor_target >/dev/null
+}
+
 fm_afk_start_main() {
   case "${1:-}" in
     '' ) ;;
@@ -141,6 +163,10 @@ fm_afk_start_main() {
   if [ "${FM_AFK_STATE_PREPARED:-0}" = 1 ]; then
     [ -f "$FM_AFK_STATE/.afk" ] || { echo "afk: launcher-prepared state is missing" >&2; return 1; }
   else
+    if ! fm_afk_host_confirmed; then
+      echo "error: cannot verify this away-mode session's primary is hosted in tmux or herdr (no FM_SUPERVISOR_TARGET override, and neither \$TMUX_PANE nor \$HERDR_ENV/\$HERDR_PANE_ID is set) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET explicitly, to use away mode" >&2
+      return 1
+    fi
     fm_afk_flag_write "$FM_AFK_STATE" || { echo "afk: failed to write away-mode flag" >&2; return 1; }
   fi
 

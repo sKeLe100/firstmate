@@ -154,9 +154,13 @@ It currently supports only `tmux` and `herdr` supervisor panes.
 Set `FM_SUPERVISOR_BACKEND=tmux|herdr` and `FM_SUPERVISOR_TARGET=<target>` to override both axes explicitly; for herdr the target is `"<session>:<pane-id>"`.
 Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then falls back to `tmux`.
 That keeps a tmux pane nested inside herdr on the tmux transport, matching the runtime backend's innermost-first rule.
-Target detection uses `FM_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then the legacy `firstmate:0` tmux fallback with a warning.
-That last fallback resolves and pins the concrete active pane id of `firstmate:0` at discovery time, because `firstmate:0` is a session:WINDOW target whose reads follow whichever pane is active in that window, so a later focus change would otherwise silently redirect every composer read to a different split.
-When tmux cannot resolve the pane id (tmux missing, or no such session) it stays the literal `firstmate:0` string; the startup log distinguishes the two as `target_source=FALLBACK(pinned:<pane-id>)` versus `target_source=FALLBACK(firstmate:0)`.
+Target detection uses `FM_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr.
+All three come up empty only when the primary session is not hosted in tmux or herdr at all - for example a primary running in a plain terminal or IDE integration with no tmux/herdr pane underneath it.
+In that case away mode REFUSES to arm rather than falling back to a guessed `firstmate:0` tmux session: an unrelated tmux session that merely happens to be named `firstmate:0` is not proof the primary lives there, and injecting into it types escalations into a pane nobody reads while the composer guard correctly refuses to deliver them, so a whole away-mode stretch can pass with every escalation discarded and `/afk` still reporting success.
+There is currently no verified delivery path for a non-tmux, non-herdr primary, and `/afk` fails loudly instead of arming into a void.
+The refusal happens at every arm entry point, deliberately: `bin/fm-afk-start.sh` checks the same sources up front and exits nonzero *before* writing `state/.afk`, so a refused start never leaves the away-mode flag set with no daemon alive (which would make firstmate keep suppressing normal wake handling while nothing supervises); `bin/fm-afk-launch.sh start-native` applies the same check before it prepares lifecycle state, so the harness-native arm path cannot bypass it either; `bin/fm-supervise-daemon.sh` repeats the check at arm time as the backstop for the launcher-prepared path and prints `error: cannot verify this away-mode daemon's target pane hosts the live firstmate primary session ...`.
+Run the primary inside tmux (or herdr), or set `FM_SUPERVISOR_TARGET` explicitly to the primary's own pane, to use away mode in that configuration.
+Setting only `FM_SUPERVISOR_BACKEND` does not lift the refusal: it names a transport but no pane, so target detection would still come up empty.
 Selecting any other supervisor backend, including `zellij`, `orca`, or `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
@@ -749,6 +753,7 @@ FM_UPSTREAM_SKILLS_SHOWN=12    # changed upstream skill names listed in the repo
 FM_UPSTREAM_DRIFT_THRESHOLD=25   # commits behind upstream that make the armed upstream-drift check ask for a sync task; see bin/fm-upstream-behind-check.sh
 FM_PROCEVENT_MAX_OUTPUT_BYTES=1048576   # bound on one captured process-to-event result
 FM_PROCEVENT_CLAIM_ROOT=                # machine-wide source claim root; default $XDG_STATE_HOME/firstmate/procevent-claims
+FM_PROCEVENT_SIGNAL_DEFER_GRACE=300     # seconds a status signal may stay deferred behind an unacknowledged process-event generation before it is delivered anyway
 FM_WHEN_OUTPUT_TAIL_BYTES=8192          # bound on the command-output tail inside one condition->action outcome document
 FM_CODEX_WATCH_CHECKPOINT=180   # seconds per foreground watcher checkpoint in Codex primary supervision
 FM_CREW_STATE_NM_TIMEOUT=10   # seconds allowed per no-mistakes query inside fm-crew-state.sh
@@ -817,7 +822,7 @@ FM_PENDING_REPLY_GRACE_SECS=120   # seconds after marked-request delivery before
 FM_PENDING_REPLY_FORCE_INGEST_WAIT_SECS=5  # bounded wait for the forced remote-reply poll fm_pending_reply_maybe_escalate runs immediately before it would otherwise escalate; no-ops instantly when a live poller already owns the source, and never runs for local secondmates
 # sub-supervisor (bin/fm-supervise-daemon.sh); presence-gated via /afk
 FM_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID before tmux fallback
-FM_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected
+FM_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected from $TMUX_PANE/HERDR_PANE_ID - away mode refuses to arm when none resolves
 FM_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
 FM_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately
 FM_MAX_DEFER_SECS=300              # max buffered escalation age before retry plus wedge alarm; 0 disables

@@ -25,13 +25,17 @@ TMP_ROOT=$(fm_test_tmproot fm-daemon-tests)
 FM_DAEMON_PRIMARY_HARNESS=claude
 export FM_DAEMON_PRIMARY_HARNESS
 
+# These stale-artifact cases exercise what happens AFTER away mode arms, so they
+# set TMUX_PANE to satisfy fm-afk-start.sh's pre-arm host check (FM_SUPERVISOR_BACKEND
+# alone no longer confirms a host); the backend stays 'unsupported' so daemon
+# startup still stops at backend validation.
 test_afk_start_refuses_when_flag_cannot_be_written() {
   local dir state out status
   dir=$(make_supercase afk-start-flag-unwritable)
   state="$dir/state"
   mkdir -p "$state/.afk"
 
-  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_BACKEND=unsupported "$AFK_START" 2>&1)
+  out=$(FM_STATE_OVERRIDE="$state" TMUX_PANE=%0 FM_SUPERVISOR_BACKEND=unsupported "$AFK_START" 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || fail "fm-afk-start.sh should fail when state/.afk cannot be written"
@@ -46,7 +50,7 @@ test_afk_start_ignores_stale_pidfile_without_lock() {
   state="$dir/state"
   printf '%s\n' "$$" > "$state/.supervise-daemon.pid"
 
-  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_BACKEND=unsupported "$AFK_START" 2>&1)
+  out=$(FM_STATE_OVERRIDE="$state" TMUX_PANE=%0 FM_SUPERVISOR_BACKEND=unsupported "$AFK_START" 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || fail "fm-afk-start.sh should attempt daemon startup instead of trusting a pidfile-only live pid"
@@ -66,7 +70,7 @@ test_afk_start_reclaims_stale_daemon_lock_reused_pid() {
   printf '%s\n' "$$" > "$lock/pid"
   printf '%s\n' "stale daemon identity" > "$lock/pid-identity"
 
-  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_BACKEND=unsupported "$AFK_START" 2>&1)
+  out=$(FM_STATE_OVERRIDE="$state" TMUX_PANE=%0 FM_SUPERVISOR_BACKEND=unsupported "$AFK_START" 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || fail "fm-afk-start.sh should attempt daemon startup after rejecting a reused-pid lock"
@@ -75,6 +79,113 @@ test_afk_start_reclaims_stale_daemon_lock_reused_pid() {
   assert_not_contains "$out" "daemon already running" "fm-afk-start.sh trusted a stale daemon lock with a reused pid"
   assert_not_contains "$out" "another fm-supervise-daemon is already running" "daemon singleton lock still trusted the reused pid"
   pass "fm-afk-start.sh reclaims stale daemon locks whose live pid identity no longer matches"
+}
+
+test_afk_start_refuses_when_primary_not_hosted_in_tmux_or_herdr() {
+  local dir state out status
+  dir=$(make_supercase afk-start-no-tmux-primary)
+  state="$dir/state"
+  mkdir -p "$state"
+
+  # No FM_SUPERVISOR_TARGET override, no $TMUX_PANE, no $HERDR_ENV/$HERDR_PANE_ID:
+  # nothing identifies the pane hosting this primary as tmux- or herdr-backed, so
+  # the daemon must refuse to arm rather than fall back to guessing a "firstmate:0"
+  # tmux session that may belong to someone else's pane entirely (2026-08-22
+  # incident: an 8-hour away-mode run silently delivered nothing this way).
+  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' \
+        TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' "$AFK_START" 2>&1)
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "fm-afk-start.sh should refuse to arm when the primary is not hosted in tmux or herdr"
+  assert_contains "$out" "cannot verify this away-mode session's primary is hosted in tmux or herdr" \
+    "fm-afk-start.sh did not refuse the unverifiable non-tmux/non-herdr host"
+  assert_not_contains "$out" "does not resolve to a" "away-mode startup pinned a fallback target instead of refusing at arming time"
+  if [ -e "$state/.afk" ]; then
+    fail "refusing to arm still left state/.afk set with no daemon running"
+  fi
+  pass "fm-afk-start.sh refuses to arm when the primary session is not hosted in tmux or herdr"
+}
+
+test_afk_start_refuses_when_only_backend_override_is_set() {
+  local dir state out status
+  dir=$(make_supercase afk-start-backend-only-override)
+  state="$dir/state"
+  mkdir -p "$state"
+
+  # FM_SUPERVISOR_BACKEND names a backend but supplies no target, so the daemon
+  # would still land on its FALLBACK refusal. Arming on the backend alone left
+  # state/.afk dead-set with no daemon; the pre-arm check must refuse instead.
+  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND=tmux \
+        TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' "$AFK_START" 2>&1)
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "fm-afk-start.sh should refuse to arm on a backend override that carries no target"
+  assert_contains "$out" "cannot verify this away-mode session's primary is hosted in tmux or herdr" \
+    "fm-afk-start.sh armed away mode on FM_SUPERVISOR_BACKEND alone"
+  if [ -e "$state/.afk" ]; then
+    fail "backend-only override still armed state/.afk with no daemon running"
+  fi
+  pass "fm-afk-start.sh refuses to arm when only FM_SUPERVISOR_BACKEND is set"
+}
+
+test_daemon_refuses_unverifiable_target_when_started_directly() {
+  local dir state out status
+  dir=$(make_supercase daemon-no-tmux-primary)
+  state="$dir/state"
+  mkdir -p "$state"
+
+  # The daemon keeps its own refusal for the same condition, since it can be
+  # started directly (or by a launcher-prepared start) without passing through
+  # fm-afk-start.sh's earlier host check.
+  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' \
+        TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' "$DAEMON" 2>&1)
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "fm-supervise-daemon.sh should refuse an unverifiable non-tmux/non-herdr target"
+  assert_contains "$out" "cannot verify this away-mode daemon's target pane hosts the live firstmate primary session" \
+    "daemon startup did not refuse the unverifiable non-tmux/non-herdr target"
+  assert_not_contains "$out" "does not resolve to a" "daemon startup pinned a fallback target instead of refusing at discovery"
+  pass "fm-supervise-daemon.sh refuses to start against an unverifiable target"
+}
+
+test_afk_start_tmux_hosted_primary_reaches_target_validation_unchanged() {
+  local dir state pid log deadline contents
+  dir=$(make_supercase afk-start-tmux-primary-unchanged)
+  state="$dir/state"
+  mkdir -p "$state"
+  log="$state/.supervise-daemon.log"
+
+  # $TMUX_PANE set (as tmux sets it for every real pane) must still resolve the
+  # target via the normal TMUX_PANE path, unaffected by the new refusal. Run in
+  # the background and read the startup log directly: whether the daemon then
+  # proceeds into its loop or stops at the pre-existing target-existence check
+  # depends on the ambient tmux server this test happens to run under, but
+  # either way it must get past the host check having resolved the target from
+  # TMUX_PANE, and must never emit the new FALLBACK refusal.
+  FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' \
+    TMUX_PANE='%no-such-pane-9999' HERDR_ENV='' HERDR_PANE_ID='' "$AFK_START" >/dev/null 2>&1 &
+  pid=$!
+  deadline=$(( $(date +%s) + 10 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    contents=$(cat "$log" 2>/dev/null || true)
+    case "$contents" in
+      *"daemon starting"*|*"startup "*) break ;;
+    esac
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.2
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  contents=$(cat "$log" 2>/dev/null || true)
+
+  case "$contents" in
+    *"daemon starting (pid "*"target=%no-such-pane-9999; target_source=TMUX_PANE; backend=tmux"*) ;;
+    *"startup failed: target '%no-such-pane-9999' not found (backend=tmux)"*) ;;
+    *) fail "tmux-hosted primary did not resolve its target from TMUX_PANE; startup log was: ${contents:-<empty>}" ;;
+  esac
+  assert_not_contains "$contents" "primary session not confirmed hosted in tmux or herdr" \
+    "tmux-hosted primary (TMUX_PANE set) was wrongly refused by the new non-tmux/non-herdr check"
+  pass "fm-afk-start.sh: a tmux-hosted primary's target resolution is unchanged"
 }
 
 test_daemon_state_root_uses_fm_home() {
@@ -2172,6 +2283,10 @@ test_inject_msg_defers_on_unrecognized_composer_state() {
 test_afk_start_refuses_when_flag_cannot_be_written
 test_afk_start_ignores_stale_pidfile_without_lock
 test_afk_start_reclaims_stale_daemon_lock_reused_pid
+test_afk_start_refuses_when_primary_not_hosted_in_tmux_or_herdr
+test_afk_start_refuses_when_only_backend_override_is_set
+test_daemon_refuses_unverifiable_target_when_started_directly
+test_afk_start_tmux_hosted_primary_reaches_target_validation_unchanged
 test_daemon_state_root_uses_fm_home
 test_classify_routine_signal_self
 test_classify_terminal_signal_escalates

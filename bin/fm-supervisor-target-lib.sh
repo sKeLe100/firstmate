@@ -48,7 +48,15 @@ discover_supervisor_target() {
     printf '%s:%s' "${HERDR_SESSION:-default}" "$HERDR_PANE_ID"
     return 0
   fi
-  # Legacy bare fallback: FM_SUPERVISOR_TARGET_DEFAULT ("firstmate:0") is a
+  # Legacy bare fallback, returned with status 1: every current caller treats
+  # that non-zero status as fatal (bin/fm-supervise-daemon.sh refuses to arm
+  # away mode when no source identified the primary's own pane;
+  # bin/fm-afk-launch.sh aborts the launch), so the value below is diagnostic
+  # only and is never armed into. It is kept - rather than collapsed into a
+  # bare `return 1` - so any future caller that chooses to proceed anyway gets
+  # the concrete pinned pane id instead of the redirectable window target.
+  #
+  # FM_SUPERVISOR_TARGET_DEFAULT ("firstmate:0") is a
   # tmux session:WINDOW target, not a pane. A window target resolves to
   # whichever pane is ACTIVE in that window at read time, so once the daemon
   # stores this into FM_SUPERVISOR_TARGET, a later focus change to a
