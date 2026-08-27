@@ -1055,6 +1055,20 @@ test_cache_expiring_follows_configured_ttl() {
   ' >/dev/null || fail "a session idle past the TTL is the steer guard's territory, not \"expiring\": $out"
   touch -t "$stamp" "$home/state/warm-task.turn-ended" "$home/state/warm-task.meta"
 
+  printf '0600\n' > "$home/config/cache-ttl-seconds"
+  touch -t "$(date -d "@$(( $(date +%s) - 400 ))" +%Y%m%d%H%M.%S 2>/dev/null \
+    || date -r "$(( $(date +%s) - 400 ))" +%Y%m%d%H%M.%S)" \
+    "$home/state/warm-task.turn-ended" "$home/state/warm-task.meta"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json 2>"$home/snapshot.err")
+  printf '%s' "$out" | jq -e '
+    [.tasks[] | select(.id == "warm-task")] | first
+    | .endpoint.cache_expiring == false
+  ' >/dev/null || fail "a leading-zero TTL is base 10, so 400s idle is under the 500s near-expiry mark: $out"
+  [ -s "$home/snapshot.err" ] \
+    && fail "a leading-zero TTL must not emit arithmetic errors: $(cat "$home/snapshot.err")"
+  printf '600\n' > "$home/config/cache-ttl-seconds"
+  touch -t "$stamp" "$home/state/warm-task.turn-ended" "$home/state/warm-task.meta"
+
   view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
   assert_contains "$view" "present (cache expiring)" \
     "the view should flag a near-expiry task whose endpoint is present"

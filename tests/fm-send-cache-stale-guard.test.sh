@@ -224,15 +224,12 @@ test_fire_and_forget_ignores_guard() {
 test_resolve_key_answer_ignores_guard() {
   local dir err rc
   dir=$(setup_case resolvekey); err="$dir/send.err"
-  age_activity "$dir" 4000
-  run_send "$dir" "$err" -- t1 --resolve-key some-key "the answer"; rc=$?
-  [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || fail "unexpected exit $rc"
-  case "$(cat "$err")" in
-    *"is not resolvable as an open decision"*) : ;;
-    *"no open decision"*) : ;;
-    *) [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a --resolve-key answer must not be blocked by the cache-stale guard" ;;
-  esac
-  pass "fm-send cache-stale guard: --resolve-key path is unaffected by staleness"
+  printf 'needs-decision [key=api-shape]: pick REST or RPC\n' > "$dir/home/state/t1.status"
+  age_activity "$dir" 40000
+  run_send "$dir" "$err" -- t1 --resolve-key api-shape "go with REST"; rc=$?
+  expect_code 0 "$rc" "an answer to a genuinely open decision must not be blocked by the guard"$'\n'"$(cat "$err")"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the decision answer should have been durably recorded"
+  pass "fm-send cache-stale guard: an open-decision --resolve-key answer is exempt"
 }
 
 test_unreadable_idle_signal_fails_open

@@ -14,6 +14,16 @@
 
 FM_CACHE_TTL_DEFAULT_SECONDS=3600
 
+# A configured value keeps its base-10 meaning everywhere: 0600 is 600 seconds
+# to the [ -gt ] comparisons AND to the near-expiry arithmetic, which would
+# otherwise read a leading zero as octal (or abort outright on 08/09).
+fm_cache_strip_leading_zeros() {  # <numeric-string> -> echoes it without leading zeros
+  local v=$1 sign=''
+  case "$v" in -*) sign=-; v=${v#-} ;; esac
+  while [ "${#v}" -gt 1 ] && [ "${v#0}" != "$v" ]; do v=${v#0}; done
+  printf '%s%s' "$sign" "$v"
+}
+
 fm_cache_ttl_seconds() {  # <config-dir> -> echoes the effective TTL
   local file="$1/cache-ttl-seconds" line val
   if [ -f "$file" ]; then
@@ -22,7 +32,7 @@ fm_cache_ttl_seconds() {  # <config-dir> -> echoes the effective TTL
       case "$val" in
         ''|'#'*) continue ;;
         -|*[!0-9-]*|?*-*) break ;;
-        *) printf '%s' "$val"; return 0 ;;
+        *) printf '%s' "$(fm_cache_strip_leading_zeros "$val")"; return 0 ;;
       esac
     done < "$file"
   fi
