@@ -38,6 +38,13 @@ set -u
 
 SESSION_START="$ROOT/bin/fm-session-start.sh"
 BASE_PATH=${FM_TEST_BASE_PATH:-$(fm_test_base_path)}
+# Strip any stale node symlink from the shared sandbox cache so that the
+# fixture's rm at test_output_ordering_diagnostics_lead line 950 truly makes
+# node absent from the PATH regardless of what the host has on its system
+# PATH.  The sandbox should already exclude node via FM_TEST_FAKED_TOOL_NAMES,
+# but guard against stale caches on hosts that previously built the sandbox
+# before node was in the exclusion list.
+[ -n "$BASE_PATH" ] && rm -f "$BASE_PATH/node" 2>/dev/null || true
 TMP_ROOT=$(fm_test_tmproot fm-session-start-tests)
 SESSION_START_TEST_HARNESS_PID=$$
 SESSION_START_SECOND_MATE_ID="fmtest-sm-${TMP_ROOT##*.}"
