@@ -22,6 +22,15 @@ batched digest rather than per-wake injections.
    This owns the durable state write, session-scoped stale-artifact clearing,
    terminal record, and rollback.
    The flag survives a firstmate restart, so recovery re-enters afk when it is present.
+   If arming exits nonzero with `cannot verify this away-mode session's primary is
+   hosted in tmux or herdr`, away mode is unavailable in this configuration: the
+   primary is not running inside a tmux or herdr pane, so escalations have no
+   verified delivery path. Do **not** retry or work around it and do **not**
+   acknowledge away mode; tell the captain plainly that away mode cannot arm here
+   and that running the primary inside tmux (or setting `FM_SUPERVISOR_TARGET` to
+   the primary's own pane) is what enables it. The refusal and its precedence are
+   owned by
+   [`docs/configuration.md`](../../../docs/configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target).
 
 2. **Ensure the sub-supervisor daemon is running as a tracked background process.**
    Its hosting differs by harness.
@@ -202,11 +211,12 @@ the operational prefix lets firstmate distinguish it from a real captain message
 - **Auto-discovered supervisor pane** - the daemon resolves its own BACKEND
   (tmux vs herdr) and TARGET independently, mirroring
   `bin/fm-backend.sh`'s own runtime auto-detection. The full backend and target
-  resolution chains, including the pinned-pane behavior of the legacy
-  `firstmate:0` fallback, are owned by
+  resolution chains, and the refusal to arm when no source identifies the pane
+  hosting the live primary (a primary not running inside tmux or herdr), are
+  owned by
   [`docs/configuration.md`](../../../docs/configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target).
   Both resolution sources are logged at
-  startup so a wrong-but-resolving fallback is detectable. Other runtime
+  startup so a wrong-but-resolving target is detectable. Other runtime
   backends, including zellij, orca, and cmux, are not yet supported as
   supervisor backends; the daemon refuses loudly at startup instead of
   misapplying tmux primitives to a pane that isn't one

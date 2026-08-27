@@ -69,10 +69,16 @@
 #          FM_SUPERVISOR_TARGET     supervisor pane target (override; otherwise
 #                                   auto-discovered per backend - $TMUX_PANE
 #                                   under tmux, "<session>:<pane-id>" from
-#                                   $HERDR_PANE_ID under herdr - then
-#                                   firstmate:0 fallback). Accepts either a
-#                                   tmux target or a herdr "<session>:<pane-id>"
-#                                   target; which one it's read as is decided by
+#                                   $HERDR_PANE_ID under herdr). If NONE of
+#                                   those identify the pane hosting the live
+#                                   primary - i.e. the primary session is not
+#                                   running inside tmux or herdr - away mode is
+#                                   unavailable in that configuration and the
+#                                   daemon REFUSES to arm at startup rather
+#                                   than falling back to an unrelated pane
+#                                   (firstmate:0) that no one is reading.
+#                                   Accepts either a tmux target or a herdr
+#                                   "<session>:<pane-id>" target; which one it's read as is decided by
 #                                   FM_SUPERVISOR_BACKEND (below), independently.
 #          FM_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr;
 #                                   override; otherwise auto-discovered the same
@@ -1433,17 +1439,30 @@ fm_super_main() {
       target_source="FALLBACK(firstmate:0)"
     fi
   fi
-  if discovered=$(discover_supervisor_target); then
-    : # resolved cleanly
-  else
-    # The bare-fallback branch now pins the concrete active pane id of
-    # firstmate:0 when tmux can resolve it, and only prints the literal
-    # window target when it cannot. Keep this log field distinguishing the
-    # two: FALLBACK(firstmate:0) is the still-redirectable window target.
-    if [ "$target_source" = "FALLBACK(firstmate:0)" ] && [ "$discovered" != "$FM_SUPERVISOR_TARGET_DEFAULT" ]; then
-      target_source="FALLBACK(pinned:$discovered)"
-    fi
-    echo "warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, or HERDR_ENV/HERDR_PANE_ID); falling back to '$discovered' — verify this is firstmate's pane" >&2
+  discovered=$(discover_supervisor_target) || true
+
+  # --- refuse to arm into a target that does not host the live primary ------
+  # A FALLBACK target_source means none of FM_SUPERVISOR_TARGET, $TMUX_PANE, or
+  # $HERDR_ENV/$HERDR_PANE_ID identified the pane actually running this
+  # firstmate primary - i.e. the primary is not hosted in tmux or herdr (the
+  # only backends this daemon has verified composer/busy primitives for). The
+  # old behavior pinned a *different*, unrelated pane (tmux session
+  # "firstmate:0" if one happened to exist) and armed into it anyway: the
+  # composer guard then correctly refused to type into that pane forever,
+  # silently discarding every escalation for the whole away-mode stretch while
+  # /afk reported success (root cause confirmed 2026-08-22: an 8-hour away-mode
+  # run delivered nothing because the primary was not in tmux and the daemon
+  # injected into a bare, unrelated shell). There is no verified delivery path
+  # for a non-tmux, non-herdr primary, so refuse loudly here instead of arming
+  # into that void; a worked-out delivery path for another backend belongs in
+  # discover_supervisor_target/discover_supervisor_backend, not as a silent
+  # guess here.
+  if [ "$target_source" = "FALLBACK(firstmate:0)" ]; then
+    echo "error: cannot verify this away-mode daemon's target pane hosts the live firstmate primary session (no FM_SUPERVISOR_TARGET override, and neither \$TMUX_PANE nor \$HERDR_ENV/\$HERDR_PANE_ID is set) - the primary session does not appear to be running inside tmux or herdr, and away mode has no other verified delivery path, so it refuses to arm rather than escalate into an unrelated pane; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET/FM_SUPERVISOR_BACKEND explicitly to the primary's own pane, to use away mode" >&2
+    log "startup refused: primary session not confirmed hosted in tmux or herdr (target_source=FALLBACK, would-be target='$discovered')"
+    fm_lock_release "$LOCK" 2>/dev/null || true
+    rm -f "$PIDFILE" 2>/dev/null || true
+    exit 1
   fi
   FM_SUPERVISOR_TARGET="$discovered"
   local TARGET="$FM_SUPERVISOR_TARGET"
