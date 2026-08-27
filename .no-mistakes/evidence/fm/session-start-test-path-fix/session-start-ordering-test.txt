@@ -1,0 +1,14 @@
+$ git diff --stat 680cbed..HEAD   # net change vs base: none (file restored to pre-85e0768 state)
+
+$ command -v node
+/usr/bin/node
+
+# targeted test (test_output_ordering_diagnostics_lead) with a real node on the host PATH
+$ bash tests/fm-session-start.test.sh  # (single test: test_output_ordering_diagnostics_lead)
+ok - digest sections are ordered safety-preamble first, live fleet state before curated memory
+EXIT=0
+
+$ TMPDIR=$(mktemp -d) bash ...   # fresh sandbox cache, no prior FM_TEST_FAKED_TOOL_NAMES history
+ok - digest sections are ordered safety-preamble first, live fleet state before curated memory
+EXIT=0
+ls: cannot access '/tmp/tmp.RKkFyz7xBw/.fm-test-sandbox-base-path.*/node': No such file or directory
