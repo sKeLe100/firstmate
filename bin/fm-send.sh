@@ -858,22 +858,23 @@ else
   fi
   if [ "$INBOX_PLANE" = 1 ]; then
     INBOX_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
-    # Ordinary local steers only: a --resolve-key answer closes an open
-    # decision and must never be blocked by this guard, and --steer-stale is
-    # the explicit deliberate-resume override.
-    if [ -z "$RESOLVE_KEYS" ] && [ "$STEER_STALE" != 1 ] && [ -n "$INBOX_TASK_ID" ]; then
+    # Ordinary human-typed local steers only: a --resolve-key answer closes an
+    # open decision, an automated internal wake (FM_SEND_INTERNAL=1, set by
+    # every programmatic caller) has no human to read the relaunch advice, and
+    # --steer-stale is the explicit deliberate-resume override. None of them
+    # may be blocked by this guard.
+    if [ -z "$RESOLVE_KEYS" ] && [ "$STEER_STALE" != 1 ] \
+      && [ "${FM_SEND_INTERNAL:-0}" != 1 ] && [ -n "$INBOX_TASK_ID" ]; then
       # Cheapest checks first: a disabled knob and a fresh (or unreadable)
       # local idle age both settle the steer without any backend probe, so
       # the busy classification only runs when its verdict can still change
       # the outcome.
       cache_ttl=$(fm_cache_ttl_seconds "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}")
       if [ "$cache_ttl" -gt 0 ] &&
-        idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$INBOX_TASK_ID"); then
-        busy_verdict=idle
-        if [ "$idle_secs" -gt "$cache_ttl" ]; then
-          busy_verdict=$(fm_busy_classify_meta "$TARGET_META" "$INBOX_TASK_ID" "$STATE" 2>/dev/null || printf 'unknown error')
-        fi
-        if [ "$idle_secs" -gt "$cache_ttl" ] && [ "${busy_verdict%% *}" != busy ]; then
+        idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$INBOX_TASK_ID") &&
+        [ "$idle_secs" -gt "$cache_ttl" ]; then
+        busy_verdict=$(fm_busy_classify_meta "$TARGET_META" "$INBOX_TASK_ID" "$STATE" 2>/dev/null || printf 'unknown error')
+        if [ "${busy_verdict%% *}" != busy ]; then
           if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
             fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
           fi

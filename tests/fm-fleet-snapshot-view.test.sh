@@ -1023,8 +1023,8 @@ test_cache_expiring_follows_configured_ttl() {
   fm_write_meta "$home/state/gone-task.meta" \
     "backend=cmux" "window=workspace:surface" "project=alpha" "harness=codex" \
     "kind=ship" "mode=ship"
-  stamp=$(date -d "@$(( $(date +%s) - 600 ))" +%Y%m%d%H%M.%S 2>/dev/null) \
-    || stamp=$(date -r "$(( $(date +%s) - 600 ))" +%Y%m%d%H%M.%S)
+  stamp=$(date -d "@$(( $(date +%s) - 550 ))" +%Y%m%d%H%M.%S 2>/dev/null) \
+    || stamp=$(date -r "$(( $(date +%s) - 550 ))" +%Y%m%d%H%M.%S)
   : > "$home/state/warm-task.turn-ended"
   : > "$home/state/gone-task.turn-ended"
   touch -t "$stamp" "$home/state/warm-task.turn-ended" "$home/state/warm-task.meta" \
@@ -1034,7 +1034,7 @@ test_cache_expiring_follows_configured_ttl() {
   printf '%s' "$out" | jq -e '
     [.tasks[] | select(.id == "warm-task")] | first
     | .endpoint.cache_expiring == false
-  ' >/dev/null || fail "the default 3600s TTL must not flag a 600s-idle task: $out"
+  ' >/dev/null || fail "the default 3600s TTL must not flag a 550s-idle task: $out"
 
   printf '600\n' > "$home/config/cache-ttl-seconds"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
@@ -1044,6 +1044,16 @@ test_cache_expiring_follows_configured_ttl() {
     and ([.tasks[] | select(.id == "gone-task")] | first
      | .endpoint.cache_expiring == false and .endpoint.exists != true)
   ' >/dev/null || fail "a lowered config/cache-ttl-seconds must drive the near-expiry flag: $out"
+
+  touch -t "$(date -d "@$(( $(date +%s) - 5000 ))" +%Y%m%d%H%M.%S 2>/dev/null \
+    || date -r "$(( $(date +%s) - 5000 ))" +%Y%m%d%H%M.%S)" \
+    "$home/state/warm-task.turn-ended" "$home/state/warm-task.meta"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    [.tasks[] | select(.id == "warm-task")] | first
+    | .endpoint.cache_expiring == false
+  ' >/dev/null || fail "a session idle past the TTL is the steer guard's territory, not \"expiring\": $out"
+  touch -t "$stamp" "$home/state/warm-task.turn-ended" "$home/state/warm-task.meta"
 
   view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
   assert_contains "$view" "present (cache expiring)" \

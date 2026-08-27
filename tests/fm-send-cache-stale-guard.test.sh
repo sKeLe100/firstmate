@@ -198,6 +198,16 @@ test_busy_session_never_refused() {
   pass "fm-send cache-stale guard: a busy mid-turn session is never refused"
 }
 
+test_internal_wake_ignores_guard() {
+  local dir err rc
+  dir=$(setup_case internalwake); err="$dir/send.err"
+  age_activity "$dir" 40000
+  run_send "$dir" "$err" FM_SEND_INTERNAL=1 -- t1 "automated receiver wake"; rc=$?
+  expect_code 0 "$rc" "an automated internal wake must never be refused by the guard"$'\n'"$(cat "$err")"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the internal wake should have been durably recorded"
+  pass "fm-send cache-stale guard: an automated internal wake is exempt"
+}
+
 test_resolve_key_answer_ignores_guard() {
   local dir err rc
   dir=$(setup_case resolvekey); err="$dir/send.err"
@@ -221,4 +231,5 @@ test_config_ttl_skips_blank_and_comment_lines
 test_zero_ttl_disables_guard
 test_recent_activity_outranks_stale_turn_ended
 test_busy_session_never_refused
+test_internal_wake_ignores_guard
 test_resolve_key_answer_ignores_guard

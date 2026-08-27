@@ -52,13 +52,11 @@ fm_cache_near_expiry_seconds() {  # <config-dir> -> echoes the near-expiry thres
 # a restored file) clamps to 0 rather than becoming a negative age; no
 # readable marker at all is UNKNOWN, signalled by a non-zero return so each
 # caller can choose its own safe default.
-fm_cache_marker_mtime() {  # <path>
-  if [ "$(uname)" = Darwin ]; then
-    stat -f %m "$1" 2>/dev/null || return 1
-  else
-    stat -c %Y "$1" 2>/dev/null || return 1
-  fi
-}
+if [ "$(uname)" = Darwin ]; then
+  fm_cache_marker_mtime() { stat -f %m "$1" 2>/dev/null || return 1; }
+else
+  fm_cache_marker_mtime() { stat -c %Y "$1" 2>/dev/null || return 1; }
+fi
 
 fm_cache_activity_age_seconds() {  # <state-dir> <id> [now-epoch] -> echoes age; nonzero rc = unknown
   local state=$1 id=$2 now=${3-} marker mtime newest=0

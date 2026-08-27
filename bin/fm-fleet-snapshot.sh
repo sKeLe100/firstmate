@@ -164,6 +164,7 @@ validate_positive_bound FM_SNAPSHOT_REGISTRY_TIMEOUT "$FM_SNAPSHOT_REGISTRY_TIME
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"  # fm_run_timed: the shared hard bound
 
+CACHE_TTL_SECONDS=$(fm_cache_ttl_seconds "$CONFIG")
 CACHE_NEAR_EXPIRY_SECONDS=$(fm_cache_near_expiry_seconds "$CONFIG")
 
 usage() {
@@ -628,7 +629,8 @@ task_json_lines() {
       idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$id" || printf '')
       if [ -n "$idle_secs" ] && [ "$endpoint_exists" = true ] &&
         [ "$CACHE_NEAR_EXPIRY_SECONDS" -gt 0 ] &&
-        [ "$idle_secs" -ge "$CACHE_NEAR_EXPIRY_SECONDS" ]; then
+        [ "$idle_secs" -ge "$CACHE_NEAR_EXPIRY_SECONDS" ] &&
+        [ "$idle_secs" -lt "$CACHE_TTL_SECONDS" ]; then
         cache_expiring=1
       fi
     fi
