@@ -38,13 +38,23 @@ set -u
 
 SESSION_START="$ROOT/bin/fm-session-start.sh"
 BASE_PATH=${FM_TEST_BASE_PATH:-$(fm_test_base_path)}
-# Strip any stale node symlink from the shared sandbox cache so that the
-# fixture's rm at test_output_ordering_diagnostics_lead line 950 truly makes
-# node absent from the PATH regardless of what the host has on its system
-# PATH.  The sandbox should already exclude node via FM_TEST_FAKED_TOOL_NAMES,
-# but guard against stale caches on hosts that previously built the sandbox
-# before node was in the exclusion list.
-[ -n "$BASE_PATH" ] && rm -f "$BASE_PATH/node" 2>/dev/null || true
+# Fixtures here delete a faked tool from their fakebin/ to observe it as
+# absent, so any leftover entry for that tool inside the shared sandbox would
+# let the real host copy resolve again. fm_test_base_path already excludes
+# FM_TEST_FAKED_TOOL_NAMES when it builds the sandbox; this re-asserts that on
+# reuse of an already-complete cache directory. It is confined to a directory
+# the harness itself owns: an FM_TEST_BASE_PATH override may name real system
+# directories, which must never be mutated.
+if [ -z "${FM_TEST_BASE_PATH:-}" ]; then
+  case $BASE_PATH in
+    "${TMPDIR:-/tmp}"/.fm-test-sandbox-base-path.*)
+      for _faked_tool in $FM_TEST_FAKED_TOOL_NAMES; do
+        rm -f "$BASE_PATH/$_faked_tool"
+      done
+      unset _faked_tool
+      ;;
+  esac
+fi
 TMP_ROOT=$(fm_test_tmproot fm-session-start-tests)
 SESSION_START_TEST_HARNESS_PID=$$
 SESSION_START_SECOND_MATE_ID="fmtest-sm-${TMP_ROOT##*.}"
