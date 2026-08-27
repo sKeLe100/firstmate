@@ -1042,14 +1042,14 @@ test_cache_expiring_follows_configured_ttl() {
     ([.tasks[] | select(.id == "warm-task")] | first
      | .endpoint.cache_expiring == true and .endpoint.exists == true)
     and ([.tasks[] | select(.id == "gone-task")] | first
-     | .endpoint.cache_expiring == true and .endpoint.exists != true)
+     | .endpoint.cache_expiring == false and .endpoint.exists != true)
   ' >/dev/null || fail "a lowered config/cache-ttl-seconds must drive the near-expiry flag: $out"
 
   view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
   assert_contains "$view" "present (cache expiring)" \
     "the view should flag a near-expiry task whose endpoint is present"
   assert_not_contains "$view" "absent (cache expiring)" \
-    "the view must not flag a near-expiry task whose endpoint is already gone"
+    "a task whose endpoint is already gone must never render as cache expiring"
   pass "fleet snapshot near-expiry flag follows config/cache-ttl-seconds and only renders on a live endpoint"
 }
 

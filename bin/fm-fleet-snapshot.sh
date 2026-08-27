@@ -279,32 +279,6 @@ path_present_json() {  # <path>
   printf '%s\n' "$out"
 }
 
-# Prompt-cache near-expiry surfacing (docs/configuration.md "Prompt-cache
-# steer guard" owns the TTL/knob contract this flags against, and
-# bin/fm-cache-ttl-lib.sh owns the threshold it is derived from). Idle age is
-# the age of a LOCAL task's NEWEST activity marker - state/<id>.meta,
-# state/<id>.status, or state/<id>.turn-ended - the same newest-of-three fold
-# the steer guard and bin/fm-inactive-reconcile.sh use, so a worker mid-turn
-# is never reported as idle. No readable marker means idle age is unknown,
-# not expiring, so it prints empty rather than guessing.
-idle_seconds_of() {  # <id> -> echoes idle seconds, or empty if unknown
-  local id=$1 marker mtime now newest=0
-  for marker in "$STATE/$id.meta" "$STATE/$id.status" "$STATE/$id.turn-ended"; do
-    [ -e "$marker" ] || continue
-    if [ "$(uname)" = Darwin ]; then
-      mtime=$(stat -f %m "$marker" 2>/dev/null) || continue
-    else
-      mtime=$(stat -c %Y "$marker" 2>/dev/null) || continue
-    fi
-    case "$mtime" in ''|*[!0-9]*) continue ;; esac
-    [ "$mtime" -le "$newest" ] || newest=$mtime
-  done
-  [ "$newest" -gt 0 ] || return 0
-  now=$(date +%s)
-  [ "$now" -ge "$newest" ] || return 0
-  printf '%s' $(( now - newest ))
-}
-
 meta_value() {  # <meta-file> <key>
   fm_meta_get "$1" "$2"
 }
@@ -651,8 +625,9 @@ task_json_lines() {
     idle_secs=
     cache_expiring=0
     if [ -z "$remote_host" ]; then
-      idle_secs=$(idle_seconds_of "$id")
-      if [ -n "$idle_secs" ] && [ "$CACHE_NEAR_EXPIRY_SECONDS" -gt 0 ] &&
+      idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$id" || printf '')
+      if [ -n "$idle_secs" ] && [ "$endpoint_exists" = true ] &&
+        [ "$CACHE_NEAR_EXPIRY_SECONDS" -gt 0 ] &&
         [ "$idle_secs" -ge "$CACHE_NEAR_EXPIRY_SECONDS" ]; then
         cache_expiring=1
       fi

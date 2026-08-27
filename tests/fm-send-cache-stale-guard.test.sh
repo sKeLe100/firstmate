@@ -5,14 +5,15 @@
 # (state/<id>.meta, .status, .turn-ended) shows it idle past the prompt-cache
 # TTL (docs/configuration.md "Prompt-cache steer guard"). These tests drive
 # the real fm-send executable:
-#   1. A fresh (no marker) task is never refused: an unknown idle age fails
-#      open rather than blocking the steer.
+#   1. An unreadable idle signal (every stat of the activity markers fails)
+#      fails open rather than blocking the steer.
 #   2. A task idle under the default TTL is not refused.
 #   3. A task idle past the default TTL is refused, prints the relaunch
 #      command, and never touches the inbox.
 #   4. --steer-stale overrides the refusal and the steer is durably sent.
-#   5. config/cache-ttl-seconds overrides the default threshold, and a
-#      configured 0 disables the guard instead of refusing everything.
+#   5. config/cache-ttl-seconds overrides the default threshold (reading past
+#      blank and comment lines), and a configured 0 disables the guard
+#      instead of refusing everything.
 #   6. A stale turn-ended marker on a task whose OTHER activity markers are
 #      fresh, and a task classified busy (mid-turn), are never refused.
 set -u
@@ -87,13 +88,19 @@ run_send() {  # <case-dir> <err-file> [env...] -- <fm-send args...>
     "$SEND" "$@" >/dev/null 2>"$err"
 }
 
-test_no_marker_fails_open() {
+test_unreadable_idle_signal_fails_open() {
   local dir err rc
-  dir=$(setup_case no-marker); err="$dir/send.err"
+  dir=$(setup_case unreadable); err="$dir/send.err"
+  age_activity "$dir" 40000
+  cat > "$dir/fakebin/stat" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$dir/fakebin/stat"
   run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
-  expect_code 0 "$rc" "an unreadable idle signal must fail open, not block the steer"
+  expect_code 0 "$rc" "an unreadable idle signal must fail open, not block the steer"$'\n'"$(cat "$err")"
   [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer should have been durably recorded"
-  pass "fm-send cache-stale guard: missing idle marker fails open"
+  pass "fm-send cache-stale guard: an unreadable idle signal fails open"
 }
 
 test_fresh_marker_not_refused() {
@@ -139,6 +146,19 @@ test_config_ttl_override() {
   run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
   expect_code 1 "$rc" "a lowered config/cache-ttl-seconds must refuse a steer the default TTL would allow"
   pass "fm-send cache-stale guard: config/cache-ttl-seconds overrides the default threshold"
+}
+
+test_config_ttl_skips_blank_and_comment_lines() {
+  local dir err rc
+  dir=$(setup_case ttlcomments); err="$dir/send.err"
+  mkdir -p "$dir/home/config"
+  printf '\n# lowered while the fleet is churning\n60\n' > "$dir/home/config/cache-ttl-seconds"
+  age_activity "$dir" 120
+  run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+  expect_code 1 "$rc" "the TTL must come from the first non-empty, non-comment line, not a leading blank"
+  assert_contains "$(cat "$err")" "60s prompt-cache TTL" \
+    "the refusal must report the configured TTL that was actually parsed"
+  pass "fm-send cache-stale guard: config/cache-ttl-seconds skips blank and comment lines"
 }
 
 test_zero_ttl_disables_guard() {
@@ -192,11 +212,12 @@ test_resolve_key_answer_ignores_guard() {
   pass "fm-send cache-stale guard: --resolve-key path is unaffected by staleness"
 }
 
-test_no_marker_fails_open
+test_unreadable_idle_signal_fails_open
 test_fresh_marker_not_refused
 test_stale_marker_refused
 test_override_flag_sends_anyway
 test_config_ttl_override
+test_config_ttl_skips_blank_and_comment_lines
 test_zero_ttl_disables_guard
 test_recent_activity_outranks_stale_turn_ended
 test_busy_session_never_refused

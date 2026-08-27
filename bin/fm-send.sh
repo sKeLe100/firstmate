@@ -316,39 +316,6 @@ fm_send_count_colons() {  # <string>
   printf '%s' $(( ${#s} - ${#no_colons} ))
 }
 
-# Cache-stale steer guard (docs/configuration.md "Prompt-cache steer guard"
-# owns the threshold/knob contract; this is its sole implementation). A LOCAL
-# worker's idle age is the age of its NEWEST activity marker - state/<id>.meta,
-# state/<id>.status, or state/<id>.turn-ended - the same newest-of-three fold
-# bin/fm-inactive-reconcile.sh's last_activity_age uses, because turn-ended
-# alone only moves when a turn ENDS and would label a worker mid-turn as idle
-# for the whole length of that turn. All three markers are already written for
-# every backend, so this needs no new probe or daemon. No readable marker is
-# NOT staleness - it means idle age is unknown, and the guard must fail open
-# rather than block a steer on a broken stat.
-fm_send_marker_mtime() {  # <path>
-  local path=$1
-  if [ "$(uname)" = Darwin ]; then
-    stat -f %m "$path" 2>/dev/null || return 1
-  else
-    stat -c %Y "$path" 2>/dev/null || return 1
-  fi
-}
-
-fm_send_idle_seconds() {  # <state-dir> <task-id> -> echoes idle seconds; nonzero rc = unknown
-  local state=$1 id=$2 marker mtime now newest=0
-  for marker in "$state/$id.meta" "$state/$id.status" "$state/$id.turn-ended"; do
-    [ -e "$marker" ] || continue
-    mtime=$(fm_send_marker_mtime "$marker") || continue
-    case "$mtime" in ''|*[!0-9]*) continue ;; esac
-    [ "$mtime" -le "$newest" ] || newest=$mtime
-  done
-  [ "$newest" -gt 0 ] || return 1
-  now=$(date +%s)
-  [ "$now" -ge "$newest" ] || return 1
-  printf '%s' $(( now - newest ))
-}
-
 fm_send_resolve_target() {  # <raw-target>
   local raw=$1 meta pane_meta target backend assumed colons id session hint
 
@@ -895,11 +862,18 @@ else
     # decision and must never be blocked by this guard, and --steer-stale is
     # the explicit deliberate-resume override.
     if [ -z "$RESOLVE_KEYS" ] && [ "$STEER_STALE" != 1 ] && [ -n "$INBOX_TASK_ID" ]; then
+      # Cheapest checks first: a disabled knob and a fresh (or unreadable)
+      # local idle age both settle the steer without any backend probe, so
+      # the busy classification only runs when its verdict can still change
+      # the outcome.
       cache_ttl=$(fm_cache_ttl_seconds "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}")
-      busy_verdict=$(fm_busy_classify_meta "$TARGET_META" "$INBOX_TASK_ID" "$STATE" 2>/dev/null || printf 'unknown error')
-      if [ "$cache_ttl" -gt 0 ] && [ "${busy_verdict%% *}" != busy ] &&
-        idle_secs=$(fm_send_idle_seconds "$STATE" "$INBOX_TASK_ID"); then
+      if [ "$cache_ttl" -gt 0 ] &&
+        idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$INBOX_TASK_ID"); then
+        busy_verdict=idle
         if [ "$idle_secs" -gt "$cache_ttl" ]; then
+          busy_verdict=$(fm_busy_classify_meta "$TARGET_META" "$INBOX_TASK_ID" "$STATE" 2>/dev/null || printf 'unknown error')
+        fi
+        if [ "$idle_secs" -gt "$cache_ttl" ] && [ "${busy_verdict%% *}" != busy ]; then
           if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
             fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
           fi
