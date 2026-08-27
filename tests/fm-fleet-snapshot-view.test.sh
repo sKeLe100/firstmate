@@ -623,6 +623,36 @@ test_many_secondmate_summaries_survive_argv_limit() {
   pass "twenty registered secondmate summaries accumulate past the exec argv limit"
 }
 
+# A remote secondmate whose home summary comes back as non-JSON must degrade to
+# an unavailable row, not take the whole snapshot down: the summary reached jq
+# through --argjson, which rejects anything that is not valid JSON.
+test_unreadable_remote_summary_degrades_to_fallback_row() {
+  local home fakebin out
+  home=$(make_home unreadable-remote-summary)
+  fakebin=$(fm_fakebin "$home-ssh")
+  cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf 'ssh: banner text, not a home summary\n'
+exit 0
+SH
+  chmod +x "$fakebin/ssh"
+  printf -- '- ios - delegated scope (host: ios-host; root: /opt/firstmate; home: /opt/fm-home; scope: delegated scope; projects: alpha; added 2026-08-01)\n' \
+    > "$home/data/secondmates.md"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json 2>"$TMP_ROOT/unreadable-remote.err")
+  [ "$?" -eq 0 ] || fail "an unreadable remote summary must not fail the snapshot: $(cat "$TMP_ROOT/unreadable-remote.err")"
+  printf '%s' "$out" | jq -e '
+    (.secondmate_current.records | length) == 1
+    and (.secondmate_current.records[0]
+         | .id == "ios"
+         and .current.state == "unknown"
+         and (.current.reason | test("malformed or stale"))
+         and .reconcile_inventory == null
+         and .invalidity == null
+         and .provenance.parent_event_role == "fallback-only-not-current")
+  ' >/dev/null || fail "unreadable remote summary must emit a degraded unavailable row: $out"
+  pass "an unreadable remote secondmate summary degrades to an unavailable row"
+}
+
 test_backlog_tasks_axi_forms_and_overrides() {
   local home data projects fakebin out view
   home=$(make_home overrides)
@@ -1000,6 +1030,7 @@ test_large_backlog_survives_argv_limit
 test_many_secondmate_summaries_survive_argv_limit
 test_many_scout_reports_survive_argv_limit
 test_interrupted_snapshot_leaves_no_temp_files
+test_unreadable_remote_summary_degrades_to_fallback_row
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status

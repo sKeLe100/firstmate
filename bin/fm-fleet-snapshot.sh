@@ -1314,7 +1314,7 @@ secondmate_current_json() {  # <parent-tasks-json>
   local activity_scan activities decisions reconciliation provenance freshness reason summary summary_rc summary_bytes summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
   local records_file registry_file counts_file tasks_file summary_file record_rc out rc seen_homes=''
   local cap_file='' check_args_file='' record_args_file=''
-  local sampled_spawn_gen
+  local sampled_spawn_gen summary_sampled
   registry=$(registry_secondmates_json) || return 1
   registry_file=$(json_tmpfile secondmate-current-registry "$registry") || return 1
   tasks_file=$(json_tmpfile secondmate-current-tasks "$tasks") || { rm -f "$registry_file"; return 1; }
@@ -1438,6 +1438,7 @@ secondmate_current_json() {  # <parent-tasks-json>
       else
         summary_bytes=$(printf '%s' "$summary" | LC_ALL=C wc -c | tr -d ' ')
         if [ "$summary_bytes" -gt "$FM_SNAPSHOT_SECONDMATE_MAX_BYTES" ]; then
+          summary='{}'
           reason="structured home snapshot exceeded byte limit"
         elif ! printf '%s' "$summary" | jq -e --arg home "$home" --arg generated "$SNAPSHOT_NOW" \
           --rawfile fm_args_raw "$check_args_file" '
@@ -1451,6 +1452,7 @@ secondmate_current_json() {  # <parent-tasks-json>
           and (.landed | type) == "array" and (.endpoints | type) == "array"
           and (.counts | type) == "object" and (.omitted | type) == "array"
         ' >/dev/null 2>&1; then
+          summary='{}'
           reason="structured home snapshot was malformed or stale"
         else
           summary_sampled=true
@@ -1539,12 +1541,12 @@ secondmate_current_json() {  # <parent-tasks-json>
       record_args_file=$(json_args_tmpfile fallback-record \
         remote "$remote" registered "$registered" event_age "$event_age" \
         activities "$activities" activity_scan "$activity_scan" \
-        decisions "$decisions" terminal "$terminal") \
+        decisions "$decisions" terminal "$terminal" \
+        summary "$summary" summary_sampled "$summary_sampled") \
         || { rm -f "$records_file" "$registry_file"; return 1; }
       record=$(jq -n \
         --arg id "$id" --arg home "$home" --arg host "$host" --arg reason "$reason" --arg observed "$SNAPSHOT_NOW" \
         --arg provenance "$provenance" --arg freshness "$freshness" --arg spawn_gen "$sampled_spawn_gen" --arg event_raw "$event_raw" --arg event_note "$event_note" \
-        --argjson summary "$summary" --argjson summary_sampled "$summary_sampled" \
         --rawfile fm_args_raw "$record_args_file" '
         ($fm_args_raw | fromjson) as $fm_args
         | $fm_args.remote as $remote
@@ -1554,6 +1556,8 @@ secondmate_current_json() {  # <parent-tasks-json>
         | $fm_args.activity_scan as $activity_scan
         | $fm_args.decisions as $decisions
         | $fm_args.terminal as $terminal
+        | $fm_args.summary as $summary
+        | $fm_args.summary_sampled as $summary_sampled
         | {id:$id,home:($home | if . == "" then null else . end),host:($host | if . == "" then null else . end),remote:$remote,registered:$registered,
          spawn_gen:($spawn_gen | if . == "" then null else . end),
          current:{state:"unknown",reason:$reason},invalidity:null,
