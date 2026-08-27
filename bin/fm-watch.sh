@@ -1497,8 +1497,9 @@ EOF
     signal_deferred=
     signal_coverage=
     for f in $files; do
+      signal_stamp=$(fm_watch_signal_coverage_stamp "$f")
       signal_verdict=$(fm_watch_signal_procevent_coverage "$f")
-      signal_coverage="$signal_coverage $f|$(fm_watch_signal_coverage_stamp "$f")|$signal_verdict"
+      signal_coverage="$signal_coverage $f|$signal_stamp|$signal_verdict"
       [ "$signal_verdict" = defer ] || continue
       signal_deferred="$signal_deferred $f"
     done
