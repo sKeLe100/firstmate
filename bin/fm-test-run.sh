@@ -642,6 +642,7 @@ tests/fm-task-inbox.test.sh 25627
 tests/fm-teardown-endpoint-safety.test.sh 4427
 tests/fm-teardown.test.sh 100584
 tests/fm-test-fixture-cleanup.test.sh 565
+tests/fm-test-fixtures.test.sh 1045
 tests/fm-test-isolation-proof.test.sh 574
 tests/fm-tmux-agent-liveness.test.sh 2493
 tests/fm-tool-update-check.test.sh 13328
@@ -1277,7 +1278,7 @@ families_for_changed_path() {
     docs/configuration.md|docs/supervision-protocols/*)
       printf '%s\n' pure-contract-unit
       ;;
-    tests/lib.sh|tests/*-helpers.sh)
+    tests/lib.sh|tests/*-helpers.sh|tests/fixtures.sh)
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
