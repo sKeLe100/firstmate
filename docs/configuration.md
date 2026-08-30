@@ -218,6 +218,16 @@ The TTL defaults to 3600 seconds and is overridden by the first non-empty, non-`
 A refused steer prints the exact `bin/fm-control.sh <task> relaunch --note ...` command to use instead; pass `--steer-stale` to fm-send to deliberately resume the stale session anyway.
 The guard never applies to a `--resolve-key` decision answer, an automated internal wake (a `--fire-and-forget` delivery, or any other programmatic caller, which sets `FM_SEND_INTERNAL=1`, since no human is there to act on the relaunch advice), a remote secondmate send, or any typed-plane delivery (a leading `/`, a leading `$` to codex, or an explicit backend target); it fails open (steers proceed) whenever the idle markers are missing or unreadable.
 `bin/fm-fleet-snapshot.sh` surfaces the same idle age per local task as `endpoint.idle_seconds` / `endpoint.cache_expiring` (true only for a LIVE endpoint whose idle age is between ~83% of the effective TTL and the TTL itself - 3000s to 3600s at the default; past the TTL the steer guard, not the heartbeat, owns the session), and `bin/fm-fleet-view.sh` renders it as a `(cache expiring)` suffix on a present endpoint so the heartbeat's fleet review catches a session before its cache lapses.
+## Turn-end pane-churn absorb (config/turnend-churn-absorb)
+
+The optional local, gitignored `config/turnend-churn-absorb` presence flag opts this home into a default-off third form of positive work evidence in watcher triage.
+With it present, every referenced task must independently show positive work evidence, and an eligible bare turn-ended task that lacks authoritative proof may satisfy that requirement when its pane content changed since the previous poll.
+It stays opt-in because the other two proofs read a verdict the harness itself vouches for while this one infers execution from rendered bytes; with the flag absent triage behaves exactly as it did before.
+`FM_TURNEND_CHURN_ABSORB_SECS` is a positive integer number of seconds, defaults to `900`, and bounds how long one endpoint's turn-ends may ride that evidence before surfacing anyway.
+An invalid value fails closed and surfaces the wake.
+The bound is required rather than cosmetic because churn and pane staleness read the same pane.
+The flag is a home-local supervision-noise preference and is not inherited by secondmate homes, which run their own crew mix.
+[`architecture.md`](architecture.md) owns the triage contract and `bin/fm-watch.sh`'s `signal_turnend_panes_churned` owns the exact evidence and fail-closed boundaries.
 
 ## Gate defaults (.no-mistakes.yaml)
 
@@ -949,6 +959,7 @@ FM_WATCH_CYCLE_LOG_MAX_BYTES=262144   # size cap for the arm-owned watcher lifec
 FM_WATCH_CYCLE_LOG_KEEP_LINES=1000   # newest complete lifecycle rows considered when the ledger is capped
 FM_WATCHER_STALE_GRACE=300   # defaults to FM_GUARD_GRACE; seconds a live watcher lock may have a stale beacon before re-arm errors
 FM_SIGNAL_GRACE=30      # seconds to coalesce nearby status and turn-end signals into one wake
+FM_TURNEND_CHURN_ABSORB_SECS=900   # longest one endpoint's bare turn-ends may be deferred on pane-churn evidence alone; only consulted when config/turnend-churn-absorb is present
 FM_CAPTAIN_RE='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'   # captain-relevant status regex; nonterminal progress verbs remain excluded even when their prose matches
 FM_CLASSIFY_PAUSED_VERB=paused     # leading status verb for a declared external wait; excluded from FM_CAPTAIN_RE and distinct from blocked
 FM_STALE_ESCALATE_SECS=240         # idle seconds before a provably-working stale pane escalates; stale panes whose crew is not provably working surface immediately unless they declare the pause verb; in the always-on watcher the first escalation for a quiet spell always fires at this threshold, and each subsequent escalation for the same uninterrupted quiet spell backs off exponentially (see FM_WEDGE_ESCALATE_MAX_SECS), resetting to this base threshold once the pane shows genuine activity again; the away-mode daemon's own stale recheck uses this threshold flat
