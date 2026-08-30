@@ -6,7 +6,7 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab] [--upstream-sync]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -27,16 +27,6 @@
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
-#   --upstream-sync applies only to a ship brief for an auto-dispatched upstream
-#   sync task (docs/configuration.md "Upstream autosync").
-#   It adds the non-negotiable gates: never yolo-merge the sync PR regardless of
-#   the project's merge posture, stop at needs-decision on any conflict in a
-#   supervision-safety file (bin/fm-watch.sh, bin/fm-classify-lib.sh,
-#   bin/fm-wake-lib.sh, bin/fm-wake-drain.sh, bin/fm-task-inbox-lib.sh,
-#   bin/fm-teardown.sh) with a three-way summary, stop
-#   at blocked on any test failure not reproduced identically on the pre-merge
-#   base, and keep the PR to only the merge commit plus labeled
-#   conflict-resolution commits, with regressions filed as separate follow-ups.
 # For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
 # captain's standing posture as context, and this script never reads it:
@@ -94,6 +84,8 @@ esac
 . "$SCRIPT_DIR/fm-marker-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/fm-dod-lib.sh
+. "$SCRIPT_DIR/fm-dod-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 
 resolve_directory_input() {
@@ -140,7 +132,6 @@ if [ -f "$CONFIG/retry-thresholds" ] && [ -r "$CONFIG/retry-thresholds" ]; then
 fi
 KIND=ship
 HERDR_LAB=0
-UPSTREAM_SYNC=0
 NO_PROJECTS=0
 MODE=
 MODE_SET=0
@@ -162,7 +153,6 @@ for a in "$@"; do
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
     --herdr-lab) HERDR_LAB=1 ;;
-    --upstream-sync) UPSTREAM_SYNC=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
@@ -197,11 +187,6 @@ ID=${POS[0]}
 
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
-  exit 1
-fi
-
-if [ "$UPSTREAM_SYNC" -eq 1 ] && [ "$KIND" != ship ]; then
-  echo "error: --upstream-sync applies only to a ship brief" >&2
   exit 1
 fi
 
@@ -287,7 +272,6 @@ Marked requests also carry a privacy-safe \`corr=<id>\` token after the marker; 
 Optional helper: \`bin/fm-secondmate-report.sh\` can append a correlated status line for you, but a plain \`echo\` that includes the same \`corr=<id>\` is equally valid - do not depend on the helper being present.
 For a terse result, a status line is the whole answer.
 For a detailed answer (an investigation, a plan, an audit), write it to a doc under your home's \`data/\` and append a status line that points to that doc - the scout-report pattern - so the main firstmate is woken and can read it.
-After writing that doc, verify with \`ls -la {path}\` that it exists at that exact path with recent content before pointing to it in your status line; a write tool can silently place the file somewhere else, and that failure is itself a \`blocked:\` condition to report.
 Before treating an investigation or visual review as complete, load \`captain-hold-lifecycle\` from this home's \`.agents/skills/\` and pass its shared completion gate.
 A message with NO marker is the captain typing directly into your pane: treat it as authoritative captain intervention and stay conversational exactly as you would for any captain message; do not force it onto the status path.
 A request arriving through the instruction inbox below follows the same marker and reply rules.
@@ -298,10 +282,6 @@ $INBOX_SECTION
 Handle routine work yourself.
 Report only true captain-relevant outcomes or a declared external wait by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
-   After every append, verify with \`ls -la $STATUS_FILE\` that the line landed at that exact
-   path with recent content; do not trust the append until that verification succeeds - a write
-   tool can silently place the file somewhere else, and that failure is itself a \`blocked:\`
-   condition to report.
 States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
 Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own; use \`blocked:\` when you are stuck and need firstmate to act.
 Use this only for material phase changes, a captain decision, a real blocker, a failure, work ready for review, or work you landed.
@@ -365,22 +345,6 @@ EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
-UPSTREAM_SYNC_SECTION=
-if [ "$UPSTREAM_SYNC" -eq 1 ]; then
-# shellcheck disable=SC2016  # single quotes are deliberate: these lines are literal brief text that must reach the reading agent verbatim; only the '"'"' break-outs interpolate a literal apostrophe.
-UPSTREAM_SYNC_SECTION=$(printf '%s\n' \
-'# Upstream sync - HARD SAFETY GATES' \
-'This brief was explicitly scaffolded with `--upstream-sync`: it merges upstream drift into this fork.' \
-'These gates are non-negotiable and apply even on a yolo-postured project.' \
-'' \
-'1. NEVER YOLO-MERGE. Regardless of this project'"'"'s merge posture, park this PR for the configured merge authority'"'"'s explicit word, exactly like every other PR. Do not merge it yourself under any standing autonomy setting.' \
-'2. SUPERVISION-SAFETY CONFLICT STOP. If the merge produces a conflict inside bin/fm-watch.sh, bin/fm-classify-lib.sh, bin/fm-wake-lib.sh, bin/fm-wake-drain.sh, bin/fm-task-inbox-lib.sh, or bin/fm-teardown.sh, do not resolve it yourself. Append `needs-decision: supervision-safety conflict in <file>` to the status file with a three-way summary: (a) what the local side'"'"'s hunk does, (b) what upstream'"'"'s hunk does, (c) what each version'"'"'s resulting behavior is. Stop and wait for the decision.' \
-'3. NON-PRE-EXISTING REGRESSION STOP. Run the full test suite after the merge. For every failure, reproduce it identically on the pre-merge base (checked out separately, never assumed) before calling it pre-existing. Any failure that does not reproduce identically on the pre-merge base blocks unattended progress: append `blocked: <test> fails post-merge and does not reproduce on pre-merge base` with the triage table (test, pre-merge result, post-merge result) and stop rather than shipping past it.' \
-'4. PR PURITY. This PR must contain only the merge commit plus clearly-labeled conflict-resolution commits. Never fold a regression fix or a pre-existing-failure fix into this PR. File any regression found during triage as a separate follow-up backlog item and mention it, unfixed, in this PR'"'"'s description. Document every pre-existing failure in the PR description; never "fix" one as part of this sync.' \
-'' \
-'Do not bypass these gates for a build that "looks fine"; the triage table and the three-way summary are the deliverable that lets the captain approve safely.')
-fi
-
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -389,7 +353,6 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 {TASK}
 
 $HERDR_SECTION
-$UPSTREAM_SYNC_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -411,16 +374,9 @@ The report is the only thing that survives, so anything worth keeping must be in
    known external wait you expect to clear on its own (an upstream release, a rate-limit reset):
    firstmate then leaves your idle pane alone and rechecks it on a long cadence instead of
    treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
-   After every append, verify with \`ls -la $STATUS_FILE\` that the line landed at that exact
-   path with recent content; do not trust the append, and do not report \`done\`, until that
-   verification succeeds - a write tool can silently place the file somewhere else, and that
-   failure is itself a \`blocked:\` condition to report.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
-   To let firstmate target its answer at this exact decision (\`--resolve-key\`), give it a stable key:
-   put \`[key=<slug>]\` BETWEEN the verb and the colon, e.g. \`needs-decision [key=<slug>]: {summary}\`
-   or \`blocked [key=<slug>]: {why}\` - a complete token at the head of the note is accepted as an equivalent position, but a token further inside the note is prose and folds under the default key instead.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
@@ -431,9 +387,6 @@ $INBOX_SECTION
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
-After writing it, verify with \`ls -la $DATA/$ID/report.md\` that the report exists at that
-exact path with recent content before continuing; if it doesn't, the write landed somewhere
-else, and that is itself a \`blocked:\` condition to report.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
 If your deliverable is a visual artifact the captain will review and iterate on, you may host the Lavish review loop yourself (poll, revise, re-serve, staying alive) instead of handing it back to firstmate.
 Before reporting done, read and follow \`$FM_ROOT/.agents/skills/captain-hold-lifecycle/SKILL.md\` and pass its shared completion gate for the report and any visual review.
@@ -444,67 +397,27 @@ echo "scaffolded: $BRIEF (scout; replace {TASK})"
 exit 0
 fi
 
-# Ship task: shape Setup / Rule 1 / Definition of done by this task's explicit
-# delivery mode, validated above. The generated DOD opens with the fixed
-# "Delivery contract: mode=<mode>" line that bin/fm-spawn.sh checks against its own
-# explicit --mode before launching.
+# Ship task: shape Setup / Rule 1 by this task's explicit delivery mode, validated
+# above, and render the Definition of done from its single owner, bin/fm-dod-lib.sh,
+# which bin/fm-promote.sh renders too so a promoted scout receives the same contract.
+# The block opens with the fixed "Delivery contract: mode=<mode>" line that
+# bin/fm-spawn.sh checks against its own explicit --mode before launching.
 case "$MODE" in
   direct-PR)
     SETUP2=""
     RULE1='1. Never push to the default branch (push only your `fm/'"$ID"'` branch). Never merge a PR.'
-    IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
-Delivery contract: mode=direct-PR
-This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
-The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
-Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
-EOF
     ;;
   local-only)
     SETUP2=""
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
-    IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
-Delivery contract: mode=local-only
-This task ships **local-only**: no remote, no PR, no pipeline.
-The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
-Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
-When it is implemented and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
-The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
-EOF
     ;;
   *)  # no-mistakes
     SETUP2="
 2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
     RULE1='1. Never push to the default branch. Never merge a PR.'
-    IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
-Delivery contract: mode=no-mistakes
-The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
-
-You drive no-mistakes by responding to its gates, not by implementing fixes.
-Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-When starting no-mistakes, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
-Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
-
-Two firstmate-specific rules layer on top of that guidance:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 7) and stop.
-  Firstmate applies \`ask-user-authority\` and obtains any required captain decision.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
-
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
-EOF
     ;;
 esac
-
-# read -r -d '' preserves the heredoc's trailing newline that the removed
-# $(...) command substitution used to strip. Drop that one newline so generated
-# briefs stay byte-identical to the historical Bash 5 output.
-DOD=${DOD%$'\n'}
+DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -513,7 +426,6 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 {TASK}
 
 $HERDR_SECTION
-$UPSTREAM_SYNC_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -526,35 +438,27 @@ If the top-level path is the primary checkout or not the worktree you were launc
 
 # Rules
 $RULE1
- 2. Stay inside this worktree; modify nothing outside it.
- 3. The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or $FM_ROOT/bin/fm-context-usage.sh for actual context numbers.
- 4. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
- 5. Report status by appending one line:
-    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
-    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
-    Each append wakes firstmate, so report sparingly: only phase changes a supervisor
-    would act on (setup done, bug reproduced, fix implemented, validation passed) and the
-    needs-decision/blocked/paused/done/failed states. No step-by-step FYI progress lines;
-    firstmate reads your pane for that.
-    A mid-task \`working:\` line (including setup complete) is nonterminal: do not end the
-    turn after it; continue the same stage until a defined \`done:\` gate under Definition of done.
-    Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - ONLY when you are deliberately idling on a
-    known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
-    a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
-    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
-    After every append, verify with \`ls -la $STATUS_FILE\` that the line landed at that exact
-    path with recent content; do not trust the append, and do not report \`done\`, until that
-    verification succeeds - a write tool can silently place the file somewhere else, and that
-    failure is itself a \`blocked:\` condition to report.
- 6. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
- 7. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
-   append \`needs-decision: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
-   To let firstmate target its answer at this exact decision (\`--resolve-key\`), give it a stable key:
-   put \`[key=<slug>]\` BETWEEN the verb and the colon, e.g. \`needs-decision [key=<slug>]: {summary}\`
-   or \`blocked [key=<slug>]: {why}\` - a complete token at the head of the note is accepted as an equivalent position, but a token further inside the note is prose and folds under the default key instead.
+2. Stay inside this worktree; modify nothing outside it.
+3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+4. Report status by appending one line:
+   \`echo "{state}: {one short line}" >> $STATUS_FILE\`
+   States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
+   Each append wakes firstmate, so report sparingly: only phase changes a supervisor
+   would act on (setup done, bug reproduced, fix implemented, validation passed) and the
+   needs-decision/blocked/paused/done/failed states. No step-by-step FYI progress lines;
+   firstmate reads your pane for that.
+   A mid-task \`working:\` line (including setup complete) is nonterminal: do not end the
+   turn after it; continue the same stage until a defined \`done:\` gate under Definition of done.
+   Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - ONLY when you are deliberately idling on a
+   known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
+   a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
+   cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
+6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
+   append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
-8. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
+7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
    every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
 9. Retry-loop failsafe: track your own validation repetition instead of grinding.
