@@ -293,17 +293,24 @@ action_check() {
   # itself spawns a crewmate.
   default=$(default_branch "$FM_ROOT" 2>/dev/null) || default=
   newest=$(report_field newest_upstream_date)
-  sync_item_out=
+  # The baseline records that this episode was FILED, so it may only be written
+  # when the sync item actually landed: the child must have run, exited 0, and
+  # not reported a skip. A hard write failure exits non-zero with nothing on
+  # stdout, and a missing default branch never runs the child at all; both must
+  # leave the baseline alone so the next poll refiles, rather than deferring the
+  # next filing by a whole threshold. The child's stderr still reaches the
+  # operator, and a sync-item failure never fails the drift check itself.
+  sync_item_filed=no
   if [ -n "$default" ]; then
-    sync_item_out=$("$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default") || true
+    if sync_item_out=$("$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default"); then
+      case "$sync_item_out" in
+        *action=skipped*) ;;
+        *) sync_item_filed=yes ;;
+      esac
+    fi
   fi
 
-  # A skipped write filed nothing, so re-baselining here would swallow a whole
-  # threshold-sized block of drift; leave the baseline for the next poll.
-  case "$sync_item_out" in
-    *action=skipped*) ;;
-    *) drift_record_write "$behind" || true ;;
-  esac
+  [ "$sync_item_filed" = no ] || drift_record_write "$behind" || true
   return 0
 }
 

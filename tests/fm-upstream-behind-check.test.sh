@@ -436,6 +436,37 @@ test_a_skipped_sync_item_write_leaves_the_episode_baseline() {
   pass "a skipped sync-item write leaves the episode baseline so the next poll retries"
 }
 
+# A HARD write failure is the other way nothing gets filed: the sync-item
+# script exits non-zero with nothing on stdout, so a gate that only looks for
+# the "action=skipped" string would re-baseline anyway. The failure is provoked
+# for real - tasks-axi keeps its backlog at <home>/backlog.md, and a directory
+# in that path makes the add fail - rather than by stubbing the child.
+test_a_failed_sync_item_write_leaves_the_episode_baseline() {
+  set -e
+  local home root bare out record
+  command -v tasks-axi >/dev/null 2>&1 || { echo "skip - tasks-axi not installed"; return 0; }
+
+  home=$(new_home)
+  rm -f "$home/config/backlog-backend"
+  mkdir -p "$home/backlog.md"
+  root="$TMP_ROOT/drift-hardfail"
+  bare="$TMP_ROOT/drift-hardfail-upstream.git"
+  drift_fixture "$root" "$bare" 6
+  record="$home/state/.upstream-drift"
+
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check 2>/dev/null)
+  assert_contains "$out" "6 commits behind upstream" "drift-hardfail: the drift line must still be reported"
+  assert_absent "$record" \
+    "drift-hardfail: a sync-item write that failed outright must not re-baseline the episode"
+
+  # Clear the fault: the next poll files for real and only then baselines.
+  rmdir "$home/backlog.md"
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "6 commits behind upstream" "drift-hardfail: the retry must re-report the still-unfiled drift"
+  assert_present "$record" "drift-hardfail: a successful write must baseline the episode"
+  pass "a failed sync-item write leaves the episode baseline so the next poll retries"
+}
+
 test_drift_trigger_fires_once_per_episode() {
   set -e
   local home root bare out record i
@@ -667,6 +698,7 @@ test_files_directly_under_skills_dir_are_not_named_as_skills
 test_degrade_preserves_last_known_good_and_retries
 test_drift_trigger_fires_once_per_episode
 test_a_skipped_sync_item_write_leaves_the_episode_baseline
+test_a_failed_sync_item_write_leaves_the_episode_baseline
 test_drift_episode_resets_after_a_sync_lands
 test_drift_baseline_tracks_a_shrinking_gap_downward
 test_drift_check_skips_the_probe_when_no_bound_fits
