@@ -399,6 +399,43 @@ run_drift() {
   FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_UPSTREAM_CHECK_INTERVAL=0 "$CHECK" "$@"
 }
 
+# The sync-item write and the episode baseline are one unit of work: filing
+# nothing but baselining anyway loses a whole threshold-sized block of drift.
+# The skip is provoked through the real refusal path - a live `backlog` lease
+# held by the OTHER supervision actor - not by stubbing the child.
+test_a_skipped_sync_item_write_leaves_the_episode_baseline() {
+  set -e
+  local home root bare out holder record
+
+  home=$(new_home)
+  mkdir -p "$home/config"
+  printf 'manual\n' > "$home/config/backlog-backend"
+  root="$TMP_ROOT/drift-skip"
+  bare="$TMP_ROOT/drift-skip-upstream.git"
+  drift_fixture "$root" "$bare" 6
+  record="$home/state/.upstream-drift"
+
+  mkdir -p "$home/state"
+  sleep 30 &
+  holder=$!
+  printf '%s\n' "$holder" > "$home/state/.lock"
+  printf 'branch\t%s\t%s\n' "$holder" "$(date +%s)" > "$home/state/.lease-backlog"
+
+  out=$(FM_SUPERVISION_ACTOR=main FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check 2>/dev/null)
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+
+  assert_contains "$out" "6 commits behind upstream" "drift-skip: the drift line must still be reported"
+  assert_absent "$record" \
+    "drift-skip: a sync-item write that filed nothing must not re-baseline the episode, or the next filing waits a whole extra threshold"
+
+  # With the contention gone the next poll refiles and baselines for real.
+  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
+  assert_contains "$out" "6 commits behind upstream" "drift-skip: the retry must re-report the still-unfiled drift"
+  assert_present "$record" "drift-skip: a successful write must baseline the episode"
+  pass "a skipped sync-item write leaves the episode baseline so the next poll retries"
+}
+
 test_drift_trigger_fires_once_per_episode() {
   set -e
   local home root bare out record i
@@ -629,6 +666,7 @@ test_upstream_missing_default_branch
 test_files_directly_under_skills_dir_are_not_named_as_skills
 test_degrade_preserves_last_known_good_and_retries
 test_drift_trigger_fires_once_per_episode
+test_a_skipped_sync_item_write_leaves_the_episode_baseline
 test_drift_episode_resets_after_a_sync_lands
 test_drift_baseline_tracks_a_shrinking_gap_downward
 test_drift_check_skips_the_probe_when_no_bound_fits

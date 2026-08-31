@@ -26,6 +26,10 @@
 #   - The gate really is inherited by a secondmate home, as AGENTS.md and
 #     docs/configuration.md promise: propagating the primary's config with the
 #     declared allowlist leaves the secondmate reporting eligible=yes.
+#   - Refreshing the stable-id item after it was completed reopens it, so the
+#     always-on filing yields a dispatchable item on EVERY drift episode, not
+#     only the first one per home.
+#   - Refreshing while a crewmate has the item in flight leaves it in flight.
 #   - An unparseable/unknown newest-upstream date reports days_behind=unknown
 #     rather than a definite 0 that can never cross the 14-day rule.
 set -u
@@ -163,7 +167,7 @@ test_tasks_axi_backend_carries_payload_and_refreshes_title() {
   assert_contains "$shown" "5 commits behind" "sync-item: the tasks-axi title must carry the commit count"
   assert_contains "$shown" "Auto-dispatch eligible: yes" \
     "sync-item: the tasks-axi item body must carry the eligibility signal"
-  assert_contains "$shown" "Pending commits" "sync-item: the tasks-axi item body must carry the commit delta"
+  assert_contains "$shown" "Pending upstream commits" "sync-item: the tasks-axi item body must carry the commit delta"
   assert_contains "$shown" "ship" "sync-item: the filed item must be an ordinary ship task, ready to dispatch"
   assert_contains "$shown" "firstmate" "sync-item: the filed item must name the data/projects.md project it ships against"
   assert_not_contains "$shown" "sKeLe100/" \
@@ -322,6 +326,54 @@ test_gate_is_inherited_by_a_secondmate_home() {
   pass "the autosync gate is inherited by a secondmate home, as documented"
 }
 
+# tasks-axi's own list/show output is the persisted backlog state contract
+# these two assert against; the item's column is the observable behavior.
+axi_state() {  # <home> <id>
+  (cd "$1" && tasks-axi show "$2" 2>/dev/null) | sed -n 's/^[[:space:]]*state:[[:space:]]*//p' | head -n 1
+}
+
+test_refresh_reopens_a_completed_item() {
+  set -e
+  local home root out
+  command -v tasks-axi >/dev/null 2>&1 || { echo "skip - tasks-axi not installed"; return 0; }
+  home=$(new_home)
+  rm -f "$home/config/backlog-backend"
+  : > "$home/config/upstream-autosync"
+  root="$TMP_ROOT/repo-reopen"
+  setup_repo "$root" 9
+
+  file_once "$home" "$root" 5 >/dev/null
+  (cd "$home" && tasks-axi done upstream-sync >/dev/null)
+  [ "$(axi_state "$home" upstream-sync)" = done ] || fail "sync-item: fixture failed to complete the item"
+
+  out=$(file_once "$home" "$root" 9) || fail "sync-item: refresh after completion failed: $out"
+  assert_contains "$out" "action=refreshed" "sync-item: a later episode must refresh the stable id"
+  [ "$(axi_state "$home" upstream-sync)" = queued ] \
+    || fail "sync-item: a new drift episode must leave a dispatchable (queued) item, not a retitled done one"
+  assert_contains "$(cd "$home" && tasks-axi list --state queued)" "9 commits behind" \
+    "sync-item: the reopened item must carry the new episode's payload"
+  pass "a new drift episode reopens the completed sync item so it is dispatchable again"
+}
+
+test_refresh_leaves_an_in_flight_item_alone() {
+  set -e
+  local home root
+  command -v tasks-axi >/dev/null 2>&1 || { echo "skip - tasks-axi not installed"; return 0; }
+  home=$(new_home)
+  rm -f "$home/config/backlog-backend"
+  : > "$home/config/upstream-autosync"
+  root="$TMP_ROOT/repo-inflight"
+  setup_repo "$root" 9
+
+  file_once "$home" "$root" 5 >/dev/null
+  (cd "$home" && tasks-axi start upstream-sync >/dev/null)
+
+  file_once "$home" "$root" 9 >/dev/null
+  [ "$(axi_state "$home" upstream-sync)" = in_flight ] \
+    || fail "sync-item: refreshing must not pull back work a crewmate has in flight"
+  pass "a refresh leaves an in-flight sync item in flight"
+}
+
 test_dedup_refreshes_in_place
 test_below_threshold_stays_ineligible_with_config
 test_at_threshold_is_eligible_with_config
@@ -333,3 +385,5 @@ test_same_actor_backlog_lease_survives_the_run
 test_unknown_date_is_not_reported_as_zero_days
 test_indented_markers_are_still_refreshed
 test_gate_is_inherited_by_a_secondmate_home
+test_refresh_reopens_a_completed_item
+test_refresh_leaves_an_in_flight_item_alone

@@ -161,7 +161,7 @@ note_body() {
   if [ -n "$overlap_shown" ]; then
     printf '%s\n' "$overlap_shown" | sed 's/^/  - /'
   fi
-  printf 'Pending commits (upstream/%s..this branch reversed):\n' "$default"
+  printf 'Pending upstream commits (%s..upstream/%s):\n' "$default" "$default"
   printf '%s\n' "$log_delta"
 }
 
@@ -176,8 +176,18 @@ if fm_tasks_axi_backend_available "$FM_HOME/config"; then
   body_file=$(mktemp "${TMPDIR:-/tmp}/fm-upstream-sync-body.XXXXXX") || exit 1
   trap 'rm -f "$body_file"' EXIT
   note_body > "$body_file"
-  if (cd "$FM_HOME" && tasks-axi show "$ITEM_ID" >/dev/null 2>&1); then
+  if item_shown=$(cd "$FM_HOME" && tasks-axi show "$ITEM_ID" 2>/dev/null); then
     action=refreshed
+    # A closed item must come back to Queued or the refreshed payload is not
+    # dispatchable; a queued item needs nothing and an in_flight item must be
+    # left alone, because reopen would pull back a crewmate's active work.
+    item_state=$(printf '%s\n' "$item_shown" | sed -n 's/^[[:space:]]*state:[[:space:]]*//p' | head -n 1)
+    case "$item_state" in
+      done|closed)
+        (cd "$FM_HOME" && tasks-axi reopen "$ITEM_ID" >/dev/null) \
+          || { echo "error: tasks-axi reopen $ITEM_ID failed; the refreshed sync item is not dispatchable" >&2; exit 1; }
+        ;;
+    esac
     (cd "$FM_HOME" && tasks-axi update "$ITEM_ID" --title "$title" \
       --kind "$ITEM_KIND" --repo "$ITEM_REPO" \
       --body-file "$body_file" --archive-body >/dev/null) \
