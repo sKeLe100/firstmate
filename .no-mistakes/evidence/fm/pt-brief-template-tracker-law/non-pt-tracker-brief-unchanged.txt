@@ -1,0 +1,3 @@
+$ bin/fm-brief.sh oth1 some-repo --mode direct-PR   # base 91f80b7 vs target 7333431, FM_ROOT/FM_HOME paths normalized
+$ diff <base brief.md> <target brief.md>
+(no output - identical)
