@@ -352,24 +352,25 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   # Extract warning lines from the CI log. Each warning block starts with
   # "warning: could not check CI:" (no-mistakes v1.32.2+). Count occurrences
   # of each unique warning *prefix* (the command+error, not the full help
-  # dump). When the same error repeats N+ times and there's no intervening
-  # progress marker (base-branch advance, merge, checks-passed), it's a wedge.
+  # dump). When the same error repeats N+ times with no progress marker after
+  # the last error occurrence, it's a wedge.
   local warnings
   warnings=$(printf '%s\n' "$log_tail" | grep -E '^warning: could not check CI:|^log: --verbose .+exit status 1' || true)
   [ -n "$warnings" ] || return 1
+  # Get the line number of the last repeated error (relative to log_tail).
+  local last_error_line
+  last_error_line=$(printf '%s\n' "$log_tail" | grep -n -E '^warning: could not check CI:|^log: --verbose .+exit status 1' | tail -1 | cut -d: -f1)
+  # Progress markers that indicate forward CI progress (must match the marker
+  # parser at nm_ci_checks_state line ~403 for consistency).
+  local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed|no CI checks reported - still monitoring|CI checks running'
   # Extract the error prefix from each warning line (e.g.,
   # "gh api workflow runs for head commit: unknown flag: --slurp").
   local prefixes
   prefixes=$(printf '%s\n' "$warnings" \
     | sed -E 's/^warning: could not check CI: //;s/^log: --verbose //;s/exit status 1$//;s/[[:space:]]*$//' \
     | sort | uniq -c | sort -rn)
-  # Count progress markers that would break the wedge pattern. This depends
-  # only on the log tail, so compute it once before scanning the prefixes.
-  local progress_count
-  progress_count=$(printf '%s\n' "$log_tail" \
-    | grep -cE 'base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed' || true)
-  [ "$progress_count" -eq 0 ] || return 1
-  # Check each error prefix: if any reaches the threshold, report the wedge.
+  # Check each error prefix: if any reaches the threshold, verify there's
+  # no progress marker after the last error occurrence.
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     local count error_type
@@ -378,8 +379,16 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     if [ "$count" -lt "$WEDGE_THRESHOLD" ]; then
       continue
     fi
-    printf '%d:%s' "$count" "$error_type"
-    return 0
+    # Count progress markers that appear after the last repeated error.
+    local progress_count=0
+    if [ -n "$last_error_line" ]; then
+      progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
+        | grep -cE "$progress_markers" || true)
+    fi
+    if [ "$progress_count" -eq 0 ]; then
+      printf '%d:%s' "$count" "$error_type"
+      return 0
+    fi
   done <<< "$prefixes"
   return 1
 }
@@ -592,7 +601,7 @@ if [ "$HAVE_RUN" = 1 ]; then
               RUN_DETAIL="checks green: PR ready for review (still monitoring for merge/close)"
             elif printf '%s' "$CI_LOG_STATE" | grep -q '^wedge:'; then
               RUN_STATE=failed
-              RUN_DETAIL="CI polling wedge: $CI_LOG_STATE - run is stuck, no forward progress"
+               RUN_DETAIL="CI polling wedge: ${CI_LOG_STATE#wedge: } - run is stuck, no forward progress"
             fi
             ;;
           fixing)
