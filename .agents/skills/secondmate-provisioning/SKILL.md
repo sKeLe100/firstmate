@@ -220,6 +220,9 @@ An SSH transport failure or unreadable remote endpoint remains unknown and must 
 `stuck-crewmate-recovery`'s remote-secondmate note owns why the endpoint-dead and send-failed verdicts that seem to justify this are themselves unreliable.
 Respawn re-resolves the secondmate harness from current config, uses the same guarded pre-launch sync, and re-propagates inherited local material, so recovered secondmates converge inherited config items and shared captain preferences whenever their home validates; tracked-file sync remains guarded separately.
 If the secondmate is already running and only inherited local material changed, prefer `bin/fm-config-push.sh` over respawning.
+Before pinging or resuming a LOCAL secondmate that is already running - never before a fresh respawn of a genuinely dead one - run `bin/fm-returning-session-check.sh <secondmate-home>` to read its last known context level.
+A `verdict=restart-with-carryover` line means relaunch it with a carryover note instead of an ordinary ping: `bin/fm-control.sh <id> relaunch --note "carryover: what is done, what is live, exact pickup commands"`, exactly as docs/configuration.md "Session context thresholds" already prescribes for the restart band.
+`verdict=resume` or `verdict=unknown` means proceed with the ordinary ping or relaunch below.
 To move a live LOCAL secondmate onto a newly pinned harness, model, or effort without a full recovery, set `config/secondmate-harness` and then relaunch it with `bin/fm-control.sh <id> relaunch`, which re-resolves that pin, stops the agent, and launches the replacement in the same home ([`docs/agent-control.md`](../../../docs/agent-control.md)).
 That plane refuses a remotely placed secondmate by name, because its agent runs on another host where none of the plane's postconditions can be read; use the remote route's own relaunch path for those.
 
