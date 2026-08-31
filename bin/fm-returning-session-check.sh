@@ -30,15 +30,19 @@
 #   verdict=restart-with-carryover band=restart context_tokens=<N> \
 #     restart_tokens=<N> transcript=<path>
 #   verdict=unknown reason=<text>
-#     printed when no transcript or usage record exists yet (a non-claude
-#     harness, or no session has run there yet). Unknown is not evidence of
-#     either band, so callers proceed with an ordinary bare resume rather than
-#     forcing a restart on missing data.
+#     printed only for fm-context-usage.sh's known no-evidence-yet failures -
+#     no Claude transcript directory, no *.jsonl transcript found, transcript
+#     not found, no assistant usage record (a non-claude harness, or no
+#     session has run there yet). Unknown is not evidence of either band, so
+#     callers proceed with an ordinary bare resume rather than forcing a
+#     restart on missing data.
 #   verdict=blocked reason=<text>
-#     printed when the home's threshold configuration is broken (a malformed
-#     or unrecognized config/context-thresholds), so no band can be trusted.
-#     A broken config is a fault to fix, never evidence that a bare resume is
-#     safe, so this exits non-zero.
+#     printed for every other fm-context-usage.sh failure: a broken
+#     config/context-thresholds, an unreadable file, a missing interpreter, or
+#     any failure text this script does not recognize. Anything that is not
+#     positively known to be missing evidence is a fault to fix, never
+#     evidence that a bare resume is safe, so it fails safe here and exits
+#     non-zero.
 #
 # verdict=restart-with-carryover means: do not bare-resume this session.
 # Checkpoint its durable state and bring it back through the existing
@@ -55,7 +59,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,58p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -83,12 +87,13 @@ usage_output="$(FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" ||
 if [ "$usage_status" -ne 0 ]; then
   reason="$(printf '%s' "$usage_output" | tr '\n' ' ' | sed 's/  */ /g')"
   case "$reason" in
-    *malformed*|*"unrecognized line"*|*"must be positive"*|*"is not a regular file"*)
-      echo "verdict=blocked reason=${reason:-fm-context-usage.sh failed}"
-      exit 1 ;;
+    *"no Claude transcript directory"*|*"no *.jsonl transcript found"*|\
+    *"transcript not found"*|*"no assistant usage record"*)
+      echo "verdict=unknown reason=$reason"
+      exit 0 ;;
   esac
-  echo "verdict=unknown reason=${reason:-fm-context-usage.sh failed}"
-  exit 0
+  echo "verdict=blocked reason=${reason:-fm-context-usage.sh failed}"
+  exit 1
 fi
 
 # usage_output is one data-only line: context_tokens=<N> window=<W>
@@ -108,8 +113,8 @@ for field in $usage_output; do
 done
 
 if [ -z "$band" ]; then
-  echo "verdict=unknown reason=fm-context-usage.sh produced no band field"
-  exit 0
+  echo "verdict=blocked reason=fm-context-usage.sh produced no band field"
+  exit 1
 fi
 
 if [ "$band" = "restart" ]; then

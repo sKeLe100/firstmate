@@ -75,6 +75,28 @@ case "$out" in
   *) fail "expected verdict=unknown for a transcript-free home, got: $out" ;;
 esac
 
+# 4b. The other no-evidence-yet shapes stay unknown too: a project dir with no
+#     transcript file, and a transcript with no assistant usage record.
+empty_proj_home="$tmp/empty_proj_home"
+mkdir -p "$empty_proj_home"
+mkdir -p "$tmp/claude_home/.claude/projects/$(printf '%s' "$empty_proj_home" | tr -c 'a-zA-Z0-9' '-')"
+out="$(HOME="$tmp/claude_home" "$bin" "$empty_proj_home")"
+case "$out" in
+  verdict=unknown\ reason=*) ;;
+  *) fail "expected verdict=unknown for a home with no transcript file, got: $out" ;;
+esac
+
+no_usage_home="$tmp/no_usage_home"
+mkdir -p "$no_usage_home"
+no_usage_proj="$tmp/claude_home/.claude/projects/$(printf '%s' "$no_usage_home" | tr -c 'a-zA-Z0-9' '-')"
+mkdir -p "$no_usage_proj"
+printf '{"type":"user","message":{"content":"hi"}}\n' > "$no_usage_proj/session.jsonl"
+out="$(HOME="$tmp/claude_home" "$bin" "$no_usage_home")"
+case "$out" in
+  verdict=unknown\ reason=*) ;;
+  *) fail "expected verdict=unknown for a transcript with no usage record, got: $out" ;;
+esac
+
 # 5. A broken config/context-thresholds is a blocked verdict with a non-zero
 #    exit, never an unknown that reads as safe to bare-resume.
 bad_home="$tmp/bad_home"
@@ -88,6 +110,26 @@ case "$out" in
   verdict=blocked\ reason=*) ;;
   *) fail "expected verdict=blocked for a malformed thresholds config, got: $out" ;;
 esac
+
+# 5b. An unclassified failure - here a config/context-thresholds that exists
+#     but cannot be read - must fail safe as blocked, not open as unknown.
+unreadable_home="$tmp/unreadable_home"
+mk_home "$unreadable_home" 60000
+mkdir -p "$unreadable_home/config"
+printf 'warn=10000\nrestart=50000\n' > "$unreadable_home/config/context-thresholds"
+chmod 000 "$unreadable_home/config/context-thresholds"
+if [ -r "$unreadable_home/config/context-thresholds" ]; then
+  echo "skip: running as a user that can read mode-000 files, skipping unreadable-config case" >&2
+else
+  if out="$(HOME="$tmp/claude_home" "$bin" "$unreadable_home")"; then
+    fail "expected non-zero exit for an unreadable thresholds config, got: $out"
+  fi
+  case "$out" in
+    verdict=blocked\ reason=*) ;;
+    *) fail "expected verdict=blocked for an unreadable thresholds config, got: $out" ;;
+  esac
+fi
+chmod 644 "$unreadable_home/config/context-thresholds"
 
 # 6. A relative home path is a usage error, not a silent unknown, because
 #    transcript directories are keyed on the absolute path.

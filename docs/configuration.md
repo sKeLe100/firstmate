@@ -253,7 +253,7 @@ The restart mechanics reuse the existing owners rather than a parallel mechanism
 
 To read another session's usage, run the helper with `FM_HOME` set to that session's working directory (a task worktree or secondmate home); thresholds then resolve against that home's own `config/context-thresholds`.
 `bin/fm-returning-session-check.sh <home-path>` wraps that same read into a `verdict=resume|restart-with-carryover|unknown` line for the specific moment a returning session (not a fresh spawn) is pinged or restarted, so `stuck-crewmate-recovery` and `secondmate-provisioning` can choose an ordinary resume versus the carryover-restart mechanics above without duplicating this threshold logic.
-It takes an absolute home path, and reports `verdict=blocked` with a non-zero exit when that home's `config/context-thresholds` is malformed, so a corrupted override is surfaced rather than silently read as safe to resume.
+It takes an absolute home path, and reports `verdict=unknown` only when the home has no transcript or usage record yet; every other read failure, including a malformed or unreadable `config/context-thresholds`, is `verdict=blocked` with a non-zero exit, so a broken setup is surfaced rather than silently read as safe to resume.
 The live `<total_tokens>` countdown can stick at 0 and is never evidence of exhausted context; the helper's transcript-derived reading is the only trusted source.
 Ship briefs scaffolded by `bin/fm-brief.sh` carry that same instruction as a standing rule, so a crewmate reads its context with `/context` or the helper instead of the countdown without being told per task.
 The helper's header owns exact parsing and output mechanics.
