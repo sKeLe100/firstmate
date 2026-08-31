@@ -57,7 +57,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 ITEM_ID=upstream-sync
 ITEM_KIND=ship
-ITEM_REPO=sKeLe100/firstmate
+ITEM_REPO=firstmate
 BACKLOG_MD="$FM_HOME/data/backlog.md"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 BACKLOG_WRITE_LOCK="$STATE/.fm-upstream-sync-item.lock"

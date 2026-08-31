@@ -23,6 +23,9 @@
 #     unattended script must never release the supervising session's lease.
 #   - A hand-indented marker pair is still refreshed in place, rather than
 #     reporting action=refreshed while silently dropping the new payload.
+#   - The gate really is inherited by a secondmate home, as AGENTS.md and
+#     docs/configuration.md promise: propagating the primary's config with the
+#     declared allowlist leaves the secondmate reporting eligible=yes.
 #   - An unparseable/unknown newest-upstream date reports days_behind=unknown
 #     rather than a definite 0 that can never cross the 14-day rule.
 set -u
@@ -162,7 +165,9 @@ test_tasks_axi_backend_carries_payload_and_refreshes_title() {
     "sync-item: the tasks-axi item body must carry the eligibility signal"
   assert_contains "$shown" "Pending commits" "sync-item: the tasks-axi item body must carry the commit delta"
   assert_contains "$shown" "ship" "sync-item: the filed item must be an ordinary ship task, ready to dispatch"
-  assert_contains "$shown" "sKeLe100/firstmate" "sync-item: the filed item must name the repo it ships against"
+  assert_contains "$shown" "firstmate" "sync-item: the filed item must name the data/projects.md project it ships against"
+  assert_not_contains "$shown" "sKeLe100/" \
+    "sync-item: --repo is a data/projects.md project name, not an owner/repo slug, or posture resolution falls back"
 
   out2=$(file_once "$home" "$root" 21) || fail "sync-item: tasks-axi backend refresh failed: $out2"
   assert_contains "$out2" "action=refreshed" "sync-item: a second episode must report refreshed, not filed"
@@ -287,6 +292,36 @@ test_indented_markers_are_still_refreshed() {
   pass "a hand-indented marker pair is refreshed in place, not silently skipped"
 }
 
+# Exercises the real propagation entry point with the DECLARED allowlist (no
+# FM_INHERITABLE_CONFIG override), then the sync item's own eligibility output
+# in the receiving home, so the documented inheritance is proven end to end.
+test_gate_is_inherited_by_a_secondmate_home() {
+  set -e
+  local primary second root out
+  # shellcheck source=bin/fm-config-inherit-lib.sh
+  . "$ROOT/bin/fm-config-inherit-lib.sh"
+  primary=$(new_home)
+  : > "$primary/config/upstream-autosync"
+  second=$(new_home)
+  git init -q -b main "$second"
+  printf 'config/\n' > "$second/.gitignore"
+  printf 'seed\n' > "$second/README.md"
+  git -C "$second" add -A && git -C "$second" commit -qm seed
+  root="$TMP_ROOT/repo-inherit"
+  setup_repo "$root" 6
+
+  propagate_inheritable_config "$primary/config" "$second/config" \
+    || fail "sync-item: propagating the primary's config failed"
+  [ -e "$second/config/upstream-autosync" ] \
+    || fail "sync-item: config/upstream-autosync is documented as inherited but was not propagated"
+
+  out=$(FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD=5 FM_HOME="$second" FM_ROOT_OVERRIDE="$root" \
+    "$ITEM" file 6 "$(date +%F)" main)
+  assert_contains "$out" "eligible=yes" \
+    "sync-item: the inherited gate must make the secondmate home dispatch-eligible too"
+  pass "the autosync gate is inherited by a secondmate home, as documented"
+}
+
 test_dedup_refreshes_in_place
 test_below_threshold_stays_ineligible_with_config
 test_at_threshold_is_eligible_with_config
@@ -297,3 +332,4 @@ test_held_backlog_lease_skips_the_write
 test_same_actor_backlog_lease_survives_the_run
 test_unknown_date_is_not_reported_as_zero_days
 test_indented_markers_are_still_refreshed
+test_gate_is_inherited_by_a_secondmate_home
