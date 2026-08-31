@@ -31,7 +31,7 @@
 #   fm-upstream-sync-item.sh file <behind> <newest_upstream_date> <default-branch>
 #     Files or refreshes the backlog item and prints:
 #       item_id=upstream-sync
-#       action=filed|refreshed
+#       action=filed|refreshed|skipped
 #       behind=<N>
 #       days_behind=<N>
 #       eligible=yes|no
@@ -76,7 +76,11 @@ case "$behind" in ''|*[!0-9]*) echo "error: <behind> must be a non-negative inte
 days_behind=0
 if [ -n "$newest" ] && [ "$newest" != unknown ]; then
   now_epoch=$(date +%s)
-  newest_epoch=$(date -d "$newest" +%s 2>/dev/null) || newest_epoch=
+  if [ "$(uname)" = Darwin ]; then
+    newest_epoch=$(date -j -f %Y-%m-%d "$newest" +%s 2>/dev/null) || newest_epoch=
+  else
+    newest_epoch=$(date -d "$newest" +%s 2>/dev/null) || newest_epoch=
+  fi
   if [ -n "$newest_epoch" ]; then
     diff=$(( (now_epoch - newest_epoch) / 86400 ))
     [ "$diff" -ge 0 ] || diff=0
@@ -144,38 +148,61 @@ note_body() {
   printf '%s\n' "$log_delta"
 }
 
+title="Upstream sync ($behind commits behind)"
 action=filed
 if fm_tasks_axi_backend_available "$FM_HOME/config"; then
-  if (cd "$FM_HOME" && tasks-axi list --state queued --fields id 2>/dev/null | grep -qx "$ITEM_ID") \
-    || (cd "$FM_HOME" && tasks-axi list --state held --fields id 2>/dev/null | grep -qx "$ITEM_ID") \
-    || (cd "$FM_HOME" && tasks-axi list --state in_flight --fields id 2>/dev/null | grep -qx "$ITEM_ID"); then
+  # `tasks-axi show <id>` is the existence probe: it exits non-zero with
+  # NOT_FOUND for an unknown id and covers every state, so the one stable id
+  # is refreshed rather than re-filed no matter which column it currently
+  # sits in. The body is the only channel the eligibility signal survives on,
+  # so a failed write is an error here, not a silent no-op.
+  body_file=$(mktemp "${TMPDIR:-/tmp}/fm-upstream-sync-body.XXXXXX") || exit 1
+  trap 'rm -f "$body_file"' EXIT
+  note_body > "$body_file"
+  if (cd "$FM_HOME" && tasks-axi show "$ITEM_ID" >/dev/null 2>&1); then
     action=refreshed
-    note_body | (cd "$FM_HOME" && tasks-axi update "$ITEM_ID" --note-file - >/dev/null 2>&1) \
-      || note_body | (cd "$FM_HOME" && tasks-axi update "$ITEM_ID" --note - >/dev/null 2>&1) || true
+    (cd "$FM_HOME" && tasks-axi update "$ITEM_ID" --title "$title" \
+      --body-file "$body_file" --archive-body >/dev/null) \
+      || { echo "error: tasks-axi update $ITEM_ID failed; the sync item carries no eligibility signal" >&2; exit 1; }
   else
-    (cd "$FM_HOME" && tasks-axi add "$ITEM_ID" --title "Upstream sync ($behind commits behind)" >/dev/null 2>&1) || true
-    note_body | (cd "$FM_HOME" && tasks-axi update "$ITEM_ID" --note-file - >/dev/null 2>&1) \
-      || note_body | (cd "$FM_HOME" && tasks-axi update "$ITEM_ID" --note - >/dev/null 2>&1) || true
+    (cd "$FM_HOME" && tasks-axi add "$ITEM_ID" "$title" --body-file "$body_file" >/dev/null) \
+      || { echo "error: tasks-axi add $ITEM_ID failed" >&2; exit 1; }
   fi
 else
+  # data/backlog.md is a whole-file replace here, which is exactly what the
+  # reserved `backlog` lease guards (bin/fm-lease.sh); the tasks-axi path
+  # above is deliberately unguarded because tasks-axi owns its own locks.
   mkdir -p "$(dirname "$BACKLOG_MD")" 2>/dev/null || true
   [ -f "$BACKLOG_MD" ] || : > "$BACKLOG_MD"
-  block=$(printf '%s\n### %s\n%s\n%s\n' "$MARK_START" "$ITEM_ID" "$(note_body)" "$MARK_END")
-  if grep -qF "$MARK_START" "$BACKLOG_MD" 2>/dev/null; then
-    action=refreshed
-    tmp=$(mktemp "$BACKLOG_MD.XXXXXX")
-    if awk -v start="$MARK_START" -v end="$MARK_END" -v block="$block" '
-      $0 == start { print block; skip=1; next }
-      $0 == end { if (skip) { skip=0; next } }
-      skip { next }
-      { print }
-    ' "$BACKLOG_MD" > "$tmp"; then
-      mv -f "$tmp" "$BACKLOG_MD"
-    else
-      rm -f "$tmp"
-    fi
+  if ! "$SCRIPT_DIR/fm-lease.sh" claim backlog >/dev/null 2>&1; then
+    echo "warning: the backlog lease is held elsewhere; skipping the sync item write this episode" >&2
+    action=skipped
   else
-    { printf '\n'; printf '%s\n' "$block"; } >> "$BACKLOG_MD"
+    trap '"$SCRIPT_DIR/fm-lease.sh" release backlog >/dev/null 2>&1 || true' EXIT
+    block=$(printf '%s\n### %s\n%s\n%s\n' "$MARK_START" "$ITEM_ID" "$(note_body)" "$MARK_END")
+    if grep -qF "$MARK_START" "$BACKLOG_MD" 2>/dev/null; then
+      action=refreshed
+      tmp=$(mktemp "$BACKLOG_MD.XXXXXX")
+      # A lost end marker must not swallow every item after the block, so the
+      # rewrite is only committed when the marker pair was actually closed.
+      # The block travels through the environment: awk -v expands backslash
+      # escapes, which would mangle an upstream commit subject.
+      if FM_SYNC_BLOCK="$block" awk -v start="$MARK_START" -v end="$MARK_END" '
+        $0 == start { print ENVIRON["FM_SYNC_BLOCK"]; skip=1; next }
+        $0 == end { if (skip) { skip=0; next } }
+        skip { next }
+        { print }
+        END { exit (skip ? 1 : 0) }
+      ' "$BACKLOG_MD" > "$tmp"; then
+        mv -f "$tmp" "$BACKLOG_MD"
+      else
+        rm -f "$tmp"
+        echo "error: $BACKLOG_MD has an unterminated $MARK_START block; leaving it untouched" >&2
+        action=skipped
+      fi
+    else
+      { printf '\n'; printf '%s\n' "$block"; } >> "$BACKLOG_MD"
+    fi
   fi
 fi
 
