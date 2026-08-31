@@ -231,7 +231,8 @@ test_fresh_spawn_without_redelegation_omits_from_task_id() {
     [ -n "$line" ] || continue
     [ "$(field "$line" event_type)" = dispatch ] || continue
     [ "$(field "$line" task_id)" = "$task_id" ] || continue
-    local from_id=$(field "$line" from_task_id)
+    local from_id
+    from_id=$(field "$line" from_task_id)
     [ -z "$from_id" ] || fail "dispatch record should not have from_task_id for an ordinary spawn: $line"
     [ "$(field "$line" purpose)" = review ] || fail "dispatch record has wrong purpose: $line"
     found=1
