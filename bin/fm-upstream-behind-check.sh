@@ -154,7 +154,11 @@ fi
 #
 # The threshold is a constant so the shipped behavior is one reviewable number,
 # with FM_UPSTREAM_DRIFT_THRESHOLD as the local override (tests use it too).
-DRIFT_THRESHOLD_DEFAULT=25
+# Matches FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD's default (fm-upstream-sync-item.sh)
+# so an episode is never filed already past the auto-dispatch eligibility line -
+# a higher episode threshold here would let drift reach dispatch-eligible size
+# before the backlog item filing this episode drives even exists.
+DRIFT_THRESHOLD_DEFAULT=5
 DRIFT_CHECK_ID=upstream-drift
 DRIFT_RECORD="$STATE/.upstream-drift"
 DRIFT_CHECK_SHIM="$STATE/$DRIFT_CHECK_ID.check.sh"

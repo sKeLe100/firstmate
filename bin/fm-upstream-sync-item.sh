@@ -104,7 +104,11 @@ overlap_count=0
 [ -z "$overlap" ] || overlap_count=$(printf '%s\n' "$overlap" | sed '/^$/d' | wc -l | tr -d '[:space:]')
 shown_limit="${FM_UPSTREAM_AUTOSYNC_OVERLAP_SHOWN:-20}"
 case "$shown_limit" in ''|*[!0-9]*) shown_limit=20 ;; esac
-overlap_shown=$([ -z "$overlap" ] && echo "" || printf '%s\n' "$overlap" | sed '/^$/d' | head -n "$shown_limit")
+if [ -z "$overlap" ]; then
+  overlap_shown=""
+else
+  overlap_shown=$(printf '%s\n' "$overlap" | sed '/^$/d' | head -n "$shown_limit")
+fi
 
 # --- eligibility --------------------------------------------------------
 commit_threshold="${FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD:-5}"
@@ -160,12 +164,16 @@ else
   if grep -qF "$MARK_START" "$BACKLOG_MD" 2>/dev/null; then
     action=refreshed
     tmp=$(mktemp "$BACKLOG_MD.XXXXXX")
-    awk -v start="$MARK_START" -v end="$MARK_END" -v block="$block" '
+    if awk -v start="$MARK_START" -v end="$MARK_END" -v block="$block" '
       $0 == start { print block; skip=1; next }
       $0 == end { if (skip) { skip=0; next } }
       skip { next }
       { print }
-    ' "$BACKLOG_MD" > "$tmp" && mv -f "$tmp" "$BACKLOG_MD" || rm -f "$tmp"
+    ' "$BACKLOG_MD" > "$tmp"; then
+      mv -f "$tmp" "$BACKLOG_MD"
+    else
+      rm -f "$tmp"
+    fi
   else
     { printf '\n'; printf '%s\n' "$block"; } >> "$BACKLOG_MD"
   fi
