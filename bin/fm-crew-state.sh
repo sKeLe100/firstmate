@@ -47,10 +47,14 @@
 #      forward-progress marker after its last occurrence) and overrides
 #      working -> failed, so a poll that can never progress surfaces as
 #      terminal instead of monitoring forever (see nm_ci_wedge_detected).
-#      The wedge verdict is taken before the marker parse, so it also wins
-#      over a green marker. The coarse cross-branch fallback (where the log
-#      may belong to another branch's run) is never wedge-checked: it reports
-#      that run's own state without a wedge verdict.
+#      A per-poll heartbeat trailing those failures is not progress unless no
+#      heartbeat is interleaved with them, but any genuine progress marker
+#      after the last failure - including a green one - clears the wedge.
+#      The wedge verdict is taken before the marker parse, so it wins over a
+#      green marker that PRECEDES the repeated failures. The coarse
+#      cross-branch fallback (where the log may belong to another branch's
+#      run) is never wedge-checked: it reports that run's own state without a
+#      wedge verdict.
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
@@ -358,17 +362,21 @@ WEDGE_THRESHOLD=5
 nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:error_type"
   local log_tail=$1
   [ -n "$log_tail" ] || return 1
-  # Extract warning lines from the CI log. Each warning block starts with
-  # "warning: could not check CI:" (no-mistakes v1.32.2+). Count occurrences
-  # of each unique warning *prefix* (the command+error, not the full help
-  # dump). When the same error repeats N+ times with no progress marker after
-  # the last error occurrence, it's a wedge.
+  # Extract failure lines from the CI log: a warning block starting with
+  # "warning: could not check CI:" (no-mistakes v1.32.2+), or a failing
+  # verbose command line ("log: --verbose ... exit status 1"). Count
+  # occurrences of each unique failure *prefix* (the command+error, not the
+  # full help dump). When the same error repeats N+ times with no progress
+  # marker after the last error occurrence, it's a wedge.
   local warnings
   warnings=$(printf '%s\n' "$log_tail" | grep -E '^warning: could not check CI:|^log: --verbose .+exit status 1' || true)
   [ -n "$warnings" ] || return 1
   # Markers that indicate real forward CI progress, and per-poll heartbeat
-  # markers that merely say the loop ran again (together they must match the
-  # marker parser in nm_ci_checks_state below for consistency).
+  # markers that merely say the loop ran again. Together they cover every
+  # marker the parser in nm_ci_checks_state below recognizes, plus terminal
+  # markers ("PR has been merged", "checks green", "outcome=") that only
+  # appear on the wedge path; the split between the two lists is what keeps a
+  # trailing heartbeat from masking a wedge.
   local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|no CI checks reported - still monitoring|outcome=|checks failed|issues detected'
   local heartbeat_markers='no CI checks reported yet|CI checks running'
   # Extract the error prefix from each warning line (e.g.,
