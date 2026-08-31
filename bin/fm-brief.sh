@@ -473,6 +473,25 @@ esac
 
 DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 
+# The tracker-entry law: pt-tracker requires a planning-surface entry and
+# ROADMAP execution prompt BEFORE dispatch. This is a literal, non-negotiable
+# pre-dispatch precondition specific to that repo, not a generalized per-project
+# policy framework (AGENTS.md section 7, captain's 2026-08-18 post-mortem Q1).
+if [ "$REPO" = pt-tracker ]; then
+IFS= read -r -d '' TRACKER_LAW_SECTION <<'EOF' || true
+
+# pt-tracker tracker-entry law
+Before any work begins on pt-tracker, you MUST complete BOTH of the following:
+1. Use the ROADMAP execution prompt in the pt-tracker repo to plan and design the work.
+2. Create a CURRENT.md tracker entry in the pt-tracker repo's planning surfaces.
+This is a pre-dispatch precondition, not a post-dispatch step. Do not start implementation
+until both items above are complete and recorded in CURRENT.md.
+EOF
+TRACKER_LAW_SECTION=${TRACKER_LAW_SECTION%$'\n'}
+else
+TRACKER_LAW_SECTION=""
+fi
+
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
@@ -538,6 +557,8 @@ $RULE1
    re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
 
 $INBOX_SECTION
+
+$TRACKER_LAW_SECTION
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
