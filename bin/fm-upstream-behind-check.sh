@@ -282,6 +282,17 @@ action_check() {
   # Report before recording, so a record that cannot be written costs a repeated
   # report rather than a lost one.
   printf '%s\n' "$FM_LINE_CAP_LINE"
+
+  # File-or-refresh the one stable-id sync backlog item and surface its
+  # auto-dispatch eligibility (config/upstream-autosync; docs/configuration.md
+  # "Upstream autosync"). This is always active - it is the AUTOMATIC filing
+  # AGENTS.md section 7 describes - and never itself spawns a crewmate.
+  default=$(default_branch "$FM_ROOT" 2>/dev/null) || default=
+  newest=$(report_field newest_upstream_date)
+  if [ -n "$default" ]; then
+    "$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default" >/dev/null 2>&1 || true
+  fi
+
   drift_record_write "$behind" || true
   return 0
 }

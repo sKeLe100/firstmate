@@ -6,7 +6,7 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab] [--upstream-sync]
 #        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -27,6 +27,15 @@
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
+#   --upstream-sync applies only to a ship brief for an auto-dispatched upstream
+#   sync task (AGENTS.md section 7; docs/configuration.md "Upstream autosync").
+#   It adds the non-negotiable gates: never yolo-merge the sync PR regardless of
+#   the project's merge posture, stop at needs-decision on any conflict in a
+#   supervision-safety file (bin/fm-watch.sh, bin/fm-classify-lib.sh,
+#   bin/fm-task-inbox-lib.sh, bin/fm-teardown.sh) with a three-way summary, stop
+#   at blocked on any test failure not reproduced identically on the pre-merge
+#   base, and keep the PR to only the merge commit plus labeled
+#   conflict-resolution commits, with regressions filed as separate follow-ups.
 # For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
 # captain's standing posture as context, and this script never reads it:
@@ -106,6 +115,7 @@ else
 fi
 KIND=ship
 HERDR_LAB=0
+UPSTREAM_SYNC=0
 NO_PROJECTS=0
 MODE=
 MODE_SET=0
@@ -127,6 +137,7 @@ for a in "$@"; do
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
     --herdr-lab) HERDR_LAB=1 ;;
+    --upstream-sync) UPSTREAM_SYNC=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
@@ -161,6 +172,11 @@ ID=${POS[0]}
 
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
+  exit 1
+fi
+
+if [ "$UPSTREAM_SYNC" -eq 1 ] && [ "$KIND" != ship ]; then
+  echo "error: --upstream-sync applies only to a ship brief" >&2
   exit 1
 fi
 
@@ -324,6 +340,22 @@ EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
+UPSTREAM_SYNC_SECTION=
+if [ "$UPSTREAM_SYNC" -eq 1 ]; then
+# shellcheck disable=SC2016  # single quotes are deliberate: these lines are literal brief text that must reach the reading agent verbatim; only the '"'"' break-outs interpolate a literal apostrophe.
+UPSTREAM_SYNC_SECTION=$(printf '%s\n' \
+'# Upstream sync - HARD SAFETY GATES' \
+'This brief was explicitly scaffolded with `--upstream-sync`: it merges upstream drift into this fork.' \
+'These gates are non-negotiable and apply even on a yolo-postured project.' \
+'' \
+'1. NEVER YOLO-MERGE. Regardless of this project'"'"'s merge posture, park this PR for the configured merge authority'"'"'s explicit word, exactly like every other PR. Do not merge it yourself under any standing autonomy setting.' \
+'2. SUPERVISION-SAFETY CONFLICT STOP. If the merge produces a conflict inside bin/fm-watch.sh, bin/fm-classify-lib.sh, bin/fm-task-inbox-lib.sh, or bin/fm-teardown.sh, do not resolve it yourself. Append `needs-decision: supervision-safety conflict in <file>` to the status file with a three-way summary: (a) what the local side'"'"'s hunk does, (b) what upstream'"'"'s hunk does, (c) what each version'"'"'s resulting behavior is. Stop and wait for the decision.' \
+'3. NON-PRE-EXISTING REGRESSION STOP. Run the full test suite after the merge. For every failure, reproduce it identically on the pre-merge base (checked out separately, never assumed) before calling it pre-existing. Any failure that does not reproduce identically on the pre-merge base blocks unattended progress: append `blocked: <test> fails post-merge and does not reproduce on pre-merge base` with the triage table (test, pre-merge result, post-merge result) and stop rather than shipping past it.' \
+'4. PR PURITY. This PR must contain only the merge commit plus clearly-labeled conflict-resolution commits. Never fold a regression fix or a pre-existing-failure fix into this PR. File any regression found during triage as a separate follow-up backlog item and mention it, unfixed, in this PR'"'"'s description. Document every pre-existing failure in the PR description; never "fix" one as part of this sync.' \
+'' \
+'Do not bypass these gates for a build that "looks fine"; the triage table and the three-way summary are the deliverable that lets the captain approve safely.')
+fi
+
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -332,6 +364,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 {TASK}
 
 $HERDR_SECTION
+$UPSTREAM_SYNC_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -455,6 +488,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 {TASK}
 
 $HERDR_SECTION
+$UPSTREAM_SYNC_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
