@@ -48,9 +48,9 @@
 #      working -> failed, so a poll that can never progress surfaces as
 #      terminal instead of monitoring forever (see nm_ci_wedge_detected).
 #      The wedge verdict is taken before the marker parse, so it also wins
-#      over a green marker; on the coarse cross-branch fallback (where the
-#      log may belong to another branch's run) it only suppresses the
-#      "still monitoring PR" emit rather than reporting failed.
+#      over a green marker. The coarse cross-branch fallback (where the log
+#      may belong to another branch's run) is never wedge-checked: it reports
+#      that run's own state without a wedge verdict.
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
@@ -366,9 +366,11 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   local warnings
   warnings=$(printf '%s\n' "$log_tail" | grep -E '^warning: could not check CI:|^log: --verbose .+exit status 1' || true)
   [ -n "$warnings" ] || return 1
-  # Progress markers that indicate forward CI progress (must match the marker
-  # parser in nm_ci_checks_state below for consistency).
-  local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed|no CI checks reported - still monitoring|no CI checks reported yet|issues detected|CI checks running'
+  # Markers that indicate real forward CI progress, and per-poll heartbeat
+  # markers that merely say the loop ran again (together they must match the
+  # marker parser in nm_ci_checks_state below for consistency).
+  local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed|issues detected'
+  local heartbeat_markers='no CI checks reported - still monitoring|no CI checks reported yet|CI checks running'
   # Extract the error prefix from each warning line (e.g.,
   # "gh api workflow runs for head commit: unknown flag: --slurp").
   local prefixes
@@ -385,24 +387,39 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     if [ "$count" -lt "$WEDGE_THRESHOLD" ]; then
       continue
     fi
-    # Line number (relative to log_tail) of this prefix's last occurrence.
-    last_error_line=$(printf '%s\n' "$log_tail" | fm_wedge_want=$error_type awk '
+    # Line numbers (relative to log_tail) of this prefix's first and last
+    # occurrence, delimiting the repeated-error span.
+    local span first_error_line
+    span=$(printf '%s\n' "$log_tail" | fm_wedge_want=$error_type awk '
       /^warning: could not check CI:|^log: --verbose .+exit status 1/ {
         s = $0
         sub(/^warning: could not check CI: /, "", s)
         sub(/^log: --verbose /, "", s)
         sub(/exit status 1$/, "", s)
         sub(/[[:space:]]+$/, "", s)
-        if (s == ENVIRON["fm_wedge_want"]) n = NR
+        if (s == ENVIRON["fm_wedge_want"]) { if (!f) f = NR; n = NR }
       }
-      END { if (n) print n }')
+      END { if (n) print f " " n }')
     # A prefix whose own occurrences cannot be located again is not evidence
     # of a wedge; fail closed rather than reporting a stuck run.
-    [ -n "$last_error_line" ] || continue
-    # Count progress markers that appear after that occurrence.
-    local progress_count
+    [ -n "$span" ] || continue
+    first_error_line=${span%% *}
+    last_error_line=${span##* }
+    # Real progress after the last occurrence always clears the wedge. A
+    # heartbeat there only counts when no heartbeat is interleaved with the
+    # repeated errors: a heartbeat the failing loop emits on every poll is
+    # noise, and must not mask a wedge just because it trails the last error.
+    local progress_count heartbeat_after heartbeat_interleaved
     progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
       | grep -cE "$progress_markers" || true)
+    heartbeat_after=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
+      | grep -cE "$heartbeat_markers" || true)
+    heartbeat_interleaved=$(printf '%s\n' "$log_tail" \
+      | sed -n "${first_error_line},${last_error_line}p" \
+      | grep -cE "$heartbeat_markers" || true)
+    if [ "$heartbeat_after" -gt 0 ] && [ "$heartbeat_interleaved" -eq 0 ]; then
+      progress_count=$((progress_count + heartbeat_after))
+    fi
     if [ "$progress_count" -eq 0 ]; then
       printf '%d:%s' "$count" "$error_type"
       return 0

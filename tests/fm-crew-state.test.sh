@@ -600,6 +600,34 @@ EOF
   pass "transient poll errors followed by pending checks are not a wedge"
 }
 
+# A per-poll heartbeat emitted alongside every failing poll is not progress:
+# interleaved (and trailing) heartbeat lines must not mask a real wedge.
+test_ci_monitoring_interleaved_heartbeat_still_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-heartbeat)
+  make_repo_on_branch "$d/wt" fm/feat-ciwedgehb
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-ciwedgehb.meta" "window=fm:fm-feat-ciwedgehb" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwedgehb)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-ciwedgehb)
+  assert_contains "$out" "state: failed" "heartbeat interleaved with repeated failures -> failed"
+  assert_contains "$out" "CI polling wedge" "trailing heartbeat must not mask the wedge"
+  pass "per-poll heartbeats interleaved with repeated failures still wedge"
+}
+
 # A prefix that repeats early but is followed by real progress must not be
 # reported as wedged just because some other error prefix trails the log.
 test_ci_monitoring_repeated_errors_then_green_not_wedged() {
@@ -1514,6 +1542,7 @@ test_ci_monitoring_green_then_rearm_stays_working
 test_ci_monitoring_no_checks_yet_stays_working
 test_ci_monitoring_repeated_poll_failure_surfaces_wedge
 test_ci_monitoring_transient_errors_then_pending_not_wedged
+test_ci_monitoring_interleaved_heartbeat_still_wedged
 test_ci_monitoring_repeated_errors_then_green_not_wedged
 test_ci_monitoring_crlf_errors_then_green_not_wedged
 test_ci_monitoring_still_waiting_stays_working
