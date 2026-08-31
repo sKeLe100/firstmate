@@ -480,6 +480,7 @@ DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 if [ "$REPO" = pt-tracker ]; then
 IFS= read -r -d '' TRACKER_LAW_SECTION <<'EOF' || true
 
+
 # pt-tracker tracker-entry law
 Before any work begins on pt-tracker, you MUST complete BOTH of the following:
 1. Use the ROADMAP execution prompt in the pt-tracker repo to plan and design the work.
@@ -556,9 +557,7 @@ $RULE1
    Never retry the same failing action a third time unchanged - a retry that changes nothing
    re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
 
-$INBOX_SECTION
-
-$TRACKER_LAW_SECTION
+$INBOX_SECTION$TRACKER_LAW_SECTION
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.

@@ -888,6 +888,11 @@ test_pt_tracker_brief_carries_tracker_entry_law() {
   assert_present "$brief" "other repo brief was not scaffolded"
   assert_no_grep "tracker-entry law" "$brief" \
     "non-pt-tracker brief must not carry the tracker-entry law"
+  if grep -B2 '^# Project memory$' "$brief" | head -2 | grep -q '[^[:space:]]'; then
+    :
+  else
+    fail "non-pt-tracker brief gained a blank line before the project-memory section"
+  fi
 
   # A scout brief for pt-tracker must NOT carry the law (scouts don't ship).
   id="brief-pt-scout-t1"
