@@ -429,9 +429,10 @@ test_a_skipped_sync_item_write_leaves_the_episode_baseline() {
   assert_absent "$record" \
     "drift-skip: a sync-item write that filed nothing must not re-baseline the episode, or the next filing waits a whole extra threshold"
 
-  # With the contention gone the next poll refiles and baselines for real.
-  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
-  assert_contains "$out" "6 commits behind upstream" "drift-skip: the retry must re-report the still-unfiled drift"
+  # With the contention gone the next poll refiles and baselines for real - the
+  # drift was deferred, not consumed. Whether that retry also re-reports is the
+  # cooldown's business, asserted separately.
+  FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check >/dev/null 2>&1
   assert_present "$record" "drift-skip: a successful write must baseline the episode"
   pass "a skipped sync-item write leaves the episode baseline so the next poll retries"
 }
@@ -461,10 +462,51 @@ test_a_failed_sync_item_write_leaves_the_episode_baseline() {
 
   # Clear the fault: the next poll files for real and only then baselines.
   rmdir "$home/backlog.md"
-  out=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check)
-  assert_contains "$out" "6 commits behind upstream" "drift-hardfail: the retry must re-report the still-unfiled drift"
+  FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check >/dev/null 2>&1
   assert_present "$record" "drift-hardfail: a successful write must baseline the episode"
   pass "a failed sync-item write leaves the episode baseline so the next poll retries"
+}
+
+# Not baselining an unfiled episode is what stops drift being LOST, but on its
+# own it would repeat the identical line every poll while the cause persists.
+# The attempt record bounds that to one report per cooldown window, without
+# consuming a threshold-sized block of drift.
+test_a_persistent_filing_failure_nags_once_per_cooldown() {
+  set -e
+  local home root bare first second third record
+  command -v tasks-axi >/dev/null 2>&1 || { echo "skip - tasks-axi not installed"; return 0; }
+
+  home=$(new_home)
+  rm -f "$home/config/backlog-backend"
+  mkdir -p "$home/backlog.md"
+  root="$TMP_ROOT/drift-cooldown"
+  bare="$TMP_ROOT/drift-cooldown-upstream.git"
+  drift_fixture "$root" "$bare" 6
+  record="$home/state/.upstream-drift"
+
+  first=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check 2>/dev/null)
+  assert_contains "$first" "6 commits behind upstream" "drift-cooldown: the first failed episode still reports"
+
+  second=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check 2>/dev/null)
+  [ -z "$second" ] \
+    || fail "drift-cooldown: a still-failing episode must not repeat the nag within the cooldown: $second"
+  assert_absent "$record" \
+    "drift-cooldown: suppressing the repeat must not consume the episode's baseline"
+
+  # The window is what silences it, not the failure: expire the cooldown and the
+  # unfiled episode is due for exactly one more report.
+  third=$(FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=0 FM_UPSTREAM_DRIFT_THRESHOLD=6 \
+    run_drift "$home" "$root" check 2>/dev/null)
+  assert_contains "$third" "6 commits behind upstream" \
+    "drift-cooldown: once the window elapses the unfiled episode reports again"
+
+  # A transient failure refiles on the very next poll, cooldown notwithstanding.
+  rmdir "$home/backlog.md"
+  FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check >/dev/null 2>&1
+  assert_present "$record" "drift-cooldown: the retry inside the window must still file and baseline"
+  assert_absent "$home/state/.upstream-drift-attempted" \
+    "drift-cooldown: a successful filing must clear the attempt record"
+  pass "a persistent filing failure reports once per cooldown while still retrying every poll"
 }
 
 test_drift_trigger_fires_once_per_episode() {
@@ -699,6 +741,7 @@ test_degrade_preserves_last_known_good_and_retries
 test_drift_trigger_fires_once_per_episode
 test_a_skipped_sync_item_write_leaves_the_episode_baseline
 test_a_failed_sync_item_write_leaves_the_episode_baseline
+test_a_persistent_filing_failure_nags_once_per_cooldown
 test_drift_episode_resets_after_a_sync_lands
 test_drift_baseline_tracks_a_shrinking_gap_downward
 test_drift_check_skips_the_probe_when_no_bound_fits

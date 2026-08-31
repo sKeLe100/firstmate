@@ -259,14 +259,16 @@ test_unknown_date_is_not_reported_as_zero_days() {
   root="$TMP_ROOT/repo-unknown"
   setup_repo "$root" 2
 
+  # days_behind now comes from the oldest unmerged upstream commit, so "unknown"
+  # is provoked through that source: a branch with no upstream ref has no delta.
   out=$(FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD=5 FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD=14 \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ITEM" file 2 unknown main)
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ITEM" file 2 unknown no-such-branch)
   assert_contains "$out" "days_behind=unknown" \
     "sync-item: an undeterminable upstream date must not be reported as a definite 0 days"
   assert_contains "$out" "eligible=no" "sync-item: an unknown date below the commit threshold stays ineligible"
   assert_contains "$out" "could not be determined" \
     "sync-item: eligible_reason must say the day rule could not be evaluated"
-  assert_not_contains "$(cat "$home/data/backlog.md")" "0 days since newest upstream commit" \
+  assert_not_contains "$(cat "$home/data/backlog.md")" "is 0 days old" \
     "sync-item: the filed note must not assert a freshly-synced 0-day age it does not know"
   pass "an unknown newest-upstream date reports unknown rather than a definite zero"
 }
@@ -374,6 +376,63 @@ test_refresh_leaves_an_in_flight_item_alone() {
   pass "a refresh leaves an in-flight sync item in flight"
 }
 
+# An upstream that ships daily always has a tip dated today. Eligibility must
+# track the oldest change this fork has NOT taken, or the days rule is dead code
+# on exactly the busy upstreams it exists for.
+test_days_behind_measures_the_oldest_unmerged_commit() {
+  set -e
+  local home root out old_epoch
+  home=$(new_home)
+  : > "$home/config/upstream-autosync"
+  old_epoch=$(( $(date +%s) - 90 * 86400 ))
+  root="$TMP_ROOT/repo-oldest"
+  new_repo "$root"
+  git -C "$root" remote add upstream "$root"
+  git -C "$root" branch upstream-src main
+  git -C "$root" checkout -q upstream-src
+  # An old unmerged commit, then a fresh tip: 2 commits behind, under the
+  # 5-commit arm, so only the days arm can make this eligible.
+  printf 'old\n' > "$root/old.txt"
+  git -C "$root" add old.txt
+  GIT_AUTHOR_DATE="@$old_epoch +0000" GIT_COMMITTER_DATE="@$old_epoch +0000" \
+    git -C "$root" commit -qm "upstream old"
+  printf 'new\n' > "$root/new.txt"
+  git -C "$root" add new.txt
+  git -C "$root" commit -qm "upstream fresh tip"
+  git -C "$root" update-ref refs/remotes/upstream/main refs/heads/upstream-src
+  git -C "$root" checkout -q main
+
+  out=$(FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD=5 FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD=14 \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ITEM" file 2 "$(date +%F)" main)
+  case "$out" in
+    *days_behind=[0-9]*) ;;
+    *) fail "sync-item: days_behind must be numeric here: $out" ;;
+  esac
+  [ "$(printf '%s\n' "$out" | sed -n 's/^days_behind=//p')" -ge 14 ] \
+    || fail "sync-item: days_behind must measure the 90-day-old unmerged commit, not the fresh tip: $out"
+  assert_contains "$out" "eligible=yes" \
+    "sync-item: a fork 2 commits behind whose oldest unmerged commit is 90 days old must cross the days arm"
+  pass "days behind measures the oldest unmerged upstream commit, not upstream's tip"
+}
+
+test_commit_delta_is_capped_with_a_truncation_marker() {
+  set -e
+  local home root body shown
+  home=$(new_home)
+  root="$TMP_ROOT/repo-deltacap"
+  setup_repo "$root" 7
+
+  FM_UPSTREAM_AUTOSYNC_DELTA_SHOWN=3 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    "$ITEM" file 7 "$(date +%F)" main >/dev/null
+  body=$(cat "$home/data/backlog.md")
+  shown=$(printf '%s\n' "$body" | grep -c "^[0-9a-f]\{7,\} upstream ")
+  [ "$shown" -eq 3 ] \
+    || fail "sync-item: the commit delta must be capped at the configured limit, printed $shown"
+  assert_contains "$body" "... and 4 more" \
+    "sync-item: a truncated delta must disclose exactly how many commits were omitted"
+  pass "the commit delta is capped and discloses the omitted count"
+}
+
 test_dedup_refreshes_in_place
 test_below_threshold_stays_ineligible_with_config
 test_at_threshold_is_eligible_with_config
@@ -387,3 +446,5 @@ test_indented_markers_are_still_refreshed
 test_gate_is_inherited_by_a_secondmate_home
 test_refresh_reopens_a_completed_item
 test_refresh_leaves_an_in_flight_item_alone
+test_days_behind_measures_the_oldest_unmerged_commit
+test_commit_delta_is_capped_with_a_truncation_marker

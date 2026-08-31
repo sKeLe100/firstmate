@@ -165,6 +165,37 @@ DRIFT_CHECK_SHIM="$STATE/$DRIFT_CHECK_ID.check.sh"
 DRIFT_CHECK_TRUST="$STATE/$DRIFT_CHECK_ID.check-trust"
 DRIFT_REGISTER_BIN="$SCRIPT_DIR/fm-check-register.sh"
 DRIFT_RECORD_SCHEMA=fm-upstream-drift-v1
+# A filing that did not land must not consume a threshold-sized block of drift,
+# so the baseline stays unwritten and the episode keeps retrying. That alone
+# would repeat the identical line every poll, so this second record - the same
+# durable per-home timestamp shape as state/<id>.reconcile-nudged - dedupes the
+# REPORT while the filing itself still retries on every cycle. One nag per home
+# per four hours, matching FM_RECONCILE_COOLDOWN_SECONDS.
+DRIFT_ATTEMPT_RECORD="$STATE/.upstream-drift-attempted"
+FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=${FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS:-14400}
+case "$FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS" in
+  ''|*[!0-9]*) FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=14400 ;;
+esac
+
+drift_attempt_within_cooldown() {
+  local last age now
+  [ -f "$DRIFT_ATTEMPT_RECORD" ] && [ ! -L "$DRIFT_ATTEMPT_RECORD" ] || return 1
+  last=$(cat "$DRIFT_ATTEMPT_RECORD" 2>/dev/null || true)
+  case "$last" in ''|*[!0-9]*) return 1 ;; esac
+  now=$(date +%s)
+  age=$((now - last))
+  # A clock that moved backwards must not silence the report forever.
+  [ "$age" -ge 0 ] && [ "$age" -lt "$FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS" ]
+}
+
+drift_attempt_record_write() {
+  local tmp
+  mkdir -p "$STATE" 2>/dev/null || return 1
+  tmp=$(umask 077; mktemp "$DRIFT_ATTEMPT_RECORD.XXXXXX" 2>/dev/null) || return 1
+  printf '%s\n' "$(now)" > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  mv -f -- "$tmp" "$DRIFT_ATTEMPT_RECORD" || { rm -f -- "$tmp"; return 1; }
+  return 0
+}
 # Wider than the digest default because the line carries the counts, the
 # threshold, and the exact command that lists the pending commits.
 DRIFT_MAX_LINE=1000
@@ -236,7 +267,7 @@ drift_record_write() {  # <behind>
 }
 
 action_check() {
-  local threshold behind status detail line refresh_timeout
+  local threshold behind status detail line refresh_timeout report default newest sync_item_filed sync_item_out
   threshold=$(drift_threshold)
 
   # Discarded output: a plain refresh prints the whole report, and this check
@@ -261,7 +292,7 @@ action_check() {
 
   if [ "$behind" -lt "$threshold" ]; then
     # The gap closed, so the episode ends here and the next one is news again.
-    rm -f -- "$DRIFT_RECORD" 2>/dev/null || true
+    rm -f -- "$DRIFT_RECORD" "$DRIFT_ATTEMPT_RECORD" 2>/dev/null || true
     return 0
   fi
 
@@ -279,13 +310,21 @@ action_check() {
     [ "$(( behind - DRIFT_REPORTED_BEHIND ))" -ge "$threshold" ] || return 0
   fi
 
-  detail=$(report_field detail_hint)
-  line="upstream drift: this home is $behind commits behind upstream (threshold $threshold) - dispatch an upstream sync task"
-  [ -z "$detail" ] || line="$line; pending commits: $detail"
-  fm_cap_line_var "$line" "$DRIFT_MAX_LINE"
-  # Report before recording, so a record that cannot be written costs a repeated
-  # report rather than a lost one.
-  printf '%s\n' "$FM_LINE_CAP_LINE"
+  # A retry whose previous attempt failed recently files again but stays quiet,
+  # so a persistent failure costs one line per cooldown window rather than one
+  # per poll, while a transient one still refiles on the very next cycle.
+  report=yes
+  ! drift_attempt_within_cooldown || report=no
+
+  if [ "$report" = yes ]; then
+    detail=$(report_field detail_hint)
+    line="upstream drift: this home is $behind commits behind upstream (threshold $threshold) - dispatch an upstream sync task"
+    [ -z "$detail" ] || line="$line; pending commits: $detail"
+    fm_cap_line_var "$line" "$DRIFT_MAX_LINE"
+    # Report before recording, so a record that cannot be written costs a
+    # repeated report rather than a lost one.
+    printf '%s\n' "$FM_LINE_CAP_LINE"
+  fi
 
   # File-or-refresh the one stable-id sync backlog item and surface its
   # auto-dispatch eligibility. This is always active - it is the AUTOMATIC
@@ -310,7 +349,12 @@ action_check() {
     fi
   fi
 
-  [ "$sync_item_filed" = no ] || drift_record_write "$behind" || true
+  if [ "$sync_item_filed" = yes ]; then
+    rm -f -- "$DRIFT_ATTEMPT_RECORD" 2>/dev/null || true
+    drift_record_write "$behind" || true
+  elif [ "$report" = yes ]; then
+    drift_attempt_record_write || true
+  fi
   return 0
 }
 

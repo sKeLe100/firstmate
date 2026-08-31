@@ -24,8 +24,7 @@
 # `config/upstream-autosync` presence flag (absent = today's ask-only behavior,
 # unchanged) and on `behind >= FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD` (default
 # 5) or `days_behind >= FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD` (default 14),
-# whichever the caller-supplied `behind` and `newest_upstream_date` cross
-# first. This script only signals eligibility; it never dispatches.
+# where days_behind is the age of the OLDEST unmerged upstream commit. This script only signals eligibility; it never dispatches.
 #
 # Usage:
 #   fm-upstream-sync-item.sh file <behind> <newest_upstream_date> <default-branch>
@@ -41,7 +40,9 @@
 #
 # FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD / FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD
 # override the thresholds (tests use them). FM_UPSTREAM_AUTOSYNC_OVERLAP_SHOWN
-# bounds the printed overlap list (default 20).
+# bounds the printed overlap list (default 20) and
+# FM_UPSTREAM_AUTOSYNC_DELTA_SHOWN bounds the printed commit delta (default 20);
+# both append an "... and N more" line rather than truncating silently.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -80,25 +81,34 @@ default=${4:-}
 case "$behind" in ''|*[!0-9]*) echo "error: <behind> must be a non-negative integer" >&2; exit 1 ;; esac
 [ -n "$default" ] || { echo "error: <default-branch> is required" >&2; exit 1; }
 
-# --- days behind, from newest_upstream_date (YYYY-MM-DD) to today -----------
+# --- commit log delta and files-touched overlap -----------------------------
+log_delta=$(git -C "$FM_ROOT" log --oneline \
+  "refs/heads/$default..refs/remotes/upstream/$default" 2>/dev/null)
+
+# --- days behind: the age of the OLDEST unmerged upstream commit ------------
+# How long this fork has been behind is the age of the earliest change it has
+# not taken, NOT the age of upstream's tip: an upstream that ships daily always
+# has a tip dated today, which would pin this at 0 and make the days threshold
+# dead code on exactly the busy upstreams the rule exists for. The
+# <newest_upstream_date> argument is still reported as context but no longer
+# drives eligibility. An empty or unreadable delta leaves this
+# unknown, which every consumer below already handles.
 days_behind=unknown
-if [ -n "$newest" ] && [ "$newest" != unknown ]; then
+oldest=$(git -C "$FM_ROOT" log --format=%cd --date=short \
+  "refs/heads/$default..refs/remotes/upstream/$default" 2>/dev/null | tail -n 1)
+if [ -n "$oldest" ]; then
   now_epoch=$(date +%s)
   if [ "$(uname)" = Darwin ]; then
-    newest_epoch=$(date -j -f %Y-%m-%d "$newest" +%s 2>/dev/null) || newest_epoch=
+    oldest_epoch=$(date -j -f %Y-%m-%d "$oldest" +%s 2>/dev/null) || oldest_epoch=
   else
-    newest_epoch=$(date -d "$newest" +%s 2>/dev/null) || newest_epoch=
+    oldest_epoch=$(date -d "$oldest" +%s 2>/dev/null) || oldest_epoch=
   fi
-  if [ -n "$newest_epoch" ]; then
-    diff=$(( (now_epoch - newest_epoch) / 86400 ))
+  if [ -n "$oldest_epoch" ]; then
+    diff=$(( (now_epoch - oldest_epoch) / 86400 ))
     [ "$diff" -ge 0 ] || diff=0
     days_behind=$diff
   fi
 fi
-
-# --- commit log delta and files-touched overlap -----------------------------
-log_delta=$(git -C "$FM_ROOT" log --oneline \
-  "refs/heads/$default..refs/remotes/upstream/$default" 2>/dev/null)
 
 merge_base=$(git -C "$FM_ROOT" merge-base "refs/heads/$default" "refs/remotes/upstream/$default" 2>/dev/null) || merge_base=
 upstream_files=""
@@ -122,6 +132,17 @@ else
   overlap_shown=$(printf '%s\n' "$overlap" | sed '/^$/d' | head -n "$shown_limit")
 fi
 
+delta_count=0
+[ -z "$log_delta" ] || delta_count=$(printf '%s\n' "$log_delta" | sed '/^$/d' | wc -l | tr -d '[:space:]')
+delta_limit="${FM_UPSTREAM_AUTOSYNC_DELTA_SHOWN:-20}"
+case "$delta_limit" in ''|*[!0-9]*) delta_limit=20 ;; esac
+if [ -z "$log_delta" ]; then
+  delta_shown=""
+else
+  delta_shown=$(printf '%s\n' "$log_delta" | sed '/^$/d' | head -n "$delta_limit")
+fi
+delta_omitted=$(( delta_count > delta_limit ? delta_count - delta_limit : 0 ))
+
 # --- eligibility --------------------------------------------------------
 commit_threshold="${FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD:-5}"
 case "$commit_threshold" in ''|*[!0-9]*) commit_threshold=5 ;; esac
@@ -137,12 +158,12 @@ if [ -f "$config_gate" ]; then
     eligible_reason="behind ($behind) >= commit threshold ($commit_threshold)"
   elif [ "$days_behind" != unknown ] && [ "$days_behind" -ge "$days_threshold" ]; then
     eligible=yes
-    eligible_reason="days behind ($days_behind) >= days threshold ($days_threshold)"
+    eligible_reason="oldest unmerged upstream commit is $days_behind days old >= days threshold ($days_threshold)"
   else
     if [ "$days_behind" = unknown ]; then
-      eligible_reason="behind ($behind) is below the commit threshold ($commit_threshold) and the newest upstream commit date could not be determined, so the $days_threshold-day rule could not be evaluated"
+      eligible_reason="behind ($behind) is below the commit threshold ($commit_threshold) and the oldest unmerged upstream commit date could not be determined, so the $days_threshold-day rule could not be evaluated"
     else
-      eligible_reason="behind ($behind) and days behind ($days_behind) are below threshold ($commit_threshold commits / $days_threshold days)"
+      eligible_reason="behind ($behind) and the oldest unmerged upstream commit's age ($days_behind days) are below threshold ($commit_threshold commits / $days_threshold days)"
     fi
   fi
 fi
@@ -150,19 +171,21 @@ fi
 # --- compose the backlog note ------------------------------------------
 note_body() {
   if [ "$days_behind" = unknown ]; then
-    printf 'Upstream sync: %s commits behind upstream/%s (age of the newest upstream commit is unknown).\n' \
+    printf 'Upstream sync: %s commits behind upstream/%s (age of the oldest unmerged upstream commit is unknown).\n' \
       "$behind" "$default"
   else
-    printf 'Upstream sync: %s commits behind upstream/%s (%s days since newest upstream commit).\n' \
+    printf 'Upstream sync: %s commits behind upstream/%s (oldest unmerged upstream commit is %s days old).\n' \
       "$behind" "$default" "$days_behind"
   fi
+  [ -z "$newest" ] || printf 'Newest upstream commit: %s\n' "$newest"
   printf 'Auto-dispatch eligible: %s (%s)\n' "$eligible" "$eligible_reason"
   printf 'Files touched both upstream and locally since merge-base (conflict risk): %s\n' "$overlap_count"
   if [ -n "$overlap_shown" ]; then
     printf '%s\n' "$overlap_shown" | sed 's/^/  - /'
   fi
   printf 'Pending upstream commits (%s..upstream/%s):\n' "$default" "$default"
-  printf '%s\n' "$log_delta"
+  [ -z "$delta_shown" ] || printf '%s\n' "$delta_shown"
+  [ "$delta_omitted" -eq 0 ] || printf '  ... and %s more\n' "$delta_omitted"
 }
 
 title="Upstream sync ($behind commits behind)"
