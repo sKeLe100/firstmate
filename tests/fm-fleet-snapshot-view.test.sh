@@ -573,13 +573,14 @@ test_interrupted_snapshot_leaves_no_temp_files() {
   kill -TERM "$pid" 2>/dev/null
   wait "$pid" 2>/dev/null
   # Check for snapshot-owned temp files only (the fm-fleet-snapshot.* directory
-  # and anything under it). The bash fallback in fm-timeout-lib.sh creates
-  # transient files directly in TMPDIR that may survive an interrupt, but that
-  # is not a snapshot cleanup bug.
+  # and stray snapshot-named files directly in TMPDIR). The bash fallback in
+  # fm-timeout-lib.sh creates transient files directly in TMPDIR (pattern
+  # fm-bash-timeout-command.*) that may survive an interrupt, but that is not
+  # a snapshot cleanup bug.
   snapshot_dir=$(find "$tmp" -mindepth 1 -maxdepth 1 -name 'fm-fleet-snapshot.*' -type d 2>/dev/null)
-  snapshot_files=$(find "$tmp" -mindepth 2 -name 'fm-fleet-snapshot.*' -o -path '*/fm-fleet-snapshot.*/*' 2>/dev/null)
   [ -z "$snapshot_dir" ] \
     || fail "interrupted snapshot left directory behind: $snapshot_dir"
+  snapshot_files=$(find "$tmp" -mindepth 1 -maxdepth 1 -name 'fm-fleet-snapshot.*' 2>/dev/null)
   [ -z "$snapshot_files" ] \
     || fail "interrupted snapshot left temp files behind: $snapshot_files"
   pass "an interrupted snapshot cleans up its temp files"
@@ -591,13 +592,9 @@ test_interrupted_snapshot_leaves_no_temp_files() {
 # which the snapshot's EXIT trap does not clean up because it only removes
 # FM_SNAPSHOT_TMPDIR. Verify the fallback mechanism's own temp files are
 # cleaned up by the timeout wrapper itself even under normal (non-interrupted)
-# execution.
+# execution. Uses FM_TIMEOUT_MECHANISM_OVERRIDE=bash to force the fallback
+# deterministically so the test covers the path on every host.
 test_bash_timeout_fallback_cleanliness() {
-  # Skip if timeout or perl are available - this test targets the bash fallback path.
-  if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1 || command -v perl >/dev/null 2>&1; then
-    pass "bash fallback not tested when timeout/perl are available (skip: native mechanism works)"
-    return 0
-  fi
   local home tmp
   home=$(make_home bash-fallback)
   tmp=$TMP_ROOT/bash-fallback-tmpdir
@@ -609,7 +606,7 @@ test_bash_timeout_fallback_cleanliness() {
         "$i" "$i" "$i"
     done
   } > "$home/data/backlog.md"
-  TMPDIR="$tmp" FM_HOME="$home" "$SNAPSHOT" --json >/dev/null 2>&1
+  TMPDIR="$tmp" FM_HOME="$home" FM_TIMEOUT_MECHANISM_OVERRIDE=bash "$SNAPSHOT" --json >/dev/null 2>&1
   local bash_files
   bash_files=$(find "$tmp" -mindepth 1 -name 'fm-bash-timeout-command.*' 2>/dev/null)
   [ -z "$bash_files" ] \
