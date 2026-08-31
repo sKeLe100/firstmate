@@ -433,6 +433,42 @@ test_commit_delta_is_capped_with_a_truncation_marker() {
   pass "the commit delta is capped and discloses the omitted count"
 }
 
+test_overlap_list_is_capped_with_a_truncation_marker() {
+  set -e
+  local home root out body shown i
+  home=$(new_home)
+  root="$TMP_ROOT/repo-overlapcap"
+  new_repo "$root"
+  git -C "$root" remote add upstream "$root"
+  git -C "$root" branch upstream-src main
+  # Five files both sides touched since the merge-base: a real overlap set.
+  for ((i = 1; i <= 5; i++)); do printf 'base%s\n' "$i" > "$root/shared-$i.txt"; done
+  git -C "$root" add -A && git -C "$root" commit -qm "shared base"
+  git -C "$root" branch -f upstream-src HEAD
+  git -C "$root" checkout -q upstream-src
+  for ((i = 1; i <= 5; i++)); do printf 'up%s\n' "$i" > "$root/shared-$i.txt"; done
+  git -C "$root" add -A && git -C "$root" commit -qm "upstream touches shared"
+  git -C "$root" update-ref refs/remotes/upstream/main refs/heads/upstream-src
+  git -C "$root" checkout -q main
+  for ((i = 1; i <= 5; i++)); do printf 'local%s\n' "$i" > "$root/shared-$i.txt"; done
+  git -C "$root" add -A && git -C "$root" commit -qm "local touches shared"
+
+  out=$(FM_UPSTREAM_AUTOSYNC_OVERLAP_SHOWN=2 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    "$ITEM" file 1 "$(date +%F)" main)
+  assert_contains "$out" "overlap_count=5" "sync-item: the full overlap count must still be reported"
+  shown=$(printf '%s\n' "$out" | grep -c '^overlap=')
+  [ "$shown" -eq 2 ] || fail "sync-item: the overlap list must be capped at the limit, printed $shown"
+  assert_contains "$out" "overlap_omitted=3" \
+    "sync-item: truncated overlap on stdout must disclose how many files were omitted"
+
+  body=$(cat "$home/data/backlog.md")
+  shown=$(printf '%s\n' "$body" | grep -c '^  - shared-')
+  [ "$shown" -eq 2 ] || fail "sync-item: the note's overlap list must be capped, printed $shown"
+  assert_contains "$body" "... and 3 more" \
+    "sync-item: a truncated overlap list must disclose the omitted count, as the docs promise"
+  pass "the overlap list is capped and discloses the omitted count, like the delta"
+}
+
 test_dedup_refreshes_in_place
 test_below_threshold_stays_ineligible_with_config
 test_at_threshold_is_eligible_with_config
@@ -448,3 +484,4 @@ test_refresh_reopens_a_completed_item
 test_refresh_leaves_an_in_flight_item_alone
 test_days_behind_measures_the_oldest_unmerged_commit
 test_commit_delta_is_capped_with_a_truncation_marker
+test_overlap_list_is_capped_with_a_truncation_marker

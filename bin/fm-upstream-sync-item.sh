@@ -37,6 +37,7 @@
 #       eligible_reason=<why>
 #       overlap_count=<N>
 #       overlap=<path>            (one line per overlapping file, bounded)
+#       overlap_omitted=<N>       (only when the overlap list was truncated)
 #
 # FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD / FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD
 # override the thresholds (tests use them). FM_UPSTREAM_AUTOSYNC_OVERLAP_SHOWN
@@ -131,6 +132,7 @@ if [ -z "$overlap" ]; then
 else
   overlap_shown=$(printf '%s\n' "$overlap" | sed '/^$/d' | head -n "$shown_limit")
 fi
+overlap_omitted=$(( overlap_count > shown_limit ? overlap_count - shown_limit : 0 ))
 
 delta_count=0
 [ -z "$log_delta" ] || delta_count=$(printf '%s\n' "$log_delta" | sed '/^$/d' | wc -l | tr -d '[:space:]')
@@ -182,6 +184,7 @@ note_body() {
   printf 'Files touched both upstream and locally since merge-base (conflict risk): %s\n' "$overlap_count"
   if [ -n "$overlap_shown" ]; then
     printf '%s\n' "$overlap_shown" | sed 's/^/  - /'
+    [ "$overlap_omitted" -eq 0 ] || printf '  ... and %s more\n' "$overlap_omitted"
   fi
   printf 'Pending upstream commits (%s..upstream/%s):\n' "$default" "$default"
   [ -z "$delta_shown" ] || printf '%s\n' "$delta_shown"
@@ -286,5 +289,6 @@ if [ -n "$overlap_shown" ]; then
     [ -n "$f" ] || continue
     printf 'overlap=%s\n' "$f"
   done <<< "$overlap_shown"
+  [ "$overlap_omitted" -eq 0 ] || printf 'overlap_omitted=%s\n' "$overlap_omitted"
 fi
 exit 0

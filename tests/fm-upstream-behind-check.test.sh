@@ -509,6 +509,46 @@ test_a_persistent_filing_failure_nags_once_per_cooldown() {
   pass "a persistent filing failure reports once per cooldown while still retrying every poll"
 }
 
+# The watcher runs armed checks with stderr redirected to /dev/null, so the
+# child's "why" has nowhere to go on the production path. With the cooldown also
+# suppressing repeats, a persistent skip would otherwise be silent rather than
+# merely quiet. The reason therefore rides in the attempt record and is folded
+# into the next line that does fire - no extra lines, but not invisible either.
+test_an_unfiled_episode_reports_why_on_its_next_line() {
+  set -e
+  local home root bare first second attempt
+  command -v tasks-axi >/dev/null 2>&1 || { echo "skip - tasks-axi not installed"; return 0; }
+
+  home=$(new_home)
+  rm -f "$home/config/backlog-backend"
+  mkdir -p "$home/backlog.md"
+  root="$TMP_ROOT/drift-reason"
+  bare="$TMP_ROOT/drift-reason-upstream.git"
+  drift_fixture "$root" "$bare" 6
+  attempt="$home/state/.upstream-drift-attempted"
+
+  # First firing: the cause is not known yet, so the line is the plain nag.
+  first=$(FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check 2>/dev/null)
+  assert_contains "$first" "6 commits behind upstream" "drift-reason: the first failed episode still reports"
+  assert_present "$attempt" "drift-reason: a failed filing must record the attempt durably"
+  [ -n "$(sed -n '2s/^reason=//p' "$attempt")" ] \
+    || fail "drift-reason: the attempt record must carry why the filing did not land"
+
+  # Next firing after the window: the recorded cause rides along.
+  second=$(FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=0 FM_UPSTREAM_DRIFT_THRESHOLD=6 \
+    run_drift "$home" "$root" check 2>/dev/null)
+  assert_contains "$second" "the sync item is still unfiled" \
+    "drift-reason: a persistently unfiled episode must say so on the line that fires"
+  assert_contains "$second" "6 commits behind upstream" "drift-reason: the drift line itself is unchanged"
+
+  # Once the filing lands the episode is clean again and carries no stale cause.
+  rmdir "$home/backlog.md"
+  FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=0 FM_UPSTREAM_DRIFT_THRESHOLD=6 \
+    run_drift "$home" "$root" check >/dev/null 2>&1
+  assert_absent "$attempt" "drift-reason: a successful filing must clear the recorded cause"
+  pass "an episode that cannot file says why on the next line it fires"
+}
+
 test_drift_trigger_fires_once_per_episode() {
   set -e
   local home root bare out record i
@@ -742,6 +782,7 @@ test_drift_trigger_fires_once_per_episode
 test_a_skipped_sync_item_write_leaves_the_episode_baseline
 test_a_failed_sync_item_write_leaves_the_episode_baseline
 test_a_persistent_filing_failure_nags_once_per_cooldown
+test_an_unfiled_episode_reports_why_on_its_next_line
 test_drift_episode_resets_after_a_sync_lands
 test_drift_baseline_tracks_a_shrinking_gap_downward
 test_drift_check_skips_the_probe_when_no_bound_fits

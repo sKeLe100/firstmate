@@ -171,6 +171,14 @@ DRIFT_RECORD_SCHEMA=fm-upstream-drift-v1
 # durable per-home timestamp shape as state/<id>.reconcile-nudged - dedupes the
 # REPORT while the filing itself still retries on every cycle. One nag per home
 # per four hours, matching FM_RECONCILE_COOLDOWN_SECONDS.
+#
+# The record carries WHY the last attempt did not land on a second line, because
+# the cause has nowhere else to go: the watcher runs armed checks with stderr
+# redirected to /dev/null (bin/fm-watch.sh), so the child's warning never
+# reaches the digest. Without this a persistent skip would be silent rather than
+# merely quiet - worse than the per-poll nag the cooldown exists to stop. The
+# reason is folded into the next report that does fire, so visibility costs no
+# extra lines.
 DRIFT_ATTEMPT_RECORD="$STATE/.upstream-drift-attempted"
 FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=${FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS:-14400}
 case "$FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS" in
@@ -180,7 +188,7 @@ esac
 drift_attempt_within_cooldown() {
   local last age now
   [ -f "$DRIFT_ATTEMPT_RECORD" ] && [ ! -L "$DRIFT_ATTEMPT_RECORD" ] || return 1
-  last=$(cat "$DRIFT_ATTEMPT_RECORD" 2>/dev/null || true)
+  last=$(head -n 1 "$DRIFT_ATTEMPT_RECORD" 2>/dev/null || true)
   case "$last" in ''|*[!0-9]*) return 1 ;; esac
   now=$(date +%s)
   age=$((now - last))
@@ -188,11 +196,20 @@ drift_attempt_within_cooldown() {
   [ "$age" -ge 0 ] && [ "$age" -lt "$FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS" ]
 }
 
-drift_attempt_record_write() {
+# Echoes the reason the previous attempt did not land, or nothing.
+drift_attempt_reason() {
+  [ -f "$DRIFT_ATTEMPT_RECORD" ] && [ ! -L "$DRIFT_ATTEMPT_RECORD" ] || return 0
+  sed -n '2s/^reason=//p' "$DRIFT_ATTEMPT_RECORD" 2>/dev/null || true
+}
+
+drift_attempt_record_write() {  # <reason>
   local tmp
   mkdir -p "$STATE" 2>/dev/null || return 1
   tmp=$(umask 077; mktemp "$DRIFT_ATTEMPT_RECORD.XXXXXX" 2>/dev/null) || return 1
-  printf '%s\n' "$(now)" > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  {
+    printf '%s\n' "$(now)"
+    printf 'reason=%s\n' "$(printf '%s' "${1:-}" | tr -d '\n')"
+  } > "$tmp" || { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$DRIFT_ATTEMPT_RECORD" || { rm -f -- "$tmp"; return 1; }
   return 0
 }
@@ -267,7 +284,7 @@ drift_record_write() {  # <behind>
 }
 
 action_check() {
-  local threshold behind status detail line refresh_timeout report default newest sync_item_filed sync_item_out
+  local threshold behind status detail line refresh_timeout report prev_reason default newest sync_item_filed sync_item_out sync_item_err sync_item_reason
   threshold=$(drift_threshold)
 
   # Discarded output: a plain refresh prints the whole report, and this check
@@ -318,7 +335,10 @@ action_check() {
 
   if [ "$report" = yes ]; then
     detail=$(report_field detail_hint)
+    # Read before the child runs, so this names the attempt that already failed.
+    prev_reason=$(drift_attempt_reason)
     line="upstream drift: this home is $behind commits behind upstream (threshold $threshold) - dispatch an upstream sync task"
+    [ -z "$prev_reason" ] || line="$line; the sync item is still unfiled: $prev_reason"
     [ -z "$detail" ] || line="$line; pending commits: $detail"
     fm_cap_line_var "$line" "$DRIFT_MAX_LINE"
     # Report before recording, so a record that cannot be written costs a
@@ -337,23 +357,39 @@ action_check() {
   # not reported a skip. A hard write failure exits non-zero with nothing on
   # stdout, and a missing default branch never runs the child at all; both must
   # leave the baseline alone so the next poll refiles, rather than deferring the
-  # next filing by a whole threshold. The child's stderr still reaches the
-  # operator, and a sync-item failure never fails the drift check itself.
+  # next filing by a whole threshold. The child's stderr is captured rather than
+  # trusted to reach anyone: the watcher discards check stderr, so the cause is
+  # carried in the attempt record instead. A sync-item failure never fails the
+  # drift check itself.
   sync_item_filed=no
+  sync_item_reason=
   if [ -n "$default" ]; then
-    if sync_item_out=$("$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default"); then
+    sync_item_err=$(mktemp "$STATE/.upstream-drift-err.XXXXXX" 2>/dev/null) || sync_item_err=
+    if sync_item_out=$("$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default" \
+      2> "${sync_item_err:-/dev/null}"); then
       case "$sync_item_out" in
-        *action=skipped*) ;;
+        *action=skipped*) sync_item_reason="the backlog write was skipped" ;;
         *) sync_item_filed=yes ;;
       esac
+    else
+      sync_item_reason="the backlog write failed"
     fi
+    if [ -n "$sync_item_err" ]; then
+      [ "$sync_item_filed" = yes ] || sync_item_reason=$(sed -n '$p' "$sync_item_err" 2>/dev/null || true)
+      cat "$sync_item_err" >&2 2>/dev/null || true
+      rm -f -- "$sync_item_err" 2>/dev/null || true
+    fi
+    [ -n "$sync_item_reason" ] || [ "$sync_item_filed" = yes ] \
+      || sync_item_reason="the backlog write did not land"
+  else
+    sync_item_reason="the default branch could not be resolved"
   fi
 
   if [ "$sync_item_filed" = yes ]; then
     rm -f -- "$DRIFT_ATTEMPT_RECORD" 2>/dev/null || true
     drift_record_write "$behind" || true
   elif [ "$report" = yes ]; then
-    drift_attempt_record_write || true
+    drift_attempt_record_write "$sync_item_reason" || true
   fi
   return 0
 }
