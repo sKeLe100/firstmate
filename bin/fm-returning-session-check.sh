@@ -17,9 +17,12 @@
 #
 # Usage: fm-returning-session-check.sh <home-path>
 #   <home-path> is the FM_HOME of the returning session: a crewmate task
-#   worktree, a local secondmate home, or this firstmate's own home. It is
-#   passed straight through as FM_HOME to fm-context-usage.sh, so the same
-#   transcript-discovery and config/context-thresholds resolution apply.
+#   worktree, a local secondmate home, or this firstmate's own home. It must
+#   be an absolute path to an existing directory, because Claude's transcript
+#   directories are keyed on the absolute home path - a relative or missing
+#   path is a usage error, not missing evidence. It is passed through as
+#   FM_HOME to fm-context-usage.sh, so the same transcript-discovery and
+#   config/context-thresholds resolution apply.
 #
 # Output, one data-only line:
 #   verdict=resume band=<ok|warn|restart> context_tokens=<N> \
@@ -31,6 +34,11 @@
 #     harness, or no session has run there yet). Unknown is not evidence of
 #     either band, so callers proceed with an ordinary bare resume rather than
 #     forcing a restart on missing data.
+#   verdict=blocked reason=<text>
+#     printed when the home's threshold configuration is broken (a malformed
+#     or unrecognized config/context-thresholds), so no band can be trusted.
+#     A broken config is a fault to fix, never evidence that a bare resume is
+#     safe, so this exits non-zero.
 #
 # verdict=restart-with-carryover means: do not bare-resume this session.
 # Checkpoint its durable state and bring it back through the existing
@@ -41,12 +49,13 @@
 # the restart band. This script does not invoke those itself, so it composes
 # with any caller's own delivery mechanics.
 #
-# Exit status: 0 whenever a verdict line was printed, including verdict=
-# unknown. Non-zero only for a usage error (missing or wrong argument count).
+# Exit status: 0 for verdict=resume, verdict=restart-with-carryover, and
+# verdict=unknown. Non-zero for verdict=blocked and for a usage error (missing,
+# wrong-count, relative, or nonexistent home argument).
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -56,6 +65,15 @@ if [ "$#" -ne 1 ]; then
 fi
 
 home_path="$1"
+case "$home_path" in
+  /*) ;;
+  *) echo "fm-returning-session-check: home-path must be absolute: $home_path" >&2; exit 1 ;;
+esac
+if [ ! -d "$home_path" ]; then
+  echo "fm-returning-session-check: home-path is not a directory: $home_path" >&2
+  exit 1
+fi
+home_path="$(cd -- "$home_path" && pwd)"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage_output=""
@@ -64,6 +82,11 @@ usage_output="$(FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" ||
 
 if [ "$usage_status" -ne 0 ]; then
   reason="$(printf '%s' "$usage_output" | tr '\n' ' ' | sed 's/  */ /g')"
+  case "$reason" in
+    *malformed*|*"unrecognized line"*|*"must be positive"*|*"is not a regular file"*)
+      echo "verdict=blocked reason=${reason:-fm-context-usage.sh failed}"
+      exit 1 ;;
+  esac
   echo "verdict=unknown reason=${reason:-fm-context-usage.sh failed}"
   exit 0
 fi

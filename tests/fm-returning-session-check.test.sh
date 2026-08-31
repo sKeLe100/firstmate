@@ -75,7 +75,35 @@ case "$out" in
   *) fail "expected verdict=unknown for a transcript-free home, got: $out" ;;
 esac
 
-# 5. Wrong argument count fails loudly rather than guessing a home.
+# 5. A broken config/context-thresholds is a blocked verdict with a non-zero
+#    exit, never an unknown that reads as safe to bare-resume.
+bad_home="$tmp/bad_home"
+mk_home "$bad_home" 60000
+mkdir -p "$bad_home/config"
+printf 'warn=not-a-number\n' > "$bad_home/config/context-thresholds"
+if out="$(HOME="$tmp/claude_home" "$bin" "$bad_home")"; then
+  fail "expected non-zero exit for a malformed thresholds config, got: $out"
+fi
+case "$out" in
+  verdict=blocked\ reason=*) ;;
+  *) fail "expected verdict=blocked for a malformed thresholds config, got: $out" ;;
+esac
+
+# 6. A relative home path is a usage error, not a silent unknown, because
+#    transcript directories are keyed on the absolute path.
+rel_out=""
+if rel_out="$( (cd "$tmp" && HOME="$tmp/claude_home" "$bin" "warm_home") 2>"$tmp/err_rel")"; then
+  fail "expected failure for a relative home path, got: $rel_out"
+fi
+grep -q "must be absolute" "$tmp/err_rel" || fail "missing absolute-path error for relative home"
+
+# 7. A nonexistent home is a usage error too.
+if out="$("$bin" "$tmp/no_such_home" 2>"$tmp/err_missing")"; then
+  fail "expected failure for a nonexistent home, got: $out"
+fi
+grep -q "not a directory" "$tmp/err_missing" || fail "missing not-a-directory error"
+
+# 8. Wrong argument count fails loudly rather than guessing a home.
 if "$bin" 2>"$tmp/err"; then
   fail "expected failure with no argument"
 fi
