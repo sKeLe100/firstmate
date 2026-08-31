@@ -625,6 +625,25 @@ EOF
   pass "repeated errors followed by green progress are not a wedge"
 }
 
+# Regression: log lines carrying a trailing carriage return (captured gh
+# output) must still re-match their own prefix, so the progress marker after
+# them is seen and a green run is not reported as terminally wedged.
+test_ci_monitoring_crlf_errors_then_green_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-crlf)
+  make_repo_on_branch "$d/wt" fm/feat-cicrlf
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cicrlf.meta" "window=fm:fm-feat-cicrlf" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cicrlf)"
+  local err; err=$(printf 'log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1\r')
+  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\nall CI checks passed - still monitoring until merged or closed\n' \
+    "$err" "$err" "$err" "$err" "$err")
+  local out; out=$(run_crew_state "$d" feat-cicrlf)
+  assert_not_contains "$out" "CI polling wedge" "CRLF errors followed by green are not a wedge"
+  assert_not_contains "$out" "state: failed" "green run with CRLF errors must not be reported failed"
+  pass "carriage-return-terminated poll errors re-match their own prefix"
+}
+
 test_ci_monitoring_still_waiting_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-waiting)
@@ -1496,6 +1515,7 @@ test_ci_monitoring_no_checks_yet_stays_working
 test_ci_monitoring_repeated_poll_failure_surfaces_wedge
 test_ci_monitoring_transient_errors_then_pending_not_wedged
 test_ci_monitoring_repeated_errors_then_green_not_wedged
+test_ci_monitoring_crlf_errors_then_green_not_wedged
 test_ci_monitoring_still_waiting_stays_working
 test_ci_monitoring_green_then_new_issue_stays_working
 test_ci_ready_done_log_relapse_stays_working

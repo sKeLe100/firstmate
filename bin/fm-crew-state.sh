@@ -377,22 +377,23 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
       continue
     fi
     # Line number (relative to log_tail) of this prefix's last occurrence.
-    last_error_line=$(printf '%s\n' "$log_tail" | awk -v want="$error_type" '
+    last_error_line=$(printf '%s\n' "$log_tail" | fm_wedge_want=$error_type awk '
       /^warning: could not check CI:|^log: --verbose .+exit status 1/ {
         s = $0
         sub(/^warning: could not check CI: /, "", s)
         sub(/^log: --verbose /, "", s)
         sub(/exit status 1$/, "", s)
-        sub(/[ \t]+$/, "", s)
-        if (s == want) n = NR
+        sub(/[[:space:]]+$/, "", s)
+        if (s == ENVIRON["fm_wedge_want"]) n = NR
       }
       END { if (n) print n }')
+    # A prefix whose own occurrences cannot be located again is not evidence
+    # of a wedge; fail closed rather than reporting a stuck run.
+    [ -n "$last_error_line" ] || continue
     # Count progress markers that appear after that occurrence.
-    local progress_count=0
-    if [ -n "$last_error_line" ]; then
-      progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
-        | grep -cE "$progress_markers" || true)
-    fi
+    local progress_count
+    progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
+      | grep -cE "$progress_markers" || true)
     if [ "$progress_count" -eq 0 ]; then
       printf '%d:%s' "$count" "$error_type"
       return 0
