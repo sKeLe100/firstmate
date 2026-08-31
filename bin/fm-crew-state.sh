@@ -363,8 +363,13 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   prefixes=$(printf '%s\n' "$warnings" \
     | sed -E 's/^warning: could not check CI: //;s/^log: --verbose //;s/exit status 1$//;s/[[:space:]]*$//' \
     | sort | uniq -c | sort -rn)
-  # Check each error prefix: if any reaches the threshold, verify there's
-  # no progress marker between the first and last occurrence of that error.
+  # Count progress markers that would break the wedge pattern. This depends
+  # only on the log tail, so compute it once before scanning the prefixes.
+  local progress_count
+  progress_count=$(printf '%s\n' "$log_tail" \
+    | grep -cE 'base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed' || true)
+  [ "$progress_count" -eq 0 ] || return 1
+  # Check each error prefix: if any reaches the threshold, report the wedge.
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     local count error_type
@@ -373,14 +378,8 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     if [ "$count" -lt "$WEDGE_THRESHOLD" ]; then
       continue
     fi
-    # Count progress markers that would break the wedge pattern.
-    local progress_count
-    progress_count=$(printf '%s\n' "$log_tail" \
-      | grep -cE 'base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed' || true)
-    if [ "$progress_count" -eq 0 ]; then
-      printf '%d:%s' "$count" "$error_type"
-      return 0
-    fi
+    printf '%d:%s' "$count" "$error_type"
+    return 0
   done <<< "$prefixes"
   return 1
 }
