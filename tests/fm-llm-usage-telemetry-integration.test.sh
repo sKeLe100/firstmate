@@ -179,20 +179,65 @@ test_fresh_spawn_with_redelegation_records_delegation_event() {
   [ "$rc" -eq 0 ] || fail "redelegated spawn failed: $out"
 
   require_python3
+  local found_dispatch=0 found_delegation=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if [ "$(field "$line" event_type)" = dispatch ]; then
+      [ "$(field "$line" task_id)" = "$new_id" ] || continue
+      [ "$(field "$line" from_task_id)" = "$prior_id" ] || fail "dispatch record missing from_task_id: $line"
+      [ "$(field "$line" harness)" = claude ] || fail "dispatch record has wrong harness: $line"
+      [ "$(field "$line" purpose)" = code ] || fail "dispatch record has wrong purpose: $line"
+      found_dispatch=1
+    elif [ "$(field "$line" event_type)" = delegation ]; then
+      [ "$(field "$line" task_id)" = "$new_id" ] || continue
+      [ "$(field "$line" from_task_id)" = "$prior_id" ] || fail "delegation record missing from_task_id: $line"
+      [ "$(field "$line" from_harness)" = codex ] || fail "delegation record has wrong from_harness: $line"
+      [ "$(field "$line" to_harness)" = claude ] || fail "delegation record has wrong to_harness: $line"
+      [ "$(field "$line" reason)" = "codex looped on the same edit three times" ] \
+        || fail "delegation record has wrong reason: $line"
+      found_delegation=1
+    fi
+  done < <(archive_records "$home")
+  [ "$found_dispatch" -eq 1 ] || fail "no dispatch record with from_task_id was written for a real redelegated fm-spawn.sh run"
+  [ "$found_delegation" -eq 1 ] || fail "no delegation record was written for a real redelegated fm-spawn.sh run"
+  pass "fm-spawn.sh: a real redelegated spawn records from_task_id in both dispatch and delegation events"
+}
+
+test_fresh_spawn_without_redelegation_omits_from_task_id() {
+  local dir home proj out task_id line
+  dir="$TMP_ROOT/spawn-ordinary-$RANDOM"
+  home="$dir/home"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+
+  task_id=ordinary-spawn
+  fm_git_worktree "$dir/proj" "$dir/wt" "task-$task_id"
+  mkdir -p "$home/data/$task_id"
+  printf '# brief\n\nDo the thing.\n' > "$home/data/$task_id/brief.md"
+  printf '%s' "$dir/wt" > "$dir/fake/cwd"
+
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 \
+    "$SPAWN" "$task_id" "$dir/proj" --mode no-mistakes --yolo off \
+      --harness claude --purpose review 2>&1)
+  local rc=$?
+  [ "$rc" -eq 0 ] || fail "ordinary spawn failed: $out"
+
+  require_python3
   local found=0
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    [ "$(field "$line" event_type)" = delegation ] || continue
-    [ "$(field "$line" task_id)" = "$new_id" ] || continue
-    [ "$(field "$line" from_task_id)" = "$prior_id" ] || fail "delegation record missing from_task_id: $line"
-    [ "$(field "$line" from_harness)" = codex ] || fail "delegation record has wrong from_harness: $line"
-    [ "$(field "$line" to_harness)" = claude ] || fail "delegation record has wrong to_harness: $line"
-    [ "$(field "$line" reason)" = "codex looped on the same edit three times" ] \
-      || fail "delegation record has wrong reason: $line"
+    [ "$(field "$line" event_type)" = dispatch ] || continue
+    [ "$(field "$line" task_id)" = "$task_id" ] || continue
+    local from_id=$(field "$line" from_task_id)
+    [ -z "$from_id" ] || fail "dispatch record should not have from_task_id for an ordinary spawn: $line"
+    [ "$(field "$line" purpose)" = review ] || fail "dispatch record has wrong purpose: $line"
     found=1
   done < <(archive_records "$home")
-  [ "$found" -eq 1 ] || fail "no delegation record was written for a real redelegated fm-spawn.sh run"
-  pass "fm-spawn.sh: a real redelegated spawn records the issue, the prior model, and the new model"
+  [ "$found" -eq 1 ] || fail "no dispatch record was written for an ordinary fm-spawn.sh run"
+  pass "fm-spawn.sh: a fresh spawn without --redelegated-from omits from_task_id from its dispatch record"
 }
 
 test_fresh_spawn_rejects_path_traversal_redelegated_from() {
@@ -524,6 +569,7 @@ test_teardown_archives_into_the_overridden_data_dir() {
 
 test_fresh_spawn_records_purpose_in_meta_and_dispatch_event
 test_fresh_spawn_with_redelegation_records_delegation_event
+test_fresh_spawn_without_redelegation_omits_from_task_id
 test_fresh_spawn_rejects_path_traversal_redelegated_from
 test_real_relaunch_records_delegation_event
 test_teardown_records_landed_outcome

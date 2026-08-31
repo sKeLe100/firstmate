@@ -2841,7 +2841,8 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   fm_llm_usage_emit "$DATA" "$STATE" dispatch \
     "task_id=$ID" "kind=$KIND" "purpose=${PURPOSE:-unspecified}" \
     "harness=$HARNESS" "model=${MODEL:-default}" "effort=${EFFORT:-default}" \
-    "backend=${BACKEND:-tmux}" "mode=${MODE:-}" "project=${PROJ_ABS:-}" || true
+    "backend=${BACKEND:-tmux}" "mode=${MODE:-}" "project=${PROJ_ABS:-}" \
+    "from_task_id=${REDELEGATED_FROM:-}" || true
   if [ "$REDELEGATED_FROM_SET" -eq 1 ]; then
     prior_meta="$STATE/$REDELEGATED_FROM.meta"
     prior_harness=$(fm_meta_get "$prior_meta" harness)
