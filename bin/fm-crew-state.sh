@@ -338,12 +338,68 @@ nm_effective_ci_step_status() {
 # for the MOST RECENT recognized marker (the log is append-only/chronological,
 # so the last match is current): green with nothing red after it means CI is
 # green right now, still only waiting on merge/close.
+# Detect the no-mistakes CI polling wedge: when the CI check command fails
+# identically N or more times in the log tail, the polling loop is stuck and
+# will not make progress (e.g. "gh api --slurp" on gh <v2.50, "gh pr checks"
+# returning exit 1 for a cancelled PR, etc.). See the wedge detection for
+# run 01M105XM5DXQ77T2DGT4J9D1GW (28 repeated identical warnings) and the
+# live wedge on run 01M1C14G6DCP89ST83AN1KF098.
+WEDGE_THRESHOLD=5
+
+nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:error_type"
+  local log_tail=$1
+  [ -n "$log_tail" ] || return 1
+  # Extract warning lines from the CI log. Each warning block starts with
+  # "warning: could not check CI:" (no-mistakes v1.32.2+). Count occurrences
+  # of each unique warning *prefix* (the command+error, not the full help
+  # dump). When the same error repeats N+ times and there's no intervening
+  # progress marker (base-branch advance, merge, checks-passed), it's a wedge.
+  local warnings
+  warnings=$(printf '%s\n' "$log_tail" | grep -E '^warning: could not check CI:|^log: --verbose .+exit status 1' || true)
+  [ -n "$warnings" ] || return 1
+  # Extract the error prefix from each warning line (e.g.,
+  # "gh api workflow runs for head commit: unknown flag: --slurp").
+  local prefixes
+  prefixes=$(printf '%s\n' "$warnings" \
+    | sed -E 's/^warning: could not check CI: //;s/^log: --verbose //;s/exit status 1$//;s/[[:space:]]*$//' \
+    | sort | uniq -c | sort -rn)
+  # Check each error prefix: if any reaches the threshold, verify there's
+  # no progress marker between the first and last occurrence of that error.
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    local count error_type
+    count=$(printf '%s' "$line" | awk '{print $1}')
+    error_type=$(printf '%s' "$line" | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')
+    if [ "$count" -lt "$WEDGE_THRESHOLD" ]; then
+      continue
+    fi
+    # Count progress markers that would break the wedge pattern.
+    local progress_count
+    progress_count=$(printf '%s\n' "$log_tail" \
+      | grep -cE 'base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed' || true)
+    if [ "$progress_count" -eq 0 ]; then
+      printf '%d:%s' "$count" "$error_type"
+      return 0
+    fi
+  done <<< "$prefixes"
+  return 1
+}
+
 nm_ci_checks_state() {
   local run_id log_tail marker
   run_id=$(strip_quotes "$(nm_field id)")
   [ -n "$run_id" ] || { printf 'unknown'; return; }
   log_tail=$(nm_run axi logs --step ci --run "$run_id") || true
   [ -n "$log_tail" ] || { printf 'unknown'; return; }
+
+  # Check for CI polling wedge first: repeated identical CI check failures
+  # indicate a stuck polling loop (not a transient error).
+  local wedge_info
+  if wedge_info=$(nm_ci_wedge_detected "$log_tail"); then
+    printf 'wedge: %s' "$wedge_info"
+    return
+  fi
+
   marker=$(printf '%s\n' "$log_tail" \
     | grep -E 'CI checks passed|no CI checks reported - still monitoring|no CI checks reported yet|checks failed|issues detected|CI checks running|base branch advanced.*re-arming CI monitor timeout' \
     | tail -1)
@@ -535,6 +591,9 @@ if [ "$HAVE_RUN" = 1 ]; then
             if [ "$CI_LOG_STATE" = green ]; then
               RUN_STATE="done"
               RUN_DETAIL="checks green: PR ready for review (still monitoring for merge/close)"
+            elif printf '%s' "$CI_LOG_STATE" | grep -q '^wedge:'; then
+              RUN_STATE=failed
+              RUN_DETAIL="CI polling wedge: $CI_LOG_STATE - run is stuck, no forward progress"
             fi
             ;;
           fixing)
@@ -557,7 +616,7 @@ if [ "$HAVE_RUN" = 1 ]; then
     elif [ "$CI_STEP_STATUS" = fixing ]; then
       CI_LOG_STATE=not-ready
     fi
-    if [ "$CI_LOG_STATE" != not-ready ]; then
+    if [ "$CI_LOG_STATE" != not-ready ] && ! printf '%s' "$CI_LOG_STATE" | grep -q '^wedge:'; then
       emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
     fi
   fi
