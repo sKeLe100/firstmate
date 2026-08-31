@@ -881,6 +881,19 @@ test_pt_tracker_brief_carries_tracker_entry_law() {
   assert_grep "pre-dispatch precondition" "$brief" \
     "pt-tracker brief must state the precondition is pre-dispatch, not post-dispatch"
 
+  # Alternate spellings of the same repo still trigger the law: REPO is a free
+  # string, and a dispatcher naming owner/repo, a path, or a .git suffix must not
+  # silently lose the precondition.
+  local spelling
+  for spelling in sKeLe100/pt-tracker pt-tracker.git "$TMP_ROOT/repos/pt-tracker"; do
+    id="brief-pt-tracker-law-$(printf '%s' "$spelling" | tr -c '[:alnum:]' -)"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$spelling" --mode no-mistakes >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "brief for repo spelling '$spelling' was not scaffolded"
+    assert_grep "# pt-tracker tracker-entry law" "$brief" \
+      "repo spelling '$spelling' must still carry the tracker-entry law"
+  done
+
   # A different project must NOT carry the law.
   id="brief-other-proj-t1"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-repo --mode direct-PR >/dev/null 2>&1

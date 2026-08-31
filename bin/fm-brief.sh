@@ -477,7 +477,13 @@ DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 # ROADMAP execution prompt BEFORE dispatch. This is a literal, non-negotiable
 # pre-dispatch precondition specific to that repo, not a generalized per-project
 # policy framework (AGENTS.md section 7, captain's 2026-08-18 post-mortem Q1).
-if [ "$REPO" = pt-tracker ]; then
+# REPO is a caller-supplied free string, so match on its normalized basename:
+# owner/pt-tracker, /path/to/pt-tracker, and pt-tracker.git all name the repo the
+# law applies to, and a spelling mismatch would silently fail the law open.
+REPO_NAME=${REPO%/}
+REPO_NAME=${REPO_NAME##*/}
+REPO_NAME=${REPO_NAME%.git}
+if [ "$REPO_NAME" = pt-tracker ]; then
 IFS= read -r -d '' TRACKER_LAW_SECTION <<'EOF' || true
 
 
