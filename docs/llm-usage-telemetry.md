@@ -80,10 +80,19 @@ WebUI chats are out of scope here; the serving side classifies those
 | `backend` | runtime session-provider backend |
 | `mode` | delivery mode, ship tasks only |
 | `project` | project directory (or secondmate home path for `kind=secondmate`) |
+| `from_task_id` | prior task id when this spawn is itself a redelegation (i.e. when `--redelegated-from` was passed to `fm-spawn.sh`); absent for ordinary spawns |
 
 `purpose` is resolved by firstmate at intake, the same way `mode` and `yolo`
 are (`AGENTS.md` section 7), and passed to `fm-spawn.sh --purpose`. An
 omitted `--purpose` records `unspecified` rather than blocking the spawn.
+
+When a `dispatch` record carries `from_task_id`, this spawn was itself a
+redelegation from that prior task (the same information as a `delegation`
+record's own `from_task_id` and `trigger=redispatch`). The `dispatch` record's
+`from_task_id` field enables answering "what was this spawn's predecessor"
+without joining against the separate `delegation` event, while `delegation`
+records continue to carry richer context like `had_issue`, `reason`, and the
+prior harness/model.
 
 ### `delegation` — emitted on a re-delegation
 
