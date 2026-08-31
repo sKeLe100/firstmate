@@ -1871,7 +1871,7 @@ EOF
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
     if [ -z "$files" ]; then
       triage_log "deferred behind process-event generation signal:$signal_deferred"
-    elif afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
+    elif afk_present || signal_files_actionable $files || ! signal_crew_provably_working $files; then
       signal_appended=0
       signal_covered=
       signal_enqueued=
@@ -1910,7 +1910,6 @@ EOF
         [ -n "$sf" ] || continue
         case " $signal_deferred " in *" $f "*) continue ;; esac
         printf '%s' "$sig" > "$sf"
-        mark_surfaced "$f"
       done <<EOF
 $pending
 EOF
