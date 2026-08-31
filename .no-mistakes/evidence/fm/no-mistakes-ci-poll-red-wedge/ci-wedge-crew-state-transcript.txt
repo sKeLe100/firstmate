@@ -1,0 +1,45 @@
+
+================ wedged-run ================
+--- ci step log tail ---
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+--- `fm-crew-state ev-wedge` output ---
+state: failed · source: run-step · CI polling wedge: 5:"gh api repos/o/r/commits/abc/check-runs" - run is stuck, no forward progress
+
+================ transient-then-pending ================
+--- ci step log tail ---
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
+--- `fm-crew-state ev-transient` output ---
+state: working · source: run-step · validating (running)
+
+================ errors-then-green ================
+--- ci step log tail ---
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+all CI checks passed - still monitoring until merged or closed
+log: --verbose "gh pr view 36" exit status 1
+--- `fm-crew-state ev-green` output ---
+state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close)
+
+================ crlf-errors-then-green ================
+--- ci step log tail ---
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+all CI checks passed - still monitoring until merged or closed
+--- `fm-crew-state ev-crlf` output ---
+state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close)
