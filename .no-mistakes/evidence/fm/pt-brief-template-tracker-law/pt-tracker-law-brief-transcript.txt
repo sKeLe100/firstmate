@@ -1,0 +1,25 @@
+=== fm-brief.sh ship-pt-tracker pt-tracker --mode no-mistakes  (tail of generated brief) ===
+# pt-tracker tracker-entry law
+Before any work begins on pt-tracker, you MUST complete BOTH of the following:
+1. Use the ROADMAP execution prompt in the pt-tracker repo to plan and design the work.
+2. Create a CURRENT.md tracker entry in the pt-tracker repo's planning surfaces.
+This is a pre-dispatch precondition, not a post-dispatch step. Do not start implementation
+until both items above are complete and recorded in CURRENT.md.
+
+# Project memory
+
+=== same law present for spelling 'sKeLe100/pt-tracker' ===
+# pt-tracker tracker-entry law
+Before any work begins on pt-tracker, you MUST complete BOTH of the following:
+1. Use the ROADMAP execution prompt in the pt-tracker repo to plan and design the work.
+2. Create a CURRENT.md tracker entry in the pt-tracker repo's planning surfaces.
+
+=== non-pt-tracker ship brief (some-repo): law absent, no blank-line drift ===
+law occurrences: 0
+When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - list '/tmp/evhome/state/ship-other-repo.inbox'/*.msg, read and act on each message in numeric order, then acknowledge each handled message by moving it: `mv '/tmp/evhome/state/ship-other-repo.inbox'/NNN.msg '/tmp/evhome/state/ship-other-repo.inbox'/handled/`.$
+The move IS the acknowledgement: without it firstmate rings again and eventually treats you as stuck. An empty or absent inbox needs no action.$
+$
+# Project memory$
+
+=== pt-tracker SCOUT brief: law absent (scouts do not ship) ===
+law occurrences: 0
