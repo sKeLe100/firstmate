@@ -1,0 +1,8 @@
+=== data/llm-usage/firstmate.jsonl (real fm-spawn.sh runs) ===
+{"schema_version": 1, "source": "firstmate", "event_type": "dispatch", "task_id": "fix-login-bug", "kind": "ship", "purpose": "code", "harness": "codex", "model": "default", "effort": "default", "backend": "tmux", "mode": "no-mistakes", "project": "/tmp/fm-evidence.zYNuzH/demo/proj"}
+{"schema_version": 1, "source": "firstmate", "event_type": "dispatch", "task_id": "fix-login-bug-retry", "kind": "ship", "purpose": "code", "harness": "claude", "model": "default", "effort": "default", "backend": "tmux", "mode": "no-mistakes", "project": "/tmp/fm-evidence.zYNuzH/demo/proj2", "from_task_id": "fix-login-bug"}
+{"schema_version": 1, "source": "firstmate", "event_type": "delegation", "task_id": "fix-login-bug-retry", "from_task_id": "fix-login-bug", "from_harness": "codex", "from_model": "default", "to_harness": "claude", "to_model": "default", "had_issue": "true", "reason": "codex looped on the same edit three times", "trigger": "redispatch"}
+
+=== 'what was this spawn's predecessor?' answered from dispatch records alone ===
+  fix-login-bug          harness=codex   from_task_id=<absent>
+  fix-login-bug-retry    harness=claude  from_task_id=fix-login-bug
