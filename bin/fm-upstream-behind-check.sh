@@ -294,7 +294,7 @@ action_check() {
   default=$(default_branch "$FM_ROOT" 2>/dev/null) || default=
   newest=$(report_field newest_upstream_date)
   if [ -n "$default" ]; then
-    "$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default" >/dev/null 2>&1 || true
+    "$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default" >/dev/null || true
   fi
 
   drift_record_write "$behind" || true

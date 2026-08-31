@@ -33,7 +33,7 @@
 #       item_id=upstream-sync
 #       action=filed|refreshed|skipped
 #       behind=<N>
-#       days_behind=<N>
+#       days_behind=<N>|unknown
 #       eligible=yes|no
 #       eligible_reason=<why>
 #       overlap_count=<N>
@@ -50,9 +50,17 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 # shellcheck source=bin/fm-tasks-axi-lib.sh
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-lease-lib.sh
+. "$SCRIPT_DIR/fm-lease-lib.sh"
 
 ITEM_ID=upstream-sync
+ITEM_KIND=ship
+ITEM_REPO=sKeLe100/firstmate
 BACKLOG_MD="$FM_HOME/data/backlog.md"
+STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+BACKLOG_WRITE_LOCK="$STATE/.fm-upstream-sync-item.lock"
 MARK_START="<!-- upstream-sync:start -->"
 MARK_END="<!-- upstream-sync:end -->"
 
@@ -73,7 +81,7 @@ case "$behind" in ''|*[!0-9]*) echo "error: <behind> must be a non-negative inte
 [ -n "$default" ] || { echo "error: <default-branch> is required" >&2; exit 1; }
 
 # --- days behind, from newest_upstream_date (YYYY-MM-DD) to today -----------
-days_behind=0
+days_behind=unknown
 if [ -n "$newest" ] && [ "$newest" != unknown ]; then
   now_epoch=$(date +%s)
   if [ "$(uname)" = Darwin ]; then
@@ -127,18 +135,27 @@ if [ -f "$config_gate" ]; then
   if [ "$behind" -ge "$commit_threshold" ]; then
     eligible=yes
     eligible_reason="behind ($behind) >= commit threshold ($commit_threshold)"
-  elif [ "$days_behind" -ge "$days_threshold" ]; then
+  elif [ "$days_behind" != unknown ] && [ "$days_behind" -ge "$days_threshold" ]; then
     eligible=yes
     eligible_reason="days behind ($days_behind) >= days threshold ($days_threshold)"
   else
-    eligible_reason="behind ($behind) and days behind ($days_behind) are below threshold ($commit_threshold commits / $days_threshold days)"
+    if [ "$days_behind" = unknown ]; then
+      eligible_reason="behind ($behind) is below the commit threshold ($commit_threshold) and the newest upstream commit date could not be determined, so the $days_threshold-day rule could not be evaluated"
+    else
+      eligible_reason="behind ($behind) and days behind ($days_behind) are below threshold ($commit_threshold commits / $days_threshold days)"
+    fi
   fi
 fi
 
 # --- compose the backlog note ------------------------------------------
 note_body() {
-  printf 'Upstream sync: %s commits behind upstream/%s (%s days since newest upstream commit).\n' \
-    "$behind" "$default" "$days_behind"
+  if [ "$days_behind" = unknown ]; then
+    printf 'Upstream sync: %s commits behind upstream/%s (age of the newest upstream commit is unknown).\n' \
+      "$behind" "$default"
+  else
+    printf 'Upstream sync: %s commits behind upstream/%s (%s days since newest upstream commit).\n' \
+      "$behind" "$default" "$days_behind"
+  fi
   printf 'Auto-dispatch eligible: %s (%s)\n' "$eligible" "$eligible_reason"
   printf 'Files touched both upstream and locally since merge-base (conflict risk): %s\n' "$overlap_count"
   if [ -n "$overlap_shown" ]; then
@@ -162,23 +179,32 @@ if fm_tasks_axi_backend_available "$FM_HOME/config"; then
   if (cd "$FM_HOME" && tasks-axi show "$ITEM_ID" >/dev/null 2>&1); then
     action=refreshed
     (cd "$FM_HOME" && tasks-axi update "$ITEM_ID" --title "$title" \
+      --kind "$ITEM_KIND" --repo "$ITEM_REPO" \
       --body-file "$body_file" --archive-body >/dev/null) \
       || { echo "error: tasks-axi update $ITEM_ID failed; the sync item carries no eligibility signal" >&2; exit 1; }
   else
-    (cd "$FM_HOME" && tasks-axi add "$ITEM_ID" "$title" --body-file "$body_file" >/dev/null) \
+    (cd "$FM_HOME" && tasks-axi add "$ITEM_ID" "$title" \
+      --kind "$ITEM_KIND" --repo "$ITEM_REPO" --body-file "$body_file" >/dev/null) \
       || { echo "error: tasks-axi add $ITEM_ID failed" >&2; exit 1; }
   fi
 else
-  # data/backlog.md is a whole-file replace here, which is exactly what the
-  # reserved `backlog` lease guards (bin/fm-lease.sh); the tasks-axi path
-  # above is deliberately unguarded because tasks-axi owns its own locks.
+  # data/backlog.md is a whole-file replace here. The reserved `backlog` lease
+  # is READ here only: it is actor-scoped and outlives any single process, so
+  # this unattended script must never claim or release it - a same-actor claim
+  # would refresh, and the release would drop, a lease the supervising session
+  # still holds. Concurrency between unattended writers is handled by the
+  # repo's process-scoped lock instead. The tasks-axi path above needs neither,
+  # because tasks-axi owns its own locks.
   mkdir -p "$(dirname "$BACKLOG_MD")" 2>/dev/null || true
+  mkdir -p "$STATE" 2>/dev/null || true
   [ -f "$BACKLOG_MD" ] || : > "$BACKLOG_MD"
-  if ! "$SCRIPT_DIR/fm-lease.sh" claim backlog >/dev/null 2>&1; then
-    echo "warning: the backlog lease is held elsewhere; skipping the sync item write this episode" >&2
+  self_actor=$(fm_lease_actor 2>/dev/null) || self_actor=main
+  if fm_lease_live backlog && [ "$FM_LEASE_ACTOR" != "$self_actor" ]; then
+    echo "warning: the backlog lease is held by the $FM_LEASE_ACTOR supervision actor; skipping the sync item write this episode" >&2
     action=skipped
   else
-    trap '"$SCRIPT_DIR/fm-lease.sh" release backlog >/dev/null 2>&1 || true' EXIT
+    fm_lock_acquire_wait "$BACKLOG_WRITE_LOCK"
+    trap 'fm_lock_release "$BACKLOG_WRITE_LOCK"' EXIT
     block=$(printf '%s\n### %s\n%s\n%s\n' "$MARK_START" "$ITEM_ID" "$(note_body)" "$MARK_END")
     if grep -qF "$MARK_START" "$BACKLOG_MD" 2>/dev/null; then
       action=refreshed
