@@ -1,0 +1,17 @@
+== Part A: bash timeout fallback interrupted mid-flight ==
+  mechanism: bash
+  TMPDIR after interrupt:
+    $TMPDIR/fm-bash-timeout-command.YpVOyC
+  OLD (TMPDIR entirely empty): FAIL - 'interrupted snapshot left temp files behind:'
+    $TMPDIR/fm-bash-timeout-command.YpVOyC
+  NEW (snapshot-owned only): PASS - no fm-fleet-snapshot.* residue
+
+== Part B: real fm-fleet-snapshot.sh interrupted mid-run ==
+  snapshot tmpdir observed while running: 1
+  TMPDIR after interrupt:
+  NEW (snapshot-owned only): PASS - no fm-fleet-snapshot.* residue
+
+== Part C: negative control - plant fm-fleet-snapshot.* residue ==
+  NEW (snapshot-owned only): FAIL - left directory behind: $TMPDIR/fm-fleet-snapshot.CONTROL
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1CD5Y7HDX4YPHF5JFPY95Z3/bin/fm-timeout-lib.sh: line 55: /tmp/tmp.zk8YfvrCwl/tmpA/fm-bash-timeout-command.YpVOyC: No such file or directory
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1CD5Y7HDX4YPHF5JFPY95Z3/bin/fm-timeout-lib.sh: line 62: /tmp/tmp.zk8YfvrCwl/tmpA/fm-bash-timeout-command.YpVOyC.deadline: No such file or directory
