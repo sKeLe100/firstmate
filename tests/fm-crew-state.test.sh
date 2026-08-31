@@ -672,6 +672,42 @@ test_ci_monitoring_crlf_errors_then_green_not_wedged() {
   pass "carriage-return-terminated poll errors re-match their own prefix"
 }
 
+# Regression: a log mixing CR-terminated and plain copies of the SAME failing
+# poll must group into one prefix, so the split does not hide a real wedge.
+test_ci_monitoring_mixed_line_endings_still_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-mixed-eol)
+  make_repo_on_branch "$d/wt" fm/feat-cimixedeol
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cimixedeol.meta" "window=fm:fm-feat-cimixedeol" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cimixedeol)"
+  local plain cr
+  plain='log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1'
+  cr=$(printf '%s\r' "$plain")
+  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$cr" "$plain" "$cr" "$plain" "$cr" "$plain")
+  local out; out=$(run_crew_state "$d" feat-cimixedeol)
+  assert_contains "$out" "state: failed" "mixed line endings must not split one wedged prefix"
+  assert_contains "$out" "CI polling wedge" "mixed-line-ending wedge is still detected"
+  pass "mixed CR and plain copies of one failing poll still wedge"
+}
+
+# Regression: an error prefix that itself begins with digits (e.g. an HTTP
+# status) must survive the count parse and still be recognized as a wedge.
+test_ci_monitoring_numeric_error_prefix_still_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-numeric)
+  make_repo_on_branch "$d/wt" fm/feat-cinumeric
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cinumeric.meta" "window=fm:fm-feat-cinumeric" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinumeric)"
+  local err='warning: could not check CI: 404 Not Found (HTTP 404)'
+  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n' "$err" "$err" "$err" "$err" "$err")
+  local out; out=$(run_crew_state "$d" feat-cinumeric)
+  assert_contains "$out" "state: failed" "numeric-leading error prefix -> failed"
+  assert_contains "$out" "404 Not Found (HTTP 404)" "numeric-leading prefix is reported intact"
+  pass "an error prefix starting with digits is preserved and wedges"
+}
+
 test_ci_monitoring_still_waiting_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-waiting)
@@ -1545,6 +1581,8 @@ test_ci_monitoring_transient_errors_then_pending_not_wedged
 test_ci_monitoring_interleaved_heartbeat_still_wedged
 test_ci_monitoring_repeated_errors_then_green_not_wedged
 test_ci_monitoring_crlf_errors_then_green_not_wedged
+test_ci_monitoring_mixed_line_endings_still_wedged
+test_ci_monitoring_numeric_error_prefix_still_wedged
 test_ci_monitoring_still_waiting_stays_working
 test_ci_monitoring_green_then_new_issue_stays_working
 test_ci_ready_done_log_relapse_stays_working

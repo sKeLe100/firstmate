@@ -375,15 +375,14 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   # "gh api workflow runs for head commit: unknown flag: --slurp").
   local prefixes
   prefixes=$(printf '%s\n' "$warnings" \
-    | sed -E 's/^warning: could not check CI: //;s/^log: --verbose //;s/exit status 1$//;s/[[:space:]]*$//' \
+    | sed -E 's/[[:space:]]*$//;s/^warning: could not check CI: //;s/^log: --verbose //;s/exit status 1$//;s/[[:space:]]*$//' \
     | sort | uniq -c | sort -rn)
   # Check each error prefix: if any reaches the threshold, verify there's
   # no progress marker after that prefix's own last occurrence.
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     local count error_type last_error_line
-    count=$(printf '%s' "$line" | awk '{print $1}')
-    error_type=$(printf '%s' "$line" | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')
+    read -r count error_type <<< "$line"
     if [ "$count" -lt "$WEDGE_THRESHOLD" ]; then
       continue
     fi
@@ -393,6 +392,7 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     span=$(printf '%s\n' "$log_tail" | fm_wedge_want=$error_type awk '
       /^warning: could not check CI:|^log: --verbose .+exit status 1/ {
         s = $0
+        sub(/[[:space:]]+$/, "", s)
         sub(/^warning: could not check CI: /, "", s)
         sub(/^log: --verbose /, "", s)
         sub(/exit status 1$/, "", s)
