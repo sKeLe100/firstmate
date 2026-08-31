@@ -28,7 +28,7 @@
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
 #   --upstream-sync applies only to a ship brief for an auto-dispatched upstream
-#   sync task (AGENTS.md section 7; docs/configuration.md "Upstream autosync").
+#   sync task (docs/configuration.md "Upstream autosync").
 #   It adds the non-negotiable gates: never yolo-merge the sync PR regardless of
 #   the project's merge posture, stop at needs-decision on any conflict in a
 #   supervision-safety file (bin/fm-watch.sh, bin/fm-classify-lib.sh,

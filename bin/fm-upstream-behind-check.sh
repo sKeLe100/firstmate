@@ -288,9 +288,9 @@ action_check() {
   printf '%s\n' "$FM_LINE_CAP_LINE"
 
   # File-or-refresh the one stable-id sync backlog item and surface its
-  # auto-dispatch eligibility (config/upstream-autosync; docs/configuration.md
-  # "Upstream autosync"). This is always active - it is the AUTOMATIC filing
-  # AGENTS.md section 7 describes - and never itself spawns a crewmate.
+  # auto-dispatch eligibility. This is always active - it is the AUTOMATIC
+  # filing docs/configuration.md "Upstream autosync" describes - and never
+  # itself spawns a crewmate.
   default=$(default_branch "$FM_ROOT" 2>/dev/null) || default=
   newest=$(report_field newest_upstream_date)
   if [ -n "$default" ]; then

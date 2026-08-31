@@ -3,8 +3,8 @@
 # backlog item for an open drift episode, and report auto-dispatch eligibility.
 #
 # Called by bin/fm-upstream-behind-check.sh's `check` action whenever an
-# upstream drift episode is open (AGENTS.md section 7 "Intake and authority";
-# docs/configuration.md "Upstream autosync"). This script never spawns a
+# upstream drift episode is open (docs/configuration.md "Upstream autosync").
+# This script never spawns a
 # crewmate itself - bin/fm-spawn.sh and firstmate's own supervision loop own
 # that decision, driven by this script's eligible= field.
 #
@@ -206,29 +206,38 @@ else
     fm_lock_acquire_wait "$BACKLOG_WRITE_LOCK"
     trap 'fm_lock_release "$BACKLOG_WRITE_LOCK"' EXIT
     block=$(printf '%s\n### %s\n%s\n%s\n' "$MARK_START" "$ITEM_ID" "$(note_body)" "$MARK_END")
-    if grep -qF "$MARK_START" "$BACKLOG_MD" 2>/dev/null; then
-      action=refreshed
-      tmp=$(mktemp "$BACKLOG_MD.XXXXXX")
-      # A lost end marker must not swallow every item after the block, so the
-      # rewrite is only committed when the marker pair was actually closed.
-      # The block travels through the environment: awk -v expands backslash
-      # escapes, which would mangle an upstream commit subject.
-      if FM_SYNC_BLOCK="$block" awk -v start="$MARK_START" -v end="$MARK_END" '
-        $0 == start { print ENVIRON["FM_SYNC_BLOCK"]; skip=1; next }
-        $0 == end { if (skip) { skip=0; next } }
-        skip { next }
-        { print }
-        END { exit (skip ? 1 : 0) }
-      ' "$BACKLOG_MD" > "$tmp"; then
+    tmp=$(mktemp "$BACKLOG_MD.XXXXXX")
+    # awk is the single matcher for the marker pair, so detection and rewrite
+    # can never disagree: it reports substituted (0), no block present (2), or
+    # an unterminated block (1), and a lost end marker must not swallow every
+    # item after the block. data/backlog.md is hand-edited, so the markers are
+    # matched with surrounding whitespace trimmed. The block travels through
+    # the environment: awk -v expands backslash escapes, which would mangle an
+    # upstream commit subject.
+    FM_SYNC_BLOCK="$block" awk -v start="$MARK_START" -v end="$MARK_END" '
+      function trim(l) { gsub(/^[ \t]+|[ \t]+$/, "", l); return l }
+      trim($0) == start { if (!found) print ENVIRON["FM_SYNC_BLOCK"]; found=1; skip=1; next }
+      trim($0) == end { if (skip) { skip=0; next } }
+      skip { next }
+      { print }
+      END { exit (skip ? 1 : (found ? 0 : 2)) }
+    ' "$BACKLOG_MD" > "$tmp"
+    rewrite_rc=$?
+    case "$rewrite_rc" in
+      0)
+        action=refreshed
         mv -f "$tmp" "$BACKLOG_MD"
-      else
+        ;;
+      2)
+        rm -f "$tmp"
+        { printf '\n'; printf '%s\n' "$block"; } >> "$BACKLOG_MD"
+        ;;
+      *)
         rm -f "$tmp"
         echo "error: $BACKLOG_MD has an unterminated $MARK_START block; leaving it untouched" >&2
         action=skipped
-      fi
-    else
-      { printf '\n'; printf '%s\n' "$block"; } >> "$BACKLOG_MD"
-    fi
+        ;;
+    esac
   fi
 fi
 

@@ -21,6 +21,8 @@
 #   - A `backlog` lease held by this script's OWN actor survives the run: the
 #     lease is actor-scoped and outlives any single process, so this
 #     unattended script must never release the supervising session's lease.
+#   - A hand-indented marker pair is still refreshed in place, rather than
+#     reporting action=refreshed while silently dropping the new payload.
 #   - An unparseable/unknown newest-upstream date reports days_behind=unknown
 #     rather than a definite 0 that can never cross the 14-day rule.
 set -u
@@ -260,6 +262,31 @@ test_unknown_date_is_not_reported_as_zero_days() {
   pass "an unknown newest-upstream date reports unknown rather than a definite zero"
 }
 
+test_indented_markers_are_still_refreshed() {
+  set -e
+  local home root out body
+  home=$(new_home)
+  : > "$home/config/upstream-autosync"
+  root="$TMP_ROOT/repo-indent"
+  setup_repo "$root" 8
+
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ITEM" file 3 "$(date +%F)" main >/dev/null
+  # data/backlog.md is hand-edited; an editor reindents the marker pair.
+  sed -i -E 's/^(<!-- upstream-sync:(start|end) -->)$/  \1/' "$home/data/backlog.md"
+
+  out=$(FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD=5 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    "$ITEM" file 8 "$(date +%F)" main)
+  assert_contains "$out" "action=refreshed" "sync-item: an indented marker pair must still refresh in place"
+  body=$(cat "$home/data/backlog.md")
+  assert_contains "$body" "8 commits behind" "sync-item: the refresh must actually replace the stale payload"
+  assert_contains "$body" "Auto-dispatch eligible: yes" \
+    "sync-item: the refreshed block must carry the new eligibility signal"
+  assert_not_contains "$body" "3 commits behind" "sync-item: the stale payload must not survive the refresh"
+  [ "$(grep -c "upstream-sync:start" "$home/data/backlog.md")" -eq 1 ] \
+    || fail "sync-item: the refresh must not leave a second sync block"
+  pass "a hand-indented marker pair is refreshed in place, not silently skipped"
+}
+
 test_dedup_refreshes_in_place
 test_below_threshold_stays_ineligible_with_config
 test_at_threshold_is_eligible_with_config
@@ -269,3 +296,4 @@ test_missing_end_marker_leaves_backlog_intact
 test_held_backlog_lease_skips_the_write
 test_same_actor_backlog_lease_survives_the_run
 test_unknown_date_is_not_reported_as_zero_days
+test_indented_markers_are_still_refreshed
