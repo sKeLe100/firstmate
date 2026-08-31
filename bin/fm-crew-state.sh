@@ -42,6 +42,11 @@
 #      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
 #      green, so a green PR is never silently read as still-validating.
+#      That same log-tail check also detects a wedged CI poll (the same CI
+#      check command failing identically WEDGE_THRESHOLD+ times with no
+#      forward-progress marker after its last occurrence) and overrides
+#      working -> failed, so a poll that can never progress surfaces as
+#      terminal instead of monitoring forever (see nm_ci_wedge_detected).
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
