@@ -357,12 +357,9 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   local warnings
   warnings=$(printf '%s\n' "$log_tail" | grep -E '^warning: could not check CI:|^log: --verbose .+exit status 1' || true)
   [ -n "$warnings" ] || return 1
-  # Get the line number of the last repeated error (relative to log_tail).
-  local last_error_line
-  last_error_line=$(printf '%s\n' "$log_tail" | grep -n -E '^warning: could not check CI:|^log: --verbose .+exit status 1' | tail -1 | cut -d: -f1)
   # Progress markers that indicate forward CI progress (must match the marker
   # parser at nm_ci_checks_state line ~403 for consistency).
-  local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed|no CI checks reported - still monitoring|CI checks running'
+  local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed|no CI checks reported - still monitoring|no CI checks reported yet|issues detected|CI checks running'
   # Extract the error prefix from each warning line (e.g.,
   # "gh api workflow runs for head commit: unknown flag: --slurp").
   local prefixes
@@ -370,16 +367,27 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     | sed -E 's/^warning: could not check CI: //;s/^log: --verbose //;s/exit status 1$//;s/[[:space:]]*$//' \
     | sort | uniq -c | sort -rn)
   # Check each error prefix: if any reaches the threshold, verify there's
-  # no progress marker after the last error occurrence.
+  # no progress marker after that prefix's own last occurrence.
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    local count error_type
+    local count error_type last_error_line
     count=$(printf '%s' "$line" | awk '{print $1}')
     error_type=$(printf '%s' "$line" | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')
     if [ "$count" -lt "$WEDGE_THRESHOLD" ]; then
       continue
     fi
-    # Count progress markers that appear after the last repeated error.
+    # Line number (relative to log_tail) of this prefix's last occurrence.
+    last_error_line=$(printf '%s\n' "$log_tail" | awk -v want="$error_type" '
+      /^warning: could not check CI:|^log: --verbose .+exit status 1/ {
+        s = $0
+        sub(/^warning: could not check CI: /, "", s)
+        sub(/^log: --verbose /, "", s)
+        sub(/exit status 1$/, "", s)
+        sub(/[ \t]+$/, "", s)
+        if (s == want) n = NR
+      }
+      END { if (n) print n }')
+    # Count progress markers that appear after that occurrence.
     local progress_count=0
     if [ -n "$last_error_line" ]; then
       progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
