@@ -47,6 +47,10 @@
 #      forward-progress marker after its last occurrence) and overrides
 #      working -> failed, so a poll that can never progress surfaces as
 #      terminal instead of monitoring forever (see nm_ci_wedge_detected).
+#      The wedge verdict is taken before the marker parse, so it also wins
+#      over a green marker; on the coarse cross-branch fallback (where the
+#      log may belong to another branch's run) it only suppresses the
+#      "still monitoring PR" emit rather than reporting failed.
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
@@ -363,7 +367,7 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   warnings=$(printf '%s\n' "$log_tail" | grep -E '^warning: could not check CI:|^log: --verbose .+exit status 1' || true)
   [ -n "$warnings" ] || return 1
   # Progress markers that indicate forward CI progress (must match the marker
-  # parser at nm_ci_checks_state line ~403 for consistency).
+  # parser in nm_ci_checks_state below for consistency).
   local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed|no CI checks reported - still monitoring|no CI checks reported yet|issues detected|CI checks running'
   # Extract the error prefix from each warning line (e.g.,
   # "gh api workflow runs for head commit: unknown flag: --slurp").
