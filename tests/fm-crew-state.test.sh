@@ -708,6 +708,27 @@ test_ci_monitoring_numeric_error_prefix_still_wedged() {
   pass "an error prefix starting with digits is preserved and wedges"
 }
 
+# A repo with no CI workflows logs the green "no CI checks reported - still
+# monitoring" marker every poll; flaky poll errors among those lines must not
+# turn that green run into a wedge.
+test_ci_monitoring_no_checks_green_marker_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-nochecks)
+  make_repo_on_branch "$d/wt" fm/feat-cinochecks
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cinochecks.meta" "window=fm:fm-feat-cinochecks" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinochecks)"
+  local err green
+  err='log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1'
+  green='no CI checks reported - still monitoring until merged or closed'
+  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+    "$green" "$err" "$green" "$err" "$green" "$err" "$green" "$err" "$green" "$err" "$green")
+  local out; out=$(run_crew_state "$d" feat-cinochecks)
+  assert_not_contains "$out" "CI polling wedge" "the no-checks green marker is progress, not heartbeat noise"
+  assert_not_contains "$out" "state: failed" "a green no-checks run must not be reported failed"
+  pass "flaky poll errors around the no-checks green marker are not a wedge"
+}
+
 test_ci_monitoring_still_waiting_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-waiting)
@@ -1583,6 +1604,7 @@ test_ci_monitoring_repeated_errors_then_green_not_wedged
 test_ci_monitoring_crlf_errors_then_green_not_wedged
 test_ci_monitoring_mixed_line_endings_still_wedged
 test_ci_monitoring_numeric_error_prefix_still_wedged
+test_ci_monitoring_no_checks_green_marker_not_wedged
 test_ci_monitoring_still_waiting_stays_working
 test_ci_monitoring_green_then_new_issue_stays_working
 test_ci_ready_done_log_relapse_stays_working

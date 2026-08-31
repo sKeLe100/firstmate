@@ -369,8 +369,8 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   # Markers that indicate real forward CI progress, and per-poll heartbeat
   # markers that merely say the loop ran again (together they must match the
   # marker parser in nm_ci_checks_state below for consistency).
-  local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|outcome=|checks failed|issues detected'
-  local heartbeat_markers='no CI checks reported - still monitoring|no CI checks reported yet|CI checks running'
+  local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|no CI checks reported - still monitoring|outcome=|checks failed|issues detected'
+  local heartbeat_markers='no CI checks reported yet|CI checks running'
   # Extract the error prefix from each warning line (e.g.,
   # "gh api workflow runs for head commit: unknown flag: --slurp").
   local prefixes
