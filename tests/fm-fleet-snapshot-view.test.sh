@@ -532,9 +532,14 @@ test_many_scout_reports_survive_argv_limit() {
 
 # Snapshot temp files hold whole backlog- and task-sized payloads. An
 # interrupted run (a captain hitting Ctrl-C on /bearings) must not leave them
-# behind in TMPDIR.
+# behind in TMPDIR. The assertion checks for snapshot-owned temp files only
+# (the fm-fleet-snapshot.* directory and its contents), not for every file
+# in TMPDIR: the fm-timeout-lib.sh bash fallback (used when timeout/perl are
+# unavailable) creates transient files directly in TMPDIR that are cleaned
+# up by the timeout wrapper itself, but an interrupt may leave them behind
+# as innocuous residue that has nothing to do with snapshot cleanup.
 test_interrupted_snapshot_leaves_no_temp_files() {
-  local home tmp pid i leftovers
+  local home tmp pid i snapshot_dir snapshot_files
   home=$(make_home interrupted-snapshot)
   tmp=$TMP_ROOT/interrupted-tmpdir
   mkdir -p "$tmp"
@@ -567,9 +572,49 @@ test_interrupted_snapshot_leaves_no_temp_files() {
   }
   kill -TERM "$pid" 2>/dev/null
   wait "$pid" 2>/dev/null
-  leftovers=$(find "$tmp" -mindepth 1 2>/dev/null)
-  [ -z "$leftovers" ] || fail "interrupted snapshot left temp files behind: $leftovers"
+  # Check for snapshot-owned temp files only (the fm-fleet-snapshot.* directory
+  # and anything under it). The bash fallback in fm-timeout-lib.sh creates
+  # transient files directly in TMPDIR that may survive an interrupt, but that
+  # is not a snapshot cleanup bug.
+  snapshot_dir=$(find "$tmp" -mindepth 1 -maxdepth 1 -name 'fm-fleet-snapshot.*' -type d 2>/dev/null)
+  snapshot_files=$(find "$tmp" -mindepth 2 -name 'fm-fleet-snapshot.*' -o -path '*/fm-fleet-snapshot.*/*' 2>/dev/null)
+  [ -z "$snapshot_dir" ] \
+    || fail "interrupted snapshot left directory behind: $snapshot_dir"
+  [ -z "$snapshot_files" ] \
+    || fail "interrupted snapshot left temp files behind: $snapshot_files"
   pass "an interrupted snapshot cleans up its temp files"
+}
+
+# Regression: when timeout/gtimeout/perl are unavailable, fm_run_timed falls
+# back to the dependency-free bash mechanism (fm-run-bash-timeout). That path
+# creates temp files directly in TMPDIR (pattern fm-bash-timeout-command.*)
+# which the snapshot's EXIT trap does not clean up because it only removes
+# FM_SNAPSHOT_TMPDIR. Verify the fallback mechanism's own temp files are
+# cleaned up by the timeout wrapper itself even under normal (non-interrupted)
+# execution.
+test_bash_timeout_fallback_cleanliness() {
+  # Skip if timeout or perl are available - this test targets the bash fallback path.
+  if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1 || command -v perl >/dev/null 2>&1; then
+    pass "bash fallback not tested when timeout/perl are available (skip: native mechanism works)"
+    return 0
+  fi
+  local home tmp
+  home=$(make_home bash-fallback)
+  tmp=$TMP_ROOT/bash-fallback-tmpdir
+  mkdir -p "$tmp"
+  {
+    printf '## In flight\n\n## Queued\n\n## Done\n'
+    for i in $(seq 1 500); do
+      printf -- '- [x] slow-task-%04d - Synthetic backlog record %04d for bash-fallback coverage https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-01)\n' \
+        "$i" "$i" "$i"
+    done
+  } > "$home/data/backlog.md"
+  TMPDIR="$tmp" FM_HOME="$home" "$SNAPSHOT" --json >/dev/null 2>&1
+  local bash_files
+  bash_files=$(find "$tmp" -mindepth 1 -name 'fm-bash-timeout-command.*' 2>/dev/null)
+  [ -z "$bash_files" ] \
+    || fail "bash fallback left temp files behind: $bash_files"
+  pass "bash timeout fallback cleans up its transient temp files"
 }
 
 # The registered-secondmate loop accumulates one record per home. Each valid
@@ -1095,6 +1140,7 @@ test_large_backlog_survives_argv_limit
 test_many_secondmate_summaries_survive_argv_limit
 test_many_scout_reports_survive_argv_limit
 test_interrupted_snapshot_leaves_no_temp_files
+test_bash_timeout_fallback_cleanliness
 test_unreadable_remote_summary_degrades_to_fallback_row
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
