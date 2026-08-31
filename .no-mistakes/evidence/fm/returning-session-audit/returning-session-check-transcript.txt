@@ -1,0 +1,31 @@
+=== fm-returning-session-check.sh: what a caller sees ===
+
+-- session well below the restart band --
+$ fm-returning-session-check.sh <tmp>/warm
+verdict=resume band=ok context_tokens=50000 restart_tokens=250000 transcript=<tmp>/ch/.claude/projects/-tmp-tmp-wC56cge2NO-warm/session.jsonl
+[exit 0]
+
+-- session past the restart band (must not bare-resume) --
+$ fm-returning-session-check.sh <tmp>/hot
+verdict=restart-with-carryover band=restart context_tokens=260000 restart_tokens=250000 transcript=<tmp>/ch/.claude/projects/-tmp-tmp-wC56cge2NO-hot/session.jsonl
+[exit 0]
+
+-- home that has never run a session: no evidence, still resumable --
+$ fm-returning-session-check.sh <tmp>/fresh
+verdict=unknown reason=fm-context-usage: no Claude transcript directory at <tmp>/ch/.claude/projects/-tmp-tmp-wC56cge2NO-fresh (non-claude harness, or no session yet)
+[exit 0]
+
+-- corrupted config/context-thresholds --
+$ fm-returning-session-check.sh <tmp>/badcfg
+verdict=blocked reason=fm-context-usage: malformed warn value in <tmp>/badcfg/config/context-thresholds: warn=oops
+[exit 1]
+
+-- UNCLASSIFIED failure (no python3 on PATH) - the allowlist inversion --
+$ PATH=/nonexistent-with-only-coreutils fm-returning-session-check.sh <tmp>/nopy
+verdict=blocked reason=/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1CKNHRZRAC0VKGYAQRBQVQF/bin/fm-context-usage.sh: line 102: sort: command not found /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1CKNHRZRAC0VKGYAQRBQVQF/bin/fm-context-usage.sh: line 102: head: command not found /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1CKNHRZRAC0VKGYAQRBQVQF/bin/fm-context-usage.sh: line 102: cut: command not found
+[exit 1]
+
+-- relative path is a usage error, not a silent unknown --
+$ fm-returning-session-check.sh ./some/relative/home
+fm-returning-session-check: home-path must be absolute: ./some/relative/home
+[exit 1]
