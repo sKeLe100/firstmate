@@ -106,6 +106,13 @@ tasks_in() {  # <home> <tasks-axi args...>
   (cd "$home" && tasks-axi "$@")
 }
 
+# UTC timestamp <days> in the future. BSD `date -v` is tried first: on BSD/macOS
+# `-d` is the DST flag, so a GNU-first probe can succeed and silently print now.
+future_utc() {  # <days>
+  date -u -v+"$1"d +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+    || date -u -d "+$1 days" +'%Y-%m-%dT%H:%M:%SZ'
+}
+
 # seed_commitment <home> <obligation> <request> <platform> <work-home> <work-id>
 # Simulates the intake half that already works today: the relay mention arrives,
 # the typed obligation is created with its opaque thread binding, the work is
@@ -113,8 +120,7 @@ tasks_in() {  # <home> <tasks-axi args...>
 seed_commitment() {
   local home=$1 obligation=$2 request=$3 platform=$4 work_home=$5 work_id=$6
   local expires_at
-  expires_at=$(date -u -d "+7 days" +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) \
-    || expires_at=$(date -u -v+7d +'%Y-%m-%dT%H:%M:%SZ')
+  expires_at=$(future_utc 7)
   jq -n --arg r "$request" --arg p "$platform" --arg e "$expires_at" \
     '{request_id:$r, platform:$p,
       context_binding:{version:"ctx1", value:("ctx1_" + $r)},
@@ -131,7 +137,7 @@ seed_commitment() {
 
   tasks_in "$home" public-followup add "$obligation" \
     --request-context-file "$home/request.json" --purpose promised-final \
-    --expected-final-file "$home/expected.json" --expires-at 2026-10-01T00:00:00Z >/dev/null \
+    --expected-final-file "$home/expected.json" --expires-at "$(future_utc 14)" >/dev/null \
     || fail "could not create the public commitment"
   tasks_in "$home" public-followup bind-work "$obligation" \
     --relation-file "$home/relation.json" >/dev/null \
@@ -158,8 +164,7 @@ seed_commitment() {
 seed_repro_commitment() {   # <home> <obligation> <request> <work-home> <work-id>
   local home=$1 obligation=$2 request=$3 work_home=$4 work_id=$5
   local expires_at
-  expires_at=$(date -u -d "+7 days" +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) \
-    || expires_at=$(date -u -v+7d +'%Y-%m-%dT%H:%M:%SZ')
+  expires_at=$(future_utc 7)
   jq -n --arg r "$request" --arg e "$expires_at" \
     '{request_id:$r, platform:"discord",
       context_binding:{version:"ctx1", value:("ctx1_" + $r)},
@@ -175,7 +180,7 @@ seed_repro_commitment() {   # <home> <obligation> <request> <work-home> <work-id
       role:"fulfills", required:true, generation:1}' > "$home/relation.json"
   tasks_in "$home" public-followup add "$obligation" --request-context-file "$home/request.json" \
     --purpose promised-final --expected-final-file "$home/expected.json" \
-    --expires-at 2026-10-01T00:00:00Z >/dev/null || fail "add failed"
+    --expires-at "$(future_utc 14)" >/dev/null || fail "add failed"
   tasks_in "$home" public-followup bind-work "$obligation" --relation-file "$home/relation.json" >/dev/null \
     || fail "bind-work failed"
   FM_HOME="$home" bash -c \
@@ -1824,8 +1829,7 @@ test_rechain_refuses_unclaimed_existing_destination() {
   local home log out expires_at
   home=$(make_home rechain-existing-destination)
   log="$home/curl.log"; : > "$log"
-  expires_at=$(date -u -d "+7 days" +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) \
-    || expires_at=$(date -u -v+7d +'%Y-%m-%dT%H:%M:%SZ')
+  expires_at=$(future_utc 7)
   seed_repro_commitment "$home" public-final-existing-a req-existing main scout-existing
   "$EMIT" --home "$home" --obligation public-final-existing-a --relation rel-code \
     --source-home main --work-id scout-existing --generation 1 \
@@ -2017,8 +2021,7 @@ test_retention_creates_no_false_teardown_refusal() {
 test_expiry_escalation_uses_now_override() {
   local home out exp now_closing now_expired registry tmp expires_at
   home=$(make_home expiry-window)
-  expires_at=$(date -u -d "+7 days" +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) \
-    || expires_at=$(date -u -v+7d +'%Y-%m-%dT%H:%M:%SZ')
+  expires_at=$(future_utc 7)
   seed_repro_commitment "$home" pf-exp req-exp main work-exp
   exp=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$expires_at" +%s 2>/dev/null) \
     || exp=$(date -u -d "$expires_at" +%s)
