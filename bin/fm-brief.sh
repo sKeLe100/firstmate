@@ -73,6 +73,12 @@
 # absent or malformed, so briefs and bin/fm-retry-pressure.sh report one ceiling
 # (docs/configuration.md "Retry-loop thresholds"). The rule's 2-no-op and ~2h
 # ceilings are fixed.
+# Ship briefs whose repo argument names pt-tracker (matched on the normalized
+# basename, so owner/repo, path, and .git spellings all count) also carry the
+# pt-tracker tracker-entry law: the ROADMAP execution prompt and a CURRENT.md
+# tracker entry are pre-dispatch preconditions, not post-dispatch steps.
+# It is a single-project law, not a per-project policy framework, and no other
+# repo, scout, or charter scaffold is affected.
 # Refuses to overwrite an existing brief.
 set -eu
 
