@@ -1,0 +1,15 @@
+# BEFORE (base 91f80b7 test file, run 2026-08-31)
+ok - the relay poll stays inert without a token, silent with no commitments, and surfaces a new result once
+ok - startup surfaces unresolved public commitments only in a relay home that owes one
+ok - typed public-followup records carry only public-safe summaries and deliverables
+ok - dropped-baton regression: delivery retains the loop and pending prints open-loop
+ok - CONTROL: the identical teardown REFUSES the moment a commitment is registered
+fm-public-followup: followup_expires_at 2026-08-28T01:12:00Z is in the past: the thread can no longer be reached, so this loop cannot be closed publicly. This is a captain decision.
+not ok - rechain failed: 
+EXIT=1
+
+# AFTER (f2e4d0a)
+passing checks: 52
+ok - pre-change registrations are open loops and un-rechainable, never a crash
+ok - teardown reports an unreconciled legacy Relay link
+ok - secondmate promotion matches teardown parent resolution

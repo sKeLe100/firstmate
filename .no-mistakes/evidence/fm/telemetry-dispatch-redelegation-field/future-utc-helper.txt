@@ -1,0 +1,4 @@
+$ date -u; future_utc 7; future_utc 14
+Mon Aug 31 15:04:32 UTC 2026
+2026-09-07T15:04:32Z
+2026-09-14T15:04:32Z
