@@ -1,0 +1,70 @@
+==============================================================
+SCENARIO: WEDGED: same poll command fails 5x, loop stuck
+--- axi logs --step ci (tail seen by fm-crew-state) ---
+  | CI checks running, waiting for results...
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+--- $ bin/fm-crew-state.sh wedge ---
+  state: failed · source: run-step · CI polling wedge: 5:"gh api repos/o/r/commits/abc/check-runs" - run is stuck, no forward progress
+
+==============================================================
+SCENARIO: WEDGED: per-poll heartbeat interleaved must not mask the wedge
+--- axi logs --step ci (tail seen by fm-crew-state) ---
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | CI checks running, waiting for results...
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | CI checks running, waiting for results...
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | CI checks running, waiting for results...
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | CI checks running, waiting for results...
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | CI checks running, waiting for results...
+--- $ bin/fm-crew-state.sh wedgehb ---
+  state: failed · source: run-step · CI polling wedge: 5:"gh api repos/o/r/commits/abc/check-runs" - run is stuck, no forward progress
+
+==============================================================
+SCENARIO: HEALTHY: transient errors then pending checks registering
+--- axi logs --step ci (tail seen by fm-crew-state) ---
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | no CI checks reported yet, waiting for checks to register...
+  | no CI checks reported yet, waiting for checks to register...
+--- $ bin/fm-crew-state.sh transient ---
+  state: working · source: run-step · validating (running)
+
+==============================================================
+SCENARIO: HEALTHY: flaky polls around the green no-checks-configured marker
+--- axi logs --step ci (tail seen by fm-crew-state) ---
+  | no CI checks reported - still monitoring until merged or closed
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | no CI checks reported - still monitoring until merged or closed
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | no CI checks reported - still monitoring until merged or closed
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | no CI checks reported - still monitoring until merged or closed
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | no CI checks reported - still monitoring until merged or closed
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | no CI checks reported - still monitoring until merged or closed
+--- $ bin/fm-crew-state.sh nochecks ---
+  state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close)
+
+==============================================================
+SCENARIO: HEALTHY: repeated errors then CI goes green
+--- axi logs --step ci (tail seen by fm-crew-state) ---
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+  | all CI checks passed - still monitoring until merged or closed
+--- $ bin/fm-crew-state.sh thengreen ---
+  state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close)
+
