@@ -1412,13 +1412,20 @@ run_check_capture() {
 # no verb) are skipped. A 1 here is NOT "benign" on its own: a no-verb signal
 # still needs the authoritative working proof or the eligible opt-in bare
 # turn-end pane-churn proof before it is benign.
+# FM_SIGNAL_COVERED is an input: the space-separated files an acknowledged
+# process-event wake already carried. Such a file is still classified here, so
+# its endpoint is available to mark_signal_surfaced and its marker commits, but
+# it never contributes to the verdict - it was decided absorbed before this
+# probe ran, so letting it read as actionable would enqueue its benign siblings.
 signal_files_actionable() {  # <status-file> ...
-  local f task record rest endpoint ident rc found=1
+  local f task record rest endpoint ident rc found=1 covered
   FM_SIGNAL_SURFACE_ENDPOINTS=''
   for f in "$@"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
+    covered=0
+    case " ${FM_SIGNAL_COVERED:-} " in *" $f "*) covered=1 ;; esac
     record=$(status_span_first_actionable_record "$f" \
       "$(fm_wake_signal_seen_size "$STATE" "$f")")
     rc=$?
@@ -1428,12 +1435,12 @@ signal_files_actionable() {  # <status-file> ...
       # record NO classified endpoint for it below, so its content is classified
       # again once it is readable. The wake signature still advances, which is
       # what bounds this to one report per distinct file state.
-      found=0
+      [ "$covered" -eq 1 ] || found=0
       continue
     fi
     endpoint=${record%%$'\t'*}; rest=${record#*$'\t'}; ident=${rest%%$'\t'*}
     FM_SIGNAL_SURFACE_ENDPOINTS="${FM_SIGNAL_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
-    [ "$rc" -eq 0 ] && found=0
+    [ "$rc" -eq 0 ] && [ "$covered" -eq 0 ] && found=0
   done
   return "$found"
 }
@@ -1974,6 +1981,7 @@ EOF
     # can enqueue - including the away-mode one, which short-circuits the
     # condition below and would otherwise enqueue with no evidence at all.
     signal_actionable=1
+    FM_SIGNAL_COVERED="$signal_covered"
     if [ -n "$files" ]; then
       # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
       signal_files_actionable $files
@@ -1983,7 +1991,8 @@ EOF
     if [ -z "$files" ]; then
       triage_log "deferred behind process-event generation signal:$signal_deferred"
     elif afk_present || [ "$signal_actionable" -eq 0 ] \
-      || { ! signal_crew_provably_working $files && ! signal_turnend_panes_churned $files; }; then
+      || { ! signal_crew_provably_working $signal_enqueue_files \
+        && ! signal_turnend_panes_churned $signal_enqueue_files; }; then
       signal_appended=0
       signal_absorbed=
       signal_decided=
