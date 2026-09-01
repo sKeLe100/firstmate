@@ -140,6 +140,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-public-followup.sh`  | Reconcile and deliver typed public commitments, then rechain or explicitly retire their retained loops |
 | `fm-public-followup-emit.sh` | Report one typed terminal work result into the home that owes the public reply    |
 | `fm-context-usage.sh`    | Report a Claude session's real context usage and warn/restart context band from the harness's durable transcript records |
+| `fm-retry-pressure.sh`   | Report a task's retry-loop pressure band from its relaunch telemetry and worker-reported retry-loop status line |
 | `fm-returning-session-check.sh` | Decide bare-resume vs restart-with-carryover for a returning (pinged or restarted) session from its `fm-context-usage.sh` band |
 | `fm-stow-cascade.sh`     | Enumerate this home's registered secondmates, their budget reports, and reachable transports for a `/stow` cascade |
 | `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |

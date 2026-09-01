@@ -308,7 +308,7 @@ The `rounds=<R>` ceiling is the review-round ceiling of the worker's own self-ch
 Like the context bands, callers act on the reported band rather than re-deriving thresholds, during the same heartbeat review that reads each worker's context band:
 
 - `ok` - keep working.
-- `loop` - the worker reported a `blocked [key=retry-loop]:` line that no later `resolved [key=retry-loop]:` line has closed; restart with the same carryover mechanics as the context `restart` band, but the carryover note must name the loop and change a variable (approach, runtime via `fm-control relaunch --harness/--model/--effort`, or authority via escalation) - a relaunch that changes nothing re-enters the same loop.
+- `loop` - the worker reported a `blocked [key=retry-loop]:` line that the shared status-key fold in `bin/fm-classify-lib.sh` still reads as open, so any later closing line for that key (resolved or captain-held) clears it exactly as it does for every other reader; restart with the same carryover mechanics as the context `restart` band, but the carryover note must name the loop and change a variable (approach, runtime via `fm-control relaunch --harness/--model/--effort`, or authority via escalation) - a relaunch that changes nothing re-enters the same loop.
 - `halt` - the relaunch ceiling is reached with no landed outcome; stop relaunching and hold the task for the captain with the loop evidence.
 
 The two sensors share one actuator and cannot fight: the context band owns restart timing, the retry band owns the note content and the relaunch-versus-hold choice, and `restart` plus `halt` resolves to checkpoint-then-hold rather than another relaunch.
