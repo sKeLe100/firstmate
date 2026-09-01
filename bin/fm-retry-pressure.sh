@@ -60,8 +60,9 @@ relaunch_ceiling=3
 round_ceiling=4
 cfg="$home/config/retry-thresholds"
 if [ -e "$cfg" ]; then
+  [ -f "$cfg" ] || { echo "fm-retry-pressure: $cfg is not a regular file" >&2; exit 1; }
   [ -r "$cfg" ] || { echo "fm-retry-pressure: unreadable $cfg" >&2; exit 1; }
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       ''|'#'*) ;;
       relaunch=*)

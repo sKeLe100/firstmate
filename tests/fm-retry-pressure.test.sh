@@ -79,6 +79,27 @@ test_resolved_keyed_line_clears_loop() {
 }
 test_resolved_keyed_line_clears_loop
 
+test_thresholds_file_without_trailing_newline_applies() {
+  local home out t=nonl-task
+  home=$(mk_home nonl)
+  printf 'relaunch=1' > "$home/config/retry-thresholds"
+  delegation_row "$t" > "$home/data/llm-usage/firstmate.jsonl"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" relaunch_ceiling)" = "1" ] || fail "unterminated last line not parsed: $out"
+  [ "$(field "$out" retry_band)" = "halt" ] || fail "unterminated ceiling not applied: $out"
+  printf 'relaunch=zero' > "$home/config/retry-thresholds"
+  if emit "$home" "$t" >/dev/null 2>&1; then
+    fail "malformed unterminated last line did not fail loudly"
+  fi
+  rm -f "$home/config/retry-thresholds"
+  mkdir -p "$home/config/retry-thresholds"
+  if emit "$home" "$t" >/dev/null 2>&1; then
+    fail "a directory config file did not fail loudly"
+  fi
+  pass "fm-retry-pressure.sh: config parsing matches the sibling helper's contract"
+}
+test_thresholds_file_without_trailing_newline_applies
+
 test_thresholds_file_overrides_and_malformed_rejected() {
   local home out t=cfg-task
   home=$(mk_home cfg)
