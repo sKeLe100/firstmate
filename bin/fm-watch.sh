@@ -2098,8 +2098,13 @@ EOF
         case " $signal_deferred " in *" $f "*) continue ;; esac
         # A covered file reaching this branch is absorbed exactly as it is in
         # the enqueue branch: its heartbeat marker advances too, and a failed
-        # commit never escalates - an acknowledged process-event wake already
-        # carried it, so it is retried on the next cycle instead of woken for.
+        # classified commit never escalates - an acknowledged process-event
+        # wake already carried it. The reported signature the first pass
+        # advanced already suppresses the file, so that failure is not retried
+        # next cycle either: the absorb is bounded to one per distinct file
+        # state, and the classified position is re-attempted only once a new
+        # append changes the bytes, with the heartbeat backstop covering the
+        # stale position in between.
         case " $signal_covered " in
           *" $f "*)
             mark_signal_surfaced "$f" || true
