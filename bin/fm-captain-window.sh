@@ -38,9 +38,10 @@
 # replaced by a default (house rule, same contract as config/context-thresholds).
 # Not inherited by secondmate homes - see docs/configuration.md.
 set -euo pipefail
+export LC_ALL=C
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 

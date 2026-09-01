@@ -94,4 +94,16 @@ now_field="${out#*now=}"; now_field="${now_field%% *}"
 iso_day="$(TZ=America/Toronto date -d "${now_field%T*}" +%a)"
 [ "$iso_day" = "Wed" ] || fail "ISO date weekday should match --weekday, got $iso_day in: $out"
 
+# 9. Weekday matching is locale-independent (host locale must not change the band).
+alt_locale=""
+for cand in de_DE.UTF-8 fr_FR.UTF-8 es_ES.UTF-8; do
+  if locale -a 2>/dev/null | grep -qx "${cand/UTF-8/utf8}" || locale -a 2>/dev/null | grep -qx "$cand"; then
+    alt_locale="$cand"; break
+  fi
+done
+if [ -n "$alt_locale" ]; then
+  out="$(LC_ALL="$alt_locale" FM_HOME="$tmp" "$bin" --now 09:30 --weekday Wed)"
+  case "$out" in *"band=working offer=no "*) ;; *) fail "locale-independent weekday: $out" ;; esac
+fi
+
 echo "PASS: fm-captain-window.test.sh"
