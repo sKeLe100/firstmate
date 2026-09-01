@@ -2147,7 +2147,8 @@ $pending
 EOF
         wake "$signal_commit_failed_reason"
       else
-        triage_log "absorbed benign $reason"
+        [ -z "$signal_enqueue_files" ] || triage_log "absorbed benign $signal_enqueue_reason"
+        [ -z "$signal_covered" ] || triage_log "absorbed procevent-covered signal:$signal_covered"
       fi
     fi
   fi
