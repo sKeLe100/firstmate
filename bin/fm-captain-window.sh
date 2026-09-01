@@ -19,7 +19,7 @@
 #   quiet    - the captain's overnight window; offer=no.
 #   working  - inside workdays/start-end; offer=no.
 #   lunch    - inside the lunch offer window; offer=yes.
-#   evening  - inside the evening offer window; offer=yes.
+#   evening  - a working day inside the evening offer window; offer=yes.
 #   offhours - every other hour outside quiet (including all day on a
 #              non-working day, or every hour when workdays=none); offer=yes.
 #
@@ -32,6 +32,8 @@
 #   lunch=12:00-13:00
 #   evening=17:30-22:00
 #   quiet=23:00-06:00
+# A workdays range must run low-to-high (Mon-Fri, not Fri-Mon) and start must
+# precede end; lunch, evening, and quiet ranges may wrap past midnight.
 # An absent file or absent key uses the built-in defaults above (source=default
 # unless any key was read from the file, in which case source=config).
 # Malformed content is rejected loudly with a non-zero exit, never silently
@@ -41,7 +43,7 @@ set -euo pipefail
 export LC_ALL=C
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
