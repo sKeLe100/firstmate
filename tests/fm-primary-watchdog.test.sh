@@ -27,6 +27,7 @@ trap cleanup EXIT
 
 # --- 1. blocked-detection matching -----------------------------------------
 fm_backend_target_exists() { return 0; }
+fm_backend_agent_alive() { printf 'alive'; }
 fm_backend_capture() { printf 'some ordinary output\nnothing unusual here\n'; }
 if fm_watchdog_primary_blocked "test:0" "tmux"; then
   fail "blocked-detection: ordinary output must not match"
@@ -59,7 +60,7 @@ now_epoch=$(date -d "2026-01-01T00:00:00+00:00" +%s)
 export FM_WATCHDOG_NOW="$now_epoch"
 export FM_WATCHDOG_RESET_JITTER=30
 got=$(fm_watchdog_reset_wait_seconds)
-if [ "$got" = "3630" ]; then
+if [ "${got% *}" = "3630" ]; then
   pass "reset-wait: 1h to reset + 30s jitter = 3630s"
 else
   fail "reset-wait: expected 3630, got $got"
@@ -157,15 +158,43 @@ HANDLED=""
 fm_watchdog_handle_reset() { HANDLED="$1 $2"; }
 fm_backend_capture() { printf 'some ordinary output\n'; }
 
-# 6a. a gone pane reaches the reset path through the cycle, not just the helper
+fm_backend_agent_alive() { printf 'alive'; }
+
+# 6a. a crashed harness in a live pane is detected and relaunched immediately,
+# without waiting on an unrelated quota reset
+LAUNCHED=""
+fm_watchdog_launch_primary() { LAUNCHED="$1 $2"; }
+fm_backend_target_exists() { return 0; }
+fm_backend_agent_alive() { printf 'dead'; }
+rm -f "$TMPHOME/state/.watchdog-last-action"
+HANDLED=""
+fm_watchdog_cycle 2>/dev/null
+if [ "$LAUNCHED" = "test:0 tmux" ] && [ -z "$HANDLED" ]; then
+  pass "cycle: a crashed harness launches a fresh session without a reset wait"
+else
+  fail "cycle: a crashed harness must launch a fresh session immediately"
+fi
+
+# 6a2. a destroyed pane is reported, never driven
 fm_backend_target_exists() { return 1; }
+rm -f "$TMPHOME/state/.watchdog-last-action"
+LAUNCHED=""; HANDLED=""
+fm_watchdog_cycle 2>/dev/null
+if [ -z "$LAUNCHED" ] && [ -z "$HANDLED" ]; then
+  pass "cycle: a destroyed pane is not typed into"
+else
+  fail "cycle: a destroyed pane must not be typed into"
+fi
+fm_backend_target_exists() { return 0; }
+fm_backend_agent_alive() { printf 'alive'; }
+fm_backend_capture() { printf 'Claude usage limit reached, resets 3am\n'; }
 rm -f "$TMPHOME/state/.watchdog-last-action"
 HANDLED=""
 fm_watchdog_cycle 2>/dev/null
 if [ -n "$HANDLED" ]; then
-  pass "cycle: a gone harness target reaches the reset path"
+  pass "cycle: a limit-blocked primary reaches the reset path"
 else
-  fail "cycle: a gone harness target must reach the reset path"
+  fail "cycle: a limit-blocked primary must reach the reset path"
 fi
 
 # 6b. after acting, the cooldown suppresses the next cycle
@@ -177,18 +206,30 @@ else
   fail "cycle: must not act again inside the cooldown window"
 fi
 
-# 6c. once the cooldown elapses, acting resumes
+# 6c. once the cooldown elapses, a reset window already handled is not redone
+HANDLED=""
+FM_WATCHDOG_NOW=$((FM_WATCHDOG_NOW + 1000)) fm_watchdog_cycle 2>/dev/null
+if [ -z "$HANDLED" ]; then
+  pass "cycle: an already-handled reset window is not acted on twice"
+else
+  fail "cycle: must not re-handle the same reset window"
+fi
+
+# 6c2. a new reset window is acted on again
+cat >"$CANNED" <<'EOF'
+{"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-01-01T06:00:00+00:00"}]}]}
+EOF
 HANDLED=""
 FM_WATCHDOG_NOW=$((FM_WATCHDOG_NOW + 1000)) fm_watchdog_cycle 2>/dev/null
 if [ -n "$HANDLED" ]; then
-  pass "cycle: acts again once the cooldown window has elapsed"
+  pass "cycle: a new reset window is acted on"
 else
-  fail "cycle: must act again after the cooldown window"
+  fail "cycle: a new reset window must be acted on"
 fi
 
 # 6d. the opt-out flag is honored by the cycle itself, not only at startup
 : >"$TMPHOME/config/primary-continuity"
-rm -f "$TMPHOME/state/.watchdog-last-action"
+rm -f "$TMPHOME/state/.watchdog-last-action" "$TMPHOME/state/.watchdog-last-reset"
 HANDLED=""
 fm_watchdog_cycle 2>/dev/null
 if [ -z "$HANDLED" ]; then
@@ -196,7 +237,7 @@ if [ -z "$HANDLED" ]; then
 else
   fail "cycle: must not act while config/primary-continuity is present"
 fi
-rm -f "$TMPHOME/config/primary-continuity" "$TMPHOME/state/.watchdog-last-action"
+rm -f "$TMPHOME/config/primary-continuity" "$TMPHOME/state/.watchdog-last-action" "$TMPHOME/state/.watchdog-last-reset"
 unset FM_WATCHDOG_QUOTA_JSON FM_WATCHDOG_NOW FM_WATCHDOG_SKIP_SLEEP FM_SUPERVISOR_TARGET
 fm_backend_target_exists() { return 0; }
 

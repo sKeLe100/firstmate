@@ -1646,7 +1646,8 @@ fm_super_main() {
   local WATCHDOG_PID=""
   local WATCHDOG_BIN="$FM_DAEMON_DIR/fm-primary-watchdog.sh"
   if [ -x "$WATCHDOG_BIN" ] && FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="${FM_CONFIG_OVERRIDE:-}" "$WATCHDOG_BIN" enabled >/dev/null 2>&1; then
-    FM_SUPERVISOR_TARGET="$TARGET" FM_SUPERVISOR_BACKEND="$BACKEND" "$WATCHDOG_BIN" run &
+    FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="${FM_CONFIG_OVERRIDE:-}" FM_STATE_OVERRIDE="${FM_STATE_OVERRIDE:-}" \
+      FM_SUPERVISOR_TARGET="$TARGET" FM_SUPERVISOR_BACKEND="$BACKEND" "$WATCHDOG_BIN" run &
     WATCHDOG_PID=$!
     log "primary continuity watchdog hosted (pid $WATCHDOG_PID)"
   fi

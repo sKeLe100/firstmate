@@ -145,26 +145,47 @@ fm_watchdog_verified_target() {
 # harness whose wording differs; keep this default narrow (specific phrases)
 # rather than a broad word like "limit" that could false-positive on ordinary
 # conversation text.
+# The stow request is deliberately prose, not a bare "/stow": every injection
+# here goes through the operational-input envelope, and a marker-prefixed line
+# reaches the harness as chat rather than as a parser command (bin/fm-send.sh
+# header), so a leading slash would never invoke the skill.
+FM_WATCHDOG_STOW_REQUEST=${FM_WATCHDOG_STOW_REQUEST:-"run the /stow skill now to checkpoint durable state; this session is about to be restarted for context"}
+
 FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|limit reached.*resets'
 
-# fm_watchdog_primary_blocked: 0 when the verified target shows the
-# usage-limit signature or the target itself no longer resolves (harness
-# process gone); 1 when neither condition holds (primary looks fine).
+# fm_watchdog_primary_blocked: 0 with the reason printed on stdout when the
+# primary needs the watchdog, 1 (nothing printed) when it looks fine. Reasons:
+#   limit        - the pane is alive and renders the usage-limit signature.
+#   gone-harness - the pane is alive but its agent process is authoritatively
+#                  dead (a crashed/exited harness, the actionable half of
+#                  intent requirement 1); a fresh session can be launched right
+#                  there, with no quota reset to wait for.
+#   gone-pane    - the pane itself no longer resolves. Nothing can be typed
+#                  into it, so the caller reports rather than acts.
 fm_watchdog_primary_blocked() {  # <target> <backend>
   local target=$1 backend=$2 tail
   fm_backend_target_exists "$backend" "$target" || {
     log "primary target gone (target=$target backend=$backend)"
+    printf 'gone-pane\n'
     return 0
   }
+  if [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null)" = dead ]; then
+    log "primary harness process gone (target=$target backend=$backend)"
+    printf 'gone-harness\n'
+    return 0
+  fi
   tail=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
-  printf '%s' "$tail" | grep -qEi "${FM_WATCHDOG_LIMIT_SIGNATURE:-$FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT}"
+  printf '%s' "$tail" | grep -qEi "${FM_WATCHDOG_LIMIT_SIGNATURE:-$FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT}" || return 1
+  printf 'limit\n'
 }
 
 # fm_watchdog_reset_wait_seconds: seconds to sleep until the account's
 # five_hour session window resets, plus jitter. Reads quota-axi --json (or a
 # canned file at FM_WATCHDOG_QUOTA_JSON for tests) and requires `jq`. Prints
-# the number of seconds (>= 0) on stdout; returns 1 if resetsAt cannot be
-# determined.
+# "<seconds-to-sleep> <reset-epoch>" on stdout - the seconds are clamped at 0
+# for an already-past reset, while the epoch stays the unclamped identity of
+# the reset window so a caller can tell one window from the next. Returns 1 if
+# resetsAt cannot be determined.
 fm_watchdog_reset_wait_seconds() {
   local json now reset_epoch wait jitter
   if [ -n "${FM_WATCHDOG_QUOTA_JSON:-}" ]; then
@@ -184,7 +205,7 @@ fm_watchdog_reset_wait_seconds() {
   jitter=${FM_WATCHDOG_RESET_JITTER:-30}
   wait=$((reset_epoch - now + jitter))
   [ "$wait" -lt 0 ] && wait=0
-  printf '%s\n' "$wait"
+  printf '%s %s\n' "$wait" "$reset_epoch"
 }
 
 # fm_watchdog_inject: repeats inject_msg's (bin/fm-supervise-daemon.sh)
@@ -260,6 +281,10 @@ fm_watchdog_restart_primary() {  # <target> <backend>
       ;;
   esac
   exit_cmd=${FM_WATCHDOG_EXIT_CMD:-/exit}
+  fm_backend_target_exists "$backend" "$target" || {
+    log "refusing to restart: target does not resolve (target=$target backend=$backend)"
+    return 1
+  }
   fm_backend_send_text_submit "$backend" "$target" "$exit_cmd" 3 2 2 >/dev/null 2>&1
   timeout=${FM_WATCHDOG_EXIT_TIMEOUT:-30}
   waited=0
@@ -275,6 +300,25 @@ fm_watchdog_restart_primary() {  # <target> <backend>
       return 1
     fi
   fi
+  fm_watchdog_launch_primary "$target" "$backend"
+}
+
+# fm_watchdog_launch_primary: launch a FRESH session in the pane, with no old
+# harness to exit first (the crashed-harness path). Same never-resume rule.
+fm_watchdog_launch_primary() {  # <target> <backend>
+  local target=$1 backend=$2 launch_cmd
+  launch_cmd=${FM_WATCHDOG_LAUNCH_CMD:-claude}
+  case " $launch_cmd " in
+    *' --resume '*|*' --continue '*)
+      log "refusing to launch: launch command must never include --resume/--continue"
+      return 1
+      ;;
+  esac
+  fm_backend_target_exists "$backend" "$target" || {
+    log "refusing to launch: target does not resolve (target=$target backend=$backend)"
+    return 1
+  }
+  log "launching a fresh primary session (target=$target backend=$backend)"
   fm_backend_send_text_submit "$backend" "$target" "$launch_cmd" 3 2 2 >/dev/null 2>&1
 }
 
@@ -289,7 +333,7 @@ fm_watchdog_handle_reset() {  # <target> <backend>
   case "$band" in
     warn|restart)
       injected_at=$(date +%s)
-      if fm_watchdog_inject "$target" "$backend" "/stow"; then
+      if fm_watchdog_inject "$target" "$backend" "$FM_WATCHDOG_STOW_REQUEST"; then
         fm_watchdog_wait_for_stow "$injected_at" || log "stow window elapsed without completion evidence; proceeding to restart anyway (captain-accepted, report 11.4 Q6)"
       else
         log "stow injection failed; proceeding to restart anyway"
@@ -303,13 +347,13 @@ fm_watchdog_handle_reset() {  # <target> <backend>
   fm_watchdog_restart_primary "$target" "$backend"
 }
 
-# fm_watchdog_cooldown_active / fm_watchdog_record_action: bound how often a
+# fm_watchdog_cooldown_clear / fm_watchdog_record_action: bound how often a
 # blocked verdict may act. The usage-limit banner typically stays rendered in
 # the pane after a nudge or a relaunch, so without this the next poll matches
 # the same scrollback, computes a now-past reset (clamped to 0) and acts again
-# every poll interval. Returns 0 (act) when the last recorded action is older
-# than FM_WATCHDOG_COOLDOWN seconds, 1 (skip) otherwise.
-fm_watchdog_cooldown_active() {
+# every poll interval. Clear (0) means the last recorded action is older than
+# FM_WATCHDOG_COOLDOWN seconds and the caller may act; 1 means still cooling.
+fm_watchdog_cooldown_clear() {
   local marker="$FM_WATCHDOG_STATE/.watchdog-last-action" last now cooldown
   cooldown=${FM_WATCHDOG_COOLDOWN:-900}
   [ -r "$marker" ] || return 0
@@ -328,29 +372,66 @@ fm_watchdog_record_action() {
   printf '%s\n' "${FM_WATCHDOG_NOW:-$(date +%s)}" >"$FM_WATCHDOG_STATE/.watchdog-last-action" 2>/dev/null || true
 }
 
+# fm_watchdog_reset_unhandled / fm_watchdog_record_reset: one reset window is
+# acted on exactly once. The limit banner stays in the pane's scrollback after
+# a nudge, so rate-limiting alone would let the same already-past reset be
+# re-handled every cooldown window forever; the handled reset epoch is the
+# identity that stops it.
+fm_watchdog_reset_unhandled() {  # <reset-epoch>
+  local handled marker="$FM_WATCHDOG_STATE/.watchdog-last-reset"
+  [ -r "$marker" ] || return 0
+  handled=$(cat "$marker" 2>/dev/null)
+  if [ "$handled" = "$1" ]; then
+    log "skipping: reset window $1 has already been handled"
+    return 1
+  fi
+  return 0
+}
+
+fm_watchdog_record_reset() {  # <reset-epoch>
+  mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 0
+  printf '%s\n' "$1" >"$FM_WATCHDOG_STATE/.watchdog-last-reset" 2>/dev/null || true
+}
+
 # fm_watchdog_cycle: one detect-or-idle pass. On a blocked verdict, sleeps
 # until reset (real sleep in production; tests inject FM_WATCHDOG_NOW/a canned
 # quota response and stub the sleep boundary via FM_WATCHDOG_SKIP_SLEEP=1
 # instead of sleeping for real hours).
 fm_watchdog_cycle() {
-  local tb rc target backend wait
+  local tb rc target backend wait reset reason
   fm_watchdog_enabled || return 0
   tb=$(fm_watchdog_verified_target)
   rc=$?
   [ "$rc" -ne 1 ] && [ -n "$tb" ] || return 1
   target=${tb% *}
   backend=${tb#* }
-  fm_watchdog_primary_blocked "$target" "$backend" || return 0
-  fm_watchdog_cooldown_active || return 0
+  reason=$(fm_watchdog_primary_blocked "$target" "$backend") || return 0
+  case "$reason" in
+    gone-pane)
+      log "primary pane no longer exists; nothing to restart in place"
+      return 1
+      ;;
+    gone-harness)
+      fm_watchdog_cooldown_clear || return 0
+      fm_watchdog_record_action
+      fm_watchdog_launch_primary "$target" "$backend"
+      return $?
+      ;;
+  esac
+  fm_watchdog_cooldown_clear || return 0
   log "primary blocked (target=$target backend=$backend); computing reset wait"
-  wait=$(fm_watchdog_reset_wait_seconds) || {
+  reset=$(fm_watchdog_reset_wait_seconds) || {
     log "could not determine reset time; deferring to next poll"
     return 1
   }
+  wait=${reset% *}
+  reset=${reset#* }
+  fm_watchdog_reset_unhandled "$reset" || return 0
   if [ "${FM_WATCHDOG_SKIP_SLEEP:-0}" != 1 ] && [ "$wait" -gt 0 ]; then
     sleep "$wait"
   fi
   fm_watchdog_record_action
+  fm_watchdog_record_reset "$reset"
   fm_watchdog_handle_reset "$target" "$backend"
 }
 

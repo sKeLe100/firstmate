@@ -160,17 +160,21 @@ resolve_remote_transport() { # <id>
 }
 
 # Durable stow-completion evidence. This command runs exactly once per /stow,
-# after the home's own pass and knowledge sweep are complete, so its invocation
-# is the mechanical record that the pass reached completion. The marker's mtime
-# is the contract other tooling anchors on (bin/fm-primary-watchdog.sh waits for
-# it before restarting a limit-blocked primary).
-mkdir -p "$STATE" 2>/dev/null || true
-: >"$STATE/.stow-last-run" 2>/dev/null || true
+# after the home's own pass and knowledge sweep are complete, and the marker is
+# written only on a terminal path where every home this pass owns has been
+# reported - never at invocation and never on a `die`. The marker's mtime is the
+# contract other tooling anchors on (bin/fm-primary-watchdog.sh waits for it
+# before restarting a limit-blocked primary).
+record_stow_completion() {
+  mkdir -p "$STATE" 2>/dev/null || return 0
+  : >"$STATE/.stow-last-run" 2>/dev/null || true
+}
 
 if [ -e "$FM_HOME/$SUB_HOME_MARKER" ] || [ -L "$FM_HOME/$SUB_HOME_MARKER" ]; then
   emit 'role=secondmate'
   emit 'secondmates=0'
   emit 'reason=a secondmate home stows its own memory only and never cascades'
+  record_stow_completion
   exit 0
 fi
 emit 'role=primary'
@@ -179,6 +183,7 @@ if [ ! -e "$REGISTRY" ] && [ ! -L "$REGISTRY" ]; then
   emit 'secondmates=0'
   emit 'exceptions=0'
   emit 'reason=no secondmate registry in this home'
+  record_stow_completion
   exit 0
 fi
 if ! secondmate_registry_validate_bindings "$REGISTRY" secondmate_registry_path_key; then
@@ -255,5 +260,6 @@ done < "$TMP/records"
 printf '\n'
 emit "secondmates=$total"
 emit "exceptions=$exceptions"
+record_stow_completion
 [ "$exceptions" -eq 0 ] || exit 3
 exit 0
