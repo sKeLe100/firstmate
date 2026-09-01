@@ -2089,6 +2089,18 @@ EOF
       signal_commit_failed=
       while IFS=$(printf '\t') read -r f surface_end surface_ident; do
         [ -n "$f" ] || continue
+        case " $signal_deferred " in *" $f "*) continue ;; esac
+        # A covered file reaching this branch is absorbed exactly as it is in
+        # the enqueue branch: its heartbeat marker advances too, and a failed
+        # commit never escalates - an acknowledged process-event wake already
+        # carried it, so it is retried on the next cycle instead of woken for.
+        case " $signal_covered " in
+          *" $f "*)
+            mark_signal_surfaced "$f" || true
+            fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" || true
+            continue
+            ;;
+        esac
         fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" \
           || signal_commit_failed="$signal_commit_failed $f"
       done <<EOF
