@@ -345,8 +345,8 @@ test_refresh_reopens_a_completed_item() {
   setup_repo "$root" 9
 
   file_once "$home" "$root" 5 >/dev/null
-  (cd "$home" && tasks-axi done upstream-sync >/dev/null)
-  [ "$(axi_state "$home" upstream-sync)" = done ] || fail "sync-item: fixture failed to complete the item"
+  (cd "$home" && tasks-axi "done" upstream-sync >/dev/null)
+  [ "$(axi_state "$home" upstream-sync)" = "done" ] || fail "sync-item: fixture failed to complete the item"
 
   out=$(file_once "$home" "$root" 9) || fail "sync-item: refresh after completion failed: $out"
   assert_contains "$out" "action=refreshed" "sync-item: a later episode must refresh the stable id"
