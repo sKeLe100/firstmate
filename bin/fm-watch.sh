@@ -2039,10 +2039,12 @@ EOF
         triage_log "absorbed procevent-covered signal:$signal_absorbed"
       fi
     else
-      # Benign: every non-deferred file is absorbed. A .status log advances only
-      # its classification position, never its reported signature, so a later
-      # captain-relevant append to the same log is still reported; a non-status
-      # signal has no span to classify and advances its raw signature here.
+      # Benign: every non-deferred file is absorbed. A .status log commits its
+      # classification position together with a reported signature scoped to the
+      # bytes just classified, so it is not re-signalled every cycle while a
+      # later captain-relevant append to the same log is still reported; a
+      # non-status signal has no span to classify and advances its raw signature
+      # here.
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         case " $signal_deferred " in *" $f "*) continue ;; esac
