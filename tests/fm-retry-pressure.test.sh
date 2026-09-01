@@ -65,6 +65,20 @@ test_worker_keyed_report_reads_loop() {
 }
 test_worker_keyed_report_reads_loop
 
+test_resolved_keyed_line_clears_loop() {
+  local home out t=resolved-task
+  home=$(mk_home resolved)
+  printf 'blocked [key=retry-loop]: 2 fix no-ops, HEAD unmoved\nresolved [key=retry-loop]: new approach, tests moving\n' > "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" retry_loop_reported)" = "0" ] || fail "resolved line did not clear the report: $out"
+  [ "$(field "$out" retry_band)" = "ok" ] || fail "resolved retry-loop still reads loop: $out"
+  printf 'blocked [key=retry-loop]: looping again\n' >> "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" retry_band)" = "loop" ] || fail "reopened retry-loop not read as loop: $out"
+  pass "fm-retry-pressure.sh: a resolved keyed line clears the loop until it reopens"
+}
+test_resolved_keyed_line_clears_loop
+
 test_thresholds_file_overrides_and_malformed_rejected() {
   local home out t=cfg-task
   home=$(mk_home cfg)

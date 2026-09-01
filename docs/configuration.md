@@ -303,11 +303,12 @@ The helper's header owns exact parsing and output mechanics.
 
 `config/retry-thresholds` is the optional local, gitignored sibling of `config/context-thresholds` for the repetition-driven failure mode context size cannot sense: repeated relaunches, review-gate rounds, and fix no-ops that each pay a full cold context reload (evidence: `data/session-retry-failsafe-design/report.md`, 2026-09-01).
 The format is at most one `relaunch=<K>` line and one `rounds=<R>` line, each a positive base-10 integer; an absent file or key means the built-in defaults of `relaunch=3` and `rounds=4`, and a malformed file is rejected loudly rather than silently replaced by defaults.
+The `rounds=<R>` ceiling is the review-round ceiling of the worker's own self-check in the ship brief's standing retry-loop rule; the helper reports it as `round_ceiling` rather than counting rounds itself, because the protocol has a worker emit one keyed line at that threshold instead of per-round progress lines.
 `bin/fm-retry-pressure.sh <task-id>` reads these ceilings against the task's durable records and reports a `retry_band=ok|loop|halt` field on its one data-only output line; its header owns exact parsing, counting, and output mechanics.
 Like the context bands, callers act on the reported band rather than re-deriving thresholds, during the same heartbeat review that reads each worker's context band:
 
 - `ok` - keep working.
-- `loop` - round pressure at the ceiling, or the worker reported `blocked [key=retry-loop]:` itself; restart with the same carryover mechanics as the context `restart` band, but the carryover note must name the loop and change a variable (approach, runtime via `fm-control relaunch --harness/--model/--effort`, or authority via escalation) - a relaunch that changes nothing re-enters the same loop.
+- `loop` - the worker reported a `blocked [key=retry-loop]:` line that no later `resolved [key=retry-loop]:` line has closed; restart with the same carryover mechanics as the context `restart` band, but the carryover note must name the loop and change a variable (approach, runtime via `fm-control relaunch --harness/--model/--effort`, or authority via escalation) - a relaunch that changes nothing re-enters the same loop.
 - `halt` - the relaunch ceiling is reached with no landed outcome; stop relaunching and hold the task for the captain with the loop evidence.
 
 The two sensors share one actuator and cannot fight: the context band owns restart timing, the retry band owns the note content and the relaunch-versus-hold choice, and `restart` plus `halt` resolves to checkpoint-then-hold rather than another relaunch.

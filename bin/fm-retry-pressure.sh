@@ -14,18 +14,25 @@
 #   Reads, under FM_HOME (default: current directory):
 #   - data/llm-usage/firstmate.jsonl delegation events for this task_id since
 #     its last landed/completed outcome event (relaunch count),
-#   - state/<task-id>.status keyed retry-loop reports and fixing/fix-review
-#     round transitions (round pressure), when the status file exists.
+#   - state/<task-id>.status keyed retry-loop reports, when the status file
+#     exists: the LAST `[key=retry-loop]` line counts only while it is a
+#     `blocked` line, since a later `resolved [key=retry-loop]:` closes it per
+#     the status protocol in bin/fm-brief.sh.
 #
 # Output is one data-only line; callers act on the band, not the raw counts:
-#   relaunches=<N> rounds=<N> retry_loop_reported=<0|1> \
+#   relaunches=<N> retry_loop_reported=<0|1> \
 #     relaunch_ceiling=<K> round_ceiling=<R> retry_band=<ok|loop|halt> task=<id>
+#
+# The round ceiling is the worker's own self-check ceiling from standing rule 9
+# of bin/fm-brief.sh, reported here so callers read one source for it; this
+# helper does not count rounds itself, because the protocol has workers emit a
+# single keyed line at the threshold rather than per-round progress lines.
 #
 # Bands:
 #   ok   - counts below every ceiling; nothing to do.
-#   loop - round pressure at/past the round ceiling, or the worker reported
-#          `blocked [key=retry-loop]:` itself; the next restart must change a
-#          variable (approach, runtime, or authority), not just relaunch.
+#   loop - the worker reported an open `blocked [key=retry-loop]:` itself; the
+#          next restart must change a variable (approach, runtime, or
+#          authority), not just relaunch.
 #   halt - relaunch count at/past the relaunch ceiling with no landed outcome;
 #          stop relaunching and hold the task for the captain.
 #
@@ -41,7 +48,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -99,24 +106,23 @@ PY
   )
 fi
 
-# Round pressure and worker-reported loops, from the status log.
-rounds=0
+# Worker-reported loops, from the status log: last keyed line wins.
 retry_loop_reported=0
 status_file="$home/state/$task.status"
 if [ -r "$status_file" ]; then
-  rounds=$(grep -c -E '^(working|fixing)[^:]*: .*(fix.round|review round|round [0-9]+)' "$status_file" 2>/dev/null || true)
-  if grep -q -E '^blocked \[key=retry-loop\]:' "$status_file" 2>/dev/null; then
-    retry_loop_reported=1
-  fi
+  last_keyed=$(grep -E '^(blocked|resolved) \[key=retry-loop\]:' "$status_file" 2>/dev/null | tail -n 1 || true)
+  case "$last_keyed" in
+    'blocked [key=retry-loop]:'*) retry_loop_reported=1 ;;
+  esac
 fi
 
 band=ok
-if [ "$rounds" -ge "$round_ceiling" ] || [ "$retry_loop_reported" -eq 1 ]; then
+if [ "$retry_loop_reported" -eq 1 ]; then
   band=loop
 fi
 if [ "$relaunches" -ge "$relaunch_ceiling" ]; then
   band=halt
 fi
 
-printf 'relaunches=%s rounds=%s retry_loop_reported=%s relaunch_ceiling=%s round_ceiling=%s retry_band=%s task=%s\n' \
-  "$relaunches" "$rounds" "$retry_loop_reported" "$relaunch_ceiling" "$round_ceiling" "$band" "$task"
+printf 'relaunches=%s retry_loop_reported=%s relaunch_ceiling=%s round_ceiling=%s retry_band=%s task=%s\n' \
+  "$relaunches" "$retry_loop_reported" "$relaunch_ceiling" "$round_ceiling" "$band" "$task"
