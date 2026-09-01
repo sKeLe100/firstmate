@@ -581,8 +581,11 @@ wedge_start_timer() {  # <window-key>
 # (PC02_STALE_ESCALATE_SECS), and a ground-truth liveness read from the
 # opencode log's `message=loop ... step=` cadence - the log gains a step line
 # whenever any local opencode session is actually stepping, which the quiet
-# pane cannot show. The single-lane spawn guard (bin/fm-spawn.sh) keeps at most
-# one PC02 lane live, so a fresh step line is attributable to that lane.
+# pane cannot show. The read is bound to THIS task's own opencode session id
+# (state/<id>.opencode-session, recorded by the busy-state plugin fm-spawn
+# writes), so another local opencode session's stepping can never mask a
+# wedged PC02 lane; with no recorded session there is nothing to attribute a
+# step line to, so the check does not absorb.
 pc02_lane_task() {  # <task>: 0 iff its meta shows harness=opencode + model=pc02-llamaswap/*
   local meta="$STATE/$1.meta"
   [ -n "$1" ] && [ -f "$meta" ] || return 1
@@ -593,10 +596,12 @@ pc02_lane_task() {  # <task>: 0 iff its meta shows harness=opencode + model=pc02
   return 1
 }
 
-pc02_loop_step_since() {  # <since-epoch>: 0 iff the opencode log holds a loop step= line newer than <since-epoch>
-  local since=$1 ts epoch
+pc02_loop_step_since() {  # <task> <since-epoch>: 0 iff <task>'s own opencode session logged a loop step= line newer than <since-epoch>
+  local task=$1 since=$2 sid ts epoch
   [ -n "$since" ] && [ -r "$OPENCODE_LOG" ] || return 1
-  ts=$(tail -n 400 "$OPENCODE_LOG" 2>/dev/null | grep 'message=loop ' | grep ' step=' | tail -n 1 \
+  sid=$(cat "$STATE/$task.opencode-session" 2>/dev/null || true)
+  [ -n "$sid" ] || return 1
+  ts=$(tail -n 400 "$OPENCODE_LOG" 2>/dev/null | grep 'message=loop ' | grep " session.id=$sid " | grep ' step=' | tail -n 1 \
     | sed -n 's/^timestamp=\([^ ]*\).*/\1/p')
   [ -n "$ts" ] || return 1
   epoch=$(date -d "$ts" +%s 2>/dev/null) || return 1
@@ -644,9 +649,11 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       fi
       age=$(( $(date +%s) - since ))
       if [ "$age" -ge "$threshold" ]; then
-        if pc02_lane_task "$task" && pc02_loop_step_since "$since"; then
+        if pc02_lane_task "$task" && pc02_loop_step_since "$task" "$since"; then
           # The lane is stepping per the opencode log: a fresh quiet spell, not
-          # a wedge. Restart the timer without burning an escalation.
+          # a wedge. Restart the timer without burning an escalation, dropping
+          # the old write-deferral chain with it like every other reset site.
+          clear_write_tracking "$(window_key "$win")"
           date +%s > "$since_file"
           triage_log "absorbed $label pc02 loop-step fresh: $win"
           return 0

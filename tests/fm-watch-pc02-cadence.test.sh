@@ -34,14 +34,20 @@ write_meta() {  # <task> <harness> <model>
     > "$STATE/$1.meta"
 }
 
-log_step_at() {  # <iso-timestamp>
-  printf 'timestamp=%s level=INFO run=deadbeef message=loop session.id=ses_x step=3\n' "$1" \
+log_step_at() {  # <iso-timestamp> [session-id]
+  printf 'timestamp=%s level=INFO run=deadbeef message=loop session.id=%s step=3\n' "$1" "${2:-ses_x}" \
     >> "$FM_OPENCODE_LOG"
+}
+
+bind_session() {  # <task> [session-id]
+  printf '%s\n' "${2:-ses_x}" > "$STATE/$1.opencode-session"
 }
 
 reset_case() {
   : > "$WAKES_LOG"
-  rm -f "$FM_OPENCODE_LOG" "$STATE"/.stale-since-* "$STATE"/.wedge-escalations-* "$STATE"/.wedge-backoff-*
+  rm -f "$FM_OPENCODE_LOG" "$STATE"/*.opencode-session \
+    "$STATE"/.stale-since-* "$STATE"/.wedge-escalations-* "$STATE"/.wedge-backoff-* \
+    "$STATE"/.writing-since-* "$STATE"/.writing-resurfaced-*
 }
 
 test_lane_classifier() {
@@ -70,6 +76,7 @@ test_fresh_loop_step_resets_timer_instead_of_escalating() {
   since_file="$STATE/.stale-since-x2"
   esc_file="$STATE/.wedge-escalations-x2"
   echo "$(( $(date +%s) - 700 ))" > "$since_file"
+  bind_session pc02-task
   log_step_at "$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%S.000Z)"
   wedge_timer_check win2 "$since_file" test "$esc_file" pc02-task
   [ ! -s "$WAKES_LOG" ] || fail "a fresh loop step must absorb, not escalate: $(cat "$WAKES_LOG")"
@@ -84,6 +91,7 @@ test_stale_log_escalates_past_floor() {
   since_file="$STATE/.stale-since-x3"
   esc_file="$STATE/.wedge-escalations-x3"
   echo "$(( $(date +%s) - 700 ))" > "$since_file"
+  bind_session pc02-task
   log_step_at "$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%S.000Z)"
   wedge_timer_check win3 "$since_file" test "$esc_file" pc02-task
   grep -q "possible wedge" "$WAKES_LOG" || fail "700s idle with only stale loop steps must escalate"
@@ -101,10 +109,59 @@ test_non_pc02_lane_keeps_default_threshold() {
   pass "non-pc02 lanes keep the default escalation threshold"
 }
 
+test_other_sessions_steps_do_not_absorb() {
+  reset_case
+  write_meta pc02-task opencode pc02-llamaswap/qwen3.6-35b-a3b-dispatch
+  since_file="$STATE/.stale-since-x5"
+  esc_file="$STATE/.wedge-escalations-x5"
+  echo "$(( $(date +%s) - 700 ))" > "$since_file"
+  bind_session pc02-task ses_mine
+  log_step_at "$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%S.000Z)" ses_someone_else
+  wedge_timer_check win5 "$since_file" test "$esc_file" pc02-task
+  grep -q "possible wedge" "$WAKES_LOG" \
+    || fail "another opencode session's fresh steps must not mask this lane's wedge"
+  pass "a fresh step from a different opencode session does not absorb the wedge"
+}
+
+test_unbound_session_does_not_absorb() {
+  reset_case
+  write_meta pc02-task opencode pc02-llamaswap/qwen3.6-35b-a3b-dispatch
+  since_file="$STATE/.stale-since-x6"
+  esc_file="$STATE/.wedge-escalations-x6"
+  echo "$(( $(date +%s) - 700 ))" > "$since_file"
+  log_step_at "$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%S.000Z)"
+  wedge_timer_check win6 "$since_file" test "$esc_file" pc02-task
+  grep -q "possible wedge" "$WAKES_LOG" \
+    || fail "with no recorded session binding the absorb must not fire"
+  pass "no session binding means no loop-step absorb"
+}
+
+test_absorb_clears_write_tracking() {
+  reset_case
+  write_meta pc02-task opencode pc02-llamaswap/qwen3.6-35b-a3b-dispatch
+  since_file="$STATE/.stale-since-x7"
+  esc_file="$STATE/.wedge-escalations-x7"
+  echo "$(( $(date +%s) - 700 ))" > "$since_file"
+  bind_session pc02-task
+  log_step_at "$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%S.000Z)"
+  key=$(window_key win7)
+  echo "$(( $(date +%s) - 7200 ))" > "$STATE/.writing-since-$key"
+  : > "$STATE/.writing-resurfaced-$key"
+  wedge_timer_check win7 "$since_file" test "$esc_file" pc02-task
+  [ ! -e "$STATE/.writing-since-$key" ] \
+    || fail "the absorb's timer reset must drop the stale write-deferral chain"
+  [ ! -e "$STATE/.writing-resurfaced-$key" ] \
+    || fail "the absorb's timer reset must drop the stale write re-surface marker"
+  pass "a loop-step absorb clears write tracking like every other timer reset"
+}
+
 test_lane_classifier
 test_idle_floor_holds_escalation_below_600s
 test_fresh_loop_step_resets_timer_instead_of_escalating
 test_stale_log_escalates_past_floor
 test_non_pc02_lane_keeps_default_threshold
+test_other_sessions_steps_do_not_absorb
+test_unbound_session_does_not_absorb
+test_absorb_clears_write_tracking
 
 echo "# all fm-watch-pc02-cadence tests passed"

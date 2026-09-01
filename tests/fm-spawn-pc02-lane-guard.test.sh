@@ -27,6 +27,7 @@ make_case() {
 set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *pane_current_command*) printf '%s\n' "${FM_FAKE_PANE_CMD:-firstmate}"; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
@@ -82,6 +83,53 @@ run_pc02_spawn() {
     CLAUDE_CONFIG_DIR='' PATH="$fakebin:$PATH" \
     "$@" "$SPAWN" "$id" "$proj" --mode no-mistakes --yolo off \
     --model pc02-llamaswap/qwen3.6-35b-a3b-dispatch 2>&1
+}
+
+test_relaunch_refuses_while_task_set_locked() {
+  local rec id out status lockdir holder_pid
+  id=pc02-guard-z5
+  rec=$(make_case relaunchlock "$id")
+  read_case_record "$rec"
+
+  out=$(run_pc02_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" env)
+  status=$?
+  expect_code 0 "$status" "the initial pc02 spawn should succeed: $out"
+
+  # A relaunch is normally exempt from the task-set lock, but a pc02 relaunch
+  # must take it so its lane read cannot race a concurrent fresh spawn.
+  lockdir="$HOME_DIR/state/.task-set.lock"
+  mkdir -p "$lockdir"
+  /bin/sleep 30 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$lockdir/pid"
+
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
+    CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN_DIR:$PATH" \
+    FM_FAKE_WINDOWS="fm-$id
+" FM_FAKE_PANE_CMD=zsh "$SPAWN" "$id" --relaunch \
+    --model pc02-llamaswap/qwen3.6-35b-a3b-dispatch 2>&1)
+  status=$?
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  expect_code 1 "$status" "a pc02 relaunch must refuse while the task set is locked: $out"
+  assert_contains "$out" "task set is locked" "relaunch refusal did not name the task-set lock: $out"
+
+  rm -rf "$lockdir"
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
+    CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN_DIR:$PATH" \
+    FM_FAKE_WINDOWS="fm-$id
+" FM_FAKE_PANE_CMD=zsh "$SPAWN" "$id" --relaunch \
+    --model pc02-llamaswap/qwen3.6-35b-a3b-dispatch 2>&1)
+  status=$?
+  expect_code 0 "$status" "an unlocked pc02 relaunch should still proceed: $out"
+  [ ! -d "$lockdir" ] || fail "the pc02 relaunch must release the task-set lock after publication"
+  pass "a pc02 relaunch takes the task-set lock so its lane read cannot race a fresh spawn"
 }
 
 test_refuses_while_other_pc02_lane_unknown_liveness() {
@@ -145,6 +193,7 @@ test_ignores_non_pc02_metas() {
   pass "non-PC02 metas never occupy the lane"
 }
 
+test_relaunch_refuses_while_task_set_locked
 test_refuses_while_other_pc02_lane_unknown_liveness
 test_refuses_while_other_pc02_lane_alive_window_listed
 test_proceeds_when_other_pc02_lane_positively_missing

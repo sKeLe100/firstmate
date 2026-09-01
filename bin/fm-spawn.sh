@@ -1369,6 +1369,25 @@ fi
 # fallback, while under-refusal wedges both PC02 lanes.
 case "${MODEL:-}" in
   pc02-llamaswap/*)
+    # The guard below must be authoritative, so the lane read and this task's
+    # own meta publication have to sit inside one critical section. A fresh
+    # spawn already holds the task-set lock; a relaunch is otherwise exempt
+    # from it, and a relaunch runs precisely when this task's endpoint is dead
+    # - the state the guard reads as a free lane - so an unlocked relaunch and
+    # a concurrent fresh spawn could both claim PC02. Take the same lock here
+    # (released after publication) and refuse rather than wait, matching the
+    # fresh-spawn path's fail-closed direction.
+    if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
+      SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
+        echo "error: could not resolve the task-set lock for $STATE" >&2
+        exit 1
+      }
+      if ! fm_lock_try_acquire "$SPAWN_TASK_SET_LOCK"; then
+        echo "error: this home's task set is locked by another operation, so the PC02 single-lane check cannot be made authoritative; refusing to relaunch task $ID onto $MODEL rather than racing it" >&2
+        exit 1
+      fi
+      SPAWN_TASK_SET_LOCK_HELD=1
+    fi
     for pc02_other_meta in "$STATE"/*.meta; do
       [ -f "$pc02_other_meta" ] || continue
       pc02_other_task=$(basename "$pc02_other_meta" .meta)
@@ -2527,6 +2546,7 @@ EOF
 // never clear the worker's busy state. The session.idle touch stays the
 // watcher's wake NOTIFICATION, never current-state truth.
 import { execFile } from "node:child_process";
+import { writeFile } from "node:fs/promises";
 const busyEvent = (state, event) =>
   new Promise((resolve) => {
     execFile("$FM_ROOT/bin/fm-busy-event.sh", [
@@ -2542,7 +2562,12 @@ export const FmBusyState = async () => {
         const sessionID = event.properties.sessionID;
         const statusType = event.properties.status && event.properties.status.type;
         if (statusType === "busy" || statusType === "retry") {
-          if (activeSession === null) activeSession = sessionID;
+          if (activeSession === null) {
+            activeSession = sessionID;
+            // The watcher's pc02 loop-step liveness read binds the shared
+            // opencode log's step lines to THIS task by session id.
+            await writeFile("$STATE_REAL/$ID.opencode-session", sessionID + "\n").catch(() => {});
+          }
           if (sessionID === activeSession) await busyEvent("busy", "session-" + statusType);
           return;
         }
