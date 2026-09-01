@@ -93,6 +93,20 @@ test_resolved_keyed_line_clears_loop() {
 }
 test_resolved_keyed_line_clears_loop
 
+test_needs_decision_keyed_report_reads_loop() {
+  local home out t=nd-task
+  home=$(mk_home nd)
+  printf 'needs-decision [key=retry-loop]: 4 review rounds, which approach do you want?\n' > "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" retry_loop_reported)" = "1" ] || fail "needs-decision keyed report not read as open: $out"
+  [ "$(field "$out" retry_band)" = "loop" ] || fail "needs-decision keyed report not read as loop: $out"
+  printf 'resolved [key=retry-loop]: captain picked an approach\n' >> "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" retry_band)" = "ok" ] || fail "resolved line did not clear needs-decision loop: $out"
+  pass "fm-retry-pressure.sh: an open needs-decision retry-loop key reads as loop"
+}
+test_needs_decision_keyed_report_reads_loop
+
 test_thresholds_file_without_trailing_newline_applies() {
   local home out t=nonl-task
   home=$(mk_home nonl)

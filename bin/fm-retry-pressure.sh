@@ -16,9 +16,14 @@
 #     its last landed/completed outcome event (relaunch count),
 #   - state/<task-id>.status keyed retry-loop reports, when the status file
 #     exists: the `[key=retry-loop]` decision counts only while the shared fold
-#     in bin/fm-classify-lib.sh still reads it open as a `blocked` line, so a
-#     later resolving or captain-held line closes it exactly as it does for
-#     every other reader of the status protocol.
+#     in bin/fm-classify-lib.sh still reads it open, under either opening verb
+#     that fold recognizes (`blocked` or `needs-decision`), so a later resolving
+#     or captain-held line closes it exactly as it does for every other reader
+#     of the status protocol.
+#
+#   A redispatch filed under a NEW task id is intentionally not counted toward
+#   this task's relaunch ceiling; that chain's evidence lives in the telemetry's
+#   from_task_id field (docs/llm-usage-telemetry.md), not here.
 #
 # Output is one data-only line; callers act on the band, not the raw counts:
 #   relaunches=<N> retry_loop_reported=<0|1> \
@@ -31,9 +36,10 @@
 #
 # Bands:
 #   ok   - counts below every ceiling; nothing to do.
-#   loop - the worker reported an open `blocked [key=retry-loop]:` itself; the
-#          next restart must change a variable (approach, runtime, or
-#          authority), not just relaunch.
+#   loop - the worker reported a `[key=retry-loop]` decision itself and it is
+#          still open (`blocked` or `needs-decision`); the next restart must
+#          change a variable (approach, runtime, or authority), not just
+#          relaunch.
 #   halt - relaunch count at/past the relaunch ceiling with no landed outcome;
 #          stop relaunching and hold the task for the captain.
 #
@@ -49,7 +55,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -116,9 +122,9 @@ fi
 # bin/fm-classify-lib.sh so this helper cannot disagree with every other reader.
 retry_loop_reported=0
 status_file="$home/state/$task.status"
-if [ "$(status_key_closing_verb "$status_file" retry-loop)" = blocked ]; then
-  retry_loop_reported=1
-fi
+case "$(status_key_closing_verb "$status_file" retry-loop)" in
+  blocked|needs-decision) retry_loop_reported=1 ;;
+esac
 
 band=ok
 if [ "$retry_loop_reported" -eq 1 ]; then
