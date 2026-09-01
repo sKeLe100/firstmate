@@ -788,3 +788,44 @@ test_drift_baseline_tracks_a_shrinking_gap_downward
 test_drift_check_skips_the_probe_when_no_bound_fits
 test_drift_check_degrades_quietly_offline
 test_drift_arm_registers_a_shim_the_watcher_accepts
+
+# A child failure must surface the script's OWN classification, not whatever
+# line the child happened to print last: a usage block's trailing example is
+# not a reason. The child is stubbed through a copy of bin/ so the failure is
+# deterministic and its stderr shape is under the test's control.
+test_failed_filing_records_the_classification_not_the_stderr_tail() {
+  set -e
+  local home root bare stub attempt out
+  home=$(new_home)
+  root="$TMP_ROOT/drift-stderr"
+  bare="$TMP_ROOT/drift-stderr-upstream.git"
+  drift_fixture "$root" "$bare" 6
+  stub="$TMP_ROOT/stub-bin"
+  rm -rf "$stub"
+  cp -R "$ROOT/bin" "$stub"
+  cat > "$stub/fm-upstream-sync-item.sh" <<'EOS'
+#!/usr/bin/env bash
+printf 'usage: tasks-axi update <id> [flags]\n' >&2
+printf '  --repo <name>\n' >&2
+printf 'tasks-axi update fm-x --repo firstmate --kind ship\n' >&2
+exit 1
+EOS
+  chmod +x "$stub/fm-upstream-sync-item.sh"
+  attempt="$home/state/.upstream-drift-attempted"
+
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_UPSTREAM_CHECK_INTERVAL=0 \
+    FM_UPSTREAM_DRIFT_THRESHOLD=6 "$stub/fm-upstream-behind-check.sh" check >/dev/null 2>&1
+  assert_present "$attempt" "stderr-tail: a failed filing must record the attempt durably"
+  grep -q "reason=the backlog write failed" "$attempt" \
+    || fail "stderr-tail: the record must keep the script's classification, got: $(cat "$attempt")"
+  ! grep -q "tasks-axi update fm-x" "$attempt" \
+    || fail "stderr-tail: the child's trailing stderr line must never become the reason"
+
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_UPSTREAM_CHECK_INTERVAL=0 \
+    FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=0 FM_UPSTREAM_DRIFT_THRESHOLD=6 \
+    "$stub/fm-upstream-behind-check.sh" check 2>/dev/null)
+  assert_contains "$out" "the sync item is still unfiled: the backlog write failed" \
+    "stderr-tail: the surfaced reason must be the classification"
+  pass "a failed filing surfaces its own classification, not the child's trailing stderr line"
+}
+test_failed_filing_records_the_classification_not_the_stderr_tail

@@ -925,8 +925,13 @@ test_upstream_sync_brief_carries_the_hard_gates() {
     "upstream-sync brief must state the never-yolo-merge instruction"
   assert_grep "SUPERVISION-SAFETY CONFLICT STOP" "$brief" \
     "upstream-sync brief must state the supervision-safety-file-conflict stop"
-  assert_grep "bin/fm-watch.sh, bin/fm-classify-lib.sh, bin/fm-task-inbox-lib.sh, or bin/fm-teardown.sh" "$brief" \
-    "upstream-sync brief must name the current supervision-safety files"
+  assert_grep "bin/fm-watch.sh, bin/fm-classify-lib.sh, bin/fm-wake-lib.sh, bin/fm-wake-drain.sh, bin/fm-task-inbox-lib.sh, or bin/fm-teardown.sh" "$brief" \
+    "upstream-sync brief must name the full supervision-safety file list"
+  local sf
+  for sf in fm-watch.sh fm-classify-lib.sh fm-wake-lib.sh fm-wake-drain.sh fm-task-inbox-lib.sh fm-teardown.sh; do
+    [ -f "$ROOT/bin/$sf" ] || fail "the gate names bin/$sf, which does not exist in this repo"
+    assert_grep "bin/$sf" "$brief" "upstream-sync brief must name bin/$sf in its conflict stop"
+  done
   assert_grep "NON-PRE-EXISTING REGRESSION STOP" "$brief" \
     "upstream-sync brief must state the non-pre-existing-regression stop"
   assert_grep "PR PURITY" "$brief" \

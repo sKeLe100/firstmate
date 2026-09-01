@@ -375,7 +375,6 @@ action_check() {
       sync_item_reason="the backlog write failed"
     fi
     if [ -n "$sync_item_err" ]; then
-      [ "$sync_item_filed" = yes ] || sync_item_reason=$(sed -n '$p' "$sync_item_err" 2>/dev/null || true)
       cat "$sync_item_err" >&2 2>/dev/null || true
       rm -f -- "$sync_item_err" 2>/dev/null || true
     fi

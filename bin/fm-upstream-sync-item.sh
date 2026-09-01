@@ -181,11 +181,10 @@ note_body() {
   fi
   [ -z "$newest" ] || printf 'Newest upstream commit: %s\n' "$newest"
   printf 'Auto-dispatch eligible: %s (%s)\n' "$eligible" "$eligible_reason"
+  printf 'Scaffold this task with `bin/fm-brief.sh --upstream-sync`: that flag is the only source of the four non-negotiable upstream-merge gates (never yolo-merge, supervision-safety conflict stop, non-pre-existing regression stop, PR purity). A plain ship brief silently loses them.\n'
   printf 'Files touched both upstream and locally since merge-base (conflict risk): %s\n' "$overlap_count"
-  if [ -n "$overlap_shown" ]; then
-    printf '%s\n' "$overlap_shown" | sed 's/^/  - /'
-    [ "$overlap_omitted" -eq 0 ] || printf '  ... and %s more\n' "$overlap_omitted"
-  fi
+  [ -z "$overlap_shown" ] || printf '%s\n' "$overlap_shown" | sed 's/^/  - /'
+  [ "$overlap_omitted" -eq 0 ] || printf '  ... and %s more\n' "$overlap_omitted"
   printf 'Pending upstream commits (%s..upstream/%s):\n' "$default" "$default"
   [ -z "$delta_shown" ] || printf '%s\n' "$delta_shown"
   [ "$delta_omitted" -eq 0 ] || printf '  ... and %s more\n' "$delta_omitted"
@@ -289,6 +288,6 @@ if [ -n "$overlap_shown" ]; then
     [ -n "$f" ] || continue
     printf 'overlap=%s\n' "$f"
   done <<< "$overlap_shown"
-  [ "$overlap_omitted" -eq 0 ] || printf 'overlap_omitted=%s\n' "$overlap_omitted"
 fi
+[ "$overlap_omitted" -eq 0 ] || printf 'overlap_omitted=%s\n' "$overlap_omitted"
 exit 0

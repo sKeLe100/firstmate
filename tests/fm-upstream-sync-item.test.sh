@@ -485,3 +485,55 @@ test_refresh_leaves_an_in_flight_item_alone
 test_days_behind_measures_the_oldest_unmerged_commit
 test_commit_delta_is_capped_with_a_truncation_marker
 test_overlap_list_is_capped_with_a_truncation_marker
+
+# The truncation marker must survive the case that drops the most: a limit of
+# zero shows nothing at all, so without the marker the note and stdout would
+# lose the whole overlap set silently.
+test_zero_shown_overlap_still_discloses_the_omitted_count() {
+  set -e
+  local home root out body i
+  home=$(new_home)
+  root="$TMP_ROOT/repo-overlapzero"
+  new_repo "$root"
+  git -C "$root" remote add upstream "$root"
+  git -C "$root" branch upstream-src main
+  for ((i = 1; i <= 5; i++)); do printf 'base%s\n' "$i" > "$root/shared-$i.txt"; done
+  git -C "$root" add -A && git -C "$root" commit -qm "shared base"
+  git -C "$root" branch -f upstream-src HEAD
+  git -C "$root" checkout -q upstream-src
+  for ((i = 1; i <= 5; i++)); do printf 'up%s\n' "$i" > "$root/shared-$i.txt"; done
+  git -C "$root" add -A && git -C "$root" commit -qm "upstream touches shared"
+  git -C "$root" update-ref refs/remotes/upstream/main refs/heads/upstream-src
+  git -C "$root" checkout -q main
+  for ((i = 1; i <= 5; i++)); do printf 'local%s\n' "$i" > "$root/shared-$i.txt"; done
+  git -C "$root" add -A && git -C "$root" commit -qm "local touches shared"
+
+  out=$(FM_UPSTREAM_AUTOSYNC_OVERLAP_SHOWN=0 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    "$ITEM" file 1 "$(date +%F)" main)
+  assert_contains "$out" "overlap_count=5" "sync-item: the full overlap count must still be reported"
+  [ "$(printf '%s\n' "$out" | grep -c '^overlap=')" -eq 0 ] \
+    || fail "sync-item: a zero limit must show no overlap entries"
+  assert_contains "$out" "overlap_omitted=5" \
+    "sync-item: a zero-shown overlap must still disclose the omitted count on stdout"
+  body=$(cat "$home/data/backlog.md")
+  assert_contains "$body" "... and 5 more" \
+    "sync-item: a zero-shown overlap must still carry the truncation marker in the note"
+  pass "a zero-shown overlap still discloses the omitted count, like the delta"
+}
+
+# The gate text lives only in `fm-brief.sh --upstream-sync`, so the filed item
+# has to carry that instruction or a dispatcher scaffolds a plain ship brief.
+test_note_body_tells_the_dispatcher_to_use_the_upstream_sync_flag() {
+  set -e
+  local home root body
+  home=$(new_home)
+  root="$TMP_ROOT/repo-briefflag"
+  setup_repo "$root" 3
+  file_once "$home" "$root" 3 >/dev/null
+  body=$(cat "$home/data/backlog.md")
+  assert_contains "$body" "bin/fm-brief.sh --upstream-sync" \
+    "sync-item: the filed item must tell the dispatcher which brief flag to scaffold with"
+  pass "the filed item carries the --upstream-sync scaffolding instruction"
+}
+test_zero_shown_overlap_still_discloses_the_omitted_count
+test_note_body_tells_the_dispatcher_to_use_the_upstream_sync_flag

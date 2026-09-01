@@ -32,7 +32,8 @@
 #   It adds the non-negotiable gates: never yolo-merge the sync PR regardless of
 #   the project's merge posture, stop at needs-decision on any conflict in a
 #   supervision-safety file (bin/fm-watch.sh, bin/fm-classify-lib.sh,
-#   bin/fm-task-inbox-lib.sh, bin/fm-teardown.sh) with a three-way summary, stop
+#   bin/fm-wake-lib.sh, bin/fm-wake-drain.sh, bin/fm-task-inbox-lib.sh,
+#   bin/fm-teardown.sh) with a three-way summary, stop
 #   at blocked on any test failure not reproduced identically on the pre-merge
 #   base, and keep the PR to only the merge commit plus labeled
 #   conflict-resolution commits, with regressions filed as separate follow-ups.
@@ -349,7 +350,7 @@ UPSTREAM_SYNC_SECTION=$(printf '%s\n' \
 'These gates are non-negotiable and apply even on a yolo-postured project.' \
 '' \
 '1. NEVER YOLO-MERGE. Regardless of this project'"'"'s merge posture, park this PR for the configured merge authority'"'"'s explicit word, exactly like every other PR. Do not merge it yourself under any standing autonomy setting.' \
-'2. SUPERVISION-SAFETY CONFLICT STOP. If the merge produces a conflict inside bin/fm-watch.sh, bin/fm-classify-lib.sh, bin/fm-task-inbox-lib.sh, or bin/fm-teardown.sh, do not resolve it yourself. Append `needs-decision: supervision-safety conflict in <file>` to the status file with a three-way summary: (a) what the local side'"'"'s hunk does, (b) what upstream'"'"'s hunk does, (c) what each version'"'"'s resulting behavior is. Stop and wait for the decision.' \
+'2. SUPERVISION-SAFETY CONFLICT STOP. If the merge produces a conflict inside bin/fm-watch.sh, bin/fm-classify-lib.sh, bin/fm-wake-lib.sh, bin/fm-wake-drain.sh, bin/fm-task-inbox-lib.sh, or bin/fm-teardown.sh, do not resolve it yourself. Append `needs-decision: supervision-safety conflict in <file>` to the status file with a three-way summary: (a) what the local side'"'"'s hunk does, (b) what upstream'"'"'s hunk does, (c) what each version'"'"'s resulting behavior is. Stop and wait for the decision.' \
 '3. NON-PRE-EXISTING REGRESSION STOP. Run the full test suite after the merge. For every failure, reproduce it identically on the pre-merge base (checked out separately, never assumed) before calling it pre-existing. Any failure that does not reproduce identically on the pre-merge base blocks unattended progress: append `blocked: <test> fails post-merge and does not reproduce on pre-merge base` with the triage table (test, pre-merge result, post-merge result) and stop rather than shipping past it.' \
 '4. PR PURITY. This PR must contain only the merge commit plus clearly-labeled conflict-resolution commits. Never fold a regression fix or a pre-existing-failure fix into this PR. File any regression found during triage as a separate follow-up backlog item and mention it, unfixed, in this PR'"'"'s description. Document every pre-existing failure in the PR description; never "fix" one as part of this sync.' \
 '' \
