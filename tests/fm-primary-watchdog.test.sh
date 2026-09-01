@@ -29,7 +29,10 @@ TMUX_STUB_DIR="$TMPHOME/stubbin"
 mkdir -p "$TMUX_STUB_DIR"
 cat >"$TMUX_STUB_DIR/tmux" <<'STUB'
 #!/usr/bin/env bash
-if [ "$1" = display-message ]; then printf 'firstmate:main\n'; exit 0; fi
+if [ "$1" = display-message ]; then
+  case "$*" in *pane_id*) head -1 "$TMUX_STUB_PANES" ;; *) printf 'firstmate:main\n' ;; esac
+  exit 0
+fi
 if [ "$1" = list-panes ]; then cat "$TMUX_STUB_PANES"; exit 0; fi
 exit 1
 STUB
@@ -382,12 +385,13 @@ printf '%%12\n' >"$TMUX_STUB_PANES"
 single=$(fm_watchdog_liveness_target "firstmate:main" tmux) || single="REFUSED"
 printf '%%12\n%%13\n' >"$TMUX_STUB_PANES"
 split=$(fm_watchdog_liveness_target "firstmate:main" tmux) || split="REFUSED"
-pinned=$(fm_watchdog_liveness_target "firstmate:main.0" tmux) || pinned="REFUSED"
+pinned_split=$(fm_watchdog_liveness_target "firstmate:main.0" tmux) || pinned_split="REFUSED"
 printf '%%12\n' >"$TMUX_STUB_PANES"
-if [ "$single" = "firstmate:main" ] && [ "$split" = "REFUSED" ] && [ "$pinned" = "firstmate:main.0" ]; then
+pinned=$(fm_watchdog_liveness_target "firstmate:main.0" tmux) || pinned="REFUSED"
+if [ "$single" = "firstmate:main" ] && [ "$split" = "REFUSED" ] && [ "$pinned" = "firstmate:main" ] && [ "$pinned_split" = "REFUSED" ]; then
   pass "liveness: a bare window target is refused when the window has a split"
 else
-  fail "liveness: window-target ambiguity check wrong (single=$single split=$split pinned=$pinned)"
+  fail "liveness: window-target ambiguity check wrong (single=$single split=$split pinned=$pinned pinned_split=$pinned_split)"
 fi
 
 if [ "$FAILED" -eq 0 ]; then

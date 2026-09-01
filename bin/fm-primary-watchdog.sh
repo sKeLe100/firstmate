@@ -164,25 +164,26 @@ FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|li
 # active (bin/fm-supervisor-target-lib.sh, the 2026-08-26 inject wedge), so an
 # ambiguous window is reported unresolvable and every caller refuses to act.
 # A window target supplied directly (FM_SUPERVISOR_TARGET=firstmate:main) is
-# redirectable the same way, so it gets the same exactly-one-pane check; a
-# target that already names a pane index (session:window.0) pins a pane and is
-# accepted as given.
+# redirectable the same way, so it gets the same exactly-one-pane check, and a
+# target naming a pane index (session:window.0) is resolved to its pane id and
+# put through that same check rather than passed to a reader that would read
+# "main.0" as a window name and report it missing.
 # Prints the usable target, or returns 1 when it cannot be resolved.
 fm_watchdog_liveness_target() {  # <target> <backend>
-  local target=$1 backend=$2 resolved panes
+  local target=$1 backend=$2 resolved panes pane
   case "$backend" in
     tmux) ;;
     *) printf '%s\n' "$target"; return 0 ;;
   esac
   case "$target" in
-    %*)
+    %*|*:*.[0-9]*)
+      pane=$(tmux display-message -p -t "$target" '#{pane_id}' 2>/dev/null) || return 1
       resolved=$(tmux display-message -p -t "$target" '#{session_name}:#{window_name}' 2>/dev/null) || return 1
-      [ -n "$resolved" ] || return 1
+      [ -n "$pane" ] && [ -n "$resolved" ] || return 1
       panes=$(tmux list-panes -t "$resolved" -F '#{pane_id}' 2>/dev/null) || return 1
-      [ "$panes" = "$target" ] || return 1
+      [ "$panes" = "$pane" ] || return 1
       printf '%s\n' "$resolved"
       ;;
-    *:*.[0-9]*) printf '%s\n' "$target" ;;
     *:*)
       panes=$(tmux list-panes -t "$target" -F '#{pane_id}' 2>/dev/null) || return 1
       case "$panes" in ''|*[!%0-9]*) return 1 ;; esac
