@@ -1,0 +1,37 @@
+=== /questionnaire Refill step: empty-bundle fallback, end to end ===
+
+--- A. A roundtable report exists from yesterday (reuse, do not pay for a scout) ---
+$ bin/fm-questionnaire-refill-source.sh --data-dir /tmp/tmp.nPNNIYPyy9/data
+/tmp/tmp.nPNNIYPyy9/data/roundtable-20260830/report.md
+(exit 0)
+-> skill Refill: reuse this report; read it and present its still-open candidates. NO scout dispatched.
+
+    report the skill would read and present:
+    | # Roundtable 2026-08-30
+    | 
+    | ## Candidates
+    | - firstmate: split watcher triage (OPEN, undispatched)
+    | - shop: tighten checkout retry (OPEN, undispatched)
+
+--- B. Same report, now 5 days old (stale -> dispatch a fresh scout) ---
+$ bin/fm-questionnaire-refill-source.sh --data-dir /tmp/tmp.nPNNIYPyy9/data
+(exit 1)
+-> skill Refill: no report within the window; dispatch ONE senior-tier Fable project-review scout.
+
+--- C. No roundtable/roadmap report at all (dispatch a fresh scout) ---
+$ bin/fm-questionnaire-refill-source.sh --data-dir /tmp/tmp.nPNNIYPyy9/data/movie-aggregator-notes
+(exit 1)
+-> skill Refill: no report within the window; dispatch ONE senior-tier Fable project-review scout.
+
+--- D. Operator typo: option with no value (must NOT be read as scout authorization) ---
+$ bin/fm-questionnaire-refill-source.sh --data-dir
+fm-questionnaire-refill-source.sh: --data-dir requires a value
+(exit 2)
+-> skill Refill: usage error; surface to the captain and stop. NO scout dispatched.
+
+--- E. Non-numeric window ---
+$ bin/fm-questionnaire-refill-source.sh --max-age-days later
+fm-questionnaire-refill-source.sh: --max-age-days must be a non-negative integer: later
+(exit 2)
+-> skill Refill: usage error; surface to the captain and stop. NO scout dispatched.
+
