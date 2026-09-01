@@ -25,6 +25,20 @@ export TMUX_PANE="test:0.0"
 cleanup() { rm -rf "$TMPHOME"; }
 trap cleanup EXIT
 
+TMUX_STUB_DIR="$TMPHOME/stubbin"
+mkdir -p "$TMUX_STUB_DIR"
+cat >"$TMUX_STUB_DIR/tmux" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = display-message ]; then printf 'firstmate:main\n'; exit 0; fi
+if [ "$1" = list-panes ]; then cat "$TMUX_STUB_PANES"; exit 0; fi
+exit 1
+STUB
+chmod +x "$TMUX_STUB_DIR/tmux"
+export TMUX_STUB_PANES="$TMPHOME/stub-panes"
+printf '%%12\n' >"$TMUX_STUB_PANES"
+PATH="$TMUX_STUB_DIR:$PATH"
+PATH_SAVED="$PATH"
+
 # --- 1. blocked-detection matching -----------------------------------------
 fm_backend_target_exists() { return 0; }
 fm_backend_agent_alive() { printf 'alive'; }
@@ -116,6 +130,7 @@ fi
 SENT_LOG="$TMPHOME/sent.log"
 fm_backend_send_text_submit() { printf '%s\n' "$3" >>"$SENT_LOG"; printf 'empty'; }
 fm_backend_busy_state() { printf 'idle'; }
+fm_backend_agent_alive() { printf 'dead'; }
 
 : >"$SENT_LOG"
 FM_WATCHDOG_LAUNCH_CMD="claude --resume" fm_watchdog_restart_primary "test:0" "tmux"
@@ -323,20 +338,7 @@ else
 fi
 
 # --- 11. a bare tmux pane id is normalized before any liveness read ---------
-TMUX_STUB_DIR="$TMPHOME/stubbin"
-mkdir -p "$TMUX_STUB_DIR"
-cat >"$TMUX_STUB_DIR/tmux" <<'STUB'
-#!/usr/bin/env bash
-if [ "$1" = display-message ]; then printf 'firstmate:main
-'; exit 0; fi
-if [ "$1" = list-panes ]; then cat "$TMUX_STUB_PANES"; exit 0; fi
-exit 1
-STUB
-chmod +x "$TMUX_STUB_DIR/tmux"
-export TMUX_STUB_PANES="$TMPHOME/stub-panes"
 printf '%%12\n' >"$TMUX_STUB_PANES"
-PATH_SAVED="$PATH"
-PATH="$TMUX_STUB_DIR:$PATH"
 SEEN_FILE="$TMPHOME/seen-target"
 fm_backend_agent_alive() { printf '%s' "$2" >"$SEEN_FILE"; printf 'dead'; }
 state=$(fm_watchdog_agent_state "%12" tmux)
@@ -373,6 +375,19 @@ if [ "$rc" -ne 0 ] && [ -z "$INJECTED" ]; then
   pass "reset: an unreadable liveness target aborts before any injection"
 else
   fail "reset: must abandon the pass before injecting when liveness is unreadable (rc=$rc injected=$INJECTED)"
+fi
+
+# --- 14. a bare window target gets the same ambiguity check -----------------
+printf '%%12\n' >"$TMUX_STUB_PANES"
+single=$(fm_watchdog_liveness_target "firstmate:main" tmux) || single="REFUSED"
+printf '%%12\n%%13\n' >"$TMUX_STUB_PANES"
+split=$(fm_watchdog_liveness_target "firstmate:main" tmux) || split="REFUSED"
+pinned=$(fm_watchdog_liveness_target "firstmate:main.0" tmux) || pinned="REFUSED"
+printf '%%12\n' >"$TMUX_STUB_PANES"
+if [ "$single" = "firstmate:main" ] && [ "$split" = "REFUSED" ] && [ "$pinned" = "firstmate:main.0" ]; then
+  pass "liveness: a bare window target is refused when the window has a split"
+else
+  fail "liveness: window-target ambiguity check wrong (single=$single split=$split pinned=$pinned)"
 fi
 
 if [ "$FAILED" -eq 0 ]; then

@@ -163,6 +163,10 @@ FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|li
 # pinned pane: a window with a split redirects every read to whichever pane is
 # active (bin/fm-supervisor-target-lib.sh, the 2026-08-26 inject wedge), so an
 # ambiguous window is reported unresolvable and every caller refuses to act.
+# A window target supplied directly (FM_SUPERVISOR_TARGET=firstmate:main) is
+# redirectable the same way, so it gets the same exactly-one-pane check; a
+# target that already names a pane index (session:window.0) pins a pane and is
+# accepted as given.
 # Prints the usable target, or returns 1 when it cannot be resolved.
 fm_watchdog_liveness_target() {  # <target> <backend>
   local target=$1 backend=$2 resolved panes
@@ -178,7 +182,12 @@ fm_watchdog_liveness_target() {  # <target> <backend>
       [ "$panes" = "$target" ] || return 1
       printf '%s\n' "$resolved"
       ;;
-    *:*) printf '%s\n' "$target" ;;
+    *:*.[0-9]*) printf '%s\n' "$target" ;;
+    *:*)
+      panes=$(tmux list-panes -t "$target" -F '#{pane_id}' 2>/dev/null) || return 1
+      case "$panes" in ''|*[!%0-9]*) return 1 ;; esac
+      printf '%s\n' "$target"
+      ;;
     *) return 1 ;;
   esac
 }
