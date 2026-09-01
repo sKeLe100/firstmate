@@ -103,6 +103,8 @@ FM_WATCHDOG_CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$FM_WATCHDOG_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-operational-input.sh
 . "$FM_WATCHDOG_DIR/fm-operational-input.sh"
+# shellcheck source=bin/fm-composer-lib.sh
+. "$FM_WATCHDOG_DIR/fm-composer-lib.sh"
 
 log() { printf '[fm-primary-watchdog] %s\n' "$*" >&2; }
 
@@ -157,9 +159,13 @@ FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|li
 # (fm_backend_agent_state / fm_backend_busy_state) accept. discover_supervisor_
 # target pins a tmux pane as a bare pane id ("%12"), which the tmux adapter
 # rejects as unreadable, so resolve it to the session:window that adapter reads.
+# A session:window target is only accepted when that window holds exactly the
+# pinned pane: a window with a split redirects every read to whichever pane is
+# active (bin/fm-supervisor-target-lib.sh, the 2026-08-26 inject wedge), so an
+# ambiguous window is reported unresolvable and every caller refuses to act.
 # Prints the usable target, or returns 1 when it cannot be resolved.
 fm_watchdog_liveness_target() {  # <target> <backend>
-  local target=$1 backend=$2 resolved
+  local target=$1 backend=$2 resolved panes
   case "$backend" in
     tmux) ;;
     *) printf '%s\n' "$target"; return 0 ;;
@@ -168,6 +174,8 @@ fm_watchdog_liveness_target() {  # <target> <backend>
     %*)
       resolved=$(tmux display-message -p -t "$target" '#{session_name}:#{window_name}' 2>/dev/null) || return 1
       [ -n "$resolved" ] || return 1
+      panes=$(tmux list-panes -t "$resolved" -F '#{pane_id}' 2>/dev/null) || return 1
+      [ "$panes" = "$target" ] || return 1
       printf '%s\n' "$resolved"
       ;;
     *:*) printf '%s\n' "$target" ;;
@@ -271,6 +279,21 @@ fm_watchdog_reset_wait_seconds() {
   printf '%s %s\n' "$wait" "$reset_epoch"
 }
 
+# fm_watchdog_pane_busy: the daemon's pane_is_busy guard
+# (bin/fm-supervise-daemon.sh), repeated here because fm_backend_busy_state is
+# hardcoded to `unknown` on tmux and the rendered-tail match is the only real
+# busy evidence there.
+fm_watchdog_pane_busy() {  # <target> <backend>
+  local target=$1 backend=$2 native harness tail40
+  native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
+  [ "$native" = busy ] && return 0
+  harness=$("$FM_WATCHDOG_DIR/fm-harness.sh" 2>/dev/null || printf 'unknown')
+  [ -n "$harness" ] || harness=unknown
+  tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
+  printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -12 \
+    | fm_busy_lines_match "$harness"
+}
+
 # fm_watchdog_inject: repeats inject_msg's (bin/fm-supervise-daemon.sh)
 # busy-guard, composer-guard, and verified-submit steps WITHOUT its
 # afk_active() gate, because this watchdog must be able to inject regardless
@@ -278,7 +301,7 @@ fm_watchdog_reset_wait_seconds() {
 fm_watchdog_inject() {  # <target> <backend> <message>
   local target=$1 backend=$2 msg=$3 encoded verdict retries sleep_s composer
   fm_backend_target_exists "$backend" "$target" || return 1
-  if fm_backend_busy_state "$backend" "$target" 2>/dev/null | grep -q busy; then
+  if fm_watchdog_pane_busy "$target" "$backend"; then
     log "inject deferred: primary pane busy"
     return 1
   fi

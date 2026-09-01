@@ -329,9 +329,12 @@ cat >"$TMUX_STUB_DIR/tmux" <<'STUB'
 #!/usr/bin/env bash
 if [ "$1" = display-message ]; then printf 'firstmate:main
 '; exit 0; fi
+if [ "$1" = list-panes ]; then cat "$TMUX_STUB_PANES"; exit 0; fi
 exit 1
 STUB
 chmod +x "$TMUX_STUB_DIR/tmux"
+export TMUX_STUB_PANES="$TMPHOME/stub-panes"
+printf '%%12\n' >"$TMUX_STUB_PANES"
 PATH_SAVED="$PATH"
 PATH="$TMUX_STUB_DIR:$PATH"
 SEEN_FILE="$TMPHOME/seen-target"
@@ -343,6 +346,17 @@ if [ "$state" = dead ] && [ "$SEEN_TARGET" = "firstmate:main" ]; then
   pass "liveness: a bare tmux pane id is resolved to a readable session:window"
 else
   fail "liveness: a bare tmux pane id must be resolved before the liveness read (state=$state target=$SEEN_TARGET)"
+fi
+
+printf '%%12\n%%13\n' >"$TMUX_STUB_PANES"
+PATH="$TMUX_STUB_DIR:$PATH"
+: >"$SEEN_FILE"
+state=$(fm_watchdog_agent_state "%12" tmux)
+PATH="$PATH_SAVED"
+if [ "$state" = unknown ] && [ ! -s "$SEEN_FILE" ]; then
+  pass "liveness: a split window yields unknown instead of a redirected verdict"
+else
+  fail "liveness: a split window must not produce a liveness verdict (state=$state)"
 fi
 
 if [ "$FAILED" -eq 0 ]; then
