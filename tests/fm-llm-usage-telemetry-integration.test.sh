@@ -388,7 +388,7 @@ make_teardown_case() {  # <name> -> echoes case dir with a landed, local-only, f
   local name=$1 dir home proj wt task_id=task-x1
   dir="$TMP_ROOT/$name-$RANDOM"
   home="$dir/home"
-  mkdir -p "$home/state" "$home/config" "$dir/fakebin"
+  mkdir -p "$home/state" "$home/config" "$home/data" "$dir/fakebin"
   cat > "$dir/fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
 exit 0
