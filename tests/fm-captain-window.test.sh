@@ -75,4 +75,23 @@ fi
 grep -q "tz" "$tmp/err" || fail "expected tz diagnostic, got: $(cat "$tmp/err")"
 rm -f "$tmp/config/working-hours"
 
+# 7. A transposed start/end is rejected rather than silently disabling working hours.
+printf 'start=17:00\nend=09:00\n' > "$tmp/config/working-hours"
+if FM_HOME="$tmp" "$bin" --now 10:00 --weekday Wed >/dev/null 2>"$tmp/err"; then
+  fail "expected non-zero exit on transposed start/end"
+fi
+grep -q "start must precede end" "$tmp/err" || fail "expected start/end diagnostic, got: $(cat "$tmp/err")"
+rm -f "$tmp/config/working-hours"
+
+# 8. --weekday without --now is a usage error, and the injected weekday drives the ISO date.
+if FM_HOME="$tmp" "$bin" --weekday Sat >/dev/null 2>"$tmp/err"; then
+  fail "expected non-zero exit for --weekday without --now"
+fi
+grep -q -- "--weekday requires --now" "$tmp/err" || fail "expected usage diagnostic, got: $(cat "$tmp/err")"
+
+out="$(FM_HOME="$tmp" "$bin" --now 12:30 --weekday Wed)"
+now_field="${out#*now=}"; now_field="${now_field%% *}"
+iso_day="$(TZ=America/Toronto date -d "${now_field%T*}" +%a)"
+[ "$iso_day" = "Wed" ] || fail "ISO date weekday should match --weekday, got $iso_day in: $out"
+
 echo "PASS: fm-captain-window.test.sh"

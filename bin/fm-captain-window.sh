@@ -59,6 +59,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ -n "$opt_weekday" ] && [ -z "$opt_now" ]; then
+  fail "--weekday requires --now"
+fi
+
 home_path="${FM_HOME:-$PWD}"
 
 tz=America/Toronto
@@ -96,6 +100,7 @@ for pair in "start:$start" "end:$end"; do
   name="${pair%%:*}"; val="${pair#*:}"
   printf '%s' "$val" | grep -Eq "$hhmm_re" || fail "malformed $name in $cfg: $val"
 done
+[ "${start//:/}" -lt "${end//:/}" ] || fail "start must precede end in $cfg: $start-$end"
 range_re='^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$'
 for pair in "lunch:$lunch" "evening:$evening" "quiet:$quiet"; do
   name="${pair%%:*}"; val="${pair#*:}"
@@ -110,6 +115,10 @@ day_index() {
   done
   return 1
 }
+
+if [ -n "$opt_weekday" ]; then
+  day_index "$opt_weekday" >/dev/null || fail "unrecognized --weekday value: $opt_weekday"
+fi
 
 workdays_set=""
 if [ "$workdays" != "none" ]; then
@@ -135,15 +144,31 @@ if [ "$workdays" != "none" ]; then
   esac
 fi
 
-printf '%s' "$tz" | grep -Eq '^[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*$' || fail "malformed tz in $cfg: $tz"
-if [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
-  fail "unknown tz in $cfg: $tz"
-fi
+printf '%s' "$tz" | grep -Eq '^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$' || fail "malformed tz in $cfg: $tz"
+tz_resolves() {
+  case "$tz" in
+    UTC|GMT|Etc/UTC|Etc/GMT|Universal|Zulu) return 0 ;;
+  esac
+  [ -f "/usr/share/zoneinfo/$tz" ] && return 0
+  [ "$(TZ="$tz" date +%z%Z)" != "$(TZ=FmNoSuchZone date +%z%Z)" ]
+}
+tz_resolves || fail "unknown tz in $cfg: $tz"
 export TZ="$tz"
 if [ -n "$opt_now" ]; then
   now_hhmm="$opt_now"
-  weekday="${opt_weekday:-$(date +%a)}"
-  now_iso="$(date -d "$(date +%Y-%m-%d) $opt_now" +%Y-%m-%dT%H:%M%z)"
+  if [ -n "$opt_weekday" ]; then
+    weekday="$opt_weekday"
+    back=0
+    while [ "$(date -d "-$back days" +%a)" != "$weekday" ]; do
+      back=$((back + 1))
+      [ "$back" -le 6 ] || fail "could not resolve a date for --weekday $weekday"
+    done
+    now_date="$(date -d "-$back days" +%Y-%m-%d)"
+  else
+    weekday="$(date +%a)"
+    now_date="$(date +%Y-%m-%d)"
+  fi
+  now_iso="$(date -d "$now_date $opt_now" +%Y-%m-%dT%H:%M%z)"
 else
   now_hhmm="$(date +%H:%M)"
   weekday="$(date +%a)"
