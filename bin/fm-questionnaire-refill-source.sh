@@ -25,10 +25,18 @@ max_age_days=3
 while [ $# -gt 0 ]; do
   case "$1" in
     --data-dir)
+      if [ $# -lt 2 ]; then
+        echo "fm-questionnaire-refill-source.sh: --data-dir requires a value" >&2
+        exit 2
+      fi
       data_dir="$2"
       shift 2
       ;;
     --max-age-days)
+      if [ $# -lt 2 ]; then
+        echo "fm-questionnaire-refill-source.sh: --max-age-days requires a value" >&2
+        exit 2
+      fi
       max_age_days="$2"
       shift 2
       ;;
@@ -38,6 +46,14 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+search_root="${data_dir%/}"
+if [ -z "$search_root" ]; then
+  search_root="/"
+  path_prefix=""
+else
+  path_prefix="$search_root"
+fi
 
 if [ ! -d "$data_dir" ]; then
   exit 1
@@ -52,7 +68,7 @@ while IFS= read -r -d '' report; do
     newest_mtime="$mtime"
     newest="$report"
   fi
-done < <(find "$data_dir" -maxdepth 2 \( -ipath "*roundtable*/report.md" -o -ipath "*roadmap*/report.md" \) -print0 2>/dev/null)
+done < <(find "$search_root" -maxdepth 2 \( -ipath "$path_prefix/*roundtable*/report.md" -o -ipath "$path_prefix/*roadmap*/report.md" \) -print0 2>/dev/null)
 
 if [ -z "$newest" ]; then
   exit 1

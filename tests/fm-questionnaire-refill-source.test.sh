@@ -96,8 +96,43 @@ test_non_roundtable_reports_are_ignored() {
   pass "fm-questionnaire-refill-source: non-roundtable/roadmap reports are ignored"
 }
 
+test_missing_option_value_is_a_usage_error() {
+  local status
+  set +e
+  "$ROOT/bin/fm-questionnaire-refill-source.sh" --data-dir >/dev/null 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 2 ] || fail "--data-dir without a value must exit 2, got: $status"
+
+  set +e
+  "$ROOT/bin/fm-questionnaire-refill-source.sh" --max-age-days >/dev/null 2>&1
+  status=$?
+  set -e
+  [ "$status" -eq 2 ] || fail "--max-age-days without a value must exit 2, got: $status"
+
+  pass "fm-questionnaire-refill-source: missing option value is a usage error, not a no-match"
+}
+
+test_roundtable_in_data_dir_path_does_not_match_everything() {
+  local data_dir report
+  data_dir="$TMP_ROOT/roundtable-workspace/data"
+  mkdir -p "$data_dir/questionnaire-skill-design"
+  report="$data_dir/questionnaire-skill-design/report.md"
+  printf 'unrelated scout report\n' > "$report"
+  touch_days_ago "$report" 0
+
+  if "$ROOT/bin/fm-questionnaire-refill-source.sh" --data-dir "$data_dir" --max-age-days 3 >"$TMP_ROOT/capture.txt" 2>/dev/null; then
+    fail "a data dir path containing 'roundtable' must not make every report match"
+  fi
+  [ ! -s "$TMP_ROOT/capture.txt" ] || fail "must print nothing when only unrelated reports exist"
+
+  pass "fm-questionnaire-refill-source: data-dir prefix is not part of the roundtable match"
+}
+
 test_no_data_dir_fails
 test_fresh_roundtable_report_is_offered
 test_stale_report_is_not_offered
 test_newest_matching_report_wins
 test_non_roundtable_reports_are_ignored
+test_missing_option_value_is_a_usage_error
+test_roundtable_in_data_dir_path_does_not_match_everything
