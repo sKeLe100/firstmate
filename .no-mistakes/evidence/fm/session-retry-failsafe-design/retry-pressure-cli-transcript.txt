@@ -1,19 +1,15 @@
-=== 1. Fresh task, no evidence (supervisor heartbeat read) ===
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=demo-task
+$ # dispatching home with no records (zero evidence)
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=task-1
 
-=== 2. Worker self-reports a retry loop in state/demo-task.status ===
-blocked [key=retry-loop]: 2 fix rounds produced no change
-relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=demo-task
+$ # worker self-reports a retry loop
+relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=task-1
 
-=== 3. Supervisor acts: relaunches and closes the key ===
-relaunches=2 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=demo-task
+$ # supervisor acts and closes the key
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=task-1
 
-=== 4. Relaunches reach the ceiling -> halt, escalate to the captain ===
-relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=demo-task
+$ # relaunch telemetry accumulates to the ceiling
+relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=task-1
 
-=== 5. Junk telemetry line is zero evidence, not a crash ===
-relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=demo-task
+$ # junk telemetry line is zero evidence, not a crash
+relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=task-1
 exit=0
-
-=== 6. Same records under FM_STATE_OVERRIDE/FM_DATA_OVERRIDE (fleet-snapshot setup) ===
-relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=demo-task
