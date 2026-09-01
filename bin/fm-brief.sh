@@ -533,6 +533,14 @@ $RULE1
 8. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
    every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
+9. Retry-loop failsafe: track your own validation repetition instead of grinding.
+   Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
+   still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after 4 review
+   rounds without the review step approving, or after roughly 2 hours cycling the same pipeline
+   step without progress, stop: commit work in progress, then append
+   \`blocked [key=retry-loop]: {round/no-op/elapsed evidence}\` and wait for firstmate.
+   Never retry the same failing action a third time unchanged - a retry that changes nothing
+   re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
 
 $INBOX_SECTION
 

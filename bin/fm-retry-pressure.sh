@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# bin/fm-retry-pressure.sh - report a task's retry-loop pressure from durable
+# records, as a data-only sibling of bin/fm-context-usage.sh.
+#
+# Why: the context-threshold mechanism senses context SIZE only. The
+# session-retry-failsafe-design scout (data/session-retry-failsafe-design/
+# report.md, 2026-09-01) showed a repetition-driven failure mode it cannot
+# catch: repeated relaunches, review-gate rounds, and fix no-ops that each pay
+# a full cold context reload before the size band ever fires. This helper
+# counts that repetition so supervision can act proactively; it reads and
+# reports only, and never relaunches, holds, or steers anything itself.
+#
+# Usage: fm-retry-pressure.sh <task-id>
+#   Reads, under FM_HOME (default: current directory):
+#   - data/llm-usage/firstmate.jsonl delegation events for this task_id since
+#     its last landed/completed outcome event (relaunch count),
+#   - state/<task-id>.status keyed retry-loop reports and fixing/fix-review
+#     round transitions (round pressure), when the status file exists.
+#
+# Output is one data-only line; callers act on the band, not the raw counts:
+#   relaunches=<N> rounds=<N> retry_loop_reported=<0|1> \
+#     relaunch_ceiling=<K> round_ceiling=<R> retry_band=<ok|loop|halt> task=<id>
+#
+# Bands:
+#   ok   - counts below every ceiling; nothing to do.
+#   loop - round pressure at/past the round ceiling, or the worker reported
+#          `blocked [key=retry-loop]:` itself; the next restart must change a
+#          variable (approach, runtime, or authority), not just relaunch.
+#   halt - relaunch count at/past the relaunch ceiling with no landed outcome;
+#          stop relaunching and hold the task for the captain.
+#
+# Ceilings come from optional config/retry-thresholds under FM_HOME, the
+# sibling of config/context-thresholds documented in docs/configuration.md
+# "Retry-loop thresholds": at most one `relaunch=<K>` line and one `rounds=<R>`
+# line, each a positive base-10 integer. Absent file or key means the built-in
+# defaults relaunch=3 and rounds=4. A malformed file is rejected loudly rather
+# than silently replaced by defaults.
+#
+# Missing telemetry or a missing status file is zero evidence, not an error:
+# the counts it would feed are reported as 0 so a fresh home reads ok.
+set -euo pipefail
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+fi
+
+[ $# -eq 1 ] || { echo "usage: fm-retry-pressure.sh <task-id>" >&2; exit 1; }
+task="$1"
+home="${FM_HOME:-$PWD}"
+
+relaunch_ceiling=3
+round_ceiling=4
+cfg="$home/config/retry-thresholds"
+if [ -e "$cfg" ]; then
+  [ -r "$cfg" ] || { echo "fm-retry-pressure: unreadable $cfg" >&2; exit 1; }
+  while IFS= read -r line; do
+    case "$line" in
+      ''|'#'*) ;;
+      relaunch=*)
+        v="${line#relaunch=}"
+        case "$v" in ''|*[!0-9]*|0*[0-9]) echo "fm-retry-pressure: malformed relaunch= in $cfg" >&2; exit 1;; esac
+        [ "$v" -ge 1 ] || { echo "fm-retry-pressure: relaunch= must be >= 1 in $cfg" >&2; exit 1; }
+        relaunch_ceiling="$v" ;;
+      rounds=*)
+        v="${line#rounds=}"
+        case "$v" in ''|*[!0-9]*|0*[0-9]) echo "fm-retry-pressure: malformed rounds= in $cfg" >&2; exit 1;; esac
+        [ "$v" -ge 1 ] || { echo "fm-retry-pressure: rounds= must be >= 1 in $cfg" >&2; exit 1; }
+        round_ceiling="$v" ;;
+      *) echo "fm-retry-pressure: unrecognized line in $cfg: $line" >&2; exit 1 ;;
+    esac
+  done < "$cfg"
+fi
+
+# Relaunches since the last landed outcome, from the delegation telemetry.
+relaunches=0
+telemetry="$home/data/llm-usage/firstmate.jsonl"
+if [ -r "$telemetry" ]; then
+  relaunches=$(TASK="$task" python3 - "$telemetry" <<'PY'
+import json, os, sys
+task = os.environ["TASK"]
+count = 0
+for line in open(sys.argv[1]):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        row = json.loads(line)
+    except ValueError:
+        continue
+    if row.get("task_id") != task:
+        continue
+    if row.get("event_type") == "outcome" and row.get("result") in ("landed", "completed"):
+        count = 0
+    elif row.get("event_type") == "delegation" and row.get("trigger") == "relaunch":
+        count += 1
+print(count)
+PY
+  )
+fi
+
+# Round pressure and worker-reported loops, from the status log.
+rounds=0
+retry_loop_reported=0
+status_file="$home/state/$task.status"
+if [ -r "$status_file" ]; then
+  rounds=$(grep -c -E '^(working|fixing)[^:]*: .*(fix.round|review round|round [0-9]+)' "$status_file" 2>/dev/null || true)
+  if grep -q -E '^blocked \[key=retry-loop\]:' "$status_file" 2>/dev/null; then
+    retry_loop_reported=1
+  fi
+fi
+
+band=ok
+if [ "$rounds" -ge "$round_ceiling" ] || [ "$retry_loop_reported" -eq 1 ]; then
+  band=loop
+fi
+if [ "$relaunches" -ge "$relaunch_ceiling" ]; then
+  band=halt
+fi
+
+printf 'relaunches=%s rounds=%s retry_loop_reported=%s relaunch_ceiling=%s round_ceiling=%s retry_band=%s task=%s\n' \
+  "$relaunches" "$rounds" "$retry_loop_reported" "$relaunch_ceiling" "$round_ceiling" "$band" "$task"

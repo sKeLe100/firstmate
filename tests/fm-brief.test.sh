@@ -911,6 +911,27 @@ test_ship_brief_context_rule_and_rule_numbering() {
 }
 test_ship_brief_context_rule_and_rule_numbering
 
+test_ship_brief_carries_retry_loop_failsafe() {
+  local home id brief
+  home="$TMP_ROOT/retry-loop-home"
+  mkdir -p "$home/data"
+  id="brief-retry-loop-r1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded"
+
+  assert_grep "Retry-loop failsafe" "$brief" \
+    "ship brief lost the retry-loop failsafe rule"
+  assert_grep "2 consecutive fix no-ops" "$brief" \
+    "retry-loop rule lost its fix no-op ceiling"
+  assert_grep "after 4 review" "$brief" \
+    "retry-loop rule lost its review-round ceiling"
+  assert_grep "blocked [key=retry-loop]:" "$brief" \
+    "retry-loop rule lost its keyed reporting contract"
+  pass "fm-brief.sh: ship brief carries the retry-loop failsafe rule with its ceilings and key"
+}
+test_ship_brief_carries_retry_loop_failsafe
+
 test_upstream_sync_brief_carries_the_hard_gates() {
   local home id brief out
   home="$TMP_ROOT/upstream-sync-home"
