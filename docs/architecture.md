@@ -59,7 +59,7 @@ Separately from heartbeat backoff and wedge handling, the watcher poll runs `bin
 In each home the scan considers only that home's long-inactive direct ordinary crewmates, excludes captain-held work, and accepts only `done` or `failed` from `bin/fm-crew-state.sh`.
 A secondmate retains a durable receipt for its idempotent report through the established parent route, and main-home captain presentation retains a separate receipt; neither path performs a forge or PR check.
 Absorbed wakes advance their suppression markers, log to `state/.watch-triage.log`, and keep the watcher blocking without a queue record or LLM turn.
-A benignly absorbed `.status` log advances only its successfully classified position and never its reported signature, so a later captain-relevant append to the same log is still reported.
+A benignly absorbed `.status` log commits its successfully classified position together with a reported signature scoped to exactly the bytes classified, so it is not re-signalled every poll cycle while a later captain-relevant append to the same log is still reported.
 When that classified position cannot be committed, only the files whose own absorb failed are surfaced as ordinary signal wakes rather than silently re-absorbed, and their reported signature advances with that wake.
 Each `fm-wake-drain.sh` presentation runs the same liveness guard as the supervision scripts, so a lapsed watcher chain surfaces even on a turn that only handles queued wakes.
 Routine watcher polling, supervision no-ops, elapsed waiting time, and absorbed benign wakes stay silent.
