@@ -1995,18 +1995,21 @@ EOF
       done <<EOF
 $pending
 EOF
-      signal_commit_error=0
+      signal_commit_failed=
       while IFS=$(printf '\t') read -r f surface_end surface_ident; do
         [ -n "$f" ] || continue
         case " $signal_deferred " in *" $f "*) continue ;; esac
         fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" \
-          || signal_commit_error=1
+          || signal_commit_failed="$signal_commit_failed $f"
       done <<EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
-      if [ "$signal_commit_error" -ne 0 ]; then
-        # The absorb could not be recorded, so the next scan would re-read the
-        # same span forever. Surface it instead of silently re-absorbing. The
+      if [ -n "$signal_commit_failed" ]; then
+        # Only the files whose own absorb could not be recorded escalate: every
+        # other file in this scan is absorbed as decided, and waking for it
+        # would spend a drain turn on a benign log already classified.
+        # The next scan would re-read the failed file's span forever. Surface it
+        # instead of silently re-absorbing. The
         # reported signature advances here even though the classification
         # position could not: the file HAS now been reported, which bounds a
         # marker this home cannot classify to one wake per distinct file state
@@ -2017,7 +2020,7 @@ EOF
         signal_enqueued=
         while IFS=$(printf '\t') read -r sf sig f; do
           [ -n "$sf" ] || continue
-          case " $signal_deferred " in *" $f "*) continue ;; esac
+          case " $signal_commit_failed " in *" $f "*) ;; *) continue ;; esac
           case " $signal_enqueued " in
             *" $f "*) ;;
             *)
