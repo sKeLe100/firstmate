@@ -66,6 +66,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-config-push.sh`      | Push declared inherited local material to live local or remote secondmates and send the placement-specific config reread when changed |
 | `fm-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for fleet sync and home seeding |
 | `fm-queue-snapshot.sh`   | Backlog-read-only snapshot of the top queued backlog items ranked by descending priority, with project posture, derived autonomy, the configured lane hierarchy, and one bounded aggregate quota read, for the `queue` skill |
+| `fm-questionnaire-refill-source.sh` | Duplication guard for the `questionnaire` skill's empty-bundle Refill step: find the newest `data/*roundtable*/report.md` or `data/*roadmap*/report.md` within a freshness window, or exit nonzero when none is fresh enough |
 | `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `fm-review-diff.sh`      | Review a crewmate branch or resolved PR head against the authoritative base          |
 | `fm-roundtable-factsheet.sh` | Generate a deterministic, read-only fact sheet of one project clone at HEAD, with an optional delta since that project's last roundtable mark ([roundtable-instrumentation.md](roundtable-instrumentation.md)) |
