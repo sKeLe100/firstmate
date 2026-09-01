@@ -181,6 +181,8 @@ note_body() {
   fi
   [ -z "$newest" ] || printf 'Newest upstream commit: %s\n' "$newest"
   printf 'Auto-dispatch eligible: %s (%s)\n' "$eligible" "$eligible_reason"
+  # The backticked flag text is literal note-body content, not a command substitution.
+  # shellcheck disable=SC2016
   printf 'Scaffold this task with `bin/fm-brief.sh --upstream-sync`: that flag is the only source of the four non-negotiable upstream-merge gates (never yolo-merge, supervision-safety conflict stop, non-pre-existing regression stop, PR purity). A plain ship brief silently loses them.\n'
   printf 'Files touched both upstream and locally since merge-base (conflict risk): %s\n' "$overlap_count"
   [ -z "$overlap_shown" ] || printf '%s\n' "$overlap_shown" | sed 's/^/  - /'
