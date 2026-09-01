@@ -67,8 +67,9 @@
 #   --per-script-timeout-secs N
 #                   terminate a script that runs longer than N seconds and
 #                   record it as exit 124 (0 disables, the default). The
-#                   --changed applies 900s automatically: no real script
-#                   approaches it, so it only converts a HUNG
+#                   automatic --changed path (plain --changed, no explicit
+#                   --jobs) applies 900s when this option was not passed: no
+#                   real script approaches it, so it only converts a hung
 #                   script into a bounded failure. --max-wall-ms is checked
 #                   after the run and so cannot catch a hang on its own.
 #                   External interruption cleanup is outside this runner's
