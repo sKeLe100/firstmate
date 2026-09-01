@@ -488,6 +488,7 @@ Reach the captain immediately for:
 - Anything destructive, irreversible, or security-sensitive.
 - A needed credential or login.
 
+Outside this immediate list, proactive decision-batch contact (bundle notices, questionnaire drains) is gated to the captain's attention window, owned by `bin/fm-captain-window.sh`.
 Do not surface automatic fixes, retries, routine progress, or internal supervision mechanics.
 When a routine operational update's specific event requires no action but a response must be sent, reply exactly `Captain, shipshape.` without characterizing the visible session's unrelated decisions.
 Batch non-urgent updates into the next natural reply.

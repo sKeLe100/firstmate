@@ -246,6 +246,32 @@ An inherited `data/captain-shared.md` counts in a secondmate's total but remains
 The internal [`/stow` skill](../.agents/skills/stow/SKILL.md) owns curation and its automatic secondmate cascade, which accounts every home against this same per-home allowance separately rather than against a fleet total.
 The helper's header owns exact parsing, publication, and report output mechanics.
 
+## Captain attention windows (config/working-hours)
+
+`config/working-hours` is an optional local, gitignored, captain-private file setting the schedule `bin/fm-captain-window.sh` reports as one data-only band, implementing the captain's ruling on when proactive decision batches may reach him (backlog task `autonomous-ops-policy-design`).
+The format is one `key=value` per line, `#` comments allowed: `tz`, `workdays` (a day range like `Mon-Fri`, a comma list like `Mon,Tue,Thu`, or `none` to disable the working band entirely), `start`, `end`, `lunch`, `evening`, `quiet` (the last three as `HH:MM-HH:MM` ranges).
+An absent file or absent key means the built-in defaults - `tz=America/Toronto workdays=Mon-Fri start=09:00 end=17:00 lunch=12:00-13:00 evening=17:30-22:00 quiet=23:00-06:00` - and a malformed file is rejected loudly rather than silently replaced by defaults, the same contract as `config/context-thresholds` below.
+The helper reports `band=quiet|working|lunch|evening|offhours`, `offer=yes|no` (yes for `lunch`, `evening`, and `offhours`; no for `working` and `quiet`), the resolved `now`, `tz`, and `source=config|default` on one line; every consumer reads that band rather than re-deriving windows from `date`.
+**Not inherited** by secondmate homes: only the home that talks to the captain has attention windows, and crewmates never address the captain at all (AGENTS.md hard rule 4) - the same reasoning as `config/calm` and `config/stow-pass-horizon`.
+The helper's header owns exact parsing and output mechanics.
+
+## Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)
+
+`config/dispatch-cap` is an optional local, gitignored, primary-authoritative file holding one bare positive base-10 integer, the `config/startup-memory-budget` idiom: the file must contain exactly that integer and one trailing newline, and an absent file means the built-in default of **3**.
+It sets the base cap on live Claude lanes dispatched at once; a malformed value is rejected rather than treated as the default.
+The cap is fleet-wide, not per-project: it bounds concurrent autonomous Claude lanes across every dispatched task in this home, alongside a separate PC02 lane already outside this cap.
+
+The base cap is reduced by a quota ladder read from `quota-axi --json` (schemaVersion 5) at dispatch intake, checked alongside the base cap rather than replacing it:
+
+| Condition | Effective cap and effect |
+|---|---|
+| `five_hour.percentRemaining >= 25` and no ahead-of-pace weekly pressure | base cap (default 3), normal tiering |
+| `five_hour.percentRemaining < 25`, or `seven_day.pace.status == "ahead"` with `burnMultiple > 1.5` | cap **2**; senior-tier (Fable/Opus) dispatch needs a stated reason; cosmetic/nice-to-have work parks |
+| `five_hour.percentRemaining < 10` | cap **1**; only work the captain is actually waiting on; everything else goes to the PC02 roster |
+| `model:fable.percentRemaining < 20` | Fable is not the automatic senior pick - `quota-array-dispatch` arbitrates to Opus; never silently downgrade out of the senior class entirely |
+
+Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable) and the fleet-stall breakout clause that pierces the working attention band above.
+
 ## Session context thresholds (config/context-thresholds)
 
 `config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-26).
