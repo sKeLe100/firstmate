@@ -350,7 +350,7 @@ At reset it reads the primary's context band via `bin/fm-context-usage.sh`: band
 The fresh session's own SessionStart hook (`bin/fm-session-start.sh`) provides correct carryover exactly as any other restart under AGENTS.md section 5, so this is a trigger mechanism only, not a second carryover path.
 
 `config/primary-continuity` is an optional local, gitignored presence flag with **inverted polarity from every other `config/*` presence flag in this file**: the watchdog runs always-on by default (captain decision 2026-09-01 - this is a general reliability fix, not specific to any overnight posture), so presence of this file **opts out** rather than opts in.
-Absence leaves the watchdog enabled; inherited by secondmate homes through `FM_INHERITABLE_CONFIG`.
+Absence leaves the watchdog enabled; the flag is inherited by secondmate homes through `FM_INHERITABLE_CONFIG`, so with the inverted polarity above an inherited *presence* propagates the opt-out, while removing it from the primary leaves an already-converged secondmate opted out until its own copy is removed too.
 The watchdog only ever acts on the verified primary pane (refuses to arm when the pane cannot be identified, mirroring the afk daemon's refuse-to-arm rule) and its restart authority is scoped strictly to the usage-limit/high-context condition it detects - it is not a general kill switch and has no merge, credential, or destructive-action capability.
 
 ## Stow pass horizon (config/stow-pass-horizon)

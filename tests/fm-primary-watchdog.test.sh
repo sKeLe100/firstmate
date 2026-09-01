@@ -147,6 +147,101 @@ else
 fi
 rm -f "$TMPHOME/config/primary-continuity"
 
+# --- 6. cycle-level regressions ----------------------------------------------
+. "$ROOT/bin/fm-primary-watchdog.sh"
+export FM_WATCHDOG_SKIP_SLEEP=1 FM_SUPERVISOR_TARGET="test:0"
+CANNED="$TMPHOME/quota.json"
+export FM_WATCHDOG_QUOTA_JSON="$CANNED"
+export FM_WATCHDOG_NOW="$(date -d "2026-01-01T00:00:00+00:00" +%s)"
+HANDLED=""
+fm_watchdog_handle_reset() { HANDLED="$1 $2"; }
+fm_backend_capture() { printf 'some ordinary output\n'; }
+
+# 6a. a gone pane reaches the reset path through the cycle, not just the helper
+fm_backend_target_exists() { return 1; }
+rm -f "$TMPHOME/state/.watchdog-last-action"
+HANDLED=""
+fm_watchdog_cycle 2>/dev/null
+if [ -n "$HANDLED" ]; then
+  pass "cycle: a gone harness target reaches the reset path"
+else
+  fail "cycle: a gone harness target must reach the reset path"
+fi
+
+# 6b. after acting, the cooldown suppresses the next cycle
+HANDLED=""
+fm_watchdog_cycle 2>/dev/null
+if [ -z "$HANDLED" ]; then
+  pass "cycle: cooldown suppresses a repeat action within the window"
+else
+  fail "cycle: must not act again inside the cooldown window"
+fi
+
+# 6c. once the cooldown elapses, acting resumes
+HANDLED=""
+FM_WATCHDOG_NOW=$((FM_WATCHDOG_NOW + 1000)) fm_watchdog_cycle 2>/dev/null
+if [ -n "$HANDLED" ]; then
+  pass "cycle: acts again once the cooldown window has elapsed"
+else
+  fail "cycle: must act again after the cooldown window"
+fi
+
+# 6d. the opt-out flag is honored by the cycle itself, not only at startup
+: >"$TMPHOME/config/primary-continuity"
+rm -f "$TMPHOME/state/.watchdog-last-action"
+HANDLED=""
+fm_watchdog_cycle 2>/dev/null
+if [ -z "$HANDLED" ]; then
+  pass "cycle: config/primary-continuity opts out mid-loop"
+else
+  fail "cycle: must not act while config/primary-continuity is present"
+fi
+rm -f "$TMPHOME/config/primary-continuity" "$TMPHOME/state/.watchdog-last-action"
+unset FM_WATCHDOG_QUOTA_JSON FM_WATCHDOG_NOW FM_WATCHDOG_SKIP_SLEEP FM_SUPERVISOR_TARGET
+fm_backend_target_exists() { return 0; }
+
+# --- 7. unreadable context band is explicit, not a silent "ok" ---------------
+. "$ROOT/bin/fm-primary-watchdog.sh"
+cat >"$TMPHOME/fm-context-usage.sh" <<'STUB'
+#!/usr/bin/env bash
+printf 'no band token here\n'
+STUB
+chmod +x "$TMPHOME/fm-context-usage.sh"
+BAND_DIR_SAVED="$FM_WATCHDOG_DIR"
+FM_WATCHDOG_DIR="$TMPHOME"
+if fm_watchdog_context_band >/dev/null 2>&1; then
+  fail "context-band: an output with no band token must not report success"
+else
+  pass "context-band: an output with no band token reports failure"
+fi
+BAND_LOG="$TMPHOME/band.log"
+RESTART_CALLED=""
+fm_watchdog_restart_primary() { RESTART_CALLED=1; }
+fm_watchdog_inject() { return 0; }
+fm_watchdog_handle_reset "test:0" "tmux" 2>"$BAND_LOG"
+if grep -q "context band unreadable" "$BAND_LOG"; then
+  pass "context-band: an unreadable band is logged before falling back"
+else
+  fail "context-band: an unreadable band must be logged"
+fi
+FM_WATCHDOG_DIR="$BAND_DIR_SAVED"
+
+# --- 8. restart never types the launch command into a live harness -----------
+. "$ROOT/bin/fm-primary-watchdog.sh"
+SENT_LOG="$TMPHOME/sent2.log"
+: >"$SENT_LOG"
+fm_backend_send_text_submit() { printf '%s\n' "$3" >>"$SENT_LOG"; printf 'empty'; }
+fm_backend_send_key() { return 0; }
+fm_backend_busy_state() { printf 'idle'; }
+fm_backend_agent_alive() { printf 'alive'; }
+FM_WATCHDOG_EXIT_SETTLE=0 fm_watchdog_restart_primary "test:0" "tmux" 2>/dev/null
+rc=$?
+if [ "$rc" -ne 0 ] && ! grep -qx 'claude' "$SENT_LOG"; then
+  pass "restart: a still-live harness blocks the launch command and fails loudly"
+else
+  fail "restart: must not type the launch command into a still-live harness"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
   echo "all tests passed"
   exit 0

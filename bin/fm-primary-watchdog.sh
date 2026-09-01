@@ -32,8 +32,10 @@
 #                               wakes get handled in the existing session.
 #        band=warn|restart  -> inject /stow, wait up to
 #                               FM_WATCHDOG_STOW_WINDOW seconds (default 600)
-#                               for completion evidence (state/.stow-last-run
-#                               newer than the inject time); on timeout, log
+#                               for completion evidence (state/.stow-last-run,
+#                               written by bin/fm-stow-cascade.sh once a pass's
+#                               own sweep is done, newer than the inject time);
+#                               on timeout, log
 #                               the skip and proceed anyway - durable records,
 #                               not the stow turn, are the source of truth for
 #                               carryover (captain-accepted, report 11.4 open
@@ -111,22 +113,29 @@ fm_watchdog_enabled() {
   [ ! -e "$FM_WATCHDOG_CONFIG/primary-continuity" ]
 }
 
-# fm_watchdog_verified_target: resolve and print "target backend", or return 1
-# when the primary's own pane cannot be identified. Mirrors the afk daemon's
-# refuse-to-arm-when-unverifiable rule (bin/fm-supervise-daemon.sh's startup
-# discovery via discover_supervisor_target).
+# fm_watchdog_verified_target: resolve and print "target backend". Returns 1
+# (refuse to arm, nothing printed) when the primary's own pane cannot be
+# identified at all - the afk daemon's refuse-to-arm-when-unverifiable rule
+# (bin/fm-supervise-daemon.sh's startup discovery via
+# discover_supervisor_target). Returns 2 when the identity IS known but the
+# pane does not currently resolve: that is the harness-gone condition, still
+# printed so the caller can act on it. The backend comes from
+# discover_supervisor_backend so an FM_SUPERVISOR_BACKEND exported alongside
+# FM_SUPERVISOR_TARGET by the daemon is honored rather than re-detected from
+# this process's own environment.
 fm_watchdog_verified_target() {
   local target backend
   target=$(discover_supervisor_target) || {
     log "refusing to arm: cannot identify the primary's own pane"
     return 1
   }
-  backend=$(fm_backend_detect 2>/dev/null || printf 'tmux')
-  fm_backend_target_exists "$backend" "$target" || {
-    log "refusing to arm: verified target does not resolve (target=$target backend=$backend)"
-    return 1
-  }
+  backend=$(discover_supervisor_backend 2>/dev/null || true)
+  [ -n "$backend" ] || backend=tmux
   printf '%s %s\n' "$target" "$backend"
+  fm_backend_target_exists "$backend" "$target" || {
+    log "verified target does not currently resolve (target=$target backend=$backend)"
+    return 2
+  }
 }
 
 # Known rendered-output phrasing for Claude Code's usage-limit notice. This is
@@ -167,7 +176,10 @@ fm_watchdog_reset_wait_seconds() {
     | jq -r '.providers[]? | select(.provider=="claude") | .windows[]? | select(.id=="five_hour") | .resetsAt' \
     | head -1) || return 1
   [ -n "$reset_epoch" ] && [ "$reset_epoch" != null ] || return 1
-  reset_epoch=$(date -d "$reset_epoch" +%s 2>/dev/null) || return 1
+  reset_epoch=$(date -d "$reset_epoch" +%s 2>/dev/null \
+    || date -j -f '%Y-%m-%dT%H:%M:%S' "${reset_epoch%%.*}" +%s 2>/dev/null \
+    || date -j -f '%Y-%m-%dT%H:%M:%S%z' "${reset_epoch}" +%s 2>/dev/null) || return 1
+  [ -n "$reset_epoch" ] || return 1
   now=${FM_WATCHDOG_NOW:-$(date +%s)}
   jitter=${FM_WATCHDOG_RESET_JITTER:-30}
   wait=$((reset_epoch - now + jitter))
@@ -202,14 +214,19 @@ fm_watchdog_inject() {  # <target> <backend> <message>
 # primary's own FM_HOME, via bin/fm-context-usage.sh (the designated
 # real-usage source, CLAUDE.md "Context monitoring").
 fm_watchdog_context_band() {
-  local out
+  local out band
   out=$(FM_HOME="$FM_HOME" "$FM_WATCHDOG_DIR/fm-context-usage.sh" 2>/dev/null) || return 1
-  printf '%s' "$out" | grep -oE 'band=[a-z]+' | cut -d= -f2
+  band=$(printf '%s' "$out" | grep -oE 'band=[a-z]+' | head -1 | cut -d= -f2)
+  case "$band" in
+    ok|warn|restart) printf '%s\n' "$band" ;;
+    *) return 1 ;;
+  esac
 }
 
 # fm_watchdog_wait_for_stow: poll up to FM_WATCHDOG_STOW_WINDOW seconds
 # (default 600) for evidence the injected /stow turn completed
-# (state/.stow-last-run newer than the injection time). Returns 0 on evidence
+# (state/.stow-last-run, the marker bin/fm-stow-cascade.sh writes once a pass's
+# own sweep is complete, newer than the injection time). Returns 0 on evidence
 # found, 1 on timeout - a timeout is NOT an error to the caller: report 11.4
 # open question 6 (captain-accepted) says proceed to restart anyway.
 fm_watchdog_wait_for_stow() {  # <injected-at-epoch>
@@ -250,6 +267,14 @@ fm_watchdog_restart_primary() {  # <target> <backend>
     sleep 2
     waited=$((waited + 2))
   done
+  if [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null)" = alive ]; then
+    fm_backend_send_key "$backend" "$target" C-c >/dev/null 2>&1
+    sleep "${FM_WATCHDOG_EXIT_SETTLE:-2}"
+    if [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null)" = alive ]; then
+      log "old harness still running after exit timeout; refusing to type the launch command into the live session"
+      return 1
+    fi
+  fi
   fm_backend_send_text_submit "$backend" "$target" "$launch_cmd" 3 2 2 >/dev/null 2>&1
 }
 
@@ -257,7 +282,10 @@ fm_watchdog_restart_primary() {  # <target> <backend>
 # stow -> restart). Exposed separately from fm_watchdog_cycle for testing.
 fm_watchdog_handle_reset() {  # <target> <backend>
   local target=$1 backend=$2 band injected_at
-  band=$(fm_watchdog_context_band) || band=ok
+  band=$(fm_watchdog_context_band) || {
+    band=ok
+    log "context band unreadable; treating as band=ok (nudge only)"
+  }
   case "$band" in
     warn|restart)
       injected_at=$(date +%s)
@@ -275,16 +303,45 @@ fm_watchdog_handle_reset() {  # <target> <backend>
   fm_watchdog_restart_primary "$target" "$backend"
 }
 
+# fm_watchdog_cooldown_active / fm_watchdog_record_action: bound how often a
+# blocked verdict may act. The usage-limit banner typically stays rendered in
+# the pane after a nudge or a relaunch, so without this the next poll matches
+# the same scrollback, computes a now-past reset (clamped to 0) and acts again
+# every poll interval. Returns 0 (act) when the last recorded action is older
+# than FM_WATCHDOG_COOLDOWN seconds, 1 (skip) otherwise.
+fm_watchdog_cooldown_active() {
+  local marker="$FM_WATCHDOG_STATE/.watchdog-last-action" last now cooldown
+  cooldown=${FM_WATCHDOG_COOLDOWN:-900}
+  [ -r "$marker" ] || return 0
+  last=$(cat "$marker" 2>/dev/null)
+  case "$last" in ''|*[!0-9]*) return 0 ;; esac
+  now=${FM_WATCHDOG_NOW:-$(date +%s)}
+  if [ "$((now - last))" -lt "$cooldown" ]; then
+    log "skipping: last watchdog action was $((now - last))s ago (cooldown ${cooldown}s)"
+    return 1
+  fi
+  return 0
+}
+
+fm_watchdog_record_action() {
+  mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 0
+  printf '%s\n' "${FM_WATCHDOG_NOW:-$(date +%s)}" >"$FM_WATCHDOG_STATE/.watchdog-last-action" 2>/dev/null || true
+}
+
 # fm_watchdog_cycle: one detect-or-idle pass. On a blocked verdict, sleeps
 # until reset (real sleep in production; tests inject FM_WATCHDOG_NOW/a canned
 # quota response and stub the sleep boundary via FM_WATCHDOG_SKIP_SLEEP=1
 # instead of sleeping for real hours).
 fm_watchdog_cycle() {
-  local tb target backend wait
-  tb=$(fm_watchdog_verified_target) || return 1
+  local tb rc target backend wait
+  fm_watchdog_enabled || return 0
+  tb=$(fm_watchdog_verified_target)
+  rc=$?
+  [ "$rc" -ne 1 ] && [ -n "$tb" ] || return 1
   target=${tb% *}
   backend=${tb#* }
   fm_watchdog_primary_blocked "$target" "$backend" || return 0
+  fm_watchdog_cooldown_active || return 0
   log "primary blocked (target=$target backend=$backend); computing reset wait"
   wait=$(fm_watchdog_reset_wait_seconds) || {
     log "could not determine reset time; deferring to next poll"
@@ -293,12 +350,14 @@ fm_watchdog_cycle() {
   if [ "${FM_WATCHDOG_SKIP_SLEEP:-0}" != 1 ] && [ "$wait" -gt 0 ]; then
     sleep "$wait"
   fi
+  fm_watchdog_record_action
   fm_watchdog_handle_reset "$target" "$backend"
 }
 
 fm_watchdog_main() {
   fm_watchdog_enabled || { log "primary-continuity watchdog disabled (config/primary-continuity present)"; return 0; }
-  fm_watchdog_verified_target >/dev/null || return 1
+  fm_watchdog_verified_target >/dev/null
+  [ "$?" -ne 1 ] || return 1
   while true; do
     fm_watchdog_cycle
     sleep "${FM_WATCHDOG_POLL_INTERVAL:-60}"

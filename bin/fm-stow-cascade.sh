@@ -159,6 +159,14 @@ resolve_remote_transport() { # <id>
   esac
 }
 
+# Durable stow-completion evidence. This command runs exactly once per /stow,
+# after the home's own pass and knowledge sweep are complete, so its invocation
+# is the mechanical record that the pass reached completion. The marker's mtime
+# is the contract other tooling anchors on (bin/fm-primary-watchdog.sh waits for
+# it before restarting a limit-blocked primary).
+mkdir -p "$STATE" 2>/dev/null || true
+: >"$STATE/.stow-last-run" 2>/dev/null || true
+
 if [ -e "$FM_HOME/$SUB_HOME_MARKER" ] || [ -L "$FM_HOME/$SUB_HOME_MARKER" ]; then
   emit 'role=secondmate'
   emit 'secondmates=0'
