@@ -152,8 +152,10 @@ tz_resolves() {
   case "$tz" in
     UTC|GMT|Etc/UTC|Etc/GMT|Universal|Zulu) return 0 ;;
   esac
-  [ -f "/usr/share/zoneinfo/$tz" ] && return 0
-  [ "$(TZ="$tz" date +%z%Z)" != "$(TZ=FmNoSuchZone date +%z%Z)" ]
+  for zoneinfo_dir in /usr/share/zoneinfo /usr/lib/zoneinfo /usr/share/lib/zoneinfo; do
+    [ -f "$zoneinfo_dir/$tz" ] && return 0
+  done
+  return 1
 }
 tz_resolves || fail "unknown tz in $cfg: $tz"
 export TZ="$tz"
