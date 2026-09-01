@@ -312,7 +312,8 @@ The bands mean:
 The restart mechanics reuse the existing owners rather than a parallel mechanism:
 
 - A crewmate or secondmate agent is restarted with `bin/fm-control.sh <task-id> relaunch --note "carryover: what is done, what run/branch is live, exact pickup commands - YOU are the replacement"`; the relaunch carries the brief plus that note into the fresh agent.
-- A primary firstmate session runs `/stow`, then advises the captain to reset the session; the replacement session recovers from durable state per AGENTS.md section 5.
+- A primary firstmate session runs `/stow`, then advises the captain to reset the session while the captain is attended; the replacement session recovers from durable state per AGENTS.md section 5.
+  When the captain is not attending (a usage-limit block, or a wedged session at reset), the [primary continuity watchdog](#primary-continuity-watchdog) drives this same `/stow`-then-restart sequence unattended.
 - The wake back to the main session is the ordinary status/wake channel: a relaunched worker's next status append, or a secondmate's routed status line, wakes its supervisor.
 - Never send `/clear` through the steer channel: it is mechanically broken and the steer becomes chat the worker reasons about.
 
@@ -338,6 +339,19 @@ Like the context bands, callers act on the reported band rather than re-deriving
 
 The two sensors share one actuator and cannot fight: the context band owns restart timing, the retry band owns the note content and the relaunch-versus-hold choice, and `restart` plus `halt` resolves to checkpoint-then-hold rather than another relaunch.
 The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), like its sibling.
+
+## Primary continuity watchdog
+
+`config/primary-continuity` controls this section.
+
+`bin/fm-primary-watchdog.sh` is a small, presence-gated loop hosted as a separate OS process alongside the afk/supervise-daemon machinery (reusing its pane discovery, backend dispatch, and verified-submit primitives - see the script's own header for the exact loop and safety contract).
+It polls cheaply for the primary being usage-limit-blocked (a rendered-output signature match, the same technique as the daemon's busy guard) or its harness process gone, computes the account's five-hour reset time from `quota-axi`, and sleeps until reset.
+At reset it reads the primary's context band via `bin/fm-context-usage.sh`: band `ok` gets one operational-prefix nudge so queued wakes get handled in the existing session; band `warn`/`restart` gets a guarded `/stow` injection (bounded wait for completion evidence, proceeding anyway on timeout - durable records, not the stow turn, are the source of truth for carryover) followed by a graceful exit of the old harness process and a **fresh** session launch in the same pane, never `--resume`/`--continue`.
+The fresh session's own SessionStart hook (`bin/fm-session-start.sh`) provides correct carryover exactly as any other restart under AGENTS.md section 5, so this is a trigger mechanism only, not a second carryover path.
+
+`config/primary-continuity` is an optional local, gitignored presence flag with **inverted polarity from every other `config/*` presence flag in this file**: the watchdog runs always-on by default (captain decision 2026-09-01 - this is a general reliability fix, not specific to any overnight posture), so presence of this file **opts out** rather than opts in.
+Absence leaves the watchdog enabled; inherited by secondmate homes through `FM_INHERITABLE_CONFIG`.
+The watchdog only ever acts on the verified primary pane (refuses to arm when the pane cannot be identified, mirroring the afk daemon's refuse-to-arm rule) and its restart authority is scoped strictly to the usage-limit/high-context condition it detects - it is not a general kill switch and has no merge, credential, or destructive-action capability.
 
 ## Stow pass horizon (config/stow-pass-horizon)
 
