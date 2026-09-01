@@ -2010,12 +2010,22 @@ EOF
         # reported signature advances here even though the classification
         # position could not: the file HAS now been reported, which bounds a
         # marker this home cannot classify to one wake per distinct file state
-        # rather than one per poll cycle.
+        # rather than one per poll cycle. $pending concatenates the pre- and
+        # post-grace scans, so a file is enqueued at most once here while its
+        # reported signature still advances for every row - the last signature
+        # for that file wins, exactly as in the enqueue branch above.
+        signal_enqueued=
         while IFS=$(printf '\t') read -r sf sig f; do
           [ -n "$sf" ] || continue
           case " $signal_deferred " in *" $f "*) continue ;; esac
-          mark_signal_surfaced "$f" || true
-          fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+          case " $signal_enqueued " in
+            *" $f "*) ;;
+            *)
+              signal_enqueued="$signal_enqueued $f"
+              mark_signal_surfaced "$f" || true
+              fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+              ;;
+          esac
           case "$f" in
             *.status)
               fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
