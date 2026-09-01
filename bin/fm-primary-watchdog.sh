@@ -153,6 +153,36 @@ FM_WATCHDOG_STOW_REQUEST=${FM_WATCHDOG_STOW_REQUEST:-"run the /stow skill now to
 
 FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|limit reached.*resets'
 
+# fm_watchdog_liveness_target: the target form the backend's liveness readers
+# (fm_backend_agent_state / fm_backend_busy_state) accept. discover_supervisor_
+# target pins a tmux pane as a bare pane id ("%12"), which the tmux adapter
+# rejects as unreadable, so resolve it to the session:window that adapter reads.
+# Prints the usable target, or returns 1 when it cannot be resolved.
+fm_watchdog_liveness_target() {  # <target> <backend>
+  local target=$1 backend=$2 resolved
+  case "$backend" in
+    tmux) ;;
+    *) printf '%s\n' "$target"; return 0 ;;
+  esac
+  case "$target" in
+    %*)
+      resolved=$(tmux display-message -p -t "$target" '#{session_name}:#{window_name}' 2>/dev/null) || return 1
+      [ -n "$resolved" ] || return 1
+      printf '%s\n' "$resolved"
+      ;;
+    *:*) printf '%s\n' "$target" ;;
+    *) return 1 ;;
+  esac
+}
+
+# fm_watchdog_agent_state: the backend's liveness verdict for the primary,
+# read through the normalized liveness target. Prints alive|dead|unknown.
+fm_watchdog_agent_state() {  # <target> <backend>
+  local live
+  live=$(fm_watchdog_liveness_target "$1" "$2") || { printf 'unknown\n'; return 0; }
+  fm_backend_agent_alive "$2" "$live" 2>/dev/null || printf 'unknown\n'
+}
+
 # fm_watchdog_primary_blocked: 0 with the reason printed on stdout when the
 # primary needs the watchdog, 1 (nothing printed) when it looks fine. Reasons:
 #   limit        - the pane is alive and renders the usage-limit signature.
@@ -169,7 +199,7 @@ fm_watchdog_primary_blocked() {  # <target> <backend>
     printf 'gone-pane\n'
     return 0
   }
-  if [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null)" = dead ]; then
+  if [ "$(fm_watchdog_agent_state "$target" "$backend")" = dead ]; then
     log "primary harness process gone (target=$target backend=$backend)"
     printf 'gone-harness\n'
     return 0
@@ -177,6 +207,41 @@ fm_watchdog_primary_blocked() {  # <target> <backend>
   tail=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
   printf '%s' "$tail" | grep -qEi "${FM_WATCHDOG_LIMIT_SIGNATURE:-$FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT}" || return 1
   printf 'limit\n'
+}
+
+# fm_watchdog_epoch_of: epoch seconds for an ISO-8601 resetsAt, on GNU date and
+# on BSD/macOS date. The offset-bearing form must be tried FIRST and with its
+# colon removed ("+00:00" -> "+0000"), because BSD %z does not accept a
+# colon-bearing offset and the offset-less format would otherwise match the
+# leading characters and silently reinterpret the timestamp as local time.
+fm_watchdog_epoch_of() {  # <iso-8601>
+  local raw=$1 base offset epoch
+  epoch=$(date -d "$raw" +%s 2>/dev/null) && [ -n "$epoch" ] && { printf '%s\n' "$epoch"; return 0; }
+  base=${raw%%.*}
+  case "$raw" in
+    *Z|*z)
+      base=${base%[Zz]}
+      offset='+0000'
+      ;;
+    *[+-][0-9][0-9]:[0-9][0-9])
+      offset=${raw: -6}
+      offset=${offset/:/}
+      base=${base%[+-][0-9][0-9]:[0-9][0-9]}
+      ;;
+    *[+-][0-9][0-9][0-9][0-9])
+      offset=${raw: -5}
+      base=${base%[+-][0-9][0-9][0-9][0-9]}
+      ;;
+    *) offset='' ;;
+  esac
+  if [ -n "$offset" ]; then
+    epoch=$(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$base$offset" +%s 2>/dev/null) \
+      && [ -n "$epoch" ] && { printf '%s\n' "$epoch"; return 0; }
+    return 1
+  fi
+  epoch=$(date -j -f '%Y-%m-%dT%H:%M:%S' "$base" +%s 2>/dev/null) \
+    && [ -n "$epoch" ] && { printf '%s\n' "$epoch"; return 0; }
+  return 1
 }
 
 # fm_watchdog_reset_wait_seconds: seconds to sleep until the account's
@@ -197,9 +262,7 @@ fm_watchdog_reset_wait_seconds() {
     | jq -r '.providers[]? | select(.provider=="claude") | .windows[]? | select(.id=="five_hour") | .resetsAt' \
     | head -1) || return 1
   [ -n "$reset_epoch" ] && [ "$reset_epoch" != null ] || return 1
-  reset_epoch=$(date -d "$reset_epoch" +%s 2>/dev/null \
-    || date -j -f '%Y-%m-%dT%H:%M:%S' "${reset_epoch%%.*}" +%s 2>/dev/null \
-    || date -j -f '%Y-%m-%dT%H:%M:%S%z' "${reset_epoch}" +%s 2>/dev/null) || return 1
+  reset_epoch=$(fm_watchdog_epoch_of "$reset_epoch") || return 1
   [ -n "$reset_epoch" ] || return 1
   now=${FM_WATCHDOG_NOW:-$(date +%s)}
   jitter=${FM_WATCHDOG_RESET_JITTER:-30}
@@ -288,15 +351,15 @@ fm_watchdog_restart_primary() {  # <target> <backend>
   fm_backend_send_text_submit "$backend" "$target" "$exit_cmd" 3 2 2 >/dev/null 2>&1
   timeout=${FM_WATCHDOG_EXIT_TIMEOUT:-30}
   waited=0
-  while [ "$waited" -lt "$timeout" ] && fm_backend_busy_state "$backend" "$target" 2>/dev/null | grep -q busy; do
+  while [ "$waited" -lt "$timeout" ] && [ "$(fm_watchdog_agent_state "$target" "$backend")" != dead ]; do
     sleep 2
     waited=$((waited + 2))
   done
-  if [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null)" = alive ]; then
+  if [ "$(fm_watchdog_agent_state "$target" "$backend")" != dead ]; then
     fm_backend_send_key "$backend" "$target" C-c >/dev/null 2>&1
     sleep "${FM_WATCHDOG_EXIT_SETTLE:-2}"
-    if [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null)" = alive ]; then
-      log "old harness still running after exit timeout; refusing to type the launch command into the live session"
+    if [ "$(fm_watchdog_agent_state "$target" "$backend")" != dead ]; then
+      log "old harness not confirmed exited; refusing to type the launch command into a possibly live session"
       return 1
     fi
   fi

@@ -308,6 +308,43 @@ else
 fi
 unset FM_WATCHDOG_SKIP_SLEEP FM_SUPERVISOR_TARGET FM_WATCHDOG_QUOTA_JSON
 
+# --- 10. offset-bearing reset timestamps parse to the same instant ----------
+. "$ROOT/bin/fm-primary-watchdog.sh"
+want=$(date -u -d "2026-01-01T06:00:00" +%s 2>/dev/null || date -j -u -f '%Y-%m-%dT%H:%M:%S' "2026-01-01T06:00:00" +%s)
+ok_all=1
+for stamp in "2026-01-01T06:00:00+00:00" "2026-01-01T06:00:00Z" "2026-01-01T06:00:00+0000" "2026-01-01T07:00:00+01:00"; do
+  got=$(fm_watchdog_epoch_of "$stamp") || got=""
+  [ "$got" = "$want" ] || ok_all=0
+done
+if [ "$ok_all" -eq 1 ]; then
+  pass "reset-time parsing: every offset spelling resolves to the same instant"
+else
+  fail "reset-time parsing: an offset spelling resolved to the wrong instant"
+fi
+
+# --- 11. a bare tmux pane id is normalized before any liveness read ---------
+TMUX_STUB_DIR="$TMPHOME/stubbin"
+mkdir -p "$TMUX_STUB_DIR"
+cat >"$TMUX_STUB_DIR/tmux" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = display-message ]; then printf 'firstmate:main
+'; exit 0; fi
+exit 1
+STUB
+chmod +x "$TMUX_STUB_DIR/tmux"
+PATH_SAVED="$PATH"
+PATH="$TMUX_STUB_DIR:$PATH"
+SEEN_FILE="$TMPHOME/seen-target"
+fm_backend_agent_alive() { printf '%s' "$2" >"$SEEN_FILE"; printf 'dead'; }
+state=$(fm_watchdog_agent_state "%12" tmux)
+SEEN_TARGET=$(cat "$SEEN_FILE" 2>/dev/null)
+PATH="$PATH_SAVED"
+if [ "$state" = dead ] && [ "$SEEN_TARGET" = "firstmate:main" ]; then
+  pass "liveness: a bare tmux pane id is resolved to a readable session:window"
+else
+  fail "liveness: a bare tmux pane id must be resolved before the liveness read (state=$state target=$SEEN_TARGET)"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
   echo "all tests passed"
   exit 0
