@@ -1,137 +1,42 @@
-=== bin/fm-captain-window.sh - end-user CLI transcript ===
+=== captain attention window helper: end-user CLI transcript ===
 
---- 1. Captain-ruled defaults, no config file (source=default) ---
-$ fm-captain-window.sh --now 05:30 --weekday Wed
-band=quiet offer=no now=2026-08-26T05:30-0400 tz=America/Toronto source=default
-$ fm-captain-window.sh --now 08:59 --weekday Wed
-band=offhours offer=yes now=2026-08-26T08:59-0400 tz=America/Toronto source=default
-$ fm-captain-window.sh --now 09:00 --weekday Wed
-band=working offer=no now=2026-08-26T09:00-0400 tz=America/Toronto source=default
+--- default bands (no config/working-hours present; Mon-Fri 09-17 America/Toronto) ---
 $ fm-captain-window.sh --now 09:30 --weekday Wed
 band=working offer=no now=2026-08-26T09:30-0400 tz=America/Toronto source=default
 $ fm-captain-window.sh --now 12:30 --weekday Wed
 band=lunch offer=yes now=2026-08-26T12:30-0400 tz=America/Toronto source=default
-$ fm-captain-window.sh --now 13:00 --weekday Wed
-band=working offer=no now=2026-08-26T13:00-0400 tz=America/Toronto source=default
-$ fm-captain-window.sh --now 16:59 --weekday Wed
-band=working offer=no now=2026-08-26T16:59-0400 tz=America/Toronto source=default
-$ fm-captain-window.sh --now 17:45 --weekday Wed
-band=evening offer=yes now=2026-08-26T17:45-0400 tz=America/Toronto source=default
-$ fm-captain-window.sh --now 21:59 --weekday Wed
-band=evening offer=yes now=2026-08-26T21:59-0400 tz=America/Toronto source=default
-$ fm-captain-window.sh --now 22:30 --weekday Wed
-band=offhours offer=yes now=2026-08-26T22:30-0400 tz=America/Toronto source=default
+$ fm-captain-window.sh --now 16:00 --weekday Wed
+band=working offer=no now=2026-08-26T16:00-0400 tz=America/Toronto source=default
+$ fm-captain-window.sh --now 20:00 --weekday Wed
+band=evening offer=yes now=2026-08-26T20:00-0400 tz=America/Toronto source=default
 $ fm-captain-window.sh --now 23:30 --weekday Wed
 band=quiet offer=no now=2026-08-26T23:30-0400 tz=America/Toronto source=default
 $ fm-captain-window.sh --now 09:30 --weekday Sat
 band=offhours offer=yes now=2026-08-29T09:30-0400 tz=America/Toronto source=default
-$ fm-captain-window.sh --now 20:00 --weekday Sun
-band=offhours offer=yes now=2026-08-30T20:00-0400 tz=America/Toronto source=default
+$ fm-captain-window.sh --now 20:00 --weekday Sat
+band=offhours offer=yes now=2026-08-29T20:00-0400 tz=America/Toronto source=default
 
---- 2. Real local clock (no injection flags) ---
+--- real clock, no injection ---
 $ fm-captain-window.sh
-band=evening offer=yes now=2026-08-31T21:07-0400 tz=America/Toronto source=default
+band=offhours offer=yes now=2026-08-31T22:29-0400 tz=America/Toronto source=default
 
---- 3. config/working-hours override: tz + workdays list + shifted windows ---
-tz=Europe/Berlin
-workdays=Mon,Tue,Thu
-start=08:00
-end=16:00
-lunch=11:30-12:30
-$ fm-captain-window.sh --now 09:00 --weekday Tue
-band=working offer=no now=2026-09-01T09:00+0200 tz=Europe/Berlin source=config
-$ fm-captain-window.sh --now 11:45 --weekday Tue
-band=lunch offer=yes now=2026-09-01T11:45+0200 tz=Europe/Berlin source=config
-$ fm-captain-window.sh --now 15:59 --weekday Tue
-band=working offer=no now=2026-09-01T15:59+0200 tz=Europe/Berlin source=config
-$ fm-captain-window.sh --now 09:00 --weekday Wed
-band=offhours offer=yes now=2026-08-26T09:00+0200 tz=Europe/Berlin source=config
+--- config override (config/working-hours: lunch=11:00-14:00) ---
+$ fm-captain-window.sh --now 13:30 --weekday Wed
+band=lunch offer=yes now=2026-08-26T13:30-0400 tz=America/Toronto source=config
 
---- 4. Comments-only config still reports source=default ---
-$ fm-captain-window.sh --now 09:30 --weekday Wed
-band=working offer=no now=2026-08-26T09:30-0400 tz=America/Toronto source=default
---- 5. workdays=none ---
-$ fm-captain-window.sh --now 09:30 --weekday Wed
-band=offhours offer=yes now=2026-08-26T09:30-0400 tz=America/Toronto source=config
+--- valid tz from config is accepted ---
+$ fm-captain-window.sh --now 09:30 --weekday Wed   # tz=Europe/Berlin
+band=working offer=no now=2026-08-26T09:30+0200 tz=Europe/Berlin source=config
 
---- 6. Malformed config is rejected loudly (never silently defaulted) ---
-config: start=9am
-$ fm-captain-window.sh --now 09:30 --weekday Wed
-fm-captain-window: malformed start in /tmp/tmp.RPdJEnZiPB/config/working-hours: 9am
-  (exit 1)
-config: tz=Amerca/Toronto
-$ fm-captain-window.sh --now 09:30 --weekday Wed
-fm-captain-window: unknown tz in /tmp/tmp.RPdJEnZiPB/config/working-hours: Amerca/Toronto
-  (exit 1)
-config: start=17:00;end=09:00
-$ fm-captain-window.sh --now 09:30 --weekday Wed
-fm-captain-window: start must precede end in /tmp/tmp.RPdJEnZiPB/config/working-hours: 17:00-09:00
-  (exit 1)
-config: workdays=Fri-Mon
-$ fm-captain-window.sh --now 09:30 --weekday Wed
-fm-captain-window: malformed workdays range in /tmp/tmp.RPdJEnZiPB/config/working-hours: Fri-Mon
-  (exit 1)
-config: quiet=25:00-06:00
-$ fm-captain-window.sh --now 09:30 --weekday Wed
-fm-captain-window: malformed quiet range in /tmp/tmp.RPdJEnZiPB/config/working-hours: 25:00-06:00
-  (exit 1)
-config: bogus=1
-$ fm-captain-window.sh --now 09:30 --weekday Wed
-fm-captain-window: unrecognized line in /tmp/tmp.RPdJEnZiPB/config/working-hours: bogus=1
-  (exit 1)
+--- THE FIX: invalid tz typo is rejected loudly (was silently accepted on CI) ---
+$ fm-captain-window.sh --now 09:30 --weekday Wed   # tz=Amerca/Toronto (typo)
+fm-captain-window: unknown tz in /tmp/tmp.9jXhKG3S4g/config/working-hours: Amerca/Toronto
+exit=1
 
---- 7. Usage error: --weekday without --now ---
-$ fm-captain-window.sh --weekday Sat
-fm-captain-window: --weekday requires --now
-  (exit 1)
-
---- 8. Locale independence (LC_ALL=de_DE.UTF-8 if present: 0 match) ---
-$ LC_ALL=de_DE.UTF-8 fm-captain-window.sh --now 09:30 --weekday Wed
-bash: warning: setlocale: LC_ALL: cannot change locale (de_DE.UTF-8): No such file or directory
-band=working offer=no now=2026-08-26T09:30-0400 tz=America/Toronto source=default
-
---- 9. --help ---
-$ fm-captain-window.sh --help
-bin/fm-captain-window.sh - single owner of the captain attention band.
-
-Why: proactive decision batching (state/noon-decision-batch.check.sh,
-state/debrief-trigger.check.sh) must agree on whether now is inside the
-captain's working day, a quiet band, or an offer window (lunch, evening,
-offhours). Every consumer reads this band rather than re-deriving windows
-from `date` itself, matching how fm-context-usage.sh is the one owner of
-the session-context band.
-
-Usage: fm-captain-window.sh [--now HH:MM] [--weekday Mon..Sun]
-  --now and --weekday are for the colocated test only; without them the
-  helper reads the real local clock under the configured (or system) tz.
-
-Output is one data-only line:
-  band=quiet|working|lunch|evening|offhours offer=yes|no now=<ISO8601> tz=<tz> source=config|default
-
-band meanings:
-  quiet    - the captain's overnight window; offer=no.
-  working  - inside workdays/start-end; offer=no.
-  lunch    - inside the lunch offer window; offer=yes.
-  evening  - inside the evening offer window; offer=yes.
-  offhours - every other hour outside quiet (including all day on a
-             non-working day, or every hour when workdays=none); offer=yes.
-
-Config: optional config/working-hours under FM_HOME (or the current
-directory), one key=value per line, `#` comments allowed:
-  tz=America/Toronto
-  workdays=Mon-Fri        # a day range, a comma list (Mon,Tue,Thu), or "none"
-  start=09:00
-  end=17:00
-  lunch=12:00-13:00
-  evening=17:30-22:00
-  quiet=23:00-06:00
-An absent file or absent key uses the built-in defaults above (source=default
-unless any key was read from the file, in which case source=config).
-Malformed content is rejected loudly with a non-zero exit, never silently
-replaced by a default (house rule, same contract as config/context-thresholds).
-Not inherited by secondmate homes - see docs/configuration.md.
-
---- 10. Files are gitignored (captain-private, not committed) ---
-$ git check-ignore -v config/working-hours config/dispatch-cap
-.gitignore:13:config/	config/working-hours
-.gitignore:13:config/	config/dispatch-cap
+--- other malformed config still rejected ---
+$ fm-captain-window.sh --now 09:30 --weekday Wed   # start=9am
+fm-captain-window: malformed start in /tmp/tmp.9jXhKG3S4g/config/working-hours: 9am
+exit=1
+$ fm-captain-window.sh --now 10:00 --weekday Wed   # start=17:00 end=09:00
+fm-captain-window: start must precede end in /tmp/tmp.9jXhKG3S4g/config/working-hours: 17:00-09:00
+exit=1
