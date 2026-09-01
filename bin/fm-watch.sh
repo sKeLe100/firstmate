@@ -204,6 +204,14 @@ TURNEND_CHURN_ABSORB_SECS=${FM_TURNEND_CHURN_ABSORB_SECS:-900}  # longest a task
 # daemon owns triage, so this watcher reverts to one-shot (enqueue + exit on every
 # wake) and never double-triages - and never runs the costly provably-working read.
 STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+PC02_STALE_ESCALATE_SECS=${FM_PC02_STALE_ESCALATE_SECS:-600}  # idle floor for opencode+pc02-llamaswap/* crews, whose normal silent turns run minutes (2x the documented-normal 4-min gap)
+OPENCODE_LOG=${FM_OPENCODE_LOG:-${HOME:-}/.local/share/opencode/log/opencode.log}  # ground-truth loop-step liveness source for the pc02 cadence check
+# Every local opencode session shares that one log, so the scanned tail must be
+# bounded by BYTES rather than by lines: a line budget sized for one session
+# scrolls a busy fleet's traffic past this task's own step lines inside the
+# quiet window, which would read a working lane as wedged. 8 MiB covers the
+# 600s window with room to spare and keeps the per-poll read O(bounded).
+OPENCODE_LOG_TAIL_BYTES=${FM_OPENCODE_LOG_TAIL_BYTES:-8388608}
 # A provably-working stale's FIRST escalation always fires at STALE_ESCALATE_SECS
 # (a real wedge must surface promptly). Every subsequent escalation for the SAME
 # uninterrupted quiet spell backs off exponentially - STALE_ESCALATE_SECS * 2^n
@@ -780,6 +788,41 @@ wedge_start_timer() {  # <window-key>
   rm -f "$STATE/.wedge-escalations-$key" "$STATE/.wedge-backoff-$key"
 }
 
+# pc02-staleness-cadence: an opencode+pc02-llamaswap/* crew's normal turns run
+# multiple minutes with a silent pane, so cloud-tuned quiet thresholds misread
+# a working PC02 lane as wedged and mid-pipeline kills follow
+# (data/pc02-followthrough-gap-assessment/report.md). Two corrections, applied
+# only to that lane inside wedge_timer_check: a raised idle floor
+# (PC02_STALE_ESCALATE_SECS), and a ground-truth liveness read from the
+# opencode log's `message=loop ... step=` cadence - the log gains a step line
+# whenever any local opencode session is actually stepping, which the quiet
+# pane cannot show. The read is bound to THIS task's own opencode session id
+# (state/<id>.opencode-session, recorded by the busy-state plugin fm-spawn
+# writes), so another local opencode session's stepping can never mask a
+# wedged PC02 lane; with no recorded session there is nothing to attribute a
+# step line to, so the check does not absorb.
+pc02_lane_task() {  # <task>: 0 iff its meta shows harness=opencode + model=pc02-llamaswap/*
+  local meta="$STATE/$1.meta"
+  [ -n "$1" ] && [ -f "$meta" ] || return 1
+  [ "$(fm_meta_get "$meta" harness)" = opencode ] || return 1
+  case "$(fm_meta_get "$meta" model)" in
+    pc02-llamaswap/*) return 0 ;;
+  esac
+  return 1
+}
+
+pc02_loop_step_since() {  # <task> <since-epoch>: 0 iff <task>'s own opencode session logged a loop step= line newer than <since-epoch>
+  local task=$1 since=$2 sid ts epoch
+  [ -n "$since" ] && [ -r "$OPENCODE_LOG" ] || return 1
+  sid=$(cat "$STATE/$task.opencode-session" 2>/dev/null || true)
+  [ -n "$sid" ] || return 1
+  ts=$(tail -c "$OPENCODE_LOG_TAIL_BYTES" "$OPENCODE_LOG" 2>/dev/null | grep 'message=loop ' | grep -F " session.id=$sid " | grep ' step=' | tail -n 1 \
+    | sed -n 's/^timestamp=\([^ ]*\).*/\1/p')
+  [ -n "$ts" ] || return 1
+  epoch=$(date -d "$ts" +%s 2>/dev/null) || return 1
+  [ "$epoch" -ge "$since" ]
+}
+
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # watcher restart between recording the hash and recording the timer), or
@@ -816,8 +859,20 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
         threshold=$(( STALE_ESCALATE_SECS * (1 << shift_n) ))
         [ "$threshold" -gt "$WEDGE_ESCALATE_MAX_SECS" ] && threshold=$WEDGE_ESCALATE_MAX_SECS
       fi
+      if pc02_lane_task "$task" && [ "$threshold" -lt "$PC02_STALE_ESCALATE_SECS" ]; then
+        threshold=$PC02_STALE_ESCALATE_SECS
+      fi
       age=$(( $(date +%s) - since ))
       if [ "$age" -ge "$threshold" ]; then
+        if pc02_lane_task "$task" && pc02_loop_step_since "$task" "$since"; then
+          # The lane is stepping per the opencode log: a fresh quiet spell, not
+          # a wedge. Restart the timer without burning an escalation, dropping
+          # the old write-deferral chain with it like every other reset site.
+          clear_write_tracking "$(window_key "$win")"
+          date +%s > "$since_file"
+          triage_log "absorbed $label pc02 loop-step fresh: $win"
+          return 0
+        fi
         if crew_worktree_written_since "$task" "$STATE" "$since_file"; then
           wedge_defer_writing "$win" "$since_file" "$label" "$age"
           return 0

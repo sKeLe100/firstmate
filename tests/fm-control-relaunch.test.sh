@@ -890,6 +890,18 @@ test_cursor_session_binding_is_retired_on_a_harness_switch() {
   pass "fm-spawn --relaunch: switching away from cursor retires its session binding"
 }
 
+test_opencode_session_binding_is_retired_on_a_harness_switch() {
+  local dir
+  dir=$(new_case ocwiring rl36)
+  add_ship_task "$dir" rl36 opencode
+  printf 'ses_prior\n' > "$dir/home/state/rl36.opencode-session"
+  printf 'zsh' > "$dir/fake/command"
+  run_spawn "$dir" rl36 --relaunch --harness claude >/dev/null
+  [ ! -e "$dir/home/state/rl36.opencode-session" ] \
+    || fail "the retired opencode incarnation's session binding must not outlive it"
+  pass "fm-spawn --relaunch: switching away from opencode retires its session binding"
+}
+
 # --- 3 and 4. refusals before the agent is touched ---------------------------
 
 test_missing_worktree_refuses_before_stopping_anything() {
@@ -1502,6 +1514,7 @@ test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
 test_prefixed_prior_harness_wiring_is_still_retired
 test_muse_session_binding_is_retired_on_a_harness_switch
 test_cursor_session_binding_is_retired_on_a_harness_switch
+test_opencode_session_binding_is_retired_on_a_harness_switch
 test_missing_worktree_refuses_before_stopping_anything
 test_missing_instructions_refuse_before_stopping_anything
 test_checkpoint_refusal_leaves_the_record_byte_identical

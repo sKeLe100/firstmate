@@ -187,6 +187,10 @@ test_opencode_plugin_semantic_lifecycle() {
   out=$(drive_oc_plugin "$plugin" "$(oc_status ses_main busy)") || fail "busy drive failed: $out"
   out=$(classify opencode "$id" "$state")
   [ "$out" = "busy opencode-plugin" ] || fail "session busy must classify 'busy opencode-plugin', got '$out'"
+  # The latched session id is the binding fm-watch's pc02 loop-step liveness
+  # read uses to attribute the shared opencode log's step lines to this task.
+  [ "$(cat "$state/$id.opencode-session" 2>/dev/null || true)" = ses_main ] \
+    || fail "the latched worker session must be recorded for the watcher's liveness read"
 
   out=$(drive_oc_plugin "$plugin" \
     "$(oc_status ses_main busy)" \

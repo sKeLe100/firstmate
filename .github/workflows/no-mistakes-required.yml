@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 # GitHub concurrency groups retain at most one pending run, replacing older
 # pending runs even when cancel-in-progress is false. Give body-bearing events
@@ -26,5 +27,28 @@ jobs:
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
+      - name: Fetch PR body from the API
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          delim="NM_PR_BODY_$(openssl rand -hex 16)"
+          {
+            echo "body<<${delim}"
+            gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q '.body // ""'
+            echo "${delim}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Verify no-mistakes signature and pipeline attestation
         uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@32d396ac0f29135daf7fcb9964aba9d5f4e796d6 # post-v1.57.1, untagged (action added in #819)
+        with:
+          # synchronize webhook payloads can omit pull_request.body, so the action's own
+          # GITHUB_EVENT_PATH fallback sees an empty body and fails. Fetch the body live
+          # from the API and pass PR context explicitly instead of trusting event context.
+          pr-body: ${{ steps.pr.outputs.body }}
+          pr-head-sha: ${{ github.event.pull_request.head.sha }}
+          pr-head-ref: ${{ github.event.pull_request.head.ref }}
+          pr-author: ${{ github.event.pull_request.user.login }}
+          pr-number: ${{ github.event.pull_request.number }}

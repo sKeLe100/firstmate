@@ -21,7 +21,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-bearings-board.sh`   | Build and arm the stable interactive `/bearings lavish` fleet board                  |
 | `fm-secondmate-reconcile.sh` | Ask each secondmate to reconcile an inventory mismatch through its durable inbox, limited by a per-home cooldown |
 | `fm-update.sh`           | Fast-forward-only self-update of firstmate and local or remote secondmate homes       |
-| `fm-upstream-behind-check.sh` | Read-only, at-most-daily check of this home's position against its `upstream` remote, cached for the bearings digest, and armable as a once-per-episode drift trigger that asks for an upstream sync task |
+| `fm-upstream-behind-check.sh` | Read-only, at-most-daily check of this home's position against its `upstream` remote, cached for the bearings digest, and armable as a once-per-episode drift trigger that files an upstream sync task and reports it |
+| `fm-upstream-sync-item.sh` | File or refresh in place the one stable-id `upstream-sync` backlog item for an open drift episode and report its auto-dispatch eligibility |
 | `fm-on.sh`               | Execute one tracked Firstmate command in a configured remote secondmate home, using its job worker except for the doctor bootstrap |
 | `fm-remote-job-lib.sh`   | Shared bounded remote job queue, worker readiness, LaunchAgent contract, and filesystem-composed PATH |
 | `fm-remote-job-worker.sh` | Long-lived remote queue worker for tracked `fm-*.sh` commands in the account runtime |
@@ -67,6 +68,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-config-push.sh`      | Push declared inherited local material to live local or remote secondmates and send the placement-specific config reread when changed |
 | `fm-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for fleet sync and home seeding |
 | `fm-queue-snapshot.sh`   | Backlog-read-only snapshot of the top queued backlog items ranked by descending priority, with project posture, derived autonomy, the configured lane hierarchy, and one bounded aggregate quota read, for the `queue` skill |
+| `fm-questionnaire-refill-source.sh` | Duplication guard for the `questionnaire` skill's empty-bundle Refill step: find the newest `data/*roundtable*/report.md` or `data/*roadmap*/report.md` within a freshness window, exit 1 when none is fresh enough, or exit 2 on a usage error |
 | `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `fm-review-diff.sh`      | Review a crewmate branch or resolved PR head against the authoritative base          |
 | `fm-roundtable-factsheet.sh` | Generate a deterministic, read-only fact sheet of one project clone at HEAD, with an optional delta since that project's last roundtable mark ([roundtable-instrumentation.md](roundtable-instrumentation.md)) |
@@ -145,7 +147,9 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-public-followup.sh`  | Reconcile and deliver typed public commitments, then rechain or explicitly retire their retained loops |
 | `fm-public-followup-emit.sh` | Report one typed terminal work result into the home that owes the public reply    |
 | `fm-context-usage.sh`    | Report a Claude session's real context usage and warn/restart context band from the harness's durable transcript records |
+| `fm-returning-session-check.sh` | Decide bare-resume vs restart-with-carryover for a returning (pinged or restarted) session from its `fm-context-usage.sh` band |
 | `fm-stow-cascade.sh`     | Enumerate this home's registered secondmates, their budget reports, and reachable transports for a `/stow` cascade |
+| `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note, dictate one, read status, ask a side question |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |
