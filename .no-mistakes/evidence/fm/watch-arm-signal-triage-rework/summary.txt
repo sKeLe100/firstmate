@@ -1,0 +1,11 @@
+Acceptance-gate run: 10x consecutive tests/fm-watch-arm.test.sh + tests/fm-wake-pair-dedup.test.sh
+branch fm/watch-arm-signal-triage-rework @ 1155d62
+
+BRANCH (1155d62), 10 iterations:
+  fm-watch-arm.test.sh        5 pass / 5 fail  (all failures: 're-arm stayed live ...', the sleep 0.25 deadline)
+  fm-wake-pair-dedup.test.sh 0 pass / 10 fail (all: 'the fixture captured no process-event result')
+  base-mode failure 'handling drain stopped its live successor': 0 occurrences
+
+BASE (0535833, pre-fix), same host:
+  fm-watch-arm.test.sh        0 pass / 5 fail  (all: 'handling drain stopped its live successor')
+  fm-wake-pair-dedup.test.sh 0 pass / 1 run   (same 'no process-event result' failure -> pre-existing/environmental)

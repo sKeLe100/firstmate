@@ -1,0 +1,6 @@
+FM_TEST_BEGIN 2026-09-01T02:10:43Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:10:53Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=10872 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=10939
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=10872 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-wake-pair-dedup.test.sh duration_ms=10872

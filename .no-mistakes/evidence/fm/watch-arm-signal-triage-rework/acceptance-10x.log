@@ -1,0 +1,245 @@
+=== iteration 1 ===
+FM_TEST_BEGIN 2026-09-01T02:00:24Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3376881 Killed                     "$WATCH" > "$child_out"
+not ok - re-arm stayed live instead of surfacing durable wakes and the still-open remote decision
+FM_TEST_END 2026-09-01T02:00:49Z tests/fm-watch-arm.test.sh exit=1 duration_ms=25268 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:00:50Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:01:01Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=11134 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=2 skipped_gate=0 duration_ms=36543
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=36402 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=25268
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=11134
+iteration 1: FAIL
+=== iteration 2 ===
+FM_TEST_BEGIN 2026-09-01T02:01:01Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3405757 Killed                     "$WATCH" > "$child_out"
+not ok - re-arm stayed live instead of surfacing durable wakes and the still-open remote decision
+FM_TEST_END 2026-09-01T02:01:30Z tests/fm-watch-arm.test.sh exit=1 duration_ms=29042 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:01:30Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:01:41Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=11446 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=2 skipped_gate=0 duration_ms=40624
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=40488 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=29042
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=11446
+iteration 2: FAIL
+=== iteration 3 ===
+FM_TEST_BEGIN 2026-09-01T02:01:41Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3429290 Killed                     "$WATCH" > "$child_out"
+not ok - re-arm stayed live instead of surfacing durable wakes and the still-open remote decision
+FM_TEST_END 2026-09-01T02:02:06Z tests/fm-watch-arm.test.sh exit=1 duration_ms=24875 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:02:06Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:02:18Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=11257 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=2 skipped_gate=0 duration_ms=36289
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=36132 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=24875
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=11257
+iteration 3: FAIL
+=== iteration 4 ===
+FM_TEST_BEGIN 2026-09-01T02:02:18Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3443832 Killed                     "$WATCH" > "$child_out"
+not ok - re-arm stayed live instead of surfacing durable wakes and the still-open remote decision
+FM_TEST_END 2026-09-01T02:02:41Z tests/fm-watch-arm.test.sh exit=1 duration_ms=23415 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:02:41Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:02:53Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=11255 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=2 skipped_gate=0 duration_ms=34832
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=34670 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=23415
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=11255
+iteration 4: FAIL
+=== iteration 5 ===
+FM_TEST_BEGIN 2026-09-01T02:02:53Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3459147 Killed                     "$WATCH" > "$child_out"
+not ok - re-arm stayed live instead of surfacing durable wakes and the still-open remote decision
+FM_TEST_END 2026-09-01T02:03:16Z tests/fm-watch-arm.test.sh exit=1 duration_ms=23048 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:03:16Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:03:27Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=11329 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=2 skipped_gate=0 duration_ms=34530
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=34377 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=23048
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=11329
+iteration 5: FAIL
+=== iteration 6 ===
+FM_TEST_BEGIN 2026-09-01T02:03:27Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3472968 Killed                     "$WATCH" > "$child_out"
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3473819.1788228230.1VJrvD
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3483878.1788228245.mH5HRp
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3485621.1788228247.3gke5C
+ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 3493756.1788228259.9t8itp
+ok - watch-arm: malformed recovery state is quarantined without a successor loop
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3496010.1788228262.ZNn26J
+ok - watch-arm: publication after recovery handoff is surfaced
+ok - watch-arm: restart publishes recovery before clearing a reused-pid watcher lock
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 3498386.1788228266.XC1OBE
+ok - watch-arm: markerless legacy queues are adopted and recovered
+ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+ok - watch-arm: a moved recovery generation consumes handled rows and names its remedy
+ok - watch-arm: downtime marker publication does not follow symlinks
+FM_TEST_END 2026-09-01T02:04:45Z tests/fm-watch-arm.test.sh exit=0 duration_ms=77818 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:04:45Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:04:56Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=10874 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=88817
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=88692 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=77818
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=10874
+iteration 6: FAIL
+=== iteration 7 ===
+FM_TEST_BEGIN 2026-09-01T02:04:56Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3528263 Killed                     "$WATCH" > "$child_out"
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3529085.1788228314.FGs6FP
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3538347.1788228328.cPPAL1
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3540178.1788228330.lryEf5
+ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 3551238.1788228342.hqOVSO
+ok - watch-arm: malformed recovery state is quarantined without a successor loop
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3553786.1788228345.0DMp7B
+ok - watch-arm: publication after recovery handoff is surfaced
+ok - watch-arm: restart publishes recovery before clearing a reused-pid watcher lock
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 3556127.1788228349.vHdhR7
+ok - watch-arm: markerless legacy queues are adopted and recovered
+ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+ok - watch-arm: a moved recovery generation consumes handled rows and names its remedy
+ok - watch-arm: downtime marker publication does not follow symlinks
+FM_TEST_END 2026-09-01T02:06:07Z tests/fm-watch-arm.test.sh exit=0 duration_ms=70815 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:06:07Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:06:18Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=10863 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=81781
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=81678 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=70815
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=10863
+iteration 7: FAIL
+=== iteration 8 ===
+FM_TEST_BEGIN 2026-09-01T02:06:18Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3581771 Killed                     "$WATCH" > "$child_out"
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3582570.1788228396.vlbm9n
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3591519.1788228410.BPnyqV
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3593111.1788228412.XzGuvy
+ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 3601078.1788228423.eHeNFK
+ok - watch-arm: malformed recovery state is quarantined without a successor loop
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3603377.1788228426.PD53iY
+ok - watch-arm: publication after recovery handoff is surfaced
+ok - watch-arm: restart publishes recovery before clearing a reused-pid watcher lock
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 3605750.1788228431.kuLiD6
+ok - watch-arm: markerless legacy queues are adopted and recovered
+ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+ok - watch-arm: a moved recovery generation consumes handled rows and names its remedy
+ok - watch-arm: downtime marker publication does not follow symlinks
+FM_TEST_END 2026-09-01T02:07:28Z tests/fm-watch-arm.test.sh exit=0 duration_ms=70107 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:07:28Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:07:39Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=10868 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=81082
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=80975 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=70107
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=10868
+iteration 8: FAIL
+=== iteration 9 ===
+FM_TEST_BEGIN 2026-09-01T02:07:39Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3629385 Killed                     "$WATCH" > "$child_out"
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3630031.1788228478.I6xuUD
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3638924.1788228491.sZbaAC
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3640531.1788228493.o0mA4p
+ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 3648506.1788228505.yTfeOr
+ok - watch-arm: malformed recovery state is quarantined without a successor loop
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3650771.1788228508.ZKwwbr
+ok - watch-arm: publication after recovery handoff is surfaced
+ok - watch-arm: restart publishes recovery before clearing a reused-pid watcher lock
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 3653148.1788228512.Ro2SUy
+ok - watch-arm: markerless legacy queues are adopted and recovered
+ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+ok - watch-arm: a moved recovery generation consumes handled rows and names its remedy
+ok - watch-arm: downtime marker publication does not follow symlinks
+FM_TEST_END 2026-09-01T02:08:49Z tests/fm-watch-arm.test.sh exit=0 duration_ms=70046 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:08:49Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:09:00Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=10901 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=81048
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=80947 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=70046
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=10901
+iteration 9: FAIL
+=== iteration 10 ===
+FM_TEST_BEGIN 2026-09-01T02:09:00Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1DAVA2P5YPK7DYMBS2V9DZW/bin/fm-watch-arm.sh: line 566: 3676470 Killed                     "$WATCH" > "$child_out"
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3677282.1788228558.bSXSCk
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3686134.1788228571.sYBE7C
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3687569.1788228573.aLGVO9
+ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 3695653.1788228584.a3M0Kw
+ok - watch-arm: malformed recovery state is quarantined without a successor loop
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3697970.1788228587.C9suXb
+ok - watch-arm: publication after recovery handoff is surfaced
+ok - watch-arm: restart publishes recovery before clearing a reused-pid watcher lock
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 3700321.1788228592.cIA8IM
+ok - watch-arm: markerless legacy queues are adopted and recovered
+ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+ok - watch-arm: a moved recovery generation consumes handled rows and names its remedy
+ok - watch-arm: downtime marker publication does not follow symlinks
+FM_TEST_END 2026-09-01T02:10:09Z tests/fm-watch-arm.test.sh exit=0 duration_ms=69362 gate_skip=false
+FM_TEST_BEGIN 2026-09-01T02:10:09Z tests/fm-wake-pair-dedup.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - the fixture captured no process-event result
+FM_TEST_END 2026-09-01T02:10:20Z tests/fm-wake-pair-dedup.test.sh exit=1 duration_ms=10864 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=80330
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=80226 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=69362
+FM_TEST_SLOWEST rank=2 script=tests/fm-wake-pair-dedup.test.sh duration_ms=10864
+iteration 10: FAIL
