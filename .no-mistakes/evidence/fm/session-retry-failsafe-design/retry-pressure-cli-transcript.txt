@@ -1,29 +1,19 @@
-== 1. fresh home, no records (zero evidence) ==
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=t1
+=== 1. Fresh task, no evidence (supervisor heartbeat read) ===
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=demo-task
 
-== 2. worker self-reports a retry loop (blocked keyed line) ==
-blocked [key=retry-loop]: 2 fix rounds with no progress
-relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=t1
+=== 2. Worker self-reports a retry loop in state/demo-task.status ===
+blocked [key=retry-loop]: 2 fix rounds produced no change
+relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=demo-task
 
-== 3. note-head token form and needs-decision verb also open the key ==
-relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=t2
-relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=t3
+=== 3. Supervisor acts: relaunches and closes the key ===
+relaunches=2 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=demo-task
 
-== 4. supervisor acts and lands the closing resolved line ==
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=t1
+=== 4. Relaunches reach the ceiling -> halt, escalate to the captain ===
+relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=demo-task
 
-== 5. relaunch telemetry accumulates to the halt band ==
-relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=t1
+=== 5. Junk telemetry line is zero evidence, not a crash ===
+relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=demo-task
+exit=0
 
-== 6. a landed outcome resets the relaunch count ==
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=t1
-
-== 7. configured ceilings, incl. a file with no trailing newline ==
-relaunches=1 retry_loop_reported=0 relaunch_ceiling=1 round_ceiling=4 retry_band=halt task=t1
-fm-retry-pressure: malformed relaunch= in /tmp/tmp.aYV4UmiNeb/config/retry-thresholds
-(exit 1)
-
-== 8. writer/reader directory overrides agree ==
-relaunches=3 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=t9
-(without the overrides, the same home reads:)
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=t9
+=== 6. Same records under FM_STATE_OVERRIDE/FM_DATA_OVERRIDE (fleet-snapshot setup) ===
+relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=demo-task
