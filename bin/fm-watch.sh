@@ -197,6 +197,12 @@ SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trai
 STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
 PC02_STALE_ESCALATE_SECS=${FM_PC02_STALE_ESCALATE_SECS:-600}  # idle floor for opencode+pc02-llamaswap/* crews, whose normal silent turns run minutes (2x the documented-normal 4-min gap)
 OPENCODE_LOG=${FM_OPENCODE_LOG:-${HOME:-}/.local/share/opencode/log/opencode.log}  # ground-truth loop-step liveness source for the pc02 cadence check
+# Every local opencode session shares that one log, so the scanned tail must be
+# bounded by BYTES rather than by lines: a line budget sized for one session
+# scrolls a busy fleet's traffic past this task's own step lines inside the
+# quiet window, which would read a working lane as wedged. 8 MiB covers the
+# 600s window with room to spare and keeps the per-poll read O(bounded).
+OPENCODE_LOG_TAIL_BYTES=${FM_OPENCODE_LOG_TAIL_BYTES:-8388608}
 # A provably-working stale's FIRST escalation always fires at STALE_ESCALATE_SECS
 # (a real wedge must surface promptly). Every subsequent escalation for the SAME
 # uninterrupted quiet spell backs off exponentially - STALE_ESCALATE_SECS * 2^n
@@ -601,7 +607,7 @@ pc02_loop_step_since() {  # <task> <since-epoch>: 0 iff <task>'s own opencode se
   [ -n "$since" ] && [ -r "$OPENCODE_LOG" ] || return 1
   sid=$(cat "$STATE/$task.opencode-session" 2>/dev/null || true)
   [ -n "$sid" ] || return 1
-  ts=$(tail -n 400 "$OPENCODE_LOG" 2>/dev/null | grep 'message=loop ' | grep " session.id=$sid " | grep ' step=' | tail -n 1 \
+  ts=$(tail -c "$OPENCODE_LOG_TAIL_BYTES" "$OPENCODE_LOG" 2>/dev/null | grep 'message=loop ' | grep -F " session.id=$sid " | grep ' step=' | tail -n 1 \
     | sed -n 's/^timestamp=\([^ ]*\).*/\1/p')
   [ -n "$ts" ] || return 1
   epoch=$(date -d "$ts" +%s 2>/dev/null) || return 1

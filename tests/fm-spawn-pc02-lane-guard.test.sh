@@ -179,6 +179,33 @@ test_proceeds_when_other_pc02_lane_positively_missing() {
   pass "a positively missing PC02 endpoint frees the lane"
 }
 
+test_remote_pc02_meta_keeps_the_lane_occupied() {
+  local rec id out status
+  id=pc02-guard-z6
+  rec=$(make_case remotelane "$id")
+  read_case_record "$rec"
+  # A remote secondmate's meta carries no local endpoint to probe (its target
+  # lives behind the remote host), so its PC02 lane must read as occupied
+  # rather than as the free lane a missing local window would imply.
+  cat > "$HOME_DIR/state/remote-pc02-task.meta" <<EOF
+window=remote:remote-pc02-task
+endpoint_task_id=remote-pc02-task
+harness=opencode
+kind=secondmate
+model=pc02-llamaswap/qwen3.6-35b-a3b-dispatch
+remote_host=pc02
+remote_backend=herdr
+remote_target=herdr-remote
+EOF
+
+  out=$(run_pc02_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" env)
+  status=$?
+  expect_code 1 "$status" "a remote PC02 lane must keep the lane occupied: $out"
+  assert_contains "$out" "remote-pc02-task" "refusal did not name the occupying remote task"
+  [ ! -f "$HOME_DIR/state/$id.meta" ] || fail "refused spawn must not write $id.meta"
+  pass "a remote secondmate's PC02 lane keeps the lane occupied"
+}
+
 test_ignores_non_pc02_metas() {
   local rec id out status
   id=pc02-guard-z4
@@ -198,5 +225,6 @@ test_refuses_while_other_pc02_lane_unknown_liveness
 test_refuses_while_other_pc02_lane_alive_window_listed
 test_proceeds_when_other_pc02_lane_positively_missing
 test_ignores_non_pc02_metas
+test_remote_pc02_meta_keeps_the_lane_occupied
 
 echo "# all fm-spawn-pc02-lane-guard tests passed"

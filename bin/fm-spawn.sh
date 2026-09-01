@@ -459,6 +459,66 @@ else
   fi
 fi
 
+# pc02-single-lane-guard: PC02's llama-swap serves one model at a time, so two
+# concurrent pc02-llamaswap/* lanes starve each other - the second lane's
+# requests queue behind the first's multi-minute turns and the watcher reads
+# the starved lane as wedged (data/pc02-followthrough-gap-assessment/report.md).
+# Refuse any spawn or relaunch onto a pc02-llamaswap/* model while another
+# task's meta holds one whose endpoint is not positively dead or missing, so
+# dispatch falls through to the rule's next candidate instead of doubling up.
+# Ambiguous liveness keeps the lane occupied: over-refusal costs one cloud
+# fallback, while under-refusal wedges both PC02 lanes. A remote secondmate's
+# lane reads as occupied outright - its liveness lives behind the remote host,
+# which this local endpoint probe cannot settle.
+#
+# Every spawn path routes here, local and remote alike, each once its own model
+# is resolved. The lane read and this task's meta publication must sit inside
+# one critical section for the verdict to be authoritative: a fresh spawn
+# already holds the task-set lock, while a relaunch is otherwise exempt from it
+# and runs precisely when this task's endpoint is dead - the state the guard
+# reads as a free lane - so an unlocked relaunch and a concurrent fresh spawn
+# could both claim PC02. Take the same lock here (released after publication)
+# and refuse rather than wait, matching the fresh-spawn path's fail-closed
+# direction.
+pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-id>
+  local id=$1 model=$2 other_meta other_task other_model other_target
+  case "$model" in
+    pc02-llamaswap/*) ;;
+    *) return 0 ;;
+  esac
+  if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
+    SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
+      echo "error: could not resolve the task-set lock for $STATE" >&2
+      return 1
+    }
+    if ! fm_lock_try_acquire "$SPAWN_TASK_SET_LOCK"; then
+      echo "error: this home's task set is locked by another operation, so the PC02 single-lane check cannot be made authoritative; refusing to launch task $id onto $model rather than racing it" >&2
+      return 1
+    fi
+    SPAWN_TASK_SET_LOCK_HELD=1
+  fi
+  for other_meta in "$STATE"/*.meta; do
+    [ -f "$other_meta" ] || continue
+    other_task=$(basename "$other_meta" .meta)
+    [ "$other_task" != "$id" ] || continue
+    other_model=$(fm_meta_get "$other_meta" model)
+    case "$other_model" in
+      pc02-llamaswap/*) ;;
+      *) continue ;;
+    esac
+    if [ -z "$(fm_meta_get "$other_meta" remote_host)" ]; then
+      other_target=$(fm_backend_target_of_meta "$other_meta")
+      if [ -n "$other_target" ] \
+        && [ "$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target")" = dead ]; then
+        continue
+      fi
+    fi
+    echo "error: PC02 lane occupied: task '$other_task' already holds a live $other_model endpoint and PC02 serves one model at a time; wait for that task or dispatch '$id' to the rule's next candidate" >&2
+    return 1
+  done
+  return 0
+}
+
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
@@ -544,6 +604,11 @@ spawn_remote_secondmate() {
       return 1
       ;;
   esac
+  if ! pc02_lane_guard "$id" "${model#-}"; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    return 1
+  fi
   meta="$STATE/$id.meta"
   if [ -e "$meta" ] || [ -L "$meta" ]; then
     if [ ! -f "$meta" ] || [ -L "$meta" ] \
@@ -1358,55 +1423,7 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   fi
 fi
 
-# pc02-single-lane-guard: PC02's llama-swap serves one model at a time, so two
-# concurrent pc02-llamaswap/* lanes starve each other - the second lane's
-# requests queue behind the first's multi-minute turns and the watcher reads
-# the starved lane as wedged (data/pc02-followthrough-gap-assessment/report.md).
-# Refuse any spawn or relaunch onto a pc02-llamaswap/* model while another
-# task's meta holds one whose endpoint is not positively dead or missing, so
-# dispatch falls through to the rule's next candidate instead of doubling up.
-# Ambiguous liveness keeps the lane occupied: over-refusal costs one cloud
-# fallback, while under-refusal wedges both PC02 lanes.
-case "${MODEL:-}" in
-  pc02-llamaswap/*)
-    # The guard below must be authoritative, so the lane read and this task's
-    # own meta publication have to sit inside one critical section. A fresh
-    # spawn already holds the task-set lock; a relaunch is otherwise exempt
-    # from it, and a relaunch runs precisely when this task's endpoint is dead
-    # - the state the guard reads as a free lane - so an unlocked relaunch and
-    # a concurrent fresh spawn could both claim PC02. Take the same lock here
-    # (released after publication) and refuse rather than wait, matching the
-    # fresh-spawn path's fail-closed direction.
-    if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
-      SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
-        echo "error: could not resolve the task-set lock for $STATE" >&2
-        exit 1
-      }
-      if ! fm_lock_try_acquire "$SPAWN_TASK_SET_LOCK"; then
-        echo "error: this home's task set is locked by another operation, so the PC02 single-lane check cannot be made authoritative; refusing to relaunch task $ID onto $MODEL rather than racing it" >&2
-        exit 1
-      fi
-      SPAWN_TASK_SET_LOCK_HELD=1
-    fi
-    for pc02_other_meta in "$STATE"/*.meta; do
-      [ -f "$pc02_other_meta" ] || continue
-      pc02_other_task=$(basename "$pc02_other_meta" .meta)
-      [ "$pc02_other_task" != "$ID" ] || continue
-      case "$(fm_meta_get "$pc02_other_meta" model)" in
-        pc02-llamaswap/*) ;;
-        *) continue ;;
-      esac
-      pc02_other_backend=$(fm_meta_get "$pc02_other_meta" backend)
-      pc02_other_window=$(fm_meta_get "$pc02_other_meta" window)
-      if [ -n "$pc02_other_window" ] \
-        && [ "$(fm_backend_agent_alive "${pc02_other_backend:-tmux}" "$pc02_other_window")" = dead ]; then
-        continue
-      fi
-      echo "error: PC02 lane occupied: task '$pc02_other_task' already holds a live $(fm_meta_get "$pc02_other_meta" model) endpoint and PC02 serves one model at a time; wait for that task or dispatch '$ID' to the rule's next candidate" >&2
-      exit 1
-    done
-    ;;
-esac
+pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 
 secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"

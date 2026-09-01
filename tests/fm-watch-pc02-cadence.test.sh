@@ -50,6 +50,28 @@ reset_case() {
     "$STATE"/.writing-since-* "$STATE"/.writing-resurfaced-*
 }
 
+test_fresh_step_survives_other_sessions_log_traffic() {
+  reset_case
+  write_meta pc02-task opencode pc02-llamaswap/qwen3.6-35b-a3b-dispatch
+  since_file="$STATE/.stale-since-x8"
+  esc_file="$STATE/.wedge-escalations-x8"
+  echo "$(( $(date +%s) - 700 ))" > "$since_file"
+  bind_session pc02-task ses_mine
+  log_step_at "$(date -u -d '-100 seconds' +%Y-%m-%dT%H:%M:%S.000Z)" ses_mine
+  # The opencode log is shared by every local session, so this task's own step
+  # line can sit far behind other sessions' chatter inside the quiet window.
+  i=0
+  while [ "$i" -lt 3000 ]; do
+    printf 'timestamp=%s level=INFO run=other message=tool session.id=ses_other step=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" "$i" >> "$FM_OPENCODE_LOG"
+    i=$(( i + 1 ))
+  done
+  wedge_timer_check win8 "$since_file" test "$esc_file" pc02-task
+  [ ! -s "$WAKES_LOG" ] \
+    || fail "a fresh step buried under other sessions' log traffic must still absorb: $(cat "$WAKES_LOG")"
+  pass "the liveness read reaches this task's step line under a busy shared log"
+}
+
 test_lane_classifier() {
   write_meta pc02-task opencode pc02-llamaswap/qwen3.6-35b-a3b-dispatch
   write_meta cloud-task claude claude-sonnet-5
@@ -163,5 +185,6 @@ test_non_pc02_lane_keeps_default_threshold
 test_other_sessions_steps_do_not_absorb
 test_unbound_session_does_not_absorb
 test_absorb_clears_write_tracking
+test_fresh_step_survives_other_sessions_log_traffic
 
 echo "# all fm-watch-pc02-cadence tests passed"
