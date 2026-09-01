@@ -1,0 +1,50 @@
+### 1. Gate ABSENT (today's ask-only behavior) - 6 commits behind
+item_id=upstream-sync
+action=filed
+behind=6
+days_behind=0
+eligible=no
+eligible_reason=config/upstream-autosync is absent, so auto-dispatch stays off (ask-only)
+overlap_count=1
+overlap=bin-fm-watch.sh
+
+### 2. Gate PRESENT but below threshold (3 behind)
+item_id=upstream-sync
+action=filed
+behind=3
+days_behind=0
+eligible=no
+eligible_reason=behind (3) and the oldest unmerged upstream commit's age (0 days) are below threshold (5 commits / 14 days)
+overlap_count=1
+overlap=bin-fm-watch.sh
+
+### 3. Gate PRESENT, at/above threshold (6 behind) -> auto-dispatch eligible
+item_id=upstream-sync
+action=refreshed
+behind=6
+days_behind=0
+eligible=yes
+eligible_reason=behind (6) >= commit threshold (5)
+overlap_count=1
+overlap=bin-fm-watch.sh
+
+### stable-id dedup: number of filed upstream-sync blocks in data/backlog.md
+1
+
+### 4. The filed backlog item as the dispatcher reads it
+<!-- upstream-sync:start -->
+### upstream-sync
+Upstream sync: 6 commits behind upstream/main (oldest unmerged upstream commit is 0 days old).
+Newest upstream commit: 2026-08-31
+Auto-dispatch eligible: yes (behind (6) >= commit threshold (5))
+Scaffold this task with `bin/fm-brief.sh --upstream-sync`: that flag is the only source of the four non-negotiable upstream-merge gates (never yolo-merge, supervision-safety conflict stop, non-pre-existing regression stop, PR purity). A plain ship brief silently loses them.
+Files touched both upstream and locally since merge-base (conflict risk): 1
+  - bin-fm-watch.sh
+Pending upstream commits (main..upstream/main):
+b10755a upstream: change 6
+f1a9ee4 upstream: change 5
+ee42ca2 upstream: change 4
+426ef34 upstream: change 3
+7a58b57 upstream: change 2
+1ac4f68 upstream: change 1
+<!-- upstream-sync:end -->
