@@ -73,23 +73,25 @@ source=default
 cfg="$home_path/config/working-hours"
 if [ -e "$cfg" ]; then
   [ -f "$cfg" ] || fail "$cfg is not a regular file"
-  source=config
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       ''|'#'*) continue ;;
-      tz=*) tz="${line#tz=}" ;;
-      workdays=*) workdays="${line#workdays=}" ;;
-      start=*) start="${line#start=}" ;;
-      end=*) end="${line#end=}" ;;
-      lunch=*) lunch="${line#lunch=}" ;;
-      evening=*) evening="${line#evening=}" ;;
-      quiet=*) quiet="${line#quiet=}" ;;
+      tz=*) tz="${line#tz=}"; source=config ;;
+      workdays=*) workdays="${line#workdays=}"; source=config ;;
+      start=*) start="${line#start=}"; source=config ;;
+      end=*) end="${line#end=}"; source=config ;;
+      lunch=*) lunch="${line#lunch=}"; source=config ;;
+      evening=*) evening="${line#evening=}"; source=config ;;
+      quiet=*) quiet="${line#quiet=}"; source=config ;;
       *) fail "unrecognized line in $cfg: $line" ;;
     esac
   done < "$cfg"
 fi
 
 hhmm_re='^([01][0-9]|2[0-3]):[0-5][0-9]$'
+if [ -n "$opt_now" ]; then
+  printf '%s' "$opt_now" | grep -Eq "$hhmm_re" || fail "malformed --now value: $opt_now"
+fi
 for pair in "start:$start" "end:$end"; do
   name="${pair%%:*}"; val="${pair#*:}"
   printf '%s' "$val" | grep -Eq "$hhmm_re" || fail "malformed $name in $cfg: $val"
@@ -133,11 +135,15 @@ if [ "$workdays" != "none" ]; then
   esac
 fi
 
+printf '%s' "$tz" | grep -Eq '^[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*$' || fail "malformed tz in $cfg: $tz"
+if [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
+  fail "unknown tz in $cfg: $tz"
+fi
 export TZ="$tz"
 if [ -n "$opt_now" ]; then
   now_hhmm="$opt_now"
   weekday="${opt_weekday:-$(date +%a)}"
-  now_iso="${opt_now}"
+  now_iso="$(date -d "$(date +%Y-%m-%d) $opt_now" +%Y-%m-%dT%H:%M%z)"
 else
   now_hhmm="$(date +%H:%M)"
   weekday="$(date +%a)"
@@ -173,7 +179,7 @@ elif [ "$is_workday" -eq 0 ] && in_range "$now_m" "$lunch"; then
   band=lunch
 elif [ "$is_workday" -eq 0 ] && [ "$now_m" -ge "$(hhmm_to_min "$start")" ] && [ "$now_m" -lt "$(hhmm_to_min "$end")" ]; then
   band=working
-elif in_range "$now_m" "$evening"; then
+elif [ "$is_workday" -eq 0 ] && in_range "$now_m" "$evening"; then
   band=evening
 else
   band=offhours
