@@ -430,9 +430,17 @@ fm_watchdog_cycle() {
   if [ "${FM_WATCHDOG_SKIP_SLEEP:-0}" != 1 ] && [ "$wait" -gt 0 ]; then
     sleep "$wait"
   fi
+  reason=$(fm_watchdog_primary_blocked "$target" "$backend") || {
+    log "primary is no longer blocked at reset; abandoning this pass"
+    return 0
+  }
+  [ "$reason" = limit ] || {
+    log "primary condition changed to $reason at reset; abandoning this pass"
+    return 0
+  }
   fm_watchdog_record_action
+  fm_watchdog_handle_reset "$target" "$backend" || return 1
   fm_watchdog_record_reset "$reset"
-  fm_watchdog_handle_reset "$target" "$backend"
 }
 
 fm_watchdog_main() {

@@ -283,6 +283,31 @@ else
   fail "restart: must not type the launch command into a still-live harness"
 fi
 
+# --- 9. the blocked condition is re-verified after the reset sleep ----------
+CAPTURE_COUNT="$TMPHOME/capture-calls"
+: >"$CAPTURE_COUNT"
+fm_backend_capture() {
+  printf 'x\n' >>"$CAPTURE_COUNT"
+  if [ "$(wc -l <"$CAPTURE_COUNT")" -le 1 ]; then
+    printf 'Claude usage limit reached, resets 3am\n'
+  else
+    printf 'captain is working normally here\n'
+  fi
+}
+fm_backend_target_exists() { return 0; }
+fm_backend_agent_alive() { printf 'alive'; }
+HANDLED=""
+fm_watchdog_handle_reset() { HANDLED="$1 $2"; }
+export FM_WATCHDOG_SKIP_SLEEP=1 FM_SUPERVISOR_TARGET="test:0" FM_WATCHDOG_QUOTA_JSON="$TMPHOME/quota.json"
+rm -f "$TMPHOME/state/.watchdog-last-action" "$TMPHOME/state/.watchdog-last-reset"
+fm_watchdog_cycle 2>/dev/null
+if [ -z "$HANDLED" ] && [ ! -e "$TMPHOME/state/.watchdog-last-reset" ]; then
+  pass "cycle: a primary no longer blocked at reset is left alone"
+else
+  fail "cycle: must abandon the pass when the primary is no longer blocked"
+fi
+unset FM_WATCHDOG_SKIP_SLEEP FM_SUPERVISOR_TARGET FM_WATCHDOG_QUOTA_JSON
+
 if [ "$FAILED" -eq 0 ]; then
   echo "all tests passed"
   exit 0
