@@ -17,6 +17,7 @@
 # Prints the newest matching report.md path (data/*roundtable*/report.md or
 # data/*roadmap*/report.md) with mtime within the window, one line, and exits 0.
 # Prints nothing and exits 1 when no report is within the window.
+# Exits 2 on a usage error (unknown argument, missing or non-numeric value).
 set -euo pipefail
 
 data_dir="data"
@@ -46,6 +47,13 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+case "$max_age_days" in
+  ''|*[!0-9]*)
+    echo "fm-questionnaire-refill-source.sh: --max-age-days must be a non-negative integer: $max_age_days" >&2
+    exit 2
+    ;;
+esac
 
 search_root="${data_dir%/}"
 if [ -z "$search_root" ]; then

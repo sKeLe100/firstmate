@@ -101,16 +101,22 @@ test_missing_option_value_is_a_usage_error() {
   set +e
   "$ROOT/bin/fm-questionnaire-refill-source.sh" --data-dir >/dev/null 2>&1
   status=$?
-  set -e
+  set +e
   [ "$status" -eq 2 ] || fail "--data-dir without a value must exit 2, got: $status"
 
   set +e
   "$ROOT/bin/fm-questionnaire-refill-source.sh" --max-age-days >/dev/null 2>&1
   status=$?
-  set -e
+  set +e
   [ "$status" -eq 2 ] || fail "--max-age-days without a value must exit 2, got: $status"
 
-  pass "fm-questionnaire-refill-source: missing option value is a usage error, not a no-match"
+  set +e
+  "$ROOT/bin/fm-questionnaire-refill-source.sh" --max-age-days not-a-number >/dev/null 2>&1
+  status=$?
+  set +e
+  [ "$status" -eq 2 ] || fail "a non-numeric --max-age-days must exit 2, got: $status"
+
+  pass "fm-questionnaire-refill-source: missing or non-numeric option value is a usage error, not a no-match"
 }
 
 test_roundtable_in_data_dir_path_does_not_match_everything() {
