@@ -359,6 +359,22 @@ else
   fail "liveness: a split window must not produce a liveness verdict (state=$state)"
 fi
 
+# --- 13. an unreadable liveness verdict aborts before any injection ---------
+printf '%%12\n%%13\n' >"$TMUX_STUB_PANES"
+PATH="$TMUX_STUB_DIR:$PATH"
+INJECTED=""
+fm_watchdog_inject() { INJECTED="$3"; return 0; }
+fm_watchdog_restart_primary() { INJECTED="${INJECTED}restart"; return 0; }
+fm_watchdog_context_band() { printf 'warn'; }
+fm_watchdog_handle_reset "%12" tmux >/dev/null 2>&1
+rc=$?
+PATH="$PATH_SAVED"
+if [ "$rc" -ne 0 ] && [ -z "$INJECTED" ]; then
+  pass "reset: an unreadable liveness target aborts before any injection"
+else
+  fail "reset: must abandon the pass before injecting when liveness is unreadable (rc=$rc injected=$INJECTED)"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
   echo "all tests passed"
   exit 0

@@ -418,6 +418,10 @@ fm_watchdog_launch_primary() {  # <target> <backend>
 # stow -> restart). Exposed separately from fm_watchdog_cycle for testing.
 fm_watchdog_handle_reset() {  # <target> <backend>
   local target=$1 backend=$2 band injected_at
+  fm_watchdog_liveness_target "$target" "$backend" >/dev/null || {
+    log "abandoning the pass: liveness verdict unreadable for this target, so a restart could never be confirmed (target=$target backend=$backend)"
+    return 1
+  }
   band=$(fm_watchdog_context_band) || {
     band=ok
     log "context band unreadable; treating as band=ok (nudge only)"
