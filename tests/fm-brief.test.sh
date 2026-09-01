@@ -910,3 +910,39 @@ test_ship_brief_context_rule_and_rule_numbering() {
   pass "fm-brief.sh: ship brief names a runnable context helper and numbers rules contiguously"
 }
 test_ship_brief_context_rule_and_rule_numbering
+
+test_upstream_sync_brief_carries_the_hard_gates() {
+  local home id brief out
+  home="$TMP_ROOT/upstream-sync-home"
+  mkdir -p "$home/data"
+  id="brief-upstream-sync-d1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" firstmate --mode no-mistakes --upstream-sync >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "upstream-sync brief was not scaffolded"
+  assert_grep "# Upstream sync - HARD SAFETY GATES" "$brief" \
+    "upstream-sync brief missing its hard safety gates section"
+  assert_grep "NEVER YOLO-MERGE" "$brief" \
+    "upstream-sync brief must state the never-yolo-merge instruction"
+  assert_grep "SUPERVISION-SAFETY CONFLICT STOP" "$brief" \
+    "upstream-sync brief must state the supervision-safety-file-conflict stop"
+  assert_grep "bin/fm-watch.sh, bin/fm-classify-lib.sh, bin/fm-wake-lib.sh, bin/fm-wake-drain.sh, bin/fm-task-inbox-lib.sh, or bin/fm-teardown.sh" "$brief" \
+    "upstream-sync brief must name the full supervision-safety file list"
+  local sf
+  for sf in fm-watch.sh fm-classify-lib.sh fm-wake-lib.sh fm-wake-drain.sh fm-task-inbox-lib.sh fm-teardown.sh; do
+    [ -f "$ROOT/bin/$sf" ] || fail "the gate names bin/$sf, which does not exist in this repo"
+    assert_grep "bin/$sf" "$brief" "upstream-sync brief must name bin/$sf in its conflict stop"
+  done
+  assert_grep "NON-PRE-EXISTING REGRESSION STOP" "$brief" \
+    "upstream-sync brief must state the non-pre-existing-regression stop"
+  assert_grep "PR PURITY" "$brief" \
+    "upstream-sync brief must state the PR-purity requirement"
+
+  local scout_id
+  scout_id="brief-upstream-sync-scout-d1"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$scout_id" firstmate --scout --upstream-sync 2>&1)
+  echo "$out" | grep -q "error: --upstream-sync applies only to a ship brief" \
+    || fail "--upstream-sync must be refused on a non-ship brief, got: $out"
+
+  pass "fm-brief.sh: --upstream-sync emits the never-yolo-merge, supervision-safety, regression, and PR-purity gates"
+}
+test_upstream_sync_brief_carries_the_hard_gates

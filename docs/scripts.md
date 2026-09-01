@@ -20,7 +20,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-bearings-board.sh`   | Build and arm the stable interactive `/bearings lavish` fleet board                  |
 | `fm-secondmate-reconcile.sh` | Ask each secondmate to reconcile an inventory mismatch through its durable inbox, limited by a per-home cooldown |
 | `fm-update.sh`           | Fast-forward-only self-update of firstmate and local or remote secondmate homes       |
-| `fm-upstream-behind-check.sh` | Read-only, at-most-daily check of this home's position against its `upstream` remote, cached for the bearings digest, and armable as a once-per-episode drift trigger that asks for an upstream sync task |
+| `fm-upstream-behind-check.sh` | Read-only, at-most-daily check of this home's position against its `upstream` remote, cached for the bearings digest, and armable as a once-per-episode drift trigger that files an upstream sync task and reports it |
+| `fm-upstream-sync-item.sh` | File or refresh in place the one stable-id `upstream-sync` backlog item for an open drift episode and report its auto-dispatch eligibility |
 | `fm-on.sh`               | Execute one tracked Firstmate command in a configured remote secondmate home, using its job worker except for the doctor bootstrap |
 | `fm-remote-job-lib.sh`   | Shared bounded remote job queue, worker readiness, LaunchAgent contract, and filesystem-composed PATH |
 | `fm-remote-job-worker.sh` | Long-lived remote queue worker for tracked `fm-*.sh` commands in the account runtime |

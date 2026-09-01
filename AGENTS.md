@@ -76,6 +76,7 @@ config/stow-pass-horizon  optional presence flag opting this home in to /stow's 
 config/context-thresholds  optional session-context warn/restart thresholds read by bin/fm-context-usage.sh, whose reported band drives the checkpoint-then-restart-with-carryover policy; LOCAL, gitignored; inherited by secondmate homes; see docs/configuration.md "Session context thresholds"
 config/herdr-presentation-spaces  optional "off" opt-out from, or "on" opt-in to, Herdr's default-on disposable single-task visual projection, which is unconfigured-default-on only at or above a Herdr version floor; LOCAL, gitignored; inherited by secondmate homes; see docs/herdr-backend.md "Presentation spaces"
 config/trace-context  optional presence flag enabling default-off native W3C trace-context propagation to spawned agents; LOCAL, gitignored; inherited by secondmate homes; see docs/configuration.md "Trace context propagation" and docs/trace-context.md
+config/upstream-autosync  optional presence flag gating auto-dispatch eligibility for the always-filed upstream sync backlog item; LOCAL, gitignored; inherited by secondmate homes; see docs/configuration.md "Upstream autosync"
 config/cmux-socket-password  optional cmux control-socket password; LOCAL, gitignored; read fresh on every cmux CLI call and passed through without ever overriding an operator's own ambient CMUX_SOCKET_PASSWORD when absent (docs/cmux-backend.md "Setup")
 config/wedge-alarm  optional away-mode wedge-alarm active-alert directives; LOCAL, gitignored; absent means auto (macOS Notification Center when available); see docs/wedge-alarm.md
 config/watched-tools.json  optional list of the tools this home depends on, read by the update check armed with bin/fm-tool-update-check.sh; LOCAL, gitignored, firstmate-maintained but human-editable, and NOT inherited by secondmate homes; see docs/configuration.md "Watched tool updates"
@@ -117,7 +118,7 @@ state/               runtime records and signals; gitignored
   .pr-check-migration-scan-v1  private marker proving the non-executing scan disabled every unsafe legacy check; .pr-check-migration-v1 separately records completed private repairs
   x-watch.check.sh   generated Relay poll shim; present only when opted in (section 14)
   tool-updates.check.sh  generated watched-tool update poll shim and its .check-trust binding; present only after bin/fm-tool-update-check.sh arm; its report record .tool-updates is what keeps one pending update from being reported on every poll
-  upstream-drift.check.sh  generated upstream-drift poll shim and its .check-trust binding; present only after bin/fm-upstream-behind-check.sh arm; its report record .upstream-drift is what keeps one open drift episode from asking for a sync task on every poll
+  upstream-drift.check.sh  generated upstream-drift poll shim and its .check-trust binding; present only after bin/fm-upstream-behind-check.sh arm; its report record .upstream-drift is what keeps one open drift episode from asking for a sync task on every poll, and .upstream-drift-attempted separately records an episode whose sync-item filing did not land, with the reason, so the retry stays quiet for a cooldown window instead of nagging every poll
   pending-replies/   parent-owned secondmate pending-reply records (correlation id, delivery vs reply, recovery, escalation); fm-pending-reply-lib.sh
   procevent/         registered process-to-event sources, one private record per canonical source id; written only by bin/fm-procevent.sh, and their presence alone keeps supervision required (section 13)
   procevent-inbox/   private captured results and their durable handled-acknowledgement markers; source output lives here and never in an event line
@@ -522,6 +523,7 @@ Keep additions task-specific rather than repeating lifecycle instructions, and a
 
 Every ship brief must retain the worktree-isolation assertion and stop if launched in the primary checkout.
 If a ship task touches firstmate's shared tracked material, explicitly require `firstmate-coding-guidelines` before editing.
+Scaffold the `upstream-sync` backlog item with `bin/fm-brief.sh --upstream-sync`; a plain ship brief loses the four non-negotiable upstream-merge gates (docs/configuration.md "Upstream autosync").
 If a task will drive Herdr lifecycle behavior, scaffold with `--herdr-lab`; if that need appears after an unguarded scaffold, stop and regenerate rather than adding commands by hand.
 The generated Herdr contract must use a named non-`default` isolated lab and its guarded helper for every lifecycle action.
 

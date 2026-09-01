@@ -184,6 +184,21 @@ A Secondmate on a remote route is covered the same way: the primary resolves and
 The presence flag is session-scoped enablement, so it transfers at launch and is left unchanged by live convergence into a running home.
 See [`trace-context.md`](trace-context.md) for carrier semantics, supported routes, the manual fleet-restart requirement, the session boundary, and safety limits; `bin/fm-trace-context-lib.sh`'s header owns the exact mechanics, and [`verification/trace-context.md`](verification/trace-context.md) records repeatable evidence.
 
+## Upstream autosync (config/upstream-autosync)
+
+Filing the one open-episode upstream sync backlog item is always active, regardless of this gate: whenever `bin/fm-upstream-behind-check.sh check` reports an open drift episode, it calls `bin/fm-upstream-sync-item.sh` to file or refresh-in-place the single stable-id `upstream-sync` item, carrying the commit count, the `git log --oneline` delta, and the files-touched overlap between upstream's pending delta and this branch's own divergent commits since their merge-base (the conflict-risk signal). The item's stable id means a later episode refreshes the same item rather than filing a duplicate, so at most one sync item is ever open at a time.
+
+The optional local, gitignored `config/upstream-autosync` presence flag additionally gates auto-dispatch eligibility: with it present, `fm-upstream-sync-item.sh` reports `eligible=yes` once the fork is `FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD` commits behind (default 5) or `FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD` days behind (default 14); with it absent, or below both thresholds, it reports `eligible=no` and the item stays queued for the captain exactly as it does today.
+"Days behind" is the age of the OLDEST unmerged upstream commit, not of upstream's tip: an upstream that ships daily always has a tip dated today, which would pin the measure at zero and make the day threshold unreachable on exactly the busy upstreams it exists for.
+The two payload lists in the filed item are bounded the same way: `FM_UPSTREAM_AUTOSYNC_OVERLAP_SHOWN` caps the files-touched overlap and `FM_UPSTREAM_AUTOSYNC_DELTA_SHOWN` caps the commit delta (both default 20), each appending an explicit `... and N more` line rather than truncating silently.
+A filing that does not land (the reserved `backlog` lease held by the other supervision actor, or a backend write failure) deliberately leaves the episode baseline unwritten so the next poll refiles instead of losing a whole threshold-sized block of drift; `FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS` (default 14400, four hours, matching the reconcile nudge cooldown) then bounds how often that unfiled episode repeats its report, so a persistent failure costs one line per window rather than one per poll.
+The script only signals eligibility on its own stdout (`eligible=yes|no`, `eligible_reason=...`); it never spawns a crewmate itself, since `bin/fm-spawn.sh` and firstmate's own supervision loop are the only owners of dispatch.
+
+Auto-dispatch, when firstmate acts on an eligible item, still keeps three hard, non-configurable boundaries that no project posture or `yolo` setting relaxes: the sync PR always parks for the captain's explicit merge word, any conflict inside a supervision-safety file (`bin/fm-watch.sh`, `bin/fm-classify-lib.sh`, `bin/fm-wake-lib.sh`, `bin/fm-wake-drain.sh`, `bin/fm-task-inbox-lib.sh`, `bin/fm-teardown.sh`) stops the task at a needs-decision with a three-way summary, and any test failure not reproduced identically on the pre-merge base blocks unattended progress.
+The sync PR itself must contain only the merge commit plus labeled conflict-resolution commits; regressions found during triage ship as separate follow-up work, never folded into the sync PR.
+`bin/fm-brief.sh --upstream-sync` scaffolds a ship brief with these gates as explicit, generated instructions; see its header for the exact flag contract. That flag is the only thing that emits them, so the brief for the `upstream-sync` item must always be scaffolded with `bin/fm-brief.sh --upstream-sync` - a plain ship brief silently loses all four gates. The filed item's own note body repeats that instruction so it travels with the item.
+`config/upstream-autosync` is inherited by secondmate homes like other `config/` files (AGENTS.md section 2).
+
 ## Prompt-cache steer guard (config/cache-ttl-seconds)
 
 `bin/fm-send.sh` refuses an ordinary text steer to a LOCAL task whose session has been idle longer than the prompt-cache TTL, because resuming it past that point burns a full context reload instead of a warm-cache resume.
@@ -763,7 +778,12 @@ FM_TOOL_UPDATE_NOW=     # test override for the watched-tool sweep clock; the sw
 FM_UPSTREAM_CHECK_INTERVAL=86400   # seconds between real upstream behind/ahead checks; in between, the cached report is reprinted
 FM_UPSTREAM_CHECK_TIMEOUT=20   # seconds bounding the upstream fetch; under the armed drift check it is cut, never raised, to fit FM_CHECK_TIMEOUT, down to skipping the probe
 FM_UPSTREAM_SKILLS_SHOWN=12    # changed upstream skill names listed in the report before it discloses how many were cut
-FM_UPSTREAM_DRIFT_THRESHOLD=25   # commits behind upstream that make the armed upstream-drift check ask for a sync task; see bin/fm-upstream-behind-check.sh
+FM_UPSTREAM_DRIFT_THRESHOLD=5   # commits behind upstream that make the armed upstream-drift check ask for a sync task; matches FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD's default so filing never lags dispatch eligibility; see bin/fm-upstream-behind-check.sh
+FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=14400   # seconds an unfiled drift episode stays quiet before repeating its report; see "Upstream autosync"
+FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD=5    # commits behind that make the filed upstream-sync item auto-dispatch eligible, only with config/upstream-autosync present
+FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD=14     # age in days of the oldest unmerged upstream commit that makes that item eligible on the same gate
+FM_UPSTREAM_AUTOSYNC_OVERLAP_SHOWN=20      # conflict-risk overlap paths listed in the filed item before an "... and N more" line
+FM_UPSTREAM_AUTOSYNC_DELTA_SHOWN=20        # pending upstream commits listed in the filed item before an "... and N more" line
 FM_PROCEVENT_MAX_OUTPUT_BYTES=1048576   # bound on one captured process-to-event result
 FM_PROCEVENT_CLAIM_ROOT=                # machine-wide source claim root; default $XDG_STATE_HOME/firstmate/procevent-claims
 FM_PROCEVENT_SIGNAL_DEFER_GRACE=300     # seconds a status signal may stay deferred behind an unacknowledged process-event generation before it is delivered anyway
