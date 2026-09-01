@@ -2085,6 +2085,9 @@ EOF
         # post-grace scans, so a file is enqueued at most once here while its
         # reported signature still advances for every row - the last signature
         # for that file wins, exactly as in the enqueue branch above.
+        # The presented reason names only the escalated files: every other file
+        # in this scan was absorbed as decided and has no queue record.
+        signal_commit_failed_reason="signal:$signal_commit_failed"
         signal_enqueued=
         while IFS=$(printf '\t') read -r sf sig f; do
           [ -n "$sf" ] || continue
@@ -2094,7 +2097,7 @@ EOF
             *)
               signal_enqueued="$signal_enqueued $f"
               mark_signal_surfaced "$f" || true
-              fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+              fm_wake_append signal "$(basename "$f")" "$signal_commit_failed_reason" || exit 1
               ;;
           esac
           case "$f" in
@@ -2106,7 +2109,7 @@ EOF
         done <<EOF
 $pending
 EOF
-        wake "$reason"
+        wake "$signal_commit_failed_reason"
       else
         triage_log "absorbed benign $reason"
       fi

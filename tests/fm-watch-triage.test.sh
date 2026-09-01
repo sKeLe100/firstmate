@@ -710,6 +710,41 @@ test_provably_working_signal_absorbed() {
   pass "a no-verb signal whose crew is provably working is absorbed (no exit, no queue, suppressor advanced, beacon present)"
 }
 
+# The benign absorb commits its marker through the v2 presentation-marker API
+# (fm_wake_status_seen_commit / fm_wake_status_reported_commit), not a raw
+# signature write. A raw write leaves a marker the presentation-marker reader
+# cannot parse, so the classified position reads 0 and the reported signature
+# never matches: the same absorbed log is re-scanned, re-classified and
+# re-absorbed on every poll cycle.
+test_benign_absorb_marker_is_presentation_record() {
+  local dir state fakebin out status_file pid size absorbed
+  dir=$(make_case benign-absorb-marker); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  status_file="$state/task.status"
+  printf 'working: compiling step 2\n' > "$status_file"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_for_absorbed "$state" "$pid" "absorbed benign"; then
+    reap "$pid"; fail "the benign working: signal was never absorbed: $(cat "$out")"
+  fi
+  # Two further poll cycles: a correctly committed marker suppresses the file,
+  # so no further absorb is recorded for the unchanged log.
+  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited after absorbing: $(cat "$out")"; }
+  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited after absorbing: $(cat "$out")"; }
+  reap "$pid"
+  absorbed=$(grep -Fc "absorbed benign" "$state/.watch-triage.log" 2>/dev/null || echo 0)
+  [ "$absorbed" -eq 1 ] \
+    || fail "an absorbed benign status re-signalled on later poll cycles (absorbs=$absorbed)"
+  size=$(wc -c < "$status_file" | tr -d '[:space:]')
+  [ "$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_wake_signal_seen_size "$2" "$3"' \
+      _ "$ROOT/bin/fm-wake-lib.sh" "$state" "$status_file")" = "$size" ] \
+    || fail "the absorbed log's marker did not record a classified position at the end of its span"
+  FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_wake_signal_seen_current "$2" "$3"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$state" "$status_file" \
+    || fail "the absorbed log's marker did not record a matching reported signature"
+  pass "a benignly absorbed .status commits a parseable presentation marker and stops re-signalling"
+}
+
 test_turn_ended_provably_working_absorbed() {
   local dir state fakebin out pid
   dir=$(make_case turn-ended-working); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
@@ -4301,6 +4336,7 @@ test_worktree_write_probe_is_wall_clock_bounded
 test_signal_crew_provably_working_classifier
 test_secondmate_status_signal_never_absorbed_classifier
 test_provably_working_signal_absorbed
+test_benign_absorb_marker_is_presentation_record
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
 test_turn_ended_churning_pane_absorbed
