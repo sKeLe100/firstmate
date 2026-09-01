@@ -224,7 +224,9 @@ fm_watchdog_primary_blocked() {  # <target> <backend>
 # leading characters and silently reinterpret the timestamp as local time.
 fm_watchdog_epoch_of() {  # <iso-8601>
   local raw=$1 base offset epoch
-  epoch=$(date -d "$raw" +%s 2>/dev/null) && [ -n "$epoch" ] && { printf '%s\n' "$epoch"; return 0; }
+  if [ "$(date -d 2001-02-03T04:05:06Z +%s 2>/dev/null)" = 981173106 ]; then
+    epoch=$(date -d "$raw" +%s 2>/dev/null) && [ -n "$epoch" ] && { printf '%s\n' "$epoch"; return 0; }
+  fi
   base=${raw%%.*}
   case "$raw" in
     *Z|*z)
@@ -371,6 +373,10 @@ fm_watchdog_restart_primary() {  # <target> <backend>
     log "refusing to restart: target does not resolve (target=$target backend=$backend)"
     return 1
   }
+  fm_watchdog_liveness_target "$target" "$backend" >/dev/null || {
+    log "refusing to restart: liveness verdict unreadable for this target, so the old harness could never be confirmed exited (target=$target backend=$backend)"
+    return 1
+  }
   fm_backend_send_text_submit "$backend" "$target" "$exit_cmd" 3 2 2 >/dev/null 2>&1
   timeout=${FM_WATCHDOG_EXIT_TIMEOUT:-30}
   waited=0
@@ -426,7 +432,10 @@ fm_watchdog_handle_reset() {  # <target> <backend>
       fi
       ;;
     *)
-      fm_watchdog_inject "$target" "$backend" "check queued wakes" || log "nudge injection failed"
+      fm_watchdog_inject "$target" "$backend" "check queued wakes" || {
+        log "nudge injection failed"
+        return 1
+      }
       return 0
       ;;
   esac
