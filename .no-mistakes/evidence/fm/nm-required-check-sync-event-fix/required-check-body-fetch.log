@@ -1,0 +1,16 @@
+$ bash tests/fm-no-mistakes-required-body-fetch.test.sh   # (base commit eaf9770 workflow)
+  File "<stdin>", line 4, in <module>
+StopIteration
+not ok - could not extract the workflow steps
+
+$ bash tests/fm-no-mistakes-required-body-fetch.test.sh   # (this branch)
+ok - the action's pr-body input consumes the API-fetched body
+ok - reproduced: a synchronize payload with no pull_request.body fails the gate
+ok - the API-fetched body clears the gate when the event payload omits it
+ok - a body carrying the old fixed delimiter and forged output lines stays one opaque value
+ok - a non-compliant fetched body is still rejected by the gate
+
+$ bash tests/fm-no-mistakes-required.test.sh
+ok - shared action accepts a matching head_sha with completed required steps
+ok - shared action rejects a mismatched head_sha and names both SHAs
+ok - shared action rejects an attestation with no head_sha
