@@ -31,12 +31,14 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
+          delim="NM_PR_BODY_$(openssl rand -hex 16)"
           {
-            echo "body<<__NM_PR_BODY__"
-            gh pr view "${{ github.event.pull_request.number }}" \
-              --repo "${{ github.repository }}" --json body -q '.body // ""'
-            echo "__NM_PR_BODY__"
+            echo "body<<${delim}"
+            gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q '.body // ""'
+            echo "${delim}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify no-mistakes signature and pipeline attestation
