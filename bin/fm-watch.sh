@@ -2117,14 +2117,11 @@ EOF
         # other file in this scan is absorbed as decided, and waking for it
         # would spend a drain turn on a benign log already classified.
         # The next scan would re-read the failed file's span forever. Surface it
-        # instead of silently re-absorbing. The
-        # reported signature advances here even though the classification
-        # position could not: the file HAS now been reported, which bounds a
-        # marker this home cannot classify to one wake per distinct file state
-        # rather than one per poll cycle. $pending concatenates the pre- and
-        # post-grace scans, so a file is enqueued at most once here while its
-        # reported signature still advances for every row - the last signature
-        # for that file wins, exactly as in the enqueue branch above.
+        # instead of silently re-absorbing; the reported signature the first
+        # pass already advanced is what bounds a marker this home cannot
+        # classify to one wake per distinct file state rather than one per poll
+        # cycle. $pending concatenates the pre- and post-grace scans, so a file
+        # is enqueued at most once here.
         # The presented reason names only the escalated files: every other file
         # in this scan was absorbed as decided and has no queue record.
         signal_commit_failed_reason="signal:$signal_commit_failed"
@@ -2138,12 +2135,6 @@ EOF
               signal_enqueued="$signal_enqueued $f"
               mark_signal_surfaced "$f" || true
               fm_wake_append signal "$(basename "$f")" "$signal_commit_failed_reason" || exit 1
-              ;;
-          esac
-          case "$f" in
-            *.status)
-              fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
-              mark_surface_reported "$f" "$sig" || true
               ;;
           esac
         done <<EOF

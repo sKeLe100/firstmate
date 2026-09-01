@@ -745,6 +745,45 @@ test_benign_absorb_marker_is_presentation_record() {
   pass "a benignly absorbed .status commits a parseable presentation marker and stops re-signalling"
 }
 
+# A scan mixing one procevent-covered status log with a benign sibling is the
+# only shape that reaches the covered-absorb code inside the benign branch:
+# signal_crew_provably_working is false for an empty list, so an all-covered
+# scan takes the enqueue branch instead. The fixture writes the process-event
+# inbox files that fm_watch_signal_procevent_coverage reads (a .result, its
+# surfaced marker stamped strictly newer than the status write, and the
+# .handled acknowledgement) - those are the persisted protocol this triage
+# path consumes, not implementation text.
+test_covered_status_absorbs_beside_benign_sibling() {
+  local dir state fakebin out inbox marker pid
+  dir=$(make_case covered-mixed-set); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  inbox="$state/procevent-inbox"
+  mkdir -p "$inbox"
+  printf 'kind=ship\n' > "$state/covered.meta"
+  printf 'kind=ship\n' > "$state/benign.meta"
+  printf 'needs-decision: pick a lane\n' > "$state/covered.status"
+  printf 'working: compiling step 2\n' > "$state/benign.status"
+  printf 'delivered\n' > "$inbox/covered.1.result"
+  : > "$inbox/covered.1.handled"
+  marker="$state/.seen-procevent-$(printf 'procevent:covered:1' | LC_ALL=C od -An -tx1 | tr -d ' \n')"
+  : > "$marker"
+  touch -d '+1 hour' "$marker" 2>/dev/null || touch "$marker"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_for_absorbed "$state" "$pid" "absorbed"; then
+    reap "$pid"; fail "the mixed covered+benign scan surfaced instead of absorbing: $(cat "$out")"
+  fi
+  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited after absorbing: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a covered status dragged its benign sibling into a wake: $(cat "$out")"
+  [ ! -s "$state/.wake-queue" ] || fail "the mixed covered+benign scan enqueued a durable wake record"
+  [ -s "$state/.hb-surfaced-covered" ] \
+    || fail "the covered log absorbed without advancing its heartbeat backstop marker"
+  [ -s "$state/.seen-covered_status" ] \
+    || fail "the covered log absorbed without advancing its .seen-* marker"
+  pass "a procevent-covered status absorbs beside a benign sibling: no wake, no queue record, markers advanced"
+}
+
 test_turn_ended_provably_working_absorbed() {
   local dir state fakebin out pid
   dir=$(make_case turn-ended-working); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
@@ -4337,6 +4376,7 @@ test_signal_crew_provably_working_classifier
 test_secondmate_status_signal_never_absorbed_classifier
 test_provably_working_signal_absorbed
 test_benign_absorb_marker_is_presentation_record
+test_covered_status_absorbs_beside_benign_sibling
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
 test_turn_ended_churning_pane_absorbed
