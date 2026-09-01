@@ -107,6 +107,8 @@ for line in open(sys.argv[1]):
         row = json.loads(line)
     except ValueError:
         continue
+    if not isinstance(row, dict):
+        continue
     if row.get("task_id") != task:
         continue
     if row.get("event_type") == "outcome" and row.get("result") in ("landed", "completed"):

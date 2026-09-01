@@ -54,6 +54,18 @@ test_halt_at_relaunch_ceiling_and_reset_on_landed_outcome() {
 }
 test_halt_at_relaunch_ceiling_and_reset_on_landed_outcome
 
+test_non_object_telemetry_line_is_zero_evidence() {
+  local home out t=junk-task
+  home=$(mk_home junk)
+  { printf '123\n'; printf '[1,2]\n'; printf '"x"\n'; delegation_row "$t"; } \
+    >> "$home/data/llm-usage/firstmate.jsonl"
+  out=$(emit "$home" "$t") || fail "non-object telemetry line aborted the helper"
+  [ "$(field "$out" relaunches)" = "1" ] || fail "non-object lines skewed the count: $out"
+  [ "$(field "$out" retry_band)" = "ok" ] || fail "non-object telemetry did not read ok: $out"
+  pass "fm-retry-pressure.sh: non-object telemetry lines are zero evidence, not an error"
+}
+test_non_object_telemetry_line_is_zero_evidence
+
 test_worker_keyed_report_reads_loop() {
   local home out t=loop-task
   home=$(mk_home loop)
