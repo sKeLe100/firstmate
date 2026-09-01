@@ -77,6 +77,7 @@ PY
 run_fetch_step() {
   local body=$1 dir=${2:-}
   [ -n "$dir" ] || dir=$(mktemp -d "$TMP_ROOT/run.XXXXXX")
+  # shellcheck disable=SC2016 # the stub script must expand $STUB_BODY_FILE at run time
   printf '%s\n' '#!/usr/bin/env bash' 'cat "$STUB_BODY_FILE"' > "$dir/gh"
   chmod +x "$dir/gh"
   printf '%s\n' "$body" > "$dir/body.txt" # gh prints a trailing newline
@@ -99,6 +100,7 @@ EOF
 }
 
 test_pr_body_input_is_wired_to_the_fetch_step() {
+  # shellcheck disable=SC2016 # comparing against the literal workflow expression
   [ "$PR_BODY_INPUT" = '${{ steps.pr.outputs.body }}' ] ||
     fail "pr-body is wired to '$PR_BODY_INPUT', not the API-fetched step output"
   pass "the action's pr-body input consumes the API-fetched body"
