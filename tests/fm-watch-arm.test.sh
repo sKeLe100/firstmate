@@ -12,6 +12,9 @@
 # and a real status change drives a real wake through the watcher-bound delivery
 # record and durable queue.
 set -u
+# Never let the arm chain spawn a real detached primary-continuity watchdog
+# loop from a test run (bin/fm-primary-watchdog.sh honors this seam).
+export FM_WATCHDOG_DISABLE=1
 
 # shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"

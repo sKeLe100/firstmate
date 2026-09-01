@@ -316,6 +316,8 @@ Act on each home by its reported `transport`:
 A newly discovered shared captain preference still routes to the primary's `data/captain-shared.md` under the existing primary-authoritative contract, whichever home found it.
 Offload proposals and the cold archive are per-home: file proposals only in the home whose pass produced them, and never cascade either to another home.
 
+Once every enumerated home has been acted on and its outcome recorded - the whole cascade is genuinely finished, not merely enumerated - run `bin/fm-stow-cascade.sh --complete` to stamp the durable stow-completion marker; other tooling (the primary continuity watchdog) anchors on that marker as evidence the full pass completed, and the enumeration run deliberately does not stamp it when secondmates exist.
+
 Extend the completion receipt with one entry per secondmate alongside the primary's own, carrying that home's budget before and after, its per-file actions, its exceptions, whether that home swept itself or was curated from here, and its reported context reading alongside the same tokens-and-percent-of-window shape as the primary's own.
 An `agent`-transport home's context reading is whatever that session reported back; a `direct`, `deferred`, or `unavailable` home has no live session to ask, so its entry states the reading is unavailable rather than inventing, inferring, or reusing another home's number.
 A home that does not report a context reading never blocks this home's `/stow`: it is a reported field on the existing entry, not a new gate on the cascade bound or on that home's own reset-safety.

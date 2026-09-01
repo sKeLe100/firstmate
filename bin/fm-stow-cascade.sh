@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Enumerate this home's registered secondmates for an internal /stow cascade.
-# Usage: fm-stow-cascade.sh [--help]
+# Usage: fm-stow-cascade.sh [--complete] [--help]
+#
+# --complete writes only the durable stow-completion marker
+# (state/.stow-last-run) and exits; the /stow skill runs it after the
+# skill-driven cascade to secondmates has genuinely finished. See
+# record_stow_completion below for why the enumeration run does not stamp the
+# marker itself when secondmates exist.
 #
 # The internal /stow skill owns curation judgement; this command owns only the
 # mechanical inputs a cascade needs: which homes exist, what each home's own
@@ -48,12 +54,13 @@
 set -u
 
 usage() {
-  sed -n '2,47{s/^# \{0,1\}//;p;}' "$0"
+  sed -n '2,53{s/^# \{0,1\}//;p;}' "$0"
 }
 
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
-  "") ;;
+  --complete) MODE=complete ;;
+  "") MODE=enumerate ;;
   *) usage >&2; exit 2 ;;
 esac
 [ "$#" -le 1 ] || { usage >&2; exit 2; }
@@ -159,16 +166,24 @@ resolve_remote_transport() { # <id>
   esac
 }
 
-# Durable stow-completion evidence. This command runs exactly once per /stow,
-# after the home's own pass and knowledge sweep are complete, and the marker is
-# written only on a terminal path where every home this pass owns has been
-# reported - never at invocation and never on a `die`. The marker's mtime is the
-# contract other tooling anchors on (bin/fm-primary-watchdog.sh waits for it
-# before restarting a limit-blocked primary).
+# Durable stow-completion evidence. The marker's mtime is the contract other
+# tooling anchors on (bin/fm-primary-watchdog.sh waits for it before restarting
+# a limit-blocked primary), so it must mean the whole /stow pass - including
+# the skill-driven cascade to secondmates that happens AFTER this enumeration
+# returns - is genuinely done, never merely that enumeration printed. The
+# enumeration run therefore writes it only on terminal paths where no cascade
+# follows (a secondmate home, no registry, an empty registry); when secondmates
+# were enumerated, the /stow skill runs `fm-stow-cascade.sh --complete` once
+# every secondmate's curation is finished, and that call writes the marker.
 record_stow_completion() {
   mkdir -p "$STATE" 2>/dev/null || return 0
   : >"$STATE/.stow-last-run" 2>/dev/null || true
 }
+
+if [ "$MODE" = complete ]; then
+  record_stow_completion
+  exit 0
+fi
 
 if [ -e "$FM_HOME/$SUB_HOME_MARKER" ] || [ -L "$FM_HOME/$SUB_HOME_MARKER" ]; then
   emit 'role=secondmate'
@@ -260,6 +275,8 @@ done < "$TMP/records"
 printf '\n'
 emit "secondmates=$total"
 emit "exceptions=$exceptions"
-record_stow_completion
+# With secondmates enumerated, the cascade itself still lies ahead of this
+# process; the /stow skill stamps completion via --complete once it finishes.
+[ "$total" -gt 0 ] || record_stow_completion
 [ "$exceptions" -eq 0 ] || exit 3
 exit 0

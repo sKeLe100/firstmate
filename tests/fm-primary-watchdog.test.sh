@@ -407,6 +407,44 @@ else
   fail "reset: a guard deferral must not restart the pane (rc=$rc restart=$DEFER_RESTART)"
 fi
 
+# --- 16. always-on arming: singleton pidfile + idempotent arm ---------------
+# The disable seam turns the presence gate off without touching config.
+if FM_WATCHDOG_DISABLE=1 fm_watchdog_enabled; then
+  fail "arm: FM_WATCHDOG_DISABLE=1 must disable the presence gate"
+else
+  pass "arm: FM_WATCHDOG_DISABLE=1 disables the presence gate"
+fi
+
+# A live pid recorded in the pidfile makes arm attach instead of spawning.
+sleep 300 & HOLDER=$!
+printf '%s\n' "$HOLDER" >"$TMPHOME/state/.primary-watchdog.pid"
+out=$(fm_watchdog_arm)
+if [ "$out" = "primary-watchdog: attached pid=$HOLDER" ]; then
+  pass "arm: attaches to a live loop instead of spawning a second one"
+else
+  fail "arm: expected attach to pid $HOLDER, got: $out"
+fi
+
+# A dead pid in the pidfile is not a live singleton.
+kill "$HOLDER" 2>/dev/null; wait "$HOLDER" 2>/dev/null
+if fm_watchdog_singleton_live >/dev/null; then
+  fail "arm: a dead pidfile holder must not read as a live singleton"
+else
+  pass "arm: a dead pidfile holder does not read as a live singleton"
+fi
+
+# main defers to another live loop owning the pidfile.
+sleep 300 & HOLDER=$!
+printf '%s\n' "$HOLDER" >"$TMPHOME/state/.primary-watchdog.pid"
+fm_watchdog_verified_target() { printf 'test:0 tmux\n'; }
+if fm_watchdog_main >/dev/null 2>&1; then
+  pass "run: a second loop defers to the live pidfile owner and exits"
+else
+  fail "run: deferring to a live pidfile owner must exit 0"
+fi
+kill "$HOLDER" 2>/dev/null; wait "$HOLDER" 2>/dev/null
+rm -f "$TMPHOME/state/.primary-watchdog.pid"
+
 if [ "$FAILED" -eq 0 ]; then
   echo "all tests passed"
   exit 0

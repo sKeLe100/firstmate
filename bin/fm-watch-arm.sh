@@ -430,6 +430,16 @@ if [ "$mode" = restart ]; then
   fi
 fi
 
+# Always-on primary continuity watchdog (bin/fm-primary-watchdog.sh, captain
+# decision 2026-09-01): every arm also ensures this home's watchdog loop is
+# running, so it rides the same Stop-hook auto-arm chain as the watcher and
+# survives independent of /afk. Best-effort and silent by contract: `arm` is
+# idempotent (attaches to a live loop), detaches its child with setsid so this
+# arm's process-group teardown cannot reap it, and self-refuses when
+# config/primary-continuity opts out or the primary pane is unverifiable. It
+# must never break the watcher arm or its one-status-line output contract.
+"$SCRIPT_DIR/fm-primary-watchdog.sh" arm >/dev/null 2>&1 || true
+
 # If a genuinely live+fresh watcher already holds the lock, do not start a second
 # one - attach to that cycle and wait until it ends so the harness notify fires
 # then, not as an immediate empty wake. (--restart skips this: it just stopped

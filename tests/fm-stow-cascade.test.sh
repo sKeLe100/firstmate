@@ -362,8 +362,38 @@ test_no_cascade_without_secondmates_or_from_a_secondmate_home() {
   pass "the cascade stays silent with no secondmates and never runs from a secondmate home"
 }
 
+test_completion_marker_waits_for_the_real_cascade() {
+  local primary a out
+  # With secondmates enumerated, the skill-driven cascade still lies ahead, so
+  # the enumeration run must NOT stamp state/.stow-last-run; only an explicit
+  # --complete (run by the /stow skill after the cascade finishes) may.
+  primary=$(new_primary marker)
+  a=$(new_home marker-a)
+  local_record marker-a "$a" > "$primary/data/secondmates.md"
+  set +e
+  out=$(run_cascade "$primary")
+  set -e
+  [ ! -e "$primary/state/.stow-last-run" ] \
+    || fail "enumeration with secondmates stamped the completion marker early"
+  set +e
+  FM_HOME="$primary" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-stow-cascade.sh" --complete
+  set -e
+  [ -e "$primary/state/.stow-last-run" ] \
+    || fail "--complete did not stamp the completion marker"
+  # A primary with no registry has no cascade ahead: the enumeration run is
+  # itself terminal and stamps the marker.
+  primary=$(new_primary marker-empty)
+  set +e
+  out=$(run_cascade "$primary")
+  set -e
+  [ -e "$primary/state/.stow-last-run" ] \
+    || fail "a no-registry enumeration did not stamp its terminal marker"
+  pass "the completion marker waits for --complete when secondmates exist"
+}
+
 test_budget_is_enforced_per_home_and_never_summed
 test_every_registered_home_is_enumerated_exactly_once
+test_completion_marker_waits_for_the_real_cascade
 test_transport_routes_by_placement_and_liveness
 test_receipt_facts_are_complete_and_show_before_and_after
 test_a_slow_remote_is_bounded_and_the_rest_still_report

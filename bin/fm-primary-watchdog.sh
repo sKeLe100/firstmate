@@ -5,7 +5,9 @@
 # and gets a usage-limit-blocked (or crashed) primary back to a working
 # session at reset, without a captain having to notice and intervene.
 #
-# Hosted alongside the afk/supervise-daemon machinery: reuses its pane
+# Armed always-on through bin/fm-watch-arm.sh (the same Stop-hook auto-arm
+# chain that keeps the watcher alive), independent of the /afk lifecycle, and
+# reuses the afk/supervise-daemon machinery's pane
 # discovery (bin/fm-supervisor-target-lib.sh), backend dispatch
 # (bin/fm-backend.sh), busy-line matching (bin/fm-busy-lib.sh), and the
 # operational-input envelope (bin/fm-operational-input.sh) rather than
@@ -71,10 +73,19 @@
 #
 # Usage:
 #   fm-primary-watchdog.sh run        Run the poll/sleep loop in the
-#                                      foreground until killed. Intended to be
-#                                      hosted by bin/fm-afk-launch.sh /
-#                                      bin/fm-supervise-daemon.sh alongside the
-#                                      existing daemon process, not run bare.
+#                                      foreground until killed. Normally
+#                                      reached through `arm`, not run bare.
+#   fm-primary-watchdog.sh arm        Idempotent always-on arming: attach to a
+#                                      live loop for this home or start one
+#                                      detached (setsid) and verify it came
+#                                      up. Called best-effort from
+#                                      bin/fm-watch-arm.sh so the watchdog
+#                                      rides the same Stop-hook auto-arm chain
+#                                      that keeps the watcher alive
+#                                      (bin/fm-claude-stop-autoarm.sh),
+#                                      independent of /afk state - the
+#                                      captain's 2026-09-01 always-on
+#                                      decision.
 #   fm-primary-watchdog.sh cycle      Run exactly one detect-or-idle pass and
 #                                      exit; used by tests and by callers that
 #                                      want to drive the loop externally.
@@ -111,7 +122,11 @@ log() { printf '[fm-primary-watchdog] %s\n' "$*" >&2; }
 # fm_watchdog_enabled: the presence gate described in the header comment
 # above. Presence of config/primary-continuity opts OUT; absence leaves the
 # always-on default enabled.
+# FM_WATCHDOG_DISABLE=1 is a process-scoped test seam so suites that exercise
+# the arm chain (tests/fm-watch-arm.test.sh) never spawn a real detached loop;
+# operators use the durable config flag, not this env.
 fm_watchdog_enabled() {
+  [ "${FM_WATCHDOG_DISABLE:-0}" != 1 ] || return 1
   [ ! -e "$FM_WATCHDOG_CONFIG/primary-continuity" ]
 }
 
@@ -558,10 +573,65 @@ fm_watchdog_cycle() {
   fm_watchdog_record_reset "$reset"
 }
 
+# --- always-on singleton + arm ----------------------------------------------
+# One loop per home, tracked in a pidfile under this home's state/. The pid
+# read is advisory (pid reuse is possible after a crash); the cooldown and
+# reset-identity guards above bound the harm of a rare duplicate, and `arm` is
+# the only spawner so steady state converges to exactly one loop.
+FM_WATCHDOG_PIDFILE="$FM_WATCHDOG_STATE/.primary-watchdog.pid"
+
+# Prints the live holder's pid and returns 0, or returns 1 when no live loop
+# holds this home's pidfile.
+fm_watchdog_singleton_live() {
+  local pid
+  [ -r "$FM_WATCHDOG_PIDFILE" ] || return 1
+  pid=$(cat "$FM_WATCHDOG_PIDFILE" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  printf '%s\n' "$pid"
+}
+
+# fm_watchdog_arm: idempotent, best-effort, home-scoped. Attaches to a live
+# loop, or starts one detached in its own session (setsid, so the caller's -
+# typically a Stop hook's - process-group teardown cannot reap it) and
+# verifies the loop claimed the pidfile. A refusal to arm (disabled flag,
+# unverifiable primary pane) is reported, never retried in a tight loop.
+fm_watchdog_arm() {
+  local live pid i
+  fm_watchdog_enabled || { log "primary-continuity watchdog disabled (config/primary-continuity present)"; return 0; }
+  if live=$(fm_watchdog_singleton_live); then
+    printf 'primary-watchdog: attached pid=%s\n' "$live"
+    return 0
+  fi
+  mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 1
+  setsid "$FM_WATCHDOG_DIR/fm-primary-watchdog.sh" run \
+    >>"$FM_WATCHDOG_STATE/.primary-watchdog.log" 2>&1 </dev/null &
+  pid=$!
+  i=0
+  while [ "$i" -lt 20 ]; do
+    if live=$(fm_watchdog_singleton_live); then
+      printf 'primary-watchdog: started pid=%s\n' "$live"
+      return 0
+    fi
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.25
+    i=$((i + 1))
+  done
+  printf 'primary-watchdog: FAILED - loop did not come up (see %s)\n' "$FM_WATCHDOG_STATE/.primary-watchdog.log"
+  return 1
+}
+
 fm_watchdog_main() {
+  local live
   fm_watchdog_enabled || { log "primary-continuity watchdog disabled (config/primary-continuity present)"; return 0; }
   fm_watchdog_verified_target >/dev/null
   [ "$?" -ne 1 ] || return 1
+  if live=$(fm_watchdog_singleton_live) && [ "$live" != "$$" ]; then
+    log "another watchdog loop (pid $live) already owns this home; exiting"
+    return 0
+  fi
+  mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 1
+  printf '%s\n' "$$" >"$FM_WATCHDOG_PIDFILE" || return 1
   while true; do
     fm_watchdog_cycle
     sleep "${FM_WATCHDOG_POLL_INTERVAL:-60}"
@@ -571,12 +641,13 @@ fm_watchdog_main() {
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   case "${1:-run}" in
     run) fm_watchdog_main ;;
+    arm) fm_watchdog_arm ;;
     cycle) fm_watchdog_cycle ;;
     enabled)
       if fm_watchdog_enabled; then printf '1\n'; exit 0; else printf '0\n'; exit 1; fi
       ;;
     *)
-      echo "usage: fm-primary-watchdog.sh [run|cycle|enabled]" >&2
+      echo "usage: fm-primary-watchdog.sh [run|arm|cycle|enabled]" >&2
       exit 2
       ;;
   esac

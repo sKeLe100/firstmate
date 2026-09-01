@@ -1636,21 +1636,10 @@ fm_super_main() {
   log "daemon starting (pid $$); target=$TARGET; target_source=$target_source; backend=$BACKEND; backend_source=$backend_source; afk=$afk_status; inject_skip='${FM_INJECT_SKIP:-$INJECT_SKIP_DEFAULT}'; stale_escalate=${FM_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}s; batch=${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}s"
   migrate_watcher_pause_markers "$STATE"
 
-  # --- host the primary continuity watchdog (report data/overnight-supervisor
-  # -mode-design section 11) as its own child process, sharing this daemon's
-  # already-verified TARGET/BACKEND rather than rediscovering them. Always-on
-  # by default (config/primary-continuity opts OUT, see the script's own
-  # header and docs/configuration.md "Primary continuity watchdog"); this
-  # daemon does not implement its detection/restart logic itself, only spawns
-  # and reaps it.
-  local WATCHDOG_PID=""
-  local WATCHDOG_BIN="$FM_DAEMON_DIR/fm-primary-watchdog.sh"
-  if [ -x "$WATCHDOG_BIN" ] && FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="${FM_CONFIG_OVERRIDE:-}" "$WATCHDOG_BIN" enabled >/dev/null 2>&1; then
-    FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="${FM_CONFIG_OVERRIDE:-}" FM_STATE_OVERRIDE="${FM_STATE_OVERRIDE:-}" \
-      FM_SUPERVISOR_TARGET="$TARGET" FM_SUPERVISOR_BACKEND="$BACKEND" "$WATCHDOG_BIN" run &
-    WATCHDOG_PID=$!
-    log "primary continuity watchdog hosted (pid $WATCHDOG_PID)"
-  fi
+  # The primary continuity watchdog (bin/fm-primary-watchdog.sh) is NOT hosted
+  # here: it is armed always-on through bin/fm-watch-arm.sh regardless of /afk
+  # state (captain decision 2026-09-01; docs/configuration.md "Primary
+  # continuity watchdog").
 
   # --- shutdown: flush buffered escalations, reap children, release lock ----
   local WATCHER_PID="" CUR_TMP=""
@@ -1661,10 +1650,6 @@ fm_super_main() {
     if [ -n "${WATCHER_PID:-}" ]; then
       kill "$WATCHER_PID" 2>/dev/null || true
       wait "$WATCHER_PID" 2>/dev/null || true
-    fi
-    if [ -n "${WATCHDOG_PID:-}" ]; then
-      kill "$WATCHDOG_PID" 2>/dev/null || true
-      wait "$WATCHDOG_PID" 2>/dev/null || true
     fi
     if [ -n "${CUR_TMP:-}" ]; then
       rm -f "$CUR_TMP" 2>/dev/null || true
