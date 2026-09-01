@@ -1,0 +1,19 @@
+### Refill step, as the /questionnaire skill runs it
+
+--- Case A: no recent roundtable/roadmap report -> exit 1, skill dispatches a scout
+$ bin/fm-questionnaire-refill-source.sh
+stdout: ''  exit: 1  -> skill: 'exits 1 (no fresh report)' => dispatch one senior scout
+
+--- Case B: a fresh report exists -> path printed, skill reuses it instead of paying for a scout
+$ bin/fm-questionnaire-refill-source.sh
+stdout: data/2026-09-01-roundtable/report.md
+exit: 0  -> skill: read that report, present its open candidates (no scout spend)
+
+--- Case C: operator typo (option with no value) -> exit 2, NOT a scout trigger
+$ bin/fm-questionnaire-refill-source.sh --max-age-days
+fm-questionnaire-refill-source.sh: --max-age-days requires a value
+exit: 2  -> skill: 'Exit 2 is a usage error, not a scout trigger: surface it and stop'
+
+--- Case D: --max-age-days honoured (window widened to 30 days rescues Case A's old report)
+$ bin/fm-questionnaire-refill-source.sh --max-age-days 30
+stdout: data/2026-08-01-roundtable/report.md  exit: 0
