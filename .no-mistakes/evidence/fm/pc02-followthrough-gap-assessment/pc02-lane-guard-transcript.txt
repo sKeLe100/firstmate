@@ -1,0 +1,10 @@
+$ fm-spawn.sh pc02-evidence-1 <project> --model pc02-llamaswap/qwen3.6-35b-a3b-dispatch   # PC02 lane held by a live task
+error: PC02 lane occupied: task 'review-leg-42' already holds a live pc02-llamaswap/qwen3.8-27b-dispatch endpoint and PC02 serves one model at a time; wait for that task or dispatch 'pc02-evidence-1' to the rule's next candidate
+exit=1
+state/pc02-evidence-1.meta written? no (dispatch falls through to the next candidate)
+
+$ fm-spawn.sh pc02-evidence-1 <project> --model pc02-llamaswap/qwen3.6-35b-a3b-dispatch   # occupying endpoint positively gone
+warning: /tmp/fm-spawn-pc02-lane-guard.AZiHkn/evidence/home/data/pc02-evidence-1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned pc02-evidence-1 harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-pc02-evidence-1 worktree=/tmp/fm-spawn-pc02-lane-guard.AZiHkn/evidence/wt
+exit=0
+state/pc02-evidence-1.meta model: model=pc02-llamaswap/qwen3.6-35b-a3b-dispatch

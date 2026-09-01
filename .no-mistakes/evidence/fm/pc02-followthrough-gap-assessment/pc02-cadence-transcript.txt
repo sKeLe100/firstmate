@@ -1,0 +1,9 @@
+1) cloud lane, quiet 300s (unchanged 240s threshold):
+  -> captain wake [winA]: stale: winA (idle 300s, possible wedge, escalation 1)
+2) PC02 lane, quiet 300s (documented-normal 4-min local-model turn):
+  -> (no wake: lane left alone)
+3) PC02 lane, quiet 700s but its opencode session logged a step 60s ago:
+  -> (no wake: lane left alone)
+  quiet-spell timer restarted to 0s ago
+4) PC02 lane, quiet 700s and no fresh step (genuinely wedged):
+  -> captain wake [winD]: stale: winD (idle 700s, possible wedge, escalation 1)
