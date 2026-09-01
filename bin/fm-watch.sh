@@ -1960,6 +1960,19 @@ EOF
     # endpoint, which both branches below commit through the status/non-status
     # marker split.
     FM_SIGNAL_SURFACE_ENDPOINTS=''
+    # The reason presented with a queue record and its wake names only the
+    # files this cycle actually enqueues: a covered file is absorbed with no
+    # record, exactly as a deferred one is.
+    signal_enqueue_files=
+    for f in $files; do
+      case " $signal_covered " in *" $f "*) continue ;; esac
+      signal_enqueue_files="$signal_enqueue_files $f"
+    done
+    signal_enqueue_reason="signal:$signal_enqueue_files"
+    # Classify every non-deferred file up front, as a pure predicate, so
+    # FM_SIGNAL_SURFACE_ENDPOINTS is populated identically on every path that
+    # can enqueue - including the away-mode one, which short-circuits the
+    # condition below and would otherwise enqueue with no evidence at all.
     signal_actionable=1
     if [ -n "$files" ]; then
       # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
@@ -2003,7 +2016,7 @@ EOF
         # while omitting it leaves the heartbeat backstop re-surfacing an event
         # this wake already delivered.
         mark_signal_surfaced "$f" || true
-        fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+        fm_wake_append signal "$(basename "$f")" "$signal_enqueue_reason" || exit 1
         signal_appended=1
         signal_decided="$signal_decided $f"
       done <<EOF
@@ -2043,7 +2056,7 @@ EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
       if [ "$signal_appended" -eq 1 ]; then
-        wake "$reason"
+        wake "$signal_enqueue_reason"
       else
         # Every pending signal was already delivered by an acknowledged
         # process-event wake. Nothing was enqueued, so waking would spend a
