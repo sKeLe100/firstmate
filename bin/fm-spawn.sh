@@ -1358,6 +1358,37 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   fi
 fi
 
+# pc02-single-lane-guard: PC02's llama-swap serves one model at a time, so two
+# concurrent pc02-llamaswap/* lanes starve each other - the second lane's
+# requests queue behind the first's multi-minute turns and the watcher reads
+# the starved lane as wedged (data/pc02-followthrough-gap-assessment/report.md).
+# Refuse any spawn or relaunch onto a pc02-llamaswap/* model while another
+# task's meta holds one whose endpoint is not positively dead or missing, so
+# dispatch falls through to the rule's next candidate instead of doubling up.
+# Ambiguous liveness keeps the lane occupied: over-refusal costs one cloud
+# fallback, while under-refusal wedges both PC02 lanes.
+case "${MODEL:-}" in
+  pc02-llamaswap/*)
+    for pc02_other_meta in "$STATE"/*.meta; do
+      [ -f "$pc02_other_meta" ] || continue
+      pc02_other_task=$(basename "$pc02_other_meta" .meta)
+      [ "$pc02_other_task" != "$ID" ] || continue
+      case "$(fm_meta_get "$pc02_other_meta" model)" in
+        pc02-llamaswap/*) ;;
+        *) continue ;;
+      esac
+      pc02_other_backend=$(fm_meta_get "$pc02_other_meta" backend)
+      pc02_other_window=$(fm_meta_get "$pc02_other_meta" window)
+      if [ -n "$pc02_other_window" ] \
+        && [ "$(fm_backend_agent_alive "${pc02_other_backend:-tmux}" "$pc02_other_window")" = dead ]; then
+        continue
+      fi
+      echo "error: PC02 lane occupied: task '$pc02_other_task' already holds a live $(fm_meta_get "$pc02_other_meta" model) endpoint and PC02 serves one model at a time; wait for that task or dispatch '$ID' to the rule's next candidate" >&2
+      exit 1
+    done
+    ;;
+esac
+
 secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"
 }
