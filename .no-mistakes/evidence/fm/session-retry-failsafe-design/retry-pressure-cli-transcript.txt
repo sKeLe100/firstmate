@@ -1,34 +1,29 @@
-=== 1. fresh home: zero evidence reads ok ===
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=demo-task
+== 1. fresh home, no records (zero evidence) ==
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=t1
 
-=== 2. worker self-reports a retry loop (brief standing rule 9) ===
-working: implementing
-blocked [key=retry-loop]: 2 fix no-ops, HEAD unmoved
-relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=demo-task
+== 2. worker self-reports a retry loop (blocked keyed line) ==
+blocked [key=retry-loop]: 2 fix rounds with no progress
+relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=t1
 
-=== 3. worker resolves the keyed blocker -> band clears ===
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=demo-task
+== 3. note-head token form and needs-decision verb also open the key ==
+relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=t2
+relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=t3
 
-=== 4. note-head key form + captain-held close (shared classify-lib fold) ===
-relaunches=0 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=demo-task
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=demo-task
+== 4. supervisor acts and lands the closing resolved line ==
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=t1
 
-=== 5. relaunch telemetry reaches the ceiling -> halt ===
-relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=demo-task
---- landed outcome resets the counter ---
-relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=demo-task
+== 5. relaunch telemetry accumulates to the halt band ==
+relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=t1
 
-=== 6. config/retry-thresholds override (no trailing newline) ===
-relaunches=1 retry_loop_reported=0 relaunch_ceiling=1 round_ceiling=4 retry_band=halt task=demo-task
---- malformed file fails loudly ---
-fm-retry-pressure: malformed relaunch= in /tmp/tmp.gihVAmcoaR/config/retry-thresholds
-exit=1
+== 6. a landed outcome resets the relaunch count ==
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=t1
 
-=== 7. --help tail (no stray shell line) ===
-than silently replaced by defaults.
+== 7. configured ceilings, incl. a file with no trailing newline ==
+relaunches=1 retry_loop_reported=0 relaunch_ceiling=1 round_ceiling=4 retry_band=halt task=t1
+fm-retry-pressure: malformed relaunch= in /tmp/tmp.aYV4UmiNeb/config/retry-thresholds
+(exit 1)
 
-Missing telemetry or a missing status file is zero evidence, not an error:
-the counts it would feed are reported as 0 so a fresh home reads ok.
-
-=== 8. retry-thresholds is inheritable config ===
-68:FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context context-thresholds retry-thresholds upstream-autosync}"
+== 8. writer/reader directory overrides agree ==
+relaunches=3 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=t9
+(without the overrides, the same home reads:)
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=t9
