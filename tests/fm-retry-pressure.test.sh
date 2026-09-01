@@ -65,6 +65,20 @@ test_worker_keyed_report_reads_loop() {
 }
 test_worker_keyed_report_reads_loop
 
+test_note_head_key_and_captain_held_follow_shared_fold() {
+  local home out t=fold-task
+  home=$(mk_home fold)
+  printf 'blocked: [key=retry-loop] 2 fix no-ops, HEAD unmoved\n' > "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" retry_band)" = "loop" ] || fail "note-head keyed report not read as loop: $out"
+  printf 'captain-held [key=retry-loop]: tracked by the captain\n' >> "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" retry_loop_reported)" = "0" ] || fail "captain-held close did not clear the report: $out"
+  [ "$(field "$out" retry_band)" = "ok" ] || fail "captain-held retry-loop still reads loop: $out"
+  pass "fm-retry-pressure.sh: keyed retry-loop reads follow the shared status-key fold"
+}
+test_note_head_key_and_captain_held_follow_shared_fold
+
 test_resolved_keyed_line_clears_loop() {
   local home out t=resolved-task
   home=$(mk_home resolved)

@@ -15,9 +15,10 @@
 #   - data/llm-usage/firstmate.jsonl delegation events for this task_id since
 #     its last landed/completed outcome event (relaunch count),
 #   - state/<task-id>.status keyed retry-loop reports, when the status file
-#     exists: the LAST `[key=retry-loop]` line counts only while it is a
-#     `blocked` line, since a later `resolved [key=retry-loop]:` closes it per
-#     the status protocol in bin/fm-brief.sh.
+#     exists: the `[key=retry-loop]` decision counts only while the shared fold
+#     in bin/fm-classify-lib.sh still reads it open as a `blocked` line, so a
+#     later resolving or captain-held line closes it exactly as it does for
+#     every other reader of the status protocol.
 #
 # Output is one data-only line; callers act on the band, not the raw counts:
 #   relaunches=<N> retry_loop_reported=<0|1> \
@@ -48,9 +49,13 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 
 [ $# -eq 1 ] || { echo "usage: fm-retry-pressure.sh <task-id>" >&2; exit 1; }
 task="$1"
@@ -107,14 +112,12 @@ PY
   )
 fi
 
-# Worker-reported loops, from the status log: last keyed line wins.
+# Worker-reported loops, decided by the shared status-key fold in
+# bin/fm-classify-lib.sh so this helper cannot disagree with every other reader.
 retry_loop_reported=0
 status_file="$home/state/$task.status"
-if [ -r "$status_file" ]; then
-  last_keyed=$(grep -E '^(blocked|resolved) \[key=retry-loop\]:' "$status_file" 2>/dev/null | tail -n 1 || true)
-  case "$last_keyed" in
-    'blocked [key=retry-loop]:'*) retry_loop_reported=1 ;;
-  esac
+if [ "$(status_key_closing_verb "$status_file" retry-loop)" = blocked ]; then
+  retry_loop_reported=1
 fi
 
 band=ok
