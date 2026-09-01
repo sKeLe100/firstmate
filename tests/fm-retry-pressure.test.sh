@@ -155,3 +155,29 @@ test_thresholds_file_overrides_and_malformed_rejected() {
   pass "fm-retry-pressure.sh: threshold file overrides apply and malformed files fail loudly"
 }
 test_thresholds_file_overrides_and_malformed_rejected
+
+test_directory_overrides_are_honored() {
+  local home out t=ovr-task
+  home=$(mk_home ovr)
+  mkdir -p "$home/alt-state" "$home/alt-data/llm-usage"
+  { delegation_row "$t"; delegation_row "$t"; delegation_row "$t"; } \
+    >> "$home/alt-data/llm-usage/firstmate.jsonl"
+  printf 'blocked [key=retry-loop]: 2 fix no-ops, HEAD unmoved\n' > "$home/alt-state/$t.status"
+  out=$(FM_STATE_OVERRIDE="$home/alt-state" FM_DATA_OVERRIDE="$home/alt-data" emit "$home" "$t")
+  [ "$(field "$out" relaunches)" = "3" ] || fail "FM_DATA_OVERRIDE telemetry not read: $out"
+  [ "$(field "$out" retry_loop_reported)" = "1" ] || fail "FM_STATE_OVERRIDE status not read: $out"
+  [ "$(field "$out" retry_band)" = "halt" ] || fail "override evidence did not reach halt: $out"
+  pass "fm-retry-pressure.sh: FM_STATE_OVERRIDE/FM_DATA_OVERRIDE resolve like the writers"
+}
+test_directory_overrides_are_honored
+
+test_retry_thresholds_is_inheritable_config() {
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-config-inherit-lib.sh"
+  case " $FM_INHERITABLE_CONFIG " in
+    *" retry-thresholds "*) ;;
+    *) fail "config/retry-thresholds must be in FM_INHERITABLE_CONFIG so secondmate homes inherit the thresholds" ;;
+  esac
+  pass "fm-retry-pressure.sh: config/retry-thresholds is inherited by secondmate homes"
+}
+test_retry_thresholds_is_inheritable_config

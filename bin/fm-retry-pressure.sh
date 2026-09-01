@@ -11,7 +11,8 @@
 # reports only, and never relaunches, holds, or steers anything itself.
 #
 # Usage: fm-retry-pressure.sh <task-id>
-#   Reads, under FM_HOME (default: current directory):
+#   Reads, under FM_HOME (default: current directory), honoring the same
+#   FM_STATE_OVERRIDE and FM_DATA_OVERRIDE directory overrides its writers use:
 #   - data/llm-usage/firstmate.jsonl delegation events for this task_id since
 #     its last landed/completed outcome event (relaunch count),
 #   - state/<task-id>.status keyed retry-loop reports, when the status file
@@ -55,7 +56,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,55p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -66,6 +67,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ $# -eq 1 ] || { echo "usage: fm-retry-pressure.sh <task-id>" >&2; exit 1; }
 task="$1"
 home="${FM_HOME:-$PWD}"
+state_dir="${FM_STATE_OVERRIDE:-$home/state}"
+data_dir="${FM_DATA_OVERRIDE:-$home/data}"
 
 relaunch_ceiling=3
 round_ceiling=4
@@ -93,7 +96,7 @@ fi
 
 # Relaunches since the last landed outcome, from the delegation telemetry.
 relaunches=0
-telemetry="$home/data/llm-usage/firstmate.jsonl"
+telemetry="$data_dir/llm-usage/firstmate.jsonl"
 if [ -r "$telemetry" ]; then
   relaunches=$(TASK="$task" python3 - "$telemetry" <<'PY'
 import json, os, sys
@@ -123,7 +126,7 @@ fi
 # Worker-reported loops, decided by the shared status-key fold in
 # bin/fm-classify-lib.sh so this helper cannot disagree with every other reader.
 retry_loop_reported=0
-status_file="$home/state/$task.status"
+status_file="$state_dir/$task.status"
 case "$(status_key_closing_verb "$status_file" retry-loop)" in
   blocked|needs-decision) retry_loop_reported=1 ;;
 esac
