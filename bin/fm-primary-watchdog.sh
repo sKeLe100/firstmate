@@ -309,18 +309,20 @@ fm_watchdog_pane_busy() {  # <target> <backend>
 # fm_watchdog_inject: repeats inject_msg's (bin/fm-supervise-daemon.sh)
 # busy-guard, composer-guard, and verified-submit steps WITHOUT its
 # afk_active() gate, because this watchdog must be able to inject regardless
-# of away-mode state.
+# of away-mode state. Returns 2 when a guard DEFERRED (the pane must not be
+# touched at all) and 1 when a submit was attempted and failed, so a caller can
+# tell "do not act on this pane" from "the message did not land".
 fm_watchdog_inject() {  # <target> <backend> <message>
   local target=$1 backend=$2 msg=$3 encoded verdict retries sleep_s composer
   fm_backend_target_exists "$backend" "$target" || return 1
   if fm_watchdog_pane_busy "$target" "$backend"; then
     log "inject deferred: primary pane busy"
-    return 1
+    return 2
   fi
   composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
   if [ "$composer" != empty ]; then
     log "inject deferred: primary composer not confirmed-empty (state=${composer:-unknown})"
-    return 1
+    return 2
   fi
   fm_operational_input_encode away-supervisor "$msg" encoded || return 1
   retries=${FM_INJECT_CONFIRM_RETRIES:-3}
@@ -439,11 +441,15 @@ fm_watchdog_handle_reset() {  # <target> <backend>
   case "$band" in
     warn|restart)
       injected_at=$(date +%s)
-      if fm_watchdog_inject "$target" "$backend" "$FM_WATCHDOG_STOW_REQUEST"; then
-        fm_watchdog_wait_for_stow "$injected_at" || log "stow window elapsed without completion evidence; proceeding to restart anyway (captain-accepted, report 11.4 Q6)"
-      else
-        log "stow injection failed; proceeding to restart anyway"
-      fi
+      fm_watchdog_inject "$target" "$backend" "$FM_WATCHDOG_STOW_REQUEST"
+      case $? in
+        0) fm_watchdog_wait_for_stow "$injected_at" || log "stow window elapsed without completion evidence; proceeding to restart anyway (captain-accepted, report 11.4 Q6)" ;;
+        2)
+          log "abandoning the pass: an inject guard deferred, so the pane must not be exited"
+          return 1
+          ;;
+        *) log "stow injection failed; proceeding to restart anyway" ;;
+      esac
       ;;
     *)
       fm_watchdog_inject "$target" "$backend" "check queued wakes" || {

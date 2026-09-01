@@ -394,6 +394,19 @@ else
   fail "liveness: window-target ambiguity check wrong (single=$single split=$split pinned=$pinned pinned_split=$pinned_split)"
 fi
 
+# --- 15. a deferred inject guard must not exit the pane ---------------------
+DEFER_RESTART=""
+fm_watchdog_restart_primary() { DEFER_RESTART=1; }
+fm_watchdog_inject() { return 2; }
+fm_watchdog_context_band() { printf 'warn'; }
+fm_watchdog_handle_reset "test:0" "tmux" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -ne 0 ] && [ -z "$DEFER_RESTART" ]; then
+  pass "reset: a deferred stow inject abandons the pass instead of restarting"
+else
+  fail "reset: a guard deferral must not restart the pane (rc=$rc restart=$DEFER_RESTART)"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
   echo "all tests passed"
   exit 0
