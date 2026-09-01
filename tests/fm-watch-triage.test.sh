@@ -754,7 +754,7 @@ test_benign_absorb_marker_is_presentation_record() {
 # .handled acknowledgement) - those are the persisted protocol this triage
 # path consumes, not implementation text.
 test_covered_status_absorbs_beside_benign_sibling() {
-  local dir state fakebin out inbox marker pid
+  local dir state fakebin out inbox marker pid size
   dir=$(make_case covered-mixed-set); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   inbox="$state/procevent-inbox"
   mkdir -p "$inbox"
@@ -777,10 +777,14 @@ test_covered_status_absorbs_beside_benign_sibling() {
   reap "$pid"
   [ ! -s "$out" ] || fail "a covered status dragged its benign sibling into a wake: $(cat "$out")"
   [ ! -s "$state/.wake-queue" ] || fail "the mixed covered+benign scan enqueued a durable wake record"
-  [ -s "$state/.hb-surfaced-covered" ] \
-    || fail "the covered log absorbed without advancing its heartbeat backstop marker"
-  [ -s "$state/.seen-covered_status" ] \
-    || fail "the covered log absorbed without advancing its .seen-* marker"
+  # Existence alone is not evidence: the branch's reported-only pass creates
+  # both markers with an unclassified position. Only the covered-absorb step
+  # commits a classified offset at the end of the span.
+  size=$(wc -c < "$state/covered.status" | tr -d '[:space:]')
+  [ "$(status_presentation_marker_offset "$state/.hb-surfaced-covered" "$state/covered.status")" = "$size" ] \
+    || fail "the covered log absorbed without a classified position on its heartbeat backstop marker"
+  [ "$(status_presentation_marker_offset "$state/.seen-covered_status" "$state/covered.status")" = "$size" ] \
+    || fail "the covered log absorbed without a classified position on its .seen-* marker"
   pass "a procevent-covered status absorbs beside a benign sibling: no wake, no queue record, markers advanced"
 }
 
