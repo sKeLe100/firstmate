@@ -1442,7 +1442,9 @@ signal_files_actionable() {  # <status-file> ...
 # signal_files_actionable classified for it in this same cycle. The caller
 # calls this immediately before the file's queue record, never during the
 # actionability probe: the marker claims the event reached firstmate, so it may
-# only be written for a file this cycle actually enqueues. A file the probe
+# only be written for a file this cycle holds proof of delivery for - one it
+# enqueues itself, or one an acknowledged process-event wake already carried. A
+# file the probe
 # could not classify has no endpoint record and is deliberately left unmarked,
 # so its bytes are classified again rather than swallowed.
 mark_signal_surfaced() {  # <status-file>
@@ -1981,11 +1983,14 @@ EOF
         signal_enqueued="$signal_enqueued $f"
         # A process-event generation may already have carried this change to the
         # supervisor. "covered" means an acknowledged wake proves it did, so the
-        # marker advances below without a second queue record; "defer" means the
-        # proof is still outstanding, so nothing is decided and no marker moves.
+        # markers advance without a second queue record - including the
+        # heartbeat backstop's, which would otherwise re-surface the very event
+        # that acknowledgement proves was delivered; "defer" means the proof is
+        # still outstanding, so nothing is decided and no marker moves.
         case " $signal_deferred " in *" $f "*) continue ;; esac
         case " $signal_covered " in
           *" $f "*)
+            mark_signal_surfaced "$f" || true
             signal_absorbed="$signal_absorbed $f"
             signal_decided="$signal_decided $f"
             continue
@@ -2066,6 +2071,12 @@ EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
       if [ "$signal_commit_error" -ne 0 ]; then
+        # The absorb could not be recorded, so the next scan would re-read the
+        # same span forever. Surface it instead of silently re-absorbing. The
+        # reported signature advances here even though the classification
+        # position could not: the file HAS now been reported, which bounds a
+        # marker this home cannot classify to one wake per distinct file state
+        # rather than one per poll cycle.
         signal_enqueued=
         while IFS=$(printf '\t') read -r sf sig f; do
           [ -n "$sf" ] || continue
@@ -2074,12 +2085,19 @@ EOF
           case " $signal_deferred " in *" $f "*) continue ;; esac
           mark_signal_surfaced "$f" || true
           fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+          case "$f" in
+            *.status)
+              fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
+              mark_surface_reported "$f" "$sig" || true
+              ;;
+          esac
         done <<EOF
 $pending
 EOF
         wake "$reason"
+      else
+        triage_log "absorbed benign $reason"
       fi
-      triage_log "absorbed benign $reason"
     fi
   fi
 
