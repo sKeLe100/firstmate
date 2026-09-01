@@ -2082,7 +2082,13 @@ EOF
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         case " $signal_deferred " in *" $f "*) continue ;; esac
-        case "$f" in *.status) ;; *) printf '%s' "$sig" > "$sf" ;; esac
+        case "$f" in
+          *.status)
+            fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
+            mark_surface_reported "$f" "$sig" || true
+            ;;
+          *) printf '%s' "$sig" > "$sf" ;;
+        esac
       done <<EOF
 $pending
 EOF
