@@ -552,6 +552,183 @@ EOF
   pass "pending no-checks ci-monitor marker stays working"
 }
 
+test_ci_monitoring_repeated_poll_failure_surfaces_wedge() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge)
+  make_repo_on_branch "$d/wt" fm/feat-ciwedge
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-ciwedge.meta" "window=fm:fm-feat-ciwedge" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwedge)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-ciwedge)
+  assert_contains "$out" "state: failed" "repeated identical poll failures -> failed"
+  assert_contains "$out" "CI polling wedge" "wedge detail names the wedge"
+  pass "repeated identical CI poll failures surface a wedge"
+}
+
+# Transient early poll failures followed by normal pending-checks polling are
+# forward progress, not a wedge: the run must keep reading as working.
+test_ci_monitoring_transient_errors_then_pending_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-transient)
+  make_repo_on_branch "$d/wt" fm/feat-citransient
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-citransient.meta" "window=fm:fm-feat-citransient" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-citransient)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
+no CI checks reported yet, waiting for checks to register...
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-citransient)
+  assert_contains "$out" "state: working" "transient errors then pending polling -> working"
+  assert_not_contains "$out" "state: failed" "healthy pending run must not be reported failed"
+  assert_not_contains "$out" "CI polling wedge" "healthy pending run must not be called a wedge"
+  pass "transient poll errors followed by pending checks are not a wedge"
+}
+
+# A per-poll heartbeat emitted alongside every failing poll is not progress:
+# interleaved (and trailing) heartbeat lines must not mask a real wedge.
+test_ci_monitoring_interleaved_heartbeat_still_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-heartbeat)
+  make_repo_on_branch "$d/wt" fm/feat-ciwedgehb
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-ciwedgehb.meta" "window=fm:fm-feat-ciwedgehb" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwedgehb)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-ciwedgehb)
+  assert_contains "$out" "state: failed" "heartbeat interleaved with repeated failures -> failed"
+  assert_contains "$out" "CI polling wedge" "trailing heartbeat must not mask the wedge"
+  pass "per-poll heartbeats interleaved with repeated failures still wedge"
+}
+
+# A prefix that repeats early but is followed by real progress must not be
+# reported as wedged just because some other error prefix trails the log.
+test_ci_monitoring_repeated_errors_then_green_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-then-green)
+  make_repo_on_branch "$d/wt" fm/feat-ciwedgegreen
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-ciwedgegreen.meta" "window=fm:fm-feat-ciwedgegreen" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwedgegreen)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+all CI checks passed - still monitoring until merged or closed
+log: --verbose "gh pr view 36" exit status 1
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-ciwedgegreen)
+  assert_not_contains "$out" "CI polling wedge" "progress after the repeated prefix clears the wedge"
+  assert_not_contains "$out" "state: failed" "green run must not be reported failed"
+  pass "repeated errors followed by green progress are not a wedge"
+}
+
+# Regression: log lines carrying a trailing carriage return (captured gh
+# output) must still re-match their own prefix, so the progress marker after
+# them is seen and a green run is not reported as terminally wedged.
+test_ci_monitoring_crlf_errors_then_green_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-crlf)
+  make_repo_on_branch "$d/wt" fm/feat-cicrlf
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cicrlf.meta" "window=fm:fm-feat-cicrlf" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cicrlf)"
+  local err; err=$(printf 'log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1\r')
+  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\nall CI checks passed - still monitoring until merged or closed\n' \
+    "$err" "$err" "$err" "$err" "$err")
+  local out; out=$(run_crew_state "$d" feat-cicrlf)
+  assert_not_contains "$out" "CI polling wedge" "CRLF errors followed by green are not a wedge"
+  assert_not_contains "$out" "state: failed" "green run with CRLF errors must not be reported failed"
+  pass "carriage-return-terminated poll errors re-match their own prefix"
+}
+
+# Regression: a log mixing CR-terminated and plain copies of the SAME failing
+# poll must group into one prefix, so the split does not hide a real wedge.
+test_ci_monitoring_mixed_line_endings_still_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-mixed-eol)
+  make_repo_on_branch "$d/wt" fm/feat-cimixedeol
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cimixedeol.meta" "window=fm:fm-feat-cimixedeol" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cimixedeol)"
+  local plain cr
+  plain='log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1'
+  cr=$(printf '%s\r' "$plain")
+  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$cr" "$plain" "$cr" "$plain" "$cr" "$plain")
+  local out; out=$(run_crew_state "$d" feat-cimixedeol)
+  assert_contains "$out" "state: failed" "mixed line endings must not split one wedged prefix"
+  assert_contains "$out" "CI polling wedge" "mixed-line-ending wedge is still detected"
+  pass "mixed CR and plain copies of one failing poll still wedge"
+}
+
+# Regression: an error prefix that itself begins with digits (e.g. an HTTP
+# status) must survive the count parse and still be recognized as a wedge.
+test_ci_monitoring_numeric_error_prefix_still_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-numeric)
+  make_repo_on_branch "$d/wt" fm/feat-cinumeric
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cinumeric.meta" "window=fm:fm-feat-cinumeric" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinumeric)"
+  local err='warning: could not check CI: 404 Not Found (HTTP 404)'
+  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n' "$err" "$err" "$err" "$err" "$err")
+  local out; out=$(run_crew_state "$d" feat-cinumeric)
+  assert_contains "$out" "state: failed" "numeric-leading error prefix -> failed"
+  assert_contains "$out" "404 Not Found (HTTP 404)" "numeric-leading prefix is reported intact"
+  pass "an error prefix starting with digits is preserved and wedges"
+}
+
+# A repo with no CI workflows logs the green "no CI checks reported - still
+# monitoring" marker every poll; flaky poll errors among those lines must not
+# turn that green run into a wedge.
+test_ci_monitoring_no_checks_green_marker_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-nochecks)
+  make_repo_on_branch "$d/wt" fm/feat-cinochecks
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cinochecks.meta" "window=fm:fm-feat-cinochecks" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinochecks)"
+  local err green
+  err='log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1'
+  green='no CI checks reported - still monitoring until merged or closed'
+  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+    "$green" "$err" "$green" "$err" "$green" "$err" "$green" "$err" "$green" "$err" "$green")
+  local out; out=$(run_crew_state "$d" feat-cinochecks)
+  assert_not_contains "$out" "CI polling wedge" "the no-checks green marker is progress, not heartbeat noise"
+  assert_not_contains "$out" "state: failed" "a green no-checks run must not be reported failed"
+  pass "flaky poll errors around the no-checks green marker are not a wedge"
+}
+
 test_ci_monitoring_still_waiting_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-waiting)
@@ -1420,6 +1597,14 @@ test_top_level_ci_checks_green_surfaces_done
 test_ci_monitoring_no_checks_terminal_surfaces_done
 test_ci_monitoring_green_then_rearm_stays_working
 test_ci_monitoring_no_checks_yet_stays_working
+test_ci_monitoring_repeated_poll_failure_surfaces_wedge
+test_ci_monitoring_transient_errors_then_pending_not_wedged
+test_ci_monitoring_interleaved_heartbeat_still_wedged
+test_ci_monitoring_repeated_errors_then_green_not_wedged
+test_ci_monitoring_crlf_errors_then_green_not_wedged
+test_ci_monitoring_mixed_line_endings_still_wedged
+test_ci_monitoring_numeric_error_prefix_still_wedged
+test_ci_monitoring_no_checks_green_marker_not_wedged
 test_ci_monitoring_still_waiting_stays_working
 test_ci_monitoring_green_then_new_issue_stays_working
 test_ci_ready_done_log_relapse_stays_working

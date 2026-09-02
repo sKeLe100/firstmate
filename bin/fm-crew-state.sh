@@ -42,6 +42,19 @@
 #      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
 #      green, so a green PR is never silently read as still-validating.
+#      That same log-tail check also detects a wedged CI poll (the same CI
+#      check command failing identically WEDGE_THRESHOLD+ times with no
+#      forward-progress marker after its last occurrence) and overrides
+#      working -> failed, so a poll that can never progress surfaces as
+#      terminal instead of monitoring forever (see nm_ci_wedge_detected).
+#      A per-poll heartbeat trailing those failures is not progress unless no
+#      heartbeat is interleaved with them, but any genuine progress marker
+#      after the last failure - including a green one - clears the wedge.
+#      The wedge verdict is taken before the marker parse, so it wins over a
+#      green marker that PRECEDES the repeated failures. The coarse
+#      cross-branch fallback (where the log may belong to another branch's
+#      run) is never wedge-checked: it reports that run's own state without a
+#      wedge verdict.
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
@@ -338,12 +351,106 @@ nm_effective_ci_step_status() {
 # for the MOST RECENT recognized marker (the log is append-only/chronological,
 # so the last match is current): green with nothing red after it means CI is
 # green right now, still only waiting on merge/close.
+# Detect the no-mistakes CI polling wedge: when the CI check command fails
+# identically N or more times in the log tail, the polling loop is stuck and
+# will not make progress (e.g. "gh api --slurp" on gh <v2.50, "gh pr checks"
+# returning exit 1 for a cancelled PR, etc.). See the wedge detection for
+# run 01M105XM5DXQ77T2DGT4J9D1GW (28 repeated identical warnings) and the
+# live wedge on run 01M1C14G6DCP89ST83AN1KF098.
+WEDGE_THRESHOLD=5
+
+nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:error_type"
+  local log_tail=$1
+  [ -n "$log_tail" ] || return 1
+  # Extract failure lines from the CI log: a warning block starting with
+  # "warning: could not check CI:" (no-mistakes v1.32.2+), or a failing
+  # verbose command line ("log: --verbose ... exit status 1"). Count
+  # occurrences of each unique failure *prefix* (the command+error, not the
+  # full help dump). When the same error repeats N+ times with no progress
+  # marker after the last error occurrence, it's a wedge.
+  local warnings
+  warnings=$(printf '%s\n' "$log_tail" | grep -E '^warning: could not check CI:|^log: --verbose .+exit status 1' || true)
+  [ -n "$warnings" ] || return 1
+  # Markers that indicate real forward CI progress, and per-poll heartbeat
+  # markers that merely say the loop ran again. Together they cover every
+  # marker the parser in nm_ci_checks_state below recognizes, plus terminal
+  # markers ("PR has been merged", "checks green", "outcome=") that only
+  # appear on the wedge path; the split between the two lists is what keeps a
+  # trailing heartbeat from masking a wedge.
+  local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|no CI checks reported - still monitoring|outcome=|checks failed|issues detected'
+  local heartbeat_markers='no CI checks reported yet|CI checks running'
+  # Extract the error prefix from each warning line (e.g.,
+  # "gh api workflow runs for head commit: unknown flag: --slurp").
+  local prefixes
+  prefixes=$(printf '%s\n' "$warnings" \
+    | sed -E 's/[[:space:]]*$//;s/^warning: could not check CI: //;s/^log: --verbose //;s/exit status 1$//;s/[[:space:]]*$//' \
+    | sort | uniq -c | sort -rn)
+  # Check each error prefix: if any reaches the threshold, verify there's
+  # no progress marker after that prefix's own last occurrence.
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    local count error_type last_error_line
+    read -r count error_type <<< "$line"
+    if [ "$count" -lt "$WEDGE_THRESHOLD" ]; then
+      continue
+    fi
+    # Line numbers (relative to log_tail) of this prefix's first and last
+    # occurrence, delimiting the repeated-error span.
+    local span first_error_line
+    span=$(printf '%s\n' "$log_tail" | fm_wedge_want=$error_type awk '
+      /^warning: could not check CI:|^log: --verbose .+exit status 1/ {
+        s = $0
+        sub(/[[:space:]]+$/, "", s)
+        sub(/^warning: could not check CI: /, "", s)
+        sub(/^log: --verbose /, "", s)
+        sub(/exit status 1$/, "", s)
+        sub(/[[:space:]]+$/, "", s)
+        if (s == ENVIRON["fm_wedge_want"]) { if (!f) f = NR; n = NR }
+      }
+      END { if (n) print f " " n }')
+    # A prefix whose own occurrences cannot be located again is not evidence
+    # of a wedge; fail closed rather than reporting a stuck run.
+    [ -n "$span" ] || continue
+    first_error_line=${span%% *}
+    last_error_line=${span##* }
+    # Real progress after the last occurrence always clears the wedge. A
+    # heartbeat there only counts when no heartbeat is interleaved with the
+    # repeated errors: a heartbeat the failing loop emits on every poll is
+    # noise, and must not mask a wedge just because it trails the last error.
+    local progress_count heartbeat_after heartbeat_interleaved
+    progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
+      | grep -cE "$progress_markers" || true)
+    heartbeat_after=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
+      | grep -cE "$heartbeat_markers" || true)
+    heartbeat_interleaved=$(printf '%s\n' "$log_tail" \
+      | sed -n "${first_error_line},${last_error_line}p" \
+      | grep -cE "$heartbeat_markers" || true)
+    if [ "$heartbeat_after" -gt 0 ] && [ "$heartbeat_interleaved" -eq 0 ]; then
+      progress_count=$((progress_count + heartbeat_after))
+    fi
+    if [ "$progress_count" -eq 0 ]; then
+      printf '%d:%s' "$count" "$error_type"
+      return 0
+    fi
+  done <<< "$prefixes"
+  return 1
+}
+
 nm_ci_checks_state() {
   local run_id log_tail marker
   run_id=$(strip_quotes "$(nm_field id)")
   [ -n "$run_id" ] || { printf 'unknown'; return; }
   log_tail=$(nm_run axi logs --step ci --run "$run_id") || true
   [ -n "$log_tail" ] || { printf 'unknown'; return; }
+
+  # Check for CI polling wedge first: repeated identical CI check failures
+  # indicate a stuck polling loop (not a transient error).
+  local wedge_info
+  if wedge_info=$(nm_ci_wedge_detected "$log_tail"); then
+    printf 'wedge: %s' "$wedge_info"
+    return
+  fi
+
   marker=$(printf '%s\n' "$log_tail" \
     | grep -E 'CI checks passed|no CI checks reported - still monitoring|no CI checks reported yet|checks failed|issues detected|CI checks running|base branch advanced.*re-arming CI monitor timeout' \
     | tail -1)
@@ -535,6 +642,9 @@ if [ "$HAVE_RUN" = 1 ]; then
             if [ "$CI_LOG_STATE" = green ]; then
               RUN_STATE="done"
               RUN_DETAIL="checks green: PR ready for review (still monitoring for merge/close)"
+            elif printf '%s' "$CI_LOG_STATE" | grep -q '^wedge:'; then
+              RUN_STATE=failed
+               RUN_DETAIL="CI polling wedge: ${CI_LOG_STATE#wedge: } - run is stuck, no forward progress"
             fi
             ;;
           fixing)
@@ -557,7 +667,7 @@ if [ "$HAVE_RUN" = 1 ]; then
     elif [ "$CI_STEP_STATUS" = fixing ]; then
       CI_LOG_STATE=not-ready
     fi
-    if [ "$CI_LOG_STATE" != not-ready ]; then
+    if [ "$CI_LOG_STATE" != not-ready ] && ! printf '%s' "$CI_LOG_STATE" | grep -q '^wedge:'; then
       emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
     fi
   fi
