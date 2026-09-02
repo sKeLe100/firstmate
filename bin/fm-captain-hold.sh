@@ -476,8 +476,42 @@ resolve_entry() {  # <origin-or-empty> <entry>; prints the resolved id or fails
   fail "no captain-held task $entry in $FM_HOME/data/backlog.md or $archive"
 }
 
+# Stamp a `since <ISO8601-UTC-timestamp>` metadata word onto task $id's
+# backlog.md row, matching the space-separated (not colon) syntax
+# fm-fleet-snapshot.sh's metadata_word() parser expects, alongside the
+# existing colon-style repo/kind/hold/hold-kind/hold-until fields in the
+# same trailing parenthetical block. This is the sole writer of that field
+# (fm-bearings-snapshot.sh's decisions_open.since/created_at are read-only
+# consumers); called once, at the moment a task first becomes captain-held,
+# so the timestamp reflects when the captain call was actually raised and a
+# later re-hold of the same task never resets it.
+stamp_since() {
+  local id=$1 ts=$2 file="$DATA/backlog.md"
+  [ -f "$file" ] || return 0
+  awk -v id="$id" -v ts="$ts" '
+    BEGIN { done = 0 }
+    !done {
+      line = $0
+      if (line ~ ("^[-*][[:space:]]+\\[[ xX]\\][[:space:]]+" id "[[:space:]]") ||
+          line ~ ("^[-*][[:space:]]+\\*\\*" id "\\*\\*[[:space:]]")) {
+        if (line !~ /[[:space:]]since[[:space:]]/) {
+          if (line ~ /\)[[:space:]]*$/) {
+            sub(/\)[[:space:]]*$/, ", since " ts ")", line)
+          } else {
+            line = line " (since " ts ")"
+          }
+        }
+        done = 1
+        print line
+        next
+      }
+    }
+    { print }
+  ' "$file" > "$file.tmp.$$" && mv "$file.tmp.$$" "$file"
+}
+
 command_hold() {
-  local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind
+  local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind prior_hold_kind=''
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -508,6 +542,7 @@ command_hold() {
     state=$(show_field "$show" state)
     [ "$state" != "done" ] \
       || fail "task $id is already closed; a new captain call needs its own task"
+    prior_hold_kind=$(show_field_value "$show" hold_kind)
     if [ -n "$title" ]; then
       existing_title=$(show_field_value "$show" title)
       [ "$existing_title" = "$title" ] || fail "existing task $id has a different title"
@@ -541,6 +576,7 @@ command_hold() {
   show=$(task_show "$id") || fail "task $id disappeared while holding it"
   hold_kind=$(show_field_value "$show" hold_kind)
   [ "$hold_kind" = captain ] || fail "task $id did not retain its captain hold"
+  [ "$prior_hold_kind" = captain ] || stamp_since "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '%s\n' "$id"
 }
 

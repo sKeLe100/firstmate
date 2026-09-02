@@ -78,6 +78,12 @@ CHAT_RULABLE=$(echo "$INPUT" | jq '
         | ([ "never", "always", "do not", "don'"'"'t", "only", "must" ]
            | map(. as $w | $body | startswith($w)) | any) | not
       )
+    | select(
+        (.summary // "") as $s
+        | ($s | ascii_downcase) as $full
+        | ([ "credential", "purchase", "on-device check", "on-device" ]
+           | map(. as $w | $full | contains($w)) | any) | not
+      )
   ] | length
 ')
 
