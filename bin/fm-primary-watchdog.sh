@@ -171,6 +171,7 @@ fm_watchdog_verified_target() {
 FM_WATCHDOG_STOW_REQUEST=${FM_WATCHDOG_STOW_REQUEST:-"run the /stow skill now to checkpoint durable state; this session is about to be restarted for context"}
 
 FM_WATCHDOG_TRANSCRIPT_PIN="$FM_WATCHDOG_STATE/.primary-watchdog.transcript"
+FM_WATCHDOG_REPIN_MARKER="$FM_WATCHDOG_STATE/.primary-watchdog.repin-after"
 
 FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|limit reached.*resets'
 
@@ -317,6 +318,23 @@ fm_watchdog_reset_wait_seconds() {
 # pattern exists for it) or a failed capture reports BUSY, because this guard
 # is what stands between an injection or an /exit and a live captain turn, and
 # absence of evidence is not evidence of an idle pane.
+# fm_watchdog_harness_unknown_escalate: an unidentifiable harness makes the
+# busy guard report busy forever, which silently disables every action this
+# watchdog exists to take (a loop armed from a plain shell has no harness
+# marker and no claude ancestor, so the condition is permanent, not transient).
+# The inaction is deliberate - the guard must fail closed - but it is surfaced
+# once per condition instead of repeating every poll, and the marker is removed
+# as soon as a harness resolves again.
+fm_watchdog_harness_unknown_escalate() {
+  local marker="$FM_WATCHDOG_STATE/.watchdog-harness-unknown"
+  if [ ! -e "$marker" ]; then
+    log "ESCALATION: the primary's harness cannot be identified from this watchdog process, so the busy guard reports busy on every poll and NO nudge, stow or restart will ever run. Re-arm the watchdog from inside the primary session (bin/fm-watch-arm.sh run by the Stop-hook chain) or set the harness marker in its environment."
+    mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 0
+    : >"$marker" 2>/dev/null || true
+  fi
+  return 0
+}
+
 fm_watchdog_pane_busy() {  # <target> <backend>
   local target=$1 backend=$2 native harness tail40
   native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
@@ -324,10 +342,11 @@ fm_watchdog_pane_busy() {  # <target> <backend>
   harness=$("$FM_WATCHDOG_DIR/fm-harness.sh" 2>/dev/null || printf 'unknown')
   case "${harness:-unknown}" in
     unknown|'')
-      log "treating the primary pane as busy: harness could not be identified, so no busy-line pattern applies"
+      fm_watchdog_harness_unknown_escalate
       return 0
       ;;
   esac
+  rm -f "$FM_WATCHDOG_STATE/.watchdog-harness-unknown" 2>/dev/null || true
   tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || {
     log "treating the primary pane as busy: pane capture failed, so idleness is unproven"
     return 0
@@ -368,25 +387,41 @@ fm_watchdog_inject() {  # <target> <backend> <message>
 # other session started in the same home overtakes it and its smaller context
 # would be reported as the primary's band. Arming happens from inside the
 # primary's own session (the Stop-hook chain), so the newest transcript at arm
-# time is the primary's; it is pinned there and passed explicitly here.
+# time is the primary's; it is pinned there and passed explicitly here. After
+# this watchdog launches a fresh session itself the pin is dropped and a
+# re-pin-after epoch recorded, so the loop re-pins on its own once the new
+# session has written a transcript newer than that launch - without the pin
+# ever silently reverting to "whichever session wrote last".
 # FM_WATCHDOG_TRANSCRIPT overrides the pin for tests.
 fm_watchdog_primary_transcript() {
   local pinned=${FM_WATCHDOG_TRANSCRIPT:-}
   [ -n "$pinned" ] || pinned=$(cat "$FM_WATCHDOG_TRANSCRIPT_PIN" 2>/dev/null)
+  if { [ -z "$pinned" ] || [ ! -f "$pinned" ]; } && [ -e "$FM_WATCHDOG_REPIN_MARKER" ]; then
+    fm_watchdog_pin_primary_transcript || return 1
+    pinned=$(cat "$FM_WATCHDOG_TRANSCRIPT_PIN" 2>/dev/null)
+  fi
   [ -n "$pinned" ] && [ -f "$pinned" ] || return 1
   printf '%s\n' "$pinned"
 }
 
 fm_watchdog_pin_primary_transcript() {
-  local munged proj newest
+  local munged proj newest epoch after
   munged=$(printf '%s' "$FM_HOME" | tr -c 'a-zA-Z0-9' '-')
   proj="$HOME/.claude/projects/$munged"
   [ -d "$proj" ] || return 1
+  after=$(cat "$FM_WATCHDOG_REPIN_MARKER" 2>/dev/null)
+  case "$after" in ''|*[!0-9]*) after=0 ;; esac
   newest=$(find "$proj" -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null \
-    | sort -rn | head -1 | cut -d' ' -f2-)
+    | sort -rn | head -1)
   [ -n "$newest" ] || return 1
+  epoch=${newest%% *}
+  epoch=${epoch%%.*}
+  newest=${newest#* }
+  case "$epoch" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$epoch" -ge "$after" ] || return 1
   mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 1
   printf '%s\n' "$newest" >"$FM_WATCHDOG_TRANSCRIPT_PIN" 2>/dev/null || return 1
+  rm -f "$FM_WATCHDOG_REPIN_MARKER" 2>/dev/null || true
 }
 
 # fm_watchdog_context_band: prints the band word (ok|warn|restart) for the
@@ -488,7 +523,9 @@ fm_watchdog_launch_primary() {  # <target> <backend>
     return 1
   }
   log "launching a fresh primary session (target=$target backend=$backend)"
+  mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || true
   rm -f "$FM_WATCHDOG_TRANSCRIPT_PIN" 2>/dev/null || true
+  printf '%s\n' "${FM_WATCHDOG_NOW:-$(date +%s)}" >"$FM_WATCHDOG_REPIN_MARKER" 2>/dev/null || true
   fm_backend_send_text_submit "$backend" "$target" "$launch_cmd" 3 2 2 >/dev/null 2>&1
 }
 
@@ -580,14 +617,25 @@ fm_watchdog_record_reset() {  # <reset-epoch>
 # group is only shells, which is exactly the captain exiting the harness to run
 # shell work, and relaunching there would type the launch command at their
 # prompt. FM_WATCHDOG_DEAD_CONFIRMATIONS (default 2) consecutive polls must see
-# it before a relaunch; any other verdict clears the streak.
+# it before a relaunch; any other verdict clears the streak. The count carries
+# the epoch it was observed at and is discarded when it is older than a few
+# poll intervals, so a streak left behind by a stopped loop can never stand in
+# for a fresh observation.
 fm_watchdog_dead_streak_bump() {
-  local marker="$FM_WATCHDOG_STATE/.watchdog-dead-streak" count
-  count=$(cat "$marker" 2>/dev/null)
+  local marker="$FM_WATCHDOG_STATE/.watchdog-dead-streak" recorded count seen now max_age
+  now=${FM_WATCHDOG_NOW:-$(date +%s)}
+  max_age=$(( ${FM_WATCHDOG_POLL_INTERVAL:-60} * 3 ))
+  recorded=$(cat "$marker" 2>/dev/null)
+  count=${recorded%% *}
+  seen=${recorded##* }
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  case "$seen" in ''|*[!0-9]*) seen='' ;; esac
+  if [ -z "$seen" ] || [ "$((now - seen))" -gt "$max_age" ] || [ "$seen" -gt "$now" ]; then
+    count=0
+  fi
   count=$((count + 1))
   mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || true
-  printf '%s\n' "$count" >"$marker" 2>/dev/null || true
+  printf '%s %s\n' "$count" "$now" >"$marker" 2>/dev/null || true
   printf '%s\n' "$count"
 }
 
@@ -716,6 +764,8 @@ fm_watchdog_main() {
   fi
   mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 1
   printf '%s\n' "$$" >"$FM_WATCHDOG_PIDFILE" || return 1
+  fm_watchdog_dead_streak_clear
+  fm_watchdog_pin_primary_transcript || log "could not pin the primary's transcript at loop start; retrying on each context read"
   while true; do
     fm_watchdog_cycle
     sleep "${FM_WATCHDOG_POLL_INTERVAL:-60}"

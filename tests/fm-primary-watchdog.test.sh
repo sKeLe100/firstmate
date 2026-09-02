@@ -488,6 +488,87 @@ else
   fail "reset: a guard deferral must not restart the pane (rc=$rc restart=$DEFER_RESTART)"
 fi
 
+# --- 17. a stale dead-streak cannot stand in for a fresh observation --------
+. "$ROOT/bin/fm-primary-watchdog.sh"
+rm -f "$TMPHOME/state/.watchdog-dead-streak"
+FM_WATCHDOG_NOW=1000000 fm_watchdog_dead_streak_bump >/dev/null
+streak=$(FM_WATCHDOG_NOW=2000000 fm_watchdog_dead_streak_bump)
+if [ "$streak" = 1 ]; then
+  pass "dead-streak: an observation from a stopped loop is discarded, not counted"
+else
+  fail "dead-streak: a stale streak must not carry over (streak=$streak)"
+fi
+streak=$(FM_WATCHDOG_NOW=2000030 fm_watchdog_dead_streak_bump)
+if [ "$streak" = 2 ]; then
+  pass "dead-streak: two consecutive in-window observations confirm"
+else
+  fail "dead-streak: consecutive observations must confirm (streak=$streak)"
+fi
+rm -f "$TMPHOME/state/.watchdog-dead-streak"
+
+# --- 18. the transcript pin self-heals after the watchdog's own launch ------
+. "$ROOT/bin/fm-primary-watchdog.sh"
+unset FM_WATCHDOG_TRANSCRIPT
+HOME_SAVED="$HOME"
+export HOME="$TMPHOME/fakehome"
+PROJ="$HOME/.claude/projects/$(printf '%s' "$FM_HOME" | tr -c 'a-zA-Z0-9' '-')"
+mkdir -p "$PROJ"
+: >"$PROJ/old-session.jsonl"
+touch -d '@1000000' "$PROJ/old-session.jsonl"
+printf '%s\n' "$PROJ/old-session.jsonl" >"$TMPHOME/state/.primary-watchdog.transcript"
+fm_backend_target_exists() { return 0; }
+fm_backend_send_text_submit() { printf 'empty'; }
+FM_WATCHDOG_NOW=2000000 fm_watchdog_launch_primary "test:0" tmux >/dev/null 2>&1
+if [ ! -e "$TMPHOME/state/.primary-watchdog.transcript" ] \
+  && ! fm_watchdog_primary_transcript >/dev/null 2>&1; then
+  pass "transcript-pin: the dead session's pin is dropped and not resurrected"
+else
+  fail "transcript-pin: a launch must drop the pin and refuse the old transcript"
+fi
+
+: >"$PROJ/new-session.jsonl"
+touch -d '@2000100' "$PROJ/new-session.jsonl"
+got=$(fm_watchdog_primary_transcript) || got="REFUSED"
+if [ "$got" = "$PROJ/new-session.jsonl" ] && [ ! -e "$TMPHOME/state/.primary-watchdog.repin-after" ]; then
+  pass "transcript-pin: the loop re-pins the fresh session's own transcript"
+else
+  fail "transcript-pin: must re-pin the post-launch transcript (got=$got)"
+fi
+rm -rf "$TMPHOME/fakehome" "$TMPHOME/state/.primary-watchdog.transcript" "$TMPHOME/state/.primary-watchdog.repin-after"
+export HOME="$HOME_SAVED"
+
+# --- 19. a permanently unidentifiable harness is surfaced once --------------
+. "$ROOT/bin/fm-primary-watchdog.sh"
+fm_backend_busy_state() { printf 'unknown'; }
+fm_backend_capture() { printf 'ordinary\n'; }
+UNK_DIR="$TMPHOME/unkbin"
+mkdir -p "$UNK_DIR"
+printf '#!/usr/bin/env bash\nprintf "unknown\\n"\n' >"$UNK_DIR/fm-harness.sh"
+chmod +x "$UNK_DIR/fm-harness.sh"
+ESC_DIR_SAVED="$FM_WATCHDOG_DIR"
+FM_WATCHDOG_DIR="$UNK_DIR"
+rm -f "$TMPHOME/state/.watchdog-harness-unknown"
+ESC1="$TMPHOME/esc1.log"; ESC2="$TMPHOME/esc2.log"
+fm_watchdog_pane_busy "test:0" tmux 2>"$ESC1"
+fm_watchdog_pane_busy "test:0" tmux 2>"$ESC2"
+if grep -q ESCALATION "$ESC1" && ! grep -q ESCALATION "$ESC2"; then
+  pass "harness-unknown: the permanent no-op is escalated once, not every poll"
+else
+  fail "harness-unknown: expected exactly one escalation across two polls"
+fi
+printf '#!/usr/bin/env bash\nprintf "claude\\n"\n' >"$UNK_DIR/fm-harness.sh"
+ESC3="$TMPHOME/esc3.log"
+fm_watchdog_pane_busy "test:0" tmux >/dev/null 2>&1
+printf '#!/usr/bin/env bash\nprintf "unknown\\n"\n' >"$UNK_DIR/fm-harness.sh"
+fm_watchdog_pane_busy "test:0" tmux 2>"$ESC3"
+if grep -q ESCALATION "$ESC3"; then
+  pass "harness-unknown: a recovered then relapsed harness escalates again"
+else
+  fail "harness-unknown: a relapse after recovery must escalate again"
+fi
+FM_WATCHDOG_DIR="$ESC_DIR_SAVED"
+rm -f "$TMPHOME/state/.watchdog-harness-unknown"
+
 # --- 16. always-on arming: singleton pidfile + idempotent arm ---------------
 # The disable seam turns the presence gate off without touching config.
 if FM_WATCHDOG_DISABLE=1 fm_watchdog_enabled; then
