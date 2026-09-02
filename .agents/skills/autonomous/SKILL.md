@@ -63,13 +63,13 @@ Read `decisions_open` as an array of rows, each carrying `id`, `key`,
 `created_at` (the last two per the captain's timestamp ruling: `since`
 is the human-readable date, `created_at` the epoch seconds derived from
 it, absent on rows that predate the field).
-Count the total for the bundle-size threshold, and identify the oldest
-row by `created_at` for the time-threshold check (use `declared_priority`
-rows first when ordering, then oldest-first by `created_at`).
-
-Filter for chat-rulable rows before counting:
-skip silently any hold that merely records a standing order already
-in force (a stated ruling plus a trigger or cadence, asking nothing).
+Step 2's `fm-autonomous-thresholds.sh` call counts only chat-rulable
+rows toward the bundle-size threshold and finds the oldest chat-rulable
+row by `created_at` for the time-threshold check - it skips silently
+any hold that merely records a standing order already in force (a
+stated ruling plus a trigger or cadence, asking nothing). Use
+`declared_priority` rows first when ordering the presented bundle at
+step 5, then oldest-first by `created_at`.
 
 The captain's attention window is owned by `bin/fm-captain-window.sh`.
 Check it before contacting the captain: if outside the window, queue
@@ -99,10 +99,11 @@ backlog prose, or agent chat for decision state.
 
 ### Step 2 - Evaluate nudge thresholds
 
-Count chat-rulable decisions from `decisions_open`.
-If the count >= 5, the bundle-size threshold is met.
-Check the oldest pending decision's age.
-If >= 48 hours, the time-threshold is met.
+Pipe the `decisions_open` array into `bin/fm-autonomous-thresholds.sh`,
+which is the single owner of the chat-rulable filter, the bundle-size
+count, and the 48h-age check. Do not reimplement its counting or
+filtering logic inline. It prints `nudge: bundle-size`, `nudge: time`,
+`nudge: both`, or `none`, exiting 0 when a nudge is due and 1 otherwise.
 
 This step only decides whether a questionnaire-ready nudge is owed; it
 never ends the pass. Record the result (nudge needed or not, and which
