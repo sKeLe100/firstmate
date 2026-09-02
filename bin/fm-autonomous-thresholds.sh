@@ -7,8 +7,9 @@
 #
 # Each decision row carries:
 #   id, key, verb, summary, owner, declared_priority
-#   created_at  (optional, epoch seconds; when absent, the row is treated
-#                as 9999999999 so it never fires the time threshold)
+#   created_at  (optional, epoch seconds; rows without it are excluded
+#                from the age computation, so they never fire the time
+#                threshold)
 #
 # Exit codes:
 #   0 - nudge needed (one or both thresholds met), prints one line:
@@ -33,7 +34,13 @@
 # force ("never merge task-7 without CI green"), not an open question. Skip
 # a row when the text after the first ": " starts with one of a known
 # directive-verb set (case-insensitive): never, always, do not, don't, only,
-# must. Anything else is conservatively counted as chat-rulable.
+# must. Anything else is conservatively counted as chat-rulable: there is no
+# structured blocked-on category to match on, so holds that happen to mention
+# credentials, purchases, or on-device checks still count rather than being
+# dropped by a free-text keyword search.
+#
+# The same chat-rulable subset feeds both thresholds: the bundle-size count
+# and the oldest-row age used by the time threshold.
 
 set -u
 
@@ -67,10 +74,8 @@ fi
 # Validate: must be a JSON array
 echo "$INPUT" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "fm-autonomous-thresholds.sh: input must be a JSON array" >&2; exit 2; }
 
-# Count chat-rulable decisions (verb == "captain-hold", excluding pure
-# standing orders where summary does not contain a colon-separated title:reason
-# pattern - those are declarative and not chat-rulable).
-CHAT_RULABLE=$(echo "$INPUT" | jq '
+# Select the chat-rulable subset once; both thresholds read from it.
+CHAT_RULABLE_ROWS=$(echo "$INPUT" | jq -c '
   [ .[] | select(.verb == "captain-hold")
     | select(
         (.summary // "") as $s
@@ -78,19 +83,15 @@ CHAT_RULABLE=$(echo "$INPUT" | jq '
         | ([ "never", "always", "do not", "don'"'"'t", "only", "must" ]
            | map(. as $w | $body | startswith($w)) | any) | not
       )
-    | select(
-        (.summary // "") as $s
-        | ($s | ascii_downcase) as $full
-        | ([ "credential", "purchase", "on-device check", "on-device" ]
-           | map(. as $w | $full | contains($w)) | any) | not
-      )
-  ] | length
+  ]
 ')
 
-# Time threshold: oldest decision >= 48h old.
-# Use created_at field if present; when absent, treat as never-old.
-OLDEST_AGE_SECONDS=$(echo "$INPUT" | jq '
-  [ .[] | select(.verb == "captain-hold") | .created_at // null ]
+CHAT_RULABLE=$(echo "$CHAT_RULABLE_ROWS" | jq 'length')
+
+# Time threshold: oldest chat-rulable decision >= 48h old.
+# Rows without created_at are excluded from the age computation.
+OLDEST_AGE_SECONDS=$(echo "$CHAT_RULABLE_ROWS" | jq '
+  [ .[] | .created_at // null ]
   | map(select(. != null))
   | if length == 0 then null
     else

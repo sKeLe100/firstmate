@@ -489,15 +489,26 @@ stamp_since() {
   local id=$1 ts=$2 file="$DATA/backlog.md"
   [ -f "$file" ] || return 0
   awk -v id="$id" -v ts="$ts" '
-    BEGIN { done = 0 }
+    BEGIN {
+      done = 0
+      known = "^(repo|kind|priority|hold|hold-kind|hold-until):|^(since|merged|reported|done)[[:space:]]"
+    }
     !done {
       line = $0
       if (line ~ ("^[-*][[:space:]]+\\[[ xX]\\][[:space:]]+" id "[[:space:]]") ||
           line ~ ("^[-*][[:space:]]+\\*\\*" id "\\*\\*[[:space:]]")) {
-        if (line !~ /[[:space:]]since[[:space:]]/) {
-          if (line ~ /\)[[:space:]]*$/) {
-            sub(/\)[[:space:]]*$/, ", since " ts ")", line)
-          } else {
+        if (line !~ /[(,][[:space:]]*since[[:space:]]/) {
+          folded = 0
+          if (match(line, /\([^()]*\)[[:space:]]*$/)) {
+            group = substr(line, RSTART + 1, RLENGTH - 1)
+            sub(/\)[[:space:]]*$/, "", group)
+            sub(/^[[:space:]]+/, "", group)
+            if (group ~ known) {
+              sub(/\)[[:space:]]*$/, ", since " ts ")", line)
+              folded = 1
+            }
+          }
+          if (!folded) {
             line = line " (since " ts ")"
           }
         }

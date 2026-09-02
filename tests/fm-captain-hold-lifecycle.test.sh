@@ -301,6 +301,37 @@ test_answer_records_and_closes() {
   pass "answer records the captain's words, closes idempotently, and releases routed work"
 }
 
+# The machine-owned `since` metadata word must be written for every first
+# hold and must never rewrite the captain's own title: a title containing the
+# ordinary word "since" still gets stamped, and a title ending in its own
+# parentheses gets a separate metadata group rather than a corrupted one.
+test_since_stamp_survives_awkward_titles() {
+  local home json
+  home=$(make_home since-stamp-titles)
+  tasks_in "$home" add sample-since-word "Decide the PC02 lane since the split" \
+    --kind ship --repo sample >/dev/null \
+    || fail "could not create the since-in-title fixture"
+  tasks_in "$home" add sample-parens "Pick a release lane (draft)" \
+    --kind ship --repo sample >/dev/null \
+    || fail "could not create the trailing-parenthesis fixture"
+  run_captain "$home" hold sample-since-word --reason "captain call needed" >/dev/null \
+    || fail "could not hold the since-in-title task"
+  run_captain "$home" hold sample-parens --reason "captain call needed" >/dev/null \
+    || fail "could not hold the trailing-parenthesis task"
+
+  json=$(run_bearings "$home") || fail "Bearings failed after stamping awkward titles"
+  printf '%s' "$json" | jq -e '
+    ([ .decisions_open[] | select(.id == "sample-since-word") ] | length) == 1
+      and ([ .decisions_open[] | select(.id == "sample-since-word") ][0].since != null)
+      and ([ .decisions_open[] | select(.id == "sample-parens") ][0].since != null)
+  ' >/dev/null || fail "a since stamp was skipped on an awkward title: $json"
+  printf '%s' "$json" | jq -e '
+    ([ .decisions_open[] | select(.id == "sample-parens") ][0].summary
+      | startswith("Pick a release lane (draft):"))
+  ' >/dev/null || fail "the trailing-parenthesis title was corrupted by the stamp: $json"
+  pass "since is stamped on awkward titles without rewriting them"
+}
+
 # --release lifts the hold instead of closing, preserving the work item's own
 # body under the record; a re-held task later accepts a new answer.
 test_release_frees_held_work() {
@@ -1171,6 +1202,7 @@ EOF
 test_uninventoried_report_decision_refuses_completion
 test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
+test_since_stamp_survives_awkward_titles
 test_release_frees_held_work
 test_deferral_leaves_captains_call_until_due
 test_out_of_band_close_is_recordable

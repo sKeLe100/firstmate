@@ -114,8 +114,10 @@ independent of whether a decision nudge is due.
 
 Read the concurrent dispatch cap from `config/dispatch-cap`.
 Check how many autonomous Claude lanes are currently active.
-If the cap is at or exceeded, queue silently and report that the pass
-deferred due to dispatch-cap occupancy.
+If the cap is at or exceeded, record that new dispatch is deferred due to
+dispatch-cap occupancy and skip only steps 7-8 (the dispatch actions) later
+in the pass. The cap never suppresses captain contact: steps 4-6 still run,
+so an owed nudge still reaches the captain.
 
 Do not hardcode the cap value here: read the live config.
 
@@ -158,6 +160,8 @@ next pass cycle.
 
 ### Step 7 - Execute dispatched work
 
+Skip this step and step 8 when step 3 found the dispatch cap at or exceeded.
+
 For decisions that resolve to dispatching new work, spawn crewmates
 through the normal lifecycle per `bin/fm-spawn.sh`.
 Resolve dispatch profiles from `config/crew-dispatch.json` before spawning.
@@ -191,7 +195,9 @@ Each entry is a single line: `<epoch>\t<threshold>\t<summary>`.
 After the pass completes, re-evaluate queued work items whose blockers
 have cleared or whose time gates have passed.
 Dispatch any that are now eligible, following the normal dispatch
-lifecycle.
+lifecycle - but only when step 3's cap check still found headroom.
+When step 3 found the cap at or exceeded, queue them instead of
+dispatching.
 
 Do not auto-dispatch work that requires a captain decision.
 Auto-dispatch only work whose authority is already established
@@ -215,9 +221,12 @@ Each deferred-ready item carries its plain-language deferral reason
 restriction). Below threshold, stay silent - no separate ping, no
 notification. Rides the existing summary ping and its band gating.
 
-Mechanics: write a `deferred-since: <date>` field to the task note
-at step 9 bookkeeping when an eligible item goes undispatched.
-Clear `deferred-since` when the item is eventually dispatched.
+Mechanics: write a `deferred-since <date>` metadata word into the item's
+trailing backlog metadata block at step 9 bookkeeping when an eligible item
+goes undispatched - the same space-separated metadata-word syntax as `since`,
+read back through the same `metadata_word()` path as `hold`/`hold-kind`/
+`since`, so it is visible in the plain `--json` snapshot with no second read.
+Remove the `deferred-since` word when the item is eventually dispatched.
 The next pass reads `deferred-since` from the snapshot it already
 takes to determine consecutive-pass eligibility.
 
