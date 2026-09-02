@@ -133,6 +133,11 @@ manual intervention:
 
 1. Confirm the scheduled task exists and is enabled: `Get-ScheduledTask -TaskName "PC01-FirstmateAutoStart"` (or the PC02 task name) shows `State: Ready`.
 2. Confirm autologon values are set: `Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' | Select AutoAdminLogon,DefaultUserName`.
+   In the same pass, confirm the section 1 wake settings took effect, since a cold boot never
+   exercises the wake path and would otherwise pass with the sign-in prompt still armed:
+   `powercfg /query SCHEME_CURRENT SUB_NONE CONSOLELOCK` must report an AC and DC index of `0x0`,
+   and `powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE` must report an AC index of `0`.
+   An actual sleep/wake cycle is stronger evidence, but the config-value check is enough to pass.
 3. Trigger a real restart: `Restart-Computer -Force`.
 4. Do not touch the keyboard or mouse during boot.
 5. After the machine finishes rebooting, confirm on-screen that it reached the desktop (or is
