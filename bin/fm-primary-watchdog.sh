@@ -725,8 +725,11 @@ fm_watchdog_singleton_live() {
 # fm_watchdog_arm: idempotent, best-effort, home-scoped. Attaches to a live
 # loop, or starts one detached in its own session (setsid, so the caller's -
 # typically a Stop hook's - process-group teardown cannot reap it) and
-# verifies the loop claimed the pidfile. A refusal to arm (disabled flag,
-# unverifiable primary pane) is reported, never retried in a tight loop.
+# verifies the loop claimed the pidfile. The disabled-flag refusal is reported
+# here; the unverifiable-primary-pane refusal belongs to fm_watchdog_main,
+# which exits immediately when the pane cannot be verified, so a loop armed
+# against an unverifiable pane never reaches a cycle. Neither refusal is
+# retried in a tight loop.
 fm_watchdog_arm() {
   local live pid i
   fm_watchdog_enabled || { log "primary-continuity watchdog disabled (config/primary-continuity present)"; return 0; }
