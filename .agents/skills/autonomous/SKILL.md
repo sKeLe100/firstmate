@@ -110,28 +110,37 @@ independent of whether a decision nudge is due.
 
 ### Step 3 - Check dispatch availability
 
-Read the concurrent dispatch cap from `config/dispatch-cap`.
-Check how many autonomous Claude lanes are currently active.
+Read the base concurrent dispatch cap from `config/dispatch-cap`.
+The effective cap is that base reduced by the quota ladder read from
+`quota-axi --json` (schemaVersion 5) at dispatch intake, per
+`docs/configuration.md`: the ladder is checked alongside the base cap
+rather than replacing it, so `five_hour.percentRemaining < 10` means an
+effective cap of 1 no matter what the base says.
+Check how many autonomous Claude lanes are currently active against both
+the base cap and the ladder before treating a lane as available.
 If the cap is at or exceeded, record that new dispatch is deferred due to
 dispatch-cap occupancy and skip only steps 7-8 (the dispatch actions) later
 in the pass. The cap never suppresses captain contact: steps 4-6 still run,
 so an owed nudge still reaches the captain.
 
-Do not hardcode the cap value here: read the live config, and use the
-built-in default of 3 when `config/dispatch-cap` is absent.
+Do not hardcode the cap value here: read the live config and the live
+quota, and use the built-in default base of 3 when `config/dispatch-cap`
+is absent.
 
 ### Step 4 - Check the captain's attention window
 
-Run `bin/fm-captain-window.sh` with no flags to determine the current
-attention band (`--now` and `--weekday` are test-only flags).
+Run `bin/fm-captain-window.sh` with no flags (`--now` and `--weekday`
+are test-only flags). It prints `band=<band> offer=yes|no`.
+The `offer` field is the single canonical predicate: `offer=yes` means
+in-window, `offer=no` means outside. Do not branch on `band`.
 This step owns the quiet-hours rule for the whole skill:
-If the captain is currently in their attention window, proceed to step 5.
-If outside the window, queue the nudge silently for the next window
+On `offer=yes`, proceed to step 5.
+On `offer=no`, queue the nudge silently for the next window
 entry: skip only steps 5-6 and continue at step 7, since the window
 gates captain contact, not dispatch.
 The single exception: when step 2 reported the time threshold and the
 oldest pending decision exceeds 48 hours, contact the captain anyway -
-run steps 5-6 out of window. That is the only quiet-hours override.
+run steps 5-6 despite `offer=no`. That is the only quiet-hours override.
 The attention window schedule is owned by `bin/fm-captain-window.sh`.
 
 ### Step 5 - Prepare the nudge message
@@ -232,8 +241,8 @@ goes undispatched - the same space-separated metadata-word syntax as `since`,
 read back through the same `metadata_word()` path as `hold`/`hold-kind`/
 `since`, so it is visible in the plain `--json` snapshot with no second read.
 Remove the `deferred-since` word when the item is eventually dispatched.
-The next pass reads `deferred-since` from the snapshot it already
-takes to determine consecutive-pass eligibility.
+The next pass reads it as `gates[].deferred_since` from the snapshot it
+already takes to determine consecutive-pass eligibility.
 
 ## 5. PC02-to-Fable plan-then-execute split
 

@@ -497,19 +497,20 @@ stamp_since() {
       line = $0
       if (line ~ ("^[-*][[:space:]]+\\[[ xX]\\][[:space:]]+" id "[[:space:]]") ||
           line ~ ("^[-*][[:space:]]+\\*\\*" id "\\*\\*[[:space:]]")) {
-        meta = ""
+        stamped = 0
+        anchored = 0
         rest = line
         while (match(rest, /\([^()]*\)[[:space:]]*$/)) {
           g = substr(rest, RSTART + 1, RLENGTH - 1)
           sub(/\)[[:space:]]*$/, "", g)
           sub(/^[[:space:]]+/, "", g)
           if (g !~ known) break
-          meta = g ", " meta
+          anchored = 1
+          if (g ~ /^since[[:space:]]/) stamped = 1
           rest = substr(rest, 1, RSTART - 1)
         }
-        group = meta
-        if (group !~ /^since[[:space:]]/ && group !~ /,[[:space:]]*since[[:space:]]/) {
-          if (meta != "") {
+        if (!stamped) {
+          if (anchored) {
             sub(/\)[[:space:]]*$/, ", since " ts ")", line)
           } else {
             line = line " (since " ts ")"

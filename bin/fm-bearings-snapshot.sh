@@ -129,9 +129,10 @@ Default is LOCAL-ONLY (no network); --include-prs is the only path that fetches.
 Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
-  decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at},
+  decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at,
+     deferred_since},
   landed{id,what,artifact,owner},
-  gates{id,title,blocked_by,reason,owner}, reports{id,path}, recorded_prs{id,url},
+  gates{id,title,blocked_by,reason,owner,deferred_since}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty),
   upstream{status,behind,ahead,newest_upstream_date,reason,checked_at,
   areas{agents_skills,bin,docs,tests,other},skills,skills_total,skills_shown,
@@ -540,7 +541,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             blocked_by:((.unresolved_blocker_ids // []) | if length > 0 then join(",") else "-" end | trunc(120)),
             reason:((if (.hold_until // null) != null and .hold_until > $today
                      then ("until " + .hold_until + ": " + (.hold_reason // .blocked_reason // "-"))
-                     else (.hold_reason // .blocked_reason // "-") end) | trunc(40)),owner:"(main)"} ]
+                     else (.hold_reason // .blocked_reason // "-") end) | trunc(40)),owner:"(main)",
+            deferred_since:(.deferred_since // null)} ]
      + [ (.secondmate_current.records // [])[] as $m
          | select($m.provenance.selected == "structured-home")
          | $m.queued[]?
@@ -551,7 +553,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             blocked_by:((.unresolved_blocker_ids // []) | if length > 0 then join(",") else "-" end | trunc(120)),
             reason:((if (.hold_until // null) != null and .hold_until > $today
                      then ("until " + .hold_until + ": " + (.hold_reason // .blocked_reason // "-"))
-                     else (.hold_reason // .blocked_reason // "-") end) | trunc(40)),owner:$m.id} ]) as $gates_all
+                     else (.hold_reason // .blocked_reason // "-") end) | trunc(40)),owner:$m.id,
+            deferred_since:(.deferred_since // null)} ]) as $gates_all
   | ([ .scout_reports[]
        | . as $r
        | select(($all_reports == "1") or (($rel_ids | index($r.id)) != null))

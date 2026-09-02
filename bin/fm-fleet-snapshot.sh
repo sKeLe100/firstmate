@@ -371,6 +371,8 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
       cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + ":[[:space:]]*(?<v>[^,)]*)");
     def metadata_word($rest; $key):
       cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + "[[:space:]]+(?<v>[^,)]*)");
+    def metadata_date_word($rest; $key):
+      cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + "[[:space:]]+(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2}[^,)]*)");
     def url_pattern: "https?://[^[:space:])\"<>]+";
     def wrapped_url_pattern: "<?" + url_pattern + ">?";
     def links($rest): [$rest | scan(url_pattern)];
@@ -440,8 +442,8 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
              blocked_by:cap($rest; ".*blocked-by:[[:space:]]*(?<v>[^[:space:])]+).*"),
              blocked_by_ids:blocked_by_ids($rest),
              blocked_reason:blocked_reason($rest),
-             since:metadata_word($rest; "since"),
-             deferred_since:metadata_word($rest; "deferred-since"),
+             since:metadata_date_word($rest; "since"),
+             deferred_since:metadata_date_word($rest; "deferred-since"),
              merged:metadata_word($rest; "merged"),
              reported:metadata_word($rest; "reported"),
              done:metadata_word($rest; "done"),
@@ -945,6 +947,7 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
           hold_kind:((.hold_kind // null) | if . == null then null else trunc(40) end),
           hold_until:((.hold_until // null) | if . == null then null else trunc(40) end),
           deferred_marker:(.deferred_marker // false),
+          deferred_since:(.deferred_since // null),
           captain_actionable:(.captain_actionable // false),
           repo:((.repo // null) | if . == null then null else trunc(120) end),
           kind:((.kind // null) | if . == null then null else trunc(40) end)}][:$queued_n]),
