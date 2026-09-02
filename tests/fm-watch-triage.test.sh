@@ -754,7 +754,7 @@ test_benign_absorb_marker_is_presentation_record() {
 # .handled acknowledgement) - those are the persisted protocol this triage
 # path consumes, not implementation text.
 test_covered_status_absorbs_beside_benign_sibling() {
-  local dir state fakebin out inbox marker pid size
+  local dir state fakebin out inbox marker pid size covered_line benign_line
   dir=$(make_case covered-mixed-set); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   inbox="$state/procevent-inbox"
   mkdir -p "$inbox"
@@ -785,7 +785,25 @@ test_covered_status_absorbs_beside_benign_sibling() {
     || fail "the covered log absorbed without a classified position on its heartbeat backstop marker"
   [ "$(status_presentation_marker_offset "$state/.seen-covered_status" "$state/covered.status")" = "$size" ] \
     || fail "the covered log absorbed without a classified position on its .seen-* marker"
-  pass "a procevent-covered status absorbs beside a benign sibling: no wake, no queue record, markers advanced"
+  # state/.watch-triage.log is the operator-facing triage record: a covered
+  # absorb is logged under its own reason, never folded into the benign line.
+  covered_line=$(grep -F "absorbed procevent-covered signal:" "$state/.watch-triage.log" 2>/dev/null | tail -1)
+  benign_line=$(grep -F "absorbed benign signal:" "$state/.watch-triage.log" 2>/dev/null | tail -1)
+  case "$covered_line" in
+    *"$state/covered.status"*) ;;
+    *) fail "the covered absorb was not logged under the procevent-covered reason: $covered_line" ;;
+  esac
+  case "$covered_line" in
+    *"$state/benign.status"*) fail "the benign sibling was logged as procevent-covered: $covered_line" ;;
+  esac
+  case "$benign_line" in
+    *"$state/benign.status"*) ;;
+    *) fail "the benign sibling's absorb was not logged: $benign_line" ;;
+  esac
+  case "$benign_line" in
+    *"$state/covered.status"*) fail "the covered log was logged as a benign absorb: $benign_line" ;;
+  esac
+  pass "a procevent-covered status absorbs beside a benign sibling: no wake, no queue record, markers advanced, absorbs logged under separate reasons"
 }
 
 test_turn_ended_provably_working_absorbed() {
