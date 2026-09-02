@@ -1034,6 +1034,20 @@ $(fm_control_harness_wiring_paths "$harness" "$wt" "$state" "$id")
 EOF
 }
 
+# A RECOVERY resume has no flat fallback: it must reclaim into the projection
+# it already published, so lock contention is something to wait through rather
+# than refuse. Concurrent resumes from different homes therefore serialize on
+# the same session lock instead of one of them failing after a bounded wait
+# that a full spawn (worktree + launch delivery) routinely outlasts.
+spawn_herdr_presentation_order_lock_wait() {
+  local session=${1:-} lock_path
+  [ -n "$session" ] || session=$(fm_backend_herdr_session)
+  lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session") || return 1
+  HERDR_PRESENTATION_ORDER_LOCK="$lock_path"
+  fm_lock_acquire_wait "$HERDR_PRESENTATION_ORDER_LOCK"
+  HERDR_PRESENTATION_ORDER_LOCK_HELD=1
+}
+
 spawn_herdr_presentation_order_lock_release() {
   [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ] || return 0
   HERDR_PRESENTATION_ORDER_LOCK_HELD=0
@@ -2236,8 +2250,8 @@ case "$BACKEND" in
           echo "error: herdr presentation recovery could not ensure its exact named session" >&2
           exit 1
         }
-        spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" || {
-          echo "error: herdr presentation recovery could not acquire its session lock; refusing a concurrent resume" >&2
+        spawn_herdr_presentation_order_lock_wait "$HERDR_SES" || {
+          echo "error: herdr presentation recovery could not resolve its session lock" >&2
           exit 1
         }
         if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
