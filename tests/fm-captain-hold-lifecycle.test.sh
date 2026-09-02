@@ -319,6 +319,11 @@ test_since_stamp_survives_awkward_titles() {
     || fail "could not create the comma-prose fixture"
   run_captain "$home" hold sample-since-comma --reason "captain call needed" >/dev/null \
     || fail "could not hold the comma-prose task"
+  tasks_in "$home" add sample-since-parens "Rework the lane (since the Fable split) - captain call" \
+    --kind ship --repo sample >/dev/null \
+    || fail "could not create the prose-parenthetical fixture"
+  run_captain "$home" hold sample-since-parens --reason "pick a lane" >/dev/null \
+    || fail "could not hold the prose-parenthetical task"
   run_captain "$home" hold sample-since-word --reason "captain call needed" >/dev/null \
     || fail "could not hold the since-in-title task"
   run_captain "$home" hold sample-parens --reason "captain call needed" >/dev/null \
@@ -330,6 +335,7 @@ test_since_stamp_survives_awkward_titles() {
       and ([ .decisions_open[] | select(.id == "sample-since-word") ][0].since != null)
       and ([ .decisions_open[] | select(.id == "sample-parens") ][0].since != null)
       and ([ .decisions_open[] | select(.id == "sample-since-comma") ][0].since != null)
+      and ([ .decisions_open[] | select(.id == "sample-since-parens") ][0].since != null)
   ' >/dev/null || fail "a since stamp was skipped on an awkward title: $json"
   printf '%s' "$json" | jq -e '
     ([ .decisions_open[] | select(.id == "sample-parens") ][0].summary

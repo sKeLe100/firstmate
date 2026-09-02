@@ -838,6 +838,8 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
             reason:(.hold_reason | trunc(160)),
             hold_until:(.hold_until // null),
             deferred_marker:(.deferred_marker // false),
+            since:(.since // null),
+            deferred_since:(.deferred_since // null),
             declared_priority:is_declared_next_session_priority,source:"backlog"} ]) as $captain_holds_all
     | ([ $backlog.records[]? | select(.state == "done" and .structured and .hold_kind != "captain")
          | {id:(.id | trunc(120)),title:(.title | trunc(120)),

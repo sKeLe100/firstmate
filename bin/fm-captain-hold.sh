@@ -497,22 +497,21 @@ stamp_since() {
       line = $0
       if (line ~ ("^[-*][[:space:]]+\\[[ xX]\\][[:space:]]+" id "[[:space:]]") ||
           line ~ ("^[-*][[:space:]]+\\*\\*" id "\\*\\*[[:space:]]")) {
-        group = ""
-        if (match(line, /\([^()]*\)[[:space:]]*$/)) {
-          group = substr(line, RSTART + 1, RLENGTH - 1)
-          sub(/\)[[:space:]]*$/, "", group)
-          sub(/^[[:space:]]+/, "", group)
+        meta = ""
+        rest = line
+        while (match(rest, /\([^()]*\)[[:space:]]*$/)) {
+          g = substr(rest, RSTART + 1, RLENGTH - 1)
+          sub(/\)[[:space:]]*$/, "", g)
+          sub(/^[[:space:]]+/, "", g)
+          if (g !~ known) break
+          meta = g ", " meta
+          rest = substr(rest, 1, RSTART - 1)
         }
-        if (line !~ /\([[:space:]]*since[[:space:]]/ &&
-            line !~ /,[[:space:]]*since[[:space:]][^()]*\)/) {
-          folded = 0
-          if (group != "") {
-            if (group ~ known) {
-              sub(/\)[[:space:]]*$/, ", since " ts ")", line)
-              folded = 1
-            }
-          }
-          if (!folded) {
+        group = meta
+        if (group !~ /^since[[:space:]]/ && group !~ /,[[:space:]]*since[[:space:]]/) {
+          if (meta != "") {
+            sub(/\)[[:space:]]*$/, ", since " ts ")", line)
+          } else {
             line = line " (since " ts ")"
           }
         }

@@ -76,10 +76,9 @@ silently for the next window entry rather than interrupting.
 
 The concurrent dispatch cap is owned by `config/dispatch-cap`.
 Check current lane occupancy against this cap before dispatching new work.
-Do not hardcode a number here: read the config file.
-
-The nightwatch cap is owned by `config/nightwatch-cap`.
-Do not hardcode a number here: read the config file.
+The file is optional and gitignored; when it is absent the built-in
+default cap is 3.
+Do not hardcode a number here: read the config file, falling back to 3.
 
 The dispatch profile is owned by `config/crew-dispatch.json`.
 Resolve it before spawning any crewmate.
@@ -118,16 +117,21 @@ dispatch-cap occupancy and skip only steps 7-8 (the dispatch actions) later
 in the pass. The cap never suppresses captain contact: steps 4-6 still run,
 so an owed nudge still reaches the captain.
 
-Do not hardcode the cap value here: read the live config.
+Do not hardcode the cap value here: read the live config, and use the
+built-in default of 3 when `config/dispatch-cap` is absent.
 
 ### Step 4 - Check the captain's attention window
 
-Run `bin/fm-captain-window.sh` with `--now` to determine the current
-attention band.
+Run `bin/fm-captain-window.sh` with no flags to determine the current
+attention band (`--now` and `--weekday` are test-only flags).
+This step owns the quiet-hours rule for the whole skill:
 If the captain is currently in their attention window, proceed to step 5.
 If outside the window, queue the nudge silently for the next window
 entry: skip only steps 5-6 and continue at step 7, since the window
 gates captain contact, not dispatch.
+The single exception: when step 2 reported the time threshold and the
+oldest pending decision exceeds 48 hours, contact the captain anyway -
+run steps 5-6 out of window. That is the only quiet-hours override.
 The attention window schedule is owned by `bin/fm-captain-window.sh`.
 
 ### Step 5 - Prepare the nudge message
@@ -337,10 +341,9 @@ follow the normal dispatch rules without a daytime restriction.
   When a decision has an ask-user finding, load the skill and
   follow its escalation policy.
 
-- Do NOT contact the captain during their quiet hours
-  (per `bin/fm-captain-window.sh`) unless the oldest pending
-  decision exceeds 48 hours.
-  The 48-hour exception is the only quiet-hours override.
+- Do NOT contact the captain during their quiet hours,
+  except under step 4's 48-hour override (step 4 owns this rule;
+  it is stated there once and not restated here).
   The pass itself still runs: dispatch, logging, and queue
   re-evaluation are never quiet-hours gated.
 
@@ -380,7 +383,6 @@ This skill cites these live owners rather than restating their values:
 - `quota-axi` - quota and model selection
 - `bin/fm-captain-window.sh` - captain attention window
 - `config/dispatch-cap` - concurrent autonomous dispatch cap
-- `config/nightwatch-cap` - nightwatch dispatch cap
 - `config/crew-dispatch.json` - dispatch profiles
 - `captain-hold-lifecycle` - closing captain-held decisions
 - `ask-user-authority` - deciding ask-user findings

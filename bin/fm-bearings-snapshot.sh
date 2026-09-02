@@ -504,6 +504,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             summary:((.title + ": " + .hold_reason) | trunc(90)),owner:"(main)",
             declared_priority:is_declared_next_session_priority,
             since:(.since // null),
+            deferred_since:(.deferred_since // null),
             created_at:(.since as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
      + [ (.secondmate_current.records // [])[] as $m | $m.decisions_open[]?
          | select(.source == "backlog" and .verb == "captain-hold")
@@ -512,6 +513,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             summary:(((.summary // .id) + ": " + (.reason // "captain decision pending")) | trunc(90)),owner:$m.id,
             declared_priority:(.declared_priority // false),
             since:(.since // null),
+            deferred_since:(.deferred_since // null),
             created_at:(.since as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
      | sort_by(if .declared_priority then 0 else 1 end)) as $decisions_all
   | ([ .backlog.records[]
