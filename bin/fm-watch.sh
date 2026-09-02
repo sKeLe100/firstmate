@@ -1905,7 +1905,6 @@ while :; do
     done <<EOF
 $pending
 EOF
-    reason="signal:$files"
     # This block composes two mechanisms that both answer "was this change
     # already delivered?": the local process-event coverage-deferral verdict
     # (covered/defer/actionable) and the surface evidence the heartbeat backstop
@@ -1960,7 +1959,6 @@ EOF
         remaining="$remaining $f"
       done
       files=$remaining
-      reason="signal:$files"
     fi
     # Actionability is also decided up front, before any side effect: the scan
     # fills FM_SIGNAL_SURFACE_ENDPOINTS with each status file's classified
@@ -2145,6 +2143,7 @@ EOF
         done <<EOF
 $pending
 EOF
+        [ -z "$signal_covered" ] || triage_log "absorbed procevent-covered signal:$signal_covered"
         wake "$signal_commit_failed_reason"
       else
         [ -z "$signal_enqueue_files" ] || triage_log "absorbed benign $signal_enqueue_reason"
