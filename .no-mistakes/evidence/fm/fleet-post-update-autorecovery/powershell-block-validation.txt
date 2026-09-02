@@ -1,0 +1,9 @@
+=== All 5 PowerShell blocks in docs/windows-post-update-autorecovery.md parsed by the real Windows PowerShell parser ===
+block1 (Autologon download/run): PARSE OK
+block2 (Winlogon registry fallback): PARSE OK
+block3 (powercfg + ConsoleLock policy): PARSE OK
+block4 (PC01 Register-ScheduledTask): PARSE OK
+block5 (PC02 Register-ScheduledTask): PARSE OK
+
+=== Cmdlet parameter existence check for sections 2-3 ===
+ALL ScheduledTask cmdlet parameters used in sections 2-3 exist on this Windows host

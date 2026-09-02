@@ -1,0 +1,32 @@
+=== [checklist item 2] Get-ItemProperty on the section-1 ConsoleLock policy key ===
+Get-ItemProperty : Cannot find path 
+'HKLM:\SOFTWARE\Policies\Microsoft\Power\PowerSettings\0e796bdb-100d-47d6-a2d5-f7d2daa51f51' because it does not exist.
+At line:1 char:1
++ Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Power\PowerSettin ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (HKLM:\SOFTWARE\...d5-f7d2daa51f51:String) [Get-ItemProperty], ItemNotFo 
+   undException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetItemPropertyCommand
+ 
+exit=1
+
+=== [checklist item 2] powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE ===
+Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)
+  GUID Alias: SCHEME_BALANCED
+  Subgroup GUID: 238c9fa8-0aad-41ed-83f4-97be242c8f20  (Sleep)
+    GUID Alias: SUB_SLEEP
+    Power Setting GUID: 29f6c1db-86da-48c5-9fdb-f2b67b1f44da  (Sleep after)
+      GUID Alias: STANDBYIDLE
+      Minimum Possible Setting: 0x00000000
+      Maximum Possible Setting: 0xffffffff
+      Possible Settings increment: 0x00000001
+      Possible Settings units: Seconds
+    Current AC Power Setting Index: 0x00000000
+    Current DC Power Setting Index: 0x00000258
+
+exit=0
+
+=== [prior-round baseline, now removed from doc] powercfg /query SCHEME_CURRENT SUB_NONE CONSOLELOCK ===
+Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)
+  GUID Alias: SCHEME_BALANCED
+exit=0

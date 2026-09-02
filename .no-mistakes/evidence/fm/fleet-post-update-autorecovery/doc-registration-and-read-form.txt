@@ -1,0 +1,11 @@
+=== Same Get-ItemProperty|Select form against an existing key (shape check, read-only) ===
+
+AutoAdminLogon DefaultUserName
+-------------- ---------------
+1              sean_          
+
+
+
+=== docs/documentation-audiences.json registration (parsed) ===
+/surfaces[79]/path = docs/windows-post-update-autorecovery.md
+entry: []

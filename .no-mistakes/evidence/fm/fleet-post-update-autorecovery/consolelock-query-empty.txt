@@ -1,0 +1,32 @@
+=== CONSOLELOCK is a hidden power setting: query prints no setting index (exit 0, silent) ===
+Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)
+  GUID Alias: SCHEME_BALANCED
+exitcode=0
+
+=== Same query by explicit CONSOLELOCK GUID - also empty ===
+Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)
+  GUID Alias: SCHEME_BALANCED
+
+=== Hidden-attribute proof: Attributes=1 (hidden) on the CONSOLELOCK setting ===
+Get-ItemProperty : Cannot find path 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\abfc2519-3608-4c2a-94ea
+-171b0ed546ab\0e796bdb-100d-47d6-a2d5-f7d2daa51f51' because it does not exist.
+At line:1 char:1
++ Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerS ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (HKLM:\SYSTEM\Cu...d5-f7d2daa51f51:String) [Get-ItemProperty], ItemNotFo 
+   undException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetItemPropertyCommand
+ 
+Get-ItemProperty : Cannot find path 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\fea3413e-7e05-4911-9a71
+-700331f1c294\0e796bdb-100d-47d6-a2d5-f7d2daa51f51' because it does not exist.
+At line:1 char:1
++ Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerS ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (HKLM:\SYSTEM\Cu...d5-f7d2daa51f51:String) [Get-ItemProperty], ItemNotFo 
+   undException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetItemPropertyCommand
+ 
+
+=== Why the query is empty: CONSOLELOCK is flagged hidden (Attributes=1) ===
+key=HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\0e796bdb-100d-47d6-a2d5-f7d2daa51f51
+Attributes=1  (1 = hidden from powercfg /query and the Power Options UI)
