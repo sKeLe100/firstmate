@@ -2062,13 +2062,14 @@ EOF
       done <<EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
+      # A covered file is absorbed whether or not a sibling was enqueued, so
+      # its absorb is recorded either way. When nothing was enqueued at all,
+      # every pending signal was already delivered by an acknowledged
+      # process-event wake, and waking would spend a drain turn on an empty
+      # queue - keep the cycle running instead.
+      [ -z "$signal_absorbed" ] || triage_log "absorbed procevent-covered signal:$signal_absorbed"
       if [ "$signal_appended" -eq 1 ]; then
         wake "$signal_enqueue_reason"
-      else
-        # Every pending signal was already delivered by an acknowledged
-        # process-event wake. Nothing was enqueued, so waking would spend a
-        # drain turn on an empty queue - keep the cycle running instead.
-        triage_log "absorbed procevent-covered signal:$signal_absorbed"
       fi
     else
       # Benign: every non-deferred file is absorbed. A .status log commits its
