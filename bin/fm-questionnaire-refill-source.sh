@@ -2,26 +2,27 @@
 # bin/fm-questionnaire-refill-source.sh - duplication guard for the
 # questionnaire skill's empty-bundle Refill step.
 #
-# Why: the captain ruled (2026-08-31, questionnaire-skill-design call 2) that
-# the empty-bundle fallback must reuse a recent roundtable/roadmap report
-# before paying for a fresh Fable project-review scout. This script owns only
-# the mechanical recency check (find the newest matching report, print it if
-# younger than the freshness window); it does not judge whether that report's
-# candidates are still open - the skill reads the report and decides that.
+# Why: the captain ruled (2026-09-01) that the empty-bundle fallback must
+# use candidates-first: read the newest matching report regardless of age,
+# dispatch a fresh sweep only if absent or its candidates are already spent,
+# and enforce a 14-day hard staleness ceiling. This script owns the mechanical
+# recency check; it does not judge whether the report's candidates are still
+# open - the skill reads the report and decides that.
 #
 # Usage: fm-questionnaire-refill-source.sh [--data-dir <path>] [--max-age-days N]
 #   --data-dir <path>   root to search (default: data)
-#   --max-age-days N    freshness window in days (default: 3, per the report's
-#                        own "duplication guard" and the captain's ruling)
+#   --max-age-days N    staleness ceiling in days (default: 14, per the captain's
+#                        2026-09-01 ruling; read the newest report regardless of
+#                        age but require it to be within this ceiling)
 #
 # Prints the newest matching report.md path (data/*roundtable*/report.md or
-# data/*roadmap*/report.md) with mtime within the window, one line, and exits 0.
-# Prints nothing and exits 1 when no report is within the window.
-# Exits 2 on a usage error (unknown argument, missing or non-numeric value).
+# data/*roadmap*/report.md) if it exists and is within the staleness ceiling,
+# one line, and exits 0. Prints nothing and exits 1 when no report exists or
+# the newest report exceeds the ceiling. Exits 2 on a usage error.
 set -euo pipefail
 
 data_dir="data"
-max_age_days=3
+max_age_days=14
 
 while [ $# -gt 0 ]; do
   case "$1" in

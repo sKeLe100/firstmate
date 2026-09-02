@@ -188,6 +188,30 @@ Do not auto-dispatch work that requires a captain decision.
 Auto-dispatch only work whose authority is already established
 (yolo on, delivery-mode resolved, no ask-user findings pending).
 
+### Deferred-ready visibility (end-of-pass reporting)
+
+After step 10, add a deferred-ready line to the pass summary.
+Name each item that passed the eligibility filter (step 3) and
+stale-work check (step 4) but was not dispatched, once it qualifies
+as deferred-ready.
+
+An item becomes deferred-ready when either condition holds:
+
+- Eligible and undispatched across >= 2 consecutive passes.
+- Eligible for > 24 hours (measured from when it first passed
+  the eligibility filter and stale-work check).
+
+Each deferred-ready item carries its plain-language deferral reason
+(dispatch-cap occupancy, outside attention window, or Fable daytime
+restriction). Below threshold, stay silent - no separate ping, no
+notification. Rides the existing summary ping and its band gating.
+
+Mechanics: write a `deferred-since: <date>` field to the task note
+at step 9 bookkeeping when an eligible item goes undispatched.
+Clear `deferred-since` when the item is eventually dispatched.
+The next pass reads `deferred-since` from the snapshot it already
+takes to determine consecutive-pass eligibility.
+
 ## 5. PC02-to-Fable plan-then-execute split
 
 When the pass would dispatch a task through the PC02 lane, apply the
@@ -298,6 +322,16 @@ follow the normal dispatch rules without a daytime restriction.
   (per `bin/fm-captain-window.sh`) unless the oldest pending
   decision exceeds 48 hours.
   The 48-hour exception is the only quiet-hours override.
+
+- Do NOT confuse the refill sweep with idle-fleet autonomy.
+  Refill's sweep (new candidates, report-only, filed as captain
+  holds) and step 8's idle-fleet autonomy (self-assigned work at
+  the cloud cap) are different: idle-fleet autonomy never files its
+  self-assigned items as captain holds, and refill never dispatches.
+
+- When idle-fleet autonomy produces roadmap/scope deliverables at
+  step 8, name them `data/<project>-roadmap-.../report.md` so they
+  feed `/questionnaire`'s refill source glob for free.
 
 ### Idempotent restart contract
 
