@@ -1,0 +1,18 @@
+
+$ bin/fm-crew-state.sh feat-ciwedge   [scenario: repeated identical poll failures (real wedge)]
+state: failed · source: run-step · CI polling wedge: 5:"gh api repos/o/r/commits/abc/check-runs" - run is stuck, no forward progress
+
+$ bin/fm-crew-state.sh feat-ciwedgehb   [scenario: heartbeats interleaved with repeated failures (wedge not masked)]
+state: failed · source: run-step · CI polling wedge: 5:"gh api repos/o/r/commits/abc/check-runs" - run is stuck, no forward progress
+
+$ bin/fm-crew-state.sh feat-cimixedeol   [scenario: mixed CR/LF copies of one failing poll]
+state: failed · source: run-step · CI polling wedge: 6:"gh api repos/o/r/commits/abc/check-runs" - run is stuck, no forward progress
+
+$ bin/fm-crew-state.sh feat-cinumeric   [scenario: error prefix starting with digits (404 ...)]
+state: failed · source: run-step · CI polling wedge: 5:404 Not Found (HTTP 404) - run is stuck, no forward progress
+
+$ bin/fm-crew-state.sh feat-cinochecks   [scenario: no-checks green marker with flaky poll errors (healthy)]
+state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close)
+
+$ bin/fm-crew-state.sh feat-citransient   [scenario: transient errors then pending checks (healthy)]
+state: working · source: run-step · validating (running)
