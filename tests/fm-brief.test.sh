@@ -967,3 +967,40 @@ test_upstream_sync_brief_carries_the_hard_gates() {
   pass "fm-brief.sh: --upstream-sync emits the never-yolo-merge, supervision-safety, regression, and PR-purity gates"
 }
 test_upstream_sync_brief_carries_the_hard_gates
+
+test_ship_brief_round_ceiling_follows_configured_thresholds() {
+  local home id brief
+  home="$TMP_ROOT/retry-rounds-home"
+  mkdir -p "$home/data" "$home/config"
+  printf 'rounds=6\n' > "$home/config/retry-thresholds"
+  id="brief-retry-rounds-r1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded"
+  assert_grep "after 6 review" "$brief" \
+    "retry-loop rule must use the configured rounds ceiling"
+  assert_grep "2 consecutive fix no-ops" "$brief" \
+    "configured rounds must not disturb the fixed no-op ceiling"
+
+  local cfg_dir id2 brief2
+  cfg_dir="$TMP_ROOT/retry-rounds-cfg"
+  mkdir -p "$cfg_dir"
+  printf 'rounds=9\n' > "$cfg_dir/retry-thresholds"
+  id2="brief-retry-rounds-r2"
+  FM_HOME="$home" FM_CONFIG_OVERRIDE="$cfg_dir" "$ROOT/bin/fm-brief.sh" "$id2" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief2="$home/data/$id2/brief.md"
+  assert_present "$brief2" "override brief was not scaffolded"
+  assert_grep "after 9 review" "$brief2" \
+    "retry-loop rule must honor FM_CONFIG_OVERRIDE for the rounds ceiling"
+
+  local id3 brief3
+  printf 'rounds=abc\n' > "$cfg_dir/retry-thresholds"
+  id3="brief-retry-rounds-r3"
+  FM_HOME="$home" FM_CONFIG_OVERRIDE="$cfg_dir" "$ROOT/bin/fm-brief.sh" "$id3" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief3="$home/data/$id3/brief.md"
+  assert_present "$brief3" "malformed-threshold brief was not scaffolded"
+  assert_grep "after 4 review" "$brief3" \
+    "a malformed rounds= value must fall back to the default ceiling"
+  pass "fm-brief.sh: retry-loop review-round ceiling follows config/retry-thresholds"
+}
+test_ship_brief_round_ceiling_follows_configured_thresholds

@@ -114,6 +114,24 @@ if [ -n "${FM_STATE_OVERRIDE:-}" ]; then
 else
   STATE="$FM_HOME/state"
 fi
+if [ -n "${FM_CONFIG_OVERRIDE:-}" ]; then
+  CONFIG=$(resolve_directory_input FM_CONFIG_OVERRIDE "$FM_CONFIG_OVERRIDE") || exit 1
+else
+  CONFIG="$FM_HOME/config"
+fi
+ROUND_CEILING=4
+if [ -f "$CONFIG/retry-thresholds" ] && [ -r "$CONFIG/retry-thresholds" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      rounds=*)
+        v="${line#rounds=}"
+        case "$v" in
+          ''|*[!0-9]*|0*[0-9]) ;;
+          *) if [ "$v" -ge 1 ]; then ROUND_CEILING="$v"; fi ;;
+        esac ;;
+    esac
+  done < "$CONFIG/retry-thresholds"
+fi
 KIND=ship
 HERDR_LAB=0
 UPSTREAM_SYNC=0
@@ -535,7 +553,7 @@ $RULE1
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
 9. Retry-loop failsafe: track your own validation repetition instead of grinding.
    Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
-   still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after 4 review
+   still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after $ROUND_CEILING review
    rounds without the review step approving, or after roughly 2 hours cycling the same pipeline
    step without progress, stop: commit work in progress, then append
    \`blocked [key=retry-loop]: {round/no-op/elapsed evidence}\` and wait for firstmate.

@@ -171,6 +171,21 @@ test_directory_overrides_are_honored() {
 }
 test_directory_overrides_are_honored
 
+test_config_override_is_honored_for_thresholds() {
+  local home out t=cfg-ovr-task
+  home=$(mk_home cfgovr)
+  mkdir -p "$home/alt-config"
+  printf 'relaunch=1\nrounds=7\n' > "$home/alt-config/retry-thresholds"
+  printf 'relaunch=9\n' > "$home/config/retry-thresholds"
+  { delegation_row "$t"; delegation_row "$t"; } >> "$home/data/llm-usage/firstmate.jsonl"
+  out=$(FM_CONFIG_OVERRIDE="$home/alt-config" emit "$home" "$t")
+  [ "$(field "$out" relaunch_ceiling)" = "1" ] || fail "FM_CONFIG_OVERRIDE thresholds not read: $out"
+  [ "$(field "$out" round_ceiling)" = "7" ] || fail "FM_CONFIG_OVERRIDE rounds not read: $out"
+  [ "$(field "$out" retry_band)" = "halt" ] || fail "override ceiling did not reach halt: $out"
+  pass "fm-retry-pressure.sh: FM_CONFIG_OVERRIDE resolves the thresholds file like the config writer"
+}
+test_config_override_is_honored_for_thresholds
+
 test_retry_thresholds_is_inheritable_config() {
   # shellcheck source=/dev/null
   . "$ROOT/bin/fm-config-inherit-lib.sh"
