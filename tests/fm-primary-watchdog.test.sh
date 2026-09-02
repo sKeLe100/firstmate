@@ -22,6 +22,7 @@ export TMUX_PANE="test:0.0"
 # shellcheck source=bin/fm-primary-watchdog.sh
 . "$ROOT/bin/fm-primary-watchdog.sh"
 
+# shellcheck disable=SC2329 # Invoked indirectly via the EXIT trap.
 cleanup() { rm -rf "$TMPHOME"; }
 trap cleanup EXIT
 
@@ -65,6 +66,7 @@ if fm_watchdog_primary_blocked "test:0" "tmux"; then
 else
   fail "blocked-detection: gone target must count as blocked"
 fi
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_target_exists() { return 0; }
 
 # --- 2. reset-wait timing calculation ---------------------------------------
@@ -132,7 +134,9 @@ fi
 . "$ROOT/bin/fm-primary-watchdog.sh"
 SENT_LOG="$TMPHOME/sent.log"
 fm_backend_send_text_submit() { printf '%s\n' "$3" >>"$SENT_LOG"; printf 'empty'; }
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_busy_state() { printf 'idle'; }
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_agent_alive() { printf 'dead'; }
 
 : >"$SENT_LOG"
@@ -171,11 +175,13 @@ rm -f "$TMPHOME/config/primary-continuity"
 export FM_WATCHDOG_SKIP_SLEEP=1 FM_SUPERVISOR_TARGET="test:0"
 CANNED="$TMPHOME/quota.json"
 export FM_WATCHDOG_QUOTA_JSON="$CANNED"
-export FM_WATCHDOG_NOW="$(date -d "2026-01-01T00:00:00+00:00" +%s)"
+FM_WATCHDOG_NOW="$(date -d "2026-01-01T00:00:00+00:00" +%s)"
+export FM_WATCHDOG_NOW
 HANDLED=""
 fm_watchdog_handle_reset() { HANDLED="$1 $2"; }
 fm_backend_capture() { printf 'some ordinary output\n'; }
 
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_agent_alive() { printf 'alive'; }
 
 # 6a. a crashed harness in a live pane is detected and relaunched immediately,
@@ -203,6 +209,7 @@ fi
 LAUNCHED=""
 rm -f "$TMPHOME/state/.watchdog-last-action" "$TMPHOME/state/.watchdog-dead-streak"
 fm_watchdog_cycle 2>/dev/null
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_agent_alive() { printf 'alive'; }
 fm_watchdog_cycle 2>/dev/null
 fm_backend_agent_alive() { printf 'dead'; }
@@ -278,6 +285,7 @@ else
 fi
 rm -f "$TMPHOME/config/primary-continuity" "$TMPHOME/state/.watchdog-last-action" "$TMPHOME/state/.watchdog-last-reset"
 unset FM_WATCHDOG_QUOTA_JSON FM_WATCHDOG_NOW FM_WATCHDOG_SKIP_SLEEP FM_SUPERVISOR_TARGET
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_target_exists() { return 0; }
 
 # --- 7. unreadable context band is explicit, not a silent "ok" ---------------
@@ -364,6 +372,7 @@ else
   fail "busy-guard: a failed capture must fail closed"
 fi
 FM_WATCHDOG_DIR="$BUSY_DIR_SAVED"
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_capture() { printf 'ordinary\n'; }
 
 # --- 8. restart never types the launch command into a live harness -----------
@@ -372,7 +381,9 @@ SENT_LOG="$TMPHOME/sent2.log"
 : >"$SENT_LOG"
 fm_backend_send_text_submit() { printf '%s\n' "$3" >>"$SENT_LOG"; printf 'empty'; }
 fm_backend_send_key() { return 0; }
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_busy_state() { printf 'idle'; }
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_agent_alive() { printf 'alive'; }
 FM_WATCHDOG_EXIT_SETTLE=0 fm_watchdog_restart_primary "test:0" "tmux" 2>/dev/null
 rc=$?
