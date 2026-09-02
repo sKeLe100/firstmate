@@ -1,0 +1,25 @@
+=== Rendered worker brief: standing rule 9 (retry-loop failsafe) ===
+
+--- default home (no config/retry-thresholds) ---
+9. Retry-loop failsafe: track your own validation repetition instead of grinding.
+   Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
+   still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after 4 review
+   rounds without the review step approving, or after roughly 2 hours cycling the same pipeline
+   step without progress, stop: commit work in progress, then append
+   `blocked [key=retry-loop]: {round/no-op/elapsed evidence}` and wait for firstmate.
+   Never retry the same failing action a third time unchanged - a retry that changes nothing
+   re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
+
+--- same home with config/retry-thresholds: rounds=6 ---
+9. Retry-loop failsafe: track your own validation repetition instead of grinding.
+   Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
+   still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after 6 review
+   rounds without the review step approving, or after roughly 2 hours cycling the same pipeline
+   step without progress, stop: commit work in progress, then append
+   `blocked [key=retry-loop]: {round/no-op/elapsed evidence}` and wait for firstmate.
+   Never retry the same failing action a third time unchanged - a retry that changes nothing
+   re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
+
+--- heartbeat instruction the supervisor follows (AGENTS.md) ---
+79:config/retry-thresholds  optional retry-loop relaunch/round ceilings read by bin/fm-retry-pressure.sh, whose reported retry_band drives proactive loop handling at the heartbeat; LOCAL, gitignored; inherited by secondmate homes; see docs/configuration.md "Retry-loop thresholds"
+426:   Alongside that read, check each such task's retry pressure with `bin/fm-retry-pressure.sh <id>` under the dispatching home's `FM_HOME` - the home holding `state/<id>.status` and `data/llm-usage/firstmate.jsonl`, not the worker's own home the context read uses - and act on its `retry_band` per `docs/configuration.md` "Retry-loop thresholds": `loop` restarts with a carryover note that names the loop and changes a variable, and `halt` stops relaunching and holds the task for the captain.

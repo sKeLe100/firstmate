@@ -1,0 +1,34 @@
+=== Retry-loop failsafe, end-to-end in a dispatching home ===
+
+--- 1. Fresh home: no telemetry, no status file (zero evidence) ---
+$ FM_HOME=<home> bin/fm-retry-pressure.sh fm-ship-widget-r1
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=fm-ship-widget-r1
+
+--- 2. Worker relaunched twice (delegation telemetry appended by fm-control.sh) ---
+$ FM_HOME=<home> bin/fm-retry-pressure.sh fm-ship-widget-r1
+relaunches=2 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=fm-ship-widget-r1
+
+--- 3. Worker hits brief rule 9 and files the keyed report into state/fm-ship-widget-r1.status ---
+blocked [key=retry-loop]: 4 review rounds, no approval; last 2 fix actions were no-ops
+$ FM_HOME=<home> bin/fm-retry-pressure.sh fm-ship-widget-r1
+relaunches=2 retry_loop_reported=1 relaunch_ceiling=3 round_ceiling=4 retry_band=loop task=fm-ship-widget-r1
+
+--- 4. Supervisor steers; fm-send.sh lands the closing resolved line ---
+$ FM_HOME=<home> bin/fm-retry-pressure.sh fm-ship-widget-r1
+relaunches=2 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=fm-ship-widget-r1
+
+--- 5. Third relaunch with no landed outcome -> halt (stop relaunching, hold for captain) ---
+$ FM_HOME=<home> bin/fm-retry-pressure.sh fm-ship-widget-r1
+relaunches=3 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=halt task=fm-ship-widget-r1
+
+--- 6. Task lands: outcome event resets pressure ---
+$ FM_HOME=<home> bin/fm-retry-pressure.sh fm-ship-widget-r1
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=fm-ship-widget-r1
+
+--- 7. Ceilings configurable via config/retry-thresholds (relaunch=2 rounds=6) ---
+$ FM_HOME=<home> bin/fm-retry-pressure.sh fm-ship-widget-r1
+relaunches=2 retry_loop_reported=0 relaunch_ceiling=2 round_ceiling=6 retry_band=halt task=fm-ship-widget-r1
+
+--- 8. Malformed config fails loudly rather than silently defaulting ---
+fm-retry-pressure: malformed relaunch= in /tmp/tmp.o7y9WR7izJ/home/config/retry-thresholds
+exit=1
