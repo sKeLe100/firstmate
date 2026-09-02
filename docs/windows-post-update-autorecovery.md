@@ -135,9 +135,13 @@ manual intervention:
 2. Confirm autologon values are set: `Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' | Select AutoAdminLogon,DefaultUserName`.
    In the same pass, confirm the section 1 wake settings took effect, since a cold boot never
    exercises the wake path and would otherwise pass with the sign-in prompt still armed:
-   `powercfg /query SCHEME_CURRENT SUB_NONE CONSOLELOCK` must report an AC and DC setting index of
-   zero (printed as `0x00000000`), and `powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE` must
-   report an AC setting index of zero (also printed as `0x00000000`).
+   `powercfg /query` cannot read `CONSOLELOCK` at all - it is a hidden power setting
+   (`Attributes = 1`), so the query prints only the scheme header and exits silently. Read the
+   ConsoleLock value out of the registry instead, from the policy key section 1 writes:
+   `Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Power\PowerSettings\0e796bdb-100d-47d6-a2d5-f7d2daa51f51' | Select ACSettingIndex,DCSettingIndex`
+   must report `0` for both (a `Cannot find path` error means section 1 was not applied on this
+   machine). `powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE` does work and must report an AC
+   setting index of zero (printed as `0x00000000`).
    An actual sleep/wake cycle is stronger evidence, but the config-value check is enough to pass.
 3. Trigger a real restart: `Restart-Computer -Force`.
 4. Do not touch the keyboard or mouse during boot.
