@@ -1,0 +1,16 @@
+fm-test-run.sh --list --lane portable-serial-<k>of4  (hints from portable_serial_weight_hints)
+CI cap: 20 min per shard
+
+shard   scripts   est_total  unhinted
+1            39      15.3m         0
+2            38      15.3m         0
+3            39      15.3m         0
+4            40      15.3m         0
+
+refreshed heavy hints (measured, run 33634884168):
+  tests/fm-watch-triage.test.sh 302721 ms
+  tests/fm-secondmate-harness.test.sh 151488 ms
+  tests/fm-backlog-atomicity.test.sh 131953 ms
+  tests/fm-remote-transport-lanes.test.sh 61340 ms
+  tests/fm-home-summary-refresh.test.sh 34990 ms
+  tests/fm-check-unregister.test.sh 568 ms
