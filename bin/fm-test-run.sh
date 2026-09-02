@@ -2170,6 +2170,10 @@ else
   done
   # Unproven remainder, after every concurrent worker has finished.
   for script in "${SERIAL_TAIL_SCRIPTS[@]+"${SERIAL_TAIL_SCRIPTS[@]}"}"; do
+    if [ "$FAIL_FAST" -eq 1 ] && [ "$FAILED" -gt 0 ]; then
+      log "fail-fast: not scheduling remaining scripts after a failure"
+      break
+    fi
     run_one_serial "$script"
   done
 fi
