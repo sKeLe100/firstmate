@@ -425,6 +425,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/windows-post-update-autorecovery.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/zellij-backend.md",
       "audience": "operator-current"
     },
