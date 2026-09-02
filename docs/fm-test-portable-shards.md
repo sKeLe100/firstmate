@@ -88,8 +88,12 @@ The single longest script, `tests/fm-watch-triage.test.sh` at 302721 ms, is the 
 
 Refresh the hints by downloading the per-shard timing artifacts from a green CI run, replacing the `portable_serial_weight_hints` table in `bin/fm-test-run.sh` with the measured `path`/`duration_ms` pairs, and updating the table above:
 
+Run this from the home's own clone so `gh` resolves the repository whose CI
+produced the artifacts (this home's runs live in its own fork, not the upstream
+template); pass `-R <owner>/<repo>` only to target a different repository.
+
 ```sh
-gh run download <run-id> -R kunchenguid/firstmate --pattern 'fm-test-timing-portable-serial-*' -D /tmp/fm-serial
+gh run download <run-id> --pattern 'fm-test-timing-portable-serial-*' -D /tmp/fm-serial
 jq -r '.scripts[] | [.path, .duration_ms] | @tsv' /tmp/fm-serial/*.json | LC_ALL=C sort
 bin/fm-test-run.sh --check-coverage
 ```
