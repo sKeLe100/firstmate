@@ -368,7 +368,7 @@ test_deferred_signal_survives_a_benign_cycle() {
 # the deferral: a signal held behind an unacknowledged process-event generation
 # has decided nothing yet, so it must not ride the fallback out early.
 test_commit_error_fallback_does_not_surface_a_deferred_signal() {
-  local dir state out1 out2
+  local dir state out1 out2 records wakes
   dir=$(make_case procevent-defer-commit-error); state="$dir/state"
   out1="$dir/watch1.out"; out2="$dir/watch2.out"
 
@@ -399,7 +399,21 @@ test_commit_error_fallback_does_not_surface_a_deferred_signal() {
   ! grep -F "delivery-src.status" "$state/.wake-queue" >/dev/null \
     || fail "the commit-error fallback surfaced a deferred signal early: $(cat "$state/.wake-queue")"
 
-  pass "the benign branch's commit-error fallback leaves a deferred signal deferred"
+  # $pending concatenates the pre- and post-grace scans, so a status file whose
+  # seen marker can never be committed appears in it twice on every cycle that
+  # takes this fallback. Each such cycle wakes exactly once, so its queue cost
+  # must be exactly one record: fm_wake_append assigns a fresh seq per call and
+  # never dedups, so a second record per cycle costs the supervisor an extra
+  # drain turn on a change it already handled. Comparing records against the
+  # watcher's own printed wakes keeps this exact however many cycles ran.
+  records=$(awk -F'\t' '$3 == "signal" && $4 == "othersrc.status" { n++ } END { print n + 0 }' \
+    "$state/.wake-queue")
+  wakes=$(grep -c "signal:.*othersrc\.status" "$out2" || true)
+  [ "$wakes" -ge 1 ] || fail "the fallback never printed a signal wake: $(cat "$out2")"
+  [ "$records" -eq "$wakes" ] \
+    || fail "the commit-error fallback enqueued $records records for $wakes wakes: $(cat "$state/.wake-queue")"
+
+  pass "the benign branch's commit-error fallback leaves a deferred signal deferred and enqueues once"
 }
 
 # --- Test 4: no process-event at all - the signal path is untouched ---

@@ -1232,6 +1232,59 @@ SH
 # contract is that scheduling stops rather than running the whole selection.
 # Every follower blocks until the failing script has published its evidence,
 # which keeps the failure the first result available to reap.
+# The unproven remainder runs AFTER every concurrent worker, in its own loop.
+# Only the automatic --changed scheduler can produce that remainder (an explicit
+# --jobs>1 refuses an unproven selection outright), so this drives --changed
+# with a mixed selection: two proven-concurrent scripts, one of which fails, and
+# one unproven script that must never start once fail-fast is on.
+test_fail_fast_skips_the_unproven_serial_tail() {
+  local tmp repo rc tail_evidence
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-ff-tail.XXXXXX")
+  repo="$tmp/repo"
+  tail_evidence="$tmp/tail-ran"
+  init_changed_fixture_repo "$repo"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  printf '#!/usr/bin/env bash\necho "not ok - deliberate failure"\nexit 1\n' \
+    >"$repo/tests/fm-daemon.test.sh"
+  printf '#!/usr/bin/env bash\nsleep 0.2\necho "ok - follower"\n' \
+    >"$repo/tests/fm-pi-watch-extension.test.sh"
+  # Keeps the shared-probe-lib.sh reference so the changed scan still selects
+  # this unproven real-herdr-gated script into the serial tail.
+  printf '#!/usr/bin/env bash\n# shared-probe-lib.sh\ntouch "$FF_TAIL_EVIDENCE"\necho "ok - tail"\n' \
+    >"$repo/tests/fm-backend-herdr-smoke.test.sh"
+  chmod +x "$repo"/tests/*.test.sh
+  git -C "$repo" add -A
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm fixtures
+  printf '\n' >>"$repo/bin/shared-probe-lib.sh"
+
+  set +e
+  (cd "$repo" && FF_TAIL_EVIDENCE="$tail_evidence" \
+    bin/fm-test-run.sh --changed --base HEAD --fail-fast) >"$tmp/ff" 2>"$tmp/fferr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] \
+    || { cat "$tmp/ff" "$tmp/fferr"; rm -rf "$tmp"; fail "--changed --fail-fast run must exit non-zero"; }
+  grep -Fq 'tests/fm-backend-herdr-smoke.test.sh' "$tmp/ff" \
+    && { cat "$tmp/ff"; rm -rf "$tmp"; fail "--fail-fast started the unproven serial tail after a failure"; }
+  [ ! -e "$tail_evidence" ] \
+    || { rm -rf "$tmp"; fail "the unproven serial-tail script ran under --fail-fast"; }
+  grep -Fq 'fail-fast: not scheduling remaining scripts' "$tmp/fferr" \
+    || { cat "$tmp/fferr"; rm -rf "$tmp"; fail "--fail-fast should log why the serial tail was skipped"; }
+
+  # Default off: the same selection runs the unproven tail to completion.
+  set +e
+  (cd "$repo" && FF_TAIL_EVIDENCE="$tail_evidence" FM_TEST_FAIL_FAST=0 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/all" 2>"$tmp/allerr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || { rm -rf "$tmp"; fail "default --changed run must still exit non-zero"; }
+  [ -e "$tail_evidence" ] \
+    || { cat "$tmp/all" "$tmp/allerr"; rm -rf "$tmp"; fail "without --fail-fast the serial tail must still run"; }
+
+  rm -rf "$tmp"
+  pass "--fail-fast stops the unproven serial remainder after a concurrent failure"
+}
+
 test_fail_fast_jobs_stops_scheduling() {
   local tmp repo runner evidence fake_bin rc begin_n last s
   local -a proven
@@ -1350,3 +1403,4 @@ test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
 test_fail_fast_stops_after_first_failure
 test_fail_fast_jobs_stops_scheduling
+test_fail_fast_skips_the_unproven_serial_tail
