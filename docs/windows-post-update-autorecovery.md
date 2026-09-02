@@ -45,12 +45,29 @@ Set-ItemProperty -Path $key -Name DefaultPassword -Value "<local-password>"
 Set-ItemProperty -Path $key -Name DefaultDomainName -Value "$env:COMPUTERNAME"
 ```
 
-Also disable the lock-screen/sleep password prompt so a screen timeout does not re-strand the
-machine between the auto sign-in and the scheduled task firing:
+Also stop the machine from sleeping and from demanding a password on wake, so neither a screen
+timeout nor a lock re-strands the machine between the auto sign-in and the scheduled task firing.
+The two `powercfg` calls only keep the machine awake (no standby on AC, no display blanking); they
+do not touch the sign-in prompt. The `ConsoleLock` setting is the one behind "If you've been away,
+when should Windows require you to sign in again" (Settings > Accounts > Sign-in options); setting
+it to 0 on both power sources, and pinning it via the matching policy registry key so a Windows
+Update does not reset it, is what stops a wake, hibernate resume, fast startup, or manual Win+L
+from leaving a login screen waiting:
 
 ```powershell
 powercfg /change standby-timeout-ac 0
 powercfg /change monitor-timeout-ac 0
+
+# Never require a sign-in on wake (ConsoleLock: 0 = never, 1 = when the PC wakes from sleep).
+powercfg /setacvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 0
+powercfg /setdcvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 0
+powercfg /setactive SCHEME_CURRENT
+
+# Pin the same ConsoleLock setting as policy so an update cannot restore the sign-in prompt.
+$lock = 'HKLM:\SOFTWARE\Policies\Microsoft\Power\PowerSettings\0e796bdb-100d-47d6-a2d5-f7d2daa51f51'
+New-Item -Path $lock -Force | Out-Null
+New-ItemProperty -Path $lock -Name 'ACSettingIndex' -Value 0 -PropertyType DWord -Force | Out-Null
+New-ItemProperty -Path $lock -Name 'DCSettingIndex' -Value 0 -PropertyType DWord -Force | Out-Null
 ```
 
 ## 2. PC01: bring the firstmate stack back at logon
@@ -122,7 +139,9 @@ manual intervention:
    `/tmp/llama-swap-boot.log` inside WSL) for errors, even if step 6 passed, since a service can
    crash-loop and still leave a stale port bound.
 8. If any check fails, inspect Task Scheduler's history for the task (right-click the task > View
-   History) for the exact failure before re-running steps 2-3.
+   History) for the exact failure, then re-register the task by re-running the `Register-ScheduledTask`
+   block from section 2 (PC01) or section 3 (PC02) with the correction, and repeat this checklist
+   from item 1.
 
 A pass on all eight items is the proof bar: the machine reached a working desktop and every tracked
 service answered, with nobody at the keyboard past step 3.
