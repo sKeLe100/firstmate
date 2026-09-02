@@ -497,12 +497,16 @@ stamp_since() {
       line = $0
       if (line ~ ("^[-*][[:space:]]+\\[[ xX]\\][[:space:]]+" id "[[:space:]]") ||
           line ~ ("^[-*][[:space:]]+\\*\\*" id "\\*\\*[[:space:]]")) {
-        if (line !~ /[(,][[:space:]]*since[[:space:]]/) {
+        group = ""
+        if (match(line, /\([^()]*\)[[:space:]]*$/)) {
+          group = substr(line, RSTART + 1, RLENGTH - 1)
+          sub(/\)[[:space:]]*$/, "", group)
+          sub(/^[[:space:]]+/, "", group)
+        }
+        if (line !~ /\([[:space:]]*since[[:space:]]/ &&
+            line !~ /,[[:space:]]*since[[:space:]][^()]*\)/) {
           folded = 0
-          if (match(line, /\([^()]*\)[[:space:]]*$/)) {
-            group = substr(line, RSTART + 1, RLENGTH - 1)
-            sub(/\)[[:space:]]*$/, "", group)
-            sub(/^[[:space:]]+/, "", group)
+          if (group != "") {
             if (group ~ known) {
               sub(/\)[[:space:]]*$/, ", since " ts ")", line)
               folded = 1

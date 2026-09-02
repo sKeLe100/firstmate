@@ -25,22 +25,15 @@
 # Time threshold: oldest pending decision >= 48h old.
 # Both thresholds are per the captain's 2026-09-01 ruling (Q3).
 #
-# Chat-rulable = verb == "captain-hold" whose summary poses something to
-# decide, not a standing order already ruled and filed only for enforcement.
-# fm-bearings-snapshot.sh's decisions_open summary is "title: hold_reason"
-# with no separate structural field for "already-decided" (every captain
-# hold shares hold_kind=captain); the surviving signal is the hold_reason
-# text itself. A standing order reads as an imperative directive already in
-# force ("never merge task-7 without CI green"), not an open question. Skip
-# a row when the text after the first ": " starts with one of a known
-# directive-verb set (case-insensitive): never, always, do not, don't, only,
-# must. Anything else is conservatively counted as chat-rulable: there is no
-# structured blocked-on category to match on, so holds that happen to mention
-# credentials, purchases, or on-device checks still count rather than being
-# dropped by a free-text keyword search.
+# Chat-rulable = every open captain hold (verb == "captain-hold").
+# fm-bearings-snapshot.sh's decisions_open carries no structured
+# blocked-on category, and free-text heuristics over the summary both
+# over- and under-match, silently dropping genuine open questions. Per
+# AGENTS.md section 10's decision-is-simply-a-held-task model, every
+# captain hold counts rather than being filtered by prose.
 #
-# The same chat-rulable subset feeds both thresholds: the bundle-size count
-# and the oldest-row age used by the time threshold.
+# The same chat-rulable subset feeds both thresholds: the bundle-size
+# count and the oldest-row age used by the time threshold.
 
 set -u
 
@@ -76,14 +69,7 @@ echo "$INPUT" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "fm-autonomous
 
 # Select the chat-rulable subset once; both thresholds read from it.
 CHAT_RULABLE_ROWS=$(echo "$INPUT" | jq -c '
-  [ .[] | select(.verb == "captain-hold")
-    | select(
-        (.summary // "") as $s
-        | ($s | ascii_downcase | sub("^[^:]*:\\s*"; "")) as $body
-        | ([ "never", "always", "do not", "don'"'"'t", "only", "must" ]
-           | map(. as $w | $body | startswith($w)) | any) | not
-      )
-  ]
+  [ .[] | select(.verb == "captain-hold") ]
 ')
 
 CHAT_RULABLE=$(echo "$CHAT_RULABLE_ROWS" | jq 'length')

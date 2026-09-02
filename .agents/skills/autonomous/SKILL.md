@@ -42,8 +42,8 @@ one-by-one.
 Nudge thresholds - contact the captain when either condition holds:
 
 - Bundle size >= 5 chat-rulable decisions.
-  A chat-rulable decision is one the captain can settle with words now,
-  not one waiting on an on-device check, a credential, or a purchase.
+  A chat-rulable decision is any open captain hold: a decision is simply
+  a task held for the captain, and no prose heuristic filters that set.
 - Oldest pending decision >= 48 hours old.
   Measure from the decision's creation or last-update time in the
   decision record, not from the last time the captain was shown decisions.
@@ -65,9 +65,8 @@ is the human-readable date, `created_at` the epoch seconds derived from
 it, absent on rows that predate the field).
 Step 2's `fm-autonomous-thresholds.sh` call counts only chat-rulable
 rows toward the bundle-size threshold and finds the oldest chat-rulable
-row by `created_at` for the time-threshold check - it skips silently
-any hold that merely records a standing order already in force (a
-stated ruling plus a trigger or cadence, asking nothing). Use
+row by `created_at` for the time-threshold check, counting every open
+captain hold. Use
 `declared_priority` rows first when ordering the presented bundle at
 step 5, then oldest-first by `created_at`.
 
@@ -126,7 +125,9 @@ Do not hardcode the cap value here: read the live config.
 Run `bin/fm-captain-window.sh` with `--now` to determine the current
 attention band.
 If the captain is currently in their attention window, proceed to step 5.
-If outside the window, queue silently for the next window entry.
+If outside the window, queue the nudge silently for the next window
+entry: skip only steps 5-6 and continue at step 7, since the window
+gates captain contact, not dispatch.
 The attention window schedule is owned by `bin/fm-captain-window.sh`.
 
 ### Step 5 - Prepare the nudge message
@@ -336,19 +337,21 @@ follow the normal dispatch rules without a daytime restriction.
   When a decision has an ask-user finding, load the skill and
   follow its escalation policy.
 
-- Do NOT run the pass during the captain's quiet hours
+- Do NOT contact the captain during their quiet hours
   (per `bin/fm-captain-window.sh`) unless the oldest pending
   decision exceeds 48 hours.
   The 48-hour exception is the only quiet-hours override.
+  The pass itself still runs: dispatch, logging, and queue
+  re-evaluation are never quiet-hours gated.
 
 - Do NOT confuse the refill sweep with idle-fleet autonomy.
   Refill's sweep (new candidates, report-only, filed as captain
-  holds) and step 8's idle-fleet autonomy (self-assigned work at
+  holds) and idle-fleet autonomy (self-assigned work at
   the cloud cap) are different: idle-fleet autonomy never files its
   self-assigned items as captain holds, and refill never dispatches.
 
-- When idle-fleet autonomy produces roadmap/scope deliverables at
-  step 8, name them `data/<project>-roadmap-.../report.md` so they
+- When idle-fleet autonomy produces roadmap/scope deliverables,
+  name them `data/<project>-roadmap-.../report.md` so they
   feed `/questionnaire`'s refill source glob for free.
 
 ### Idempotent restart contract

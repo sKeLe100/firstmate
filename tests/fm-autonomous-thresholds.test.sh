@@ -249,18 +249,19 @@ test_input_via_flag_on_missing_file() {
   pass "autonomous-thresholds: missing --input file -> usage error exit 2"
 }
 
-test_standing_order_summaries_are_not_chat_rulable() {
+test_directive_sounding_summaries_still_count() {
   local decisions='['
   decisions="$decisions{\"id\":\"t1\",\"verb\":\"captain-hold\",\"summary\":\"task-7: never merge without CI green\"},"
   decisions="$decisions{\"id\":\"t2\",\"verb\":\"captain-hold\",\"summary\":\"task-8: always run tests first\"},"
   decisions="$decisions{\"id\":\"t3\",\"verb\":\"captain-hold\",\"summary\":\"task-9: do not touch prod config\"},"
   decisions="$decisions{\"id\":\"t4\",\"verb\":\"captain-hold\",\"summary\":\"task-10: don't retry more than once\"},"
-  decisions="$decisions{\"id\":\"t5\",\"verb\":\"captain-hold\",\"summary\":\"task-11: only ship on green CI\"}"
+  decisions="$decisions{\"id\":\"t5\",\"verb\":\"captain-hold\",\"summary\":\"task-11: must we keep the PC02 lane or fold it into Fable?\"}"
   decisions="$decisions]"
   feed "$decisions"
-  [ "$FM_TEST_FEED_STATUS" -eq 1 ] || fail "5 pure standing orders must not fire bundle-size, got status $FM_TEST_FEED_STATUS output $FM_TEST_FEED_OUTPUT"
+  [ "$FM_TEST_FEED_STATUS" -eq 0 ] || fail "5 captain holds must fire bundle-size regardless of wording, got status $FM_TEST_FEED_STATUS output $FM_TEST_FEED_OUTPUT"
+  [ "$FM_TEST_FEED_OUTPUT" = "nudge: bundle-size" ] || fail "expected bundle-size nudge, got $FM_TEST_FEED_OUTPUT"
 
-  pass "autonomous-thresholds: purely declarative standing-order summaries are skipped"
+  pass "autonomous-thresholds: directive-sounding summaries still count as chat-rulable"
 }
 
 test_mixed_standing_orders_and_open_questions_counts_only_open() {
@@ -272,7 +273,7 @@ test_mixed_standing_orders_and_open_questions_counts_only_open() {
   feed "$decisions"
   [ "$FM_TEST_FEED_STATUS" -eq 1 ] || fail "2 open decisions below threshold must not fire, got status $FM_TEST_FEED_STATUS output $FM_TEST_FEED_OUTPUT"
 
-  pass "autonomous-thresholds: standing orders excluded, open questions still counted"
+  pass "autonomous-thresholds: every captain hold counts, below threshold stays silent"
 }
 
 # --- run all tests ---------------------------------------------------------
@@ -298,5 +299,5 @@ test_declared_priority_rows_dont_affect_count
 test_empty_input_pipe_is_no_nudge
 test_input_via_flag
 test_input_via_flag_on_missing_file
-test_standing_order_summaries_are_not_chat_rulable
+test_directive_sounding_summaries_still_count
 test_mixed_standing_orders_and_open_questions_counts_only_open
