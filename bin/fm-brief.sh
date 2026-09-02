@@ -67,6 +67,12 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
+# The standing retry-loop rule's review-round ceiling is rendered from the
+# dispatching home's optional config/retry-thresholds `rounds=<R>` key (config
+# dir honoring FM_CONFIG_OVERRIDE), defaulting to 4 when the file or key is
+# absent or malformed, so briefs and bin/fm-retry-pressure.sh report one ceiling
+# (docs/configuration.md "Retry-loop thresholds"). The rule's 2-no-op and ~2h
+# ceilings are fixed.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -113,6 +119,24 @@ if [ -n "${FM_STATE_OVERRIDE:-}" ]; then
   STATE=$(resolve_directory_input FM_STATE_OVERRIDE "$FM_STATE_OVERRIDE") || exit 1
 else
   STATE="$FM_HOME/state"
+fi
+if [ -n "${FM_CONFIG_OVERRIDE:-}" ]; then
+  CONFIG=$(resolve_directory_input FM_CONFIG_OVERRIDE "$FM_CONFIG_OVERRIDE") || exit 1
+else
+  CONFIG="$FM_HOME/config"
+fi
+ROUND_CEILING=4
+if [ -f "$CONFIG/retry-thresholds" ] && [ -r "$CONFIG/retry-thresholds" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      rounds=*)
+        v="${line#rounds=}"
+        case "$v" in
+          ''|*[!0-9]*|0*[0-9]) ;;
+          *) if [ "$v" -ge 1 ]; then ROUND_CEILING="$v"; fi ;;
+        esac ;;
+    esac
+  done < "$CONFIG/retry-thresholds"
 fi
 KIND=ship
 HERDR_LAB=0
@@ -533,6 +557,14 @@ $RULE1
 8. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
    every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
+9. Retry-loop failsafe: track your own validation repetition instead of grinding.
+   Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
+   still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after $ROUND_CEILING review
+   rounds without the review step approving, or after roughly 2 hours cycling the same pipeline
+   step without progress, stop: commit work in progress, then append
+   \`blocked [key=retry-loop]: {round/no-op/elapsed evidence}\` and wait for firstmate.
+   Never retry the same failing action a third time unchanged - a retry that changes nothing
+   re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
 
 $INBOX_SECTION
 
