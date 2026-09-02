@@ -2028,8 +2028,11 @@ EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
       if [ "$signal_commit_error" -ne 0 ]; then
+        signal_enqueued=
         while IFS=$(printf '\t') read -r sf sig f; do
           [ -n "$sf" ] || continue
+          case " $signal_enqueued " in *" $f "*) continue ;; esac
+          signal_enqueued="$signal_enqueued $f"
           case " $signal_deferred " in *" $f "*) continue ;; esac
           fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
         done <<EOF
