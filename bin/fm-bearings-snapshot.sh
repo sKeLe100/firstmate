@@ -129,7 +129,8 @@ Default is LOCAL-ONLY (no network); --include-prs is the only path that fetches.
 Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
-  decisions_open{id,key,verb,summary,owner,declared_priority}, landed{id,what,artifact,owner},
+  decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at},
+  landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty),
   upstream{status,behind,ahead,newest_upstream_date,reason,checked_at,
@@ -501,13 +502,17 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | select(($all_decisions == "1") or (.deferred_marker != true))
          | {id,key:.id,verb:"captain-hold",
             summary:((.title + ": " + .hold_reason) | trunc(90)),owner:"(main)",
-            declared_priority:is_declared_next_session_priority} ]
+            declared_priority:is_declared_next_session_priority,
+            since:(.since // null),
+            created_at:(if .since then (.since | strptime("%Y-%m-%d") | mktime) else null end)} ]
      + [ (.secondmate_current.records // [])[] as $m | $m.decisions_open[]?
          | select(.source == "backlog" and .verb == "captain-hold")
          | select(($all_decisions == "1") or (.deferred_marker != true))
          | {id:($m.id + "/" + .id),key,verb,
             summary:(((.summary // .id) + ": " + (.reason // "captain decision pending")) | trunc(90)),owner:$m.id,
-            declared_priority:(.declared_priority // false)} ]
+            declared_priority:(.declared_priority // false),
+            since:(.since // null),
+            created_at:(if .since then (.since | strptime("%Y-%m-%d") | mktime) else null end)} ]
      | sort_by(if .declared_priority then 0 else 1 end)) as $decisions_all
   | ([ .backlog.records[]
          | select(.structured and .captain_actionable == true and .deferred_marker == true) ]

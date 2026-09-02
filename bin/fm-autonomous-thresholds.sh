@@ -24,9 +24,16 @@
 # Time threshold: oldest pending decision >= 48h old.
 # Both thresholds are per the captain's 2026-09-01 ruling (Q3).
 #
-# Chat-rulable = verb == "captain-hold" (standing orders that are
-# purely declarative, e.g. "never merge task-7", are silently skipped
-# because they contain no question for the captain to rule on).
+# Chat-rulable = verb == "captain-hold" whose summary poses something to
+# decide, not a standing order already ruled and filed only for enforcement.
+# fm-bearings-snapshot.sh's decisions_open summary is "title: hold_reason"
+# with no separate structural field for "already-decided" (every captain
+# hold shares hold_kind=captain); the surviving signal is the hold_reason
+# text itself. A standing order reads as an imperative directive already in
+# force ("never merge task-7 without CI green"), not an open question. Skip
+# a row when the text after the first ": " starts with one of a known
+# directive-verb set (case-insensitive): never, always, do not, don't, only,
+# must. Anything else is conservatively counted as chat-rulable.
 
 set -u
 
@@ -66,13 +73,10 @@ echo "$INPUT" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "fm-autonomous
 CHAT_RULABLE=$(echo "$INPUT" | jq '
   [ .[] | select(.verb == "captain-hold")
     | select(
-        # A pure standing order has a summary that looks like
-        # "ruling: action" without a question - but we conservatively
-        # count all captain-holds as chat-rulable unless they match
-        # a known declarative pattern.  The skill treats all
-        # captain-holds as chat-rulable for the threshold count,
-        # and the questionnaire skill filters further at presentation.
-        true
+        (.summary // "") as $s
+        | ($s | ascii_downcase | sub("^[^:]*:\\s*"; "")) as $body
+        | ([ "never", "always", "do not", "don'"'"'t", "only", "must" ]
+           | map(. as $w | $body | startswith($w)) | any) | not
       )
   ] | length
 ')

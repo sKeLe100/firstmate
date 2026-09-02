@@ -426,6 +426,8 @@ Handle actionable wakes as follows:
    Alongside that read, check each such task's retry pressure with `bin/fm-retry-pressure.sh <id>` under the dispatching home's `FM_HOME` - the home holding `state/<id>.status` and `data/llm-usage/firstmate.jsonl`, not the worker's own home the context read uses - and act on its `retry_band` per `docs/configuration.md` "Retry-loop thresholds": `loop` restarts with a carryover note that names the loop and changes a variable, and `halt` stops relaunching and holds the task for the captain.
    Acting on `loop` also closes the open retry-loop key, so the next heartbeat reads the action rather than the same open report: deliver a steer with `bin/fm-send.sh <target> --resolve-key retry-loop`, or append the closing `resolved [key=retry-loop]: <action taken>` line to the dispatching home's `state/<id>.status` alongside the carryover relaunch.
 
+Load the `autonomous` skill when the captain invokes `/autonomous`, mentions standing orders or autonomous dispatch, or when a silent-invocation point fires (12:30/17:30 fleet-dispatch-points); it owns the dispatch-pass procedure and is captain-invocable, unlike section 13's agent-only reference skills.
+
 When any wake reports a merged PR for a project cloned in this home, refresh that clone through the guarded fleet-sync path.
 When Relay-linked work reaches a milestone or terminal state, load `fmx-respond`; before terminal teardown, use its promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up so the link clears even if earlier follow-ups were spent.
 
@@ -566,7 +568,6 @@ These skills are not captain-invocable; load them only at their precise triggers
 - `fmx-respond` - load on an `x-mention <request_id>` `check:` wake to handle the mention, on an `x-mode-error ...` `check:` wake to report the Relay configuration blocker, on a `public-followup ...` `check:` wake or a startup-surfaced public commitment, and on any milestone or terminal wake for a Relay-linked task before posting its completion follow-up; relevant only when Relay is on.
 - `firstmate-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Firstmate work.
 - `firstmate-coding-guidelines` - load before changing firstmate's shared, tracked material, as defined by section 1's list, whether editing directly or briefing a crewmate for a firstmate-repo task.
-- `autonomous` - load when the captain invokes `/autonomous`, mentions standing orders or autonomous dispatch, or when a silent-invocation point fires (12:30/17:30 fleet-dispatch-points).
 
 ## 14. Relay
 

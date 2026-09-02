@@ -59,10 +59,13 @@ due, and a prose-deferred hold disclosed in `omitted[]` stays silent
 until the captain raises it himself.
 
 Read `decisions_open` as an array of rows, each carrying `id`, `key`,
-`verb`, `summary`, `owner`, and `declared_priority`.
+`verb`, `summary`, `owner`, `declared_priority`, `since`, and
+`created_at` (the last two per the captain's timestamp ruling: `since`
+is the human-readable date, `created_at` the epoch seconds derived from
+it, absent on rows that predate the field).
 Count the total for the bundle-size threshold, and identify the oldest
-row for the time-threshold check (use `declared_priority` rows first
-when ordering, then oldest-first).
+row by `created_at` for the time-threshold check (use `declared_priority`
+rows first when ordering, then oldest-first by `created_at`).
 
 Filter for chat-rulable rows before counting:
 skip silently any hold that merely records a standing order already
@@ -101,8 +104,10 @@ If the count >= 5, the bundle-size threshold is met.
 Check the oldest pending decision's age.
 If >= 48 hours, the time-threshold is met.
 
-If neither threshold is met, the pass is complete.
-Log the evaluation and report that no nudge is needed.
+This step only decides whether a questionnaire-ready nudge is owed; it
+never ends the pass. Record the result (nudge needed or not, and which
+threshold) and proceed to step 3 either way, since dispatch work is
+independent of whether a decision nudge is due.
 
 ### Step 3 - Check dispatch availability
 
@@ -122,6 +127,9 @@ If outside the window, queue silently for the next window entry.
 The attention window schedule is owned by `bin/fm-captain-window.sh`.
 
 ### Step 5 - Prepare the nudge message
+
+Run this step and step 6 only when step 2 recorded a nudge as needed.
+Otherwise skip directly to step 7.
 
 Compose a single-line batched summary of the decisions in bundle,
 ordered with `declared_priority` rows first (keep the snapshot's order)
@@ -191,9 +199,9 @@ Auto-dispatch only work whose authority is already established
 ### Deferred-ready visibility (end-of-pass reporting)
 
 After step 10, add a deferred-ready line to the pass summary.
-Name each item that passed the eligibility filter (step 3) and
-stale-work check (step 4) but was not dispatched, once it qualifies
-as deferred-ready.
+Name each item that passed step 10's eligibility filter (blockers
+cleared, time gates passed, authority already established) and stale-work
+check but was not dispatched, once it qualifies as deferred-ready.
 
 An item becomes deferred-ready when either condition holds:
 
