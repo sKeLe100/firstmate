@@ -1250,6 +1250,8 @@ test_fail_fast_skips_the_unproven_serial_tail() {
     >"$repo/tests/fm-pi-watch-extension.test.sh"
   # Keeps the shared-probe-lib.sh reference so the changed scan still selects
   # this unproven real-herdr-gated script into the serial tail.
+  # shellcheck disable=SC2016  # literal fixture text: $FF_TAIL_EVIDENCE must
+  # reach the fixture verbatim and expand when that script runs, not here.
   printf '#!/usr/bin/env bash\n# shared-probe-lib.sh\ntouch "$FF_TAIL_EVIDENCE"\necho "ok - tail"\n' \
     >"$repo/tests/fm-backend-herdr-smoke.test.sh"
   chmod +x "$repo"/tests/*.test.sh

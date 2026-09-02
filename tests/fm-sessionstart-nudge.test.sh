@@ -1010,7 +1010,7 @@ test_run_gate_and_scope_are_silent() {
   assert_absent "$root/state/.lock" "a gate agent's session open still took the fleet lock"
   out=$(env NO_MISTAKES_GATE=1 FM_GATE_REFUSE_BYPASS=0 \
     FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$RUN_PATH" \
-    "$RUN" --source startup --pi-prerequisite 2>&1) || status=$?
+    "$root/bin/fm-sessionstart-run.sh" --source startup --pi-prerequisite 2>&1) || status=$?
   expect_code 3 "$status" "gate env Pi prerequisite stand-down"
   [ -z "$out" ] || fail "gate env Pi prerequisite stand-down must be silent, got: $out"
 

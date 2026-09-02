@@ -640,7 +640,7 @@ task_json_lines() {
     idle_secs=
     cache_expiring=0
     if [ -z "$remote_host" ]; then
-      idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$id" || printf '')
+      idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$id" "$SNAPSHOT_EPOCH" || printf '')
       if [ -n "$idle_secs" ] && [ "$endpoint_exists" = true ] &&
         [ "$CACHE_NEAR_EXPIRY_SECONDS" -gt 0 ] &&
         [ "$idle_secs" -ge "$CACHE_NEAR_EXPIRY_SECONDS" ] &&
