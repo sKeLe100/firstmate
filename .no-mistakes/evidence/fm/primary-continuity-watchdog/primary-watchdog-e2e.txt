@@ -1,0 +1,140 @@
+==============================================================
+SCENARIO 0 - the headline path: limit-blocked primary -> stow -> fresh session
+==============================================================
+  canned quota-axi five_hour resetsAt = now+5s (2026-09-02T00:23:30Z)
+  primary pane %362 (a real tmux pane) renders the usage-limit banner;
+  pinned primary transcript reads band=restart:
+    context_tokens=300000 window=1000000 percent=30.0 warn_tokens=150000 restart_tokens=250000 band=restart transcript=/tmp/fmwd-e2e.uPndiW/primary.jsonl age_seconds=282
+  --- pane before ---
+    Claude Code v2.0  (session: primary)
+    You've reached your usage limit reached for this 5-hour window.
+    Your limit will reset at 2026-09-01T00:00:00Z.
+  ╭──────────────────────────────────────────────────────────╮
+  │ >                                                        │
+  ╰──────────────────────────────────────────────────────────╯
+  cycle start 00:23:25Z
+  [fm-primary-watchdog] primary blocked (target=%362 backend=tmux); computing reset wait
+  [fm-primary-watchdog] launching a fresh primary session (target=%362 backend=tmux)
+  cycle end   00:23:49Z  (slept until the canned reset + 2s jitter)
+  --- lines submitted into the primary pane ---
+  ⁣FIRSTMATE_OP: v1 away-supervisor: run the /stow skill now to checkpoint durable state; this session is about to be restarted for context
+  /exit
+  --- stow completion evidence the watchdog waited for ---
+  -rw-r--r-- 1 sean_ sean_ 0 Sep  1 20:23 /tmp/fmwd-e2e.uPndiW/home/state/.stow-last-run
+  --- pane after: a FRESH session, no --resume/--continue ---
+    Claude Code v2.0  (FRESH session launched by the watchdog)
+    launch args: (none)
+  ╭──────────────────────────────────────────────────────────╮
+  │ >                                                        │
+  ╰──────────────────────────────────────────────────────────╯
+==============================================================
+SCENARIO A - band=ok: one operational nudge, session NOT restarted
+==============================================================
+  canned quota-axi five_hour resetsAt = now+4s (2026-09-02T00:23:56Z)
+  primary pane %363 shows the usage-limit banner; pinned transcript is small (band=ok)
+  [fm-primary-watchdog] primary blocked (target=%363 backend=tmux); computing reset wait
+  --- lines submitted into the primary pane ---
+  ⁣FIRSTMATE_OP: v1 away-supervisor: check queued wakes
+  --- pane now ---
+    Claude Code v2.0  (session: primary)
+    You've reached your usage limit reached for this 5-hour window.
+    Your limit will reset at 2026-09-01T00:00:00Z.
+    > ⁣FIRSTMATE_OP: v1 away-supervisor: check queued wakes
+  ╭──────────────────────────────────────────────────────────╮
+  │ >                                                        │
+  ╰──────────────────────────────────────────────────────────╯
+
+==============================================================
+SCENARIO B - band=restart, stow never completes: bounded window, restart anyway
+==============================================================
+  canned quota-axi five_hour resetsAt = now+4s (2026-09-02T00:24:10Z)
+  same blocked primary, band=restart, but the stow marker is never stamped;
+  FM_WATCHDOG_STOW_WINDOW lowered to 15s for the demo (default 1800s)
+  [fm-primary-watchdog] primary blocked (target=%364 backend=tmux); computing reset wait
+  [fm-primary-watchdog] stow window elapsed without completion evidence; proceeding to restart anyway (captain-accepted, report 11.4 Q6)
+  [fm-primary-watchdog] launching a fresh primary session (target=%364 backend=tmux)
+  --- lines submitted into the primary pane ---
+  ⁣FIRSTMATE_OP: v1 away-supervisor: run the /stow skill now to checkpoint durable state; this session is about to be restarted for context
+  /exit
+  --- pane now ---
+    Claude Code v2.0  (FRESH session launched by the watchdog)
+    launch args: (none)
+  ╭──────────────────────────────────────────────────────────╮
+  │ >                                                        │
+  ╰──────────────────────────────────────────────────────────╯
+
+==============================================================
+SCENARIO C - config/primary-continuity present: opted out, no action at all
+==============================================================
+  canned quota-axi five_hour resetsAt = now+0s (2026-09-02T00:24:47Z)
+  --- lines submitted into the primary pane (expect none) ---
+  enabled query:
+    0
+  after removing the opt-out flag, enabled query:
+    1
+
+==============================================================
+SCENARIO D - captain exits the harness to a shell: one dead reading does not hijack
+==============================================================
+  pane %366 is sitting at a bare shell prompt (captain typed /exit themselves)
+  poll 1:
+  [fm-primary-watchdog] primary harness process gone (target=%366 backend=tmux)
+  [fm-primary-watchdog] harness read as gone (observation 1); waiting for the next poll to confirm before relaunching
+  lines submitted after poll 1 (expect none):
+  poll 2 (condition persists):
+  [fm-primary-watchdog] primary harness process gone (target=%366 backend=tmux)
+  [fm-primary-watchdog] launching a fresh primary session (target=%366 backend=tmux)
+  lines submitted after poll 2:
+  --- pane now ---
+    Claude Code v2.0  (FRESH session launched by the watchdog)
+    launch args: (none)
+  ╭──────────────────────────────────────────────────────────╮
+  │ >                                                        │
+  ╰──────────────────────────────────────────────────────────╯
+
+==============================================================
+SCENARIO E - never --resume/--continue, and arm is an idempotent singleton
+==============================================================
+  operator misconfigures the launch command as 'claude --resume':
+  [fm-primary-watchdog] primary blocked (target=%367 backend=tmux); computing reset wait
+  [fm-primary-watchdog] refusing to restart: launch command must never include --resume/--continue
+  lines submitted into the pane (the stow prose only; no /exit, no relaunch):
+    ⁣FIRSTMATE_OP: v1 away-supervisor: run the /stow skill now to checkpoint durable state; this session is about to be restarted for context
+
+  arm twice from the same home (real detached loop, singleton pidfile):
+    [fm-primary-watchdog] could not pin the primary's transcript; context bands will be unreadable until the next arm
+    primary-watchdog: started pid=3352547
+    [fm-primary-watchdog] could not pin the primary's transcript; context bands will be unreadable until the next arm
+    primary-watchdog: attached pid=3352547
+    pidfile holder: 3352547
+    detached loops alive for this home: 1
+==============================================================
+SCENARIO F - stow-completion marker is stamped only when the cascade truly finishes
+==============================================================
+  primary home has one registered secondmate:
+    - navigator - domain summary (home: /tmp/fm-stow-demo.ffwdZZ/navigator; scope: navigator work; projects: alpha; added 2026-08-07)
+
+  1) enumeration run (what /stow calls first):
+    role=primary
+    
+    secondmate=navigator
+    placement=local
+    home=/tmp/fm-stow-demo.ffwdZZ/navigator
+    budget_report=ok
+    estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate
+    role=secondmate
+    effective_budget_tokens=2000
+    file=data/captain.md bytes=6 estimated_tokens=2 status=present
+    file=data/captain-shared.md bytes=0 estimated_tokens=0 status=absent
+    file=data/learnings.md bytes=0 estimated_tokens=0 status=absent
+    total_estimated_tokens=2
+    budget_status=within-budget
+    transport=direct
+    reason=no recorded endpoint for this home
+    
+    secondmates=1
+    exceptions=0
+  marker after enumeration: ABSENT (the watchdog keeps waiting - the cascade is not done yet)
+
+  2) the skill finishes the cascade and stamps completion:
+  marker after --complete: /tmp/fm-stow-demo.ffwdZZ/primary/state/.stow-last-run
