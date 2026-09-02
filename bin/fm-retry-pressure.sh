@@ -30,10 +30,10 @@
 #   relaunches=<N> retry_loop_reported=<0|1> \
 #     relaunch_ceiling=<K> round_ceiling=<R> retry_band=<ok|loop|halt> task=<id>
 #
-# The round ceiling is the worker's own self-check ceiling from standing rule 9
-# of bin/fm-brief.sh, reported here so callers read one source for it; this
-# helper does not count rounds itself, because the protocol has workers emit a
-# single keyed line at the threshold rather than per-round progress lines.
+# The round ceiling is the worker's own self-check ceiling: bin/fm-brief.sh
+# renders this same configured value into standing rule 9, and it is reported
+# here so callers read one source for it. This helper does not count rounds
+# itself; the protocol has workers emit one keyed line at the threshold instead.
 #
 # Bands:
 #   ok   - counts below every ceiling; nothing to do.
@@ -44,12 +44,12 @@
 #   halt - relaunch count at/past the relaunch ceiling with no landed outcome;
 #          stop relaunching and hold the task for the captain.
 #
-# Ceilings come from optional config/retry-thresholds under FM_HOME, the
-# sibling of config/context-thresholds documented in docs/configuration.md
-# "Retry-loop thresholds": at most one `relaunch=<K>` line and one `rounds=<R>`
-# line, each a positive base-10 integer. Absent file or key means the built-in
-# defaults relaunch=3 and rounds=4. A malformed file is rejected loudly rather
-# than silently replaced by defaults.
+# Ceilings come from optional config/retry-thresholds under FM_HOME (honoring
+# FM_CONFIG_OVERRIDE), the sibling of config/context-thresholds documented in
+# docs/configuration.md "Retry-loop thresholds": at most one `relaunch=<K>` line
+# and one `rounds=<R>` line, each a positive base-10 integer. Absent file or key
+# means the built-in defaults relaunch=3 and rounds=4. A malformed file is
+# rejected loudly rather than silently replaced by defaults.
 #
 # Missing telemetry or a missing status file is zero evidence, not an error:
 # the counts it would feed are reported as 0 so a fresh home reads ok.

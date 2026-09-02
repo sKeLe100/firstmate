@@ -67,6 +67,12 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
+# The standing retry-loop rule's review-round ceiling is rendered from the
+# dispatching home's optional config/retry-thresholds `rounds=<R>` key (config
+# dir honoring FM_CONFIG_OVERRIDE), defaulting to 4 when the file or key is
+# absent or malformed, so briefs and bin/fm-retry-pressure.sh report one ceiling
+# (docs/configuration.md "Retry-loop thresholds"). The rule's 2-no-op and ~2h
+# ceilings are fixed.
 # Refuses to overwrite an existing brief.
 set -eu
 
