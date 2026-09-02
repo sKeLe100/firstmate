@@ -2116,6 +2116,13 @@ EOF
       done <<EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
+      signal_benign_absorbed=
+      for f in $signal_enqueue_files; do
+        case " $signal_commit_failed " in *" $f "*) continue ;; esac
+        signal_benign_absorbed="$signal_benign_absorbed $f"
+      done
+      [ -z "$signal_benign_absorbed" ] || triage_log "absorbed benign signal:$signal_benign_absorbed"
+      [ -z "$signal_covered" ] || triage_log "absorbed procevent-covered signal:$signal_covered"
       if [ -n "$signal_commit_failed" ]; then
         # Only the files whose own absorb could not be recorded escalate: every
         # other file in this scan is absorbed as decided, and waking for it
@@ -2144,11 +2151,7 @@ EOF
         done <<EOF
 $pending
 EOF
-        [ -z "$signal_covered" ] || triage_log "absorbed procevent-covered signal:$signal_covered"
         wake "$signal_commit_failed_reason"
-      else
-        [ -z "$signal_enqueue_files" ] || triage_log "absorbed benign $signal_enqueue_reason"
-        [ -z "$signal_covered" ] || triage_log "absorbed procevent-covered signal:$signal_covered"
       fi
     fi
   fi
