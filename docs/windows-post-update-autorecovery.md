@@ -45,14 +45,14 @@ Set-ItemProperty -Path $key -Name DefaultPassword -Value "<local-password>"
 Set-ItemProperty -Path $key -Name DefaultDomainName -Value "$env:COMPUTERNAME"
 ```
 
-Also stop the machine from sleeping and from demanding a password on wake, so neither a screen
-timeout nor a lock re-strands the machine between the auto sign-in and the scheduled task firing.
+Also stop the machine from sleeping and from demanding a password on wake, so a screen timeout
+does not re-strand the machine between the auto sign-in and the scheduled task firing.
 The two `powercfg` calls only keep the machine awake (no standby on AC, no display blanking); they
 do not touch the sign-in prompt. The `ConsoleLock` setting is the one behind "If you've been away,
 when should Windows require you to sign in again" (Settings > Accounts > Sign-in options); setting
 it to 0 on both power sources, and pinning it via the matching policy registry key so a Windows
-Update does not reset it, is what stops a wake, hibernate resume, fast startup, or manual Win+L
-from leaving a login screen waiting:
+Update does not reset it, is what stops a wake, hibernate resume, or fast startup from leaving a
+login screen waiting:
 
 ```powershell
 powercfg /change standby-timeout-ac 0
@@ -69,6 +69,11 @@ New-Item -Path $lock -Force | Out-Null
 New-ItemProperty -Path $lock -Name 'ACSettingIndex' -Value 0 -PropertyType DWord -Force | Out-Null
 New-ItemProperty -Path $lock -Name 'DCSettingIndex' -Value 0 -PropertyType DWord -Force | Out-Null
 ```
+
+None of this covers a session that is already locked: a manual Win+L, a screensaver lock, or an
+inactivity-timeout lock still needs a human at the keyboard, since autologon only applies to a
+fresh sign-in and never re-signs-in a locked session. Leave the screensaver and any lock-on-
+inactivity policy off on these machines.
 
 ## 2. PC01: bring the firstmate stack back at logon
 
