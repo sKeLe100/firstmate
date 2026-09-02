@@ -33,7 +33,9 @@
 #        band=ok            -> inject one operational-prefix nudge so queued
 #                               wakes get handled in the existing session.
 #        band=warn|restart  -> inject /stow, wait up to
-#                               FM_WATCHDOG_STOW_WINDOW seconds (default 600)
+#                               FM_WATCHDOG_STOW_WINDOW seconds (default
+#                               1800, comfortably longer than a full
+#                               secondmate cascade)
 #                               for completion evidence (state/.stow-last-run,
 #                               written by bin/fm-stow-cascade.sh once a pass's
 #                               own sweep is done, newer than the inject time);
@@ -95,7 +97,7 @@
 #
 # Test seams: FM_WATCHDOG_POLL_INTERVAL (loop cadence, default 60s),
 # FM_WATCHDOG_RESET_JITTER (default 30s), FM_WATCHDOG_STOW_WINDOW (default
-# 600s), FM_WATCHDOG_LAUNCH_CMD (overrides the fresh-session launch command,
+# 1800s), FM_WATCHDOG_LAUNCH_CMD (overrides the fresh-session launch command,
 # default "claude" with no --resume/--continue flag ever appended),
 # FM_WATCHDOG_NOW (epoch seconds override for reset-wait math),
 # FM_WATCHDOG_QUOTA_JSON (path to a canned quota-axi --json response instead
@@ -167,6 +169,8 @@ fm_watchdog_verified_target() {
 # reaches the harness as chat rather than as a parser command (bin/fm-send.sh
 # header), so a leading slash would never invoke the skill.
 FM_WATCHDOG_STOW_REQUEST=${FM_WATCHDOG_STOW_REQUEST:-"run the /stow skill now to checkpoint durable state; this session is about to be restarted for context"}
+
+FM_WATCHDOG_TRANSCRIPT_PIN="$FM_WATCHDOG_STATE/.primary-watchdog.transcript"
 
 FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|limit reached.*resets'
 
@@ -309,14 +313,25 @@ fm_watchdog_reset_wait_seconds() {
 # fm_watchdog_pane_busy: the daemon's pane_is_busy guard
 # (bin/fm-supervise-daemon.sh), repeated here because fm_backend_busy_state is
 # hardcoded to `unknown` on tmux and the rendered-tail match is the only real
-# busy evidence there.
+# busy evidence there. It fails CLOSED: an unidentifiable harness (no busy-line
+# pattern exists for it) or a failed capture reports BUSY, because this guard
+# is what stands between an injection or an /exit and a live captain turn, and
+# absence of evidence is not evidence of an idle pane.
 fm_watchdog_pane_busy() {  # <target> <backend>
   local target=$1 backend=$2 native harness tail40
   native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
   [ "$native" = busy ] && return 0
   harness=$("$FM_WATCHDOG_DIR/fm-harness.sh" 2>/dev/null || printf 'unknown')
-  [ -n "$harness" ] || harness=unknown
-  tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
+  case "${harness:-unknown}" in
+    unknown|'')
+      log "treating the primary pane as busy: harness could not be identified, so no busy-line pattern applies"
+      return 0
+      ;;
+  esac
+  tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || {
+    log "treating the primary pane as busy: pane capture failed, so idleness is unproven"
+    return 0
+  }
   printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -12 \
     | fm_busy_lines_match "$harness"
 }
@@ -346,12 +361,44 @@ fm_watchdog_inject() {  # <target> <backend> <message>
   [ "$verdict" = empty ]
 }
 
+# fm_watchdog_primary_transcript / fm_watchdog_pin_primary_transcript: the
+# primary session's own transcript identity. bin/fm-context-usage.sh with no
+# argument reads the most recently modified transcript for this home, which is
+# NOT necessarily the primary: a limit-blocked primary stops appending, so any
+# other session started in the same home overtakes it and its smaller context
+# would be reported as the primary's band. Arming happens from inside the
+# primary's own session (the Stop-hook chain), so the newest transcript at arm
+# time is the primary's; it is pinned there and passed explicitly here.
+# FM_WATCHDOG_TRANSCRIPT overrides the pin for tests.
+fm_watchdog_primary_transcript() {
+  local pinned=${FM_WATCHDOG_TRANSCRIPT:-}
+  [ -n "$pinned" ] || pinned=$(cat "$FM_WATCHDOG_TRANSCRIPT_PIN" 2>/dev/null)
+  [ -n "$pinned" ] && [ -f "$pinned" ] || return 1
+  printf '%s\n' "$pinned"
+}
+
+fm_watchdog_pin_primary_transcript() {
+  local munged proj newest
+  munged=$(printf '%s' "$FM_HOME" | tr -c 'a-zA-Z0-9' '-')
+  proj="$HOME/.claude/projects/$munged"
+  [ -d "$proj" ] || return 1
+  newest=$(find "$proj" -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null \
+    | sort -rn | head -1 | cut -d' ' -f2-)
+  [ -n "$newest" ] || return 1
+  mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 1
+  printf '%s\n' "$newest" >"$FM_WATCHDOG_TRANSCRIPT_PIN" 2>/dev/null || return 1
+}
+
 # fm_watchdog_context_band: prints the band word (ok|warn|restart) for the
 # primary's own FM_HOME, via bin/fm-context-usage.sh (the designated
 # real-usage source, CLAUDE.md "Context monitoring").
 fm_watchdog_context_band() {
-  local out band
-  out=$(FM_HOME="$FM_HOME" "$FM_WATCHDOG_DIR/fm-context-usage.sh" 2>/dev/null) || return 1
+  local out band transcript
+  transcript=$(fm_watchdog_primary_transcript) || {
+    log "no pinned primary transcript; refusing to read some other session's context"
+    return 1
+  }
+  out=$(FM_HOME="$FM_HOME" "$FM_WATCHDOG_DIR/fm-context-usage.sh" "$transcript" 2>/dev/null) || return 1
   band=$(printf '%s' "$out" | grep -oE 'band=[a-z]+' | head -1 | cut -d= -f2)
   case "$band" in
     ok|warn|restart) printf '%s\n' "$band" ;;
@@ -360,13 +407,16 @@ fm_watchdog_context_band() {
 }
 
 # fm_watchdog_wait_for_stow: poll up to FM_WATCHDOG_STOW_WINDOW seconds
-# (default 600) for evidence the injected /stow turn completed
+# (default 1800 - the marker is stamped only when the whole skill-driven
+# cascade completes, which for a home with agent-transport secondmates
+# includes each secondmate running its own /stow and reporting back) for
+# evidence the injected /stow turn completed
 # (state/.stow-last-run, the marker bin/fm-stow-cascade.sh writes once a pass's
 # own sweep is complete, newer than the injection time). Returns 0 on evidence
 # found, 1 on timeout - a timeout is NOT an error to the caller: report 11.4
 # open question 6 (captain-accepted) says proceed to restart anyway.
 fm_watchdog_wait_for_stow() {  # <injected-at-epoch>
-  local injected_at=$1 window=${FM_WATCHDOG_STOW_WINDOW:-600} interval=15 waited=0 marker
+  local injected_at=$1 window=${FM_WATCHDOG_STOW_WINDOW:-1800} interval=15 waited=0 marker
   marker="$FM_WATCHDOG_STATE/.stow-last-run"
   while [ "$waited" -lt "$window" ]; do
     if [ -e "$marker" ]; then
@@ -438,6 +488,7 @@ fm_watchdog_launch_primary() {  # <target> <backend>
     return 1
   }
   log "launching a fresh primary session (target=$target backend=$backend)"
+  rm -f "$FM_WATCHDOG_TRANSCRIPT_PIN" 2>/dev/null || true
   fm_backend_send_text_submit "$backend" "$target" "$launch_cmd" 3 2 2 >/dev/null 2>&1
 }
 
@@ -523,29 +574,61 @@ fm_watchdog_record_reset() {  # <reset-epoch>
   printf '%s\n' "$1" >"$FM_WATCHDOG_STATE/.watchdog-last-reset" 2>/dev/null || true
 }
 
+# fm_watchdog_dead_streak_bump / fm_watchdog_dead_streak_clear: consecutive
+# observations of an authoritatively dead harness. A single dead reading is not
+# acted on: the backend reports `dead` whenever the pane's foreground process
+# group is only shells, which is exactly the captain exiting the harness to run
+# shell work, and relaunching there would type the launch command at their
+# prompt. FM_WATCHDOG_DEAD_CONFIRMATIONS (default 2) consecutive polls must see
+# it before a relaunch; any other verdict clears the streak.
+fm_watchdog_dead_streak_bump() {
+  local marker="$FM_WATCHDOG_STATE/.watchdog-dead-streak" count
+  count=$(cat "$marker" 2>/dev/null)
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  count=$((count + 1))
+  mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || true
+  printf '%s\n' "$count" >"$marker" 2>/dev/null || true
+  printf '%s\n' "$count"
+}
+
+fm_watchdog_dead_streak_clear() {
+  rm -f "$FM_WATCHDOG_STATE/.watchdog-dead-streak" 2>/dev/null || true
+}
+
 # fm_watchdog_cycle: one detect-or-idle pass. On a blocked verdict, sleeps
 # until reset (real sleep in production; tests inject FM_WATCHDOG_NOW/a canned
 # quota response and stub the sleep boundary via FM_WATCHDOG_SKIP_SLEEP=1
 # instead of sleeping for real hours).
 fm_watchdog_cycle() {
-  local tb rc target backend wait reset reason
+  local tb rc target backend wait reset reason streak
   fm_watchdog_enabled || return 0
   tb=$(fm_watchdog_verified_target)
   rc=$?
   [ "$rc" -ne 1 ] && [ -n "$tb" ] || return 1
   target=${tb% *}
   backend=${tb#* }
-  reason=$(fm_watchdog_primary_blocked "$target" "$backend") || return 0
+  reason=$(fm_watchdog_primary_blocked "$target" "$backend") || {
+    fm_watchdog_dead_streak_clear
+    return 0
+  }
+  [ "$reason" = gone-harness ] || fm_watchdog_dead_streak_clear
   case "$reason" in
     gone-pane)
       log "primary pane no longer exists; nothing to restart in place"
       return 1
       ;;
     gone-harness)
+      streak=$(fm_watchdog_dead_streak_bump)
+      if [ "$streak" -lt "${FM_WATCHDOG_DEAD_CONFIRMATIONS:-2}" ]; then
+        log "harness read as gone (observation $streak); waiting for the next poll to confirm before relaunching"
+        return 0
+      fi
       fm_watchdog_cooldown_clear || return 0
       fm_watchdog_record_action
       fm_watchdog_launch_primary "$target" "$backend"
-      return $?
+      rc=$?
+      fm_watchdog_dead_streak_clear
+      return "$rc"
       ;;
   esac
   fm_watchdog_cooldown_clear || return 0
@@ -599,6 +682,7 @@ fm_watchdog_singleton_live() {
 fm_watchdog_arm() {
   local live pid i
   fm_watchdog_enabled || { log "primary-continuity watchdog disabled (config/primary-continuity present)"; return 0; }
+  fm_watchdog_pin_primary_transcript || log "could not pin the primary's transcript; context bands will be unreadable until the next arm"
   if live=$(fm_watchdog_singleton_live); then
     printf 'primary-watchdog: attached pid=%s\n' "$live"
     return 0

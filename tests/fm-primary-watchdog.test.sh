@@ -184,14 +184,35 @@ LAUNCHED=""
 fm_watchdog_launch_primary() { LAUNCHED="$1 $2"; }
 fm_backend_target_exists() { return 0; }
 fm_backend_agent_alive() { printf 'dead'; }
-rm -f "$TMPHOME/state/.watchdog-last-action"
+rm -f "$TMPHOME/state/.watchdog-last-action" "$TMPHOME/state/.watchdog-dead-streak"
 HANDLED=""
 fm_watchdog_cycle 2>/dev/null
-if [ "$LAUNCHED" = "test:0 tmux" ] && [ -z "$HANDLED" ]; then
-  pass "cycle: a crashed harness launches a fresh session without a reset wait"
+if [ -z "$LAUNCHED" ]; then
+  pass "cycle: one dead reading alone does not relaunch (captain at a shell prompt)"
 else
-  fail "cycle: a crashed harness must launch a fresh session immediately"
+  fail "cycle: a single dead observation must not relaunch"
 fi
+fm_watchdog_cycle 2>/dev/null
+if [ "$LAUNCHED" = "test:0 tmux" ] && [ -z "$HANDLED" ]; then
+  pass "cycle: a confirmed crashed harness launches a fresh session without a reset wait"
+else
+  fail "cycle: a confirmed crashed harness must launch a fresh session immediately"
+fi
+
+# 6a1. a live reading between two dead readings resets the confirmation streak
+LAUNCHED=""
+rm -f "$TMPHOME/state/.watchdog-last-action" "$TMPHOME/state/.watchdog-dead-streak"
+fm_watchdog_cycle 2>/dev/null
+fm_backend_agent_alive() { printf 'alive'; }
+fm_watchdog_cycle 2>/dev/null
+fm_backend_agent_alive() { printf 'dead'; }
+fm_watchdog_cycle 2>/dev/null
+if [ -z "$LAUNCHED" ]; then
+  pass "cycle: an intervening live reading clears the dead-confirmation streak"
+else
+  fail "cycle: a non-consecutive dead reading must not relaunch"
+fi
+rm -f "$TMPHOME/state/.watchdog-last-action" "$TMPHOME/state/.watchdog-dead-streak"
 
 # 6a2. a destroyed pane is reported, never driven
 fm_backend_target_exists() { return 1; }
@@ -268,6 +289,8 @@ STUB
 chmod +x "$TMPHOME/fm-context-usage.sh"
 BAND_DIR_SAVED="$FM_WATCHDOG_DIR"
 FM_WATCHDOG_DIR="$TMPHOME"
+: >"$TMPHOME/primary.jsonl"
+export FM_WATCHDOG_TRANSCRIPT="$TMPHOME/primary.jsonl"
 if fm_watchdog_context_band >/dev/null 2>&1; then
   fail "context-band: an output with no band token must not report success"
 else
@@ -284,6 +307,64 @@ else
   fail "context-band: an unreadable band must be logged"
 fi
 FM_WATCHDOG_DIR="$BAND_DIR_SAVED"
+
+# --- 7b. the band is read from the PINNED primary transcript, never from
+# whichever session happened to write last ----------------------------------
+cat >"$TMPHOME/fm-context-usage.sh" <<'STUB'
+#!/usr/bin/env bash
+printf 'transcript=%s band=restart\n' "${1:-NONE}"
+STUB
+chmod +x "$TMPHOME/fm-context-usage.sh"
+FM_WATCHDOG_DIR="$TMPHOME"
+: >"$TMPHOME/other-session.jsonl"
+band=$(fm_watchdog_context_band) || band="REFUSED"
+seen_args="$TMPHOME/band-args"
+cat >"$TMPHOME/fm-context-usage.sh" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\${1:-NONE}" >"$seen_args"
+printf 'band=restart\n'
+STUB
+chmod +x "$TMPHOME/fm-context-usage.sh"
+fm_watchdog_context_band >/dev/null 2>&1
+if [ "$band" = restart ] && [ "$(cat "$seen_args")" = "$TMPHOME/primary.jsonl" ]; then
+  pass "context-band: the pinned primary transcript is passed explicitly"
+else
+  fail "context-band: must pass the pinned transcript (band=$band arg=$(cat "$seen_args" 2>/dev/null))"
+fi
+
+unset FM_WATCHDOG_TRANSCRIPT
+rm -f "$TMPHOME/state/.primary-watchdog.transcript"
+if fm_watchdog_context_band >/dev/null 2>&1; then
+  fail "context-band: an unpinned primary must not fall back to some other session"
+else
+  pass "context-band: an unpinned primary refuses rather than reading another session"
+fi
+FM_WATCHDOG_DIR="$BAND_DIR_SAVED"
+
+# --- 7c. the busy guard fails CLOSED ---------------------------------------
+. "$ROOT/bin/fm-primary-watchdog.sh"
+fm_backend_busy_state() { printf 'unknown'; }
+HARNESS_STUB_DIR="$TMPHOME/harnessbin"
+mkdir -p "$HARNESS_STUB_DIR"
+printf '#!/usr/bin/env bash\nprintf "unknown\\n"\n' >"$HARNESS_STUB_DIR/fm-harness.sh"
+chmod +x "$HARNESS_STUB_DIR/fm-harness.sh"
+BUSY_DIR_SAVED="$FM_WATCHDOG_DIR"
+FM_WATCHDOG_DIR="$HARNESS_STUB_DIR"
+fm_backend_capture() { printf 'idle-looking pane\n'; }
+if fm_watchdog_pane_busy "test:0" tmux 2>/dev/null; then
+  pass "busy-guard: an unidentifiable harness is treated as busy, not idle"
+else
+  fail "busy-guard: an unidentifiable harness must fail closed"
+fi
+printf '#!/usr/bin/env bash\nprintf "claude\\n"\n' >"$HARNESS_STUB_DIR/fm-harness.sh"
+fm_backend_capture() { return 1; }
+if fm_watchdog_pane_busy "test:0" tmux 2>/dev/null; then
+  pass "busy-guard: a failed pane capture is treated as busy, not idle"
+else
+  fail "busy-guard: a failed capture must fail closed"
+fi
+FM_WATCHDOG_DIR="$BUSY_DIR_SAVED"
+fm_backend_capture() { printf 'ordinary\n'; }
 
 # --- 8. restart never types the launch command into a live harness -----------
 . "$ROOT/bin/fm-primary-watchdog.sh"
