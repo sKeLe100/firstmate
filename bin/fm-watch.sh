@@ -1982,7 +1982,7 @@ EOF
     signal_covered=
     signal_covered_end=
     for f in $files; do
-      signal_stamp=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+      signal_stamp=$(_fm_status_file_size "$f")
       case "$(fm_watch_signal_procevent_coverage "$f")" in
         defer) signal_deferred="$signal_deferred $f" ;;
         covered)
@@ -2142,6 +2142,7 @@ EOF
 $pending
 EOF
       signal_commit_failed=
+      signal_absorbed=
       while IFS=$(printf '\t') read -r f surface_end surface_ident; do
         [ -n "$f" ] || continue
         # A covered file reaching this branch is absorbed exactly as it is in
@@ -2158,6 +2159,7 @@ EOF
             signal_covered_absorbable "$f" "$surface_end" || continue
             mark_signal_surfaced "$f" || true
             fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" || true
+            signal_absorbed="$signal_absorbed $f"
             continue
             ;;
         esac
@@ -2172,7 +2174,7 @@ EOF
         signal_benign_absorbed="$signal_benign_absorbed $f"
       done
       [ -z "$signal_benign_absorbed" ] || triage_log "absorbed benign signal:$signal_benign_absorbed"
-      [ -z "$signal_covered" ] || triage_log "absorbed procevent-covered signal:$signal_covered"
+      [ -z "$signal_absorbed" ] || triage_log "absorbed procevent-covered signal:$signal_absorbed"
       if [ -n "$signal_commit_failed" ]; then
         # Only the files whose own absorb could not be recorded escalate: every
         # other file in this scan is absorbed as decided, and waking for it
