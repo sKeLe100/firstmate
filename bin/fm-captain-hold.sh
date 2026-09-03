@@ -153,10 +153,16 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
 CAPTAIN_META_LOCK=
 CAPTAIN_META_LOCK_HELD=0
+CAPTAIN_MARKS_LOCK=
+CAPTAIN_MARKS_LOCK_HELD=0
 captain_hold_cleanup() {
   if [ "$CAPTAIN_META_LOCK_HELD" = 1 ]; then
     fm_lock_release "$CAPTAIN_META_LOCK" || true
     CAPTAIN_META_LOCK_HELD=0
+  fi
+  if [ "$CAPTAIN_MARKS_LOCK_HELD" = 1 ]; then
+    fm_lock_release "$CAPTAIN_MARKS_LOCK" || true
+    CAPTAIN_MARKS_LOCK_HELD=0
   fi
 }
 trap captain_hold_cleanup EXIT
@@ -500,19 +506,36 @@ stamp_since() {
   mark_set "$id" held-since "$ts"
 }
 
+# Take the sidecar lock for the duration of one read-prune-write sequence, so a
+# concurrent writer cannot base its rewrite on a file this one is replacing.
+marks_lock_acquire() {
+  CAPTAIN_MARKS_LOCK="$DATA/.task-marks.lock"
+  fm_lock_acquire_wait "$CAPTAIN_MARKS_LOCK"
+  CAPTAIN_MARKS_LOCK_HELD=1
+}
+
+marks_lock_release() {
+  [ "$CAPTAIN_MARKS_LOCK_HELD" = 1 ] || return 0
+  fm_lock_release "$CAPTAIN_MARKS_LOCK" || true
+  CAPTAIN_MARKS_LOCK_HELD=0
+}
+
 # Write <id>\t<key>\t<value> into the sidecar unless that (id,key) pair is
 # already present; never overwrites an existing value.
 mark_set() {  # <id> <key> <value>
   local id=$1 key=$2 value=$3 marks="$DATA/task-marks.tsv" tmp
   [ -d "$DATA" ] || return 0
+  marks_lock_acquire
   if [ -f "$marks" ] && awk -F'\t' -v i="$id" -v k="$key" \
       '$1 == i && $2 == k { found = 1 } END { exit found ? 0 : 1 }' "$marks"; then
+    marks_lock_release
     return 0
   fi
   tmp="$marks.tmp.$$"
   mark_prune_to "$marks" > "$tmp"
   printf '%s\t%s\t%s\n' "$id" "$key" "$value" >> "$tmp"
   mv "$tmp" "$marks"
+  marks_lock_release
 }
 
 # Print the value of the (id,key) mark, or nothing when it is not set.
@@ -527,11 +550,13 @@ mark_get() {  # <id> <key>
 mark_clear() {  # <id> [<key>]
   local id=$1 key=${2:-} marks="$DATA/task-marks.tsv" tmp
   [ -f "$marks" ] || return 0
+  marks_lock_acquire
   tmp="$marks.tmp.$$"
   mark_prune_to "$marks" \
     | awk -F'\t' -v i="$id" -v k="$key" \
         '$1 == i && (k == "" || $2 == k) { next } { print }' > "$tmp"
   mv "$tmp" "$marks"
+  marks_lock_release
 }
 
 # Emit the sidecar's surviving lines: those whose task id still appears as a
@@ -1182,6 +1207,7 @@ command_mark() {
       [ "$#" -eq 4 ] || { usage >&2; exit 2; }
       validate_slug "task id" "$id"
       validate_slug "mark key" "$key"
+      [ -n "$value" ] || fail "mark value must not be empty: an empty mark is indistinguishable from an absent one"
       validate_one_line "mark value" "$value"
       case "$value" in *$'\t'*) fail "mark value must not contain a tab" ;; esac
       [ -d "$DATA" ] || fail "no data directory at $DATA"

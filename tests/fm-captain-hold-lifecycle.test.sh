@@ -1434,6 +1434,41 @@ test_release_clears_held_since() {
   pass "releasing a hold clears held-since so a later call ages from itself"
 }
 
+# The sidecar is a shared file with several writers (every hold stamps
+# held-since, the autonomous pass stamps deferred-since); concurrent writes must
+# not lose each other, and an empty value is refused so that reading nothing
+# back always means the mark is absent.
+test_concurrent_mark_writes_all_survive() {
+  local home i pids=()
+  home=$(make_home concurrent-marks)
+  for i in 1 2 3 4 5 6; do
+    tasks_in "$home" add "sample-conc-$i" "Queued lane $i" --kind ship --repo sample \
+      >/dev/null || fail "could not create concurrent fixture $i"
+  done
+
+  for i in 1 2 3 4 5 6; do
+    run_captain "$home" mark set "sample-conc-$i" deferred-since "2026-07-1${i}T09:00:00Z" &
+    pids+=($!)
+  done
+  for i in "${pids[@]}"; do
+    wait "$i" || fail "a concurrent mark set failed"
+  done
+
+  for i in 1 2 3 4 5 6; do
+    [ "$(run_captain "$home" mark get "sample-conc-$i" deferred-since)" = "2026-07-1${i}T09:00:00Z" ] \
+      || fail "a concurrent mark write was lost: $(cat "$home/data/task-marks.tsv")"
+  done
+
+  if run_captain "$home" mark set sample-conc-1 blank "" 2>"$home/blank.err"; then
+    fail "mark set accepted an empty value"
+  fi
+  assert_grep "must not be empty" "$home/blank.err" \
+    "an empty mark value must be refused with a clear diagnostic"
+
+  pass "concurrent mark writes all survive and empty values are refused"
+}
+
 test_held_since_lives_in_the_sidecar
 test_deferred_since_mark_round_trips
+test_concurrent_mark_writes_all_survive
 test_release_clears_held_since

@@ -250,7 +250,13 @@ and `bin/fm-captain-hold.sh mark clear <task-id> deferred-since` when the item
 is eventually dispatched. That subcommand is the only writer of firstmate's
 own sidecar `data/task-marks.tsv` (`<task-id>\t<key>\t<value>`, the same shape
 as `data/roundtable-marks.tsv`); never hand-edit the file, since the writer
-rewrites it whole and a concurrent edit would be lost.
+rewrites it whole under a lock and a concurrent edit would be lost.
+Sidecar tracking covers primary-home tasks only. `gates[]` also carries
+secondmate-owned queued items, whose marks live in that secondmate's own home;
+the `mark` writer only reaches the primary home, so those items are excluded
+from deferred-ready naming until secondmate-side sidecar tracking exists. That
+is a known limitation, not a bug - do not stamp a secondmate item's id here,
+since the primary home's pruning would drop the stray mark anyway.
 The mark does NOT go into the backlog row's trailing metadata
 block: tasks-axi owns that block and its parser rejects any word it does not
 know, so an unrecognized word swallows the row's title, repo, and kind in
