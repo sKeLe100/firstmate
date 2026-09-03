@@ -72,6 +72,49 @@ test_fresh_step_survives_other_sessions_log_traffic() {
   pass "the liveness read reaches this task's step line under a busy shared log"
 }
 
+# --- covered-absorb byte scoping ---------------------------------------------
+# signal_covered_absorbable is the predicate that keeps a procevent-covered
+# absorb scoped to the bytes its coverage verdict judged: the verdict records
+# each covered file's byte extent in signal_covered_end, and a classified
+# endpoint past that extent means an append landed after the verdict, so the
+# absorb must be refused and the file decided fresh next cycle. Unit level is
+# sufficient here: the predicate is the only new decision logic, and its two
+# call sites (the enqueue and benign refusal branches) are already exercised
+# end-to-end for the endpoint-equals-stamp case by
+# tests/fm-watch-triage.test.sh::test_covered_status_absorbs_beside_benign_sibling.
+test_covered_absorbable_scopes_to_verdict_extent() {
+  local f=/tmp/covered.status
+  signal_covered_end=" $f|120"
+  signal_covered_absorbable "$f" 121 \
+    && fail "an endpoint past the verdict's extent must refuse the absorb"
+  signal_covered_absorbable "$f" 500 \
+    && fail "an endpoint far past the verdict's extent must refuse the absorb"
+  signal_covered_absorbable "$f" 120 \
+    || fail "an endpoint equal to the verdict's extent must absorb"
+  signal_covered_absorbable "$f" 119 \
+    || fail "an endpoint short of the verdict's extent must absorb"
+  # No endpoint record means the probe could not classify the file, so there is
+  # nothing to commit and nothing to swallow.
+  signal_covered_absorbable "$f" '' \
+    || fail "an unclassified file must not be refused"
+  # A stamp this cycle never recorded, or one no size reader could parse, is not
+  # evidence of anything: refuse rather than absorb against an unknown extent.
+  signal_covered_end=" /tmp/other.status|120"
+  signal_covered_absorbable "$f" 10 \
+    && fail "a file with no recorded verdict extent must refuse the absorb"
+  signal_covered_end=" $f|"
+  signal_covered_absorbable "$f" 10 \
+    && fail "an empty recorded extent must refuse the absorb"
+  signal_covered_end=" $f|12x"
+  signal_covered_absorbable "$f" 10 \
+    && fail "a non-numeric recorded extent must refuse the absorb"
+  signal_covered_end=" $f|120"
+  signal_covered_absorbable "$f" 1x \
+    && fail "a non-numeric endpoint must refuse the absorb"
+  signal_covered_end=
+  pass "a covered absorb is refused unless its endpoint stays within the extent the verdict judged"
+}
+
 test_lane_classifier() {
   write_meta pc02-task opencode pc02-llamaswap/qwen3.6-35b-a3b-dispatch
   write_meta cloud-task claude claude-sonnet-5
@@ -178,6 +221,7 @@ test_absorb_clears_write_tracking() {
 }
 
 test_lane_classifier
+test_covered_absorbable_scopes_to_verdict_extent
 test_idle_floor_holds_escalation_below_600s
 test_fresh_loop_step_resets_timer_instead_of_escalating
 test_stale_log_escalates_past_floor
