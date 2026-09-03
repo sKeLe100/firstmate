@@ -491,7 +491,7 @@ stamp_since() {
   awk -v id="$id" -v ts="$ts" '
     BEGIN {
       done = 0
-      known = "^(repo|kind|priority|hold|hold-kind|hold-until):|^(since|merged|reported|done)[[:space:]]"
+      known = "^(repo|kind|priority|hold|hold-kind|hold-until):|^(since|deferred-since|merged|reported|done)[[:space:]]"
     }
     !done {
       line = $0

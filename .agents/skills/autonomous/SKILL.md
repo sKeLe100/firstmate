@@ -71,14 +71,17 @@ captain hold. Use
 step 5, then oldest-first by `created_at`.
 
 The captain's attention window is owned by `bin/fm-captain-window.sh`.
-Check it before contacting the captain: if outside the window, queue
-silently for the next window entry rather than interrupting.
+Check it before contacting the captain. Step 4 owns the full rule,
+including its 48-hour override; follow step 4 rather than any summary
+of it here.
 
-The concurrent dispatch cap is owned by `config/dispatch-cap`.
-Check current lane occupancy against this cap before dispatching new work.
-The file is optional and gitignored; when it is absent the built-in
-default cap is 3.
-Do not hardcode a number here: read the config file, falling back to 3.
+The concurrent dispatch cap is owned by `config/dispatch-cap` (optional
+and gitignored; the built-in default base is 3 when it is absent),
+reduced by the quota ladder read from `quota-axi --json` at dispatch
+intake, per `docs/configuration.md`. The effective cap is both together,
+never the base alone. Step 3 owns the full rule; check lane occupancy
+against it there. Do not hardcode a number here: read the live config
+and the live quota.
 
 The dispatch profile is owned by `config/crew-dispatch.json`.
 Resolve it before spawning any crewmate.
@@ -90,8 +93,10 @@ Each step must complete successfully before proceeding to the next.
 
 ### Step 1 - Gather decision state
 
-Run `bin/fm-bearings-snapshot.sh --json`.
-Read `decisions_open` from the output.
+Run `FM_BEARINGS_GATES=500 bin/fm-bearings-snapshot.sh --json`.
+Read `decisions_open` from the output. The `FM_BEARINGS_GATES` override
+keeps the `gates` projection from being truncated to its default of 20,
+so the deferred-ready check later in the pass sees every queued item.
 This is the authoritative decision source: do not scrape status lines,
 backlog prose, or agent chat for decision state.
 
@@ -235,14 +240,19 @@ Each deferred-ready item carries its plain-language deferral reason
 restriction). Below threshold, stay silent - no separate ping, no
 notification. Rides the existing summary ping and its band gating.
 
-Mechanics: write a `deferred-since <date>` metadata word into the item's
+Mechanics: write a `deferred-since <UTC-ISO8601-timestamp>` metadata word into the item's
 trailing backlog metadata block at step 9 bookkeeping when an eligible item
 goes undispatched - the same space-separated metadata-word syntax as `since`,
 read back through the same `metadata_word()` path as `hold`/`hold-kind`/
 `since`, so it is visible in the plain `--json` snapshot with no second read.
 Remove the `deferred-since` word when the item is eventually dispatched.
+The full timestamp (not a bare date) is what makes the > 24 hour
+condition above measurable; `since` uses the same format.
 The next pass reads it as `gates[].deferred_since` from the snapshot it
-already takes to determine consecutive-pass eligibility.
+already takes to determine consecutive-pass eligibility. Take that read
+with `FM_BEARINGS_GATES=500` set, so the `gates` projection is not
+truncated to its default of 20 and a lower-ranked queue item cannot
+silently drop out of deferred-since tracking.
 
 ## 5. PC02-to-Fable plan-then-execute split
 

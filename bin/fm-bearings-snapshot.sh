@@ -129,8 +129,7 @@ Default is LOCAL-ONLY (no network); --include-prs is the only path that fetches.
 Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
-  decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at,
-     deferred_since},
+  decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at},
   landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner,deferred_since}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty),
@@ -505,7 +504,6 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             summary:((.title + ": " + .hold_reason) | trunc(90)),owner:"(main)",
             declared_priority:is_declared_next_session_priority,
             since:(.since // null),
-            deferred_since:(.deferred_since // null),
             created_at:(.since as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
      + [ (.secondmate_current.records // [])[] as $m | $m.decisions_open[]?
          | select(.source == "backlog" and .verb == "captain-hold")
@@ -514,7 +512,6 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             summary:(((.summary // .id) + ": " + (.reason // "captain decision pending")) | trunc(90)),owner:$m.id,
             declared_priority:(.declared_priority // false),
             since:(.since // null),
-            deferred_since:(.deferred_since // null),
             created_at:(.since as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
      | sort_by(if .declared_priority then 0 else 1 end)) as $decisions_all
   | ([ .backlog.records[]
