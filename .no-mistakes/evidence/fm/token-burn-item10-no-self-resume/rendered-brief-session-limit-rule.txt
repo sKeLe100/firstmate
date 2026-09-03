@@ -1,0 +1,69 @@
+=== rendered ship brief (status protocol excerpt) ===
+    `echo "{state}: {one short line}" >> '/tmp/tmp.YVW65hnVlA/state/demo-ship.status'`
+    States: working, needs-decision, blocked, paused, done, failed.
+    Each append wakes firstmate, so report sparingly: only phase changes a supervisor
+    would act on (setup done, bug reproduced, fix implemented, validation passed) and the
+    needs-decision/blocked/paused/done/failed states. No step-by-step FYI progress lines;
+    firstmate reads your pane for that.
+    A mid-task `working:` line (including setup complete) is nonterminal: do not end the
+    turn after it; continue the same stage until a defined `done:` gate under Definition of done.
+    Use `paused: {why}` - distinct from `blocked:` - ONLY when you are deliberately idling on a
+    known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
+    a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
+    cadence instead of treating it as a possible wedge. Use `blocked:` when you are stuck and need help.
+    If you hit your own Claude session usage limit (as distinct from account-wide quota
+    exhaustion or a real wedge), report `paused: {harness} session usage limit, resets <ts>` and
+    STOP - do not attempt to keep working or retry in the same session once the limit clears;
+    firstmate will relaunch you fresh with a carryover note.
+    After every append, verify with `ls -la '/tmp/tmp.YVW65hnVlA/state/demo-ship.status'` that the line landed at that exact
+    path with recent content; do not trust the append, and do not report `done`, until that
+    verification succeeds - a write tool can silently place the file somewhere else, and that
+    failure is itself a `blocked:` condition to report.
+ 6. If you hit the same obstacle twice, append `blocked: {why}` and stop; firstmate will help.
+ 7. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
+   append `needs-decision: {summary of options}` and stop. Firstmate will apply the configured authority and reply with the decision.
+
+=== rendered scout brief (status protocol excerpt) ===
+2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
+3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+4. Report status by appending one line:
+   `echo "{state}: {one short line}" >> '/tmp/tmp.YVW65hnVlA/state/demo-scout.status'`
+   States: working, needs-decision, blocked, paused, done, failed.
+   Each append wakes firstmate, so report sparingly: only phase changes a supervisor
+   would act on and the needs-decision/blocked/paused/done/failed states. No step-by-step
+   FYI progress lines; firstmate reads your pane for that.
+   Use `paused: {why}` - distinct from `blocked:` - ONLY when you are deliberately idling on a
+   known external wait you expect to clear on its own (an upstream release, a rate-limit reset):
+   firstmate then leaves your idle pane alone and rechecks it on a long cadence instead of
+   treating it as a possible wedge. Use `blocked:` when you are stuck and need help.
+   If you hit your own Claude session usage limit (as distinct from account-wide quota
+   exhaustion or a real wedge), report `paused: {harness} session usage limit, resets <ts>` and
+   STOP - do not attempt to keep working or retry in the same session once the limit clears;
+   firstmate will relaunch you fresh with a carryover note.
+   After every append, verify with `ls -la '/tmp/tmp.YVW65hnVlA/state/demo-scout.status'` that the line landed at that exact
+   path with recent content; do not trust the append, and do not report `done`, until that
+   verification succeeds - a write tool can silently place the file somewhere else, and that
+   failure is itself a `blocked:` condition to report.
+5. If you hit the same obstacle twice, append `blocked: {why}` and stop; firstmate will help.
+6. If a decision belongs to a human (product choices, destructive actions),
+   append `needs-decision: {summary of options}` and stop. Firstmate will reply with the decision.
+=== custom pause verb (FM_CLASSIFY_PAUSED_VERB=holding) rendered brief ===
+ 4. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+ 5. Report status by appending one line:
+    `echo "{state}: {one short line}" >> '/tmp/tmp.PZgg244JLQ/state/v.status'`
+    States: working, needs-decision, blocked, holding, done, failed.
+    Each append wakes firstmate, so report sparingly: only phase changes a supervisor
+    would act on (setup done, bug reproduced, fix implemented, validation passed) and the
+    needs-decision/blocked/paused/done/failed states. No step-by-step FYI progress lines;
+    firstmate reads your pane for that.
+    A mid-task `working:` line (including setup complete) is nonterminal: do not end the
+    turn after it; continue the same stage until a defined `done:` gate under Definition of done.
+    Use `holding: {why}` - distinct from `blocked:` - ONLY when you are deliberately idling on a
+    known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
+    a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
+    cadence instead of treating it as a possible wedge. Use `blocked:` when you are stuck and need help.
+    If you hit your own Claude session usage limit (as distinct from account-wide quota
+    exhaustion or a real wedge), report `paused: {harness} session usage limit, resets <ts>` and
+    STOP - do not attempt to keep working or retry in the same session once the limit clears;
+    firstmate will relaunch you fresh with a carryover note.
+    After every append, verify with `ls -la '/tmp/tmp.PZgg244JLQ/state/v.status'` that the line landed at that exact
