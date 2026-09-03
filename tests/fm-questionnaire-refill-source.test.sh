@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-questionnaire-refill-source.sh: the questionnaire
 # skill's empty-bundle Refill step must reuse a recent roundtable/roadmap
-# report instead of paying for a fresh scout, per the captain's 2026-08-31
-# ruling on questionnaire-skill-design call 2.
+# report instead of paying for a fresh scout, per the captain's 2026-09-01
+# ruling (candidates-first with 14-day staleness ceiling).
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -135,10 +135,47 @@ test_roundtable_in_data_dir_path_does_not_match_everything() {
   pass "fm-questionnaire-refill-source: data-dir prefix is not part of the roundtable match"
 }
 
-test_no_data_dir_fails
 test_fresh_roundtable_report_is_offered
 test_stale_report_is_not_offered
 test_newest_matching_report_wins
 test_non_roundtable_reports_are_ignored
 test_missing_option_value_is_a_usage_error
 test_roundtable_in_data_dir_path_does_not_match_everything
+test_no_data_dir_fails
+
+test_default_14_day_ceiling() {
+  # The default staleness ceiling is 14 days (captain's 2026-09-01 ruling).
+  # Reports under 14 days are accepted; 14 days is stale (ceiling boundary).
+  local data_dir report
+  data_dir="$TMP_ROOT/default-ceiling/data"
+  mkdir -p "$data_dir/roundtable-default"
+  report="$data_dir/roundtable-default/report.md"
+  printf '# Report at 13 days\n' > "$report"
+  touch_days_ago "$report" 13
+
+  local out
+  out=$("$ROOT/bin/fm-questionnaire-refill-source.sh" --data-dir "$data_dir")
+  [ "$out" = "$report" ] || fail "13-day report should match with default 14-day ceiling, got: $out"
+
+  pass "fm-questionnaire-refill-source: default 14-day ceiling is enforced"
+}
+
+test_stale_at_14_days_boundary() {
+  # A report exactly at the 14-day boundary must be rejected (staleness ceiling).
+  local data_dir report
+  data_dir="$TMP_ROOT/boundary/data"
+  mkdir -p "$data_dir/roundtable-boundary"
+  report="$data_dir/roundtable-boundary/report.md"
+  printf '# Report at exactly 14 days\n' > "$report"
+  touch_days_ago "$report" 14
+
+  if "$ROOT/bin/fm-questionnaire-refill-source.sh" --data-dir "$data_dir" >"$TMP_ROOT/capture.txt" 2>/dev/null; then
+    fail "a report exactly 14 days old must be rejected (staleness ceiling)"
+  fi
+  [ ! -s "$TMP_ROOT/capture.txt" ] || fail "must print nothing for a stale report"
+
+  pass "fm-questionnaire-refill-source: 14-day boundary is rejected"
+}
+
+test_default_14_day_ceiling
+test_stale_at_14_days_boundary

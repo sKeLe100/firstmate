@@ -427,6 +427,8 @@ Handle actionable wakes as follows:
    Alongside that read, check each such task's retry pressure with `bin/fm-retry-pressure.sh <id>` under the dispatching home's `FM_HOME` - the home holding `state/<id>.status` and `data/llm-usage/firstmate.jsonl`, not the worker's own home the context read uses - and act on its `retry_band` per `docs/configuration.md` "Retry-loop thresholds": `loop` restarts with a carryover note that names the loop and changes a variable, and `halt` stops relaunching and holds the task for the captain.
    Acting on `loop` also closes the open retry-loop key, so the next heartbeat reads the action rather than the same open report: deliver a steer with `bin/fm-send.sh <target> --resolve-key retry-loop`, or append the closing `resolved [key=retry-loop]: <action taken>` line to the dispatching home's `state/<id>.status` alongside the carryover relaunch.
 
+Load the `autonomous` skill when the captain invokes `/autonomous`, mentions standing orders or autonomous dispatch, or when a silent-invocation point fires (12:30/17:30 fleet-dispatch-points); it owns the dispatch-pass procedure and is captain-invocable, unlike section 13's agent-only reference skills.
+
 When any wake reports a merged PR for a project cloned in this home, refresh that clone through the guarded fleet-sync path.
 When Relay-linked work reaches a milestone or terminal state, load `fmx-respond`; before terminal teardown, use its promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up so the link clears even if earlier follow-ups were spent.
 

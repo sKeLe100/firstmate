@@ -68,7 +68,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-config-push.sh`      | Push declared inherited local material to live local or remote secondmates and send the placement-specific config reread when changed |
 | `fm-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for fleet sync and home seeding |
 | `fm-queue-snapshot.sh`   | Backlog-read-only snapshot of the top queued backlog items ranked by descending priority, with project posture, derived autonomy, the configured lane hierarchy, and one bounded aggregate quota read, for the `queue` skill |
-| `fm-questionnaire-refill-source.sh` | Duplication guard for the `questionnaire` skill's empty-bundle Refill step: find the newest `data/*roundtable*/report.md` or `data/*roadmap*/report.md` within a freshness window, exit 1 when none is fresh enough, or exit 2 on a usage error |
+| `fm-questionnaire-refill-source.sh` | Duplication guard for the `questionnaire` skill's empty-bundle Refill step: find the newest `data/*roundtable*/report.md` or `data/*roadmap*/report.md` within its 14-day staleness ceiling, exit 1 when none is fresh enough, or exit 2 on a usage error |
 | `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `fm-review-diff.sh`      | Review a crewmate branch or resolved PR head against the authoritative base          |
 | `fm-roundtable-factsheet.sh` | Generate a deterministic, read-only fact sheet of one project clone at HEAD, with an optional delta since that project's last roundtable mark ([roundtable-instrumentation.md](roundtable-instrumentation.md)) |
@@ -151,6 +151,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-returning-session-check.sh` | Decide bare-resume vs restart-with-carryover for a returning (pinged or restarted) session from its `fm-context-usage.sh` band |
 | `fm-stow-cascade.sh`     | Enumerate this home's registered secondmates, their budget reports, and reachable transports for a `/stow` cascade |
 | `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
+| `fm-autonomous-thresholds.sh` | Evaluate the `/autonomous` dispatch pass's bundle-size and time nudge thresholds over a JSON array of open decision rows |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note, dictate one, read status, ask a side question |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |

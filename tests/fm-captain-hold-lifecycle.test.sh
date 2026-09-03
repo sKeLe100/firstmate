@@ -301,6 +301,55 @@ test_answer_records_and_closes() {
   pass "answer records the captain's words, closes idempotently, and releases routed work"
 }
 
+# The machine-owned `since` metadata word must be written for every first
+# hold and must never rewrite the captain's own title: a title containing the
+# ordinary word "since" still gets stamped, and a title ending in its own
+# parentheses gets a separate metadata group rather than a corrupted one.
+test_since_stamp_survives_awkward_titles() {
+  local home json
+  home=$(make_home since-stamp-titles)
+  tasks_in "$home" add sample-since-word "Decide the PC02 lane since the split" \
+    --kind ship --repo sample >/dev/null \
+    || fail "could not create the since-in-title fixture"
+  tasks_in "$home" add sample-parens "Pick a release lane (draft)" \
+    --kind ship --repo sample >/dev/null \
+    || fail "could not create the trailing-parenthesis fixture"
+  tasks_in "$home" add sample-since-comma "Reconsider the lane, since the split landed" \
+    --kind ship --repo sample >/dev/null \
+    || fail "could not create the comma-prose fixture"
+  run_captain "$home" hold sample-since-comma --reason "captain call needed" >/dev/null \
+    || fail "could not hold the comma-prose task"
+  tasks_in "$home" add sample-since-parens "Rework the lane (since the Fable split) - captain call" \
+    --kind ship --repo sample >/dev/null \
+    || fail "could not create the prose-parenthetical fixture"
+  run_captain "$home" hold sample-since-parens --reason "pick a lane" >/dev/null \
+    || fail "could not hold the prose-parenthetical task"
+  tasks_in "$home" add sample-comma-reason "Choose the rollout order" \
+    --kind ship --repo sample >/dev/null \
+    || fail "could not create the comma-reason fixture"
+  run_captain "$home" hold sample-comma-reason --reason "blocked, since Friday" >/dev/null \
+    || fail "could not hold the comma-reason task"
+  run_captain "$home" hold sample-since-word --reason "captain call needed" >/dev/null \
+    || fail "could not hold the since-in-title task"
+  run_captain "$home" hold sample-parens --reason "captain call needed" >/dev/null \
+    || fail "could not hold the trailing-parenthesis task"
+
+  json=$(run_bearings "$home") || fail "Bearings failed after stamping awkward titles"
+  printf '%s' "$json" | jq -e '
+    ([ .decisions_open[] | select(.id == "sample-since-word") ] | length) == 1
+      and ([ .decisions_open[] | select(.id == "sample-since-word") ][0].since != null)
+      and ([ .decisions_open[] | select(.id == "sample-parens") ][0].since != null)
+      and ([ .decisions_open[] | select(.id == "sample-since-comma") ][0].since != null)
+      and ([ .decisions_open[] | select(.id == "sample-since-parens") ][0].since != null)
+      and ([ .decisions_open[] | select(.id == "sample-comma-reason") ][0].created_at != null)
+  ' >/dev/null || fail "a since stamp was skipped on an awkward title: $json"
+  printf '%s' "$json" | jq -e '
+    ([ .decisions_open[] | select(.id == "sample-parens") ][0].summary
+      | startswith("Pick a release lane (draft):"))
+  ' >/dev/null || fail "the trailing-parenthesis title was corrupted by the stamp: $json"
+  pass "since is stamped on awkward titles without rewriting them"
+}
+
 # --release lifts the hold instead of closing, preserving the work item's own
 # body under the record; a re-held task later accepts a new answer.
 test_release_frees_held_work() {
@@ -1171,6 +1220,7 @@ EOF
 test_uninventoried_report_decision_refuses_completion
 test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
+test_since_stamp_survives_awkward_titles
 test_release_frees_held_work
 test_deferral_leaves_captains_call_until_due
 test_out_of_band_close_is_recordable
@@ -1283,6 +1333,142 @@ test_verify_rejects_hold_missing_from_both_surfaces() {
   pass "verify fails loudly naming both surfaces when a hold is absent from both"
 }
 
+# The hold-raise timestamp lives in firstmate's own sidecar, not in the task
+# row: tasks-axi writes its own creation-date `since` word into that row and
+# rejects words it does not know, so the row must survive a hold untouched
+# while the decision ages from the hold, not from creation.
+test_held_since_lives_in_the_sidecar() {
+  local home json marks first second
+  home=$(make_home held-since-sidecar)
+  marks="$home/data/task-marks.tsv"
+  tasks_in "$home" add sample-sidecar "Pick a lane" --kind ship --repo sample >/dev/null \
+    || fail "could not create the sidecar fixture"
+
+  [ ! -s "$marks" ] || fail "a mark existed before any hold: $(cat "$marks")"
+
+  run_captain "$home" hold sample-sidecar --reason "captain call needed" >/dev/null \
+    || fail "could not hold the sidecar fixture"
+  first=$(awk -F'\t' '$1 == "sample-sidecar" && $2 == "held-since" { print $3 }' "$marks")
+  [ -n "$first" ] || fail "the first hold wrote no held-since mark: $(cat "$marks")"
+
+  run_captain "$home" hold sample-sidecar --reason "still needs a ruling" >/dev/null \
+    || fail "could not re-hold the sidecar fixture"
+  second=$(awk -F'\t' '$1 == "sample-sidecar" && $2 == "held-since" { print $3 }' "$marks")
+  [ "$first" = "$second" ] || fail "a re-hold reset held-since: $first -> $second"
+  [ "$(grep -c $'^sample-sidecar\theld-since\t' "$marks")" = 1 ] \
+    || fail "the re-hold duplicated the mark: $(cat "$marks")"
+
+  grep -q 'deferred-since\|held-since' "$home/data/backlog.md" \
+    && fail "a machine mark leaked into the task row: $(grep sample-sidecar "$home/data/backlog.md")"
+
+  json=$(run_bearings "$home") || fail "Bearings failed after the sidecar hold"
+  printf '%s' "$json" | jq -e --arg mark "$first" '
+    ([ .decisions_open[] | select(.id == "sample-sidecar") ][0]) as $row
+    | $row.since == $mark
+      and $row.created_at == ($mark | fromdateiso8601)
+      and ($row.summary | startswith("Pick a lane:"))
+  ' >/dev/null || fail "the decision did not age from its held-since mark: $json"
+
+  pass "held-since is recorded once in the sidecar and ages the decision"
+}
+
+# A deferred-ready mark set for queued work is visible on the gates projection
+# and disappears once cleared, without ever touching the task row.
+test_deferred_since_mark_round_trips() {
+  local home json
+  home=$(make_home deferred-since-mark)
+  tasks_in "$home" add sample-deferred "Ship the queued lane" --kind ship --repo sample \
+    >/dev/null || fail "could not create the deferred fixture"
+  run_captain "$home" mark set sample-deferred deferred-since 2026-07-13T09:00:00Z \
+    || fail "mark set failed on the deferred fixture"
+  [ "$(run_captain "$home" mark get sample-deferred deferred-since)" = 2026-07-13T09:00:00Z ] \
+    || fail "mark get did not read back the value it just set"
+
+  json=$(run_bearings "$home") || fail "Bearings failed with a deferred-since mark"
+  printf '%s' "$json" | jq -e '
+    ([ .gates[] | select(.id == "sample-deferred") ][0].deferred_since) == "2026-07-13T09:00:00Z"
+  ' >/dev/null || fail "the deferred-since mark did not reach gates: $json"
+
+  run_captain "$home" mark clear sample-deferred deferred-since \
+    || fail "mark clear failed on the deferred fixture"
+  [ -z "$(run_captain "$home" mark get sample-deferred deferred-since)" ] \
+    || fail "mark clear left the value readable: $(cat "$home/data/task-marks.tsv")"
+  [ "$(grep -c 'deferred-since' "$home/data/task-marks.tsv" || true)" = 0 ] \
+    || fail "mark clear left a stale row: $(cat "$home/data/task-marks.tsv")"
+  json=$(run_bearings "$home") || fail "Bearings failed after clearing the mark"
+  printf '%s' "$json" | jq -e '
+    ([ .gates[] | select(.id == "sample-deferred") ][0].deferred_since) == null
+  ' >/dev/null || fail "the cleared deferred-since mark still renders: $json"
+
+  pass "a deferred-since mark is projected on gates and clears cleanly"
+}
+
 test_verify_accepts_archived_answered_hold
 test_verify_rejects_unheld_unresolved_hold
 test_verify_rejects_hold_missing_from_both_surfaces
+# A released hold is a finished captain call: the next call on the same task
+# must age from its own raise time, not from the answered one.
+test_release_clears_held_since() {
+  local home first second
+  home=$(make_home held-since-release)
+  tasks_in "$home" add sample-recall "Choose the rollout order" --kind ship --repo sample \
+    >/dev/null || fail "could not create the re-hold fixture"
+  run_captain "$home" hold sample-recall --reason "captain call needed" >/dev/null \
+    || fail "could not raise the first captain call"
+  first=$(run_captain "$home" mark get sample-recall held-since)
+  [ -n "$first" ] || fail "the first hold wrote no held-since mark"
+
+  printf 'Go with option A.\n' > "$home/go.txt"
+  run_captain "$home" answer sample-recall --decision-file "$home/go.txt" --release >/dev/null \
+    || fail "answer --release failed on the re-hold fixture"
+  [ -z "$(run_captain "$home" mark get sample-recall held-since)" ] \
+    || fail "the released hold kept its held-since mark: $(cat "$home/data/task-marks.tsv")"
+
+  sleep 1
+  run_captain "$home" hold sample-recall --reason "a second ruling is needed" >/dev/null \
+    || fail "could not raise the second captain call"
+  second=$(run_captain "$home" mark get sample-recall held-since)
+  [ -n "$second" ] || fail "the re-hold wrote no held-since mark"
+  [ "$second" != "$first" ] \
+    || fail "the re-hold reused the answered call's timestamp: $second"
+  pass "releasing a hold clears held-since so a later call ages from itself"
+}
+
+# The sidecar is a shared file with several writers (every hold stamps
+# held-since, the autonomous pass stamps deferred-since); concurrent writes must
+# not lose each other, and an empty value is refused so that reading nothing
+# back always means the mark is absent.
+test_concurrent_mark_writes_all_survive() {
+  local home i pids=()
+  home=$(make_home concurrent-marks)
+  for i in 1 2 3 4 5 6; do
+    tasks_in "$home" add "sample-conc-$i" "Queued lane $i" --kind ship --repo sample \
+      >/dev/null || fail "could not create concurrent fixture $i"
+  done
+
+  for i in 1 2 3 4 5 6; do
+    run_captain "$home" mark set "sample-conc-$i" deferred-since "2026-07-1${i}T09:00:00Z" &
+    pids+=($!)
+  done
+  for i in "${pids[@]}"; do
+    wait "$i" || fail "a concurrent mark set failed"
+  done
+
+  for i in 1 2 3 4 5 6; do
+    [ "$(run_captain "$home" mark get "sample-conc-$i" deferred-since)" = "2026-07-1${i}T09:00:00Z" ] \
+      || fail "a concurrent mark write was lost: $(cat "$home/data/task-marks.tsv")"
+  done
+
+  if run_captain "$home" mark set sample-conc-1 blank "" 2>"$home/blank.err"; then
+    fail "mark set accepted an empty value"
+  fi
+  assert_grep "must not be empty" "$home/blank.err" \
+    "an empty mark value must be refused with a clear diagnostic"
+
+  pass "concurrent mark writes all survive and empty values are refused"
+}
+
+test_held_since_lives_in_the_sidecar
+test_deferred_since_mark_round_trips
+test_concurrent_mark_writes_all_survive
+test_release_clears_held_since

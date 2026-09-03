@@ -370,9 +370,18 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
     return 0
   fi
 
+  local marks="${backlog%/*}/task-marks.tsv"
+  [ -f "$marks" ] || marks=/dev/null
+
   # shellcheck disable=SC2094
-  jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" '
-    def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
+  jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" \
+    --rawfile fm_marks_raw "$marks" '
+    ([$fm_marks_raw | split("\n")[]
+       | select(test("^[^\t]+\t[^\t]+\t"))
+       | capture("^(?<id>[^\t]+)\t(?<key>[^\t]+)\t(?<value>.*)$")
+       | {key:(.id + "\t" + .key), value:.value}]
+     | from_entries) as $marks
+    | def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
     def section_state:
       if . == "In flight" then "in_flight"
       elif . == "Queued" then "queued"
@@ -385,12 +394,14 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
       cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + ":[[:space:]]*(?<v>[^,)]*)");
     def metadata_word($rest; $key):
       cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + "[[:space:]]+(?<v>[^,)]*)");
+    def metadata_date_word($rest; $key):
+      cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + "[[:space:]]+(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2}[^,)]*)");
     def url_pattern: "https?://[^[:space:])\"<>]+";
     def wrapped_url_pattern: "<?" + url_pattern + ">?";
     def links($rest): [$rest | scan(url_pattern)];
     def strip_trailing_metadata:
       reduce range(0; 20) as $_ (.;
-        sub("[[:space:]]*\\([[:space:]]*(?:(?:repo|kind|priority|hold|hold-kind|hold-until):[[:space:]]*[^)]*|(?:since|merged|reported|done)[[:space:]]+[^)]*)[[:space:]]*\\)[[:space:]]*$"; ""));
+        sub("[[:space:]]*\\([[:space:]]*(?:(?:repo|kind|priority|hold|hold-kind|hold-until):[[:space:]]*[^)]*|(?:since|deferred-since|merged|reported|done)[[:space:]]+[^)]*)[[:space:]]*\\)[[:space:]]*$"; ""));
     def strip_title_artifacts:
       sub("[[:space:]]+-[[:space:]]+data/[^[:space:])]+/report\\.md$"; "")
       | sub("[[:space:]]+data/[^[:space:])]+/report\\.md$"; "")
@@ -454,7 +465,9 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
              blocked_by:cap($rest; ".*blocked-by:[[:space:]]*(?<v>[^[:space:])]+).*"),
              blocked_by_ids:blocked_by_ids($rest),
              blocked_reason:blocked_reason($rest),
-             since:metadata_word($rest; "since"),
+             since:metadata_date_word($rest; "since"),
+             held_since:($marks[$m.id + "\theld-since"] // null),
+             deferred_since:($marks[$m.id + "\tdeferred-since"] // null),
              merged:metadata_word($rest; "merged"),
              reported:metadata_word($rest; "reported"),
              done:metadata_word($rest; "done"),
@@ -852,6 +865,9 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
             reason:(.hold_reason | trunc(160)),
             hold_until:(.hold_until // null),
             deferred_marker:(.deferred_marker // false),
+            since:(.since // null),
+            held_since:(.held_since // null),
+            deferred_since:(.deferred_since // null),
             declared_priority:is_declared_next_session_priority,source:"backlog"} ]) as $captain_holds_all
     | ([ $backlog.records[]? | select(.state == "done" and .structured and .hold_kind != "captain")
          | {id:(.id | trunc(120)),title:(.title | trunc(120)),
@@ -958,6 +974,8 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
           hold_kind:((.hold_kind // null) | if . == null then null else trunc(40) end),
           hold_until:((.hold_until // null) | if . == null then null else trunc(40) end),
           deferred_marker:(.deferred_marker // false),
+          held_since:(.held_since // null),
+          deferred_since:(.deferred_since // null),
           captain_actionable:(.captain_actionable // false),
           repo:((.repo // null) | if . == null then null else trunc(120) end),
           kind:((.kind // null) | if . == null then null else trunc(40) end)}][:$queued_n]),
