@@ -58,7 +58,7 @@ SH
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf 'gh version %s (fake)\n' "${FM_FAKE_GH_VERSION:-2.63.0}"
+  printf 'gh version %s (fake)\n' "${FM_FAKE_GH_VERSION:-99.0.0}"
   exit 0
 fi
 if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then
@@ -403,6 +403,15 @@ newer gh major is accepted^3.0.0^empty
 older gh patch reports a manual upgrade^2.46.0^missing
 unparseable gh version reports a manual upgrade^gh development build^missing
 ROWS
+  case_dir="$TMP_ROOT/gh-absent"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  rm -f "$fakebin/gh"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  printf '%s\n' "$out" | grep -qxF "MISSING: gh (install: brew install gh  # or the platform's package manager)" \
+    || fail "absent gh: expected an automated install hint, got: $out"
   pass "bootstrap enforces gh minimum version"
 }
 

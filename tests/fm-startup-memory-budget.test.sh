@@ -34,7 +34,7 @@ SH
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf 'gh version 2.63.0 (fake)\n'
+  printf 'gh version 99.0.0 (fake)\n'
 fi
 exit 0
 SH

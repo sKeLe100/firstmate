@@ -880,12 +880,16 @@ manual_install_url() {
 }
 
 missing_tool_diagnostic() {
-  local tool=$1 instructions
+  local tool=$1 cmd instructions
+  if cmd=$(install_cmd "$tool"); then
+    echo "MISSING: $tool (install: $cmd)"
+    return 0
+  fi
   if instructions=$(manual_install_url "$tool"); then
     echo "MISSING_MANUAL: $tool (instructions: $instructions)"
     return 0
   fi
-  echo "MISSING: $tool (install: $(install_cmd "$tool"))"
+  echo "MISSING: $tool"
 }
 
 # Required-tool detection follows the RESOLVED backend, not a one-size default:
