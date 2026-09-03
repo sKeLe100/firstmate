@@ -874,6 +874,7 @@ manual_install_url() {
   case "$1" in
     herdr) echo "https://herdr.dev" ;;
     cursor-agent) echo "https://cursor.com/cli" ;;
+    gh) echo "https://cli.github.com" ;;
     *) return 1 ;;
   esac
 }
@@ -901,6 +902,11 @@ if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then
 fi
 TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 NO_MISTAKES_MIN=1.46.0
+# gh sat pinned at 2.46.0 for an extended period: its unsupported --slurp flag
+# broke no-mistakes' internal CI-status reader, and `gh pr edit` failed silently
+# on a deprecated GraphQL field so PR-body attestation refreshes no-op'd. This
+# floor is the minimum version known to avoid both, not a "current latest" pin.
+GH_MIN=2.63.0
 # AXI-FAMILY FLOOR POLICY. Every axi-family floor is the CURRENT LATEST published
 # version of that tool, captain-bumped periodically to keep the whole fleet on the
 # newest axi tools. It is NOT the minimum feature-introduced version. These floors
@@ -1345,6 +1351,9 @@ detect_local_tools() {
   fi
   if command -v no-mistakes >/dev/null 2>&1 && ! tool_version_at_least no-mistakes "$NO_MISTAKES_MIN"; then
     echo "MISSING: no-mistakes (install: $(install_cmd no-mistakes))"
+  fi
+  if command -v gh >/dev/null 2>&1 && ! tool_version_at_least gh "$GH_MIN"; then
+    echo "MISSING_MANUAL: gh (instructions: $(manual_install_url gh))"
   fi
   if command -v gh-axi >/dev/null 2>&1 && ! tool_version_at_least gh-axi "$GH_AXI_MIN"; then
     echo "MISSING: gh-axi (install: $(install_cmd gh-axi))"
