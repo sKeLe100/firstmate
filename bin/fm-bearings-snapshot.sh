@@ -503,16 +503,16 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | {id,key:.id,verb:"captain-hold",
             summary:((.title + ": " + .hold_reason) | trunc(90)),owner:"(main)",
             declared_priority:is_declared_next_session_priority,
-            since:(.since // null),
-            created_at:(.since as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
+            since:((.held_since // .since) // null),
+            created_at:((.held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
      + [ (.secondmate_current.records // [])[] as $m | $m.decisions_open[]?
          | select(.source == "backlog" and .verb == "captain-hold")
          | select(($all_decisions == "1") or (.deferred_marker != true))
          | {id:($m.id + "/" + .id),key,verb,
             summary:(((.summary // .id) + ": " + (.reason // "captain decision pending")) | trunc(90)),owner:$m.id,
             declared_priority:(.declared_priority // false),
-            since:(.since // null),
-            created_at:(.since as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
+            since:((.held_since // .since) // null),
+            created_at:((.held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
      | sort_by(if .declared_priority then 0 else 1 end)) as $decisions_all
   | ([ .backlog.records[]
          | select(.structured and .captain_actionable == true and .deferred_marker == true) ]

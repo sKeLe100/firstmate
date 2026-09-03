@@ -1333,6 +1333,70 @@ test_verify_rejects_hold_missing_from_both_surfaces() {
   pass "verify fails loudly naming both surfaces when a hold is absent from both"
 }
 
+# The hold-raise timestamp lives in firstmate's own sidecar, not in the task
+# row: tasks-axi writes its own creation-date `since` word into that row and
+# rejects words it does not know, so the row must survive a hold untouched
+# while the decision ages from the hold, not from creation.
+test_held_since_lives_in_the_sidecar() {
+  local home json marks first second
+  home=$(make_home held-since-sidecar)
+  marks="$home/data/task-marks.tsv"
+  tasks_in "$home" add sample-sidecar "Pick a lane" --kind ship --repo sample >/dev/null \
+    || fail "could not create the sidecar fixture"
+
+  [ ! -s "$marks" ] || fail "a mark existed before any hold: $(cat "$marks")"
+
+  run_captain "$home" hold sample-sidecar --reason "captain call needed" >/dev/null \
+    || fail "could not hold the sidecar fixture"
+  first=$(awk -F'\t' '$1 == "sample-sidecar" && $2 == "held-since" { print $3 }' "$marks")
+  [ -n "$first" ] || fail "the first hold wrote no held-since mark: $(cat "$marks")"
+
+  run_captain "$home" hold sample-sidecar --reason "still needs a ruling" >/dev/null \
+    || fail "could not re-hold the sidecar fixture"
+  second=$(awk -F'\t' '$1 == "sample-sidecar" && $2 == "held-since" { print $3 }' "$marks")
+  [ "$first" = "$second" ] || fail "a re-hold reset held-since: $first -> $second"
+  [ "$(grep -c $'^sample-sidecar\theld-since\t' "$marks")" = 1 ] \
+    || fail "the re-hold duplicated the mark: $(cat "$marks")"
+
+  grep -q 'deferred-since\|held-since' "$home/data/backlog.md" \
+    && fail "a machine mark leaked into the task row: $(grep sample-sidecar "$home/data/backlog.md")"
+
+  json=$(run_bearings "$home") || fail "Bearings failed after the sidecar hold"
+  printf '%s' "$json" | jq -e --arg mark "$first" '
+    ([ .decisions_open[] | select(.id == "sample-sidecar") ][0]) as $row
+    | $row.since == $mark
+      and $row.created_at == ($mark | fromdateiso8601)
+      and ($row.summary | startswith("Pick a lane:"))
+  ' >/dev/null || fail "the decision did not age from its held-since mark: $json"
+
+  pass "held-since is recorded once in the sidecar and ages the decision"
+}
+
+# A deferred-ready mark set for queued work is visible on the gates projection
+# and disappears once cleared, without ever touching the task row.
+test_deferred_since_mark_round_trips() {
+  local home json
+  home=$(make_home deferred-since-mark)
+  tasks_in "$home" add sample-deferred "Ship the queued lane" --kind ship --repo sample \
+    >/dev/null || fail "could not create the deferred fixture"
+  printf 'sample-deferred\tdeferred-since\t2026-07-13T09:00:00Z\n' > "$home/data/task-marks.tsv"
+
+  json=$(run_bearings "$home") || fail "Bearings failed with a deferred-since mark"
+  printf '%s' "$json" | jq -e '
+    ([ .gates[] | select(.id == "sample-deferred") ][0].deferred_since) == "2026-07-13T09:00:00Z"
+  ' >/dev/null || fail "the deferred-since mark did not reach gates: $json"
+
+  : > "$home/data/task-marks.tsv"
+  json=$(run_bearings "$home") || fail "Bearings failed after clearing the mark"
+  printf '%s' "$json" | jq -e '
+    ([ .gates[] | select(.id == "sample-deferred") ][0].deferred_since) == null
+  ' >/dev/null || fail "the cleared deferred-since mark still renders: $json"
+
+  pass "a deferred-since mark is projected on gates and clears cleanly"
+}
+
 test_verify_accepts_archived_answered_hold
 test_verify_rejects_unheld_unresolved_hold
 test_verify_rejects_hold_missing_from_both_surfaces
+test_held_since_lives_in_the_sidecar
+test_deferred_since_mark_round_trips

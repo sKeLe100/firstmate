@@ -476,53 +476,60 @@ resolve_entry() {  # <origin-or-empty> <entry>; prints the resolved id or fails
   fail "no captain-held task $entry in $FM_HOME/data/backlog.md or $archive"
 }
 
-# Stamp a `since <ISO8601-UTC-timestamp>` metadata word onto task $id's
-# backlog.md row, matching the space-separated (not colon) syntax
-# fm-fleet-snapshot.sh's metadata_word() parser expects, alongside the
-# existing colon-style repo/kind/hold/hold-kind/hold-until fields in the
-# same trailing parenthetical block. This is the sole writer of that field
-# (fm-bearings-snapshot.sh's decisions_open.since/created_at are read-only
-# consumers); called once, at the moment a task first becomes captain-held,
-# so the timestamp reflects when the captain call was actually raised and a
-# later re-hold of the same task never resets it.
+# Record a `held-since` mark for task $id in the firstmate-owned sidecar
+# data/task-marks.tsv (<task-id>\t<key>\t<value>), the same shape as
+# data/roundtable-marks.tsv. The mark is written once, on the first hold, and
+# never reset by a later re-hold, so it reflects when the captain call was
+# actually raised. It lives in the sidecar rather than the backlog row because
+# tasks-axi owns the row's trailing metadata block: it already writes its own
+# `since` word (the task's creation date) and its parser rejects any word it
+# does not know. Marks for task ids no longer present in backlog.md are pruned
+# lazily on each write.
 stamp_since() {
-  local id=$1 ts=$2 file="$DATA/backlog.md"
-  [ -f "$file" ] || return 0
-  awk -v id="$id" -v ts="$ts" '
+  local id=$1 ts=$2
+  mark_set "$id" held-since "$ts"
+}
+
+# Write <id>\t<key>\t<value> into the sidecar unless that (id,key) pair is
+# already present; never overwrites an existing value.
+mark_set() {  # <id> <key> <value>
+  local id=$1 key=$2 value=$3 marks="$DATA/task-marks.tsv" tmp
+  [ -d "$DATA" ] || return 0
+  if [ -f "$marks" ] && awk -F'\t' -v i="$id" -v k="$key" \
+      '$1 == i && $2 == k { found = 1 } END { exit found ? 0 : 1 }' "$marks"; then
+    return 0
+  fi
+  tmp="$marks.tmp.$$"
+  mark_prune_to "$marks" > "$tmp"
+  printf '%s\t%s\t%s\n' "$id" "$key" "$value" >> "$tmp"
+  mv "$tmp" "$marks"
+}
+
+# Emit the sidecar's surviving lines: those whose task id still appears as a
+# structured row in backlog.md.
+mark_prune_to() {  # <marks-file>
+  local marks=$1 file="$DATA/backlog.md"
+  [ -f "$marks" ] || return 0
+  if [ ! -f "$file" ]; then
+    cat "$marks"
+    return 0
+  fi
+  awk -F'\t' -v backlog="$file" '
     BEGIN {
-      done = 0
-      known = "^(repo|kind|priority|hold|hold-kind|hold-until):|^(since|deferred-since|merged|reported|done)[[:space:]]"
-    }
-    !done {
-      line = $0
-      if (line ~ ("^[-*][[:space:]]+\\[[ xX]\\][[:space:]]+" id "[[:space:]]") ||
-          line ~ ("^[-*][[:space:]]+\\*\\*" id "\\*\\*[[:space:]]")) {
-        stamped = 0
-        anchored = 0
-        rest = line
-        while (match(rest, /\([^()]*\)[[:space:]]*$/)) {
-          g = substr(rest, RSTART + 1, RLENGTH - 1)
-          sub(/\)[[:space:]]*$/, "", g)
-          sub(/^[[:space:]]+/, "", g)
-          if (g !~ known) break
-          anchored = 1
-          if (g ~ /^since[[:space:]]/) stamped = 1
-          rest = substr(rest, 1, RSTART - 1)
+      while ((getline line < backlog) > 0) {
+        if (match(line, /^[-*][[:space:]]+\[[ xX]\][[:space:]]+[^[:space:]]+/) ||
+            match(line, /^[-*][[:space:]]+\*\*[^*]+\*\*/)) {
+          row = substr(line, RSTART, RLENGTH)
+          sub(/^[-*][[:space:]]+/, "", row)
+          sub(/^\[[ xX]\][[:space:]]+/, "", row)
+          gsub(/\*\*/, "", row)
+          live[row] = 1
         }
-        if (!stamped) {
-          if (anchored) {
-            sub(/\)[[:space:]]*$/, ", since " ts ")", line)
-          } else {
-            line = line " (since " ts ")"
-          }
-        }
-        done = 1
-        print line
-        next
       }
+      close(backlog)
     }
-    { print }
-  ' "$file" > "$file.tmp.$$" && mv "$file.tmp.$$" "$file"
+    $1 in live { print }
+  ' "$marks"
 }
 
 command_hold() {

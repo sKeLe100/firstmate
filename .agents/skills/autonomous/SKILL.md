@@ -51,8 +51,9 @@ Nudge thresholds - contact the captain when either condition holds:
 Both thresholds are proposed per the captain's 2026-09-01 ruling
 (question Q3) and belong here as this skill's own numbers.
 
-To gather decisions, run `bin/fm-bearings-snapshot.sh --json` once
-and read `decisions_open`.
+To gather decisions, take step 1's single snapshot read (which sets
+`FM_BEARINGS_GATES` so `gates` is not truncated) and read `decisions_open`.
+Do not restate a bare snapshot command here: step 1 owns the read.
 Do not build a second decision reader, scrape reports or status tails,
 or pass `--all-decisions`: date-deferred holds sit in `gates` until
 due, and a prose-deferred hold disclosed in `omitted[]` stays silent
@@ -61,8 +62,11 @@ until the captain raises it himself.
 Read `decisions_open` as an array of rows, each carrying `id`, `key`,
 `verb`, `summary`, `owner`, `declared_priority`, `since`, and
 `created_at` (the last two per the captain's timestamp ruling: `since`
-is the human-readable date, `created_at` the epoch seconds derived from
-it, absent on rows that predate the field).
+is the human-readable timestamp of when the captain call was raised, read
+from the `held-since` mark in `data/task-marks.tsv` and falling back to the
+row's own tasks-axi creation date on rows written before the sidecar
+existed; `created_at` is the epoch seconds derived from it, absent when
+neither is present).
 Step 2's `fm-autonomous-thresholds.sh` call counts only chat-rulable
 rows toward the bundle-size threshold and finds the oldest chat-rulable
 row by `created_at` for the time-threshold check, counting every open
@@ -240,19 +244,20 @@ Each deferred-ready item carries its plain-language deferral reason
 restriction). Below threshold, stay silent - no separate ping, no
 notification. Rides the existing summary ping and its band gating.
 
-Mechanics: write a `deferred-since <UTC-ISO8601-timestamp>` metadata word into the item's
-trailing backlog metadata block at step 9 bookkeeping when an eligible item
-goes undispatched - the same space-separated metadata-word syntax as `since`,
-read back through the same `metadata_word()` path as `hold`/`hold-kind`/
-`since`, so it is visible in the plain `--json` snapshot with no second read.
-Remove the `deferred-since` word when the item is eventually dispatched.
+Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,
+record a `deferred-since <UTC-ISO8601-timestamp>` mark for it in firstmate's
+own sidecar `data/task-marks.tsv` (`<task-id>\t<key>\t<value>`, the same shape
+as `data/roundtable-marks.tsv`). Remove that mark when the item is eventually
+dispatched. The mark does NOT go into the backlog row's trailing metadata
+block: tasks-axi owns that block and its parser rejects any word it does not
+know, so an unrecognized word swallows the row's title, repo, and kind in
+tasks-axi's own surfaces.
 The full timestamp (not a bare date) is what makes the > 24 hour
-condition above measurable; `since` uses the same format.
-The next pass reads it as `gates[].deferred_since` from the snapshot it
-already takes to determine consecutive-pass eligibility. Take that read
-with `FM_BEARINGS_GATES=500` set, so the `gates` projection is not
-truncated to its default of 20 and a lower-ranked queue item cannot
-silently drop out of deferred-since tracking.
+condition above measurable.
+The next pass reads the mark back as `gates[].deferred_since` from the
+step 1 snapshot it already takes - `bin/fm-fleet-snapshot.sh` joins the
+sidecar onto each backlog record - so consecutive-pass eligibility needs
+no second read.
 
 ## 5. PC02-to-Fable plan-then-execute split
 

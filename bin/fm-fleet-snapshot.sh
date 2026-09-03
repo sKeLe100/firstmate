@@ -356,9 +356,18 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
     return 0
   fi
 
+  local marks="${backlog%/*}/task-marks.tsv"
+  [ -f "$marks" ] || marks=/dev/null
+
   # shellcheck disable=SC2094
-  jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" '
-    def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
+  jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" \
+    --rawfile fm_marks_raw "$marks" '
+    ([$fm_marks_raw | split("\n")[]
+       | select(test("^[^\t]+\t[^\t]+\t"))
+       | capture("^(?<id>[^\t]+)\t(?<key>[^\t]+)\t(?<value>.*)$")
+       | {key:(.id + "\t" + .key), value:.value}]
+     | from_entries) as $marks
+    | def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
     def section_state:
       if . == "In flight" then "in_flight"
       elif . == "Queued" then "queued"
@@ -443,7 +452,8 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
              blocked_by_ids:blocked_by_ids($rest),
              blocked_reason:blocked_reason($rest),
              since:metadata_date_word($rest; "since"),
-             deferred_since:metadata_date_word($rest; "deferred-since"),
+             held_since:($marks[$m.id + "\theld-since"] // null),
+             deferred_since:($marks[$m.id + "\tdeferred-since"] // null),
              merged:metadata_word($rest; "merged"),
              reported:metadata_word($rest; "reported"),
              done:metadata_word($rest; "done"),
@@ -841,6 +851,7 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
             hold_until:(.hold_until // null),
             deferred_marker:(.deferred_marker // false),
             since:(.since // null),
+            held_since:(.held_since // null),
             deferred_since:(.deferred_since // null),
             declared_priority:is_declared_next_session_priority,source:"backlog"} ]) as $captain_holds_all
     | ([ $backlog.records[]? | select(.state == "done" and .structured and .hold_kind != "captain")
@@ -947,6 +958,7 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
           hold_kind:((.hold_kind // null) | if . == null then null else trunc(40) end),
           hold_until:((.hold_until // null) | if . == null then null else trunc(40) end),
           deferred_marker:(.deferred_marker // false),
+          held_since:(.held_since // null),
           deferred_since:(.deferred_since // null),
           captain_actionable:(.captain_actionable // false),
           repo:((.repo // null) | if . == null then null else trunc(120) end),
