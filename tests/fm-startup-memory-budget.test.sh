@@ -33,6 +33,10 @@ exit 0
 SH
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' 'gh version 2.73.0 (fake)'
+  exit 0
+fi
 exit 0
 SH
   cat > "$fakebin/treehouse" <<'SH'
