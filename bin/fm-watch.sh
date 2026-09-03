@@ -2094,7 +2094,6 @@ EOF
       signal_commit_failed=
       while IFS=$(printf '\t') read -r f surface_end surface_ident; do
         [ -n "$f" ] || continue
-        case " $signal_deferred " in *" $f "*) continue ;; esac
         # A covered file reaching this branch is absorbed exactly as it is in
         # the enqueue branch: its heartbeat marker advances too, and a failed
         # classified commit never escalates - an acknowledged process-event
