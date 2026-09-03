@@ -1,4 +1,11 @@
-### pt-tracker ship brief (repo=pt-tracker) — tracker-entry law section as an end user sees it
+=== pt-tracker ship brief (REPO='sKeLe100/pt-tracker.git') — law appears in the brief the crewmate is launched with ===
+   re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
+
+# Firstmate instruction inbox
+Firstmate steers you through durable message files in '/tmp/ptev/a/state/demo-ship.inbox'.
+When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - list '/tmp/ptev/a/state/demo-ship.inbox'/*.msg, read and act on each message in numeric order, then acknowledge each handled message by moving it: `mv '/tmp/ptev/a/state/demo-ship.inbox'/NNN.msg '/tmp/ptev/a/state/demo-ship.inbox'/handled/`.
+The move IS the acknowledgement: without it firstmate rings again and eventually treats you as stuck. An empty or absent inbox needs no action.
+
 # pt-tracker tracker-entry law
 Before any work begins on pt-tracker, you MUST complete BOTH of the following:
 1. Use the ROADMAP execution prompt in the pt-tracker repo to plan and design the work.
@@ -8,18 +15,25 @@ until both items above are complete and recorded in CURRENT.md.
 
 # Project memory
 
-### law present for alternate repo spellings
-owner    1 match(es)
-dotgit   1 match(es)
+=== non-pt-tracker ship brief (REPO='some-repo'), same region — no law, no blank-line drift ===
 
-### non-pt-tracker ship brief (repo=some-repo): no law, no blank-line drift
+# Firstmate instruction inbox
+Firstmate steers you through durable message files in '/tmp/ptev/a/state/demo-other.inbox'.
+When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - list '/tmp/ptev/a/state/demo-other.inbox'/*.msg, read and act on each message in numeric order, then acknowledge each handled message by moving it: `mv '/tmp/ptev/a/state/demo-other.inbox'/NNN.msg '/tmp/ptev/a/state/demo-other.inbox'/handled/`.
+The move IS the acknowledgement: without it firstmate rings again and eventually treats you as stuck. An empty or absent inbox needs no action.
+
+# Project memory
+If `AGENTS.md` or `CLAUDE.md` already exists, or if this task produced durable project-intrinsic knowledge, run `/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M1M7A0SF9ZGYXEMTEJRKA00M/bin/fm-ensure-agents-md.sh .` in the worktree.
+Record only project knowledge useful to almost every future session.
+
+=== non-pt-tracker brief vs base commit 58cb216 output (paths normalized) ===
+no differences — non-pt-tracker briefs byte-identical to pre-change output
+
+=== pt-tracker scout brief: occurrences of 'tracker-entry law' ===
 0
-56-When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - list '/tmp/tmp.BsQGWj8xk8/state/other.inbox'/*.msg, read and act on each message in numeric order, then acknowledge each handled message by moving it: `mv '/tmp/tmp.BsQGWj8xk8/state/other.inbox'/NNN.msg '/tmp/tmp.BsQGWj8xk8/state/other.inbox'/handled/`.
-57-The move IS the acknowledgement: without it firstmate rings again and eventually treats you as stuck. An empty or absent inbox needs no action.
-58-
-59:# Project memory
-
-### pt-tracker scout brief: no law (scouts do not ship)
-0
-
-### non-pt-tracker brief (repo=some-repo, --mode direct-PR) is byte-identical to base commit 91f80b7 output (root/home paths normalized)
+=== repo-spelling matrix: law present (1) for each spelling ===
+pt-tracker                     law_blocks=1
+sKeLe100/pt-tracker            law_blocks=1
+pt-tracker.git                 law_blocks=1
+/home/x/repos/pt-tracker       law_blocks=1
+some-repo                      law_blocks=0
