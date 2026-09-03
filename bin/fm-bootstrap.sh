@@ -58,6 +58,8 @@
 #          LAVISH_AXI_MIN below; the per-tool owners point there. An installed
 #          build below its floor reports MISSING like no-mistakes, so the operator
 #          is asked to upgrade rather than silently running an older tool.
+#          gh is also MISSING_MANUAL (not MISSING - it is root-owned/distro-
+#          managed) when its installed version is older than GH_MIN below.
 #          tasks-axi feature probes remain a separate defense-in-depth check.
 #          tasks-axi and quota-axi are required bootstrap tools (same class as
 #          lavish-axi). A compatible tasks-axi default backend is silent.
@@ -878,6 +880,14 @@ manual_install_url() {
   esac
 }
 
+# gh's own upgrade instructions, used only by the GH_MIN version-floor check
+# below: gh is root-owned/distro-managed, so an outdated gh is MISSING_MANUAL
+# (like herdr/cursor-agent) rather than MISSING, even though a totally absent
+# gh still reports MISSING via install_cmd since brew/apt CAN install it fresh.
+gh_upgrade_url() {
+  echo "https://cli.github.com"
+}
+
 missing_tool_diagnostic() {
   local tool=$1 instructions
   if instructions=$(manual_install_url "$tool"); then
@@ -910,6 +920,15 @@ NO_MISTAKES_MIN=1.46.0
 # of its floor.
 GH_AXI_MIN=0.1.29
 LAVISH_AXI_MIN=0.1.46
+# GH_MIN is deliberately NOT an axi-family current-latest floor: gh is a
+# root-owned, distro-managed system package firstmate cannot upgrade itself
+# (missing_tool_diagnostic emits MISSING_MANUAL for it, not MISSING), so an
+# aggressive floor would produce a permanent un-actionable warning. This is
+# the lowest version confirmed to support both `gh api --paginate --slurp`
+# (added in 2.48.0) and feature-detecting v1 Projects on `gh pr edit` so it
+# no longer breaks on repos where the deprecated `projectCards` GraphQL
+# field is unavailable (cli/cli#10942, released in 2.73.0).
+GH_MIN=2.73.0
 
 treehouse_supports_lease() {
   treehouse get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'
@@ -1348,6 +1367,11 @@ detect_local_tools() {
   fi
   if command -v gh-axi >/dev/null 2>&1 && ! tool_version_at_least gh-axi "$GH_AXI_MIN"; then
     echo "MISSING: gh-axi (install: $(install_cmd gh-axi))"
+  fi
+  # gh is root-owned/distro-managed: firstmate cannot upgrade it itself, so an
+  # outdated gh is MISSING_MANUAL (captain must upgrade it), never MISSING.
+  if command -v gh >/dev/null 2>&1 && ! tool_version_at_least gh "$GH_MIN"; then
+    echo "MISSING_MANUAL: gh (instructions: $(gh_upgrade_url))"
   fi
   if command -v lavish-axi >/dev/null 2>&1 && ! tool_version_at_least lavish-axi "$LAVISH_AXI_MIN"; then
     echo "MISSING: lavish-axi (install: $(install_cmd lavish-axi))"
