@@ -218,16 +218,6 @@ The TTL defaults to 3600 seconds and is overridden by the first non-empty, non-`
 A refused steer prints the exact `bin/fm-control.sh <task> relaunch --note ...` command to use instead; pass `--steer-stale` to fm-send to deliberately resume the stale session anyway.
 The guard never applies to a `--resolve-key` decision answer, an automated internal wake (a `--fire-and-forget` delivery, or any other programmatic caller, which sets `FM_SEND_INTERNAL=1`, since no human is there to act on the relaunch advice), a remote secondmate send, or any typed-plane delivery (a leading `/`, a leading `$` to codex, or an explicit backend target); it fails open (steers proceed) whenever the idle markers are missing or unreadable.
 `bin/fm-fleet-snapshot.sh` surfaces the same idle age per local task as `endpoint.idle_seconds` / `endpoint.cache_expiring` (true only for a LIVE endpoint whose idle age is between ~83% of the effective TTL and the TTL itself - 3000s to 3600s at the default; past the TTL the steer guard, not the heartbeat, owns the session), and `bin/fm-fleet-view.sh` renders it as a `(cache expiring)` suffix on a present endpoint so the heartbeat's fleet review catches a session before its cache lapses.
-## Turn-end pane-churn absorb (config/turnend-churn-absorb)
-
-The optional local, gitignored `config/turnend-churn-absorb` presence flag opts this home into a default-off third form of positive work evidence in watcher triage.
-With it present, every referenced task must independently show positive work evidence, and an eligible bare turn-ended task that lacks authoritative proof may satisfy that requirement when its pane content changed since the previous poll.
-It stays opt-in because the other two proofs read a verdict the harness itself vouches for while this one infers execution from rendered bytes; with the flag absent triage behaves exactly as it did before.
-`FM_TURNEND_CHURN_ABSORB_SECS` is a positive integer number of seconds, defaults to `900`, and bounds how long one endpoint's turn-ends may ride that evidence before surfacing anyway.
-An invalid value fails closed and surfaces the wake.
-The bound is required rather than cosmetic because churn and pane staleness read the same pane.
-The flag is a home-local supervision-noise preference and is not inherited by secondmate homes, which run their own crew mix.
-[`architecture.md`](architecture.md) owns the triage contract and `bin/fm-watch.sh`'s `signal_turnend_panes_churned` owns the exact evidence and fail-closed boundaries.
 
 ## Turn-end pane-churn absorb (config/turnend-churn-absorb)
 

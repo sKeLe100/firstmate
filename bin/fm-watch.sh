@@ -2105,10 +2105,13 @@ EOF
       for f in $signal_surface_marks; do
         mark_signal_surfaced "$f" || true
       done
-      # Only a SUCCESSFULLY classified log commits a classification position,
-      # so an unreadable log's content is classified again once it is readable.
+      # Only a SUCCESSFULLY classified log whose enqueue-or-absorb decision is
+      # final commits a classification position, so an unreadable log - and a
+      # file whose covered absorb was refused - keeps its bytes unclassified
+      # and is decided fresh next cycle.
       while IFS=$(printf '\t') read -r f surface_end surface_ident; do
         [ -n "$f" ] || continue
+        case " $signal_decided " in *" $f "*) ;; *) continue ;; esac
         fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" || true
       done <<EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
