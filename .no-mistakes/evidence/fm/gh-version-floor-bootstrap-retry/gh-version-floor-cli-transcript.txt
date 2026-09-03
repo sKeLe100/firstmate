@@ -1,0 +1,37 @@
+=== gh below the new 2.63.0 floor (the 2.46.0 pin that broke --slurp / gh pr edit) ===
+$ gh --version
+gh version 2.46.0 (fake)
+$ bin/fm-bootstrap.sh
+MISSING_MANUAL: gh (instructions: https://cli.github.com)
+
+=== gh exactly at the floor ===
+$ gh --version
+gh version 2.63.0 (fake)
+$ bin/fm-bootstrap.sh
+(no output - bootstrap reports nothing actionable)
+
+=== gh newer than the floor ===
+$ gh --version
+gh version 3.0.0 (fake)
+$ bin/fm-bootstrap.sh
+(no output - bootstrap reports nothing actionable)
+
+=== gh version string unparseable ===
+$ gh --version
+gh version gh development build (fake)
+$ bin/fm-bootstrap.sh
+MISSING_MANUAL: gh (instructions: https://cli.github.com)
+
+=== gh not installed at all (automated install path preserved) ===
+$ gh --version
+bash: gh: command not found
+$ bin/fm-bootstrap.sh
+MISSING: gh (install: brew install gh  # or the platform's package manager)
+NEEDS_GH_AUTH
+
+=== BASELINE (base commit 60ac3a5 bin/fm-bootstrap.sh): gh 2.46.0 is not flagged at all ===
+$ gh --version
+gh version 2.46.0 (fake)
+$ bin/fm-bootstrap.sh
+(no output - bootstrap reports nothing actionable)
+
