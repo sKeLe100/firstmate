@@ -64,7 +64,7 @@ Each shard is still strictly serial in itself, and separate runners mean no two 
 `.github/workflows/ci.yml` derives the same `n` from `strategy.job-total` rather than a literal, so changing the shard count in either file without the other fails the lane loudly instead of leaving part of the required suite unrun.
 
 Assignment is longest-processing-time bin packing over per-script duration hints embedded in `bin/fm-test-run.sh`.
-The hints came from the `fm-test-timing-portable-serial-*` artifacts of green CI run [33622894934](https://github.com/sKeLe100/firstmate/actions/runs/33622894934) on 2026-09-02, where the lane ran 148 scripts in 3492115 ms of serial work.
+The hints came from the `fm-test-timing-portable-serial-*` artifacts of CI run [33634884168](https://github.com/sKeLe100/firstmate/actions/runs/33634884168) on 2026-09-02, where the lane ran 156 scripts in 3679432 ms of serial work.
 A script with no hint gets the conservative `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` default.
 Hints only affect balance: the coverage guard keeps the partition complete and disjoint whatever they say, so a stale hint costs a slower shard rather than lost coverage.
 Balance is still worth keeping current, because enough unmeasured scripts let one shard carry more than twice another shard's real work and reach the job cap while another runner sits idle.
@@ -72,23 +72,28 @@ Refresh the hints whenever the serial lane gains scripts, rather than waiting fo
 
 | Lane | Script count | Estimated duration |
 |---|---:|---:|
-| `portable-serial-1of4` | 36 | 873026 ms (~873.0 s) |
-| `portable-serial-2of4` | 37 | 873024 ms (~873.0 s) |
-| `portable-serial-3of4` | 37 | 873030 ms (~873.0 s) |
-| `portable-serial-4of4` | 37 | 873035 ms (~873.0 s) |
-| imbalance | | 11 ms |
+| `portable-serial-1of4` | 39 | 919856 ms (~919.9 s) |
+| `portable-serial-2of4` | 38 | 919850 ms (~919.9 s) |
+| `portable-serial-3of4` | 39 | 919865 ms (~919.9 s) |
+| `portable-serial-4of4` | 40 | 919861 ms (~919.9 s) |
+| imbalance | | 15 ms |
 
-Scripts without a measured hint carry the `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS`
-default, so the estimates above are a partition of the current hint table rather
+Every script in the lane currently carries a measured hint; any script added
+later carries the `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` default until the next
+refresh, so the estimates above are a partition of the current hint table rather
 than measured shard wall time. Refresh them from a green CI run using the
 procedure below.
 
-The single longest script, `tests/fm-pr-check-security.test.sh` at 287010 ms, is the floor for any shard count.
+The single longest script, `tests/fm-watch-triage.test.sh` at 302721 ms, is the floor for any shard count.
 
 Refresh the hints by downloading the per-shard timing artifacts from a green CI run, replacing the `portable_serial_weight_hints` table in `bin/fm-test-run.sh` with the measured `path`/`duration_ms` pairs, and updating the table above:
 
+Run this from the home's own clone so `gh` resolves the repository whose CI
+produced the artifacts (this home's runs live in its own fork, not the upstream
+template); pass `-R <owner>/<repo>` only to target a different repository.
+
 ```sh
-gh run download <run-id> -R kunchenguid/firstmate --pattern 'fm-test-timing-portable-serial-*' -D /tmp/fm-serial
+gh run download <run-id> --pattern 'fm-test-timing-portable-serial-*' -D /tmp/fm-serial
 jq -r '.scripts[] | [.path, .duration_ms] | @tsv' /tmp/fm-serial/*.json | LC_ALL=C sort
 bin/fm-test-run.sh --check-coverage
 ```

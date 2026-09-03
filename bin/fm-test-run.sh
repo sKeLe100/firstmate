@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fm-test-run.sh - single owner of Firstmate's behavior-test runner, lane
-# composition for portable CI shards, local --jobs for the proven-isolated set,
+# composition for portable CI shards, local --jobs for proven-concurrent work,
 # timing markers, and the complete-regression coverage guard.
 #
 # Selection modes (exactly one of: --all, --family, --changed, --lane,
@@ -17,7 +17,10 @@
 #   fm-test-run.sh --list --all
 #   fm-test-run.sh --list --family <name>
 #   fm-test-run.sh --list --lane portable-parallel-1
+#   fm-test-run.sh --list-scheduled --family <name>
 #   fm-test-run.sh --list-families
+#   fm-test-run.sh --list-concurrent-safe-families
+#   fm-test-run.sh --concurrent-safe-family-jobs-max <name>
 #   fm-test-run.sh --list-lanes
 #   fm-test-run.sh --check-coverage
 #
@@ -27,6 +30,8 @@
 # Options:
 #   --json <path>   write a deterministic timing artifact after the run
 #   --list          print selected script paths (one per line) and exit 0
+#   --list-scheduled
+#                   print selected paths longest-hint-first and exit 0
 #   --base <ref>    with --changed, compare against this ref (default: origin/main)
 #   --exclude-family <name>
 #                   drop scripts whose primary family matches <name> after selection
@@ -38,10 +43,19 @@
 #                   The required Herdr CI lane uses this so a missing pin cannot
 #                   silently pass as a gate skip.
 #   --jobs N        run the selected scripts with up to N concurrent workers.
-#                   Default is 1 (serial). N>1 is allowed only when every
-#                   selected script is in the proven-isolated set
-#                   (bin/fm-test-isolation-proof.sh --list). Cap is 8. Stateful
-#                   families never schedule under --jobs.
+#                   Plain --changed uses min(4, cpus) workers when multiple
+#                   selected scripts are admissible.
+#                   N>1 is allowed only when every selected script is proven
+#                   safe to run concurrently: individually in the proven-isolated
+#                   set (bin/fm-test-isolation-proof.sh --list), or in a family
+#                   carrying a recorded concurrent proof
+#                   (list_concurrent_safe_families below). Overall cap is 8;
+#                   family proofs may impose a lower cap. Unproven stateful
+#                   scripts stay serial. Concurrent runs are ordered
+#                   longest-hint-first so the slowest script is not stranded
+#                   alone at the tail. Default is 1 (serial) except for plain
+#                   --changed, which uses the bounded automatic scheduler. Any
+#                   unproven remainder runs serially after that group.
 #   --fail-fast     opt-in; stop the run at the first failing script instead of
 #                   continuing through every remaining selected script. Off by
 #                   default so CI keeps seeing the complete result set.
@@ -50,6 +64,22 @@
 #                   hard error rather than a silent no-op. Under
 #                   --jobs>1, in-flight workers still finish but no new worker
 #                   is scheduled once a failure is seen.
+#   --per-script-timeout-secs N
+#                   terminate a script that runs longer than N seconds and
+#                   record it as exit 124 (0 disables, the default). The
+#                   automatic --changed path (plain --changed, no explicit
+#                   --jobs) applies 900s when this option was not passed: no
+#                   real script approaches it, so it only converts a hung
+#                   script into a bounded failure. --max-wall-ms is checked
+#                   after the run and so cannot catch a hang on its own.
+#                   External interruption cleanup is outside this runner's
+#                   guarantee; configured per-script bounds remain authoritative.
+#   --max-wall-ms N fail the run when its measured invocation wall clock exceeds
+#                   N milliseconds, including an empty selection. It is
+#                   evaluated after selection and suite execution and cannot
+#                   interrupt a running script; per-script hangs are
+#                   bounded by --per-script-timeout-secs. Pathological output
+#                   sinks that block finalization are explicitly out of scope.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -60,9 +90,12 @@
 #   FM_TEST_SUMMARY total=<n> failed=<n> skipped_gate=<n> duration_ms=<n>
 #   FM_TEST_SUMMARY_FAMILY family=<name> count=<n> duration_ms=<n> failed=<n>
 #   FM_TEST_SLOWEST rank=<k> script=<path> duration_ms=<n>
+#   FM_TEST_BUDGET max_wall_ms=<n> duration_ms=<n>   (only with --max-wall-ms)
 #
-# Exit status is non-zero if any selected script exits non-zero or a configured
-# --fail-on-gate-skip token appears. Other gate skips (first meaningful line
+# Exit status is non-zero if any selected script exits non-zero, a configured
+# --fail-on-gate-skip token appears, the measured duration exceeds
+# --max-wall-ms, timing-artifact finalization fails, or a concurrent worker
+# violates its isolation check. Other gate skips (first meaningful line
 # matching ^skip:) remain successful and are counted as skipped_gate.
 #
 # Family labels, the changed-file map, and production portable-shard composition
@@ -75,15 +108,32 @@
 # share a machine. This script owns <n>: a lane whose <n> disagrees with the
 # configured shard count is refused, so a CI matrix cannot silently drop a shard.
 # --changed is conservative: it over-selects related families rather than
-# under-selecting, and never expands to the complete suite unless --all.
+# under-selecting, and never expands to the complete suite unless --all. The one
+# place it is deliberately narrow is a bin/ path with no curated family: a test
+# that names it is selected as that SCRIPT, because the reference is per-script
+# evidence. Consumer bin/ scripts still resolve through the curated map, so
+# recorded family-level coupling still expands to the whole family.
 set -eu
+
+now_ms() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import time; print(int(time.time() * 1000))'
+  else
+    echo $(($(date +%s) * 1000))
+  fi
+}
+
+RUN_STARTED_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+RUN_STARTED_MS=$(now_ms)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
 MODE=
 LIST_ONLY=0
+LIST_SCHEDULED=0
 LIST_FAMILIES=0
+LIST_CONCURRENT_SAFE_FAMILIES=0
 LIST_LANES=0
 CHECK_COVERAGE=0
 AGGREGATE_OUT=
@@ -96,7 +146,20 @@ EXCLUDE_FAMILIES=()
 FAIL_ON_GATE_SKIP=
 JOBS=1
 FAIL_FAST=
+JOBS_EXPLICIT=0
 JOBS_MAX=8
+MAX_WALL_MS=
+PER_SCRIPT_TIMEOUT_SECS=0
+# Bound applied automatically on the automatic --changed path, derived from
+# measured healthy runtimes with margin rather than picked: the slowest measured
+# behavior test is the 341s Herdr presentation E2E, and the slowest script in a
+# runner-file changed selection is tests/fm-calm-pi-extension.test.sh at 77s
+# once its Chrome reap terminates. 900s leaves roughly 2.6x headroom over the
+# slowest real script, so this can only ever fire on a script that is genuinely
+# stuck. It is a guard, not a speed control: a HUNG script becomes a bounded
+# failure instead of an unbounded suite, which is the shape that silently
+# outruns a caller's invocation budget.
+CHANGED_DEFAULT_TIMEOUT_SECS=900
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
@@ -138,13 +201,14 @@ now_iso() {
   date -u +%Y-%m-%dT%H:%M:%SZ
 }
 
-now_ms() {
-  if command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import time; print(int(time.time() * 1000))'
-  else
-    # Second precision only when python3 is unavailable.
-    echo $(($(date +%s) * 1000))
-  fi
+cpu_count() {
+  local n
+  n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+  case "$n" in
+    ''|*[!0-9]*) n=1 ;;
+  esac
+  [ "$n" -ge 1 ] || n=1
+  printf '%s\n' "$n"
 }
 
 # Primary family for one tests/*.test.sh basename. Unmapped scripts are
@@ -162,6 +226,7 @@ family_for_basename() {
     fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
     fm-lint-workflows.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
+    fm-harness-adapter-references.test.sh|\
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
     fm-subagent-pretool-check.test.sh|\
     fm-supervision-instructions.test.sh|fm-task-delivery.test.sh|\
@@ -191,6 +256,7 @@ family_for_basename() {
       ;;
     fm-backlog-handoff.test.sh|fm-on.test.sh|fm-remote-backlog-handoff.test.sh|\
     fm-remote-doctor.test.sh|fm-remote-job.test.sh|fm-remote-job-orphan-reap.test.sh|\
+    fm-remote-transport-lanes.test.sh|\
     fm-remote-reply.test.sh|fm-remote-secondmate-lifecycle-e2e.test.sh|\
     fm-remote-secondmate-trace-context.test.sh|\
     fm-secondmate-harness.test.sh|fm-secondmate-lifecycle-e2e.test.sh|\
@@ -200,6 +266,7 @@ family_for_basename() {
     fm-send-secondmate-marker.test.sh|fm-shared-captain-inheritance.test.sh)
       printf '%s\n' secondmate
       ;;
+    fm-backlog-atomicity.test.sh|\
     fm-bootstrap.test.sh|fm-bootstrap-network-parallel.test.sh|fm-fleet-sync.test.sh|fm-gate-refuse.test.sh|fm-gotmp.test.sh|\
     fm-session-start.test.sh|fm-sessionstart-nudge.test.sh|fm-startup-network.test.sh|\
     fm-tangle-guard.test.sh|fm-update.test.sh)
@@ -210,7 +277,8 @@ family_for_basename() {
     fm-composer-matrix-live-e2e.test.sh|\
     fm-codex-continuity-live-e2e.test.sh|fm-grok-continuity-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|\
-    fm-grok-stop-live-e2e.test.sh|fm-harness-liveness-drift-live-e2e.test.sh|\
+    fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
+    fm-harness-liveness-drift-live-e2e.test.sh|\
     fm-muse-signals-live-e2e.test.sh|\
     fm-herdr-version-floor-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
@@ -231,15 +299,15 @@ family_for_basename() {
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
       ;;
-    fm-pr-check-security.test.sh|fm-pr-merge.test.sh|fm-review-diff.test.sh|\
-    fm-teardown.test.sh|fm-x-mode.test.sh)
+    fm-check-unregister.test.sh|fm-pr-check-security.test.sh|fm-pr-merge.test.sh|\
+    fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
       ;;
     fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh)
       printf '%s\n' afk
       ;;
     fm-bearings-board-render.test.sh|fm-bearings-snapshot.test.sh|\
-    fm-fleet-snapshot-view.test.sh)
+    fm-fleet-snapshot-view.test.sh|fm-home-summary-refresh.test.sh)
       printf '%s\n' snapshot-bearings
       ;;
     fm-backend-cmux.test.sh|fm-backend-cmux-smoke.test.sh)
@@ -369,6 +437,50 @@ tests/fm-composer-lib.test.sh
 EOF
 }
 
+# Families whose scripts are proven safe to run concurrently WITH EACH OTHER
+# under the bounded local scheduler. Deliberately separate from the
+# proven-isolated set, which must stay exactly equal to the portable CI shard
+# union (see the coverage guard); these families keep their serial CI lane and
+# only gain concurrency for a local run.
+#
+# Membership is empirical, never assumed:
+# `bin/fm-test-isolation-proof.sh --pool <family> --jobs 4` is the owner of the
+# proof, and docs/fm-test-isolation-proof.md records the dated result.
+list_concurrent_safe_families() {
+  cat <<'EOF'
+watcher-wake-lock
+pure-contract-unit
+EOF
+}
+
+family_is_concurrent_safe() {
+  local want=$1 line
+  while IFS= read -r line; do
+    [ "$line" = "$want" ] && return 0
+  done < <(list_concurrent_safe_families)
+  return 1
+}
+
+concurrent_safe_family_jobs_max() {
+  case "$1" in
+    watcher-wake-lock|pure-contract-unit) printf '4\n' ;;
+    *) printf '1\n' ;;
+  esac
+}
+
+# A script may run under --jobs when it is individually proven isolated or is
+# an exact repository member of a family carrying a recorded concurrent proof.
+script_allows_concurrency() {
+  local s=$1 family repo_script
+  is_proven_isolated_script "$s" && return 0
+  family=$(family_for_basename "$(basename "$s")")
+  family_is_concurrent_safe "$family" || return 1
+  while IFS= read -r repo_script; do
+    [ "$repo_script" = "$s" ] && return 0
+  done < <(all_repo_tests)
+  return 1
+}
+
 is_proven_isolated_script() {
   local want=$1 line
   while IFS= read -r line; do
@@ -405,154 +517,162 @@ list_portable_serial() {
 # procedure.
 portable_serial_weight_hints() {
   cat <<'EOF'
-tests/fm-afk-inject-e2e.test.sh 35125
-tests/fm-afk-pi-herdr-return-e2e.test.sh 74
-tests/fm-afk-return.test.sh 1825
-tests/fm-ask-user-authority.test.sh 100
-tests/fm-backend-cmux-smoke.test.sh 33
-tests/fm-backend-cmux.test.sh 3624
-tests/fm-backend-herdr-focus-flash-e2e.test.sh 23
-tests/fm-backend-orca.test.sh 18621
-tests/fm-backend-tmux-smoke.test.sh 376
-tests/fm-backend-zellij-smoke.test.sh 17
-tests/fm-backend-zellij.test.sh 9365
-tests/fm-backend.test.sh 20919
-tests/fm-backlog-handoff.test.sh 42747
-tests/fm-bearings-board-render.test.sh 1466
-tests/fm-bearings-board.test.sh 3215
-tests/fm-bearings-snapshot.test.sh 106027
-tests/fm-bootstrap-network-parallel.test.sh 8678
-tests/fm-bootstrap.test.sh 38567
-tests/fm-branch-supervision.test.sh 5656
-tests/fm-busy-adapter-wiring.test.sh 18046
-tests/fm-busy-state.test.sh 2933
-tests/fm-calm-pi-extension.test.sh 190
-tests/fm-captain-window.test.sh 286
-tests/fm-classify-corr-token.test.sh 10251
-tests/fm-classify-decision-key.test.sh 782
-tests/fm-claude-stop-autoarm-live-e2e.test.sh 21
-tests/fm-claude-stop-autoarm.test.sh 60703
-tests/fm-cmux-claude-composer-live-e2e.test.sh 17
+tests/fm-afk-inject-e2e.test.sh 34747
+tests/fm-afk-pi-herdr-return-e2e.test.sh 63
+tests/fm-afk-return.test.sh 1494
+tests/fm-ask-user-authority.test.sh 94
+tests/fm-backend-cmux-smoke.test.sh 29
+tests/fm-backend-cmux.test.sh 3621
+tests/fm-backend-herdr-focus-flash-e2e.test.sh 22
+tests/fm-backend-orca.test.sh 15989
+tests/fm-backend-tmux-smoke.test.sh 430
+tests/fm-backend-zellij-smoke.test.sh 20
+tests/fm-backend-zellij.test.sh 7338
+tests/fm-backend.test.sh 20697
+tests/fm-backlog-atomicity.test.sh 131953
+tests/fm-backlog-handoff.test.sh 51279
+tests/fm-bearings-board-render.test.sh 1259
+tests/fm-bearings-board.test.sh 3266
+tests/fm-bearings-snapshot.test.sh 82867
+tests/fm-bootstrap-network-parallel.test.sh 8555
+tests/fm-bootstrap.test.sh 21442
+tests/fm-branch-supervision.test.sh 4510
+tests/fm-busy-adapter-wiring.test.sh 20844
+tests/fm-busy-state.test.sh 2911
+tests/fm-calm-pi-extension.test.sh 275
+tests/fm-captain-window.test.sh 279
+tests/fm-check-unregister.test.sh 568
+tests/fm-classify-corr-token.test.sh 13455
+tests/fm-classify-decision-key.test.sh 881
+tests/fm-claude-stop-autoarm-live-e2e.test.sh 18
+tests/fm-claude-stop-autoarm.test.sh 60516
+tests/fm-cmux-claude-composer-live-e2e.test.sh 20
 tests/fm-codex-continuity-live-e2e.test.sh 16
-tests/fm-composer-matrix-live-e2e.test.sh 22
-tests/fm-context-usage.test.sh 299
-tests/fm-control-relaunch.test.sh 62704
-tests/fm-control.test.sh 37655
-tests/fm-cursor-harness.test.sh 30079
-tests/fm-cursor-primary-live-e2e.test.sh 21
-tests/fm-cursor-primary.test.sh 54549
-tests/fm-daemon.test.sh 20050
-tests/fm-documentation-audiences.test.sh 597
-tests/fm-fleet-snapshot-view.test.sh 30030
-tests/fm-fleet-sync.test.sh 36374
-tests/fm-gate-refuse.test.sh 5212
-tests/fm-gitignore-config.test.sh 59
-tests/fm-gotmp.test.sh 1849
+tests/fm-composer-matrix-live-e2e.test.sh 19
+tests/fm-context-usage.test.sh 221
+tests/fm-control-relaunch.test.sh 44458
+tests/fm-control.test.sh 37123
+tests/fm-cursor-harness.test.sh 30123
+tests/fm-cursor-primary-live-e2e.test.sh 16
+tests/fm-cursor-primary.test.sh 48335
+tests/fm-daemon.test.sh 26382
+tests/fm-documentation-audiences.test.sh 799
+tests/fm-extension-binding.test.sh 7433
+tests/fm-fleet-snapshot-view.test.sh 25710
+tests/fm-fleet-sync.test.sh 32837
+tests/fm-gate-refuse.test.sh 4864
+tests/fm-gitignore-config.test.sh 47
+tests/fm-gotmp.test.sh 1809
 tests/fm-grok-continuity-live-e2e.test.sh 20
-tests/fm-grok-stop-live-e2e.test.sh 16
-tests/fm-guard-stale-banner.test.sh 11473
-tests/fm-harness-liveness-drift-live-e2e.test.sh 20
-tests/fm-herdr-session-cleanup.test.sh 5001
-tests/fm-herdr-submit-confirm-live-e2e.test.sh 22
+tests/fm-grok-stop-live-e2e.test.sh 18
+tests/fm-guard-stale-banner.test.sh 8335
+tests/fm-harness-adapter-instructions-live-e2e.test.sh 21
+tests/fm-harness-adapter-references.test.sh 104
+tests/fm-harness-liveness-drift-live-e2e.test.sh 18
+tests/fm-herdr-session-cleanup.test.sh 5839
+tests/fm-herdr-submit-confirm-live-e2e.test.sh 19
 tests/fm-herdr-version-floor-live-e2e.test.sh 21
-tests/fm-inactive-reconcile.test.sh 40771
-tests/fm-kimi-harness.test.sh 18023
-tests/fm-lint-workflows.test.sh 830
-tests/fm-llm-usage-lib.test.sh 874
-tests/fm-llm-usage-telemetry-integration.test.sh 21426
-tests/fm-muse-harness.test.sh 48329
-tests/fm-muse-signals-live-e2e.test.sh 23
-tests/fm-no-mistakes-required-body-fetch.test.sh 373
-tests/fm-no-mistakes-required.test.sh 229
-tests/fm-on.test.sh 8339
-tests/fm-opencode-primary-live-e2e.test.sh 21
-tests/fm-operational-input.test.sh 234
-tests/fm-peek-remote.test.sh 955
-tests/fm-pending-reply.test.sh 24949
-tests/fm-pi-branch-extension.test.sh 18060
-tests/fm-pi-branch-live-e2e.test.sh 20
-tests/fm-pi-primary-live-e2e.test.sh 16
-tests/fm-pi-watch-extension.test.sh 41105
-tests/fm-pr-check-security.test.sh 287010
-tests/fm-primary-scope-lib.test.sh 94
-tests/fm-procevent-when.test.sh 15273
-tests/fm-procevent.test.sh 55319
-tests/fm-project-origin.test.sh 136
-tests/fm-public-followup.test.sh 151994
-tests/fm-questionnaire-refill-source.test.sh 115
-tests/fm-queue-snapshot.test.sh 7543
-tests/fm-quota-array-dispatch-live-e2e.test.sh 20
-tests/fm-remote-backlog-handoff.test.sh 38643
-tests/fm-remote-doctor.test.sh 4986
-tests/fm-remote-entrypoint.test.sh 79
-tests/fm-remote-job-orphan-reap.test.sh 2976
-tests/fm-remote-job.test.sh 52005
-tests/fm-remote-reply.test.sh 71710
-tests/fm-remote-secondmate-control-launch-settle.test.sh 678
-tests/fm-remote-secondmate-lifecycle-e2e.test.sh 177685
-tests/fm-remote-secondmate-parent-binding.test.sh 16968
-tests/fm-remote-secondmate-trace-context.test.sh 43006
-tests/fm-retry-pressure.test.sh 435
-tests/fm-returning-session-check.test.sh 269
-tests/fm-roundtable-coverage.test.sh 740
-tests/fm-roundtable-factsheet.test.sh 654
-tests/fm-secondmate-harness.test.sh 152401
-tests/fm-secondmate-lifecycle-e2e.test.sh 7693
-tests/fm-secondmate-liveness.test.sh 16965
-tests/fm-secondmate-reconcile.test.sh 57944
-tests/fm-secondmate-safety.test.sh 55372
-tests/fm-secondmate-sync.test.sh 17307
-tests/fm-send-cache-stale-guard.test.sh 14070
-tests/fm-send-inbox-doorbell-live-e2e.test.sh 23
-tests/fm-send-inbox.test.sh 38778
-tests/fm-send-remote-delivery.test.sh 13497
-tests/fm-send-resolve-key.test.sh 17718
-tests/fm-send-secondmate-marker-herdr-e2e.test.sh 49
-tests/fm-send-secondmate-marker.test.sh 6097
-tests/fm-session-lock-ancestry.test.sh 1043
-tests/fm-session-start.test.sh 147825
-tests/fm-sessionstart-hook-live-e2e.test.sh 21
-tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 20
-tests/fm-sessionstart-nudge.test.sh 19204
-tests/fm-shared-captain-inheritance.test.sh 4487
-tests/fm-spawn-dispatch-profile.test.sh 71664
-tests/fm-spawn-pc02-lane-guard.test.sh 8306
-tests/fm-spawn-pool-base-freshen.test.sh 34435
-tests/fm-spawn-worktree-settle.test.sh 5767
-tests/fm-startup-memory-budget.test.sh 5854
-tests/fm-startup-network.test.sh 54867
-tests/fm-stow-cascade.test.sh 3086
-tests/fm-subagent-pretool-check.test.sh 1317
-tests/fm-supervision-events.test.sh 658
-tests/fm-tangle-guard.test.sh 9402
-tests/fm-task-delivery.test.sh 2456
-tests/fm-task-inbox.test.sh 25627
-tests/fm-teardown-endpoint-safety.test.sh 4427
-tests/fm-teardown.test.sh 100584
-tests/fm-test-fixture-cleanup.test.sh 565
-tests/fm-test-isolation-proof.test.sh 574
-tests/fm-tmux-agent-liveness.test.sh 2493
-tests/fm-tool-update-check.test.sh 13328
-tests/fm-trace-context-lib.test.sh 212
-tests/fm-trace-context-spawn.test.sh 42278
-tests/fm-turnend-guard.test.sh 22386
-tests/fm-update.test.sh 5495
-tests/fm-upstream-behind-check.test.sh 12664
-tests/fm-upstream-sync-item.test.sh 5702
-tests/fm-vendor-auth-probe.test.sh 43376
-tests/fm-voice-relay.test.sh 28566
-tests/fm-wake-daemon-lifecycle-e2e.test.sh 6476
-tests/fm-wake-drain-open-decisions-cursor.test.sh 19688
-tests/fm-wake-drain-open-decisions.test.sh 3973
-tests/fm-wake-drain-unread-status.test.sh 11822
-tests/fm-wake-pair-dedup.test.sh 25760
-tests/fm-wake-queue.test.sh 40590
-tests/fm-watch-arm.test.sh 69350
-tests/fm-watch-checkpoint.test.sh 5644
-tests/fm-watch-pc02-cadence.test.sh 6055
-tests/fm-watch-recovery-loop.test.sh 58354
-tests/fm-watch-triage.test.sh 225624
-tests/fm-watcher-lock.test.sh 103920
+tests/fm-home-summary-refresh.test.sh 34990
+tests/fm-inactive-reconcile.test.sh 41623
+tests/fm-kimi-harness.test.sh 20728
+tests/fm-lint-workflows.test.sh 635
+tests/fm-llm-usage-lib.test.sh 934
+tests/fm-llm-usage-telemetry-integration.test.sh 21242
+tests/fm-muse-harness.test.sh 59788
+tests/fm-muse-signals-live-e2e.test.sh 18
+tests/fm-no-mistakes-required-body-fetch.test.sh 332
+tests/fm-no-mistakes-required.test.sh 322
+tests/fm-on.test.sh 11265
+tests/fm-opencode-primary-live-e2e.test.sh 16
+tests/fm-operational-input.test.sh 191
+tests/fm-peek-remote.test.sh 990
+tests/fm-pending-reply.test.sh 20007
+tests/fm-pi-branch-extension.test.sh 20462
+tests/fm-pi-branch-live-e2e.test.sh 18
+tests/fm-pi-primary-live-e2e.test.sh 21
+tests/fm-pi-watch-extension.test.sh 43731
+tests/fm-pr-check-security.test.sh 139722
+tests/fm-primary-scope-lib.test.sh 133
+tests/fm-procevent-when.test.sh 16420
+tests/fm-procevent.test.sh 58507
+tests/fm-project-origin.test.sh 99
+tests/fm-public-followup.test.sh 166269
+tests/fm-questionnaire-refill-source.test.sh 157
+tests/fm-queue-snapshot.test.sh 7061
+tests/fm-quota-array-dispatch-live-e2e.test.sh 16
+tests/fm-remote-backlog-handoff.test.sh 35343
+tests/fm-remote-doctor.test.sh 4370
+tests/fm-remote-entrypoint.test.sh 92
+tests/fm-remote-job-orphan-reap.test.sh 2776
+tests/fm-remote-job.test.sh 56595
+tests/fm-remote-reply.test.sh 83953
+tests/fm-remote-secondmate-control-launch-settle.test.sh 563
+tests/fm-remote-secondmate-lifecycle-e2e.test.sh 202101
+tests/fm-remote-secondmate-parent-binding.test.sh 28584
+tests/fm-remote-secondmate-trace-context.test.sh 61840
+tests/fm-remote-transport-lanes.test.sh 61340
+tests/fm-retry-pressure.test.sh 595
+tests/fm-returning-session-check.test.sh 222
+tests/fm-roundtable-coverage.test.sh 495
+tests/fm-roundtable-factsheet.test.sh 446
+tests/fm-secondmate-harness.test.sh 151488
+tests/fm-secondmate-lifecycle-e2e.test.sh 7352
+tests/fm-secondmate-liveness.test.sh 8202
+tests/fm-secondmate-reconcile.test.sh 60099
+tests/fm-secondmate-safety.test.sh 54979
+tests/fm-secondmate-sync.test.sh 15480
+tests/fm-send-cache-stale-guard.test.sh 11924
+tests/fm-send-inbox-doorbell-live-e2e.test.sh 19
+tests/fm-send-inbox.test.sh 35675
+tests/fm-send-remote-delivery.test.sh 26529
+tests/fm-send-resolve-key.test.sh 14273
+tests/fm-send-secondmate-marker-herdr-e2e.test.sh 55
+tests/fm-send-secondmate-marker.test.sh 4649
+tests/fm-session-lock-ancestry.test.sh 1110
+tests/fm-session-start.test.sh 142046
+tests/fm-sessionstart-hook-live-e2e.test.sh 20
+tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 18
+tests/fm-sessionstart-nudge.test.sh 58252
+tests/fm-shared-captain-inheritance.test.sh 4888
+tests/fm-spawn-dispatch-profile.test.sh 72127
+tests/fm-spawn-pc02-lane-guard.test.sh 11095
+tests/fm-spawn-pool-base-freshen.test.sh 36516
+tests/fm-spawn-worktree-settle.test.sh 6293
+tests/fm-startup-memory-budget.test.sh 6861
+tests/fm-startup-network.test.sh 51384
+tests/fm-stow-cascade.test.sh 2936
+tests/fm-subagent-pretool-check.test.sh 1352
+tests/fm-supervision-events.test.sh 735
+tests/fm-tangle-guard.test.sh 8896
+tests/fm-task-delivery.test.sh 4355
+tests/fm-task-inbox.test.sh 23776
+tests/fm-teardown-endpoint-safety.test.sh 4264
+tests/fm-teardown.test.sh 87126
+tests/fm-test-fixture-cleanup.test.sh 612
+tests/fm-test-fixtures.test.sh 116
+tests/fm-test-isolation-proof.test.sh 2647
+tests/fm-tmux-agent-liveness.test.sh 1331
+tests/fm-tool-update-check.test.sh 13916
+tests/fm-trace-context-lib.test.sh 178
+tests/fm-trace-context-spawn.test.sh 47780
+tests/fm-turnend-guard.test.sh 36391
+tests/fm-update.test.sh 3668
+tests/fm-upstream-behind-check.test.sh 10190
+tests/fm-upstream-sync-item.test.sh 4797
+tests/fm-vendor-auth-probe.test.sh 43105
+tests/fm-voice-relay.test.sh 28722
+tests/fm-wake-daemon-lifecycle-e2e.test.sh 6520
+tests/fm-wake-drain-open-decisions-cursor.test.sh 16324
+tests/fm-wake-drain-open-decisions.test.sh 4763
+tests/fm-wake-drain-unread-status.test.sh 24081
+tests/fm-wake-pair-dedup.test.sh 27171
+tests/fm-wake-queue.test.sh 41794
+tests/fm-watch-arm.test.sh 47370
+tests/fm-watch-checkpoint.test.sh 5272
+tests/fm-watch-pc02-cadence.test.sh 5377
+tests/fm-watch-recovery-loop.test.sh 58299
+tests/fm-watch-triage.test.sh 302721
+tests/fm-watcher-lock.test.sh 62472
 EOF
 }
 
@@ -727,7 +847,7 @@ run_coverage_guard() {
       rm -rf "$tmp"
       return 1
     fi
-    printf '%s\n' "${SCRIPTS[@]}" >>"$tmp/serial_shards_raw"
+    printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" >>"$tmp/serial_shards_raw"
     shard=$((shard + 1))
   done
   SCRIPTS=()
@@ -942,14 +1062,66 @@ families_for_test_reference() {
   [ "$found" -eq 1 ]
 }
 
+# Tests that name <needle>, selected as individual scripts rather than widened
+# to each referencing test's whole family. A direct reference is per-script
+# evidence, so it selects per script: one real-Herdr E2E sourcing a shared
+# helper must not drag in every other script of that expensive family.
+scripts_for_test_reference() {
+  local needle=$1 s
+  local found=0
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    if grep -Fq "$needle" "$s"; then
+      printf '__script__:%s\n' "$(basename "$s")"
+      found=1
+    fi
+  done < <(all_repo_tests)
+  [ "$found" -eq 1 ]
+}
+
+# bin/ scripts other than <needle> itself that name <needle>.
+bin_consumers_of() {
+  local needle=$1 b
+  for b in bin/*.sh bin/backends/*.sh; do
+    [ -f "$b" ] || continue
+    [ "$(basename "$b")" = "$needle" ] || ! grep -Fq "$needle" "$b" || printf '%s\n' "$b"
+  done
+}
+
+# An unmapped bin/ path has no curated family of its own. Its blast radius is
+# the tests that name it, plus the curated families of the bin/ scripts that
+# consume it. Direct test references resolve per script (above) while consumer
+# scripts resolve back through the curated map, so genuine family-level
+# coupling a maintainer recorded is preserved while an incidental single-script
+# reference no longer selects that script's whole family.
+BIN_FALLBACK_DEPTH=0
+families_for_unmapped_bin() {
+  local path=$1 needle consumer out found=0
+  needle=$(basename "$path")
+  if out=$(scripts_for_test_reference "$needle"); then
+    printf '%s\n' "$out"
+    found=1
+  fi
+  if [ "$BIN_FALLBACK_DEPTH" -lt 2 ]; then
+    BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH + 1))
+    while IFS= read -r consumer; do
+      [ -n "$consumer" ] || continue
+      out=$(families_for_changed_path "$consumer" | grep -v '^__unmapped__:' || true)
+      if [ -n "$out" ]; then
+        printf '%s\n' "$out"
+        found=1
+      fi
+    done < <(bin_consumers_of "$needle")
+    BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH - 1))
+  fi
+  [ "$found" -eq 1 ]
+}
+
 # Conservative path → family map. Over-selects rather than under-selects.
 # Never expands to the complete suite.
 families_for_changed_path() {
   local path=$1 fixture_ref
   case "$path" in
-    tests/fm-test-run.test.sh)
-      printf '%s\n' pure-contract-unit
-      ;;
     tests/fm-backend-herdr-eventwait.test.py)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
@@ -960,6 +1132,10 @@ families_for_changed_path() {
       printf '%s\n' "__script__:$(basename "$path")"
       ;;
     bin/fm-test-run.sh|bin/fm-test-isolation-proof.sh)
+      # Deliberately the WHOLE family, not just the two contract tests. This
+      # runner executes every pure-contract-unit script, so a change to it is
+      # only proven by running them: its own contract test passing says the
+      # runner's logic is right, not that the suite it drives still runs.
       printf '%s\n' pure-contract-unit
       ;;
     bin/backends/herdr*|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh)
@@ -1024,6 +1200,15 @@ families_for_changed_path() {
       printf '%s\n' session-bootstrap
       printf '%s\n' live-harness-optin
       ;;
+    bin/fm-extension.mjs|bin/fm-extension.sh|docs/examples/process-event-extension/*)
+      printf '%s\n' __script__:fm-extension-binding.test.sh
+      ;;
+    bin/fm-procevent.sh|bin/fm-procevent-lib.sh|bin/fm-procevent-extension-capture.pl)
+      printf '%s\n' __script__:fm-extension-binding.test.sh
+      printf '%s\n' __script__:fm-procevent.test.sh
+      printf '%s\n' __script__:fm-procevent-when.test.sh
+      printf '%s\n' __script__:fm-remote-reply.test.sh
+      ;;
     bin/fm-timeout-lib.sh)
       # The shared hard bound: session start's runtime bound, the fleet/bearings
       # snapshots, the vendor auth probe, the stow cascade's per-home step, and
@@ -1066,7 +1251,8 @@ families_for_changed_path() {
       printf '%s\n' watcher-wake-lock
       printf '%s\n' live-harness-optin
       ;;
-    bin/fm-bearings-snapshot.sh|bin/fm-fleet-snapshot.sh|bin/fm-fleet-view.sh)
+    bin/fm-bearings-snapshot.sh|bin/fm-fleet-snapshot.sh|bin/fm-fleet-view.sh|\
+    bin/fm-home-summary-refresh.sh)
       printf '%s\n' snapshot-bearings
       ;;
     bin/fm-install-herdr.sh|bin/fm-install-treehouse.sh|bin/fm-herdr-ci-cleanup.sh)
@@ -1089,6 +1275,10 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
       ;;
+    .agents/skills/harness-adapters/SKILL.md|.agents/skills/harness-adapters/references/*)
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' live-harness-optin
+      ;;
     .agents/skills/*/SKILL.md)
       printf '%s\n' pure-contract-unit
       ;;
@@ -1104,7 +1294,7 @@ families_for_changed_path() {
     docs/configuration.md|docs/supervision-protocols/*)
       printf '%s\n' pure-contract-unit
       ;;
-    tests/lib.sh|tests/*-helpers.sh)
+    tests/lib.sh|tests/*-helpers.sh|tests/fixtures.sh)
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
@@ -1125,7 +1315,7 @@ families_for_changed_path() {
       # the fixture case above applies. Refusing on its absent mapping would
       # make every retirement branch unable to select its changed tests.
       if [ -e "$path" ]; then
-        families_for_test_reference "$(basename "$path")" \
+        families_for_unmapped_bin "$path" \
           || printf '%s\n' "__unmapped__:$path"
       fi
       ;;
@@ -1226,7 +1416,7 @@ apply_exclude_families() {
   for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
     fam=$(family_for_basename "$(basename "$s")")
     keep=1
-    for ex in "${EXCLUDE_FAMILIES[@]}"; do
+    for ex in "${EXCLUDE_FAMILIES[@]+"${EXCLUDE_FAMILIES[@]}"}"; do
       if [ "$fam" = "$ex" ]; then
         keep=0
         break
@@ -1373,10 +1563,30 @@ while [ "$#" -gt 0 ]; do
     --jobs)
       [ "$#" -gt 1 ] || die "--jobs requires a positive integer"
       JOBS=$2
+      JOBS_EXPLICIT=1
       shift 2
       ;;
     --jobs=*)
       JOBS=${1#--jobs=}
+      JOBS_EXPLICIT=1
+      shift
+      ;;
+    --max-wall-ms)
+      [ "$#" -gt 1 ] || die "--max-wall-ms requires a positive integer"
+      MAX_WALL_MS=$2
+      shift 2
+      ;;
+    --max-wall-ms=*)
+      MAX_WALL_MS=${1#--max-wall-ms=}
+      shift
+      ;;
+    --per-script-timeout-secs)
+      [ "$#" -gt 1 ] || die "--per-script-timeout-secs requires a whole number of seconds"
+      PER_SCRIPT_TIMEOUT_SECS=$2
+      shift 2
+      ;;
+    --per-script-timeout-secs=*)
+      PER_SCRIPT_TIMEOUT_SECS=${1#--per-script-timeout-secs=}
       shift
       ;;
     --fail-fast)
@@ -1387,9 +1597,26 @@ while [ "$#" -gt 0 ]; do
       LIST_ONLY=1
       shift
       ;;
+    --list-scheduled)
+      LIST_SCHEDULED=1
+      shift
+      ;;
     --list-families)
       LIST_FAMILIES=1
       shift
+      ;;
+    --list-concurrent-safe-families)
+      LIST_CONCURRENT_SAFE_FAMILIES=1
+      shift
+      ;;
+    --concurrent-safe-family-jobs-max)
+      [ "$#" -gt 1 ] || die "--concurrent-safe-family-jobs-max requires a family name"
+      concurrent_safe_family_jobs_max "$2"
+      exit 0
+      ;;
+    --concurrent-safe-family-jobs-max=*)
+      concurrent_safe_family_jobs_max "${1#--concurrent-safe-family-jobs-max=}"
+      exit 0
       ;;
     --list-lanes)
       LIST_LANES=1
@@ -1458,6 +1685,11 @@ if [ "$LIST_FAMILIES" -eq 1 ]; then
   exit 0
 fi
 
+if [ "$LIST_CONCURRENT_SAFE_FAMILIES" -eq 1 ]; then
+  list_concurrent_safe_families
+  exit 0
+fi
+
 if [ "$LIST_LANES" -eq 1 ]; then
   list_known_lanes
   exit 0
@@ -1484,6 +1716,17 @@ esac
 [ "$JOBS" -ge 1 ] || die "--jobs must be >= 1"
 [ "$JOBS" -le "$JOBS_MAX" ] || die "--jobs is capped at $JOBS_MAX (got $JOBS)"
 
+if [ -n "$MAX_WALL_MS" ]; then
+  case "$MAX_WALL_MS" in
+    ''|*[!0-9]*) die "--max-wall-ms requires a positive integer" ;;
+  esac
+  [ "$MAX_WALL_MS" -gt 0 ] || die "--max-wall-ms requires a positive integer"
+fi
+
+case "$PER_SCRIPT_TIMEOUT_SECS" in
+  ''|*[!0-9]*) die "--per-script-timeout-secs requires a whole number of seconds (0 disables)" ;;
+esac
+
 case "${MODE:-}" in
   all)
     select_all
@@ -1507,7 +1750,7 @@ case "${MODE:-}" in
     ;;
   scripts)
     # Normalize and re-add through add_script for consistent paths.
-    raw=("${SCRIPTS[@]}")
+    raw=("${SCRIPTS[@]+"${SCRIPTS[@]}"}")
     SCRIPTS=()
     for s in "${raw[@]}"; do
       add_script "$s"
@@ -1526,31 +1769,54 @@ fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
 fi
-if [ "$JOBS" -gt 1 ]; then
-  SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
-fi
-
-if [ "$LIST_ONLY" -eq 1 ]; then
-  for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
-    printf '%s\n' "$s"
-  done
+if [ "$LIST_ONLY" -eq 1 ] || [ "$LIST_SCHEDULED" -eq 1 ]; then
+  if [ "$LIST_SCHEDULED" -eq 1 ]; then
+    for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
+      printf '%s\t%s\n' "$(portable_serial_weight_for "$s")" "$s"
+    done | LC_ALL=C sort -t"$(printf '\t')" -k1,1nr -k2,2 | cut -f2-
+  else
+    for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
+      printf '%s\n' "$s"
+    done
+  fi
   exit 0
 fi
 
+# An empty selection is a clean result, not a no-op that falls through. Exiting
+# here also keeps every array expansion below off the empty-array path: under
+# `set -u`, bash 3.2 (the stock macOS shell) treats "${arr[@]}" on an empty
+# array as an unbound-variable error, while bash 4.4+ makes it a harmless no-op.
+# A contributor on stock macOS who changes only documentation must still get
+# total=0 and exit 0 rather than a crash.
 if [ "${#SCRIPTS[@]}" -eq 0 ]; then
   log "nothing to run"
-  printf 'FM_TEST_SUMMARY total=0 failed=0 skipped_gate=0 duration_ms=0\n'
+  empty_finished_ms=$(now_ms)
+  empty_duration=$((empty_finished_ms - RUN_STARTED_MS))
+  [ "$empty_duration" -ge 0 ] || empty_duration=0
+  empty_rc=0
+  printf 'FM_TEST_SUMMARY total=0 failed=0 skipped_gate=0 duration_ms=%s\n' "$empty_duration"
+  # The budget covers the whole invocation, so a selection phase that outran it
+  # still fails - reporting zero work is not the same as reporting no time.
+  if [ -n "$MAX_WALL_MS" ]; then
+    printf 'FM_TEST_BUDGET max_wall_ms=%s duration_ms=%s\n' "$MAX_WALL_MS" "$empty_duration"
+    if [ "$empty_duration" -gt "$MAX_WALL_MS" ]; then
+      log "wall-clock budget exceeded: ${empty_duration}ms > ${MAX_WALL_MS}ms for $SELECTION_DESC"
+      empty_rc=1
+    fi
+  fi
   if [ -n "$JSON_PATH" ]; then
     empty_rec=$(mktemp)
     empty_fam=$(mktemp)
     : >"$empty_rec"
     : >"$empty_fam"
-    started=$(now_iso)
+    empty_finished_iso=$(now_iso)
     mkdir -p "$(dirname "$JSON_PATH")"
-    write_json_artifact "$JSON_PATH" "$started" "$started" "empty" 0 0 0 0 "$SELECTION_DESC" "$empty_rec" "$empty_fam"
+    write_json_artifact "$JSON_PATH" "$RUN_STARTED_ISO" "$empty_finished_iso" \
+      "fm-test-run-${RUN_STARTED_MS}-$$" 0 0 0 "$empty_duration" \
+      "$SELECTION_DESC" "$empty_rec" "$empty_fam"
     rm -f "$empty_rec" "$empty_fam"
   fi
-  exit 0
+  exit "$empty_rc"
 fi
 
 # Verify selected scripts exist before starting.
@@ -1559,23 +1825,96 @@ for s in "${SCRIPTS[@]}"; do
   [ -x "$s" ] || [ -r "$s" ] || die "test script not readable: $s"
 done
 
-# --jobs N>1 only for the proven-isolated set. Stateful families stay serial.
-if [ "$JOBS" -gt 1 ]; then
+# Plain --changed uses the bounded representative-suite scheduler; numeric
+# --jobs retains the strict all-script admission rule below.
+AUTO_CONCURRENCY=0
+if [ "$MODE" = changed ] && [ "$JOBS_EXPLICIT" -eq 0 ]; then
+  if [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
+    PER_SCRIPT_TIMEOUT_SECS=$CHANGED_DEFAULT_TIMEOUT_SECS
+  fi
+  auto_admissible=0
   for s in "${SCRIPTS[@]}"; do
+    script_allows_concurrency "$s" && auto_admissible=$((auto_admissible + 1))
+  done
+  if [ "$auto_admissible" -gt 1 ]; then
+    JOBS=$(cpu_count)
+    [ "$JOBS" -le 4 ] || JOBS=4
+    [ "$JOBS" -ge 1 ] || JOBS=1
+    [ "$JOBS" -eq 1 ] || AUTO_CONCURRENCY=1
+  fi
+fi
+if [ "$JOBS" -gt 1 ] || [ "$MODE" = changed ]; then
+  SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
+fi
+
+# An explicit --jobs names a concurrency for exactly the selection given, so an
+# unproven script in it is a refusal rather than something to schedule around.
+if [ "$JOBS" -gt 1 ] && [ "$AUTO_CONCURRENCY" -eq 0 ]; then
+  for s in "${SCRIPTS[@]}"; do
+    if ! script_allows_concurrency "$s"; then
+      die "--jobs $JOBS refused: $s is not in the proven-isolated set (see bin/fm-test-isolation-proof.sh --list) and its family has no recorded concurrent proof. Unproven stateful scripts stay serial."
+    fi
     if ! is_proven_isolated_script "$s"; then
-      die "--jobs $JOBS refused: $s is not in the proven-isolated set (see bin/fm-test-isolation-proof.sh --list). Stateful families stay serial."
+      family=$(family_for_basename "$(basename "$s")")
+      family_jobs_max=$(concurrent_safe_family_jobs_max "$family")
+      [ "$JOBS" -le "$family_jobs_max" ] \
+        || die "--jobs $JOBS refused: family $family is proven only up to $family_jobs_max concurrent workers"
     fi
   done
+fi
+
+# Split the run into the proven-concurrent scripts and an unproven remainder.
+# The remainder runs serially AFTER the concurrent group, never beside it, so an
+# unproven script still never shares a machine with another test. An explicit
+# --jobs refused above, so its remainder is always empty.
+CONCURRENT_SCRIPTS=()
+SERIAL_TAIL_SCRIPTS=()
+if [ "$JOBS" -gt 1 ]; then
+  SCHEDULE_TMP=$(mktemp "${TMPDIR:-/tmp}/fm-test-sched.XXXXXX")
+  : >"$SCHEDULE_TMP"
+  # Two passes: the tail array must be built in this shell, so the weighted
+  # listing is written to a file rather than piped into sort from a loop whose
+  # appends would be lost in a subshell.
+  for s in "${SCRIPTS[@]}"; do
+    if script_allows_concurrency "$s"; then
+      # Longest first: workers are handed scripts in order, so starting the
+      # longest last strands it running alone at the tail. Measured over the
+      # watcher family, alphabetical order finished in 395s where the balanced
+      # four-worker sum was 205s.
+      printf '%s\t%s\n' "$(portable_serial_weight_for "$s")" "$s" >>"$SCHEDULE_TMP"
+    else
+      SERIAL_TAIL_SCRIPTS+=("$s")
+    fi
+  done
+  while IFS=$'\t' read -r _weight s; do
+    [ -n "$s" ] || continue
+    CONCURRENT_SCRIPTS+=("$s")
+  done < <(LC_ALL=C sort -t"$(printf '\t')" -k1,1nr -k2,2 "$SCHEDULE_TMP")
+  rm -f "$SCHEDULE_TMP"
+fi
+
+if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
+  [ -r "$ROOT/bin/fm-timeout-lib.sh" ] || die "per-script timeout helper not found: bin/fm-timeout-lib.sh"
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$ROOT/bin/fm-timeout-lib.sh"
 fi
 
 RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX")
 RECORDS="$RUN_TMP/records.tsv"
 FAMILIES_TSV="$RUN_TMP/families.tsv"
 : >"$RECORDS"
-trap 'rm -rf "$RUN_TMP"' EXIT
+declare -a WORKER_PIDS=()
+declare -a WORKER_IDX=()
+declare -a WORKER_SCRIPTS=()
 
-RUN_STARTED_ISO=$(now_iso)
-RUN_STARTED_MS=$(now_ms)
+# Invoked indirectly by the EXIT trap below.
+# shellcheck disable=SC2329
+cleanup_run() {
+  rm -rf "$RUN_TMP"
+}
+
+trap cleanup_run EXIT
+
 RUN_ID="fm-test-run-${RUN_STARTED_MS}-$$"
 TOTAL=0
 FAILED=0
@@ -1647,6 +1986,42 @@ record_script_result() {
   TOTAL=$((TOTAL + 1))
 }
 
+# Run <script>, capturing output to <out>. <stream> 1 also echoes it live.
+# <id> only has to be unique within this run. When PER_SCRIPT_TIMEOUT_SECS is
+# positive, a script that outruns it is terminated and reported as exit 124: a
+# hung script must become a bounded failure rather than an unbounded suite,
+# because an unbounded suite is what silently outruns its caller's budget.
+run_script_bounded() {  # <script> <out> <stream> <id>
+  local script=$1 out=$2 stream=$3 id=$4
+  local rc
+  : "$id"
+  set +e
+  if [ "$stream" -eq 1 ]; then
+    if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
+      # Expansion is intentionally deferred to the child bash passed to -c.
+      # shellcheck disable=SC2016
+      fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash -c \
+        'bash "$1" 2>&1 | tee "$2"; exit "${PIPESTATUS[0]}"' _ "$script" "$out"
+      rc=$?
+    else
+      bash "$script" 2>&1 | tee "$out"
+      rc=${PIPESTATUS[0]}
+    fi
+  elif [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
+    fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash "$script" >"$out" 2>&1
+    rc=$?
+  else
+    bash "$script" >"$out" 2>&1
+    rc=$?
+  fi
+  if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ] && [ "$rc" -eq 124 ]; then
+    printf 'not ok - %s exceeded the per-script bound of %ss and was terminated\n' \
+      "$script" "$PER_SCRIPT_TIMEOUT_SECS" >>"$out"
+    [ "$stream" -eq 1 ] && tail -1 "$out"
+  fi
+  return "$rc"
+}
+
 run_one_serial() {
   local script=$1
   local base family expected out begin_iso begin_ms end_ms end_iso duration rc
@@ -1662,9 +2037,8 @@ run_one_serial() {
 
   set +e
   # Stream live output while retaining a copy for gate-skip detection.
-  # PIPESTATUS[0] is the test script; tee's exit is ignored for aggregate.
-  bash "$script" 2>&1 | tee "$out"
-  rc=${PIPESTATUS[0]}
+  run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  rc=$?
   set -e
   : "${rc:=1}"
 
@@ -1686,12 +2060,9 @@ if [ "$JOBS" -eq 1 ]; then
     fi
   done
 else
-  # Bounded concurrent execution for proven-isolated scripts only. Each worker
-  # gets a private mode-0700 TMPDIR so mktemp roots cannot collide. Retries are
-  # never used as a green strategy.
-  declare -a WORKER_PIDS=()
-  declare -a WORKER_IDX=()
-  declare -a WORKER_SCRIPTS=()
+  # Bounded concurrent execution for admitted scripts. Each worker gets a
+  # private mode-0700 TMPDIR so mktemp roots cannot collide. Retries are never
+  # used as a green strategy.
   worker_n=0
   active_workers=0
 
@@ -1700,13 +2071,13 @@ else
     pid=${WORKER_PIDS[$slot]}
     idx=${WORKER_IDX[$slot]}
     script=${WORKER_SCRIPTS[$slot]}
+    set +e
+    wait "$pid"
+    set -e
     unset 'WORKER_PIDS[slot]'
     unset 'WORKER_IDX[slot]'
     unset 'WORKER_SCRIPTS[slot]'
     active_workers=$((active_workers - 1))
-    set +e
-    wait "$pid"
-    set -e
     work="$RUN_TMP/w$idx"
     rc=$(cat "$work/exit" 2>/dev/null || echo 1)
     duration=$(cat "$work/duration_ms" 2>/dev/null || echo 0)
@@ -1753,7 +2124,7 @@ else
     done
   }
 
-  for script in "${SCRIPTS[@]}"; do
+  for script in "${CONCURRENT_SCRIPTS[@]+"${CONCURRENT_SCRIPTS[@]}"}"; do
     if [ "$FAIL_FAST" -eq 1 ] && [ "$FAILED" -gt 0 ]; then
       log "fail-fast: not scheduling remaining scripts after a failure"
       break
@@ -1771,6 +2142,7 @@ else
     printf 'FM_TEST_BEGIN %s %s family=%s expected_gate_skip=%s\n' \
       "$(now_iso)" "$script" "$family" "$expected"
     (
+      trap - EXIT HUP INT TERM
       set +e
       export TMPDIR="$work/tmp"
       export TMP="$work/tmp"
@@ -1778,8 +2150,10 @@ else
         FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE FM_BACKEND 2>/dev/null || true
       cd "$ROOT" || exit 1
       begin_ms=$(now_ms)
-      bash "$script" >"$work/output" 2>&1
+      set +e
+      run_script_bounded "$script" "$work/output" 0 "w$worker_n"
       rc=$?
+      set -e
       end_ms=$(now_ms)
       duration=$((end_ms - begin_ms))
       if [ "$duration" -lt 0 ]; then
@@ -1789,13 +2163,22 @@ else
       printf '%s\n' "$rc" >"$work/exit"
       exit 0
     ) &
-    WORKER_PIDS[worker_n]=$!
+    worker_pid=$!
+    WORKER_PIDS[worker_n]=$worker_pid
     WORKER_IDX[worker_n]=$worker_n
     WORKER_SCRIPTS[worker_n]=$script
     active_workers=$((active_workers + 1))
   done
   while [ "$active_workers" -gt 0 ]; do
     wait_one_completed_job_worker
+  done
+  # Unproven remainder, after every concurrent worker has finished.
+  for script in "${SERIAL_TAIL_SCRIPTS[@]+"${SERIAL_TAIL_SCRIPTS[@]}"}"; do
+    if [ "$FAIL_FAST" -eq 1 ] && [ "$FAILED" -gt 0 ]; then
+      log "fail-fast: not scheduling remaining scripts after a failure"
+      break
+    fi
+    run_one_serial "$script"
   done
 fi
 
@@ -1835,11 +2218,27 @@ if [ -n "$JSON_PATH" ]; then
   else
     : >"$FAMILIES_TSV"
   fi
+  set +e
   write_json_artifact "$JSON_PATH" \
     "$RUN_STARTED_ISO" "$RUN_FINISHED_ISO" "$RUN_ID" \
     "$TOTAL" "$FAILED" "$SKIPPED_GATE" "$RUN_DURATION" \
     "$SELECTION_DESC" "$RECORDS" "$FAMILIES_TSV"
-  log "wrote timing artifact: $JSON_PATH"
+  json_rc=$?
+  set -e
+  if [ "$json_rc" -eq 0 ]; then
+    log "wrote timing artifact: $JSON_PATH"
+  else
+    log "timing artifact finalization failed: $JSON_PATH"
+    AGG_RC=1
+  fi
+fi
+
+if [ -n "$MAX_WALL_MS" ]; then
+  printf 'FM_TEST_BUDGET max_wall_ms=%s duration_ms=%s\n' "$MAX_WALL_MS" "$RUN_DURATION"
+  if [ "$RUN_DURATION" -gt "$MAX_WALL_MS" ]; then
+    log "wall-clock budget exceeded: ${RUN_DURATION}ms > ${MAX_WALL_MS}ms for $SELECTION_DESC"
+    AGG_RC=1
+  fi
 fi
 
 exit "$AGG_RC"

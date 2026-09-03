@@ -360,6 +360,62 @@ test_deferred_signal_survives_a_benign_cycle() {
   pass "a deferred signal keeps its marker when a benign signal shares the cycle"
 }
 
+# --- Test 3c: a deferred signal is not surfaced early by the benign branch's
+# status-commit-error fallback ---
+
+# When the benign absorb branch cannot commit a status file's seen marker it
+# fails toward waking and enqueues the batch. That fallback must still respect
+# the deferral: a signal held behind an unacknowledged process-event generation
+# has decided nothing yet, so it must not ride the fallback out early.
+test_commit_error_fallback_does_not_surface_a_deferred_signal() {
+  local dir state out1 out2 records wakes
+  dir=$(make_case procevent-defer-commit-error); state="$dir/state"
+  out1="$dir/watch1.out"; out2="$dir/watch2.out"
+
+  printf 'note: drafting the API shape\nnote: still drafting\n' \
+    > "$state/delivery-src.status"
+  seed_captured_procevent_result "$dir" delivery-src \
+    || fail "the fixture captured no process-event result"
+
+  watch_bg "$dir" "$out1"
+  wait_for_exit "$!" 150 || fail "the watcher never surfaced the queued process-event result"
+
+  # A second, unrelated status log lands in the same cycle with no captain verb,
+  # so the crew-working cycle takes the benign absorb branch. Its seen marker is
+  # a directory, so the marker commit cannot succeed and the branch falls back
+  # to enqueuing the batch.
+  printf 'note: unrelated bookkeeping\n' > "$state/othersrc.status"
+  mkdir -p "$state/.seen-othersrc_status" \
+    || fail "could not stage the unwritable seen marker"
+
+  export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy'
+  watch_bg "$dir" "$out2" 1
+  wait_for_exit "$!" 200 \
+    || { unset FM_FAKE_CREW_STATE; fail "the commit-error fallback never woke: $(cat "$out2")"; }
+  unset FM_FAKE_CREW_STATE
+
+  grep -F "othersrc.status" "$state/.wake-queue" >/dev/null \
+    || fail "the uncommittable status file was not enqueued by the fallback: $(cat "$state/.wake-queue")"
+  ! grep -F "delivery-src.status" "$state/.wake-queue" >/dev/null \
+    || fail "the commit-error fallback surfaced a deferred signal early: $(cat "$state/.wake-queue")"
+
+  # $pending concatenates the pre- and post-grace scans, so a status file whose
+  # seen marker can never be committed appears in it twice on every cycle that
+  # takes this fallback. Each such cycle wakes exactly once, so its queue cost
+  # must be exactly one record: fm_wake_append assigns a fresh seq per call and
+  # never dedups, so a second record per cycle costs the supervisor an extra
+  # drain turn on a change it already handled. Comparing records against the
+  # watcher's own printed wakes keeps this exact however many cycles ran.
+  records=$(awk -F'\t' '$3 == "signal" && $4 == "othersrc.status" { n++ } END { print n + 0 }' \
+    "$state/.wake-queue")
+  wakes=$(grep -c "signal:.*othersrc\.status" "$out2" || true)
+  [ "$wakes" -ge 1 ] || fail "the fallback never printed a signal wake: $(cat "$out2")"
+  [ "$records" -eq "$wakes" ] \
+    || fail "the commit-error fallback enqueued $records records for $wakes wakes: $(cat "$state/.wake-queue")"
+
+  pass "the benign branch's commit-error fallback leaves a deferred signal deferred and enqueues once"
+}
+
 # --- Test 4: no process-event at all - the signal path is untouched ---
 
 test_signal_without_any_procevent_wakes_normally() {
@@ -384,6 +440,7 @@ test_routine_line_beside_an_open_decision_is_never_absorbed
 test_distinct_status_change_after_procevent_still_wakes
 test_deferred_signal_is_delivered_when_no_acknowledgement_arrives
 test_deferred_signal_survives_a_benign_cycle
+test_commit_error_fallback_does_not_surface_a_deferred_signal
 test_signal_without_any_procevent_wakes_normally
 
 echo ""
