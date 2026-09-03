@@ -2017,13 +2017,14 @@ EOF
             ;;
         esac
         # Surface evidence is written HERE, for this one file, immediately
-        # before its queue record and never earlier: the marker asserts the
-        # event reached firstmate, so writing it during the probe above would
-        # let a file absorbed as covered claim a delivery no wake carried,
-        # while omitting it leaves the heartbeat backstop re-surfacing an event
-        # this wake already delivered.
-        mark_signal_surfaced "$f" || true
+        # after its queue record exists and never earlier: the marker asserts
+        # the event reached firstmate, so writing it during the probe above
+        # would let a file absorbed as covered claim a delivery no wake
+        # carried, and writing it before a failed (fatal) append would leave
+        # the event marked surfaced with no queue record for the heartbeat
+        # backstop to re-surface.
         fm_wake_append signal "$(basename "$f")" "$signal_enqueue_reason" || exit 1
+        mark_signal_surfaced "$f" || true
         signal_appended=1
         signal_decided="$signal_decided $f"
       done <<EOF
@@ -2143,8 +2144,8 @@ EOF
             *" $f "*) ;;
             *)
               signal_enqueued="$signal_enqueued $f"
-              mark_signal_surfaced "$f" || true
               fm_wake_append signal "$(basename "$f")" "$signal_commit_failed_reason" || exit 1
+              mark_signal_surfaced "$f" || true
               ;;
           esac
         done <<EOF
