@@ -73,6 +73,12 @@
 # absent or malformed, so briefs and bin/fm-retry-pressure.sh report one ceiling
 # (docs/configuration.md "Retry-loop thresholds"). The rule's 2-no-op and ~2h
 # ceilings are fixed.
+# Ship briefs whose repo argument names pt-tracker (matched on the normalized
+# basename, so owner/repo, path, and .git spellings all count) also carry the
+# pt-tracker tracker-entry law: the ROADMAP execution prompt and a CURRENT.md
+# tracker entry are pre-dispatch preconditions, not post-dispatch steps.
+# It is a single-project law, not a per-project policy framework, and no other
+# repo, scout, or charter scaffold is affected.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -473,6 +479,32 @@ esac
 
 DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 
+# The tracker-entry law: pt-tracker requires a planning-surface entry and
+# ROADMAP execution prompt BEFORE dispatch. This is a literal, non-negotiable
+# pre-dispatch precondition specific to that repo, not a generalized per-project
+# policy framework (AGENTS.md section 7, captain's 2026-08-18 post-mortem Q1).
+# REPO is a caller-supplied free string, so match on its normalized basename:
+# owner/pt-tracker, /path/to/pt-tracker, and pt-tracker.git all name the repo the
+# law applies to, and a spelling mismatch would silently fail the law open.
+REPO_NAME=${REPO%/}
+REPO_NAME=${REPO_NAME##*/}
+REPO_NAME=${REPO_NAME%.git}
+if [ "$REPO_NAME" = pt-tracker ]; then
+IFS= read -r -d '' TRACKER_LAW_SECTION <<'EOF' || true
+
+
+# pt-tracker tracker-entry law
+Before any work begins on pt-tracker, you MUST complete BOTH of the following:
+1. Use the ROADMAP execution prompt in the pt-tracker repo to plan and design the work.
+2. Create a CURRENT.md tracker entry in the pt-tracker repo's planning surfaces.
+This is a pre-dispatch precondition, not a post-dispatch step. Do not start implementation
+until both items above are complete and recorded in CURRENT.md.
+EOF
+TRACKER_LAW_SECTION=${TRACKER_LAW_SECTION%$'\n'}
+else
+TRACKER_LAW_SECTION=""
+fi
+
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
@@ -537,7 +569,7 @@ $RULE1
    Never retry the same failing action a third time unchanged - a retry that changes nothing
    re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
 
-$INBOX_SECTION
+$INBOX_SECTION$TRACKER_LAW_SECTION
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.

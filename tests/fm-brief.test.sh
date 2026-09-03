@@ -859,6 +859,65 @@ test_status_and_report_writes_require_verification() {
   pass "fm-brief.sh: status appends and scout reports require ls -la verification before trust"
 }
 
+# Captain's 2026-08-18 post-mortem Q1: pt-tracker ship briefs carry the
+# tracker-entry law as a literal, explicit requirement block. Non-pt-tracker
+# briefs, scouts, and secondmate charters are unaffected.
+test_pt_tracker_brief_carries_tracker_entry_law() {
+  local home id brief
+  home="$TMP_ROOT/pt-tracker-law-home"
+  mkdir -p "$home/data"
+
+  # pt-tracker ship brief must contain the law with both preconditions.
+  id="brief-pt-tracker-law-t1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" pt-tracker --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "pt-tracker brief was not scaffolded"
+  assert_grep "# pt-tracker tracker-entry law" "$brief" \
+    "pt-tracker brief missing the tracker-entry law heading"
+  assert_grep "ROADMAP execution prompt" "$brief" \
+    "pt-tracker brief missing the ROADMAP execution prompt requirement"
+  assert_grep "CURRENT.md tracker entry" "$brief" \
+    "pt-tracker brief missing the CURRENT.md tracker entry requirement"
+  assert_grep "pre-dispatch precondition" "$brief" \
+    "pt-tracker brief must state the precondition is pre-dispatch, not post-dispatch"
+
+  # Alternate spellings of the same repo still trigger the law: REPO is a free
+  # string, and a dispatcher naming owner/repo, a path, or a .git suffix must not
+  # silently lose the precondition.
+  local spelling
+  for spelling in sKeLe100/pt-tracker pt-tracker.git "$TMP_ROOT/repos/pt-tracker"; do
+    id="brief-pt-tracker-law-$(printf '%s' "$spelling" | tr -c '[:alnum:]' -)"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$spelling" --mode no-mistakes >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "brief for repo spelling '$spelling' was not scaffolded"
+    assert_grep "# pt-tracker tracker-entry law" "$brief" \
+      "repo spelling '$spelling' must still carry the tracker-entry law"
+  done
+
+  # A different project must NOT carry the law.
+  id="brief-other-proj-t1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-repo --mode direct-PR >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "other repo brief was not scaffolded"
+  assert_no_grep "tracker-entry law" "$brief" \
+    "non-pt-tracker brief must not carry the tracker-entry law"
+  if grep -B2 '^# Project memory$' "$brief" | head -2 | grep -q '[^[:space:]]'; then
+    :
+  else
+    fail "non-pt-tracker brief gained a blank line before the project-memory section"
+  fi
+
+  # A scout brief for pt-tracker must NOT carry the law (scouts don't ship).
+  id="brief-pt-scout-t1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" pt-tracker --scout >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "pt-tracker scout was not scaffolded"
+  assert_no_grep "tracker-entry law" "$brief" \
+    "pt-tracker scout brief must not carry the tracker-entry law"
+
+  pass "fm-brief.sh: pt-tracker ship brief carries the tracker-entry law; other briefs are unaffected"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -882,6 +941,7 @@ test_scout_and_secondmate_load_decision_hold_policy
 test_ship_and_scout_teach_correct_key_placement
 test_scout_and_secondmate_scaffold
 test_status_and_report_writes_require_verification
+test_pt_tracker_brief_carries_tracker_entry_law
 
 # The generated brief is fm-brief.sh's public output artifact - the prompt a
 # claude-harness worker is actually launched with - so its Rules block is an
