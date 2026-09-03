@@ -1,0 +1,53 @@
+=== /autonomous pass: deferred-ready visibility ===
+
+$ fm-captain-hold.sh mark set sample-q1 deferred-since 2026-07-11T09:00:00Z
+
+$ fm-captain-hold.sh mark get sample-q1 deferred-since
+2026-07-11T09:00:00Z
+
+$ fm-bearings-snapshot.sh --json | jq '.gates[] | {id, deferred_since}'
+{"id":"sample-q1","deferred_since":"2026-07-11T09:00:00Z"}
+{"id":"sample-q2","deferred_since":null}
+
+$ fm-captain-hold.sh mark clear sample-q1 deferred-since   # item dispatched
+
+$ fm-bearings-snapshot.sh --json | jq '.gates[] | {id, deferred_since}'
+{"id":"sample-q1","deferred_since":null}
+{"id":"sample-q2","deferred_since":null}
+
+$ fm-captain-hold.sh mark set sample-q1 deferred-since ''  # empty rejected
+fm-captain-hold: mark value must not be empty: an empty mark is indistinguishable from an absent one
+(exit 1)
+
+=== captain hold ages from its own raise; release clears held-since ===
+
+$ fm-captain-hold.sh hold sample-recall --reason 'captain call needed'
+held
+held-since: 2026-09-03T11:59:07Z
+
+$ fm-captain-hold.sh answer sample-recall --decision-file go.txt --release
+answered+released
+held-since after release: ''
+
+$ fm-captain-hold.sh hold sample-recall --reason 'a second ruling is needed'
+held-since restamped: 2026-09-03T11:59:11Z
+
+=== decision bundling thresholds ===
+
+$ 5 open captain holds, all fresh -> bundle-size
+nudge: bundle-size
+
+$ 2 holds, oldest 50h old -> time
+nudge: time
+
+$ 1 fresh hold -> no nudge
+none
+(exit 1)
+
+=== refill freshness window (14-day ceiling) ===
+
+$ fm-questionnaire-refill-source.sh --data-dir /tmp/evi-data   # newest report, 2 days old
+/tmp/evi-data/2026-09-01-roundtable/report.md
+
+$ fm-questionnaire-refill-source.sh --data-dir /tmp/evi-data --max-age-days 1
+(no source within ceiling, exit 1)
