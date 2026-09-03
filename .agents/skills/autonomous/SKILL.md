@@ -245,10 +245,13 @@ restriction). Below threshold, stay silent - no separate ping, no
 notification. Rides the existing summary ping and its band gating.
 
 Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,
-record a `deferred-since <UTC-ISO8601-timestamp>` mark for it in firstmate's
+run `bin/fm-captain-hold.sh mark set <task-id> deferred-since <UTC-ISO8601-timestamp>`,
+and `bin/fm-captain-hold.sh mark clear <task-id> deferred-since` when the item
+is eventually dispatched. That subcommand is the only writer of firstmate's
 own sidecar `data/task-marks.tsv` (`<task-id>\t<key>\t<value>`, the same shape
-as `data/roundtable-marks.tsv`). Remove that mark when the item is eventually
-dispatched. The mark does NOT go into the backlog row's trailing metadata
+as `data/roundtable-marks.tsv`); never hand-edit the file, since the writer
+rewrites it whole and a concurrent edit would be lost.
+The mark does NOT go into the backlog row's trailing metadata
 block: tasks-axi owns that block and its parser rejects any word it does not
 know, so an unrecognized word swallows the row's title, repo, and kind in
 tasks-axi's own surfaces.

@@ -29,6 +29,16 @@
 #   fm-captain-hold.sh complete <origin-id> (--none | <task-id>...)
 #   fm-captain-hold.sh verify <origin-id>
 #   fm-captain-hold.sh diverged
+#   fm-captain-hold.sh mark set <task-id> <key> <value>
+#   fm-captain-hold.sh mark get <task-id> <key>
+#   fm-captain-hold.sh mark clear <task-id> [<key>]
+#
+# `mark` is the only writer of the firstmate-owned sidecar data/task-marks.tsv
+# (<task-id>\t<key>\t<value>), which carries machine marks such as `held-since`
+# and the autonomous pass's `deferred-since` that must not go into the task row
+# tasks-axi owns. `set` never overwrites an existing value, `clear` with no key
+# drops every mark for the task, and both rewrite the whole file through the
+# same path so concurrent writers cannot interleave.
 #
 # `hold` places an existing task under an active captain hold, or creates the
 # task first when no work item exists to hold (--title required to create; the
@@ -505,6 +515,25 @@ mark_set() {  # <id> <key> <value>
   mv "$tmp" "$marks"
 }
 
+# Print the value of the (id,key) mark, or nothing when it is not set.
+mark_get() {  # <id> <key>
+  local marks="$DATA/task-marks.tsv"
+  [ -f "$marks" ] || return 0
+  awk -F'\t' -v i="$1" -v k="$2" '$1 == i && $2 == k { print $3; exit }' "$marks"
+}
+
+# Drop the (id,key) mark, or every mark for <id> when no key is given, through
+# the same whole-file rewrite mark_set uses so there is a single writer path.
+mark_clear() {  # <id> [<key>]
+  local id=$1 key=${2:-} marks="$DATA/task-marks.tsv" tmp
+  [ -f "$marks" ] || return 0
+  tmp="$marks.tmp.$$"
+  mark_prune_to "$marks" \
+    | awk -F'\t' -v i="$id" -v k="$key" \
+        '$1 == i && (k == "" || $2 == k) { next } { print }' > "$tmp"
+  mv "$tmp" "$marks"
+}
+
 # Emit the sidecar's surviving lines: those whose task id still appears as a
 # structured row in backlog.md.
 mark_prune_to() {  # <marks-file>
@@ -628,8 +657,10 @@ write_resolution_record() {  # <task-id> <mode> <shown-body>
 close_answered() {  # <task-id> <release-0-or-1>
   if [ "$2" = 1 ]; then
     tasks_axi unhold "$1" >/dev/null || fail "could not release captain-held task $1"
+    mark_clear "$1" held-since
   else
     tasks_axi "done" "$1" >/dev/null || fail "could not close answered captain-held task $1"
+    mark_clear "$1"
   fi
 }
 
@@ -1144,8 +1175,37 @@ EOF
   done
 }
 
+command_mark() {
+  local verb=${1:-} id=${2:-} key=${3:-} value=${4:-}
+  case "$verb" in
+    set)
+      [ "$#" -eq 4 ] || { usage >&2; exit 2; }
+      validate_slug "task id" "$id"
+      validate_slug "mark key" "$key"
+      validate_one_line "mark value" "$value"
+      case "$value" in *$'\t'*) fail "mark value must not contain a tab" ;; esac
+      [ -d "$DATA" ] || fail "no data directory at $DATA"
+      mark_set "$id" "$key" "$value"
+      ;;
+    get)
+      [ "$#" -eq 3 ] || { usage >&2; exit 2; }
+      validate_slug "task id" "$id"
+      validate_slug "mark key" "$key"
+      mark_get "$id" "$key"
+      ;;
+    clear)
+      [ "$#" -ge 2 ] && [ "$#" -le 3 ] || { usage >&2; exit 2; }
+      validate_slug "task id" "$id"
+      [ -z "$key" ] || validate_slug "mark key" "$key"
+      mark_clear "$id" "$key"
+      ;;
+    *) usage >&2; exit 2 ;;
+  esac
+}
+
 case "${1:-}" in
   hold) shift; command_hold "$@" ;;
+  mark) shift; command_mark "$@" ;;
   answer) shift; command_answer "$@" ;;
   answers) shift; command_answers "$@" ;;
   bind) shift; command_bind "$@" ;;

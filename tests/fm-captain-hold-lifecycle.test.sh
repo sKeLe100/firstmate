@@ -1379,14 +1379,22 @@ test_deferred_since_mark_round_trips() {
   home=$(make_home deferred-since-mark)
   tasks_in "$home" add sample-deferred "Ship the queued lane" --kind ship --repo sample \
     >/dev/null || fail "could not create the deferred fixture"
-  printf 'sample-deferred\tdeferred-since\t2026-07-13T09:00:00Z\n' > "$home/data/task-marks.tsv"
+  run_captain "$home" mark set sample-deferred deferred-since 2026-07-13T09:00:00Z \
+    || fail "mark set failed on the deferred fixture"
+  [ "$(run_captain "$home" mark get sample-deferred deferred-since)" = 2026-07-13T09:00:00Z ] \
+    || fail "mark get did not read back the value it just set"
 
   json=$(run_bearings "$home") || fail "Bearings failed with a deferred-since mark"
   printf '%s' "$json" | jq -e '
     ([ .gates[] | select(.id == "sample-deferred") ][0].deferred_since) == "2026-07-13T09:00:00Z"
   ' >/dev/null || fail "the deferred-since mark did not reach gates: $json"
 
-  : > "$home/data/task-marks.tsv"
+  run_captain "$home" mark clear sample-deferred deferred-since \
+    || fail "mark clear failed on the deferred fixture"
+  [ -z "$(run_captain "$home" mark get sample-deferred deferred-since)" ] \
+    || fail "mark clear left the value readable: $(cat "$home/data/task-marks.tsv")"
+  [ "$(grep -c 'deferred-since' "$home/data/task-marks.tsv" || true)" = 0 ] \
+    || fail "mark clear left a stale row: $(cat "$home/data/task-marks.tsv")"
   json=$(run_bearings "$home") || fail "Bearings failed after clearing the mark"
   printf '%s' "$json" | jq -e '
     ([ .gates[] | select(.id == "sample-deferred") ][0].deferred_since) == null
@@ -1398,5 +1406,34 @@ test_deferred_since_mark_round_trips() {
 test_verify_accepts_archived_answered_hold
 test_verify_rejects_unheld_unresolved_hold
 test_verify_rejects_hold_missing_from_both_surfaces
+# A released hold is a finished captain call: the next call on the same task
+# must age from its own raise time, not from the answered one.
+test_release_clears_held_since() {
+  local home first second
+  home=$(make_home held-since-release)
+  tasks_in "$home" add sample-recall "Choose the rollout order" --kind ship --repo sample \
+    >/dev/null || fail "could not create the re-hold fixture"
+  run_captain "$home" hold sample-recall --reason "captain call needed" >/dev/null \
+    || fail "could not raise the first captain call"
+  first=$(run_captain "$home" mark get sample-recall held-since)
+  [ -n "$first" ] || fail "the first hold wrote no held-since mark"
+
+  printf 'Go with option A.\n' > "$home/go.txt"
+  run_captain "$home" answer sample-recall --decision-file "$home/go.txt" --release >/dev/null \
+    || fail "answer --release failed on the re-hold fixture"
+  [ -z "$(run_captain "$home" mark get sample-recall held-since)" ] \
+    || fail "the released hold kept its held-since mark: $(cat "$home/data/task-marks.tsv")"
+
+  sleep 1
+  run_captain "$home" hold sample-recall --reason "a second ruling is needed" >/dev/null \
+    || fail "could not raise the second captain call"
+  second=$(run_captain "$home" mark get sample-recall held-since)
+  [ -n "$second" ] || fail "the re-hold wrote no held-since mark"
+  [ "$second" != "$first" ] \
+    || fail "the re-hold reused the answered call's timestamp: $second"
+  pass "releasing a hold clears held-since so a later call ages from itself"
+}
+
 test_held_since_lives_in_the_sidecar
 test_deferred_since_mark_round_trips
+test_release_clears_held_since
