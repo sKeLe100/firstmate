@@ -345,6 +345,10 @@ SH
   chmod +x "$fakebin/tmux"
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf 'gh version 2.99.0 (2026-01-01)\n'
+  exit 0
+fi
 exit 0
 SH
   chmod +x "$fakebin/gh"
