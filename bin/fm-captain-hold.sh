@@ -36,9 +36,10 @@
 # `mark` is the only writer of the firstmate-owned sidecar data/task-marks.tsv
 # (<task-id>\t<key>\t<value>), which carries machine marks such as `held-since`
 # and the autonomous pass's `deferred-since` that must not go into the task row
-# tasks-axi owns. `set` never overwrites an existing value, `clear` with no key
-# drops every mark for the task, and both rewrite the whole file through the
-# same path so concurrent writers cannot interleave.
+# tasks-axi owns. `set` never overwrites an existing value and refuses an empty
+# one (an empty mark is indistinguishable from an absent one), `clear` with no
+# key drops every mark for the task, and both rewrite the whole file under
+# data/.task-marks.lock so concurrent writers cannot lose an update.
 #
 # `hold` places an existing task under an active captain hold, or creates the
 # task first when no work item exists to hold (--title required to create; the
@@ -494,9 +495,10 @@ resolve_entry() {  # <origin-or-empty> <entry>; prints the resolved id or fails
 
 # Record a `held-since` mark for task $id in the firstmate-owned sidecar
 # data/task-marks.tsv (<task-id>\t<key>\t<value>), the same shape as
-# data/roundtable-marks.tsv. The mark is written once, on the first hold, and
-# never reset by a later re-hold, so it reflects when the captain call was
-# actually raised. It lives in the sidecar rather than the backlog row because
+# data/roundtable-marks.tsv. The mark is written on the first hold and not reset
+# by a later re-hold, so it reflects when the captain call was actually raised;
+# closing the call clears it (see close_answered), so a task re-held after a
+# release ages from the new call. It lives in the sidecar rather than the backlog row because
 # tasks-axi owns the row's trailing metadata block: it already writes its own
 # `since` word (the task's creation date) and its parser rejects any word it
 # does not know. Marks for task ids no longer present in backlog.md are pruned
