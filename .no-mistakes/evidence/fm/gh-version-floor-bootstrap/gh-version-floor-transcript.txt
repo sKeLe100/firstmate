@@ -1,0 +1,17 @@
+$ # Simulating the captain's machine at several installed gh versions
+
+$ gh --version   ->  gh version 2.46.0
+$ bin/fm-bootstrap.sh
+MISSING_MANUAL: gh (instructions: https://cli.github.com)
+
+$ gh --version   ->  gh version 2.72.0
+$ bin/fm-bootstrap.sh
+MISSING_MANUAL: gh (instructions: https://cli.github.com)
+
+$ gh --version   ->  gh version 2.73.0
+$ bin/fm-bootstrap.sh
+(no gh diagnostic - version is at or above GH_MIN=2.73.0)
+
+$ gh --version   ->  gh version 2.99.0
+$ bin/fm-bootstrap.sh
+(no gh diagnostic - version is at or above GH_MIN=2.73.0)

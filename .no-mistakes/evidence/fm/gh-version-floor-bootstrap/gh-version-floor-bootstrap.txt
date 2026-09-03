@@ -1,0 +1,19 @@
+$ gh --version    # the real gh installed on this host
+gh version 2.99.0 (2026-09-01)
+
+--- host gh reports: gh version 2.46.0 (2024-03-20) ---
+$ bin/fm-bootstrap.sh
+MISSING_MANUAL: gh (instructions: https://cli.github.com)
+
+--- host gh reports: gh version 2.72.0 (2025-05-01) ---
+$ bin/fm-bootstrap.sh
+MISSING_MANUAL: gh (instructions: https://cli.github.com)
+
+--- host gh reports: gh version 2.73.0 (2025-05-15) ---
+$ bin/fm-bootstrap.sh
+(silent - toolchain healthy)
+
+--- host gh reports: gh version 2.99.0 (2026-09-01) ---
+$ bin/fm-bootstrap.sh
+(silent - toolchain healthy)
+
