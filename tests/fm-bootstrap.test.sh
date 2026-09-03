@@ -57,6 +57,10 @@ SH
   chmod +x "$fakebin/gh-axi"
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf 'gh version %s (fake)\n' "${FM_FAKE_GH_VERSION:-99.0.0}"
+  exit 0
+fi
 if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then
   exit 0
 fi
@@ -370,6 +374,45 @@ much older gh-axi minor reports an upgrade^0.0.9^missing
 unparseable gh-axi version reports an upgrade^gh-axi development build^missing
 ROWS
   pass "bootstrap enforces gh-axi minimum version"
+}
+
+test_gh_min_version() {
+  local label version mode case_dir fakebin out missing n
+  missing='MISSING_MANUAL: gh (instructions: https://cli.github.com)'
+  n=0
+  while IFS='^' read -r label version mode; do
+    [ -n "$label" ] || continue
+    n=$((n + 1))
+    case_dir="$TMP_ROOT/gh-$n"
+    mkdir -p "$case_dir/home/config"
+    printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+    fakebin=$(make_fake_toolchain "$case_dir")
+    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+      FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_FAKE_GH_VERSION="$version" "$ROOT/bin/fm-bootstrap.sh")
+    case "$mode" in
+      empty)
+        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
+      missing)
+        [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
+    esac
+  done <<'ROWS'
+minimum gh version is accepted^2.63.0^empty
+newer gh patch is accepted^2.63.1^empty
+newer gh minor is accepted^2.64.0^empty
+newer gh major is accepted^3.0.0^empty
+older gh patch reports a manual upgrade^2.46.0^missing
+unparseable gh version reports a manual upgrade^gh development build^missing
+ROWS
+  case_dir="$TMP_ROOT/gh-absent"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  rm -f "$fakebin/gh"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  printf '%s\n' "$out" | grep -qxF "MISSING: gh (install: brew install gh  # or the platform's package manager)" \
+    || fail "absent gh: expected an automated install hint, got: $out"
+  pass "bootstrap enforces gh minimum version"
 }
 
 test_lavish_axi_min_version() {
@@ -1151,6 +1194,7 @@ ROWS
 test_bootstrap_reporting
 test_no_mistakes_min_version
 test_gh_axi_min_version
+test_gh_min_version
 test_lavish_axi_min_version
 test_tasks_axi_min_version
 test_quota_axi_min_version
