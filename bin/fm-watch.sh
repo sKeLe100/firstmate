@@ -1983,6 +1983,7 @@ EOF
     signal_covered_end=
     for f in $files; do
       signal_stamp=$(_fm_status_file_size "$f")
+      signal_stamp=${signal_stamp//[[:space:]]/}
       case "$(fm_watch_signal_procevent_coverage "$f")" in
         defer) signal_deferred="$signal_deferred $f" ;;
         covered)
