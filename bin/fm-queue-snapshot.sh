@@ -23,8 +23,18 @@
 #               project's registry posture has yolo off; autonomous-eligible
 #               when none of those hold and yolo is on; unclear only when the
 #               item carries no captain-kind signal AND no project (repo
-#               empty/"-"), the one case this script cannot resolve
+#               empty/"-") AND no id-prefix project inference (below)
+#               resolved one either, the one case this script cannot resolve
 #               deterministically.
+#
+# When repo is empty/"-", this script also asks bin/fm-project-mode.sh
+# --infer-project-from-id whether the item's own id names a registered
+# project by prefix (its name or a recorded alias; see that script's header
+# for the exact match rule). A hit resolves posture/autonomy exactly as a
+# recorded repo would and reports autonomy_reason "project inferred from id
+# prefix" instead of "no project recorded on this item", so the skill can
+# render it as an inferred verdict rather than "unclear". This is inference
+# for THIS READ only - it never writes repo back to the backlog item.
 #
 # Tier/model/effort resolution against a single item is deliberately OUT of
 # scope: matching an item's description against config/crew-dispatch.json's
@@ -349,6 +359,22 @@ if reported_count != len(rows):
     )
 
 posture_cache = {}
+inferred_project_cache = {}
+
+
+def inferred_project_for(item_id):
+    if item_id in inferred_project_cache:
+        return inferred_project_cache[item_id]
+    try:
+        out = subprocess.run(
+            [project_mode_bin, "--infer-project-from-id", item_id],
+            capture_output=True, text=True, check=False,
+        )
+        inferred = out.stdout.strip() if out.returncode == 0 else ""
+    except OSError:
+        inferred = ""
+    inferred_project_cache[item_id] = inferred
+    return inferred
 
 
 def posture_for(repo):
@@ -393,7 +419,16 @@ for r in rows:
     captain_kind = r["kind"] == "captain" or r["hold_kind"] == "captain"
     repo = r["repo"]
     has_repo = bool(repo) and repo != "-"
-    posture = posture_for(repo) if has_repo else "n/a"
+    inferred_reason = None
+    if not has_repo:
+        inferred = inferred_project_for(r["id"])
+        if inferred:
+            has_repo, inferred_reason = True, "project inferred from id prefix"
+            posture = posture_for(inferred)
+        else:
+            posture = "n/a"
+    else:
+        posture = posture_for(repo)
     if captain_kind:
         autonomy, reason = "captain-gated", "captain kind or captain-kind hold"
     elif not has_repo:
@@ -401,9 +436,9 @@ for r in rows:
     else:
         yolo = posture.split()[-1] if posture else "off"
         if yolo == "off":
-            autonomy, reason = "captain-gated", "project registry posture has yolo off"
+            autonomy, reason = "captain-gated", inferred_reason or "project registry posture has yolo off"
         else:
-            autonomy, reason = "autonomous-eligible", "project registry posture has yolo on"
+            autonomy, reason = "autonomous-eligible", inferred_reason or "project registry posture has yolo on"
     blocked_flag = r["blocked"] == "yes"
     held_flag = r["held"] == "yes"
     hold_until = r["hold_until"]
