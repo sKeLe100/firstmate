@@ -962,10 +962,11 @@ test_turn_ended_churn_resets_prior_stale_classification() {
   pass "pane churn starts a fresh stale-classification interval before a stopped render returns"
 }
 
-# A watcher started fresh against a pane that was ALREADY idle seeds its quiet
-# spell from the busy-lib Stop record's ts rather than from `now`, so a pane idle
-# for longer than the escalation threshold before the watcher restart escalates
-# on the first stale poll instead of waiting out a fresh ladder
+# A watcher restarted against a pane that was ALREADY idle seeds its quiet spell
+# from the busy-lib Stop record's ts rather than from `now`, even though the
+# state dir still holds the previous process's hash baseline, so a pane idle for
+# longer than the escalation threshold before the restart escalates on the first
+# stale poll instead of waiting out a fresh ladder
 # (data/bearings-autonomous-liveness-gap report, section 2d / option D).
 test_fresh_watcher_seeds_idle_clock_from_stop_record() {
   local dir state fakebin out capture_file window key pid rec gen
@@ -982,13 +983,17 @@ test_fresh_watcher_seeds_idle_clock_from_stop_record() {
   rec="$state/longidle.busy-state"
   [ -f "$rec" ] || fail "busy-lib Stop record was not written for the fixture"
   sed -i.bak "s/ts=[0-9]*/ts=$(( $(date +%s) - 500 ))/" "$rec" && rm -f "$rec.bak"
-  # No .hash-/.count-/.stale-since- baseline: this watcher has never seen the pane.
+  # A populated state dir from the PREVIOUS watcher process: its last recorded
+  # render differs from what the pane shows now, so the restart lands on the
+  # churn branch, exactly the 2d sequence.
+  printf '%s' "$(hash_text 'busy render recorded before the watcher went down')" > "$state/.hash-$key"
+  printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 150 || { reap "$pid"; fail "a fresh watcher restarted the idle clock for an already-long-idle pane: $(cat "$out")"; }
+  wait_for_exit "$pid" 150 || { reap "$pid"; fail "a restarted watcher restarted the idle clock for an already-long-idle pane: $(cat "$out")"; }
   grep -F "stale: $window" "$out" >/dev/null || fail "fresh watcher did not print a stale wake for the long-idle pane"
   grep -F "possible wedge" "$out" >/dev/null || fail "fresh watcher did not escalate the long-idle pane as a possible wedge"
   [ "$(cat "$state/.stale-since-$key" 2>/dev/null || echo 0)" -lt $(( $(date +%s) - 400 )) ] \
@@ -997,12 +1002,13 @@ test_fresh_watcher_seeds_idle_clock_from_stop_record() {
   pass "a fresh watcher seeds the idle clock from the Stop record and escalates an already-long-idle pane promptly"
 }
 
-# The churn half of option D: a pane whose hash just changed carries fresh
-# evidence, so an OLD idle Stop record must not seed its quiet spell. The watcher
-# already holds a hash baseline for the window here, so the seed stays `now` and
-# the next quiet poll must not escalate the pane as a possible wedge.
+# The churn half of option D: a pane whose hash changed while THIS watcher was
+# polling it carries fresh evidence, so an OLD idle Stop record must not seed its
+# quiet spell. The watcher observes the pane once, the pane then renders new
+# content, so the seed stays `now` and the next quiet poll must not escalate the
+# pane as a possible wedge.
 test_churned_pane_ignores_old_stop_record_for_idle_clock() {
-  local dir state fakebin out capture_file window key pid rec gen since
+  local dir state fakebin out capture_file window key pid rec gen since i
   dir=$(make_case churned-pane-idle-clock); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"
   window="test:fm-churnidle"
@@ -1016,15 +1022,19 @@ test_churned_pane_ignores_old_stop_record_for_idle_clock() {
   rec="$state/churnidle.busy-state"
   [ -f "$rec" ] || fail "busy-lib Stop record was not written for the fixture"
   sed -i.bak "s/ts=[0-9]*/ts=$(( $(date +%s) - 500 ))/" "$rec" && rm -f "$rec.bak"
-  # The previous poll recorded DIFFERENT pane content: this watcher has a baseline
-  # and the pane has churned since.
-  printf '%s' "$(hash_text 'idle output from the prior interval')" > "$state/.hash-$key"
-  printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
+  # Let this process record the pane once, then churn the pane under it.
+  i=0
+  while [ ! -s "$state/.hash-$key" ] && [ "$i" -lt 100 ]; do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1; i=$((i + 1))
+  done
+  [ -s "$state/.hash-$key" ] || { reap "$pid"; fail "the watcher never recorded a first hash for the pane: $(cat "$out")"; }
+  printf 'no-mistakes axi run: validating... step 2 of 5' > "$capture_file"
   wait_for_absorbed "$state" "$pid" "absorbed non-terminal stale (provably working)" \
     || { reap "$pid"; fail "the churned working pane was not absorbed on its first stale poll: $(cat "$out")"; }
   # One more quiet poll past the absorb: the seeded timer must not have expired.
