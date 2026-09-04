@@ -435,7 +435,7 @@ printf '%s\n' '- crlf-proj [direct-PR +yolo] - test project (added 2026-08-20)' 
 run_snapshot "$home" > "$TMP_ROOT/line-endings.out"
 carriage=$(grep -c $'\r' "$TMP_ROOT/line-endings.out") || true
 [ "$carriage" = 0 ] || fail "the snapshot emitted CR characters: $(cat -A "$TMP_ROOT/line-endings.out")"
-reason_field=$(grep ',crlf-a,' "$TMP_ROOT/line-endings.out" | sed 's/,[^,]*$//; s/.*,//')
+reason_field=$(grep ',crlf-a,' "$TMP_ROOT/line-endings.out" | sed 's/,[^,]*$//; s/,[^,]*$//; s/.*,//')
 [ "$reason_field" = "captain kind or captain-kind hold" ] \
   || fail "autonomy_reason was not the documented value: [$reason_field]"
 case "$(cat "$TMP_ROOT/line-endings.out")" in
@@ -443,7 +443,7 @@ case "$(cat "$TMP_ROOT/line-endings.out")" in
   *) fail "a literal backslash was not doubled as documented: $(cat "$TMP_ROOT/line-endings.out")" ;;
 esac
 
-# 14. Items are sorted by descending priority with rank starting at 1;
+# 14. Under --priority, items are sorted by descending priority with rank starting at 1;
 #     unset priority ("-") sorts last; equal-priority items keep tasks-axi's
 #     own return order as the tiebreak. --limit is applied AFTER the sort, so
 #     a high-priority item outside the first N in tasks-axi's raw order still
@@ -458,7 +458,7 @@ home=$(make_home priority-sort)
   tasks-axi add pri-none "unset" --kind docs >/dev/null
   tasks-axi add pri-high "high" --kind docs --priority 4 >/dev/null
 )
-out=$(run_snapshot "$home")
+out=$(run_snapshot "$home" --priority)
 case "$out" in
   *"1,pri-high,high,docs,-,4,"*) ;;
   *) fail "highest priority did not rank 1: $out" ;;
@@ -488,7 +488,7 @@ home=$(make_home priority-limit)
   tasks-axi add lim-low-2 "low 2" --kind docs --priority 0 >/dev/null
   tasks-axi add lim-high "high" --kind docs --priority 4 >/dev/null
 )
-out=$(run_snapshot "$home" --limit 1)
+out=$(run_snapshot "$home" --priority --limit 1)
 case "$out" in
   *"count: 1"*) ;;
   *) fail "expected count: 1 under --limit 1 after sorting, got: $out" ;;
