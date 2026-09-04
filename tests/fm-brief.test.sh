@@ -430,6 +430,27 @@ test_perspective_flag_refuses_unknown_or_unsafe_slug() {
   pass "fm-brief.sh: --perspective refuses unknown, empty, unsafe, and charter-scoped slugs"
 }
 
+test_perspective_strip_keeps_prose_around_comments() {
+  local home root brief
+  home="$TMP_ROOT/perspective-strip-home"
+  root="$TMP_ROOT/perspective-strip-root"
+  mkdir -p "$home/data" "$root/.agents/skills/perspective-catalog/references"
+  cat >"$root/.agents/skills/perspective-catalog/references/probe.md" <<'FRAG'
+<!-- why (2026-09-04): maintainer bookkeeping that must not reach the worker. -->
+Stance: probe stance line.
+Refuse: fixing defects. <!-- why: ported from the pt-tracker seat. -->
+FRAG
+  FM_ROOT_OVERRIDE="$root" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-strip firstmate --scout --perspective probe >/dev/null 2>&1 \
+    || fail "scout --perspective probe was refused"
+  brief="$home/data/brief-persp-strip/brief.md"
+  assert_grep "Stance: probe stance line." "$brief" "brief dropped a plain fragment line"
+  assert_grep "Refuse: fixing defects." "$brief" "brief dropped prose sharing a line with a trailing comment"
+  assert_no_grep "maintainer bookkeeping" "$brief" "brief leaked the whole-line maintainer comment"
+  assert_no_grep "pt-tracker seat" "$brief" "brief leaked a trailing maintainer comment"
+  assert_no_grep '<!--' "$brief" "brief leaked an HTML comment marker"
+  pass "fm-brief.sh: --perspective strips HTML comments and keeps the prose around them"
+}
+
 test_perspective_catalog_fragments_stay_within_bounds() {
   local dir home n slug brief
   dir="$ROOT/.agents/skills/perspective-catalog/references"
@@ -1017,6 +1038,7 @@ test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_perspective_flag_inserts_catalog_fragment_and_marker
 test_perspective_flag_refuses_unknown_or_unsafe_slug
+test_perspective_strip_keeps_prose_around_comments
 test_perspective_catalog_fragments_stay_within_bounds
 test_herdr_lab_contract_quotes_foreign_firstmate_path
 test_herdr_lab_omission_is_loud_for_ship_and_scout

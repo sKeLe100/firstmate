@@ -236,8 +236,9 @@ if [ "$PERSPECTIVE_SET" -eq 1 ]; then
   PERSPECTIVE_FILE="$FM_ROOT/.agents/skills/perspective-catalog/references/$PERSPECTIVE.md"
   [ -f "$PERSPECTIVE_FILE" ] || { echo "error: unknown perspective '$PERSPECTIVE'; the catalog is .agents/skills/perspective-catalog/references/" >&2; exit 1; }
   # The fragment's dated "<!-- why ... -->" comment is maintainer bookkeeping,
-  # not worker instruction, so HTML comments never reach the dispatched brief.
-  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; awk '/<!--/{skip=1} {if (!skip) print} /-->/{skip=0}' "$PERSPECTIVE_FILE"; echo)
+  # not worker instruction, so HTML comments are removed on the way into the
+  # dispatched brief while the prose on the line around them survives.
+  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; awk 'skip{if (/-->/) skip=0; next} /^<!--/{if (!/-->/) skip=1; next} {sub(/[ \t]*<!--.*-->[ \t]*$/, ""); print}' "$PERSPECTIVE_FILE"; echo)
 fi
 
 if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then

@@ -18,7 +18,7 @@ The design and its evidence live in the private scout report that proposed it (2
 
 ## Catalog
 
-Each fragment is `references/<slug>.md`, inserted verbatim.
+Each fragment is `references/<slug>.md`, inserted with its HTML maintainer comments removed and the rest of its prose untouched.
 
 | slug | eligible purposes | stance |
 |---|---|---|
@@ -31,7 +31,7 @@ Each fragment is `references/<slug>.md`, inserted verbatim.
 | `parallel-review-seat` | review | Same stance and output shape as independent-reviewer, plus: one of two independent seats on the same subject and question, never sees the other's output, opens with its model family and model name. |
 
 Keep the catalog at seven or fewer entries.
-Every fragment opens with a dated HTML comment stating why it exists; when you change a fragment, update that line and re-read this table so the two do not drift.
+Every fragment opens with a dated HTML comment stating why it exists; that comment is maintainer bookkeeping and never reaches the worker's brief. When you change a fragment, update that line and re-read this table so the two do not drift.
 
 ## Selection precedence at intake
 
