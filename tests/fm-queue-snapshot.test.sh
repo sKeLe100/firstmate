@@ -320,8 +320,8 @@ cat > "$stub_dir/tasks-axi" <<'STUB'
 #!/usr/bin/env bash
 cat <<'OUT'
 count: 1
-tasks[1]{id,state,epic,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority}:
-  shift-a,queued,none,ship,shift-proj,shifted item,no,none,no,"-","-","-","3"
+tasks[1]{id,state,epic,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created}:
+  shift-a,queued,none,ship,shift-proj,shifted item,no,none,no,"-","-","-","3",2026-09-01
 help[1]:
   - Run `tasks-axi show <id>` for full notes on a task
 OUT
@@ -341,10 +341,10 @@ esac
 cat > "$stub_dir/tasks-axi" <<'STUB'
 #!/usr/bin/env bash
 echo "count: 2"
-echo 'tasks[2]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority}:'
-echo '  warn-a,queued,ship,warn-proj,first item,no,none,no,"-","-","-","-"'
+echo 'tasks[2]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created}:'
+echo '  warn-a,queued,ship,warn-proj,first item,no,none,no,"-","-","-","-",2026-09-01'
 echo "help[1]: warn: backlog cache rebuilt" >&2
-echo '  warn-b,queued,ship,warn-proj,second item,no,none,no,"-","-","-","-"'
+echo '  warn-b,queued,ship,warn-proj,second item,no,none,no,"-","-","-","-",2026-09-01'
 echo "help[1]:"
 echo "  - Run \`tasks-axi show <id>\` for full notes on a task"
 STUB
@@ -366,8 +366,8 @@ cat > "$stub_dir/tasks-axi" <<'STUB'
 #!/usr/bin/env bash
 cat <<'OUT'
 count: 2
-tasks[2]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority}:
-  drop-a,queued,ship,drop-proj,first item,no,none,no,"-","-","-","-"
+tasks[2]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created}:
+  drop-a,queued,ship,drop-proj,first item,no,none,no,"-","-","-","-",2026-09-01
   drop-b,queued,ship,drop-proj
 help[1]:
   - Run `tasks-axi show <id>` for full notes on a task
@@ -435,9 +435,9 @@ printf '%s\n' '- crlf-proj [direct-PR +yolo] - test project (added 2026-08-20)' 
 run_snapshot "$home" > "$TMP_ROOT/line-endings.out"
 carriage=$(grep -c $'\r' "$TMP_ROOT/line-endings.out") || true
 [ "$carriage" = 0 ] || fail "the snapshot emitted CR characters: $(cat -A "$TMP_ROOT/line-endings.out")"
-last_field=$(grep ',crlf-a,' "$TMP_ROOT/line-endings.out" | sed 's/.*,//')
-[ "$last_field" = "captain kind or captain-kind hold" ] \
-  || fail "autonomy_reason was not the documented value: [$last_field]"
+reason_field=$(grep ',crlf-a,' "$TMP_ROOT/line-endings.out" | sed 's/,[^,]*$//; s/.*,//')
+[ "$reason_field" = "captain kind or captain-kind hold" ] \
+  || fail "autonomy_reason was not the documented value: [$reason_field]"
 case "$(cat "$TMP_ROOT/line-endings.out")" in
   *'crlf-a,fix C:\\path,captain,crlf-proj'*) ;;
   *) fail "a literal backslash was not doubled as documented: $(cat "$TMP_ROOT/line-endings.out")" ;;
@@ -860,5 +860,29 @@ case "$out" in
   *"live_slots: 1"*) ;;
   *) fail "expected live_slots: 1 with one ship and one secondmate, got: $out" ;;
 esac
+
+# The hidden-by-project breakdown counts exactly the items --limit cut, so it
+# always sums to total_queued - count even when two queued rows share an id.
+cat > "$stub_dir/tasks-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'OUT'
+count: 3
+tasks[3]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created}:
+  dup-a,queued,ship,dup-proj,first item,no,none,no,"-","-","-","3",2026-09-01
+  dup-a,queued,ship,dup-proj,second item,no,none,no,"-","-","-","2",2026-09-01
+  dup-b,queued,ship,other-proj,third item,no,none,no,"-","-","-","1",2026-09-01
+OUT
+STUB
+home=$(make_home hidden-dup-ids)
+: > "$home/data/projects.md"
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir" "$SNAPSHOT" --limit 1)
+case "$out" in
+  *"total_queued: 3"*) ;;
+  *) fail "expected total_queued: 3, got: $out" ;;
+esac
+hidden_total=$(printf '%s\n' "$out" | sed -n '/^hidden\[/,$p' | sed -n '2,3p' \
+  | awk -F, '{ s += $2 } END { print s+0 }')
+[ "$hidden_total" = 2 ] \
+  || fail "hidden breakdown did not sum to total_queued - count: $out"
 
 echo "PASS fm-queue-snapshot.test.sh"

@@ -340,7 +340,9 @@ def priority_key(value):
 # Stable sort by descending priority; equal-priority items (including "-",
 # the lowest bucket) keep tasks-axi's own return order as the tiebreak, since
 # `rows` is already in that order and Python's sort is stable.
-ranked_rows = sorted(rows, key=lambda r: -priority_key(r["priority"]))[:limit]
+sorted_rows = sorted(rows, key=lambda r: -priority_key(r["priority"]))
+ranked_rows = sorted_rows[:limit]
+hidden_rows_src = sorted_rows[limit:]
 
 out_rows = []
 for rank, r in enumerate(ranked_rows, start=1):
@@ -364,7 +366,6 @@ for rank, r in enumerate(ranked_rows, start=1):
         r["hold_reason"], r["hold_until"], posture, autonomy, reason,
         r["created"],
     ])
-shown_ids = {r["id"] for r in ranked_rows}
 
 print(f"count: {len(out_rows)}")
 if len(out_rows) < len(rows):
@@ -381,10 +382,8 @@ if out_rows:
 
 if len(out_rows) < len(rows):
     hidden_counts = {}
-    for r in rows:
-        if r["id"] in shown_ids:
-            continue
-        repo_key = r["repo"] if r["repo"] and r["repo"] != "-" else "-"
+    for r in hidden_rows_src:
+        repo_key = r["repo"] or "-"
         hidden_counts[repo_key] = hidden_counts.get(repo_key, 0) + 1
     hidden_rows = sorted(hidden_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     print(f"hidden[{len(hidden_rows)}]{{repo,count}}:")
