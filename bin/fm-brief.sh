@@ -232,16 +232,17 @@ fi
 PERSPECTIVE_SECTION=
 if [ "$PERSPECTIVE_SET" -eq 1 ]; then
   [ "$KIND" != secondmate ] || { echo "error: --perspective applies only to crewmate ship or scout briefs" >&2; exit 1; }
-  [ "$KIND" = scout ] || echo "warning: --perspective on a ship brief: every catalog stance refuses producing code, so the fragment can pull against the delivery contract; inserting '$PERSPECTIVE' because it was named explicitly" >&2
   case "$PERSPECTIVE" in
     *[!a-z0-9-]*|-*|'') echo "error: --perspective slug must be lowercase letters, digits, and dashes (got '$PERSPECTIVE')" >&2; exit 1 ;;
   esac
   PERSPECTIVE_FILE="$FM_ROOT/.agents/skills/perspective-catalog/references/$PERSPECTIVE.md"
   [ -f "$PERSPECTIVE_FILE" ] || { echo "error: unknown perspective '$PERSPECTIVE'; the catalog is .agents/skills/perspective-catalog/references/" >&2; exit 1; }
+  [ "$KIND" = scout ] || echo "warning: --perspective on a ship brief: every catalog stance refuses producing code, so the fragment can pull against the delivery contract; inserting '$PERSPECTIVE' because it was named explicitly" >&2
   # The fragment's dated "<!-- why ... -->" comment is maintainer bookkeeping,
   # not worker instruction, so HTML comments are removed on the way into the
   # dispatched brief while the prose on the line around them survives.
-  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; awk 'skip{if (/-->/) skip=0; next} /^<!--/{if (!/-->/) skip=1; next} {sub(/[ \t]*<!--.*-->[ \t]*$/, ""); print}' "$PERSPECTIVE_FILE"; echo)
+  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; awk 'skip{if (/-->/) skip=0; next} /^<!--/{if (!/-->/) skip=1; next} {sub(/[ \t]*<!--.*-->[ \t]*$/, ""); print}' "$PERSPECTIVE_FILE"; printf '\n.')
+  PERSPECTIVE_SECTION=${PERSPECTIVE_SECTION%.}
 fi
 
 if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
