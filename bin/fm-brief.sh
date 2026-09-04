@@ -38,7 +38,7 @@
 #   --perspective <slug> inserts .agents/skills/perspective-catalog/references/<slug>.md
 #   (minus its HTML maintainer comments) as a "# Perspective" section between # Task and # Setup on a
 #   scout brief, and records a fixed machine-readable "Perspective: <slug>" line
-#   that bin/fm-spawn.sh echoes into task meta as perspective=. The slug must name
+#   in the brief. The slug must name
 #   an existing catalog fragment (lowercase letters, digits, dashes); anything else
 #   is refused rather than silently dropped. Every catalog stance refuses producing
 #   code, so --perspective is accepted on scout briefs only, never on a ship brief's
