@@ -1,0 +1,18 @@
+$ bin/fm-queue-snapshot.sh --limit 3   # with config/crew-dispatch.json present
+
+count: 3
+total_queued: 9
+items[3]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,created}:
+  1,qk-01,queue gate-class grouping,ship,firstmate,5,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,2026-08-30
+  2,qk-02,survey display-manager options,scout,pc02,4,no,none,no,-,-,-,no-mistakes off,captain-gated,project registry posture has yolo off,2026-08-20
+  3,qk-03,ratify lane policy,captain,firstmate,4,no,none,yes,captain,awaiting captain ruling,-,direct-PR on,captain-gated,captain kind or captain-kind hold,2026-07-15
+hidden[3]{repo,count}:
+  firstmate,3
+  -,2
+  pc02,1
+dispatch_config: present
+hierarchy_lanes[3]{source,for,harness,model,effort,available,availability_reason}:
+  rule,"hard, ambiguous, or high-stakes work",claude,claude-opus-5,high,yes,20% remaining (all_models)
+  rule,routine implementation,claude,claude-sonnet-5,medium,yes,20% remaining (all_models)
+  default,default (no rule matched),claude,claude-haiku-4-5-20251001,low,yes,20% remaining (all_models)
+live_slots: 0

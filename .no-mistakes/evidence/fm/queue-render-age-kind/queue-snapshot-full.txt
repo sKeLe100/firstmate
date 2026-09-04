@@ -1,0 +1,16 @@
+$ bin/fm-queue-snapshot.sh
+
+count: 9
+items[9]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,created}:
+  1,qk-01,queue gate-class grouping,ship,firstmate,5,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,2026-08-30
+  2,qk-02,survey display-manager options,scout,pc02,4,no,none,no,-,-,-,no-mistakes off,captain-gated,project registry posture has yolo off,2026-08-20
+  3,qk-03,ratify lane policy,captain,firstmate,4,no,none,yes,captain,awaiting captain ruling,-,direct-PR on,captain-gated,captain kind or captain-kind hold,2026-07-15
+  4,qk-04,queue project inference,ship,firstmate,3,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,2026-09-01
+  5,qk-05,fix suspend hook,ship,pc02,3,yes,qk-02,no,-,-,-,no-mistakes off,captain-gated,project registry posture has yolo off,2026-08-25
+  6,qk-06,tidy scratch notes,task,,2,no,none,no,-,-,-,n/a,unclear,no project recorded on this item,2026-08-05
+  7,qk-07,queue rot flag,ship,firstmate,2,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,2026-08-28
+  8,qk-08,queue chain rendering,ship,firstmate,1,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,2026-08-29
+  9,qk-09,collect quota telemetry,scout,,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item,2026-06-30
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
