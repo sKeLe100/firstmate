@@ -396,8 +396,8 @@ test_perspective_flag_inserts_catalog_fragment_and_marker() {
   assert_grep "Perspective: explorer" "$brief" "scout brief lacks the machine-readable Perspective: line"
   assert_grep "Stance: read-only repository discovery for one precise question." "$brief" \
     "scout brief lacks the explorer fragment body"
-  awk '/^Output shape:/{if (getline line <= 0 || line != "") exit 1} END{exit 0}' "$brief" \
-    || fail "no blank line separates the perspective fragment from the next section"
+  awk '/^Output shape:/{if ((getline a) <= 0 || a != "") bad=1; else if ((getline b) <= 0 || b == "") bad=1} END{exit bad}' "$brief" \
+    || fail "the perspective fragment is not followed by exactly one blank line"
   # Section order: # Task, then # Perspective, then # Setup.
   awk '/^# Task$/{t=NR} /^# Perspective$/{p=NR} /^# Setup$/{s=NR} END{exit !(t && p && s && t<p && p<s)}' "$brief" \
     || fail "Perspective section is not between # Task and # Setup"

@@ -241,7 +241,7 @@ if [ "$PERSPECTIVE_SET" -eq 1 ]; then
   # The fragment's dated "<!-- why ... -->" comment is maintainer bookkeeping,
   # not worker instruction, so HTML comments are removed on the way into the
   # dispatched brief while the prose on the line around them survives.
-  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; awk 'skip{if (/-->/) skip=0; next} /^<!--/{if (!/-->/) skip=1; next} {sub(/[ \t]*<!--.*-->[ \t]*$/, ""); print}' "$PERSPECTIVE_FILE"; printf '\n.')
+  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; awk 'skip{if (/-->/) skip=0; next} /^<!--/{if (!/-->/) skip=1; next} {sub(/[ \t]*<!--.*-->[ \t]*$/, ""); print}' "$PERSPECTIVE_FILE"; printf '.')
   PERSPECTIVE_SECTION=${PERSPECTIVE_SECTION%.}
 fi
 
