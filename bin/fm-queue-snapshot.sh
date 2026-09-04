@@ -375,6 +375,12 @@ def gate_sort_key(gate):
     return 3  # deferred-until <date>
 
 
+def deferred_date(gate):
+    if gate.startswith("deferred-until "):
+        return gate[len("deferred-until "):]
+    return ""
+
+
 # Derive posture/autonomy/gate for every queued item up front (not just the
 # post-limit slice) so gate-class ordering can be applied to the full set
 # before `--limit` cuts it; posture_for is repo-cached, so this costs one
@@ -421,14 +427,19 @@ if sort_mode == "priority":
 else:
     # Default: gate class first (dispatchable, blocked, captain,
     # deferred-until, in that order), then project (repo, "-" last) as the
-    # secondary key, then newest-first by `created` as the final tiebreak.
+    # secondary key, then hold date ascending for deferred items, then
+    # newest-first by `created` as the final tiebreak.
     # Two stable passes: sort by `created` descending first, then re-sort by
-    # (gate, repo) - the stable sort preserves the `created`-descending order
-    # within each equal (gate, repo) group.
+    # (gate, repo, hold date) - the stable sort preserves the
+    # `created`-descending order within each equal group.
     sorted_enriched = sorted(enriched, key=lambda e: e[0]["created"], reverse=True)
     sorted_enriched = sorted(
         sorted_enriched,
-        key=lambda e: (gate_sort_key(e[5]), (1, "") if e[1] in ("", "-") else (0, e[1])),
+        key=lambda e: (
+            gate_sort_key(e[5]),
+            (1, "") if e[1] in ("", "-") else (0, e[1]),
+            deferred_date(e[5]),
+        ),
     )
 
 ranked_enriched = sorted_enriched[:limit]
