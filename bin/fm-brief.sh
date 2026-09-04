@@ -37,12 +37,12 @@
 #   sync task (docs/configuration.md "Upstream autosync").
 #   --perspective <slug> inserts .agents/skills/perspective-catalog/references/<slug>.md
 #   (minus its HTML maintainer comments) as a "# Perspective" section between # Task and # Setup on a
-#   scout brief, and records a fixed machine-readable "Perspective: <slug>" line
+#   ship or scout brief, and records a fixed machine-readable "Perspective: <slug>" line
 #   in the brief. The slug must name
 #   an existing catalog fragment (lowercase letters, digits, dashes); anything else
-#   is refused rather than silently dropped. Every catalog stance refuses producing
-#   code, so --perspective is accepted on scout briefs only, never on a ship brief's
-#   delivery contract. The perspective-catalog skill owns which slug an intake
+#   is refused rather than silently dropped. A ship brief defaults to no perspective;
+#   an explicitly named slug is inserted with a warning, because every catalog stance
+#   refuses producing code. The perspective-catalog skill owns which slug an intake
 #   chooses; this script only inserts it.
 # For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
@@ -231,7 +231,8 @@ fi
 # as a path component.
 PERSPECTIVE_SECTION=
 if [ "$PERSPECTIVE_SET" -eq 1 ]; then
-  [ "$KIND" = scout ] || { echo "error: --perspective applies only to scout briefs; every catalog stance refuses producing code, which contradicts a ship delivery contract" >&2; exit 1; }
+  [ "$KIND" != secondmate ] || { echo "error: --perspective applies only to crewmate ship or scout briefs" >&2; exit 1; }
+  [ "$KIND" = scout ] || echo "warning: --perspective on a ship brief: every catalog stance refuses producing code, so the fragment can pull against the delivery contract; inserting '$PERSPECTIVE' because it was named explicitly" >&2
   case "$PERSPECTIVE" in
     *[!a-z0-9-]*|-*|'') echo "error: --perspective slug must be lowercase letters, digits, and dashes (got '$PERSPECTIVE')" >&2; exit 1 ;;
   esac
@@ -558,6 +559,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 $TASK_SECTION
 
+$PERSPECTIVE_SECTION
 $HERDR_SECTION
 $UPSTREAM_SYNC_SECTION
 

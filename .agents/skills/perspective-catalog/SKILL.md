@@ -2,7 +2,7 @@
 name: perspective-catalog
 description: >-
   Agent-only catalog of opt-in worker perspectives and the intake procedure that selects one.
-  Load at every scout intake whose purpose class is review, investigation, or planning, before scaffolding the brief, and before adding, editing, or removing a catalog fragment.
+  Load at every scout or ship intake whose purpose class is review, investigation, or planning, before scaffolding the brief, and before adding, editing, or removing a catalog fragment.
   Owns the fixed seven-entry catalog, the selection precedence, the purpose-class defaults, and the may/may-not rule for fragment content; bin/fm-brief.sh --perspective owns the insertion mechanics.
 user-invocable: false
 metadata:
@@ -14,7 +14,7 @@ metadata:
 A perspective is a short brief-template fragment that frames how a worker approaches its task: stance, what to read first, what to return, what to refuse, and output shape.
 Firstmate chooses one at intake from this fixed catalog and `bin/fm-brief.sh --perspective <slug>` inserts it as a `# Perspective` section between `# Task` and `# Setup`.
 The fragment never owns any contract: Setup, Rules, and Definition of done stay with the scaffold, so a perspective can never contradict what `bin/fm-spawn.sh` validates.
-Every catalog stance refuses producing code, so `bin/fm-brief.sh` accepts `--perspective` on scout briefs only and refuses it on a ship brief.
+Every catalog stance refuses producing code, so a ship brief defaults to none and `bin/fm-brief.sh` inserts an explicitly named slug with a warning.
 The design and its evidence live in the private scout report that proposed it (2026-09-04); this skill is the only shared owner.
 
 ## Catalog
@@ -48,7 +48,7 @@ Purpose-class defaults:
 - Eligible purposes are `review`, `investigation`, and `planning` only.
 - `code`, `mechanical`, and `summarize` always default to none; only a captain naming a slug overrides that.
 - A scout with an eligible purpose defaults to `explorer`; a review scout defaults to `independent-reviewer`.
-- A ship task never takes one: every stance refuses producing code, and `bin/fm-brief.sh` refuses `--perspective` on a ship brief.
+- A ship task defaults to none; the captain overrides per task only by naming a slug, which `bin/fm-brief.sh` inserts with a warning.
 - A slug outside the catalog is a refusal from `fm-brief.sh`, never a silent fallback; report it and re-resolve.
 
 Pass the resolved slug as `bin/fm-brief.sh <id> <repo> --scout --perspective <slug>`.

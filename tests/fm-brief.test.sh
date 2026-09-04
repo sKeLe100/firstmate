@@ -399,6 +399,12 @@ test_perspective_flag_inserts_catalog_fragment_and_marker() {
   # Section order: # Task, then # Perspective, then # Setup.
   awk '/^# Task$/{t=NR} /^# Perspective$/{p=NR} /^# Setup$/{s=NR} END{exit !(t && p && s && t<p && p<s)}' "$brief" \
     || fail "Perspective section is not between # Task and # Setup"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-ship firstmate --mode no-mistakes --perspective validator 2>&1); rc=$?
+  [ "$rc" -eq 0 ] || fail "ship --perspective validator refused: $out"
+  printf '%s' "$out" | grep -F "warning: --perspective on a ship brief" >/dev/null || fail "ship perspective warning missing: $out"
+  brief="$home/data/brief-persp-ship/brief.md"
+  assert_grep "Perspective: validator" "$brief" "ship brief lacks the Perspective: line"
+  assert_grep "Delivery contract: mode=no-mistakes" "$brief" "ship brief with a perspective lost its delivery contract"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-none firstmate --scout >/dev/null 2>&1
   assert_no_grep "# Perspective" "$home/data/brief-persp-none/brief.md" "brief without --perspective carries a Perspective section"
   pass "fm-brief.sh: --perspective inserts the catalog fragment between Task and Setup with its marker"
@@ -419,16 +425,10 @@ test_perspective_flag_refuses_unknown_or_unsafe_slug() {
   [ "$rc" -ne 0 ] || fail "empty perspective slug was accepted"
   printf '%s' "$out" | grep -F "lowercase letters, digits, and dashes" >/dev/null || fail "empty slug error missing: $out"
   assert_absent "$home/data/brief-persp-empty/brief.md" "brief was written despite an empty slug"
-  for slug in architect validator independent-reviewer; do
-    out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-persp-ship-$slug" firstmate --mode no-mistakes --perspective "$slug" 2>&1); rc=$?
-    [ "$rc" -ne 0 ] || fail "perspective $slug was accepted on a ship brief"
-    printf '%s' "$out" | grep -F "applies only to scout briefs" >/dev/null || fail "ship refusal missing for $slug: $out"
-    assert_absent "$home/data/brief-persp-ship-$slug/brief.md" "ship brief was written despite perspective $slug"
-  done
   out=$(FM_HOME="$home" FM_SECONDMATE_CHARTER=x "$ROOT/bin/fm-brief.sh" brief-persp-sm --secondmate --no-projects --perspective explorer 2>&1); rc=$?
   [ "$rc" -ne 0 ] || fail "--perspective accepted on a secondmate charter"
-  printf '%s' "$out" | grep -F "applies only to scout briefs" >/dev/null || fail "secondmate refusal missing: $out"
-  pass "fm-brief.sh: --perspective refuses unknown, empty, unsafe, ship, and charter-scoped slugs"
+  printf '%s' "$out" | grep -F "applies only to crewmate ship or scout briefs" >/dev/null || fail "secondmate refusal missing: $out"
+  pass "fm-brief.sh: --perspective refuses unknown, empty, unsafe, and charter-scoped slugs"
 }
 
 test_perspective_strip_keeps_prose_around_comments() {
