@@ -1,15 +1,16 @@
-$ bin/fm-queue-snapshot.sh --limit 3
-
 count: 3
-total_queued: 9
+total_queued: 68
 items[3]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,created}:
-  1,qk-01,queue gate-class grouping,ship,firstmate,5,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,2026-08-30
-  2,qk-02,survey display-manager options,scout,pc02,4,no,none,no,-,-,-,no-mistakes off,captain-gated,project registry posture has yolo off,2026-08-20
-  3,qk-03,ratify lane policy,captain,firstmate,4,no,none,yes,captain,awaiting captain ruling,-,direct-PR on,captain-gated,captain kind or captain-kind hold,2026-07-15
+  1,q1,expose created/kind on /queue,ship,firstmate,5,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,2026-08-28
+  2,q2,survey pc02 disk layout,scout,pc02,4,no,none,no,-,-,-,direct-PR off,captain-gated,project registry posture has yolo off,2026-07-20
+  3,q3,untriaged inbox item,task,,3,no,none,no,-,-,-,n/a,unclear,no project recorded on this item,2026-09-03
 hidden[3]{repo,count}:
-  firstmate,3
-  -,2
-  pc02,1
-dispatch_config: absent
-hierarchy_lanes: unavailable (dispatch_config: absent)
+  firstmate,41
+  pc02,15
+  -,9
+dispatch_config: present
+hierarchy_lanes[3]{source,for,harness,model,effort,available,availability_reason}:
+  rule,"hard, ambiguous, or high-stakes work",claude,opus,high,yes,20% remaining (all_models)
+  rule,routine work,codex,gpt-5,medium,unknown,no live quota data for codex
+  default,default (no rule matched),codex,gpt-5,low,unknown,no live quota data for codex
 live_slots: 0

@@ -1,0 +1,7 @@
+count: 2
+items[2]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,created}:
+  1,q9,item with empty created,ship,firstmate,2,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,
+  2,q10,captain-kind item,captain,pc02,1,no,none,no,-,-,-,direct-PR off,captain-gated,captain kind or captain-kind hold,2026-06-01
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
