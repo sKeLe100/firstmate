@@ -1572,7 +1572,7 @@ secondmate_current_json() {  # <parent-tasks-json>
   local row id home host remote registered registry_error task status_file event_raw event_note event_epoch event_age
   local activity_scan activities decisions reconciliation provenance freshness reason summary summary_rc summary_bytes summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
   local records_file registry_file counts_file tasks_file summary_file record_rc out rc seen_homes=''
-  local cap_file='' check_args_file='' record_args_file=''
+  local cap_file='' record_args_file=''
   local summary_source summary_age summary_observed summary_freshness cache_path collection_status collection_slot
   local sampled_spawn_gen summary_sampled
   registry=$(registry_secondmates_json) || return 1
@@ -1745,7 +1745,7 @@ secondmate_current_json() {  # <parent-tasks-json>
         activities "$activities" activity_scan "$activity_scan" \
         reconciliation "$reconciliation" terminal "$terminal" contradiction "$contradiction" \
         event_age "$event_age") \
-        || { rm -f "$records_file" "$registry_file" "$summary_file" "$check_args_file"; return 1; }
+        || { rm -f "$records_file" "$registry_file" "$summary_file"; return 1; }
       record=$(jq -n \
         --arg id "$id" --arg home "$home" --arg host "$host" --arg state "$state" --arg current_reason "$current_reason" --arg observed "$summary_observed" \
         --arg summary_source "$summary_source" --arg summary_freshness "$summary_freshness" --argjson summary_age "$summary_age" \
@@ -1777,7 +1777,7 @@ secondmate_current_json() {  # <parent-tasks-json>
          parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan,reconciliation:$reconciliation},
          terminal_evidence:$terminal,contradiction:$contradiction}')
       record_rc=$?
-      rm -f "$summary_file" "$record_args_file" "$check_args_file"
+      rm -f "$summary_file" "$record_args_file"
     else
       if [ -n "$event_raw" ]; then
         provenance='parent-event-fallback'
@@ -1822,7 +1822,7 @@ secondmate_current_json() {  # <parent-tasks-json>
          parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan},
          terminal_evidence:$terminal,contradiction:false}')
       record_rc=$?
-      rm -f "$record_args_file" "$check_args_file"
+      rm -f "$record_args_file"
     fi
     if [ "$record_rc" -ne 0 ] || [ -z "$record" ]; then
       rm -f "$records_file" "$registry_file"

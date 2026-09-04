@@ -500,20 +500,6 @@ archive_entry_body() {  # <archive-file> <id>
 # Durable state of one captain call: an active captain hold (annotations
 # surviving even when a date gate has expired) or a recorded captain answer.
 verify_hold_durable() {  # <task-id>
-  local id=$1 show state hold_kind body
-  show=$(task_show "$id") || fail "captain-held task $id is absent from $CAPTAIN_BACKLOG_FILE"
-  state=$(show_field "$show" state)
-  hold_kind=$(show_field_value "$show" hold_kind)
-  body=$(show_field "$show" body)
-  if body_has_resolution_record "$body"; then
-    return 0
-  fi
-  fail "archived captain-held task $id in $archive lacks a durable resolution record"
-}
-
-# Durable state of one captain call: an active captain hold (annotations
-# surviving even when a date gate has expired) or a recorded captain answer.
-verify_hold_durable() {  # <task-id>
   local id=$1 show state hold_kind body archive
   if show=$(task_show "$id"); then
     state=$(show_field "$show" state)

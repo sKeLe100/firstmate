@@ -478,7 +478,6 @@ reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeou
   if [ -n "$self" ] && child_terminal_ledger_line "$status" >/dev/null; then
     return 0
   fi
-  turn="$STATE/$id.turn-ended"
   age=$(last_activity_age "$id")
   [ "$age" -ge "$FM_INACTIVE_RECONCILE_SECS" ] || return 0
   state_line=$(fm_run_timed "$timeout" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
