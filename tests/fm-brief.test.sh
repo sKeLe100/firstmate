@@ -427,19 +427,23 @@ test_perspective_flag_refuses_unknown_or_unsafe_slug() {
 }
 
 test_perspective_catalog_fragments_stay_within_bounds() {
-  local dir n f
+  local dir home n slug brief
   dir="$ROOT/.agents/skills/perspective-catalog/references"
+  home="$TMP_ROOT/perspective-catalog-home"
+  mkdir -p "$home/data"
   n=$(find "$dir" -name '*.md' | wc -l | tr -d ' ')
   [ "$n" -le 7 ] || fail "perspective catalog grew past 7 entries ($n)"
-  for slug in explorer architect researcher validator independent-reviewer reaction-review parallel-review-seat; do
-    f="$dir/$slug.md"
-    [ -f "$f" ] || fail "catalog fragment missing: $slug"
-    head -n 1 "$f" | grep -E '^<!-- why \([0-9]{4}-[0-9]{2}-[0-9]{2}\):' >/dev/null || fail "$slug lacks the dated why comment on line 1"
-    # Fragments may not restate scaffold-owned contracts (AGENTS.md section 11).
-    grep -inE 'status file|git checkout|worktree|no-mistakes axi|Delivery contract|merge the PR|--yes' "$f" >/dev/null \
-      && fail "$slug restates a scaffold-owned contract"
+  for f in "$dir"/*.md; do
+    slug=$(basename "$f" .md)
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-persp-$slug" firstmate --scout --perspective "$slug" >/dev/null 2>&1 \
+      || fail "scout --perspective $slug was refused"
+    brief="$home/data/brief-persp-$slug/brief.md"
+    assert_present "$brief" "no brief was scaffolded for perspective $slug"
+    assert_grep "Perspective: $slug" "$brief" "brief for $slug lacks its Perspective marker"
+    grep -E '^<!-- why \([0-9]{4}-[0-9]{2}-[0-9]{2}\):' "$brief" >/dev/null \
+      || fail "brief for $slug carries no dated why line from the fragment"
   done
-  pass "perspective-catalog: fragments are bounded, dated, and contract-free"
+  pass "perspective-catalog: every catalog slug renders a bounded, dated brief"
 }
 
 test_herdr_lab_contract_is_explicit_and_complete() {

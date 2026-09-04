@@ -28,7 +28,7 @@ Each fragment is `references/<slug>.md`, inserted verbatim.
 | `validator` | review | Run the gate, probe boundaries, reproduce; report severity and suspected location; never fix. |
 | `independent-reviewer` | review | Read-only; cite file:line; recount every checkable claim with method; unprompted observations; zero findings is inconclusive; ends ship / ship-with-changes / rethink. |
 | `reaction-review` | review | Five generic lenses, each naming and classifying a real downside; simulated reactions are disclaimed. |
-| `parallel-review-seat` | review | independent-reviewer plus: one of two seats, never sees the other, records its model family. |
+| `parallel-review-seat` | review | Same stance and output shape as independent-reviewer, plus: one of two independent seats on the same subject and question, never sees the other's output, opens with its model family and model name. |
 
 Keep the catalog at seven or fewer entries.
 Every fragment opens with a dated HTML comment stating why it exists; when you change a fragment, update that line and re-read this table so the two do not drift.

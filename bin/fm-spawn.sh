@@ -3122,7 +3122,7 @@ preserve_relaunch_meta() {
   # usage telemetry archive only; absent when the brief carries no perspective.
   # A relaunch carries the recorded value forward via preserve_relaunch_meta.
   if [ "$RELAUNCH" -eq 0 ] && [ -n "${BRIEF:-}" ] && [ -f "$BRIEF" ]; then
-    BRIEF_PERSPECTIVE=$(sed -n 's/^Perspective: \([a-z0-9-]*\)$/\1/p' "$BRIEF" | head -n 1)
+    BRIEF_PERSPECTIVE=$(sed -n '/^# Perspective$/{n;s/^Perspective: \([a-z0-9-]*\)$/\1/p;}' "$BRIEF" | head -n 1)
     [ -z "$BRIEF_PERSPECTIVE" ] || echo "perspective=$BRIEF_PERSPECTIVE"
   fi
   if [ "$RELAUNCH" -eq 1 ]; then
