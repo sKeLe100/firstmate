@@ -14,6 +14,7 @@ metadata:
 A perspective is a short brief-template fragment that frames how a worker approaches its task: stance, what to read first, what to return, what to refuse, and output shape.
 Firstmate chooses one at intake from this fixed catalog and `bin/fm-brief.sh --perspective <slug>` inserts it as a `# Perspective` section between `# Task` and `# Setup`.
 The fragment never owns any contract: Setup, Rules, and Definition of done stay with the scaffold, so a perspective can never contradict what `bin/fm-spawn.sh` validates.
+The review stances (`independent-reviewer`, `reaction-review`, `parallel-review-seat`) refuse editing and committing, so `bin/fm-brief.sh` accepts them on scout briefs only and refuses them on a ship brief.
 The design and its evidence live in the private scout report that proposed it (2026-09-04); this skill is the only shared owner.
 
 ## Catalog

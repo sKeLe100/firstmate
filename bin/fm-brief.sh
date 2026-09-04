@@ -40,7 +40,9 @@
 #   scout brief, and records a fixed machine-readable "Perspective: <slug>" line
 #   that bin/fm-spawn.sh echoes into task meta as perspective=. The slug must name
 #   an existing catalog fragment (lowercase letters, digits, dashes); anything else
-#   is refused rather than silently dropped. The perspective-catalog skill owns
+#   is refused rather than silently dropped. The review stances (independent-reviewer,
+#   reaction-review, parallel-review-seat) refuse editing and committing, so they are
+#   accepted on scout briefs only, never on a ship brief's delivery contract. The perspective-catalog skill owns
 #   which slug an intake chooses; this script only inserts it.
 # For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
@@ -233,6 +235,15 @@ if [ "$PERSPECTIVE_SET" -eq 1 ]; then
   case "$PERSPECTIVE" in
     *[!a-z0-9-]*|-*|'') echo "error: --perspective slug must be lowercase letters, digits, and dashes (got '$PERSPECTIVE')" >&2; exit 1 ;;
   esac
+  # A review stance refuses editing and committing, which is the opposite of a
+  # ship brief's delivery contract, so the pairing is refused rather than dispatched.
+  if [ "$KIND" != scout ]; then
+    case "$PERSPECTIVE" in
+      independent-reviewer|reaction-review|parallel-review-seat)
+        echo "error: --perspective $PERSPECTIVE is a review stance that refuses editing and committing; it applies only to scout briefs, not to a ship delivery contract" >&2
+        exit 1 ;;
+    esac
+  fi
   PERSPECTIVE_FILE="$FM_ROOT/.agents/skills/perspective-catalog/references/$PERSPECTIVE.md"
   [ -f "$PERSPECTIVE_FILE" ] || { echo "error: unknown perspective '$PERSPECTIVE'; the catalog is .agents/skills/perspective-catalog/references/" >&2; exit 1; }
   # The fragment's dated "<!-- why ... -->" comment is maintainer bookkeeping,
