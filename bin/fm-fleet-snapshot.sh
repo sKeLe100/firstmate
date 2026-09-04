@@ -545,7 +545,7 @@ task_json_lines() {
   local idle_secs cache_expiring
   local last_event_raw current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
-  local home_args_file record_args_file record_rc pipeline_rc
+  local record_args_file record_rc pipeline_rc
 
   set -o pipefail
   for meta in "$STATE"/*.meta; do
@@ -1570,7 +1570,7 @@ parent_evidence_reconciliation_json() {  # <summary-json> <activities-json> <dec
 secondmate_current_json() {  # <parent-tasks-json>
   local tasks=$1 registry union rows total_registered total shown truncated
   local row id home host remote registered registry_error task status_file event_raw event_note event_epoch event_age
-  local activity_scan activities decisions reconciliation provenance freshness reason summary summary_rc summary_bytes summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
+  local activity_scan activities decisions reconciliation provenance freshness reason summary summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
   local records_file registry_file counts_file tasks_file summary_file record_rc out rc seen_homes=''
   local cap_file='' record_args_file=''
   local summary_source summary_age summary_observed summary_freshness cache_path collection_status collection_slot
