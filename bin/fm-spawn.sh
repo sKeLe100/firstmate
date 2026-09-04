@@ -14,6 +14,9 @@
 #   scaffolded before that line existed warns once and launches on the flag. A
 #   ship or scout spawn also refuses leftover `{TASK}` / `{FIRSTMATE_SPEC}`
 #   placeholders, an empty Task, or an incomplete pair of Task subsections.
+#   A brief's fixed "Perspective: <slug>" line (fm-brief.sh --perspective) is
+#   echoed into task meta as perspective= for telemetry only; it is never
+#   validated or acted on here, and a relaunch carries the recorded value forward.
 #   For a no-mistakes ship, spawn renders `launch-brief.md` with the current
 #   `--intent` contract and the extracted captain intent. A legacy mixed Task is
 #   accepted there only under bin/fm-dod-lib.sh's provenance-marking rules;
@@ -3114,6 +3117,14 @@ preserve_relaunch_meta() {
   # its task's existing purpose forward untouched via preserve_relaunch_meta
   # below rather than resetting it to "unspecified" (docs/llm-usage-telemetry.md).
   [ "$RELAUNCH" -eq 1 ] || echo "purpose=${PURPOSE:-unspecified}"
+  # perspective= mirrors purpose=: read once from the brief's fixed
+  # "Perspective: <slug>" line written by fm-brief.sh --perspective, for the
+  # usage telemetry archive only; absent when the brief carries no perspective.
+  # A relaunch carries the recorded value forward via preserve_relaunch_meta.
+  if [ "$RELAUNCH" -eq 0 ] && [ -n "${BRIEF:-}" ] && [ -f "$BRIEF" ]; then
+    BRIEF_PERSPECTIVE=$(sed -n 's/^Perspective: \([a-z0-9-]*\)$/\1/p' "$BRIEF" | head -n 1)
+    [ -z "$BRIEF_PERSPECTIVE" ] || echo "perspective=$BRIEF_PERSPECTIVE"
+  fi
   if [ "$RELAUNCH" -eq 1 ]; then
     preserve_relaunch_meta
   fi

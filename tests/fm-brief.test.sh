@@ -386,6 +386,62 @@ test_ship_project_memory_wording() {
   pass "fm-brief.sh: ship project-memory wording carries the AGENTS.md authoring bar"
 }
 
+test_perspective_flag_inserts_catalog_fragment_and_marker() {
+  local home brief out rc
+  home="$TMP_ROOT/perspective-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-scout firstmate --scout --perspective explorer >/dev/null 2>&1 \
+    || fail "scout --perspective explorer refused"
+  brief="$home/data/brief-persp-scout/brief.md"
+  assert_grep "Perspective: explorer" "$brief" "scout brief lacks the machine-readable Perspective: line"
+  assert_grep "Stance: read-only repository discovery for one precise question." "$brief" \
+    "scout brief lacks the explorer fragment body"
+  # Section order: # Task, then # Perspective, then # Setup.
+  awk '/^# Task$/{t=NR} /^# Perspective$/{p=NR} /^# Setup$/{s=NR} END{exit !(t && p && s && t<p && p<s)}' "$brief" \
+    || fail "Perspective section is not between # Task and # Setup"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-ship firstmate --mode no-mistakes --perspective independent-reviewer >/dev/null 2>&1 \
+    || fail "ship --perspective independent-reviewer refused"
+  brief="$home/data/brief-persp-ship/brief.md"
+  assert_grep "Perspective: independent-reviewer" "$brief" "ship brief lacks the Perspective: line"
+  assert_grep "Delivery contract: mode=no-mistakes" "$brief" "ship brief with a perspective lost its delivery contract"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-none firstmate --scout >/dev/null 2>&1
+  assert_no_grep "# Perspective" "$home/data/brief-persp-none/brief.md" "brief without --perspective carries a Perspective section"
+  pass "fm-brief.sh: --perspective inserts the catalog fragment between Task and Setup with its marker"
+}
+
+test_perspective_flag_refuses_unknown_or_unsafe_slug() {
+  local home out rc
+  home="$TMP_ROOT/perspective-refuse-home"
+  mkdir -p "$home/data"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-bad firstmate --scout --perspective no-such-slug 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "unknown perspective slug was accepted"
+  printf '%s' "$out" | grep -F "unknown perspective 'no-such-slug'" >/dev/null || fail "unknown slug error missing: $out"
+  assert_absent "$home/data/brief-persp-bad/brief.md" "brief was written despite an unknown slug"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-path firstmate --scout --perspective '../explorer' 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "path-like perspective slug was accepted"
+  printf '%s' "$out" | grep -F "lowercase letters, digits, and dashes" >/dev/null || fail "unsafe slug error missing: $out"
+  out=$(FM_HOME="$home" FM_SECONDMATE_CHARTER=x "$ROOT/bin/fm-brief.sh" brief-persp-sm --secondmate --no-projects --perspective explorer 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "--perspective accepted on a secondmate charter"
+  printf '%s' "$out" | grep -F "applies only to crewmate ship or scout briefs" >/dev/null || fail "secondmate refusal missing: $out"
+  pass "fm-brief.sh: --perspective refuses unknown, unsafe, and charter-scoped slugs"
+}
+
+test_perspective_catalog_fragments_stay_within_bounds() {
+  local dir n f
+  dir="$ROOT/.agents/skills/perspective-catalog/references"
+  n=$(find "$dir" -name '*.md' | wc -l | tr -d ' ')
+  [ "$n" -le 7 ] || fail "perspective catalog grew past 7 entries ($n)"
+  for slug in explorer architect researcher validator independent-reviewer reaction-review parallel-review-seat; do
+    f="$dir/$slug.md"
+    [ -f "$f" ] || fail "catalog fragment missing: $slug"
+    head -n 1 "$f" | grep -E '^<!-- why \([0-9]{4}-[0-9]{2}-[0-9]{2}\):' >/dev/null || fail "$slug lacks the dated why comment on line 1"
+    # Fragments may not restate scaffold-owned contracts (AGENTS.md section 11).
+    grep -inE 'status file|git checkout|worktree|no-mistakes axi|Delivery contract|merge the PR|--yes' "$f" >/dev/null \
+      && fail "$slug restates a scaffold-owned contract"
+  done
+  pass "perspective-catalog: fragments are bounded, dated, and contract-free"
+}
+
 test_herdr_lab_contract_is_explicit_and_complete() {
   local home id brief
   home="$TMP_ROOT/herdr-lab-home"
@@ -950,6 +1006,9 @@ test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
+test_perspective_flag_inserts_catalog_fragment_and_marker
+test_perspective_flag_refuses_unknown_or_unsafe_slug
+test_perspective_catalog_fragments_stay_within_bounds
 test_herdr_lab_contract_quotes_foreign_firstmate_path
 test_herdr_lab_omission_is_loud_for_ship_and_scout
 test_documented_global_replace_leaves_the_herdr_gate_intact
