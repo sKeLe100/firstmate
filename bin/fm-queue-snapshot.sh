@@ -70,6 +70,14 @@
 # the /queue skill renders so the captain's item numbers match this script's
 # order exactly.
 #
+# Priority analysis: when fewer than 20% of the full queued set carries a
+# numeric priority value, the `priority_analysis` line reports
+# `priority_meaningful: no (N/M items have priority, P%)` so the /queue
+# skill can drop its "sorted by priority" framing and instead state the
+# actual sort (insertion order for unprioritized items).  20% is the
+# threshold at which the priority sort stops being a meaningful signal
+# rather than an artifact of a handful of manually-tagged items.
+#
 # Usage: fm-queue-snapshot.sh [--limit N] [--priority]   (default N=30)
 #
 # By default `rank` orders the full queued set by gate class first
@@ -121,6 +129,10 @@
 #     limit, not after), sorted by descending count then repo name, so the
 #     caller can print a "hidden: N by project" summary without re-deriving it
 #     -- absent entirely when nothing was truncated --
+#   priority_analysis: priority_meaningful: <yes|no> (<n>/<m> items have priority, <p>%)
+#     -- present ALWAYS; reports the share of the full queued set that
+#     carries a numeric priority value.  When "no", the /queue skill should
+#     not claim the list is "sorted by priority" (see .agents/skills/queue).
 #   dispatch_config: absent|present|invalid|unverified
 #   hierarchy_lanes: unavailable (dispatch_config: <status>)
 #     -- OR "unavailable (config defines no dispatch profiles)" when the
@@ -488,6 +500,16 @@ for rank, (r, repo, posture, autonomy, reason, gate) in enumerate(
         r["hold_reason"], r["hold_until"], posture, autonomy, reason,
         gate, r["created"],
     ])
+
+# Priority analysis: compute share of full set with a numeric priority.
+# When <20% of items carry priority, the /queue skill drops the
+# "sorted by priority" framing (see .agents/skills/queue/SKILL.md).
+total_items = len(rows)
+items_with_priority = sum(1 for r in rows if r["priority"].isdigit())
+ratio = items_with_priority / total_items if total_items else 0.0
+meaningful = "yes" if ratio >= 0.20 else "no"
+pct = round(ratio * 100)
+print(f"priority_analysis: priority_meaningful: {meaningful} ({items_with_priority}/{total_items} items have priority, {pct}%)")
 
 print(f"count: {len(out_rows)}")
 if len(out_rows) < len(rows):
