@@ -52,7 +52,7 @@ Purpose-class defaults:
 - A slug outside the catalog is a refusal from `fm-brief.sh`, never a silent fallback; report it and re-resolve.
 
 Pass the resolved slug as `bin/fm-brief.sh <id> <repo> --scout --perspective <slug>`.
-The scaffold records a fixed `Perspective: <slug>` line, and `fm-spawn.sh` echoes it into task meta as `perspective=` so the task record durably names the stance it was launched with; no telemetry consumer reads it yet.
+The scaffold records a fixed `Perspective: <slug>` line in the brief.
 
 ## What a fragment may and may not contain
 

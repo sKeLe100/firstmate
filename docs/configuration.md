@@ -468,7 +468,7 @@ Per rule, `when` and `use` are required.
 Both `use` and the optional top-level `default` accept either one profile object or a non-empty array of profile objects.
 The single-object form stays fully backward-compatible, and every profile needs `harness`.
 Profile `model` and `effort` fields and rule `why` are optional.
-A profile's optional `perspective` names a slug from the agent-only `perspective-catalog` skill, which firstmate applies at intake through `bin/fm-brief.sh --perspective` for review, investigation, and planning work after the profile is resolved; that skill owns the catalog, precedence, and purpose-class defaults.
+A profile's optional `perspective` names a slug from the agent-only `perspective-catalog` skill, which firstmate applies at intake through `bin/fm-brief.sh --perspective` for review, investigation, and planning scout work after the profile is resolved; it is scout-only and refused on a ship brief; that skill owns the catalog, precedence, and purpose-class defaults.
 An omitted model or effort means the selected harness uses its own default for that axis.
 Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
 If no dispatch rule fits, firstmate resolves `default` through the same object-or-array path before falling back to `config/crew-harness`.

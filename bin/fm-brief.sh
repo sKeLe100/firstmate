@@ -558,7 +558,6 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 $TASK_SECTION
 
-$PERSPECTIVE_SECTION
 $HERDR_SECTION
 $UPSTREAM_SYNC_SECTION
 
