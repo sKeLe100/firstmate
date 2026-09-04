@@ -2135,6 +2135,11 @@ EOF
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         case " $signal_deferred " in *" $f "*) continue ;; esac
+        # A covered file's absorb is not decided until signal_covered_absorbable
+        # rules below; its reported signature advances there, mirroring the
+        # enqueue branch's decided gating, so a refused absorb leaves the file
+        # unsuppressed for the next scan instead of silently dropped.
+        case " $signal_covered " in *" $f "*) continue ;; esac
         case "$f" in
           *.status)
             fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
@@ -2161,6 +2166,20 @@ EOF
         case " $signal_covered " in
           *" $f "*)
             signal_covered_absorbable "$f" "$surface_end" || continue
+            # The absorb decision is final only here, so the reported-marker
+            # advance the first pass skipped for covered files runs now, with
+            # the file's LAST pending signature winning as it does there.
+            signal_covered_sig=
+            while IFS=$(printf '\t') read -r _csf csig cf; do
+              [ "$cf" = "$f" ] || continue
+              signal_covered_sig="$csig"
+            done <<EOF2
+$pending
+EOF2
+            if [ -n "$signal_covered_sig" ]; then
+              fm_wake_status_reported_commit "$STATE" "$f" "$signal_covered_sig" || true
+              mark_surface_reported "$f" "$signal_covered_sig" || true
+            fi
             mark_signal_surfaced "$f" || true
             fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" || true
             signal_absorbed="$signal_absorbed $f"
