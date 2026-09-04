@@ -532,7 +532,7 @@ total_items = len(rows)
 items_with_priority = sum(1 for r in rows if r["priority"].isdigit())
 ratio = items_with_priority / total_items if total_items else 0.0
 meaningful = "yes" if ratio >= 0.20 else "no"
-pct = round(ratio * 100)
+pct = int(ratio * 100)
 print(f"priority_analysis: priority_meaningful: {meaningful} ({items_with_priority}/{total_items} items have priority, {pct}%)")
 
 print(f"dispatch_config: {dispatch_status}")
