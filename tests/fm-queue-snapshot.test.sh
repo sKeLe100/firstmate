@@ -885,4 +885,32 @@ hidden_total=$(printf '%s\n' "$out" | sed -n '/^hidden\[/,$p' | sed -n '2,3p' \
 [ "$hidden_total" = 2 ] \
   || fail "hidden breakdown did not sum to total_queued - count: $out"
 
+
+# 19. A repo-less item whose id carries a "-"-delimited registered project or
+#     alias prefix inherits that project's posture and autonomy with reason
+#     "project inferred from id prefix"; a bare substring match (demo2-...)
+#     is NOT a match and stays honestly unclear.
+home=$(make_home id-prefix)
+printf '%s\n' '- demo [direct-PR +yolo] - test project (aliases: dm) (added 2026-08-20)' \
+  > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add demo-42 "inferred by name prefix" --kind ship >/dev/null
+  tasks-axi add dm-7 "inferred by alias prefix" --kind ship >/dev/null
+  tasks-axi add demo2-notes "not the demo project" --kind ship >/dev/null
+)
+out=$(run_snapshot "$home")
+case "$out" in
+  *"demo-42,inferred by name prefix,ship,-,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project inferred from id prefix"*) ;;
+  *) fail "delimited id prefix did not inherit the registered project's posture: $out" ;;
+esac
+case "$out" in
+  *"dm-7,inferred by alias prefix,ship,-,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project inferred from id prefix"*) ;;
+  *) fail "registered alias prefix did not resolve to the project: $out" ;;
+esac
+case "$out" in
+  *"demo2-notes,not the demo project,ship,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item"*) ;;
+  *) fail "substring id match was wrongly inferred as the demo project: $out" ;;
+esac
+
 echo "PASS fm-queue-snapshot.test.sh"

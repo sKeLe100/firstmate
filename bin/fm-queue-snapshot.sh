@@ -359,22 +359,17 @@ if reported_count != len(rows):
     )
 
 posture_cache = {}
-inferred_project_cache = {}
 
 
 def inferred_project_for(item_id):
-    if item_id in inferred_project_cache:
-        return inferred_project_cache[item_id]
     try:
         out = subprocess.run(
             [project_mode_bin, "--infer-project-from-id", item_id],
             capture_output=True, text=True, check=False,
         )
-        inferred = out.stdout.strip() if out.returncode == 0 else ""
+        return out.stdout.strip() if out.returncode == 0 else ""
     except OSError:
-        inferred = ""
-    inferred_project_cache[item_id] = inferred
-    return inferred
+        return ""
 
 
 def posture_for(repo):
