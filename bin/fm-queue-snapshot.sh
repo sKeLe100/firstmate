@@ -5,7 +5,7 @@
 # tasks-axi (bin/fm-tasks-axi-lib.sh's compatible binary) remains the single
 # backlog source; this script never parses data/backlog.md itself and never
 # filters or mutates what tasks-axi returns, and reorders it only by the
-# priority sort documented under "Ranking and priority" below. It shells out
+# sorts documented under "Ranking and priority" below. It shells out
 # to `tasks-axi list --state queued` for EVERY queued item (no --limit, so
 # the sort sees the whole queue), sorts that set, keeps the top N, and
 # enriches each surviving row with more deterministic facts tasks-axi
@@ -47,11 +47,13 @@
 # `quota-axi --json` call to report live lane availability. It runs no
 # tasks-axi mutation and writes no file.
 #
-# Ranking and priority: items are sorted by tasks-axi's own `priority` field
-# (0-4, higher = more urgent), descending, BEFORE --limit is applied, so a
-# high-priority item outside the first N in tasks-axi's raw return order is
-# never dropped from view. An item with no priority set ("-") sorts as the
-# lowest priority. Equal-priority items (including all items when none set a
+# Ranking: whichever sort is in effect (gate class by default, or descending
+# priority under --priority; see Usage below) is applied to the FULL queued
+# set BEFORE --limit, so an item that would rank high is never dropped from
+# view merely because tasks-axi returned it late. Under --priority, items are
+# sorted by tasks-axi's own `priority` field (0-4, higher = more urgent),
+# descending; an item with no priority set ("-") sorts as the lowest
+# priority, and equal-priority items (including all items when none set a
 # priority) keep tasks-axi's own return order as a stable tiebreak - this
 # script never reorders same-priority items by title, id, or any other guess.
 # `rank` is the resulting 1-based position after that sort, the same number
@@ -63,7 +65,8 @@
 # By default `rank` orders the full queued set by gate class first
 # (dispatchable, blocked, captain, deferred-until, in that order - the same
 # order the /queue skill renders its four sections in), then by project
-# (repo, "-" last) as the secondary key within each gate class, then by
+# (repo, "-" last) as the secondary key within each gate class, then - for
+# deferred rows only - by hold date ascending (soonest first), then by
 # `created` descending (newest first) as the final tiebreak; `--limit` is
 # applied after that full ordering, exactly as it was applied after the
 # priority sort before this flag existed. Pass `--priority` to restore the
