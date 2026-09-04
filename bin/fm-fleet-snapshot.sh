@@ -1569,10 +1569,12 @@ parent_evidence_reconciliation_json() {  # <summary-json> <activities-json> <dec
 
 secondmate_current_json() {  # <parent-tasks-json>
   local tasks=$1 registry union rows total_registered total shown truncated
-  local row id home host remote registered registry_error task sampled_spawn_gen status_file event_raw event_note event_epoch event_age
-  local activity_scan activities decisions reconciliation provenance freshness reason summary summary_sampled summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
+  local row id home host remote registered registry_error task status_file event_raw event_note event_epoch event_age
+  local activity_scan activities decisions reconciliation provenance freshness reason summary summary_rc summary_bytes summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
+  local records_file registry_file counts_file tasks_file summary_file record_rc out rc seen_homes=''
+  local cap_file='' check_args_file='' record_args_file=''
   local summary_source summary_age summary_observed summary_freshness cache_path collection_status collection_slot
-  local records='[]' seen_homes=''
+  local sampled_spawn_gen summary_sampled
   registry=$(registry_secondmates_json) || return 1
   registry_file=$(json_tmpfile secondmate-current-registry "$registry") || return 1
   tasks_file=$(json_tmpfile secondmate-current-tasks "$tasks") || { rm -f "$registry_file"; return 1; }
@@ -1609,8 +1611,13 @@ secondmate_current_json() {  # <parent-tasks-json>
   [ "$rc" -eq 0 ] || { rm -f "$registry_file"; return 1; }
   shown=$(printf '%s\n' "$rows" | grep -c . || true)
   truncated=$((total - shown))
+  # Records accumulate on disk as NDJSON: folding them through `--argjson` once
+  # per home puts the whole growing array in jq's exec argv and hits E2BIG
+  # (the same scaling failure as the backlog call sites).
+  records_file=$(umask 077 && mktemp "$FM_SNAPSHOT_TMPDIR/secondmate-records.XXXXXX") \
+    || { rm -f "$registry_file"; return 1; }
   if [ -n "$rows" ]; then
-    prepare_remote_summary_collection "$rows" || return 1
+    prepare_remote_summary_collection "$rows" || { rm -f "$records_file" "$registry_file"; return 1; }
   fi
 
   while IFS= read -r row; do
@@ -1738,16 +1745,26 @@ secondmate_current_json() {  # <parent-tasks-json>
         activities "$activities" activity_scan "$activity_scan" \
         reconciliation "$reconciliation" terminal "$terminal" contradiction "$contradiction" \
         event_age "$event_age") \
-        || { rm -f "$records_file" "$registry_file" "$summary_file"; return 1; }
+        || { rm -f "$records_file" "$registry_file" "$summary_file" "$check_args_file"; return 1; }
       record=$(jq -n \
-        --arg id "$id" --arg home "$home" --arg host "$host" --argjson remote "$remote" --arg state "$state" --arg current_reason "$current_reason" --arg observed "$summary_observed" \
+        --arg id "$id" --arg home "$home" --arg host "$host" --arg state "$state" --arg current_reason "$current_reason" --arg observed "$summary_observed" \
         --arg summary_source "$summary_source" --arg summary_freshness "$summary_freshness" --argjson summary_age "$summary_age" \
-        --arg spawn_gen "$sampled_spawn_gen" \
-        --argjson registered "$registered" --argjson summary "$summary" --argjson summary_valid "$summary_valid" --argjson decisions "$decisions" \
-        --argjson activities "$activities" --argjson activity_scan "$activity_scan" \
-        --argjson reconciliation "$reconciliation" --argjson terminal "$terminal" --argjson contradiction "$contradiction" \
-        --arg event_raw "$event_raw" --arg event_note "$event_note" --argjson event_age "$event_age" '
-        {id:$id,home:$home,host:($host | if . == "" then null else . end),remote:$remote,registered:$registered,
+        --rawfile summary_raw "$summary_file" \
+        --rawfile fm_args_raw "$record_args_file" \
+        --arg spawn_gen "$sampled_spawn_gen" --arg event_raw "$event_raw" --arg event_note "$event_note" '
+        ($fm_args_raw | fromjson) as $fm_args
+        | $fm_args.remote as $remote
+        | $fm_args.registered as $registered
+        | $fm_args.summary_valid as $summary_valid
+        | $fm_args.decisions as $decisions
+        | $fm_args.activities as $activities
+        | $fm_args.activity_scan as $activity_scan
+        | $fm_args.reconciliation as $reconciliation
+        | $fm_args.terminal as $terminal
+        | $fm_args.contradiction as $contradiction
+        | $fm_args.event_age as $event_age
+        | ($summary_raw | fromjson) as $summary
+        | {id:$id,home:$home,host:($host | if . == "" then null else . end),remote:$remote,registered:$registered,
          spawn_gen:($spawn_gen | if . == "" then null else . end),
          current:{state:$state,reason:($current_reason | if . == "" then null else . end)},invalidity:$summary.invalidity,
          reconcile_inventory:$summary.invalidity,
@@ -1760,7 +1777,7 @@ secondmate_current_json() {  # <parent-tasks-json>
          parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan,reconciliation:$reconciliation},
          terminal_evidence:$terminal,contradiction:$contradiction}')
       record_rc=$?
-      rm -f "$summary_file" "$record_args_file"
+      rm -f "$summary_file" "$record_args_file" "$check_args_file"
     else
       if [ -n "$event_raw" ]; then
         provenance='parent-event-fallback'
@@ -1805,7 +1822,7 @@ secondmate_current_json() {  # <parent-tasks-json>
          parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan},
          terminal_evidence:$terminal,contradiction:false}')
       record_rc=$?
-      rm -f "$record_args_file"
+      rm -f "$record_args_file" "$check_args_file"
     fi
     if [ "$record_rc" -ne 0 ] || [ -z "$record" ]; then
       rm -f "$records_file" "$registry_file"
@@ -1816,14 +1833,23 @@ secondmate_current_json() {  # <parent-tasks-json>
 $rows
 EOF
   snapshot_collection_cleanup
-  jq -n \
-    --argjson registry "$(printf '%s' "$union" | jq '.registry')" \
-    --argjson records "$records" \
-    --argjson total_registered "$total_registered" \
-    --argjson total "$total" \
-    --argjson shown "$shown" \
-    --argjson truncated "$truncated" \
-    '{registry:$registry,records:$records,total_registered:$total_registered,total:$total,shown:$shown,truncated:$truncated}'
+  counts_file=$(json_args_tmpfile secondmate-current-counts \
+    total_registered "$total_registered" total "$total" shown "$shown" truncated "$truncated") \
+    || { rm -f "$records_file" "$registry_file"; return 1; }
+  out=$(jq -n \
+    --rawfile registry_raw "$registry_file" \
+    --slurpfile records "$records_file" \
+    --rawfile fm_args_raw "$counts_file" \
+    '($fm_args_raw | fromjson) as $fm_args
+     | $fm_args.total_registered as $total_registered
+     | $fm_args.total as $total
+     | $fm_args.shown as $shown
+     | $fm_args.truncated as $truncated
+     | {registry:($registry_raw | fromjson),records:$records,total_registered:$total_registered,total:$total,shown:$shown,truncated:$truncated}')
+  rc=$?
+  rm -f "$records_file" "$registry_file" "$counts_file"
+  [ "$rc" -eq 0 ] || return "$rc"
+  printf '%s\n' "$out"
 }
 
 secondmate_landed_from_current_json() {  # <secondmate-current-json>

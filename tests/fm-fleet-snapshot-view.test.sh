@@ -600,6 +600,8 @@ test_many_secondmate_summaries_survive_argv_limit() {
           "$id" "$j" "$j" "$id" "$((i * 100 + j))" "$(((j % 28) + 1))"
       done
     } > "$mate/data/backlog.md"
+    FM_HOME="$mate" "$SNAPSHOT" --secondmate-home-summary > "$mate/state/home-summary.json" \
+      || fail "could not seed the $id home-summary ledger"
     printf -- '- %s - delegated scope (home: %s; scope: delegated scope; projects: alpha; added 2026-08-01)\n' \
       "$id" "$mate" >> "$home/data/secondmates.md"
   done
@@ -646,7 +648,7 @@ SH
     and (.secondmate_current.records[0]
          | .id == "ios"
          and .current.state == "unknown"
-         and (.current.reason | test("malformed or stale"))
+         and (.current.reason | test("missing, unreadable, or invalid"))
          and .reconcile_inventory == null
          and .invalidity == null
          and .provenance.parent_event_role == "fallback-only-not-current")
