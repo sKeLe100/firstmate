@@ -58,7 +58,19 @@
 # the /queue skill renders so the captain's item numbers match this script's
 # order exactly.
 #
-# Usage: fm-queue-snapshot.sh [--limit N]   (default N=30)
+# Usage: fm-queue-snapshot.sh [--limit N] [--priority]   (default N=30)
+#
+# By default `rank` orders the full queued set by gate class first
+# (dispatchable, blocked, captain, deferred-until, in that order - the same
+# order the /queue skill renders its four sections in), then by project
+# (repo, "-" last) as the secondary key within each gate class, then by
+# `created` descending (newest first) as the final tiebreak; `--limit` is
+# applied after that full ordering, exactly as it was applied after the
+# priority sort before this flag existed. Pass `--priority` to restore the
+# prior default: sort the full queued set by descending `priority` instead
+# (ties keep tasks-axi's own return order), ignoring gate class entirely.
+# `gate` and `rank` are still emitted on every row either way; `--priority`
+# only changes which order produces `rank`.
 #
 # Output (stable field order; the rows are RFC4180 CSV, so an embedded quote is
 # doubled - "" - not backslash-escaped as tasks-axi's own TOON input is, and a
@@ -72,11 +84,21 @@
 #     smaller than the total number of queued items tasks-axi returned), so a
 #     capped listing is never mistaken for the whole queue; absent entirely
 #     when nothing was truncated --
-#   items[<n>]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,created}:
+#   items[<n>]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,gate,created}:
 #     <csv row>...
 #     `created` is tasks-axi's own item-creation date (empty string if tasks-axi
 #     reports none for that item) - carried through unmodified, never
 #     reformatted or age-computed here; the caller derives age from it.
+#     `gate` is a deterministic gate-class verdict for grouping the list -
+#     "dispatchable", "blocked", "captain", or "deferred-until <date>" (using
+#     the item's own `hold_until` verbatim) - derived, never guessed, from
+#     this same row's `blocked`/`hold_until` fields and the `autonomy` verdict
+#     computed just above: `blocked` when `blocked` is yes (a blocking chain
+#     always wins, regardless of any hold); else `deferred-until <hold_until>`
+#     when held with a `hold_until` date set; else `captain` when held with no
+#     `hold_until` (an open-ended hold), OR when `autonomy` is
+#     `captain-gated` OR `unclear` (an unresolved project is a captain
+#     question, not a dispatchable one); else `dispatchable`.
 #   hidden[<n>]{repo,count}:
 #     <csv row>...
 #     -- present ONLY when --limit truncated the full queued set (same
@@ -147,6 +169,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 LIMIT=30
+SORT_MODE=gate
 while [ $# -gt 0 ]; do
   case "$1" in
     --limit)
@@ -162,6 +185,10 @@ while [ $# -gt 0 ]; do
         exit 2
       fi
       shift 2
+      ;;
+    --priority)
+      SORT_MODE=priority
+      shift
       ;;
     *)
       echo "fm-queue-snapshot: unknown argument: $1" >&2
@@ -219,6 +246,7 @@ PROJECT_MODE_BIN="$SCRIPT_DIR/fm-project-mode.sh"
 FM_QUEUE_PROJECT_MODE_BIN="$PROJECT_MODE_BIN" \
 FM_QUEUE_DISPATCH_STATUS="$dispatch_status" \
 FM_QUEUE_LIMIT="$LIMIT" \
+FM_QUEUE_SORT_MODE="$SORT_MODE" \
 FM_QUEUE_CFG="$CFG" \
 FM_QUEUE_STATE_DIR="$FM_HOME/state" \
 python3 - "$TMP_LIST" <<'PY'
@@ -233,6 +261,7 @@ import sys
 project_mode_bin = os.environ["FM_QUEUE_PROJECT_MODE_BIN"]
 dispatch_status = os.environ["FM_QUEUE_DISPATCH_STATUS"]
 limit = int(os.environ["FM_QUEUE_LIMIT"])
+sort_mode = os.environ["FM_QUEUE_SORT_MODE"]
 cfg_path = os.environ["FM_QUEUE_CFG"]
 state_dir = os.environ["FM_QUEUE_STATE_DIR"]
 
@@ -337,15 +366,21 @@ def priority_key(value):
     return int(value) if value.isdigit() else -1
 
 
-# Stable sort by descending priority; equal-priority items (including "-",
-# the lowest bucket) keep tasks-axi's own return order as the tiebreak, since
-# `rows` is already in that order and Python's sort is stable.
-sorted_rows = sorted(rows, key=lambda r: -priority_key(r["priority"]))
-ranked_rows = sorted_rows[:limit]
-hidden_rows_src = sorted_rows[limit:]
+GATE_ORDER = {"dispatchable": 0, "blocked": 1, "captain": 2}
 
-out_rows = []
-for rank, r in enumerate(ranked_rows, start=1):
+
+def gate_sort_key(gate):
+    if gate in GATE_ORDER:
+        return GATE_ORDER[gate]
+    return 3  # deferred-until <date>
+
+
+# Derive posture/autonomy/gate for every queued item up front (not just the
+# post-limit slice) so gate-class ordering can be applied to the full set
+# before `--limit` cuts it; posture_for is repo-cached, so this costs one
+# fm-project-mode.sh call per distinct project, not per item.
+enriched = []
+for r in rows:
     captain_kind = r["kind"] == "captain" or r["hold_kind"] == "captain"
     repo = r["repo"]
     has_repo = bool(repo) and repo != "-"
@@ -360,11 +395,54 @@ for rank, r in enumerate(ranked_rows, start=1):
             autonomy, reason = "captain-gated", "project registry posture has yolo off"
         else:
             autonomy, reason = "autonomous-eligible", "project registry posture has yolo on"
+    blocked_flag = r["blocked"] == "yes"
+    held_flag = r["held"] == "yes"
+    hold_until = r["hold_until"]
+    if hold_until == "-":
+        hold_until = ""
+    if blocked_flag:
+        gate = "blocked"
+    elif held_flag and hold_until:
+        gate = f"deferred-until {hold_until}"
+    elif held_flag or autonomy in ("captain-gated", "unclear"):
+        gate = "captain"
+    else:
+        gate = "dispatchable"
+    enriched.append((r, repo, posture, autonomy, reason, gate))
+
+if sort_mode == "priority":
+    # Stable sort by descending priority; equal-priority items (including
+    # "-", the lowest bucket) keep tasks-axi's own return order as the
+    # tiebreak, since `enriched` is already in that order and Python's sort
+    # is stable.
+    sorted_enriched = sorted(
+        enriched, key=lambda e: -priority_key(e[0]["priority"])
+    )
+else:
+    # Default: gate class first (dispatchable, blocked, captain,
+    # deferred-until, in that order), then project (repo, "-" last) as the
+    # secondary key, then newest-first by `created` as the final tiebreak.
+    # Two stable passes: sort by `created` descending first, then re-sort by
+    # (gate, repo) - the stable sort preserves the `created`-descending order
+    # within each equal (gate, repo) group.
+    sorted_enriched = sorted(enriched, key=lambda e: e[0]["created"], reverse=True)
+    sorted_enriched = sorted(
+        sorted_enriched,
+        key=lambda e: (gate_sort_key(e[5]), (1, "") if e[1] in ("", "-") else (0, e[1])),
+    )
+
+ranked_enriched = sorted_enriched[:limit]
+hidden_rows_src = [e[0] for e in sorted_enriched[limit:]]
+
+out_rows = []
+for rank, (r, repo, posture, autonomy, reason, gate) in enumerate(
+    ranked_enriched, start=1
+):
     out_rows.append([
         rank, r["id"], r["title"], r["kind"], repo, r["priority"],
         r["blocked"], r["blocked_by"], r["held"], r["hold_kind"],
         r["hold_reason"], r["hold_until"], posture, autonomy, reason,
-        r["created"],
+        gate, r["created"],
     ])
 
 print(f"count: {len(out_rows)}")
@@ -373,7 +451,7 @@ if len(out_rows) < len(rows):
 if out_rows:
     cols = ("rank,id,title,kind,repo,priority,blocked,blocked_by,held,"
             "hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,"
-            "created")
+            "gate,created")
     print(f"items[{len(out_rows)}]{{{cols}}}:")
     writer = csv.writer(sys.stdout, lineterminator="\n")
     for row in out_rows:
