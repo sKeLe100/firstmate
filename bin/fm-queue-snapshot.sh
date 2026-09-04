@@ -29,8 +29,8 @@
 #
 # When repo is empty/"-", this script also asks bin/fm-project-mode.sh
 # --infer-project-from-id whether the item's own id names a registered
-# project by prefix (its name or a recorded alias; see that script's header
-# for the exact match rule). A hit resolves posture/autonomy exactly as a
+# project by prefix (see that script's header for the exact match rule).
+# A hit resolves posture/autonomy exactly as a
 # recorded repo would and reports autonomy_reason "project inferred from id
 # prefix" instead of "no project recorded on this item", so the skill can
 # render it as an inferred verdict rather than "unclear". This is inference
