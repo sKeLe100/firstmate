@@ -35,11 +35,10 @@
 # An unknown/missing project or unknown mode falls back to "no-mistakes off" and warns
 # to stderr, so a typo never silently drops the gate.
 #
-# --infer-project-from-id <id> prints the registered project name whose name,
-# or a recorded "(aliases: a, b)" annotation in that project's description
-# parenthetical, is a "-"-delimited prefix of <id> - the longest such match
-# wins so e.g. "life-os-finance" beats "life-os" for id "life-os-finance-42".
-# Prints nothing and exits 1 when no registered name/alias matches. This is
+# --infer-project-from-id <id> prints the registered project name that is a
+# "-"-delimited prefix of <id> - the longest such match wins so e.g.
+# "life-os-finance" beats "life-os" for id "life-os-finance-42".
+# Prints nothing and exits 1 when no registered name matches. This is
 # the single registry-parsing path for id-prefix project inference; callers
 # (bin/fm-queue-snapshot.sh) never read data/projects.md themselves.
 # Usage: fm-project-mode.sh [--raw] <project-name>
@@ -58,29 +57,12 @@ if [ "${1:-}" = "--infer-project-from-id" ]; then
   awk -v id="$ID" '
     $1 == "-" {
       name = $2
-      best_len = 0
-      if (name != "" && (id == name || index(id, name "-") == 1) && length(name) > best_len) {
+      if (name != "" && (id == name || index(id, name "-") == 1) \
+          && length(name) > best_len) {
         best_len = length(name); best = name
       }
-      # description parenthetical may record "aliases: a, b, c"
-      line = $0
-      if (match(line, /\(aliases:[^)]*\)/)) {
-        alist = substr(line, RSTART, RLENGTH)
-        sub(/^\(aliases:/, "", alist); sub(/\)$/, "", alist)
-        n = split(alist, parts, ",")
-        for (i = 1; i <= n; i++) {
-          gsub(/^[ \t]+|[ \t]+$/, "", parts[i])
-          a = parts[i]
-          if (a != "" && (id == a || index(id, a "-") == 1) && length(a) > best_len) {
-            best_len = length(a); best = name
-          }
-        }
-      }
-      if (best_len > 0 && best_len > global_best_len) {
-        global_best_len = best_len; global_best = best
-      }
     }
-    END { if (global_best != "") print global_best }
+    END { if (best != "") print best }
   ' "$REG" | { read -r m; [ -n "$m" ] && { echo "$m"; exit 0; }; exit 1; }
   exit $?
 fi
