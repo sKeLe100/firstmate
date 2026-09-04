@@ -1338,24 +1338,6 @@ ${context.command}
     mirrorCollection.stagedCaptain = { file, index, text: prompt };
   });
 
-  pi.on?.("before_agent_start", (event, ctx) => {
-    rememberMainModel(ctx);
-    currentMainSession = ctx?.sessionManager ?? null;
-    if (!actingAsOwner() || !currentMainSession || !collectCurrentMainDialog()) return;
-
-    // This event is Pi's authoritative complete current prompt. At this point
-    // SessionManager still contains only the preceding dialog, so relying on
-    // getEntries() here loses the captain request that the next wake may answer.
-    // Stage it verbatim and remember the future persisted index for turn_end's
-    // duplicate suppression. Operational extension injections are not dialog.
-    const prompt = event.prompt.trim();
-    if (!prompt || isOperationalUserText(prompt)) return;
-    const file = currentMainSession.getSessionFile() ?? "";
-    const index = mirrorCollection.collectAnchor?.index ?? currentMainSession.getEntries().length;
-    pendingMirror.push({ tag: "captain", text: prompt });
-    mirrorCollection.stagedCaptain = { file, index, text: prompt };
-  });
-
   pi.on?.("agent_start", () => {
     mainStreaming = true;
     // Pi delivers a queued nextTurn copy with the prompt that starts this run,
