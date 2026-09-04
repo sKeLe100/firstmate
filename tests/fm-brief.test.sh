@@ -386,6 +386,95 @@ test_ship_project_memory_wording() {
   pass "fm-brief.sh: ship project-memory wording carries the AGENTS.md authoring bar"
 }
 
+test_perspective_flag_inserts_catalog_fragment_and_marker() {
+  local home brief out rc
+  home="$TMP_ROOT/perspective-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-scout firstmate --scout --perspective explorer >/dev/null 2>&1 \
+    || fail "scout --perspective explorer refused"
+  brief="$home/data/brief-persp-scout/brief.md"
+  assert_grep "Perspective: explorer" "$brief" "scout brief lacks the machine-readable Perspective: line"
+  assert_grep "Stance: read-only repository discovery for one precise question." "$brief" \
+    "scout brief lacks the explorer fragment body"
+  awk '/^Output shape:/{if ((getline a) <= 0 || a != "") bad=1; else if ((getline b) <= 0 || b == "") bad=1} END{exit bad}' "$brief" \
+    || fail "the perspective fragment is not followed by exactly one blank line"
+  # Section order: # Task, then # Perspective, then # Setup.
+  awk '/^# Task$/{t=NR} /^# Perspective$/{p=NR} /^# Setup$/{s=NR} END{exit !(t && p && s && t<p && p<s)}' "$brief" \
+    || fail "Perspective section is not between # Task and # Setup"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-ship firstmate --mode no-mistakes --perspective validator 2>&1); rc=$?
+  [ "$rc" -eq 0 ] || fail "ship --perspective validator refused: $out"
+  printf '%s' "$out" | grep -F "warning: --perspective on a ship brief" >/dev/null || fail "ship perspective warning missing: $out"
+  brief="$home/data/brief-persp-ship/brief.md"
+  assert_grep "Perspective: validator" "$brief" "ship brief lacks the Perspective: line"
+  assert_grep "Delivery contract: mode=no-mistakes" "$brief" "ship brief with a perspective lost its delivery contract"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-none firstmate --scout >/dev/null 2>&1
+  assert_no_grep "# Perspective" "$home/data/brief-persp-none/brief.md" "brief without --perspective carries a Perspective section"
+  pass "fm-brief.sh: --perspective inserts the catalog fragment between Task and Setup with its marker"
+}
+
+test_perspective_flag_refuses_unknown_or_unsafe_slug() {
+  local home out rc
+  home="$TMP_ROOT/perspective-refuse-home"
+  mkdir -p "$home/data"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-bad firstmate --scout --perspective no-such-slug 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "unknown perspective slug was accepted"
+  printf '%s' "$out" | grep -F "unknown perspective 'no-such-slug'" >/dev/null || fail "unknown slug error missing: $out"
+  assert_absent "$home/data/brief-persp-bad/brief.md" "brief was written despite an unknown slug"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-path firstmate --scout --perspective '../explorer' 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "path-like perspective slug was accepted"
+  printf '%s' "$out" | grep -F "lowercase letters, digits, and dashes" >/dev/null || fail "unsafe slug error missing: $out"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-empty firstmate --scout --perspective= 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "empty perspective slug was accepted"
+  printf '%s' "$out" | grep -F "lowercase letters, digits, and dashes" >/dev/null || fail "empty slug error missing: $out"
+  assert_absent "$home/data/brief-persp-empty/brief.md" "brief was written despite an empty slug"
+  out=$(FM_HOME="$home" FM_SECONDMATE_CHARTER=x "$ROOT/bin/fm-brief.sh" brief-persp-sm --secondmate --no-projects --perspective explorer 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "--perspective accepted on a secondmate charter"
+  printf '%s' "$out" | grep -F "applies only to crewmate ship or scout briefs" >/dev/null || fail "secondmate refusal missing: $out"
+  pass "fm-brief.sh: --perspective refuses unknown, empty, unsafe, and charter-scoped slugs"
+}
+
+test_perspective_strip_keeps_prose_around_comments() {
+  local home root brief
+  home="$TMP_ROOT/perspective-strip-home"
+  root="$TMP_ROOT/perspective-strip-root"
+  mkdir -p "$home/data" "$root/.agents/skills/perspective-catalog/references"
+  cat >"$root/.agents/skills/perspective-catalog/references/probe.md" <<'FRAG'
+<!-- why (2026-09-04): maintainer bookkeeping that must not reach the worker. -->
+Stance: probe stance line.
+Refuse: fixing defects. <!-- why: ported from the pt-tracker seat. -->
+FRAG
+  FM_ROOT_OVERRIDE="$root" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-strip firstmate --scout --perspective probe >/dev/null 2>&1 \
+    || fail "scout --perspective probe was refused"
+  brief="$home/data/brief-persp-strip/brief.md"
+  assert_grep "Stance: probe stance line." "$brief" "brief dropped a plain fragment line"
+  assert_grep "Refuse: fixing defects." "$brief" "brief dropped prose sharing a line with a trailing comment"
+  assert_no_grep "maintainer bookkeeping" "$brief" "brief leaked the whole-line maintainer comment"
+  assert_no_grep "pt-tracker seat" "$brief" "brief leaked a trailing maintainer comment"
+  assert_no_grep '<!--' "$brief" "brief leaked an HTML comment marker"
+  pass "fm-brief.sh: --perspective strips HTML comments and keeps the prose around them"
+}
+
+test_perspective_catalog_fragments_stay_within_bounds() {
+  local dir home n slug brief
+  dir="$ROOT/.agents/skills/perspective-catalog/references"
+  home="$TMP_ROOT/perspective-catalog-home"
+  mkdir -p "$home/data"
+  n=$(find "$dir" -name '*.md' | wc -l | tr -d ' ')
+  [ "$n" -le 7 ] || fail "perspective catalog grew past 7 entries ($n)"
+  for f in "$dir"/*.md; do
+    slug=$(basename "$f" .md)
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-persp-$slug" firstmate --scout --perspective "$slug" >/dev/null 2>&1 \
+      || fail "scout --perspective $slug was refused"
+    brief="$home/data/brief-persp-$slug/brief.md"
+    assert_present "$brief" "no brief was scaffolded for perspective $slug"
+    assert_grep "Perspective: $slug" "$brief" "brief for $slug lacks its Perspective marker"
+    grep -E '^<!-- why \([0-9]{4}-[0-9]{2}-[0-9]{2}\):' "$f" >/dev/null \
+      || fail "catalog fragment $slug carries no dated why comment"
+    assert_no_grep '<!--' "$brief" "brief for $slug leaked a maintainer HTML comment"
+  done
+  pass "perspective-catalog: every catalog slug renders a bounded, dated brief"
+}
+
 test_herdr_lab_contract_is_explicit_and_complete() {
   local home id brief
   home="$TMP_ROOT/herdr-lab-home"
@@ -950,6 +1039,10 @@ test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
+test_perspective_flag_inserts_catalog_fragment_and_marker
+test_perspective_flag_refuses_unknown_or_unsafe_slug
+test_perspective_strip_keeps_prose_around_comments
+test_perspective_catalog_fragments_stay_within_bounds
 test_herdr_lab_contract_quotes_foreign_firstmate_path
 test_herdr_lab_omission_is_loud_for_ship_and_scout
 test_documented_global_replace_leaves_the_herdr_gate_intact

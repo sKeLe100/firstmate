@@ -11,8 +11,8 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
-#        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab] [--perspective <slug>]
+#        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab] [--perspective <slug>]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
@@ -35,6 +35,15 @@
 #   omitted contract cannot be silent.
 #   --upstream-sync applies only to a ship brief for an auto-dispatched upstream
 #   sync task (docs/configuration.md "Upstream autosync").
+#   --perspective <slug> inserts .agents/skills/perspective-catalog/references/<slug>.md
+#   (minus its HTML maintainer comments) as a "# Perspective" section between # Task and # Setup on a
+#   ship or scout brief, and records a fixed machine-readable "Perspective: <slug>" line
+#   in the brief. The slug must name
+#   an existing catalog fragment (lowercase letters, digits, dashes); anything else
+#   is refused rather than silently dropped. A ship brief defaults to no perspective;
+#   an explicitly named slug is inserted with a warning, because every catalog stance
+#   refuses producing code. The perspective-catalog skill owns which slug an intake
+#   chooses; this script only inserts it.
 # For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
 # captain's standing posture as context, and this script never reads it:
@@ -147,9 +156,11 @@ fi
 KIND=ship
 HERDR_LAB=0
 UPSTREAM_SYNC=0
+PERSPECTIVE=
 NO_PROJECTS=0
 MODE=
 MODE_SET=0
+PERSPECTIVE_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -159,6 +170,7 @@ for a in "$@"; do
     esac
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
+      perspective) PERSPECTIVE=$a; PERSPECTIVE_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -172,6 +184,8 @@ for a in "$@"; do
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --perspective) want_value=perspective ;;
+    --perspective=*) PERSPECTIVE=${a#--perspective=}; PERSPECTIVE_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -209,6 +223,26 @@ fi
 if [ "$UPSTREAM_SYNC" -eq 1 ] && [ "$KIND" != ship ]; then
   echo "error: --upstream-sync applies only to a ship brief" >&2
   exit 1
+fi
+
+# --perspective inserts a catalog fragment; the perspective-catalog skill
+# owns the catalog and the choice, so an unknown slug is refused here, never
+# guessed. The slug is restricted to a plain lowercase token before it is used
+# as a path component.
+PERSPECTIVE_SECTION=
+if [ "$PERSPECTIVE_SET" -eq 1 ]; then
+  [ "$KIND" != secondmate ] || { echo "error: --perspective applies only to crewmate ship or scout briefs" >&2; exit 1; }
+  case "$PERSPECTIVE" in
+    *[!a-z0-9-]*|-*|'') echo "error: --perspective slug must be lowercase letters, digits, and dashes (got '$PERSPECTIVE')" >&2; exit 1 ;;
+  esac
+  PERSPECTIVE_FILE="$FM_ROOT/.agents/skills/perspective-catalog/references/$PERSPECTIVE.md"
+  [ -f "$PERSPECTIVE_FILE" ] || { echo "error: unknown perspective '$PERSPECTIVE'; the catalog is .agents/skills/perspective-catalog/references/" >&2; exit 1; }
+  [ "$KIND" = scout ] || echo "warning: --perspective on a ship brief: every catalog stance refuses producing code, so the fragment can pull against the delivery contract; inserting '$PERSPECTIVE' because it was named explicitly" >&2
+  # The fragment's dated "<!-- why ... -->" comment is maintainer bookkeeping,
+  # not worker instruction, so HTML comments are removed on the way into the
+  # dispatched brief while the prose on the line around them survives.
+  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; awk 'skip{if (/-->/) skip=0; next} /^<!--/{if (!/-->/) skip=1; next} {sub(/[ \t]*<!--.*-->[ \t]*$/, ""); print}' "$PERSPECTIVE_FILE"; printf '.')
+  PERSPECTIVE_SECTION=${PERSPECTIVE_SECTION%.}
 fi
 
 if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
@@ -408,6 +442,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 $TASK_SECTION
 
+$PERSPECTIVE_SECTION
 $HERDR_SECTION
 $UPSTREAM_SYNC_SECTION
 
@@ -525,6 +560,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 $TASK_SECTION
 
+$PERSPECTIVE_SECTION
 $HERDR_SECTION
 $UPSTREAM_SYNC_SECTION
 

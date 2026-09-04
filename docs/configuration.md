@@ -453,7 +453,7 @@ This section is the single owner of the canonical schema and its per-field seman
     {
       "when": "<natural-language condition describing a kind of task>",
       "use": [
-        { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max, optional>" }
+        { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max, optional>", "perspective": "<optional perspective-catalog slug>" }
       ],
       "why": "<optional rationale that helps firstmate choose>"
     }
@@ -468,6 +468,7 @@ Per rule, `when` and `use` are required.
 Both `use` and the optional top-level `default` accept either one profile object or a non-empty array of profile objects.
 The single-object form stays fully backward-compatible, and every profile needs `harness`.
 Profile `model` and `effort` fields and rule `why` are optional.
+A profile's optional `perspective` names a slug from the agent-only `perspective-catalog` skill, which firstmate applies at intake through `bin/fm-brief.sh --perspective` for review, investigation, and planning work after the profile is resolved; a ship brief defaults to none and inserts an explicitly named slug with a warning; that skill owns the catalog, precedence, and purpose-class defaults.
 An omitted model or effort means the selected harness uses its own default for that axis.
 Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
 If no dispatch rule fits, firstmate resolves `default` through the same object-or-array path before falling back to `config/crew-harness`.

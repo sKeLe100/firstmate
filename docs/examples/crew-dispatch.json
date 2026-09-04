@@ -17,6 +17,11 @@
         { "harness": "codex", "model": "gpt-5.5", "effort": "high" }
       ],
       "why": "Use a strong coding profile for big, ambiguous work; resolve the alternatives through quota-array-dispatch."
+    },
+    {
+      "when": "The task is a read-only review of a diff, PR, or authority record that someone else produced.",
+      "use": { "harness": "opencode", "model": "gpt-5.5", "effort": "high", "perspective": "independent-reviewer" },
+      "why": "Review work gets the independent-reviewer perspective so the reviewer recounts claims instead of confirming them."
     }
   ],
   "default": [

@@ -213,6 +213,38 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/perspective-catalog/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/perspective-catalog/references/architect.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/perspective-catalog/references/explorer.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/perspective-catalog/references/independent-reviewer.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/perspective-catalog/references/parallel-review-seat.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/perspective-catalog/references/reaction-review.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/perspective-catalog/references/researcher.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/perspective-catalog/references/validator.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/process-event-sources/SKILL.md",
       "audience": "agent-runtime"
     },
