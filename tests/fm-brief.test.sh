@@ -444,8 +444,9 @@ test_perspective_catalog_fragments_stay_within_bounds() {
     brief="$home/data/brief-persp-$slug/brief.md"
     assert_present "$brief" "no brief was scaffolded for perspective $slug"
     assert_grep "Perspective: $slug" "$brief" "brief for $slug lacks its Perspective marker"
-    grep -E '^<!-- why \([0-9]{4}-[0-9]{2}-[0-9]{2}\):' "$brief" >/dev/null \
-      || fail "brief for $slug carries no dated why line from the fragment"
+    grep -E '^<!-- why \([0-9]{4}-[0-9]{2}-[0-9]{2}\):' "$f" >/dev/null \
+      || fail "catalog fragment $slug carries no dated why comment"
+    assert_no_grep '<!--' "$brief" "brief for $slug leaked a maintainer HTML comment"
   done
   pass "perspective-catalog: every catalog slug renders a bounded, dated brief"
 }

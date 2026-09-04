@@ -36,7 +36,7 @@
 #   --upstream-sync applies only to a ship brief for an auto-dispatched upstream
 #   sync task (docs/configuration.md "Upstream autosync").
 #   --perspective <slug> inserts .agents/skills/perspective-catalog/references/<slug>.md
-#   verbatim as a "# Perspective" section between # Task and # Setup on a ship or
+#   (minus its HTML maintainer comments) as a "# Perspective" section between # Task and # Setup on a ship or
 #   scout brief, and records a fixed machine-readable "Perspective: <slug>" line
 #   that bin/fm-spawn.sh echoes into task meta as perspective=. The slug must name
 #   an existing catalog fragment (lowercase letters, digits, dashes); anything else
@@ -223,7 +223,7 @@ if [ "$UPSTREAM_SYNC" -eq 1 ] && [ "$KIND" != ship ]; then
   exit 1
 fi
 
-# --perspective inserts a catalog fragment verbatim; the perspective-catalog skill
+# --perspective inserts a catalog fragment; the perspective-catalog skill
 # owns the catalog and the choice, so an unknown slug is refused here, never
 # guessed. The slug is restricted to a plain lowercase token before it is used
 # as a path component.
@@ -235,7 +235,9 @@ if [ "$PERSPECTIVE_SET" -eq 1 ]; then
   esac
   PERSPECTIVE_FILE="$FM_ROOT/.agents/skills/perspective-catalog/references/$PERSPECTIVE.md"
   [ -f "$PERSPECTIVE_FILE" ] || { echo "error: unknown perspective '$PERSPECTIVE'; the catalog is .agents/skills/perspective-catalog/references/" >&2; exit 1; }
-  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; cat "$PERSPECTIVE_FILE"; echo)
+  # The fragment's dated "<!-- why ... -->" comment is maintainer bookkeeping,
+  # not worker instruction, so HTML comments never reach the dispatched brief.
+  PERSPECTIVE_SECTION=$(printf '# Perspective\nPerspective: %s\n' "$PERSPECTIVE"; awk '/<!--/{skip=1} {if (!skip) print} /-->/{skip=0}' "$PERSPECTIVE_FILE"; echo)
 fi
 
 if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
