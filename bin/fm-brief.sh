@@ -558,6 +558,14 @@ $RULE1
    known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
    a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+   If you hit your own Claude session usage limit (as distinct from account-wide quota
+   exhaustion or a real wedge), report \`paused: {harness} session usage limit, resets <ts>\` and
+   STOP - do not attempt to keep working or retry in the same session once the limit clears;
+   firstmate will relaunch you fresh with a carryover note.
+   After every append, verify with \`ls -la $STATUS_FILE\` that the line landed at that exact
+   path with recent content; do not trust the append, and do not report \`done\`, until that
+   verification succeeds - a write tool can silently place the file somewhere else, and that
+   failure is itself a \`blocked:\` condition to report.
 6. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 7. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.

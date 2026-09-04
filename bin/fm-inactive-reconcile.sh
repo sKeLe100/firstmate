@@ -94,6 +94,8 @@ CREW_STATE_BIN="${FM_INACTIVE_CREW_STATE_BIN:-$SCRIPT_DIR/fm-crew-state.sh}"
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-parent-channel-lib.sh
 . "$SCRIPT_DIR/fm-parent-channel-lib.sh"
+# shellcheck source=bin/fm-cache-ttl-lib.sh
+. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
@@ -477,7 +479,7 @@ reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeou
     return 0
   fi
   turn="$STATE/$id.turn-ended"
-  age=$(last_activity_age "$meta" "$status" "$turn")
+  age=$(last_activity_age "$id")
   [ "$age" -ge "$FM_INACTIVE_RECONCILE_SECS" ] || return 0
   state_line=$(fm_run_timed "$timeout" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     "$CREW_STATE_BIN" "$id" 2>/dev/null) || state_rc=$?
