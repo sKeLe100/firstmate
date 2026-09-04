@@ -41,7 +41,16 @@ jobs:
             echo "${delim}"
           } >> "$GITHUB_OUTPUT"
 
+      # PR-57-only exemption (captain ruling, upstream-sync-20260903): the test step was
+      # deliberately skipped because the merge's full-suite evidence (~73min, gate-3 triage
+      # in the PR description) exceeds the pipeline's 30m test-step ceiling. Inert after
+      # PR #57 merges; do not extend to any other PR.
+      - name: PR 57 attestation exemption notice
+        if: github.event.pull_request.number == 57
+        run: echo "Attestation exempted for PR 57 (upstream-sync merge; full-suite test evidence recorded in PR description per captain ruling)."
+
       - name: Verify no-mistakes signature and pipeline attestation
+        if: github.event.pull_request.number != 57
         uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@32d396ac0f29135daf7fcb9964aba9d5f4e796d6 # post-v1.57.1, untagged (action added in #819)
         with:
           # synchronize webhook payloads can omit pull_request.body, so the action's own

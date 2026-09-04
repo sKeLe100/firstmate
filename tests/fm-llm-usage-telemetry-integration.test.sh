@@ -120,7 +120,7 @@ test_fresh_spawn_records_purpose_in_meta_and_dispatch_event() {
   fm_git_worktree "$proj" "$wt" "task-spawn-purpose"
   task_id=spawn-purpose
   mkdir -p "$home/data/$task_id"
-  printf '# brief\n\nDo the thing.\n' > "$home/data/$task_id/brief.md"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
   printf '%s' "$wt" > "$dir/fake/cwd"
 
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
@@ -166,7 +166,7 @@ test_fresh_spawn_with_redelegation_records_delegation_event() {
   new_id=redelegated-attempt
   fm_git_worktree "$dir/proj" "$dir/wt" "task-$new_id"
   mkdir -p "$home/data/$new_id"
-  printf '# brief\n\nRetry with a different model.\n' > "$home/data/$new_id/brief.md"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$new_id" > "$home/data/$new_id/brief.md"
   printf '%s' "$dir/wt" > "$dir/fake/cwd"
 
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
@@ -215,7 +215,7 @@ test_fresh_spawn_without_redelegation_omits_from_task_id() {
   task_id=ordinary-spawn
   fm_git_worktree "$dir/proj" "$dir/wt" "task-$task_id"
   mkdir -p "$home/data/$task_id"
-  printf '# brief\n\nDo the thing.\n' > "$home/data/$task_id/brief.md"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
   printf '%s' "$dir/wt" > "$dir/fake/cwd"
 
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
@@ -256,7 +256,7 @@ test_fresh_spawn_rejects_path_traversal_redelegated_from() {
   new_id=unsafe-attempt
   fm_git_worktree "$dir/proj" "$dir/wt" "task-$new_id"
   mkdir -p "$home/data/$new_id"
-  printf '# brief\n\nRetry.\n' > "$home/data/$new_id/brief.md"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$new_id" > "$home/data/$new_id/brief.md"
   printf '%s' "$dir/wt" > "$dir/fake/cwd"
 
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
@@ -289,7 +289,7 @@ test_real_relaunch_records_delegation_event() {
   task_id=relaunch-t1
   fm_git_worktree "$dir/proj" "$dir/wt" "task-$task_id"
   mkdir -p "$home/data/$task_id"
-  printf '# brief for %s\n\nDo the thing.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
   {
     echo "window=fmses:fm-$task_id"
     echo "endpoint_task_id=$task_id"
@@ -345,7 +345,7 @@ test_rolled_back_relaunch_journal_does_not_claim_a_relaunch() {
   task_id=relaunch-t2
   fm_git_worktree "$dir/proj" "$dir/wt" "task-$task_id"
   mkdir -p "$home/data/$task_id"
-  printf '# brief for %s\n\nDo the thing.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
   {
     echo "window=fmses:fm-$task_id"
     echo "endpoint_task_id=$task_id"
