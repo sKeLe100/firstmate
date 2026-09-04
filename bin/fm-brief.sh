@@ -11,7 +11,7 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab] [--perspective <slug>]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab] [--perspective <slug>]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -36,14 +36,14 @@
 #   --upstream-sync applies only to a ship brief for an auto-dispatched upstream
 #   sync task (docs/configuration.md "Upstream autosync").
 #   --perspective <slug> inserts .agents/skills/perspective-catalog/references/<slug>.md
-#   (minus its HTML maintainer comments) as a "# Perspective" section between # Task and # Setup on a ship or
+#   (minus its HTML maintainer comments) as a "# Perspective" section between # Task and # Setup on a
 #   scout brief, and records a fixed machine-readable "Perspective: <slug>" line
 #   that bin/fm-spawn.sh echoes into task meta as perspective=. The slug must name
 #   an existing catalog fragment (lowercase letters, digits, dashes); anything else
-#   is refused rather than silently dropped. The review stances (independent-reviewer,
-#   reaction-review, parallel-review-seat) refuse editing and committing, so they are
-#   accepted on scout briefs only, never on a ship brief's delivery contract. The perspective-catalog skill owns
-#   which slug an intake chooses; this script only inserts it.
+#   is refused rather than silently dropped. Every catalog stance refuses producing
+#   code, so --perspective is accepted on scout briefs only, never on a ship brief's
+#   delivery contract. The perspective-catalog skill owns which slug an intake
+#   chooses; this script only inserts it.
 # For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
 # captain's standing posture as context, and this script never reads it:
@@ -231,19 +231,10 @@ fi
 # as a path component.
 PERSPECTIVE_SECTION=
 if [ "$PERSPECTIVE_SET" -eq 1 ]; then
-  [ "$KIND" != secondmate ] || { echo "error: --perspective applies only to crewmate ship or scout briefs" >&2; exit 1; }
+  [ "$KIND" = scout ] || { echo "error: --perspective applies only to scout briefs; every catalog stance refuses producing code, which contradicts a ship delivery contract" >&2; exit 1; }
   case "$PERSPECTIVE" in
     *[!a-z0-9-]*|-*|'') echo "error: --perspective slug must be lowercase letters, digits, and dashes (got '$PERSPECTIVE')" >&2; exit 1 ;;
   esac
-  # A review stance refuses editing and committing, which is the opposite of a
-  # ship brief's delivery contract, so the pairing is refused rather than dispatched.
-  if [ "$KIND" != scout ]; then
-    case "$PERSPECTIVE" in
-      independent-reviewer|reaction-review|parallel-review-seat)
-        echo "error: --perspective $PERSPECTIVE is a review stance that refuses editing and committing; it applies only to scout briefs, not to a ship delivery contract" >&2
-        exit 1 ;;
-    esac
-  fi
   PERSPECTIVE_FILE="$FM_ROOT/.agents/skills/perspective-catalog/references/$PERSPECTIVE.md"
   [ -f "$PERSPECTIVE_FILE" ] || { echo "error: unknown perspective '$PERSPECTIVE'; the catalog is .agents/skills/perspective-catalog/references/" >&2; exit 1; }
   # The fragment's dated "<!-- why ... -->" comment is maintainer bookkeeping,
