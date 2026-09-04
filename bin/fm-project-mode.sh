@@ -34,7 +34,15 @@
 #
 # An unknown/missing project or unknown mode falls back to "no-mistakes off" and warns
 # to stderr, so a typo never silently drops the gate.
+#
+# --infer-project-from-id <id> prints the registered project name that is a
+# "-"-delimited prefix of <id> - the longest such match wins so e.g.
+# "life-os-finance" beats "life-os" for id "life-os-finance-42".
+# Prints nothing and exits 1 when no registered name matches. This is
+# the single registry-parsing path for id-prefix project inference; callers
+# (bin/fm-queue-snapshot.sh) never read data/projects.md themselves.
 # Usage: fm-project-mode.sh [--raw] <project-name>
+#        fm-project-mode.sh --infer-project-from-id <id>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +50,23 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 REG="$DATA/projects.md"
+
+if [ "${1:-}" = "--infer-project-from-id" ]; then
+  ID=${2:?usage: fm-project-mode.sh --infer-project-from-id <id>}
+  [ -f "$REG" ] || exit 1
+  awk -v id="$ID" '
+    $1 == "-" {
+      name = $2
+      if (name != "" && (id == name || index(id, name "-") == 1) \
+          && length(name) > best_len) {
+        best_len = length(name); best = name
+      }
+    }
+    END { if (best != "") print best }
+  ' "$REG" | { read -r m; [ -n "$m" ] && { echo "$m"; exit 0; }; exit 1; }
+  exit $?
+fi
+
 RAW=0
 if [ "${1:-}" = "--raw" ]; then
   RAW=1
