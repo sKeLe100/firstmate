@@ -1,6 +1,6 @@
 ---
 name: queue
-description: Show the next queued work items at a glance - project, dispatch tier, and whether each clears itself or needs the captain. Use when the captain invokes /queue or asks "what's queued", "what's next", "show me the queue", or similar.
+description: Show the next queued work items at a glance - project, kind, age, dispatch tier, and whether each clears itself or needs the captain. Use when the captain invokes /queue (or `/queue lanes` for the full lane hierarchy) or asks "what's queued", "what's next", "show me the queue", or similar.
 user-invocable: true
 metadata:
   internal: true
