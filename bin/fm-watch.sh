@@ -1257,13 +1257,6 @@ EOF
   return "$saw"
 }
 
-# The bytes a coverage verdict was taken against: its mtime and size. A verdict
-# may only be reused while this is unchanged, so an append that lands after the
-# verdict was taken is never absorbed by it.
-fm_watch_signal_coverage_stamp() {  # <status-file>
-  printf '%s:%s' "$(stat_mtime_ns "$1")" "$(wc -c < "$1" 2>/dev/null | tr -d ' ')"
-}
-
 # fm_watch_signal_procevent_coverage <status-file>
 # Decide what the signal scan owes a status change that a process-event
 # generation for the same task may already have delivered. Prints one of:
@@ -1419,13 +1412,20 @@ run_check_capture() {
 # no verb) are skipped. A 1 here is NOT "benign" on its own: a no-verb signal
 # still needs the authoritative working proof or the eligible opt-in bare
 # turn-end pane-churn proof before it is benign.
+# FM_SIGNAL_COVERED is an input: the space-separated files an acknowledged
+# process-event wake already carried. Such a file is still classified here, so
+# its endpoint is available to mark_signal_surfaced and its marker commits, but
+# it never contributes to the verdict - it was decided absorbed before this
+# probe ran, so letting it read as actionable would enqueue its benign siblings.
 signal_files_actionable() {  # <status-file> ...
-  local f task record rest endpoint ident rc found=1
+  local f task record rest endpoint ident rc found=1 covered
   FM_SIGNAL_SURFACE_ENDPOINTS=''
   for f in "$@"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
+    covered=0
+    case " ${FM_SIGNAL_COVERED:-} " in *" $f "*) covered=1 ;; esac
     record=$(status_span_first_actionable_record "$f" \
       "$(fm_wake_signal_seen_size "$STATE" "$f")")
     rc=$?
@@ -1435,14 +1435,67 @@ signal_files_actionable() {  # <status-file> ...
       # record NO classified endpoint for it below, so its content is classified
       # again once it is readable. The wake signature still advances, which is
       # what bounds this to one report per distinct file state.
-      found=0
+      [ "$covered" -eq 1 ] || found=0
       continue
     fi
     endpoint=${record%%$'\t'*}; rest=${record#*$'\t'}; ident=${rest%%$'\t'*}
     FM_SIGNAL_SURFACE_ENDPOINTS="${FM_SIGNAL_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
-    [ "$rc" -eq 0 ] && found=0
+    [ "$rc" -eq 0 ] && [ "$covered" -eq 0 ] && found=0
   done
   return "$found"
+}
+
+# Record ONE signaled status log as surfaced, through the endpoint
+# signal_files_actionable classified for it in this same cycle. The caller
+# calls this once the file's queue record exists (or its absorb is final),
+# never during the actionability probe: the marker claims the event reached firstmate, so it may
+# only be written for a file this cycle holds proof of delivery for - one it
+# enqueues itself, or one an acknowledged process-event wake already carried. A
+# file the probe
+# could not classify has no endpoint record and is deliberately left unmarked,
+# so its bytes are classified again rather than swallowed.
+mark_signal_surfaced() {  # <status-file>
+  local want=$1 f endpoint ident rc=0
+  while IFS=$(printf '\t') read -r f endpoint ident; do
+    [ -n "$f" ] || continue
+    [ "$f" = "$want" ] || continue
+    mark_surfaced "$f" "$endpoint" "$ident" || rc=1
+    break
+  done <<EOF
+$FM_SIGNAL_SURFACE_ENDPOINTS
+EOF
+  return "$rc"
+}
+
+# The classified endpoint signal_files_actionable recorded for ONE file this
+# cycle, empty when the probe could not classify it.
+signal_surface_endpoint() {  # <status-file>
+  local want=$1 f endpoint ident
+  while IFS=$(printf '\t') read -r f endpoint ident; do
+    [ -n "$f" ] || continue
+    [ "$f" = "$want" ] || continue
+    printf '%s' "$endpoint"
+    return 0
+  done <<EOF
+$FM_SIGNAL_SURFACE_ENDPOINTS
+EOF
+  return 0
+}
+
+# 0 when a covered file's absorb may consume the classified endpoint: an
+# acknowledged process-event wake only proves delivery of the bytes the
+# coverage verdict judged, so an endpoint past the size recorded with that
+# verdict (an append that landed after it, inside this same cycle) is refused
+# and left for the next cycle to decide fresh.
+signal_covered_absorbable() {  # <status-file> <endpoint>
+  local want=$1 end=$2 rec
+  case "$end" in '') return 0 ;; *[!0-9]*) return 1 ;; esac
+  case "$signal_covered_end " in
+    *" $want|"*) rec=${signal_covered_end##*" $want|"}; rec=${rec%% *} ;;
+    *) return 1 ;;
+  esac
+  case "$rec" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$end" -le "$rec" ]
 }
 
 # Surfaced-marker bookkeeping for the heartbeat backstop is owned by
@@ -1883,7 +1936,17 @@ while :; do
     done <<EOF
 $pending
 EOF
-    reason="signal:$files"
+    # This block composes two mechanisms that both answer "was this change
+    # already delivered?": the local process-event coverage-deferral verdict
+    # (covered/defer/actionable) and the surface evidence the heartbeat backstop
+    # reads (FM_SIGNAL_SURFACE_ENDPOINTS -> mark_signal_surfaced). They compose
+    # only in one order - decide first, side-effect after - so every step below
+    # keeps that order: verdicts are computed once with no side effects, the
+    # actionability probe stays a pure predicate, surface evidence is written
+    # only for a file being enqueued, and a .seen-* marker advances only once
+    # that file's own enqueue-or-absorb decision is final. Interleaving them
+    # instead lets a file be marked surfaced and then absorbed with no queue
+    # record, or enqueued with no evidence for the backstop to absorb against.
     # Triage: a signal is ACTIONABLE when any of these holds (cheapest first):
     #   - the away-mode daemon owns triage (afk) and wants every wake;
     #   - any status file gained a captain-relevant event since it was last
@@ -1907,17 +1970,27 @@ EOF
     # checks are costly (a bounded no-mistakes call, then a pane capture), so the ||
     # ordering evaluates them ONLY for a non-afk signal with no captain-relevant
     # status span, and the capture only once the authoritative verdict comes up short.
-    # Coverage is decided once per file here, in THIS shell. The decision runs
-    # in a command substitution, so it cannot cache anything itself; the verdict
-    # is recorded alongside the bytes it judged and reused below.
+    # Coverage is decided ONCE per file here, in THIS shell, with no side
+    # effects, and the verdict decided here is the only one this cycle uses.
+    # Re-reading a file to re-decide it later in the cycle would let a status
+    # append landing between the two reads flip the verdict mid-cycle, so which
+    # side of a concurrent drain wins would vary run to run.
+    # The size is read ONCE per file here, before its verdict, and is the byte
+    # extent that verdict is allowed to absorb: an append landing after it is
+    # refused below and decided fresh next cycle.
     signal_deferred=
-    signal_coverage=
+    signal_covered=
+    signal_covered_end=
     for f in $files; do
-      signal_stamp=$(fm_watch_signal_coverage_stamp "$f")
-      signal_verdict=$(fm_watch_signal_procevent_coverage "$f")
-      signal_coverage="$signal_coverage $f|$signal_stamp|$signal_verdict"
-      [ "$signal_verdict" = defer ] || continue
-      signal_deferred="$signal_deferred $f"
+      signal_stamp=$(_fm_status_file_size "$f")
+      signal_stamp=${signal_stamp//[[:space:]]/}
+      case "$(fm_watch_signal_procevent_coverage "$f")" in
+        defer) signal_deferred="$signal_deferred $f" ;;
+        covered)
+          signal_covered="$signal_covered $f"
+          signal_covered_end="$signal_covered_end $f|${signal_stamp:-0}"
+          ;;
+      esac
     done
     if [ -n "$signal_deferred" ]; then
       remaining=
@@ -1926,26 +1999,42 @@ EOF
         remaining="$remaining $f"
       done
       files=$remaining
-      reason="signal:$files"
     fi
     # Actionability is also decided up front, before any side effect: the scan
     # fills FM_SIGNAL_SURFACE_ENDPOINTS with each status file's classified
     # endpoint, which both branches below commit through the status/non-status
     # marker split.
     FM_SIGNAL_SURFACE_ENDPOINTS=''
+    # The reason presented with a queue record and its wake names only the
+    # files this cycle actually enqueues: a covered file is absorbed with no
+    # record, exactly as a deferred one is.
+    signal_enqueue_files=
+    for f in $files; do
+      case " $signal_covered " in *" $f "*) continue ;; esac
+      signal_enqueue_files="$signal_enqueue_files $f"
+    done
+    signal_enqueue_reason="signal:$signal_enqueue_files"
+    # Classify every non-deferred file up front, as a pure predicate, so
+    # FM_SIGNAL_SURFACE_ENDPOINTS is populated identically on every path that
+    # can enqueue - including the away-mode one, which short-circuits the
+    # condition below and would otherwise enqueue with no evidence at all.
     signal_actionable=1
+    FM_SIGNAL_COVERED="$signal_covered"
     if [ -n "$files" ]; then
       # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
       signal_files_actionable $files
       signal_actionable=$?
     fi
-    # shellcheck disable=SC2086  # same space-separated status-path list
+    # shellcheck disable=SC2086  # same list, same reason
     if [ -z "$files" ]; then
       triage_log "deferred behind process-event generation signal:$signal_deferred"
     elif afk_present || [ "$signal_actionable" -eq 0 ] \
-      || { ! signal_crew_provably_working $files && ! signal_turnend_panes_churned $files; }; then
+      || { ! signal_crew_provably_working $signal_enqueue_files \
+        && ! signal_turnend_panes_churned $signal_enqueue_files; }; then
       signal_appended=0
-      signal_covered=
+      signal_absorbed=
+      signal_decided=
+      signal_surface_marks=
       signal_enqueued=
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
@@ -1955,37 +2044,49 @@ EOF
         signal_enqueued="$signal_enqueued $f"
         # A process-event generation may already have carried this change to the
         # supervisor. "covered" means an acknowledged wake proves it did, so the
-        # marker advances below without a second queue record; "defer" means the
-        # proof is still outstanding, so nothing is decided and no marker moves.
+        # markers advance without a second queue record - including the
+        # heartbeat backstop's, which would otherwise re-surface the very event
+        # that acknowledgement proves was delivered; "defer" means the proof is
+        # still outstanding, so nothing is decided and no marker moves.
         case " $signal_deferred " in *" $f "*) continue ;; esac
-        # Reuse the pre-scan verdict, but only while the file still holds the
-        # bytes it judged; anything appended since is decided fresh.
-        signal_stamp=$(fm_watch_signal_coverage_stamp "$f")
-        signal_verdict=
-        case "$signal_coverage " in
-          *" $f|$signal_stamp|"*)
-            signal_verdict=${signal_coverage##*" $f|$signal_stamp|"}
-            signal_verdict=${signal_verdict%% *}
+        case " $signal_covered " in
+          *" $f "*)
+            signal_covered_absorbable "$f" "$(signal_surface_endpoint "$f")" || continue
+            signal_surface_marks="$signal_surface_marks $f"
+            signal_absorbed="$signal_absorbed $f"
+            signal_decided="$signal_decided $f"
+            continue
             ;;
         esac
-        [ -n "$signal_verdict" ] || signal_verdict=$(fm_watch_signal_procevent_coverage "$f")
-        if [ "$signal_verdict" = covered ]; then
-          signal_covered="$signal_covered $f"
-          continue
-        fi
-        fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+        # Surface evidence is only RECORDED here, for this one file, once its
+        # queue record exists: the marker asserts the event reached firstmate,
+        # so writing it during the probe above would let a file absorbed as
+        # covered claim a delivery no wake carried, and writing it before a
+        # failed (fatal) append would leave the event marked surfaced with no
+        # queue record for the heartbeat backstop to re-surface. The write
+        # itself happens after the reported pass below.
+        fm_wake_append signal "$(basename "$f")" "$signal_enqueue_reason" || exit 1
+        signal_surface_marks="$signal_surface_marks $f"
         signal_appended=1
+        signal_decided="$signal_decided $f"
       done <<EOF
 $pending
 EOF
-      # The wake signature advances for every file in this batch, including one
-      # whose span could not be classified: it has now been reported, and this is
-      # what bounds an unreadable log to one report per distinct file state. Only
-      # a SUCCESSFULLY classified log commits a classification position below, so
-      # an unreadable log's content is still classified once it becomes readable.
+      # Marker advance is a separate pass because $pending concatenates the pre-
+      # and post-grace scans and the LAST signature for a file must win. It
+      # advances only for a file whose own enqueue-or-absorb decision above is
+      # final: a deferred file's proof is still outstanding, and a file the loop
+      # never decided must keep its bytes unclassified rather than skip them.
+      # A .status marker is the structured presentation record scan_signals
+      # reads back through fm_wake_signal_seen_current, so it is committed
+      # through its owning API in fm-wake-lib.sh; only a non-status signal
+      # (a bare .turn-ended) carries a raw signature. The reported signature
+      # advances for every decided file, including one whose span could not be
+      # classified - it has now been reported, which is what bounds an
+      # unreadable log to one report per distinct file state.
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
-        case " $signal_deferred " in *" $f "*) continue ;; esac
+        case " $signal_decided " in *" $f "*) ;; *) continue ;; esac
         case "$f" in
           *.status)
             fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
@@ -1996,51 +2097,141 @@ EOF
       done <<EOF
 $pending
 EOF
+      # Surface evidence is written only for a file this cycle holds proof of
+      # delivery for - one whose queue record already exists, or one an
+      # acknowledged process-event wake carried - and after the reported pass,
+      # so the marker ends the cycle with the endpoint-scoped signature the
+      # benign path also leaves.
+      for f in $signal_surface_marks; do
+        mark_signal_surfaced "$f" || true
+      done
+      # Only a SUCCESSFULLY classified log whose enqueue-or-absorb decision is
+      # final commits a classification position, so an unreadable log - and a
+      # file whose covered absorb was refused - keeps its bytes unclassified
+      # and is decided fresh next cycle.
       while IFS=$(printf '\t') read -r f surface_end surface_ident; do
         [ -n "$f" ] || continue
+        case " $signal_decided " in *" $f "*) ;; *) continue ;; esac
         fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" || true
-        mark_surfaced "$f" "$surface_end" "$surface_ident"
       done <<EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
+      # A covered file is absorbed whether or not a sibling was enqueued, so
+      # its absorb is recorded either way. When nothing was enqueued at all,
+      # every pending signal was already delivered by an acknowledged
+      # process-event wake, and waking would spend a drain turn on an empty
+      # queue - keep the cycle running instead.
+      [ -z "$signal_absorbed" ] || triage_log "absorbed procevent-covered signal:$signal_absorbed"
       if [ "$signal_appended" -eq 1 ]; then
-        wake "$reason"
-      else
-        # Every pending signal was already delivered by an acknowledged
-        # process-event wake. Nothing was enqueued, so waking would spend a
-        # drain turn on an empty queue - keep the cycle running instead.
-        triage_log "absorbed procevent-covered signal:$signal_covered"
+        wake "$signal_enqueue_reason"
       fi
     else
+      # Benign: every non-deferred file is absorbed. A .status log commits its
+      # classification position together with a reported signature scoped to the
+      # bytes just classified, so it is not re-signalled every cycle while a
+      # later captain-relevant append to the same log is still reported; a
+      # non-status signal has no span to classify and advances its raw signature
+      # here.
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         case " $signal_deferred " in *" $f "*) continue ;; esac
-        case "$f" in *.status) ;; *) printf '%s' "$sig" > "$sf" ;; esac
+        # A covered file's absorb is not decided until signal_covered_absorbable
+        # rules below; its reported signature advances there, mirroring the
+        # enqueue branch's decided gating, so a refused absorb leaves the file
+        # unsuppressed for the next scan instead of silently dropped.
+        case " $signal_covered " in *" $f "*) continue ;; esac
+        case "$f" in
+          *.status)
+            fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
+            mark_surface_reported "$f" "$sig" || true
+            ;;
+          *) printf '%s' "$sig" > "$sf" ;;
+        esac
       done <<EOF
 $pending
 EOF
-      signal_commit_error=0
+      signal_commit_failed=
+      signal_absorbed=
       while IFS=$(printf '\t') read -r f surface_end surface_ident; do
         [ -n "$f" ] || continue
+        # A covered file reaching this branch is absorbed exactly as it is in
+        # the enqueue branch: its heartbeat marker advances too, and a failed
+        # classified commit never escalates - an acknowledged process-event
+        # wake already carried it. The reported signature this branch advances
+        # below, once the absorb is ruled, already suppresses the file, so that
+        # failure is not retried next cycle either: the absorb is bounded to one
+        # per distinct file state, and the classified position is re-attempted
+        # only once a new append changes the bytes, with the heartbeat backstop
+        # covering the stale position in between.
+        case " $signal_covered " in
+          *" $f "*)
+            signal_covered_absorbable "$f" "$surface_end" || continue
+            # The absorb decision is final only here, so the reported-marker
+            # advance the first pass skipped for covered files runs now, with
+            # the file's LAST pending signature winning as it does there.
+            signal_covered_sig=
+            while IFS=$(printf '\t') read -r _csf csig cf; do
+              [ "$cf" = "$f" ] || continue
+              signal_covered_sig="$csig"
+            done <<EOF2
+$pending
+EOF2
+            if [ -n "$signal_covered_sig" ]; then
+              fm_wake_status_reported_commit "$STATE" "$f" "$signal_covered_sig" || true
+              mark_surface_reported "$f" "$signal_covered_sig" || true
+            fi
+            mark_signal_surfaced "$f" || true
+            fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" || true
+            signal_absorbed="$signal_absorbed $f"
+            continue
+            ;;
+        esac
         fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" \
-          || signal_commit_error=1
+          || signal_commit_failed="$signal_commit_failed $f"
       done <<EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
-      if [ "$signal_commit_error" -ne 0 ]; then
+      signal_benign_absorbed=
+      for f in $signal_enqueue_files; do
+        case " $signal_commit_failed " in *" $f "*) continue ;; esac
+        signal_benign_absorbed="$signal_benign_absorbed $f"
+      done
+      [ -z "$signal_benign_absorbed" ] || triage_log "absorbed benign signal:$signal_benign_absorbed"
+      [ -z "$signal_absorbed" ] || triage_log "absorbed procevent-covered signal:$signal_absorbed"
+      if [ -n "$signal_commit_failed" ]; then
+        # Only the files whose own absorb could not be recorded escalate: every
+        # other file in this scan is absorbed as decided, and waking for it
+        # would spend a drain turn on a benign log already classified.
+        # The next scan would re-read the failed file's span forever. Surface it
+        # instead of silently re-absorbing; the reported signature the first
+        # pass already advanced is what bounds a marker this home cannot
+        # classify to one wake per distinct file state rather than one per poll
+        # cycle. $pending concatenates the pre- and post-grace scans, so a file
+        # is enqueued at most once here.
+        # The presented reason names only the escalated files: every other file
+        # in this scan was absorbed as decided and has no queue record.
+        signal_commit_failed_reason="signal:$signal_commit_failed"
+        signal_surface_marks=
         signal_enqueued=
         while IFS=$(printf '\t') read -r sf sig f; do
           [ -n "$sf" ] || continue
-          case " $signal_enqueued " in *" $f "*) continue ;; esac
-          signal_enqueued="$signal_enqueued $f"
-          case " $signal_deferred " in *" $f "*) continue ;; esac
-          fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+          case " $signal_commit_failed " in *" $f "*) ;; *) continue ;; esac
+          case " $signal_enqueued " in
+            *" $f "*) ;;
+            *)
+              signal_enqueued="$signal_enqueued $f"
+              fm_wake_append signal "$(basename "$f")" "$signal_commit_failed_reason" || exit 1
+              signal_surface_marks="$signal_surface_marks $f"
+              ;;
+          esac
         done <<EOF
 $pending
 EOF
-        wake "$reason"
+        for f in $signal_surface_marks; do
+          mark_signal_surfaced "$f" || true
+        done
+        wake "$signal_commit_failed_reason"
       fi
-      triage_log "absorbed benign $reason"
     fi
   fi
 

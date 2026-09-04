@@ -218,6 +218,7 @@ The TTL defaults to 3600 seconds and is overridden by the first non-empty, non-`
 A refused steer prints the exact `bin/fm-control.sh <task> relaunch --note ...` command to use instead; pass `--steer-stale` to fm-send to deliberately resume the stale session anyway.
 The guard never applies to a `--resolve-key` decision answer, an automated internal wake (a `--fire-and-forget` delivery, or any other programmatic caller, which sets `FM_SEND_INTERNAL=1`, since no human is there to act on the relaunch advice), a remote secondmate send, or any typed-plane delivery (a leading `/`, a leading `$` to codex, or an explicit backend target); it fails open (steers proceed) whenever the idle markers are missing or unreadable.
 `bin/fm-fleet-snapshot.sh` surfaces the same idle age per local task as `endpoint.idle_seconds` / `endpoint.cache_expiring` (true only for a LIVE endpoint whose idle age is between ~83% of the effective TTL and the TTL itself - 3000s to 3600s at the default; past the TTL the steer guard, not the heartbeat, owns the session), and `bin/fm-fleet-view.sh` renders it as a `(cache expiring)` suffix on a present endpoint so the heartbeat's fleet review catches a session before its cache lapses.
+
 ## Turn-end pane-churn absorb (config/turnend-churn-absorb)
 
 The optional local, gitignored `config/turnend-churn-absorb` presence flag opts this home into a default-off third form of positive work evidence in watcher triage.
