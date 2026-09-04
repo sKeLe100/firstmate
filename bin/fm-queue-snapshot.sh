@@ -501,16 +501,6 @@ for rank, (r, repo, posture, autonomy, reason, gate) in enumerate(
         gate, r["created"],
     ])
 
-# Priority analysis: compute share of full set with a numeric priority.
-# When <20% of items carry priority, the /queue skill drops the
-# "sorted by priority" framing (see .agents/skills/queue/SKILL.md).
-total_items = len(rows)
-items_with_priority = sum(1 for r in rows if r["priority"].isdigit())
-ratio = items_with_priority / total_items if total_items else 0.0
-meaningful = "yes" if ratio >= 0.20 else "no"
-pct = round(ratio * 100)
-print(f"priority_analysis: priority_meaningful: {meaningful} ({items_with_priority}/{total_items} items have priority, {pct}%)")
-
 print(f"count: {len(out_rows)}")
 if len(out_rows) < len(rows):
     print(f"total_queued: {len(rows)}")
@@ -534,6 +524,16 @@ if len(out_rows) < len(rows):
     writer = csv.writer(sys.stdout, lineterminator="\n")
     for repo_key, cnt in hidden_rows:
         writer.writerow(["  " + one_line(repo_key), cnt])
+
+# Priority analysis: compute share of full set with a numeric priority.
+# When <20% of items carry priority, the /queue skill drops the
+# "sorted by priority" framing (see .agents/skills/queue/SKILL.md).
+total_items = len(rows)
+items_with_priority = sum(1 for r in rows if r["priority"].isdigit())
+ratio = items_with_priority / total_items if total_items else 0.0
+meaningful = "yes" if ratio >= 0.20 else "no"
+pct = round(ratio * 100)
+print(f"priority_analysis: priority_meaningful: {meaningful} ({items_with_priority}/{total_items} items have priority, {pct}%)")
 
 print(f"dispatch_config: {dispatch_status}")
 
