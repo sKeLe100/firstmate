@@ -55,7 +55,7 @@ Membership is derived rather than enumerated, so a newly added test lands here b
 
 ## Portable serial CI shards
 
-On green CI run [30725985757](https://github.com/kunchenguid/firstmate/actions/runs/30725985757), that remainder accumulated 19m04s of script time against a 20-minute job timeout.
+On green CI run [30725985757](https://github.com/kunchenguid/firstmate/actions/runs/30725985757), that remainder accumulated 19m04s of script time against the 20-minute job timeout in force at the time.
 On [PR 1495](https://github.com/kunchenguid/firstmate/pull/1495), its main step ran about 19m51s before the job was cancelled at that boundary.
 `portable-serial-<k>of<n>` splits it across `n` separate CI runners.
 Each shard is still strictly serial in itself, and separate runners mean no two of these stateful scripts ever share a machine, so the split needs no concurrency isolation proof.
@@ -67,7 +67,7 @@ Assignment is longest-processing-time bin packing over per-script duration hints
 The 139 current hints are the slowest measurements retained from the `fm-test-timing-portable-serial-*` artifacts of three green CI runs on 2026-09-01, [33558082172](https://github.com/kunchenguid/firstmate/actions/runs/33558082172), [33523597838](https://github.com/kunchenguid/firstmate/actions/runs/33523597838), and [33463326167](https://github.com/kunchenguid/firstmate/actions/runs/33463326167).
 Those per-script maxima total 3825047 ms of conservative balance weight.
 Taking the slowest of several runs rather than a single run keeps the balance honest on a slow runner: individual scripts varied by up to 20% between those three runs.
-A script with no hint gets the conservative `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` default; the current 140-script lane has one such script, bringing its assignment weight to 3852047 ms.
+A script with no hint gets the conservative `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` default; this fork's 160-script lane has 21 such scripts, bringing its assignment weight to 4392047 ms.
 Hints only affect balance: the coverage guard keeps the partition complete and disjoint whatever they say, so a stale hint costs a slower shard rather than lost coverage.
 Balance is still worth keeping current, because enough unmeasured scripts let one shard carry more than twice another shard's real work and reach the job cap while another runner sits idle.
 That is not hypothetical: by 2026-09-01 the lane had grown from 116 to 139 scripts and from ~42 to ~63 minutes, 17 scripts were still unmeasured, and several hints were low by 2-5x, so shard 3 of 4 ran 17-20 minutes against its 20-minute cap while shard 1 ran 11.5 minutes and run [33574154856](https://github.com/kunchenguid/firstmate/actions/runs/33574154856) timed out seconds after a passing test.
@@ -76,15 +76,15 @@ Refresh the hints whenever the serial lane gains scripts, rather than waiting fo
 
 | Lane | Script count | Estimated duration |
 |---|---:|---:|
-| `portable-serial-1of5` | 27 | 770410 ms (~12.84 min) |
-| `portable-serial-2of5` | 29 | 770416 ms (~12.84 min) |
-| `portable-serial-3of5` | 30 | 770417 ms (~12.84 min) |
-| `portable-serial-4of5` | 26 | 770405 ms (~12.84 min) |
-| `portable-serial-5of5` | 28 | 770399 ms (~12.84 min) |
+| `portable-serial-1of5` | 31 | 878410 ms (~14.64 min) |
+| `portable-serial-2of5` | 33 | 878416 ms (~14.64 min) |
+| `portable-serial-3of5` | 34 | 878417 ms (~14.64 min) |
+| `portable-serial-4of5` | 30 | 878405 ms (~14.64 min) |
+| `portable-serial-5of5` | 32 | 878399 ms (~14.64 min) |
 | imbalance | | 18 ms |
 
-The current table is generated from the runner's retained maxima plus its default for the one unhinted script.
-The last complete replay against the three source runs put the then-current partition's worst shard at 12.54 min, 63% of the 20-minute job cap.
+The current table is generated from the runner's retained maxima plus its default for the 21 unhinted scripts.
+This fork's worst shard carries ~14.64 min of assignment weight, 49% of its 30-minute job cap.
 
 The single longest script, `tests/fm-watch-triage.test.sh` at 262626 ms, is the floor for any shard count.
 
