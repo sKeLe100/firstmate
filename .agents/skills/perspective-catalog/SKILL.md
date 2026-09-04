@@ -2,7 +2,7 @@
 name: perspective-catalog
 description: >-
   Agent-only catalog of opt-in worker perspectives and the intake procedure that selects one.
-  Load at every scout or ship intake whose purpose class is review, investigation, or planning, before scaffolding the brief, and before adding, editing, or removing a catalog fragment.
+  Load at every scout intake whose purpose class is review, investigation, or planning, and at any intake where the captain explicitly names a perspective slug, before scaffolding the brief, and before adding, editing, or removing a catalog fragment.
   Owns the fixed seven-entry catalog, the selection precedence, the purpose-class defaults, and the may/may-not rule for fragment content; bin/fm-brief.sh --perspective owns the insertion mechanics.
 user-invocable: false
 metadata:
@@ -51,7 +51,7 @@ Purpose-class defaults:
 - A ship task defaults to none; the captain overrides per task only by naming a slug, which `bin/fm-brief.sh` inserts with a warning.
 - A slug outside the catalog is a refusal from `fm-brief.sh`, never a silent fallback; report it and re-resolve.
 
-Pass the resolved slug as `bin/fm-brief.sh <id> <repo> --scout --perspective <slug>`.
+Pass the resolved slug as `bin/fm-brief.sh <id> <repo> --scout --perspective <slug>`, or as `bin/fm-brief.sh <id> <repo> --mode <mode> --perspective <slug>` on a ship scaffold when the captain named it.
 The scaffold records a fixed `Perspective: <slug>` line in the brief.
 
 ## What a fragment may and may not contain
