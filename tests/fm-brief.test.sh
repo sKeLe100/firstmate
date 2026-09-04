@@ -420,10 +420,14 @@ test_perspective_flag_refuses_unknown_or_unsafe_slug() {
   out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-path firstmate --scout --perspective '../explorer' 2>&1); rc=$?
   [ "$rc" -ne 0 ] || fail "path-like perspective slug was accepted"
   printf '%s' "$out" | grep -F "lowercase letters, digits, and dashes" >/dev/null || fail "unsafe slug error missing: $out"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-persp-empty firstmate --scout --perspective= 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "empty perspective slug was accepted"
+  printf '%s' "$out" | grep -F "lowercase letters, digits, and dashes" >/dev/null || fail "empty slug error missing: $out"
+  assert_absent "$home/data/brief-persp-empty/brief.md" "brief was written despite an empty slug"
   out=$(FM_HOME="$home" FM_SECONDMATE_CHARTER=x "$ROOT/bin/fm-brief.sh" brief-persp-sm --secondmate --no-projects --perspective explorer 2>&1); rc=$?
   [ "$rc" -ne 0 ] || fail "--perspective accepted on a secondmate charter"
   printf '%s' "$out" | grep -F "applies only to crewmate ship or scout briefs" >/dev/null || fail "secondmate refusal missing: $out"
-  pass "fm-brief.sh: --perspective refuses unknown, unsafe, and charter-scoped slugs"
+  pass "fm-brief.sh: --perspective refuses unknown, empty, unsafe, and charter-scoped slugs"
 }
 
 test_perspective_catalog_fragments_stay_within_bounds() {

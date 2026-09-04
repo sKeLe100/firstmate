@@ -158,6 +158,7 @@ PERSPECTIVE=
 NO_PROJECTS=0
 MODE=
 MODE_SET=0
+PERSPECTIVE_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -167,7 +168,7 @@ for a in "$@"; do
     esac
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
-      perspective) PERSPECTIVE=$a ;;
+      perspective) PERSPECTIVE=$a; PERSPECTIVE_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -182,7 +183,7 @@ for a in "$@"; do
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --perspective) want_value=perspective ;;
-    --perspective=*) PERSPECTIVE=${a#--perspective=} ;;
+    --perspective=*) PERSPECTIVE=${a#--perspective=}; PERSPECTIVE_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -227,7 +228,7 @@ fi
 # guessed. The slug is restricted to a plain lowercase token before it is used
 # as a path component.
 PERSPECTIVE_SECTION=
-if [ -n "$PERSPECTIVE" ]; then
+if [ "$PERSPECTIVE_SET" -eq 1 ]; then
   [ "$KIND" != secondmate ] || { echo "error: --perspective applies only to crewmate ship or scout briefs" >&2; exit 1; }
   case "$PERSPECTIVE" in
     *[!a-z0-9-]*|-*|'') echo "error: --perspective slug must be lowercase letters, digits, and dashes (got '$PERSPECTIVE')" >&2; exit 1 ;;
