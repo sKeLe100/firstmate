@@ -997,6 +997,49 @@ test_fresh_watcher_seeds_idle_clock_from_stop_record() {
   pass "a fresh watcher seeds the idle clock from the Stop record and escalates an already-long-idle pane promptly"
 }
 
+# The churn half of option D: a pane whose hash just changed carries fresh
+# evidence, so an OLD idle Stop record must not seed its quiet spell. The watcher
+# already holds a hash baseline for the window here, so the seed stays `now` and
+# the next quiet poll must not escalate the pane as a possible wedge.
+test_churned_pane_ignores_old_stop_record_for_idle_clock() {
+  local dir state fakebin out capture_file window key pid rec gen since
+  dir=$(make_case churned-pane-idle-clock); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-churnidle"
+  printf 'no-mistakes axi run: validating...' > "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=claude\n' "$window" > "$state/churnidle.meta"
+  printf 'working: validation under way\n' > "$state/churnidle.status"
+  printf '%s' "$(seen_sig "$state/churnidle.status")" > "$state/.seen-churnidle_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" churnidle)
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" churnidle idle --gen "$gen" --source claude-hook --event stop >/dev/null
+  rec="$state/churnidle.busy-state"
+  [ -f "$rec" ] || fail "busy-lib Stop record was not written for the fixture"
+  sed -i.bak "s/ts=[0-9]*/ts=$(( $(date +%s) - 500 ))/" "$rec" && rm -f "$rec.bak"
+  # The previous poll recorded DIFFERENT pane content: this watcher has a baseline
+  # and the pane has churned since.
+  printf '%s' "$(hash_text 'idle output from the prior interval')" > "$state/.hash-$key"
+  printf '0\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_absorbed "$state" "$pid" "absorbed non-terminal stale (provably working)" \
+    || { reap "$pid"; fail "the churned working pane was not absorbed on its first stale poll: $(cat "$out")"; }
+  # One more quiet poll past the absorb: the seeded timer must not have expired.
+  sleep 2
+  kill -0 "$pid" 2>/dev/null || { fail "the churned pane escalated instead of staying absorbed: $(cat "$out")"; }
+  since=$(cat "$state/.stale-since-$key" 2>/dev/null || echo 0)
+  [ "$since" -ge $(( $(date +%s) - 60 )) ] \
+    || { reap "$pid"; fail "a churned pane's quiet-spell timer was seeded from the old Stop record ($since)"; }
+  reap "$pid"
+  ! grep -F "possible wedge" "$out" >/dev/null || fail "a churned pane was escalated as a possible wedge from an old Stop record"
+  [ ! -s "$state/.wake-queue" ] || fail "the churned working pane queued an unexpected wake"
+  unset FM_FAKE_CREW_STATE
+  pass "a churned pane keeps a now-seeded idle clock despite an old idle Stop record"
+}
+
 test_turn_ended_churn_resets_wedge_state_before_stale_poll() {
   local dir state fakebin out capture_file capture_count window key pid
   dir=$(make_case turn-ended-churn-resets-wedge); state="$dir/state"; fakebin="$dir/fakebin"
@@ -4633,6 +4676,7 @@ test_turn_ended_not_working_surfaced
 test_turn_ended_churning_pane_absorbed
 test_turn_ended_churn_resets_prior_stale_classification
 test_fresh_watcher_seeds_idle_clock_from_stop_record
+test_churned_pane_ignores_old_stop_record_for_idle_clock
 test_turn_ended_churn_resets_wedge_state_before_stale_poll
 test_turn_ended_still_pane_surfaced
 test_turn_ended_malformed_prior_hash_surfaced

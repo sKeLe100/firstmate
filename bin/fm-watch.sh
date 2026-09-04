@@ -337,7 +337,7 @@ window_label() {
 
 # The ONE derivation of a window's per-window marker key: `:`, `/` and `.` become
 # `_` so a window name is usable as a filename suffix. Every per-window file the
-# watcher keeps is named by it (.hash-, .count-, .stale-, .stale-since-,
+# watcher keeps is named by it (.hash-, .count-, .stale-, .stale-since-, .fresh-since-,
 # .wedge-escalations-, .wedge-backoff-, .paused-*, .writing-*), and live homes hold those markers on
 # disk under the current format, so the format lives here alone: a second copy is
 # how a future change to it silently orphans a window's markers instead of clearing
@@ -794,22 +794,32 @@ task_worktree() {  # <task>
 }
 
 # Start a fresh quiet spell: seed the timer and drop any carried-over escalation
-# history and backoff pace. With a task named, the spell is seeded from the
-# oldest cheap durable idle evidence rather than `now`: the busy-lib Stop record's
-# ts when it reads idle, else the transcript age fm-context-usage.sh reports.
-# That evidence outlives the watcher process, so a pane already idle for 40
-# minutes before a watcher restart escalates on the first poll instead of
-# earning a fresh full ladder (data/bearings-autonomous-liveness-gap report, 2d);
-# a pane that just churned carries fresh evidence, so the seed stays `now`.
-wedge_start_timer() {  # <window-key> [task]
-  local key=$1 task=${2:-} since evidence
-  since=$(date +%s)
-  if [ -n "$task" ]; then
-    evidence=$(wedge_idle_since "$task")
-    if [ -n "$evidence" ] && [ "$evidence" -lt "$since" ]; then since=$evidence; fi
+# history and backoff pace. The spell starts at `now` unless a fresh-watcher seed
+# (wedge_seed_fresh_baseline) is standing for this window, in which case the
+# seed becomes the timer. That seed is written only when the watcher first
+# records a hash for a window it has never observed, and the next hash change
+# clears it, so a pane that just churned always restarts from `now` while a
+# pane already idle for 40 minutes before a watcher restart escalates on the
+# first stale poll instead of earning a fresh full ladder
+# (data/bearings-autonomous-liveness-gap report, 2d).
+wedge_start_timer() {  # <window-key>
+  local key=$1
+  if [ -s "$STATE/.fresh-since-$key" ]; then
+    mv -f "$STATE/.fresh-since-$key" "$STATE/.stale-since-$key"
+  else
+    date +%s > "$STATE/.stale-since-$key"
   fi
-  printf '%s\n' "$since" > "$STATE/.stale-since-$key"
   rm -f "$STATE/.wedge-escalations-$key" "$STATE/.wedge-backoff-$key"
+}
+# First observation of a window by this watcher (no .hash- baseline yet): record
+# the oldest cheap durable idle evidence outside this process - the busy-lib Stop
+# record's ts when it reads idle, else the transcript age fm-context-usage.sh
+# reports - for wedge_start_timer to adopt. Without evidence nothing is recorded.
+wedge_seed_fresh_baseline() {  # <window-key> <task>
+  local key=$1 task=$2 evidence
+  evidence=$(wedge_idle_since "$task")
+  [ -n "$evidence" ] && [ "$evidence" -lt "$(date +%s)" ] || return 0
+  printf '%s\n' "$evidence" > "$STATE/.fresh-since-$key"
 }
 # Epoch second the task's pane was last observed to go idle, from durable
 # evidence outside this watcher process; empty when none is available.
@@ -2432,7 +2442,7 @@ EOF
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
               printf '%s' "$h" > "$sf"
-              wedge_start_timer "$key" "$(window_to_task "$w" "$STATE")"
+              wedge_start_timer "$key"
               clear_write_tracking "$key"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
             else
@@ -2480,7 +2490,7 @@ EOF
               working)
                 clear_pause_tracking "$key"
                 printf '%s' "$h" > "$sf"
-                wedge_start_timer "$key" "$task"
+                wedge_start_timer "$key"
                 triage_log "absorbed non-terminal stale (provably working): $w"
                 ;;
               paused)
@@ -2530,11 +2540,13 @@ EOF
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
       paused_bound=1
+      rm -f "$STATE/.fresh-since-$key"
       if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
         busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" && paused_bound=0
       else
         wedge_reset_backoff "$key"
         clear_write_tracking "$key"
+        [ -n "$prev" ] || wedge_seed_fresh_baseline "$key" "$task"
       fi
       task=$(window_to_task "$w" "$STATE")
       if ! afk_present && status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")" "$(task_worktree "$task")" && [ "$busy_now" -ne 0 ]; then
