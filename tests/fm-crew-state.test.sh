@@ -1153,6 +1153,38 @@ test_no_run_idle_pane_paused() {
   pass "no run + idle pane on a paused: status reports state: paused with its reason"
 }
 
+# (g'') the paused: verb's two meanings. A `paused [key=session-limit]:` line is
+# self-clearing whatever the worker's context band says; any other paused: line
+# whose band (read by fm-context-usage.sh under the task worktree) is warn or
+# restart is a context-exhausted stop only a relaunch clears, so it reports
+# blocked; a bare paused: with an ok band keeps the old self-clearing reading, so
+# in-flight briefs' existing lines are never misclassified retroactively.
+test_no_run_idle_pane_paused_split() {
+  reset_fakes
+  local d; d=$(new_case paused-split)
+  make_repo_on_branch "$d/wt" fm/feat-psplit
+  make_fakebin "$d" >/dev/null
+  printf '#!/bin/sh\nprintf "band=%%s transcript=x age_seconds=1\\n" "${FM_FAKE_BAND:-ok}"\n' > "$d/ctx-usage.sh"
+  chmod 0700 "$d/ctx-usage.sh"
+  fm_write_meta "$d/state/feat-psplit.meta" "window=fm:fm-feat-psplit" "worktree=$d/wt" "kind=ship" "harness=claude"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-psplit
+  local out
+  printf 'paused: context exhausted, relaunch to continue\n' > "$d/state/feat-psplit.status"
+  out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=restart run_crew_state "$d" feat-psplit)
+  assert_contains "$out" "state: blocked" "bare paused + restart band -> blocked"
+  assert_contains "$out" "context exhausted" "the exhausted reason is carried in the detail"
+  out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=warn run_crew_state "$d" feat-psplit)
+  assert_contains "$out" "state: blocked" "bare paused + warn band -> blocked"
+  out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=ok run_crew_state "$d" feat-psplit)
+  assert_contains "$out" "state: paused" "bare paused + ok band stays self-clearing"
+  printf 'paused [key=session-limit]: claude session usage limit, resets 14:00\n' > "$d/state/feat-psplit.status"
+  out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=restart run_crew_state "$d" feat-psplit)
+  assert_contains "$out" "state: paused" "keyed session-limit pause stays self-clearing even at restart band"
+  pass "paused: splits into self-clearing (session-limit key or ok band) and blocked (exhausted band)"
+}
+
 test_no_run_idle_pane_custom_paused_verb() {
   reset_fakes
   local d; d=$(new_case custom-paused)
@@ -1766,6 +1798,7 @@ test_no_run_herdr_idle_agent_status_and_idle_record_stays_idle
 test_no_run_idle_pane_uses_log
 test_no_run_idle_pane_uses_keyed_log
 test_no_run_idle_pane_paused
+test_no_run_idle_pane_paused_split
 test_no_run_idle_pane_custom_paused_verb
 test_no_run_idle_secondmate_resolved_event_not_state
 test_dead_window_ignores_stale_status_log

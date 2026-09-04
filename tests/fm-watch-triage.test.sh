@@ -962,6 +962,41 @@ test_turn_ended_churn_resets_prior_stale_classification() {
   pass "pane churn starts a fresh stale-classification interval before a stopped render returns"
 }
 
+# A watcher started fresh against a pane that was ALREADY idle seeds its quiet
+# spell from the busy-lib Stop record's ts rather than from `now`, so a pane idle
+# for longer than the escalation threshold before the watcher restart escalates
+# on the first stale poll instead of waiting out a fresh ladder
+# (data/bearings-autonomous-liveness-gap report, section 2d / option D).
+test_fresh_watcher_seeds_idle_clock_from_stop_record() {
+  local dir state fakebin out capture_file window key pid rec gen
+  dir=$(make_case fresh-watcher-idle-clock); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-longidle"
+  printf 'no-mistakes axi run: validating...' > "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=claude\n' "$window" > "$state/longidle.meta"
+  printf 'working: validation under way\n' > "$state/longidle.status"
+  printf '%s' "$(seen_sig "$state/longidle.status")" > "$state/.seen-longidle_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" longidle)
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" longidle idle --gen "$gen" --source claude-hook --event stop >/dev/null
+  rec="$state/longidle.busy-state"
+  [ -f "$rec" ] || fail "busy-lib Stop record was not written for the fixture"
+  sed -i.bak "s/ts=[0-9]*/ts=$(( $(date +%s) - 500 ))/" "$rec" && rm -f "$rec.bak"
+  # No .hash-/.count-/.stale-since- baseline: this watcher has never seen the pane.
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 150 || { reap "$pid"; fail "a fresh watcher restarted the idle clock for an already-long-idle pane: $(cat "$out")"; }
+  grep -F "stale: $window" "$out" >/dev/null || fail "fresh watcher did not print a stale wake for the long-idle pane"
+  grep -F "possible wedge" "$out" >/dev/null || fail "fresh watcher did not escalate the long-idle pane as a possible wedge"
+  [ "$(cat "$state/.stale-since-$key" 2>/dev/null || echo 0)" -lt $(( $(date +%s) - 400 )) ] \
+    || fail "the quiet-spell timer was seeded from now instead of the Stop record"
+  unset FM_FAKE_CREW_STATE
+  pass "a fresh watcher seeds the idle clock from the Stop record and escalates an already-long-idle pane promptly"
+}
+
 test_turn_ended_churn_resets_wedge_state_before_stale_poll() {
   local dir state fakebin out capture_file capture_count window key pid
   dir=$(make_case turn-ended-churn-resets-wedge); state="$dir/state"; fakebin="$dir/fakebin"
@@ -4597,6 +4632,7 @@ test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
 test_turn_ended_churning_pane_absorbed
 test_turn_ended_churn_resets_prior_stale_classification
+test_fresh_watcher_seeds_idle_clock_from_stop_record
 test_turn_ended_churn_resets_wedge_state_before_stale_poll
 test_turn_ended_still_pane_surfaced
 test_turn_ended_malformed_prior_hash_surfaced

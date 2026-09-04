@@ -786,12 +786,50 @@ wedge_reset_backoff() {  # <window-key>
   rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" "$STATE/.wedge-backoff-$key"
 }
 
+# Recorded worktree of a task (empty when unknown); the pause discriminator reads
+# the worker's context band from it.
+task_worktree() {  # <task>
+  [ -n "$1" ] && [ -f "$STATE/$1.meta" ] || return 0
+  fm_meta_get "$STATE/$1.meta" worktree
+}
+
 # Start a fresh quiet spell: seed the timer and drop any carried-over escalation
-# history and backoff pace.
-wedge_start_timer() {  # <window-key>
-  local key=$1
-  date +%s > "$STATE/.stale-since-$key"
+# history and backoff pace. With a task named, the spell is seeded from the
+# oldest cheap durable idle evidence rather than `now`: the busy-lib Stop record's
+# ts when it reads idle, else the transcript age fm-context-usage.sh reports.
+# That evidence outlives the watcher process, so a pane already idle for 40
+# minutes before a watcher restart escalates on the first poll instead of
+# earning a fresh full ladder (data/bearings-autonomous-liveness-gap report, 2d);
+# a pane that just churned carries fresh evidence, so the seed stays `now`.
+wedge_start_timer() {  # <window-key> [task]
+  local key=$1 task=${2:-} since evidence
+  since=$(date +%s)
+  if [ -n "$task" ]; then
+    evidence=$(wedge_idle_since "$task")
+    if [ -n "$evidence" ] && [ "$evidence" -lt "$since" ]; then since=$evidence; fi
+  fi
+  printf '%s\n' "$since" > "$STATE/.stale-since-$key"
   rm -f "$STATE/.wedge-escalations-$key" "$STATE/.wedge-backoff-$key"
+}
+# Epoch second the task's pane was last observed to go idle, from durable
+# evidence outside this watcher process; empty when none is available.
+wedge_idle_since() {  # <task>
+  local task=$1 rec wt out age reader
+  # fm_busy_record_read validates gen, source trust, and shape; only a verdict
+  # of idle lets the raw record's ts field seed the clock.
+  rec=$(fm_busy_record_read "$STATE" "$task" 2>/dev/null) || rec=
+  case "$rec" in
+    idle\ *)
+      out=$(tr ' ' '\n' < "$(fm_busy_record_path "$STATE" "$task")" 2>/dev/null | sed -n 's/^ts=//p' | head -1)
+      case "$out" in ''|*[!0-9]*) ;; *) printf '%s' "$out"; return 0 ;; esac ;;
+  esac
+  wt=$(task_worktree "$task")
+  reader=${FM_CONTEXT_USAGE_BIN:-$SCRIPT_DIR/fm-context-usage.sh}
+  [ -n "$wt" ] && [ -d "$wt" ] && [ -x "$reader" ] || return 0
+  out=$(FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || return 0
+  age=${out##* age_seconds=}; age=${age%% *}
+  case "$age" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s' $(( $(date +%s) - age ))
 }
 
 # pc02-staleness-cadence: an opencode+pc02-llamaswap/* crew's normal turns run
@@ -969,7 +1007,7 @@ handle_paused_stale() {  # <window> <task> <hash>
 busy_turn_bound_check() {  # <window> <task> <hash> <since-file> <escalation-file>
   local win=$1 task=$2 h=$3 since_file=$4 escalation_file=$5 key statusf declared
   statusf="$STATE/$task.status"
-  if status_is_paused_or_captain_held "$(last_status_line "$statusf")"; then
+  if status_is_paused_or_captain_held "$(last_status_line "$statusf")" "$(task_worktree "$task")"; then
     if afk_present; then
       # Away mode is daemon-owned, so this bound hands off the PLAIN wake identity
       # and lets the daemon classify the declaration itself - the undecorated
@@ -1040,7 +1078,7 @@ pause_state_class() {  # <window> <task>
   key=$(window_key "$win")
   last=$(last_status_line "$STATE/$task.status")
   recheck_file="$STATE/.paused-rechecked-$key"
-  if ! status_is_paused_or_captain_held "$last"; then
+  if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")"; then
     rm -f "$recheck_file"
     crew_absorb_class "$task"
     return
@@ -1112,7 +1150,7 @@ surface_nonterminal_stale() {  # <window> <hash>
   key=$(window_key "$win")
   task=$(window_to_task "$win" "$STATE")
   last=$(last_status_line "$STATE/$task.status")
-  if status_is_paused_or_captain_held "$last"; then
+  if status_is_paused_or_captain_held "$last" "$(task_worktree "$task")"; then
     declared=0
     declaration="declared:$(fm_wake_signal_sig "$STATE/$task.status" || true)"
     if [ "$(cat "$STATE/.paused-resurfaced-$key" 2>/dev/null || true)" = "$declaration" ] \
@@ -2330,7 +2368,7 @@ EOF
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
     key=$(window_key "$w")
     last=$(last_status_line "$STATE/$task.status")
-    if ! status_is_paused_or_captain_held "$last" && [ -e "$STATE/.paused-$key" ]; then
+    if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$key"
     fi
     # An idle secondmate endpoint is healthy by design, so a mate is admitted to
@@ -2340,7 +2378,7 @@ EOF
     # it to `paused` would leave a mate's captain hold rotting invisibly: the
     # clear above already spares its pause tracking, but nothing would ever
     # re-surface it.
-    if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last"; then
+    if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")"; then
       continue
     fi
     tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
@@ -2394,7 +2432,7 @@ EOF
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
               printf '%s' "$h" > "$sf"
-              wedge_start_timer "$key"
+              wedge_start_timer "$key" "$(window_to_task "$w" "$STATE")"
               clear_write_tracking "$key"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
             else
@@ -2442,7 +2480,7 @@ EOF
               working)
                 clear_pause_tracking "$key"
                 printf '%s' "$h" > "$sf"
-                wedge_start_timer "$key"
+                wedge_start_timer "$key" "$task"
                 triage_log "absorbed non-terminal stale (provably working): $w"
                 ;;
               paused)
@@ -2454,7 +2492,7 @@ EOF
             esac
           else
             task=$(window_to_task "$w" "$STATE")
-            if [ -e "$pf" ] || status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")"; then
+            if [ -e "$pf" ] || status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")" "$(task_worktree "$task")"; then
               case "$(pause_state_class "$w" "$task")" in
                 paused)  handle_paused_stale "$w" "$task" "$h" ;;
                 working) clear_pause_state "$key"
@@ -2484,7 +2522,7 @@ EOF
         # is cleared - but not in the same poll the declared-pause cadence just
         # recorded it, or the re-surface throttle it depends on would be erased and
         # the pause would re-surface every poll instead of once per long cadence.
-        if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(last_status_line "$STATE/$(window_to_task "$w" "$STATE").status")"; }; then
+        if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(last_status_line "$STATE/$(window_to_task "$w" "$STATE").status")" "$(task_worktree "$(window_to_task "$w" "$STATE")")"; }; then
           clear_pause_tracking "$key"
         fi
       fi
@@ -2499,7 +2537,7 @@ EOF
         clear_write_tracking "$key"
       fi
       task=$(window_to_task "$w" "$STATE")
-      if ! afk_present && status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")" && [ "$busy_now" -ne 0 ]; then
+      if ! afk_present && status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")" "$(task_worktree "$task")" && [ "$busy_now" -ne 0 ]; then
         case "$(pause_state_class "$w" "$task")" in
           paused) handle_paused_stale "$w" "$task" "$h" ;;
           # Inconclusive, but the declared wait itself still stands, so only the

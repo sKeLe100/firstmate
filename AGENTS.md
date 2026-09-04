@@ -424,6 +424,7 @@ Treat any `RECORD DIVERGENCE` section as a contradiction between two records of 
 After handling all emitted wakes and reconciling the OPEN DECISIONS and UNREAD STATUS sections, run the exact generation-bound `--ack-through` command printed as `WAKE_ACK_REQUIRED`; interruption before that acknowledgement deliberately leaves the work durable for idempotent re-handling.
 A status line is a wake event, not current state; use `bin/fm-crew-state.sh` when current state matters, especially before re-escalating an old decision, blocker, or pause.
 A declared `paused:` event means a bounded external wait expected to clear on its own, while `blocked:` means firstmate action is needed.
+Only `paused [key=session-limit]:` is unconditionally self-clearing; any other `paused:` whose worker context band reads warn or restart is a context-exhausted stop that `bin/fm-classify-lib.sh`'s pause discriminator reports as needing action, so relaunch it with a carryover note rather than waiting.
 
 Handle actionable wakes as follows:
 
