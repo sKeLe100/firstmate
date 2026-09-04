@@ -72,8 +72,20 @@
 #     smaller than the total number of queued items tasks-axi returned), so a
 #     capped listing is never mistaken for the whole queue; absent entirely
 #     when nothing was truncated --
-#   items[<n>]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason}:
+#   items[<n>]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,created}:
 #     <csv row>...
+#     `created` is tasks-axi's own item-creation date (empty string if tasks-axi
+#     reports none for that item) - carried through unmodified, never
+#     reformatted or age-computed here; the caller derives age from it.
+#   hidden[<n>]{repo,count}:
+#     <csv row>...
+#     -- present ONLY when --limit truncated the full queued set (same
+#     condition as total_queued above); one row per distinct repo (repo "-"
+#     for items with no project recorded) among the items --limit cut, counted
+#     from the SAME full queued set total_queued is drawn from (before the
+#     limit, not after), sorted by descending count then repo name, so the
+#     caller can print a "hidden: N by project" summary without re-deriving it
+#     -- absent entirely when nothing was truncated --
 #   dispatch_config: absent|present|invalid|unverified
 #   hierarchy_lanes: unavailable (dispatch_config: <status>)
 #     -- OR "unavailable (config defines no dispatch profiles)" when the
@@ -167,7 +179,7 @@ TMP_LIST="$(mktemp "${TMPDIR:-/tmp}/fm-queue-snapshot.XXXXXX")"
 TMP_ERR="$(mktemp "${TMPDIR:-/tmp}/fm-queue-snapshot-err.XXXXXX")"
 trap 'rm -f "$TMP_LIST" "$TMP_ERR"' EXIT
 
-FIELDS="blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority"
+FIELDS="blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created"
 # Fetch every queued item (no --limit) so priority sorting below considers
 # the full queue before the requested N is applied; --limit here would
 # truncate to tasks-axi's raw return order first and could drop a
@@ -258,7 +270,7 @@ def split_toon_row(line):
 
 
 WANTED = ("id", "title", "kind", "repo", "priority", "blocked", "blocked_by",
-          "held", "hold_kind", "hold_reason", "hold_until")
+          "held", "hold_kind", "hold_reason", "hold_until", "created")
 
 rows = []
 columns = None
@@ -350,19 +362,36 @@ for rank, r in enumerate(ranked_rows, start=1):
         rank, r["id"], r["title"], r["kind"], repo, r["priority"],
         r["blocked"], r["blocked_by"], r["held"], r["hold_kind"],
         r["hold_reason"], r["hold_until"], posture, autonomy, reason,
+        r["created"],
     ])
+shown_ids = {r["id"] for r in ranked_rows}
 
 print(f"count: {len(out_rows)}")
 if len(out_rows) < len(rows):
     print(f"total_queued: {len(rows)}")
 if out_rows:
     cols = ("rank,id,title,kind,repo,priority,blocked,blocked_by,held,"
-            "hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason")
+            "hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,"
+            "created")
     print(f"items[{len(out_rows)}]{{{cols}}}:")
     writer = csv.writer(sys.stdout, lineterminator="\n")
     for row in out_rows:
         cells = [one_line(str(v)) for v in row]
         writer.writerow(["  " + cells[0]] + cells[1:])
+
+if len(out_rows) < len(rows):
+    hidden_counts = {}
+    for r in rows:
+        if r["id"] in shown_ids:
+            continue
+        repo_key = r["repo"] if r["repo"] and r["repo"] != "-" else "-"
+        hidden_counts[repo_key] = hidden_counts.get(repo_key, 0) + 1
+    hidden_rows = sorted(hidden_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    print(f"hidden[{len(hidden_rows)}]{{repo,count}}:")
+    writer = csv.writer(sys.stdout, lineterminator="\n")
+    for repo_key, cnt in hidden_rows:
+        writer.writerow(["  " + one_line(repo_key), cnt])
+
 print(f"dispatch_config: {dispatch_status}")
 
 # --- hierarchy lanes: config/crew-dispatch.json rules/default enriched with
