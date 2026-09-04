@@ -1,0 +1,25 @@
+tests/fm-watch-arm.test.sh - 10 consecutive runs (race requires looped proof)
+run 1 exit=0
+run 2 exit=0
+run 3 exit=0
+run 4 exit=0
+run 5 exit=0
+run 6 exit=0
+run 7 exit=0
+run 8 exit=0
+run 9 exit=0
+run 10 exit=0
+
+per-run result of the race scenario carrying the 'handling drain stopped its live successor' assertion:
+run 1: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 2: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 3: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 4: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 5: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 6: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 7: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 8: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 9: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+run 10: ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+
+total 'not ok' lines across all 10 runs: 0

@@ -1,0 +1,9 @@
+=== watcher stdout (empty = no wake surfaced to firstmate) ===
+[stdout bytes: 0]
+
+=== <state>/.wake-queue (durable wake records) ===
+[empty: nothing enqueued]
+
+=== <state>/.watch-triage.log (operator-facing triage record) ===
+[2026-09-04T08:29:09-0400] absorbed benign signal: <state>/benign.status
+[2026-09-04T08:29:09-0400] absorbed procevent-covered signal: <state>/covered.status

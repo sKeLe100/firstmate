@@ -1,0 +1,11 @@
+== covered/benign triage A/B (tests/fm-watch-triage.test.sh subset) ==
+
+-- BASE be8320bd bin/fm-watch.sh --
+ok - a no-verb signal whose crew is provably working is absorbed (no exit, no queue, suppressor advanced, beacon present)
+ok - a benignly absorbed .status commits a parseable presentation marker and stops re-signalling
+not ok - the mixed covered+benign scan surfaced instead of absorbing: signal: /tmp/fm-watch-triage-tests.MdocyK/covered-mixed-set/state/benign.status /tmp/fm-watch-triage-tests.MdocyK/covered-mixed-set/state/covered.status
+
+-- TARGET 8bc5dbb bin/fm-watch.sh --
+ok - a no-verb signal whose crew is provably working is absorbed (no exit, no queue, suppressor advanced, beacon present)
+ok - a benignly absorbed .status commits a parseable presentation marker and stops re-signalling
+ok - a procevent-covered status absorbs beside a benign sibling: no wake, no queue record, markers advanced, absorbs logged under separate reasons
