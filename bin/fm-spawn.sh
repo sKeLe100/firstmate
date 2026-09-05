@@ -1203,6 +1203,11 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
   fi
+  batch_harness=${HARNESS_ARG:-$("$FM_ROOT/bin/fm-harness.sh" crew)}
+  if [ "$batch_harness" = codex ]; then
+    echo "error: Codex batch launching is forbidden; launch and verify each task individually" >&2
+    exit 1
+  fi
   rc=0
   shared_args=()
   [ -z "$HARNESS_ARG" ] || shared_args+=(--harness "$HARNESS_ARG")
