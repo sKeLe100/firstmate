@@ -135,10 +135,17 @@ log_last_line() {
 # the deliberate-external-wait verb (fm-classify-lib.sh's FM_CLASSIFY_PAUSED_VERB):
 # a crew with no active run and an idle pane that declared a known external wait
 # reports `paused` distinctly, so a supervisor reading this sees a declared pause
-# and its reason rather than a wedge-suspect idle.
+# and its reason rather than a wedge-suspect idle. A pause that is NOT
+# self-clearing - not keyed session-limit, and the worker's own context band is
+# warn/restart - is a context-exhausted stop only a relaunch clears, so it maps to
+# `blocked` (firstmate action needed); status_pause_needs_action owns that split.
 map_log_state() {  # <line>
   if status_is_paused "$1"; then
-    echo paused
+    if status_pause_needs_action "$1" "$WT"; then
+      echo blocked
+    else
+      echo paused
+    fi
     return
   fi
   case "$(status_line_verb "$1")" in
