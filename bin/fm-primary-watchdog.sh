@@ -768,6 +768,7 @@ fm_watchdog_main() {
   mkdir -p "$FM_WATCHDOG_STATE" 2>/dev/null || return 1
   printf '%s\n' "$$" >"$FM_WATCHDOG_PIDFILE" || return 1
   fm_watchdog_dead_streak_clear
+  rm -f "$FM_WATCHDOG_STATE/.watchdog-harness-unknown" 2>/dev/null || true
   fm_watchdog_pin_primary_transcript || log "could not pin the primary's transcript at loop start; retrying on each context read"
   while true; do
     fm_watchdog_cycle

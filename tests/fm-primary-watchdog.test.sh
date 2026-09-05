@@ -618,6 +618,21 @@ fi
 kill "$HOLDER" 2>/dev/null; wait "$HOLDER" 2>/dev/null
 rm -f "$TMPHOME/state/.primary-watchdog.pid"
 
+# --- 20. a fresh loop start clears a prior loop's escalation marker --------
+# The marker is otherwise only removed when a harness resolves at inject time,
+# so a stale one would silence the log-once escalation for the new loop's life.
+: >"$TMPHOME/state/.watchdog-harness-unknown"
+fm_watchdog_verified_target() { printf 'test:0 tmux\n'; }
+fm_watchdog_pin_primary_transcript() { return 0; }
+fm_watchdog_cycle() { exit 0; }
+(fm_watchdog_main) >/dev/null 2>&1
+if [ ! -e "$TMPHOME/state/.watchdog-harness-unknown" ]; then
+  pass "run: loop start removes a pre-existing harness-unknown marker"
+else
+  fail "run: a stale harness-unknown marker survived loop start"
+fi
+rm -f "$TMPHOME/state/.primary-watchdog.pid"
+
 if [ "$FAILED" -eq 0 ]; then
   echo "all tests passed"
   exit 0
