@@ -563,65 +563,10 @@ pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-
   return 0
 }
 
-# codex_lane_cap: reads config/codex-lane-cap (docs/configuration.md "Concurrent
-# Codex lane cap"), the same bare-positive-base-10-integer idiom as
-# config/dispatch-cap and config/startup-memory-budget. Prints the resolved
-# cap on stdout; an absent file means the built-in default of 3, and a
-# malformed value is rejected rather than silently treated as the default.
-codex_lane_cap() {
-  local path="$CONFIG/codex-lane-cap" value
-  if [ ! -e "$path" ]; then
-    printf '%s\n' 3
-    return 0
-  fi
-  if [ ! -f "$path" ] || [ -L "$path" ]; then
-    echo "error: $path must be a plain regular file" >&2
-    return 1
-  fi
-  value=$(<"$path") || {
-    echo "error: could not read $path" >&2
-    return 1
-  }
-  case "$value" in
-    ''|*[!0-9]*|0)
-      echo "error: $path must contain exactly one positive base-10 integer and one trailing newline: got '$value'" >&2
-      return 1
-      ;;
-  esac
-  if ! printf '%s\n' "$value" | cmp -s "$path" -; then
-    echo "error: $path must contain exactly one positive base-10 integer and one trailing newline" >&2
-    return 1
-  fi
-  printf '%s\n' "$value"
-}
-
-# codex-lane-guard: the captain's standing rule (corrected 2026-09-05) allows
-# several concurrent Codex lanes; what it forbids is batch launching, the
-# exact incident this guard is closing (data/codex-secondmate-integration-plan/
-# report.md, Phase 1b). Two independent refusals follow from that:
-#
-#  1. A cap on live harness=codex tasks at once, read from
-#     codex_lane_cap() (config/codex-lane-cap, default 3). A confirmed-alive
-#     other codex task counts against the cap; a positively dead one does not.
-#  2. Serialization: a codex task whose spawn published its meta but whose
-#     endpoint has not yet settled into a classifiable alive/dead state reads
-#     as fm_backend_agent_alive's "unknown" - this is the existing marker the
-#     script already uses elsewhere to distinguish a settled endpoint from
-#     one still mid-launch/verification (see fm_backend_agent_state's alive/
-#     dead/other tri-state, reused verbatim here rather than inventing a new
-#     field). Any such unconfirmed codex task refuses a new codex spawn
-#     outright, regardless of the cap, because that is precisely the window
-#     in which two spawns racing each other could both believe they are
-#     within the cap and stack up together - the failure mode the no-batching
-#     rule exists to close. A remote secondmate's lane cannot be probed at
-#     all, so (as in pc02_lane_guard) it always reads as occupied and counts
-#     toward the cap rather than the serialization refusal.
-#
-# Mirrors pc02_lane_guard's locking shape so both guards read the same
-# task-set snapshot under the same lock.
+# codex_lane_guard serializes Codex launches under the task-set lock.
+# A positively dead endpoint releases its lane; every other state occupies it.
 codex_lane_guard() {  # <task-id> <harness>: 0 iff <task-id> may launch/relaunch onto codex now
-  local id=$1 harness=$2 other_meta other_task other_harness other_target other_state cap
-  local -a live_ids=() launching_ids=()
+  local id=$1 harness=$2 other_meta other_task other_harness other_target other_state
   [ "$harness" = codex ] || return 0
   if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
     SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
@@ -646,22 +591,17 @@ codex_lane_guard() {  # <task-id> <harness>: 0 iff <task-id> may launch/relaunch
       if [ -n "$other_target" ]; then
         other_state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target")
       fi
+    else
+      other_state=unknown
     fi
     case "$other_state" in
       dead) continue ;;
-      unknown) launching_ids+=("$other_task") ;;
-      *) live_ids+=("$other_task") ;;
+      *)
+        echo "error: Codex lane occupied: task '$other_task' is $other_state; the captain's standing rule permits one Codex launch at a time, so wait for that task to finish before dispatching '$id'" >&2
+        return 1
+        ;;
     esac
   done
-  if [ "${#launching_ids[@]}" -gt 0 ]; then
-    echo "error: Codex spawn serialized: task(s) ${launching_ids[*]} are still launching or unconfirmed on codex; the captain's standing rule forbids batch-launching Codex, so wait for that launch to settle before dispatching '$id'" >&2
-    return 1
-  fi
-  cap=$(codex_lane_cap) || return 1
-  if [ "${#live_ids[@]}" -ge "$cap" ]; then
-    echo "error: Codex lane cap ($cap) reached: task(s) ${live_ids[*]} already hold live codex endpoints; wait for one to finish or dispatch '$id' onto a different harness" >&2
-    return 1
-  fi
   return 0
 }
 
