@@ -1002,6 +1002,51 @@ test_fresh_watcher_seeds_idle_clock_from_stop_record() {
   pass "a fresh watcher seeds the idle clock from the Stop record and escalates an already-long-idle pane promptly"
 }
 
+# The one-time seed must survive a capture failure on the restarted watcher's
+# first poll: a backend that is briefly unreachable must not consume the
+# first observation, or the next successful poll would land on the churn
+# branch and restart the clock from `now`.
+test_first_observation_seed_survives_failed_first_capture() {
+  local dir state fakebin out capture_file window key pid rec gen
+  dir=$(make_case failed-first-capture-idle-clock); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-flaky"
+  printf 'no-mistakes axi run: validating...' > "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=claude\n' "$window" > "$state/flaky.meta"
+  printf 'working: validation under way\n' > "$state/flaky.status"
+  printf '%s' "$(seen_sig "$state/flaky.status")" > "$state/.seen-flaky_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" flaky)
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" flaky idle --gen "$gen" --source claude-hook --event stop >/dev/null
+  rec="$state/flaky.busy-state"
+  [ -f "$rec" ] || fail "busy-lib Stop record was not written for the fixture"
+  sed -i.bak "s/ts=[0-9]*/ts=$(( $(date +%s) - 500 ))/" "$rec" && rm -f "$rec.bak"
+  printf '%s' "$(hash_text 'busy render recorded before the watcher went down')" > "$state/.hash-$key"
+  printf '0\n' > "$state/.count-$key"
+  mv "$fakebin/tmux" "$fakebin/tmux.real"
+  cat > "$fakebin/tmux" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = capture-pane ] && [ ! -e "$dir/capture-failed-once" ]; then
+  : > "$dir/capture-failed-once"
+  exit 1
+fi
+exec "$fakebin/tmux.real" "\$@"
+SH
+  chmod +x "$fakebin/tmux"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 150 || { reap "$pid"; fail "a failed first capture consumed the one-time idle-clock seed: $(cat "$out")"; }
+  [ -e "$dir/capture-failed-once" ] || fail "the fixture's first capture did not fail"
+  grep -F "possible wedge" "$out" >/dev/null || fail "watcher did not escalate the long-idle pane after a failed first capture"
+  [ "$(cat "$state/.stale-since-$key" 2>/dev/null || echo 0)" -lt $(( $(date +%s) - 400 )) ] \
+    || fail "the quiet-spell timer was seeded from now after a failed first capture"
+  unset FM_FAKE_CREW_STATE
+  pass "a failed first capture does not consume the one-time idle-clock seed"
+}
+
 # The churn half of option D: a pane whose hash changed while THIS watcher was
 # polling it carries fresh evidence, so an OLD idle Stop record must not seed its
 # quiet spell. The watcher observes the pane once, the pane then renders new
@@ -4686,6 +4731,7 @@ test_turn_ended_not_working_surfaced
 test_turn_ended_churning_pane_absorbed
 test_turn_ended_churn_resets_prior_stale_classification
 test_fresh_watcher_seeds_idle_clock_from_stop_record
+test_first_observation_seed_survives_failed_first_capture
 test_churned_pane_ignores_old_stop_record_for_idle_clock
 test_turn_ended_churn_resets_wedge_state_before_stale_poll
 test_turn_ended_still_pane_surfaced

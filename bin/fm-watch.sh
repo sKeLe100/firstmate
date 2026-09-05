@@ -804,12 +804,22 @@ task_worktree() {  # <task>
 # (data/bearings-autonomous-liveness-gap report, 2d). It deliberately lives in
 # memory, not under state/: the on-disk .hash- baseline persists across restarts,
 # so it cannot tell a restart from an in-process churn.
-declare -A WEDGE_SEEN_KEYS=() WEDGE_FIRST_SEEDS=()
+# Both live as newline-delimited strings (bash 3.2 has no associative arrays):
+# WEDGE_SEEN_KEYS holds one key per line, WEDGE_FIRST_SEEDS one `key=ts` per line.
+WEDGE_SEEN_KEYS=
+WEDGE_FIRST_SEEDS=
+wedge_first_seed_get() {  # <window-key> -> pending seed ts, or empty
+  printf '%s\n' "$WEDGE_FIRST_SEEDS" | sed -n "s/^$1=//p" | head -1
+}
+wedge_first_seed_unset() {  # <window-key>
+  WEDGE_FIRST_SEEDS=$(printf '%s\n' "$WEDGE_FIRST_SEEDS" | grep -v "^$1=" || true)
+}
 wedge_start_timer() {  # <window-key>
-  local key=$1
-  if [ -n "${WEDGE_FIRST_SEEDS[$key]+x}" ]; then
-    printf '%s\n' "${WEDGE_FIRST_SEEDS[$key]}" > "$STATE/.stale-since-$key"
-    unset "WEDGE_FIRST_SEEDS[$key]"
+  local key=$1 seed
+  seed=$(wedge_first_seed_get "$key")
+  if [ -n "$seed" ]; then
+    printf '%s\n' "$seed" > "$STATE/.stale-since-$key"
+    wedge_first_seed_unset "$key"
   else
     date +%s > "$STATE/.stale-since-$key"
   fi
@@ -822,11 +832,11 @@ wedge_start_timer() {  # <window-key>
 # and 1 on every later poll; without evidence nothing is remembered.
 wedge_seed_first_observation() {  # <window-key> <task>
   local key=$1 task=$2 evidence
-  [ -z "${WEDGE_SEEN_KEYS[$key]+x}" ] || return 1
-  WEDGE_SEEN_KEYS[$key]=1
+  case "$WEDGE_SEEN_KEYS" in "$key"|"$key"$'\n'*|*$'\n'"$key"|*$'\n'"$key"$'\n'*) return 1 ;; esac
+  WEDGE_SEEN_KEYS=${WEDGE_SEEN_KEYS:+$WEDGE_SEEN_KEYS$'\n'}$key
   evidence=$(wedge_idle_since "$task")
   [ -n "$evidence" ] && [ "$evidence" -lt "$(date +%s)" ] || return 0
-  WEDGE_FIRST_SEEDS[$key]=$evidence
+  WEDGE_FIRST_SEEDS=${WEDGE_FIRST_SEEDS:+$WEDGE_FIRST_SEEDS$'\n'}$key=$evidence
 }
 # Epoch second the task's pane was last observed to go idle, from durable
 # evidence outside this watcher process; empty when none is available.
@@ -2384,8 +2394,6 @@ EOF
     # exemption below, because a mate's steers land in an inbox too.
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
     key=$(window_key "$w")
-    first_seen=1
-    wedge_seed_first_observation "$key" "$task" && first_seen=0
     last=$(last_status_line "$STATE/$task.status")
     if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$key"
@@ -2401,6 +2409,8 @@ EOF
       continue
     fi
     tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
+    first_seen=1
+    wedge_seed_first_observation "$key" "$task" && first_seen=0
     h=$(printf '%s' "$tail40" | hash_pane)
     hf="$STATE/.hash-$key"
     cf="$STATE/.count-$key"
@@ -2549,7 +2559,7 @@ EOF
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
       paused_bound=1
-      [ "$first_seen" -eq 0 ] || unset "WEDGE_FIRST_SEEDS[$key]"
+      [ "$first_seen" -eq 0 ] || wedge_first_seed_unset "$key"
       if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
         busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" && paused_bound=0
       else
