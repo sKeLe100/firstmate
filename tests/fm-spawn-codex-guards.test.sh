@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 # fm-spawn.sh codex guards (Phase 1b, data/codex-secondmate-integration-plan;
-# corrected 2026-09-05 to cap+serialize instead of strict single-lane
-# exclusivity - several concurrent Codex lanes are allowed, batch launching
-# is not):
-#   1. codex_lane_guard allows a spawn while confirmed-alive codex tasks stay
-#      under config/codex-lane-cap (default 3), and refuses once the cap is
-#      met, naming the conflicting task ids.
-#   2. codex_lane_guard refuses a spawn outright, regardless of the cap,
-#      while another codex task's launch is still unconfirmed (its endpoint
-#      reads neither alive nor dead), and allows it once that task settles.
+# the captain's one-lane rule):
+#   1. codex_lane_guard refuses a spawn while another Codex task is alive or
+#      unconfirmed, naming the conflicting task id, and allows it once dead.
 #   3. The composed codex launch line never contains --fast, and neither
 #      does the composed claude launch line (the captain was previously
 #      burned by --fast on claude specifically).
@@ -120,10 +114,24 @@ run_spawn() {  # <home> <wt> <fakebin> <id> <proj> <extra args...>
     "$SPAWN" "$id" "$proj" --harness codex --mode no-mistakes --yolo off "$@" 2>&1
 }
 
-test_codex_lane_guard_allows_under_cap() {
+test_codex_remote_lane_blocks_launch() {
+  local rec id out status
+  id=codex-remote-blocked
+  rec=$(make_case remote-lane "$id")
+  read_case_record "$rec"
+  write_other_codex_meta "$HOME_DIR" remote-codex
+  printf 'remote_host=example.test\n' >> "$HOME_DIR/state/remote-codex.meta"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 1 "$status" "a published remote Codex route must block a second launch: $out"
+  assert_contains "$out" "remote-codex" "remote refusal omitted remote task identity"
+  pass "a published remote Codex route blocks a second launch"
+}
+
+test_codex_lane_guard_refuses_live_task_and_names_it() {
   local rec id out status
   id=codex-guard-a1
-  rec=$(make_case underlacap "$id")
+  rec=$(make_case live-lane "$id")
   read_case_record "$rec"
   write_other_codex_meta "$HOME_DIR" other-codex-task
 
@@ -131,28 +139,9 @@ test_codex_lane_guard_allows_under_cap() {
     FM_FAKE_PANE_CMD=codex \
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
   status=$?
-  expect_code 0 "$status" "one confirmed-alive codex task must not block a spawn under the default cap of 3: $out"
-  pass "codex_lane_guard allows a spawn while under the lane cap"
-}
-
-test_codex_lane_guard_refuses_at_cap_and_names_conflicting_ids() {
-  local rec id out status
-  id=codex-guard-a2
-  rec=$(make_case atcap "$id")
-  read_case_record "$rec"
-  printf '2\n' > "$HOME_DIR/config/codex-lane-cap"
-  write_other_codex_meta "$HOME_DIR" codex-live-1
-  write_other_codex_meta "$HOME_DIR" codex-live-2
-
-  out=$(FM_FAKE_WINDOWS="$(fake_windows_for codex-live-1 codex-live-2)" \
-    FM_FAKE_PANE_CMD=codex \
-    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
-  status=$?
-  expect_code 1 "$status" "a spawn at the configured lane cap must refuse: $out"
-  assert_contains "$out" "Codex lane cap" "the refusal did not name the cap: $out"
-  assert_contains "$out" "codex-live-1" "the refusal did not name the first conflicting task: $out"
-  assert_contains "$out" "codex-live-2" "the refusal did not name the second conflicting task: $out"
-  pass "codex_lane_guard refuses a spawn once confirmed-alive codex tasks meet the configured cap"
+  expect_code 1 "$status" "one confirmed-alive Codex task must block a spawn: $out"
+  assert_contains "$out" "other-codex-task" "the refusal did not name the live task: $out"
+  pass "codex_lane_guard refuses a spawn while another Codex task is live"
 }
 
 test_codex_lane_guard_serializes_against_unconfirmed_launch() {
@@ -167,24 +156,9 @@ test_codex_lane_guard_serializes_against_unconfirmed_launch() {
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
   status=$?
   expect_code 1 "$status" "a spawn must refuse while another codex task's launch is still unconfirmed: $out"
-  assert_contains "$out" "serialized" "the refusal did not name the serialization guard: $out"
+  assert_contains "$out" "Codex lane occupied" "the refusal did not name the lane guard: $out"
   assert_contains "$out" "launching-codex-task" "the refusal did not name the unconfirmed task: $out"
   pass "codex_lane_guard refuses a spawn while another codex task is still launching/unconfirmed"
-}
-
-test_codex_lane_guard_allows_once_launch_settles() {
-  local rec id out status
-  id=codex-guard-a4
-  rec=$(make_case settled "$id")
-  read_case_record "$rec"
-  write_other_codex_meta "$HOME_DIR" settled-codex-task
-
-  out=$(FM_FAKE_WINDOWS="$(fake_windows_for settled-codex-task)" \
-    FM_FAKE_PANE_CMD=codex \
-    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
-  status=$?
-  expect_code 0 "$status" "a spawn must be allowed once the other codex task's launch settles into a confirmed-alive endpoint: $out"
-  pass "codex_lane_guard allows a spawn once the other codex task's launch is confirmed"
 }
 
 test_codex_lane_guard_allows_when_other_codex_is_dead() {
@@ -235,10 +209,9 @@ test_composed_claude_launch_line_never_contains_fast() {
   pass "the composed claude launch line never contains --fast"
 }
 
-test_codex_lane_guard_allows_under_cap
-test_codex_lane_guard_refuses_at_cap_and_names_conflicting_ids
+test_codex_remote_lane_blocks_launch
+test_codex_lane_guard_refuses_live_task_and_names_it
 test_codex_lane_guard_serializes_against_unconfirmed_launch
-test_codex_lane_guard_allows_once_launch_settles
 test_codex_lane_guard_allows_when_other_codex_is_dead
 test_composed_codex_launch_line_never_contains_fast
 test_composed_claude_launch_line_never_contains_fast
