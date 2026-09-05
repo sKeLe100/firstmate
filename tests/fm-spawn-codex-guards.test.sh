@@ -122,9 +122,11 @@ test_codex_remote_route_does_not_occupy_local_lane() {
   read_case_record "$rec"
   write_other_codex_meta "$HOME_DIR" remote-codex
   printf 'remote_host=example.test\n' >> "$HOME_DIR/state/remote-codex.meta"
-  out=$(FM_FAKE_WINDOWS='' run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  out=$(FM_FAKE_WINDOWS="$(fake_windows_for remote-codex)" \
+    FM_FAKE_PANE_CMD=codex \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
   status=$?
-  expect_code 0 "$status" "a remote Codex route must not occupy this home's Codex lane: $out"
+  expect_code 0 "$status" "a remote Codex route must not occupy this home's Codex lane even when a same-named local window reads alive: $out"
   pass "a remote-routed Codex meta does not occupy this home's Codex lane"
 }
 
