@@ -26,6 +26,12 @@ The Codex lane is per Firstmate home, matching the PC02 lane guard.
 Remote-routed metas are outside the guard's scope, so a Codex secondmate published on another host never blocks a local Codex launch, and the refusal names the home it applies to.
 Batched Codex spawns are refused separately and unconditionally.
 
+## Executable rediscovery
+
+`bin/fm-spawn.sh` rediscovers the codex executable from PATH on every spawn and relaunch, resolves it with `readlink -f`, probes `--version`, and never reads it from a prior meta.
+A raw custom launch command whose first word is a codex binary is refused unless that binary resolves to the same path; the refusal names both resolved paths.
+The task meta records `codex_exe` and `codex_version` as audit evidence only; nothing consumes them.
+
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
 Accept it with Enter and verify the instructions begin processing.
 The decision persists for the repository, so later worktrees of the same project skip it.
