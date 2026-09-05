@@ -1802,7 +1802,7 @@ model_flag_for_harness() {
 # catalogued model's accepted efforts, since firstmate cannot know at flag
 # time which model codex will actually select.
 codex_effort_flag() {
-  local effort=$1 model=$2 catalog="${HOME:-}/.codex/models_cache.json" supported rc
+  local effort=$1 model=$2 catalog="${FM_TEST_CODEX_MODELS_CACHE:-${HOME:-}/.codex/models_cache.json}" supported rc
   if [ -z "${HOME:-}" ] || [ ! -f "$catalog" ]; then
     echo "error: codex model catalog not found at '$catalog'; cannot validate --effort $effort without it. Run codex once to populate the catalog, or omit --effort." >&2
     return 1
