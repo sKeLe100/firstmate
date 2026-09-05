@@ -563,10 +563,12 @@ pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-
   return 0
 }
 
-# codex_lane_guard serializes Codex launches under the task-set lock.
-# A positively dead endpoint releases its lane; every other state occupies it.
-codex_lane_guard() {  # <task-id> <harness>: 0 iff <task-id> may launch/relaunch onto codex now
-  local id=$1 harness=$2 other_meta other_task other_harness other_target other_state
+# codex_lane_guard serializes Codex launches within this home under the
+# task-set lock. It scans this home's metas only: a positively dead local
+# endpoint releases the lane, every other local state occupies it, and remote
+# routes are outside its scope.
+codex_lane_guard() {  # <task-id> <harness>: 0 iff <task-id> may launch/relaunch onto codex in this home now
+  local id=$1 harness=$2 other_meta other_task other_target other_state
   [ "$harness" = codex ] || return 0
   if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
     SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
@@ -583,24 +585,16 @@ codex_lane_guard() {  # <task-id> <harness>: 0 iff <task-id> may launch/relaunch
     [ -f "$other_meta" ] || continue
     other_task=$(basename "$other_meta" .meta)
     [ "$other_task" != "$id" ] || continue
-    other_harness=$(fm_meta_get "$other_meta" harness)
-    [ "$other_harness" = codex ] || continue
+    [ "$(fm_meta_get "$other_meta" harness)" = codex ] || continue
+    [ -z "$(fm_meta_get "$other_meta" remote_host)" ] || continue
     other_state=unknown
-    if [ -z "$(fm_meta_get "$other_meta" remote_host)" ]; then
-      other_target=$(fm_backend_target_of_meta "$other_meta")
-      if [ -n "$other_target" ]; then
-        other_state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target")
-      fi
-    else
-      other_state=unknown
+    other_target=$(fm_backend_target_of_meta "$other_meta")
+    if [ -n "$other_target" ]; then
+      other_state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target")
     fi
-    case "$other_state" in
-      dead) continue ;;
-      *)
-        echo "error: Codex lane occupied: task '$other_task' is $other_state; the captain's standing rule permits one Codex launch at a time, so wait for that task to finish before dispatching '$id'" >&2
-        return 1
-        ;;
-    esac
+    [ "$other_state" != dead ] || continue
+    echo "error: Codex lane occupied in this home ($STATE): local task '$other_task' is $other_state; the captain's standing rule permits one live Codex agent per home at a time, so wait for that task to finish before dispatching '$id'" >&2
+    return 1
   done
   return 0
 }

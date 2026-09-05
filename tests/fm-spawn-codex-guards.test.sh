@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # fm-spawn.sh codex guards (Phase 1b, data/codex-secondmate-integration-plan;
 # the captain's one-lane rule):
-#   1. codex_lane_guard refuses a spawn while another Codex task is alive or
-#      unconfirmed, naming the conflicting task id, and allows it once dead.
+#   1. codex_lane_guard refuses a spawn while another Codex task in this home
+#      is alive or unconfirmed, naming the conflicting task id, allows it once
+#      dead, and ignores remote-routed Codex metas (the lane is per home).
 #   3. The composed codex launch line never contains --fast, and neither
 #      does the composed claude launch line (the captain was previously
 #      burned by --fast on claude specifically).
@@ -114,18 +115,17 @@ run_spawn() {  # <home> <wt> <fakebin> <id> <proj> <extra args...>
     "$SPAWN" "$id" "$proj" --harness codex --mode no-mistakes --yolo off "$@" 2>&1
 }
 
-test_codex_remote_lane_blocks_launch() {
+test_codex_remote_route_does_not_occupy_local_lane() {
   local rec id out status
-  id=codex-remote-blocked
+  id=codex-remote-ignored
   rec=$(make_case remote-lane "$id")
   read_case_record "$rec"
   write_other_codex_meta "$HOME_DIR" remote-codex
   printf 'remote_host=example.test\n' >> "$HOME_DIR/state/remote-codex.meta"
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  out=$(FM_FAKE_WINDOWS='' run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
   status=$?
-  expect_code 1 "$status" "a published remote Codex route must block a second launch: $out"
-  assert_contains "$out" "remote-codex" "remote refusal omitted remote task identity"
-  pass "a published remote Codex route blocks a second launch"
+  expect_code 0 "$status" "a remote Codex route must not occupy this home's Codex lane: $out"
+  pass "a remote-routed Codex meta does not occupy this home's Codex lane"
 }
 
 test_codex_lane_guard_refuses_live_task_and_names_it() {
@@ -156,7 +156,7 @@ test_codex_lane_guard_serializes_against_unconfirmed_launch() {
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
   status=$?
   expect_code 1 "$status" "a spawn must refuse while another codex task's launch is still unconfirmed: $out"
-  assert_contains "$out" "Codex lane occupied" "the refusal did not name the lane guard: $out"
+  assert_contains "$out" "Codex lane occupied in this home" "the refusal did not name the per-home lane guard: $out"
   assert_contains "$out" "launching-codex-task" "the refusal did not name the unconfirmed task: $out"
   pass "codex_lane_guard refuses a spawn while another codex task is still launching/unconfirmed"
 }
@@ -209,7 +209,7 @@ test_composed_claude_launch_line_never_contains_fast() {
   pass "the composed claude launch line never contains --fast"
 }
 
-test_codex_remote_lane_blocks_launch
+test_codex_remote_route_does_not_occupy_local_lane
 test_codex_lane_guard_refuses_live_task_and_names_it
 test_codex_lane_guard_serializes_against_unconfirmed_launch
 test_codex_lane_guard_allows_when_other_codex_is_dead
