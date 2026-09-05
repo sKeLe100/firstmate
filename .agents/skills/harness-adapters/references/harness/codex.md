@@ -19,6 +19,13 @@ The codex-cli 0.153.4 catalog lists low, medium, high, and xhigh for every model
 It additionally lists `max` on gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-6-astra, and gpt-reserve, and `ultra` on gpt-6-astra, gpt-5.6-sol, and gpt-5.6-terra.
 `bin/fm-spawn.sh` owns launch-time validation against that catalog and the diagnostic for unsupported efforts.
 
+## Lane rule
+
+The Codex lane is per Firstmate home, matching the PC02 lane guard.
+`bin/fm-spawn.sh` scans only this home's task metas and refuses a Codex launch while another local Codex task, worker or secondmate, is alive or still unconfirmed; a positively dead local endpoint releases the lane.
+Remote-routed metas are outside the guard's scope, so a Codex secondmate published on another host never blocks a local Codex launch, and the refusal names the home it applies to.
+Batched Codex spawns are refused separately and unconditionally.
+
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
 Accept it with Enter and verify the instructions begin processing.
 The decision persists for the repository, so later worktrees of the same project skip it.
