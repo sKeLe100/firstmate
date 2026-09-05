@@ -36,6 +36,12 @@ TMP_ROOT=$(fm_test_tmproot fm-control-relaunch)
 mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
 TASK_TMPS=()
+# Codex relaunches validate the configured effort against the model catalog;
+# the fixture pins a suite-owned catalog so the real ~/.codex cache never decides.
+export FM_TEST_CODEX_MODELS_CACHE="$TMP_ROOT/codex-models-cache.json"
+cat > "$FM_TEST_CODEX_MODELS_CACHE" <<'JSON'
+{"models":[{"slug":"some-model","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"}]}]}
+JSON
 
 relaunch_cleanup() {
   local d
