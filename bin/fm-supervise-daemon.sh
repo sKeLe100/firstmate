@@ -1636,7 +1636,12 @@ fm_super_main() {
   log "daemon starting (pid $$); target=$TARGET; target_source=$target_source; backend=$BACKEND; backend_source=$backend_source; afk=$afk_status; inject_skip='${FM_INJECT_SKIP:-$INJECT_SKIP_DEFAULT}'; stale_escalate=${FM_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}s; batch=${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}s"
   migrate_watcher_pause_markers "$STATE"
 
-  # --- shutdown: flush buffered escalations, reap child, release lock -------
+  # The primary continuity watchdog (bin/fm-primary-watchdog.sh) is NOT hosted
+  # here: it is armed always-on through bin/fm-watch-arm.sh regardless of /afk
+  # state (captain decision 2026-09-01; docs/configuration.md "Primary
+  # continuity watchdog").
+
+  # --- shutdown: flush buffered escalations, reap children, release lock ----
   local WATCHER_PID="" CUR_TMP=""
   cleanup() {
     trap - TERM INT

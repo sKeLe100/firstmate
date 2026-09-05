@@ -151,6 +151,11 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-public-followup.sh`  | Reconcile and deliver typed public commitments, then rechain or explicitly retire their retained loops |
 | `fm-public-followup-emit.sh` | Report one typed terminal work result into the home that owes the public reply, or stage it when that home is on another machine |
 | `fm-public-followup-collect.sh` | Read and retire the typed terminal results a remote work home staged for the home that owes the public reply |
+| `fm-context-usage.sh`    | Report a Claude session's real context usage and warn/restart context band from the harness's durable transcript records |
+| `fm-returning-session-check.sh` | Decide bare-resume vs restart-with-carryover for a returning (pinged or restarted) session from its `fm-context-usage.sh` band |
+| `fm-primary-watchdog.sh` | Get a usage-limit-blocked or crashed primary back to a working session at reset, without the captain intervening |
+| `fm-stow-cascade.sh`     | Enumerate this home's registered secondmates, their budget reports, and reachable transports for a `/stow` cascade; `--complete` stamps the durable stow-completion marker once the whole cascade finished |
+| `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note, dictate one, read status, ask a side question |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |

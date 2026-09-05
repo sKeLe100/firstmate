@@ -312,7 +312,8 @@ The bands mean:
 The restart mechanics reuse the existing owners rather than a parallel mechanism:
 
 - A crewmate or secondmate agent is restarted with `bin/fm-control.sh <task-id> relaunch --note "carryover: what is done, what run/branch is live, exact pickup commands - YOU are the replacement"`; the relaunch carries the brief plus that note into the fresh agent.
-- A primary firstmate session runs `/stow`, then advises the captain to reset the session; the replacement session recovers from durable state per AGENTS.md section 5.
+- A primary firstmate session runs `/stow`, then advises the captain to reset the session while the captain is attended; the replacement session recovers from durable state per AGENTS.md section 5.
+  When the captain is not attending (a usage-limit block, or a wedged session at reset), the [primary continuity watchdog](#primary-continuity-watchdog) drives this same `/stow`-then-restart sequence unattended.
 - The wake back to the main session is the ordinary status/wake channel: a relaunched worker's next status append, or a secondmate's routed status line, wakes its supervisor.
 - Never send `/clear` through the steer channel: it is mechanically broken and the steer becomes chat the worker reasons about.
 
@@ -338,6 +339,21 @@ Like the context bands, callers act on the reported band rather than re-deriving
 
 The two sensors share one actuator and cannot fight: the context band owns restart timing, the retry band owns the note content and the relaunch-versus-hold choice, and `restart` plus `halt` resolves to checkpoint-then-hold rather than another relaunch.
 The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), like its sibling.
+
+## Primary continuity watchdog
+
+`config/primary-continuity` controls this section.
+
+`bin/fm-primary-watchdog.sh` is a small, presence-gated loop that runs as a separate OS process from the primary session, armed always-on through `bin/fm-watch-arm.sh` - the same Stop-hook auto-arm chain (`bin/fm-claude-stop-autoarm.sh`) that keeps the watcher alive - so it runs independent of the `/afk` lifecycle while reusing the afk/supervise-daemon machinery's pane discovery, backend dispatch, and verified-submit primitives (see the script's own header for the exact loop and safety contract).
+Its `arm` subcommand is idempotent - it attaches to this home's live loop or starts one detached - so repeated arms converge on exactly one loop per home.
+It polls cheaply for the primary being usage-limit-blocked (a rendered-output signature match, the same technique as the daemon's busy guard) or its harness process gone, computes the account's five-hour reset time from `quota-axi`, and sleeps until reset.
+At reset it reads the primary's context band via `bin/fm-context-usage.sh`: band `ok` gets one operational-prefix nudge so queued wakes get handled in the existing session; band `warn`/`restart` gets a guarded `/stow` injection (bounded wait for completion evidence, proceeding anyway on timeout - durable records, not the stow turn, are the source of truth for carryover) followed by a graceful exit of the old harness process and a **fresh** session launch in the same pane, never `--resume`/`--continue`.
+The fresh session's own SessionStart hook (`bin/fm-session-start.sh`) provides correct carryover exactly as any other restart under AGENTS.md section 5, so this is a trigger mechanism only, not a second carryover path.
+
+`config/primary-continuity` is an optional local, gitignored presence flag with **inverted polarity from every other `config/*` presence flag in this file**: the watchdog runs always-on by default (captain decision 2026-09-01 - this is a general reliability fix, not specific to any overnight posture), so presence of this file **opts out** rather than opts in.
+Absence leaves the watchdog enabled; the flag is inherited by secondmate homes through `FM_INHERITABLE_CONFIG`, so with the inverted polarity above an inherited *presence* propagates the opt-out, and because propagation is primary-authoritative, removing it from the primary clears the secondmate's copy at the next convergence and re-enables the watchdog there.
+The watchdog only ever acts on the verified primary pane (refuses to arm when the pane cannot be identified, mirroring the afk daemon's refuse-to-arm rule) and its restart authority is scoped strictly to the usage-limit/high-context condition it detects - it is not a general kill switch and has no merge, credential, or destructive-action capability.
+Its busy guard fails closed: when `bin/fm-harness.sh` cannot identify the primary's harness from the loop's own environment (a loop armed by hand from a plain shell has no harness marker or harness ancestor), every action is withheld, and the loop logs one `ESCALATION` line per loop process naming the remedy - re-arm from inside the primary session via the Stop-hook chain - rather than staying silently inert.
 
 ## Stow pass horizon (config/stow-pass-horizon)
 
@@ -1039,6 +1055,11 @@ FM_CRASH_BACKOFF=60                # seconds to wait after crossing the crash th
 FM_CRASH_NORMAL_SLEEP=5            # seconds to wait after an isolated watcher crash
 FM_LOG_MAX_BYTES=1048576           # daemon log size that triggers trimming
 FM_LOG_KEEP_LINES=2000             # daemon log lines kept when trimming
+# primary continuity watchdog (bin/fm-primary-watchdog.sh); always-on, see "Primary continuity watchdog" above
+FM_WATCHDOG_POLL_INTERVAL=60       # seconds between watchdog detect-or-idle passes
+FM_WATCHDOG_COOLDOWN=900           # seconds after one watchdog action before another may fire
+FM_WATCHDOG_STOW_WINDOW=1800       # seconds the watchdog waits for stow-completion evidence (state/.stow-last-run) before restarting anyway; the default comfortably exceeds a full secondmate cascade
+FM_WATCHDOG_DEAD_CONFIRMATIONS=2   # consecutive polls that must report the harness gone before a fresh session is launched, so a captain who exits to a shell prompt is not hijacked
 # spoken interface and captain inbox; see "Spoken interface and captain inbox" above
 FM_VOICE_REGION=        # overrides config/voice-region for one relay run
 FM_VOICE_MODEL=         # overrides config/voice-model for one relay run
