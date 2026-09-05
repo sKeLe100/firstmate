@@ -1518,8 +1518,9 @@ case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
     HARNESS=""
+    RAW_LAUNCH_EXE=""
     for word in $LAUNCH; do
-      case "$word" in [A-Za-z_]*=*) continue ;; *) HARNESS=$(basename "$word"); break ;; esac
+      case "$word" in [A-Za-z_]*=*) continue ;; *) RAW_LAUNCH_EXE=$word; HARNESS=$(basename "$word"); break ;; esac
     done
     ;;
   '')
@@ -1588,6 +1589,16 @@ case "$HARNESS" in
       echo "error: codex executable '$CODEX_BIN' reported an empty --version" >&2
       exit 1
     }
+    if [ -n "${RAW_LAUNCH_EXE:-}" ]; then
+      case "$RAW_LAUNCH_EXE" in
+        */*) RAW_CODEX_RESOLVED=$(readlink -f -- "$RAW_LAUNCH_EXE" 2>/dev/null) || RAW_CODEX_RESOLVED="" ;;
+        *) RAW_CODEX_RESOLVED=$(type -P -- "$RAW_LAUNCH_EXE" 2>/dev/null) && RAW_CODEX_RESOLVED=$(readlink -f -- "$RAW_CODEX_RESOLVED" 2>/dev/null) || RAW_CODEX_RESOLVED="" ;;
+      esac
+      if [ -z "$RAW_CODEX_RESOLVED" ] || [ "$RAW_CODEX_RESOLVED" != "$CODEX_BIN" ]; then
+        echo "error: raw codex launch command names '$RAW_LAUNCH_EXE' (resolves to '${RAW_CODEX_RESOLVED:-unresolvable}'), which is not the freshly rediscovered codex executable '$CODEX_BIN'; refusing to launch from a stale or foreign codex reference" >&2
+        exit 1
+      fi
+    fi
     ;;
   pi|pi-signed)
     PI_BIN=$(resolve_pi_executable "$HARNESS") || {
@@ -3194,9 +3205,10 @@ preserve_relaunch_meta() {
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
-  # Recorded fresh on every spawn and relaunch, never carried over from a
-  # prior meta by preserve_relaunch_meta, so the evidence trail always names
-  # the exact binary this exact launch actually resolved and probed.
+  # Audit evidence only, not consumed by any spawn or relaunch path: recorded
+  # fresh on every spawn and relaunch, never carried over from a prior meta by
+  # preserve_relaunch_meta, so the trail names the exact binary this exact
+  # launch actually resolved and probed.
   if [ "$HARNESS" = codex ]; then
     echo "codex_exe=$CODEX_BIN"
     echo "codex_version=$CODEX_VERSION"

@@ -4,6 +4,8 @@
 #   1. codex_lane_guard refuses a spawn while another Codex task in this home
 #      is alive or unconfirmed, naming the conflicting task id, allows it once
 #      dead, and ignores remote-routed Codex metas (the lane is per home).
+#   2. A raw custom Codex launch command is refused unless the executable it
+#      names resolves (readlink -f) to the freshly rediscovered codex exe.
 #   3. The composed codex launch line never contains --fast, and neither
 #      does the composed claude launch line (the captain was previously
 #      burned by --fast on claude specifically).
@@ -211,6 +213,52 @@ test_composed_claude_launch_line_never_contains_fast() {
   pass "the composed claude launch line never contains --fast"
 }
 
+run_raw_spawn() {  # <home> <wt> <fakebin> <id> <proj> <raw launch command>
+  local home=$1 wt=$2 fakebin=$3 id=$4 proj=$5 raw=$6
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" FM_FAKE_DIR="$CASE_DIR/fake" \
+    TMUX="fake,1,0" CLAUDE_CONFIG_DIR='' PATH="$fakebin:$PATH" FM_FAKE_WINDOWS='' \
+    "$SPAWN" "$id" "$proj" "$raw" --mode no-mistakes --yolo off 2>&1
+}
+
+test_raw_codex_launch_refuses_foreign_executable() {
+  local rec id out status other
+  id=codex-raw-foreign
+  rec=$(make_case rawforeign "$id")
+  read_case_record "$rec"
+  mkdir -p "$CASE_DIR/nightly"
+  other="$CASE_DIR/nightly/codex"
+  cp "$FAKEBIN_DIR/codex" "$other"
+  chmod +x "$other"
+
+  out=$(run_raw_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" "$other --dangerously-bypass-approvals-and-sandbox")
+  status=$?
+  expect_code 1 "$status" "a raw codex launch naming a binary other than the rediscovered exe must be refused: $out"
+  assert_contains "$out" "$other" "the refusal did not name the raw command's executable: $out"
+  assert_contains "$out" "$(readlink -f -- "$FAKEBIN_DIR/codex")" "the refusal did not name the rediscovered codex exe: $out"
+  if [ -s "$CASE_DIR/fake/literal" ]; then
+    fail "the refused raw codex launch must not be sent to the pane: $(cat "$CASE_DIR/fake/literal")"
+  fi
+  pass "a raw codex launch command is refused unless it names the rediscovered exe"
+}
+
+test_raw_codex_launch_allows_rediscovered_executable() {
+  local rec id out status
+  id=codex-raw-same
+  rec=$(make_case rawsame "$id")
+  read_case_record "$rec"
+
+  out=$(run_raw_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" "codex --dangerously-bypass-approvals-and-sandbox")
+  status=$?
+  expect_code 0 "$status" "a raw codex launch naming the rediscovered exe must be allowed: $out"
+  assert_contains "$(cat "$HOME_DIR/state/$id.meta")" "codex_exe=$(readlink -f -- "$FAKEBIN_DIR/codex")" "meta must record the rediscovered codex exe as audit evidence"
+  pass "a raw codex launch command naming the rediscovered exe launches"
+}
+
+test_raw_codex_launch_refuses_foreign_executable
+test_raw_codex_launch_allows_rediscovered_executable
 test_codex_remote_route_does_not_occupy_local_lane
 test_codex_lane_guard_refuses_live_task_and_names_it
 test_codex_lane_guard_serializes_against_unconfirmed_launch
