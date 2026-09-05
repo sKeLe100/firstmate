@@ -908,4 +908,83 @@ case "$out" in
   *) fail "substring id match was wrongly inferred as the demo project: $out" ;;
 esac
 
+# 17. priority_analysis reports the share of the FULL queued set carrying a
+#     numeric priority: "yes" at exactly 20%, "no" below it, the displayed
+#     percentage is floored (never reaching 20 while the verdict is "no"),
+#     N/M count the whole queue even when --limit truncates the rows, an
+#     empty queue is "no (0/0 ..., 0%)", and the line sits between the items
+#     block and dispatch_config as the header documents.
+home=$(make_home priority-analysis-yes)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add pa-p "prioritized" --kind docs --priority 3 >/dev/null
+  for i in 1 2 3 4; do tasks-axi add "pa-u$i" "unset $i" --kind docs >/dev/null; done
+)
+out=$(run_snapshot "$home" --priority)
+case "$out" in
+  *"priority_analysis: priority_meaningful: yes (1/5 items have priority, 20%)"*) ;;
+  *) fail "exactly 20% prioritized was not reported meaningful: $out" ;;
+esac
+# Same line is emitted in the default (gate) sort too, and sits just before dispatch_config.
+out=$(run_snapshot "$home")
+after_items=$(printf '%s\n' "$out" | awk '/^items\[/{f=1;next} f' )
+case "$after_items" in
+  *"priority_analysis: priority_meaningful: yes (1/5 items have priority, 20%)"*) ;;
+  *) fail "priority_analysis missing or printed before the items block: $out" ;;
+esac
+[ "$(printf '%s\n' "$out" | grep -A1 '^priority_analysis:' | tail -1)" = "dispatch_config: absent" ] \
+  || fail "priority_analysis is not immediately followed by dispatch_config: $out"
+
+home=$(make_home priority-analysis-no)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add pb-p "prioritized" --kind docs --priority 3 >/dev/null
+  for i in 1 2 3 4 5; do tasks-axi add "pb-u$i" "unset $i" --kind docs >/dev/null; done
+)
+out=$(run_snapshot "$home" --priority)
+case "$out" in
+  *"priority_analysis: priority_meaningful: no (1/6 items have priority, 16%)"*) ;;
+  *) fail "below-20% prioritized was not reported as not meaningful with floored pct: $out" ;;
+esac
+
+# 39/200 = 19.5%: verdict "no" and display floors to 19, never rounds up to 20.
+home=$(make_home priority-analysis-floor)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  for i in $(seq 1 39); do tasks-axi add "pf-p$i" "p $i" --kind docs --priority 1 >/dev/null; done
+  for i in $(seq 1 161); do tasks-axi add "pf-u$i" "u $i" --kind docs >/dev/null; done
+)
+out=$(run_snapshot "$home" --priority --limit 5)
+case "$out" in
+  *"count: 5"*) ;;
+  *) fail "expected count: 5 under --limit 5: $out" ;;
+esac
+case "$out" in
+  *"priority_analysis: priority_meaningful: no (39/200 items have priority, 19%)"*) ;;
+  *) fail "19.5% was not floored to 19 with verdict no, or N/M did not count the full queue under --limit: $out" ;;
+esac
+
+home=$(make_home priority-analysis-zero)
+: > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add pz-u1 "unset" --kind docs >/dev/null
+)
+out=$(run_snapshot "$home" --priority)
+case "$out" in
+  *"priority_analysis: priority_meaningful: no (0/1 items have priority, 0%)"*) ;;
+  *) fail "no prioritized items was not reported as 0/1, 0%: $out" ;;
+esac
+
+home=$(make_home priority-analysis-empty)
+: > "$home/data/projects.md"
+out=$(run_snapshot "$home" --priority)
+case "$out" in
+  *"priority_analysis: priority_meaningful: no (0/0 items have priority, 0%)"*) ;;
+  *) fail "empty queue did not report 0/0, 0% without dividing by zero: $out" ;;
+esac
+
 echo "PASS fm-queue-snapshot.test.sh"
