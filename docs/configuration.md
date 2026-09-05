@@ -296,6 +296,12 @@ The base cap is reduced by a quota ladder read from `quota-axi --json` (schemaVe
 
 Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable) and the fleet-stall breakout clause that pierces the working attention band above.
 
+## Concurrent Codex lane cap (config/codex-lane-cap)
+
+`config/codex-lane-cap` is an optional local, gitignored, primary-authoritative file holding one bare positive base-10 integer, the `config/dispatch-cap` idiom: the file must contain exactly that integer and one trailing newline, and an absent file means the built-in default of **3**.
+It sets the cap `bin/fm-spawn.sh`'s `codex_lane_guard` enforces on live `harness=codex` tasks dispatched at once, per the captain's standing no-batch-launching rule: several concurrent Codex lanes are allowed, but a spawn is refused outright while another Codex task's launch is still unconfirmed, and separately refused once confirmed-alive Codex tasks already meet the cap.
+Not inherited by secondmate homes: like `config/dispatch-cap`, the cap governs the primary's own dispatch decisions onto its harness fleet, not a secondmate's.
+
 ## Session context thresholds (config/context-thresholds)
 
 `config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-26).

@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+# fm-spawn.sh codex guards (Phase 1b, data/codex-secondmate-integration-plan;
+# corrected 2026-09-05 to cap+serialize instead of strict single-lane
+# exclusivity - several concurrent Codex lanes are allowed, batch launching
+# is not):
+#   1. codex_lane_guard allows a spawn while confirmed-alive codex tasks stay
+#      under config/codex-lane-cap (default 3), and refuses once the cap is
+#      met, naming the conflicting task ids.
+#   2. codex_lane_guard refuses a spawn outright, regardless of the cap,
+#      while another codex task's launch is still unconfirmed (its endpoint
+#      reads neither alive nor dead), and allows it once that task settles.
+#   3. The composed codex launch line never contains --fast, and neither
+#      does the composed claude launch line (the captain was previously
+#      burned by --fast on claude specifically).
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+SPAWN="$ROOT/bin/fm-spawn.sh"
+TMP_ROOT=$(fm_test_tmproot fm-spawn-codex-guards)
+
+make_case() {  # <name> [task-id...]
+  local name=$1 case_dir home proj wt fakebin id
+  shift
+  case_dir="$TMP_ROOT/$name"
+  home="$case_dir/home"
+  proj="$case_dir/project"
+  wt="$case_dir/wt"
+  fakebin=$(fm_fakebin "$case_dir/fake")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+D=$FM_FAKE_DIR
+case "$*" in
+  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *pane_current_command*) printf '%s\n' "${FM_FAKE_PANE_CMD:-firstmate}"; exit 0 ;;
+esac
+case "${1:-}" in
+  display-message) printf 'firstmate\n'; exit 0 ;;
+  list-windows)
+    if [ -n "${FM_FAKE_LIST_WINDOWS_ERR:-}" ]; then
+      echo "fake inventory failure" >&2
+      exit 1
+    fi
+    printf '%s' "${FM_FAKE_WINDOWS:-}"
+    exit 0
+    ;;
+  send-keys)
+    shift
+    literal=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) literal=1; shift ;;
+        *) break ;;
+      esac
+    done
+    if [ "$literal" = 1 ] && [ -n "${D:-}" ]; then
+      printf '%s\n' "${1:-}" >> "$D/literal"
+    fi
+    exit 0 ;;
+  has-session|new-session|new-window|kill-window) exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux"
+  cat > "$fakebin/codex" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  --version) printf 'codex-cli 0.153.4\n'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/codex"
+  fm_fake_exit0 "$fakebin" treehouse
+  mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config" "$case_dir/fake"
+  : > "$case_dir/fake/literal"
+  printf 'claude\n' > "$home/config/crew-harness"
+  fm_git_worktree "$proj" "$wt" "wt-$name"
+  touch "$home/state/.last-watcher-beat"
+  for id in "$@"; do
+    mkdir -p "$home/data/$id"
+    printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$id" > "$home/data/$id/brief.md"
+  done
+  printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
+}
+
+read_case_record() {
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF
+$1
+EOF
+}
+
+write_other_codex_meta() {  # <home> <task>
+  cat > "$1/state/$2.meta" <<EOF
+window=firstmate:fm-$2
+endpoint_task_id=$2
+harness=codex
+kind=ship
+model=default
+EOF
+}
+
+fake_windows_for() {  # <task...> -> tmux list-windows -F '#{window_name}' output
+  local id
+  for id in "$@"; do
+    printf 'fm-%s\n' "$id"
+  done
+}
+
+run_spawn() {  # <home> <wt> <fakebin> <id> <proj> <extra args...>
+  local home=$1 wt=$2 fakebin=$3 id=$4 proj=$5
+  shift 5
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" FM_FAKE_DIR="$CASE_DIR/fake" \
+    TMUX="fake,1,0" CLAUDE_CONFIG_DIR='' PATH="$fakebin:$PATH" \
+    "$SPAWN" "$id" "$proj" --harness codex --mode no-mistakes --yolo off "$@" 2>&1
+}
+
+test_codex_lane_guard_allows_under_cap() {
+  local rec id out status
+  id=codex-guard-a1
+  rec=$(make_case underlacap "$id")
+  read_case_record "$rec"
+  write_other_codex_meta "$HOME_DIR" other-codex-task
+
+  out=$(FM_FAKE_WINDOWS="$(fake_windows_for other-codex-task)" \
+    FM_FAKE_PANE_CMD=codex \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "one confirmed-alive codex task must not block a spawn under the default cap of 3: $out"
+  pass "codex_lane_guard allows a spawn while under the lane cap"
+}
+
+test_codex_lane_guard_refuses_at_cap_and_names_conflicting_ids() {
+  local rec id out status
+  id=codex-guard-a2
+  rec=$(make_case atcap "$id")
+  read_case_record "$rec"
+  printf '2\n' > "$HOME_DIR/config/codex-lane-cap"
+  write_other_codex_meta "$HOME_DIR" codex-live-1
+  write_other_codex_meta "$HOME_DIR" codex-live-2
+
+  out=$(FM_FAKE_WINDOWS="$(fake_windows_for codex-live-1 codex-live-2)" \
+    FM_FAKE_PANE_CMD=codex \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 1 "$status" "a spawn at the configured lane cap must refuse: $out"
+  assert_contains "$out" "Codex lane cap" "the refusal did not name the cap: $out"
+  assert_contains "$out" "codex-live-1" "the refusal did not name the first conflicting task: $out"
+  assert_contains "$out" "codex-live-2" "the refusal did not name the second conflicting task: $out"
+  pass "codex_lane_guard refuses a spawn once confirmed-alive codex tasks meet the configured cap"
+}
+
+test_codex_lane_guard_serializes_against_unconfirmed_launch() {
+  local rec id out status
+  id=codex-guard-a3
+  rec=$(make_case launching "$id")
+  read_case_record "$rec"
+  write_other_codex_meta "$HOME_DIR" launching-codex-task
+
+  out=$(FM_FAKE_WINDOWS="$(fake_windows_for launching-codex-task)" \
+    FM_FAKE_PANE_CMD=firstmate \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 1 "$status" "a spawn must refuse while another codex task's launch is still unconfirmed: $out"
+  assert_contains "$out" "serialized" "the refusal did not name the serialization guard: $out"
+  assert_contains "$out" "launching-codex-task" "the refusal did not name the unconfirmed task: $out"
+  pass "codex_lane_guard refuses a spawn while another codex task is still launching/unconfirmed"
+}
+
+test_codex_lane_guard_allows_once_launch_settles() {
+  local rec id out status
+  id=codex-guard-a4
+  rec=$(make_case settled "$id")
+  read_case_record "$rec"
+  write_other_codex_meta "$HOME_DIR" settled-codex-task
+
+  out=$(FM_FAKE_WINDOWS="$(fake_windows_for settled-codex-task)" \
+    FM_FAKE_PANE_CMD=codex \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "a spawn must be allowed once the other codex task's launch settles into a confirmed-alive endpoint: $out"
+  pass "codex_lane_guard allows a spawn once the other codex task's launch is confirmed"
+}
+
+test_codex_lane_guard_allows_when_other_codex_is_dead() {
+  local rec id out status
+  id=codex-guard-a5
+  rec=$(make_case deadlane "$id")
+  read_case_record "$rec"
+  write_other_codex_meta "$HOME_DIR" dead-codex-task
+
+  out=$(FM_FAKE_WINDOWS='' run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "a dead prior codex task must not block a fresh spawn: $out"
+  pass "codex_lane_guard allows a spawn once the other codex endpoint reads dead"
+}
+
+test_composed_codex_launch_line_never_contains_fast() {
+  local rec id status
+  id=codex-guard-b1
+  rec=$(make_case codexfast "$id")
+  read_case_record "$rec"
+
+  FM_FAKE_WINDOWS='' run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" >/dev/null 2>&1
+  status=$?
+  expect_code 0 "$status" "the codex spawn used to compose the launch line should succeed"
+  if grep -q -- '--fast' "$CASE_DIR/fake/literal" 2>/dev/null; then
+    fail "the composed codex launch line must never contain --fast: $(cat "$CASE_DIR/fake/literal")"
+  fi
+  pass "the composed codex launch line never contains --fast"
+}
+
+test_composed_claude_launch_line_never_contains_fast() {
+  local rec id status
+  id=codex-guard-b2
+  rec=$(make_case claudefast "$id")
+  read_case_record "$rec"
+
+  FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" FM_FAKE_DIR="$CASE_DIR/fake" \
+    TMUX="fake,1,0" CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN_DIR:$PATH" FM_FAKE_WINDOWS='' \
+    "$SPAWN" "$id" "$PROJ_DIR" --harness claude --mode no-mistakes --yolo off >/dev/null 2>&1
+  status=$?
+  expect_code 0 "$status" "the claude spawn used to compose the launch line should succeed"
+  if grep -q -- '--fast' "$CASE_DIR/fake/literal" 2>/dev/null; then
+    fail "the composed claude launch line must never contain --fast: $(cat "$CASE_DIR/fake/literal")"
+  fi
+  pass "the composed claude launch line never contains --fast"
+}
+
+test_codex_lane_guard_allows_under_cap
+test_codex_lane_guard_refuses_at_cap_and_names_conflicting_ids
+test_codex_lane_guard_serializes_against_unconfirmed_launch
+test_codex_lane_guard_allows_once_launch_settles
+test_codex_lane_guard_allows_when_other_codex_is_dead
+test_composed_codex_launch_line_never_contains_fast
+test_composed_claude_launch_line_never_contains_fast
+
+echo "# all fm-spawn-codex-guards tests passed"
