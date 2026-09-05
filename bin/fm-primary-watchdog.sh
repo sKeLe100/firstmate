@@ -95,6 +95,9 @@
 #                                      gate allows arming, "0" and exit 1
 #                                      otherwise.
 #
+# Operator-tunable env knobs (poll interval, cooldown, stow window, dead
+# confirmations) are owned by docs/configuration.md "Primary continuity
+# watchdog" and its environment-variable listing.
 # Test seams: FM_WATCHDOG_POLL_INTERVAL (loop cadence, default 60s),
 # FM_WATCHDOG_RESET_JITTER (default 30s), FM_WATCHDOG_STOW_WINDOW (default
 # 1800s), FM_WATCHDOG_LAUNCH_CMD (overrides the fresh-session launch command,
