@@ -152,7 +152,8 @@ Classify each wake this way:
 - `signal` whose newly classified status span contains captain-relevant events -> escalate every event in source order.
   A nonterminal progress verb remains nonterminal even when its prose contains a legacy free-text token such as `PR ready`, `checks green`, `ready in branch`, or `merged`; only a bare legacy line with such a token escalates.
   Other signals with no captain-relevant event in the span -> self-handle.
-- `signal` or `stale` whose latest status declares a wait, either a `paused:` external wait or a verified `captain-held` transfer, tracks the pause rather than a wedge whether its pane reads idle or busy.
+- `signal` or `stale` whose latest status declares a wait, either a self-clearing `paused:` wait or a verified `captain-held` transfer, tracks the pause rather than a wedge whether its pane reads idle or busy.
+  A context-exhausted `paused:` (see the pause discriminator in `bin/fm-classify-lib.sh`) is not a declared wait here and takes the ordinary stale path instead.
   An unreported captain-relevant event in the newly classified span still escalates immediately while the current declaration independently keeps the pause cadence.
   With no unreported actionable event, the wake self-handles, and the current declaration outranks an enriched possible-wedge reason so it never escalates on the `FM_STALE_ESCALATE_SECS` cadence.
   If it is still declared past `FM_PAUSE_RESURFACE_SECS` (default 3600s), housekeeping sends one recheck and resets the pause window.
