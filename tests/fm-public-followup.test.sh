@@ -54,20 +54,10 @@ pf_test_cleanup() {
   if [ -f "$pid_file" ]; then
     pid=$(cat "$pid_file" 2>/dev/null) || pid=
     if [ -n "$pid" ]; then
-      kill "$pid" 2>/dev/null || true
-      # Wait for the worker (and any children) to actually exit before
-      # returning, so lib.sh's rm -r does not race with an open writer.
-      local _w=0
-      while kill -0 "$pid" 2>/dev/null && [ "$_w" -lt 50 ]; do
-        _w=$((_w + 1))
-        sleep 0.1
-      done
-      kill -0 "$pid" 2>/dev/null && {
-        kill -KILL "$pid" 2>/dev/null || true
-        sleep 0.2
-      }
-      wait "$pid" 2>/dev/null || true
-      rm -f "$pid_file"
+      # shellcheck source=bin/fm-remote-job-lib.sh
+      . "$ROOT/bin/fm-remote-job-lib.sh"
+      FM_REMOTE_JOB_STATE="${pid_file%/worker.pid}"
+      fm_remote_job_stop_worker_tree "$pid" 2>/dev/null || true
     fi
   fi
   fm_test_cleanup
