@@ -1,6 +1,6 @@
 # Codex
 
-Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer version.
+Verified on 2026-09-05 with codex-cli 0.153.4 unless a fact gives a newer version.
 
 ## Operating facts
 
@@ -12,7 +12,8 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 | Skill invocation | `$<skill>`, for example `$no-mistakes`; `/<skill>` is Claude-only and Codex rejects it as "Unrecognized command". |
 | Resume | `codex resume <session-id>`, using the id printed on quit. |
 | Model flag | `--model <model>`. |
-| Effort flag | `-c 'model_reasoning_effort="<low\|medium\|high\|xhigh>"'`, verified on codex-cli 0.142.1 whose installed schema contains `model_reasoning_effort`, active config uses it, and bundled catalog advertises only these four values while omitting `max`. |
+| Effort flag | `-c 'model_reasoning_effort="<effort>"'`, verified on codex-cli 0.153.4. Every model in the bundled catalog supports low, medium, high, and xhigh; `max` is additionally supported on gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-6-astra, and gpt-reserve; `ultra` is additionally supported on gpt-6-astra, gpt-5.6-sol, and gpt-5.6-terra. fm-spawn.sh reads `~/.codex/models_cache.json` at launch time to validate the requested effort against the resolved model (or, with no explicit model, against the intersection of every catalogued model's supported efforts) and refuses loudly naming the model and its accepted effort set rather than silently dropping an unsupported value. |
+| Model discovery | codex bundles and refreshes its own model catalog at `~/.codex/models_cache.json`; read that file for current model slugs and per-model effort support rather than guessing or hardcoding names. |
 | Model discovery | Open the current interactive session's `/model` picker. |
 
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
