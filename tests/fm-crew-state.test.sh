@@ -1164,6 +1164,7 @@ test_no_run_idle_pane_paused_split() {
   local d; d=$(new_case paused-split)
   make_repo_on_branch "$d/wt" fm/feat-psplit
   make_fakebin "$d" >/dev/null
+  # shellcheck disable=SC2016 # FM_FAKE_BAND must expand when the fake ctx-usage.sh runs, not here.
   printf '#!/bin/sh\nprintf "band=%%s transcript=x age_seconds=1\\n" "${FM_FAKE_BAND:-ok}"\n' > "$d/ctx-usage.sh"
   chmod 0700 "$d/ctx-usage.sh"
   fm_write_meta "$d/state/feat-psplit.meta" "window=fm:fm-feat-psplit" "worktree=$d/wt" "kind=ship" "harness=claude"
