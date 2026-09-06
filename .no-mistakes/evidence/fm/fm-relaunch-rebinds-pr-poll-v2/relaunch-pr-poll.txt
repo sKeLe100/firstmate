@@ -1,0 +1,47 @@
+--- state/rl30.meta after relaunch (AFTER FIX (current HEAD)) ---
+window=fmses:fm-rl30
+endpoint_task_id=rl30
+worktree=/tmp/fm-control-relaunch.iss5NC/prpoll-11642/wt
+project=/tmp/fm-control-relaunch.iss5NC/prpoll-11642/proj
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-rl30
+model=default
+effort=default
+busy_gen=g1788713840.470070.29217
+spawn_gen=s1788713840.469406.14879
+control_relaunch_tx=468868.20260906T165719Z.1298
+traceparent=00-b7f4e482eb6983c7b772d43a6d000f2e-c8a4d18cdff3bcc8-01
+pr=https://github.com/firstmate/maint/pull/42
+pr_head=0000000000000000000000000000000000000001
+--- poll artifacts ---
+rl30.check.sh
+rl30.pr-poll
+rl30.pr-poll-registration
+fm_pr_poll_artifacts_valid: PASS
+
+--- state/rl30.meta after relaunch (BEFORE FIX (base commit fm-spawn.sh)) ---
+window=fmses:fm-rl30
+endpoint_task_id=rl30
+worktree=/tmp/fm-control-relaunch.2hv8iS/prpoll-30421/wt
+project=/tmp/fm-control-relaunch.2hv8iS/prpoll-30421/proj
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-rl30
+model=default
+effort=default
+busy_gen=g1788713961.608561.13691
+spawn_gen=s1788713961.607698.10689
+pr=https://github.com/firstmate/maint/pull/42
+pr_head=0000000000000000000000000000000000000001
+control_relaunch_tx=606753.20260906T165920Z.3461
+traceparent=00-87b9f7318b70caf60e1a0858b9dd4d0f-d8dcbd5fb91d4f58-01
+--- poll artifacts ---
+rl30.check.sh
+rl30.pr-poll
+rl30.pr-poll-registration
+fm_pr_poll_artifacts_valid: FAIL
