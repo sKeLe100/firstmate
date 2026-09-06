@@ -851,6 +851,18 @@ do_relaunch() {
   }
   RELAUNCH_AGENT_CONFIRMED=1
 
+  # Re-arm the PR poll after a confirmed relaunch. When a task has a valid
+  # pr= in its .meta and an existing .pr-poll-registration, the registration
+  # binds a dev:inode pair for state/<id>.check.sh. A relaunch rewrites that
+  # file (new inode), so the old registration no longer matches and the
+  # watcher rejects the check script as unauthenticated. Re-arm restores a
+  # fresh registration whose check_identity matches the new inode.
+  # Best-effort: a failed re-arm does not unwind the relaunch, but leaves
+  # the poll in a stale state that needs manual re-arm via bin/fm-pr-check.sh.
+  if [ -f "$STATE/$ID.pr-poll-registration" ]; then
+    fm_pr_poll_rearm "$STATE" "$ID" "$SCRIPT_DIR" || true
+  fi
+
   # LLM usage telemetry (docs/llm-usage-telemetry.md): the relaunch's own
   # required --note/--note-file text doubles as the delegation reason, since
   # it already exists to tell the replacement worker what happened. A

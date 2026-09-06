@@ -1273,6 +1273,76 @@ SH
   pass "teardown removes safe poll artifacts and refuses directory-shaped check files without traversal"
 }
 
+# Regression: relaunch rewrites state/<id>.check.sh with a new inode, which
+# invalidates the dev:inode binding in the existing .pr-poll-registration.
+# The watcher then rejects the check script as unauthenticated. This test
+# verifies that fm_pr_poll_rearm restores a valid registration after the
+# check.sh file is replaced.
+test_relaunch_rebinds_pr_poll() {
+  local dir state url rc
+  dir=$(make_case relaunch-rebinds-poll)
+  state="$dir/home/state"
+  url="https://github.com/firstmate/maint/pull/42"
+  write_poll_meta "$state" task-a "$url"
+
+  # Arm the PR poll.
+  seed_canonical_poll "$dir" task-a "$url" || fail "could not seed initial poll"
+  fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "seeded poll was not initially valid"
+
+  # Capture the original registration's check_identity (last line, device:inode).
+  local orig_check_identity
+  orig_check_identity=$(tail -1 "$state/task-a.pr-poll-registration")
+  [ -n "$orig_check_identity" ] || fail "registration has no check_identity"
+
+  # Simulate relaunch: overwrite state/<id>.check.sh with different content.
+  # This is what fm-spawn.sh does for opencode (writes fm-busy-state.js plugin
+  # and associated state wiring; the observable effect is a new inode for
+  # state/<id>.check.sh when the poll copies the template over the existing file).
+  local old_inode new_inode
+  old_inode=$(fm_pr_file_inode "$state/task-a.check.sh")
+  printf '#!/usr/bin/env bash\n# replaced by relaunch simulation\nexit 0\n' > "$state/task-a.check.sh.tmp"
+  mv -f "$state/task-a.check.sh.tmp" "$state/task-a.check.sh"
+  chmod 0600 "$state/task-a.check.sh"
+  new_inode=$(fm_pr_file_inode "$state/task-a.check.sh")
+  [ "$old_inode" != "$new_inode" ] || fail "relaunch simulation did not produce a new inode"
+
+  # The old registration no longer matches.
+  ! fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "poll was still valid after check.sh inode changed"
+
+  # Re-arm the poll.
+  fm_pr_poll_rearm "$state" task-a "$ROOT/bin" \
+    || fail "fm_pr_poll_rearm failed"
+
+  # The re-armed poll is valid.
+  fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "re-armed poll is not valid"
+
+  # The registration now has a new check_identity matching the new inode.
+  local new_reg_check_identity
+  new_reg_check_identity=$(tail -1 "$state/task-a.pr-poll-registration")
+  [ -n "$new_reg_check_identity" ] || fail "re-armed registration has no check_identity"
+  [ "$new_reg_check_identity" != "$orig_check_identity" ] \
+    || fail "re-arm did not update check_identity"
+
+  # The PR data identity is preserved across re-arm.
+  local orig_data_identity new_data_identity
+  orig_data_identity=$(fm_pr_poll_data_parse "$state/task-a.pr-poll" && printf '%s' "$FM_PR_DATA_URL" || true)
+  new_data_identity=$(fm_pr_poll_data_parse "$state/task-a.pr-poll" && printf '%s' "$FM_PR_DATA_URL" || true)
+  [ "$orig_data_identity" = "$new_data_identity" ] \
+    || fail "re-arm changed PR data identity"
+
+  # Verify the watcher would accept the re-armed check script.
+  # fm_pr_poll_snapshot_capture validates the same path the watcher follows.
+  fm_pr_poll_snapshot_capture "$state" task-a "$POLL" \
+    || fail "watcher snapshot rejected re-armed poll"
+  [ "$FM_PR_POLL_SNAPSHOT_ID" = "task-a" ] \
+    || fail "watcher snapshot has wrong task ID"
+
+  pass "re-arm restores a valid poll registration after check.sh inode change"
+}
+
 # The GitLab watch must follow a merge request exactly as the GitHub watch
 # follows a pull request, on any instance, and must never turn an unreadable
 # merge request into a merge. Its evidence against the public fixture project
@@ -2148,3 +2218,4 @@ test_bootstrap_leaves_unauthenticated_checks
 test_custom_snapshot_cleanup_on_signal
 test_returned_custom_check_descendants_are_drained
 test_teardown_removes_poll_artifacts
+test_relaunch_rebinds_pr_poll

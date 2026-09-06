@@ -1014,3 +1014,62 @@ fm_pr_poll_merge_notified_remove() {  # <state> <id>
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
   rm -f -- "$marker"
 }
+
+# Resolve the poll template path for a given script directory.
+# Consumers that need the template (e.g. re-arm after relaunch) use this
+# instead of hard-coding the relative path, keeping the contract on one owner.
+fm_pr_poll_template_path() {  # <script-dir>
+  local script_dir=${1-}
+  [ -n "$script_dir" ] || return 1
+  printf '%s/fm-pr-poll.sh' "$script_dir"
+}
+
+# Re-arm a task's PR poll when the check.sh file identity has changed (e.g.
+# after a relaunch that rewrites state/<id>.check.sh with a new inode).
+# Reads pr=<url> from the task's metadata, resolves the poll template, then
+# prepares and publishes fresh poll artifacts whose registration binds the new
+# check.sh identity. This is equivalent to re-running bin/fm-pr-check.sh
+# without re-writing the metadata or posting the parent-channel ready line.
+#
+# Returns 0 on success (poll is armed with fresh registration), 1 if the task
+# has no pr= metadata (no poll to re-arm) or any preparation/publish step
+# fails. Callers should not retry: a failure means the poll could not be
+# restored and the task needs manual intervention via bin/fm-pr-check.sh.
+fm_pr_poll_rearm() {  # <state-dir> <id> <script-dir>
+  local state=$1 id=$2 script_dir=$3
+  fm_pr_task_id_valid "$id" || return 1
+  [ -d "$state" ] && [ ! -L "$state" ] || return 1
+  [ -f "$state/$id.meta" ] && [ ! -L "$state/$id.meta" ] || return 1
+
+  # Read the current pr= URL from the task metadata.
+  local pr_url
+  pr_url=$(grep '^pr=' "$state/$id.meta" | tail -1 | sed 's/^pr=//' || true)
+  [ -n "$pr_url" ] || return 1
+
+  # Parse and validate the PR URL to extract provider-tagged identity.
+  fm_pr_url_parse "$pr_url" || return 1
+  local provider=$FM_PR_PROVIDER url=$FM_PR_URL host=$FM_PR_HOST path=$FM_PR_PATH number=$FM_PR_NUMBER
+
+  # Resolve the poll template path.
+  local template
+  template=$(fm_pr_poll_template_path "$script_dir")
+  [ -f "$template" ] || return 1
+
+  # Recover any pending retirement for the old registration before preparing.
+  # This discards stale receipts whose identities no longer match current artifacts.
+  fm_pr_poll_retirement_recover_one "$state" "$id" "$template" || return 1
+
+  # Prepare fresh poll artifacts. This creates temp files with new dev:inode
+  # identities for both the check script and data sidecar, and computes a
+  # registration that binds the new check.sh identity.
+  fm_pr_poll_prepare "$state" "$id" "$provider" "$url" "$host" "$path" "$number" "$template" \
+    || return 1
+
+  # Publish the prepared artifacts. This atomically replaces the old check.sh,
+  # data sidecar, and registration with fresh versions whose registration
+  # matches the new check.sh inode.
+  fm_pr_poll_publish_prepared || {
+    fm_pr_poll_cleanup
+    return 1
+  }
+}
