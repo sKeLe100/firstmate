@@ -20,6 +20,7 @@ Never select `max` through this fallback; only an explicit per-task or standing 
 If requested effort is outside the adapter's accepted set, the spawn records `effort=` in task metadata but emits no effort flag.
 This preserves launch success instead of passing a known-bad value.
 A harness with no verified interactive effort flag follows the same record-and-omit contract.
+Codex is the exception: the spawn validates the requested effort against the installed model catalog and refuses the launch, naming the accepted set, rather than omitting the flag; `../harness/codex.md` owns that catalog contract.
 
 ## Harness and provider identity
 
