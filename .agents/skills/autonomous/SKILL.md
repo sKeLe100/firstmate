@@ -136,6 +136,20 @@ Do not hardcode the cap value here: read the live config and the live
 quota, and use the built-in default base of 3 when `config/dispatch-cap`
 is absent.
 
+The dispatch-cap check above answers only "is there Claude-lane headroom".
+It says nothing about PC02: only one PC02 opencode lane may run at a time
+(the same rule `bin/fm-spawn.sh`'s `pc02_lane_guard` enforces at spawn
+time), so a PC02-routed candidate can read as dispatchable under the
+Claude cap while PC02 itself is already held by another task. Before
+treating any PC02-routed candidate as dispatchable, separately run
+`bin/fm-autonomous-pc02-lane.sh`, which mirrors `pc02_lane_guard`'s
+scan-and-liveness read (state/*.meta for a live task with
+harness=opencode pointed at a pc02-llamaswap/* model). It prints `free`
+(exit 0) or `occupied: <task-id>` (exit 1). When it reports occupied,
+defer that candidate specifically - do not fall back to counting it
+against, or clearing it via, the generic dispatch-cap headroom - and
+continue evaluating any non-PC02 candidates normally.
+
 ### Step 4 - Check the captain's attention window
 
 Run `bin/fm-captain-window.sh` with no flags (`--now` and `--weekday`
