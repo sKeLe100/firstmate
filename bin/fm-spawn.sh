@@ -1514,6 +1514,19 @@ launch_template() {
   esac
 }
 
+# resolve_executable_path prints the fully resolved real path of a command word,
+# whether it is spelled as a path or looked up on PATH. Empty output means the
+# word does not resolve to anything runnable here.
+resolve_executable_path() {  # <word>
+  local word=$1 found=""
+  case "$word" in
+    */*) found=$word ;;
+    *) found=$(type -P -- "$word" 2>/dev/null) || found="" ;;
+  esac
+  [ -n "$found" ] || return 0
+  readlink -f -- "$found" 2>/dev/null || true
+}
+
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
@@ -1522,6 +1535,17 @@ case "$ARG3" in
     for word in $LAUNCH; do
       case "$word" in [A-Za-z_]*=*) continue ;; *) RAW_LAUNCH_EXE=$word; HARNESS=$(basename "$word"); break ;; esac
     done
+    # The codex guards below govern the BINARY, not the name it is spelled with:
+    # a `cdx` symlink or any other alias that resolves to this machine's codex is
+    # still a Codex launch and must take the lane, the fresh-exe probe and the
+    # effort validation. Classify by resolved target, not by spelled name.
+    if [ -n "$RAW_LAUNCH_EXE" ] && [ "$HARNESS" != codex ]; then
+      RAW_LAUNCH_RESOLVED=$(resolve_executable_path "$RAW_LAUNCH_EXE")
+      CODEX_ON_PATH=$(resolve_executable_path codex)
+      if [ -n "$RAW_LAUNCH_RESOLVED" ] && [ "$RAW_LAUNCH_RESOLVED" = "$CODEX_ON_PATH" ]; then
+        HARNESS=codex
+      fi
+    fi
     ;;
   '')
     # No explicit harness: resolve from config. A secondmate AGENT launches on the
@@ -1550,6 +1574,19 @@ case "$ARG3" in
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
+
+# The captain's standing rule: no agent launches with the fast modifier - it
+# burns tokens for nothing. No verified template emits --fast, so the reachable
+# source is the raw-launch escape hatch; refusing on the composed command line
+# keeps the rule enforced here rather than in prose.
+for word in $LAUNCH; do
+  case "$word" in
+    --fast|--fast=*)
+      echo "error: launch command for task $ID carries the fast modifier ('$word'); the captain's standing rule forbids launching an agent with --fast. Remove it from the launch command." >&2
+      exit 1
+      ;;
+  esac
+done
 
 # muse is verified as a CREWMATE/SCOUT adapter only. A secondmate is a firstmate
 # instance, so it needs a primary supervision protocol; muse has none, and its
@@ -1598,6 +1635,12 @@ case "$HARNESS" in
         echo "error: raw codex launch command names '$RAW_LAUNCH_EXE' (resolves to '${RAW_CODEX_RESOLVED:-unresolvable}'), which is not the freshly rediscovered codex executable '$CODEX_BIN'; refusing to launch from a stale or foreign codex reference" >&2
         exit 1
       fi
+      # The pane re-resolves whatever word it is sent against ITS own PATH at
+      # execution time, so sending a bare name would launch a binary this probe
+      # never verified. Pin the launch to the exact executable just probed.
+      RAW_CODEX_PREFIX=${LAUNCH%%"$RAW_LAUNCH_EXE"*}
+      RAW_CODEX_SUFFIX=${LAUNCH#*"$RAW_LAUNCH_EXE"}
+      LAUNCH="$RAW_CODEX_PREFIX$(shell_quote "$CODEX_BIN")$RAW_CODEX_SUFFIX"
     fi
     ;;
   pi|pi-signed)

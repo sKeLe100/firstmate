@@ -6,9 +6,11 @@
 #      dead, and ignores remote-routed Codex metas (the lane is per home).
 #   2. A raw custom Codex launch command is refused unless the executable it
 #      names resolves (readlink -f) to the freshly rediscovered codex exe.
-#   3. The composed codex launch line never contains --fast, and neither
-#      does the composed claude launch line (the captain was previously
-#      burned by --fast on claude specifically).
+#   3. The composed codex launch line never contains --fast, and any launch
+#      command carrying the fast modifier is refused outright (the captain was
+#      previously burned by --fast on claude specifically).
+#   4. A raw codex launch is pinned to the probed absolute executable, and a
+#      differently-named binary that resolves to codex still takes the lane.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -178,6 +180,16 @@ test_codex_lane_guard_allows_when_other_codex_is_dead() {
   pass "codex_lane_guard allows a spawn once the other codex endpoint reads dead"
 }
 
+run_raw_spawn() {  # <home> <wt> <fakebin> <id> <proj> <raw launch command>
+  local home=$1 wt=$2 fakebin=$3 id=$4 proj=$5 raw=$6
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" FM_FAKE_DIR="$CASE_DIR/fake" \
+    TMUX="fake,1,0" CLAUDE_CONFIG_DIR='' PATH="$fakebin:$PATH" FM_FAKE_WINDOWS="${FM_FAKE_WINDOWS:-}" \
+    "$SPAWN" "$id" "$proj" "$raw" --mode no-mistakes --yolo off 2>&1
+}
+
 test_composed_codex_launch_line_never_contains_fast() {
   local rec id status
   id=codex-guard-b1
@@ -193,34 +205,52 @@ test_composed_codex_launch_line_never_contains_fast() {
   pass "the composed codex launch line never contains --fast"
 }
 
-test_composed_claude_launch_line_never_contains_fast() {
-  local rec id status
+test_raw_launch_with_fast_modifier_is_refused() {
+  local rec id out status
   id=codex-guard-b2
   rec=$(make_case claudefast "$id")
   read_case_record "$rec"
 
-  FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
-    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
-    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
-    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" FM_FAKE_DIR="$CASE_DIR/fake" \
-    TMUX="fake,1,0" CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN_DIR:$PATH" FM_FAKE_WINDOWS='' \
-    "$SPAWN" "$id" "$PROJ_DIR" --harness claude --mode no-mistakes --yolo off >/dev/null 2>&1
+  out=$(run_raw_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" "claude --fast --dangerously-skip-permissions")
   status=$?
-  expect_code 0 "$status" "the claude spawn used to compose the launch line should succeed"
-  if grep -q -- '--fast' "$CASE_DIR/fake/literal" 2>/dev/null; then
-    fail "the composed claude launch line must never contain --fast: $(cat "$CASE_DIR/fake/literal")"
+  expect_code 1 "$status" "a launch command carrying --fast must be refused: $out"
+  assert_contains "$out" "fast modifier" "the refusal did not name the fast modifier: $out"
+  if [ -s "$CASE_DIR/fake/literal" ]; then
+    fail "the refused --fast launch must not be sent to the pane: $(cat "$CASE_DIR/fake/literal")"
   fi
-  pass "the composed claude launch line never contains --fast"
+  pass "a launch command carrying the fast modifier is refused"
 }
 
-run_raw_spawn() {  # <home> <wt> <fakebin> <id> <proj> <raw launch command>
-  local home=$1 wt=$2 fakebin=$3 id=$4 proj=$5 raw=$6
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
-    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" FM_FAKE_DIR="$CASE_DIR/fake" \
-    TMUX="fake,1,0" CLAUDE_CONFIG_DIR='' PATH="$fakebin:$PATH" FM_FAKE_WINDOWS='' \
-    "$SPAWN" "$id" "$proj" "$raw" --mode no-mistakes --yolo off 2>&1
+test_raw_codex_bare_name_is_pinned_to_the_resolved_exe() {
+  local rec id out status resolved sent
+  id=codex-raw-pinned
+  rec=$(make_case rawpinned "$id")
+  read_case_record "$rec"
+  resolved=$(readlink -f -- "$FAKEBIN_DIR/codex")
+
+  out=$(run_raw_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" "codex --dangerously-bypass-approvals-and-sandbox")
+  status=$?
+  expect_code 0 "$status" "a raw codex launch naming the rediscovered exe must be allowed: $out"
+  sent=$(cat "$CASE_DIR/fake/literal")
+  assert_contains "$sent" "$resolved" "the launch line sent to the pane must name the probed codex executable, not a bare name: $sent"
+  pass "a bare-name raw codex launch is sent to the pane as the probed absolute executable"
+}
+
+test_raw_codex_alias_takes_the_codex_lane() {
+  local rec id out status alias
+  id=codex-raw-alias
+  rec=$(make_case rawalias "$id")
+  read_case_record "$rec"
+  mkdir -p "$CASE_DIR/aliasbin"
+  alias="$CASE_DIR/aliasbin/cdx"
+  ln -sf "$FAKEBIN_DIR/codex" "$alias"
+  write_other_codex_meta "$HOME_DIR" other-codex-task
+
+  out=$(FM_FAKE_WINDOWS="$(fake_windows_for other-codex-task)" FM_FAKE_PANE_CMD=codex     run_raw_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" "$alias --dangerously-bypass-approvals-and-sandbox")
+  status=$?
+  expect_code 1 "$status" "a raw launch of a differently-named binary that resolves to codex must take the Codex lane: $out"
+  assert_contains "$out" "Codex lane occupied in this home" "the alias launch bypassed the per-home Codex lane guard: $out"
+  pass "a raw launch aliasing the codex binary is classified as codex and takes the lane"
 }
 
 test_raw_codex_launch_refuses_foreign_executable() {
@@ -264,6 +294,8 @@ test_codex_lane_guard_refuses_live_task_and_names_it
 test_codex_lane_guard_serializes_against_unconfirmed_launch
 test_codex_lane_guard_allows_when_other_codex_is_dead
 test_composed_codex_launch_line_never_contains_fast
-test_composed_claude_launch_line_never_contains_fast
+test_raw_launch_with_fast_modifier_is_refused
+test_raw_codex_bare_name_is_pinned_to_the_resolved_exe
+test_raw_codex_alias_takes_the_codex_lane
 
 echo "# all fm-spawn-codex-guards tests passed"
