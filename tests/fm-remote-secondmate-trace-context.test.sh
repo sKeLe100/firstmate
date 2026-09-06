@@ -27,6 +27,7 @@ REMOTE_ROOT="$TMP_ROOT/remote-root"
 REMOTE_HOME="$TMP_ROOT/remote-home"
 SECOND_HOME="$TMP_ROOT/remote-home-2"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/fake")
+fm_fake_codex_probe "$FAKEBIN"
 HERDR_LOG="$TMP_ROOT/remote-herdr.log"
 HERDR_STATE="$TMP_ROOT/remote-herdr.state"
 TMUX_LOG="$TMP_ROOT/remote-tmux.log"

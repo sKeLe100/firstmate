@@ -260,14 +260,7 @@ fm_test_make_spawn_fakebin() {
   fakebin=$(fm_fakebin "$dir")
   fm_test_fake_tmux_spawn "$fakebin"
   fm_fake_exit0 "$fakebin" treehouse "$@"
-  cat > "$fakebin/codex" <<'SH'
-#!/usr/bin/env bash
-case "$1" in
-  --version) printf 'codex-cli 0.153.4\n'; exit 0 ;;
-  *) exit 0 ;;
-esac
-SH
-  chmod +x "$fakebin/codex"
+  fm_fake_codex_probe "$fakebin"
   cat > "$fakebin/codex-models-cache.json" <<'JSON'
 {"models":[
   {"slug":"gpt-5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]},

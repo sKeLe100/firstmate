@@ -121,6 +121,7 @@ esac
 exit 0
 SH
   chmod +x "$fb/tmux"
+  fm_fake_codex_probe "$fb"
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
 [ -z "${FM_FAKE_LOCK_WAITING:-}" ] || : > "$FM_FAKE_LOCK_WAITING"

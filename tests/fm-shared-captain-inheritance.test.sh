@@ -213,6 +213,7 @@ make_fake_spawn_toolchain() {
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_codex_probe "$fakebin"
   printf '%s\n' "$fakebin"
 }
 

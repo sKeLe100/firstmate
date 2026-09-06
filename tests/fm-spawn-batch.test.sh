@@ -14,6 +14,12 @@ set -u
 
 SPAWN="$ROOT/bin/fm-spawn.sh"
 TMP_ROOT=$(fm_test_tmproot fm-spawn-batch)
+# The codex harness argument is inert here (every attempt fails at the brief
+# check), but fm-spawn's codex exe rediscovery probe runs first and needs a
+# codex binary on PATH.
+FAKEBIN=$(fm_fakebin "$TMP_ROOT/fake")
+fm_fake_codex_probe "$FAKEBIN"
+export PATH="$FAKEBIN:$PATH"
 export FM_BACKEND=tmux
 
 # Clear ambient firstmate overrides so the behavior test owns its environment.
