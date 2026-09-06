@@ -312,6 +312,22 @@ SH
   done
 }
 
+# fm_fake_codex_probe <fakebin>
+# Drops a codex stub that answers --version, so fm-spawn's per-launch codex exe
+# rediscovery probe resolves and verifies a binary in fixtures that only need
+# codex as an inert verified harness (the fake tmux never runs the launch).
+fm_fake_codex_probe() {
+  local fakebin=$1
+  cat > "$fakebin/codex" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf 'codex-cli 0.153.4\n'
+fi
+exit 0
+SH
+  chmod +x "$fakebin/codex"
+}
+
 # fm_fake_crash_injector <fakebin>
 # Drops an `fm-crash-inject <pid>` shim that a PATH fake calls to simulate a
 # hard crash of the process under test. It SIGKILLs <pid> and then returns only

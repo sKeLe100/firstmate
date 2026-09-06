@@ -1,6 +1,6 @@
 # Codex
 
-Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer version.
+Verified on 2026-09-05 with codex-cli 0.153.4 unless a fact gives a newer version.
 
 ## Operating facts
 
@@ -12,8 +12,25 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 | Skill invocation | `$<skill>`, for example `$no-mistakes`; `/<skill>` is Claude-only and Codex rejects it as "Unrecognized command". |
 | Resume | `codex resume <session-id>`, using the id printed on quit. |
 | Model flag | `--model <model>`. |
-| Effort flag | `-c 'model_reasoning_effort="<low\|medium\|high\|xhigh>"'`, verified on codex-cli 0.142.1 whose installed schema contains `model_reasoning_effort`, active config uses it, and bundled catalog advertises only these four values while omitting `max`. |
-| Model discovery | Open the current interactive session's `/model` picker. |
+| Effort flag | `-c 'model_reasoning_effort="<effort>"'`; see the catalog support below. |
+| Model discovery | Read `~/.codex/models_cache.json` for current model slugs and per-model effort support, or open the interactive session's `/model` picker. |
+
+The codex-cli 0.153.4 catalog lists low, medium, high, and xhigh for every model.
+It additionally lists `max` on gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-6-astra, and gpt-reserve, and `ultra` on gpt-6-astra, gpt-5.6-sol, and gpt-5.6-terra.
+`bin/fm-spawn.sh` owns launch-time validation against that catalog and the diagnostic for unsupported efforts.
+
+## Lane rule
+
+The Codex lane is per Firstmate home, matching the PC02 lane guard.
+`bin/fm-spawn.sh` scans only this home's task metas and refuses a Codex launch while another local Codex task, worker or secondmate, is alive or still unconfirmed; a positively dead local endpoint releases the lane.
+Remote-routed metas are outside the guard's scope, so a Codex secondmate published on another host never blocks a local Codex launch, and the refusal names the home it applies to.
+Batched Codex spawns are refused separately and unconditionally.
+
+## Executable rediscovery
+
+`bin/fm-spawn.sh` rediscovers the codex executable from PATH on every spawn and relaunch, resolves it with `readlink -f`, probes `--version`, and never reads it from a prior meta.
+A raw custom launch command whose first word is a codex binary is refused unless that binary resolves to the same path; the refusal names both resolved paths.
+The task meta records `codex_exe` and `codex_version` as audit evidence only; nothing consumes them.
 
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
 Accept it with Enter and verify the instructions begin processing.

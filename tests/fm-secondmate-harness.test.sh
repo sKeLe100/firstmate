@@ -63,6 +63,11 @@ BASE_PATH=${FM_TEST_BASE_PATH:-$(fm_test_base_path)}
 fm_git_identity fmtest fmtest@example.com
 TMP_ROOT=$(fm_test_tmproot fm-secondmate-harness)
 export FM_BACKEND=tmux
+# Codex launch probes and effort checks use suite-owned tool/catalog fixtures.
+export FM_TEST_CODEX_MODELS_CACHE="$TMP_ROOT/codex-models-cache.json"
+cat > "$FM_TEST_CODEX_MODELS_CACHE" <<'JSON'
+{"models":[{"slug":"gpt-5.5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]}]}
+JSON
 
 # ===========================================================================
 # A) fm-harness.sh secondmate resolution + fallback (deterministic detect_own)
@@ -426,6 +431,7 @@ make_noop_tmux() {
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_codex_probe "$fakebin"
   printf '%s\n' "$fakebin"
 }
 
@@ -660,6 +666,7 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_codex_probe "$fakebin"
   fm_fake_exit0 "$fakebin" pi
   printf '%s\n' "$fakebin"
 }
@@ -856,7 +863,7 @@ test_spawn_explicit_harness_does_not_inherit_secondmate_harness_tokens() {
   [ "$(meta_field "$meta" model)" = default ] || fail "explicit-harness-no-tokens: meta model should stay default"
   [ "$(meta_field "$meta" effort)" = default ] || fail "explicit-harness-no-tokens: meta effort should stay default"
   launch=$(cat "$launchlog")
-  assert_contains "$launch" "codex --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "'$w/tmux-sm/fakebin/codex' --dangerously-bypass-approvals-and-sandbox" \
     "explicit-harness-no-tokens: launch did not use codex"
   assert_not_contains "$launch" "--model" "explicit-harness-no-tokens: launch must not carry a --model flag"
   assert_not_contains "$launch" "model_reasoning_effort" \
@@ -1081,6 +1088,7 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_codex_probe "$fakebin"
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -2142,6 +2150,7 @@ esac
 exec "$fakebin/tmux.real" "\$@"
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_codex_probe "$fakebin"
 
   first_out="$w/first-push.out"
   (
@@ -2290,6 +2299,7 @@ esac
 exec "$fakebin/tmux.real" "\$@"
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_codex_probe "$fakebin"
   report="$w/empty-reread.report"
   : > "$report"
   log="$w/config-reread-order.tmux.log"
@@ -2470,6 +2480,7 @@ case "\$*" in
 esac
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_codex_probe "$fakebin"
   PATH="$fakebin:$BASE_PATH" FM_HOME="$w/home" FM_ROOT_OVERRIDE="$w/main" \
     FM_SEND_SETTLE=0 FM_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/fm-bootstrap.sh" >/dev/null 2>&1

@@ -563,6 +563,42 @@ pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-
   return 0
 }
 
+# codex_lane_guard serializes Codex launches within this home under the
+# task-set lock. It scans this home's metas only: a positively dead local
+# endpoint releases the lane, every other local state occupies it, and remote
+# routes are outside its scope.
+codex_lane_guard() {  # <task-id> <harness>: 0 iff <task-id> may launch/relaunch onto codex in this home now
+  local id=$1 harness=$2 other_meta other_task other_target other_state
+  [ "$harness" = codex ] || return 0
+  if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
+    SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
+      echo "error: could not resolve the task-set lock for $STATE" >&2
+      return 1
+    }
+    if ! fm_lock_try_acquire "$SPAWN_TASK_SET_LOCK"; then
+      echo "error: this home's task set is locked by another operation, so the Codex lane check cannot be made authoritative; refusing to launch task $id onto codex rather than racing it" >&2
+      return 1
+    fi
+    SPAWN_TASK_SET_LOCK_HELD=1
+  fi
+  for other_meta in "$STATE"/*.meta; do
+    [ -f "$other_meta" ] || continue
+    other_task=$(basename "$other_meta" .meta)
+    [ "$other_task" != "$id" ] || continue
+    [ "$(fm_meta_get "$other_meta" harness)" = codex ] || continue
+    [ -z "$(fm_meta_get "$other_meta" remote_host)" ] || continue
+    other_state=unknown
+    other_target=$(fm_backend_target_of_meta "$other_meta")
+    if [ -n "$other_target" ]; then
+      other_state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target")
+    fi
+    [ "$other_state" != dead ] || continue
+    echo "error: Codex lane occupied in this home ($STATE): local task '$other_task' is $other_state; the captain's standing rule permits one live Codex agent per home at a time, so wait for that task to finish before dispatching '$id'" >&2
+    return 1
+  done
+  return 0
+}
+
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
@@ -649,6 +685,11 @@ spawn_remote_secondmate() {
       ;;
   esac
   if ! pc02_lane_guard "$id" "${model#-}"; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    return 1
+  fi
+  if ! codex_lane_guard "$id" "$harness"; then
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
     return 1
@@ -1096,6 +1137,11 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
   fi
+  batch_harness=${HARNESS_ARG:-$("$FM_ROOT/bin/fm-harness.sh" crew)}
+  if [ "$batch_harness" = codex ]; then
+    echo "error: Codex batch launching is forbidden; launch and verify each task individually" >&2
+    exit 1
+  fi
   rc=0
   shared_args=()
   [ -z "$HARNESS_ARG" ] || shared_args+=(--harness "$HARNESS_ARG")
@@ -1402,9 +1448,9 @@ launch_template() {
     claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '\''{"feedbackDrafts":"off"}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then
-        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s' '__CODEXBIN__ __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
-        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s' '__CODEXBIN__ __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       fi
       ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
@@ -1472,8 +1518,9 @@ case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
     HARNESS=""
+    RAW_LAUNCH_EXE=""
     for word in $LAUNCH; do
-      case "$word" in [A-Za-z_]*=*) continue ;; *) HARNESS=$(basename "$word"); break ;; esac
+      case "$word" in [A-Za-z_]*=*) continue ;; *) RAW_LAUNCH_EXE=$word; HARNESS=$(basename "$word"); break ;; esac
     done
     ;;
   '')
@@ -1516,6 +1563,43 @@ if [ "$KIND" = secondmate ] && [ "$HARNESS" = muse ]; then
 fi
 
 case "$HARNESS" in
+  codex)
+    # Resolved fresh at every spawn and relaunch, never read from a prior
+    # meta field: an auto-updated codex binary under a running session is a
+    # stale-exe failure mode this probe exists to catch at the next launch
+    # (data/codex-secondmate-integration-plan/report.md, Phase 1b).
+    CODEX_BIN_RAW=$(type -P -- codex 2>/dev/null) || {
+      echo "error: codex executable not found on PATH; install it or select a different verified harness" >&2
+      exit 1
+    }
+    CODEX_BIN=$(readlink -f -- "$CODEX_BIN_RAW" 2>/dev/null) || {
+      echo "error: could not resolve codex executable '$CODEX_BIN_RAW' with readlink -f" >&2
+      exit 1
+    }
+    [ -n "$CODEX_BIN" ] && [ -x "$CODEX_BIN" ] || {
+      echo "error: resolved codex executable '$CODEX_BIN' is missing or not executable" >&2
+      exit 1
+    }
+    CODEX_VERSION=$("$CODEX_BIN" --version 2>&1) || {
+      echo "error: codex executable '$CODEX_BIN' failed to report --version; refusing to launch an unverified binary" >&2
+      exit 1
+    }
+    CODEX_VERSION=$(printf '%s' "$CODEX_VERSION" | head -n1 | tr -d '\r')
+    [ -n "$CODEX_VERSION" ] || {
+      echo "error: codex executable '$CODEX_BIN' reported an empty --version" >&2
+      exit 1
+    }
+    if [ -n "${RAW_LAUNCH_EXE:-}" ]; then
+      case "$RAW_LAUNCH_EXE" in
+        */*) RAW_CODEX_RESOLVED=$(readlink -f -- "$RAW_LAUNCH_EXE" 2>/dev/null) || RAW_CODEX_RESOLVED="" ;;
+        *) RAW_CODEX_RESOLVED=$(type -P -- "$RAW_LAUNCH_EXE" 2>/dev/null) && RAW_CODEX_RESOLVED=$(readlink -f -- "$RAW_CODEX_RESOLVED" 2>/dev/null) || RAW_CODEX_RESOLVED="" ;;
+      esac
+      if [ -z "$RAW_CODEX_RESOLVED" ] || [ "$RAW_CODEX_RESOLVED" != "$CODEX_BIN" ]; then
+        echo "error: raw codex launch command names '$RAW_LAUNCH_EXE' (resolves to '${RAW_CODEX_RESOLVED:-unresolvable}'), which is not the freshly rediscovered codex executable '$CODEX_BIN'; refusing to launch from a stale or foreign codex reference" >&2
+        exit 1
+      fi
+    fi
+    ;;
   pi|pi-signed)
     PI_BIN=$(resolve_pi_executable "$HARNESS") || {
       echo "error: $HARNESS executable not found on PATH; install it or select a different verified harness" >&2
@@ -1569,6 +1653,7 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
 fi
 
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
+codex_lane_guard "$ID" "$HARNESS" || exit 1
 
 secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"
@@ -1657,8 +1742,53 @@ model_flag_for_harness() {
   esac
 }
 
+# codex_effort_flag: emits the -c model_reasoning_effort="..." flag for codex
+# only when ~/.codex/models_cache.json actually lists that effort as
+# supported for the resolved model, and refuses loudly naming the model and
+# its accepted effort set otherwise. This replaces a prior silent-omission
+# policy (data/codex-secondmate-integration-plan/report.md, Phase 1b) that let
+# an unsupported effort such as "max" vanish from the launch line without any
+# signal. With no explicit model, the requirement is the INTERSECTION of every
+# catalogued model's accepted efforts, since firstmate cannot know at flag
+# time which model codex will actually select.
+codex_effort_flag() {
+  local effort=$1 model=$2 catalog="${FM_TEST_CODEX_MODELS_CACHE:-${HOME:-}/.codex/models_cache.json}" supported rc
+  if [ -z "${HOME:-}" ] || [ ! -f "$catalog" ]; then
+    echo "error: codex model catalog not found at '$catalog'; cannot validate --effort $effort without it. Run codex once to populate the catalog, or omit --effort." >&2
+    return 1
+  fi
+  command -v jq >/dev/null 2>&1 || {
+    echo "error: jq is required to validate codex effort '$effort' against '$catalog'" >&2
+    return 1
+  }
+  if [ -n "$model" ] && [ "$model" != default ]; then
+    if ! jq -e --arg m "$model" '.models[] | select(.slug == $m)' "$catalog" >/dev/null 2>&1; then
+      echo "error: codex model '$model' is not listed in '$catalog'; cannot validate --effort $effort for it" >&2
+      return 1
+    fi
+    supported=$(jq -r --arg m "$model" '.models[] | select(.slug == $m) | .supported_reasoning_levels[].effort' "$catalog") || rc=$?
+  else
+    supported=$(jq -r '
+      reduce .models[] as $m (null;
+        ($m.supported_reasoning_levels | map(.effort)) as $le
+        | if . == null then $le else (. as $acc | $le | map(select(. as $x | $acc | index($x)))) end
+      ) | .[]
+    ' "$catalog") || rc=$?
+  fi
+  if [ "${rc:-0}" -ne 0 ] || [ -z "$supported" ]; then
+    echo "error: could not read supported codex effort levels from '$catalog' for model '${model:-<default>}'" >&2
+    return 1
+  fi
+  if printf '%s\n' "$supported" | grep -qx -- "$effort"; then
+    printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")"
+    return 0
+  fi
+  echo "error: codex effort '$effort' is not supported for model '${model:-<default>}' per '$catalog'; accepted efforts: $(printf '%s' "$supported" | tr '\n' ' ' | sed 's/ *$//')" >&2
+  return 1
+}
+
 effort_flag_for_harness() {
-  local harness=$1 effort=$2
+  local harness=$1 effort=$2 model=${3:-}
   [ -n "$effort" ] && [ "$effort" != default ] || return 0
   case "$harness" in
     claude)
@@ -1667,12 +1797,7 @@ effort_flag_for_harness() {
       esac
       ;;
     codex)
-      # The installed codex config schema uses model_reasoning_effort, and the
-      # bundled model catalog advertises low|medium|high|xhigh. Omit max rather
-      # than passing an unsupported value.
-      case "$effort" in
-        low|medium|high|xhigh) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
-      esac
+      codex_effort_flag "$effort" "$model" || return 1
       ;;
     grok)
       # grok exposes both --effort and --reasoning-effort; firstmate's profile
@@ -3062,7 +3187,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx codex_exe codex_version", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -3080,6 +3205,14 @@ preserve_relaunch_meta() {
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
+  # Audit evidence only, not consumed by any spawn or relaunch path: recorded
+  # fresh on every spawn and relaunch, never carried over from a prior meta by
+  # preserve_relaunch_meta, so the trail names the exact binary this exact
+  # launch actually resolved and probed.
+  if [ "$HARNESS" = codex ]; then
+    echo "codex_exe=$CODEX_BIN"
+    echo "codex_version=$CODEX_VERSION"
+  fi
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   # Default-off writes no traceparent= line.
@@ -3199,7 +3332,7 @@ sq_piwatch=$(shell_quote "$PROJ_ABS/.pi/extensions/fm-primary-pi-watch.ts")
 sq_opinput=$(shell_quote "$FM_ROOT/bin/fm-operational-input.sh")
 sq_worktree=$(shell_quote "$WT")
 MODELFLAG=$(model_flag_for_harness "$HARNESS" "$MODEL")
-EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT")
+EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT" "${MODEL:-}") || exit 1
 LAUNCH=${LAUNCH//__MODELFLAG__/$MODELFLAG}
 LAUNCH=${LAUNCH//__EFFORTFLAG__/$EFFORTFLAG}
 LAUNCH=${LAUNCH//__BRIEF__/$sq_brief}
@@ -3209,6 +3342,7 @@ LAUNCH=${LAUNCH//__PITURNEND__/$sq_piturnend}
 LAUNCH=${LAUNCH//__PIWATCH__/$sq_piwatch}
 LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 case "$HARNESS" in
+  codex) LAUNCH=${LAUNCH//__CODEXBIN__/"$(shell_quote "$CODEX_BIN")"} ;;
   pi|pi-signed) LAUNCH=${LAUNCH//__PIBIN__/"$(shell_quote "$PI_BIN")"} ;;
   cursor) LAUNCH=${LAUNCH//__CURSORBIN__/"$(shell_quote "$CURSOR_BIN")"} ;;
 esac

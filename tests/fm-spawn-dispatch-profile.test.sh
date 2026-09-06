@@ -344,8 +344,10 @@ test_active_dispatch_profile_allows_explicit_harness() {
   expect_code 0 "$status" "explicit harness should satisfy active dispatch-profile requirement"
   assert_contains "$out" "spawned $id harness=codex" "spawn did not report explicit codex harness"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
+  assert_grep "codex_exe=$FAKEBIN_DIR/codex" "$HOME_DIR/state/$id.meta" "missing resolved executable metadata"
+  assert_grep "codex_version=codex-cli 0.153.4" "$HOME_DIR/state/$id.meta" "missing executable version metadata"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "'$FAKEBIN_DIR/codex' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "explicit harness launch did not thread model and effort"
   pass "active crew-dispatch profile allows an explicit resolved harness"
 }
@@ -363,6 +365,8 @@ test_active_dispatch_profile_allows_positional_harness() {
   expect_code 0 "$status" "positional harness should satisfy active dispatch-profile requirement"
   assert_contains "$out" "spawned $id harness=codex" "spawn did not report positional codex harness"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
+  assert_grep "codex_exe=$FAKEBIN_DIR/codex" "$HOME_DIR/state/$id.meta" "missing resolved executable metadata"
+  assert_grep "codex_version=codex-cli 0.153.4" "$HOME_DIR/state/$id.meta" "missing executable version metadata"
   pass "active crew-dispatch profile allows the legacy positional harness form"
 }
 
@@ -411,27 +415,52 @@ test_codex_threads_model_and_effort() {
   status=$?
   expect_code 0 "$status" "codex spawn with profile flags should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
+  assert_grep "codex_exe=$FAKEBIN_DIR/codex" "$HOME_DIR/state/$id.meta" "missing resolved executable metadata"
+  assert_grep "codex_version=codex-cli 0.153.4" "$HOME_DIR/state/$id.meta" "missing executable version metadata"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "'$FAKEBIN_DIR/codex' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread model and reasoning effort config"
   pass "codex receives --model and model_reasoning_effort profile flags"
 }
 
-test_codex_omits_invalid_max_effort() {
+test_codex_accepts_catalog_max_and_refuses_failed_probe() {
   local rec id out status launch
+  id=profile-codex-catalog-max
+  rec=$(make_spawn_case profile-codex-catalog-max codex "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model openai-codex/gpt-5.6-sol --effort max)
+  status=$?
+  expect_code 0 "$status" "catalog-listed max effort should launch: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "-c 'model_reasoning_effort=\"max\"'" "max effort was silently omitted"
+
+  id=profile-codex-failed-probe
+  rec=$(make_spawn_case profile-codex-failed-probe codex "$id")
+  read_case_record "$rec"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN_DIR/codex"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 1 "$status" "failed executable version probe must refuse"
+  assert_contains "$out" "failed to report --version" "probe refusal did not explain failure"
+  assert_absent "$HOME_DIR/state/$id.meta" "failed probe published task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "failed probe sent a launch command"
+  pass "Codex passes catalog-listed max and refuses a failed executable probe"
+}
+
+test_codex_refuses_invalid_max_effort() {
+  local rec id out status
   id=profile-codex-max-z4
   rec=$(make_spawn_case profile-codex-max codex "$id")
   read_case_record "$rec"
 
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5 --effort max)
   status=$?
-  expect_code 0 "$status" "codex spawn with unsupported max effort should omit the effort flag"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 max
-  launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' --dangerously-bypass-approvals-and-sandbox" \
-    "codex launch did not preserve the model flag when max effort was omitted"
-  assert_not_contains "$launch" "model_reasoning_effort" "codex launch must omit unsupported max reasoning effort"
-  pass "codex omits unsupported max effort instead of passing a bad config value"
+  expect_code 1 "$status" "codex spawn with unsupported max effort must refuse loudly, never silently omit"
+  assert_contains "$out" "codex effort 'max' is not supported for model 'gpt-5'" \
+    "refusal must name the model and the unsupported effort"
+  assert_absent "$HOME_DIR/state/$id.meta" "refused codex spawn must not write meta"
+  pass "codex refuses an unsupported max effort instead of silently omitting it"
 }
 
 test_grok_threads_model_and_reasoning_effort() {
@@ -715,14 +744,35 @@ test_batch_forwards_shared_profile_flags() {
   enable_dispatch_profile "$HOME_DIR"
 
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-    "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness codex --model gpt-5 --effort high)
+    "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness claude --model sonnet --effort high)
   status=$?
   expect_code 0 "$status" "batch spawn with shared profile flags should succeed"
-  assert_contains "$out" "spawned $id1 harness=codex" "first batch task did not use shared harness"
-  assert_contains "$out" "spawned $id2 harness=codex" "second batch task did not use shared harness"
-  assert_meta_profile "$HOME_DIR/state/$id1.meta" codex gpt-5 high
-  assert_meta_profile "$HOME_DIR/state/$id2.meta" codex gpt-5 high
+  assert_contains "$out" "spawned $id1 harness=claude" "first batch task did not use shared harness"
+  assert_contains "$out" "spawned $id2 harness=claude" "second batch task did not use shared harness"
+  assert_meta_profile "$HOME_DIR/state/$id1.meta" claude sonnet high
+  assert_meta_profile "$HOME_DIR/state/$id2.meta" claude sonnet high
   pass "batch dispatch forwards shared --harness, --model, and --effort to every pair"
+}
+
+test_batch_refuses_codex_before_launch() {
+  local rec id1 id2 out status
+  id1=profile-codex-batch-a
+  id2=profile-codex-batch-b
+  rec=$(make_spawn_case profile-codex-batch codex "$id1" "$id2")
+  read_case_record "$rec"
+  for harness in explicit inherited; do
+    local -a args=()
+    [ "$harness" != explicit ] || args=(--harness codex)
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" "${args[@]}")
+    status=$?
+    expect_code 1 "$status" "Codex batches must fail before launching any task"
+    assert_contains "$out" "Codex batch launching is forbidden" "missing batch refusal"
+    assert_absent "$HOME_DIR/state/$id1.meta" "batch published first task"
+    assert_absent "$HOME_DIR/state/$id2.meta" "batch published second task"
+    [ ! -s "$LAUNCH_LOG" ] || fail "refused batch sent a launch command"
+  done
+  pass "explicit and inherited Codex batches refuse before launching"
 }
 
 test_claude_forwards_firstmate_config_dir_when_set() {
@@ -805,7 +855,8 @@ test_active_dispatch_profile_allows_positional_harness
 test_active_dispatch_profile_allows_raw_launch_command
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
-test_codex_omits_invalid_max_effort
+test_codex_refuses_invalid_max_effort
+test_codex_accepts_catalog_max_and_refuses_failed_probe
 test_grok_threads_model_and_reasoning_effort
 test_grok_omits_invalid_max_reasoning_effort
 test_grok_omits_invalid_xhigh_reasoning_effort
@@ -819,6 +870,7 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
+test_batch_refuses_codex_before_launch
 test_claude_forwards_firstmate_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
