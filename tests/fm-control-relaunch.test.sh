@@ -24,6 +24,8 @@ set -u
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-control-lib.sh"
 # shellcheck source=/dev/null
+. "$ROOT/bin/fm-pr-lib.sh"
+# shellcheck source=/dev/null
 . "$ROOT/bin/fm-trace-context-lib.sh"
 
 CONTROL="$ROOT/bin/fm-control.sh"
@@ -1030,6 +1032,44 @@ test_prepublication_failure_keeps_concurrent_durable_metadata() {
   pass "fm-control relaunch: unpublished rollback keeps concurrent durable metadata"
 }
 
+# Regression: a task with an armed PR merge poll used to lose its merge watch
+# on every `fm-control.sh relaunch`. The relaunch rewrites the task record and
+# appended control_relaunch_tx= after the carried-forward pr=/pr_head= lines,
+# which breaks the record-identity invariant fm-pr-check.sh binds the poll to,
+# so the watcher rejected state/<id>.check.sh as unauthenticated and stopped
+# polling until bin/fm-pr-check.sh was re-run by hand. A relaunch must leave
+# the published poll artifacts authenticated.
+test_relaunch_keeps_the_pr_poll_authenticated() {
+  local dir state url out rc saved_umask
+  dir=$(new_case prpoll rl30)
+  add_ship_task "$dir" rl30 claude
+  state="$dir/home/state"
+  url="https://github.com/firstmate/maint/pull/42"
+  {
+    echo "pr=$url"
+    echo "pr_head=$(printf '0%.0s' {1..39})1"
+  } >> "$state/rl30.meta"
+
+  fm_pr_url_parse "$url" || fail "the fixture PR URL should parse"
+  saved_umask=$(umask)
+  fm_pr_poll_prepare "$state" rl30 "$FM_PR_PROVIDER" "$FM_PR_URL" "$FM_PR_HOST" \
+    "$FM_PR_PATH" "$FM_PR_NUMBER" "$ROOT/bin/fm-pr-poll.sh" \
+    || fail "could not prepare the PR poll fixture"
+  fm_pr_poll_publish_prepared || fail "could not publish the PR poll fixture"
+  umask "$saved_umask"
+  fm_pr_poll_artifacts_valid "$state" rl30 "$ROOT/bin/fm-pr-poll.sh" \
+    || fail "the seeded PR poll should authenticate before the relaunch"
+
+  out=$(run_control "$dir" rl30 relaunch --note "replace the agent, keep the merge watch"); rc=$?
+  expect_code 0 "$rc" "the relaunch should succeed"$'\n'"$out"
+  [ -n "$(meta_field "$dir" rl30 control_relaunch_tx)" ] \
+    || fail "the relaunched record should identify its relaunch transaction"
+  fm_pr_poll_artifacts_valid "$state" rl30 "$ROOT/bin/fm-pr-poll.sh" \
+    || fail "the relaunch invalidated the task's PR merge poll"
+
+  pass "fm-control relaunch: an armed PR merge poll still authenticates afterwards"
+}
+
 test_post_publication_launch_failure_keeps_the_new_record() {
   local dir out rc
   dir=$(new_case published rl24)
@@ -1529,6 +1569,7 @@ test_checkpoint_refuses_uninspectable_head_and_status
 test_launch_failure_keeps_the_prior_record_and_reports_it
 test_prepublication_failure_keeps_concurrent_durable_metadata
 test_post_publication_launch_failure_keeps_the_new_record
+test_relaunch_keeps_the_pr_poll_authenticated
 test_stop_transport_failure_reconciles_a_dead_agent
 test_complete_journal_failure_rolls_back_from_durable_phase
 test_prepublication_abort_retires_replacement_wiring_and_busy_state

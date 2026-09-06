@@ -851,25 +851,6 @@ do_relaunch() {
   }
   RELAUNCH_AGENT_CONFIRMED=1
 
-  # Re-arm the PR poll after a confirmed relaunch. Relaunching a task with an
-  # armed poll has been observed to leave its state/<id>.check.sh rejected by
-  # the watcher as unauthenticated, stalling the merge watch until someone
-  # re-ran bin/fm-pr-check.sh by hand. fm_pr_poll_rearm is a no-op unless the
-  # published artifacts actually fail authentication, in which case it
-  # republishes a registration bound to the current check.sh identity.
-  # Best-effort: a failed re-arm does not unwind the relaunch, but the poll
-  # may be left with no artifacts at all (fm_pr_poll_rearm can revoke a
-  # partially-republished poll on failure), so a failure is surfaced rather
-  # than silently swallowed; manual re-arm via bin/fm-pr-check.sh recovers it.
-  if [ -f "$STATE/$ID.pr-poll-registration" ]; then
-    local rearm_umask
-    rearm_umask=$(umask)
-    if ! fm_pr_poll_rearm "$STATE" "$ID" "$SCRIPT_DIR"; then
-      echo "warning: $ID's PR poll re-arm after relaunch failed; the poll registration may be gone - re-run bin/fm-pr-check.sh $ID <PR url> to restore it" >&2
-    fi
-    umask "$rearm_umask"
-  fi
-
   # LLM usage telemetry (docs/llm-usage-telemetry.md): the relaunch's own
   # required --note/--note-file text doubles as the delegation reason, since
   # it already exists to tell the replacement worker what happened. A

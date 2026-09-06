@@ -3114,11 +3114,15 @@ preserve_relaunch_meta() {
   # its task's existing purpose forward untouched via preserve_relaunch_meta
   # below rather than resetting it to "unspecified" (docs/llm-usage-telemetry.md).
   [ "$RELAUNCH" -eq 1 ] || echo "purpose=${PURPOSE:-unspecified}"
-  if [ "$RELAUNCH" -eq 1 ]; then
-    preserve_relaunch_meta
-  fi
+  # control_relaunch_tx= is emitted before the carried-forward lines because a
+  # task's pr=/pr_head= pair must stay last in the record: fm-pr-check.sh binds
+  # the PR poll to a record whose identity lines are terminal, and any other key
+  # written after pr= makes the watcher reject the poll as unauthenticated.
   if [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
+  fi
+  if [ "$RELAUNCH" -eq 1 ]; then
+    preserve_relaunch_meta
   fi
 } > "$SPAWN_META_PATH" || {
   echo "error: task record for $ID could not be prepared at $SPAWN_META_PATH" >&2
