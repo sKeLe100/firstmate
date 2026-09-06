@@ -334,11 +334,27 @@ test_raw_launch_with_unclassifiable_executable_is_refused() {
     "CODEX_HOME=\"$CASE_DIR/my codex\" codex --dangerously-bypass-approvals-and-sandbox")
   status=$?
   expect_code 1 "$status" "a raw launch whose executable word cannot be resolved must be refused: $out"
-  assert_contains "$out" "leaves a quote open before its executable word" "the refusal did not name the unparsable quoting: $out"
+  assert_contains "$out" "quotes its executable word or leaves a quote open before it" "the refusal did not name the unparsable quoting: $out"
   if [ -s "$CASE_DIR/fake/literal" ]; then
     fail "the refused raw launch must not be sent to the pane: $(cat "$CASE_DIR/fake/literal")"
   fi
   pass "a raw launch with a quoted env value that hides the executable word is refused"
+}
+
+test_raw_launch_with_quoted_executable_path_is_refused() {
+  local rec id out status
+  id=codex-raw-quoted-exe
+  rec=$(make_case rawquotedexe "$id")
+  read_case_record "$rec"
+
+  out=$(run_raw_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" \
+    "\"$CASE_DIR/my codex/codex\" --dangerously-bypass-approvals-and-sandbox")
+  status=$?
+  expect_code 1 "$status" "a raw launch whose executable path is quoted must be refused: $out"
+  if [ -s "$CASE_DIR/fake/literal" ]; then
+    fail "the refused raw launch must not be sent to the pane: $(cat "$CASE_DIR/fake/literal")"
+  fi
+  pass "a raw launch with a quoted executable path is refused"
 }
 
 test_raw_launch_with_balanced_quoted_env_value_is_allowed() {
@@ -404,5 +420,6 @@ test_codex_effort_max_is_reachable_without_an_explicit_model
 test_codex_effort_refused_when_default_model_lacks_it
 test_raw_launch_with_unclassifiable_executable_is_refused
 test_raw_launch_with_balanced_quoted_env_value_is_allowed
+test_raw_launch_with_quoted_executable_path_is_refused
 
 echo "# all fm-spawn-codex-guards tests passed"

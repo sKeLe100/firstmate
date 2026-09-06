@@ -1564,8 +1564,10 @@ case "$ARG3" in
     RAW_LAUNCH_SCANNED=$RAW_LAUNCH_PREFIX
     RAW_LAUNCH_DQ=$(printf '%s' "$RAW_LAUNCH_SCANNED" | tr -cd '"' | wc -c)
     RAW_LAUNCH_SQ=$(printf '%s' "$RAW_LAUNCH_SCANNED" | tr -cd "'" | wc -c)
-    if [ $(( RAW_LAUNCH_DQ % 2 )) -ne 0 ] || [ $(( RAW_LAUNCH_SQ % 2 )) -ne 0 ]; then
-      echo "error: raw launch command leaves a quote open before its executable word, so firstmate cannot identify the executable or apply that harness's launch guards; keep any leading environment assignment's quoting closed within its own word" >&2
+    RAW_LAUNCH_EXE_QUOTED=0
+    case "$RAW_LAUNCH_EXE" in *[\"\']*) RAW_LAUNCH_EXE_QUOTED=1 ;; esac
+    if [ $(( RAW_LAUNCH_DQ % 2 )) -ne 0 ] || [ $(( RAW_LAUNCH_SQ % 2 )) -ne 0 ] || [ "$RAW_LAUNCH_EXE_QUOTED" -eq 1 ]; then
+      echo "error: raw launch command quotes its executable word or leaves a quote open before it, so firstmate cannot identify the executable or apply that harness's launch guards; spell the executable unquoted and keep any leading environment assignment's quoting closed within its own word" >&2
       exit 1
     fi
     if [ -n "$RAW_LAUNCH_EXE" ] && [ "$HARNESS" != codex ]; then
@@ -1830,8 +1832,8 @@ codex_default_model() {  # <catalog>
 # an unsupported effort such as "max" vanish from the launch line without any
 # signal. With no explicit model the effort must be in the INTERSECTION of every
 # catalogued model's accepted efforts, or else in the accepted set of the model
-# codex itself would select by default (its configured model, or the catalog's
-# sole entry), so a level such as max stays reachable without ever emitting one
+# codex itself would select by default (the top-level model in its config.toml),
+# so a level such as max stays reachable without ever emitting one
 # the resolved model does not list.
 codex_effort_flag() {
   local effort=$1 model=$2 catalog="${FM_TEST_CODEX_MODELS_CACHE:-${HOME:-}/.codex/models_cache.json}" supported rc
