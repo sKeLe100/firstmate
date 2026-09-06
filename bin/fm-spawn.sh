@@ -1532,8 +1532,26 @@ case "$ARG3" in
     LAUNCH=$ARG3
     HARNESS=""
     RAW_LAUNCH_EXE=""
-    for word in $LAUNCH; do
-      case "$word" in [A-Za-z_]*=*) continue ;; *) RAW_LAUNCH_EXE=$word; HARNESS=$(basename "$word"); break ;; esac
+    # Tokenize by scanning, keeping the exact text on either side of the
+    # executable word: the codex guard below has to rewrite that one word in
+    # place, and any leading env assignment may itself contain the same text.
+    RAW_LAUNCH_PREFIX=""
+    RAW_LAUNCH_TAIL=""
+    RAW_LAUNCH_REST=$LAUNCH
+    while [[ $RAW_LAUNCH_REST =~ ^([[:space:]]*)([^[:space:]]+)(.*)$ ]]; do
+      case "${BASH_REMATCH[2]}" in
+        [A-Za-z_]*=*)
+          RAW_LAUNCH_PREFIX="$RAW_LAUNCH_PREFIX${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+          RAW_LAUNCH_REST=${BASH_REMATCH[3]}
+          ;;
+        *)
+          RAW_LAUNCH_PREFIX="$RAW_LAUNCH_PREFIX${BASH_REMATCH[1]}"
+          RAW_LAUNCH_EXE=${BASH_REMATCH[2]}
+          RAW_LAUNCH_TAIL=${BASH_REMATCH[3]}
+          HARNESS=$(basename "$RAW_LAUNCH_EXE")
+          break
+          ;;
+      esac
     done
     # The codex guards below govern the BINARY, not the name it is spelled with:
     # a `cdx` symlink or any other alias that resolves to this machine's codex is
@@ -1638,9 +1656,7 @@ case "$HARNESS" in
       # The pane re-resolves whatever word it is sent against ITS own PATH at
       # execution time, so sending a bare name would launch a binary this probe
       # never verified. Pin the launch to the exact executable just probed.
-      RAW_CODEX_PREFIX=${LAUNCH%%"$RAW_LAUNCH_EXE"*}
-      RAW_CODEX_SUFFIX=${LAUNCH#*"$RAW_LAUNCH_EXE"}
-      LAUNCH="$RAW_CODEX_PREFIX$(shell_quote "$CODEX_BIN")$RAW_CODEX_SUFFIX"
+      LAUNCH="$RAW_LAUNCH_PREFIX$(shell_quote "$CODEX_BIN")$RAW_LAUNCH_TAIL"
     fi
     ;;
   pi|pi-signed)
@@ -1811,12 +1827,7 @@ codex_effort_flag() {
     fi
     supported=$(jq -r --arg m "$model" '.models[] | select(.slug == $m) | .supported_reasoning_levels[].effort' "$catalog") || rc=$?
   else
-    supported=$(jq -r '
-      reduce .models[] as $m (null;
-        ($m.supported_reasoning_levels | map(.effort)) as $le
-        | if . == null then $le else (. as $acc | $le | map(select(. as $x | $acc | index($x)))) end
-      ) | .[]
-    ' "$catalog") || rc=$?
+    supported=$(jq -r '[.models[].supported_reasoning_levels[].effort] | unique | .[]' "$catalog") || rc=$?
   fi
   if [ "${rc:-0}" -ne 0 ] || [ -z "$supported" ]; then
     echo "error: could not read supported codex effort levels from '$catalog' for model '${model:-<default>}'" >&2

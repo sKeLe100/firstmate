@@ -253,6 +253,47 @@ test_raw_codex_alias_takes_the_codex_lane() {
   pass "a raw launch aliasing the codex binary is classified as codex and takes the lane"
 }
 
+test_raw_codex_launch_with_env_prefix_pins_the_exe() {
+  local rec id out status resolved sent
+  id=codex-raw-envprefix
+  rec=$(make_case rawenv "$id")
+  read_case_record "$rec"
+  resolved=$(readlink -f -- "$FAKEBIN_DIR/codex")
+
+  out=$(run_raw_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" \
+    "CODEX_HOME=$CASE_DIR/.codex codex --dangerously-bypass-approvals-and-sandbox")
+  status=$?
+  expect_code 0 "$status" "a raw codex launch with an env-assignment prefix must be allowed: $out"
+  sent=$(cat "$CASE_DIR/fake/literal")
+  assert_contains "$sent" "CODEX_HOME=$CASE_DIR/.codex" "the env assignment preceding the executable must be sent verbatim: $sent"
+  assert_contains "$sent" "$resolved" "the executable word must be pinned to the probed codex path: $sent"
+  if printf '%s' "$sent" | grep -qE "(^|[[:space:]])codex([[:space:]]|$)"; then
+    fail "the launch line must not still invoke codex by bare name: $sent"
+  fi
+  pass "a raw codex launch with env-assignment prefixes pins only the executable word"
+}
+
+test_codex_effort_max_is_reachable_without_an_explicit_model() {
+  local rec id out status catalog
+  id=codex-effort-max
+  rec=$(make_case effortmax "$id")
+  read_case_record "$rec"
+  catalog="$CASE_DIR/codex-models-cache.json"
+  cat > "$catalog" <<'JSON'
+{"models":[
+  {"slug":"gpt-5.6-luna","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"}]},
+  {"slug":"gpt-5.5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]}
+]}
+JSON
+
+  out=$(FM_TEST_CODEX_MODELS_CACHE="$catalog" FM_FAKE_WINDOWS='' \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --effort max)
+  status=$?
+  expect_code 0 "$status" "effort max must stay reachable when the catalog lists it for at least one model: $out"
+  assert_contains "$(cat "$CASE_DIR/fake/literal")" 'model_reasoning_effort="max"' "the launch line must carry the max reasoning effort"
+  pass "codex effort max is reachable without naming a model"
+}
+
 test_raw_codex_launch_refuses_foreign_executable() {
   local rec id out status other
   id=codex-raw-foreign
@@ -297,5 +338,7 @@ test_composed_codex_launch_line_never_contains_fast
 test_raw_launch_with_fast_modifier_is_refused
 test_raw_codex_bare_name_is_pinned_to_the_resolved_exe
 test_raw_codex_alias_takes_the_codex_lane
+test_raw_codex_launch_with_env_prefix_pins_the_exe
+test_codex_effort_max_is_reachable_without_an_explicit_model
 
 echo "# all fm-spawn-codex-guards tests passed"
