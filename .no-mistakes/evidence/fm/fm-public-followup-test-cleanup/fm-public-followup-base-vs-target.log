@@ -1,0 +1,52 @@
+== base-af64bf8: 5fbcc58 ==
+ok - retire accepts link absence in non-writable remote state
+ok - the guarded remote clear refuses a lock it cannot acquire instead of hanging
+ok - an unconfirmed remote clear is unknown completion, never a silent close
+ok - a typed terminal result emitted in a remote work home reaches the owning home
+ok - an unreachable remote work home fails loudly instead of reporting an empty inbox
+ok - an unreadable remote outbox fails collection without losing its result
+ok - invalid registration fails collection without dropping the staged result
+ok - unsafe registration entries fail collection without dropping staged results
+ok - route loss fails brief and consume without dropping the staged result
+ok - empty reachable remote collection remains a healthy no-op
+ok - remote brief rejects traversal and empty route path components
+ok - a local work home's emit path is unchanged
+ok - a duplicate report from a remote work home stays a no-op
+ok - staging requires the matching secondmate firstmate home
+rm: cannot remove '/tmp/fm-public-followup.NbImXQ': Directory not empty
+exit=1
+-- leftover /tmp dirs --
+/tmp/fm-public-followup.NbImXQ
+-- leaked worker processes --
+841137 /bin/bash /tmp/fm-test-run.VgIpSr/w62/tmp/fm-remote-secondmate-e2e.L7RaNG/remote-root/bin/fm-remote-job-worker.sh
+841269 /bin/bash /tmp/fm-test-run.VgIpSr/w62/tmp/fm-remote-secondmate-e2e.L7RaNG/remote-root/bin/fm-remote-job-worker.sh --serve
+1229913 /bin/bash /tmp/fm-test-run.VgIpSr/w71/tmp/fm-remote-handoff.Xlpzvh/remote-root/bin/fm-remote-job-worker.sh
+1230083 /bin/bash /tmp/fm-test-run.VgIpSr/w71/tmp/fm-remote-handoff.Xlpzvh/remote-root/bin/fm-remote-job-worker.sh --serve
+3194845 /bin/bash /tmp/fm-public-followup.NbImXQ/remote-root/bin/fm-remote-job-worker.sh
+3194955 /bin/bash /tmp/fm-public-followup.NbImXQ/remote-root/bin/fm-remote-job-worker.sh --serve
+== target-5fbcc58: 5fbcc58 ==
+ok - retire fails closed when remote state is non-writable
+ok - retire accepts link absence in non-writable remote state
+ok - the guarded remote clear refuses a lock it cannot acquire instead of hanging
+ok - an unconfirmed remote clear is unknown completion, never a silent close
+ok - a typed terminal result emitted in a remote work home reaches the owning home
+ok - an unreachable remote work home fails loudly instead of reporting an empty inbox
+ok - an unreadable remote outbox fails collection without losing its result
+ok - invalid registration fails collection without dropping the staged result
+ok - unsafe registration entries fail collection without dropping staged results
+ok - route loss fails brief and consume without dropping the staged result
+ok - empty reachable remote collection remains a healthy no-op
+ok - remote brief rejects traversal and empty route path components
+ok - a local work home's emit path is unchanged
+ok - a duplicate report from a remote work home stays a no-op
+ok - staging requires the matching secondmate firstmate home
+exit=0
+-- leftover /tmp dirs --
+/tmp/fm-public-followup.NbImXQ
+-- leaked worker processes --
+841137 /bin/bash /tmp/fm-test-run.VgIpSr/w62/tmp/fm-remote-secondmate-e2e.L7RaNG/remote-root/bin/fm-remote-job-worker.sh
+841269 /bin/bash /tmp/fm-test-run.VgIpSr/w62/tmp/fm-remote-secondmate-e2e.L7RaNG/remote-root/bin/fm-remote-job-worker.sh --serve
+1229913 /bin/bash /tmp/fm-test-run.VgIpSr/w71/tmp/fm-remote-handoff.Xlpzvh/remote-root/bin/fm-remote-job-worker.sh
+1230083 /bin/bash /tmp/fm-test-run.VgIpSr/w71/tmp/fm-remote-handoff.Xlpzvh/remote-root/bin/fm-remote-job-worker.sh --serve
+
+[exited with code 0]
