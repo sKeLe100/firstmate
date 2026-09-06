@@ -62,6 +62,13 @@ test_opencode_guard_blocks_writes_outside_worktree() {
       } catch (e) {
         blockedEdit = 'threw: ' + e.message;
       }
+      let allowedReport = 'threw';
+      try {
+        await before({ tool: 'write' }, { args: { filePath: '$home/data/$id/report.md' } });
+        allowedReport = 'no-throw';
+      } catch (e) {
+        allowedReport = 'threw: ' + e.message;
+      }
       let allowedBash = 'threw';
       try {
         await before({ tool: 'bash' }, { args: { command: 'ls $primary_dir' } });
@@ -72,6 +79,7 @@ test_opencode_guard_blocks_writes_outside_worktree() {
       console.log('BLOCKED_WRITE=' + blockedWrite);
       console.log('ALLOWED_WRITE=' + allowedWrite);
       console.log('BLOCKED_EDIT=' + blockedEdit);
+      console.log('ALLOWED_REPORT=' + allowedReport);
       console.log('ALLOWED_BASH=' + allowedBash);
     }).catch((e) => { console.error(e); process.exit(1); });
   " >"$case_dir/node.out" 2>"$case_dir/node.err"
@@ -81,6 +89,7 @@ test_opencode_guard_blocks_writes_outside_worktree() {
   assert_contains "$out" "BLOCKED_WRITE=threw:" "guard must refuse a write resolving outside the worktree"
   assert_contains "$out" "ALLOWED_WRITE=no-throw" "guard must allow a write that stays inside the worktree"
   assert_contains "$out" "BLOCKED_EDIT=threw:" "guard must refuse an edit resolving outside the worktree"
+  assert_contains "$out" "ALLOWED_REPORT=no-throw" "guard must allow the brief-mandated report write under the task data dir"
   assert_contains "$out" "ALLOWED_BASH=no-throw" "guard must not block read-only bash commands"
   pass "opencode worktree-guard plugin blocks write/edit calls escaping the assigned worktree"
 }

@@ -2839,7 +2839,8 @@ EOF
       exclude_path '.opencode/plugins/fm-busy-state.js'
       cat > "$WT/.opencode/plugins/fm-worktree-guard.js" <<EOF
 // Write-guard for PC02/opencode crewmate sessions: refuses any edit or write
-// tool call that would escape this task's assigned worktree. Reproduced twice
+// tool call that would escape this task's assigned worktree or its own
+// report directory. Reproduced twice
 // in production (2026-09-03
 // token-burn-item10-no-self-resume, 2026-09-06 fm-relaunch-rebinds-pr-poll)
 // when a tool call resolved a path against the primary checkout instead of
@@ -2850,22 +2851,27 @@ EOF
 import { realpathSync } from "node:fs";
 import { resolve, dirname, basename } from "node:path";
 
-const WORKTREE_ROOT = (() => {
+const realRoot = (p) => {
   try {
-    return realpathSync("$WT");
+    return realpathSync(p);
   } catch {
-    return resolve("$WT");
+    return resolve(p);
   }
-})();
+};
+const WORKTREE_ROOT = realRoot("$WT");
+// The crewmate brief mandates exactly one write outside the worktree: the
+// task's own report under \$DATA/\$ID (bin/fm-brief.sh Definition of done).
+const TASK_DATA_ROOT = realRoot("$DATA/$ID");
+const ALLOWED_ROOTS = [WORKTREE_ROOT, TASK_DATA_ROOT];
 
-function insideWorktree(target) {
+function allowedTarget(target) {
   let real;
   try {
     real = resolve(realpathSync(dirname(resolve(target))), basename(target));
   } catch {
     real = resolve(target);
   }
-  return real === WORKTREE_ROOT || real.startsWith(WORKTREE_ROOT + "/");
+  return ALLOWED_ROOTS.some((root) => real === root || real.startsWith(root + "/"));
 }
 
 export const FmWorktreeGuard = async () => {
@@ -2875,7 +2881,7 @@ export const FmWorktreeGuard = async () => {
       const args = output?.args || {};
       if (tool === "write" || tool === "edit") {
         const target = args.filePath;
-        if (typeof target === "string" && target && !insideWorktree(target)) {
+        if (typeof target === "string" && target && !allowedTarget(target)) {
           throw new Error(
             "fm-worktree-guard: refused " + tool + " outside the assigned worktree (" +
               WORKTREE_ROOT + "): " + target
