@@ -53,7 +53,12 @@ pf_test_cleanup() {
   fi
   if [ -f "$pid_file" ]; then
     pid=$(cat "$pid_file" 2>/dev/null) || pid=
-    [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+    if [ -n "$pid" ]; then
+      # shellcheck source=bin/fm-remote-job-lib.sh
+      . "$ROOT/bin/fm-remote-job-lib.sh"
+      FM_REMOTE_JOB_STATE="${pid_file%/worker.pid}"
+      fm_remote_job_stop_worker_tree "$pid" 2>/dev/null || true
+    fi
   fi
   fm_test_cleanup
 }
