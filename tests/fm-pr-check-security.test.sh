@@ -1273,11 +1273,13 @@ SH
   pass "teardown removes safe poll artifacts and refuses directory-shaped check files without traversal"
 }
 
-# Regression: relaunch rewrites state/<id>.check.sh with a new inode, which
-# invalidates the dev:inode binding in the existing .pr-poll-registration.
-# The watcher then rejects the check script as unauthenticated. This test
-# verifies that fm_pr_poll_rearm restores a valid registration after the
-# check.sh file is replaced.
+# Regression: relaunching a task with an armed poll was observed to leave its
+# state/<id>.check.sh rejected by the watcher as unauthenticated, because the
+# published check.sh no longer matches the dev:inode binding recorded in
+# .pr-poll-registration. This test verifies that fm_pr_poll_rearm restores a
+# valid registration once the check.sh file identity has diverged, that it
+# leaves a healthy poll untouched, and that it refuses to resurrect a poll
+# that has already been retired.
 test_relaunch_rebinds_pr_poll() {
   local dir state url rc
   dir=$(make_case relaunch-rebinds-poll)
@@ -1291,14 +1293,20 @@ test_relaunch_rebinds_pr_poll() {
     || fail "seeded poll was not initially valid"
 
   # Capture the original registration's check_identity (last line, device:inode).
-  local orig_check_identity
+  local orig_check_identity orig_data_url
   orig_check_identity=$(tail -1 "$state/task-a.pr-poll-registration")
   [ -n "$orig_check_identity" ] || fail "registration has no check_identity"
+  fm_pr_poll_data_parse "$state/task-a.pr-poll" || fail "seeded poll data is unparseable"
+  orig_data_url=$FM_PR_DATA_URL
 
-  # Simulate relaunch: overwrite state/<id>.check.sh with different content.
-  # This is what fm-spawn.sh does for opencode (writes fm-busy-state.js plugin
-  # and associated state wiring; the observable effect is a new inode for
-  # state/<id>.check.sh when the poll copies the template over the existing file).
+  # A healthy poll is left exactly as-is: re-arm is a no-op, not a republish.
+  fm_pr_poll_rearm "$state" task-a "$ROOT/bin" \
+    || fail "fm_pr_poll_rearm failed on a healthy poll"
+  [ "$(tail -1 "$state/task-a.pr-poll-registration")" = "$orig_check_identity" ] \
+    || fail "re-arm republished a healthy poll"
+
+  # Reproduce the observed failure: state/<id>.check.sh no longer has the
+  # identity the registration binds, so the watcher rejects it.
   local old_inode new_inode
   old_inode=$(fm_pr_file_inode "$state/task-a.check.sh")
   printf '#!/usr/bin/env bash\n# replaced by relaunch simulation\nexit 0\n' > "$state/task-a.check.sh.tmp"
@@ -1326,12 +1334,12 @@ test_relaunch_rebinds_pr_poll() {
   [ "$new_reg_check_identity" != "$orig_check_identity" ] \
     || fail "re-arm did not update check_identity"
 
-  # The PR data identity is preserved across re-arm.
-  local orig_data_identity new_data_identity
-  orig_data_identity=$(fm_pr_poll_data_parse "$state/task-a.pr-poll" && printf '%s' "$FM_PR_DATA_URL" || true)
-  new_data_identity=$(fm_pr_poll_data_parse "$state/task-a.pr-poll" && printf '%s' "$FM_PR_DATA_URL" || true)
-  [ "$orig_data_identity" = "$new_data_identity" ] \
-    || fail "re-arm changed PR data identity"
+  # The PR the poll watches is preserved across re-arm.
+  local new_data_url
+  fm_pr_poll_data_parse "$state/task-a.pr-poll" || fail "re-armed poll data is unparseable"
+  new_data_url=$FM_PR_DATA_URL
+  [ "$new_data_url" = "$orig_data_url" ] \
+    || fail "re-arm changed the PR the poll watches"
 
   # Verify the watcher would accept the re-armed check script.
   # fm_pr_poll_snapshot_capture validates the same path the watcher follows.
@@ -1340,7 +1348,23 @@ test_relaunch_rebinds_pr_poll() {
   [ "$FM_PR_POLL_SNAPSHOT_ID" = "task-a" ] \
     || fail "watcher snapshot has wrong task ID"
 
-  pass "re-arm restores a valid poll registration after check.sh inode change"
+  # A retired poll is never resurrected: with a retirement receipt present,
+  # re-arm reports success without republishing, even though the artifacts no
+  # longer authenticate.
+  printf 'x\n' > "$state/task-a.check.sh"
+  ! fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "poll was still valid after check.sh was clobbered"
+  : > "$state/task-a.pr-poll-retirement"
+  local retired_check_identity
+  retired_check_identity=$(tail -1 "$state/task-a.pr-poll-registration")
+  fm_pr_poll_rearm "$state" task-a "$ROOT/bin" \
+    || fail "fm_pr_poll_rearm did not succeed on a retired poll"
+  [ "$(tail -1 "$state/task-a.pr-poll-registration")" = "$retired_check_identity" ] \
+    || fail "re-arm republished a retired poll"
+  ! fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "re-arm resurrected a retired poll"
+
+  pass "re-arm restores an unauthenticated poll and leaves healthy and retired polls alone"
 }
 
 # The GitLab watch must follow a merge request exactly as the GitHub watch

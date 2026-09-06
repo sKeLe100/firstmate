@@ -1015,31 +1015,39 @@ fm_pr_poll_merge_notified_remove() {  # <state> <id>
   rm -f -- "$marker"
 }
 
-# Resolve the poll template path for a given script directory.
-# Consumers that need the template (e.g. re-arm after relaunch) use this
-# instead of hard-coding the relative path, keeping the contract on one owner.
-fm_pr_poll_template_path() {  # <script-dir>
-  local script_dir=${1-}
-  [ -n "$script_dir" ] || return 1
-  printf '%s/fm-pr-poll.sh' "$script_dir"
-}
-
-# Re-arm a task's PR poll when the check.sh file identity has changed (e.g.
-# after a relaunch that rewrites state/<id>.check.sh with a new inode).
-# Reads pr=<url> from the task's metadata, resolves the poll template, then
-# prepares and publishes fresh poll artifacts whose registration binds the new
-# check.sh identity. This is equivalent to re-running bin/fm-pr-check.sh
-# without re-writing the metadata or posting the parent-channel ready line.
+# Re-arm a task's PR poll when its published artifacts no longer authenticate,
+# which is what a relaunch of a task with an armed poll was observed to leave
+# behind: the watcher rejected state/<id>.check.sh as unauthenticated and
+# stopped polling for the merge until bin/fm-pr-check.sh was re-run by hand.
+# Reads pr=<url> from the task's metadata, then prepares and publishes fresh
+# poll artifacts whose registration binds the current check.sh identity. This
+# is equivalent to re-running bin/fm-pr-check.sh without re-writing the
+# metadata or posting the parent-channel ready line.
 #
-# Returns 0 on success (poll is armed with fresh registration), 1 if the task
-# has no pr= metadata (no poll to re-arm) or any preparation/publish step
-# fails. Callers should not retry: a failure means the poll could not be
-# restored and the task needs manual intervention via bin/fm-pr-check.sh.
+# Returns 0 when the poll needs no re-arm (already valid, or a retirement
+# receipt marks it as deliberately retired) and when a re-arm succeeds.
+# Returns 1 if the task has no pr= metadata (no poll to re-arm) or any
+# preparation/publish step fails. Callers should not retry: a failure means
+# the poll could not be restored and the task needs manual intervention via
+# bin/fm-pr-check.sh.
 fm_pr_poll_rearm() {  # <state-dir> <id> <script-dir>
   local state=$1 id=$2 script_dir=$3
   fm_pr_task_id_valid "$id" || return 1
   [ -d "$state" ] && [ ! -L "$state" ] || return 1
   [ -f "$state/$id.meta" ] && [ ! -L "$state/$id.meta" ] || return 1
+  [ -n "$script_dir" ] || return 1
+
+  local template="$script_dir/fm-pr-poll.sh"
+  [ -f "$template" ] || return 1
+
+  # A retirement receipt means the poll was deliberately retired (e.g. the PR
+  # merged). Re-arming would resurrect polling of an already-merged PR.
+  [ ! -e "$state/$id.pr-poll-retirement" ] || return 0
+
+  # Only re-arm a poll that no longer authenticates. Republishing tears down
+  # and rebuilds all three artifacts, and a failed publish revokes them, so a
+  # healthy poll must never be put through that.
+  ! fm_pr_poll_artifacts_valid "$state" "$id" "$template" || return 0
 
   # Read the current pr= URL from the task metadata.
   local pr_url
@@ -1049,15 +1057,6 @@ fm_pr_poll_rearm() {  # <state-dir> <id> <script-dir>
   # Parse and validate the PR URL to extract provider-tagged identity.
   fm_pr_url_parse "$pr_url" || return 1
   local provider=$FM_PR_PROVIDER url=$FM_PR_URL host=$FM_PR_HOST path=$FM_PR_PATH number=$FM_PR_NUMBER
-
-  # Resolve the poll template path.
-  local template
-  template=$(fm_pr_poll_template_path "$script_dir")
-  [ -f "$template" ] || return 1
-
-  # Recover any pending retirement for the old registration before preparing.
-  # This discards stale receipts whose identities no longer match current artifacts.
-  fm_pr_poll_retirement_recover_one "$state" "$id" "$template" || return 1
 
   # Prepare fresh poll artifacts. This creates temp files with new dev:inode
   # identities for both the check script and data sidecar, and computes a
