@@ -105,6 +105,7 @@ esac
 exit 0
 SH
   chmod +x "$fb/tmux"
+  fm_fake_codex_probe "$fb"
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}" in

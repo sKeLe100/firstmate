@@ -87,6 +87,7 @@ esac
 exit 0
 SH
   chmod +x "$fb/tmux"
+  fm_fake_codex_probe "$fb"
   cat > "$fb/treehouse" <<'SH'
 #!/usr/bin/env bash
 exit 0

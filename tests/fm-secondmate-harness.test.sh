@@ -69,16 +69,6 @@ cat > "$FM_TEST_CODEX_MODELS_CACHE" <<'JSON'
 {"models":[{"slug":"gpt-5.5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]}]}
 JSON
 
-make_codex_probe() {
-  cat > "$1/codex" <<'SH'
-#!/usr/bin/env bash
-if [ "${1:-}" = --version ]; then
-  printf 'codex-cli 0.153.4\n'
-fi
-SH
-  chmod +x "$1/codex"
-}
-
 # ===========================================================================
 # A) fm-harness.sh secondmate resolution + fallback (deterministic detect_own)
 # ===========================================================================
@@ -441,7 +431,7 @@ make_noop_tmux() {
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  make_codex_probe "$fakebin"
+  fm_fake_codex_probe "$fakebin"
   printf '%s\n' "$fakebin"
 }
 
@@ -676,7 +666,7 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  make_codex_probe "$fakebin"
+  fm_fake_codex_probe "$fakebin"
   fm_fake_exit0 "$fakebin" pi
   printf '%s\n' "$fakebin"
 }
@@ -1098,7 +1088,7 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  make_codex_probe "$fakebin"
+  fm_fake_codex_probe "$fakebin"
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -2160,7 +2150,7 @@ esac
 exec "$fakebin/tmux.real" "\$@"
 SH
   chmod +x "$fakebin/tmux"
-  make_codex_probe "$fakebin"
+  fm_fake_codex_probe "$fakebin"
 
   first_out="$w/first-push.out"
   (
@@ -2309,7 +2299,7 @@ esac
 exec "$fakebin/tmux.real" "\$@"
 SH
   chmod +x "$fakebin/tmux"
-  make_codex_probe "$fakebin"
+  fm_fake_codex_probe "$fakebin"
   report="$w/empty-reread.report"
   : > "$report"
   log="$w/config-reread-order.tmux.log"
@@ -2490,7 +2480,7 @@ case "\$*" in
 esac
 SH
   chmod +x "$fakebin/tmux"
-  make_codex_probe "$fakebin"
+  fm_fake_codex_probe "$fakebin"
   PATH="$fakebin:$BASE_PATH" FM_HOME="$w/home" FM_ROOT_OVERRIDE="$w/main" \
     FM_SEND_SETTLE=0 FM_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/fm-bootstrap.sh" >/dev/null 2>&1
