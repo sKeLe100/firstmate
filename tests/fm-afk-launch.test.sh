@@ -483,6 +483,44 @@ unit_tmux_absence_distinguishes_probe_failure() {
   rm -rf "$st"
 }
 
+unit_native_refuses_nonexistent_target() {
+  local st out rc
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native-noexist.XXXXXX")
+  mkdir -p "$st/state"
+  set +e
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="%no-such-pane" \
+    FM_SUPERVISOR_BACKEND=tmux bash -c '
+      . "$1"
+      tmux() { return 1; }
+      fm_afk_launch_start_native
+    ' _ "$LAUNCH" 2>&1)
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ] && [ ! -e "$st/state/.afk" ] && printf '%s' "$out" | grep -q "does not resolve to a tmux pane"; then
+    pass "native entry: refuses to arm when the recorded target pane does not exist"
+  else
+    fail "native entry: armed away mode for a nonexistent target pane"
+  fi
+  rm -rf "$st"
+}
+
+unit_native_refuses_unsupported_backend() {
+  local st out rc
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native-badbackend.XXXXXX")
+  mkdir -p "$st/state"
+  set +e
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="whatever" \
+    FM_SUPERVISOR_BACKEND=zellij "$LAUNCH" start-native 2>&1)
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ] && [ ! -e "$st/state/.afk" ] && printf '%s' "$out" | grep -q "not one this daemon supports"; then
+    pass "native entry: refuses to arm for an unsupported supervisor backend"
+  else
+    fail "native entry: armed away mode for an unsupported supervisor backend"
+  fi
+  rm -rf "$st"
+}
+
 unit_native_refuses_unhosted_primary() {
   local st out rc
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native-unhosted.XXXXXX")
@@ -502,11 +540,15 @@ unit_native_refuses_unhosted_primary() {
 }
 
 unit_native_lifecycle() {
-  local st
+  local st cap_session cap_pane
+  command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (native lifecycle)"; return 0; }
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native.XXXXXX")
   mkdir -p "$st/state"
   : > "$st/state/.subsuper-escalations"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET=%0 "$LAUNCH" start-native >/dev/null 2>&1 \
+  cap_session="fm-test-native-lifecycle-$$"
+  tmux new-session -d -s "$cap_session" 2>/dev/null || { fail "native lifecycle: could not create captain session"; rm -rf "$st"; return 0; }
+  cap_pane=$(tmux display-message -p -t "$cap_session" '#{pane_id}')
+  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ "$(cut -f1 "$st/state/.afk-daemon-terminal")" = none ] \
     && [ -e "$st/state/.afk" ] \
     && [ ! -e "$st/state/.subsuper-escalations" ]; then
@@ -520,6 +562,7 @@ unit_native_lifecycle() {
   else
     fail "native lifecycle: uniform stop retained state"
   fi
+  tmux kill-session -t "$cap_session" 2>/dev/null || true
   rm -rf "$st"
 }
 
@@ -958,6 +1001,8 @@ unit_readiness_failure_rolls_back_terminal
 unit_readiness_failure_preserves_unconfirmed_record
 unit_tmux_absence_distinguishes_probe_failure
 unit_native_lifecycle
+unit_native_refuses_nonexistent_target
+unit_native_refuses_unsupported_backend
 unit_native_refuses_unhosted_primary
 unit_native_entry_preserves_prepared_state
 unit_close_failure_preserves_record
