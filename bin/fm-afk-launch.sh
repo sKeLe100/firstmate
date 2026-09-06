@@ -482,8 +482,6 @@ fm_afk_launch_start() {
         fm_afk_launch_log "supervisor backend '$captain_backend' is not one this daemon supports yet (set FM_SUPERVISOR_BACKEND=tmux|herdr) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward" ;;
       target-not-found)
         fm_afk_launch_log "supervisor target '$captain_target' does not resolve to a $captain_backend pane (set FM_SUPERVISOR_TARGET) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward" ;;
-      *)
-        fm_afk_launch_log "supervisor target '$captain_target' failed validation for backend '$captain_backend'" ;;
     esac
     return 1; }
 
@@ -571,8 +569,6 @@ fm_afk_launch_start_native() {
         fm_afk_launch_log "supervisor backend '$native_backend' is not one this daemon supports yet (set FM_SUPERVISOR_BACKEND=tmux|herdr) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward" ;;
       target-not-found)
         fm_afk_launch_log "supervisor target '$native_target' does not resolve to a $native_backend pane (set FM_SUPERVISOR_TARGET) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward" ;;
-      *)
-        fm_afk_launch_log "supervisor target '$native_target' failed validation for backend '$native_backend'" ;;
     esac
     return 1; }
   if daemon_lock_held_by_live_daemon; then
