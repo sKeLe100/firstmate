@@ -227,6 +227,9 @@ Only a named non-default branch checked out in `FM_ROOT` is a worktree tangle.
 `fm-guard.sh` prints the repair command on the next mutable fleet action, while `bin/fm-session-start.sh` reports the same condition through bootstrap as a `TANGLE:` line at session start.
 If another live session holds the fleet lock, both surfaces keep the alarm but switch to read-only wording with no repair command.
 Ship briefs also tell the crewmate to verify `pwd -P` and `git rev-parse --show-toplevel` before creating `fm/<id>`, then stop with a blocked status if it landed in the primary checkout.
+That brief rule is advisory, so opencode crewmates also get a mechanical backstop: `fm-spawn.sh` writes `.opencode/plugins/fm-worktree-guard.js` into the task worktree, and its `tool.execute.before` hook throws on any `write` or `edit` whose `filePath` resolves outside the task worktree or the task's own report directory under `data/<id>/`.
+It exists because a PC02/opencode worker twice wrote its edits into the primary firstmate checkout as well as its own worktree, caught only by accident through `git status`.
+The guard is best-effort containment layered under the brief rules, not a complete boundary: it covers only those two tools' path argument, so shell writes and in-worktree symlinks that point outward still pass, and `tests/fm-worktree-guard.test.sh` owns its regression coverage.
 
 ## No-mistakes gate authority boundary
 
