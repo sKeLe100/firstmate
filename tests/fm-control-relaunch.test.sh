@@ -1044,6 +1044,10 @@ test_relaunch_keeps_the_pr_poll_authenticated() {
   dir=$(new_case prpoll rl30)
   add_ship_task "$dir" rl30 claude
   state="$dir/home/state"
+  # Trace context on, so the relaunch also exercises the traceparent= writer,
+  # the second meta writer on this path.
+  printf '%s\n' "$$" > "$state/.lock"
+  printf '%s on\n' "$$" > "$state/.trace-context-effective"
   url="https://github.com/firstmate/maint/pull/42"
   {
     echo "pr=$url"
@@ -1064,6 +1068,8 @@ test_relaunch_keeps_the_pr_poll_authenticated() {
   expect_code 0 "$rc" "the relaunch should succeed"$'\n'"$out"
   [ -n "$(meta_field "$dir" rl30 control_relaunch_tx)" ] \
     || fail "the relaunched record should identify its relaunch transaction"
+  fm_trace_context_valid "$(meta_field "$dir" rl30 traceparent)" \
+    || fail "the relaunched record should carry a trace carrier"
   fm_pr_poll_artifacts_valid "$state" rl30 "$ROOT/bin/fm-pr-poll.sh" \
     || fail "the relaunch invalidated the task's PR merge poll"
 

@@ -3267,8 +3267,15 @@ spawn_record_traceparent() {
   fi
   SPAWN_META_TMP="$STATE/.$ID.meta.trace.${BASHPID:-$$}"
   if [ ! -f "$meta" ] || [ ! -w "$meta" ] \
-     || ! awk -F= '$1 != "traceparent"' "$meta" > "$SPAWN_META_TMP" \
-     || ! printf 'traceparent=%s\n' "$SPAWN_TRACEPARENT" >> "$SPAWN_META_TMP" \
+     || ! awk -F= -v tp="$SPAWN_TRACEPARENT" '
+            $1 == "traceparent" { next }
+            $1 == "pr" || $1 == "pr_head" { identity[n++] = $0; next }
+            { print }
+            END {
+              printf "traceparent=%s\n", tp
+              for (i = 0; i < n; i++) print identity[i]
+            }
+          ' "$meta" > "$SPAWN_META_TMP" \
      || ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$meta" "task record" "$STATE"; then
     status=1
     rm -f "$SPAWN_META_TMP" 2>/dev/null || true
