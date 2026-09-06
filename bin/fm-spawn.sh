@@ -3181,11 +3181,15 @@ preserve_relaunch_meta() {
   # its task's existing purpose forward untouched via preserve_relaunch_meta
   # below rather than resetting it to "unspecified" (docs/llm-usage-telemetry.md).
   [ "$RELAUNCH" -eq 1 ] || echo "purpose=${PURPOSE:-unspecified}"
-  if [ "$RELAUNCH" -eq 1 ]; then
-    preserve_relaunch_meta
-  fi
+  # control_relaunch_tx= is emitted before the carried-forward lines because a
+  # task's pr=/pr_head= pair must stay last in the record: fm-pr-check.sh binds
+  # the PR poll to a record whose identity lines are terminal, and any other key
+  # written after pr= makes the watcher reject the poll as unauthenticated.
   if [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
+  fi
+  if [ "$RELAUNCH" -eq 1 ]; then
+    preserve_relaunch_meta
   fi
 } > "$SPAWN_META_PATH" || {
   echo "error: task record for $ID could not be prepared at $SPAWN_META_PATH" >&2
@@ -3329,9 +3333,20 @@ spawn_record_traceparent() {
     acquired=1
   fi
   SPAWN_META_TMP="$STATE/.$ID.meta.trace.${BASHPID:-$$}"
+  # traceparent= is rewritten in place of the old one, but the record's
+  # pr=/pr_head= identity lines are carried to the end: they must stay last or
+  # an armed PR merge poll is rejected as unauthenticated (bin/fm-pr-lib.sh
+  # fm_pr_metadata_identity_parse).
   if [ ! -f "$meta" ] || [ ! -w "$meta" ] \
-     || ! awk -F= '$1 != "traceparent"' "$meta" > "$SPAWN_META_TMP" \
-     || ! printf 'traceparent=%s\n' "$SPAWN_TRACEPARENT" >> "$SPAWN_META_TMP" \
+     || ! awk -F= -v tp="$SPAWN_TRACEPARENT" '
+            $1 == "traceparent" { next }
+            $1 == "pr" || $1 == "pr_head" { identity[n++] = $0; next }
+            { print }
+            END {
+              printf "traceparent=%s\n", tp
+              for (i = 0; i < n; i++) print identity[i]
+            }
+          ' "$meta" > "$SPAWN_META_TMP" \
      || ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$meta" "task record" "$STATE"; then
     status=1
     rm -f "$SPAWN_META_TMP" 2>/dev/null || true
