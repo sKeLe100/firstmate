@@ -351,6 +351,14 @@ test_matrix_opencode_leftbar_signals() {
   assert_screen "opencode placeholder-like input on plain backends" unknown "$CAPS_PLAIN" "$typed"
   typed=$'┃  refactor the parser please\n┃\n┃  Build · GPT-5.5 Fast OpenAI · high'
   assert_screen "opencode multiline draft above blank cursor row" pending "$CAPS_TMUX" "$typed" 1
+  # Regression (opencode-composer-footer-false-pending): a pane narrow enough
+  # that opencode wraps its own footer line across two left-bar rows must not
+  # read the wrapped remainder as pending typed text.
+  local wrapped
+  wrapped=$'  ┃\n  ┃  Ask anything... "What is the tech stack?"\n  ┃\n  ┃  Build · GPT-5.5\n  ┃  Fast OpenAI · high\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
+  assert_screen "opencode idle, footer wraps across two rows, tmux" empty "$CAPS_TMUX" "$wrapped" ''
+  assert_screen "opencode idle, footer wraps across two rows, herdr" empty "$CAPS_STYLED" "$wrapped"
+  assert_screen "opencode idle, footer wraps across two rows, plain" empty "$CAPS_PLAIN" "$wrapped"
   pass "matrix: opencode's left-bar composer reads empty everywhere and scans the full active run"
 }
 
