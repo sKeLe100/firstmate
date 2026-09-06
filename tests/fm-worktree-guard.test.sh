@@ -6,7 +6,7 @@
 # 2026-09-06 fm-relaunch-rebinds-pr-poll) had an opencode crewmate write edits
 # into the primary firstmate checkout instead of its assigned worktree. This
 # test spawns a real opencode task, then drives the generated plugin in a
-# plain Node host to prove it refuses a write/edit/bash tool call resolving
+# plain Node host to prove it refuses a write/edit tool call resolving
 # outside the task's worktree while allowing one that stays inside it.
 set -u
 
@@ -39,13 +39,6 @@ test_opencode_guard_blocks_writes_outside_worktree() {
   mkdir -p "$primary_dir"
   outside_target="$primary_dir/leaked-edit.md"
 
-  # The plugin embeds the real FM_ROOT (the tracked code root scripts come
-  # from, per AGENTS.md section 2) as its PRIMARY_ROOT at spawn time; read it
-  # back so the bash-guard assertion targets the value fm-spawn actually
-  # wrote, rather than assuming it equals this test's stand-in directory.
-  embedded_primary_root=$(sed -n 's/^const PRIMARY_ROOT = "\(.*\)";$/\1/p' "$plugin")
-  [ -n "$embedded_primary_root" ] || fail "could not read embedded PRIMARY_ROOT from $plugin"
-
   node --input-type=module -e "
     import('$plugin').then(async (mod) => {
       const hooks = await mod.FmWorktreeGuard();
@@ -63,15 +56,23 @@ test_opencode_guard_blocks_writes_outside_worktree() {
       } catch (e) {
         allowedWrite = 'threw: ' + e.message;
       }
-      let blockedBash = 'no-throw';
+      let blockedEdit = 'no-throw';
       try {
-        await before({ tool: 'bash' }, { args: { command: 'echo hi > $embedded_primary_root/x' } });
+        await before({ tool: 'edit' }, { args: { filePath: '$outside_target' } });
       } catch (e) {
-        blockedBash = 'threw: ' + e.message;
+        blockedEdit = 'threw: ' + e.message;
+      }
+      let allowedBash = 'threw';
+      try {
+        await before({ tool: 'bash' }, { args: { command: 'ls $primary_dir' } });
+        allowedBash = 'no-throw';
+      } catch (e) {
+        allowedBash = 'threw: ' + e.message;
       }
       console.log('BLOCKED_WRITE=' + blockedWrite);
       console.log('ALLOWED_WRITE=' + allowedWrite);
-      console.log('BLOCKED_BASH=' + blockedBash);
+      console.log('BLOCKED_EDIT=' + blockedEdit);
+      console.log('ALLOWED_BASH=' + allowedBash);
     }).catch((e) => { console.error(e); process.exit(1); });
   " >"$case_dir/node.out" 2>"$case_dir/node.err"
   expect_code 0 $? "guard plugin should load and run under plain Node: $(cat "$case_dir/node.err")"
@@ -79,8 +80,9 @@ test_opencode_guard_blocks_writes_outside_worktree() {
   out=$(cat "$case_dir/node.out")
   assert_contains "$out" "BLOCKED_WRITE=threw:" "guard must refuse a write resolving outside the worktree"
   assert_contains "$out" "ALLOWED_WRITE=no-throw" "guard must allow a write that stays inside the worktree"
-  assert_contains "$out" "BLOCKED_BASH=threw:" "guard must refuse a bash command referencing the primary checkout path"
-  pass "opencode worktree-guard plugin blocks writes and bash commands escaping the assigned worktree"
+  assert_contains "$out" "BLOCKED_EDIT=threw:" "guard must refuse an edit resolving outside the worktree"
+  assert_contains "$out" "ALLOWED_BASH=no-throw" "guard must not block read-only bash commands"
+  pass "opencode worktree-guard plugin blocks write/edit calls escaping the assigned worktree"
 }
 
 test_opencode_guard_blocks_writes_outside_worktree

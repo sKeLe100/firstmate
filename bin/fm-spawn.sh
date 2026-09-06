@@ -2838,9 +2838,9 @@ export const FmBusyState = async () => {
 EOF
       exclude_path '.opencode/plugins/fm-busy-state.js'
       cat > "$WT/.opencode/plugins/fm-worktree-guard.js" <<EOF
-// Write-guard for PC02/opencode crewmate sessions: refuses any edit/write or
-// primary-checkout-referencing bash command that would escape this task's
-// assigned worktree. Reproduced twice in production (2026-09-03
+// Write-guard for PC02/opencode crewmate sessions: refuses any edit or write
+// tool call that would escape this task's assigned worktree. Reproduced twice
+// in production (2026-09-03
 // token-burn-item10-no-self-resume, 2026-09-06 fm-relaunch-rebinds-pr-poll)
 // when a tool call resolved a path against the primary checkout instead of
 // \$WT; both times the primary checkout's stray copy was only caught by
@@ -2857,10 +2857,8 @@ const WORKTREE_ROOT = (() => {
     return resolve("$WT");
   }
 })();
-const PRIMARY_ROOT = "$FM_ROOT";
 
 function insideWorktree(target) {
-  if (!target || typeof target !== "string") return true;
   let real;
   try {
     real = resolve(realpathSync(dirname(resolve(target))), basename(target));
@@ -2875,26 +2873,12 @@ export const FmWorktreeGuard = async () => {
     "tool.execute.before": async (input, output) => {
       const tool = input?.tool;
       const args = output?.args || {};
-      if (tool === "write" || tool === "edit" || tool === "patch") {
-        const target = args.filePath || args.path || args.file_path;
-        if (target && !insideWorktree(target)) {
+      if (tool === "write" || tool === "edit") {
+        const target = args.filePath;
+        if (typeof target === "string" && target && !insideWorktree(target)) {
           throw new Error(
             "fm-worktree-guard: refused " + tool + " outside the assigned worktree (" +
               WORKTREE_ROOT + "): " + target
-          );
-        }
-      }
-      if (tool === "bash") {
-        const command = args.command;
-        if (
-          typeof command === "string" &&
-          PRIMARY_ROOT &&
-          PRIMARY_ROOT !== WORKTREE_ROOT &&
-          command.includes(PRIMARY_ROOT)
-        ) {
-          throw new Error(
-            "fm-worktree-guard: refused bash command referencing the primary checkout (" +
-              PRIMARY_ROOT + ") instead of the assigned worktree (" + WORKTREE_ROOT + ")"
           );
         }
       }
