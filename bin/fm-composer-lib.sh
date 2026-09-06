@@ -974,12 +974,17 @@ _fm_composer_classify_bare_wrap() {  # <screen> <styled> <glyph-row> <cursor-row
 }
 
 # _fm_composer_classify_leftbar: opencode's left-bar composer. Blank rows and
-# the idle hint read empty; the run's LAST row may be the mode/model footer
-# (composer furniture, never typed text). Real content is pending when styling
-# can prove it real, unknown otherwise.
+# the idle hint read empty; the mode/model footer (composer furniture, never
+# typed text) may be the run's LAST row, or - when the pane is narrow enough
+# that opencode wraps the footer text across more than one left-bar row - the
+# last several rows. Once a row matches the footer anchor, every row through
+# `last` is treated as the same wrapped footer rather than only that one row,
+# since nothing opencode draws follows its own footer. Real content is
+# pending when styling can prove it real, unknown otherwise.
 _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
   local screen=$1 styled=$2 first=$3 last=$4
   local row raw content pending_seen=0 footer_re leading_blank=1 placeholder_position=0
+  local footer_active=0
   footer_re=${FM_COMPOSER_LEFTBAR_FOOTER_RE:-$FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT}
   row=$first
   while [ "$row" -le "$last" ]; do
@@ -1000,8 +1005,11 @@ _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
        && fm_composer_idle_matches "$content" "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive; then
       row=$((row + 1)); continue
     fi
-    if [ "$row" -eq "$last" ] \
-       && fm_composer_idle_matches "$content" "$footer_re" sensitive; then
+    if [ "$footer_active" = 1 ]; then
+      row=$((row + 1)); continue
+    fi
+    if fm_composer_idle_matches "$content" "$footer_re" sensitive; then
+      footer_active=1
       row=$((row + 1)); continue
     fi
     pending_seen=1
