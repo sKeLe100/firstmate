@@ -1,0 +1,8 @@
+REFUSED  write /home/sean_/firstmate/bin/fm-spawn.sh
+         -> fm-worktree-guard: refused write outside the assigned worktree (/tmp/fm-guard-evidence.z2TCGj/demo/wt): /home/sean_/firstmate/bin/fm-spawn.sh
+REFUSED  edit  /home/sean_/firstmate/data/backlog.md
+         -> fm-worktree-guard: refused edit outside the assigned worktree (/tmp/fm-guard-evidence.z2TCGj/demo/wt): /home/sean_/firstmate/data/backlog.md
+ALLOWED  write /tmp/fm-guard-evidence.z2TCGj/demo/wt/src/change.md   # legitimate: inside assigned worktree
+ALLOWED  write /tmp/fm-guard-evidence.z2TCGj/demo/wt/docs/new/notes.md   # legitimate: new nested dir in worktree
+ALLOWED  write /tmp/fm-guard-evidence.z2TCGj/demo/home/data/demo/report.md   # legitimate: brief-mandated scout report
+ALLOWED  bash  cat /home/sean_/firstmate/AGENTS.md   # read-only bash unaffected
