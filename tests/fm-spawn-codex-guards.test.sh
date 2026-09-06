@@ -274,7 +274,7 @@ test_raw_codex_launch_with_env_prefix_pins_the_exe() {
 }
 
 test_codex_effort_max_is_reachable_without_an_explicit_model() {
-  local rec id out status catalog
+  local rec id out status catalog codex_home
   id=codex-effort-max
   rec=$(make_case effortmax "$id")
   read_case_record "$rec"
@@ -285,13 +285,60 @@ test_codex_effort_max_is_reachable_without_an_explicit_model() {
   {"slug":"gpt-5.5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]}
 ]}
 JSON
+  codex_home="$CASE_DIR/codex-home"
+  mkdir -p "$codex_home"
+  printf 'model = "gpt-5.6-luna"\n' > "$codex_home/config.toml"
 
-  out=$(FM_TEST_CODEX_MODELS_CACHE="$catalog" FM_FAKE_WINDOWS='' \
+  out=$(FM_TEST_CODEX_MODELS_CACHE="$catalog" CODEX_HOME="$codex_home" FM_FAKE_WINDOWS='' \
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --effort max)
   status=$?
-  expect_code 0 "$status" "effort max must stay reachable when the catalog lists it for at least one model: $out"
+  expect_code 0 "$status" "effort max must stay reachable when codex's own default model lists it: $out"
   assert_contains "$(cat "$CASE_DIR/fake/literal")" 'model_reasoning_effort="max"' "the launch line must carry the max reasoning effort"
-  pass "codex effort max is reachable without naming a model"
+  pass "codex effort max is reachable without naming a model when the default model supports it"
+}
+
+test_codex_effort_refused_when_default_model_lacks_it() {
+  local rec id out status catalog codex_home
+  id=codex-effort-nomax
+  rec=$(make_case effortnomax "$id")
+  read_case_record "$rec"
+  catalog="$CASE_DIR/codex-models-cache.json"
+  cat > "$catalog" <<'JSON'
+{"models":[
+  {"slug":"gpt-5.6-luna","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"}]},
+  {"slug":"gpt-5.5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]}
+]}
+JSON
+  codex_home="$CASE_DIR/codex-home"
+  mkdir -p "$codex_home"
+  printf 'model = "gpt-5.5"\n' > "$codex_home/config.toml"
+
+  out=$(FM_TEST_CODEX_MODELS_CACHE="$catalog" CODEX_HOME="$codex_home" FM_FAKE_WINDOWS='' \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --effort max)
+  status=$?
+  expect_code 1 "$status" "an effort the resolved default model does not list must be refused: $out"
+  assert_contains "$out" "gpt-5.5" "the refusal did not name the resolved default model: $out"
+  if grep -q 'model_reasoning_effort' "$CASE_DIR/fake/literal" 2>/dev/null; then
+    fail "the refused effort must never reach a launch line: $(cat "$CASE_DIR/fake/literal")"
+  fi
+  pass "codex refuses an effort the resolved default model does not list"
+}
+
+test_raw_launch_with_unclassifiable_executable_is_refused() {
+  local rec id out status
+  id=codex-raw-quoted-env
+  rec=$(make_case rawquoted "$id")
+  read_case_record "$rec"
+
+  out=$(run_raw_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" \
+    "CODEX_HOME=\"$CASE_DIR/my codex\" codex --dangerously-bypass-approvals-and-sandbox")
+  status=$?
+  expect_code 1 "$status" "a raw launch whose executable word cannot be resolved must be refused: $out"
+  assert_contains "$out" "quotes text before its executable word" "the refusal did not name the unparsable quoting: $out"
+  if [ -s "$CASE_DIR/fake/literal" ]; then
+    fail "the refused raw launch must not be sent to the pane: $(cat "$CASE_DIR/fake/literal")"
+  fi
+  pass "a raw launch with a quoted env value that hides the executable word is refused"
 }
 
 test_raw_codex_launch_refuses_foreign_executable() {
@@ -340,5 +387,7 @@ test_raw_codex_bare_name_is_pinned_to_the_resolved_exe
 test_raw_codex_alias_takes_the_codex_lane
 test_raw_codex_launch_with_env_prefix_pins_the_exe
 test_codex_effort_max_is_reachable_without_an_explicit_model
+test_codex_effort_refused_when_default_model_lacks_it
+test_raw_launch_with_unclassifiable_executable_is_refused
 
 echo "# all fm-spawn-codex-guards tests passed"

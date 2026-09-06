@@ -1557,10 +1557,19 @@ case "$ARG3" in
     # a `cdx` symlink or any other alias that resolves to this machine's codex is
     # still a Codex launch and must take the lane, the fresh-exe probe and the
     # effort validation. Classify by resolved target, not by spelled name.
+    # Whitespace tokenization can only find the executable word when nothing
+    # before it is quoted: a quoted env value containing a space would split
+    # into pieces and hand back a bogus executable, silently skipping every
+    # harness guard below. Refuse that shape instead of guessing.
+    case "$RAW_LAUNCH_PREFIX$RAW_LAUNCH_EXE" in
+      *[\"\']*)
+        echo "error: raw launch command quotes text before its executable word, so firstmate cannot identify the executable or apply that harness's launch guards; spell any leading environment assignments without quotes" >&2
+        exit 1
+        ;;
+    esac
     if [ -n "$RAW_LAUNCH_EXE" ] && [ "$HARNESS" != codex ]; then
       RAW_LAUNCH_RESOLVED=$(resolve_executable_path "$RAW_LAUNCH_EXE")
-      CODEX_ON_PATH=$(resolve_executable_path codex)
-      if [ -n "$RAW_LAUNCH_RESOLVED" ] && [ "$RAW_LAUNCH_RESOLVED" = "$CODEX_ON_PATH" ]; then
+      if [ -n "$RAW_LAUNCH_RESOLVED" ] && [ "$RAW_LAUNCH_RESOLVED" = "$(resolve_executable_path codex)" ]; then
         HARNESS=codex
       fi
     fi
@@ -1801,15 +1810,31 @@ model_flag_for_harness() {
   esac
 }
 
+# codex_default_model prints the model codex itself would select with no
+# --model flag: its configured model, or the sole catalogued model when the
+# catalog lists exactly one. Empty output means it cannot be determined here.
+codex_default_model() {  # <catalog>
+  local catalog=$1 config="${CODEX_HOME:-${HOME:-}/.codex}/config.toml" slug=""
+  if [ -f "$config" ]; then
+    slug=$(sed -n 's/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$config" | head -n1)
+  fi
+  if [ -z "$slug" ]; then
+    slug=$(jq -r 'if (.models | length) == 1 then .models[0].slug else empty end' "$catalog" 2>/dev/null) || slug=""
+  fi
+  printf '%s' "$slug"
+}
+
 # codex_effort_flag: emits the -c model_reasoning_effort="..." flag for codex
 # only when ~/.codex/models_cache.json actually lists that effort as
 # supported for the resolved model, and refuses loudly naming the model and
 # its accepted effort set otherwise. This replaces a prior silent-omission
 # policy (data/codex-secondmate-integration-plan/report.md, Phase 1b) that let
 # an unsupported effort such as "max" vanish from the launch line without any
-# signal. With no explicit model, the requirement is the INTERSECTION of every
-# catalogued model's accepted efforts, since firstmate cannot know at flag
-# time which model codex will actually select.
+# signal. With no explicit model the effort must be in the INTERSECTION of every
+# catalogued model's accepted efforts, or else in the accepted set of the model
+# codex itself would select by default (its configured model, or the catalog's
+# sole entry), so a level such as max stays reachable without ever emitting one
+# the resolved model does not list.
 codex_effort_flag() {
   local effort=$1 model=$2 catalog="${FM_TEST_CODEX_MODELS_CACHE:-${HOME:-}/.codex/models_cache.json}" supported rc
   if [ -z "${HOME:-}" ] || [ ! -f "$catalog" ]; then
@@ -1827,7 +1852,20 @@ codex_effort_flag() {
     fi
     supported=$(jq -r --arg m "$model" '.models[] | select(.slug == $m) | .supported_reasoning_levels[].effort' "$catalog") || rc=$?
   else
-    supported=$(jq -r '[.models[].supported_reasoning_levels[].effort] | unique | .[]' "$catalog") || rc=$?
+    supported=$(jq -r '
+      reduce .models[] as $m (null;
+        ($m.supported_reasoning_levels | map(.effort)) as $le
+        | if . == null then $le else (. as $acc | $le | map(select(. as $x | $acc | index($x)))) end
+      ) | .[]
+    ' "$catalog") || rc=$?
+    if [ "${rc:-0}" -eq 0 ] && ! printf '%s\n' "$supported" | grep -qx -- "$effort"; then
+      model=$(codex_default_model "$catalog")
+      if [ -z "$model" ]; then
+        echo "error: codex effort '$effort' is not accepted by every model in '$catalog' and codex's default model could not be resolved from '${CODEX_HOME:-${HOME:-}/.codex}/config.toml'; pass an explicit --model that supports it" >&2
+        return 1
+      fi
+      supported=$(jq -r --arg m "$model" '.models[] | select(.slug == $m) | .supported_reasoning_levels[].effort' "$catalog") || rc=$?
+    fi
   fi
   if [ "${rc:-0}" -ne 0 ] || [ -z "$supported" ]; then
     echo "error: could not read supported codex effort levels from '$catalog' for model '${model:-<default>}'" >&2
