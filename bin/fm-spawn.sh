@@ -1561,12 +1561,13 @@ case "$ARG3" in
     # before it is quoted: a quoted env value containing a space would split
     # into pieces and hand back a bogus executable, silently skipping every
     # harness guard below. Refuse that shape instead of guessing.
-    case "$RAW_LAUNCH_PREFIX$RAW_LAUNCH_EXE" in
-      *[\"\']*)
-        echo "error: raw launch command quotes text before its executable word, so firstmate cannot identify the executable or apply that harness's launch guards; spell any leading environment assignments without quotes" >&2
-        exit 1
-        ;;
-    esac
+    RAW_LAUNCH_SCANNED=$RAW_LAUNCH_PREFIX
+    RAW_LAUNCH_DQ=$(printf '%s' "$RAW_LAUNCH_SCANNED" | tr -cd '"' | wc -c)
+    RAW_LAUNCH_SQ=$(printf '%s' "$RAW_LAUNCH_SCANNED" | tr -cd "'" | wc -c)
+    if [ $(( RAW_LAUNCH_DQ % 2 )) -ne 0 ] || [ $(( RAW_LAUNCH_SQ % 2 )) -ne 0 ]; then
+      echo "error: raw launch command leaves a quote open before its executable word, so firstmate cannot identify the executable or apply that harness's launch guards; keep any leading environment assignment's quoting closed within its own word" >&2
+      exit 1
+    fi
     if [ -n "$RAW_LAUNCH_EXE" ] && [ "$HARNESS" != codex ]; then
       RAW_LAUNCH_RESOLVED=$(resolve_executable_path "$RAW_LAUNCH_EXE")
       if [ -n "$RAW_LAUNCH_RESOLVED" ] && [ "$RAW_LAUNCH_RESOLVED" = "$(resolve_executable_path codex)" ]; then
@@ -1811,15 +1812,12 @@ model_flag_for_harness() {
 }
 
 # codex_default_model prints the model codex itself would select with no
-# --model flag: its configured model, or the sole catalogued model when the
-# catalog lists exactly one. Empty output means it cannot be determined here.
+# --model flag: the model its config.toml names at top level. Empty output
+# means it cannot be determined here.
 codex_default_model() {  # <catalog>
-  local catalog=$1 config="${CODEX_HOME:-${HOME:-}/.codex}/config.toml" slug=""
+  local config="${CODEX_HOME:-${HOME:-}/.codex}/config.toml" slug=""
   if [ -f "$config" ]; then
-    slug=$(sed -n 's/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$config" | head -n1)
-  fi
-  if [ -z "$slug" ]; then
-    slug=$(jq -r 'if (.models | length) == 1 then .models[0].slug else empty end' "$catalog" 2>/dev/null) || slug=""
+    slug=$(sed -n '/^[[:space:]]*\[/q; s/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$config" | head -n1)
   fi
   printf '%s' "$slug"
 }
