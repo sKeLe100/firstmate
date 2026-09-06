@@ -475,6 +475,17 @@ fm_afk_launch_start() {
     fm_afk_launch_log "could not resolve the captain supervisor pane (set FM_SUPERVISOR_TARGET)"; return 1; }
   captain_backend=$(discover_supervisor_backend) || {
     fm_afk_launch_log "could not resolve the captain supervisor backend (set FM_SUPERVISOR_BACKEND)"; return 1; }
+  local start_reason
+  start_reason=$(validate_supervisor_target "$captain_backend" "$captain_target") || {
+    case "$start_reason" in
+      unsupported-backend)
+        fm_afk_launch_log "supervisor backend '$captain_backend' is not one this daemon supports yet (set FM_SUPERVISOR_BACKEND=tmux|herdr) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward" ;;
+      target-not-found)
+        fm_afk_launch_log "supervisor target '$captain_target' does not resolve to a $captain_backend pane (set FM_SUPERVISOR_TARGET) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward" ;;
+      *)
+        fm_afk_launch_log "supervisor target '$captain_target' failed validation for backend '$captain_backend'" ;;
+    esac
+    return 1; }
 
   mkdir -p "$FM_AFK_LAUNCH_STATE"
 
@@ -540,12 +551,29 @@ fm_afk_launch_start_native() {
     fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
     return 1
   fi
-  # The harness-native daemon inherits THIS pane's env, so the same host check
-  # the daemon applies at startup has to pass here - otherwise this writes
-  # state/.afk and the daemon then refuses, leaving away mode armed with no
-  # daemon alive.
-  discover_supervisor_target >/dev/null || {
+  # The harness-native daemon inherits THIS pane's env, so the same checks
+  # the daemon applies at startup have to pass here first - otherwise this
+  # writes state/.afk and the daemon then refuses, leaving away mode armed
+  # with no daemon alive to deliver escalations (afk-delivery-unreachable,
+  # 2026-08-27).
+  local native_target native_backend native_reason
+  native_target=$(discover_supervisor_target) || {
     fm_afk_launch_log "cannot verify this away-mode session's primary is hosted in tmux or herdr (no FM_SUPERVISOR_TARGET override, and neither \$TMUX_PANE nor \$HERDR_ENV/\$HERDR_PANE_ID is set) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward; run the primary inside tmux (or herdr), or set FM_SUPERVISOR_TARGET explicitly, to use away mode"
+    return 1; }
+  # Mirrors the daemon's own `|| true`: a fallback-default backend is not
+  # itself an error here (the target-hosted check above already refused the
+  # case that matters), it only means nothing configured/detected identified
+  # one explicitly.
+  native_backend=$(discover_supervisor_backend) || true
+  native_reason=$(validate_supervisor_target "$native_backend" "$native_target") || {
+    case "$native_reason" in
+      unsupported-backend)
+        fm_afk_launch_log "supervisor backend '$native_backend' is not one this daemon supports yet (set FM_SUPERVISOR_BACKEND=tmux|herdr) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward" ;;
+      target-not-found)
+        fm_afk_launch_log "supervisor target '$native_target' does not resolve to a $native_backend pane (set FM_SUPERVISOR_TARGET) - refusing before arming rather than writing the away-mode flag and having the daemon refuse afterward" ;;
+      *)
+        fm_afk_launch_log "supervisor target '$native_target' failed validation for backend '$native_backend'" ;;
+    esac
     return 1; }
   if daemon_lock_held_by_live_daemon; then
     fm_afk_launch_record_validate_if_present || return 1

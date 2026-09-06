@@ -21,6 +21,37 @@
 FM_SUPERVISOR_TARGET_DEFAULT="firstmate:0"
 FM_SUPERVISOR_BACKEND_DEFAULT="tmux"
 
+# Supervisor backends the daemon's injection primitives (and this validation)
+# actually cover today. zellij, orca, and cmux are real backends elsewhere in
+# firstmate (bin/fm-backend.sh) but have no verified composer/busy primitives
+# wired up here yet - see docs/herdr-backend.md and AGENTS.md section 4's
+# harness-verification discipline. Owned here (not in fm-supervise-daemon.sh)
+# so the away-mode launcher's pre-arm check can share the exact same list.
+FM_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr"
+
+# validate_supervisor_target: the single owner of "is this backend+target a
+# usable away-mode delivery path", shared by the daemon's own startup refusal
+# and the launcher's pre-arm check so a target that would make the daemon
+# refuse can never get as far as writing state/.afk in the first place
+# (2026-08-27 afk-delivery-unreachable review). Two checks, cheapest first:
+#   1. the backend is one FM_SUPERVISOR_SUPPORTED_BACKENDS covers.
+#   2. the target actually resolves to a live pane under that backend
+#      (fm_backend_target_exists - the same read-only probe the daemon uses).
+# Prints a short machine-readable reason on failure for the caller to report
+# in its own words; returns 0 on success.
+validate_supervisor_target() {  # <backend> <target>
+  local backend="$1" target="$2"
+  if ! fm_backend_list_contains "$FM_SUPERVISOR_SUPPORTED_BACKENDS" "$backend"; then
+    printf 'unsupported-backend'
+    return 1
+  fi
+  if ! fm_backend_target_exists "$backend" "$target"; then
+    printf 'target-not-found'
+    return 1
+  fi
+  return 0
+}
+
 # discover_supervisor_target: resolve the pane running firstmate. Priority:
 #   1. FM_SUPERVISOR_TARGET env (explicit override) - may be a tmux target or a
 #      herdr "<session>:<pane-id>" target (paired with discover_supervisor_backend
