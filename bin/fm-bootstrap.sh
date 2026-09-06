@@ -173,8 +173,6 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-startup-memory-budget-lib.sh"
 # shellcheck source=bin/fm-x-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-x-lib.sh"
-# shellcheck source=bin/fm-crew-dispatch-lib.sh disable=SC1091
-. "$SCRIPT_DIR/fm-crew-dispatch-lib.sh"
 # shellcheck source=bin/fm-backend.sh disable=SC1091
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh disable=SC1091
@@ -398,7 +396,7 @@ secondmate_sync() {
       echo "NUDGE_SECONDMATES: secondmate $id: send failed: cannot record retry marker"
       return 0
     fi
-    if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" FM_SEND_INTERNAL=1 "$SCRIPT_DIR/fm-send.sh" "$selector" "$SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
+    if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-send.sh" "$selector" "$SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
       rm -f "$marker"
       echo "BOOTSTRAP_INFO: nudged $selector with '$SECOND_MATE_NUDGE_MESSAGE'"
     else
@@ -471,7 +469,7 @@ secondmate_sync() {
         echo "NUDGE_SECONDMATES: secondmate $id: send failed: retry target is not at recorded instruction commit"
         continue
       }
-      if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" FM_SEND_INTERNAL=1 "$SCRIPT_DIR/fm-send.sh" "$selector" "$SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
+      if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-send.sh" "$selector" "$SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
         rm -f "$marker"
         echo "BOOTSTRAP_INFO: nudged $selector with '$SECOND_MATE_NUDGE_MESSAGE'"
       else
@@ -717,19 +715,16 @@ secondmate_liveness_one_timed() {  # <meta> <id> <label>
 # secondmate_note_respawned so a concurrent sweep can collect them after wait.
 secondmate_liveness_one() {  # <meta> <id>
   local meta=$1 id=$2
-  local window harness backend target agent_state out cause remote_host remote_rc readiness_reason route_out remote_backend wsl2_hint unreachable_msg
+  local window harness backend target agent_state out cause remote_host remote_rc readiness_reason route_out remote_backend
   window=$(fm_meta_get "$meta" window)
   [ -n "$window" ] || return 0
   harness=$(fm_meta_get "$meta" harness)
   remote_host=$(fm_meta_get "$meta" remote_host)
   if [ -n "$remote_host" ]; then
-    unreachable_msg="remote host unavailable or endpoint state unknown; route preserved on $remote_host"
     remote_rc=0
     fm_remote_readiness_ensure "$SCRIPT_DIR" "$id" || remote_rc=$?
     if [ "$remote_rc" -eq 255 ]; then
-      [ -n "${wsl2_hint+x}" ] || wsl2_hint=$(fm_wsl2_mirrored_networking_hint)
-      [ -z "$wsl2_hint" ] || unreachable_msg="$unreachable_msg ($wsl2_hint)"
-      echo "SECONDMATE_LIVENESS: secondmate $id: skipped: $unreachable_msg"
+      echo "SECONDMATE_LIVENESS: secondmate $id: skipped: remote host unavailable or endpoint state unknown; route preserved on $remote_host"
       return 0
     fi
     if [ "$remote_rc" -ne 0 ]; then
@@ -746,9 +741,7 @@ secondmate_liveness_one() {  # <meta> <id>
       remote_rc=$?
     fi
     if [ "$remote_rc" -eq 255 ]; then
-      [ -n "${wsl2_hint+x}" ] || wsl2_hint=$(fm_wsl2_mirrored_networking_hint)
-      [ -z "$wsl2_hint" ] || unreachable_msg="$unreachable_msg ($wsl2_hint)"
-      echo "SECONDMATE_LIVENESS: secondmate $id: skipped: $unreachable_msg"
+      echo "SECONDMATE_LIVENESS: secondmate $id: skipped: remote host unavailable or endpoint state unknown; route preserved on $remote_host"
       return 0
     fi
     if [ "$remote_rc" -ne 0 ]; then
@@ -764,10 +757,7 @@ secondmate_liveness_one() {  # <meta> <id>
           remote_rc=$?
         fi
         if [ "$remote_rc" -eq 255 ]; then
-          unreachable_msg="remote host unavailable or endpoint route unknown; route preserved on $remote_host"
-          [ -n "${wsl2_hint+x}" ] || wsl2_hint=$(fm_wsl2_mirrored_networking_hint)
-          [ -z "$wsl2_hint" ] || unreachable_msg="$unreachable_msg ($wsl2_hint)"
-          echo "SECONDMATE_LIVENESS: secondmate $id: skipped: $unreachable_msg"
+          echo "SECONDMATE_LIVENESS: secondmate $id: skipped: remote host unavailable or endpoint route unknown; route preserved on $remote_host"
           return 0
         fi
         if [ "$remote_rc" -ne 0 ]; then
@@ -880,22 +870,17 @@ manual_install_url() {
   case "$1" in
     herdr) echo "https://herdr.dev" ;;
     cursor-agent) echo "https://cursor.com/cli" ;;
-    gh) echo "https://cli.github.com" ;;
     *) return 1 ;;
   esac
 }
 
 missing_tool_diagnostic() {
-  local tool=$1 cmd instructions
-  if cmd=$(install_cmd "$tool"); then
-    echo "MISSING: $tool (install: $cmd)"
-    return 0
-  fi
+  local tool=$1 instructions
   if instructions=$(manual_install_url "$tool"); then
     echo "MISSING_MANUAL: $tool (instructions: $instructions)"
     return 0
   fi
-  echo "MISSING: $tool"
+  echo "MISSING: $tool (install: $(install_cmd "$tool"))"
 }
 
 # Required-tool detection follows the RESOLVED backend, not a one-size default:
@@ -912,11 +897,6 @@ if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then
 fi
 TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 NO_MISTAKES_MIN=1.46.0
-# gh sat pinned at 2.46.0 for an extended period: its unsupported --slurp flag
-# broke no-mistakes' internal CI-status reader, and `gh pr edit` failed silently
-# on a deprecated GraphQL field so PR-body attestation refreshes no-op'd. This
-# floor is the minimum version known to avoid both, not a "current latest" pin.
-GH_MIN=2.63.0
 # AXI-FAMILY FLOOR POLICY. Every axi-family floor is the CURRENT LATEST published
 # version of that tool, captain-bumped periodically to keep the whole fleet on the
 # newest axi tools. It is NOT the minimum feature-introduced version. These floors
@@ -1112,16 +1092,80 @@ EOF
 }
 
 crew_dispatch_validate() {
-  local file err rc
+  local file err
   file="$CONFIG/crew-dispatch.json"
   [ -f "$file" ] || return 0
-  err=$(fm_crew_dispatch_validate "$file")
-  rc=$?
-  if [ "$rc" -eq 2 ]; then
+  if ! command -v jq >/dev/null 2>&1; then
     echo "MISSING: jq (install: $(install_cmd jq))"
     return 0
   fi
-  if [ "$rc" -ne 0 ]; then
+  if ! jq -e . "$file" >/dev/null 2>&1; then
+    echo "CREW_DISPATCH: invalid config/crew-dispatch.json - malformed JSON"
+    return 0
+  fi
+  err=$(jq -r '
+    def verified($h): ["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","muse","rovo"] | index($h);
+    def effort_ok($h; $e):
+      if $e == null then true
+      elif ($e | type) != "string" then false
+      elif $h == "claude" then (["low","medium","high","xhigh","max"] | index($e))
+      elif $h == "codex" then (["low","medium","high","xhigh"] | index($e))
+      elif $h == "grok" then (["low","medium","high"] | index($e))
+      elif $h == "pi" or $h == "pi-signed" then (["low","medium","high","xhigh","max"] | index($e))
+      elif $h == "muse" then (["low","medium","high","xhigh","max"] | index($e))
+      elif $h == "rovo" then (["low","medium","high","max"] | index($e))
+      elif $h == "opencode" or $h == "kimi" or $h == "cursor" then false
+      else true
+      end;
+    def profiles($value):
+      if ($value | type) == "array" then $value
+      elif ($value | type) == "object" then [$value]
+      else []
+      end;
+    def configured_profiles:
+      ([(.rules // [])[]? | profiles(.use?)[]?]
+        + (if has("default") then [profiles(.default)[]?] else [] end));
+    def malformed_optional_fields($items):
+      ($items | any(has("model") and (((.model | type) != "string") or (.model | length) == 0)))
+      or ($items | any(has("effort") and (((.effort | type) != "string") or (.effort | length) == 0)));
+    def bad_efforts:
+      configured_profiles
+      | map({h: .harness, e: .effort})
+      | map(select(.e != null))
+      | map(select((.h | type) == "string" and verified(.h)))
+      | map(select(. as $p | effort_ok($p.h; $p.e) | not))
+      | map("\(.h):\(.e)")
+      | unique;
+    if type != "object" then "top-level value must be an object"
+    elif has("rules") and (.rules | type) != "array" then "rules must be an array"
+    elif [(.rules // [])[]? | select(type != "object")] | length > 0 then "each rule must be an object"
+    elif [(.rules // [])[]? | select((.when? | type) != "string" or (.when | length) == 0)] | length > 0 then "each rule needs non-empty when"
+    elif [(.rules // [])[]? | select((.use? | type) != "object" and (.use? | type) != "array")] | length > 0 then "each rule needs use"
+    elif [(.rules // [])[]? | select((.use? | type) == "array" and (.use | length) == 0)] | length > 0 then "each rule needs at least one use profile"
+    elif [(.rules // [])[]? | profiles(.use?)[]? | select(type != "object")] | length > 0 then "each use profile must be an object"
+    elif [(.rules // [])[]? | profiles(.use?)[]? | select((.harness? | type) != "string" or (.harness | length) == 0)] | length > 0 then "each use profile needs harness"
+    elif malformed_optional_fields([(.rules // [])[]? | profiles(.use?)[]?]) then "use profile model and effort must be non-empty strings when present"
+    elif [(.rules // [])[]? | select(has("select") and ((.select? | type) != "string" or (.select | length) == 0))] | length > 0 then "select must be a non-empty string"
+    elif [(.rules // [])[]? | .select? // empty | select(. != "quota-balanced")] | length > 0 then
+      "unknown select: " + ([ (.rules // [])[]? | .select? // empty | select(. != "quota-balanced") ] | unique | join(", "))
+    elif has("default") and ((.default | type) != "object" and (.default | type) != "array") then "default must be a profile object or non-empty profile array"
+    elif has("default") and ((.default | type) == "array" and (.default | length) == 0) then "default needs at least one profile"
+    elif has("default") and ([profiles(.default)[]? | select(type != "object")] | length) > 0 then "each default profile must be an object"
+    elif has("default") and ([profiles(.default)[]? | select((.harness? | type) != "string" or (.harness | length) == 0)] | length) > 0 then "each default profile needs harness"
+    elif has("default") and malformed_optional_fields([profiles(.default)[]?]) then "default profile model and effort must be non-empty strings when present"
+    else
+      (configured_profiles
+        | map(.harness)
+        | map(select(. != null))
+        | map(select(. as $h | verified($h) | not))
+        | unique) as $bad_harnesses
+      | if ($bad_harnesses | length) > 0 then "unverified harness: " + ($bad_harnesses | join(", "))
+        elif (bad_efforts | length) > 0 then "invalid effort: " + (bad_efforts | join(", "))
+        else empty
+        end
+    end
+  ' "$file" 2>/dev/null || true)
+  if [ -n "$err" ]; then
     echo "CREW_DISPATCH: invalid config/crew-dispatch.json - $err"
     return 0
   fi
@@ -1376,9 +1420,6 @@ detect_local_tools() {
   fi
   if command -v no-mistakes >/dev/null 2>&1 && ! tool_version_at_least no-mistakes "$NO_MISTAKES_MIN"; then
     echo "MISSING: no-mistakes (install: $(install_cmd no-mistakes))"
-  fi
-  if command -v gh >/dev/null 2>&1 && ! tool_version_at_least gh "$GH_MIN"; then
-    echo "MISSING_MANUAL: gh (instructions: $(manual_install_url gh))"
   fi
   if command -v gh-axi >/dev/null 2>&1 && ! tool_version_at_least gh-axi "$GH_AXI_MIN"; then
     echo "MISSING: gh-axi (install: $(install_cmd gh-axi))"

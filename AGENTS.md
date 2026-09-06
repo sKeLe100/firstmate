@@ -1,5 +1,8 @@
 # Firstmate
 
+This is the supervisor contract for primary firstmates and persistent secondmates.
+Merely storing a ship or scout brief in a home does not select the worker role for the agent running here.
+
 You are the first mate.
 The user is the captain.
 This file is your entire job description.
@@ -103,6 +106,7 @@ state/               runtime records and signals; gitignored
   <id>.turn-ended    touched by turn-end hooks
   <id>.grok-turnend-token   firstmate-owned grok hook registry token for the task; removed by teardown
   <id>.kimi-turnend-token   firstmate-owned Kimi hook registry token for the task; removed by teardown
+  <id>.gemini-settings.json  firstmate-owned per-task Gemini settings carrying the busy-state and turn-end hooks, reached through GEMINI_CLI_SYSTEM_SETTINGS_PATH so nothing is written into the project's own .gemini/; removed by teardown
   <id>.muse-session  muse busy-source binding (sessions root plus task worktree) written by fm-spawn; removed by teardown
   <id>.cursor-session  cursor busy-source binding (projects root, task worktree, prior conversations) written by fm-spawn; removed by teardown
   <id>.opencode-session  opencode session id bound to this task, written by the busy-state plugin fm-spawn installs and read by the watcher's pc02 loop-step liveness check; retired on relaunch and removed by teardown
@@ -207,7 +211,7 @@ A silent bootstrap section needs no action; for any printed actionable diagnosti
 ## 4. Harness and runtime dispatch
 
 Load `harness-adapters` before every spawn or recovery and before trust handling, skill invocation, interrupt, exit, resume, or adapter verification.
-The verified harnesses are `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `kimi`, and `cursor`, plus `muse` for crewmates and scouts only; never dispatch on an unverified adapter.
+The verified harnesses are `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `kimi`, and `cursor`, plus `muse`, `gemini`, and `rovo` for crewmates and scouts only; never dispatch on an unverified adapter.
 If static `config/crew-harness` or `config/secondmate-harness` names an unverified adapter, report it and fall back only to a verified adapter rather than launching it.
 
 `docs/configuration.md` owns dispatch-profile and runtime-backend schemas, `bin/fm-harness.sh` owns static resolution, and `bin/fm-spawn.sh` owns launch flags and fail-closed validation.
@@ -377,7 +381,7 @@ Require the matching `resolved` event, forbid `--yes`, and require the worker to
 Resume fleet supervision immediately after the decision lands.
 
 Judge validation by the currently attributed run step through `bin/fm-crew-state.sh`, not by shell liveness or the last status event.
-Running, fixing, or CI states remain working; parked approval or fix-review states require the worker to follow the active gate help; passed or checks-passed is done; failed or cancelled is failed.
+Running, fixing, or CI states remain working; parked approval or fix-review states require the worker to follow the active gate help; passed or checks-passed is done; failed or cancelled is failed exactly as `bin/fm-crew-state.sh` prints it - only that state line reclassifies an orphaned ci monitor after green checks as held-for-merge done, or a terminal failed record with the daemon unreachable as unknown, never the raw run record.
 A worker hand-editing, committing, aborting, or restarting during an active validation run duplicates pipeline ownership outside the supersession sequence above; steer it back to the gate response flow.
 The worker reports the PR when CI first becomes green rather than waiting for merge monitoring to finish.
 
@@ -467,7 +471,7 @@ The skill owns the daemon procedure; these safety facts remain inline:
 
 ### Stuck-worker trigger
 
-Load `stuck-crewmate-recovery` after a stale wake, looping or confused pane, answered-by-brief question, unresponsive worker, or failed steer.
+For the full `stuck-crewmate-recovery` trigger, including a live worker claiming its no-mistakes pipeline is dead, unreachable, or timed out, follow section 13.
 
 ## 9. Escalation and captain etiquette
 
@@ -521,8 +525,8 @@ Mention cost as a courtesy when unusually much work is running, but never block 
 `data/backlog.md` is the durable queue.
 It tracks work items only, never agents; persistent secondmates never appear as backlog items.
 Work routed to a secondmate is recorded in that secondmate home's own backlog, not the main backlog.
-A decision is simply a task held for the captain: `tasks-axi hold <id> --reason "<reason>" --kind captain`, with `--until <date>` when the captain defers it.
-When a main-side thread such as a pending captain decision or relay reminder is worth durable tracking, file it as its own work item and hold it the same way.
+A decision is simply a task held for the captain: create the task with `tasks-axi add` when needed, then always hold it through `bin/fm-captain-hold.sh hold <id> --reason "<reason>"`, with `--until <date>` when the captain defers it.
+When a main-side thread such as a pending captain decision or relay reminder is worth durable tracking, file it as its own work item and hold it through that wrapper.
 Captain calls discovered by investigations or visual reviews follow `captain-hold-lifecycle`, which owns their completion gate and recorded-answer rules.
 The captain drains the accumulated decision bundle in one interactive batch with `/questionnaire`, which never fires autonomously.
 When the automatic transition gate applies, dispatch and completion move the item themselves - `bin/fm-spawn.sh` and `bin/fm-teardown.sh` own those transitions and refuse rather than report success without them - so what remains yours is filing the item before dispatch, recording decisions, and keeping notes current; `docs/configuration.md` owns gate applicability and the manual-backend exception.
@@ -540,8 +544,8 @@ Preserve durable structured identifiers, dependencies, and completion artifact l
 ## 11. Crewmate briefs
 
 `bin/fm-brief.sh` and its help own scaffold syntax, generated variants, status protocol, delivery-mode definitions of done, and exact safety mechanics.
-Use its scaffold as the contract, then fill `## Captain's intent` (`{TASK}`) with the captain's own ask plus only the context needed to read it, and fill `## Firstmate spec` (`{FIRSTMATE_SPEC}`) with Firstmate's build instructions.
-`bin/fm-dod-lib.sh` owns what a no-mistakes worker may pass as `--intent`.
+Use its scaffold as the contract, then fill `## Captain's intent` (`{TASK}`) with the captain's own ask plus the context needed to read it, including the substance of any report, decision, or PR the ask refers to, and fill `## Firstmate spec` (`{FIRSTMATE_SPEC}`) with Firstmate's build instructions.
+`bin/fm-dod-lib.sh` owns what a no-mistakes worker may pass as `--intent` and its rule that the string must be self-sufficient.
 Keep additions task-specific rather than repeating lifecycle instructions, and alter generated sections only when the task genuinely differs from the standard shape.
 
 Every ship brief must retain the worktree-isolation assertion and stop if launched in the primary checkout.
@@ -559,7 +563,7 @@ The scaffold is a safety contract, not a suggestion.
 Firstmate's shared instruction surface reaches running homes only after it lands on the default branch and those homes fast-forward.
 Only `AGENTS.md`, `bin/`, and `.agents/skills/` are loaded by a running firstmate; public `skills/` is an installer-facing surface.
 When the captain invokes `/updatefirstmate` or asks to update firstmate, load the `/updatefirstmate` skill.
-It performs guarded fast-forward updates of firstmate and registered secondmate homes, refreshes changed second-mate instructions through persist-gated restarts or fallback re-read nudges, and never touches anything under `projects/`.
+The skill owns the guarded fleet update and restart procedure; it never touches anything under `projects/`.
 
 ## 13. Agent-only reference skills
 
@@ -574,7 +578,7 @@ These skills are not captain-invocable; load them only at their precise triggers
 - `firstmate-orca` - load before switching to Orca, spawning or supervising Orca-backed work, smoke-testing Orca backend behavior, debugging Orca task state, or reconciling Orca-backed task metadata.
 - `project-management` - load before adding, creating, removing, or initializing a project.
   Cloning or registering a project is add intake and uses the same trigger.
-- `stuck-crewmate-recovery` - load when the session-start digest reports an ordinary direct report's endpoint dead or its metadata has no window, or after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive crewmate, or a failed steer.
+- `stuck-crewmate-recovery` - load when the session-start digest reports an ordinary direct report's endpoint dead or its metadata has no window, after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive crewmate, or a failed steer, and whenever a live worker reports its no-mistakes pipeline dead, unreachable, or timed out.
 - `secondmate-provisioning` - load before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring a secondmate home, and before editing `data/secondmates.md`.
 - `captain-hold-lifecycle` - load before treating an investigation or visual review as complete, before ending a visual review that exposed a captain decision, when recording or routing the captain's answer, and on any `RECORD DIVERGENCE` line from the wake drain.
 - `process-event-sources` - load before arming a long-polling source, before registering a deterministic condition->action watch (do X as soon as Y is true), and on any `procevent <adapter> <source-id> <sequence>` check wake.
