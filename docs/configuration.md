@@ -170,7 +170,9 @@ There is currently no verified delivery path for a non-tmux, non-herdr primary, 
 The refusal happens at every arm entry point, deliberately: `bin/fm-afk-start.sh` checks the same sources up front and exits nonzero *before* writing `state/.afk`, so a refused start never leaves the away-mode flag set with no daemon alive (which would make firstmate keep suppressing normal wake handling while nothing supervises); `bin/fm-afk-launch.sh start-native` applies the same check before it prepares lifecycle state, so the harness-native arm path cannot bypass it either; `bin/fm-supervise-daemon.sh` repeats the check at arm time as the backstop for the launcher-prepared path and prints `error: cannot verify this away-mode daemon's target pane hosts the live firstmate primary session ...`.
 Run the primary inside tmux (or herdr), or set `FM_SUPERVISOR_TARGET` explicitly to the primary's own pane, to use away mode in that configuration.
 Setting only `FM_SUPERVISOR_BACKEND` does not lift the refusal: it names a transport but no pane, so target detection would still come up empty.
-Selecting any other supervisor backend, including `zellij`, `orca`, or `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
+Selecting any other supervisor backend, including `zellij`, `orca`, or `cmux`, refuses instead of trying tmux injection primitives against a non-tmux pane.
+A resolved backend and target are also checked for usability *before* `bin/fm-afk-launch.sh` arms away mode (both `start` and `start-native`): `validate_supervisor_target` in `bin/fm-supervisor-target-lib.sh` owns that check and rejects an unsupported backend, then a target that does not resolve to a live pane under it, so a broken supervision target fails at `/afk` time rather than after `state/.afk` is written.
+`bin/fm-supervise-daemon.sh` runs the same shared check at startup as the backstop, so the two refusals cannot drift apart.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
@@ -1037,7 +1039,7 @@ FM_PENDING_REPLY_GRACE_SECS=120   # seconds after marked-request delivery before
 FM_PENDING_REPLY_FORCE_INGEST_WAIT_SECS=5  # bounded wait for the forced remote-reply poll fm_pending_reply_maybe_escalate runs immediately before it would otherwise escalate; no-ops instantly when a live poller already owns the source, and never runs for local secondmates
 # sub-supervisor (bin/fm-supervise-daemon.sh); presence-gated via /afk
 FM_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID before tmux fallback
-FM_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected from $TMUX_PANE/HERDR_PANE_ID - away mode refuses to arm when none resolves
+FM_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected from $TMUX_PANE/HERDR_PANE_ID - away mode refuses to arm when none resolves, or when the resolved target is not a live pane under the resolved backend
 FM_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
 FM_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately
 FM_MAX_DEFER_SECS=300              # max buffered escalation age before retry plus wedge alarm; 0 disables
