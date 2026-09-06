@@ -3266,6 +3266,10 @@ spawn_record_traceparent() {
     acquired=1
   fi
   SPAWN_META_TMP="$STATE/.$ID.meta.trace.${BASHPID:-$$}"
+  # traceparent= is rewritten in place of the old one, but the record's
+  # pr=/pr_head= identity lines are carried to the end: they must stay last or
+  # an armed PR merge poll is rejected as unauthenticated (bin/fm-pr-lib.sh
+  # fm_pr_metadata_identity_parse).
   if [ ! -f "$meta" ] || [ ! -w "$meta" ] \
      || ! awk -F= -v tp="$SPAWN_TRACEPARENT" '
             $1 == "traceparent" { next }
