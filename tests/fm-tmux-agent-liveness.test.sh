@@ -39,6 +39,26 @@ trap cleanup_all EXIT
 # A `tmux` shim on PATH so bin/backends/tmux.sh's bare `tmux` calls reach the
 # private socket and never touch the host's real sessions.
 mkdir -p "$LAB/shim" "$LAB/bin" "$LAB/bin/claude" "$LAB/bin/decoy" "$LAB/wt"
+
+# The stand-ins below are symlinks whose NAME is the signal under test, so the
+# target binary must ignore its own argv[0]. Some distributions ship coreutils
+# as a multi-call binary (uutils), where `sleep` dispatches on argv[0] and a
+# symlink named claude-link runs `link` instead and exits immediately. Probe
+# for that and fall back to a purpose-built spinner when it happens.
+SPIN_BIN=$SLEEP_BIN
+mkdir -p "$LAB/probe"
+ln -s "$SLEEP_BIN" "$LAB/probe/claude-link"
+if ! "$LAB/probe/claude-link" 0.05 >/dev/null 2>&1; then
+  SPIN_CC=$(command -v cc 2>/dev/null || command -v gcc 2>/dev/null || true)
+  if [ -n "$SPIN_CC" ] &&
+    printf '%s\n' '#include <unistd.h>' 'int main(void){for(;;)sleep(60);return 0;}' > "$LAB/spin.c" &&
+    "$SPIN_CC" -o "$LAB/spin" "$LAB/spin.c" 2>/dev/null; then
+    SPIN_BIN=$LAB/spin
+  else
+    echo "skip: no argv[0]-independent long-running binary available"
+    exit 0
+  fi
+fi
 cat > "$LAB/shim/tmux" <<SH
 #!/usr/bin/env bash
 exec "$REAL_TMUX" -L "$SOCKET" "\$@"
@@ -51,20 +71,20 @@ export PATH
 # binary, never copies: a copied platform binary fails code-signing validation
 # and is killed on macOS arm64. The symlink name is what the kernel records as
 # the executable identity, which is exactly the signal under test.
-ln -s "$SLEEP_BIN" "$LAB/bin/claude-link"
-ln -s "$SLEEP_BIN" "$LAB/bin/pi"
-ln -s "$SLEEP_BIN" "$LAB/bin/notaharness"
+ln -s "$SPIN_BIN" "$LAB/bin/claude-link"
+ln -s "$SPIN_BIN" "$LAB/bin/pi"
+ln -s "$SPIN_BIN" "$LAB/bin/notaharness"
 # muse's installed binary is muse-bin-<version>: the launcher execs it, so the
 # version is the LIVE process name and it changes on every auto-update. Unlike
 # Claude Code's version-named binary there is no `muse` path component to fall
 # back on (~/.local/bin/muse-bin-<version>), so the executable name is the ONLY
 # signal, and `muse` alone is a common English fragment that must not widen into
 # a substring match. The last two names are the decoys that would be misread.
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-bin-0.1.0-R708.1"
-ln -s "$SLEEP_BIN" "$LAB/bin/musescore"
-ln -s "$SLEEP_BIN" "$LAB/bin/amuse"
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-binary"
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-bind"
+ln -s "$SPIN_BIN" "$LAB/bin/muse-bin-0.1.0-R708.1"
+ln -s "$SPIN_BIN" "$LAB/bin/musescore"
+ln -s "$SPIN_BIN" "$LAB/bin/amuse"
+ln -s "$SPIN_BIN" "$LAB/bin/muse-binary"
+ln -s "$SPIN_BIN" "$LAB/bin/muse-bind"
 
 # A launcher whose own process identity is a bare shell, running the harness as
 # a child in the same foreground process group - the shape the real Pi Launcher
@@ -268,8 +288,8 @@ pass "tmux liveness: an absent window classifies missing rather than inheriting 
 # shellcheck source=bin/fm-tmux-lib.sh
 . "$ROOT/bin/fm-tmux-lib.sh"
 
-ln -s "$SLEEP_BIN" "$LAB/bin/cursor-agent"
-ln -s "$SLEEP_BIN" "$LAB/bin/notcursor"
+ln -s "$SPIN_BIN" "$LAB/bin/cursor-agent"
+ln -s "$SPIN_BIN" "$LAB/bin/notcursor"
 
 # Cursor's real screen shape: a BARE composer row carrying its U+2192 glyph, two
 # footer rows below it, and the terminal cursor left on a blank row past the
