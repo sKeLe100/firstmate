@@ -1,0 +1,14 @@
+count: 8
+items[8]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,gate,created}:
+  1,fm-1,ship the queue skill update,ship,firstmate,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,dispatchable,2026-09-06
+  2,fm-2,decide delivery mode for release,captain,firstmate,-,no,none,no,-,-,-,direct-PR on,captain-gated,captain kind or captain-kind hold,captain,2026-09-06
+  3,fm-6,scope unclear: dashboard refresh,ship,firstmate,-,no,none,yes,-,ambiguous scope,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,captain,2026-09-06
+  4,fm-8,held with no reason,ship,firstmate,-,no,none,yes,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,captain,2026-09-06
+  5,fm-3,captain call on pricing copy,captain,legacy-app,-,no,none,no,-,-,-,no-mistakes off,captain-gated,captain kind or captain-kind hold,captain,2026-09-06
+  6,fm-4,upgrade auth library,ship,legacy-app,-,no,none,no,-,-,-,no-mistakes off,captain-gated,project registry posture has yolo off,captain,2026-09-06
+  7,fm-5,rewrite onboarding docs,docs,legacy-app,-,no,none,no,-,-,-,no-mistakes off,captain-gated,project registry posture has yolo off,captain,2026-09-06
+  8,fm-7,orphan chore,chore,-,-,no,none,no,-,-,-,n/a,unclear,no project recorded on this item,captain,2026-09-06
+priority_analysis: priority_meaningful: no (0/8 items have priority, 0%)
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
