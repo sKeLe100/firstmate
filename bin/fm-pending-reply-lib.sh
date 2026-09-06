@@ -621,6 +621,15 @@ _fm_pending_reply_try_resolve_locked() {  # <state-dir> <corr_id> [status-file-o
     unconfirmed=1
   fi
   status_file=${status_override:-$(fm_pending_reply_get "$rec" parent_status)}
+  # Skipping the read of a parent status file that has not changed since the
+  # last miss cannot hide a late reply, including one the forced ingest in
+  # fm_pending_reply_maybe_escalate just pulled in, because the cached value is
+  # the signature taken BEFORE that scan and every append grows the file, moving
+  # the size and both timestamps the signature is built from. So anything
+  # written from the moment of the previous stat onward is still seen here.
+  # Keep those two properties together: caching a signature taken after the scan
+  # instead, or narrowing the signature to identity alone, would each reintroduce
+  # a real miss. tests/fm-pending-reply.test.sh covers both directions.
   if [ -z "$status_override" ] && [ "$unconfirmed" = 0 ]; then
     signature=$(fm_pending_reply_file_signature "$status_file")
     previous=$(fm_pending_reply_get "$rec" parent_status_scan_signature)
