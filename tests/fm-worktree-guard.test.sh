@@ -16,7 +16,7 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-worktree-guard)
 
 test_opencode_guard_blocks_writes_outside_worktree() {
-  local case_dir home proj wt fakebin id=guard-block out plugin primary_dir outside_target
+  local case_dir home proj wt wt_link fakebin id=guard-block out plugin primary_dir outside_target
   case_dir="$TMP_ROOT/block"
   home="$case_dir/home"
   proj="$case_dir/project"
@@ -38,6 +38,11 @@ test_opencode_guard_blocks_writes_outside_worktree() {
   primary_dir="$case_dir/primary-checkout"
   mkdir -p "$primary_dir"
   outside_target="$primary_dir/leaked-edit.md"
+
+  # The worktree reached through a symlinked prefix, mirroring fm-spawn's raw
+  # (non-canonical) WT path on setups where a project prefix is a symlink.
+  wt_link="$case_dir/wt-link"
+  ln -sfn "$wt" "$wt_link"
 
   node --input-type=module -e "
     import('$plugin').then(async (mod) => {
@@ -62,6 +67,13 @@ test_opencode_guard_blocks_writes_outside_worktree() {
       } catch (e) {
         blockedEdit = 'threw: ' + e.message;
       }
+      let allowedNestedNew = 'threw';
+      try {
+        await before({ tool: 'write' }, { args: { filePath: '$wt_link/docs/new/notes.md' } });
+        allowedNestedNew = 'no-throw';
+      } catch (e) {
+        allowedNestedNew = 'threw: ' + e.message;
+      }
       let allowedReport = 'threw';
       try {
         await before({ tool: 'write' }, { args: { filePath: '$home/data/$id/report.md' } });
@@ -79,6 +91,7 @@ test_opencode_guard_blocks_writes_outside_worktree() {
       console.log('BLOCKED_WRITE=' + blockedWrite);
       console.log('ALLOWED_WRITE=' + allowedWrite);
       console.log('BLOCKED_EDIT=' + blockedEdit);
+      console.log('ALLOWED_NESTED_NEW=' + allowedNestedNew);
       console.log('ALLOWED_REPORT=' + allowedReport);
       console.log('ALLOWED_BASH=' + allowedBash);
     }).catch((e) => { console.error(e); process.exit(1); });
@@ -89,6 +102,7 @@ test_opencode_guard_blocks_writes_outside_worktree() {
   assert_contains "$out" "BLOCKED_WRITE=threw:" "guard must refuse a write resolving outside the worktree"
   assert_contains "$out" "ALLOWED_WRITE=no-throw" "guard must allow a write that stays inside the worktree"
   assert_contains "$out" "BLOCKED_EDIT=threw:" "guard must refuse an edit resolving outside the worktree"
+  assert_contains "$out" "ALLOWED_NESTED_NEW=no-throw" "guard must allow a new nested in-worktree path reached through a symlinked prefix"
   assert_contains "$out" "ALLOWED_REPORT=no-throw" "guard must allow the brief-mandated report write under the task data dir"
   assert_contains "$out" "ALLOWED_BASH=no-throw" "guard must not block read-only bash commands"
   pass "opencode worktree-guard plugin blocks write/edit calls escaping the assigned worktree"

@@ -2864,13 +2864,24 @@ const WORKTREE_ROOT = realRoot("$WT");
 const TASK_DATA_ROOT = realRoot("$DATA/$ID");
 const ALLOWED_ROOTS = [WORKTREE_ROOT, TASK_DATA_ROOT];
 
-function allowedTarget(target) {
-  let real;
-  try {
-    real = resolve(realpathSync(dirname(resolve(target))), basename(target));
-  } catch {
-    real = resolve(target);
+function canonicalize(target) {
+  const abs = resolve(target);
+  const trailing = [];
+  let probe = abs;
+  for (;;) {
+    try {
+      return resolve(realpathSync(probe), ...trailing);
+    } catch {
+      const parent = dirname(probe);
+      if (parent === probe) return abs;
+      trailing.unshift(basename(probe));
+      probe = parent;
+    }
   }
+}
+
+function allowedTarget(target) {
+  const real = canonicalize(target);
   return ALLOWED_ROOTS.some((root) => real === root || real.startsWith(root + "/"));
 }
 
