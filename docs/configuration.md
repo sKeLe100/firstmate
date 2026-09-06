@@ -172,6 +172,7 @@ Run the primary inside tmux (or herdr), or set `FM_SUPERVISOR_TARGET` explicitly
 Setting only `FM_SUPERVISOR_BACKEND` does not lift the refusal: it names a transport but no pane, so target detection would still come up empty.
 Selecting any other supervisor backend, including `zellij`, `orca`, or `cmux`, refuses instead of trying tmux injection primitives against a non-tmux pane.
 A resolved backend and target are also checked for usability *before* `bin/fm-afk-launch.sh` arms away mode (both `start` and `start-native`): `validate_supervisor_target` in `bin/fm-supervisor-target-lib.sh` owns that check and rejects an unsupported backend, then a target that does not resolve to a live pane under it, so a broken supervision target fails at `/afk` time rather than after `state/.afk` is written.
+`bin/fm-afk-start.sh` deliberately does not repeat that usability check: it only verifies a target resolves at all, so on a direct (non-launcher-prepared) start an unsupported backend or dead target is caught by `bin/fm-supervise-daemon.sh`'s startup refusal rather than at `/afk` time.
 `bin/fm-supervise-daemon.sh` runs the same shared check at startup as the backstop, so the two refusals cannot drift apart.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
