@@ -2837,6 +2837,72 @@ export const FmBusyState = async () => {
 };
 EOF
       exclude_path '.opencode/plugins/fm-busy-state.js'
+      cat > "$WT/.opencode/plugins/fm-worktree-guard.js" <<EOF
+// Write-guard for PC02/opencode crewmate sessions: refuses any edit/write or
+// primary-checkout-referencing bash command that would escape this task's
+// assigned worktree. Reproduced twice in production (2026-09-03
+// token-burn-item10-no-self-resume, 2026-09-06 fm-relaunch-rebinds-pr-poll)
+// when a tool call resolved a path against the primary checkout instead of
+// \$WT; both times the primary checkout's stray copy was only caught by
+// accident via git status. tool.execute.before can block by throwing
+// (verified against fm-primary-pretool-check.js, 2026-07-09 against OpenCode
+// 1.17.15).
+import { realpathSync } from "node:fs";
+import { resolve, dirname, basename } from "node:path";
+
+const WORKTREE_ROOT = (() => {
+  try {
+    return realpathSync("$WT");
+  } catch {
+    return resolve("$WT");
+  }
+})();
+const PRIMARY_ROOT = "$FM_ROOT";
+
+function insideWorktree(target) {
+  if (!target || typeof target !== "string") return true;
+  let real;
+  try {
+    real = resolve(realpathSync(dirname(resolve(target))), basename(target));
+  } catch {
+    real = resolve(target);
+  }
+  return real === WORKTREE_ROOT || real.startsWith(WORKTREE_ROOT + "/");
+}
+
+export const FmWorktreeGuard = async () => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      const tool = input?.tool;
+      const args = output?.args || {};
+      if (tool === "write" || tool === "edit" || tool === "patch") {
+        const target = args.filePath || args.path || args.file_path;
+        if (target && !insideWorktree(target)) {
+          throw new Error(
+            "fm-worktree-guard: refused " + tool + " outside the assigned worktree (" +
+              WORKTREE_ROOT + "): " + target
+          );
+        }
+      }
+      if (tool === "bash") {
+        const command = args.command;
+        if (
+          typeof command === "string" &&
+          PRIMARY_ROOT &&
+          PRIMARY_ROOT !== WORKTREE_ROOT &&
+          command.includes(PRIMARY_ROOT)
+        ) {
+          throw new Error(
+            "fm-worktree-guard: refused bash command referencing the primary checkout (" +
+              PRIMARY_ROOT + ") instead of the assigned worktree (" + WORKTREE_ROOT + ")"
+          );
+        }
+      }
+    },
+  };
+};
+EOF
+      exclude_path '.opencode/plugins/fm-worktree-guard.js'
       ;;
     pi|pi-signed)
       # Written OUTSIDE the worktree: pi's project-trust gate fires on any extension
