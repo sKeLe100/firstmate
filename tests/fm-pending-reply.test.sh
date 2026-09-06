@@ -13,6 +13,8 @@
 #   4. Second missed turn escalates once and remains durable
 #   4a. A remote reply still in ingest transit resolves locally instead of a
 #       false repost demand, while a genuinely missing one still escalates
+#   4b. A parent status scan signature cached by an earlier miss cannot hide a
+#       reply the forced ingest lands, so the optimization never fakes a miss
 #   5. Transport success cannot masquerade as reply success
 #   6. Unrelated events and stale correlation ids cannot resolve a request
 #   7. Restart/compaction preserves the expectation and exact parent destination
@@ -359,6 +361,59 @@ test_remote_reply_in_transit_resolves_without_escalation() {
     fail "an in-transit reply must not trigger a repost demand"$'\n'"$status_line"
   fi
   pass "a remote reply still in ingest transit resolves locally instead of escalating"
+}
+
+# The scan-signature cache skips re-reading a parent status file that has not
+# changed since the last miss scan. It cannot mask a reply the forced ingest
+# pulled in, because two invariants hold together: the cached value is the
+# signature computed BEFORE that scan, so anything written after it is still
+# seen next time, and every ingest append grows the file, which changes the
+# size and both timestamps the signature is built from. This primes the cache
+# with a real miss scan and then lands the reply in the same second, the
+# tightest window the timestamp resolution allows.
+test_primed_scan_signature_cannot_mask_forced_ingest() {
+  local home state corr rec primed status_line
+  home=$(setup_parent primed-signature)
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=4250
+  fm_write_meta "$state/hibit.meta" \
+    "kind=secondmate" "mode=secondmate" "home=$home/sm" "remote_host=pc02-llm-lab"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "why is phase 7 stuck")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  fm_pending_reply_note_remote_channel_caught_up "$state" hibit "$FM_PENDING_REPLY_NOW"
+  export FM_PENDING_REPLY_SEND_HOOK='true'
+  fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  # Prime the cache with a genuine miss against the file as it stands just
+  # before the reply lands, so escalation runs with the stalest cache possible.
+  printf 'working: still digging\n' >> "$state/hibit.status"
+  fm_pending_reply_try_resolve "$state" "$corr" >/dev/null 2>&1 || true
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  primed=$(fm_pending_reply_get "$rec" parent_status_scan_signature)
+  [ -n "$primed" ] || fail "a delivered miss scan must cache a parent status signature"
+  # This hook is strictly weaker than the real ingest, which resolves each
+  # correlated id itself through the status-file override that bypasses the
+  # cache: here only the append happens, so the re-resolve after the ingest is
+  # the sole thing that can find the reply.
+  # shellcheck disable=SC2329
+  ingest_hook() {
+    printf 'done [corr=%s]: build verified\n' "$2" >> "$1/hibit.status"
+  }
+  export -f ingest_hook
+  export FM_PENDING_REPLY_FORCE_INGEST_HOOK='ingest_hook'
+  fm_pending_reply_maybe_escalate "$state" "$corr" 2>/dev/null || true
+  unset -f ingest_hook
+  unset FM_PENDING_REPLY_FORCE_INGEST_HOOK
+  [ "$(fm_pending_reply_file_signature "$state/hibit.status")" != "$primed" ] \
+    || fail "an ingest append must change the parent status signature"
+  [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] \
+    || fail "a primed scan signature must not stop the post-ingest re-scan from resolving"
+  if grep -Fq "blocked [key=pending-reply-$corr]:" "$state/hibit.status"; then
+    status_line=$(grep -F "blocked [key=pending-reply-$corr]:" "$state/hibit.status")
+    fail "a cached scan signature must not turn an ingested reply into a repost demand"$'\n'"$status_line"
+  fi
+  pass "a primed scan signature cannot mask a reply the forced ingest just landed"
 }
 
 test_remote_genuinely_missing_reply_still_escalates() {
@@ -1365,6 +1420,7 @@ test_recovery_attempt_is_never_reinjected
 test_recovery_reply_resolves_original
 test_second_missed_turn_escalates_once_and_stays_durable
 test_remote_reply_in_transit_resolves_without_escalation
+test_primed_scan_signature_cannot_mask_forced_ingest
 test_remote_genuinely_missing_reply_still_escalates
 test_local_secondmate_escalation_skips_forced_ingest
 test_escalation_wakes_and_its_close_stays_quiet
