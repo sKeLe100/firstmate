@@ -30,6 +30,11 @@ CONTROL="$ROOT/bin/fm-control.sh"
 SPAWN="$ROOT/bin/fm-spawn.sh"
 PROMOTE="$ROOT/bin/fm-promote.sh"
 X_LINK="$ROOT/bin/fm-x-link.sh"
+# Ticks of 0.01s each test spends waiting for a rendezvous file another process
+# must create. Generous on purpose: these are handshake waits, not timing
+# assertions, and a 2s budget expired under load on a busy machine, failing the
+# test before the relaunch had even reached its trace-delivery stub.
+WAIT_TICKS=3000
 # fm_test_tmproot's own cleanup trap fires when its command substitution exits,
 # so recreate the root before resolving it and clean it up from this file's trap.
 TMP_ROOT=$(fm_test_tmproot fm-control-relaunch)
@@ -355,7 +360,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
     FM_FAKE_TRACE_RELEASE="$launch_release" \
     run_control "$dir" rl28 relaunch --note "continue after publication" > "$dir/control.out" &
   control_pid=$!
-  while [ ! -e "$prepare" ] && [ "$i" -lt 200 ]; do
+  while [ ! -e "$prepare" ] && [ "$i" -lt "$WAIT_TICKS" ]; do
     /bin/sleep 0.01
     i=$((i + 1))
   done
@@ -374,7 +379,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
       --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
   link_pid=$!
   i=0
-  while [ ! -e "$waiting" ] && [ "$i" -lt 200 ]; do
+  while [ ! -e "$waiting" ] && [ "$i" -lt "$WAIT_TICKS" ]; do
     /bin/sleep 0.01
     i=$((i + 1))
   done
@@ -387,7 +392,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
   }
   : > "$launch_release"
   i=0
-  while [ ! -e "$ready" ] && [ "$i" -lt 200 ]; do
+  while [ ! -e "$ready" ] && [ "$i" -lt "$WAIT_TICKS" ]; do
     /bin/sleep 0.01
     i=$((i + 1))
   done
@@ -1006,7 +1011,7 @@ test_prepublication_failure_keeps_concurrent_durable_metadata() {
     run_control "$dir" rl30 relaunch --harness codex --note "preserve concurrent metadata" \
       > "$dir/control.out" &
   control_pid=$!
-  while [ ! -e "$dir/cwd-race-ready" ] && [ "$i" -lt 200 ]; do
+  while [ ! -e "$dir/cwd-race-ready" ] && [ "$i" -lt "$WAIT_TICKS" ]; do
     /bin/sleep 0.01
     i=$((i + 1))
   done

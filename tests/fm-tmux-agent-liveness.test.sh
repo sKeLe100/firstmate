@@ -47,8 +47,33 @@ chmod +x "$LAB/shim/tmux"
 PATH="$LAB/shim:$PATH"
 export PATH
 
-# Stand-in "harness" binaries. These are SYMLINKS to a real long-running system
-# binary, never copies: a copied platform binary fails code-signing validation
+# The long-running target every stand-in symlink points at. A multi-call
+# coreutils build (uutils, busybox) dispatches on argv[0], so a symlink to the
+# system `sleep` named `claude-link` runs `link` and exits 1 instead of
+# sleeping - the pane dies and every case below reads `missing`. Prefer a
+# locally compiled spinner, which has no argv[0] dispatch, and fall back to the
+# system binary only after proving a renamed symlink to it actually stays alive.
+CC_BIN=$(command -v cc 2>/dev/null || command -v gcc 2>/dev/null || true)
+SPIN_SRC="$LAB/spin.c"
+printf '%s\n' '#include <unistd.h>' 'int main(void){for(;;)sleep(60);return 0;}' > "$SPIN_SRC"
+if [ -n "$CC_BIN" ] && "$CC_BIN" -o "$LAB/spin" "$SPIN_SRC" 2>/dev/null; then
+  SLEEP_BIN="$LAB/spin"
+else
+  mkdir -p "$LAB/probe"
+  ln -s "$SLEEP_BIN" "$LAB/probe/fm-liveness-probe"
+  "$LAB/probe/fm-liveness-probe" 30 >/dev/null 2>&1 &
+  probe_pid=$!
+  sleep 0.5
+  if kill -0 "$probe_pid" 2>/dev/null; then
+    kill "$probe_pid" 2>/dev/null || true
+  else
+    echo "skip: no C compiler and the system sleep dispatches on argv[0], so renamed stand-in binaries cannot run"
+    exit 0
+  fi
+fi
+
+# Stand-in "harness" binaries. These are SYMLINKS to the long-running target
+# above, never copies: a copied platform binary fails code-signing validation
 # and is killed on macOS arm64. The symlink name is what the kernel records as
 # the executable identity, which is exactly the signal under test.
 ln -s "$SLEEP_BIN" "$LAB/bin/claude-link"
@@ -179,11 +204,9 @@ pass "tmux liveness: unrelated muse-containing command names stay ambiguous"
 # real executable file rather than a symlink, because macOS takes the title
 # from the resolved target's name, so it is skipped where no C compiler exists.
 
-CC_BIN=$(command -v cc 2>/dev/null || command -v gcc 2>/dev/null || true)
 if [ -n "$CC_BIN" ] &&
-  printf '%s\n' '#include <unistd.h>' 'int main(void){for(;;)sleep(60);return 0;}' > "$LAB/spin.c" &&
-  "$CC_BIN" -o "$LAB/bin/claude/2.1.220" "$LAB/spin.c" 2>/dev/null &&
-  "$CC_BIN" -o "$LAB/bin/decoy/2.1.220" "$LAB/spin.c" 2>/dev/null; then
+  "$CC_BIN" -o "$LAB/bin/claude/2.1.220" "$SPIN_SRC" 2>/dev/null &&
+  "$CC_BIN" -o "$LAB/bin/decoy/2.1.220" "$SPIN_SRC" 2>/dev/null; then
   new_window titled "$LAB/bin/claude/2.1.220"
   wait_for_state "$SESSION:titled" alive \
     || fail "a version-named executable under a harness install path must classify alive"
