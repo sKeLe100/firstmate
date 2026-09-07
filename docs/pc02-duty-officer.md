@@ -31,7 +31,7 @@ prompt="$(cat docs/pc02-duty-officer-prompt.txt)
 
 Question: <the factual question>"
 
-remote="opencode run -m pc02-llama-swap/qwen3.6-35b-a3b-dispatch \
+remote="opencode run -m pc02-llamaswap/qwen3.6-35b-a3b-dispatch \
   --dir <staging-dir-with-the-needed-file(s)> $(printf %q "$prompt")"
 
 ssh pc02 "bash -lc $(printf %q "$remote")"
@@ -84,6 +84,9 @@ Per the scoping report, the duty officer is the secondary fallback, not the prim
 4. **Neither cloud nor PC02 works:** there is no offline answer. This is the same conclusion the
    scoping report reached - it is a hardware/connectivity ceiling, not something this deployment can
    close.
+
+When PC02 is reachable but its llama-swap serving stack is down, recovery steps live in
+[`pc02-outage-runbook.md`](pc02-outage-runbook.md).
 
 The duty officer never has fleet-supervision, merge, or code-modification authority; those remain
 gated on a full session per `data/pc02-duty-officer-scoping/report.md`'s capability findings.
