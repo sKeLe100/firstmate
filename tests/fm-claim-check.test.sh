@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Behavior tests for fm-claim-check.sh: a claimed path passes when git knows
-# it - touched in the diff, or tracked at HEAD - and fails only when the
-# branch produced no such file. Detection is git-fact only, so the prose
-# around a path never changes the verdict.
+# it: a path claimed as changed by an unambiguous change verb must appear in
+# the diff, while any other mentioned path only has to be tracked at HEAD.
+# Unrecognized phrasing falls through to the permissive citation tier.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -59,12 +59,35 @@ STATUS=$?
 [ "$STATUS" -eq 0 ] || fail "expected exit 0 when an unchanged path is tracked, got $STATUS: $OUT"
 [ -z "$OUT" ] || fail "expected no output for a tracked cited path, got: $OUT"
 
-# --- the same tracked path passes even under a change verb: the documented
-# --- limitation. Detection never reads the prose, in either direction.
+# --- a change-verb claim about a tracked-but-untouched path fails: an
+# --- uncommitted claim about an existing file is what this gate exists to catch
 OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'updated docs/architecture.md' 2>/dev/null)
 STATUS=$?
-[ "$STATUS" -eq 0 ] || fail "expected exit 0 for a tracked-but-untouched path, got $STATUS: $OUT"
-[ -z "$OUT" ] || fail "expected no output for a tracked-but-untouched path, got: $OUT"
+[ "$STATUS" -eq 1 ] || fail "expected exit 1 for a change-verb claim on an untouched path, got $STATUS: $OUT"
+assert_contains "$OUT" "docs/architecture.md" "untouched change-verb path listed in output"
+
+# --- the verb binds only its own direct object, so a reference clause in the
+# --- same sentence stays in the permissive citation tier ---
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'updated bin/fm-new-thing.sh to match docs/architecture.md' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 0 ] || fail "expected exit 0 when the verb object is in the diff, got $STATUS: $OUT"
+[ -z "$OUT" ] || fail "expected no output for a same-clause citation, got: $OUT"
+
+# --- an unrecognized verb degrades to the citation tier, never a false alarm ---
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'reflected docs/architecture.md' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 0 ] || fail "expected exit 0 for an unlisted verb on a tracked path, got $STATUS: $OUT"
+
+# --- the canonical "done: PR <url>" summaries the DOD prescribes pass ---
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'done: PR https://github.com/sKeLe100/firstmate/pull/71; added bin/fm-new-thing.sh' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 0 ] || fail "expected exit 0 for the direct-PR done line, got $STATUS: $OUT"
+[ -z "$OUT" ] || fail "expected no output for the direct-PR done line, got: $OUT"
+
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'done: PR https://github.com/sKeLe100/firstmate/pull/71 checks green; added bin/fm-new-thing.sh' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 0 ] || fail "expected exit 0 for the no-mistakes done line, got $STATUS: $OUT"
+[ -z "$OUT" ] || fail "expected no output for the no-mistakes done line, got: $OUT"
 
 # --- a summary mixing a tracked citation with a nonexistent claim reports
 # --- only the nonexistent one ---
