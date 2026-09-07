@@ -1,0 +1,66 @@
+=== fm-autonomous-pc02-lane.sh: end-to-end CLI transcript ===
+
+$ fm-autonomous-pc02-lane.sh --help
+fm-autonomous-pc02-lane.sh - is the PC02 lane free for the
+/autonomous skill's step 3 dispatch-availability check?
+
+Why: PC02's llama-swap serves one model at a time (bin/fm-spawn.sh's
+pc02_lane_guard), so a second concurrent pc02-llamaswap/* task starves the
+first. Step 3 of the autonomous pass already checks the generic Claude
+dispatch-cap gate (config/dispatch-cap reduced by the quota ladder), but
+that check says nothing about PC02 occupancy: a PC02-routed candidate can
+read as dispatchable purely because the Claude lane count has headroom
+while PC02 itself is already held by another task. This script is the
+pass's separate, explicit answer to "is PC02 itself free right now",
+mirroring pc02_lane_guard's scan-and-liveness read (never its lock or
+meta-publication half, which only apply at spawn time) rather than
+inventing new detection logic.
+
+Usage: fm-autonomous-pc02-lane.sh
+
+Scans state/*.meta for a task whose meta shows a pc02-llamaswap/* model,
+exactly as pc02_lane_guard matches. A match is occupied unless its
+recorded endpoint reads back positively dead (fm_backend_agent_alive = dead); ambiguous or
+unknown liveness keeps the lane occupied, matching pc02_lane_guard's
+fail-closed direction. A remote secondmate's lane (remote_host set) always
+reads as occupied outright - liveness lives behind the remote host, which
+this local endpoint probe cannot settle.
+
+Output (one line to stdout):
+  free                       - no live PC02 task holds the lane
+  occupied: <task-id>        - <task-id>'s live pc02-llamaswap/* endpoint holds it
+
+Exit codes: 0 = free, 1 = occupied, 2 = usage error or unreadable state
+directory (never a silent free).
+exit=0
+
+--- 1. Claude lane busy (dispatch-cap would be consumed), PC02 untouched ---
+$ ls state/ -> cloud.meta
+$ fm-autonomous-pc02-lane.sh
+free
+exit=0
+
+--- 2. A live PC02 task holds the lane (any harness) ---
+$ fm-autonomous-pc02-lane.sh
+occupied: pc02-holder
+exit=1
+
+--- 3. Holder's endpoint is positively dead -> lane frees ---
+$ fm-autonomous-pc02-lane.sh
+free
+exit=0
+
+--- 4. Remote secondmate's PC02 lane always reads occupied ---
+$ fm-autonomous-pc02-lane.sh
+occupied: remote
+exit=1
+
+--- 5. Fail-closed: state dir unavailable ---
+$ FM_STATE_OVERRIDE=/nonexistent fm-autonomous-pc02-lane.sh
+fm-autonomous-pc02-lane.sh: state directory is unavailable: /tmp/tmp.CkTsmwl3Je/gone
+exit=2
+
+--- 6. Usage error ---
+$ fm-autonomous-pc02-lane.sh --bogus
+fm-autonomous-pc02-lane.sh: unknown argument: --bogus
+exit=2
