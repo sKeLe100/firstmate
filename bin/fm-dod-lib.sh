@@ -202,6 +202,7 @@ For a legacy brief with no such subsection, include only words explicitly labele
 Do not include \`## Firstmate spec\`, later Firstmate build constraints, or your own decisions and tradeoffs.
 This replaces the no-mistakes skill's advice to enrich \`--intent\` with decisions and tradeoffs; that advice does not apply to Firstmate-dispatched work.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+Poll long-running pipeline steps (no-mistakes runs, test loops) with synchronous foreground checks on an explicit sleep/retry cadence; do not park a background Task/Monitor call on a step that can run for many minutes.
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop.
