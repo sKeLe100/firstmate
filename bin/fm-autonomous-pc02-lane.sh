@@ -28,7 +28,8 @@
 #   free                       - no live PC02 task holds the lane
 #   occupied: <task-id>        - <task-id>'s live pc02-llamaswap/* endpoint holds it
 #
-# Exit codes: 0 = free, 1 = occupied, 2 = usage error.
+# Exit codes: 0 = free, 1 = occupied, 2 = usage error or unreadable state
+# directory (never a silent free).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,6 +49,11 @@ fi
 
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
+
+if [ ! -d "$STATE" ]; then
+  echo "fm-autonomous-pc02-lane.sh: state directory is unavailable: $STATE" >&2
+  exit 2
+fi
 
 for other_meta in "$STATE"/*.meta; do
   [ -f "$other_meta" ] || continue

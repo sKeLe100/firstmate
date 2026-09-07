@@ -148,7 +148,21 @@ test_stray_argument_is_a_usage_error() {
   pass "a stray argument is rejected as a usage error"
 }
 
+test_missing_state_dir_refuses_instead_of_reading_free() {
+  local rec home fakebin out status
+  rec=$(make_home nostate)
+  IFS='|' read -r home fakebin <<< "$rec"
+
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_STATE_OVERRIDE="$home/state-gone" \
+    PATH="$fakebin:$PATH" TMUX="fake,1,0" "$SCRIPT" 2>&1)
+  status=$?
+  expect_code 2 "$status" "a missing state directory must refuse, not read free: $out"
+  assert_contains "$out" "state directory is unavailable" "missing state dir lacked a concrete diagnostic: $out"
+  pass "a missing state directory refuses instead of silently reading free"
+}
+
 test_free_when_no_pc02_meta_exists
+test_missing_state_dir_refuses_instead_of_reading_free
 test_non_opencode_harness_still_holds_pc02_lane
 test_stray_argument_is_a_usage_error
 test_occupied_when_pc02_lane_alive
