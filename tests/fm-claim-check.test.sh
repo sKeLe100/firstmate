@@ -73,6 +73,18 @@ STATUS=$?
 [ "$STATUS" -eq 0 ] || fail "expected exit 0 when the verb object is in the diff, got $STATUS: $OUT"
 [ -z "$OUT" ] || fail "expected no output for a same-clause citation, got: $OUT"
 
+# --- a verb governs every path in its list, not just the first ---
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'updated bin/fm-new-thing.sh and docs/architecture.md' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 1 ] || fail "expected exit 1 for an 'and' list with an untouched path, got $STATUS: $OUT"
+assert_contains "$OUT" "docs/architecture.md" "second listed path checked as a claim"
+case $OUT in *fm-new-thing*) fail "committed path must not be reported: $OUT";; esac
+
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'updated bin/fm-new-thing.sh, docs/architecture.md' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 1 ] || fail "expected exit 1 for a comma list with an untouched path, got $STATUS: $OUT"
+assert_contains "$OUT" "docs/architecture.md" "comma-listed path checked as a claim"
+
 # --- an unrecognized verb degrades to the citation tier, never a false alarm ---
 OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'reflected docs/architecture.md' 2>/dev/null)
 STATUS=$?

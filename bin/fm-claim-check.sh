@@ -6,9 +6,10 @@
 # Reads the claim text from stdin.
 # Every path-shaped token (containing a "/" and a file extension) is checked
 # against git in one of two tiers:
-#   - a path claimed as changed - it is the first path within a few words
-#     after an unambiguous change verb (created/added/modified/updated/wrote,
-#     ...) - must appear in `git diff --name-only <base-ref>...HEAD`.
+#   - a path claimed as changed - it follows an unambiguous change verb
+#     (created/added/modified/updated/wrote, ...) within a few words, and so
+#     does every further path the verb lists after it via "and" or a comma -
+#     must appear in `git diff --name-only <base-ref>...HEAD`.
 #   - any other mentioned path is a citation and only has to be tracked at
 #     HEAD, so a summary may freely reference unchanged files.
 # The verb list is deliberately short. A phrasing it does not recognize falls
@@ -29,7 +30,8 @@ Verifies the file paths named in a claim text against git facts. Reads the
 claim text from stdin and classifies each path-shaped token in two tiers.
 
 A path introduced by an unambiguous change verb (created, added, modified,
-updated, wrote, ...) must appear in the diff of HEAD versus <base-ref>. Any
+updated, wrote, ...), and every further path listed with it, must appear in
+the diff of HEAD versus <base-ref>. Any
 other mentioned path is treated as a citation and only has to be tracked at
 HEAD. Unrecognized phrasing falls through to the citation tier, so the gate
 errs toward accepting correct work. URLs are ignored.
@@ -73,6 +75,8 @@ CLASSIFIED=$(printf '%s\n' "$CLAIM_TEXT" | awk '
             "implemented|implementing|delete|deletes|deleted|deleting|" \
             "remove|removes|removed|removing)$"
     window = 0
+    inlist = 0
+    conj = "^(and|&|plus|,)$"
   }
   {
     for (i = 1; i <= NF; i++) {
@@ -82,11 +86,13 @@ CLASSIFIED=$(printf '%s\n' "$CLAIM_TEXT" | awk '
       gsub(/[`"\x27)\]>.,;:]+$/, "", tok)
       if (tok ~ /^[A-Za-z0-9_.\/-]+\/[A-Za-z0-9_.\/-]+\.[A-Za-z0-9]+$/) {
         sub(/^\.\//, "", tok)
-        if (window > 0) { print "changed " tok; window = 0 }
-        else { print "cited " tok }
+        if (window > 0 || inlist) { print "changed " tok; window = 0; inlist = 1 }
+        else { print "cited " tok; inlist = 0 }
         continue
       }
-      if (tolower(tok) ~ verbs) { window = 4; continue }
+      if (tolower(tok) ~ verbs) { window = 4; inlist = 0; continue }
+      if (inlist && tolower(tok) ~ conj) { continue }
+      inlist = 0
       if (window > 0) { window-- }
     }
   }
