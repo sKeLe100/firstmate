@@ -161,6 +161,21 @@ test_missing_state_dir_refuses_instead_of_reading_free() {
   pass "a missing state directory refuses instead of silently reading free"
 }
 
+test_help_prints_the_whole_documented_contract() {
+  local out status
+  out=$("$SCRIPT" --help 2>&1)
+  status=$?
+  expect_code 0 "$status" "--help must exit 0: $out"
+  assert_contains "$out" "Exit codes: 0 = free, 1 = occupied, 2 = usage error or unreadable state
+directory (never a silent free)." "--help truncated the exit-codes contract: $out"
+  assert_contains "$out" "occupied: <task-id>" "--help omitted the occupied output line: $out"
+  case "$out" in
+    *"set -u"*) fail "--help spilled past the header block into script code: $out" ;;
+  esac
+  pass "--help prints the whole documented contract"
+}
+
+test_help_prints_the_whole_documented_contract
 test_free_when_no_pc02_meta_exists
 test_missing_state_dir_refuses_instead_of_reading_free
 test_non_opencode_harness_still_holds_pc02_lane
