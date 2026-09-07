@@ -145,7 +145,9 @@ treating any PC02-routed candidate as dispatchable, separately run
 `bin/fm-autonomous-pc02-lane.sh`, which mirrors `pc02_lane_guard`'s
 scan-and-liveness read (state/*.meta for a live task on a
 pc02-llamaswap/* model, whatever its harness). It prints `free`
-(exit 0) or `occupied: <task-id>` (exit 1). When it reports occupied,
+(exit 0) or `occupied: <task-id>` (exit 1); if it cannot read the state
+directory it prints an error on stderr and exits 2, which is fail-closed -
+treat exit 2 exactly like occupied, never as free. When it reports occupied,
 defer that candidate specifically - do not fall back to counting it
 against, or clearing it via, the generic dispatch-cap headroom - and
 continue evaluating any non-PC02 candidates normally.
