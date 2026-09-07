@@ -37,7 +37,7 @@ firstmate is not a model, not a harness, not a skill, not an MCP server, and not
 firstmate is an agent distro for running a crew of agents.
 An agent distro is a portable directory of instructions, skills, tooling, policies, and state conventions that turns a general-purpose agent into a specialized one.
 There is no app to install: the cloned repo is the distro - `AGENTS.md`, bundled firstmate skills, and helper scripts that any terminal coding agent can follow.
-Launching a supported harness inside it instantiates your first mate - and makes you the captain.
+Launching a supported harness inside it for your primary session instantiates your first mate - and makes you the captain.
 
 ## Features
 
@@ -178,7 +178,7 @@ Claude and grok use the slash form shown here; codex uses the same names with `$
 | `/bearings`        | Generate a concise four-section chat digest from bounded fleet state, including registered remote-home ledgers; use `/bearings file` to also replace today's dated report in `data/`, and add `include PRs` for live GitHub enrichment |
 | `/queue`           | List the next queued backlog items as a numbered list grouped into dispatchable, blocked, needs-the-captain, and deferred sections - the needs-the-captain section is split into sub-groups by the underlying cause, so the captain can see why each item needs them (`/queue priority` renders the old flat priority-ordered list instead), opening with a one-line lane-availability summary (`/queue lanes` shows the full per-tier hierarchy and what task class each lane serves), and giving each item its project, kind, age in days, dispatch tier candidates, and whether it clears itself or needs the captain along with the reason behind that verdict; when the listing is capped below the full queue it says so with a "showing N of M queued" header plus a hidden-by-project breakdown; it never mutates the backlog, and every item can be asked about for full detail |
 | `/questionnaire`   | Walk the captain through the pending decision bundle one interactive batch at a time, recording each ruling durably; when nothing needs ruling, offer a senior-tier project-review scout that refills the bundle with grounded candidate next steps |
-| `/updatefirstmate` | Self-update the running firstmate and its secondmates with fast-forward-only pulls, then reload changed second-mate instructions through persist-gated restarts or fallback re-read nudges |
+| `/updatefirstmate` | Fast-forward the running firstmate and its secondmates, then persist and restart every live mate successfully left on the target commit - including already-current homes - with an honest re-read nudge only when restart cannot be proven |
 | `/stow`            | Sweep the session for uncaptured durable knowledge, persist the open work records this session knows are unfiled or now wrong, curate tiered startup memory with decay and cold archival, enforce each home's budget or surface the required decision, cascade to registered second mates, and report what is safe to reset |
 
 Bearings invocation examples:
@@ -222,7 +222,7 @@ Firstmate's skills live in two separate places with different audiences:
 - [docs/supervision-protocols/](docs/supervision-protocols/) - rendered primary-harness watcher protocols for Claude, Codex, OpenCode, Pi and `pi-signed`, Grok, Cursor, and unknown harness fallback.
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
 - [docs/documentation-audiences.md](docs/documentation-audiences.md) - documentation audiences and the machine-checked placement boundary.
-- [`AGENTS.md`](AGENTS.md) - the distro's always-loaded operating contract and routing index for conditional procedures.
+- [`AGENTS.md`](AGENTS.md) - the supervisor contract, role boundary, and routing index for conditional procedures.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
 
 ## Contributing

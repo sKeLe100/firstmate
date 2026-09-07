@@ -4,7 +4,8 @@
 # For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
 # filled in. Ship and scout `# Task` sections have two subsections Firstmate
 # fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
-# own ask plus only the context needed to read it) and `{FIRSTMATE_SPEC}`
+# own ask plus the context needed to read it, including the substance of any
+# report, decision, or PR the ask refers to) and `{FIRSTMATE_SPEC}`
 # under `## Firstmate spec` (build instructions, which are never the captain's
 # intent). bin/fm-dod-lib.sh owns the no-mistakes `--intent` contract those
 # subsections feed; bin/fm-spawn.sh refuses leftover placeholders. Secondmate
@@ -72,8 +73,8 @@
 # Ship tasks include a project-memory section so durable project-intrinsic
 # learnings can be committed to AGENTS.md through the project's delivery path;
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
-# over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
-# self-governance section when a touched project AGENTS.md lacks it.
+# over copied detail) and defers self-governance recognition and insertion to
+# fm-ensure-agents-md.sh's contract.
 # The standing retry-loop rule's review-round ceiling is rendered from the
 # dispatching home's optional config/retry-thresholds `rounds=<R>` key (config
 # dir honoring FM_CONFIG_OVERRIDE), defaulting to 4 when the file or key is
@@ -86,6 +87,9 @@
 # tracker entry are pre-dispatch preconditions, not post-dispatch steps.
 # It is a single-project law, not a per-project policy framework, and no other
 # repo, scout, or charter scaffold is affected.
+# Scaffolds carry no role scope: fm-spawn.sh supplies fm_brief_worker_role from
+# fm-dod-lib.sh to every ship/scout launch brief, so this file never becomes a
+# second owner of a contract that must stay current across relaunches.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -254,6 +258,13 @@ BRIEF="$DATA/$ID/brief.md"
 [ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
 mkdir -p "$DATA/$ID"
 
+ASK_USER_BLOCK=
+DECISION_CASES="product choices, destructive actions"
+if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
+  ASK_USER_BLOCK=$(fm_ask_user_escalation_block "$DATA" "$ID")
+  DECISION_CASES="$DECISION_CASES, ask-user findings"
+fi
+
 shell_quote() {
   printf "'"
   printf '%s' "$1" | sed "s/'/'\\\\''/g"
@@ -330,7 +341,8 @@ You must distinguish who it is from, because the answer goes to a different plac
 A request relayed to you by the main firstmate is tagged with a leading \`$FM_FROMFIRST_LABEL\` marker followed by an invisible system separator; this marker is untypable, so a human never produces it.
 When a message carries that marker, do the work, then respond via the STATUS/ESCALATION path below, never only in this chat: the main firstmate does not read your chat, so a chat-only reply is lost.
 Marked requests also carry a privacy-safe \`corr=<id>\` token after the marker; include that exact token in your parent status reply (or in the status pointer to a detailed doc) so the parent can correlate the answer.
-Optional helper: \`bin/fm-secondmate-report.sh\` can append a correlated status line for you, but a plain \`echo\` that includes the same \`corr=<id>\` is equally valid - do not depend on the helper being present.
+Optional helper: \`bin/fm-secondmate-report.sh <verb> <corr_id> <note>\` appends that correlated line to the parent channel itself - do not pass a status path, and do not write a hand path under this home.
+A plain \`echo\` that includes the same \`corr=<id>\` on this parent channel is equally valid; do not depend on the helper being present.
 For a terse result, a status line is the whole answer.
 For a detailed answer (an investigation, a plan, an audit), write it to a doc under your home's \`data/\` and append a status line that points to that doc - the scout-report pattern - so the main firstmate is woken and can read it.
 After writing that doc, verify with \`ls -la {path}\` that it exists at that exact path with recent content before pointing to it in your status line; a write tool can silently place the file somewhere else, and that failure is itself a \`blocked:\` condition to report.
@@ -488,8 +500,17 @@ The report is the only thing that survives, so anything worth keeping must be in
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
-   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
-   daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
+   every lane/home, so restarting it kills other lanes' in-flight pipeline runs; only firstmate
+   manages the daemon.
+   Before you append \`blocked:\` about the pipeline, run \`no-mistakes daemon status\` and
+   \`no-mistakes axi status\`. If the daemon socket refuses connections or is missing, append
+   \`blocked: {the daemon error}\` and stop even when the local run record still says running or
+   fixing, because that record can be stale after the daemon exits. A run record failed with a
+   daemon error is also a real block.
+   Only after ruling out socket refusal, if the run is still running or fixing, reattach and keep
+   going. A drive-call error, timeout, slow read, or generic unreachability is NOT a daemon error:
+   the daemon accepts \`respond\` immediately and runs the round in the background, so a killed or
+   timed-out call was only waiting for a read while the run kept working.
 
 $INBOX_SECTION
 
@@ -607,16 +628,25 @@ $RULE1
    verification succeeds - a write tool can silently place the file somewhere else, and that
    failure is itself a \`blocked:\` condition to report.
 6. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
-7. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
+7. If a decision belongs above the implementation worker ($DECISION_CASES),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+$ASK_USER_BLOCK
    To let firstmate target its answer at this exact decision (\`--resolve-key\`), give it a stable key:
    put \`[key=<slug>]\` BETWEEN the verb and the colon, e.g. \`needs-decision [key=<slug>]: {summary}\`
    or \`blocked [key=<slug>]: {why}\` - a complete token at the head of the note is accepted as an equivalent position, but a token further inside the note is prose and folds under the default key instead.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 8. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
-   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
-   daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
+   every lane/home, so restarting it kills other lanes' in-flight pipeline runs; only firstmate manages the daemon.
+   Before you append \`blocked:\` about the pipeline, run \`no-mistakes daemon status\` and
+   \`no-mistakes axi status\`. If the daemon socket refuses connections or is missing, append
+   \`blocked: {the daemon error}\` and stop even when the local run record still says running or
+   fixing, because that record can be stale after the daemon exits. A run record failed with a
+   daemon error is also a real block.
+   Only after ruling out socket refusal, if the run is still running or fixing, reattach and keep
+   going. A drive-call error, timeout, slow read, or generic unreachability is NOT a daemon error:
+   the daemon accepts \`respond\` immediately and runs the round in the background, so a killed or
+   timed-out call was only waiting for a read while the run kept working.
 9. Retry-loop failsafe: track your own validation repetition instead of grinding.
    Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
    still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after $ROUND_CEILING review
@@ -632,7 +662,7 @@ $INBOX_SECTION$TRACKER_LAW_SECTION
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
 Record only project knowledge useful to almost every future session.
 For anything the codebase already shows, prefer a pointer to the authoritative file, command, or doc over copying the detail.
-If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, add that short self-governance section from \`$FM_ROOT/bin/fm-ensure-agents-md.sh\` in the same pass.
+If you touch a project \`AGENTS.md\`, follow \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`'s self-governance contract in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
 $DOD

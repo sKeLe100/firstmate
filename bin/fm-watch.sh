@@ -129,8 +129,9 @@ mkdir -p "$STATE"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # Steering-inbox loss detection: bin/fm-task-inbox-lib.sh owns the record,
-# doorbell, and re-ring ladder contracts; this watcher only supplies the busy
-# gate and the wake emission (inbox_steer_check below).
+# doorbell, re-ring ladder, and unavailable-endpoint contracts; this watcher
+# supplies their live endpoint and busy checks plus wake emission
+# (inbox_steer_check below).
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 # Process-event inbox semantics (pending vs. acknowledged captured results) are
@@ -349,13 +350,30 @@ window_key() {  # <window>
   printf '%s' "${key//./_}"
 }
 
+inbox_steer_escalate_unavailable() {  # <window> <task> <record>
+  local w=$1 task=$2 rec=$3 reason
+  reason="stale: $w (unread firstmate instruction: $rec is unhandled and the worker's agent has exited or its endpoint is missing, so the doorbell was not typed; recover the worker)"
+  if [ ! -d "${rec%/*}" ] || [ ! -f "$rec" ]; then
+    fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
+    return 0
+  fi
+  fm_wake_append stale "$w" "$reason" || exit 1
+  if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
+    echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
+    exit 1
+  fi
+  wake "$reason"
+}
+
 # Steering-inbox loss detection, one cheap check per recorded window per poll.
 # Quiet when healthy: an absent, empty, or handled inbox costs one directory
 # glob and produces nothing. When the ladder (fm_task_inbox_due_action, the
 # policy owner) reports a due action, a busy pane just waits - the record is
 # durable and the worker will reach a turn boundary - an idle pane gets one
 # delivery attempt, and a spent attempt budget surfaces as an ordinary stale
-# wake for stuck-crewmate-recovery. If the attempt's ladder write fails while
+# wake for stuck-crewmate-recovery, and a pane whose agent is positively dead
+# or missing skips the ladder altogether: it is never typed into and surfaces
+# as that same stale wake exactly once. If the attempt's ladder write fails while
 # its record remains unhandled, that unwritable state surfaces through the same
 # stale path instead of silently re-ringing forever; acknowledgement or teardown
 # still makes the race quiet. The attempt is data-plane typing or a
@@ -364,7 +382,7 @@ window_key() {  # <window>
 # too: their pane-staleness exemption is about quiet panes being healthy,
 # while an unacknowledged instruction past the ladder is a stuck steer.
 inbox_steer_check() {  # <window> <task>
-  local w=$1 task=$2 action verb rec count tail40 reason ring_rc
+  local w=$1 task=$2 action verb rec count tail40 reason ring_rc backend agent_state
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
@@ -376,14 +394,26 @@ inbox_steer_check() {  # <window> <task>
       rec=${rec% *}
       ;;
   esac
-  tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || tail40=
+  backend=$(window_backend "$w")
+  agent_state=$(fm_backend_agent_state "$backend" "$w" 2>/dev/null || true)
+  case "$agent_state" in
+    dead|missing)
+      inbox_steer_escalate_unavailable "$w" "$task" "$rec"
+      return 0
+      ;;
+  esac
+  tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || tail40=
   if window_is_busy "$w" "$tail40"; then
     return 0
   fi
   case "$verb" in
     ring)
       ring_rc=0
-      fm_task_inbox_ring "$(window_backend "$w")" "$w" "$rec" "$(window_label "$w")" || ring_rc=$?
+      fm_task_inbox_ring "$backend" "$w" "$rec" "$(window_label "$w")" || ring_rc=$?
+      if [ "$ring_rc" -eq 3 ]; then
+        inbox_steer_escalate_unavailable "$w" "$task" "$rec"
+        return 0
+      fi
       if ! fm_task_inbox_record_ring "$STATE" "$task" "$rec"; then
         if [ ! -f "$rec" ]; then
           fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
@@ -1530,17 +1560,25 @@ run_check_capture() {
 # its endpoint is available to mark_signal_surfaced and its marker commits, but
 # it never contributes to the verdict - it was decided absorbed before this
 # probe ran, so letting it read as actionable would enqueue its benign siblings.
+# Also populates FM_SIGNAL_NEEDS_DECISION_FILES (space-separated status-file
+# paths) with exactly the files whose newly classified span carries one of the
+# decision-owned classes defined by the status-span contract, so the caller can
+# route those - and only those - signal rows as main-only
+# (docs/pi-supervision-branch.md). Stale and heartbeat rows retain their existing
+# eligibility rules.
 signal_files_actionable() {  # <status-file> ...
-  local f task record rest endpoint ident rc found=1 covered
+  local f task record rest endpoint ident needs_decision rc found=1 covered
   FM_SIGNAL_SURFACE_ENDPOINTS=''
+  FM_SIGNAL_NEEDS_DECISION_FILES=''
   for f in "$@"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
     covered=0
     case " ${FM_SIGNAL_COVERED:-} " in *" $f "*) covered=1 ;; esac
-    record=$(status_span_first_actionable_record "$f" \
-      "$(fm_wake_signal_seen_size "$STATE" "$f")")
+    record=''; needs_decision=0
+    status_span_first_actionable_record "$f" \
+      "$(fm_wake_signal_seen_size "$STATE" "$f")" record needs_decision
     rc=$?
     [ "$rc" -eq 1 ] && [ -z "$record" ] && continue
     if [ "$rc" -eq 2 ]; then
@@ -1553,7 +1591,12 @@ signal_files_actionable() {  # <status-file> ...
     fi
     endpoint=${record%%$'\t'*}; rest=${record#*$'\t'}; ident=${rest%%$'\t'*}
     FM_SIGNAL_SURFACE_ENDPOINTS="${FM_SIGNAL_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
-    [ "$rc" -eq 0 ] && [ "$covered" -eq 0 ] && found=0
+    if [ "$needs_decision" -eq 1 ]; then
+      FM_SIGNAL_NEEDS_DECISION_FILES="${FM_SIGNAL_NEEDS_DECISION_FILES} ${f}"
+    fi
+    if [ "$covered" -eq 0 ] && { [ "$rc" -eq 0 ] || [ "$needs_decision" -eq 1 ]; }; then
+      found=0
+    fi
   done
   return "$found"
 }
@@ -2166,6 +2209,7 @@ EOF
     # can enqueue - including the away-mode one, which short-circuits the
     # condition below and would otherwise enqueue with no evidence at all.
     signal_actionable=1
+    FM_SIGNAL_NEEDS_DECISION_FILES=''
     FM_SIGNAL_COVERED="$signal_covered"
     if [ -n "$files" ]; then
       # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
@@ -2212,7 +2256,11 @@ EOF
         # failed (fatal) append would leave the event marked surfaced with no
         # queue record for the heartbeat backstop to re-surface. The write
         # itself happens after the reported pass below.
-        fm_wake_append signal "$(basename "$f")" "$signal_enqueue_reason" || exit 1
+        file_reason="$signal_enqueue_reason"
+        case " $FM_SIGNAL_NEEDS_DECISION_FILES " in
+          *" $f "*) file_reason="needs-decision:$signal_enqueue_files" ;;
+        esac
+        fm_wake_append signal "$(basename "$f")" "$file_reason" || exit 1
         signal_surface_marks="$signal_surface_marks $f"
         signal_appended=1
         signal_decided="$signal_decided $f"
