@@ -421,6 +421,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/pc02-outage-runbook.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/pi-supervision-branch.md",
       "audience": "maintainer-architecture"
     },
