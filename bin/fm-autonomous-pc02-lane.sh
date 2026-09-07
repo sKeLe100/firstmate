@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-autonomous-pc02-lane.sh - is the PC02 opencode lane free for the
+# fm-autonomous-pc02-lane.sh - is the PC02 lane free for the
 # /autonomous skill's step 3 dispatch-availability check?
 #
 # Why: PC02's llama-swap serves one model at a time (bin/fm-spawn.sh's

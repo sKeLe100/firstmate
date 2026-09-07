@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-autonomous-pc02-lane.sh: the /autonomous skill's
-# step 3 dispatch-availability check for the PC02 opencode lane, separate
+# step 3 dispatch-availability check for the PC02 lane, separate
 # from and independent of the generic Claude dispatch-cap check. Mirrors
 # fm-spawn.sh's pc02_lane_guard scan-and-liveness read (see
 # tests/fm-spawn-pc02-lane-guard.test.sh for that guard's own coverage).
