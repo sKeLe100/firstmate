@@ -563,6 +563,7 @@ tests/fm-afk-inject-e2e.test.sh 35792
 tests/fm-afk-pi-herdr-return-e2e.test.sh 100
 tests/fm-afk-return.test.sh 1837
 tests/fm-ask-user-authority.test.sh 128
+tests/fm-autonomous-pc02-lane.test.sh 661
 tests/fm-backend-cmux-smoke.test.sh 33
 tests/fm-backend-cmux.test.sh 3657
 tests/fm-backend-orca.test.sh 19253

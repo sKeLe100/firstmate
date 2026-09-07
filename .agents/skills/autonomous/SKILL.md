@@ -136,6 +136,22 @@ Do not hardcode the cap value here: read the live config and the live
 quota, and use the built-in default base of 3 when `config/dispatch-cap`
 is absent.
 
+The dispatch-cap check above answers only "is there Claude-lane headroom".
+It says nothing about PC02: only one PC02 lane may run at a time
+(the same rule `bin/fm-spawn.sh`'s `pc02_lane_guard` enforces at spawn
+time), so a PC02-routed candidate can read as dispatchable under the
+Claude cap while PC02 itself is already held by another task. Before
+treating any PC02-routed candidate as dispatchable, separately run
+`bin/fm-autonomous-pc02-lane.sh`, which mirrors `pc02_lane_guard`'s
+scan-and-liveness read (state/*.meta for a live task on a
+pc02-llamaswap/* model, whatever its harness). It prints `free`
+(exit 0) or `occupied: <task-id>` (exit 1); if it cannot read the state
+directory it prints an error on stderr and exits 2, which is fail-closed -
+treat exit 2 exactly like occupied, never as free. When it reports occupied,
+defer that candidate specifically - do not fall back to counting it
+against, or clearing it via, the generic dispatch-cap headroom - and
+continue evaluating any non-PC02 candidates normally.
+
 ### Step 4 - Check the captain's attention window
 
 Run `bin/fm-captain-window.sh` with no flags (`--now` and `--weekday`
@@ -240,9 +256,9 @@ An item becomes deferred-ready when either condition holds:
   the eligibility filter and stale-work check).
 
 Each deferred-ready item carries its plain-language deferral reason
-(dispatch-cap occupancy, outside attention window, or Fable daytime
-restriction). Below threshold, stay silent - no separate ping, no
-notification. Rides the existing summary ping and its band gating.
+(dispatch-cap occupancy, PC02 lane occupied, outside attention window,
+or Fable daytime restriction). Below threshold, stay silent - no
+separate ping, no notification. Rides the existing summary ping and its band gating.
 
 Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,
 run `bin/fm-captain-hold.sh mark set <task-id> deferred-since <UTC-ISO8601-timestamp>`,
@@ -416,6 +432,7 @@ This skill cites these live owners rather than restating their values:
 - `quota-axi` - quota and model selection
 - `bin/fm-captain-window.sh` - captain attention window
 - `config/dispatch-cap` - concurrent autonomous dispatch cap
+- `bin/fm-autonomous-pc02-lane.sh` - whether the single PC02 lane is free
 - `config/crew-dispatch.json` - dispatch profiles
 - `captain-hold-lifecycle` - closing captain-held decisions
 - `ask-user-authority` - deciding ask-user findings
