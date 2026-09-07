@@ -66,6 +66,17 @@ STATUS=$?
 [ "$STATUS" -eq 0 ] || fail "expected exit 0 for a same-clause citation, got $STATUS: $OUT"
 [ -z "$OUT" ] || fail "expected no output for a same-clause citation, got: $OUT"
 
+# --- a "./"-prefixed claim resolves to the repo-relative diff path ---
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'updated ./bin/fm-new-thing.sh')
+STATUS=$?
+[ "$STATUS" -eq 0 ] || fail "expected exit 0 for a ./-prefixed verified claim, got $STATUS: $OUT"
+[ -z "$OUT" ] || fail "expected no output for a ./-prefixed verified claim, got: $OUT"
+
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'updated ./bin/fm-never-touched.sh' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 1 ] || fail "expected exit 1 for a ./-prefixed unverified claim, got $STATUS"
+assert_contains "$OUT" "bin/fm-never-touched.sh" "normalized unverified path listed in output"
+
 # --- usage errors ---
 "$CLAIM_CHECK" >/dev/null 2>&1 && fail "expected non-zero exit with no arguments"
 "$CLAIM_CHECK" main extra </dev/null >/dev/null 2>&1 && fail "expected non-zero exit with a second argument"

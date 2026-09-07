@@ -58,7 +58,11 @@ BEGIN {
     w = $i;
     bare = tolower(w);
     gsub(/^[^A-Za-z0-9_.\/-]+|[^A-Za-z0-9_.\/-]+$/, "", bare);
-    if (since <= 5 && match(w, path)) print substr(w, RSTART, RLENGTH);
+    if (since <= 5 && match(w, path)) {
+      p = substr(w, RSTART, RLENGTH);
+      sub(/^\.\//, "", p);
+      print p;
+    }
     if (bare ~ ref || w ~ /[;,.]$/) since = 99;
     else if (bare ~ verb) since = 0;
     else since++;
