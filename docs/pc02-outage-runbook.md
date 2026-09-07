@@ -10,11 +10,11 @@ This is a recovery checklist, not an architecture doc.
 
 PC02 runs llama-swap inside WSL as a systemd service. llama-swap is a single
 Go binary (`~/.local/bin/llama-swap`) that fronts two large local models
-(`Qwen3.8-27B` and `Qwen3.6-35B`) with hot-swap-on-request, so only one
-holds the GPU at a time.
+(`qwen3.8-27b-dispatch` and `qwen3.6-35b-a3b-dispatch`) with
+hot-swap-on-request, so only one holds the GPU at a time.
 
 It binds to the host's tailnet IP `100.67.55.77:8080` (not loopback). opencode
-connects via `pc02-llama-swap/<model>`.
+connects via `pc02-llamaswap/<model>`.
 
 - **Binary**: `~/.local/bin/llama-swap` (installed from the llama-swap GitHub releases page)
 - **Config**: `/home/sean_/fm-pc02-llm-lab/projects/pc02-llm-lab-tooling/llama-swap/config.yaml`
@@ -86,7 +86,7 @@ If the service unit file does not exist (the unit was never deployed or was
 removed), start llama-swap manually:
 
 ```bash
-ssh pc02 "bash -lc 'llama-swap --config /home/sean_/fm-pc02-llm-lab/projects/pc02-llm-lab-tooling/llama-swap/config.yaml --listen 100.67.55.77:8080 &'"
+ssh pc02 "bash -lc 'nohup setsid llama-swap --config /home/sean_/fm-pc02-llm-lab/projects/pc02-llm-lab-tooling/llama-swap/config.yaml --listen 100.67.55.77:8080 >/tmp/llama-swap.log 2>&1 &'"
 ```
 
 Wait for the model to load. Cold starts take approximately 5-6 minutes.
@@ -97,7 +97,8 @@ Verify it's up:
 ssh pc02 "curl -s --connect-timeout 10 http://100.67.55.77:8080/v1/models"
 ```
 
-If the models endpoint returns JSON with a loaded model, the stack is back.
+If the models endpoint lists `qwen3.8-27b-dispatch` and `qwen3.6-35b-a3b-dispatch`,
+the stack is back.
 
 ## If the restart itself fails
 
