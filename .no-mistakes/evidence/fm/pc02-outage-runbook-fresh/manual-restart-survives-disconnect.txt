@@ -1,0 +1,32 @@
+PC02 outage runbook: manual-fallback start command survives ssh disconnect
+(fake llama-swap serving the runbook's /v1/models contract; ssh session emulated
+ as a separate process group that receives SIGHUP on disconnect)
+
+== BEFORE (pre-review command shape) ==
+$ ssh pc02 "bash -lc 'llama-swap --config /tmp/rb96SL/cfg/config.yaml --listen 127.0.0.1:18201 &'"
+  simulated ssh-session pgid=4052803 ; llama-swap pid=4052811 pgid=4052803
+  [disconnect] sent SIGHUP to process group 4052803
+  RESULT: llama-swap was KILLED by the disconnect (curl: connection refused)
+
+== AFTER (command as written in docs/pc02-outage-runbook.md) ==
+$ ssh pc02 "bash -lc 'nohup setsid llama-swap --config /tmp/rb96SL/cfg/config.yaml --listen 127.0.0.1:18202 >/tmp/llama-swap-18202.log 2>&1 &'"
+  simulated ssh-session pgid=4052931 ; llama-swap pid=4052939 pgid=4052939
+  [disconnect] sent SIGHUP to process group 4052931
+  RESULT: llama-swap SURVIVED the disconnect
+$ ssh pc02 "curl -s --connect-timeout 10 http://100.67.55.77:8080/v1/models"   (simulated on 127.0.0.1:18202)
+  {
+    "object": "list",
+    "data": [
+      {
+        "id": "qwen3.8-27b-dispatch",
+        "object": "model"
+      },
+      {
+        "id": "qwen3.6-35b-a3b-dispatch",
+        "object": "model"
+      }
+    ]
+  }
+== health check step ==
+grep for stale prefix 'pc02-llama-swap' in runbook:
+0
