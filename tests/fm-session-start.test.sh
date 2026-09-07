@@ -205,6 +205,54 @@ SH
   chmod +x "$fakebin/tasks-axi"
 }
 
+# make_fake_tasks_axi_dupe_and_long_reason <fakebin>: an in-flight row and a
+# held row share one id ("both-states"), the way a task that is simultaneously
+# in flight and held really renders from tasks-axi's two independent state
+# filters, plus a second held-only row carrying a hold_reason well past the
+# 250-char cap so both fixes have coverage in one fake.
+make_fake_tasks_axi_dupe_and_long_reason() {
+  local fakebin=$1 long
+  long=$(printf 'x%.0s' $(seq 1 300))
+  cat > "$fakebin/tasks-axi" <<SH
+#!/usr/bin/env bash
+set -u
+case "\${1:-}" in
+  --version|-v|-V)
+    printf '%s\n' '0.2.4'
+    exit 0
+    ;;
+  list)
+    case "\$*" in
+      *'--state in_flight'*)
+        printf 'tasks[1]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
+        printf '  both-states,in_flight,ship,firstmate,Shared row,none,captain,captain choice pending\n'
+        ;;
+      *'--state held'*)
+        printf 'tasks[2]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
+        printf '  both-states,in_flight,ship,firstmate,Shared row,none,captain,captain choice pending\n'
+        printf '  held-only,queued,ship,firstmate,Held only,none,captain,%s\n' "$long"
+        ;;
+      *'--state queued'*'--blocked'*)
+        printf 'tasks[0]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
+        ;;
+      *)
+        exit 9
+        ;;
+    esac
+    exit 0
+    ;;
+  ready)
+    printf 'count: 0\n'
+    printf 'ready[0]{id,state,kind,repo,title}:\n'
+    printf 'ready_public_followups: 0 delivery-ready obligations\n'
+    exit 0
+    ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/tasks-axi"
+}
+
 # make_fake_ps_claude <fakebin>: harness_pid()/holder_alive() (fm-lock.sh) walk
 # `ps` output looking for a harness command name; this fake reports EVERY
 # queried pid as a live `claude` harness unless a stable harness pid is set.
@@ -1721,7 +1769,7 @@ EOF
   out=$(FM_FAKE_TASKS_AXI_LOG="$log" FM_FAKE_TASKS_AXI_READY=3 \
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to 20; task bodies omitted)" \
+  assert_contains "$out" "compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown once with hold fields capped to 250 chars; ready queued bounded to 20; task bodies omitted)" \
     "compatible tasks-axi backend did not render the compact backlog listing"
   assert_contains "$out" "tasks[1]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:" \
     "tasks-axi compact listing omitted the expected structured field header"
@@ -1759,6 +1807,42 @@ EOF
     "session start did not ask tasks-axi for the dispatchable queued set"
 
   pass "compatible tasks-axi backlog rendering drops done rows and keeps every in-flight, held, and blocked row"
+}
+
+# An in-flight-and-held task must appear once, with its hold fields, not once
+# per group; an oversized hold_reason must be capped with a pointer to the
+# full text rather than passed through verbatim.
+test_backlog_compact_dedupes_held_and_caps_hold_reason() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-compact-dedupe-cap)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_tasks_axi_dupe_and_long_reason "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  write_long_body_backlog "$home/data/backlog.md"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "both-states,in_flight,ship,firstmate,Shared row,none,captain,captain choice pending" \
+    "the shared in-flight-and-held row did not render under in flight"
+  assert_contains "$out" "already shown with full hold fields under in flight" \
+    "the held group did not disclose that the shared row was deduplicated"
+
+  local in_flight_count held_count
+  in_flight_count=$(printf '%s\n' "$out" | grep -c '^  both-states,in_flight,ship,firstmate,Shared row')
+  [ "$in_flight_count" -eq 1 ] || fail "expected the shared row exactly once, found $in_flight_count: $out"
+
+  held_count=$(printf '%s\n' "$out" | grep -c 'held-only,queued,ship,firstmate,Held only')
+  [ "$held_count" -eq 1 ] || fail "expected the held-only row exactly once, found $held_count"
+
+  assert_not_contains "$out" "$(printf 'x%.0s' $(seq 1 251))" \
+    "an oversized hold_reason was not capped"
+  assert_contains "$out" "tasks-axi show held-only --full for the rest" \
+    "a capped hold_reason did not point at the full-text lookup"
+
+  pass "the compact backlog listing lists an in-flight-and-held task once and caps an oversized hold_reason"
 }
 
 # The bound may only ever cut the dispatchable-now listing, and whatever it cuts
@@ -2675,6 +2759,7 @@ test_composition_invokes_real_scripts
 test_branch_outcome_replay_respects_captain_barrier_and_lease_sweep
 test_non_pi_session_start_leaves_branch_state_untouched
 test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
+test_backlog_compact_dedupes_held_and_caps_hold_reason
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_declared_next_session_priority_is_called_out
