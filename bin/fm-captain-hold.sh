@@ -935,12 +935,15 @@ mark_prune_to() {  # <marks-file>
   ' "$marks"
 }
 
+# The close command's own status is this function's status: clearing the
+# firstmate-owned held-since mark must never mask a failed close, and a mark is
+# only dropped once the close it belongs to actually landed.
 close_answered() {  # <task-id> <release-0-or-1>
   if [ "$2" = 1 ]; then
-    tasks_axi unhold "$1" >/dev/null
+    tasks_axi unhold "$1" >/dev/null || return
     mark_clear "$1" held-since
   else
-    tasks_axi "done" "$1" >/dev/null
+    tasks_axi "done" "$1" >/dev/null || return
     mark_clear "$1"
   fi
 }

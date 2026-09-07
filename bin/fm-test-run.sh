@@ -587,6 +587,7 @@ tests/fm-classify-corr-token.test.sh 38742
 tests/fm-classify-decision-key.test.sh 1167
 tests/fm-claude-stop-autoarm-live-e2e.test.sh 21
 tests/fm-claude-stop-autoarm.test.sh 60709
+tests/fm-claude-trust.test.sh 11268
 tests/fm-cmux-claude-composer-live-e2e.test.sh 23
 tests/fm-codex-continuity-live-e2e.test.sh 21
 tests/fm-composer-matrix-live-e2e.test.sh 23
@@ -601,6 +602,7 @@ tests/fm-extension-binding.test.sh 7398
 tests/fm-fleet-snapshot-view.test.sh 8547
 tests/fm-fleet-sync.test.sh 37749
 tests/fm-gate-refuse.test.sh 4977
+tests/fm-gemini-harness.test.sh 1349
 tests/fm-gitignore-config.test.sh 62
 tests/fm-gotmp.test.sh 1310
 tests/fm-grok-continuity-live-e2e.test.sh 20
@@ -647,10 +649,12 @@ tests/fm-remote-secondmate-lifecycle-e2e.test.sh 209631
 tests/fm-remote-secondmate-parent-binding.test.sh 29562
 tests/fm-remote-secondmate-trace-context.test.sh 67096
 tests/fm-remote-transport-lanes.test.sh 63140
+tests/fm-rovo-harness.test.sh 25090
 tests/fm-secondmate-harness.test.sh 151589
 tests/fm-secondmate-lifecycle-e2e.test.sh 8793
 tests/fm-secondmate-liveness.test.sh 18146
 tests/fm-secondmate-reconcile.test.sh 62726
+tests/fm-secondmate-restart.test.sh 106226
 tests/fm-secondmate-safety.test.sh 57689
 tests/fm-secondmate-sync.test.sh 17183
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 22
