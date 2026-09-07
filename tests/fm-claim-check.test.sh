@@ -82,4 +82,18 @@ assert_contains "$OUT" "bin/fm-never-touched.sh" "normalized unverified path lis
 "$CLAIM_CHECK" main extra </dev/null >/dev/null 2>&1 && fail "expected non-zero exit with a second argument"
 "$CLAIM_CHECK" --help >/dev/null 2>&1 || fail "expected --help to succeed"
 
+# --- the DOD block hands workers an invokable claim-check command ---
+# The rendered DOD block is a generated agent-facing interface; the command it
+# emits must run from a project worktree that is not firstmate's own checkout.
+. "$ROOT/bin/fm-dod-lib.sh"
+OTHER_CWD="$TMP_ROOT/elsewhere"
+mkdir -p "$OTHER_CWD"
+for MODE in direct-PR local-only no-mistakes; do
+  BLOCK=$(fm_dod_block "$MODE" demo) || fail "fm_dod_block failed for mode $MODE"
+  CMD=$(printf '%s\n' "$BLOCK" | sed -n 's/.*`\([^`]*fm-claim-check\.sh\) main`.*/\1/p' | head -1)
+  [ -n "$CMD" ] || fail "no claim-check command rendered for mode $MODE"
+  (cd "$OTHER_CWD" && "$CMD" --help >/dev/null 2>&1) \
+    || fail "claim-check command '$CMD' from mode $MODE is not invokable outside the firstmate checkout"
+done
+
 pass "fm-claim-check verifies claimed paths against the diff"
