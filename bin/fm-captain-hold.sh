@@ -31,7 +31,17 @@
 #   fm-captain-hold.sh verify <origin-id>
 #   fm-captain-hold.sh open <task-id>
 #   fm-captain-hold.sh diverged
+#   fm-captain-hold.sh mark set <task-id> <key> <value>
+#   fm-captain-hold.sh mark get <task-id> <key>
+#   fm-captain-hold.sh mark clear <task-id> [<key>]
 #
+# `mark` is the only writer of the firstmate-owned sidecar data/task-marks.tsv
+# (<task-id>\t<key>\t<value>), which carries machine marks such as `held-since`
+# and the autonomous pass's `deferred-since` that must not go into the task row
+# tasks-axi owns. `set` never overwrites an existing value and refuses an empty
+# one (an empty mark is indistinguishable from an absent one), `clear` with no
+# key drops every mark for the task, and both rewrite the whole file under
+# data/.task-marks.lock so concurrent writers cannot lose an update.
 # `hold` places an existing task under an active captain hold, or creates the
 # task first when no work item exists to hold (--title required to create; the
 # optional --origin records provenance in the new task's body and supplies the
@@ -788,6 +798,7 @@ command_hold() {
   show=$(task_show "$id") || fail "task $id disappeared while holding it"
   hold_kind=$(show_field_value "$show" hold_kind)
   [ "$hold_kind" = captain ] || fail "task $id did not retain its captain hold"
+  stamp_since "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   occurrence=$(( $(resolution_record_count "$(show_field "$show" body)") + 1 ))
   [ -n "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
     || fail "task $id lost its hold-set stamp while being held"
@@ -828,11 +839,109 @@ write_resolution_record() {  # <task-id> <mode> <shown-body>
   rm -f -- "$tmp"
 }
 
+
+# Record a `held-since` mark for task $id in the firstmate-owned sidecar
+# data/task-marks.tsv (<task-id>\t<key>\t<value>), the same shape as
+# data/roundtable-marks.tsv. The mark is written on the first hold and not reset
+# by a later re-hold, so it reflects when the captain call was actually raised;
+# closing the call clears it (see close_answered), so a task re-held after a
+# release ages from the new call. It lives in the sidecar rather than the backlog row because
+# tasks-axi owns the row's trailing metadata block: it already writes its own
+# `since` word (the task's creation date) and its parser rejects any word it
+# does not know. Marks for task ids no longer present in backlog.md are pruned
+# lazily on each write.
+stamp_since() {
+  local id=$1 ts=$2
+  mark_set "$id" held-since "$ts"
+}
+
+# Take the sidecar lock for the duration of one read-prune-write sequence, so a
+# concurrent writer cannot base its rewrite on a file this one is replacing.
+marks_lock_acquire() {
+  CAPTAIN_MARKS_LOCK="$DATA/.task-marks.lock"
+  fm_lock_acquire_wait "$CAPTAIN_MARKS_LOCK"
+  CAPTAIN_MARKS_LOCK_HELD=1
+}
+
+marks_lock_release() {
+  [ "$CAPTAIN_MARKS_LOCK_HELD" = 1 ] || return 0
+  fm_lock_release "$CAPTAIN_MARKS_LOCK" || true
+  CAPTAIN_MARKS_LOCK_HELD=0
+}
+
+# Write <id>\t<key>\t<value> into the sidecar unless that (id,key) pair is
+# already present; never overwrites an existing value.
+mark_set() {  # <id> <key> <value>
+  local id=$1 key=$2 value=$3 marks="$DATA/task-marks.tsv" tmp
+  [ -d "$DATA" ] || return 0
+  marks_lock_acquire
+  if [ -f "$marks" ] && awk -F'\t' -v i="$id" -v k="$key" \
+      '$1 == i && $2 == k { found = 1 } END { exit found ? 0 : 1 }' "$marks"; then
+    marks_lock_release
+    return 0
+  fi
+  tmp="$marks.tmp.$$"
+  mark_prune_to "$marks" > "$tmp"
+  printf '%s\t%s\t%s\n' "$id" "$key" "$value" >> "$tmp"
+  mv "$tmp" "$marks"
+  marks_lock_release
+}
+
+# Print the value of the (id,key) mark, or nothing when it is not set.
+mark_get() {  # <id> <key>
+  local marks="$DATA/task-marks.tsv"
+  [ -f "$marks" ] || return 0
+  awk -F'\t' -v i="$1" -v k="$2" '$1 == i && $2 == k { print $3; exit }' "$marks"
+}
+
+# Drop the (id,key) mark, or every mark for <id> when no key is given, through
+# the same whole-file rewrite mark_set uses so there is a single writer path.
+mark_clear() {  # <id> [<key>]
+  local id=$1 key=${2:-} marks="$DATA/task-marks.tsv" tmp
+  [ -f "$marks" ] || return 0
+  marks_lock_acquire
+  tmp="$marks.tmp.$$"
+  mark_prune_to "$marks" \
+    | awk -F'\t' -v i="$id" -v k="$key" \
+        '$1 == i && (k == "" || $2 == k) { next } { print }' > "$tmp"
+  mv "$tmp" "$marks"
+  marks_lock_release
+}
+
+# Emit the sidecar's surviving lines: those whose task id still appears as a
+# structured row in backlog.md.
+mark_prune_to() {  # <marks-file>
+  local marks=$1 file="$DATA/backlog.md"
+  [ -f "$marks" ] || return 0
+  if [ ! -f "$file" ]; then
+    cat "$marks"
+    return 0
+  fi
+  awk -F'\t' -v backlog="$file" '
+    BEGIN {
+      while ((getline line < backlog) > 0) {
+        if (match(line, /^[-*][[:space:]]+\[[ xX]\][[:space:]]+[^[:space:]]+/) ||
+            match(line, /^[-*][[:space:]]+\*\*[^*]+\*\*/)) {
+          row = substr(line, RSTART, RLENGTH)
+          sub(/^[-*][[:space:]]+/, "", row)
+          sub(/^\[[ xX]\][[:space:]]+/, "", row)
+          gsub(/\*\*/, "", row)
+          live[row] = 1
+        }
+      }
+      close(backlog)
+    }
+    $1 in live { print }
+  ' "$marks"
+}
+
 close_answered() {  # <task-id> <release-0-or-1>
   if [ "$2" = 1 ]; then
     tasks_axi unhold "$1" >/dev/null
+    mark_clear "$1" held-since
   else
     tasks_axi "done" "$1" >/dev/null
+    mark_clear "$1"
   fi
 }
 
@@ -1454,8 +1563,38 @@ command_open() {  # <task-id>
   exit 2
 }
 
+command_mark() {
+  local verb=${1:-} id=${2:-} key=${3:-} value=${4:-}
+  case "$verb" in
+    set)
+      [ "$#" -eq 4 ] || { usage >&2; exit 2; }
+      validate_slug "task id" "$id"
+      validate_slug "mark key" "$key"
+      [ -n "$value" ] || fail "mark value must not be empty: an empty mark is indistinguishable from an absent one"
+      validate_one_line "mark value" "$value"
+      case "$value" in *$'\t'*) fail "mark value must not contain a tab" ;; esac
+      [ -d "$DATA" ] || fail "no data directory at $DATA"
+      mark_set "$id" "$key" "$value"
+      ;;
+    get)
+      [ "$#" -eq 3 ] || { usage >&2; exit 2; }
+      validate_slug "task id" "$id"
+      validate_slug "mark key" "$key"
+      mark_get "$id" "$key"
+      ;;
+    clear)
+      [ "$#" -ge 2 ] && [ "$#" -le 3 ] || { usage >&2; exit 2; }
+      validate_slug "task id" "$id"
+      [ -z "$key" ] || validate_slug "mark key" "$key"
+      mark_clear "$id" "$key"
+      ;;
+    *) usage >&2; exit 2 ;;
+  esac
+}
+
 case "${1:-}" in
   hold) shift; command_hold "$@" ;;
+  mark) shift; command_mark "$@" ;;
   answer) shift; command_answer "$@" ;;
   answers) shift; command_answers "$@" ;;
   bind) shift; command_bind "$@" ;;

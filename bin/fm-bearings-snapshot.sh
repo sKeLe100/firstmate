@@ -129,8 +129,9 @@ remote homes under one shared snapshot budget and may refresh the parent-side ca
 Default fields: schema, home, generated, prs, in_flight{id,kind,state,repo,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
-  decisions_open{id,key,verb,summary,owner}, landed{id,what,artifact,owner},
-  gates{id,title,blocked_by,reason,owner}, reports{id,path}, recorded_prs{id,url},
+  decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at},
+  landed{id,what,artifact,owner},
+  gates{id,title,blocked_by,reason,owner,deferred_since}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty), omitted{surface,reveal}.
 landed merges this home's Done with registered secondmate homes' Done, bounded by
   a per-home cap (FM_BEARINGS_LANDED_PER_HOME) and an overall cap (FM_BEARINGS_LANDED),
@@ -202,6 +203,76 @@ else
 fi
 HOME_LABEL=$(printf '%s' "$SNAP" | jq -er '.fm_home | strings | split("/") | (.[-2:] | join("/"))') \
   || { echo "fm-bearings-snapshot: invalid canonical snapshot" >&2; exit 1; }
+
+# --- cached upstream-position read (local file, no network) -----------------
+UPSTREAM_JSON=null
+UPSTREAM_REPORT="$(printf '%s' "$SNAP" | jq -r '.fm_home')/state/.upstream-behind-check.report"
+if [ -f "$UPSTREAM_REPORT" ]; then
+  ustatus='' ubehind='' uahead='' unewest='' ureason='' uchecked=''
+  uarea_skills='' uarea_bin='' uarea_docs='' uarea_tests='' uarea_other=''
+  uskills_total='' uskills_shown='' udetail_hint=''
+  ustale_behind='' ustale_ahead='' ustale_newest='' ustale_checked=''
+  UPSTREAM_SKILLS_JSON='[]'
+  skill_names=()
+  while IFS= read -r kv || [ -n "$kv" ]; do
+    case "$kv" in
+      status=*) ustatus=${kv#status=} ;;
+      behind=*) ubehind=${kv#behind=} ;;
+      ahead=*) uahead=${kv#ahead=} ;;
+      newest_upstream_date=*) unewest=${kv#newest_upstream_date=} ;;
+      reason=*) ureason=${kv#reason=} ;;
+      checked_at=*) uchecked=${kv#checked_at=} ;;
+      area_count_agents_skills=*) uarea_skills=${kv#area_count_agents_skills=} ;;
+      area_count_bin=*) uarea_bin=${kv#area_count_bin=} ;;
+      area_count_docs=*) uarea_docs=${kv#area_count_docs=} ;;
+      area_count_tests=*) uarea_tests=${kv#area_count_tests=} ;;
+      area_count_other=*) uarea_other=${kv#area_count_other=} ;;
+      skills_total=*) uskills_total=${kv#skills_total=} ;;
+      skills_shown=*) uskills_shown=${kv#skills_shown=} ;;
+      detail_hint=*) udetail_hint=${kv#detail_hint=} ;;
+      stale_behind=*) ustale_behind=${kv#stale_behind=} ;;
+      stale_ahead=*) ustale_ahead=${kv#stale_ahead=} ;;
+      stale_newest_upstream_date=*) ustale_newest=${kv#stale_newest_upstream_date=} ;;
+      stale_checked_at=*) ustale_checked=${kv#stale_checked_at=} ;;
+      skill=*) skill_names+=("${kv#skill=}") ;;
+    esac
+  done < "$UPSTREAM_REPORT"
+  if [ ${#skill_names[@]} -gt 0 ]; then
+    UPSTREAM_SKILLS_JSON=$(printf '%s\n' "${skill_names[@]}" | jq -R . | jq -s .)
+  fi
+  if [ -n "$ustatus" ]; then
+    UPSTREAM_JSON=$(jq -n \
+      --arg status "$ustatus" --arg behind "$ubehind" --arg ahead "$uahead" \
+      --arg newest "$unewest" --arg reason "$ureason" --arg checked_at "$uchecked" \
+      --arg a_skills "$uarea_skills" --arg a_bin "$uarea_bin" --arg a_docs "$uarea_docs" \
+      --arg a_tests "$uarea_tests" --arg a_other "$uarea_other" \
+      --arg skills_total "$uskills_total" --arg skills_shown "$uskills_shown" \
+      --arg detail_hint "$udetail_hint" \
+      --arg s_behind "$ustale_behind" --arg s_ahead "$ustale_ahead" \
+      --arg s_newest "$ustale_newest" --arg s_checked "$ustale_checked" \
+      --arg skills "$UPSTREAM_SKILLS_JSON" '
+      ({status:$status}
+       + (if $behind != "" then {behind:($behind|tonumber)} else {} end)
+       + (if $ahead != "" then {ahead:($ahead|tonumber)} else {} end)
+       + (if $newest != "" then {newest_upstream_date:$newest} else {} end)
+       + (if $reason != "" then {reason:$reason} else {} end)
+       + (if $checked_at != "" then {checked_at:($checked_at|tonumber)} else {} end)
+       + (if $skills_total != "" then {skills_total:($skills_total|tonumber)} else {} end)
+       + (if $skills_shown != "" then {skills_shown:($skills_shown|tonumber)} else {} end)
+       + (if $detail_hint != "" then {detail_hint:$detail_hint} else {} end)
+       + (if ($skills|fromjson|length) > 0 then {skills:($skills|fromjson)} else {} end)
+       + (if $s_behind != "" then {stale_behind:($s_behind|tonumber)} else {} end)
+       + (if $s_ahead != "" then {stale_ahead:($s_ahead|tonumber)} else {} end)
+       + (if $s_newest != "" then {stale_newest_upstream_date:$s_newest} else {} end)
+       + (if $s_checked != "" then {stale_checked_at:($s_checked|tonumber)} else {} end)
+      ) as $base
+      | ([{k:"agents_skills",v:$a_skills},{k:"bin",v:$a_bin},{k:"docs",v:$a_docs},
+          {k:"tests",v:$a_tests},{k:"other",v:$a_other}]
+         | map(select(.v != "")) | map({(.k):(.v|tonumber)}) | add) as $areas
+      | $base + (if $areas != null then {areas:$areas} else {} end)' 2>/dev/null) || UPSTREAM_JSON=null
+    [ -n "$UPSTREAM_JSON" ] || UPSTREAM_JSON=null
+  fi
+fi
 
 # --- optional live GitHub PR enrichment -------------------------------------
 PR_STATUS='not_requested (run: /bearings include PRs)'
@@ -305,6 +376,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --arg now "$NOW" \
   --arg today "$BEARINGS_TODAY" \
   --arg prs "$PR_STATUS" \
+  --arg upstream "$UPSTREAM_JSON" \
   --arg fields "$FIELDS" \
   --argjson landed_n "$FM_BEARINGS_LANDED" \
   --argjson landed_per_home_n "$FM_BEARINGS_LANDED_PER_HOME" \
@@ -378,7 +450,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   def as_gate($owner):
     {id, title:(.title | trunc(60)),
      blocked_by:((.unresolved_blocker_ids // []) | if length > 0 then join(",") else "-" end | trunc(120)),
-     reason:(hold_gate_reason | trunc(40)), owner:$owner};
+     reason:(hold_gate_reason | trunc(40)), owner:$owner,
+     deferred_since:(.deferred_since // null)};
   def round_robin_landed($n):
     . as $groups
     | [range(0; (($groups | map(length) | max) // 0)) as $i
@@ -463,19 +536,28 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             state:(.state // "working"),
             repo:(.repo // null),
             doing:((.doing // .state) | trunc(90))} ]) as $in_flight_all
-  | ([ .backlog.records[]
+  | def is_declared_next_session_priority:
+      (.priority // null) == "0"
+      and ((.hold_reason // "") | test("^NEXT-SESSION PRIORITY:"));
+    ([ .backlog.records[]
          | . as $record
          | select(.structured and .hold_bucket != null)
          | select(($all_decisions == 1) or live_captain_call)
          | {id,key:.id,verb:"captain-hold",
-            summary:hold_summary(.title; .hold_reason),owner:"(main)"} ]
+            summary:hold_summary(.title; .hold_reason),owner:"(main)",
+            declared_priority:is_declared_next_session_priority,
+            since:((.held_since // .since) // null),
+            created_at:((.held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
      + [ (.secondmate_current.records // [])[] as $m
          | ([ $m.decisions_open[]?
               | select(.source == "backlog" and .verb == "captain-hold")
               | select(($all_decisions == 1) or live_captain_call)
               | {id:($m.id + "/" + .id),key,verb,
                  summary:hold_summary((.summary // .id);
-                                      (.reason // "captain decision pending")),owner:$m.id} ]
+                                      (.reason // "captain decision pending")),owner:$m.id,
+                 declared_priority:(.declared_priority // false),
+                 since:((.held_since // .since) // null),
+                 created_at:((.held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
             + [ $m.queued[]?
                 | select($all_decisions == 1 and .hold_kind == "captain")
                 | select(.id as $id
@@ -485,7 +567,11 @@ MODEL=$(printf '%s' "$SNAP" | jq \
                          | index($id) | not)
                 | {id:($m.id + "/" + .id),key:.id,verb:"captain-hold",
                    summary:hold_summary((.title // .id);
-                                        (.hold_reason // "captain decision pending")),owner:$m.id} ])[] ]) as $decisions_all
+                                        (.hold_reason // "captain decision pending")),owner:$m.id,
+                   declared_priority:(.declared_priority // false),
+                   since:((.held_since // .since) // null),
+                   created_at:((.held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ])[] ]
+     | sort_by(if .declared_priority then 0 else 1 end)) as $decisions_all
   | ([ .backlog.records[]
          | . as $record
          | select(.structured and projected_deferred_hold) ]
@@ -539,6 +625,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   | . + (if ($unhealthy_all | length) > 0 then
            {unhealthy_endpoints:(if $all_unhealthy == 1 then $unhealthy_all else $unhealthy_all[:$unhealthy_n] end)}
          else {} end)
+  | . + (($upstream|fromjson) as $u | if $u != null then {upstream:$u} else {} end)
   | . + (if $include_prs == 1 then {candidate_prs:$candidate_prs} else {} end)
   | . + (if $f_bodies then {bodies:[ $snap.backlog.records[] | select(.structured and (.state == "queued" or .state == "done")) | {id, body:((.body_excerpt // .raw // "-") | trunc(200))} ]} else {} end)
   | . + (if $f_paths then {paths:[ $snap.tasks[] | {id, worktree:(.paths.worktree.path // "-"), home:(.paths.home.path // "-"), status:.paths.status_log.path, report:.paths.report.path} ]} else {} end)
