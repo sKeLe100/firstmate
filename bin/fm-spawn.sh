@@ -3284,6 +3284,73 @@ export const FmBusyState = async () => {
 };
 EOF
       exclude_path '.opencode/plugins/fm-busy-state.js'
+      cat > "$WT/.opencode/plugins/fm-worktree-guard.js" <<EOF
+// Write-guard for PC02/opencode crewmate sessions: refuses any edit or write
+// tool call that would escape this task's assigned worktree or its own
+// report directory. Reproduced twice
+// in production (2026-09-03
+// token-burn-item10-no-self-resume, 2026-09-06 fm-relaunch-rebinds-pr-poll)
+// when a tool call resolved a path against the primary checkout instead of
+// \$WT; both times the primary checkout's stray copy was only caught by
+// accident via git status. tool.execute.before can block by throwing
+// (verified against fm-primary-pretool-check.js, 2026-07-09 against OpenCode
+// 1.17.15).
+import { realpathSync } from "node:fs";
+import { resolve, dirname, basename } from "node:path";
+
+const realRoot = (p) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
+const WORKTREE_ROOT = realRoot("$WT");
+// The crewmate brief mandates exactly one write outside the worktree: the
+// task's own report under \$DATA/\$ID (bin/fm-brief.sh Definition of done).
+const TASK_DATA_ROOT = realRoot("$DATA/$ID");
+const ALLOWED_ROOTS = [WORKTREE_ROOT, TASK_DATA_ROOT];
+
+function canonicalize(target) {
+  const abs = resolve(target);
+  const trailing = [];
+  let probe = abs;
+  for (;;) {
+    try {
+      return resolve(realpathSync(probe), ...trailing);
+    } catch {
+      const parent = dirname(probe);
+      if (parent === probe) return abs;
+      trailing.unshift(basename(probe));
+      probe = parent;
+    }
+  }
+}
+
+function allowedTarget(target) {
+  const real = canonicalize(target);
+  return ALLOWED_ROOTS.some((root) => real === root || real.startsWith(root + "/"));
+}
+
+export const FmWorktreeGuard = async () => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      const tool = input?.tool;
+      const args = output?.args || {};
+      if (tool === "write" || tool === "edit") {
+        const target = args.filePath;
+        if (typeof target === "string" && target && !allowedTarget(target)) {
+          throw new Error(
+            "fm-worktree-guard: refused " + tool + " outside the assigned worktree (" +
+              WORKTREE_ROOT + "): " + target
+          );
+        }
+      }
+    },
+  };
+};
+EOF
+      exclude_path '.opencode/plugins/fm-worktree-guard.js'
       ;;
     pi|pi-signed)
       # Written OUTSIDE the worktree: pi's project-trust gate fires on any extension
@@ -3561,11 +3628,15 @@ preserve_relaunch_meta() {
   # its task's existing purpose forward untouched via preserve_relaunch_meta
   # below rather than resetting it to "unspecified" (docs/llm-usage-telemetry.md).
   [ "$RELAUNCH" -eq 1 ] || echo "purpose=${PURPOSE:-unspecified}"
-  if [ "$RELAUNCH" -eq 1 ]; then
-    preserve_relaunch_meta
-  fi
+  # control_relaunch_tx= is emitted before the carried-forward lines because a
+  # task's pr=/pr_head= pair must stay last in the record: fm-pr-check.sh binds
+  # the PR poll to a record whose identity lines are terminal, and any other key
+  # written after pr= makes the watcher reject the poll as unauthenticated.
   if [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
+  fi
+  if [ "$RELAUNCH" -eq 1 ]; then
+    preserve_relaunch_meta
   fi
 } > "$SPAWN_META_PATH" || {
   echo "error: task record for $ID could not be prepared at $SPAWN_META_PATH" >&2
@@ -3717,9 +3788,20 @@ spawn_record_traceparent() {
     acquired=1
   fi
   SPAWN_META_TMP="$STATE/.$ID.meta.trace.${BASHPID:-$$}"
+  # traceparent= is rewritten in place of the old one, but the record's
+  # pr=/pr_head= identity lines are carried to the end: they must stay last or
+  # an armed PR merge poll is rejected as unauthenticated (bin/fm-pr-lib.sh
+  # fm_pr_metadata_identity_parse).
   if [ ! -f "$meta" ] || [ ! -w "$meta" ] \
-     || ! awk -F= '$1 != "traceparent"' "$meta" > "$SPAWN_META_TMP" \
-     || ! printf 'traceparent=%s\n' "$SPAWN_TRACEPARENT" >> "$SPAWN_META_TMP" \
+     || ! awk -F= -v tp="$SPAWN_TRACEPARENT" '
+            $1 == "traceparent" { next }
+            $1 == "pr" || $1 == "pr_head" { identity[n++] = $0; next }
+            { print }
+            END {
+              printf "traceparent=%s\n", tp
+              for (i = 0; i < n; i++) print identity[i]
+            }
+          ' "$meta" > "$SPAWN_META_TMP" \
      || ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$meta" "task record" "$STATE"; then
     status=1
     rm -f "$SPAWN_META_TMP" 2>/dev/null || true

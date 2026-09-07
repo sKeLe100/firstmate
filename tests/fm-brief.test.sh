@@ -362,6 +362,8 @@ test_no_mistakes_dod_wording() {
     "no-mistakes DOD must require a self-sufficient --intent string"
   assert_grep "write the substance of the referenced items into \`--intent\`" "$brief" \
     "no-mistakes DOD must tell the worker to resolve report, decision, and PR references into substance"
+  assert_grep "do not park a background Task/Monitor call on a step that can run for many minutes" "$brief" \
+    "no-mistakes DOD must warn against backgrounding long-running pipeline steps"
 
   # The --yes ban is a fleet-wide prohibition, not a preference, and it must not
   # claim an enforcement the tool does not provide: this is instruction only.

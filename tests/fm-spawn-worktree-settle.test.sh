@@ -149,7 +149,8 @@ test_already_settled_pane_costs_one_confirm_read() {
   expect_code 0 "$status" "spawn should succeed when the pane is already settled"$'\n'"$out"
   assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
     "meta did not record the already-settled worktree"
-  reads=$(cat "$COUNTFILE")
+  reads=0
+  [ -f "$COUNTFILE" ] && reads=$(cat "$COUNTFILE")
   [ "$reads" -eq 2 ] || fail "already-settled pane took $reads reads to confirm - expected the first read plus one confirmation"
   pass "an already-settled pane confirms on the next read, not a whole extra cycle"
 }

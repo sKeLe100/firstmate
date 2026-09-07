@@ -172,7 +172,10 @@ There is currently no verified delivery path for a non-tmux, non-herdr primary, 
 The refusal happens at every arm entry point, deliberately: `bin/fm-afk-start.sh` checks the same sources up front and exits nonzero *before* writing `state/.afk`, so a refused start never leaves the away-mode flag set with no daemon alive (which would make firstmate keep suppressing normal wake handling while nothing supervises); `bin/fm-afk-launch.sh start-native` applies the same check before it prepares lifecycle state, so the harness-native arm path cannot bypass it either; `bin/fm-supervise-daemon.sh` repeats the check at arm time as the backstop for the launcher-prepared path and prints `error: cannot verify this away-mode daemon's target pane hosts the live firstmate primary session ...`.
 Run the primary inside tmux (or herdr), or set `FM_SUPERVISOR_TARGET` explicitly to the primary's own pane, to use away mode in that configuration.
 Setting only `FM_SUPERVISOR_BACKEND` does not lift the refusal: it names a transport but no pane, so target detection would still come up empty.
-Selecting any other supervisor backend, including `zellij`, `orca`, or `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
+Selecting any other supervisor backend, including `zellij`, `orca`, or `cmux`, refuses instead of trying tmux injection primitives against a non-tmux pane.
+A resolved backend and target are also checked for usability *before* `bin/fm-afk-launch.sh` arms away mode (both `start` and `start-native`): `validate_supervisor_target` in `bin/fm-supervisor-target-lib.sh` owns that check and rejects an unsupported backend, then a target that does not resolve to a live pane under it, so a broken supervision target fails at `/afk` time rather than after `state/.afk` is written.
+`bin/fm-afk-start.sh` deliberately does not repeat that usability check: it only verifies a target resolves at all, so on a direct (non-launcher-prepared) start an unsupported backend or dead target is caught by `bin/fm-supervise-daemon.sh`'s startup refusal rather than at `/afk` time.
+`bin/fm-supervise-daemon.sh` runs the same shared check at startup as the backstop, so the two refusals cannot drift apart.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
@@ -242,6 +245,7 @@ The runner's `--help` output owns the exact selection, scheduling, and timeout r
 It excludes `real-herdr-gated` on the same grounds the portable CI lanes do, because those scripts drive a live Herdr lab and the dedicated required Herdr lane owns that coverage.
 Because firstmate always supplies `--intent`, that command is a baseline and the Test step still runs its intent-targeted evidence agent on top of it.
 `commands.test` executes code, so no-mistakes honors it only from the default-branch copy of `.no-mistakes.yaml`; a pushed branch cannot change what the gate runs.
+It also sets `review.path_instructions` for `bin/*.sh` and `tests/*.test.sh`, which point the Review step at the maintainability rules owned by the [firstmate coding guidelines skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md) rather than restating them; the file's own comment owns why those entries stay short pointers.
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
 
@@ -975,7 +979,8 @@ FM_BACKEND_HERDR_SUBMIT_MIN_SLEEP=0.6  # herdr-only: minimum per-Enter confirmat
 FM_ZELLIJ_SESSION=firstmate  # zellij-only: named session for normal backend ops and test isolation (docs/zellij-backend.md)
 CMUX_SOCKET_PASSWORD=   # cmux-only: socket password fallback when config/cmux-socket-password is absent (docs/cmux-backend.md)
 FM_SESSION_START_STATUS_TAIL=5   # state/*.status lines printed per task in the session-start digest; each line is capped by bin/fm-line-cap-lib.sh
-FM_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session-start digest; in-flight, held, and blocked rows are never bounded and done rows are never listed
+FM_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session-start digest; every in-flight, held, and blocked row is still listed and done rows are never listed
+FM_SESSION_START_HOLD_REASON_CHAR_LIMIT=250   # hold_reason characters kept per backlog row in the session-start digest before it is truncated with a pointer to `tasks-axi show <id> --full`; a task that is both in flight and held is listed once, under in flight
 FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 FM_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/fm-bootstrap.sh
 FM_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the deferred inactive-outcome scan plus network checks; hitting it prints an actionable NETWORK_CHECKS line
@@ -1090,7 +1095,7 @@ FM_PENDING_REPLY_GRACE_SECS=120   # seconds after marked-request delivery before
 FM_PENDING_REPLY_FORCE_INGEST_WAIT_SECS=5  # bounded wait for the forced remote-reply poll fm_pending_reply_maybe_escalate runs immediately before it would otherwise escalate; no-ops instantly when a live poller already owns the source, and never runs for local secondmates
 # sub-supervisor (bin/fm-supervise-daemon.sh); presence-gated via /afk
 FM_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID before tmux fallback
-FM_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected from $TMUX_PANE/HERDR_PANE_ID - away mode refuses to arm when none resolves
+FM_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected from $TMUX_PANE/HERDR_PANE_ID - away mode refuses to arm when none resolves, or when the resolved target is not a live pane under the resolved backend
 FM_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
 FM_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately
 FM_MAX_DEFER_SECS=300              # max buffered escalation age before retry plus wedge alarm; 0 disables

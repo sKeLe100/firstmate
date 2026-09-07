@@ -23,6 +23,8 @@
 # bin/fm-promote.sh refuse leftover `{TASK}` / `{FIRSTMATE_SPEC}` placeholders
 # through the helpers below. Other mentions of `--intent` point here rather than
 # restating the rule.
+# The post-green fm-claim-check.sh gate verifies the worker's own done summary,
+# never the composed `--intent` text, so its output never becomes intent content.
 # Every heredoc here stays outside a command substitution: `VAR=$(cat <<EOF ...)`
 # breaks parsing of the whole file on Bash 3.2 (tests/fm-brief.test.sh).
 # fm_brief_worker_role owns the ship/scout role scope. bin/fm-spawn.sh is its one
@@ -193,8 +195,10 @@ fm_ask_user_escalation_block() {  # <data-dir> <task-id>
 EOF
 }
 
+FM_DOD_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 fm_dod_block() {  # <mode> <task-id>
-  local mode=$1 id=$2
+  local mode=$1 id=$2 claim_check="$FM_DOD_LIB_DIR/fm-claim-check.sh"
   case "$mode" in
     direct-PR)
       cat <<EOF
@@ -202,7 +206,8 @@ fm_dod_block() {  # <mode> <task-id>
 Delivery contract: mode=direct-PR
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+Before opening the PR, run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary or the missing commit before proceeding, never silence the gate.
+When it is implemented, committed, and the claim check passes, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
       ;;
@@ -213,7 +218,8 @@ Delivery contract: mode=local-only
 This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$id\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
-When it is implemented and committed, append \`done: ready in branch fm/$id\` to the status file and stop.
+Before reporting done, run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary or the missing commit first, never silence the gate.
+When it is implemented, committed, and the claim check passes, append \`done: ready in branch fm/$id\` to the status file and stop.
 The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
 EOF
       ;;
@@ -234,6 +240,7 @@ The \`--intent\` string you pass must be self-sufficient: that string plus the c
 When the captain's intent refers to a report, decision, or PR ("do items 1, 2, 3, and 7 of the report"), write the substance of the referenced items into \`--intent\` in the captain's terms, not only the pointer; that substance is the captain's ask by reference, while Firstmate's build instructions and your own decisions still stay out.
 This replaces the no-mistakes skill's advice to enrich \`--intent\` with decisions and tradeoffs; that advice does not apply to Firstmate-dispatched work.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+Poll long-running pipeline steps (no-mistakes runs, test loops) with synchronous foreground checks on an explicit sleep/retry cadence; do not park a background Task/Monitor call on a step that can run for many minutes.
 
 One drive call blocks until the next gate or outcome, which routinely outlives what your harness lets a single command run: Claude Code kills a command at ten minutes maximum, while one fix round is capped around thirty minutes and up to three rounds chain.
 So background the drive call and poll \`no-mistakes axi status\` from a separate call instead of sitting in one blocking hold your harness will kill.
@@ -248,7 +255,8 @@ Two firstmate-specific rules layer on top of that guidance:
 - NEVER pass \`--yes\` (or \`-y\`) to \`no-mistakes axi run\` or \`no-mistakes axi respond\`. It is banned fleet-wide.
   It auto-resolves every gate including ask-user findings with no escalation, and answering your own ask-user finding is a hard rule violation.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary before reporting (do not silence the gate, and do not hand-edit or recommit once the run is closed out).
+Append \`done: PR {url} checks green\` and stop. You are finished.
 EOF
       ;;
     *)

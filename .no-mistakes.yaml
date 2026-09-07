@@ -59,3 +59,26 @@ commands:
 test:
   evidence:
     store_in_repo: true
+
+# Maintainability rules the Review step applies to the surfaces where this repo
+# has repeatedly paid for getting them wrong. Kept as pointers for the same
+# reason `document.instructions` is: the coding guideline owns the policy, and a
+# second prose copy here would become a competing owner. Schema caps both the
+# entry count and the total bytes added to the review prompt, so keep each
+# entry short.
+review:
+  path_instructions:
+    - path: 'bin/*.sh'
+      instructions: |
+        Apply .agents/skills/firstmate-coding-guidelines/SKILL.md. Check that
+        the script has one owner for its contract and does not restate a rule
+        another file owns, that its header and --help agree with what it does,
+        that it is shellcheck-clean, and that a failure mode refuses with a
+        concrete diagnostic rather than silently continuing.
+    - path: 'tests/*.test.sh'
+      instructions: |
+        Check that each test asserts observable behavior rather than the
+        implementation's current shape, that it covers the failure exits and
+        not just the happy path, and that a documented deliberate limitation
+        has a test pinning it so a later change cannot silently reintroduce
+        the rejected approach.

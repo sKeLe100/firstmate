@@ -66,6 +66,9 @@ Nothing reaches the captain in that case.
 Never restart, stop, or update the shared daemon on a crewmate's claim.
 It is one instance serving every lane and home, so a restart kills other lanes' in-flight runs.
 Only positive socket refusal or absence is a daemon-down finding; escalate that finding, or a failed run record that names a daemon error, to the captain.
+## Recognized patterns
+
+A frozen elapsed-time counter, a byte-identical pane, and no Escape reaction on a `claude` pane parked in a background call together mean a harness main-thread wedge: skip further steers and go straight to step 4's `bin/fm-control.sh <task-id> relaunch` below - the worktree and branch survive.
 
 ## Live-endpoint escalation
 

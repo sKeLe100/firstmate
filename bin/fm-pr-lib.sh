@@ -285,6 +285,11 @@ fm_pr_regular_destination_on_device_or_absent() {
   [ ! -e "$path" ] || [ "$(fm_pr_file_device "$path")" = "$device" ]
 }
 
+# Terminal-identity contract for state/<id>.meta: the single pr= line and its
+# optional pr_head= must be the last lines of the record, apart from the
+# whitelisted x_* keys below. Any other key written after pr= makes this parse
+# fail, which de-authenticates an armed PR merge poll. Every meta writer that
+# appends or rewrites the record must re-emit these identity lines last.
 fm_pr_metadata_identity_parse() {
   local file=$1 line value pr_count=0 seen_pr=0 post_pr_invalid=0
   FM_PR_META_PROVIDER=
