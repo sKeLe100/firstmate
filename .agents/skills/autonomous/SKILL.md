@@ -256,9 +256,9 @@ An item becomes deferred-ready when either condition holds:
   the eligibility filter and stale-work check).
 
 Each deferred-ready item carries its plain-language deferral reason
-(dispatch-cap occupancy, outside attention window, or Fable daytime
-restriction). Below threshold, stay silent - no separate ping, no
-notification. Rides the existing summary ping and its band gating.
+(dispatch-cap occupancy, PC02 lane occupied, outside attention window,
+or Fable daytime restriction). Below threshold, stay silent - no
+separate ping, no notification. Rides the existing summary ping and its band gating.
 
 Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,
 run `bin/fm-captain-hold.sh mark set <task-id> deferred-since <UTC-ISO8601-timestamp>`,
@@ -432,6 +432,7 @@ This skill cites these live owners rather than restating their values:
 - `quota-axi` - quota and model selection
 - `bin/fm-captain-window.sh` - captain attention window
 - `config/dispatch-cap` - concurrent autonomous dispatch cap
+- `bin/fm-autonomous-pc02-lane.sh` - whether the single PC02 lane is free
 - `config/crew-dispatch.json` - dispatch profiles
 - `captain-hold-lifecycle` - closing captain-held decisions
 - `ask-user-authority` - deciding ask-user findings
