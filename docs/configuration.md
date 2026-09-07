@@ -243,6 +243,7 @@ The runner's `--help` output owns the exact selection, scheduling, and timeout r
 It excludes `real-herdr-gated` on the same grounds the portable CI lanes do, because those scripts drive a live Herdr lab and the dedicated required Herdr lane owns that coverage.
 Because firstmate always supplies `--intent`, that command is a baseline and the Test step still runs its intent-targeted evidence agent on top of it.
 `commands.test` executes code, so no-mistakes honors it only from the default-branch copy of `.no-mistakes.yaml`; a pushed branch cannot change what the gate runs.
+It also sets `review.path_instructions` for `bin/*.sh` and `tests/*.test.sh`, which point the Review step at the maintainability rules owned by the [firstmate coding guidelines skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md) rather than restating them; the file's own comment owns why those entries stay short pointers.
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
 
