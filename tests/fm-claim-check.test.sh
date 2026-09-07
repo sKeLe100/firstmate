@@ -60,6 +60,12 @@ STATUS=$?
 assert_contains "$OUT" "bin/fm-never-touched.sh" "asserted unverified path listed in output"
 case $OUT in *docs/architecture.md*) fail "cited-only path must not be reported: $OUT";; esac
 
+# --- a citation in the same clause as a change verb is not a claim ---
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'updated bin/fm-new-thing.sh to match docs/architecture.md' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 0 ] || fail "expected exit 0 for a same-clause citation, got $STATUS: $OUT"
+[ -z "$OUT" ] || fail "expected no output for a same-clause citation, got: $OUT"
+
 # --- usage errors ---
 "$CLAIM_CHECK" >/dev/null 2>&1 && fail "expected non-zero exit with no arguments"
 "$CLAIM_CHECK" main extra </dev/null >/dev/null 2>&1 && fail "expected non-zero exit with a second argument"
