@@ -1,0 +1,12 @@
+### BEFORE the fix (base 6a510fc) - defer/covered classification ran ahead of afk_present
+--- fixture: away mode (.afk present), crew reports working,
+---          status file carries 'needs-decision: pick a lane',
+---          and its process-event generation is already acknowledged (coverable).
+watcher: STILL RUNNING after 10s - signal was delayed or absorbed
+--- bin/fm-watch.sh stdout (what the away-mode daemon reads):
+--- triage log absorb records:
+    [2026-09-07T12:34:19-0400] absorbed procevent-covered signal: /tmp/fm-watch-triage-tests.XOd7Du/afk-demo/state/covered.status
+--- bin/fm-wake-drain.sh (durable queue the daemon classifies):
+    OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    covered needs-decision: pick a lane
+    OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'

@@ -1,0 +1,14 @@
+### AFTER the fix (target 5d03b32) - bin/fm-watch.sh with afk_present gating
+--- fixture: away mode (.afk present), crew reports working,
+---          status file carries 'needs-decision: pick a lane',
+---          and its process-event generation is already acknowledged (coverable).
+watcher: EXITED one-shot (away-mode contract: queue and exit immediately)
+--- bin/fm-watch.sh stdout (what the away-mode daemon reads):
+    signal: /tmp/fm-watch-triage-tests.j0NQW8/afk-demo/state/covered.status
+--- triage log absorb records:
+--- bin/fm-wake-drain.sh (durable queue the daemon classifies):
+    1788798849	1	signal	covered.status	needs-decision: /tmp/fm-watch-triage-tests.j0NQW8/afk-demo/state/covered.status
+    wake annotation: latest wake-EVENT observed at drain, not current state: covered.status: needs-decision: pick a lane
+    OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    covered needs-decision: pick a lane
+    OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
