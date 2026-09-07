@@ -806,6 +806,45 @@ test_covered_status_absorbs_beside_benign_sibling() {
   pass "a procevent-covered status absorbs beside a benign sibling: no wake, no queue record, markers advanced, absorbs logged under separate reasons"
 }
 
+# The defer/covered decision must be GATED BY afk_present, not run ahead of it:
+# away mode's contract is queue-and-exit-immediately for every coverable signal,
+# never the delay (defer, up to PROCEVENT_SIGNAL_DEFER_GRACE) or silent-absorb
+# (covered) path meant for normal operation. This reuses the exact
+# procevent-covered fixture from test_covered_status_absorbs_beside_benign_sibling
+# above - a coverage verdict of "covered" is the one this ordering bug lets
+# leak into afk mode as a silent absorb instead of a queued wake.
+test_afk_procevent_covered_signal_queued_not_absorbed() {
+  local dir state fakebin out drain_out inbox marker status_file pid
+  dir=$(make_case afk-covered-signal); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  inbox="$state/procevent-inbox"
+  mkdir -p "$inbox"
+  status_file="$state/covered.status"
+  printf 'kind=ship\n' > "$state/covered.meta"
+  printf 'needs-decision: pick a lane\n' > "$status_file"
+  printf 'delivered\n' > "$inbox/covered.1.result"
+  : > "$inbox/covered.1.handled"
+  marker="$state/.seen-procevent-$(printf 'procevent:covered:1' | LC_ALL=C od -An -tx1 | tr -d ' \n')"
+  : > "$marker"
+  touch -d '+1 hour' "$marker" 2>/dev/null || touch "$marker"
+  date '+%s' > "$state/.afk"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 100 || { unset FM_FAKE_CREW_STATE
+    fail "with .afk present the watcher did not exit one-shot for a coverable signal: $(cat "$out")"; }
+  unset FM_FAKE_CREW_STATE
+  grep -F "signal: $status_file" "$out" >/dev/null \
+    || fail "an afk-mode coverable signal was absorbed instead of surfaced for the daemon: $(cat "$out")"
+  [ ! -f "$state/.watch-triage.log" ] \
+    || ! grep -qF "absorbed procevent-covered signal:$status_file" "$state/.watch-triage.log" \
+    || fail "an afk-mode coverable signal was silently absorbed as procevent-covered"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the afk-mode signal failed"
+  grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$status_file" >/dev/null \
+    || fail "an afk-mode coverable signal was not queued for the daemon to classify"
+  pass "an afk-mode coverable signal is queued and the wake exits immediately, never delayed or absorbed"
+}
+
 test_turn_ended_provably_working_absorbed() {
   local dir state fakebin out pid
   dir=$(make_case turn-ended-working); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
@@ -4837,6 +4876,7 @@ test_secondmate_status_signal_never_absorbed_classifier
 test_provably_working_signal_absorbed
 test_benign_absorb_marker_is_presentation_record
 test_covered_status_absorbs_beside_benign_sibling
+test_afk_procevent_covered_signal_queued_not_absorbed
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
 test_turn_ended_churning_pane_absorbed

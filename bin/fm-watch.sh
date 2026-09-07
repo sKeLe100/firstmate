@@ -2171,17 +2171,25 @@ EOF
     signal_deferred=
     signal_covered=
     signal_covered_end=
-    for f in $files; do
-      signal_stamp=$(_fm_status_file_size "$f")
-      signal_stamp=${signal_stamp//[[:space:]]/}
-      case "$(fm_watch_signal_procevent_coverage "$f")" in
-        defer) signal_deferred="$signal_deferred $f" ;;
-        covered)
-          signal_covered="$signal_covered $f"
-          signal_covered_end="$signal_covered_end $f|${signal_stamp:-0}"
-          ;;
-      esac
-    done
+    # Away mode's queue-and-exit-immediately contract must gate entry into this
+    # defer/covered classification, not run after it: a coverable signal
+    # decided here as "defer" or "covered" is skipped by the enqueue loop
+    # below regardless of afk_present, so classifying at all while away would
+    # let a signal be delayed up to the process-event grace window or silently
+    # absorbed instead of always being queued immediately.
+    if ! afk_present; then
+      for f in $files; do
+        signal_stamp=$(_fm_status_file_size "$f")
+        signal_stamp=${signal_stamp//[[:space:]]/}
+        case "$(fm_watch_signal_procevent_coverage "$f")" in
+          defer) signal_deferred="$signal_deferred $f" ;;
+          covered)
+            signal_covered="$signal_covered $f"
+            signal_covered_end="$signal_covered_end $f|${signal_stamp:-0}"
+            ;;
+        esac
+      done
+    fi
     if [ -n "$signal_deferred" ]; then
       remaining=
       for f in $files; do
