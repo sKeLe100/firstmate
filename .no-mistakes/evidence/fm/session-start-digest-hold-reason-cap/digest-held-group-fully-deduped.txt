@@ -1,0 +1,5 @@
+held (captain- or time-gated; an in-flight item that is also held is listed once, above):
+tasks[0]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+(1 row(s) omitted here - already shown with full hold fields under in flight)
+
+blocked queued:

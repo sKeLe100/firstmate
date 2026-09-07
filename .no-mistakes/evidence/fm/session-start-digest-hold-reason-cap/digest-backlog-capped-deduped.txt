@@ -1,0 +1,18 @@
+compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown once with hold fields capped to 250 chars; ready queued bounded to 20; task bodies omitted)
+
+in flight:
+tasks[1]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+  both-states,in_flight,ship,firstmate,Shared row,none,captain,captain choice pending
+
+held (captain- or time-gated; an in-flight item that is also held is listed once, above):
+tasks[2]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+  held-only,queued,ship,firstmate,Held only,none,captain,"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx... (truncated; tasks-axi show held-only --full for the rest)"
+  utf8-cut,queued,ship,firstmate,Utf8 cut,none,captain,"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxé... (truncated; tasks-axi show utf8-cut --full for the rest)"
+(1 row(s) omitted here - already shown with full hold fields under in flight)
+
+blocked queued:
+tasks[0]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+
+ready queued (dispatchable now):
