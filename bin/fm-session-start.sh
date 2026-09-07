@@ -539,6 +539,28 @@ cap_hold_reason_field() {
       gsub(/"/, "\"\"", v)
       return "\"" v "\""
     }
+    function trim_partial_utf8(v,   k, b, need) {
+      if (!bytes) return v
+      k = 0
+      while (length(v) - k > 0 && index(cont, substr(v, length(v) - k, 1)) > 0) k++
+      if (length(v) - k < 1) return v
+      b = substr(v, length(v) - k, 1)
+      if (index(lead2, b) > 0) need = 1
+      else if (index(lead3, b) > 0) need = 2
+      else if (index(lead4, b) > 0) need = 3
+      else return v
+      if (k == need) return v
+      return substr(v, 1, length(v) - k - 1)
+    }
+    BEGIN {
+      bytes = (length("é") > 1)
+      if (bytes) {
+        for (i = 128; i < 192; i++) cont = cont sprintf("%c", i)
+        for (i = 192; i < 224; i++) lead2 = lead2 sprintf("%c", i)
+        for (i = 224; i < 240; i++) lead3 = lead3 sprintf("%c", i)
+        for (i = 240; i < 248; i++) lead4 = lead4 sprintf("%c", i)
+      }
+    }
     /^  / {
       line = $0
       rest = line
@@ -562,7 +584,7 @@ cap_hold_reason_field() {
         field = substr(body, pos + 1)
         value = unquote(field)
         if (length(value) > max) {
-          value = substr(value, 1, max) "... (truncated; tasks-axi show " id " --full for the rest)"
+          value = trim_partial_utf8(substr(value, 1, max)) "... (truncated; tasks-axi show " id " --full for the rest)"
           field = requote(value)
         }
         print "  " prefix field
@@ -594,11 +616,17 @@ dedupe_held_against_in_flight() {
       sub(/^[[:space:]]+/, "", id)
       sub(/,.*$/, "", id)
       if (id in seen) { dropped++; next }
-      print
+      out[++lines] = $0
+      kept++
       next
     }
-    { print }
+    {
+      out[++lines] = $0
+      if (header == 0 && $0 ~ /^tasks\[[0-9]+\]/) header = lines
+    }
     END {
+      if (header > 0 && dropped > 0) sub(/^tasks\[[0-9]+\]/, "tasks[" kept "]", out[header])
+      for (i = 1; i <= lines; i++) print out[i]
       if (dropped > 0) {
         printf "(%d row(s) omitted here - already shown with full hold fields under in flight)\n", dropped
       }

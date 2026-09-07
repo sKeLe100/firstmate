@@ -211,8 +211,10 @@ SH
 # filters, plus a second held-only row carrying a hold_reason well past the
 # 250-char cap so both fixes have coverage in one fake.
 make_fake_tasks_axi_dupe_and_long_reason() {
-  local fakebin=$1 long
+  local fakebin=$1 long split
   long=$(printf 'x%.0s' $(seq 1 300))
+  split=$(printf 'x%.0s' $(seq 1 249))
+  split="${split}é$(printf 'x%.0s' $(seq 1 60))"
   cat > "$fakebin/tasks-axi" <<SH
 #!/usr/bin/env bash
 set -u
@@ -228,9 +230,10 @@ case "\${1:-}" in
         printf '  both-states,in_flight,ship,firstmate,Shared row,none,captain,captain choice pending\n'
         ;;
       *'--state held'*)
-        printf 'tasks[2]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
+        printf 'tasks[3]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
         printf '  both-states,in_flight,ship,firstmate,Shared row,none,captain,captain choice pending\n'
         printf '  held-only,queued,ship,firstmate,Held only,none,captain,%s\n' "$long"
+        printf '  utf8-cut,queued,ship,firstmate,Utf8 cut,none,captain,%s\n' "$split"
         ;;
       *'--state queued'*'--blocked'*)
         printf 'tasks[0]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
@@ -1841,6 +1844,14 @@ EOF
     "an oversized hold_reason was not capped"
   assert_contains "$out" "tasks-axi show held-only --full for the rest" \
     "a capped hold_reason did not point at the full-text lookup"
+
+  assert_contains "$out" "tasks[2]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:" \
+    "the held group header count was not rewritten to the rows actually printed"
+  assert_not_contains "$out" "tasks[3]{" \
+    "the held group header still advertises the pre-dedupe row count"
+
+  printf '%s' "$out" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 \
+    || fail "capping a hold_reason split a multi-byte character: $out"
 
   pass "the compact backlog listing lists an in-flight-and-held task once and caps an oversized hold_reason"
 }
