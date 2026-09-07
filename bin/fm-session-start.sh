@@ -515,8 +515,127 @@ print_ready_queued_bounded() {
   '
 }
 
+HOLD_REASON_CHAR_LIMIT=${FM_SESSION_START_HOLD_REASON_CHAR_LIMIT:-250}
+case "$HOLD_REASON_CHAR_LIMIT" in ''|*[!0-9]*|0) HOLD_REASON_CHAR_LIMIT=250 ;; esac
+
+# cap_hold_reason_field <path>: reads a tasks-axi structured `tasks[N]{...}:`
+# listing (BACKLOG_FIELDS order: id,state,kind,repo,title,blocked_by,
+# hold_kind,hold_reason) from stdin and truncates any hold_reason value past
+# HOLD_REASON_CHAR_LIMIT chars, pointing at the full text instead of passing
+# unbounded captain/task prose straight into the digest (report:
+# session-start-context-bloat-audit, 2026-08-31). CSV-aware: hold_reason is
+# always the last field, so everything from the first unquoted field-start to
+# end of line is treated as one value even if it embeds commas or quotes.
+cap_hold_reason_field() {
+  awk -v max="$HOLD_REASON_CHAR_LIMIT" '
+    function unquote(v) {
+      if (substr(v, 1, 1) == "\"" && substr(v, length(v), 1) == "\"") {
+        v = substr(v, 2, length(v) - 2)
+        gsub(/""/, "\"", v)
+      }
+      return v
+    }
+    function requote(v) {
+      gsub(/"/, "\"\"", v)
+      return "\"" v "\""
+    }
+    function trim_partial_utf8(v,   k, b, need) {
+      if (!bytes) return v
+      k = 0
+      while (length(v) - k > 0 && index(cont, substr(v, length(v) - k, 1)) > 0) k++
+      if (length(v) - k < 1) return v
+      b = substr(v, length(v) - k, 1)
+      if (index(lead2, b) > 0) need = 1
+      else if (index(lead3, b) > 0) need = 2
+      else if (index(lead4, b) > 0) need = 3
+      else return v
+      if (k == need) return v
+      return substr(v, 1, length(v) - k - 1)
+    }
+    BEGIN {
+      bytes = (length("é") > 1)
+      if (bytes) {
+        for (i = 128; i < 192; i++) cont = cont sprintf("%c", i)
+        for (i = 192; i < 224; i++) lead2 = lead2 sprintf("%c", i)
+        for (i = 224; i < 240; i++) lead3 = lead3 sprintf("%c", i)
+        for (i = 240; i < 248; i++) lead4 = lead4 sprintf("%c", i)
+      }
+    }
+    /^  / {
+      line = $0
+      rest = line
+      sub(/^[[:space:]]+/, "", rest)
+      id = rest
+      sub(/,.*$/, "", id)
+      # Walk 6 more top-level (unquoted) commas to reach the hold_reason field
+      # start: id,state,kind,repo,title,blocked_by,hold_kind,hold_reason.
+      body = rest
+      n = length(body)
+      commas = 0
+      pos = 0
+      inq = 0
+      for (i = 1; i <= n && commas < 7; i++) {
+        c = substr(body, i, 1)
+        if (c == "\"") { inq = !inq }
+        else if (c == "," && !inq) { commas++; if (commas == 7) pos = i }
+      }
+      if (pos > 0) {
+        prefix = substr(body, 1, pos)
+        field = substr(body, pos + 1)
+        value = unquote(field)
+        if (length(value) > max) {
+          value = trim_partial_utf8(substr(value, 1, max)) "... (truncated; tasks-axi show " id " --full for the rest)"
+          field = requote(value)
+        }
+        print "  " prefix field
+        next
+      }
+      print line
+      next
+    }
+    { print }
+  '
+}
+
+# dedupe_held_against_in_flight <in_flight_ids_var> <held_text>: an item can be
+# both in_flight and held simultaneously (its hold survives regardless of
+# underlying lifecycle state), and tasks-axi's separate --state filters then
+# both return the identical full row. Print the held listing with any row
+# whose id already appeared in the in-flight listing dropped, plus a count of
+# what was skipped, so the captain sees each item's hold fields once rather
+# than twice (report: session-start-context-bloat-audit, 2026-08-31).
+dedupe_held_against_in_flight() {
+  local in_flight_ids=$1 held=$2
+  printf '%s\n' "$held" | awk -v ids="$in_flight_ids" '
+    BEGIN {
+      n = split(ids, a, "\n")
+      for (i = 1; i <= n; i++) if (a[i] != "") seen[a[i]] = 1
+    }
+    /^  / {
+      id = $0
+      sub(/^[[:space:]]+/, "", id)
+      sub(/,.*$/, "", id)
+      if (id in seen) { dropped++; next }
+      out[++lines] = $0
+      kept++
+      next
+    }
+    {
+      out[++lines] = $0
+      if (header == 0 && $0 ~ /^tasks\[[0-9]+\]/) header = lines
+    }
+    END {
+      if (header > 0 && dropped > 0) sub(/^tasks\[[0-9]+\]/, "tasks[" kept + 0 "]", out[header])
+      for (i = 1; i <= lines; i++) print out[i]
+      if (dropped > 0) {
+        printf "(%d row(s) omitted here - already shown with full hold fields under in flight)\n", dropped
+      }
+    }
+  '
+}
+
 print_backlog_tasks_axi_compact() {
-  local path=$1 in_flight held blocked ready err
+  local path=$1 in_flight held blocked ready err in_flight_ids
   if ! in_flight=$(tasks-axi list --file "$path" --state in_flight --fields "$BACKLOG_FIELDS" 2>&1); then
     err=$in_flight
   elif ! held=$(tasks-axi list --file "$path" --state held --fields "$BACKLOG_FIELDS" 2>&1); then
@@ -526,14 +645,15 @@ print_backlog_tasks_axi_compact() {
   elif ! ready=$(tasks-axi ready --file "$path" 2>&1); then
     err=$ready
   else
-    printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to %s; task bodies omitted)\n' \
-      "$QUEUED_LIMIT"
+    printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown once with hold fields capped to %s chars; ready queued bounded to %s; task bodies omitted)\n' \
+      "$HOLD_REASON_CHAR_LIMIT" "$QUEUED_LIMIT"
+    in_flight_ids=$(printf '%s\n' "$in_flight" | awk '/^  / { id = $0; sub(/^[[:space:]]+/, "", id); sub(/,.*$/, "", id); print id }')
     printf '\nin flight:\n'
-    printf '%s\n' "$in_flight" | strip_axi_help
-    printf '\nheld (captain- or time-gated; an in-flight item that is also held appears in both groups):\n'
-    printf '%s\n' "$held" | strip_axi_help
+    printf '%s\n' "$in_flight" | strip_axi_help | cap_hold_reason_field
+    printf '\nheld (captain- or time-gated; an in-flight item that is also held is listed once, above):\n'
+    dedupe_held_against_in_flight "$in_flight_ids" "$(printf '%s\n' "$held" | strip_axi_help)" | cap_hold_reason_field
     printf '\nblocked queued:\n'
-    printf '%s\n' "$blocked" | strip_axi_help
+    printf '%s\n' "$blocked" | strip_axi_help | cap_hold_reason_field
     printf '\nready queued (dispatchable now):\n'
     print_ready_queued_bounded "$ready" "$path"
     return 0
