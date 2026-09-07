@@ -625,7 +625,7 @@ dedupe_held_against_in_flight() {
       if (header == 0 && $0 ~ /^tasks\[[0-9]+\]/) header = lines
     }
     END {
-      if (header > 0 && dropped > 0) sub(/^tasks\[[0-9]+\]/, "tasks[" kept "]", out[header])
+      if (header > 0 && dropped > 0) sub(/^tasks\[[0-9]+\]/, "tasks[" kept + 0 "]", out[header])
       for (i = 1; i <= lines; i++) print out[i]
       if (dropped > 0) {
         printf "(%d row(s) omitted here - already shown with full hold fields under in flight)\n", dropped
