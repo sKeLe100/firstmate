@@ -223,6 +223,18 @@ case "\${1:-}" in
     printf '%s\n' '0.2.4'
     exit 0
     ;;
+  update)
+    if [ "\${2:-}" = --help ]; then
+      printf '%s\n' 'usage: tasks-axi update <id> [--archive-body]'
+      exit 0
+    fi
+    ;;
+  mv)
+    if [ "\${2:-}" = --help ]; then
+      printf '%s\n' 'usage: tasks-axi mv <dest> [<id>...]'
+      exit 0
+    fi
+    ;;
   list)
     case "\$*" in
       *'--state in_flight'*)
