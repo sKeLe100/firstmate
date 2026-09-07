@@ -16,9 +16,9 @@
 #
 # Usage: fm-autonomous-pc02-lane.sh
 #
-# Scans state/*.meta for a task whose meta shows harness=opencode and a
-# pc02-llamaswap/* model. A match is occupied unless its recorded endpoint
-# reads back positively dead (fm_backend_agent_alive = dead); ambiguous or
+# Scans state/*.meta for a task whose meta shows a pc02-llamaswap/* model,
+# exactly as pc02_lane_guard matches. A match is occupied unless its
+# recorded endpoint reads back positively dead (fm_backend_agent_alive = dead); ambiguous or
 # unknown liveness keeps the lane occupied, matching pc02_lane_guard's
 # fail-closed direction. A remote secondmate's lane (remote_host set) always
 # reads as occupied outright - liveness lives behind the remote host, which
@@ -37,7 +37,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -55,7 +55,6 @@ for other_meta in "$STATE"/*.meta; do
     pc02-llamaswap/*) ;;
     *) continue ;;
   esac
-  [ "$(fm_meta_get "$other_meta" harness)" = opencode ] || continue
   other_task=$(basename "$other_meta" .meta)
   if [ -z "$(fm_meta_get "$other_meta" remote_host)" ]; then
     other_target=$(fm_backend_target_of_meta "$other_meta")

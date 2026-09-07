@@ -121,7 +121,36 @@ test_remote_pc02_meta_keeps_lane_occupied() {
   pass "a remote secondmate's PC02 lane always reads as occupied"
 }
 
+test_non_opencode_harness_still_holds_pc02_lane() {
+  local rec home fakebin out status
+  rec=$(make_home otherharness)
+  IFS='|' read -r home fakebin <<< "$rec"
+  write_meta "$home" pc02-holder pc02-llamaswap/qwen3.6-35b-a3b-dispatch codex
+
+  out=$(run_lane_check "$home" "$fakebin" env FM_FAKE_WINDOWS="fm-pc02-holder
+")
+  status=$?
+  expect_code 1 "$status" "a pc02-llamaswap model must hold the lane regardless of harness: $out"
+  assert_contains "$out" "occupied: pc02-holder" "non-opencode holder was not reported occupied: $out"
+  pass "a live pc02-llamaswap task holds the lane under any harness"
+}
+
+test_stray_argument_is_a_usage_error() {
+  local rec home fakebin out status
+  rec=$(make_home usage)
+  IFS='|' read -r home fakebin <<< "$rec"
+
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    PATH="$fakebin:$PATH" TMUX="fake,1,0" "$SCRIPT" --bogus 2>&1)
+  status=$?
+  expect_code 2 "$status" "a stray argument must exit 2: $out"
+  assert_contains "$out" "unknown argument" "usage error did not explain the bad argument: $out"
+  pass "a stray argument is rejected as a usage error"
+}
+
 test_free_when_no_pc02_meta_exists
+test_non_opencode_harness_still_holds_pc02_lane
+test_stray_argument_is_a_usage_error
 test_occupied_when_pc02_lane_alive
 test_occupied_when_pc02_liveness_unknown
 test_free_when_pc02_lane_positively_dead
