@@ -228,12 +228,14 @@ case "\${1:-}" in
       printf '%s\n' 'usage: tasks-axi update <id> [--archive-body]'
       exit 0
     fi
+    exit 1
     ;;
   mv)
     if [ "\${2:-}" = --help ]; then
       printf '%s\n' 'usage: tasks-axi mv <dest> [<id>...]'
       exit 0
     fi
+    exit 1
     ;;
   list)
     case "\$*" in
