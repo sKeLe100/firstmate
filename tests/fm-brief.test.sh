@@ -355,6 +355,8 @@ test_no_mistakes_dod_wording() {
     "no-mistakes DOD must keep worker tradeoffs out of --intent"
   assert_grep "This replaces the no-mistakes skill's advice to enrich \`--intent\`" "$brief" \
     "no-mistakes DOD must override the external skill's enrich-with-decisions guidance"
+  assert_grep "do not park a background Task/Monitor call on a step that can run for many minutes" "$brief" \
+    "no-mistakes DOD must warn against backgrounding long-running pipeline steps"
 
   # The --yes ban is a fleet-wide prohibition, not a preference, and it must not
   # claim an enforcement the tool does not provide: this is instruction only.
