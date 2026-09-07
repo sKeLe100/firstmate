@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests for fm-claim-check.sh: pass when every claimed path was
 # touched in the diff, fail and list unverified paths otherwise, and treat
-# claim text with no path-shaped token as vacuously verified.
+# claim text with no change-asserting clause as vacuously verified.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -47,8 +47,22 @@ STATUS=$?
 [ "$STATUS" -eq 0 ] || fail "expected exit 0 when no path-shaped token is present, got $STATUS"
 [ -z "$OUT" ] || fail "expected no output when no path-shaped token is present, got: $OUT"
 
+# --- a merely cited unchanged path is not a claim ---
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'wired the gate into bin/fm-new-thing.sh; behavior matches docs/architecture.md' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 0 ] || fail "expected exit 0 when an unchanged path is only cited, got $STATUS: $OUT"
+[ -z "$OUT" ] || fail "expected no output for a cited-only path, got: $OUT"
+
+# --- a change assertion in the same summary is still verified ---
+OUT=$(cd "$REPO" && "$CLAIM_CHECK" main <<<'updated bin/fm-never-touched.sh; behavior matches docs/architecture.md' 2>/dev/null)
+STATUS=$?
+[ "$STATUS" -eq 1 ] || fail "expected exit 1 for an asserted unverified path, got $STATUS"
+assert_contains "$OUT" "bin/fm-never-touched.sh" "asserted unverified path listed in output"
+case $OUT in *docs/architecture.md*) fail "cited-only path must not be reported: $OUT";; esac
+
 # --- usage errors ---
 "$CLAIM_CHECK" >/dev/null 2>&1 && fail "expected non-zero exit with no arguments"
+"$CLAIM_CHECK" main extra </dev/null >/dev/null 2>&1 && fail "expected non-zero exit with a second argument"
 "$CLAIM_CHECK" --help >/dev/null 2>&1 || fail "expected --help to succeed"
 
 pass "fm-claim-check verifies claimed paths against the diff"
