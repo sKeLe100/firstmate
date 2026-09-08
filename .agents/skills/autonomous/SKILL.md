@@ -191,16 +191,21 @@ are test-only flags). It prints `band=<band> offer=yes|no`.
 For the question this step owns - whether to contact the captain with a
 nudge - the `offer` field is the single canonical predicate: `offer=yes`
 means in-window, `offer=no` means outside. Do not branch on `band` for
-that nudge decision. (The daytime-only restriction on a planning scout in
-section 5 asks a different question and does read `band`.)
+that nudge decision.
 This step owns the quiet-hours rule for the whole skill:
 On `offer=yes`, proceed to step 5.
 On `offer=no`, queue the nudge silently for the next window
 entry: skip only steps 5-6 and continue at step 7, since the window
 gates captain contact, not dispatch.
-The single exception: when step 2 reported the time threshold and the
-oldest pending decision exceeds 48 hours, contact the captain anyway -
-run steps 5-6 despite `offer=no`. That is the only quiet-hours override.
+Two exceptions override the quiet hours. First, when step 2 reported the
+time threshold and the oldest pending decision exceeds 48 hours, contact
+the captain anyway - run steps 5-6 despite `offer=no`. Second, on a fleet
+stall - every lane blocked or held while at least one row is still
+`gate: dispatchable` in `bin/fm-queue-snapshot.sh` - contact the captain
+despite `offer=no`, likewise running steps 5-6; `docs/configuration.md`
+"Fleet-stall breakout" owns the stall definition and the once-per-episode
+reporting rule. Piercing the band permits contact; it does not compel it.
+Those are the only quiet-hours overrides.
 The attention window schedule is owned by `bin/fm-captain-window.sh`.
 
 ### Step 5 - Prepare the nudge message
@@ -228,13 +233,7 @@ Use `bin/fm-captain-hold.sh` to record rulings durably.
 For "later" deferrals, record as `tasks-axi hold <id> ... --until <date>`,
 defaulting to +7 days when the captain gives no specific date.
 
-Do not block the pass on the reply.
-Like steps 3 and 4, this step's incompletion skips only itself: an unanswered
-bundle leaves each decision recorded and held and continues at step 7, so
-dispatch never waits on a captain who is away, asleep, or mid-task.
-That matches the captain's own standing order in `data/captain.md` never to
-block on a decision while away, overnight, or post-reset - record the hold and
-keep dispatching within the cap.
+Wait for the captain's response.
 If the captain declines to rule on any decision, defer it to the
 next pass cycle.
 
@@ -392,20 +391,12 @@ Senior-tier planning scouts run daytime only for now.
 A planning scout is a task dispatched through the senior tier that
 requires the captain to review and approve the plan before execution.
 Check `bin/fm-captain-window.sh` before dispatching a planning scout:
-it prints `band=<band> offer=yes|no`, and the daytime test here reads
-`band`, not `offer` - queue a planning scout only when `band` is
-`quiet`, and dispatch it on every other band (`working`, `lunch`,
-`evening`, `offhours`).
-`quiet` is the one band that means the captain is unreachable overnight,
-which is exactly what this restriction is for; `offhours` is an offer
-window (`offer=yes`) where the captain is contactable, and `working` is
-daylight with `offer=no`, which is why `band` rather than `offer` is the
-right predicate here.
+if outside the captain's attention window, queue the scout for the
+next morning pass.
 
-Overnight, ambiguous items wait out the quiet window and go on the
-morning pass.
-A morning pass is the first `/autonomous` invocation after the quiet
-window ends (per `bin/fm-captain-window.sh`).
+Overnight, ambiguous items wait for the morning pass.
+A morning pass is the first `/autonomous` invocation after the
+captain's attention window opens (per `bin/fm-captain-window.sh`).
 Ambiguous items are tasks where the 3-part test is uncertain or
 where classification gate requires captain judgment.
 

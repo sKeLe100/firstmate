@@ -309,7 +309,15 @@ The elapsed-time dimension bounds how many concurrent cloud sessions the window'
 
 `quota-axi --json` exposes only `five_hour.resetsAt` - a fixed reset timestamp - not a window-start timestamp, so elapsed time cannot be read directly and must be derived from the five-hour window's fixed duration: a window is at or before its 2.5-hour mark exactly when at least 2.5 hours remain until `five_hour.resetsAt` (`resetsAt - generatedAt >= 2.5h`), and past it once less than 2.5 hours remain.
 
-Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable).
+Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable) and the fleet-stall breakout clause below.
+
+### Fleet-stall breakout
+
+A fleet stall is every lane blocked or held while at least one item is still `gate: dispatchable` in `bin/fm-queue-snapshot.sh`: capacity exists on paper, work exists in the queue, and nothing can move without the captain.
+That state pierces `bin/fm-captain-window.sh`'s `offer=no` the same way the 48-hour decision-age override in the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) skill's step 4 does, and for the same reason - a band that suppresses a stall report converts a short block into an all-day one.
+Piercing the band permits contact; it does not compel it.
+Report the stall once per episode with what is holding each lane and what would clear it, and stay silent on the following passes while the same episode persists, so a stall reports as one interruption rather than one per pass.
+Both surfaces are read, never derived: the lane states come from the fleet view and the eligible row from that snapshot's own `gate` verdict.
 
 ## Host memory floor (config/host-memory-floor)
 

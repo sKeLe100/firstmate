@@ -106,6 +106,8 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/fm-push-transition-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # Single owner of durable merge-outcome publication, shared with
 # bin/fm-pr-merge.sh so self and poll origins use the same role-routed outcome.
 # The watcher still owns immediate delivery of its actionable poll result and
@@ -1687,13 +1689,8 @@ EOF
 # retry_pressure_read: one time-bounded invocation of the retry-pressure helper.
 retry_pressure_read() {  # <reader> <task>
   local t=${FM_RETRY_PRESSURE_TIMEOUT:-10}
-  if command -v timeout >/dev/null 2>&1; then
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" timeout "$t" "$1" "$2" 2>/dev/null </dev/null
-  elif command -v gtimeout >/dev/null 2>&1; then
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" gtimeout "$t" "$1" "$2" 2>/dev/null </dev/null
-  else
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$1" "$2" 2>/dev/null </dev/null
-  fi
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    fm_run_timed "$t" "$1" "$2" 2>/dev/null </dev/null
 }
 
 # retry_halt_tasks: names every task bin/fm-retry-pressure.sh currently reports
@@ -1735,6 +1732,7 @@ retry_halt_tasks() {
     task=$(basename "$f"); task="${task%.status}"
     [ -e "$STATE/$task.meta" ] || continue
     out=$(retry_pressure_read "$reader" "$task") || continue
+    case "$out" in *" retry_band="*) ;; *) continue ;; esac
     band=${out##* retry_band=}; band=${band%% *}
     [ "$band" = halt ] || { rm -f "$STATE/.retry-halt-surfaced-$task"; continue; }
     case "$out" in *relaunches=*) ;; *) continue ;; esac
