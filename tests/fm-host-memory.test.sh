@@ -72,12 +72,13 @@ test_malformed_floor_is_rejected_not_defaulted() {
   local home mi out rc bad
   home=$(mk_home malformed)
   mi=$(meminfo malformed 8388608)   # would read free under the default floor
-  for bad in "not-a-number" "" "0" "-512" "2048 4096" "4096
+  for bad in "not-a-number" "" "0" "-512" "2048 4096" "99999999999999999999" "4096
 1024"; do
     printf '%s\n' "$bad" > "$home/config/host-memory-floor"
     out=$(emit "$home" "$mi" 2>&1) && rc=0 || rc=$?
     [ "$rc" -eq 2 ] || fail "malformed floor '$bad' must exit 2, not fall back to the default: rc=$rc out=$out"
     assert_not_contains "$out" "free" "a malformed floor must never read free"
+    assert_not_contains "$out" "low:" "a malformed floor must never read low"
   done
   pass "fm-host-memory.sh: a malformed floor is rejected loudly rather than silently defaulted"
 }

@@ -97,11 +97,16 @@ Each step must complete successfully before proceeding to the next.
 
 ### Step 0 - Re-read the captain's standing orders
 
-Read `data/captain.md`'s dispatch, concurrency, and working-style sections
-before evaluating anything else.
-Those sections are the captain's durable standing orders for this home, and
-they bind this pass exactly as the configured owners below do: a standing
-order recorded there needs no restatement in chat to take effect.
+Read `data/captain.md`'s captain preferences and working style before
+evaluating anything else.
+That file is the captain's durable standing orders for this home, and they
+bind this pass exactly as the configured owners below do: a standing order
+recorded there needs no restatement in chat to take effect.
+When `data/captain.md` is absent, use the firstmate repo's built-in defaults
+per `AGENTS.md` and continue the pass - the absent file is not an error, this
+step counts as completed successfully, and the pass must not abort, since a
+home with no recorded instruction is exactly the one that needs the refill and
+stuck-work surfacing below.
 The session-start digest prints that file once per session, which is not the
 same as this pass reading it: a pass that runs many hours or one context reset
 later must read it again rather than relying on what a session happened to
@@ -270,9 +275,11 @@ Record the number of decisions evaluated, the number ruled on, the
 number deferred, and the number dispatched.
 Append to the pass log: the epoch timestamp, the threshold that fired,
 and a one-line summary of outcomes.
-Name in that summary the standing orders step 0 applied, and any eligible row
-step 10 declined with its reason, so a later pass can see what this one chose
-rather than only what it did.
+Name in that summary the standing orders step 0 applied.
+Step 10 runs after this one, so when it declines an eligible row, amend this
+pass's log line after step 10 completes to name that row and its reason,
+keeping the same single-line format, so a later pass can see what this one
+chose rather than only what it did.
 
 The pass log path is `state/.autonomous-pass-log`.
 Each entry is a single line: `<epoch>\t<threshold>\t<summary>`.
@@ -308,19 +315,20 @@ say in its step 9 log line which row it declined and why.
 ### Deferred-ready visibility (end-of-pass reporting)
 
 After step 10, add a deferred-ready line to the pass summary.
-Name each item that passed step 10's eligibility filter (blockers
-cleared, time gates passed, authority already established) and stale-work
-check but was not dispatched, once it qualifies as deferred-ready.
+Name each item step 10 read as `gate: dispatchable` from
+`bin/fm-queue-snapshot.sh`, which is the single owner of that derivation, and
+that passed the stale-work check but was not dispatched, once it qualifies as
+deferred-ready.
 
 An item becomes deferred-ready when either condition holds:
 
 - Eligible and undispatched across >= 2 consecutive passes.
-- Eligible for > 24 hours (measured from when it first passed
-  the eligibility filter and stale-work check).
+- Eligible for > 24 hours (measured from when it first read
+  `gate: dispatchable` and passed the stale-work check).
 
 Each deferred-ready item carries its plain-language deferral reason
-(dispatch-cap occupancy, PC02 lane occupied, outside attention window,
-or senior-tier daytime restriction). Below threshold, stay silent - no
+(dispatch-cap occupancy, PC02 lane occupied, host memory below the floor,
+outside attention window, or senior-tier daytime restriction). Below threshold, stay silent - no
 separate ping, no notification. Rides the existing summary ping and its band gating.
 
 Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,

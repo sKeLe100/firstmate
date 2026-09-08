@@ -1689,6 +1689,9 @@ EOF
 # retry_pressure_read: one time-bounded invocation of the retry-pressure helper.
 retry_pressure_read() {  # <reader> <task>
   local t=${FM_RETRY_PRESSURE_TIMEOUT:-10}
+  case "$t" in
+    ''|*[!0-9]*|0) t=10 ;;
+  esac
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     fm_run_timed "$t" "$1" "$2" 2>/dev/null </dev/null
 }
@@ -1727,6 +1730,11 @@ retry_halt_tasks() {
     [ "$(age_of "$stamp")" -ge "$interval" ] || return 0
     touch "$stamp"
   fi
+  for marker in "$STATE"/.retry-halt-surfaced-*; do
+    [ -e "$marker" ] || continue
+    task=$(basename "$marker"); task="${task#.retry-halt-surfaced-}"
+    [ -e "$STATE/$task.meta" ] || rm -f "$marker"
+  done
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"

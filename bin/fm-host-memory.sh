@@ -61,8 +61,8 @@ if [ -e "$floor_file" ]; then
     exit 2
   fi
   case "$raw" in
-    *[!0-9]* | '' | 0*)
-      echo "fm-host-memory.sh: $floor_file must hold one positive integer of MiB, got: $raw" >&2
+    *[!0-9]* | '' | 0* | ??????????*)
+      echo "fm-host-memory.sh: $floor_file must hold one positive integer of MiB no wider than 9 digits, got: $raw" >&2
       exit 2
       ;;
   esac
