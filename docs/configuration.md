@@ -307,7 +307,7 @@ The elapsed-time dimension bounds how many concurrent cloud sessions the window'
 | at or before the 2.5-hour mark | ceiling **3**; up to 2-3 concurrent cloud sessions |
 | past the 2.5-hour mark | ceiling **2**; down to 1-2 concurrent cloud sessions |
 
-`quota-axi --json` exposes only `five_hour.resetsAt` - a fixed reset timestamp - not a window-start timestamp, so elapsed time cannot be read directly and must be derived from the five-hour window's fixed duration: a window is at or before its 2.5-hour mark exactly when at least 2.5 hours remain until `five_hour.resetsAt` (`resetsAt - generatedAt >= 2.5h`), and past it once less than 2.5 hours remain. This derivation depends on the five-hour window duration actually being 5 hours; if `quota-axi` ever reports a different session-window length, treat the elapsed-time dimension as unreliable and fall back to the percent-remaining dimension alone rather than guessing.
+`quota-axi --json` exposes only `five_hour.resetsAt` - a fixed reset timestamp - not a window-start timestamp, so elapsed time cannot be read directly and must be derived from the five-hour window's fixed duration: a window is at or before its 2.5-hour mark exactly when at least 2.5 hours remain until `five_hour.resetsAt` (`resetsAt - generatedAt >= 2.5h`), and past it once less than 2.5 hours remain.
 
 Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable) and the fleet-stall breakout clause that pierces the working attention band above.
 
