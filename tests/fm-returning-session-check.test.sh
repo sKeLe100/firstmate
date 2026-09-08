@@ -156,4 +156,104 @@ if "$bin" "$warn_home" extra 2>"$tmp/err2"; then
 fi
 grep -q "usage:" "$tmp/err2" || fail "missing usage message on extra argument"
 
+# 9. idle_seconds reports "unknown" and never affects the verdict when
+#    state-dir/task-id are omitted, even at warn band.
+warn_band_home="$tmp/warn_band_home"
+mk_home "$warn_band_home" 160000
+out="$(HOME="$tmp/claude_home" "$bin" "$warn_band_home")"
+case "$out" in
+  *"verdict=resume band=warn "*"idle_seconds=unknown "*) ;;
+  *) fail "expected verdict=resume band=warn with idle_seconds=unknown, got: $out" ;;
+esac
+case "$out" in
+  *" ttl_seconds=n/a "*) ;;
+  *) fail "expected ttl_seconds=n/a without a state-dir, got: $out" ;;
+esac
+
+# 10. A warn-band session idle past its TTL gets restart-with-carryover, not
+#     a bare resume, even though context alone stays under the restart band.
+idle_state="$tmp/idle_state"
+mkdir -p "$idle_state"
+now=$(date +%s)
+touch -d "@$((now - 4000))" "$idle_state/coldtask.status"
+idle_home="$tmp/idle_home"
+mk_home "$idle_home" 160000
+out="$(HOME="$tmp/claude_home" "$bin" "$idle_home" "$idle_state" coldtask)"
+case "$out" in
+  *"verdict=restart-with-carryover band=warn "*) ;;
+  *) fail "expected verdict=restart-with-carryover band=warn for a cold idle warn-band session, got: $out" ;;
+esac
+case "$out" in
+  *" ttl_seconds=3600 "*) ;;
+  *) fail "expected ttl_seconds=3600 field, got: $out" ;;
+esac
+idle_field="$(printf '%s\n' "$out" | grep -o 'idle_seconds=[0-9]*' | cut -d= -f2)"
+[ -n "$idle_field" ] && [ "$idle_field" -ge 4000 ] && [ "$idle_field" -le 4005 ] \
+  || fail "expected idle_seconds near 4000, got: $out"
+
+# 11. A warn-band session that is still within its TTL resumes bare.
+warm_state="$tmp/warm_state"
+mkdir -p "$warm_state"
+touch -d "@$((now - 100))" "$warm_state/warmtask.status"
+out="$(HOME="$tmp/claude_home" "$bin" "$warn_band_home" "$warm_state" warmtask)"
+case "$out" in
+  *"verdict=resume band=warn "*) ;;
+  *) fail "expected verdict=resume band=warn for a warn-band session still within TTL, got: $out" ;;
+esac
+
+# 12. band=ok never restarts on idle alone, no matter how cold.
+ancient_state="$tmp/ancient_state"
+mkdir -p "$ancient_state"
+touch -d "@$((now - 999999))" "$ancient_state/oldtask.status"
+out="$(HOME="$tmp/claude_home" "$bin" "$warn_home" "$ancient_state" oldtask)"
+case "$out" in
+  *"verdict=resume band=ok "*) ;;
+  *) fail "expected verdict=resume band=ok regardless of idle time, got: $out" ;;
+esac
+
+# 13. band=restart still restarts even when idle is well within TTL - context
+#     size alone remains sufficient, matching the pre-existing behavior.
+recent_state="$tmp/recent_state"
+mkdir -p "$recent_state"
+touch -d "@$((now - 10))" "$recent_state/hottask.status"
+out="$(HOME="$tmp/claude_home" "$bin" "$hot_home" "$recent_state" hottask)"
+case "$out" in
+  *"verdict=restart-with-carryover band=restart "*) ;;
+  *) fail "expected verdict=restart-with-carryover band=restart regardless of idle time, got: $out" ;;
+esac
+
+# 14. No readable activity marker under the given state-dir/task-id is
+#     idle_seconds=unknown, not a crash or a forced restart.
+empty_state="$tmp/empty_state"
+mkdir -p "$empty_state"
+out="$(HOME="$tmp/claude_home" "$bin" "$warn_band_home" "$empty_state" notask)"
+case "$out" in
+  *"verdict=resume band=warn "*"idle_seconds=unknown "*) ;;
+  *) fail "expected idle_seconds=unknown with no activity marker, got: $out" ;;
+esac
+
+# 15. A cache-ttl-seconds override in the caller home's config/ (the config
+#     directory beside the given state-dir) is honored, matching how every
+#     other consumer of fm-cache-ttl-lib.sh reads that knob.
+ttl_cfg_home="$tmp/ttl_cfg_home"
+mk_home "$ttl_cfg_home" 160000
+ttl_caller="$tmp/ttl_caller"
+mkdir -p "$ttl_caller/config"
+printf '500\n' > "$ttl_caller/config/cache-ttl-seconds"
+ttl_state="$ttl_caller/state"
+mkdir -p "$ttl_state"
+touch -d "@$((now - 600))" "$ttl_state/ttltask.status"
+out="$(HOME="$tmp/claude_home" "$bin" "$ttl_cfg_home" "$ttl_state" ttltask)"
+case "$out" in
+  *"verdict=restart-with-carryover band=warn "*"ttl_seconds=500 "*) ;;
+  *) fail "expected local TTL override to force restart-with-carryover, got: $out" ;;
+esac
+
+# 16. Two arguments (state-dir without task-id, or vice versa) is a usage
+#     error rather than a silent partial read.
+if "$bin" "$warn_home" "$idle_state" 2>"$tmp/err_two"; then
+  fail "expected failure for exactly two arguments"
+fi
+grep -q "usage:" "$tmp/err_two" || fail "missing usage message for two-argument call"
+
 echo "ok: fm-returning-session-check.test.sh"
