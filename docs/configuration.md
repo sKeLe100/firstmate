@@ -309,7 +309,30 @@ The elapsed-time dimension bounds how many concurrent cloud sessions the window'
 
 `quota-axi --json` exposes only `five_hour.resetsAt` - a fixed reset timestamp - not a window-start timestamp, so elapsed time cannot be read directly and must be derived from the five-hour window's fixed duration: a window is at or before its 2.5-hour mark exactly when at least 2.5 hours remain until `five_hour.resetsAt` (`resetsAt - generatedAt >= 2.5h`), and past it once less than 2.5 hours remain.
 
-Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable) and the fleet-stall breakout clause that pierces the working attention band above.
+Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable) and the fleet-stall breakout clause below.
+
+### Fleet-stall breakout
+
+A fleet stall is every lane blocked or held while at least one item is still `gate: dispatchable` in `bin/fm-queue-snapshot.sh`: capacity exists on paper, work exists in the queue, and nothing can move without the captain.
+That state pierces `bin/fm-captain-window.sh`'s `offer=no` the same way the 48-hour decision-age override in the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) skill's step 4 does, and for the same reason - a band that suppresses a stall report converts a short block into an all-day one.
+Piercing the band permits contact; it does not compel it.
+Report the stall once per episode with what is holding each lane and what would clear it, and stay silent on the following passes while the same episode persists, so a stall reports as one interruption rather than one per pass.
+Both surfaces are read, never derived: the lane states come from the fleet view and the eligible row from that snapshot's own `gate` verdict.
+
+## Host memory floor (config/host-memory-floor)
+
+`config/host-memory-floor` is an optional local, gitignored, primary-authoritative file holding one bare positive base-10 integer of MiB, the `config/dispatch-cap` idiom: the file must contain exactly that integer and one trailing newline, and an absent file means the built-in default of **3072**.
+A malformed value is rejected rather than treated as the default.
+The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`); a secondmate placed on another machine reads its own host's memory against the floor it inherits, which is the intended behavior since the floor is a policy and the reading is per host.
+
+It exists because the dispatch cap and the PC02 lane guard are quota and lane accounting and neither knows what the machine can carry.
+An agent launched onto a host with no memory left does not fail to start - it wedges mid-run and takes its pipeline with it, which is what happened to the 2026-09-08 `codex-phase1b-spawn-guards` test step on a 14 GB host with 3 GB available.
+`bin/fm-host-memory.sh` is the one owner of the reading, in the same data-only shape as `bin/fm-context-usage.sh`: it compares `MemAvailable` from `/proc/meminfo` against the floor and reports `free` (exit 0) or `low: <available>MiB < <floor>MiB` (exit 1).
+`MemAvailable`, not `MemFree`, is the number, because the question is what a new workload can claim without swapping.
+
+Exit 2 - an unreadable `/proc/meminfo` or a malformed floor - is fail-closed and every caller treats it exactly like `low`, never as free, the same direction `bin/fm-autonomous-pc02-lane.sh` takes.
+Two callers enforce it: the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) pass's step 3 defers new dispatch while the host reads low, and `bin/fm-spawn.sh` refuses a local launch below the floor so a dispatch that bypassed the pass is still caught.
+A remote secondmate launch is not gated by it, because this reading says nothing about the host that launch lands on.
 
 ## Session context thresholds (config/context-thresholds)
 

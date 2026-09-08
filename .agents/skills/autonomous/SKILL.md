@@ -3,7 +3,7 @@ name: autonomous
 description: >-
   Run an autonomous dispatch pass: evaluate open decisions for bundling,
   check whether nudge thresholds are met, and execute a structured
-  10-step dispatch cycle that minimizes unnecessary captain contact.
+  dispatch cycle that minimizes unnecessary captain contact.
   Use when the captain invokes /autonomous, mentions standing orders
   or autonomous dispatch, or when a silent-invocation point (12:30/17:30
   fleet-dispatch-points) fires.
@@ -17,7 +17,7 @@ metadata:
 Autonomous dispatch pass.
 When invoked, `/autonomous` evaluates open decisions for bundling,
 checks whether nudge thresholds are met, and executes a structured
-10-step dispatch cycle that minimizes unnecessary captain contact.
+dispatch cycle that minimizes unnecessary captain contact.
 
 ## 2. Name and triggers
 
@@ -90,10 +90,26 @@ and the live quota.
 The dispatch profile is owned by `config/crew-dispatch.json`.
 Resolve it before spawning any crewmate.
 
-## 4. The 10-step pass procedure
+## 4. The pass procedure
 
 Run these steps in order.
 Each step must complete successfully before proceeding to the next.
+
+### Step 0 - Re-read the captain's standing orders
+
+Read `data/captain.md`'s dispatch, concurrency, and working-style sections
+before evaluating anything else.
+Those sections are the captain's durable standing orders for this home, and
+they bind this pass exactly as the configured owners below do: a standing
+order recorded there needs no restatement in chat to take effect.
+The session-start digest prints that file once per session, which is not the
+same as this pass reading it: a pass that runs many hours or one context reset
+later must read it again rather than relying on what a session happened to
+retain.
+Where a standing order and this skill's own text disagree, the standing order
+wins and the disagreement is a defect in this skill to report, not a conflict
+to arbitrate per pass.
+Record which standing orders applied; step 9 names them in the pass log.
 
 ### Step 1 - Gather decision state
 
@@ -153,6 +169,20 @@ defer that candidate specifically - do not fall back to counting it
 against, or clearing it via, the generic dispatch-cap headroom - and
 continue evaluating any non-PC02 candidates normally.
 
+Neither the cap nor the PC02 lane guard answers whether this HOST can carry
+another agent: both are quota and lane accounting, and an agent starved of
+memory wedges its pipeline rather than failing to launch.
+Before treating any candidate as dispatchable, run
+`bin/fm-host-memory.sh`, which reads `MemAvailable` from `/proc/meminfo`
+against the floor in `config/host-memory-floor` (absent means the built-in
+default). It prints `free` (exit 0) or `low: <available>MiB < <floor>MiB`
+(exit 1); an unreadable `/proc/meminfo` or a malformed floor prints an error
+on stderr and exits 2, which is fail-closed - treat exit 2 exactly like `low`,
+never as free, the same direction the PC02 lane guard takes.
+When it reports `low`, defer every new dispatch this pass and record the
+host-memory reason; `bin/fm-spawn.sh` enforces the same floor at spawn time,
+so a candidate dispatched past this check is refused there anyway.
+
 ### Step 4 - Check the captain's attention window
 
 Run `bin/fm-captain-window.sh` with no flags (`--now` and `--weekday`
@@ -194,7 +224,13 @@ Use `bin/fm-captain-hold.sh` to record rulings durably.
 For "later" deferrals, record as `tasks-axi hold <id> ... --until <date>`,
 defaulting to +7 days when the captain gives no specific date.
 
-Wait for the captain's response.
+Do not block the pass on the reply.
+Like steps 3 and 4, this step's incompletion skips only itself: an unanswered
+bundle leaves each decision recorded and held and continues at step 7, so
+dispatch never waits on a captain who is away, asleep, or mid-task.
+That matches the captain's own standing order in `data/captain.md` never to
+block on a decision while away, overnight, or post-reset - record the hold and
+keep dispatching within the cap.
 If the captain declines to rule on any decision, defer it to the
 next pass cycle.
 
@@ -211,13 +247,18 @@ For decisions that resolve to reviewing existing work, surface the
 review-ready item to the captain.
 Do not review work autonomously without captain approval.
 
-### Step 8 - Run the PC02-to-Fable split (section 5)
+### Step 8 - Resolve the senior tier for planning-heavy work
 
 If any dispatched work would normally route to the PC02 lane,
 evaluate the 3-part trigger test from section 5.
-When the test passes, route through Fable for plan-then-execute
-instead.
-Respect the daytime-only restriction from the captain's Q4 ruling.
+When the test passes, the work needs the senior tier's plan-then-execute
+shape rather than the PC02 lane: resolve it through
+`config/crew-dispatch.json`'s senior rule per `quota-array-dispatch`.
+That rule's own text carries the captain's 2026-09-07 order, and this step
+never overrides it: Fable is never auto-selected here, Opus 5 is the
+autonomous senior default, and routing to Fable requires the captain's
+explicit per-dispatch approval for that task.
+When the test fails, use the PC02 lane directly.
 
 ### Step 9 - Record the pass outcome
 
@@ -226,22 +267,38 @@ Record the number of decisions evaluated, the number ruled on, the
 number deferred, and the number dispatched.
 Append to the pass log: the epoch timestamp, the threshold that fired,
 and a one-line summary of outcomes.
+Name in that summary the standing orders step 0 applied, and any eligible row
+step 10 declined with its reason, so a later pass can see what this one chose
+rather than only what it did.
 
 The pass log path is `state/.autonomous-pass-log`.
 Each entry is a single line: `<epoch>\t<threshold>\t<summary>`.
 
-### Step 10 - Re-evaluate the queue
+### Step 10 - Refill idle lanes from the queue
 
-After the pass completes, re-evaluate queued work items whose blockers
-have cleared or whose time gates have passed.
-Dispatch any that are now eligible, following the normal dispatch
-lifecycle - but only when step 3's cap check still found headroom.
-When step 3 found the cap at or exceeded, queue them instead of
-dispatching.
+Read the queue with `bin/fm-queue-snapshot.sh`, which is the single owner of
+the per-item eligibility verdict this step needs.
+Step 1's bearings snapshot answers what the captain owes a decision on; it is
+not a dispatch source, because its `gates[]` projection carries no item kind,
+hold date, or autonomy verdict and so cannot tell a cleared time gate from a
+live one. Keep step 1 where it is and read this snapshot here.
 
-Do not auto-dispatch work that requires a captain decision.
-Auto-dispatch only work whose authority is already established
-(yolo on, delivery-mode resolved, no ask-user findings pending).
+Each row carries a `gate` of `dispatchable`, `blocked`, `captain`, or
+`deferred-until <date>`, and an `autonomy` of `autonomous-eligible`,
+`captain-gated`, or `unclear`, both derived from that row's own fields.
+Dispatch rows where `gate` is `dispatchable` AND `autonomy` is
+`autonomous-eligible`, in the order the snapshot returns them, up to the
+headroom step 3 found, following the normal dispatch lifecycle.
+Never re-derive either verdict from a row's title or your own reading of it,
+and never widen the filter: `captain-gated` and `unclear` are captain
+questions, not dispatchable work, so this step cannot dispatch work that
+requires a captain decision.
+When step 3 found no headroom - the cap, the PC02 lane, or the host-memory
+floor - leave the eligible rows queued and record them below instead.
+
+An idle lane with an eligible row is the pass failing, not the queue being
+empty: a pass that ends with headroom and an unclaimed `dispatchable` row must
+say in its step 9 log line which row it declined and why.
 
 ### Deferred-ready visibility (end-of-pass reporting)
 
@@ -258,7 +315,8 @@ An item becomes deferred-ready when either condition holds:
 
 Each deferred-ready item carries its plain-language deferral reason
 (dispatch-cap occupancy, PC02 lane occupied, outside attention window,
-or Fable daytime restriction). Below threshold, stay silent - no
+or a planning scout waiting on the captain's attention window). Below
+threshold, stay silent - no
 separate ping, no notification. Rides the existing summary ping and its band gating.
 
 Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,
@@ -285,20 +343,25 @@ step 1 snapshot it already takes - `bin/fm-fleet-snapshot.sh` joins the
 sidecar onto each backlog record - so consecutive-pass eligibility needs
 no second read.
 
-## 5. PC02-to-Fable plan-then-execute split
+## 5. PC02-to-senior-tier plan-then-execute split
 
 When the pass would dispatch a task through the PC02 lane, apply the
-3-part trigger test to decide whether to route through Fable instead.
-Fable is the plan-then-execute path: it plans first, then executes
-with the plan as a guard.
+3-part trigger test to decide whether the work needs the senior tier's
+plan-then-execute path instead: it plans first, then executes with the plan
+as a guard.
+Which model serves that path is not this skill's call.
+`config/crew-dispatch.json`'s senior rule owns the candidates and
+`quota-array-dispatch` owns the choice among them, under the captain's
+2026-09-07 order that Fable is never auto-selected and Opus 5 is the
+autonomous default.
 
-The trigger test (all three parts must pass to route to Fable):
+The trigger test (all three parts must pass to route to the senior tier):
 
 1. **Budget gate**: the task's estimated token cost exceeds the PC02
    lane's per-turn budget threshold.
    This threshold is defined by the PC02 lane's configuration.
    Read it from the lane's own config, do not hardcode it here.
-   If the task's budget cannot be estimated, route to Fable.
+   If the task's budget cannot be estimated, treat this gate as passed.
 
 2. **Classification gate**: the task is a planning-heavy type
    (architecture review, multi-step migration design, cross-project
@@ -315,38 +378,40 @@ The trigger test (all three parts must pass to route to Fable):
    or has a high cost of incorrect execution passes this gate.
    Isolated, low-risk changes do not.
 
-When all three gates pass, route through Fable for plan-then-execute.
+When all three gates pass, route to the senior tier for plan-then-execute.
 When any gate fails, use the PC02 lane directly.
 
-### Daytime-only restriction (Q4)
+### Captain-approval restriction on a planning scout
 
-Fable planning scouts run daytime only for now.
-A planning scout is a task dispatched through the Fable path that
-requires the captain to review and approve the plan before execution.
-Check `bin/fm-captain-window.sh` before dispatching a planning scout:
-if outside the captain's attention window, queue the scout for the
-next morning pass.
+A planning scout is a task on this path that requires the captain to review
+and approve the plan before execution, so it cannot be dispatched into a
+window where he will not see it.
+`bin/fm-captain-window.sh`'s `offer` field answers whether contacting him is
+permitted, which is exactly the question here: on `offer=no`, queue the
+planning scout for the next pass that reads `offer=yes` rather than
+dispatching a plan nobody can approve.
+Do not read `offer` as a proxy for time of day - `band=working` reports
+`offer=no` precisely because the captain is busy, not because it is night.
 
-Overnight, ambiguous items wait for the morning pass.
-A morning pass is the first `/autonomous` invocation after the
-captain's attention window opens (per `bin/fm-captain-window.sh`).
-Ambiguous items are tasks where the 3-part test is uncertain or
-where classification gate requires captain judgment.
-
-The daytime-only restriction applies to planning scouts only.
-Non-planning dispatches (execution-only Fable, PC02 lane work)
-follow the normal dispatch rules without a daytime restriction.
+Ambiguous items wait the same way.
+Ambiguous items are tasks where the 3-part test is uncertain or where the
+classification gate requires captain judgment.
+This restriction applies to planning scouts only.
+Execution-only senior-tier dispatch and PC02 lane work follow the normal
+dispatch rules without it.
 
 ## 6. Gaps, never-do list, and restart contract
 
 ### Gaps
 
-- Fable integration is planned but not yet built.
-  Until Fable ships, the PC02-to-Fable split (section 5) can be
-  evaluated but the actual Fable dispatch path is unavailable.
-  Route through PC02 as a fallback when Fable is not available.
-  When Fable ships, the split gates will automatically enable the
-  Fable path without changing this skill's contract.
+- Fable is available; what constrains it is authority, not availability.
+  The captain's 2026-09-07 order makes Fable a per-dispatch captain
+  approval and Opus 5 the autonomous senior default, so this pass
+  never selects Fable on its own. Section 5's split therefore routes to
+  the senior tier as `config/crew-dispatch.json` defines it, and
+  `quota-array-dispatch` chooses among that rule's candidates.
+  An earlier version of this skill described Fable as unbuilt and
+  routed to it directly; both were wrong and are corrected here.
 
 - `/nightwatch` is not yet shipped.
   While nightwatch is unarmed, the bare night-bucket wake runs the

@@ -1684,9 +1684,43 @@ EOF
 # surfaced when it wakes firstmate, this normally finds nothing and the heartbeat
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
+# retry_halt_tasks: names every task bin/fm-retry-pressure.sh currently reports
+# at retry_band=halt whose reading has not been surfaced yet, one per line.
+#
+# Why here: the context band already reaches supervision on its own through this
+# watcher, while retry pressure - the repetition-driven failure the context band
+# cannot sense - was specified as a heartbeat duty in AGENTS.md with no reader
+# anywhere in the tree, so a task past its relaunch ceiling stayed invisible
+# until someone thought to run the helper by hand. This is that reader, beside
+# the context-band read it mirrors.
+#
+# Surfacing is per reading, not per poll: the marker holds the relaunch count
+# that was surfaced, so one halt reports once and reports again only when the
+# count moves. Missing helper, unreadable task, or any non-halt band contributes
+# nothing - this reader adds wakes, it never suppresses one.
+retry_halt_tasks() {
+  local reader f task out band count marker
+  reader=${FM_RETRY_PRESSURE_BIN:-$SCRIPT_DIR/fm-retry-pressure.sh}
+  [ -x "$reader" ] || return 0
+  for f in "$STATE"/*.status; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    task=$(basename "$f"); task="${task%.status}"
+    out=$("$reader" "$task" 2>/dev/null </dev/null) || continue
+    band=${out##* retry_band=}; band=${band%% *}
+    [ "$band" = halt ] || { rm -f "$STATE/.retry-halt-surfaced-$task"; continue; }
+    count=${out##*relaunches=}; count=${count%% *}
+    case "$count" in ''|*[!0-9]*) count=0 ;; esac
+    marker="$STATE/.retry-halt-surfaced-$task"
+    [ "$(cat "$marker" 2>/dev/null || true)" = "$count" ] && continue
+    printf '%s\n' "$count" > "$marker"
+    printf '%s\n' "$task"
+  done
+}
+
 heartbeat_scan_finds_actionable() {
   local f task record rest endpoint ident rc found=1 sig marker
   FM_HEARTBEAT_SURFACE_ENDPOINTS=''
+  FM_HEARTBEAT_RETRY_HALT=''
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
@@ -1705,6 +1739,8 @@ heartbeat_scan_finds_actionable() {
     FM_HEARTBEAT_SURFACE_ENDPOINTS="${FM_HEARTBEAT_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
     [ "$rc" -eq 0 ] && found=0
   done
+  FM_HEARTBEAT_RETRY_HALT=$(retry_halt_tasks | paste -sd, -)
+  [ -n "$FM_HEARTBEAT_RETRY_HALT" ] && found=0
   return "$found"
 }
 
@@ -2668,10 +2704,15 @@ EOF
       # Enqueue first, then record every status log surfaced through its end so the
       # next heartbeat does not re-fire it (enqueue-before-suppress preserved);
       # this wake sends firstmate to the whole fleet, so every log is read.
-      fm_wake_append heartbeat heartbeat heartbeat || exit 1
+      # A halt-band task is named in the reason because the whole point of
+      # surfacing it is that nobody was going to run the helper unprompted.
+      hb_reason=heartbeat
+      [ -z "$FM_HEARTBEAT_RETRY_HALT" ] \
+        || hb_reason="heartbeat (retry halt: $FM_HEARTBEAT_RETRY_HALT)"
+      fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
       touch "$STATE/.last-heartbeat"
       mark_all_captain_relevant_surfaced || true
-      wake "heartbeat"
+      wake "$hb_reason"
     else
       if ! mark_all_captain_relevant_surfaced; then
         fm_wake_append heartbeat heartbeat heartbeat || exit 1

@@ -1717,6 +1717,24 @@ fi
 
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 
+# Host-memory floor: neither the dispatch cap nor the PC02 lane guard knows
+# what this machine can carry, and an agent launched with no memory left wedges
+# mid-run instead of failing to start. bin/fm-host-memory.sh owns the reading
+# and the floor; exit 2 (unreadable /proc/meminfo, malformed floor) is
+# fail-closed here exactly as it is for the caller in the /autonomous pass.
+# Local launches only: a remote secondmate runs on another host, whose memory
+# this reading says nothing about, and that path never reaches here.
+host_memory_guard() {  # <task-id>: 0 iff this host has room for another agent
+  local id=$1 out rc
+  out=$("$SCRIPT_DIR/fm-host-memory.sh" 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  echo "error: host memory floor: $out; refusing to launch task '$id' onto a host that cannot carry another agent - free memory on this host (quiesce another lane) or lower config/host-memory-floor" >&2
+  return 1
+}
+
+host_memory_guard "$ID" || exit 1
+
 secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"
 }

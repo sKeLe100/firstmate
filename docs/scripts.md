@@ -158,6 +158,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-stow-cascade.sh`     | Enumerate this home's registered secondmates, their budget reports, and reachable transports for a `/stow` cascade; `--complete` stamps the durable stow-completion marker once the whole cascade finished |
 | `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
 | `fm-autonomous-pc02-lane.sh` | Report whether the single PC02 lane is free for the autonomous pass's dispatch-availability check |
+| `fm-host-memory.sh` | Report whether this host's free memory clears the launch floor, for the autonomous pass and the spawn preflight |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note, dictate one, read status, ask a side question |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |
