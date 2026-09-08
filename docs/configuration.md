@@ -291,14 +291,23 @@ The helper's header owns exact parsing and output mechanics.
 It sets the base cap on live Claude lanes dispatched at once; a malformed value is rejected rather than treated as the default.
 The cap is fleet-wide, not per-project: it bounds concurrent autonomous Claude lanes across every dispatched task in this home, alongside a separate PC02 lane already outside this cap.
 
-The base cap is reduced by a quota ladder read from `quota-axi --json` (schemaVersion 5) at dispatch intake, checked alongside the base cap rather than replacing it:
+The base cap is reduced by a quota ladder read from `quota-axi --json` (schemaVersion 5) at dispatch intake, checked alongside the base cap rather than replacing it. The ladder has two independent dimensions - percent remaining in the current five-hour window, and how far that window has elapsed - and the effective cap is the tightest cap any applicable row yields (captain ruling 2026-09-02, more aggressive throttling early in a window's life, not a loosening):
 
 | Condition | Effective cap and effect |
 |---|---|
 | `five_hour.percentRemaining >= 25` and no ahead-of-pace weekly pressure | base cap (default 3), normal tiering |
 | `five_hour.percentRemaining < 25`, or `seven_day.pace.status == "ahead"` with `burnMultiple > 1.5` | cap **2**; senior-tier (Fable/Opus) dispatch needs a stated reason; cosmetic/nice-to-have work parks |
-| `five_hour.percentRemaining < 10` | cap **1**; only work the captain is actually waiting on; everything else goes to the PC02 roster |
+| `five_hour.percentRemaining <= 15` | cap **1**; only work the captain is actually waiting on; everything else goes to the PC02 roster |
 | `model:fable.percentRemaining < 20` | Fable is not the automatic senior pick - `quota-array-dispatch` arbitrates to Opus; never silently downgrade out of the senior class entirely |
+
+The elapsed-time dimension bounds how many concurrent cloud sessions the window's age alone allows, independent of the percent-remaining rows above:
+
+| Time elapsed in the current five-hour window | Effective cap ceiling |
+|---|---|
+| at or before the 2.5-hour mark | ceiling **3**; up to 2-3 concurrent cloud sessions |
+| past the 2.5-hour mark | ceiling **2**; down to 1-2 concurrent cloud sessions |
+
+`quota-axi --json` exposes only `five_hour.resetsAt` - a fixed reset timestamp - not a window-start timestamp, so elapsed time cannot be read directly and must be derived from the five-hour window's fixed duration: a window is at or before its 2.5-hour mark exactly when at least 2.5 hours remain until `five_hour.resetsAt` (`resetsAt - generatedAt >= 2.5h`), and past it once less than 2.5 hours remain. This derivation depends on the five-hour window duration actually being 5 hours; if `quota-axi` ever reports a different session-window length, treat the elapsed-time dimension as unreliable and fall back to the percent-remaining dimension alone rather than guessing.
 
 Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable) and the fleet-stall breakout clause that pierces the working attention band above.
 
