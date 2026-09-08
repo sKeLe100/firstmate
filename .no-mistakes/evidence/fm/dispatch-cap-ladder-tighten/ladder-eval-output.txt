@@ -1,0 +1,55 @@
+=== Documented dispatch-cap ladder, evaluated (base cap 3) ===
+
+[OK ] fresh window, 0.5h in (4.5h left), plenty of quota
+        effective cap = 3 (expected 3)
+          - base cap 3
+          - percentRemaining 82 >= 25, no weekly pressure -> base cap
+          - 4.50h left >= 2.5h -> at/before 2.5h mark -> ceiling 3 (2-3 sessions)
+
+[OK ] exactly at the 2.5h mark (2.5h left)
+        effective cap = 3 (expected 3)
+          - base cap 3
+          - percentRemaining 82 >= 25, no weekly pressure -> base cap
+          - 2.50h left >= 2.5h -> at/before 2.5h mark -> ceiling 3 (2-3 sessions)
+
+[OK ] just past the 2.5h mark (2.49h left)
+        effective cap = 2 (expected 2)
+          - base cap 3
+          - percentRemaining 82 >= 25, no weekly pressure -> base cap
+          - 2.49h left < 2.5h -> past 2.5h mark -> ceiling 2 (1-2 sessions)
+
+[OK ] late window, 0.5h left
+        effective cap = 2 (expected 2)
+          - base cap 3
+          - percentRemaining 82 >= 25, no weekly pressure -> base cap
+          - 0.50h left < 2.5h -> past 2.5h mark -> ceiling 2 (1-2 sessions)
+
+[OK ] early window but percentRemaining 16 (old floor)
+        effective cap = 2 (expected 2)
+          - base cap 3
+          - percentRemaining < 25 or weekly ahead-of-pace burn > 1.5 -> cap 2
+          - 4.50h left >= 2.5h -> at/before 2.5h mark -> ceiling 3 (2-3 sessions)
+
+[OK ] early window, percentRemaining 15 (NEW <=15 floor)
+        effective cap = 1 (expected 1)
+          - base cap 3
+          - percentRemaining 15 <= 15 -> cap 1
+          - 4.50h left >= 2.5h -> at/before 2.5h mark -> ceiling 3 (2-3 sessions)
+
+[OK ] early window, percentRemaining 10 (old <10 floor)
+        effective cap = 1 (expected 1)
+          - base cap 3
+          - percentRemaining 10 <= 15 -> cap 1
+          - 4.50h left >= 2.5h -> at/before 2.5h mark -> ceiling 3 (2-3 sessions)
+
+[OK ] weekly ahead-of-pace burn 2.3, early window
+        effective cap = 2 (expected 2)
+          - base cap 3
+          - percentRemaining < 25 or weekly ahead-of-pace burn > 1.5 -> cap 2
+          - 4.50h left >= 2.5h -> at/before 2.5h mark -> ceiling 3 (2-3 sessions)
+
+=== Live quota-axi --json snapshot ===
+  generatedAt 2026-09-08T20:30:25.010Z  ->  effective cap = 2
+    - base cap 3
+    - percentRemaining < 25 or weekly ahead-of-pace burn > 1.5 -> cap 2
+    - 4.33h left >= 2.5h -> at/before 2.5h mark -> ceiling 3 (2-3 sessions)
