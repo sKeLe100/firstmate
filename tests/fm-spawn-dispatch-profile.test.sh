@@ -434,6 +434,38 @@ test_codex_omits_invalid_max_effort() {
   pass "codex omits unsupported max effort instead of passing a bad config value"
 }
 
+test_codex_refuses_model_less_spawn() {
+  local rec id out status
+  id=profile-codex-no-model-z4b
+  rec=$(make_spawn_case profile-codex-no-model codex "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --effort high)
+  status=$?
+  expect_code 1 "$status" "codex spawn without --model should refuse instead of launching on Codex CLI's own default"
+  assert_contains "$out" "codex requires an explicit --model" \
+    "codex model-less refusal did not name the missing --model requirement"
+  assert_absent "$HOME_DIR/state/$id.meta" "model-less codex refusal should happen before meta is written"
+  [ ! -s "$LAUNCH_LOG" ] || fail "model-less codex refusal must compose no launch line"
+  pass "codex refuses a model-less spawn instead of silently launching on its own default model"
+}
+
+test_codex_refuses_effort_less_spawn() {
+  local rec id out status
+  id=profile-codex-no-effort-z4c
+  rec=$(make_spawn_case profile-codex-no-effort codex "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5)
+  status=$?
+  expect_code 1 "$status" "codex spawn without --effort should refuse instead of launching on Codex CLI's own default"
+  assert_contains "$out" "codex requires an explicit --effort" \
+    "codex effort-less refusal did not name the missing --effort requirement"
+  assert_absent "$HOME_DIR/state/$id.meta" "effort-less codex refusal should happen before meta is written"
+  [ ! -s "$LAUNCH_LOG" ] || fail "effort-less codex refusal must compose no launch line"
+  pass "codex refuses an effort-less spawn instead of silently launching on its own default reasoning effort"
+}
+
 test_grok_threads_model_and_reasoning_effort() {
   local rec id out status launch
   id=profile-grok-z5
@@ -780,7 +812,7 @@ test_non_claude_harness_ignores_config_dir() {
   read_case_record "$rec"
 
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="/opt/test/claude-work" \
-    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5 --effort high)
   status=$?
   expect_code 0 "$status" "codex spawn with CLAUDE_CONFIG_DIR set should succeed"
   launch=$(cat "$LAUNCH_LOG")
@@ -792,7 +824,9 @@ test_non_claude_harness_ignores_config_dir() {
 test_active_dispatch_profile_does_not_block_secondmate_launch() {
   local rec id sm out status
   id=profile-secondmate-z16
-  rec=$(make_spawn_case profile-secondmate codex "$id")
+  # claude (not codex) so this stays a pure test of the harness-consultation
+  # bypass, distinct from codex's own explicit model/effort requirement below.
+  rec=$(make_spawn_case profile-secondmate claude "$id")
   read_case_record "$rec"
   enable_dispatch_profile "$HOME_DIR"
   sm="$CASE_DIR/secondmate-home"
@@ -801,10 +835,33 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
   status=$?
   expect_code 0 "$status" "secondmate spawn should be exempt from the dispatch-profile explicit harness requirement"
-  assert_contains "$out" "spawned $id harness=codex kind=secondmate" "secondmate launch did not use secondmate harness resolution"
+  assert_contains "$out" "spawned $id harness=claude kind=secondmate" "secondmate launch did not use secondmate harness resolution"
   assert_grep "kind=secondmate" "$HOME_DIR/state/$id.meta" "secondmate meta missing kind=secondmate"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" codex default default
+  assert_meta_profile "$HOME_DIR/state/$id.meta" claude default default
   pass "active crew-dispatch profile does not block secondmate launches"
+}
+
+test_codex_secondmate_requires_explicit_model_and_effort() {
+  local rec id sm out status
+  id=profile-codex-secondmate-no-model-z16b
+  rec=$(make_spawn_case profile-codex-secondmate-no-model codex "$id")
+  read_case_record "$rec"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  status=$?
+  expect_code 1 "$status" "codex secondmate spawn without a resolved model/effort should refuse"
+  assert_contains "$out" "codex requires an explicit --model" \
+    "codex secondmate model-less refusal did not name the missing --model requirement"
+  [ ! -s "$LAUNCH_LOG" ] || fail "model-less codex secondmate refusal must compose no launch line"
+
+  printf '%s\n' 'codex gpt-5 high' > "$HOME_DIR/config/secondmate-harness"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  status=$?
+  expect_code 0 "$status" "codex secondmate spawn with config/secondmate-harness model/effort tokens should succeed"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
+  pass "codex secondmate spawn requires the same explicit model/effort as a crew spawn"
 }
 
 # Execute the actual emitted command in a synthetic pane environment: the
@@ -917,7 +974,7 @@ test_launch_environment_inherited_by_secondmate() {
   printf 'FM_TEST_ALLOWED\n' > "$HOME_DIR/config/launch-env-allowlist"
   sm="$CASE_DIR/secondmate-home"
   make_seeded_secondmate_home "$sm" "$id"
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate --model gpt-5 --effort high)
   status=$?
   expect_code 0 "$status" "secondmate with an allowlist should spawn: $out"
   cmp -s "$HOME_DIR/config/launch-env-allowlist" "$sm/config/launch-env-allowlist" \
@@ -1062,9 +1119,9 @@ printf '%s\n' "$@" > "$FM_ROLE_PROMPT"
 SH
     chmod +x "$FAKEBIN_DIR/codex"
     if [ "$kind" = scout ]; then
-      out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout)
+      out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout --model gpt-5 --effort high)
     else
-      out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --mode "$kind" --yolo off)
+      out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --mode "$kind" --yolo off --model gpt-5 --effort high)
     fi
     expect_code 0 "$?" "$kind worker spawn failed: $out"
     launch=$(cat "$LAUNCH_LOG")
@@ -1107,6 +1164,8 @@ test_active_dispatch_profile_allows_raw_launch_command
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_omits_invalid_max_effort
+test_codex_refuses_model_less_spawn
+test_codex_refuses_effort_less_spawn
 test_grok_threads_model_and_reasoning_effort
 test_grok_omits_invalid_max_reasoning_effort
 test_grok_omits_invalid_xhigh_reasoning_effort
@@ -1124,5 +1183,6 @@ test_claude_forwards_firstmate_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
+test_codex_secondmate_requires_explicit_model_and_effort
 
 echo "# all fm-spawn-dispatch-profile tests passed"

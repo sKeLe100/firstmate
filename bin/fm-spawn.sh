@@ -1715,6 +1715,29 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   fi
 fi
 
+# Codex CLI silently launches on its own bundled default model and reasoning
+# effort when neither flag is passed, which is gpt-6-astra at its most
+# expensive tier - the confirmed root cause of the 2026-09-05 incident that
+# burned 30% of the weekly window in 59 minutes. fm-control.sh's relaunch path
+# reaches codex only through this same spawn entrypoint and does not
+# re-resolve a prior model/effort on its own, so a bare relaunch hits this
+# same hole; refusing here closes both paths in one place. This is a
+# silent-default guard, not an astra-specific block: any explicitly named
+# model and effort satisfy it. A raw launch command (the unverified-adapter
+# escape hatch) is exempt: it never routes through model_flag_for_harness or
+# effort_flag_for_harness, so MODEL/EFFORT here reflect nothing about what its
+# hand-composed command line actually launches.
+if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
+  if [ -z "$MODEL" ] || [ "$MODEL" = default ]; then
+    echo "error: codex requires an explicit --model; a model-less codex spawn or relaunch silently falls through to Codex CLI's own default model rather than firstmate's choice. Pass --model with one of config/crew-dispatch.json's configured candidates, or the harness's default profile." >&2
+    exit 1
+  fi
+  if [ -z "$EFFORT" ] || [ "$EFFORT" = default ]; then
+    echo "error: codex requires an explicit --effort; an effort-less codex spawn or relaunch silently falls through to Codex CLI's own default reasoning effort rather than firstmate's choice. Pass --effort with one of config/crew-dispatch.json's configured candidates, or the harness's default profile." >&2
+    exit 1
+  fi
+fi
+
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 
 secondmate_registry_value() {

@@ -474,7 +474,9 @@ test_spawn_split_and_inherit() {
   mkdir -p "$w/home/config"
   printf '{"default":{"harness":"claude","model":"haiku","effort":"low"}}\n' > "$w/home/config/crew-dispatch.json"
   printf 'claude\n' > "$w/home/config/crew-harness"
-  printf 'codex\n' > "$w/home/config/secondmate-harness"
+  # codex now requires an explicit model/effort resolved from this same file,
+  # since it never falls back to a default.
+  printf 'codex gpt-5 high\n' > "$w/home/config/secondmate-harness"
   printf 'manual\n' > "$w/home/config/backlog-backend"
   printf 'zellij\n' > "$w/home/config/backend"
   make_seeded_home "$sm" sm
@@ -506,16 +508,20 @@ test_spawn_backward_compat_crew_fallback() {
   w="$TMP_ROOT/spawn-compat"
   sm="$w/sm"
   mkdir -p "$w/home/config"
-  printf 'codex\n' > "$w/home/config/crew-harness"
+  # grok (not codex) here: the crew-harness fallback carries only a bare
+  # adapter name, never model/effort tokens (those come solely from
+  # config/secondmate-harness), so codex could never resolve the explicit
+  # model/effort it now requires through this path.
+  printf 'grok\n' > "$w/home/config/crew-harness"
   make_seeded_home "$sm" sm
 
   spawn_secondmate "$w" sm "$sm"
 
   meta="$w/home/state/sm.meta"
-  [ "$(meta_harness "$meta")" = codex ] \
-    || fail "compat: secondmate launched on '$(meta_harness "$meta")', expected the crew harness codex"
-  [ "$(cat "$sm/config/crew-harness" 2>/dev/null)" = codex ] \
-    || fail "compat: home crew-harness not inherited as codex"
+  [ "$(meta_harness "$meta")" = grok ] \
+    || fail "compat: secondmate launched on '$(meta_harness "$meta")', expected the crew harness grok"
+  [ "$(cat "$sm/config/crew-harness" 2>/dev/null)" = grok ] \
+    || fail "compat: home crew-harness not inherited as grok"
   pass "B3 spawn: an absent secondmate-harness falls back to the crew harness (backward-compat)"
 }
 
@@ -849,18 +855,20 @@ test_spawn_explicit_harness_does_not_inherit_secondmate_harness_tokens() {
   printf 'claude opus high\n' > "$w/home/config/secondmate-harness"
   make_seeded_home "$sm" sm
 
-  spawn_secondmate_capture "$w" sm "$sm" "$launchlog" --harness codex >/dev/null 2>&1
+  # grok (not codex) here: codex never resolves to a default model/effort, so
+  # it cannot demonstrate the clean-defaults case this test is about.
+  spawn_secondmate_capture "$w" sm "$sm" "$launchlog" --harness grok >/dev/null 2>&1
 
   meta="$w/home/state/sm.meta"
-  [ "$(meta_field "$meta" harness)" = codex ] || fail "explicit-harness-no-tokens: meta harness not codex"
+  [ "$(meta_field "$meta" harness)" = grok ] || fail "explicit-harness-no-tokens: meta harness not grok"
   [ "$(meta_field "$meta" model)" = default ] || fail "explicit-harness-no-tokens: meta model should stay default"
   [ "$(meta_field "$meta" effort)" = default ] || fail "explicit-harness-no-tokens: meta effort should stay default"
   launch=$(cat "$launchlog")
-  assert_contains "$launch" "codex --dangerously-bypass-approvals-and-sandbox" \
-    "explicit-harness-no-tokens: launch did not use codex"
+  assert_contains "$launch" "grok --always-approve" \
+    "explicit-harness-no-tokens: launch did not use grok"
   assert_not_contains "$launch" "--model" "explicit-harness-no-tokens: launch must not carry a --model flag"
-  assert_not_contains "$launch" "model_reasoning_effort" \
-    "explicit-harness-no-tokens: launch must not carry a codex effort flag"
+  assert_not_contains "$launch" "--reasoning-effort" \
+    "explicit-harness-no-tokens: launch must not carry a grok effort flag"
   pass "C7 spawn: an explicit --harness starts with clean model/effort defaults"
 }
 
@@ -898,7 +906,13 @@ test_spawned_secondmate_uses_its_harness_supervision_model() {
     sm="$w/sm"
     launchlog="$w/launch.log"
     mkdir -p "$w/home/config"
-    printf '%s\n' "$harness" > "$w/home/config/secondmate-harness"
+    if [ "$harness" = codex ]; then
+      # codex requires an explicit model/effort (it never resolves to
+      # default), so its config line carries tokens; claude still needs none.
+      printf 'codex gpt-5 high\n' > "$w/home/config/secondmate-harness"
+    else
+      printf '%s\n' "$harness" > "$w/home/config/secondmate-harness"
+    fi
     make_seeded_home "$sm" sm
     spawn_secondmate_capture "$w" sm "$sm" "$launchlog" >/dev/null 2>&1
     fm_write_meta "$sm/state/task.meta" "window=firstmate:fm-task" "kind=ship"
@@ -940,14 +954,16 @@ test_spawn_fallback_chain_and_crew_scout_unaffected() {
   sm="$w/sm"
   launchlog="$w/launch.log"
   mkdir -p "$w/home/config"
-  printf 'codex\n' > "$w/home/config/crew-harness"
+  # grok (not codex) here: codex never resolves to a default model/effort, so
+  # it cannot demonstrate this fallback chain's no-tokens-anywhere case.
+  printf 'grok\n' > "$w/home/config/crew-harness"
   make_seeded_home "$sm" sm
 
   spawn_secondmate_capture "$w" sm "$sm" "$launchlog" >/dev/null 2>&1
 
   meta="$w/home/state/sm.meta"
-  [ "$(meta_field "$meta" harness)" = codex ] \
-    || fail "fallback: secondmate harness did not fall back to crew-harness codex"
+  [ "$(meta_field "$meta" harness)" = grok ] \
+    || fail "fallback: secondmate harness did not fall back to crew-harness grok"
   [ "$(meta_field "$meta" model)" = default ] || fail "fallback: meta model should stay default with no tokens anywhere"
   [ "$(meta_field "$meta" effort)" = default ] || fail "fallback: meta effort should stay default with no tokens anywhere"
 
@@ -978,7 +994,7 @@ EOF
     "$ROOT/bin/fm-spawn.sh" "$id" "$proj" --mode no-mistakes --yolo off >/dev/null 2>&1
   meta="$home/state/$id.meta"
   [ "$(meta_field "$meta" kind)" = ship ] || fail "crew-unaffected: expected an ordinary ship task"
-  [ "$(meta_field "$meta" harness)" = codex ] || fail "crew-unaffected: crew harness resolution changed"
+  [ "$(meta_field "$meta" harness)" = grok ] || fail "crew-unaffected: crew harness resolution changed"
   [ "$(meta_field "$meta" model)" = default ] || fail "crew-unaffected: crew task must not invent a model"
   [ "$(meta_field "$meta" effort)" = default ] || fail "crew-unaffected: crew task must not invent an effort"
   launch=$(cat "$launchlog")
@@ -2495,7 +2511,10 @@ test_spawn_quarantines_pending_rereads_on_cleanup_failure() {
   w=$(new_world config-reread-spawn-quarantine)
   sm="$w/sm"
   mkdir -p "$w/home/config"
-  printf 'codex\n' > "$w/home/config/crew-harness"
+  # grok (not codex): this test is unrelated to harness profile resolution,
+  # and the crew-harness fallback never carries a model/effort token, which
+  # codex now requires.
+  printf 'grok\n' > "$w/home/config/crew-harness"
   make_seeded_home "$sm" sm
   mkdir -p "$sm/state"
   report="$sm/state/stale-reread.report"
