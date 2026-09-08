@@ -60,18 +60,12 @@ if [ -e "$floor_file" ]; then
     exit 2
   fi
   case "$raw" in
-    *[!0-9$'\n']* | '' | 0*)
+    *[!0-9]* | '' | 0*)
       echo "fm-host-memory.sh: $floor_file must hold one positive integer of MiB, got: $raw" >&2
       exit 2
       ;;
   esac
-  floor=$(printf '%s' "$raw" | tr -d '\n')
-  case "$floor" in
-    '' | *[!0-9]*)
-      echo "fm-host-memory.sh: $floor_file must hold one positive integer of MiB, got: $raw" >&2
-      exit 2
-      ;;
-  esac
+  floor=$raw
 fi
 
 available=$(awk '$1 == "MemAvailable:" { print $2; found = 1; exit } END { exit !found }' "$MEMINFO" 2>/dev/null) || {

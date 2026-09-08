@@ -72,7 +72,8 @@ test_malformed_floor_is_rejected_not_defaulted() {
   local home mi out rc bad
   home=$(mk_home malformed)
   mi=$(meminfo malformed 8388608)   # would read free under the default floor
-  for bad in "not-a-number" "" "0" "-512" "2048 4096"; do
+  for bad in "not-a-number" "" "0" "-512" "2048 4096" "4096
+1024"; do
     printf '%s\n' "$bad" > "$home/config/host-memory-floor"
     out=$(emit "$home" "$mi" 2>&1) && rc=0 || rc=$?
     [ "$rc" -eq 2 ] || fail "malformed floor '$bad' must exit 2, not fall back to the default: rc=$rc out=$out"
@@ -115,13 +116,29 @@ test_reads_memavailable_not_memfree() {
 }
 test_reads_memavailable_not_memfree
 
-test_host_memory_floor_is_inheritable_config() {
+test_host_memory_floor_is_inherited_by_secondmate_homes() {
+  local primary second
+  primary="$TMP_ROOT/inherit-primary"
+  second="$TMP_ROOT/inherit-secondmate"
+  mkdir -p "$primary/config" "$primary/data" "$second/config" "$second/data"
+  printf '%s\n' 4096 > "$primary/config/host-memory-floor"
+
   # shellcheck source=/dev/null
   . "$ROOT/bin/fm-config-inherit-lib.sh"
-  case " $FM_INHERITABLE_CONFIG " in
-    *" host-memory-floor "*) ;;
-    *) fail "config/host-memory-floor must be in FM_INHERITABLE_CONFIG so secondmate homes inherit the floor" ;;
+  propagate_secondmate_inheritance "$primary" "$second" >/dev/null 2>&1 ||
+    fail "propagate_secondmate_inheritance failed"
+
+  [ -f "$second/config/host-memory-floor" ] ||
+    fail "secondmate home did not inherit config/host-memory-floor"
+  [ "$(cat "$second/config/host-memory-floor")" = 4096 ] ||
+    fail "inherited floor differs from the primary's: $(cat "$second/config/host-memory-floor")"
+
+  out=$(emit "$second" "$(meminfo inherited 2097152)"); rc=$?
+  [ "$rc" -eq 1 ] || fail "the inherited 4096MiB floor must make 2048MiB read low: rc=$rc out=$out"
+  case "$out" in
+    *4096MiB*) ;;
+    *) fail "the secondmate verdict must use the inherited floor, got: $out" ;;
   esac
-  pass "fm-host-memory.sh: config/host-memory-floor is inherited by secondmate homes"
+  pass "fm-host-memory.sh: a secondmate home inherits and enforces the primary's floor"
 }
-test_host_memory_floor_is_inheritable_config
+test_host_memory_floor_is_inherited_by_secondmate_homes
