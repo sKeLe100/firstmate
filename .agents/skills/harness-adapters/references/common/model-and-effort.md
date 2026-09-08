@@ -20,6 +20,7 @@ Never select `max` through this fallback; only an explicit per-task or standing 
 If requested effort is outside the adapter's accepted set, the spawn records `effort=` in task metadata but emits no effort flag.
 This preserves launch success instead of passing a known-bad value.
 A harness with no verified interactive effort flag follows the same record-and-omit contract.
+codex is the single exception: a codex spawn or relaunch that names no model, or an effort codex does not accept, is refused rather than launched, because Codex CLI silently bills its own default on an omitted flag (`../harness/codex.md`).
 
 ## Harness and provider identity
 
