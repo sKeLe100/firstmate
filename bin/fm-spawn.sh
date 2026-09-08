@@ -1725,6 +1725,10 @@ pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 # that is noted and proceeds, the same direction the /autonomous pass takes.
 # Local launches only: a remote secondmate runs on another host, whose memory
 # this reading says nothing about, and that path never reaches here.
+# A --relaunch is exempt: it replaces one agent with another for the same task,
+# so it is net-neutral rather than new usage, and the reading here would be taken
+# while the agent being replaced still holds its memory - refusing exactly the
+# recovery relaunch a low-memory wedge needs.
 host_memory_guard() {  # <task-id>: 0 unless this host is provably below the floor
   local id=$1 out rc
   out=$("$SCRIPT_DIR/fm-host-memory.sh" 2>&1)
@@ -1742,7 +1746,7 @@ host_memory_guard() {  # <task-id>: 0 unless this host is provably below the flo
   return 1
 }
 
-host_memory_guard "$ID" || exit 1
+[ "$RELAUNCH" -eq 1 ] || host_memory_guard "$ID" || exit 1
 
 secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"

@@ -95,3 +95,25 @@ EOF2
 test_unmeasurable_reading_allows_the_launch
 
 printf '# all fm-spawn-host-memory tests passed\n'
+
+test_relaunch_is_not_refused_by_the_floor() {
+  local rec id out meminfo
+  id=hostmem-relaunch
+  rec=$(make_case relaunch "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-low"
+  printf 'MemTotal:       14000000 kB\nMemAvailable:     524288 kB\n' > "$meminfo"
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
+    CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN_DIR:$PATH" \
+    FM_MEMINFO_OVERRIDE="$meminfo" \
+    "$SPAWN" "$id" --relaunch 2>&1)
+  assert_not_contains "$out" "host memory floor" \
+    "a relaunch replaces an agent that still holds its memory, so the floor must not refuse it: $out"
+  pass "fm-spawn.sh: the host-memory floor does not refuse a --relaunch"
+}
+test_relaunch_is_not_refused_by_the_floor

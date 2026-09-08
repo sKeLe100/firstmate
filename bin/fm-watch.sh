@@ -1688,12 +1688,8 @@ EOF
 # the fail-safe backstop.
 # retry_pressure_read: one time-bounded invocation of the retry-pressure helper.
 retry_pressure_read() {  # <reader> <task>
-  local t=${FM_RETRY_PRESSURE_TIMEOUT:-10}
-  case "$t" in
-    ''|*[!0-9]*|0) t=10 ;;
-  esac
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-    fm_run_timed "$t" "$1" "$2" 2>/dev/null </dev/null
+    fm_run_timed 10 "$1" "$2" 2>/dev/null </dev/null
 }
 
 # retry_halt_tasks: names every task bin/fm-retry-pressure.sh currently reports
@@ -1730,6 +1726,7 @@ retry_halt_tasks() {
     [ "$(age_of "$stamp")" -ge "$interval" ] || return 0
     touch "$stamp"
   fi
+  retry_halt_promote_pending
   for marker in "$STATE"/.retry-halt-surfaced-*; do
     [ -e "$marker" ] || continue
     task=$(basename "$marker"); task="${task#.retry-halt-surfaced-}"
@@ -1752,15 +1749,33 @@ retry_halt_tasks() {
   done
 }
 
-# retry_halt_mark_surfaced: stamps the suppression markers for the readings
-# retry_halt_tasks reported, and is called only after the wake carrying them is
-# durably enqueued, so a refused append leaves the halt still unsurfaced.
+# retry_halt_mark_surfaced: records the readings retry_halt_tasks reported as
+# PENDING delivery, once the wake carrying them is durably enqueued.
+#
+# Suppression waits for the drain, not the append: fm_wake_append dedupes queued
+# heartbeat rows under one key and keeps the last, so a later plain heartbeat can
+# replace a halt-bearing row that is still queued. Stamping the suppression
+# marker at append time would then record "the supervisor was told" for a reason
+# the supervisor never received. retry_halt_promote_pending turns pending into
+# the marker only once no halt-bearing row is left in the queue.
 retry_halt_mark_surfaced() {
   local task count
   while IFS=$'\t' read -r task count; do
     [ -n "$task" ] || continue
-    printf '%s\n' "$count" > "$STATE/.retry-halt-surfaced-$task"
+    printf '%s\t%s\n' "$task" "$count" >> "$STATE/.retry-halt-pending"
   done <<< "${FM_HEARTBEAT_RETRY_HALT_MARKS:-}"
+}
+
+retry_halt_promote_pending() {
+  local pending task count
+  pending="$STATE/.retry-halt-pending"
+  [ -s "$pending" ] || { rm -f "$pending"; return 0; }
+  grep -q 'retry halt:' "${FM_WAKE_QUEUE:-$STATE/.wake-queue}" 2>/dev/null && return 0
+  while IFS=$'\t' read -r task count; do
+    [ -n "$task" ] || continue
+    printf '%s\n' "$count" > "$STATE/.retry-halt-surfaced-$task"
+  done < "$pending"
+  rm -f "$pending"
 }
 
 heartbeat_scan_finds_actionable() {

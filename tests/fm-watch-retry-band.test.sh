@@ -103,6 +103,57 @@ test_heartbeat_names_a_halt_band_task() {
 }
 test_heartbeat_names_a_halt_band_task
 
+test_halt_is_not_suppressed_while_its_wake_sits_queued() {
+  local dir state fakebin out pid
+  dir=$(make_case retry-halt-queued); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  printf 'working: routine progress\n' > "$state/grinder.status"
+  printf 'backend=tmux\n' > "$state/grinder.meta"
+  printf '%s' "$(seen_sig "$state/grinder.status")" > "$state/.seen-grinder_status"
+  fake_retry_pressure "$fakebin" halt 7
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_RETRY_PRESSURE_EVERY_POLL=1 \
+    FM_RETRY_PRESSURE_BIN="$fakebin/fm-retry-pressure.sh" "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 \
+    || fail "a halt-band task did not surface at the heartbeat: $(cat "$out")"
+  assert_grep "retry halt: grinder" "$state/.wake-queue" \
+    "the halt-bearing wake must still be queued for this case"
+  assert_absent "$state/.retry-halt-surfaced-grinder" \
+    "the halt must not count as surfaced while its wake sits queued undrained"
+  pass "a queued-but-undrained halt is not yet recorded as surfaced"
+}
+test_halt_is_not_suppressed_while_its_wake_sits_queued
+
+test_drained_halt_becomes_suppressed() {
+  local dir state fakebin out pid
+  dir=$(make_case retry-halt-drained); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  printf 'working: routine progress\n' > "$state/grinder.status"
+  printf 'backend=tmux\n' > "$state/grinder.meta"
+  printf '%s' "$(seen_sig "$state/grinder.status")" > "$state/.seen-grinder_status"
+  fake_retry_pressure "$fakebin" halt 7
+  # The durable state a prior heartbeat leaves behind: the reading was enqueued
+  # and the queue has since been drained, so the halt has actually reached the
+  # supervisor and may now be suppressed.
+  printf 'grinder\t7\n' > "$state/.retry-halt-pending"
+  : > "$state/.wake-queue"
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_RETRY_PRESSURE_EVERY_POLL=1 \
+    FM_RETRY_PRESSURE_BIN="$fakebin/fm-retry-pressure.sh" "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "a delivered halt reading re-fired instead of being suppressed: $(cat "$out")"
+  fi
+  assert_not_contains "$(cat "$out")" "retry halt" \
+    "a delivered halt reading must not re-fire on the next heartbeat"
+  [ "$(cat "$state/.retry-halt-surfaced-grinder" 2>/dev/null)" = 7 ] \
+    || fail "the delivered halt reading was never recorded as surfaced"
+  reap "$pid"
+  pass "a halt is suppressed once the wake carrying it has been drained"
+}
+test_drained_halt_becomes_suppressed
+
 test_heartbeat_halt_surfaces_once_per_reading() {
   local dir state fakebin out pid
   dir=$(make_case retry-halt-once); state="$dir/state"; fakebin="$dir/fakebin"
