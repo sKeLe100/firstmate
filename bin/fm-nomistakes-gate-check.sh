@@ -167,7 +167,8 @@ HEAD_HASH=$(git rev-parse "$HEAD_REF" 2>/dev/null) || die "cannot resolve HEAD h
 
 GATE_FILE=$(resolve_gate_config) || die "cannot resolve gate config"
 GATE_HASH=$(read_gate_hash "$GATE_FILE") || die "cannot read gate hash"
-GATE_HASH=$(git rev-parse --verify --quiet "$GATE_HASH^{commit}") \
+RESOLVED_GATE_HASH=$(git rev-parse --verify --quiet "$GATE_HASH^{commit}") \
   || die "gate hash '$GATE_HASH' from $GATE_FILE is not a commit in this repository"
+GATE_HASH="$RESOLVED_GATE_HASH"
 
 compare_heads "$GATE_HASH" "$HEAD_HASH"

@@ -433,7 +433,7 @@ test_unresolvable_gate() {
     || fail "unresolvable-gate: expected non-zero exit, got '$out'"
   [ "$out" != "diverged" ] \
     || fail "unresolvable-gate: silently reported 'diverged'"
-  grep -q "is not a commit" "$tmp/err" \
+  grep -q "gate hash '0123456789012345678901234567890123456789' .* is not a commit" "$tmp/err" \
     || fail "unresolvable-gate: missing diagnostic ($(cat "$tmp/err"))"
   pass "12. unresolvable gate hash errors instead of diverged"
 }
