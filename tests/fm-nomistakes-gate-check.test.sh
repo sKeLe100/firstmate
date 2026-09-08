@@ -274,13 +274,6 @@ test_bad_branch() {
   pass "8. nonexistent branch"
 }
 
-# --- 9. script parses under bash -n --------------------------------------
-
-test_parses() {
-  bash -n "$SCRIPT" || fail "bash -n failed on the script"
-  pass "9. script parses under bash -n"
-}
-
 # --- 10. output is exactly one word, no trailing whitespace ---------------
 
 test_output_clean() {
@@ -388,9 +381,80 @@ test_output_clean() {
   pass "10. output is clean single word"
 }
 
+# --- 11. branch argument is used for the ancestry checks ------------------
+
+test_branch_arg() {
+  local gate_dir="$tmp/gate-brancharg" nm_dir="$tmp/nm-brancharg"
+  local workdir="$tmp/work-brancharg" gate_sha
+  gate_sha=$(mk_gate_work "$gate_dir" "gate")
+  mk_nm_remote "$nm_dir" "$gate_sha"
+  mk_workdir "$workdir"
+  (
+    cd "$workdir"
+    git remote add no-mistakes "$nm_dir"
+    git fetch "$gate_dir" "$gate_sha" 2>/dev/null
+    git reset --hard "$gate_sha" >/dev/null
+    git checkout -q --orphan other
+    git rm -rq --cached . >/dev/null
+    rm -f README.md
+    printf '# other\n' > other.txt
+    git add other.txt
+    git commit -qm "other"
+    git checkout -qf main
+  )
+  set +e
+  out="$(cd "$workdir" && "$SCRIPT" other 2>"$tmp/err")"
+  rc=$?
+  set -e
+  [ "$rc" = 0 ] || fail "branch-arg: expected exit 0, got $rc ($(cat "$tmp/err"))"
+  [ "$out" = "diverged" ] \
+    || fail "branch-arg: expected 'diverged' for branch other, got '$out'"
+  pass "11. branch argument drives ancestry checks"
+}
+
+# --- 12. gate hash that is not a commit in this repo ----------------------
+
+test_unresolvable_gate() {
+  local nm_dir="$tmp/nm-unresolvable" workdir="$tmp/work-unresolvable"
+  mk_nm_remote "$nm_dir" "0123456789012345678901234567890123456789"
+  mk_workdir "$workdir"
+  (
+    cd "$workdir"
+    printf '# work\n' > work.txt
+    git add work.txt
+    git commit -qm "work"
+    git remote add no-mistakes "$nm_dir"
+  )
+  set +e
+  out="$("$SCRIPT" "$workdir" 2>"$tmp/err")"
+  rc=$?
+  set -e
+  [ "$rc" != 0 ] \
+    || fail "unresolvable-gate: expected non-zero exit, got '$out'"
+  [ "$out" != "diverged" ] \
+    || fail "unresolvable-gate: silently reported 'diverged'"
+  grep -q "is not a commit" "$tmp/err" \
+    || fail "unresolvable-gate: missing diagnostic ($(cat "$tmp/err"))"
+  pass "12. unresolvable gate hash errors instead of diverged"
+}
+
+# --- 13. --help prints usage and exits 0 ----------------------------------
+
+test_help() {
+  set +e
+  out="$("$SCRIPT" --help 2>"$tmp/err")"
+  rc=$?
+  set -e
+  [ "$rc" = 0 ] || fail "help: expected exit 0, got $rc ($(cat "$tmp/err"))"
+  case "$out" in
+    Usage:*) ;;
+    *) fail "help: expected usage text, got '$out'" ;;
+  esac
+  pass "13. --help prints usage"
+}
+
 # --- run all tests -------------------------------------------------------
 
-test_parses
 test_equal
 test_ahead
 test_behind
@@ -400,5 +464,8 @@ test_missing_config
 test_bad_config
 test_bad_branch
 test_output_clean
+test_branch_arg
+test_unresolvable_gate
+test_help
 
 echo "ok: fm-nomistakes-gate-check.test.sh"

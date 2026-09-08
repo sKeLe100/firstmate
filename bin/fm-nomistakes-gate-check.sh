@@ -118,12 +118,12 @@ compare_heads() {
   local gate_before_head=0 head_before_gate=0
 
   # Is gate an ancestor of HEAD? (gate is behind HEAD)
-  if git merge-base --is-ancestor "$gate_hash" HEAD 2>/dev/null; then
+  if git merge-base --is-ancestor "$gate_hash" "$head_hash" 2>/dev/null; then
     gate_before_head=1
   fi
 
   # Is HEAD an ancestor of gate? (HEAD is behind gate)
-  if git merge-base --is-ancestor HEAD "$gate_hash" 2>/dev/null; then
+  if git merge-base --is-ancestor "$head_hash" "$gate_hash" 2>/dev/null; then
     head_before_gate=1
   fi
 
@@ -143,6 +143,13 @@ compare_heads() {
 # --- main -------------------------------------------------------------------
 
 TARGET="${1:-}"
+
+case "$TARGET" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
 
 # If the argument is a directory (worktree), cd into it and use its default
 # branch. This lets callers pass a worktree path and have the script resolve
@@ -164,5 +171,7 @@ HEAD_HASH=$(git rev-parse "$HEAD_REF" 2>/dev/null) || die "cannot resolve HEAD h
 
 GATE_FILE=$(resolve_gate_config) || die "cannot resolve gate config"
 GATE_HASH=$(read_gate_hash "$GATE_FILE") || die "cannot read gate hash"
+git rev-parse --verify --quiet "$GATE_HASH^{commit}" >/dev/null \
+  || die "gate hash '$GATE_HASH' from $GATE_FILE is not a commit in this repository"
 
 compare_heads "$GATE_HASH" "$HEAD_HASH"
