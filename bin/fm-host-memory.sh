@@ -30,8 +30,9 @@
 #   low: <available>MiB < <floor>MiB
 #
 # Exit codes: 0 = free, 1 = low, 2 = usage error, unreadable /proc/meminfo, or
-# a malformed floor. Exit 2 is fail-closed: callers treat it exactly like low,
-# never as free, matching fm-autonomous-pc02-lane.sh's direction.
+# a malformed floor. Exit 2 never reports free: it says the reading could not be
+# taken, which callers disclose and proceed past - only exit 1 is evidence of
+# memory pressure and only exit 1 blocks a dispatch or a launch.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,7 +44,7 @@ MEMINFO="${FM_MEMINFO_OVERRIDE:-/proc/meminfo}"
 DEFAULT_FLOOR_MIB=3072
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 

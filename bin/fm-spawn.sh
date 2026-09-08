@@ -1724,11 +1724,19 @@ pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 # fail-closed here exactly as it is for the caller in the /autonomous pass.
 # Local launches only: a remote secondmate runs on another host, whose memory
 # this reading says nothing about, and that path never reaches here.
-host_memory_guard() {  # <task-id>: 0 iff this host has room for another agent
+host_memory_guard() {  # <task-id>: 0 unless this host is provably below the floor
   local id=$1 out rc
   out=$("$SCRIPT_DIR/fm-host-memory.sh" 2>&1)
   rc=$?
   [ "$rc" -eq 0 ] && return 0
+  # Only a proven low reading blocks a launch. Any other nonzero rc means the
+  # helper could not measure this host at all (no /proc/meminfo on macOS, a
+  # malformed floor); that is disclosed uncertainty, not evidence of pressure,
+  # so it is noted and the launch proceeds.
+  if [ "$rc" -ne 1 ]; then
+    echo "note: host memory floor not enforced: $out" >&2
+    return 0
+  fi
   echo "error: host memory floor: $out; refusing to launch task '$id' onto a host that cannot carry another agent - free memory on this host (quiesce another lane) or lower config/host-memory-floor" >&2
   return 1
 }

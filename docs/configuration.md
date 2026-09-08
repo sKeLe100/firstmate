@@ -330,7 +330,7 @@ An agent launched onto a host with no memory left does not fail to start - it we
 `bin/fm-host-memory.sh` is the one owner of the reading, in the same data-only shape as `bin/fm-context-usage.sh`: it compares `MemAvailable` from `/proc/meminfo` against the floor and reports `free` (exit 0) or `low: <available>MiB < <floor>MiB` (exit 1).
 `MemAvailable`, not `MemFree`, is the number, because the question is what a new workload can claim without swapping.
 
-Exit 2 - an unreadable `/proc/meminfo` or a malformed floor - is fail-closed and every caller treats it exactly like `low`, never as free, the same direction `bin/fm-autonomous-pc02-lane.sh` takes.
+Exit 2 - an unreadable `/proc/meminfo` or a malformed floor - means the reading could not be taken: the script itself still exits 2 and never reports `free`, and its callers treat that as disclosed uncertainty rather than pressure, noting the reason and proceeding. Only a `low` reading (exit 1) blocks a dispatch or a launch.
 Two callers enforce it: the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) pass's step 3 defers new dispatch while the host reads low, and `bin/fm-spawn.sh` refuses a local launch below the floor so a dispatch that bypassed the pass is still caught.
 A remote secondmate launch is not gated by it, because this reading says nothing about the host that launch lands on.
 

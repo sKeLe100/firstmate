@@ -177,8 +177,9 @@ Before treating any candidate as dispatchable, run
 against the floor in `config/host-memory-floor` (absent means the built-in
 default). It prints `free` (exit 0) or `low: <available>MiB < <floor>MiB`
 (exit 1); an unreadable `/proc/meminfo` or a malformed floor prints an error
-on stderr and exits 2, which is fail-closed - treat exit 2 exactly like `low`,
-never as free, the same direction the PC02 lane guard takes.
+on stderr and exits 2, which means the host reading is unavailable: record the
+reason and continue evaluating candidates normally rather than deferring
+dispatch. Only a `low` reading defers.
 When it reports `low`, defer every new dispatch this pass and record the
 host-memory reason; `bin/fm-spawn.sh` enforces the same floor at spawn time,
 so a candidate dispatched past this check is refused there anyway.
@@ -187,8 +188,11 @@ so a candidate dispatched past this check is refused there anyway.
 
 Run `bin/fm-captain-window.sh` with no flags (`--now` and `--weekday`
 are test-only flags). It prints `band=<band> offer=yes|no`.
-The `offer` field is the single canonical predicate: `offer=yes` means
-in-window, `offer=no` means outside. Do not branch on `band`.
+For the question this step owns - whether to contact the captain with a
+nudge - the `offer` field is the single canonical predicate: `offer=yes`
+means in-window, `offer=no` means outside. Do not branch on `band` for
+that nudge decision. (The daytime-only restriction on a planning scout in
+section 5 asks a different question and does read `band`.)
 This step owns the quiet-hours rule for the whole skill:
 On `offer=yes`, proceed to step 5.
 On `offer=no`, queue the nudge silently for the next window
@@ -315,8 +319,7 @@ An item becomes deferred-ready when either condition holds:
 
 Each deferred-ready item carries its plain-language deferral reason
 (dispatch-cap occupancy, PC02 lane occupied, outside attention window,
-or a planning scout waiting on the captain's attention window). Below
-threshold, stay silent - no
+or senior-tier daytime restriction). Below threshold, stay silent - no
 separate ping, no notification. Rides the existing summary ping and its band gating.
 
 Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,
@@ -381,24 +384,26 @@ The trigger test (all three parts must pass to route to the senior tier):
 When all three gates pass, route to the senior tier for plan-then-execute.
 When any gate fails, use the PC02 lane directly.
 
-### Captain-approval restriction on a planning scout
+### Daytime-only restriction (Q4)
 
-A planning scout is a task on this path that requires the captain to review
-and approve the plan before execution, so it cannot be dispatched into a
-window where he will not see it.
-`bin/fm-captain-window.sh`'s `offer` field answers whether contacting him is
-permitted, which is exactly the question here: on `offer=no`, queue the
-planning scout for the next pass that reads `offer=yes` rather than
-dispatching a plan nobody can approve.
-Do not read `offer` as a proxy for time of day - `band=working` reports
-`offer=no` precisely because the captain is busy, not because it is night.
+Senior-tier planning scouts run daytime only for now.
+A planning scout is a task dispatched through the senior tier that
+requires the captain to review and approve the plan before execution.
+Check `bin/fm-captain-window.sh` before dispatching a planning scout:
+it prints `band=<band> offer=yes|no`, and the daytime test here reads
+`band`, not `offer` - dispatch a planning scout when `band` is
+`working`, `lunch`, or `evening`, and queue it for the next morning
+pass when `band` is `quiet` (the overnight window) or `offhours`.
 
-Ambiguous items wait the same way.
-Ambiguous items are tasks where the 3-part test is uncertain or where the
-classification gate requires captain judgment.
-This restriction applies to planning scouts only.
-Execution-only senior-tier dispatch and PC02 lane work follow the normal
-dispatch rules without it.
+Overnight, ambiguous items wait for the morning pass.
+A morning pass is the first `/autonomous` invocation after the
+captain's attention window opens (per `bin/fm-captain-window.sh`).
+Ambiguous items are tasks where the 3-part test is uncertain or
+where classification gate requires captain judgment.
+
+The daytime-only restriction applies to planning scouts only.
+Non-planning dispatches (execution-only senior-tier work, PC02 lane
+work) follow the normal dispatch rules without a daytime restriction.
 
 ## 6. Gaps, never-do list, and restart contract
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-host-memory.sh: the floor read from
-# config/host-memory-floor, the MemAvailable comparison, and the fail-closed
-# direction on an unreadable source or a malformed floor.
+# config/host-memory-floor, the MemAvailable comparison, and the exit-2
+# reporting on an unreadable source or a malformed floor.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -83,7 +83,7 @@ test_malformed_floor_is_rejected_not_defaulted() {
 }
 test_malformed_floor_is_rejected_not_defaulted
 
-test_unreadable_meminfo_is_fail_closed() {
+test_unreadable_meminfo_exits_two() {
   local home out rc
   home=$(mk_home unreadable)
   out=$(emit "$home" "$TMP_ROOT/no-such-meminfo" 2>&1) && rc=0 || rc=$?
@@ -96,7 +96,7 @@ test_unreadable_meminfo_is_fail_closed() {
   assert_not_contains "$out" "free" "a source with no MemAvailable must never read free"
   pass "fm-host-memory.sh: an unreadable or MemAvailable-less source exits 2 and never reads free"
 }
-test_unreadable_meminfo_is_fail_closed
+test_unreadable_meminfo_exits_two
 
 test_reads_memavailable_not_memfree() {
   local home f out rc
