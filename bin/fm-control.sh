@@ -687,6 +687,15 @@ resolve_relaunch_profile() {
   else
     TARGET_EFFORT=default
   fi
+  # The launch owner refuses a codex launch that resolves no concrete
+  # model/effort, but it is only reached after the old agent has been stopped.
+  # Asking the same question here keeps that refusal on the pre-stop side of
+  # the transaction, where nothing has changed yet.
+  if [ "$TARGET_HARNESS" = codex ]; then
+    if [ "$TARGET_MODEL" = default ] || [ "$TARGET_EFFORT" = default ]; then
+      die "relaunching $ID onto codex resolves no concrete model/effort (model=$TARGET_MODEL effort=$TARGET_EFFORT), so the launch would be refused after the running agent had already been stopped; pass --model and --effort explicitly"
+    fi
+  fi
 }
 
 # safe_checkpoint: prove, before anything is stopped, that the work a relaunch
