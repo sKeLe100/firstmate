@@ -155,7 +155,7 @@ run_spawn() {
   local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5
   fm_test_spawn_brief "$home" "$id" brief
   fm_test_run_spawn "$home" "$pane" "$fakebin" \
-    "$id" "$proj" codex --mode no-mistakes --yolo off
+    "$id" "$proj" claude --mode no-mistakes --yolo off
 }
 
 test_spawn_isolation_abort() {
@@ -247,7 +247,7 @@ run_spawn_record() {
   fm_test_spawn_brief "$home" "$id" brief
   FM_TMUX_REC="$rec" \
     fm_test_run_spawn "$home" "$pane" "$fakebin" \
-    "$id" "$proj" codex --mode no-mistakes --yolo off
+    "$id" "$proj" claude --mode no-mistakes --yolo off
 }
 
 test_spawn_tmux_window_construction() {
