@@ -453,6 +453,29 @@ test_help() {
   pass "13. --help prints usage"
 }
 
+# --- 14. abbreviated gate hash equal to HEAD reports equal ----------------
+
+test_abbrev_gate() {
+  local gate_dir="$tmp/gate-abbrev" nm_dir="$tmp/nm-abbrev"
+  local workdir="$tmp/work-abbrev" gate_sha
+  gate_sha=$(mk_gate_work "$gate_dir" "gate")
+  mk_nm_remote "$nm_dir" "${gate_sha:0:10}"
+  mk_workdir "$workdir"
+  (
+    cd "$workdir"
+    git remote add no-mistakes "$nm_dir"
+    git fetch "$gate_dir" "$gate_sha" 2>/dev/null
+    git reset --hard "$gate_sha" >/dev/null
+  )
+  set +e
+  out="$("$SCRIPT" "$workdir" 2>"$tmp/err")"
+  rc=$?
+  set -e
+  [ "$rc" = 0 ] || fail "abbrev-gate: expected exit 0, got $rc ($(cat "$tmp/err"))"
+  [ "$out" = "equal" ] || fail "abbrev-gate: expected 'equal', got '$out'"
+  pass "14. abbreviated gate hash reports equal"
+}
+
 # --- run all tests -------------------------------------------------------
 
 test_equal
@@ -467,5 +490,6 @@ test_output_clean
 test_branch_arg
 test_unresolvable_gate
 test_help
+test_abbrev_gate
 
 echo "ok: fm-nomistakes-gate-check.test.sh"

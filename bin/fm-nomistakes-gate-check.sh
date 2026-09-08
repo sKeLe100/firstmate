@@ -127,11 +127,7 @@ compare_heads() {
     head_before_gate=1
   fi
 
-  if [ "$gate_before_head" -eq 1 ] && [ "$head_before_gate" -eq 1 ]; then
-    # Both are ancestors of each other but hashes differ - should not happen
-    # with valid commits, but handle it as diverged.
-    printf 'diverged\n'
-  elif [ "$gate_before_head" -eq 1 ]; then
+  if [ "$gate_before_head" -eq 1 ]; then
     printf 'ahead\n'
   elif [ "$head_before_gate" -eq 1 ]; then
     printf 'behind\n'
@@ -171,7 +167,7 @@ HEAD_HASH=$(git rev-parse "$HEAD_REF" 2>/dev/null) || die "cannot resolve HEAD h
 
 GATE_FILE=$(resolve_gate_config) || die "cannot resolve gate config"
 GATE_HASH=$(read_gate_hash "$GATE_FILE") || die "cannot read gate hash"
-git rev-parse --verify --quiet "$GATE_HASH^{commit}" >/dev/null \
+GATE_HASH=$(git rev-parse --verify --quiet "$GATE_HASH^{commit}") \
   || die "gate hash '$GATE_HASH' from $GATE_FILE is not a commit in this repository"
 
 compare_heads "$GATE_HASH" "$HEAD_HASH"
