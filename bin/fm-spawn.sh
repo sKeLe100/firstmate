@@ -723,6 +723,17 @@ spawn_remote_secondmate() {
       return 1
       ;;
   esac
+  # The host-local fm-spawn this launch ends at applies the codex axis guard,
+  # but only after a remote readiness pass, a remote git sync, and a consumed
+  # inheritance generation. Asking the same question here refuses an
+  # unlaunchable spawn before any of that work happens.
+  if [ "$harness" = codex ] \
+     && ! codex_axes_resolved "${model#-}" "${effort#-}"; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    echo "error: a codex remote secondmate resolves no model/effort codex actually receives (model=$model effort=$effort); pin them in config/secondmate-harness as \"codex <model> <effort>\", or pass --model/--effort explicitly, with an effort of $(codex_effort_tiers_phrase)" >&2
+    return 1
+  fi
   if ! pc02_lane_guard "$id" "${model#-}"; then
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
