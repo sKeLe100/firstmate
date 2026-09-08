@@ -1688,11 +1688,11 @@ EOF
 retry_pressure_read() {  # <reader> <task>
   local t=${FM_RETRY_PRESSURE_TIMEOUT:-10}
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$t" "$1" "$2" 2>/dev/null </dev/null
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" timeout "$t" "$1" "$2" 2>/dev/null </dev/null
   elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$t" "$1" "$2" 2>/dev/null </dev/null
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" gtimeout "$t" "$1" "$2" 2>/dev/null </dev/null
   else
-    "$1" "$2" 2>/dev/null </dev/null
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$1" "$2" 2>/dev/null </dev/null
   fi
 }
 
