@@ -36,10 +36,10 @@
 #
 # Output, one data-only line:
 #   verdict=resume band=<ok|warn|restart> context_tokens=<N> \
-#     restart_tokens=<N> idle_seconds=<N|unknown> ttl_seconds=<N> \
+#     restart_tokens=<N> idle_seconds=<N|unknown> ttl_seconds=<N|n/a> \
 #     transcript=<path>
 #   verdict=restart-with-carryover band=<warn|restart> context_tokens=<N> \
-#     restart_tokens=<N> idle_seconds=<N|unknown> ttl_seconds=<N> \
+#     restart_tokens=<N> idle_seconds=<N|unknown> ttl_seconds=<N|n/a> \
 #     transcript=<path>
 #   verdict=unknown reason=<text>
 #     printed only for fm-context-usage.sh's known no-evidence-yet failures -
@@ -67,7 +67,9 @@
 # verdict - only band does, exactly as before this parameter existed. A
 # disabled TTL (ttl_seconds <= 0, i.e. config/cache-ttl-seconds <= 0) also
 # never contributes idle to the verdict, since a disabled guard has no
-# notion of "past TTL".
+# notion of "past TTL". Without <state-dir> there is no marker owner to read
+# the knob from and idle can never contribute, so ttl_seconds reports "n/a"
+# rather than a resolved value that could not have been used.
 #
 # This closes the size-only gap this header used to flag: an earlier version
 # of this script noted a queued-separately "autocompact-wake" mechanism that
@@ -92,7 +94,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,91p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,93p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -158,12 +160,10 @@ idle_seconds="unknown"
 if [ -n "$state_dir" ] && [ -n "$task_id" ]; then
   idle_val="$(fm_cache_activity_age_seconds "$state_dir" "$task_id" "$(date +%s)")" && idle_seconds="$idle_val"
 fi
+ttl_seconds="n/a"
 if [ -n "$state_dir" ]; then
-  ttl_config_dir="$(dirname -- "$state_dir")/config"
-else
-  ttl_config_dir="$home_path/config"
+  ttl_seconds="$(fm_cache_ttl_seconds "$(dirname -- "$state_dir")/config")"
 fi
-ttl_seconds="$(fm_cache_ttl_seconds "$ttl_config_dir")"
 
 if [ "$band" = "restart" ]; then
   verdict="restart-with-carryover"

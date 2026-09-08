@@ -165,6 +165,10 @@ case "$out" in
   *"verdict=resume band=warn "*"idle_seconds=unknown "*) ;;
   *) fail "expected verdict=resume band=warn with idle_seconds=unknown, got: $out" ;;
 esac
+case "$out" in
+  *" ttl_seconds=n/a "*) ;;
+  *) fail "expected ttl_seconds=n/a without a state-dir, got: $out" ;;
+esac
 
 # 10. A warn-band session idle past its TTL gets restart-with-carryover, not
 #     a bare resume, even though context alone stays under the restart band.
