@@ -425,6 +425,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/pc02-qwen38-bartowski-optimization-2026-09-07.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/pi-supervision-branch.md",
       "audience": "maintainer-architecture"
     },
