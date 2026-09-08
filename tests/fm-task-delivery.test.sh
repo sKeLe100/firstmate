@@ -768,9 +768,9 @@ EOF
       id="roles-$project_kind-$kind"
       write_brief "$home" "$id"
       if [ "$kind" = scout ]; then
-        out=$(run_spawn "$home" "$fakebin" "$id" "$proj" codex --scout)
+        out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --scout)
       else
-        out=$(run_spawn "$home" "$fakebin" "$id" "$proj" codex --mode "$kind" --yolo off)
+        out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --mode "$kind" --yolo off)
       fi
       assert_not_contains "$out" 'could not render' "worker role rendering failed"
       brief="$home/data/$id/launch-brief.md"

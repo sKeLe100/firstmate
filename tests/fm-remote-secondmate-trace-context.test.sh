@@ -75,7 +75,7 @@ case "\${1:-}" in
   display-message)
     case "\$*" in
       *'#{pane_current_path}'*) cut -d'|' -f2- "\$state" ;;
-      *'#{pane_current_command}'*) printf 'codex\n' ;;
+      *'#{pane_current_command}'*) printf 'claude\n' ;;
       *'#{cursor_y}'*) printf '0\n' ;;
       *'#S'*) printf 'firstmate\n' ;;
       *) printf '%%1\n' ;;
@@ -85,7 +85,7 @@ case "\${1:-}" in
   capture-pane) printf '❯\n'; exit 0 ;;
   send-keys) exit 0 ;;
   kill-window) rm -f -- "\$state"; exit 0 ;;
-  list-panes) printf 'codex\n'; exit 0 ;;
+  list-panes) printf 'claude\n'; exit 0 ;;
 esac
 exit 0
 SH
@@ -120,9 +120,9 @@ exec "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
 SH
 chmod +x "$FAKEBIN/fake-ssh"
 
-printf 'codex\n' > "$PARENT/config/secondmate-harness"
+printf 'claude\n' > "$PARENT/config/secondmate-harness"
 printf 'tmux\n' > "$PARENT/config/backend"
-printf 'codex\n' > "$PARENT/config/crew-harness"
+printf 'claude\n' > "$PARENT/config/crew-harness"
 printf '## In flight\n\n## Queued\n\n## Done\n' > "$PARENT/data/backlog.md"
 
 remote_env() {

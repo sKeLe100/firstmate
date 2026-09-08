@@ -452,7 +452,7 @@ new_world() {
   w="$TMP_ROOT/$name"
   mkdir -p "$w/home/state" "$w/home/config"
   touch "$w/home/state/.last-watcher-beat"
-  printf 'codex\n' > "$w/home/config/crew-harness"
+  printf 'claude\n' > "$w/home/config/crew-harness"
   printf '%s\n' "$w"
 }
 
@@ -639,7 +639,7 @@ test_sweep_skipped_under_detect_only() {
   w=$(new_world sweep-detect-only)
   add_sm_home "$w" sm1 firstmate:fm-sm1
   mkdir -p "$w/home/config"
-  printf 'codex\n' > "$w/home/config/crew-harness"
+  printf 'claude\n' > "$w/home/config/crew-harness"
   fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
   log="$w/calls.log"; : > "$log"
 
