@@ -384,6 +384,27 @@ test_active_dispatch_profile_allows_raw_launch_command() {
   pass "active crew-dispatch profile allows the raw launch-command escape hatch"
 }
 
+test_raw_codex_launch_command_is_exempt_from_the_axis_guard() {
+  local rec id out status launch
+  id=profile-raw-codex-z15b
+  rec=$(make_spawn_case profile-raw-codex claude "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "codex --dangerously-bypass-approvals-and-sandbox")
+  status=$?
+  expect_code 0 "$status" \
+    "a raw codex launch command is the documented escape hatch and must not hit the axis guard"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  case "$launch" in
+    *"codex --dangerously-bypass-approvals-and-sandbox") ;;
+    *) fail "the raw codex command was not launched verbatim"$'\n'"actual: $launch" ;;
+  esac
+  assert_not_contains "$launch" "model_reasoning_effort" \
+    "fm-spawn must not compose profile flags into a hand-written launch command"
+  pass "a raw codex launch command stays exempt from the codex model/effort guard"
+}
+
 test_claude_threads_model_and_effort() {
   local rec id out status launch
   id=profile-claude-z2
@@ -1160,6 +1181,7 @@ test_active_dispatch_profile_requires_explicit_harness_for_scout
 test_active_dispatch_profile_allows_explicit_harness
 test_active_dispatch_profile_allows_positional_harness
 test_active_dispatch_profile_allows_raw_launch_command
+test_raw_codex_launch_command_is_exempt_from_the_axis_guard
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_refuses_max_effort

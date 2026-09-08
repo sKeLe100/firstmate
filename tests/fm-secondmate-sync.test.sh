@@ -1291,6 +1291,55 @@ test_bootstrap_reports_outdated_host_actionably() {
   pass "R10 a host too old for a parent-targeted sync is reported with the command that fixes it"
 }
 
+# --- R11: a codex remote secondmate with no resolved axes is refused BEFORE the
+# parent spends a readiness pass, a remote sync, or an inheritance generation on
+# a launch the host-local fm-spawn would reject anyway.
+test_remote_codex_spawn_without_axes_refuses_before_remote_work() {
+  local w c1 home fakebin out status
+  w=$(new_remote_world remote-codex-axes)
+  cp "$ROOT"/bin/fm-remote-*.sh "$w/main/bin/"
+  git -C "$w/main" add -A
+  git -C "$w/main" commit -qm "primary tooling"
+  git -C "$w/main" push -q origin main
+  c1=$(head_of "$w/main")
+  add_remote_home "$w" sm "$w/forge.git" "$c1"
+  home="$w/home"
+  mkdir -p "$home/config" "$home/projects"
+  printf -- '- sm - remote fixture (host: host-sm; root: %s; home: %s; scope: remote work; projects: alpha; added 2026-08-02)\n' \
+    "$w/coderoot" "$w/sm" > "$home/data/secondmates.md"
+  fm_write_secondmate_meta "$home/state/sm.meta" "$w/sm"
+  printf 'remote_host=host-sm\n' >> "$home/state/sm.meta"
+
+  fakebin=$(fm_fakebin "$w/nossh")
+  fm_fake_exit0 "$fakebin" gh treehouse tmux node
+  # Any crossing of the remote boundary is a failure of this contract, so the
+  # ssh leg records the attempt instead of serving it.
+  cat > "$fakebin/fake-ssh" <<SH
+#!/usr/bin/env bash
+: > "$w/ssh-was-called"
+exit 90
+SH
+  chmod +x "$fakebin/fake-ssh"
+
+  out=$(PATH="$fakebin:$BASE_PATH" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$w/main" \
+    FM_SSH_BIN="$fakebin/fake-ssh" FM_REMOTE_CODE_ROOT="$w/coderoot" \
+    FM_TEST_REPO_ROOT="$ROOT" FM_SEND_SETTLE=0 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" sm --secondmate --harness codex 2>&1)
+  status=$?
+
+  expect_code 1 "$status" "a codex remote secondmate with no model/effort should refuse"$'\n'"$out"
+  assert_contains "$out" "resolves no model/effort codex actually receives" \
+    "the refusal did not name the unresolved codex axes"
+  [ ! -e "$w/ssh-was-called" ] \
+    || fail "the refusal came after the parent had already crossed to the host"
+  [ "$(head_of "$w/sm")" = "$c1" ] \
+    || fail "a refused codex spawn still synced the remote home"
+  [ ! -e "$home/state/.spawn-sm.lock" ] \
+    || fail "the refusal leaked the spawn task lock"
+  pass "R11 a codex remote secondmate with no resolved axes refuses before any remote work"
+}
+
 # --- R9: a remote launch never re-targets the host's own Firstmate copy --------
 # The launch leg runs a host-local spawn whose FM_ROOT is that host's Firstmate
 # copy. Once the parent has synced the home to ITS commit, that spawn must leave
@@ -1369,6 +1418,7 @@ test_remote_sync_skips_dirty_diverged_and_feature_branch
 test_remote_sync_without_target_follows_host_copy
 test_bootstrap_syncs_remote_home_to_primary_commit
 test_bootstrap_reports_outdated_host_actionably
+test_remote_codex_spawn_without_axes_refuses_before_remote_work
 test_remote_launch_does_not_retarget_host_copy
 
 echo "# all fm-secondmate-sync tests passed"
