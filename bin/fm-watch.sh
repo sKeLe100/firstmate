@@ -1684,6 +1684,18 @@ EOF
 # surfaced when it wakes firstmate, this normally finds nothing and the heartbeat
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
+# retry_pressure_read: one time-bounded invocation of the retry-pressure helper.
+retry_pressure_read() {  # <reader> <task>
+  local t=${FM_RETRY_PRESSURE_TIMEOUT:-10}
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$t" "$1" "$2" 2>/dev/null </dev/null
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$t" "$1" "$2" 2>/dev/null </dev/null
+  else
+    "$1" "$2" 2>/dev/null </dev/null
+  fi
+}
+
 # retry_halt_tasks: names every task bin/fm-retry-pressure.sh currently reports
 # at retry_band=halt whose reading has not been surfaced yet, one per line.
 #
@@ -1698,14 +1710,31 @@ EOF
 # that was surfaced, so one halt reports once and reports again only when the
 # count moves. Missing helper, unreadable task, or any non-halt band contributes
 # nothing - this reader adds wakes, it never suppresses one.
+#
+# Cost discipline: the heartbeat fleet-scan this hangs off must stay cheap, so
+# the read is bounded three ways. It runs at most once per REAL heartbeat
+# interval (never faster than the 600s default, however short FM_HEARTBEAT is
+# set), it consults the helper only for tasks that actually have a state/<id>.meta
+# record rather than for every stray .status file, and each helper invocation is
+# time-bounded so a slow or hung reader can never stall the poll.
+# FM_RETRY_PRESSURE_EVERY_POLL=1 removes the rate limit for the tests that
+# exercise the surfacing contract itself.
 retry_halt_tasks() {
-  local reader f task out band count marker
+  local reader f task out band count marker interval stamp
   reader=${FM_RETRY_PRESSURE_BIN:-$SCRIPT_DIR/fm-retry-pressure.sh}
   [ -x "$reader" ] || return 0
+  stamp="$STATE/.last-retry-pressure-read"
+  if [ "${FM_RETRY_PRESSURE_EVERY_POLL:-0}" != 1 ]; then
+    interval=600
+    [ "$HEARTBEAT" -gt "$interval" ] && interval=$HEARTBEAT
+    [ "$(age_of "$stamp")" -ge "$interval" ] || return 0
+    touch "$stamp"
+  fi
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
-    out=$("$reader" "$task" 2>/dev/null </dev/null) || continue
+    [ -e "$STATE/$task.meta" ] || continue
+    out=$(retry_pressure_read "$reader" "$task") || continue
     band=${out##* retry_band=}; band=${band%% *}
     [ "$band" = halt ] || { rm -f "$STATE/.retry-halt-surfaced-$task"; continue; }
     count=${out##*relaunches=}; count=${count%% *}

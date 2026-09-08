@@ -84,10 +84,11 @@ test_heartbeat_names_a_halt_band_task() {
   # read this heartbeat is absorbed as no-change, which is exactly how two
   # halt-band tasks sat unheld on 2026-09-08.
   printf 'working: routine progress\n' > "$state/grinder.status"
+  printf 'backend=tmux\n' > "$state/grinder.meta"
   sig=$(seen_sig "$state/grinder.status"); printf '%s' "$sig" > "$state/.seen-grinder_status"
   fake_retry_pressure "$fakebin" halt 7
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_RETRY_PRESSURE_EVERY_POLL=1 \
     FM_RETRY_PRESSURE_BIN="$fakebin/fm-retry-pressure.sh" "$WATCH" > "$out" &
   pid=$!
   wait_for_exit "$pid" 100 \
@@ -105,13 +106,14 @@ test_heartbeat_halt_surfaces_once_per_reading() {
   dir=$(make_case retry-halt-once); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"
   printf 'working: routine progress\n' > "$state/grinder.status"
+  printf 'backend=tmux\n' > "$state/grinder.meta"
   printf '%s' "$(seen_sig "$state/grinder.status")" > "$state/.seen-grinder_status"
   fake_retry_pressure "$fakebin" halt 7
   # Pre-record the same reading the watcher is about to take: an unchanged halt
   # must not re-fire, or every heartbeat becomes a duplicate of the last one.
   printf '7\n' > "$state/.retry-halt-surfaced-grinder"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_RETRY_PRESSURE_EVERY_POLL=1 \
     FM_RETRY_PRESSURE_BIN="$fakebin/fm-retry-pressure.sh" "$WATCH" > "$out" &
   pid=$!
   if ! wait_poll_cycle "$state" "$pid"; then
@@ -129,10 +131,11 @@ test_heartbeat_ok_band_still_absorbs() {
   dir=$(make_case retry-ok); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"
   printf 'working: routine progress\n' > "$state/steady.status"
+  printf 'backend=tmux\n' > "$state/steady.meta"
   printf '%s' "$(seen_sig "$state/steady.status")" > "$state/.seen-steady_status"
   fake_retry_pressure "$fakebin" ok 1
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_RETRY_PRESSURE_EVERY_POLL=1 \
     FM_RETRY_PRESSURE_BIN="$fakebin/fm-retry-pressure.sh" "$WATCH" > "$out" &
   pid=$!
   if ! wait_poll_cycle "$state" "$pid"; then
