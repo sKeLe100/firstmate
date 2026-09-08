@@ -1732,10 +1732,13 @@ if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
     echo "error: codex requires an explicit --model; a model-less codex spawn or relaunch silently falls through to Codex CLI's own default model rather than firstmate's choice. Pass --model with one of config/crew-dispatch.json's configured candidates, or the harness's default profile." >&2
     exit 1
   fi
-  if [ -z "$EFFORT" ] || [ "$EFFORT" = default ]; then
-    echo "error: codex requires an explicit --effort; an effort-less codex spawn or relaunch silently falls through to Codex CLI's own default reasoning effort rather than firstmate's choice. Pass --effort with one of config/crew-dispatch.json's configured candidates, or the harness's default profile." >&2
-    exit 1
-  fi
+  case "$EFFORT" in
+    low|medium|high|xhigh) ;;
+    *)
+      echo "error: codex requires an explicit --effort of low, medium, high, or xhigh; any other value (including max, which Codex CLI's model catalog does not advertise) is dropped from the launch and silently falls through to Codex CLI's own default reasoning effort rather than firstmate's choice. Pass --effort with one of config/crew-dispatch.json's configured candidates, or the harness's default profile." >&2
+      exit 1
+      ;;
+  esac
 fi
 
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
