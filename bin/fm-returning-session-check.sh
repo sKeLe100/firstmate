@@ -15,7 +15,7 @@
 # autocompact-wake mechanism (queued separately) owns deciding WHEN a ping or
 # restart happens, this owns the verdict at THAT moment.
 #
-# Usage: fm-returning-session-check.sh <home-path>
+# Usage: fm-returning-session-check.sh <home-path> [<state-dir> <task-id>]
 #   <home-path> is the FM_HOME of the returning session: a crewmate task
 #   worktree, a local secondmate home, or this firstmate's own home. It must
 #   be an absolute path to an existing directory, because Claude's transcript
@@ -24,11 +24,26 @@
 #   FM_HOME to fm-context-usage.sh, so the same transcript-discovery and
 #   config/context-thresholds resolution apply.
 #
+#   <state-dir> and <task-id> are optional and must be given together: the
+#   CALLER's own state directory (never the returning home's own state/,
+#   which does not exist for a plain crewmate task worktree) and the task or
+#   secondmate id whose state/<task-id>.meta, .status, and .turn-ended
+#   markers live there. When given, they feed the same activity-age fold
+#   bin/fm-cache-ttl-lib.sh's fm_cache_activity_age_seconds already shares
+#   with the steer guard, the near-expiry heartbeat flag, and the inactivity
+#   reconciler, so idle time is measured once and the same way everywhere.
+#   Omit both when no id applies (checking this firstmate's own home) or the
+#   caller has no state dir handy; idle_seconds then reports "unknown" and
+#   the verdict falls back to context size alone, exactly as before this
+#   parameter existed.
+#
 # Output, one data-only line:
 #   verdict=resume band=<ok|warn|restart> context_tokens=<N> \
-#     restart_tokens=<N> transcript=<path>
-#   verdict=restart-with-carryover band=restart context_tokens=<N> \
-#     restart_tokens=<N> transcript=<path>
+#     restart_tokens=<N> idle_seconds=<N|unknown> ttl_seconds=<N> \
+#     transcript=<path>
+#   verdict=restart-with-carryover band=<warn|restart> context_tokens=<N> \
+#     restart_tokens=<N> idle_seconds=<N|unknown> ttl_seconds=<N> \
+#     transcript=<path>
 #   verdict=unknown reason=<text>
 #     printed only for fm-context-usage.sh's known no-evidence-yet failures -
 #     no Claude transcript directory, no *.jsonl transcript found, transcript
@@ -43,6 +58,27 @@
 #     positively known to be missing evidence is a fault to fix, never
 #     evidence that a bare resume is safe, so it fails safe here and exits
 #     non-zero.
+#
+# The verdict is restart-with-carryover when band=restart, OR when band=warn
+# AND the session has sat idle past its own effective prompt-cache TTL
+# (config/cache-ttl-seconds under <home-path>, else the shared 3600s
+# default): a warn-band session that has gone cold pays the same return-tax
+# re-read a restart-band session does, so a bare resume just walks it
+# straight into the restart band on the very first turn back. band=ok never
+# restarts regardless of idle time, and idle_seconds=unknown (no state-dir/
+# task-id given, or no readable activity marker yet) never contributes to the
+# verdict - only band does, exactly as before this parameter existed. A
+# disabled TTL (ttl_seconds <= 0, i.e. config/cache-ttl-seconds <= 0) also
+# never contributes idle to the verdict, since a disabled guard has no
+# notion of "past TTL".
+#
+# This closes the size-only gap this header used to flag: an earlier version
+# of this script noted a queued-separately "autocompact-wake" mechanism that
+# might decide idle timing instead. As of this change no such mechanism has
+# shipped anywhere in this repo (checked before writing this: no
+# autocompact-wake reference exists outside this file's own history), so this
+# script is now the one place idle-vs-TTL feeds the resume verdict, reusing
+# fm-cache-ttl-lib.sh's fold rather than duplicating it.
 #
 # verdict=restart-with-carryover means: do not bare-resume this session.
 # Checkpoint its durable state and bring it back through the existing
@@ -59,16 +95,18 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,58p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,94p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
-if [ "$#" -ne 1 ]; then
-  echo "fm-returning-session-check: usage: fm-returning-session-check.sh <home-path>" >&2
+if [ "$#" -ne 1 ] && [ "$#" -ne 3 ]; then
+  echo "fm-returning-session-check: usage: fm-returning-session-check.sh <home-path> [<state-dir> <task-id>]" >&2
   exit 1
 fi
 
 home_path="$1"
+state_dir="${2:-}"
+task_id="${3:-}"
 case "$home_path" in
   /*) ;;
   *) echo "fm-returning-session-check: home-path must be absolute: $home_path" >&2; exit 1 ;;
@@ -79,6 +117,8 @@ if [ ! -d "$home_path" ]; then
 fi
 home_path="$(cd -- "$home_path" && pwd)"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-cache-ttl-lib.sh
+. "$script_dir/fm-cache-ttl-lib.sh"
 
 usage_output=""
 usage_status=0
@@ -117,10 +157,19 @@ if [ -z "$band" ]; then
   exit 1
 fi
 
+idle_seconds="unknown"
+if [ -n "$state_dir" ] && [ -n "$task_id" ]; then
+  idle_val="$(fm_cache_activity_age_seconds "$state_dir" "$task_id" "$(date +%s)")" && idle_seconds="$idle_val"
+fi
+ttl_seconds="$(fm_cache_ttl_seconds "$home_path/config")"
+
 if [ "$band" = "restart" ]; then
+  verdict="restart-with-carryover"
+elif [ "$band" != "ok" ] && [ "$idle_seconds" != "unknown" ] \
+    && [ "$ttl_seconds" -gt 0 ] && [ "$idle_seconds" -gt "$ttl_seconds" ]; then
   verdict="restart-with-carryover"
 else
   verdict="resume"
 fi
 
-echo "verdict=$verdict band=$band context_tokens=$context_tokens restart_tokens=$restart_tokens transcript=$transcript"
+echo "verdict=$verdict band=$band context_tokens=$context_tokens restart_tokens=$restart_tokens idle_seconds=$idle_seconds ttl_seconds=$ttl_seconds transcript=$transcript"
