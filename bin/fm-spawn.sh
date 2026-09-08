@@ -306,6 +306,8 @@ esac
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
+# shellcheck source=bin/fm-codex-axes-lib.sh
+. "$SCRIPT_DIR/fm-codex-axes-lib.sh"
 # shellcheck source=bin/fm-tasks-axi-lib.sh
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backlog-transition-lib.sh
@@ -1735,12 +1737,11 @@ effort_flag_for_harness() {
       esac
       ;;
     codex)
-      # The installed codex config schema uses model_reasoning_effort, and the
-      # bundled model catalog advertises low|medium|high|xhigh. Omit max rather
-      # than passing an unsupported value.
-      case "$effort" in
-        low|medium|high|xhigh) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
-      esac
+      # fm-codex-axes-lib.sh owns which tiers codex receives; omit anything
+      # else rather than passing an unsupported value.
+      if codex_effort_supported "$effort"; then
+        printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")"
+      fi
       ;;
     grok)
       # grok exposes both --effort and --reasoning-effort; firstmate's profile

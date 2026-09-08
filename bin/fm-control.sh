@@ -130,6 +130,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/fm-codex-axes-lib.sh
+. "$SCRIPT_DIR/fm-codex-axes-lib.sh"
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
@@ -691,10 +693,9 @@ resolve_relaunch_profile() {
   # model/effort, but it is only reached after the old agent has been stopped.
   # Asking the same question here keeps that refusal on the pre-stop side of
   # the transaction, where nothing has changed yet.
-  if [ "$TARGET_HARNESS" = codex ]; then
-    if [ "$TARGET_MODEL" = default ] || [ "$TARGET_EFFORT" = default ]; then
-      die "relaunching $ID onto codex resolves no concrete model/effort (model=$TARGET_MODEL effort=$TARGET_EFFORT), so the launch would be refused after the running agent had already been stopped; pass --model and --effort explicitly"
-    fi
+  if [ "$TARGET_HARNESS" = codex ] \
+     && ! codex_axes_resolved "$TARGET_MODEL" "$TARGET_EFFORT"; then
+    die "relaunching $ID onto codex resolves no model/effort codex actually receives (model=$TARGET_MODEL effort=$TARGET_EFFORT), so the launch would be refused after the running agent had already been stopped; pass --model and --effort explicitly, with an effort of low, medium, high, or xhigh"
   fi
 }
 
