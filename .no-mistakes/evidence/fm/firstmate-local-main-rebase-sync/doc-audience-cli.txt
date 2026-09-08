@@ -1,0 +1,53 @@
+$ bin/fm-doc-audience-check.sh
+fm-doc-audience-check: ok surfaces=114 local_links=356
+exit=0
+
+--- git log --oneline base..HEAD ---
+c2009e0 no-mistakes(test): register new PC02 doc in documentation audience inventory
+9a4e8b0 no-mistakes(review): remove stray root-level tmp llama-swap scratch config
+1ba9840 docs: record PC02 qwen3.8-27b-bartowski-q4_k_m optimization application and verification results
+350eea8 Add qwen3.8-27b-bartowski-q4_k_m model entry for PC02
+
+--- rendered doc ---
+# PC02 qwen3.8-27b-bartowski-q4_k_m Optimization Applied
+
+**Date:** 2026-09-07
+**Source:** Scout report `data/pc02-qwen38-bartowski-config-scout/report.md` section 6, config "G"
+**Branch:** `fm/pc02-qwen38-bartowski-optimization-apply`
+
+## Config change
+
+Applied to `C:\pc02-llm-server\bin\native-config.yaml` on PC02 (WSL path: `/mnt/c/pc02-llm-server/bin/native-config.yaml`):
+
+Added flags to the `qwen3.8-27b-bartowski-q4_k_m` model entry:
+- `-c 262144` (full context)
+- `--cache-type-k q8_0` (KV cache K quantization)
+- `--cache-type-v q8_0` (KV cache V quantization)
+- `--no-kv-offload` (KV in system RAM, not VRAM)
+- `--no-mmap` (avoid mmap page faults)
+- `--spec-type draft-mtp` (multi-token prediction speculative decoding)
+- `-ot "blk\.([89]|[1-5][0-9]|6[0-3])\.ffn_(gate|up|down)\.weight=CPU"` (offload FFN weights to CPU)
+
+Backup: `native-config.yaml.bak-2026-09-07-qwen38-bartowski-opt-apply`
+
+## Verification results
+
+1. **All 12 entries present:** Confirmed via `/v1/models` listing.
+2. **Model responds:** `qwen3.8-27b-bartowski-q4_k_m` loads and returns completions.
+3. **Sibling healthy:** `qwen3.8-27b-dispatch` responds at 12.16 tok/s (proves restart is not corrupt).
+4. **Measured decode speed:** ~1.84 tok/s with a ~2852 token prompt (vs scout report's claimed 6.00 tok/s).
+
+## Performance note
+
+The optimized bartowski config runs slower than the dispatch entry:
+- `qwen3.8-27b-dispatch`: 12.16 tok/s decode, 262.06 tok/s prompt processing
+- `qwen3.8-27b-bartowski-q4_k_m` (new config): 1.84 tok/s decode, 44.61 tok/s prompt processing
+
+The `--spec-type draft-mtp` and `-ot` offload flags appear to add overhead without the expected speed benefit on this hardware/system state. This may warrant further investigation if the captain wants to pursue MTP speculative decoding on PC02.
+
+## Restart method
+
+Used the documented autostart script (not ad-hoc Stop-Process/Start-Process chain):
+```
+ssh pc02 "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command '& \"C:\\pc02-llm-server\\bin\\pc02-llama-swap-autostart.ps1\"'"
+```
