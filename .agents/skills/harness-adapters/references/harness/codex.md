@@ -14,6 +14,7 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 | Model flag | `--model <model>`. |
 | Effort flag | `-c 'model_reasoning_effort="<low\|medium\|high\|xhigh>"'`, verified on codex-cli 0.142.1 whose installed schema contains `model_reasoning_effort`, active config uses it, and bundled catalog advertises only these four values while omitting `max`. |
 | Model discovery | Open the current interactive session's `/model` picker. |
+| Approval bypass | `--dangerously-bypass-approvals-and-sandbox` is **required** on every launch (enforced in `bin/fm-spawn.sh`). Removing or softening this flag re-enables the `codex-auto-review` feature, which bills a second hidden model call against the weekly allocation on every approval request. |
 
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
 Accept it with Enter and verify the instructions begin processing.
