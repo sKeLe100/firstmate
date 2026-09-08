@@ -1764,11 +1764,22 @@ retry_halt_mark_surfaced() {
   done <<< "${FM_HEARTBEAT_RETRY_HALT_MARKS:-}"
 }
 
+# Every heartbeat enqueue must build its payload through this helper: a literal
+# `heartbeat` payload at any one site collapses a still-queued halt row under
+# fm_wake_print_deduped's last-row-wins rule and loses the halt.
 heartbeat_reason_with_queued_halts() {
-  local names queued
+  local names queued payload line
   names=${FM_HEARTBEAT_RETRY_HALT:-}
-  queued=$(sed -n 's/.*retry halt: \([^\t]*\).*/\1/p' \
-    "${FM_WAKE_QUEUE:-$STATE/.wake-queue}" 2>/dev/null | paste -sd, -)
+  queued=
+  while IFS= read -r payload; do
+    case "$payload" in
+      "heartbeat: retry halt: "*) line=${payload#heartbeat: retry halt: } ;;
+      *) continue ;;
+    esac
+    [ -n "$line" ] || continue
+    queued="${queued:+$queued,}$line"
+  done < <(awk -F'\t' 'NF >= 5 { print $5 }' \
+    "${FM_WAKE_QUEUE:-$STATE/.wake-queue}" 2>/dev/null)
   [ -z "$queued" ] || names="${names:+$names,}$queued"
   [ -n "$names" ] || { printf 'heartbeat\n'; return 0; }
   names=$(printf '%s' "$names" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)
@@ -2756,9 +2767,10 @@ EOF
     # without exiting); the away-mode daemon, when present, owns triage and wants
     # every heartbeat.
     if afk_present; then
-      fm_wake_append heartbeat heartbeat heartbeat || exit 1
+      hb_reason=$(heartbeat_reason_with_queued_halts)
+      fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
       touch "$STATE/.last-heartbeat"
-      wake "heartbeat"
+      wake "$hb_reason"
     elif heartbeat_scan_finds_actionable; then
       # Backstop: a captain-relevant event the per-wake path absorbed by mistake.
       # Enqueue first, then record every status log surfaced through its end so the
@@ -2774,9 +2786,10 @@ EOF
       wake "$hb_reason"
     else
       if ! mark_all_captain_relevant_surfaced; then
-        fm_wake_append heartbeat heartbeat "$(heartbeat_reason_with_queued_halts)" || exit 1
+        hb_reason=$(heartbeat_reason_with_queued_halts)
+        fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
         touch "$STATE/.last-heartbeat"
-        wake "heartbeat"
+        wake "$hb_reason"
       fi
       touch "$STATE/.last-heartbeat"
       echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"
