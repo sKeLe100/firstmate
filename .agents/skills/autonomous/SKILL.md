@@ -121,14 +121,11 @@ independent of whether a decision nudge is due.
 
 Read the base concurrent dispatch cap from `config/dispatch-cap`.
 The effective cap is that base reduced by the quota ladder read from
-`quota-axi --json` (schemaVersion 5) at dispatch intake, per
-`docs/configuration.md`: the ladder is checked alongside the base cap
-rather than replacing it, so `five_hour.percentRemaining <= 15` means an
-effective cap of 1 no matter what the base says. The ladder also has a
-second, independent dimension for how far the current five-hour window
-has elapsed - derived from `five_hour.resetsAt` since no window-start
-field is exposed - which caps at 3 at or before the window's 2.5-hour
-mark and caps at 2 once past it, regardless of percent remaining.
+`quota-axi --json` (schemaVersion 5) at dispatch intake, checked
+alongside the base cap rather than replacing it. `docs/configuration.md`
+owns the full ladder, including its percent-remaining floor and its
+elapsed-time-in-window dimension; read the current numbers there rather
+than from any restatement, since a restated threshold here can drift.
 Check how many autonomous Claude lanes are currently active against both
 the base cap and the ladder before treating a lane as available.
 If the cap is at or exceeded, record that new dispatch is deferred due to
