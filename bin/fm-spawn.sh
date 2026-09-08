@@ -1799,11 +1799,7 @@ effort_flag_for_harness() {
 # effort_flag_for_harness, so MODEL/EFFORT here reflect nothing about what its
 # hand-composed command line actually launches.
 if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
-  if [ "$KIND" = secondmate ]; then
-    codex_remedy="config/crew-harness carries a bare adapter name and cannot supply either axis, so a codex secondmate resolved through it has no durable pin: write config/secondmate-harness as \"codex <model> <effort>\", or pass --model/--effort explicitly."
-  else
-    codex_remedy="config/crew-harness carries a bare adapter name and cannot supply either axis: pass --model/--effort explicitly, or take them from config/crew-dispatch.json's configured candidates when that file is active."
-  fi
+  codex_remedy="Pass --model/--effort explicitly, or pin them in config/secondmate-harness as \"codex <model> <effort>\"; config/crew-harness carries only a bare adapter name and cannot supply either axis."
   if [ -z "$(model_flag_for_harness codex "$MODEL")" ]; then
     echo "error: codex requires an explicit --model; a model-less codex spawn or relaunch silently falls through to Codex CLI's own default model rather than firstmate's choice. $codex_remedy" >&2
     exit 1
