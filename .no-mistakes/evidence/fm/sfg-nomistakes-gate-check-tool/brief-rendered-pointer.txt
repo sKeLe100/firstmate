@@ -1,0 +1,8 @@
+=== rendered no-mistakes definition-of-done block (what a dispatched crewmate actually reads in data/<task>/brief.md) ===
+27-  When the decision comes back, feed it to the gate with `no-mistakes axi respond` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+28-- NEVER pass `--yes` (or `-y`) to `no-mistakes axi run` or `no-mistakes axi respond`. It is banned fleet-wide.
+29-  It auto-resolves every gate including ask-user findings with no escalation, and answering your own ask-user finding is a hard rule violation.
+30-
+31:After any custody recovery on a rebased branch, run `bin/fm-nomistakes-gate-check.sh` before pushing; treat a `diverged` result as an immediate `blocked:` report rather than pushing anyway.
+32-
+33-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), run `/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M21FZ1YTNBEAJ5RCG0Q8C97J/bin/fm-claim-check.sh main` piping in your intended `done:` summary; if it reports unverified paths, fix the summary before reporting (do not silence the gate, and do not hand-edit or recommit once the run is closed out).

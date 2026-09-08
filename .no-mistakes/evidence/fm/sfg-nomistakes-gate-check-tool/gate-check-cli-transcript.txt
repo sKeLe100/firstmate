@@ -1,0 +1,50 @@
+### 1. --help (end-user discovery)
+Usage: fm-nomistakes-gate-check.sh [branch]
+
+Detects whether a local branch's HEAD has diverged from the no-mistakes
+pipeline's own gate ref before pushing.
+
+Resolves the no-mistakes remote, reads the gate config (v2:<hash>), and
+compares the gate hash against local HEAD using two ancestry checks:
+  git merge-base --is-ancestor <gate> HEAD   (gate is before HEAD)
+  git merge-base --is-ancestor HEAD <gate>   (HEAD is before gate)
+
+Prints exactly one of: equal, ahead, behind, diverged.
+This script is read-only: it never writes, pushes, or attempts to fix anything.
+
+Exit 0: one of the four status values printed to stdout.
+Exit 1: usage error, git error, or gate config unreadable.
+
+Optional <branch> argument: the local branch to check against.
+Defaults to the current branch.
+
+### 2. Set up a repo + a no-mistakes gate remote holding the gate ref
+gate config contains: v2:39b7277dcaa86fb286ec80d19a5be43dfea54400
+local HEAD:           39b7277dcaa86fb286ec80d19a5be43dfea54400
+
+### 3. HEAD == gate  -> expect: equal
+equal
+
+### 4. one new local commit on top -> expect: ahead
+ahead
+
+### 5. reset local back before gate -> expect: behind
+behind
+
+### 6. custody-recovery-style rebase: local branch rewritten off the gate -> expect: diverged
+diverged
+(brief rule: a 'diverged' result is an immediate blocked: report, do not push)
+
+### 7. branch argument checks a named branch, not the checked-out one
+current branch HEAD is diverged; checking branch 'atgate':
+equal
+
+### 8. refuses on an unresolvable gate value instead of faking 'diverged'
+error: gate hash '44d8c1e6deadbeefdeadbeefdeadbeefdeadbeef' from /tmp/tmp.bjByVAYoIA/gate.git/no-mistakes-gate-config is not a commit in this repository
+exit code: 1 (refused with the offending hash shown)
+
+### 9. read-only proof: nothing in the repo or gate changed during all of the above
+OK: working tree, HEAD, and gate repo contents unchanged after running the check
+
+### 10. the brief scaffold now carries the pointer an agent actually reads
+1:fm-nomistakes-gate-check.sh
