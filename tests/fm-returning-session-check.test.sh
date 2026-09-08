@@ -228,13 +228,15 @@ case "$out" in
   *) fail "expected idle_seconds=unknown with no activity marker, got: $out" ;;
 esac
 
-# 15. A local config/cache-ttl-seconds override under home-path is honored,
-#     matching fm-cache-ttl-lib.sh's own resolution.
+# 15. A cache-ttl-seconds override in the caller home's config/ (the config
+#     directory beside the given state-dir) is honored, matching how every
+#     other consumer of fm-cache-ttl-lib.sh reads that knob.
 ttl_cfg_home="$tmp/ttl_cfg_home"
 mk_home "$ttl_cfg_home" 160000
-mkdir -p "$ttl_cfg_home/config"
-printf '500\n' > "$ttl_cfg_home/config/cache-ttl-seconds"
-ttl_state="$tmp/ttl_state"
+ttl_caller="$tmp/ttl_caller"
+mkdir -p "$ttl_caller/config"
+printf '500\n' > "$ttl_caller/config/cache-ttl-seconds"
+ttl_state="$ttl_caller/state"
 mkdir -p "$ttl_state"
 touch -d "@$((now - 600))" "$ttl_state/ttltask.status"
 out="$(HOME="$tmp/claude_home" "$bin" "$ttl_cfg_home" "$ttl_state" ttltask)"

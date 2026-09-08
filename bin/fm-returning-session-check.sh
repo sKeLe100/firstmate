@@ -10,10 +10,7 @@
 # context level with the existing bin/fm-context-usage.sh machinery and the
 # thresholds already documented in docs/configuration.md "Session context
 # thresholds", and reports which resume path the caller should take. It reads
-# and decides only; it does not itself resume, relaunch, or send anything, and
-# it owns no threshold or trigger machinery of its own - the companion
-# autocompact-wake mechanism (queued separately) owns deciding WHEN a ping or
-# restart happens, this owns the verdict at THAT moment.
+# and decides only; it does not itself resume, relaunch, or send anything.
 #
 # Usage: fm-returning-session-check.sh <home-path> [<state-dir> <task-id>]
 #   <home-path> is the FM_HOME of the returning session: a crewmate task
@@ -60,9 +57,9 @@
 #     non-zero.
 #
 # The verdict is restart-with-carryover when band=restart, OR when band=warn
-# AND the session has sat idle past its own effective prompt-cache TTL
-# (config/cache-ttl-seconds under <home-path>, else the shared 3600s
-# default): a warn-band session that has gone cold pays the same return-tax
+# AND the session has sat idle past the effective prompt-cache TTL of the
+# home that owns those activity markers (cache-ttl-seconds in the config/
+# directory beside <state-dir>, else the shared 3600s default): a warn-band session that has gone cold pays the same return-tax
 # re-read a restart-band session does, so a bare resume just walks it
 # straight into the restart band on the very first turn back. band=ok never
 # restarts regardless of idle time, and idle_seconds=unknown (no state-dir/
@@ -95,7 +92,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,94p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,91p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -161,7 +158,12 @@ idle_seconds="unknown"
 if [ -n "$state_dir" ] && [ -n "$task_id" ]; then
   idle_val="$(fm_cache_activity_age_seconds "$state_dir" "$task_id" "$(date +%s)")" && idle_seconds="$idle_val"
 fi
-ttl_seconds="$(fm_cache_ttl_seconds "$home_path/config")"
+if [ -n "$state_dir" ]; then
+  ttl_config_dir="$(dirname -- "$state_dir")/config"
+else
+  ttl_config_dir="$home_path/config"
+fi
+ttl_seconds="$(fm_cache_ttl_seconds "$ttl_config_dir")"
 
 if [ "$band" = "restart" ]; then
   verdict="restart-with-carryover"
