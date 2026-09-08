@@ -546,11 +546,25 @@ test_codex_relaunch_without_axes_refuses_before_stopping_the_agent() {
   printf 'codex' > "$dir/fake/becomes"
   out=$(run_control "$dir" rl4c relaunch --harness codex --note "switching runtime"); rc=$?
   expect_code 1 "$rc" "a codex relaunch with no model/effort should refuse"$'\n'"$out"
-  assert_contains "$out" "resolves no concrete model/effort" \
+  assert_contains "$out" "no model/effort codex actually receives" \
     "the refusal should name the unresolved codex axes"
   [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused codex relaunch must not stop the agent"
   [ "$(meta_field "$dir" rl4c harness)" = claude ] || fail "a refused codex relaunch must leave the record alone"
   pass "fm-control relaunch: codex refuses unresolved model/effort before the agent is stopped"
+}
+
+test_codex_relaunch_with_unreceivable_effort_refuses_before_stopping_the_agent() {
+  local dir out rc
+  dir=$(new_case codex-max rl4d)
+  add_ship_task "$dir" rl4d claude
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl4d relaunch --harness codex --model gpt-5 --effort max --note "switching runtime"); rc=$?
+  expect_code 1 "$rc" "a codex relaunch with an effort codex cannot receive should refuse"$'\n'"$out"
+  assert_contains "$out" "no model/effort codex actually receives" \
+    "the refusal should name the unreceivable codex effort"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused codex relaunch must not stop the agent"
+  [ "$(meta_field "$dir" rl4d harness)" = claude ] || fail "a refused codex relaunch must leave the record alone"
+  pass "fm-control relaunch: codex refuses an effort it cannot receive before the agent is stopped"
 }
 
 test_harness_switch_does_not_carry_the_old_profile_axes() {
@@ -1626,6 +1640,7 @@ test_relaunch_appends_the_progress_note_to_the_instructions
 test_relaunch_requires_a_note_for_a_ship_task
 test_harness_switch_moves_the_record_and_clears_prior_wiring
 test_codex_relaunch_without_axes_refuses_before_stopping_the_agent
+test_codex_relaunch_with_unreceivable_effort_refuses_before_stopping_the_agent
 test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
