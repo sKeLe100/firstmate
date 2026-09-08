@@ -330,7 +330,7 @@ An agent launched onto a host with no memory left does not fail to start - it we
 `MemAvailable`, not `MemFree`, is the number, because the question is what a new workload can claim without swapping.
 
 Exit 2 - an unreadable `/proc/meminfo` or a malformed floor - means the reading could not be taken: the script itself still exits 2 and never reports `free`, and its callers treat that as disclosed uncertainty rather than pressure, noting the reason and proceeding. Only a `low` reading (exit 1) blocks a dispatch or a launch.
-Two callers enforce it: the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) pass's step 3 defers new dispatch while the host reads low, and `bin/fm-spawn.sh` refuses a local launch below the floor so a dispatch that bypassed the pass is still caught.
+Two callers enforce it: the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) pass's step 3 defers new dispatch while the host reads low, and `bin/fm-spawn.sh` refuses a local launch below the floor so a dispatch that bypassed the pass is still caught, except for `--relaunch`, which is exempt: a same-task replacement is net-neutral rather than new usage, and the reading there would be taken while the agent being replaced still holds its memory.
 A remote secondmate launch is not gated by it, because this reading says nothing about the host that launch lands on.
 
 ## Session context thresholds (config/context-thresholds)

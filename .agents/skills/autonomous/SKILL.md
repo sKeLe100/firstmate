@@ -187,7 +187,7 @@ reason and continue evaluating candidates normally rather than deferring
 dispatch. Only a `low` reading defers.
 When it reports `low`, defer every new dispatch this pass and record the
 host-memory reason; `bin/fm-spawn.sh` enforces the same floor at spawn time,
-so a candidate dispatched past this check is refused there anyway.
+so a candidate dispatched past this check is refused there anyway, except for a `--relaunch`, which is exempt because a same-task replacement is net-neutral and would be measured while the agent it replaces still holds its memory.
 
 ### Step 4 - Check the captain's attention window
 

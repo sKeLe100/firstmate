@@ -1726,7 +1726,6 @@ retry_halt_tasks() {
     [ "$(age_of "$stamp")" -ge "$interval" ] || return 0
     touch "$stamp"
   fi
-  retry_halt_promote_pending
   for marker in "$STATE"/.retry-halt-surfaced-*; do
     [ -e "$marker" ] || continue
     task=$(basename "$marker"); task="${task#.retry-halt-surfaced-}"
@@ -1752,30 +1751,28 @@ retry_halt_tasks() {
 # retry_halt_mark_surfaced: records the readings retry_halt_tasks reported as
 # PENDING delivery, once the wake carrying them is durably enqueued.
 #
-# Suppression waits for the drain, not the append: fm_wake_append dedupes queued
-# heartbeat rows under one key and keeps the last, so a later plain heartbeat can
-# replace a halt-bearing row that is still queued. Stamping the suppression
-# marker at append time would then record "the supervisor was told" for a reason
-# the supervisor never received. retry_halt_promote_pending turns pending into
-# the marker only once no halt-bearing row is left in the queue.
+# Suppression is safe at append time because the halt reason survives dedup:
+# fm_wake_append collapses queued heartbeat rows to the last one, so
+# heartbeat_reason_with_queued_halts carries any still-queued halt names into the
+# reason of every later heartbeat row. The row the supervisor is actually shown
+# therefore always names a halt that has not been drained yet.
 retry_halt_mark_surfaced() {
   local task count
   while IFS=$'\t' read -r task count; do
     [ -n "$task" ] || continue
-    printf '%s\t%s\n' "$task" "$count" >> "$STATE/.retry-halt-pending"
+    printf '%s\n' "$count" > "$STATE/.retry-halt-surfaced-$task"
   done <<< "${FM_HEARTBEAT_RETRY_HALT_MARKS:-}"
 }
 
-retry_halt_promote_pending() {
-  local pending task count
-  pending="$STATE/.retry-halt-pending"
-  [ -s "$pending" ] || { rm -f "$pending"; return 0; }
-  grep -q 'retry halt:' "${FM_WAKE_QUEUE:-$STATE/.wake-queue}" 2>/dev/null && return 0
-  while IFS=$'\t' read -r task count; do
-    [ -n "$task" ] || continue
-    printf '%s\n' "$count" > "$STATE/.retry-halt-surfaced-$task"
-  done < "$pending"
-  rm -f "$pending"
+heartbeat_reason_with_queued_halts() {
+  local names queued
+  names=${FM_HEARTBEAT_RETRY_HALT:-}
+  queued=$(sed -n 's/.*retry halt: \([^\t]*\).*/\1/p' \
+    "${FM_WAKE_QUEUE:-$STATE/.wake-queue}" 2>/dev/null | paste -sd, -)
+  [ -z "$queued" ] || names="${names:+$names,}$queued"
+  [ -n "$names" ] || { printf 'heartbeat\n'; return 0; }
+  names=$(printf '%s' "$names" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)
+  printf 'heartbeat: retry halt: %s\n' "$names"
 }
 
 heartbeat_scan_finds_actionable() {
@@ -2769,9 +2766,7 @@ EOF
       # this wake sends firstmate to the whole fleet, so every log is read.
       # A halt-band task is named in the reason because the whole point of
       # surfacing it is that nobody was going to run the helper unprompted.
-      hb_reason=heartbeat
-      [ -z "$FM_HEARTBEAT_RETRY_HALT" ] \
-        || hb_reason="heartbeat: retry halt: $FM_HEARTBEAT_RETRY_HALT"
+      hb_reason=$(heartbeat_reason_with_queued_halts)
       fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
       retry_halt_mark_surfaced
       touch "$STATE/.last-heartbeat"
@@ -2779,7 +2774,7 @@ EOF
       wake "$hb_reason"
     else
       if ! mark_all_captain_relevant_surfaced; then
-        fm_wake_append heartbeat heartbeat heartbeat || exit 1
+        fm_wake_append heartbeat heartbeat "$(heartbeat_reason_with_queued_halts)" || exit 1
         touch "$STATE/.last-heartbeat"
         wake "heartbeat"
       fi

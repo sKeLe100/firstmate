@@ -94,7 +94,6 @@ EOF2
 }
 test_unmeasurable_reading_allows_the_launch
 
-printf '# all fm-spawn-host-memory tests passed\n'
 
 test_relaunch_is_not_refused_by_the_floor() {
   local rec id out meminfo
@@ -117,3 +116,5 @@ EOF2
   pass "fm-spawn.sh: the host-memory floor does not refuse a --relaunch"
 }
 test_relaunch_is_not_refused_by_the_floor
+
+printf '# all fm-spawn-host-memory tests passed\n'
