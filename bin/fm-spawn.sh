@@ -47,7 +47,10 @@
 #   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
-#   from that harness's launch rather than guessed.
+#   from that harness's launch rather than guessed. codex is the exception: it
+#   silently bills its own expensive default when an axis is omitted, so a codex
+#   spawn or relaunch is REFUSED unless it names a model and an effort codex
+#   itself accepts (max is not one of them). A raw launch command is exempt.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then

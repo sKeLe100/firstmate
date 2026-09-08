@@ -15,11 +15,21 @@
 # bundled model catalog advertises low|medium|high|xhigh. max is deliberately
 # absent: codex does not advertise it, so it reaches no flag at all.
 
+CODEX_EFFORT_TIERS="low medium high xhigh"
+
 codex_effort_supported() {
-  case "${1:-}" in
-    low|medium|high|xhigh) return 0 ;;
-  esac
+  local candidate=${1:-} tier
+  [ -n "$candidate" ] || return 1
+  for tier in $CODEX_EFFORT_TIERS; do
+    [ "$candidate" != "$tier" ] || return 0
+  done
   return 1
+}
+
+# The tiers as an operator-facing list, so a diagnostic never spells out a
+# second copy that can drift from the one above.
+codex_effort_tiers_phrase() {
+  printf '%s' "${CODEX_EFFORT_TIERS// /, }"
 }
 
 # A codex launch is fully resolved only when BOTH axes name something codex

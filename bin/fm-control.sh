@@ -35,7 +35,9 @@
 #              SAME endpoint and SAME worktree, on the same or a newly chosen
 #              harness/model/effort - so switching harness is one ordinary use
 #              of this verb. An explicit `default` model or effort clears that
-#              axis for the replacement. With no explicit axis, a secondmate
+#              axis for the replacement, except on codex, which requires an
+#              explicit model plus an effort its own CLI accepts and refuses
+#              the relaunch BEFORE the running agent is stopped otherwise. With no explicit axis, a secondmate
 #              re-resolves its durable config/secondmate-harness pin (harness
 #              plus its optional model and effort tokens) exactly as any other
 #              respawn does, while a ship or scout keeps the exact adapter
@@ -695,7 +697,7 @@ resolve_relaunch_profile() {
   # the transaction, where nothing has changed yet.
   if [ "$TARGET_HARNESS" = codex ] \
      && ! codex_axes_resolved "$TARGET_MODEL" "$TARGET_EFFORT"; then
-    die "relaunching $ID onto codex resolves no model/effort codex actually receives (model=$TARGET_MODEL effort=$TARGET_EFFORT), so the launch would be refused after the running agent had already been stopped; pass --model and --effort explicitly, with an effort of low, medium, high, or xhigh"
+    die "relaunching $ID onto codex resolves no model/effort codex actually receives (model=$TARGET_MODEL effort=$TARGET_EFFORT), so the launch would be refused after the running agent had already been stopped; pass --model and --effort explicitly, with an effort of $(codex_effort_tiers_phrase)"
   fi
 }
 
