@@ -71,14 +71,6 @@
 # the knob from and idle can never contribute, so ttl_seconds reports "n/a"
 # rather than a resolved value that could not have been used.
 #
-# This closes the size-only gap this header used to flag: an earlier version
-# of this script noted a queued-separately "autocompact-wake" mechanism that
-# might decide idle timing instead. As of this change no such mechanism has
-# shipped anywhere in this repo (checked before writing this: no
-# autocompact-wake reference exists outside this file's own history), so this
-# script is now the one place idle-vs-TTL feeds the resume verdict, reusing
-# fm-cache-ttl-lib.sh's fold rather than duplicating it.
-#
 # verdict=restart-with-carryover means: do not bare-resume this session.
 # Checkpoint its durable state and bring it back through the existing
 # carryover-restart mechanics already owned elsewhere - bin/fm-control.sh
@@ -94,7 +86,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,93p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,85p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
