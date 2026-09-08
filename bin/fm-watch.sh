@@ -1737,19 +1737,31 @@ retry_halt_tasks() {
     out=$(retry_pressure_read "$reader" "$task") || continue
     band=${out##* retry_band=}; band=${band%% *}
     [ "$band" = halt ] || { rm -f "$STATE/.retry-halt-surfaced-$task"; continue; }
+    case "$out" in *relaunches=*) ;; *) continue ;; esac
     count=${out##*relaunches=}; count=${count%% *}
-    case "$count" in ''|*[!0-9]*) count=0 ;; esac
+    case "$count" in ''|*[!0-9]*) continue ;; esac
     marker="$STATE/.retry-halt-surfaced-$task"
     [ "$(cat "$marker" 2>/dev/null || true)" = "$count" ] && continue
-    printf '%s\n' "$count" > "$marker"
-    printf '%s\n' "$task"
+    printf '%s\t%s\n' "$task" "$count"
   done
+}
+
+# retry_halt_mark_surfaced: stamps the suppression markers for the readings
+# retry_halt_tasks reported, and is called only after the wake carrying them is
+# durably enqueued, so a refused append leaves the halt still unsurfaced.
+retry_halt_mark_surfaced() {
+  local task count
+  while IFS=$'\t' read -r task count; do
+    [ -n "$task" ] || continue
+    printf '%s\n' "$count" > "$STATE/.retry-halt-surfaced-$task"
+  done <<< "${FM_HEARTBEAT_RETRY_HALT_MARKS:-}"
 }
 
 heartbeat_scan_finds_actionable() {
   local f task record rest endpoint ident rc found=1 sig marker
   FM_HEARTBEAT_SURFACE_ENDPOINTS=''
   FM_HEARTBEAT_RETRY_HALT=''
+  FM_HEARTBEAT_RETRY_HALT_MARKS=''
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
@@ -1768,7 +1780,8 @@ heartbeat_scan_finds_actionable() {
     FM_HEARTBEAT_SURFACE_ENDPOINTS="${FM_HEARTBEAT_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
     [ "$rc" -eq 0 ] && found=0
   done
-  FM_HEARTBEAT_RETRY_HALT=$(retry_halt_tasks | paste -sd, -)
+  FM_HEARTBEAT_RETRY_HALT_MARKS=$(retry_halt_tasks)
+  FM_HEARTBEAT_RETRY_HALT=$(printf '%s' "$FM_HEARTBEAT_RETRY_HALT_MARKS" | cut -f1 | paste -sd, -)
   [ -n "$FM_HEARTBEAT_RETRY_HALT" ] && found=0
   return "$found"
 }
@@ -2739,6 +2752,7 @@ EOF
       [ -z "$FM_HEARTBEAT_RETRY_HALT" ] \
         || hb_reason="heartbeat (retry halt: $FM_HEARTBEAT_RETRY_HALT)"
       fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
+      retry_halt_mark_surfaced
       touch "$STATE/.last-heartbeat"
       mark_all_captain_relevant_surfaced || true
       wake "$hb_reason"

@@ -290,13 +290,15 @@ live one. Keep step 1 where it is and read this snapshot here.
 Each row carries a `gate` of `dispatchable`, `blocked`, `captain`, or
 `deferred-until <date>`, and an `autonomy` of `autonomous-eligible`,
 `captain-gated`, or `unclear`, both derived from that row's own fields.
-Dispatch rows where `gate` is `dispatchable` AND `autonomy` is
-`autonomous-eligible`, in the order the snapshot returns them, up to the
-headroom step 3 found, following the normal dispatch lifecycle.
-Never re-derive either verdict from a row's title or your own reading of it,
-and never widen the filter: `captain-gated` and `unclear` are captain
-questions, not dispatchable work, so this step cannot dispatch work that
+Dispatch rows where `gate` is `dispatchable`, in the order the snapshot
+returns them, up to the headroom step 3 found, following the normal dispatch
+lifecycle.
+That single condition is sufficient because the snapshot already folds
+autonomy into the gate: a row is only `dispatchable` when its `autonomy` is
+neither `captain-gated` nor `unclear`, so this step cannot dispatch work that
 requires a captain decision.
+Never re-derive either verdict from a row's title or your own reading of it,
+and never widen the filter.
 When step 3 found no headroom - the cap, the PC02 lane, or the host-memory
 floor - leave the eligible rows queued and record them below instead.
 
@@ -391,13 +393,19 @@ A planning scout is a task dispatched through the senior tier that
 requires the captain to review and approve the plan before execution.
 Check `bin/fm-captain-window.sh` before dispatching a planning scout:
 it prints `band=<band> offer=yes|no`, and the daytime test here reads
-`band`, not `offer` - dispatch a planning scout when `band` is
-`working`, `lunch`, or `evening`, and queue it for the next morning
-pass when `band` is `quiet` (the overnight window) or `offhours`.
+`band`, not `offer` - queue a planning scout only when `band` is
+`quiet`, and dispatch it on every other band (`working`, `lunch`,
+`evening`, `offhours`).
+`quiet` is the one band that means the captain is unreachable overnight,
+which is exactly what this restriction is for; `offhours` is an offer
+window (`offer=yes`) where the captain is contactable, and `working` is
+daylight with `offer=no`, which is why `band` rather than `offer` is the
+right predicate here.
 
-Overnight, ambiguous items wait for the morning pass.
-A morning pass is the first `/autonomous` invocation after the
-captain's attention window opens (per `bin/fm-captain-window.sh`).
+Overnight, ambiguous items wait out the quiet window and go on the
+morning pass.
+A morning pass is the first `/autonomous` invocation after the quiet
+window ends (per `bin/fm-captain-window.sh`).
 Ambiguous items are tasks where the 3-part test is uncertain or
 where classification gate requires captain judgment.
 
