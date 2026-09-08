@@ -323,7 +323,6 @@ Both surfaces are read, never derived: the lane states come from the fleet view 
 
 `config/host-memory-floor` is an optional local, gitignored, primary-authoritative file holding one bare positive base-10 integer of MiB, the `config/dispatch-cap` idiom: the file must contain exactly that integer and one trailing newline, and an absent file means the built-in default of **3072**.
 A malformed value is rejected rather than treated as the default.
-The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`); a secondmate placed on another machine reads its own host's memory against the floor it inherits, which is the intended behavior since the floor is a policy and the reading is per host.
 
 It exists because the dispatch cap and the PC02 lane guard are quota and lane accounting and neither knows what the machine can carry.
 An agent launched onto a host with no memory left does not fail to start - it wedges mid-run and takes its pipeline with it, which is what happened to the 2026-09-08 `codex-phase1b-spawn-guards` test step on a 14 GB host with 3 GB available.

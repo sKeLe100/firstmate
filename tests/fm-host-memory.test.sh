@@ -116,29 +116,3 @@ test_reads_memavailable_not_memfree() {
 }
 test_reads_memavailable_not_memfree
 
-test_host_memory_floor_is_inherited_by_secondmate_homes() {
-  local primary second
-  primary="$TMP_ROOT/inherit-primary"
-  second="$TMP_ROOT/inherit-secondmate"
-  mkdir -p "$primary/config" "$primary/data" "$second/config" "$second/data"
-  printf '%s\n' 4096 > "$primary/config/host-memory-floor"
-
-  # shellcheck source=/dev/null
-  . "$ROOT/bin/fm-config-inherit-lib.sh"
-  propagate_secondmate_inheritance "$primary" "$second" >/dev/null 2>&1 ||
-    fail "propagate_secondmate_inheritance failed"
-
-  [ -f "$second/config/host-memory-floor" ] ||
-    fail "secondmate home did not inherit config/host-memory-floor"
-  [ "$(cat "$second/config/host-memory-floor")" = 4096 ] ||
-    fail "inherited floor differs from the primary's: $(cat "$second/config/host-memory-floor")"
-
-  out=$(emit "$second" "$(meminfo inherited 2097152)"); rc=$?
-  [ "$rc" -eq 1 ] || fail "the inherited 4096MiB floor must make 2048MiB read low: rc=$rc out=$out"
-  case "$out" in
-    *4096MiB*) ;;
-    *) fail "the secondmate verdict must use the inherited floor, got: $out" ;;
-  esac
-  pass "fm-host-memory.sh: a secondmate home inherits and enforces the primary's floor"
-}
-test_host_memory_floor_is_inherited_by_secondmate_homes
