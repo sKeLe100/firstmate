@@ -461,7 +461,7 @@ printf '%s\n' '- crlf-proj [direct-PR +yolo] - test project (added 2026-08-20)' 
 run_snapshot "$home" > "$TMP_ROOT/line-endings.out"
 carriage=$(grep -c $'\r' "$TMP_ROOT/line-endings.out") || true
 [ "$carriage" = 0 ] || fail "the snapshot emitted CR characters: $(cat -A "$TMP_ROOT/line-endings.out")"
-reason_field=$(grep ',crlf-a,' "$TMP_ROOT/line-endings.out" | sed 's/,[^,]*$//; s/,[^,]*$//; s/.*,//')
+reason_field=$(grep ',crlf-a,' "$TMP_ROOT/line-endings.out" | sed 's/,[^,]*$//; s/,[^,]*$//; s/,[^,]*$//; s/.*,//')
 [ "$reason_field" = "captain kind or captain-kind hold" ] \
   || fail "autonomy_reason was not the documented value: [$reason_field]"
 case "$(cat "$TMP_ROOT/line-endings.out")" in
@@ -1011,6 +1011,66 @@ out=$(run_snapshot "$home" --priority)
 case "$out" in
   *"priority_analysis: priority_meaningful: no (0/0 items have priority, 0%)"*) ;;
   *) fail "empty queue did not report 0/0, 0% without dividing by zero: $out" ;;
+esac
+
+# 20. rot is yes only for a dispatchable item that is both unprioritized and
+#     old enough (>= ROT_MIN_AGE_DAYS, reusing the autonomous skill's
+#     deferred-ready >24h convention); a blocked item, a held/captain-gated
+#     item, a prioritized item, a fresh item, and an item with no created
+#     date are all rot=no even though some of them are otherwise old and
+#     unprioritized. --now pins "today" for the colocated test.
+home=$(make_home rot-flag)
+printf '%s\n' '- rot-proj [direct-PR +yolo] - test project (added 2026-08-20)' \
+  > "$home/data/projects.md"
+cat > "$stub_dir/tasks-axi" <<'STUB'
+#!/usr/bin/env bash
+cat <<'OUT'
+count: 6
+tasks[6]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created}:
+  rot-old,queued,ship,rot-proj,rotting stale item,no,none,no,"-","-","-","-",2026-08-20
+  rot-prioritized,queued,ship,rot-proj,prioritized old item,no,none,no,"-","-","-","2",2026-08-20
+  rot-blocked,queued,ship,rot-proj,blocked old item,yes,rot-old,no,"-","-","-","-",2026-08-20
+  rot-held,queued,ship,rot-proj,held old item,no,none,yes,captain,"needs a call","-","-",2026-08-20
+  rot-fresh,queued,ship,rot-proj,fresh item,no,none,no,"-","-","-","-",2026-09-08
+  rot-nodate,queued,ship,rot-proj,no date item,no,none,no,"-","-","-","-",
+OUT
+STUB
+chmod +x "$stub_dir/tasks-axi"
+out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$stub_dir" "$SNAPSHOT" --now 2026-09-08)
+case "$out" in
+  *"rot-old,rotting stale item,ship,rot-proj,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,dispatchable,2026-08-20,yes"*) ;;
+  *) fail "an old, unprioritized, dispatchable item was not flagged rot=yes: $out" ;;
+esac
+case "$out" in
+  *"rot-prioritized,prioritized old item,ship,rot-proj,2,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,dispatchable,2026-08-20,no"*) ;;
+  *) fail "a prioritized old item was still flagged rot=yes: $out" ;;
+esac
+case "$out" in
+  *"rot-blocked,blocked old item,ship,rot-proj,-,yes,rot-old,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,blocked,2026-08-20,no"*) ;;
+  *) fail "a blocked old unprioritized item was still flagged rot=yes: $out" ;;
+esac
+case "$out" in
+  *"rot-held,held old item,ship,rot-proj,-,no,none,yes,captain,needs a call,-,direct-PR on,captain-gated,captain kind or captain-kind hold,captain,2026-08-20,no"*) ;;
+  *) fail "a held old unprioritized item was still flagged rot=yes: $out" ;;
+esac
+case "$out" in
+  *"rot-fresh,fresh item,ship,rot-proj,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,dispatchable,2026-09-08,no"*) ;;
+  *) fail "a freshly created item was flagged rot=yes: $out" ;;
+esac
+case "$out" in
+  *"rot-nodate,no date item,ship,rot-proj,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,dispatchable,,no"*) ;;
+  *) fail "an item with no created date was flagged rot=yes instead of an honest no: $out" ;;
+esac
+
+# 21. A malformed --now value is rejected loudly with exit 2, matching the
+#     --limit validation contract, rather than silently falling back to the
+#     real system date.
+err=$(run_snapshot "$home" --now "not-a-date" 2>&1)
+rc=$?
+[ "$rc" = 2 ] || fail "--now 'not-a-date' exited $rc, expected 2 (output: $err)"
+case "$err" in
+  *"YYYY-MM-DD"*) ;;
+  *) fail "--now 'not-a-date' gave no usable error message: $err" ;;
 esac
 
 echo "PASS fm-queue-snapshot.test.sh"

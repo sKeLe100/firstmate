@@ -26,6 +26,19 @@
 #               empty/"-") AND no id-prefix project inference (below)
 #               resolved one either, the one case this script cannot resolve
 #               deterministically.
+#   rot       - yes/no. yes when this row's own `gate` is "dispatchable" (so
+#               it is already known neither blocked nor held), its `priority`
+#               is unset ("-"), and `created` is at least ROT_MIN_AGE_DAYS
+#               days old; no otherwise, including when `created` is empty
+#               (age cannot be assessed, so it is never guessed rotten).
+#               ROT_MIN_AGE_DAYS reuses the ">24 hours" deferred-ready
+#               staleness convention the `autonomous` skill already applies
+#               to eligible-but-undispatched items (see its "deferred-ready"
+#               section), rounded to one full calendar day since this row's
+#               age is itself only day-granular - not a new invented number.
+#               This flags a stale, unprioritized, dispatchable item so it
+#               does not sit unnoticed; it never changes gate, autonomy, or
+#               any backlog data.
 #
 # When repo is empty/"-", this script also asks bin/fm-project-mode.sh
 # --infer-project-from-id whether the item's own id names a registered
@@ -79,7 +92,11 @@
 # threshold at which the priority sort stops being a meaningful signal
 # rather than an artifact of a handful of manually-tagged items.
 #
-# Usage: fm-queue-snapshot.sh [--limit N] [--priority]   (default N=30)
+# Usage: fm-queue-snapshot.sh [--limit N] [--priority] [--now YYYY-MM-DD]
+#   (default N=30)
+#   --now is for the colocated test only; without it the `rot` field's age
+#   check reads the real system date, matching the --now convention
+#   bin/fm-captain-window.sh already uses for the same reason.
 #
 # By default `rank` orders the full queued set by gate class first
 # (dispatchable, blocked, captain, deferred-until, in that order - the same
@@ -106,11 +123,12 @@
 #     smaller than the total number of queued items tasks-axi returned), so a
 #     capped listing is never mistaken for the whole queue; absent entirely
 #     when nothing was truncated --
-#   items[<n>]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,gate,created}:
+#   items[<n>]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,gate,created,rot}:
 #     <csv row>...
 #     `created` is tasks-axi's own item-creation date (empty string if tasks-axi
 #     reports none for that item) - carried through unmodified, never
 #     reformatted or age-computed here; the caller derives age from it.
+#     `rot` is the derived yes/no verdict documented above.
 #     `gate` is a deterministic gate-class verdict for grouping the list -
 #     "dispatchable", "blocked", "captain", or "deferred-until <date>" (using
 #     the item's own `hold_until` verbatim) - derived, never guessed, from
@@ -196,6 +214,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 LIMIT=30
 SORT_MODE=gate
+NOW_OVERRIDE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --limit)
@@ -215,6 +234,17 @@ while [ $# -gt 0 ]; do
     --priority)
       SORT_MODE=priority
       shift
+      ;;
+    --now)
+      NOW_OVERRIDE="${2:?--now needs a value}"
+      case "$NOW_OVERRIDE" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+        *)
+          echo "fm-queue-snapshot: --now needs YYYY-MM-DD, got: $NOW_OVERRIDE" >&2
+          exit 2
+          ;;
+      esac
+      shift 2
       ;;
     *)
       echo "fm-queue-snapshot: unknown argument: $1" >&2
@@ -275,6 +305,7 @@ FM_QUEUE_LIMIT="$LIMIT" \
 FM_QUEUE_SORT_MODE="$SORT_MODE" \
 FM_QUEUE_CFG="$CFG" \
 FM_QUEUE_STATE_DIR="$FM_HOME/state" \
+FM_QUEUE_NOW="$NOW_OVERRIDE" \
 python3 - "$TMP_LIST" <<'PY'
 import csv
 import glob
@@ -283,6 +314,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import date
 
 project_mode_bin = os.environ["FM_QUEUE_PROJECT_MODE_BIN"]
 dispatch_status = os.environ["FM_QUEUE_DISPATCH_STATUS"]
@@ -290,6 +322,14 @@ limit = int(os.environ["FM_QUEUE_LIMIT"])
 sort_mode = os.environ["FM_QUEUE_SORT_MODE"]
 cfg_path = os.environ["FM_QUEUE_CFG"]
 state_dir = os.environ["FM_QUEUE_STATE_DIR"]
+now_override = os.environ["FM_QUEUE_NOW"]
+
+# Reuses the >24-hour deferred-ready staleness convention from the
+# `autonomous` skill (see fm-queue-snapshot.sh's header) rounded to one full
+# calendar day, since `created` and the age this script derives from it are
+# both day-granular.
+ROT_MIN_AGE_DAYS = 1
+today = date.fromisoformat(now_override) if now_override else date.today()
 
 TOON_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", '"': '"'}
 
@@ -460,7 +500,15 @@ for r in rows:
         gate = "captain"
     else:
         gate = "dispatchable"
-    enriched.append((r, repo, posture, autonomy, reason, gate))
+    rot = "no"
+    if gate == "dispatchable" and r["priority"] in ("", "-") and r["created"]:
+        try:
+            age_days = (today - date.fromisoformat(r["created"])).days
+        except ValueError:
+            age_days = 0
+        if age_days >= ROT_MIN_AGE_DAYS:
+            rot = "yes"
+    enriched.append((r, repo, posture, autonomy, reason, gate, rot))
 
 if sort_mode == "priority":
     # Stable sort by descending priority; equal-priority items (including
@@ -492,14 +540,14 @@ ranked_enriched = sorted_enriched[:limit]
 hidden_rows_src = [e[0] for e in sorted_enriched[limit:]]
 
 out_rows = []
-for rank, (r, repo, posture, autonomy, reason, gate) in enumerate(
+for rank, (r, repo, posture, autonomy, reason, gate, rot) in enumerate(
     ranked_enriched, start=1
 ):
     out_rows.append([
         rank, r["id"], r["title"], r["kind"], repo, r["priority"],
         r["blocked"], r["blocked_by"], r["held"], r["hold_kind"],
         r["hold_reason"], r["hold_until"], posture, autonomy, reason,
-        gate, r["created"],
+        gate, r["created"], rot,
     ])
 
 print(f"count: {len(out_rows)}")
@@ -508,7 +556,7 @@ if len(out_rows) < len(rows):
 if out_rows:
     cols = ("rank,id,title,kind,repo,priority,blocked,blocked_by,held,"
             "hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,"
-            "gate,created")
+            "gate,created,rot")
     print(f"items[{len(out_rows)}]{{{cols}}}:")
     writer = csv.writer(sys.stdout, lineterminator="\n")
     for row in out_rows:
