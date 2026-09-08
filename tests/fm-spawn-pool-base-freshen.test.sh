@@ -56,7 +56,7 @@ run_spawn() {
   local id=$1
   shift
   fm_test_run_spawn "$HOME_DIR" "$POOL_DIR" "$FAKEBIN_DIR" \
-    "$id" "$PROJECT_DIR" "$@"
+    "$id" "$PROJECT_DIR" --model big-model --effort high "$@"
 }
 
 test_linked_spawning_home_rejects_primary_before_refresh() {
