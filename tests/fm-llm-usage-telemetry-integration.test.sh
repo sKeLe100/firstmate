@@ -313,7 +313,7 @@ test_real_relaunch_records_delegation_event() {
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
     FM_SPAWN_NO_GUARD=1 \
     FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
-    "$CONTROL" "$task_id" relaunch --harness codex \
+    "$CONTROL" "$task_id" relaunch --harness codex --model gpt-5 --effort high \
       --note "claude produced a broken patch three times in a row" 2>&1)
   local rc=$?
   [ "$rc" -eq 0 ] || fail "relaunch failed: $out"
@@ -371,7 +371,7 @@ test_rolled_back_relaunch_journal_does_not_claim_a_relaunch() {
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
     FM_SPAWN_NO_GUARD=1 \
     FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
-    "$CONTROL" "$task_id" relaunch --harness codex \
+    "$CONTROL" "$task_id" relaunch --harness codex --model gpt-5 --effort high \
       --note "trying codex" 2>&1)
   local rc=$?
   [ "$rc" -ne 0 ] || fail "the relaunch should have failed when the replacement never came up: $out"
