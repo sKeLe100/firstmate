@@ -1,0 +1,30 @@
+=== fm-returning-session-check.sh: idle-aware cold-resume verdict ===
+
+--- 1) warn-band session, no state-dir given: idle unknown, ttl n/a, bare resume (pre-change behavior) ---
+$ fm-returning-session-check.sh /tmp/tmp.5TK3VjORwh/warn_home
+verdict=resume band=warn context_tokens=160000 restart_tokens=250000 idle_seconds=unknown ttl_seconds=n/a transcript=<tmp>/ch/.claude/projects/-tmp-tmp-5TK3VjORwh-warn-home/session.jsonl
+
+--- 2) warn-band session idle 4000s > default TTL 3600s -> restart-with-carryover ---
+$ fm-returning-session-check.sh /tmp/tmp.5TK3VjORwh/warn_home /tmp/tmp.5TK3VjORwh/fm/state coldtask
+verdict=restart-with-carryover band=warn context_tokens=160000 restart_tokens=250000 idle_seconds=4000 ttl_seconds=3600 transcript=<tmp>/ch/.claude/projects/-tmp-tmp-5TK3VjORwh-warn-home/session.jsonl
+
+--- 3) same warn-band session, idle 100s (within TTL) -> bare resume ---
+$ fm-returning-session-check.sh /tmp/tmp.5TK3VjORwh/warn_home /tmp/tmp.5TK3VjORwh/fm/state warmtask
+verdict=resume band=warn context_tokens=160000 restart_tokens=250000 idle_seconds=100 ttl_seconds=3600 transcript=<tmp>/ch/.claude/projects/-tmp-tmp-5TK3VjORwh-warn-home/session.jsonl
+
+--- 4) band=ok never restarts on idle alone (idle ~999999s) ---
+$ fm-returning-session-check.sh /tmp/tmp.5TK3VjORwh/ok_home /tmp/tmp.5TK3VjORwh/fm/state oldtask
+verdict=resume band=ok context_tokens=50000 restart_tokens=250000 idle_seconds=999999 ttl_seconds=3600 transcript=<tmp>/ch/.claude/projects/-tmp-tmp-5TK3VjORwh-ok-home/session.jsonl
+
+--- 5) band=restart still restarts regardless of fresh idle ---
+$ fm-returning-session-check.sh /tmp/tmp.5TK3VjORwh/hot_home /tmp/tmp.5TK3VjORwh/fm/state warmtask
+verdict=restart-with-carryover band=restart context_tokens=260000 restart_tokens=250000 idle_seconds=100 ttl_seconds=3600 transcript=<tmp>/ch/.claude/projects/-tmp-tmp-5TK3VjORwh-hot-home/session.jsonl
+
+--- 6) firstmate's own config/cache-ttl-seconds=600 honored (idle 1000s > 600) ---
+$ fm-returning-session-check.sh /tmp/tmp.5TK3VjORwh/warn_home /tmp/tmp.5TK3VjORwh/fm/state knobtask
+verdict=restart-with-carryover band=warn context_tokens=160000 restart_tokens=250000 idle_seconds=1000 ttl_seconds=600 transcript=<tmp>/ch/.claude/projects/-tmp-tmp-5TK3VjORwh-warn-home/session.jsonl
+
+--- 7) disabled TTL (cache-ttl-seconds=0) never contributes idle ---
+$ fm-returning-session-check.sh /tmp/tmp.5TK3VjORwh/warn_home /tmp/tmp.5TK3VjORwh/fm/state coldtask
+verdict=resume band=warn context_tokens=160000 restart_tokens=250000 idle_seconds=4000 ttl_seconds=0 transcript=<tmp>/ch/.claude/projects/-tmp-tmp-5TK3VjORwh-warn-home/session.jsonl
+
