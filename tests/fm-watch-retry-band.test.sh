@@ -97,6 +97,8 @@ test_heartbeat_names_a_halt_band_task() {
     "the heartbeat wake reason must name the halt-band task"
   assert_grep "retry halt: grinder" "$state/.wake-queue" \
     "the durable wake record must carry the halt-band task too"
+  grep -Eq '^(signal:|stale:|check:|heartbeat($|:))' "$out" \
+    || fail "the emitted wake reason left the reason grammar every consumer parses: $(cat "$out")"
   pass "a halt-band task makes an otherwise-quiet heartbeat actionable and is named in the reason"
 }
 test_heartbeat_names_a_halt_band_task

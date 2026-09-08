@@ -2748,7 +2748,7 @@ EOF
       # surfacing it is that nobody was going to run the helper unprompted.
       hb_reason=heartbeat
       [ -z "$FM_HEARTBEAT_RETRY_HALT" ] \
-        || hb_reason="heartbeat (retry halt: $FM_HEARTBEAT_RETRY_HALT)"
+        || hb_reason="heartbeat: retry halt: $FM_HEARTBEAT_RETRY_HALT"
       fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
       retry_halt_mark_surfaced
       touch "$STATE/.last-heartbeat"
