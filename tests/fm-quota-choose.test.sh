@@ -33,7 +33,6 @@ MUSE_POSITIVE="$LAB/muse-positive.json"
 UNKNOWN_PACE="$LAB/unknown-pace.json"
 PLACEHOLDER_TOON="$LAB/placeholder-quota.toon"
 UNKNOWN_CONFIDENCE_TOON="$LAB/unknown-confidence-quota.toon"
-UNKNOWN_CONFIDENCE_JSON="$LAB/unknown-confidence.json"
 TOON="$LAB/quota.toon"
 RENDERER_TOON="$LAB/renderer-quota.toon"
 EMPTY_TOON="$LAB/empty-quota.toon"
@@ -462,38 +461,6 @@ if out=$(call_choose --snapshot "$UNKNOWN_CONFIDENCE_TOON" --candidate codex:gpt
 fi
 [ "$out" = "none" ] || fail "TOON unknown confidence returned: $out"
 ok "TOON unknown confidence fails closed (placeholder detection)"
-
-# A JSON snapshot with unknown window confidence also fails closed, even when
-# the pace reason is not set to future_cycle_start - the window's confidence
-# field independently flags the unmeasurable window.
-jq '(.providers[] | select(.provider == "codex")) = {
-      provider: "codex",
-      windows: [{
-        id: "weekly",
-        kind: "weekly",
-        resetsAt: "2030-01-08T00:00:00Z",
-        windowSeconds: 604800,
-        percentRemaining: 100,
-        pace: {status: "ahead"}
-      }],
-      quotaSemantics: {
-        status: "known",
-        effectiveAvailability: [{
-          scope: "all_models",
-          status: "known",
-          effectivePercentRemaining: 100,
-          boundedBy: ["weekly"],
-          runway: {status: "through_reset"}
-        }]
-      }
-    }' "$LAB/captured.json" > "$UNKNOWN_CONFIDENCE_JSON"
-jq '(.providers[] | select(.provider == "codex") | .windows[0].confidence) = "unknown"' \
-  "$UNKNOWN_CONFIDENCE_JSON" > "$UNKNOWN_CONFIDENCE_JSON.tmp" && mv "$UNKNOWN_CONFIDENCE_JSON.tmp" "$UNKNOWN_CONFIDENCE_JSON"
-if out=$(call_choose --snapshot "$UNKNOWN_CONFIDENCE_JSON" --candidate codex:gpt-5.6-terra 2>/dev/null); then
-  fail "JSON unknown window confidence unexpectedly dispatched"
-fi
-[ "$out" = "none" ] || fail "JSON unknown window confidence returned: $out"
-ok "JSON unknown window confidence fails closed (placeholder detection)"
 
 printf 'garbage\n' > "$LEADING_GARBAGE_NONZERO_TOON"
 cat "$TOON" >> "$LEADING_GARBAGE_NONZERO_TOON"
