@@ -128,7 +128,7 @@ Main can read the durable outcome store on demand through its `fm_branch_outcome
 ## Heartbeat routing
 
 The cheap bash-level heartbeat scan absorbs a genuinely no-op pass before it reaches Pi, unchanged from before.
-Only a scan already flagged as possibly captain-relevant emits the bare `heartbeat` wake; `.pi/extensions/fm-primary-pi-watch.ts` flags that offer `heartbeat: true`, and the branch accepts it without a project only when every branch-ownable row observed in the unread-queue eligibility check is either heartbeat-kind or a resolvable task-local signal or stale event.
+Only a scan already flagged as possibly captain-relevant emits a `heartbeat` wake (bare; a retry-halt reading is instead carried on a `check: retry halt: <tasks>` reason, which the branch does not claim as a heartbeat); `.pi/extensions/fm-primary-pi-watch.ts` flags that offer `heartbeat: true`, and the branch accepts it without a project only when every branch-ownable row observed in the unread-queue eligibility check is either heartbeat-kind or a resolvable task-local signal or stale event.
 
 A heartbeat is never vetoed or ridden into main by a co-present check row or decision-owned signal/stale row.
 Those rows are permanently main-owned in every mode: they are excluded from what the branch may claim and left queued for main, which is woken for each on its own watcher cycle, so nothing starves by being left behind.

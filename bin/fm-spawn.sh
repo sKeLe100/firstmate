@@ -1717,6 +1717,37 @@ fi
 
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 
+# Host-memory floor: neither the dispatch cap nor the PC02 lane guard knows
+# what this machine can carry, and an agent launched with no memory left wedges
+# mid-run instead of failing to start. bin/fm-host-memory.sh owns the reading
+# and the floor; only a proven low reading (exit 1) refuses a launch, while
+# exit 2 (unreadable /proc/meminfo, malformed floor) is disclosed uncertainty
+# that is noted and proceeds, the same direction the /autonomous pass takes.
+# Local launches only: a remote secondmate runs on another host, whose memory
+# this reading says nothing about, and that path never reaches here.
+# A --relaunch is exempt: it replaces one agent with another for the same task,
+# so it is net-neutral rather than new usage, and the reading here would be taken
+# while the agent being replaced still holds its memory - refusing exactly the
+# recovery relaunch a low-memory wedge needs.
+host_memory_guard() {  # <task-id>: 0 unless this host is provably below the floor
+  local id=$1 out rc
+  out=$("$SCRIPT_DIR/fm-host-memory.sh" 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  # Only a proven low reading blocks a launch. Any other nonzero rc means the
+  # helper could not measure this host at all (no /proc/meminfo on macOS, a
+  # malformed floor); that is disclosed uncertainty, not evidence of pressure,
+  # so it is noted and the launch proceeds.
+  if [ "$rc" -ne 1 ]; then
+    echo "note: host memory floor not enforced: $out" >&2
+    return 0
+  fi
+  echo "error: host memory floor: $out; refusing to launch task '$id' onto a host that cannot carry another agent - free memory on this host (quiesce another lane) or lower config/host-memory-floor" >&2
+  return 1
+}
+
+[ "$RELAUNCH" -eq 1 ] || host_memory_guard "$ID" || exit 1
+
 secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"
 }

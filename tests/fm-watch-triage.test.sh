@@ -14,7 +14,9 @@
 #
 # Daemon-side classification/injection lives in fm-daemon.test.sh; watcher/lock
 # liveness in fm-watcher-lock.test.sh; the durable-queue safety matrix in
-# fm-wake-queue.test.sh.
+# fm-wake-queue.test.sh; the heartbeat's retry-band reader in
+# fm-watch-retry-band.test.sh (split out to keep this file under the
+# per-file runtime cap).
 set -u
 
 # shellcheck source=tests/wake-helpers.sh

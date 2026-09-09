@@ -69,6 +69,11 @@
 #                          and has not been surfaced yet; reported once per
 #                          captured generation, never again while that record
 #                          stays queued and never once it is acknowledged
+#   check: retry halt: <tasks>
+#                          bin/fm-retry-pressure.sh reads these tasks at
+#                          retry_band=halt and the reading has not been
+#                          surfaced yet; carried forward onto every later
+#                          heartbeat row until the queue is drained
 #   check: rejected unauthenticated state checks: <paths>
 #                          unsafe state checks were refused without execution
 #   check: rejected unauthenticated PR poll retirement receipts: <paths>
@@ -106,6 +111,8 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/fm-push-transition-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # Single owner of durable merge-outcome publication, shared with
 # bin/fm-pr-merge.sh so self and poll origins use the same role-routed outcome.
 # The watcher still owns immediate delivery of its actionable poll result and
@@ -1684,9 +1691,124 @@ EOF
 # surfaced when it wakes firstmate, this normally finds nothing and the heartbeat
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
+# retry_pressure_read: one time-bounded invocation of the retry-pressure helper.
+retry_pressure_read() {  # <reader> <task>
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    fm_run_timed 10 "$1" "$2" 2>/dev/null </dev/null
+}
+
+# retry_halt_tasks: names every task bin/fm-retry-pressure.sh currently reports
+# at retry_band=halt whose reading has not been surfaced yet, one per line.
+#
+# Why here: the context band already reaches supervision on its own through this
+# watcher, while retry pressure - the repetition-driven failure the context band
+# cannot sense - was specified as a heartbeat duty in AGENTS.md with no reader
+# anywhere in the tree, so a task past its relaunch ceiling stayed invisible
+# until someone thought to run the helper by hand. This is that reader, beside
+# the context-band read it mirrors.
+#
+# Surfacing is per reading, not per poll: the marker holds the relaunch count
+# that was surfaced, so one halt reports once and reports again only when the
+# count moves. Missing helper, unreadable task, or any non-halt band contributes
+# nothing - this reader adds wakes, it never suppresses one.
+#
+# Cost discipline: the heartbeat fleet-scan this hangs off must stay cheap, so
+# the read is bounded three ways. It runs at most once per REAL heartbeat
+# interval (never faster than the 600s default, however short FM_HEARTBEAT is
+# set), it consults the helper only for tasks that actually have a state/<id>.meta
+# record rather than for every stray .status file, and each helper invocation is
+# time-bounded so a slow or hung reader can never stall the poll.
+# FM_RETRY_PRESSURE_EVERY_POLL=1 removes the rate limit for the tests that
+# exercise the surfacing contract itself.
+retry_halt_tasks() {
+  local reader f task out band count marker interval stamp deadline
+  reader=${FM_RETRY_PRESSURE_BIN:-$SCRIPT_DIR/fm-retry-pressure.sh}
+  [ -x "$reader" ] || return 0
+  stamp="$STATE/.last-retry-pressure-read"
+  if [ "${FM_RETRY_PRESSURE_EVERY_POLL:-0}" != 1 ]; then
+    interval=600
+    [ "$HEARTBEAT" -gt "$interval" ] && interval=$HEARTBEAT
+    [ "$(age_of "$stamp")" -ge "$interval" ] || return 0
+    touch "$stamp"
+  fi
+  for marker in "$STATE"/.retry-halt-surfaced-*; do
+    [ -e "$marker" ] || continue
+    task=$(basename "$marker"); task="${task#.retry-halt-surfaced-}"
+    [ -e "$STATE/$task.meta" ] || rm -f "$marker"
+  done
+  deadline=$(( $(date +%s) + 60 ))
+  for f in "$STATE"/*.status; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    [ "$(date +%s)" -lt "$deadline" ] || break
+    task=$(basename "$f"); task="${task%.status}"
+    [ -e "$STATE/$task.meta" ] || continue
+    out=$(retry_pressure_read "$reader" "$task") || continue
+    case "$out" in *" retry_band="*) ;; *) continue ;; esac
+    band=${out##* retry_band=}; band=${band%% *}
+    [ "$band" = halt ] || { rm -f "$STATE/.retry-halt-surfaced-$task"; continue; }
+    case "$out" in *relaunches=*) ;; *) continue ;; esac
+    count=${out##*relaunches=}; count=${count%% *}
+    case "$count" in ''|*[!0-9]*) continue ;; esac
+    marker="$STATE/.retry-halt-surfaced-$task"
+    [ "$(cat "$marker" 2>/dev/null || true)" = "$count" ] && continue
+    printf '%s\t%s\n' "$task" "$count"
+  done
+}
+
+# retry_halt_mark_surfaced: records the readings retry_halt_tasks reported as
+# PENDING delivery, once the wake carrying them is durably enqueued.
+#
+# Suppression is safe at append time because the halt reason survives dedup:
+# fm_wake_append collapses queued heartbeat rows to the last one, so
+# heartbeat_reason_with_queued_halts carries any still-queued halt names into the
+# reason of every later heartbeat row. The row the supervisor is actually shown
+# therefore always names a halt that has not been drained yet.
+retry_halt_mark_surfaced() {
+  local task count
+  while IFS=$'\t' read -r task count; do
+    [ -n "$task" ] || continue
+    printf '%s\n' "$count" > "$STATE/.retry-halt-surfaced-$task"
+  done <<< "${FM_HEARTBEAT_RETRY_HALT_MARKS:-}"
+}
+
+# Every heartbeat enqueue must build its payload through this helper: a literal
+# `heartbeat` payload at any one site collapses a still-queued halt row under
+# fm_wake_print_deduped's last-row-wins rule and loses the halt.
+#
+# A halt-bearing reason is prefixed `check:`, not `heartbeat:`: it stays inside
+# the wake-reason grammar every consumer parses, while a `heartbeat` prefix is
+# what bin/fm-supervise-daemon.sh's INJECT_SKIP_DEFAULT and the Pi branch's
+# heartbeat claim both treat as absorbable, which would swallow the one
+# surfacing a halted task ever gets.
+heartbeat_reason_with_queued_halts() {
+  local names queued payload line
+  names=${FM_HEARTBEAT_RETRY_HALT:-}
+  queued=
+  while IFS= read -r payload; do
+    case "$payload" in
+      "check: retry halt: "*) line=${payload#check: retry halt: } ;;
+      *) continue ;;
+    esac
+    [ -n "$line" ] || continue
+    queued="${queued:+$queued,}$line"
+  done < <(awk -F'\t' 'NF >= 5 { print $5 }' \
+    "${FM_WAKE_QUEUE:-$STATE/.wake-queue}" 2>/dev/null)
+  [ -z "$queued" ] || names="${names:+$names,}$queued"
+  [ -n "$names" ] || { printf 'heartbeat\n'; return 0; }
+  names=$(printf '%s' "$names" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)
+  printf 'check: retry halt: %s\n' "$names"
+}
+
+retry_halt_collect() {
+  FM_HEARTBEAT_RETRY_HALT_MARKS=$(retry_halt_tasks)
+  FM_HEARTBEAT_RETRY_HALT=$(printf '%s' "$FM_HEARTBEAT_RETRY_HALT_MARKS" | cut -f1 | paste -sd, -)
+}
+
 heartbeat_scan_finds_actionable() {
   local f task record rest endpoint ident rc found=1 sig marker
   FM_HEARTBEAT_SURFACE_ENDPOINTS=''
+  FM_HEARTBEAT_RETRY_HALT=''
+  FM_HEARTBEAT_RETRY_HALT_MARKS=''
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
@@ -1705,6 +1827,8 @@ heartbeat_scan_finds_actionable() {
     FM_HEARTBEAT_SURFACE_ENDPOINTS="${FM_HEARTBEAT_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
     [ "$rc" -eq 0 ] && found=0
   done
+  retry_halt_collect
+  [ -n "$FM_HEARTBEAT_RETRY_HALT" ] && found=0
   return "$found"
 }
 
@@ -2660,23 +2784,31 @@ EOF
     # without exiting); the away-mode daemon, when present, owns triage and wants
     # every heartbeat.
     if afk_present; then
-      fm_wake_append heartbeat heartbeat heartbeat || exit 1
+      retry_halt_collect
+      hb_reason=$(heartbeat_reason_with_queued_halts)
+      fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
+      retry_halt_mark_surfaced
       touch "$STATE/.last-heartbeat"
-      wake "heartbeat"
+      wake "$hb_reason"
     elif heartbeat_scan_finds_actionable; then
       # Backstop: a captain-relevant event the per-wake path absorbed by mistake.
       # Enqueue first, then record every status log surfaced through its end so the
       # next heartbeat does not re-fire it (enqueue-before-suppress preserved);
       # this wake sends firstmate to the whole fleet, so every log is read.
-      fm_wake_append heartbeat heartbeat heartbeat || exit 1
+      # A halt-band task is named in the reason because the whole point of
+      # surfacing it is that nobody was going to run the helper unprompted.
+      hb_reason=$(heartbeat_reason_with_queued_halts)
+      fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
+      retry_halt_mark_surfaced
       touch "$STATE/.last-heartbeat"
       mark_all_captain_relevant_surfaced || true
-      wake "heartbeat"
+      wake "$hb_reason"
     else
       if ! mark_all_captain_relevant_surfaced; then
-        fm_wake_append heartbeat heartbeat heartbeat || exit 1
+        hb_reason=$(heartbeat_reason_with_queued_halts)
+        fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
         touch "$STATE/.last-heartbeat"
-        wake "heartbeat"
+        wake "$hb_reason"
       fi
       touch "$STATE/.last-heartbeat"
       echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"

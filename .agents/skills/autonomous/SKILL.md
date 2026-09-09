@@ -3,7 +3,7 @@ name: autonomous
 description: >-
   Run an autonomous dispatch pass: evaluate open decisions for bundling,
   check whether nudge thresholds are met, and execute a structured
-  10-step dispatch cycle that minimizes unnecessary captain contact.
+  dispatch cycle that minimizes unnecessary captain contact.
   Use when the captain invokes /autonomous, mentions standing orders
   or autonomous dispatch, or when a silent-invocation point (12:30/17:30
   fleet-dispatch-points) fires.
@@ -17,7 +17,7 @@ metadata:
 Autonomous dispatch pass.
 When invoked, `/autonomous` evaluates open decisions for bundling,
 checks whether nudge thresholds are met, and executes a structured
-10-step dispatch cycle that minimizes unnecessary captain contact.
+dispatch cycle that minimizes unnecessary captain contact.
 
 ## 2. Name and triggers
 
@@ -90,10 +90,31 @@ and the live quota.
 The dispatch profile is owned by `config/crew-dispatch.json`.
 Resolve it before spawning any crewmate.
 
-## 4. The 10-step pass procedure
+## 4. The pass procedure
 
 Run these steps in order.
 Each step must complete successfully before proceeding to the next.
+
+### Step 0 - Re-read the captain's standing orders
+
+Read `data/captain.md`'s captain preferences and working style before
+evaluating anything else.
+That file is the captain's durable standing orders for this home, and they
+bind this pass exactly as the configured owners below do: a standing order
+recorded there needs no restatement in chat to take effect.
+When `data/captain.md` is absent, use the firstmate repo's built-in defaults
+per `AGENTS.md` and continue the pass - the absent file is not an error, this
+step counts as completed successfully, and the pass must not abort, since a
+home with no recorded instruction is exactly the one that needs the refill and
+stuck-work surfacing below.
+The session-start digest prints that file once per session, which is not the
+same as this pass reading it: a pass that runs many hours or one context reset
+later must read it again rather than relying on what a session happened to
+retain.
+Where a standing order and this skill's own text disagree, the standing order
+wins and the disagreement is a defect in this skill to report, not a conflict
+to arbitrate per pass.
+Record which standing orders applied; step 10 names them in the pass log.
 
 ### Step 1 - Gather decision state
 
@@ -153,12 +174,29 @@ defer that candidate specifically - do not fall back to counting it
 against, or clearing it via, the generic dispatch-cap headroom - and
 continue evaluating any non-PC02 candidates normally.
 
+Neither the cap nor the PC02 lane guard answers whether this HOST can carry
+another agent: both are quota and lane accounting, and an agent starved of
+memory wedges its pipeline rather than failing to launch.
+Before treating any candidate as dispatchable, run
+`bin/fm-host-memory.sh`, which reads `MemAvailable` from `/proc/meminfo`
+against the floor in `config/host-memory-floor` (absent means the built-in
+default). It prints `free` (exit 0) or `low: <available>MiB < <floor>MiB`
+(exit 1); an unreadable `/proc/meminfo` or a malformed floor prints an error
+on stderr and exits 2, which means the host reading is unavailable: record the
+reason and continue evaluating candidates normally rather than deferring
+dispatch. Only a `low` reading defers.
+When it reports `low`, defer every new dispatch this pass and record the
+host-memory reason; `bin/fm-spawn.sh` enforces the same floor at spawn time,
+so a candidate dispatched past this check is refused there anyway, except for a `--relaunch`, which is exempt because a same-task replacement is net-neutral and would be measured while the agent it replaces still holds its memory.
+
 ### Step 4 - Check the captain's attention window
 
 Run `bin/fm-captain-window.sh` with no flags (`--now` and `--weekday`
 are test-only flags). It prints `band=<band> offer=yes|no`.
-The `offer` field is the single canonical predicate: `offer=yes` means
-in-window, `offer=no` means outside. Do not branch on `band`.
+For the question this step owns - whether to contact the captain with a
+nudge - the `offer` field is the single canonical predicate: `offer=yes`
+means in-window, `offer=no` means outside. Do not branch on `band` for
+that nudge decision.
 This step owns the quiet-hours rule for the whole skill:
 On `offer=yes`, proceed to step 5.
 On `offer=no`, queue the nudge silently for the next window
@@ -211,57 +249,83 @@ For decisions that resolve to reviewing existing work, surface the
 review-ready item to the captain.
 Do not review work autonomously without captain approval.
 
-### Step 8 - Run the PC02-to-Fable split (section 5)
+### Step 8 - Resolve the senior tier for planning-heavy work
 
 If any dispatched work would normally route to the PC02 lane,
 evaluate the 3-part trigger test from section 5.
-When the test passes, route through Fable for plan-then-execute
-instead.
-Respect the daytime-only restriction from the captain's Q4 ruling.
+When the test passes, the work needs the senior tier's plan-then-execute
+shape rather than the PC02 lane: resolve it through
+`config/crew-dispatch.json`'s senior rule per `quota-array-dispatch`.
+That rule's own text carries the captain's 2026-09-07 order, and this step
+never overrides it: Fable is never auto-selected here, Opus 5 is the
+autonomous senior default, and routing to Fable requires the captain's
+explicit per-dispatch approval for that task.
+When the test fails, use the PC02 lane directly.
 
-### Step 9 - Record the pass outcome
+### Step 9 - Refill idle lanes from the queue
+
+Read the queue with `bin/fm-queue-snapshot.sh`, which is the single owner of
+the per-item eligibility verdict this step needs.
+Step 1's bearings snapshot answers what the captain owes a decision on; it is
+not a dispatch source, because its `gates[]` projection carries no item kind,
+hold date, or autonomy verdict and so cannot tell a cleared time gate from a
+live one. Keep step 1 where it is and read this snapshot here.
+
+Each row carries a `gate` of `dispatchable`, `blocked`, `captain`, or
+`deferred-until <date>`, and an `autonomy` of `autonomous-eligible`,
+`captain-gated`, or `unclear`, both derived from that row's own fields.
+Dispatch rows where `gate` is `dispatchable`, in the order the snapshot
+returns them, up to the headroom step 3 found, following the normal dispatch
+lifecycle.
+That single condition is sufficient because the snapshot already folds
+autonomy into the gate: a row is only `dispatchable` when its `autonomy` is
+neither `captain-gated` nor `unclear`, so this step cannot dispatch work that
+requires a captain decision.
+Never re-derive either verdict from a row's title or your own reading of it,
+and never widen the filter.
+When step 3 found no headroom - the cap, the PC02 lane, or the host-memory
+floor - leave the eligible rows queued and record them below instead.
+
+An idle lane with an eligible row is the pass failing, not the queue being
+empty: a pass that ends with headroom and an unclaimed `dispatchable` row must
+say in the step 10 log line which row it declined and why.
+
+### Step 10 - Record the pass outcome
 
 Log the pass outcome durably.
 Record the number of decisions evaluated, the number ruled on, the
 number deferred, and the number dispatched.
 Append to the pass log: the epoch timestamp, the threshold that fired,
 and a one-line summary of outcomes.
+Name in that summary the standing orders step 0 applied, and any eligible row
+step 9 declined with its reason, so a later pass can see what this one chose
+rather than only what it did.
+Write that line once, as this step's single append; never go back and amend a
+line already appended.
 
 The pass log path is `state/.autonomous-pass-log`.
 Each entry is a single line: `<epoch>\t<threshold>\t<summary>`.
 
-### Step 10 - Re-evaluate the queue
-
-After the pass completes, re-evaluate queued work items whose blockers
-have cleared or whose time gates have passed.
-Dispatch any that are now eligible, following the normal dispatch
-lifecycle - but only when step 3's cap check still found headroom.
-When step 3 found the cap at or exceeded, queue them instead of
-dispatching.
-
-Do not auto-dispatch work that requires a captain decision.
-Auto-dispatch only work whose authority is already established
-(yolo on, delivery-mode resolved, no ask-user findings pending).
-
 ### Deferred-ready visibility (end-of-pass reporting)
 
-After step 10, add a deferred-ready line to the pass summary.
-Name each item that passed step 10's eligibility filter (blockers
-cleared, time gates passed, authority already established) and stale-work
-check but was not dispatched, once it qualifies as deferred-ready.
+After step 9, add a deferred-ready line to the pass summary.
+Name each item step 9 read as `gate: dispatchable` from
+`bin/fm-queue-snapshot.sh`, which is the single owner of that derivation, and
+that passed the stale-work check but was not dispatched, once it qualifies as
+deferred-ready.
 
 An item becomes deferred-ready when either condition holds:
 
 - Eligible and undispatched across >= 2 consecutive passes.
-- Eligible for > 24 hours (measured from when it first passed
-  the eligibility filter and stale-work check).
+- Eligible for > 24 hours (measured from when it first read
+  `gate: dispatchable` and passed the stale-work check).
 
 Each deferred-ready item carries its plain-language deferral reason
-(dispatch-cap occupancy, PC02 lane occupied, outside attention window,
-or Fable daytime restriction). Below threshold, stay silent - no
+(dispatch-cap occupancy, PC02 lane occupied, host memory below the floor,
+outside attention window, or senior-tier daytime restriction). Below threshold, stay silent - no
 separate ping, no notification. Rides the existing summary ping and its band gating.
 
-Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,
+Mechanics: at step 10 bookkeeping, when an eligible item goes undispatched,
 run `bin/fm-captain-hold.sh mark set <task-id> deferred-since <UTC-ISO8601-timestamp>`,
 and `bin/fm-captain-hold.sh mark clear <task-id> deferred-since` when the item
 is eventually dispatched. That subcommand is the only writer of firstmate's
@@ -285,20 +349,25 @@ step 1 snapshot it already takes - `bin/fm-fleet-snapshot.sh` joins the
 sidecar onto each backlog record - so consecutive-pass eligibility needs
 no second read.
 
-## 5. PC02-to-Fable plan-then-execute split
+## 5. PC02-to-senior-tier plan-then-execute split
 
 When the pass would dispatch a task through the PC02 lane, apply the
-3-part trigger test to decide whether to route through Fable instead.
-Fable is the plan-then-execute path: it plans first, then executes
-with the plan as a guard.
+3-part trigger test to decide whether the work needs the senior tier's
+plan-then-execute path instead: it plans first, then executes with the plan
+as a guard.
+Which model serves that path is not this skill's call.
+`config/crew-dispatch.json`'s senior rule owns the candidates and
+`quota-array-dispatch` owns the choice among them, under the captain's
+2026-09-07 order that Fable is never auto-selected and Opus 5 is the
+autonomous default.
 
-The trigger test (all three parts must pass to route to Fable):
+The trigger test (all three parts must pass to route to the senior tier):
 
 1. **Budget gate**: the task's estimated token cost exceeds the PC02
    lane's per-turn budget threshold.
    This threshold is defined by the PC02 lane's configuration.
    Read it from the lane's own config, do not hardcode it here.
-   If the task's budget cannot be estimated, route to Fable.
+   If the task's budget cannot be estimated, treat this gate as passed.
 
 2. **Classification gate**: the task is a planning-heavy type
    (architecture review, multi-step migration design, cross-project
@@ -315,13 +384,13 @@ The trigger test (all three parts must pass to route to Fable):
    or has a high cost of incorrect execution passes this gate.
    Isolated, low-risk changes do not.
 
-When all three gates pass, route through Fable for plan-then-execute.
+When all three gates pass, route to the senior tier for plan-then-execute.
 When any gate fails, use the PC02 lane directly.
 
 ### Daytime-only restriction (Q4)
 
-Fable planning scouts run daytime only for now.
-A planning scout is a task dispatched through the Fable path that
+Senior-tier planning scouts run daytime only for now.
+A planning scout is a task dispatched through the senior tier that
 requires the captain to review and approve the plan before execution.
 Check `bin/fm-captain-window.sh` before dispatching a planning scout:
 if outside the captain's attention window, queue the scout for the
@@ -334,19 +403,21 @@ Ambiguous items are tasks where the 3-part test is uncertain or
 where classification gate requires captain judgment.
 
 The daytime-only restriction applies to planning scouts only.
-Non-planning dispatches (execution-only Fable, PC02 lane work)
-follow the normal dispatch rules without a daytime restriction.
+Non-planning dispatches (execution-only senior-tier work, PC02 lane
+work) follow the normal dispatch rules without a daytime restriction.
 
 ## 6. Gaps, never-do list, and restart contract
 
 ### Gaps
 
-- Fable integration is planned but not yet built.
-  Until Fable ships, the PC02-to-Fable split (section 5) can be
-  evaluated but the actual Fable dispatch path is unavailable.
-  Route through PC02 as a fallback when Fable is not available.
-  When Fable ships, the split gates will automatically enable the
-  Fable path without changing this skill's contract.
+- Fable is available; what constrains it is authority, not availability.
+  The captain's 2026-09-07 order makes Fable a per-dispatch captain
+  approval and Opus 5 the autonomous senior default, so this pass
+  never selects Fable on its own. Section 5's split therefore routes to
+  the senior tier as `config/crew-dispatch.json` defines it, and
+  `quota-array-dispatch` chooses among that rule's candidates.
+  An earlier version of this skill described Fable as unbuilt and
+  routed to it directly; both were wrong and are corrected here.
 
 - `/nightwatch` is not yet shipped.
   While nightwatch is unarmed, the bare night-bucket wake runs the
