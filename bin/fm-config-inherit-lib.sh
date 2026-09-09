@@ -101,11 +101,6 @@ fm_config_inherit_item_session_scoped() {  # <item>
 # propagation just leaves the item alone in both directions (present primary
 # value and mirrored absence).
 
-# The sibling override-marker path for <item> under <dest-config-dir>.
-fm_config_inherit_override_marker() {  # <dest-config-dir> <item>
-  printf '%s/%s.local-override\n' "$1" "$2"
-}
-
 # True when <item> is crew-harness - the one overridable item - and the
 # destination home has actually set its marker as a regular file, so
 # propagation must leave that item alone. A marker path that exists but is not
@@ -114,7 +109,7 @@ fm_config_inherit_override_marker() {  # <dest-config-dir> <item>
 fm_config_inherit_item_overridden() {  # <dest-config-dir> <item>
   local dest_config=$1 item=$2 marker
   [ "$item" = crew-harness ] || return 1
-  marker=$(fm_config_inherit_override_marker "$dest_config" "$item")
+  marker="$dest_config/crew-harness.local-override"
   if [ -f "$marker" ] && [ ! -L "$marker" ]; then
     return 0
   fi
