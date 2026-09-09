@@ -8,7 +8,11 @@
 # dispatch_config field. A file that merely parses as JSON is NOT valid - a rule
 # needs a non-empty `when`, `use`/`default` must be a non-empty profile object or
 # array, every harness must be a verified adapter, and any effort must be one its
-# harness supports.
+# harness supports. Codex's accepted effort tiers are not restated here:
+# bin/fm-codex-axes-lib.sh owns them and this validator is handed that same list.
+
+# shellcheck source=bin/fm-codex-axes-lib.sh disable=SC1091
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-codex-axes-lib.sh"
 
 # fm_crew_dispatch_validate <file>
 #   0 - valid (or the file does not exist)
@@ -22,13 +26,16 @@ fm_crew_dispatch_validate() {
     echo "malformed JSON"
     return 1
   fi
-  err=$(jq -r '
+  local codex_efforts
+  # shellcheck disable=SC2086 # CODEX_EFFORT_TIERS is a space-separated list
+  codex_efforts=$(jq -nc '$ARGS.positional' --args $CODEX_EFFORT_TIERS)
+  err=$(jq -r --argjson codex_efforts "$codex_efforts" '
     def verified($h): ["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","muse","rovo"] | index($h);
     def effort_ok($h; $e):
       if $e == null then true
       elif ($e | type) != "string" then false
       elif $h == "claude" then (["low","medium","high","xhigh","max"] | index($e))
-      elif $h == "codex" then (["low","medium","high","xhigh"] | index($e))
+      elif $h == "codex" then ($codex_efforts | index($e))
       elif $h == "grok" then (["low","medium","high"] | index($e))
       elif $h == "pi" or $h == "pi-signed" then (["low","medium","high","xhigh","max"] | index($e))
       elif $h == "muse" then (["low","medium","high","xhigh","max"] | index($e))
