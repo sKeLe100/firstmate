@@ -15,6 +15,9 @@ DUPLICATE="$LAB/duplicate.json"
 OUT_OF_RANGE="$LAB/out-of-range.json"
 INVALID_RUNWAY="$LAB/invalid-runway.json"
 INVALID_AVAILABILITY="$LAB/invalid-availability.json"
+SYNTHESIZED_WINDOW="$LAB/synthesized-window.json"
+FUTURE_CYCLE_WINDOW="$LAB/future-cycle-window.json"
+UNKNOWN_RUNWAY="$LAB/unknown-runway.json"
 EMPTY_SCOPE="$LAB/empty-scope.json"
 WHITESPACE_PROVIDER="$LAB/whitespace-provider.json"
 WHITESPACE_SCOPE="$LAB/whitespace-scope.json"
@@ -286,6 +289,64 @@ if out=$(call_choose --snapshot "$KNOWN_UNKNOWN" --candidate claude:default 2>/d
 fi
 [ "$out" = "none" ] || fail "unknown headroom returned: $out"
 ok "unknown headroom is not positive quota"
+
+# A future-cycle window is a synthesized placeholder rather than measured
+# headroom.  Its known-looking percentage must not make Codex dispatchable.
+jq '(.providers[] | select(.provider == "codex")) = {
+      provider: "codex",
+      windows: [{
+        id: "weekly",
+        kind: "weekly",
+        resetsAt: "2030-01-08T00:00:00Z",
+        windowSeconds: 604800,
+        percentRemaining: 100,
+        pace: {status: "unknown", reason: "future_cycle_start"}
+      }],
+      quotaSemantics: {
+        status: "known",
+        effectiveAvailability: [{
+          scope: "all_models",
+          status: "known",
+          effectivePercentRemaining: 100,
+          boundedBy: ["weekly"],
+          runway: {status: "unknown", unmeasurableWindowIds: ["weekly"]},
+          selection: {status: "unknown", unmeasurableWindowIds: ["weekly"]},
+          pace: {status: "unknown", unknownWindowIds: ["weekly"]}
+        }]
+      }
+    }' "$LAB/captured.json" > "$SYNTHESIZED_WINDOW"
+if out=$(call_choose --snapshot "$SYNTHESIZED_WINDOW" --candidate codex:gpt-5.6-terra 2>/dev/null); then
+  fail "synthesized future-cycle window unexpectedly dispatched"
+fi
+[ "$out" = "none" ] || fail "synthesized future-cycle window returned: $out"
+ok "synthesized future-cycle window fails closed"
+
+# The producer's direct placeholder marker is independently sufficient to
+# reject a window, even if another producer version mislabels its aggregates.
+jq '(.providers[] | select(.provider == "codex").quotaSemantics.effectiveAvailability[0]) |=
+      (.runway = {status: "through_reset"} |
+       .selection = {status: "known", spendPriority: 10} |
+       .pace = {status: "ahead"})' \
+  "$SYNTHESIZED_WINDOW" > "$FUTURE_CYCLE_WINDOW"
+if out=$(call_choose --snapshot "$FUTURE_CYCLE_WINDOW" --candidate codex:gpt-5.6-terra 2>/dev/null); then
+  fail "future-cycle placeholder unexpectedly dispatched"
+fi
+[ "$out" = "none" ] || fail "future-cycle placeholder returned: $out"
+ok "future-cycle placeholder fails closed"
+
+# Unknown completion evidence also cannot be converted to positive headroom,
+# even when the provider reports a positive effective percentage.
+jq '(.providers[] | select(.provider == "codex").windows[0].pace) = {status: "ahead"} |
+    (.providers[] | select(.provider == "codex").quotaSemantics.effectiveAvailability[0]) |=
+      (.runway = {status: "unknown"} |
+       .selection = {status: "known", spendPriority: 10} |
+       .pace = {status: "ahead"})' \
+  "$SYNTHESIZED_WINDOW" > "$UNKNOWN_RUNWAY"
+if out=$(call_choose --snapshot "$UNKNOWN_RUNWAY" --candidate codex:gpt-5.6-terra 2>/dev/null); then
+  fail "unknown runway with positive headroom unexpectedly dispatched"
+fi
+[ "$out" = "none" ] || fail "unknown runway with positive headroom returned: $out"
+ok "unknown runway with positive headroom fails closed"
 
 jq '(.providers[] | select(.provider == "claude").quotaSemantics.status) = "partial" |
     (.providers[] | select(.provider == "claude").quotaSemantics.effectiveAvailability) += [{"scope":"model:unmeasured","status":"unknown","runway":{"status":"unknown"}}]' \
