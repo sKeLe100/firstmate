@@ -10,10 +10,12 @@
 # provider-wide scopes and exact model or product scopes for <model>. A candidate
 # is eligible only when every applicable runway is measured, no applicable
 # window is synthesized or otherwise unmeasurable, and its known effective
-# percent remaining is greater than zero. Synthesized-window detection reads
-# per-window pace evidence, which only the `--json` snapshot carries: a default
-# TOON snapshot cannot expose a placeholder window, so on that input the
-# guarantee narrows to the runway and percent checks. The first eligible
+# percent remaining is greater than zero. The TOON row's confidence field (field 5)
+# is threaded into each mapped availability entry as `.confidence`, but is not used
+# in `cannot_be_checked` because the renderer emits `unknown` for any runway whose
+# `projectionConfidence` is absent (even for healthy rows), so flagging it would
+# block dispatch fleet-wide. Placeholder detection therefore remains JSON-only. The
+# first eligible
 # candidate is printed as "<harness> <model>" and the script exits 0.
 # If no candidate is quota-eligible, it prints "none" and exits 1.
 #
@@ -276,7 +278,8 @@ else
                     scope: .[1],
                     status: "known",
                     effectivePercentRemaining: (.[2] | tonumber),
-                    runway: {status: .[4]}
+                    runway: {status: .[4]},
+                    confidence: .[5]
                   }
                 })) +
                 ($attention_entries | map(. as $entry | {

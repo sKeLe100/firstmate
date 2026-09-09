@@ -430,14 +430,15 @@ ok "renderer-shaped TOON snapshot is accepted"
 
 # Known limitation, pinned deliberately: the default TOON carries no per-window
 # pace evidence, so a placeholder future-cycle window is indistinguishable from
-# measured headroom on that input and still dispatches. The row's confidence
-# column is `runway.projectionConfidence or "unknown"`, which is absent on many
-# healthy runways, so it is not a placeholder signal.
+# measured headroom on that input and still dispatches. The TOON row's confidence
+# column (field 5) is threaded into each availability entry, but the renderer
+# emits `unknown` when `runway.projectionConfidence` is absent (even for healthy
+# rows), so it cannot be used as a placeholder signal.
 cat > "$PLACEHOLDER_TOON" <<'TOON'
 bin: quota-axi
 generatedAt: "2030-01-01T00:00:00Z"
 quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
-  codex,all_models,100,-1,through_reset,high,weekly,2030-01-08T00:00:00Z
+  codex,all_models,100,-1,through_reset,established,weekly,2030-01-08T00:00:00Z
 exhaustion[0]:
 attention[0]:
 TOON
