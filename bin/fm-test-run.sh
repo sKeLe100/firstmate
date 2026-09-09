@@ -592,6 +592,7 @@ tests/fm-claude-stop-autoarm.test.sh 60709
 tests/fm-claude-trust.test.sh 11268
 tests/fm-cmux-claude-composer-live-e2e.test.sh 23
 tests/fm-codex-continuity-live-e2e.test.sh 21
+tests/fm-codex-usage.test.sh 61912
 tests/fm-composer-matrix-live-e2e.test.sh 23
 tests/fm-control-relaunch.test.sh 48210
 tests/fm-control.test.sh 37798
