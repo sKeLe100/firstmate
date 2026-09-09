@@ -15,6 +15,9 @@ DUPLICATE="$LAB/duplicate.json"
 OUT_OF_RANGE="$LAB/out-of-range.json"
 INVALID_RUNWAY="$LAB/invalid-runway.json"
 INVALID_AVAILABILITY="$LAB/invalid-availability.json"
+SYNTHESIZED_WINDOW="$LAB/synthesized-window.json"
+FUTURE_CYCLE_WINDOW="$LAB/future-cycle-window.json"
+UNKNOWN_RUNWAY="$LAB/unknown-runway.json"
 EMPTY_SCOPE="$LAB/empty-scope.json"
 WHITESPACE_PROVIDER="$LAB/whitespace-provider.json"
 WHITESPACE_SCOPE="$LAB/whitespace-scope.json"
@@ -27,6 +30,8 @@ NO_APPLICABLE="$LAB/no-applicable.json"
 APPLICABLE_VETO="$LAB/applicable-veto.json"
 MUSE_EXHAUSTED="$LAB/muse-exhausted.json"
 MUSE_POSITIVE="$LAB/muse-positive.json"
+UNKNOWN_PACE="$LAB/unknown-pace.json"
+PLACEHOLDER_TOON="$LAB/placeholder-quota.toon"
 TOON="$LAB/quota.toon"
 RENDERER_TOON="$LAB/renderer-quota.toon"
 EMPTY_TOON="$LAB/empty-quota.toon"
@@ -287,6 +292,92 @@ fi
 [ "$out" = "none" ] || fail "unknown headroom returned: $out"
 ok "unknown headroom is not positive quota"
 
+# A future-cycle window is a synthesized placeholder rather than measured
+# headroom.  Its known-looking percentage must not make Codex dispatchable.
+jq '(.providers[] | select(.provider == "codex")) = {
+      provider: "codex",
+      windows: [{
+        id: "weekly",
+        kind: "weekly",
+        resetsAt: "2030-01-08T00:00:00Z",
+        windowSeconds: 604800,
+        percentRemaining: 100,
+        pace: {status: "unknown", reason: "future_cycle_start"}
+      }],
+      quotaSemantics: {
+        status: "known",
+        effectiveAvailability: [{
+          scope: "all_models",
+          status: "known",
+          effectivePercentRemaining: 100,
+          boundedBy: ["weekly"],
+          runway: {status: "unknown", unmeasurableWindowIds: ["weekly"]},
+          selection: {status: "unknown", unmeasurableWindowIds: ["weekly"]},
+          pace: {status: "unknown", unknownWindowIds: ["weekly"]}
+        }]
+      }
+    }' "$LAB/captured.json" > "$SYNTHESIZED_WINDOW"
+if out=$(call_choose --snapshot "$SYNTHESIZED_WINDOW" --candidate codex:gpt-5.6-terra 2>/dev/null); then
+  fail "synthesized future-cycle window unexpectedly dispatched"
+fi
+[ "$out" = "none" ] || fail "synthesized future-cycle window returned: $out"
+ok "synthesized future-cycle window fails closed"
+
+# The producer's direct placeholder marker is independently sufficient to
+# reject a window, even if another producer version mislabels its aggregates.
+jq '(.providers[] | select(.provider == "codex").quotaSemantics.effectiveAvailability[0]) |=
+      (.runway = {status: "through_reset"} |
+       .selection = {status: "known", spendPriority: 10} |
+       .pace = {status: "ahead"})' \
+  "$SYNTHESIZED_WINDOW" > "$FUTURE_CYCLE_WINDOW"
+if out=$(call_choose --snapshot "$FUTURE_CYCLE_WINDOW" --candidate codex:gpt-5.6-terra 2>/dev/null); then
+  fail "future-cycle placeholder unexpectedly dispatched"
+fi
+[ "$out" = "none" ] || fail "future-cycle placeholder returned: $out"
+ok "future-cycle placeholder fails closed"
+
+# Unknown completion evidence also cannot be converted to positive headroom,
+# even when the provider reports a positive effective percentage.
+jq '(.providers[] | select(.provider == "codex").windows[0].pace) = {status: "ahead"} |
+    (.providers[] | select(.provider == "codex").quotaSemantics.effectiveAvailability[0]) |=
+      (.runway = {status: "unknown"} |
+       .selection = {status: "known", spendPriority: 10} |
+       .pace = {status: "ahead"})' \
+  "$SYNTHESIZED_WINDOW" > "$UNKNOWN_RUNWAY"
+if out=$(call_choose --snapshot "$UNKNOWN_RUNWAY" --candidate codex:gpt-5.6-terra 2>/dev/null); then
+  fail "unknown runway with positive headroom unexpectedly dispatched"
+fi
+[ "$out" = "none" ] || fail "unknown runway with positive headroom returned: $out"
+ok "unknown runway with positive headroom fails closed"
+
+# Pace measures burn rate, not whether the headroom number is real: a freshly
+# started window with too little history to pace must still dispatch.
+jq '(.providers[] | select(.provider == "codex")) = {
+      provider: "codex",
+      windows: [{
+        id: "weekly",
+        kind: "weekly",
+        resetsAt: "2030-01-08T00:00:00Z",
+        windowSeconds: 604800,
+        percentRemaining: 50,
+        pace: {status: "unknown"}
+      }],
+      quotaSemantics: {
+        status: "known",
+        effectiveAvailability: [{
+          scope: "all_models",
+          status: "known",
+          effectivePercentRemaining: 50,
+          boundedBy: ["weekly"],
+          runway: {status: "through_reset"},
+          pace: {status: "unknown", unknownWindowIds: ["weekly"]}
+        }]
+      }
+    }' "$LAB/captured.json" > "$UNKNOWN_PACE"
+out=$(call_choose --snapshot "$UNKNOWN_PACE" --candidate codex:gpt-5.6-terra)
+[ "$out" = "codex gpt-5.6-terra" ] || fail "measured headroom with unknown pace returned: $out"
+ok "unknown pace does not veto measured headroom"
+
 jq '(.providers[] | select(.provider == "claude").quotaSemantics.status) = "partial" |
     (.providers[] | select(.provider == "claude").quotaSemantics.effectiveAvailability) += [{"scope":"model:unmeasured","status":"unknown","runway":{"status":"unknown"}}]' \
   "$LAB/captured.json" > "$PARTIAL"
@@ -336,6 +427,23 @@ TOON
 out=$(call_choose --snapshot "$RENDERER_TOON" --candidate claude:default)
 [ "$out" = "claude default" ] || fail "renderer-shaped TOON snapshot returned: $out"
 ok "renderer-shaped TOON snapshot is accepted"
+
+# Known limitation, pinned deliberately: the default TOON carries no per-window
+# pace evidence, so a placeholder future-cycle window is indistinguishable from
+# measured headroom on that input and still dispatches. Detecting it there is
+# tracked separately as quota-choose-toon-confidence-mapping.
+cat > "$PLACEHOLDER_TOON" <<'TOON'
+bin: quota-axi
+generatedAt: "2030-01-01T00:00:00Z"
+quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,all_models,100,-1,through_reset,high,weekly,2030-01-08T00:00:00Z
+exhaustion[0]:
+attention[0]:
+TOON
+out=$(call_choose --snapshot "$PLACEHOLDER_TOON" --candidate codex:gpt-5.6-terra)
+[ "$out" = "codex gpt-5.6-terra" ] \
+  || fail "TOON placeholder limitation changed; returned: $out"
+ok "default TOON cannot detect a placeholder window (known limitation)"
 
 printf 'garbage\n' > "$LEADING_GARBAGE_NONZERO_TOON"
 cat "$TOON" >> "$LEADING_GARBAGE_NONZERO_TOON"

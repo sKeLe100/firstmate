@@ -8,8 +8,12 @@
 # provided file, or from stdin when --snapshot is omitted. For each --candidate
 # in order, it maps <harness> to its primary provider family, then applies the
 # provider-wide scopes and exact model or product scopes for <model>. A candidate
-# is eligible only when no applicable runway is `exhausted_now` and its known
-# effective percent remaining is greater than zero. The first eligible
+# is eligible only when every applicable runway is measured, no applicable
+# window is synthesized or otherwise unmeasurable, and its known effective
+# percent remaining is greater than zero. Synthesized-window detection reads
+# per-window pace evidence, which only the `--json` snapshot carries: a default
+# TOON snapshot cannot expose a placeholder window, so on that input the
+# guarantee narrows to the runway and percent checks. The first eligible
 # candidate is printed as "<harness> <model>" and the script exits 0.
 # If no candidate is quota-eligible, it prints "none" and exits 1.
 #
@@ -325,6 +329,18 @@ effective_for_provider_model() {
   printf '%s\n' "$QUOTA_JSON" | jq -c --arg provider "$provider" --arg model "$model" '
     ($model | sub("^model:"; "")) as $model_token |
     ([.providers[]? | select(.provider == $provider)] | first) as $p |
+    [($p.windows // [])[]? |
+      select(.pace.reason? == "future_cycle_start") |
+      .id
+    ] as $placeholder_window_ids |
+    def applies_placeholder_window:
+      if ($placeholder_window_ids | length) == 0 then false
+      else
+        any(.boundedBy[]?; . as $id | $placeholder_window_ids | index($id))
+      end;
+    def cannot_be_checked:
+      (.runway.status // "") == "unknown" or
+      applies_placeholder_window;
     if ($p // null) == null then {status: "unknown"}
     else ($p.quotaSemantics.effectiveAvailability // []) |
     map(select(.scope as $scope |
@@ -337,6 +353,7 @@ effective_for_provider_model() {
     if ($applicable | length) == 0 then {status: "unknown"}
     elif any($applicable[]; (.runway.status // "") == "exhausted_now") then
       ($applicable | map(select((.runway.status // "") == "exhausted_now")) | first)
+    elif any($applicable[]; cannot_be_checked) then {status: "unknown"}
     elif ($known | length) == 0 then {status: "unknown"}
     elif any($known[]; .effectivePercentRemaining == 0) then
       ($known | map(select(.effectivePercentRemaining == 0)) | first)
@@ -372,7 +389,8 @@ for c in "${CANDIDATES[@]}"; do
       .effectivePercentRemaining as $remaining |
       (($remaining | type) == "number") and
       ($remaining > 0) and
-      ((.runway.status // "") != "exhausted_now")
+      ((.runway.status // "") == "through_reset" or
+       (.runway.status // "") == "projected_exhaustion")
     end
   ' >/dev/null 2>&1; then
     chosen="$harness $model"
