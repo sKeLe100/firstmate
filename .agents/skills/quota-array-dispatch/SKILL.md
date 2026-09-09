@@ -26,8 +26,10 @@ Pass it the intake's already-captured default TOON or permitted JSON fallback th
 Pass each candidate as `harness:model`, with earlier candidates preferred.
 The helper maps each harness to its primary provider family and applies the provider-wide scopes plus the exact model or product scopes for the model.
 An `exhausted_now` runway vetoes the candidate.
-The helper selects a candidate only when its applicable quota has a known `effectivePercentRemaining` greater than zero.
-This is an optional narrow helper with a known limitation: it maps each harness to one primary provider family only, so a candidate whose established provider differs from that primary family is checked against the wrong quota row.
+The helper selects a candidate only when every applicable runway is measured (`through_reset` or `projected_exhaustion`), no applicable window is a synthesized placeholder, and its applicable quota has a known `effectivePercentRemaining` greater than zero; an unmeasured runway or a placeholder window fails closed to `none` rather than being read as real headroom.
+This is an optional narrow helper with two known limitations.
+It maps each harness to one primary provider family only, so a candidate whose established provider differs from that primary family is checked against the wrong quota row.
+And placeholder-window detection reads per-window pace evidence that only `quota-axi --json` carries, so on a default TOON snapshot the fail-closed guarantee narrows to the runway and percent checks.
 Authoritative multi-provider routing - including provider discovery from the harness catalog and quota matching by that explicit provider - stays owned by this skill's intake procedure above and AGENTS.md section 4, not by the helper.
 Use it only when the brief already fixed the candidate order and every candidate's provider is the harness's primary family.
 It does not replace the reasoning-class, runway-feasibility, or authentication gates above.
