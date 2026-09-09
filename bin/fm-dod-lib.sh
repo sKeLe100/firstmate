@@ -255,6 +255,8 @@ Two firstmate-specific rules layer on top of that guidance:
 - NEVER pass \`--yes\` (or \`-y\`) to \`no-mistakes axi run\` or \`no-mistakes axi respond\`. It is banned fleet-wide.
   It auto-resolves every gate including ask-user findings with no escalation, and answering your own ask-user finding is a hard rule violation.
 
+After any custody recovery on a rebased branch, run \`bin/fm-nomistakes-gate-check.sh\` before pushing; treat a \`diverged\` result as an immediate \`blocked:\` report rather than pushing anyway.
+
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary before reporting (do not silence the gate, and do not hand-edit or recommit once the run is closed out).
 Append \`done: PR {url} checks green\` and stop. You are finished.
 EOF
