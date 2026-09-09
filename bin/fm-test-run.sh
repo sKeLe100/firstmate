@@ -643,6 +643,7 @@ tests/fm-project-origin.test.sh 137
 tests/fm-public-followup.test.sh 196745
 tests/fm-quota-array-dispatch-live-e2e.test.sh 21
 tests/fm-quota-choose.test.sh 1461
+tests/fm-raw-launch-lib.test.sh 326
 tests/fm-remote-backlog-handoff.test.sh 41432
 tests/fm-remote-doctor.test.sh 5198
 tests/fm-remote-entrypoint.test.sh 132
@@ -673,6 +674,8 @@ tests/fm-sessionstart-hook-live-e2e.test.sh 20
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 22
 tests/fm-sessionstart-nudge.test.sh 66194
 tests/fm-shared-captain-inheritance.test.sh 6108
+tests/fm-spawn-codex-lane-guard.test.sh 22491
+tests/fm-spawn-codex-raw-launch.test.sh 27807
 tests/fm-spawn-dispatch-profile.test.sh 63996
 tests/fm-spawn-host-memory.test.sh 5440
 tests/fm-spawn-pool-base-freshen.test.sh 34920
