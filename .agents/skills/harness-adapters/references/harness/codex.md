@@ -29,7 +29,9 @@ A MULTI-pair batch resolving to Codex is refused separately, whatever the lane h
 `bin/fm-spawn.sh` rediscovers the codex executable from PATH on every LOCAL spawn and relaunch, resolves it with `readlink -f`, probes `--version`, and never reads it from a prior meta.
 A secondmate routed to a remote host is published by that host and returns before this block, so it takes no rediscovery, probe or pin and records no `codex_exe`/`codex_version`; that host's own `fm-spawn.sh` applies these rules.
 A raw custom launch command whose first word is a codex binary is refused unless that binary resolves to the same path; the refusal names both resolved paths.
-That first word is read through the shell's own quote removal (without running the command), so `"codex"`, `'codex'` and `\codex` all classify as Codex; a raw launch whose executable word only the pane could resolve - an unterminated quote, a shell expansion, or no command word - is refused outright.
+The raw line is read once with the shell's own lexical rules (`bin/fm-raw-launch-lib.sh`, pinned against bash itself by `tests/fm-raw-launch-lib.test.sh`), so word boundaries and values come from one pass: `"codex"`, `'codex'`, `\codex` and `co"dex"` all classify as Codex, and quoted or backslash-escaped whitespace in a leading `NAME=value` assignment cannot move the command word.
+A raw launch firstmate cannot read conclusively is refused outright rather than classified as another harness: an unterminated quote, a newline, a command word that is a shell expansion, tilde, glob or brace pattern, a command substitution anywhere, an unquoted control operator or redirection, or no command word at all.
+A raw Codex launch is also refused when any word after the executable would expand in the pane, so the `--fast` refusal is conclusive; a wrapper such as `env codex ...` still classifies as that wrapper.
 The task meta records `codex_exe` and `codex_version` as audit evidence only; nothing consumes them.
 
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"

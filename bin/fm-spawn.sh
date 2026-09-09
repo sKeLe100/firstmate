@@ -68,18 +68,23 @@
 #       are recorded as codex_exe=/codex_version= in state/<id>.meta as audit
 #       evidence, and the launch is pinned to the probed absolute path.
 #   All three guards key off the launch's executable word being spelled codex,
-#   however it is quoted. A raw launch's words are read through the shell's own
-#   quote removal once (without running the command), so "codex", 'codex' and
-#   \codex are all read as codex, and "--fast" as --fast. A raw launch whose
-#   executable word only the pane could resolve - an unterminated quote, a
-#   shell expansion, or no command word at all - is REFUSED rather than
-#   classified as some other harness. Words after the executable keep the
-#   escape hatch's unverified contract and may still expand, and a wrapper
-#   (env codex ..., a shell script) still classifies as that wrapper.
-#   A raw launch's leading unquoted NAME=value assignments are skipped, so an
-#   env-prefixed raw codex launch still classifies as codex and still takes
-#   every guard; a wrapper (env codex ..., a shell script) or a QUOTED
-#   environment value classifies as another harness and does not.
+#   however it is quoted. A raw launch line is read ONCE, character by
+#   character, with the shell's own lexical rules (bin/fm-raw-launch-lib.sh
+#   owns that reader), so word boundaries and word values come from the same
+#   pass and nothing is run or expanded: "codex", 'codex', \codex and co"dex"
+#   all read as codex, FOO='a b' and FOO=bar\ baz stay one assignment ahead of
+#   the command word, and "--fast" and --f'ast' read as --fast. Leading
+#   NAME=value assignments are skipped to reach the command word, so an
+#   env-prefixed raw codex launch still takes every guard. A line firstmate
+#   cannot read conclusively is REFUSED rather than classified as some other
+#   harness: an unterminated quote, a newline, a trailing backslash, a command
+#   word that is a shell expansion, tilde, glob or brace pattern (or empty), a
+#   command substitution anywhere, an unquoted ; | & ( ) < > or a word-leading
+#   #, or no command word at all. A codex launch is additionally refused when
+#   any word AFTER the executable would expand, so the fast-modifier check is
+#   conclusive; a non-codex launch keeps the escape hatch's unverified contract
+#   for those words and is sent verbatim. A wrapper (env codex ..., a shell
+#   script) still classifies as that wrapper.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then
@@ -344,6 +349,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 # shellcheck source=bin/fm-codex-axes-lib.sh
 . "$SCRIPT_DIR/fm-codex-axes-lib.sh"
+# shellcheck source=bin/fm-raw-launch-lib.sh
+. "$SCRIPT_DIR/fm-raw-launch-lib.sh"
 # shellcheck source=bin/fm-tasks-axi-lib.sh
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backlog-transition-lib.sh
@@ -1702,74 +1709,35 @@ launch_template() {
   esac
 }
 
-# raw_launch_token applies the SHELL'S OWN quote removal to one word of a raw
-# launch command, without running it: xargs is a real word parser, so ', " and
-# backslash quoting are all removed the way the pane's shell will remove them,
-# and no command substitution or parameter expansion is ever performed. A word
-# carrying $ or ` has a value only the pane can know, and an unterminated quote
-# has no value at all; both return non-zero so the caller can fail closed
-# instead of comparing a string the launched process will never see.
-raw_launch_token() {  # <raw word>: prints the word's shell-literal value
-  local word=$1 value
-  case "$word" in *'$'*|*'`'*) return 1 ;; esac
-  value=$(printf '%s\n' "$word" | xargs printf '%s' 2>/dev/null) || return 1
-  printf '%s' "$value"
-}
-
 RAW_LAUNCH_WORDS=()
+RAW_LAUNCH_TAIL_OPAQUE=0
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     RAW_LAUNCH=1
     LAUNCH=$ARG3
     HARNESS=""
-    # First-word classification: leading environment assignments are skipped and
-    # the first remaining word names the harness. Every word is read through
-    # raw_launch_token, so the harness name, the executable identity and the
-    # fast modifier are all compared against the value the launched process will
-    # actually receive, whatever quoting spells it. The word's raw span is also
-    # recorded (prefix before it, tail after it) so the codex branch below can
-    # pin a codex launch to the freshly probed binary byte for byte.
-    # Globbing is off because those spans match each split word literally
-    # against the unexpanded command, so a word the shell had expanded
-    # (FOO=*.txt) would match nothing and silently duplicate the launch text.
-    RAW_LAUNCH_PREFIX=""
-    RAW_LAUNCH_EXE=""
-    RAW_LAUNCH_TAIL=""
-    raw_rest=$LAUNCH
-    raw_pre=""
-    raw_seen_exe=0
-    raw_exe_unresolved=0
-    raw_noglob_was_set=1
-    case $- in *f*) ;; *) raw_noglob_was_set=0; set -f ;; esac
-    for word in $LAUNCH; do
-      raw_ws=${raw_rest%%"$word"*}
-      raw_rest=${raw_rest#*"$word"}
-      if raw_lit=$(raw_launch_token "$word"); then
-        :
-      elif [ "$raw_seen_exe" -eq 0 ]; then
-        raw_exe_unresolved=1
-        break
-      else
-        raw_lit=$word
-      fi
-      RAW_LAUNCH_WORDS+=("$raw_lit")
-      [ "$raw_seen_exe" -eq 0 ] || continue
-      case "$raw_lit" in [A-Za-z_]*=*) raw_pre="$raw_pre$raw_ws$word"; continue ;; esac
-      RAW_LAUNCH_PREFIX="$raw_pre$raw_ws"
-      RAW_LAUNCH_EXE=$raw_lit
-      RAW_LAUNCH_TAIL=$raw_rest
-      HARNESS=$(basename "$raw_lit")
-      raw_seen_exe=1
-    done
-    [ "$raw_noglob_was_set" -eq 1 ] || set +f
-    # Fail closed: a launch whose executable word only the pane can resolve
-    # cannot be proven not to be codex, so it is refused rather than allowed to
-    # slip past the codex guards under some other harness name. Words AFTER the
-    # executable keep the escape hatch's unverified contract and may expand.
-    if [ "$raw_exe_unresolved" -eq 1 ] || [ "$raw_seen_exe" -eq 0 ]; then
-      echo "error: raw launch command's executable word cannot be resolved without running it (an unterminated quote, a shell expansion, or no command word at all), so firstmate cannot tell which harness is launching or apply that harness's launch guards; spell the executable as a literal word" >&2
+    # First-word classification through bin/fm-raw-launch-lib.sh: one
+    # quote-aware pass yields every word's literal value AND the command word's
+    # raw byte span, so the harness name, the executable identity and the fast
+    # modifier are all compared against the value the launched process will
+    # actually receive, whatever quoting spells it, and the codex branch below
+    # can pin the launch to the freshly probed binary byte for byte. Leading
+    # assignments are skipped by the reader. Fail closed: a line whose command
+    # word only the pane could resolve, or that would run more than one simple
+    # command, is refused rather than allowed to slip past the codex guards
+    # under some other harness name.
+    if ! fm_raw_launch_scan "$LAUNCH"; then
+      echo "error: raw launch command refused: $FM_RAW_REFUSAL. firstmate cannot tell which harness would launch or apply that harness's launch guards; spell the launch as one simple command whose executable word is literal (leading NAME=value assignments are fine)" >&2
       exit 1
     fi
+    RAW_LAUNCH_WORDS=("${FM_RAW_WORDS[@]}")
+    RAW_LAUNCH_EXE=${FM_RAW_WORDS[$FM_RAW_EXE_INDEX]}
+    RAW_LAUNCH_PREFIX=${LAUNCH:0:$FM_RAW_EXE_START}
+    RAW_LAUNCH_TAIL=${LAUNCH:$FM_RAW_EXE_END}
+    HARNESS=$(basename "$RAW_LAUNCH_EXE")
+    for ((raw_i = FM_RAW_EXE_INDEX + 1; raw_i < ${#FM_RAW_WORDS[@]}; raw_i++)); do
+      [ "${FM_RAW_WORD_OPAQUE[$raw_i]}" -eq 0 ] || RAW_LAUNCH_TAIL_OPAQUE=1
+    done
     ;;
   '')
     # No explicit harness: resolve from config. A secondmate AGENT launches on the
@@ -1812,6 +1780,13 @@ if [ "$HARNESS" = codex ]; then
         ;;
     esac
   done
+  # A codex argument only the pane can evaluate ($X, ~, a glob, a brace
+  # pattern) could expand to --fast, so the check above is conclusive only
+  # when every word after the executable is literal.
+  if [ "$RAW_LAUNCH_TAIL_OPAQUE" -eq 1 ]; then
+    echo "error: raw codex launch command for task $ID carries a word after the executable whose value only the pane can resolve (a shell expansion, tilde, glob or brace pattern), so the fast-modifier refusal cannot be proven; spell every word of a codex launch literally" >&2
+    exit 1
+  fi
 fi
 
 # muse and gemini are verified as CREWMATE/SCOUT adapters only. A secondmate is
