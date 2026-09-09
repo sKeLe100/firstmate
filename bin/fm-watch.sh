@@ -69,6 +69,11 @@
 #                          and has not been surfaced yet; reported once per
 #                          captured generation, never again while that record
 #                          stays queued and never once it is acknowledged
+#   check: retry halt: <tasks>
+#                          bin/fm-retry-pressure.sh reads these tasks at
+#                          retry_band=halt and the reading has not been
+#                          surfaced yet; carried forward onto every later
+#                          heartbeat row until the queue is drained
 #   check: rejected unauthenticated state checks: <paths>
 #                          unsafe state checks were refused without execution
 #   check: rejected unauthenticated PR poll retirement receipts: <paths>
@@ -1792,6 +1797,11 @@ heartbeat_reason_with_queued_halts() {
   printf 'check: retry halt: %s\n' "$names"
 }
 
+retry_halt_collect() {
+  FM_HEARTBEAT_RETRY_HALT_MARKS=$(retry_halt_tasks)
+  FM_HEARTBEAT_RETRY_HALT=$(printf '%s' "$FM_HEARTBEAT_RETRY_HALT_MARKS" | cut -f1 | paste -sd, -)
+}
+
 heartbeat_scan_finds_actionable() {
   local f task record rest endpoint ident rc found=1 sig marker
   FM_HEARTBEAT_SURFACE_ENDPOINTS=''
@@ -1815,8 +1825,7 @@ heartbeat_scan_finds_actionable() {
     FM_HEARTBEAT_SURFACE_ENDPOINTS="${FM_HEARTBEAT_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
     [ "$rc" -eq 0 ] && found=0
   done
-  FM_HEARTBEAT_RETRY_HALT_MARKS=$(retry_halt_tasks)
-  FM_HEARTBEAT_RETRY_HALT=$(printf '%s' "$FM_HEARTBEAT_RETRY_HALT_MARKS" | cut -f1 | paste -sd, -)
+  retry_halt_collect
   [ -n "$FM_HEARTBEAT_RETRY_HALT" ] && found=0
   return "$found"
 }
@@ -2773,8 +2782,10 @@ EOF
     # without exiting); the away-mode daemon, when present, owns triage and wants
     # every heartbeat.
     if afk_present; then
+      retry_halt_collect
       hb_reason=$(heartbeat_reason_with_queued_halts)
       fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
+      retry_halt_mark_surfaced
       touch "$STATE/.last-heartbeat"
       wake "$hb_reason"
     elif heartbeat_scan_finds_actionable; then

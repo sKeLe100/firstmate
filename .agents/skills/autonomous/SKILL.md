@@ -114,7 +114,7 @@ retain.
 Where a standing order and this skill's own text disagree, the standing order
 wins and the disagreement is a defect in this skill to report, not a conflict
 to arbitrate per pass.
-Record which standing orders applied; step 9 names them in the pass log.
+Record which standing orders applied; step 10 names them in the pass log.
 
 ### Step 1 - Gather decision state
 
@@ -268,24 +268,7 @@ autonomous senior default, and routing to Fable requires the captain's
 explicit per-dispatch approval for that task.
 When the test fails, use the PC02 lane directly.
 
-### Step 9 - Record the pass outcome
-
-Log the pass outcome durably.
-Record the number of decisions evaluated, the number ruled on, the
-number deferred, and the number dispatched.
-Append to the pass log: the epoch timestamp, the threshold that fired,
-and a one-line summary of outcomes.
-Name in that summary the standing orders step 0 applied, and any eligible row
-step 10 declined with its reason, so a later pass can see what this one chose
-rather than only what it did.
-Write that line once, after step 10 has run, so the single append-only line
-already names everything the pass decided; never go back and amend a line
-already appended.
-
-The pass log path is `state/.autonomous-pass-log`.
-Each entry is a single line: `<epoch>\t<threshold>\t<summary>`.
-
-### Step 10 - Refill idle lanes from the queue
+### Step 9 - Refill idle lanes from the queue
 
 Read the queue with `bin/fm-queue-snapshot.sh`, which is the single owner of
 the per-item eligibility verdict this step needs.
@@ -311,12 +294,28 @@ floor - leave the eligible rows queued and record them below instead.
 
 An idle lane with an eligible row is the pass failing, not the queue being
 empty: a pass that ends with headroom and an unclaimed `dispatchable` row must
-say in its step 9 log line which row it declined and why.
+say in the step 10 log line which row it declined and why.
+
+### Step 10 - Record the pass outcome
+
+Log the pass outcome durably.
+Record the number of decisions evaluated, the number ruled on, the
+number deferred, and the number dispatched.
+Append to the pass log: the epoch timestamp, the threshold that fired,
+and a one-line summary of outcomes.
+Name in that summary the standing orders step 0 applied, and any eligible row
+step 9 declined with its reason, so a later pass can see what this one chose
+rather than only what it did.
+Write that line once, as this step's single append; never go back and amend a
+line already appended.
+
+The pass log path is `state/.autonomous-pass-log`.
+Each entry is a single line: `<epoch>\t<threshold>\t<summary>`.
 
 ### Deferred-ready visibility (end-of-pass reporting)
 
-After step 10, add a deferred-ready line to the pass summary.
-Name each item step 10 read as `gate: dispatchable` from
+After step 9, add a deferred-ready line to the pass summary.
+Name each item step 9 read as `gate: dispatchable` from
 `bin/fm-queue-snapshot.sh`, which is the single owner of that derivation, and
 that passed the stale-work check but was not dispatched, once it qualifies as
 deferred-ready.
@@ -332,7 +331,7 @@ Each deferred-ready item carries its plain-language deferral reason
 outside attention window, or senior-tier daytime restriction). Below threshold, stay silent - no
 separate ping, no notification. Rides the existing summary ping and its band gating.
 
-Mechanics: at step 9 bookkeeping, when an eligible item goes undispatched,
+Mechanics: at step 10 bookkeeping, when an eligible item goes undispatched,
 run `bin/fm-captain-hold.sh mark set <task-id> deferred-since <UTC-ISO8601-timestamp>`,
 and `bin/fm-captain-hold.sh mark clear <task-id> deferred-since` when the item
 is eventually dispatched. That subcommand is the only writer of firstmate's
