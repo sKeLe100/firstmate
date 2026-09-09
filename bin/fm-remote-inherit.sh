@@ -67,6 +67,14 @@ PARENT_REAL=$(CDPATH='' cd -- "$PARENT" && pwd -P)
 case "$PARENT_REAL" in "$HOME_REAL/config"|"$HOME_REAL/data") ;; *) die "inherited destination escapes FM_HOME" ;; esac
 DEST="$PARENT_REAL/$(basename "$REL")"
 [ ! -L "$DEST" ] || die "inherited destination is a symlink"
+case "$REL" in
+  config/*)
+    if fm_config_inherit_item_overridden "$PARENT_REAL" "${REL#config/}"; then
+      printf 'skipped: %s (secondmate-local override pinned)\n' "$REL"
+      exit 0
+    fi
+    ;;
+esac
 if [ -e "$DEST" ]; then
   [ -f "$DEST" ] || die "inherited destination is not a regular file"
   [ "$(file_link_count "$DEST")" = 1 ] || die "inherited destination is hardlinked"
