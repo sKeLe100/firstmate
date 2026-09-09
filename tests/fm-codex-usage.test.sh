@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/fm-codex-usage.test.sh - behavior tests for bin/fm-codex-usage.sh.
-# Exercises the helper through its executable interface with synthetic and
-# real rollout fixtures: the reported context band, weekly quota, model
+# Exercises the helper through its executable interface with synthetic inline
+# rollout fixtures: the reported context band, weekly quota, model
 # attribution, and telemetry emission must all match the data in the file.
 set -u
 
@@ -10,8 +10,6 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-codex-usage)
 HELPER="$ROOT/bin/fm-codex-usage.sh"
-
-# Path to the real Codex usage audit fixtures.
 
 # --- helper functions -------------------------------------------------------
 
@@ -43,6 +41,14 @@ mk_turn_context() {
   printf '{"timestamp":"2026-09-06T19:49:49.000Z","ordinal":1,"type":"turn_context","payload":{"model":"%s","text":"test"}}\n' "$1"
 }
 
+# mk_astra_null_info - emit a rollout mimicking the astra burn session:
+# info=null and rate_limits.primary=null, with a turn_context model.
+mk_astra_null_info() {
+  printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"astra","model_provider":"openai"}}\n'
+  mk_turn_context "gpt-6-astra"
+  printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":1,"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":null}}}\n'
+}
+
 # --- tests ------------------------------------------------------------------
 
 test_explicit_path_reads_all_fields() {
@@ -54,8 +60,6 @@ test_explicit_path_reads_all_fields() {
     # session_meta
     printf '{"timestamp":"2026-09-06T19:49:48.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"abc","model_provider":"openai"}}\n'
     # turn_context with model
-    mk_turn_context "gpt-5.6-terra"
-    mk_turn_context "gpt-5.6-terra"
     mk_turn_context "gpt-5.6-terra"
     # 5 token_count records at different ordinals
     mk_line 1 60000 6000 258400 75.0 1789236167
@@ -75,7 +79,7 @@ test_explicit_path_reads_all_fields() {
   [ "$(field "$out" models_seen)" = "gpt-5.6-terra" ] || fail "models_seen should be gpt-5.6-terra: $out"
   # turns = number of token_count records.
   [ "$(field "$out" turns)" = "5" ] || fail "turns should be 5: $out"
-  # weekly_resets_at should be populated (inherited from previous record).
+  # weekly_resets_at should be populated from the last record's rate_limits.
   [ "$(field "$out" weekly_resets_at)" != "" ] || fail "weekly_resets_at should be populated: $out"
   pass "fm-codex-usage.sh: explicit path reads all fields correctly"
 }
@@ -220,16 +224,10 @@ test_no_models_seen_is_none() {
 }
 
 test_astra_null_info_handled_gracefully() {
-  # Create an inline fixture mimicking the astra burn session:
-  # info=null, primary=null, but turn_context has model gpt-6-astra.
   local home out
   home="$TMP_ROOT/test7"
   mkdir -p "$home"
-  {
-    printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"astra","model_provider":"openai"}}\n'
-    mk_turn_context "gpt-6-astra"
-    printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":1,"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":null}}}\n'
-  } > "$TMP_ROOT/astra-inline.jsonl"
+  mk_astra_null_info > "$TMP_ROOT/astra-inline.jsonl"
   out=$(emit "$home" "$TMP_ROOT/astra-inline.jsonl")
   # context_tokens should be 0 (info is null).
   [ "$(field "$out" context_tokens)" = "0" ] || fail "astra context_tokens should be 0: $out"
@@ -357,12 +355,7 @@ test_telemetry_omits_unknown_fields() {
   local home
   home="$TMP_ROOT/test11d"
   mkdir -p "$home"
-  # Inline minimal astra null-info fixture.
-  {
-    printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"astra","model_provider":"openai"}}\n'
-    mk_turn_context "gpt-6-astra"
-    printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":1,"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":null}}}\n'
-  } > "$TMP_ROOT/astra-telemetry.jsonl"
+  mk_astra_null_info > "$TMP_ROOT/astra-telemetry.jsonl"
   FM_HOME="$home" "$HELPER" --telemetry --task-id task-null "$TMP_ROOT/astra-telemetry.jsonl" >/dev/null \
     || fail "telemetry run on null-info fixture failed"
   python3 -c "
