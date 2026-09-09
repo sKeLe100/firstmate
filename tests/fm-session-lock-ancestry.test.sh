@@ -289,7 +289,7 @@ SH
 # walk terminates inside the fixture. Returns once the hook has recorded its exit
 # code.
 run_fixture_tree() {  # <dir> <session-bin> [<daemon-bin>]
-  local dir=$1 session_bin=$2 daemon_bin=${3:-} i
+  local dir=$1 session_bin=$2 daemon_bin=${3:-} deadline
   if [ -n "$daemon_bin" ]; then
     FM_HOME="$dir" FM_SESSION_BIN="$session_bin" FM_FIXTURE_ORPHAN_HERE=0 \
       bash -c '"$0" "$1" &' "$daemon_bin" "$dir/daemon.sh"
@@ -297,10 +297,12 @@ run_fixture_tree() {  # <dir> <session-bin> [<daemon-bin>]
     FM_HOME="$dir" FM_FIXTURE_ORPHAN_HERE=1 \
       bash -c '"$0" "$1" &' "$session_bin" "$dir/session.sh"
   fi
-  i=0
-  while [ "$i" -lt 400 ] && [ ! -s "$dir/state/hook.rc" ]; do
+  # Wall-clock, not an iteration count: the fixture tree runs a real hook, so a
+  # loaded host (the suite's own concurrent lanes) stretches it well past any
+  # fixed number of 0.05s polls.
+  deadline=$((SECONDS + 120))
+  while [ "$SECONDS" -lt "$deadline" ] && [ ! -s "$dir/state/hook.rc" ]; do
     sleep 0.05
-    i=$((i + 1))
   done
   [ -s "$dir/state/hook.rc" ] || fail "the fixture hook never finished"
 }
