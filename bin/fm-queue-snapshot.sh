@@ -28,9 +28,11 @@
 #               deterministically.
 #   rot       - yes/no. yes when this row's own `gate` is "dispatchable" (so
 #               it is already known neither blocked nor held), its `priority`
-#               is unset ("-"), and `created` is at least ROT_MIN_AGE_DAYS
-#               days old; no otherwise, including when `created` is empty
-#               (age cannot be assessed, so it is never guessed rotten).
+#               is not a number (unset, "-", or any non-numeric value - the
+#               same rule priority_analysis uses), and `created` is at least
+#               ROT_MIN_AGE_DAYS days old; no otherwise, including when
+#               `created` is empty (age cannot be assessed, so it is never
+#               guessed rotten).
 #               ROT_MIN_AGE_DAYS reuses the ">24 hours" deferred-ready
 #               staleness convention the `autonomous` skill already applies
 #               to eligible-but-undispatched items (see its "deferred-ready"
@@ -237,7 +239,7 @@ while [ $# -gt 0 ]; do
       ;;
     --now)
       NOW_OVERRIDE="${2:?--now needs a value}"
-      if ! python3 -c 'import sys; from datetime import datetime; datetime.strptime(sys.argv[1], "%Y-%m-%d")' "$NOW_OVERRIDE" >/dev/null 2>&1; then
+      if ! python3 -c 'import sys; from datetime import date; date.fromisoformat(sys.argv[1])' "$NOW_OVERRIDE" >/dev/null 2>&1; then
         echo "fm-queue-snapshot: --now needs YYYY-MM-DD, got: $NOW_OVERRIDE" >&2
         exit 2
       fi
