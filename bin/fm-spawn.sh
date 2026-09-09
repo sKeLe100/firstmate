@@ -644,9 +644,10 @@ pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-
 # endpoint releases the lane, every other local state occupies it, and remote
 # routes are outside its scope in both directions - a meta carrying remote_host
 # never occupies the lane, and a remote-routed spawn is never checked against
-# it. The lane exists to serialize this home's local exe rediscovery and
-# --version probe, which an agent running on another host never touches; that
-# host's own fm-spawn applies its own lane.
+# it. The lane enforces one rule only: at most one live LOCAL Codex agent per
+# home. It does not serialize the executable rediscovery or --version probe
+# performed earlier in this script. An agent running on another host is
+# governed by that host's own fm-spawn lane.
 codex_lane_guard() {  # <task-id> <harness>: 0 iff <task-id> may launch/relaunch onto codex in this home now
   local id=$1 harness=$2 other_meta other_task other_target other_state
   [ "$harness" = codex ] || return 0
@@ -1666,148 +1667,37 @@ launch_template() {
   esac
 }
 
-# raw_launch_classify splits a hand-composed launch command the way a shell
-# would: it tracks single quotes, double quotes and backslash escapes, so a
-# word only ends at whitespace seen OUTSIDE quoting. Leading environment
-# assignments are recognised by their unquoted literal value and kept verbatim
-# in RAW_LAUNCH_PREFIX; the first non-assignment word is the executable, whose
-# LITERAL value (quotes removed) becomes RAW_LAUNCH_EXE, and everything after
-# its raw span becomes RAW_LAUNCH_TAIL. Prefix + a replacement executable word
-# + tail reconstructs the command byte for byte, which is what lets the codex
-# branch pin the launch to the freshly probed binary.
-# RAW_LAUNCH_EXE_UNCLEAR is set only when the executable genuinely cannot be
-# determined statically: an unterminated quote, no executable word at all, or
-# an executable word produced by a shell expansion. Those shapes cannot be
-# proven not to be codex, so the caller refuses them.
-raw_launch_take_word() {  # <leading-ws> <raw-text> <literal-value> <has-expansion>: 0 iff this is the executable word
-  local ws=$1 raw=$2 lit=$3 expands=$4
-  if [[ $lit =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-    RAW_LAUNCH_PREFIX="$RAW_LAUNCH_PREFIX$ws$raw"
-    return 1
-  fi
-  RAW_LAUNCH_PREFIX="$RAW_LAUNCH_PREFIX$ws"
-  RAW_LAUNCH_EXE=$lit
-  [ "$expands" -eq 1 ] && RAW_LAUNCH_EXE_UNCLEAR=1
-  return 0
-}
-
-raw_launch_classify() {  # <launch-command>
-  local launch=$1 i=0 n ch
-  local in_sq=0 in_dq=0 in_word=0 expands=0
-  local word_raw="" word_lit="" pending_ws=""
-  RAW_LAUNCH_PREFIX=""
-  RAW_LAUNCH_EXE=""
-  RAW_LAUNCH_TAIL=""
-  RAW_LAUNCH_EXE_UNCLEAR=0
-  n=${#launch}
-  while [ "$i" -lt "$n" ]; do
-    ch=${launch:i:1}
-    if [ "$in_sq" -eq 1 ]; then
-      word_raw+=$ch
-      i=$((i + 1))
-      if [ "$ch" = "'" ]; then in_sq=0; else word_lit+=$ch; fi
-      continue
-    fi
-    if [ "$in_dq" -eq 1 ]; then
-      if [ "$ch" = "\\" ] && [ $((i + 1)) -lt "$n" ]; then
-        word_raw+=$ch${launch:i+1:1}
-        word_lit+=${launch:i+1:1}
-        i=$((i + 2))
-        continue
-      fi
-      word_raw+=$ch
-      i=$((i + 1))
-      if [ "$ch" = '"' ]; then
-        in_dq=0
-      else
-        word_lit+=$ch
-        case "$ch" in '$'|'`') expands=1 ;; esac
-      fi
-      continue
-    fi
-    case "$ch" in
-      [[:space:]])
-        if [ "$in_word" -eq 1 ]; then
-          if raw_launch_take_word "$pending_ws" "$word_raw" "$word_lit" "$expands"; then
-            RAW_LAUNCH_TAIL=${launch:i}
-            return 0
-          fi
-          pending_ws=""
-          word_raw=""
-          word_lit=""
-          expands=0
-          in_word=0
-        fi
-        pending_ws+=$ch
-        i=$((i + 1))
-        continue
-        ;;
-    esac
-    in_word=1
-    case "$ch" in
-      "'")
-        in_sq=1
-        word_raw+=$ch
-        i=$((i + 1))
-        continue
-        ;;
-      '"')
-        in_dq=1
-        word_raw+=$ch
-        i=$((i + 1))
-        continue
-        ;;
-      "\\")
-        if [ $((i + 1)) -lt "$n" ]; then
-          word_raw+=$ch${launch:i+1:1}
-          word_lit+=${launch:i+1:1}
-          i=$((i + 2))
-        else
-          word_raw+=$ch
-          i=$((i + 1))
-        fi
-        continue
-        ;;
-      '$'|'`') expands=1 ;;
-    esac
-    word_raw+=$ch
-    word_lit+=$ch
-    i=$((i + 1))
-  done
-  if [ "$in_sq" -eq 1 ] || [ "$in_dq" -eq 1 ]; then
-    RAW_LAUNCH_EXE_UNCLEAR=1
-    return 0
-  fi
-  if [ "$in_word" -eq 1 ]; then
-    if raw_launch_take_word "$pending_ws" "$word_raw" "$word_lit" "$expands"; then
-      RAW_LAUNCH_TAIL=""
-      return 0
-    fi
-    RAW_LAUNCH_PREFIX="$RAW_LAUNCH_PREFIX$pending_ws$word_raw"
-  fi
-  [ -n "$RAW_LAUNCH_EXE" ] || RAW_LAUNCH_EXE_UNCLEAR=1
-  return 0
-}
-
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     RAW_LAUNCH=1
     LAUNCH=$ARG3
     HARNESS=""
-    raw_launch_classify "$LAUNCH"
-    [ -z "$RAW_LAUNCH_EXE" ] || HARNESS=$(basename "$RAW_LAUNCH_EXE")
-    # A raw launch is codex when its executable word is SPELLED codex; a word
-    # spelled anything else is not a codex launch and keeps the unverified
-    # adapter escape hatch untouched. Once a launch is codex, the codex branch
-    # below still requires that word to resolve to the freshly rediscovered
-    # codex binary before it will launch.
-    # A launch whose executable cannot be determined statically cannot be proven
-    # NOT to be codex, so it is refused rather than allowed to slip past the
-    # codex guards with a bogus harness name.
-    if [ "$RAW_LAUNCH_EXE_UNCLEAR" -eq 1 ]; then
-      echo "error: raw launch command's executable word cannot be identified (unterminated quote, no command word, or an executable name produced by a shell expansion), so firstmate cannot tell which harness is launching or apply that harness's launch guards; spell the executable as a literal word" >&2
-      exit 1
-    fi
+    # First-word classification, as before: leading environment assignments are
+    # skipped and the first remaining word names the harness. The word's raw
+    # span is also recorded (prefix before it, tail after it) so the codex
+    # branch below can pin a codex launch to the freshly probed binary.
+    RAW_LAUNCH_PREFIX=""
+    RAW_LAUNCH_EXE=""
+    RAW_LAUNCH_TAIL=""
+    raw_rest=$LAUNCH
+    raw_pre=""
+    for word in $LAUNCH; do
+      raw_ws=${raw_rest%%"$word"*}
+      raw_rest=${raw_rest#*"$word"}
+      case "$word" in [A-Za-z_]*=*) raw_pre="$raw_pre$raw_ws$word"; continue ;; esac
+      RAW_LAUNCH_PREFIX="$raw_pre$raw_ws"
+      RAW_LAUNCH_EXE=$word
+      RAW_LAUNCH_TAIL=$raw_rest
+      HARNESS=$(basename "$word")
+      break
+    done
+    # A raw launch is codex when this word is SPELLED codex; anything else is
+    # not a codex launch and keeps the unverified-adapter escape hatch
+    # untouched. Classification is deliberately as loose as it has always been
+    # (plain word splitting, no quote parsing), so a wrapper or a quoted
+    # environment value classifies as some other harness and bypasses the codex
+    # guards - the same documented limitation the escape hatch's unverified
+    # contract already carries.
     ;;
   '')
     # No explicit harness: resolve from config. A secondmate AGENT launches on the
