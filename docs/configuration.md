@@ -332,6 +332,8 @@ Exit 2 - an unreadable `/proc/meminfo` or a malformed floor - means the reading 
 Two callers enforce it: the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) pass's step 3 defers new dispatch while the host reads low, and `bin/fm-spawn.sh` refuses a local launch below the floor so a dispatch that bypassed the pass is still caught, except for `--relaunch`, which is exempt: a same-task replacement is net-neutral rather than new usage, and the reading there would be taken while the agent being replaced still holds its memory.
 A remote secondmate launch is not gated by it, because this reading says nothing about the host that launch lands on.
 
+`config/dispatch-cap` and its Codex sibling `config/codex-lane-cap` are inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so a secondmate launches with the primary's lane limits instead of no mechanical cap at all; primary-authoritative propagation and absence-mirroring apply exactly as for `config/context-thresholds` below.
+
 ## Session context thresholds (config/context-thresholds)
 
 `config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-26).
