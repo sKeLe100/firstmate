@@ -130,6 +130,26 @@ assert_grep "closed	item-a	medium" "$home/data/routing-ledger.tsv" \
 # gc on an already-absent id is a no-op, not an error.
 run_routing "$home" gc item-a || fail "gc on an absent row must be a no-op, not an error"
 
+# 6b. A gc that cannot take the registry lock must archive nothing: an
+#     abandoned "closed" line would be counted again when the next heartbeat
+#     retries the gc, over-reporting the reconciliation metric.
+run_routing "$home" set item-c pc02 >/dev/null
+ledger_before=$(wc -l < "$home/data/routing-ledger.tsv")
+mkdir "$home/data/.backlog-routing.lock"
+run_routing "$home" gc item-c 2>/dev/null; rc=$?
+rmdir "$home/data/.backlog-routing.lock"
+[ "$rc" -eq 2 ] || fail "gc must exit 2 when the registry lock is held, got $rc"
+ledger_after=$(wc -l < "$home/data/routing-ledger.tsv")
+[ "$ledger_before" -eq "$ledger_after" ] \
+  || fail "a gc that could not remove the row must not have appended a closed ledger line"
+assert_contains "$(run_routing "$home" list --class pc02)" "item-c" \
+  "the row survives a gc that could not take the registry lock"
+run_routing "$home" gc item-c || fail "the retried gc should succeed once the lock is free"
+assert_grep "closed	item-c	pc02" "$home/data/routing-ledger.tsv" \
+  "the retried gc appends exactly the one closed line"
+[ "$(grep -c "closed	item-c	pc02" "$home/data/routing-ledger.tsv")" -eq 1 ] \
+  || fail "item-c must be archived exactly once across the failed and retried gc"
+
 # 7. list filters by class and never validates freshness itself.
 run_routing "$home" set item-b pc02 >/dev/null
 run_routing "$home" set item-c senior >/dev/null

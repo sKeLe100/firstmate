@@ -200,7 +200,7 @@ routing_rewrite() {  # <id> <new_line-or-empty>
   if [ -n "$new_line" ]; then
     printf '%s\n' "$new_line" >> "$tmp"
   fi
-  mv "$tmp" "$ROUTING"
+  mv "$tmp" "$ROUTING" || { rm -f "$tmp"; return 1; }
 }
 
 routing_row_for() {  # <id>
@@ -231,8 +231,12 @@ cmd_set() {
   digest=$(digest_of_fields "$fields")
   ts=$(utc_now)
   acquire_lockdir "$lockdir" || exit 2
-  routing_rewrite "$id" "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' \
-    "$id" "$class" "$sidecar" "$(sanitize_field "$risk")" "$(sanitize_field "$purpose")" "$ts" "$digest")"
+  if ! routing_rewrite "$id" "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+    "$id" "$class" "$sidecar" "$(sanitize_field "$risk")" "$(sanitize_field "$purpose")" "$ts" "$digest")"; then
+    release_lockdir "$lockdir"
+    fm_routing_log "could not write the routing row for $id"
+    exit 2
+  fi
   release_lockdir "$lockdir"
   ledger_append classified "$id" "$class" || {
     fm_routing_log "row for $id written but the classified ledger line could not be appended"
@@ -270,8 +274,12 @@ cmd_escalate() {
   digest=$(digest_of_fields "$fields")
   ts=$(utc_now)
   acquire_lockdir "$lockdir" || exit 2
-  routing_rewrite "$id" "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' \
-    "$id" "$class" "$sidecar" "$(printf '%s' "$existing" | cut -f4)" "$(printf '%s' "$existing" | cut -f5)" "$ts" "$digest")"
+  if ! routing_rewrite "$id" "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+    "$id" "$class" "$sidecar" "$(printf '%s' "$existing" | cut -f4)" "$(printf '%s' "$existing" | cut -f5)" "$ts" "$digest")"; then
+    release_lockdir "$lockdir"
+    fm_routing_log "could not write the escalated routing row for $id"
+    exit 2
+  fi
   release_lockdir "$lockdir"
   ledger_append escalated "$id" "$class" "$reason" || {
     fm_routing_log "row for $id escalated but the escalated ledger line could not be appended"
@@ -330,18 +338,26 @@ cmd_gc() {
   local id=${1:-}
   [ -n "$id" ] || { fm_routing_log "gc requires <id>"; exit 2; }
   local row lockdir="$DATA/.backlog-routing.lock" class
+  # Everything below runs under the routing lock, so the row's existence
+  # check, its archive, and its removal are one indivisible step: a gc that
+  # cannot finish never leaves a "closed" line behind for the next
+  # heartbeat's retry to duplicate.
+  acquire_lockdir "$lockdir" || exit 2
   if ! row=$(routing_row_for "$id"); then
+    release_lockdir "$lockdir"
     exit 0
   fi
   class=$(printf '%s' "$row" | cut -f2)
-  # Archive first: the row's class is unrecoverable once the rewrite drops
-  # it, so a contended ledger must abort the removal rather than lose it.
-  ledger_append closed "$id" "$class" || {
+  if ! ledger_append closed "$id" "$class"; then
+    release_lockdir "$lockdir"
     fm_routing_log "refusing to gc $id: could not append its closed ledger line"
     exit 2
-  }
-  acquire_lockdir "$lockdir" || exit 2
-  routing_rewrite "$id" ""
+  fi
+  if ! routing_rewrite "$id" ""; then
+    release_lockdir "$lockdir"
+    fm_routing_log "gc $id: archived to the ledger but the registry rewrite failed"
+    exit 2
+  fi
   release_lockdir "$lockdir"
 }
 
