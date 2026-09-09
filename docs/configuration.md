@@ -342,6 +342,15 @@ The live `<total_tokens>` countdown can stick at 0 and is never evidence of exha
 Ship briefs scaffolded by `bin/fm-brief.sh` carry that same instruction as a standing rule, so a crewmate reads its context with `/context` or the helper instead of the countdown without being told per task.
 The helper's header owns exact parsing and output mechanics.
 
+## Codex context thresholds (config/codex-context-thresholds)
+
+`config/codex-context-thresholds` is the optional local, gitignored Codex-side sibling of `config/context-thresholds`, setting the bands `bin/fm-codex-usage.sh` reports for a Codex session read from its durable rollout file rather than a Claude transcript.
+It is a separate file because the Codex context window differs from Claude's: the built-in defaults are `warn=150000` and `restart=180000` against a ~258k window.
+The format and failure behavior match its sibling above - at most one `warn=<N>` line and one `restart=<N>` line, positive base-10 integers with `warn <= restart`, and a malformed file rejected loudly rather than silently replaced by defaults - and `FM_CONFIG_OVERRIDE` redirects the lookup exactly as it does for the other threshold files.
+Unlike `config/context-thresholds`, it is not in `FM_INHERITABLE_CONFIG`, so each home sets its own.
+The band meanings and the checkpoint-then-restart-with-carryover mechanics they drive are the ones defined under "Session context thresholds" above; callers act on the reported `band` rather than re-deriving thresholds.
+The helper also reports weekly-quota burn, per-turn weekly delta, and model attribution on the same data-only line, and its header owns exact parsing, flags, and output mechanics.
+
 ## Retry-loop thresholds (config/retry-thresholds)
 
 `config/retry-thresholds` is the optional local, gitignored sibling of `config/context-thresholds` for the repetition-driven failure mode context size cannot sense: repeated relaunches, review-gate rounds, and fix no-ops that each pay a full cold context reload (evidence: `data/session-retry-failsafe-design/report.md`, 2026-09-01).
