@@ -311,6 +311,8 @@ The elapsed-time dimension bounds how many concurrent cloud sessions the window'
 
 Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable).
 
+`config/dispatch-cap` and its Codex sibling `config/codex-lane-cap` are inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so a secondmate launches with the primary's lane limits instead of no mechanical cap at all; primary-authoritative propagation and absence-mirroring apply exactly as for `config/context-thresholds` below.
+
 ### Fleet-stall breakout
 
 A fleet stall is every lane blocked or held while at least one item is still `gate: dispatchable` in `bin/fm-queue-snapshot.sh`: capacity exists on paper, work exists in the queue, and nothing can move without the captain.
