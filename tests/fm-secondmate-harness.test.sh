@@ -423,7 +423,7 @@ test_propagate_lib() {
 # while every other declared item keeps converging normally, and the skip
 # must be reported (report status "skipped") without failing propagation.
 test_propagate_lib_local_override() {
-  local d src dest report status reason
+  local d src dest report status reason stderr
   d="$TMP_ROOT/prop-lib-override"
   src="$d/src"
   dest="$d/home/config"
@@ -473,6 +473,22 @@ test_propagate_lib_local_override() {
   propagate_inheritable_config "$src" "$dest" || fail "override removed: propagate returned non-zero"
   [ "$(cat "$dest/crew-harness")" = pi ] \
     || fail "override removed: crew-harness did not resume inheriting after the marker was removed"
+
+  # 5. a marker path that is not a regular file (e.g. a symlink) is not a
+  # trusted opt-in: the item keeps converging to the primary and the marker
+  # path is named on stderr.
+  printf 'pinned\n' > "$dest/crew-harness"
+  printf 'not-a-marker\n' > "$d/marker-target"
+  ln -s "$d/marker-target" "$dest/crew-harness.local-override"
+  printf 'grok\n' > "$src/crew-harness"
+  stderr="$d/symlink-marker.err"
+  propagate_inheritable_config "$src" "$dest" 2> "$stderr" \
+    || fail "override symlink marker: propagate returned non-zero"
+  [ "$(cat "$dest/crew-harness")" = grok ] \
+    || fail "override symlink marker: a symlinked marker was trusted as an opt-in"
+  assert_contains "$(cat "$stderr")" "$dest/crew-harness.local-override" \
+    "override symlink marker: no diagnostic named the untrusted marker path"
+  rm -f "$dest/crew-harness.local-override"
 
   pass "B1b propagate_inheritable_config: a secondmate-local crew-harness override marker is honored and reversible"
 }
