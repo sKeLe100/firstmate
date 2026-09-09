@@ -564,6 +564,7 @@ make_noop_tmux() {
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_codex_probe "$fakebin"
   printf '%s\n' "$fakebin"
 }
 
@@ -805,6 +806,7 @@ exit 0
 SH
   chmod +x "$fakebin/tmux"
   fm_fake_exit0 "$fakebin" pi
+  fm_fake_codex_probe "$fakebin"
   printf '%s\n' "$fakebin"
 }
 

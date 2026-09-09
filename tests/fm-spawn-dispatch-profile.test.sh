@@ -344,8 +344,9 @@ test_active_dispatch_profile_allows_explicit_harness() {
   expect_code 0 "$status" "explicit harness should satisfy active dispatch-profile requirement"
   assert_contains "$out" "spawned $id harness=codex" "spawn did not report explicit codex harness"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
+  assert_grep "codex_exe=$FAKEBIN_DIR/codex" "$HOME_DIR/state/$id.meta" "missing resolved executable metadata"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "'$FAKEBIN_DIR/codex' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "explicit harness launch did not thread model and effort"
   pass "active crew-dispatch profile allows an explicit resolved harness"
 }
@@ -397,8 +398,8 @@ test_raw_codex_launch_command_is_exempt_from_the_axis_guard() {
     "a raw codex launch command is the documented escape hatch and must not hit the axis guard"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
   case "$launch" in
-    *"codex --dangerously-bypass-approvals-and-sandbox") ;;
-    *) fail "the raw codex command was not launched verbatim"$'\n'"actual: $launch" ;;
+    *"'$FAKEBIN_DIR/codex' --dangerously-bypass-approvals-and-sandbox") ;;
+    *) fail "the raw codex command was not pinned to the freshly rediscovered executable"$'\n'"actual: $launch" ;;
   esac
   assert_not_contains "$launch" "model_reasoning_effort" \
     "fm-spawn must not compose profile flags into a hand-written launch command"
@@ -432,8 +433,10 @@ test_codex_threads_model_and_effort() {
   status=$?
   expect_code 0 "$status" "codex spawn with profile flags should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
+  assert_grep "codex_exe=$FAKEBIN_DIR/codex" "$HOME_DIR/state/$id.meta" "missing resolved executable metadata"
+  assert_grep "codex_version=codex-cli 0.153.4" "$HOME_DIR/state/$id.meta" "missing executable version metadata"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "'$FAKEBIN_DIR/codex' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread model and reasoning effort config"
   pass "codex receives --model and model_reasoning_effort profile flags"
 }
@@ -779,14 +782,31 @@ test_batch_forwards_shared_profile_flags() {
   enable_dispatch_profile "$HOME_DIR"
 
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-    "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness codex --model gpt-5 --effort high)
+    "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness grok --model grok-4 --effort high)
   status=$?
   expect_code 0 "$status" "batch spawn with shared profile flags should succeed"
-  assert_contains "$out" "spawned $id1 harness=codex" "first batch task did not use shared harness"
-  assert_contains "$out" "spawned $id2 harness=codex" "second batch task did not use shared harness"
-  assert_meta_profile "$HOME_DIR/state/$id1.meta" codex gpt-5 high
-  assert_meta_profile "$HOME_DIR/state/$id2.meta" codex gpt-5 high
+  assert_contains "$out" "spawned $id1 harness=grok" "first batch task did not use shared harness"
+  assert_contains "$out" "spawned $id2 harness=grok" "second batch task did not use shared harness"
+  assert_meta_profile "$HOME_DIR/state/$id1.meta" grok grok-4 high
+  assert_meta_profile "$HOME_DIR/state/$id2.meta" grok grok-4 high
   pass "batch dispatch forwards shared --harness, --model, and --effort to every pair"
+}
+
+test_codex_batch_is_refused_before_any_pair_spawns() {
+  local rec id1 id2 out status
+  id1=profile-batch-codex-a-z31
+  id2=profile-batch-codex-b-z32
+  rec=$(make_spawn_case profile-batch-codex claude "$id1" "$id2")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness codex --model gpt-5 --effort high 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a codex batch must be refused"$'\n'"$out"
+  assert_contains "$out" "batch dispatch onto codex is refused" "refusal did not name the codex batch rule"
+  [ ! -e "$HOME_DIR/state/$id1.meta" ] || fail "first batch pair was spawned despite the codex batch refusal"
+  [ ! -e "$HOME_DIR/state/$id2.meta" ] || fail "second batch pair was spawned despite the codex batch refusal"
+  pass "a codex batch is refused outright with no pair half-spawned"
 }
 
 test_claude_forwards_firstmate_config_dir_when_set() {
@@ -1135,6 +1155,10 @@ test_worker_launch_delivers_role_scope() {
     cp "$HOME_DIR/data/$id/brief.md" "$CASE_DIR/brief-before"
     cat > "$FAKEBIN_DIR/codex" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf 'codex-cli 0.153.4\n'
+  exit 0
+fi
 printf '%s\n' "$@" > "$FM_ROLE_PROMPT"
 SH
     chmod +x "$FAKEBIN_DIR/codex"
@@ -1200,6 +1224,7 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
+test_codex_batch_is_refused_before_any_pair_spawns
 test_claude_forwards_firstmate_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir

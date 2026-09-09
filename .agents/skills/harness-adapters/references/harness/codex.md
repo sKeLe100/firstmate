@@ -17,6 +17,19 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 | Approval bypass | `--dangerously-bypass-approvals-and-sandbox` is **required** on every launch (enforced in `bin/fm-spawn.sh`). Removing or softening this flag re-enables the `codex-auto-review` feature, which bills a second hidden model call against the weekly allocation on every approval request. |
 | Required axes | Both. Codex CLI launches on its own bundled default model and reasoning effort when a flag is absent, so `../../../bin/fm-spawn.sh` refuses a codex spawn or relaunch that names no model or an effort outside the four above, instead of the record-and-omit contract every other harness follows. A raw launch command is exempt. |
 
+## Lane rule
+
+The Codex lane is per Firstmate home, matching the PC02 lane guard.
+`bin/fm-spawn.sh` scans only this home's task metas and refuses a Codex launch while another local Codex task, worker or secondmate, is alive or still unconfirmed; a positively dead local endpoint releases the lane.
+Remote-routed metas are outside the guard's scope, so a Codex secondmate published on another host never blocks a local Codex launch, and the refusal names the home it applies to.
+Batched Codex spawns are refused separately and unconditionally.
+
+## Executable rediscovery
+
+`bin/fm-spawn.sh` rediscovers the codex executable from PATH on every spawn and relaunch, resolves it with `readlink -f`, probes `--version`, and never reads it from a prior meta.
+A raw custom launch command whose first word is a codex binary is refused unless that binary resolves to the same path; the refusal names both resolved paths.
+The task meta records `codex_exe` and `codex_version` as audit evidence only; nothing consumes them.
+
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
 Accept it with Enter and verify the instructions begin processing.
 The decision persists for the repository, so later worktrees of the same project skip it.

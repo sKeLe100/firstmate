@@ -204,6 +204,7 @@
 #   See docs/configuration.md for provider/Git setup and supported limits.
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
 #     __BRIEF__    absolute path to data/<task-id>/brief.md
+#     __CODEXBIN__ freshly rediscovered codex executable, resolved and version-probed on every launch
 #     __PIBIN__    quoted concrete Pi-family executable path resolved from PATH
 #     __PITUIMODE__ optional --tui-mode regular when that executable advertises it
 #     __TURNEND__  absolute path to state/<task-id>.turn-ended (for harnesses whose
@@ -633,6 +634,46 @@ pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-
       fi
     fi
     echo "error: PC02 lane occupied: task '$other_task' already holds a live $other_model endpoint and PC02 serves one model at a time; wait for that task or dispatch '$id' to the rule's next candidate" >&2
+    return 1
+  done
+  return 0
+}
+
+# codex_lane_guard serializes LOCAL Codex launches within this home under the
+# task-set lock. It scans this home's metas only: a positively dead local
+# endpoint releases the lane, every other local state occupies it, and remote
+# routes are outside its scope in both directions - a meta carrying remote_host
+# never occupies the lane, and a remote-routed spawn is never checked against
+# it. The lane exists to serialize this home's local exe rediscovery and
+# --version probe, which an agent running on another host never touches; that
+# host's own fm-spawn applies its own lane.
+codex_lane_guard() {  # <task-id> <harness>: 0 iff <task-id> may launch/relaunch onto codex in this home now
+  local id=$1 harness=$2 other_meta other_task other_target other_state
+  [ "$harness" = codex ] || return 0
+  if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
+    SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
+      echo "error: could not resolve the task-set lock for $STATE" >&2
+      return 1
+    }
+    if ! fm_lock_try_acquire "$SPAWN_TASK_SET_LOCK"; then
+      echo "error: this home's task set is locked by another operation, so the Codex lane check cannot be made authoritative; refusing to launch task $id onto codex rather than racing it" >&2
+      return 1
+    fi
+    SPAWN_TASK_SET_LOCK_HELD=1
+  fi
+  for other_meta in "$STATE"/*.meta; do
+    [ -f "$other_meta" ] || continue
+    other_task=$(basename "$other_meta" .meta)
+    [ "$other_task" != "$id" ] || continue
+    [ "$(fm_meta_get "$other_meta" harness)" = codex ] || continue
+    [ -z "$(fm_meta_get "$other_meta" remote_host)" ] || continue
+    other_state=unknown
+    other_target=$(fm_backend_target_of_meta "$other_meta")
+    if [ -n "$other_target" ]; then
+      other_state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target")
+    fi
+    [ "$other_state" != dead ] || continue
+    echo "error: Codex lane occupied in this home ($STATE): local task '$other_task' is $other_state; the captain's standing rule permits one live Codex agent per home at a time, so wait for that task to finish before dispatching '$id'" >&2
     return 1
   done
   return 0
@@ -1182,6 +1223,14 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
   fi
+  # The per-child lane guard cannot express this: a batch re-execs its pairs
+  # sequentially, so the first codex child would already be live before the
+  # second was refused, leaving a half-spawned batch behind.
+  batch_harness=${HARNESS_ARG:-$("$FM_ROOT/bin/fm-harness.sh" crew)}
+  if [ "$batch_harness" = codex ]; then
+    echo "error: batch dispatch onto codex is refused outright; this home runs one Codex agent at a time, so spawn each codex task individually and verify it before the next" >&2
+    exit 1
+  fi
   rc=0
   shared_args=()
   [ -z "$HARNESS_ARG" ] || shared_args+=(--harness "$HARNESS_ARG")
@@ -1489,9 +1538,9 @@ launch_template() {
     claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '\''{"feedbackDrafts":"off"}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then
-        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s' '__CODEXBIN__ __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
-        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s' '__CODEXBIN__ __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       fi
       ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
@@ -1617,14 +1666,148 @@ launch_template() {
   esac
 }
 
+# raw_launch_classify splits a hand-composed launch command the way a shell
+# would: it tracks single quotes, double quotes and backslash escapes, so a
+# word only ends at whitespace seen OUTSIDE quoting. Leading environment
+# assignments are recognised by their unquoted literal value and kept verbatim
+# in RAW_LAUNCH_PREFIX; the first non-assignment word is the executable, whose
+# LITERAL value (quotes removed) becomes RAW_LAUNCH_EXE, and everything after
+# its raw span becomes RAW_LAUNCH_TAIL. Prefix + a replacement executable word
+# + tail reconstructs the command byte for byte, which is what lets the codex
+# branch pin the launch to the freshly probed binary.
+# RAW_LAUNCH_EXE_UNCLEAR is set only when the executable genuinely cannot be
+# determined statically: an unterminated quote, no executable word at all, or
+# an executable word produced by a shell expansion. Those shapes cannot be
+# proven not to be codex, so the caller refuses them.
+raw_launch_take_word() {  # <leading-ws> <raw-text> <literal-value> <has-expansion>: 0 iff this is the executable word
+  local ws=$1 raw=$2 lit=$3 expands=$4
+  if [[ $lit =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+    RAW_LAUNCH_PREFIX="$RAW_LAUNCH_PREFIX$ws$raw"
+    return 1
+  fi
+  RAW_LAUNCH_PREFIX="$RAW_LAUNCH_PREFIX$ws"
+  RAW_LAUNCH_EXE=$lit
+  [ "$expands" -eq 1 ] && RAW_LAUNCH_EXE_UNCLEAR=1
+  return 0
+}
+
+raw_launch_classify() {  # <launch-command>
+  local launch=$1 i=0 n ch
+  local in_sq=0 in_dq=0 in_word=0 expands=0
+  local word_raw="" word_lit="" pending_ws=""
+  RAW_LAUNCH_PREFIX=""
+  RAW_LAUNCH_EXE=""
+  RAW_LAUNCH_TAIL=""
+  RAW_LAUNCH_EXE_UNCLEAR=0
+  n=${#launch}
+  while [ "$i" -lt "$n" ]; do
+    ch=${launch:i:1}
+    if [ "$in_sq" -eq 1 ]; then
+      word_raw+=$ch
+      i=$((i + 1))
+      if [ "$ch" = "'" ]; then in_sq=0; else word_lit+=$ch; fi
+      continue
+    fi
+    if [ "$in_dq" -eq 1 ]; then
+      if [ "$ch" = "\\" ] && [ $((i + 1)) -lt "$n" ]; then
+        word_raw+=$ch${launch:i+1:1}
+        word_lit+=${launch:i+1:1}
+        i=$((i + 2))
+        continue
+      fi
+      word_raw+=$ch
+      i=$((i + 1))
+      if [ "$ch" = '"' ]; then
+        in_dq=0
+      else
+        word_lit+=$ch
+        case "$ch" in '$'|'`') expands=1 ;; esac
+      fi
+      continue
+    fi
+    case "$ch" in
+      [[:space:]])
+        if [ "$in_word" -eq 1 ]; then
+          if raw_launch_take_word "$pending_ws" "$word_raw" "$word_lit" "$expands"; then
+            RAW_LAUNCH_TAIL=${launch:i}
+            return 0
+          fi
+          pending_ws=""
+          word_raw=""
+          word_lit=""
+          expands=0
+          in_word=0
+        fi
+        pending_ws+=$ch
+        i=$((i + 1))
+        continue
+        ;;
+    esac
+    in_word=1
+    case "$ch" in
+      "'")
+        in_sq=1
+        word_raw+=$ch
+        i=$((i + 1))
+        continue
+        ;;
+      '"')
+        in_dq=1
+        word_raw+=$ch
+        i=$((i + 1))
+        continue
+        ;;
+      "\\")
+        if [ $((i + 1)) -lt "$n" ]; then
+          word_raw+=$ch${launch:i+1:1}
+          word_lit+=${launch:i+1:1}
+          i=$((i + 2))
+        else
+          word_raw+=$ch
+          i=$((i + 1))
+        fi
+        continue
+        ;;
+      '$'|'`') expands=1 ;;
+    esac
+    word_raw+=$ch
+    word_lit+=$ch
+    i=$((i + 1))
+  done
+  if [ "$in_sq" -eq 1 ] || [ "$in_dq" -eq 1 ]; then
+    RAW_LAUNCH_EXE_UNCLEAR=1
+    return 0
+  fi
+  if [ "$in_word" -eq 1 ]; then
+    if raw_launch_take_word "$pending_ws" "$word_raw" "$word_lit" "$expands"; then
+      RAW_LAUNCH_TAIL=""
+      return 0
+    fi
+    RAW_LAUNCH_PREFIX="$RAW_LAUNCH_PREFIX$pending_ws$word_raw"
+  fi
+  [ -n "$RAW_LAUNCH_EXE" ] || RAW_LAUNCH_EXE_UNCLEAR=1
+  return 0
+}
+
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     RAW_LAUNCH=1
     LAUNCH=$ARG3
     HARNESS=""
-    for word in $LAUNCH; do
-      case "$word" in [A-Za-z_]*=*) continue ;; *) HARNESS=$(basename "$word"); break ;; esac
-    done
+    raw_launch_classify "$LAUNCH"
+    [ -z "$RAW_LAUNCH_EXE" ] || HARNESS=$(basename "$RAW_LAUNCH_EXE")
+    # A raw launch is codex when its executable word is SPELLED codex; a word
+    # spelled anything else is not a codex launch and keeps the unverified
+    # adapter escape hatch untouched. Once a launch is codex, the codex branch
+    # below still requires that word to resolve to the freshly rediscovered
+    # codex binary before it will launch.
+    # A launch whose executable cannot be determined statically cannot be proven
+    # NOT to be codex, so it is refused rather than allowed to slip past the
+    # codex guards with a bogus harness name.
+    if [ "$RAW_LAUNCH_EXE_UNCLEAR" -eq 1 ]; then
+      echo "error: raw launch command's executable word cannot be identified (unterminated quote, no command word, or an executable name produced by a shell expansion), so firstmate cannot tell which harness is launching or apply that harness's launch guards; spell the executable as a literal word" >&2
+      exit 1
+    fi
     ;;
   '')
     # No explicit harness: resolve from config. A secondmate AGENT launches on the
@@ -1654,6 +1837,21 @@ case "$ARG3" in
     ;;
 esac
 
+# The captain's standing rule: no Codex agent launches with the fast modifier -
+# it burns tokens for nothing. The verified codex template never emits --fast,
+# so the reachable source is the raw-launch escape hatch; refusing on the
+# composed command line keeps the rule enforced here rather than in prose.
+if [ "$HARNESS" = codex ]; then
+  for word in $LAUNCH; do
+    case "$word" in
+      --fast|--fast=*)
+        echo "error: launch command for task $ID carries the fast modifier ('$word'); the captain's standing rule forbids launching a Codex agent with --fast. Remove it from the launch command." >&2
+        exit 1
+        ;;
+    esac
+  done
+fi
+
 # muse and gemini are verified as CREWMATE/SCOUT adapters only. A secondmate is
 # a firstmate instance, so it needs a primary supervision protocol.
 # gemini has none: docs/supervision-protocols/ carries no gemini wake protocol
@@ -1679,6 +1877,47 @@ if [ "$KIND" = secondmate ] && [ "$HARNESS" = rovo ]; then
 fi
 
 case "$HARNESS" in
+  codex)
+    # Resolved fresh at every spawn and relaunch, never read from a prior
+    # meta field: an auto-updated codex binary under a running session is a
+    # stale-exe failure mode this probe exists to catch at the next launch
+    # (data/codex-secondmate-integration-plan/report.md, Phase 1b).
+    CODEX_BIN_RAW=$(type -P -- codex 2>/dev/null) || {
+      echo "error: codex executable not found on PATH; install it or select a different verified harness" >&2
+      exit 1
+    }
+    CODEX_BIN=$(readlink -f -- "$CODEX_BIN_RAW" 2>/dev/null) || {
+      echo "error: could not resolve codex executable '$CODEX_BIN_RAW' with readlink -f" >&2
+      exit 1
+    }
+    [ -n "$CODEX_BIN" ] && [ -x "$CODEX_BIN" ] || {
+      echo "error: resolved codex executable '$CODEX_BIN' is missing or not executable" >&2
+      exit 1
+    }
+    CODEX_VERSION=$("$CODEX_BIN" --version 2>&1) || {
+      echo "error: codex executable '$CODEX_BIN' failed to report --version; refusing to launch an unverified binary" >&2
+      exit 1
+    }
+    CODEX_VERSION=$(printf '%s' "$CODEX_VERSION" | head -n1 | tr -d '\r')
+    [ -n "$CODEX_VERSION" ] || {
+      echo "error: codex executable '$CODEX_BIN' reported an empty --version" >&2
+      exit 1
+    }
+    if [ -n "${RAW_LAUNCH_EXE:-}" ]; then
+      case "$RAW_LAUNCH_EXE" in
+        */*) RAW_CODEX_RESOLVED=$(readlink -f -- "$RAW_LAUNCH_EXE" 2>/dev/null) || RAW_CODEX_RESOLVED="" ;;
+        *) RAW_CODEX_RESOLVED=$(type -P -- "$RAW_LAUNCH_EXE" 2>/dev/null) && RAW_CODEX_RESOLVED=$(readlink -f -- "$RAW_CODEX_RESOLVED" 2>/dev/null) || RAW_CODEX_RESOLVED="" ;;
+      esac
+      if [ -z "$RAW_CODEX_RESOLVED" ] || [ "$RAW_CODEX_RESOLVED" != "$CODEX_BIN" ]; then
+        echo "error: raw codex launch command names '$RAW_LAUNCH_EXE' (resolves to '${RAW_CODEX_RESOLVED:-unresolvable}'), which is not the freshly rediscovered codex executable '$CODEX_BIN'; refusing to launch from a stale or foreign codex reference" >&2
+        exit 1
+      fi
+      # The pane re-resolves whatever word it is sent against ITS own PATH at
+      # execution time, so sending a bare name would launch a binary this probe
+      # never verified. Pin the launch to the exact executable just probed.
+      LAUNCH="$RAW_LAUNCH_PREFIX$(shell_quote "$CODEX_BIN")$RAW_LAUNCH_TAIL"
+    fi
+    ;;
   pi|pi-signed)
     PI_BIN=$(resolve_pi_executable "$HARNESS") || {
       echo "error: $HARNESS executable not found on PATH; install it or select a different verified harness" >&2
@@ -1826,6 +2065,7 @@ if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
 fi
 
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
+codex_lane_guard "$ID" "$HARNESS" || exit 1
 
 # Host-memory floor: neither the dispatch cap nor the PC02 lane guard knows
 # what this machine can carry, and an agent launched with no memory left wedges
@@ -3646,7 +3886,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx codex_exe codex_version", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -3664,6 +3904,14 @@ preserve_relaunch_meta() {
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
+  # Audit evidence only, not consumed by any spawn or relaunch path: recorded
+  # fresh on every spawn and relaunch, never carried over from a prior meta by
+  # preserve_relaunch_meta, so the trail names the exact binary this exact
+  # launch actually resolved and probed.
+  if [ "$HARNESS" = codex ]; then
+    echo "codex_exe=$CODEX_BIN"
+    echo "codex_version=$CODEX_VERSION"
+  fi
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   # Default-off writes no traceparent= line.
@@ -3804,6 +4052,7 @@ LAUNCH=${LAUNCH//__PITURNEND__/$sq_piturnend}
 LAUNCH=${LAUNCH//__PIWATCH__/$sq_piwatch}
 LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 case "$HARNESS" in
+  codex) LAUNCH=${LAUNCH//__CODEXBIN__/"$(shell_quote "$CODEX_BIN")"} ;;
   pi|pi-signed) LAUNCH=${LAUNCH//__PIBIN__/"$(shell_quote "$PI_BIN")"} ;;
   cursor) LAUNCH=${LAUNCH//__CURSORBIN__/"$(shell_quote "$CURSOR_BIN")"} ;;
   gemini) LAUNCH=${LAUNCH//__GEMINISETTINGS__/"$(shell_quote "$STATE_REAL/$ID.gemini-settings.json")"} ;;
