@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Behavior tests for fm-spawn.sh's handling of a raw (hand-composed) launch
-# command: first-word classification decides which harness a raw launch is, and
+# command. Each word is read through the shell's own quote removal before it is
+# compared, so the executable word decides the harness however it is quoted, and
 # a launch classified codex additionally takes the per-launch exe rediscovery
-# and --version probe, the executable pin, and the fast-modifier refusal.
-# Launches classified as anything else keep the unverified-adapter escape hatch
-# untouched and spawn verbatim.
+# and --version probe, the executable pin, and the fast-modifier refusal. A
+# launch whose executable word cannot be resolved without running it is refused;
+# launches classified as another harness keep the unverified-adapter escape
+# hatch and spawn verbatim.
 set -u
 
 # shellcheck source=tests/fixtures.sh
@@ -62,24 +64,55 @@ test_env_prefixed_launch_still_classifies_codex() {
   pass "a raw codex launch behind an unquoted env prefix takes the codex guards"
 }
 
-# The documented limitation: classification is plain word splitting, so a QUOTED
-# environment value splits into words that are not an assignment and the launch
-# classifies as some other harness, bypassing the codex guards.
-test_quoted_env_value_classifies_elsewhere() {
+# An environment value carrying whitespace inside quotes leaves the executable
+# word unresolvable without running the command, so the launch is refused rather
+# than classified as some other harness.
+test_quoted_env_value_is_refused() {
   local rec id out status
   id=rawcodex-quotedenv-a9
   rec=$(make_case rawcodex-quotedenv "$id")
   read_case_record "$rec"
 
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-    "$id" "$PROJ_DIR" 'RUST_LOG="a b" codex --dangerously-bypass-approvals-and-sandbox')
+    "$id" "$PROJ_DIR" 'RUST_LOG="a b" codex --dangerously-bypass-approvals-and-sandbox' 2>&1)
   status=$?
-  expect_code 0 "$status" "a quoted env value must keep the escape hatch spawning"$'\n'"$out"
-  case "$out" in
-    *"spawned $id harness=codex"*) fail "a quoted env value is documented as classifying elsewhere, but it classified codex" ;;
-  esac
-  grep -q '^codex_exe=' "$HOME_DIR/state/$id.meta" && fail "a launch not classified codex must not record codex rediscovery evidence"
-  pass "a quoted environment value classifies as another harness (documented limitation)"
+  expect_code 1 "$status" "an unresolvable executable word must be refused"$'\n'"$out"
+  assert_contains "$out" "executable word cannot be resolved" "refusal did not explain the unresolvable executable"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn must not write task metadata"
+  pass "an environment value with quoted whitespace refuses rather than misclassifying"
+}
+
+test_backslash_quoted_codex_takes_the_guards() {
+  local rec id out status launch
+  id=rawcodex-backslash-a14
+  rec=$(make_case rawcodex-backslash "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" '\codex --dangerously-bypass-approvals-and-sandbox')
+  status=$?
+  expect_code 0 "$status" "a backslash-quoted codex executable must still spawn"$'\n'"$out"
+  assert_contains "$out" "spawned $id harness=codex" "backslash quoting hid the codex classification"
+  assert_grep "codex_exe=$FAKEBIN_DIR/codex" "$HOME_DIR/state/$id.meta" "codex exe rediscovery did not run"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "'$FAKEBIN_DIR/codex' --dangerously-bypass-approvals-and-sandbox" \
+    "the backslash-quoted executable was not pinned to the probed binary"$'\n'"actual: $launch"
+  pass "a backslash-quoted codex executable takes the codex guards"
+}
+
+test_backslash_quoted_codex_with_fast_is_refused() {
+  local rec id out status
+  id=rawcodex-backslashfast-a15
+  rec=$(make_case rawcodex-backslashfast "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" '\codex \-\-fast --dangerously-bypass-approvals-and-sandbox' 2>&1)
+  status=$?
+  expect_code 1 "$status" "backslash quoting must not smuggle the fast modifier past the guard"$'\n'"$out"
+  assert_contains "$out" "fast modifier" "refusal did not name the fast modifier"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn must not write task metadata"
+  pass "a backslash-quoted fast modifier is refused"
 }
 
 # Regression: word splitting must not glob-expand, or the executable span is
@@ -275,25 +308,43 @@ SH
   pass "a raw codex launch naming a codex binary other than the rediscovered one is refused"
 }
 
-test_non_codex_expanded_executable_still_spawns() {
-  local rec id out status launch
+test_expanded_executable_word_is_refused() {
+  local rec id out status
   id=rawexpand-a8
   rec=$(make_case rawexpand "$id")
   read_case_record "$rec"
 
   # shellcheck disable=SC2016  # the unexpanded $MYBIN is the input under test
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-    "$id" "$PROJ_DIR" '$MYBIN --flag')
+    "$id" "$PROJ_DIR" '$MYBIN --flag' 2>&1)
   status=$?
-  expect_code 0 "$status" "the unverified-adapter escape hatch must keep spawning non-codex raw launches"$'\n'"$out"
-  assert_contains "$out" 'spawned '"$id"' harness=$MYBIN' "the escape hatch misclassified the executable"
+  expect_code 1 "$status" "an executable word only the pane can resolve must be refused"$'\n'"$out"
+  assert_contains "$out" "executable word cannot be resolved" "refusal did not explain the unresolvable executable"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn must not write task metadata"
+  pass "a raw launch whose executable word is a shell expansion is refused"
+}
+
+test_expansion_after_the_executable_still_spawns() {
+  local rec id out status launch
+  id=rawexpandtail-a16
+  rec=$(make_case rawexpandtail "$id")
+  read_case_record "$rec"
+
+  # shellcheck disable=SC2016  # the unexpanded $MYARG is the input under test
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" 'some-tool --flag $MYARG')
+  status=$?
+  expect_code 0 "$status" "an expansion after the executable must keep the escape hatch spawning"$'\n'"$out"
+  assert_contains "$out" "spawned $id harness=some-tool" "the escape hatch misclassified the executable"
   launch=$(cat "$LAUNCH_LOG")
-  [ "$launch" = '$MYBIN --flag' ] || fail "a non-codex raw launch was rewritten"$'\n'"actual: $launch"
-  pass "a non-codex raw launch whose executable word is a shell expansion still spawns verbatim"
+  [ "$launch" = 'some-tool --flag $MYARG' ] || fail "a non-codex raw launch was rewritten"$'\n'"actual: $launch"
+  pass "an expansion after the executable word still spawns verbatim"
 }
 
 test_env_prefixed_launch_still_classifies_codex
-test_quoted_env_value_classifies_elsewhere
+test_quoted_env_value_is_refused
+test_backslash_quoted_codex_takes_the_guards
+test_backslash_quoted_codex_with_fast_is_refused
 test_glob_env_value_codex_launch_is_pinned_intact
 test_quoted_env_value_codex_launch_refuses_fast
 test_quoted_fast_modifier_is_refused
@@ -304,6 +355,7 @@ test_codex_absent_from_path_is_refused
 test_failing_version_probe_is_refused
 test_empty_version_probe_is_refused
 test_foreign_codex_executable_is_refused
-test_non_codex_expanded_executable_still_spawns
+test_expanded_executable_word_is_refused
+test_expansion_after_the_executable_still_spawns
 
 echo "# all fm-spawn-codex-raw-launch tests passed"

@@ -68,9 +68,14 @@
 #       are recorded as codex_exe=/codex_version= in state/<id>.meta as audit
 #       evidence, and the launch is pinned to the probed absolute path.
 #   All three guards key off the launch's executable word being spelled codex,
-#   quoted or not: a raw launch is split into words once and shell quoting is
-#   stripped from each before any of them is compared, so "codex" "--fast"
-#   is read exactly as codex --fast.
+#   however it is quoted. A raw launch's words are read through the shell's own
+#   quote removal once (without running the command), so "codex", 'codex' and
+#   \codex are all read as codex, and "--fast" as --fast. A raw launch whose
+#   executable word only the pane could resolve - an unterminated quote, a
+#   shell expansion, or no command word at all - is REFUSED rather than
+#   classified as some other harness. Words after the executable keep the
+#   escape hatch's unverified contract and may still expand, and a wrapper
+#   (env codex ..., a shell script) still classifies as that wrapper.
 #   A raw launch's leading unquoted NAME=value assignments are skipped, so an
 #   env-prefixed raw codex launch still classifies as codex and still takes
 #   every guard; a wrapper (env codex ..., a shell script) or a QUOTED
@@ -1697,38 +1702,56 @@ launch_template() {
   esac
 }
 
+# raw_launch_token applies the SHELL'S OWN quote removal to one word of a raw
+# launch command, without running it: xargs is a real word parser, so ', " and
+# backslash quoting are all removed the way the pane's shell will remove them,
+# and no command substitution or parameter expansion is ever performed. A word
+# carrying $ or ` has a value only the pane can know, and an unterminated quote
+# has no value at all; both return non-zero so the caller can fail closed
+# instead of comparing a string the launched process will never see.
+raw_launch_token() {  # <raw word>: prints the word's shell-literal value
+  local word=$1 value
+  case "$word" in *'$'*|*'`'*) return 1 ;; esac
+  value=$(printf '%s\n' "$word" | xargs printf '%s' 2>/dev/null) || return 1
+  printf '%s' "$value"
+}
+
 RAW_LAUNCH_WORDS=()
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     RAW_LAUNCH=1
     LAUNCH=$ARG3
     HARNESS=""
-    # First-word classification, as before: leading environment assignments are
-    # skipped and the first remaining word names the harness. The word's raw
-    # span is also recorded (prefix before it, tail after it) so the codex
-    # branch below can pin a codex launch to the freshly probed binary.
+    # First-word classification: leading environment assignments are skipped and
+    # the first remaining word names the harness. Every word is read through
+    # raw_launch_token, so the harness name, the executable identity and the
+    # fast modifier are all compared against the value the launched process will
+    # actually receive, whatever quoting spells it. The word's raw span is also
+    # recorded (prefix before it, tail after it) so the codex branch below can
+    # pin a codex launch to the freshly probed binary byte for byte.
+    # Globbing is off because those spans match each split word literally
+    # against the unexpanded command, so a word the shell had expanded
+    # (FOO=*.txt) would match nothing and silently duplicate the launch text.
     RAW_LAUNCH_PREFIX=""
     RAW_LAUNCH_EXE=""
     RAW_LAUNCH_TAIL=""
     raw_rest=$LAUNCH
     raw_pre=""
     raw_seen_exe=0
-    # The one place a raw launch is split into words, and the one place shell
-    # quoting is stripped from them: the pane's shell removes ' and " before
-    # the command runs, so every later comparison - the harness name, the
-    # executable identity, the fast modifier - reads the same value the launched
-    # process will see. The raw spans stay unnormalised so the codex pin can
-    # rebuild the command byte for byte. Globbing is off because those spans
-    # match each split word literally against the unexpanded command, so a word
-    # the shell had expanded (FOO=*.txt) would match nothing and silently
-    # duplicate the launch text.
+    raw_exe_unresolved=0
     raw_noglob_was_set=1
     case $- in *f*) ;; *) raw_noglob_was_set=0; set -f ;; esac
     for word in $LAUNCH; do
       raw_ws=${raw_rest%%"$word"*}
       raw_rest=${raw_rest#*"$word"}
-      raw_lit=${word//\"/}
-      raw_lit=${raw_lit//\'/}
+      if raw_lit=$(raw_launch_token "$word"); then
+        :
+      elif [ "$raw_seen_exe" -eq 0 ]; then
+        raw_exe_unresolved=1
+        break
+      else
+        raw_lit=$word
+      fi
       RAW_LAUNCH_WORDS+=("$raw_lit")
       [ "$raw_seen_exe" -eq 0 ] || continue
       case "$raw_lit" in [A-Za-z_]*=*) raw_pre="$raw_pre$raw_ws$word"; continue ;; esac
@@ -1739,13 +1762,14 @@ case "$ARG3" in
       raw_seen_exe=1
     done
     [ "$raw_noglob_was_set" -eq 1 ] || set +f
-    # A raw launch is codex when that word is SPELLED codex, quoted or not;
-    # anything else is not a codex launch and keeps the unverified-adapter
-    # escape hatch untouched. Word splitting itself stays as loose as it has
-    # always been, so a wrapper (env codex ..., a shell script) or an
-    # environment value carrying whitespace inside quotes still classifies as
-    # some other harness and bypasses the codex guards - the same documented
-    # limitation the escape hatch's unverified contract already carries.
+    # Fail closed: a launch whose executable word only the pane can resolve
+    # cannot be proven not to be codex, so it is refused rather than allowed to
+    # slip past the codex guards under some other harness name. Words AFTER the
+    # executable keep the escape hatch's unverified contract and may expand.
+    if [ "$raw_exe_unresolved" -eq 1 ] || [ "$raw_seen_exe" -eq 0 ]; then
+      echo "error: raw launch command's executable word cannot be resolved without running it (an unterminated quote, a shell expansion, or no command word at all), so firstmate cannot tell which harness is launching or apply that harness's launch guards; spell the executable as a literal word" >&2
+      exit 1
+    fi
     ;;
   '')
     # No explicit harness: resolve from config. A secondmate AGENT launches on the
