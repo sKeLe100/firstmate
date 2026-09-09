@@ -286,6 +286,34 @@ and never widen the filter.
 When step 3 found no headroom - the cap, the PC02 lane, or the host-memory
 floor - leave the eligible rows queued and record them below instead.
 
+For a row this step would route through the PC02 lane specifically, do not
+dispatch snapshot order directly: run `bin/fm-pc02-fair-order.sh`, which
+joins the same snapshot against the durable routing registry
+(`data/backlog-routing.tsv`, owned by `bin/fm-backlog-routing.sh`) and
+returns the PC02-classified subset in dependency-cleared, then priority,
+then fair-rotation order - the durable refill design in
+`data/backlog-triage-durable-plan/report.md` (captain's ruling 2026-09-08).
+Dispatch its first row (after the PC02 lane and host-memory checks in step
+3), never the whole list at once - the same one-item-at-a-time contract
+step 3's PC02 note already states. A `gate: dispatchable` PC02-tier row with
+no fresh routing classification (absent or `stale:` from
+`bin/fm-backlog-routing.sh get <id>`) is not itself blocked from dispatch by
+this step - the snapshot's gate/autonomy verdict still governs whether it is
+eligible - but it cannot be fairness-ordered until classified, so route it
+to the "routing review" batch named below instead of guessing its tier from
+title or repo; classify it there (`bin/fm-backlog-routing.sh set <id>
+pc02|medium|senior`) rather than skipping it silently.
+Non-PC02-tier dispatchable rows are unaffected by this paragraph and keep
+the snapshot's own order.
+
+When a PC02-routed candidate fails once (a genuine PC02 rabbit hole, not a
+transient session/quota pause), escalate it rather than looping it back
+silently: run `bin/fm-backlog-routing.sh escalate <id> medium|senior
+--reason "<what happened>"` before considering it for redispatch, per the
+report's tier-escalation rule. This step never re-derives PC02 vs.
+medium/senior from a row's content on its own; that judgment lives only in
+the routing registry.
+
 An idle lane with an eligible row is the pass failing, not the queue being
 empty: a pass that ends with headroom and an unclaimed `dispatchable` row must
 say in the step 10 log line which row it declined and why.
@@ -300,6 +328,10 @@ and a one-line summary of outcomes.
 Name in that summary the standing orders step 0 applied, and any eligible row
 step 9 declined with its reason, so a later pass can see what this one chose
 rather than only what it did.
+Name any PC02-tier row step 9 found with no fresh routing classification as
+a routing-review item in this same line (id and reason "unclassified" or
+"stale"); this is a report-only batch, never a blocking one - step 9's
+non-PC02 and correctly-classified PC02 dispatch continue regardless.
 Write that line once, as this step's single append; never go back and amend a
 line already appended.
 
@@ -505,6 +537,10 @@ This skill cites these live owners rather than restating their values:
 - `bin/fm-captain-window.sh` - captain attention window
 - `config/dispatch-cap` - concurrent autonomous dispatch cap
 - `bin/fm-autonomous-pc02-lane.sh` - whether the single PC02 lane is free
+- `bin/fm-backlog-routing.sh` - the durable pc02/medium/senior routing
+  registry (`data/backlog-routing.tsv`) and its ledger
+- `bin/fm-pc02-fair-order.sh` - fair dispatch order over the PC02-classified
+  roster
 - `config/crew-dispatch.json` - dispatch profiles
 - `captain-hold-lifecycle` - closing captain-held decisions
 - `ask-user-authority` - deciding ask-user findings

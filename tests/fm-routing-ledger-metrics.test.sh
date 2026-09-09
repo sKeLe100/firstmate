@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# tests/fm-routing-ledger-metrics.test.sh - behavior tests for
+# bin/fm-routing-ledger-metrics.sh, the ledger-metric test seam named in
+# data/backlog-triage-durable-plan/report.md's test seams list.
+#
+# Drives the real bin/fm-backlog-routing.sh to produce ledger events (never
+# hand-writes the ledger file), then verifies opened/closed/reopened/
+# gross-per-day/net-per-day/median-cycle-time reconcile to those raw
+# transitions, and that pc02_idle_pct reports "unavailable" without
+# --occupancy and a real percentage with one.
+set -u
+
+# shellcheck source=tests/lib.sh
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+ROUTING="$ROOT/bin/fm-backlog-routing.sh"
+METRICS="$ROOT/bin/fm-routing-ledger-metrics.sh"
+TMP_ROOT=$(fm_test_tmproot fm-routing-ledger-metrics)
+
+command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
+
+make_home() {  # <name>
+  local home="$TMP_ROOT/$1"
+  mkdir -p "$home/data" "$home/state" "$home/config" "$home/projects"
+  cp "$ROOT/.tasks.toml" "$home/.tasks.toml"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+
+## Done
+EOF
+  printf '%s\n' "$home"
+}
+
+# 1. Empty/absent ledger reports all-zero counts and "unavailable" rates
+#    rather than erroring.
+home=$(make_home empty)
+out=$(FM_HOME="$home" "$METRICS") || fail "metrics must succeed on an absent ledger"
+assert_contains "$out" "opened: 0" "absent ledger reports opened: 0"
+assert_contains "$out" "median_cycle_time_seconds: unavailable" "absent ledger reports unavailable median cycle time"
+assert_contains "$out" "pc02_idle_pct: unavailable" "no --occupancy given reports unavailable idle pct"
+
+# 2. opened/closed/reopened reconcile to raw classified/closed transitions,
+#    including a reopen (classified again after a prior close).
+home=$(make_home transitions)
+(cd "$home" && tasks-axi add item-a "a" --kind ship --repo demo >/dev/null)
+(cd "$home" && tasks-axi add item-b "b" --kind ship --repo demo >/dev/null)
+FM_HOME="$home" "$ROUTING" set item-a pc02 >/dev/null
+FM_HOME="$home" "$ROUTING" set item-b pc02 >/dev/null
+FM_HOME="$home" "$ROUTING" gc item-a >/dev/null
+FM_HOME="$home" "$ROUTING" set item-a pc02 >/dev/null   # reopened
+out=$(FM_HOME="$home" "$METRICS") || fail "metrics should succeed"
+assert_contains "$out" "opened: 3" "3 classified events (item-a twice, item-b once)"
+assert_contains "$out" "closed: 1" "1 closed event"
+assert_contains "$out" "reopened: 1" "item-a's second classification counts as reopened"
+
+# 3. Median cycle time reconciles to the actual epoch delta between an id's
+#    first classified event and its closed event, using an injected ledger
+#    with controlled timestamps (the routing script's own epoch_now has
+#    second granularity, too coarse to assert an exact delta from real
+#    calls a few tests apart).
+home=$(make_home cycle-time)
+mkdir -p "$home/data"
+now=$(date -u +%s)
+cat > "$home/data/routing-ledger.tsv" <<EOF
+$((now - 300))	classified	cyc-a	pc02
+$((now - 100))	closed	cyc-a	pc02
+$((now - 600))	classified	cyc-b	pc02
+$((now - 200))	closed	cyc-b	pc02
+EOF
+out=$(FM_HOME="$home" "$METRICS") || fail "metrics should succeed on an injected ledger"
+# cyc-a: 200s, cyc-b: 400s -> median 300
+assert_contains "$out" "median_cycle_time_seconds: 300" "median cycle time reconciles to the injected deltas: $out"
+
+# 4. pc02_idle_pct reflects an --occupancy samples file.
+occ_file="$TMP_ROOT/occupancy.tsv"
+cat > "$occ_file" <<'EOF'
+1000 free
+1001 free
+1002 occupied
+1003 free
+EOF
+out=$(FM_HOME="$home" "$METRICS" --occupancy "$occ_file") || fail "metrics with --occupancy should succeed"
+assert_contains "$out" "pc02_idle_pct: 75.0" "3 of 4 samples free reconciles to 75.0%"
+
+pass "fm-routing-ledger-metrics.sh behavior"
