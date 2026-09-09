@@ -37,6 +37,13 @@
 # invoke fm_config_send_reread_nudge so the live agent re-reads exact post-write
 # bytes (spawn/respawn already re-reads at launch and needs no redundant nudge).
 #
+# config/crew-harness is the one declared exception to primary authority: a
+# destination home may pin its own value by leaving a sibling
+# "crew-harness.local-override" marker next to it, and every convergence point
+# then leaves that item alone in both directions instead of re-pushing the
+# primary's value or mirroring its absence - see
+# fm_config_inherit_item_overridden.
+#
 # Extensible by design: FM_INHERITABLE_CONFIG is the single declared list of
 # config-dir-relative items the primary propagates. Add an item there and every
 # convergence point inherits it - no other change needed. config/secondmate-harness
@@ -80,6 +87,35 @@ fm_config_inherit_item_session_scoped() {  # <item>
   for candidate in $FM_SESSION_SCOPED_INHERITABLE_CONFIG; do
     [ "$candidate" = "$item" ] && return 0
   done
+  return 1
+}
+
+# A secondmate home may pin its own config/crew-harness to a value distinct
+# from the primary's by leaving a sibling "crew-harness.local-override" marker
+# file next to it under the destination home's config/. That is how a
+# secondmate (e.g. a Codex secondmate) spawns its own crewmates on a harness
+# distinct from whatever the primary happens to be pinned to. The marker's
+# mere presence is the opt-in; its content is never read. This is an
+# explicitly declared config knob a secondmate sets by hand, not captured
+# local drift to preserve, so there is no quarantine-and-diagnostics ceremony:
+# propagation just leaves the item alone in both directions (present primary
+# value and mirrored absence).
+
+# True when <item> is crew-harness - the one overridable item - and the
+# destination home has actually set its marker as a regular file, so
+# propagation must leave that item alone. A marker path that exists but is not
+# a regular file (e.g. a symlink) cannot be trusted as an opt-in, so it is
+# reported and the item keeps converging to the primary.
+fm_config_inherit_item_overridden() {  # <dest-config-dir> <item>
+  local dest_config=$1 item=$2 marker
+  [ "$item" = crew-harness ] || return 1
+  marker="$dest_config/crew-harness.local-override"
+  if [ -f "$marker" ] && [ ! -L "$marker" ]; then
+    return 0
+  fi
+  if [ -e "$marker" ] || [ -L "$marker" ]; then
+    echo "fm-config-inherit: warning: ignoring $item override marker at $marker: not a regular file" >&2
+  fi
   return 1
 }
 
@@ -461,6 +497,10 @@ propagate_inheritable_config() {
     esac
     if [ "${FM_CONFIG_INHERIT_LIVE:-0}" = 1 ] && fm_config_inherit_item_session_scoped "$item"; then
       record_inheritable_config_result "$item" unchanged "session-scoped"
+      continue
+    fi
+    if fm_config_inherit_item_overridden "$dest_config" "$item"; then
+      record_inheritable_config_result "$item" skipped "secondmate-local override pinned"
       continue
     fi
     src="$src_config/$item"

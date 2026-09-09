@@ -27,7 +27,10 @@
 #      (re-pushed at secondmate spawn, on the bootstrap secondmate sweep, and by
 #      config push).
 #      config/secondmate-harness is deliberately NOT inherited (secondmates do
-#      not spawn secondmates). After a successful push that changes allowlisted
+#      not spawn secondmates). A secondmate may pin its own config/crew-harness
+#      independent of the primary via a sibling config/crew-harness.local-override
+#      marker, which leaves that one item alone in both directions while every
+#      other item keeps converging. After a successful push that changes allowlisted
 #      config under an already-running home, a literal-content reread instruction
 #      is written to the secondmate home and only its pointer is sent via the
 #      routed secondmate path (exact destination bytes, no summaries); unchanged
@@ -409,6 +412,141 @@ test_propagate_lib() {
   [ ! -e "$guard_repo/config/crew-dispatch.json" ] || fail "guard skip still copied the unignored item"
 
   pass "B1 propagate_inheritable_config: copy, idempotence, convergence, absence-mirror, exclusion, no-op, skip diagnostics"
+}
+
+# A secondmate home may pin its own config/crew-harness independent of the
+# primary by leaving a sibling config/crew-harness.local-override marker next
+# to it (fm_config_inherit_item_overridden in fm-config-inherit-lib.sh). With no
+# marker, ordinary primary-authoritative inheritance applies unchanged. With
+# the marker present, propagation must leave crew-harness alone in both
+# directions - a changed primary value and a primary value going absent -
+# while every other declared item keeps converging normally, and the skip
+# must be reported (report status "skipped") without failing propagation.
+test_propagate_lib_local_override() {
+  local d src dest report status reason stderr
+  d="$TMP_ROOT/prop-lib-override"
+  src="$d/src"
+  dest="$d/home/config"
+  mkdir -p "$src" "$dest"
+
+  # 1. no marker -> crew-harness still inherits normally (baseline).
+  printf 'codex\n' > "$src/crew-harness"
+  printf 'manual\n' > "$src/backlog-backend"
+  propagate_inheritable_config "$src" "$dest" || fail "override baseline: propagate returned non-zero"
+  [ "$(cat "$dest/crew-harness")" = codex ] \
+    || fail "override baseline: crew-harness did not inherit with no override marker"
+  [ "$(cat "$dest/backlog-backend")" = manual ] \
+    || fail "override baseline: backlog-backend did not inherit alongside"
+
+  # 2. set the marker and the secondmate's own local value, then re-sync with
+  # a changed primary value: the local value must survive, unlike backend.
+  printf 'claude\n' > "$dest/crew-harness"
+  : > "$dest/crew-harness.local-override"
+  printf 'grok\n' > "$src/crew-harness"
+  printf 'tasks-axi\n' > "$src/backlog-backend"
+  report="$d/override-present.report"
+  FM_CONFIG_INHERIT_REPORT="$report" propagate_inheritable_config "$src" "$dest" \
+    || fail "override present: propagate returned non-zero"
+  [ "$(cat "$dest/crew-harness")" = claude ] \
+    || fail "override present: local crew-harness was overwritten despite the marker"
+  [ "$(cat "$dest/backlog-backend")" = tasks-axi ] \
+    || fail "override present: backlog-backend (not overridable) failed to converge"
+  status=$(awk -F '\t' '$1 == "crew-harness" { print $2; exit }' "$report")
+  reason=$(awk -F '\t' '$1 == "crew-harness" { print $3; exit }' "$report")
+  [ "$status" = skipped ] \
+    || fail "override present: report status for crew-harness was '$status', expected skipped"
+  assert_contains "$reason" "secondmate-local override pinned" \
+    "override present: report reason did not explain the local override"
+
+  # 3. the marker also blocks the primary-absence mirror, not just changed
+  # values: removing the primary source must not remove the local value.
+  rm -f "$src/crew-harness"
+  propagate_inheritable_config "$src" "$dest" || fail "override absence: propagate returned non-zero"
+  [ "$(cat "$dest/crew-harness" 2>/dev/null)" = claude ] \
+    || fail "override absence: local crew-harness was mirrored to absence despite the marker"
+  [ "$(cat "$dest/backlog-backend" 2>/dev/null)" = tasks-axi ] \
+    || fail "override absence: backlog-backend (not overridable) stopped converging"
+
+  # 4. removing the marker resumes ordinary primary-authoritative inheritance.
+  printf 'pi\n' > "$src/crew-harness"
+  rm -f "$dest/crew-harness.local-override"
+  propagate_inheritable_config "$src" "$dest" || fail "override removed: propagate returned non-zero"
+  [ "$(cat "$dest/crew-harness")" = pi ] \
+    || fail "override removed: crew-harness did not resume inheriting after the marker was removed"
+
+  # 5. a marker path that is not a regular file (e.g. a symlink) is not a
+  # trusted opt-in: the item keeps converging to the primary and the marker
+  # path is named on stderr.
+  printf 'pinned\n' > "$dest/crew-harness"
+  printf 'not-a-marker\n' > "$d/marker-target"
+  ln -s "$d/marker-target" "$dest/crew-harness.local-override"
+  printf 'grok\n' > "$src/crew-harness"
+  stderr="$d/symlink-marker.err"
+  propagate_inheritable_config "$src" "$dest" 2> "$stderr" \
+    || fail "override symlink marker: propagate returned non-zero"
+  [ "$(cat "$dest/crew-harness")" = grok ] \
+    || fail "override symlink marker: a symlinked marker was trusted as an opt-in"
+  assert_contains "$(cat "$stderr")" "$dest/crew-harness.local-override" \
+    "override symlink marker: no diagnostic named the untrusted marker path"
+  rm -f "$dest/crew-harness.local-override"
+
+  pass "B1b propagate_inheritable_config: a secondmate-local crew-harness override marker is honored and reversible"
+}
+
+# The remote path converges through the receiver bin/fm-remote-inherit.sh, not
+# through propagate_inheritable_config, and the sender still transfers
+# crew-harness on every push. With the local-override marker set in the remote
+# home, the receiver must skip both the put and the absent command, leaving the
+# home's own bytes byte-exact, reporting the skip, and exiting 0 so the push is
+# not treated as a transfer failure. Every other inherited item still applies.
+test_remote_inherit_receiver_honors_local_override() {
+  local d home payload bytes hash out
+  d="$TMP_ROOT/remote-inherit-override"
+  home="$d/home"
+  mkdir -p "$home/config" "$home/data"
+  payload="$d/payload"
+  printf 'grok\n' > "$payload"
+  bytes=$(LC_ALL=C wc -c < "$payload" | tr -d ' ')
+  if command -v shasum >/dev/null 2>&1; then
+    hash=$(shasum -a 256 "$payload" | awk '{print $1}')
+  else
+    hash=$(sha256sum "$payload" | awk '{print $1}')
+  fi
+
+  printf 'claude\n' > "$home/config/crew-harness"
+  : > "$home/config/crew-harness.local-override"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-remote-inherit.sh" \
+    put config/crew-harness "$bytes" "$hash" 1 < "$payload") \
+    || fail "receiver override: put exited non-zero instead of skipping"
+  assert_contains "$out" "skipped: config/crew-harness" \
+    "receiver override: put did not report the skip"
+  [ "$(cat "$home/config/crew-harness")" = claude ] \
+    || fail "receiver override: put overwrote the pinned crew-harness"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-remote-inherit.sh" \
+    absent config/crew-harness 0 \
+    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 2 </dev/null) \
+    || fail "receiver override: absent exited non-zero instead of skipping"
+  assert_contains "$out" "skipped: config/crew-harness" \
+    "receiver override: absent did not report the skip"
+  [ "$(cat "$home/config/crew-harness")" = claude ] \
+    || fail "receiver override: absent removed the pinned crew-harness"
+
+  FM_HOME="$home" "$ROOT/bin/fm-remote-inherit.sh" \
+    put config/backlog-backend "$bytes" "$hash" 1 < "$payload" >/dev/null \
+    || fail "receiver override: a non-overridable item stopped converging"
+  [ "$(cat "$home/config/backlog-backend")" = grok ] \
+    || fail "receiver override: a non-overridable item did not receive the primary bytes"
+
+  rm -f "$home/config/crew-harness.local-override"
+  FM_HOME="$home" "$ROOT/bin/fm-remote-inherit.sh" \
+    put config/crew-harness "$bytes" "$hash" 3 < "$payload" >/dev/null \
+    || fail "receiver override: put failed after the marker was removed"
+  [ "$(cat "$home/config/crew-harness")" = grok ] \
+    || fail "receiver override: crew-harness did not resume converging after marker removal"
+
+  pass "B1c fm-remote-inherit.sh receiver: the local-override marker skips put and absent for crew-harness"
 }
 
 # ===========================================================================
@@ -2585,6 +2723,8 @@ test_secondmate_model_effort_tokens
 test_pi_signed_detection_and_session_lock_identity
 test_dash_leading_process_names_are_basename_operands
 test_propagate_lib
+test_propagate_lib_local_override
+test_remote_inherit_receiver_honors_local_override
 test_spawn_split_and_inherit
 test_spawn_backward_compat_crew_fallback
 test_spawn_bare_backward_compat

@@ -8,6 +8,8 @@
 # Only the inherited-material allowlist is writable or removable. Writes are
 # atomic ordinary-file replacements. Divergent data/captain-shared.md bytes are
 # quarantined before replacement or removal and its converged copy is read-only.
+# config/crew-harness is skipped (reported, no write or removal, exit 0) when
+# this home pins it with a sibling config/crew-harness.local-override marker.
 set -eu
 
 FM_HOME=${FM_HOME:?FM_HOME is required}
@@ -20,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 file_link_count() {
   if [ "$(uname)" = Darwin ]; then stat -f %l "$1" 2>/dev/null; else stat -c %h "$1" 2>/dev/null; fi
 }
@@ -67,6 +69,14 @@ PARENT_REAL=$(CDPATH='' cd -- "$PARENT" && pwd -P)
 case "$PARENT_REAL" in "$HOME_REAL/config"|"$HOME_REAL/data") ;; *) die "inherited destination escapes FM_HOME" ;; esac
 DEST="$PARENT_REAL/$(basename "$REL")"
 [ ! -L "$DEST" ] || die "inherited destination is a symlink"
+case "$REL" in
+  config/*)
+    if fm_config_inherit_item_overridden "$PARENT_REAL" "${REL#config/}"; then
+      printf 'skipped: %s (secondmate-local override pinned)\n' "$REL"
+      exit 0
+    fi
+    ;;
+esac
 if [ -e "$DEST" ]; then
   [ -f "$DEST" ] || die "inherited destination is not a regular file"
   [ "$(file_link_count "$DEST")" = 1 ] || die "inherited destination is hardlinked"
