@@ -215,7 +215,11 @@
 #   and scout batches. A MULTI-pair batch resolving to harness codex is refused,
 #   whatever the lane's state: pairs are spawned one at a time, so a refusal
 #   partway through would leave a half-spawned batch behind. Spawn codex tasks
-#   individually; a single-pair batch is one spawn and the lane guard owns it. The loop lives here, in bash, so callers never hand-write a
+#   individually; a single-pair batch is one spawn and the lane guard owns it.
+#   A shared --harness spelled as a raw launch command is classified for that
+#   rule with the same reader the child uses, so `--harness 'codex ...'` is
+#   refused too, and a raw command the reader cannot read conclusively refuses
+#   the whole batch before any pair spawns. The loop lives here, in bash, so callers never hand-write a
 #   multi-task shell loop (the tool shell is zsh, which does not word-split unquoted
 #   $vars and silently breaks ad-hoc `for ... in $pairs` loops).
 # Launch environment (config/launch-env-allowlist):
