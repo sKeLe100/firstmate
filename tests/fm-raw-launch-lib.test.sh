@@ -127,6 +127,18 @@ test_tail_expansions_are_marked_opaque_not_refused() {
   pass "expansions after the command word are reported opaque for the caller to judge"
 }
 
+# shellcheck disable=SC2016  # unexpanded command-substitution text is the input under test
+test_single_quoted_command_substitution_is_literal_text() {
+  # bash performs no substitution inside single quotes, so the reader must not
+  # refuse it; the differential check pins that it reads exactly what bash does.
+  assert_agrees_with_bash 'some-tool '"'"'$(codex --fast)'"'"'' "single-quoted command substitution"
+  assert_exe 'some-tool '"'"'$(codex --fast)'"'"'' some-tool "single-quoted command substitution"
+  [ "${FM_RAW_WORDS[1]}" = '$(codex --fast)' ] \
+    || fail "single-quoted substitution text was not carried verbatim: '${FM_RAW_WORDS[1]}'"
+  [ "${FM_RAW_WORD_OPAQUE[1]}" = 0 ] || fail "single-quoted literal text must not be marked opaque"
+  pass "a single-quoted command substitution is literal text the reader accepts"
+}
+
 # shellcheck disable=SC2016,SC2088  # unexpanded shell syntax is the input under test
 test_unresolvable_command_words_are_refused() {
   assert_refused '$MYBIN --flag' "cannot be resolved without running it" "parameter expansion as the command word"
@@ -167,6 +179,7 @@ test_accepted_lines_agree_with_bash
 test_command_word_and_span_come_from_one_parse
 test_prefix_assignment_expansions_never_move_the_command_word
 test_tail_expansions_are_marked_opaque_not_refused
+test_single_quoted_command_substitution_is_literal_text
 test_unresolvable_command_words_are_refused
 test_second_commands_and_broken_lines_are_refused
 

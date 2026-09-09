@@ -126,6 +126,23 @@ test_multi_pair_codex_batch_is_refused() {
   pass "a multi-pair codex batch is refused before any pair spawns"
 }
 
+test_multi_pair_raw_codex_launch_batch_is_refused() {
+  local rec id1 id2 out status
+  id1=codexrawbatch-a-z11
+  id2=codexrawbatch-b-z12
+  rec=$(make_case multirawbatch "$id1" "$id2")
+  read_case_record "$rec"
+
+  out=$(run_spawn_pairs "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" \
+    --harness 'codex --dangerously-bypass-approvals-and-sandbox' --model gpt-5 --effort high)
+  status=$?
+  expect_code 1 "$status" "a multi-pair batch on a raw codex launch must be refused: $out"
+  assert_contains "$out" "onto codex is refused" "refusal did not name the codex batch rule"
+  [ ! -f "$HOME_DIR/state/$id1.meta" ] || fail "a refused batch must not spawn its first pair"
+  [ ! -f "$HOME_DIR/state/$id2.meta" ] || fail "a refused batch must not spawn its second pair"
+  pass "a multi-pair batch whose --harness is a raw codex launch is refused before any pair spawns"
+}
+
 test_single_pair_codex_batch_still_spawns() {
   local rec id out status
   id=codexbatch-solo-z10
@@ -303,6 +320,7 @@ test_live_local_codex_secondmate_holds_the_lane
 test_lane_is_codex_only_in_both_directions
 test_locked_task_set_refuses_the_codex_relaunch_lane_read
 test_multi_pair_codex_batch_is_refused
+test_multi_pair_raw_codex_launch_batch_is_refused
 test_single_pair_codex_batch_still_spawns
 
 echo "# all fm-spawn-codex-lane-guard tests passed"

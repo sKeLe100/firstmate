@@ -309,6 +309,30 @@ test_non_codex_quoted_env_launch_still_spawns() {
   pass "a non-codex raw launch with an env prefix still spawns verbatim"
 }
 
+# The one deliberate, documented limitation of first-word classification
+# (bin/fm-spawn.sh header, .agents/skills/harness-adapters/references/harness/codex.md):
+# a wrapper such as `env codex ...` classifies as the wrapper, so the codex
+# guards do not apply. Pinned so a classification change cannot widen or narrow
+# it silently.
+test_wrapper_launch_classifies_as_the_wrapper() {
+  local rec id out status launch
+  id=rawwrapper-env-a9
+  rec=$(make_case rawwrapper-env "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" 'env codex --dangerously-bypass-approvals-and-sandbox')
+  status=$?
+  expect_code 0 "$status" "a wrapper launch classifies as the wrapper and spawns"$'\n'"$out"
+  assert_contains "$out" "spawned $id harness=env" "the wrapper was not classified as the wrapper"
+  launch=$(cat "$LAUNCH_LOG")
+  [ "$launch" = 'env codex --dangerously-bypass-approvals-and-sandbox' ] \
+    || fail "a wrapper raw launch was rewritten"$'\n'"actual: $launch"
+  ! grep -q 'codex_exe=' "$HOME_DIR/state/$id.meta" \
+    || fail "a wrapper launch must not record a codex exe pin"
+  pass "a wrapper launch classifies as the wrapper and takes no codex guard"
+}
+
 # PATH minus every directory that carries a codex executable, so the "codex is
 # not installed" exit is reached regardless of the developer's own PATH.
 path_without_codex() {
@@ -447,6 +471,7 @@ test_quoted_fast_modifier_is_refused
 test_quoted_executable_word_still_classifies_codex
 test_quoted_executable_with_fast_is_refused
 test_non_codex_quoted_env_launch_still_spawns
+test_wrapper_launch_classifies_as_the_wrapper
 test_codex_absent_from_path_is_refused
 test_failing_version_probe_is_refused
 test_empty_version_probe_is_refused

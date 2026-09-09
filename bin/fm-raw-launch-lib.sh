@@ -32,8 +32,10 @@
 #     opaque (FM_RAW_WORD_OPAQUE=1) and the caller decides whether that harness
 #     tolerates an unverifiable argument. Its literal value is reported with
 #     the expansion characters kept verbatim.
-#   - REFUSED outright, wherever they appear and however quoted: a command
-#     substitution ($( or `), a newline. Refused when unquoted: a control
+#   - REFUSED outright, wherever they appear: a newline. A command
+#     substitution ($( or `) is refused unquoted or inside double quotes;
+#     inside single quotes it is literal text, exactly as bash treats it.
+#     Refused when unquoted: a control
 #     operator or redirection (; | & ( ) < >), a # that starts a word, an
 #     unterminated quote, and a trailing backslash. A raw launch is ONE simple
 #     command; anything that would make the pane run a second command, or

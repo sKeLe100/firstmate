@@ -79,7 +79,8 @@
 #   cannot read conclusively is REFUSED rather than classified as some other
 #   harness: an unterminated quote, a newline, a trailing backslash, a command
 #   word that is a shell expansion, tilde, glob or brace pattern (or empty), a
-#   command substitution anywhere, an unquoted ; | & ( ) < > or a word-leading
+#   command substitution that is unquoted or double-quoted (inside single quotes
+#   it is literal text, exactly as bash treats it), an unquoted ; | & ( ) < > or a word-leading
 #   #, or no command word at all. A codex launch is additionally refused when
 #   any word AFTER the executable would expand, so the fast-modifier check is
 #   conclusive; a non-codex launch keeps the escape hatch's unverified contract
@@ -1269,6 +1270,15 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   # one spawn, so it goes through and the lane guard owns it.
   if [ "${#POS[@]}" -gt 1 ]; then
     batch_harness=${HARNESS_ARG:-$("$FM_ROOT/bin/fm-harness.sh" crew)}
+    case "$batch_harness" in
+      *' '*)
+        if ! fm_raw_launch_scan "$batch_harness"; then
+          echo "error: raw launch command refused: $FM_RAW_REFUSAL. firstmate cannot tell which harness would launch or apply that harness's launch guards; spell the launch as one simple command whose executable word is literal (leading NAME=value assignments are fine)" >&2
+          exit 1
+        fi
+        batch_harness=$(basename "${FM_RAW_WORDS[$FM_RAW_EXE_INDEX]}")
+        ;;
+    esac
     if [ "$batch_harness" = codex ]; then
       echo "error: batch dispatch of ${#POS[@]} pairs onto codex is refused; this home runs one Codex agent at a time, so spawn each codex task individually and verify it before the next" >&2
       exit 1
