@@ -332,15 +332,12 @@ effective_for_provider_model() {
     ] as $placeholder_window_ids |
     def applies_placeholder_window:
       if ($placeholder_window_ids | length) == 0 then false
-      elif (.boundedBy? | type) == "array" then
+      else
         any(.boundedBy[]?; . as $id | $placeholder_window_ids | index($id))
-      else true
       end;
     def cannot_be_checked:
       (.runway.status // "") == "unknown" or
-      (.selection.status? // "") == "unknown" or
       (.pace.status? // "") == "unknown" or
-      ((.selection.unmeasurableWindowIds? // []) | length > 0) or
       ((.pace.unknownWindowIds? // []) | length > 0) or
       applies_placeholder_window;
     if ($p // null) == null then {status: "unknown"}
