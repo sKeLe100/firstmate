@@ -20,7 +20,7 @@
 # The floor comes from optional config/host-memory-floor under FM_HOME
 # (honoring FM_CONFIG_OVERRIDE), the sibling of config/dispatch-cap documented
 # in docs/configuration.md "Host memory floor": exactly one bare positive
-# base-10 integer of MiB and a trailing newline. An absent file means the
+# base-10 integer of MiB, no wider than 9 digits, and a trailing newline. An absent file means the
 # built-in default of 3072 MiB. A malformed value is rejected loudly rather
 # than silently replaced by the default, the same contract config/dispatch-cap
 # and config/context-thresholds carry.

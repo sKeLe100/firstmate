@@ -104,7 +104,7 @@ test_heartbeat_names_a_halt_band_task() {
 test_heartbeat_names_a_halt_band_task
 
 test_queued_halt_survives_a_later_plain_heartbeat() {
-  local dir state fakebin out pid
+  local dir state fakebin out pid before
   dir=$(make_case retry-halt-carry); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"
   printf 'working: routine progress\n' > "$state/grinder.status"
@@ -123,14 +123,25 @@ test_queued_halt_survives_a_later_plain_heartbeat() {
   # A later heartbeat that takes no retry read at all (the rate-limited case):
   # dedup keeps only the last heartbeat row, so that row must still name the
   # halt nobody has drained yet.
+  before=$(wc -l < "$state/.wake-queue")
+  # Captain-relevant for the heartbeat fleet-scan, but already seen by the
+  # per-poll signal scan, so the second run reaches the heartbeat enqueue
+  # instead of exiting on a signal wake. No FM_RETRY_PRESSURE_EVERY_POLL, so
+  # the rate limit suppresses the retry read and only carry-forward can name
+  # grinder on the new row.
   printf 'blocked: needs a decision\n' >> "$state/grinder.status"
+  printf '%s' "$(seen_sig "$state/grinder.status")" > "$state/.seen-grinder_status"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_WATCH_HANDLING_SUCCESSOR=1 \
     FM_RETRY_PRESSURE_BIN="$fakebin/fm-retry-pressure.sh" "$WATCH" > "$out" &
   pid=$!
   wait_for_exit "$pid" 100 || reap "$pid"
-  assert_grep "retry halt: grinder" "$state/.wake-queue" \
-    "a later heartbeat row must carry the still-queued halt forward, not replace it"
+  [ "$(wc -l < "$state/.wake-queue")" -gt "$before" ] \
+    || fail "the second run enqueued nothing, so it never reached the heartbeat: $(cat "$out")"
+  case "$(awk -F'\t' '$3 == "heartbeat" { last = $5 } END { print last }' "$state/.wake-queue")" in
+    *"retry halt: grinder"*) ;;
+    *) fail "the newest heartbeat row dropped the still-queued halt: $(cat "$state/.wake-queue")" ;;
+  esac
   pass "an undrained halt survives a later heartbeat that takes no retry read"
 }
 test_queued_halt_survives_a_later_plain_heartbeat
