@@ -2308,7 +2308,9 @@ SH
       "$ROOT/bin/fm-config-push.sh" > "$first_out" 2>&1
   ) &
   first_pid=$!
-  for _ in $(seq 1 100); do
+  # 30s, not 2s: under a loaded parallel test run the first push can take
+  # seconds to reach pointer delivery, and a short bound fails spuriously.
+  for _ in $(seq 1 1500); do
     [ -e "$entered" ] && break
     sleep 0.02
   done
