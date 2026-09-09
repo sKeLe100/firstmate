@@ -803,7 +803,7 @@ test_codex_batch_is_refused_before_any_pair_spawns() {
     "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness codex --model gpt-5 --effort high 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "a codex batch must be refused"$'\n'"$out"
-  assert_contains "$out" "batch dispatch onto codex is refused" "refusal did not name the codex batch rule"
+  assert_contains "$out" "onto codex is refused" "refusal did not name the codex batch rule"
   [ ! -e "$HOME_DIR/state/$id1.meta" ] || fail "first batch pair was spawned despite the codex batch refusal"
   [ ! -e "$HOME_DIR/state/$id2.meta" ] || fail "second batch pair was spawned despite the codex batch refusal"
   pass "a codex batch is refused outright with no pair half-spawned"

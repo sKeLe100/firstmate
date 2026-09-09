@@ -22,7 +22,7 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 The Codex lane is per Firstmate home, matching the PC02 lane guard.
 `bin/fm-spawn.sh` scans only this home's task metas and refuses a Codex launch while another local Codex task, worker or secondmate, is alive or still unconfirmed; a positively dead local endpoint releases the lane.
 Remote-routed metas are outside the guard's scope, so a Codex secondmate published on another host never blocks a local Codex launch, and the refusal names the home it applies to.
-Batched Codex spawns are refused separately and unconditionally.
+A MULTI-pair batch resolving to Codex is refused separately, whatever the lane holds, because pairs spawn one at a time and a refusal partway through would leave a half-spawned batch; a single `id=repo` pair is one spawn and goes through under the lane rule above.
 
 ## Executable rediscovery
 

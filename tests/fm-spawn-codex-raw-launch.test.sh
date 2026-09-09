@@ -136,6 +136,39 @@ test_quoted_fast_modifier_is_refused() {
   pass "a quoted fast modifier is refused like the bare spelling"
 }
 
+test_quoted_executable_word_still_classifies_codex() {
+  local rec id out status launch
+  id=rawcodex-quotedexe-a12
+  rec=$(make_case rawcodex-quotedexe "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" '"codex" --dangerously-bypass-approvals-and-sandbox')
+  status=$?
+  expect_code 0 "$status" "a quoted codex executable word must still spawn"$'\n'"$out"
+  assert_contains "$out" "spawned $id harness=codex" "a quoted executable word hid the codex classification"
+  assert_grep "codex_exe=$FAKEBIN_DIR/codex" "$HOME_DIR/state/$id.meta" "codex exe rediscovery did not run"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "'$FAKEBIN_DIR/codex' --dangerously-bypass-approvals-and-sandbox" \
+    "the quoted executable was not pinned to the probed binary"$'\n'"actual: $launch"
+  pass "a quoted codex executable word takes the codex guards"
+}
+
+test_quoted_executable_with_fast_is_refused() {
+  local rec id out status
+  id=rawcodex-quotedexefast-a13
+  rec=$(make_case rawcodex-quotedexefast "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" '"codex" --fast --dangerously-bypass-approvals-and-sandbox' 2>&1)
+  status=$?
+  expect_code 1 "$status" "a quoted codex executable must not smuggle --fast past the guard"$'\n'"$out"
+  assert_contains "$out" "fast modifier" "refusal did not name the fast modifier"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn must not write task metadata"
+  pass "a quoted codex executable carrying --fast is refused"
+}
+
 test_non_codex_quoted_env_launch_still_spawns() {
   local rec id out status launch
   id=rawother-env-a3
@@ -264,6 +297,8 @@ test_quoted_env_value_classifies_elsewhere
 test_glob_env_value_codex_launch_is_pinned_intact
 test_quoted_env_value_codex_launch_refuses_fast
 test_quoted_fast_modifier_is_refused
+test_quoted_executable_word_still_classifies_codex
+test_quoted_executable_with_fast_is_refused
 test_non_codex_quoted_env_launch_still_spawns
 test_codex_absent_from_path_is_refused
 test_failing_version_probe_is_refused

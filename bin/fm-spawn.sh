@@ -67,7 +67,10 @@
 #       the just-probed binary are all refused. The resolved path and version
 #       are recorded as codex_exe=/codex_version= in state/<id>.meta as audit
 #       evidence, and the launch is pinned to the probed absolute path.
-#   All three guards key off the launch's executable word being spelled codex.
+#   All three guards key off the launch's executable word being spelled codex,
+#   quoted or not: a raw launch is split into words once and shell quoting is
+#   stripped from each before any of them is compared, so "codex" "--fast"
+#   is read exactly as codex --fast.
 #   A raw launch's leading unquoted NAME=value assignments are skipped, so an
 #   env-prefixed raw codex launch still classifies as codex and still takes
 #   every guard; a wrapper (env codex ..., a shell script) or a QUOTED
@@ -1694,6 +1697,7 @@ launch_template() {
   esac
 }
 
+RAW_LAUNCH_WORDS=()
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     RAW_LAUNCH=1
@@ -1708,29 +1712,40 @@ case "$ARG3" in
     RAW_LAUNCH_TAIL=""
     raw_rest=$LAUNCH
     raw_pre=""
-    # Globbing off: the spans below match each split word literally against the
-    # unexpanded command, so a word the shell had expanded (FOO=*.txt) would
-    # match nothing and silently duplicate the launch text.
+    raw_seen_exe=0
+    # The one place a raw launch is split into words, and the one place shell
+    # quoting is stripped from them: the pane's shell removes ' and " before
+    # the command runs, so every later comparison - the harness name, the
+    # executable identity, the fast modifier - reads the same value the launched
+    # process will see. The raw spans stay unnormalised so the codex pin can
+    # rebuild the command byte for byte. Globbing is off because those spans
+    # match each split word literally against the unexpanded command, so a word
+    # the shell had expanded (FOO=*.txt) would match nothing and silently
+    # duplicate the launch text.
     raw_noglob_was_set=1
     case $- in *f*) ;; *) raw_noglob_was_set=0; set -f ;; esac
     for word in $LAUNCH; do
       raw_ws=${raw_rest%%"$word"*}
       raw_rest=${raw_rest#*"$word"}
-      case "$word" in [A-Za-z_]*=*) raw_pre="$raw_pre$raw_ws$word"; continue ;; esac
+      raw_lit=${word//\"/}
+      raw_lit=${raw_lit//\'/}
+      RAW_LAUNCH_WORDS+=("$raw_lit")
+      [ "$raw_seen_exe" -eq 0 ] || continue
+      case "$raw_lit" in [A-Za-z_]*=*) raw_pre="$raw_pre$raw_ws$word"; continue ;; esac
       RAW_LAUNCH_PREFIX="$raw_pre$raw_ws"
-      RAW_LAUNCH_EXE=$word
+      RAW_LAUNCH_EXE=$raw_lit
       RAW_LAUNCH_TAIL=$raw_rest
-      HARNESS=$(basename "$word")
-      break
+      HARNESS=$(basename "$raw_lit")
+      raw_seen_exe=1
     done
     [ "$raw_noglob_was_set" -eq 1 ] || set +f
-    # A raw launch is codex when this word is SPELLED codex; anything else is
-    # not a codex launch and keeps the unverified-adapter escape hatch
-    # untouched. Classification is deliberately as loose as it has always been
-    # (plain word splitting, no quote parsing), so a wrapper or a quoted
-    # environment value classifies as some other harness and bypasses the codex
-    # guards - the same documented limitation the escape hatch's unverified
-    # contract already carries.
+    # A raw launch is codex when that word is SPELLED codex, quoted or not;
+    # anything else is not a codex launch and keeps the unverified-adapter
+    # escape hatch untouched. Word splitting itself stays as loose as it has
+    # always been, so a wrapper (env codex ..., a shell script) or an
+    # environment value carrying whitespace inside quotes still classifies as
+    # some other harness and bypasses the codex guards - the same documented
+    # limitation the escape hatch's unverified contract already carries.
     ;;
   '')
     # No explicit harness: resolve from config. A secondmate AGENT launches on the
@@ -1765,14 +1780,7 @@ esac
 # so the reachable source is the raw-launch escape hatch; refusing on the
 # composed command line keeps the rule enforced here rather than in prose.
 if [ "$HARNESS" = codex ]; then
-  fast_noglob_was_set=1
-  case $- in *f*) ;; *) fast_noglob_was_set=0; set -f ;; esac
-  for word in $LAUNCH; do
-    # Shell quoting is stripped by the pane before codex sees the word, so it
-    # is stripped here too: "--fast" and '--fast' carry the modifier exactly as
-    # the bare spelling does.
-    word=${word//\"/}
-    word=${word//\'/}
+  for word in ${RAW_LAUNCH_WORDS[@]+"${RAW_LAUNCH_WORDS[@]}"}; do
     case "$word" in
       --fast|--fast=*)
         echo "error: launch command for task $ID carries the fast modifier ('$word'); the captain's standing rule forbids launching a Codex agent with --fast. Remove it from the launch command." >&2
@@ -1780,7 +1788,6 @@ if [ "$HARNESS" = codex ]; then
         ;;
     esac
   done
-  [ "$fast_noglob_was_set" -eq 1 ] || set +f
 fi
 
 # muse and gemini are verified as CREWMATE/SCOUT adapters only. A secondmate is
