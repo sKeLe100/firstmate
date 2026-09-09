@@ -1,0 +1,24 @@
+$ # backlog created today (2026-09-09): 4 queued items on a yolo=on project
+$ bin/fm-queue-snapshot.sh --now 2026-09-09   # same day: nothing has rotted yet
+count: 4
+items[4]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,gate,created,rot}:
+  1,widgets-1,rewrite the CSV exporter,ship,-,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project inferred from id prefix,dispatchable,2026-09-09,no
+  2,widgets-2,ship the login banner,ship,-,3,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project inferred from id prefix,dispatchable,2026-09-09,no
+  3,widgets-3,audit dependency tree,scout,-,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project inferred from id prefix,dispatchable,2026-09-09,no
+  4,widgets-4,decide pricing tiers,captain,-,-,no,none,no,-,-,-,direct-PR on,captain-gated,captain kind or captain-kind hold,captain,2026-09-09,no
+priority_analysis: priority_meaningful: yes (1/4 items have priority, 25%)
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
+
+$ bin/fm-queue-snapshot.sh --now 2026-09-25   # 16 days later
+count: 4
+items[4]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,gate,created,rot}:
+  1,widgets-1,rewrite the CSV exporter,ship,-,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project inferred from id prefix,dispatchable,2026-09-09,yes
+  2,widgets-2,ship the login banner,ship,-,3,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project inferred from id prefix,dispatchable,2026-09-09,no
+  3,widgets-3,audit dependency tree,scout,-,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project inferred from id prefix,dispatchable,2026-09-09,yes
+  4,widgets-4,decide pricing tiers,captain,-,-,no,none,no,-,-,-,direct-PR on,captain-gated,captain kind or captain-kind hold,captain,2026-09-09,no
+priority_analysis: priority_meaningful: yes (1/4 items have priority, 25%)
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0

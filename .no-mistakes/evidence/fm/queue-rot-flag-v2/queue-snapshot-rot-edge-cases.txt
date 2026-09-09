@@ -1,0 +1,20 @@
+$ # review-round fixes, exercised through the CLI
+$ bin/fm-queue-snapshot.sh --now 2026-9-8    # non-zero-padded: same parser that consumes it
+fm-queue-snapshot: --now needs YYYY-MM-DD, got: 2026-9-8
+exit: 2
+
+$ bin/fm-queue-snapshot.sh --now 2026-13-45   # out-of-range
+fm-queue-snapshot: --now needs YYYY-MM-DD, got: 2026-13-45
+exit: 2
+
+$ bin/fm-queue-snapshot.sh --now 2026-09-25   # non-numeric priority "P1" counts as unprioritized; bad created date is reported, not silently rot=no
+fm-queue-snapshot: item edge-baddate has an unparseable created date: not-a-date
+count: 2
+items[2]{rank,id,title,kind,repo,priority,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,posture,autonomy,autonomy_reason,gate,created,rot}:
+  1,edge-baddate,malformed created date,ship,widgets,-,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,dispatchable,not-a-date,no
+  2,edge-nonnumeric,non-numeric priority value,ship,widgets,P1,no,none,no,-,-,-,direct-PR on,autonomous-eligible,project registry posture has yolo on,dispatchable,2026-08-01,yes
+priority_analysis: priority_meaningful: no (0/2 items have priority, 0%)
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
+exit: 0

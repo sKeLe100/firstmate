@@ -1,0 +1,14 @@
+Captain-facing /queue listing, rendered by hand from the snapshot rows above
+per .agents/skills/queue/SKILL.md step 7 (the skill itself is model-executed,
+so this is what the captain sees for the 2026-09-25 snapshot):
+
+1. [ROT] widgets-1: rewrite the CSV exporter
+     project: widgets - kind: ship - 16d - tier: crew-dispatch config absent - autonomous-eligible - rot: queued 16d with no priority set
+2. widgets-2: ship the login banner
+     project: widgets - kind: ship - 16d - tier: crew-dispatch config absent - autonomous-eligible
+3. [ROT] widgets-3: audit dependency tree
+     project: widgets - kind: scout - 16d - tier: crew-dispatch config absent - autonomous-eligible - rot: queued 16d with no priority set
+4. widgets-4: decide pricing tiers
+     project: widgets - kind: captain - 16d - tier: crew-dispatch config absent - captain-gated - gated: captain kind or captain-kind hold
+
+Ask about any item by id or description for full detail via `tasks-axi show <id> --full`.
