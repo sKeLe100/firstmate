@@ -1,0 +1,15 @@
+== healthy row with confidence=unknown (projectionConfidence absent) ==
+bin: quota-axi
+generatedAt: "2030-01-01T00:00:00Z"
+quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,all_models,100,-1,through_reset,unknown,weekly,2030-01-08T00:00:00Z
+exhaustion[0]:
+attention[0]:
+$ bin/fm-quota-choose.sh --snapshot unknown-conf.toon --candidate codex:gpt-5.6-terra
+codex gpt-5.6-terra
+exit=0
+
+== placeholder future-cycle window on default TOON (known limitation) ==
+$ bin/fm-quota-choose.sh --snapshot placeholder.toon --candidate codex:gpt-5.6-terra
+codex gpt-5.6-terra
+exit=0
