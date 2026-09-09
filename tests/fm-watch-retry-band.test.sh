@@ -53,6 +53,18 @@ wait_poll_cycle() {  # <state> <pid> [limit-ticks]
   return 1
 }
 
+# Wait until <file> is gone, failing if the watcher <pid> exits first.
+wait_file_gone() {  # <file> <pid> [limit-ticks]
+  local f=$1 pid=$2 limit=${3:-300} i=0
+  while [ "$i" -lt "$limit" ]; do
+    [ -e "$f" ] || return 0
+    kill -0 "$pid" 2>/dev/null || return 1
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ ! -e "$f" ]
+}
+
 file_mtime() {
   if [ "$(uname)" = Darwin ]; then stat -f %m "$1" 2>/dev/null; else stat -c %Y "$1" 2>/dev/null; fi
 }
@@ -186,12 +198,16 @@ test_heartbeat_ok_band_still_absorbs() {
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_RETRY_PRESSURE_EVERY_POLL=1 \
     FM_RETRY_PRESSURE_BIN="$fakebin/fm-retry-pressure.sh" "$WATCH" > "$out" &
   pid=$!
-  if ! wait_poll_cycle "$state" "$pid"; then
-    reap "$pid"; fail "an ok retry band made a quiet heartbeat actionable: $(cat "$out")"
+  # Wait for the retry read itself, not for a fixed number of polls: the
+  # heartbeat fires on its own interval, so a poll cycle is not proof one has
+  # happened yet. The marker's removal is that proof.
+  if ! wait_file_gone "$state/.retry-halt-surfaced-steady" "$pid"; then
+    reap "$pid"
+    fail "an ok band left the stale halt marker behind: $(cat "$out")"
   fi
   [ ! -s "$out" ] || fail "ok-band heartbeat printed a wake reason: $(cat "$out")"
-  assert_absent "$state/.retry-halt-surfaced-steady" \
-    "an ok band must clear a stale halt marker, never leave one behind"
+  kill -0 "$pid" 2>/dev/null \
+    || fail "an ok retry band made a quiet heartbeat actionable: $(cat "$out")"
   reap "$pid"
   pass "a non-halt retry band leaves the no-change heartbeat absorbed as before"
 }
