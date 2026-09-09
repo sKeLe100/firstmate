@@ -245,6 +245,7 @@ if command -v jq >/dev/null 2>&1; then
   {
     printf '%s\n' '#!/bin/sh'
     printf '%s\n' 'for a in "$@"; do'
+    # shellcheck disable=SC2016 # literal shell text for the stub jq script
     printf '%s\n' '  [ "$a" = --argjson ] && { echo "jq: Unknown option" >&2; exit 2; }'
     printf '%s\n' 'done'
     printf '%s\n' "exec $(command -v jq) \"\$@\""
