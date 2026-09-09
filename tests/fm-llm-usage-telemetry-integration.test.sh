@@ -105,6 +105,9 @@ SH
 exit 0
 SH
   chmod +x "$fb/treehouse" "$fb/gh-axi" "$fb/gh" "$fb/no-mistakes"
+  # fm-spawn rediscovers and --version-probes codex on every launch, so a codex
+  # relaunch needs one on this fixture's PATH rather than the runner's.
+  fm_fake_codex_probe "$fb"
 }
 
 # --- 1 & 2: fresh spawn dispatch + redelegation ----------------------------

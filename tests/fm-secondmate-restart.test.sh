@@ -124,6 +124,9 @@ esac
 exit 0
 SH
   chmod +x "$fb/sleep"
+  # fm-spawn rediscovers and --version-probes codex on every launch, so a codex
+  # restart needs one on this fixture's PATH rather than the runner's.
+  fm_fake_codex_probe "$fb"
 }
 
 # new_case <name> -> a parent home with a stub session provider.

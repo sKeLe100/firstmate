@@ -17,6 +17,10 @@ REMOTE_ROOT="$TMP_ROOT/remote-root"
 REMOTE_HOME="$TMP_ROOT/remote-home"
 LOCAL_HOME="$TMP_ROOT/local-home"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/fake")
+# The host-local secondmate launch rediscovers and --version-probes codex on
+# every launch, so a codex secondmate needs one on this fixture's PATH rather
+# than the runner's.
+fm_fake_codex_probe "$FAKEBIN"
 SSH_COUNT="$TMP_ROOT/ssh.count"
 DOCTOR_LOG="$TMP_ROOT/doctor.log"
 HERDR_STATE="$TMP_ROOT/remote-herdr.state"
