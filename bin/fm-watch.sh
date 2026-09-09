@@ -1721,7 +1721,7 @@ retry_pressure_read() {  # <reader> <task>
 # FM_RETRY_PRESSURE_EVERY_POLL=1 removes the rate limit for the tests that
 # exercise the surfacing contract itself.
 retry_halt_tasks() {
-  local reader f task out band count marker interval stamp
+  local reader f task out band count marker interval stamp deadline
   reader=${FM_RETRY_PRESSURE_BIN:-$SCRIPT_DIR/fm-retry-pressure.sh}
   [ -x "$reader" ] || return 0
   stamp="$STATE/.last-retry-pressure-read"
@@ -1736,8 +1736,10 @@ retry_halt_tasks() {
     task=$(basename "$marker"); task="${task#.retry-halt-surfaced-}"
     [ -e "$STATE/$task.meta" ] || rm -f "$marker"
   done
+  deadline=$(( $(date +%s) + 60 ))
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
+    [ "$(date +%s)" -lt "$deadline" ] || break
     task=$(basename "$f"); task="${task%.status}"
     [ -e "$STATE/$task.meta" ] || continue
     out=$(retry_pressure_read "$reader" "$task") || continue

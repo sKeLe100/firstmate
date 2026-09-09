@@ -104,14 +104,31 @@ $rec
 EOF2
   meminfo="$CASE_DIR/meminfo-low"
   printf 'MemTotal:       14000000 kB\nMemAvailable:     524288 kB\n' > "$meminfo"
+  # The task record and agent-free endpoint --relaunch requires; without them
+  # the run aborts long before the guard and the case would pin nothing.
+  cat > "$HOME_DIR/state/$id.meta" <<META
+window=firstmate:fm-$id
+endpoint_task_id=$id
+harness=claude
+kind=ship
+backend=tmux
+project=$PROJ_DIR
+worktree=$WT_DIR
+META
+  printf 'working: relaunch fixture\n' > "$HOME_DIR/state/$id.status"
   out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_FAKE_WINDOWS="fm-$id" FM_FAKE_PANE_CMD=bash \
     FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
     FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
     CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN_DIR:$PATH" \
     FM_MEMINFO_OVERRIDE="$meminfo" \
     "$SPAWN" "$id" --relaunch 2>&1)
-  assert_not_contains "$out" "host memory floor" \
+  assert_not_contains "$out" "needs an existing task record" \
+    "the fixture must reach the guard, not abort on a missing task record: $out"
+  assert_not_contains "$out" "endpoint reads" \
+    "the fixture must reach the guard, not abort on a live endpoint: $out"
+  assert_not_contains "$out" "refusing to launch task" \
     "a relaunch replaces an agent that still holds its memory, so the floor must not refuse it: $out"
   pass "fm-spawn.sh: the host-memory floor does not refuse a --relaunch"
 }

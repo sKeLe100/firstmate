@@ -179,6 +179,9 @@ test_heartbeat_ok_band_still_absorbs() {
   printf 'backend=tmux\n' > "$state/steady.meta"
   printf '%s' "$(seen_sig "$state/steady.status")" > "$state/.seen-steady_status"
   fake_retry_pressure "$fakebin" ok 1
+  # A marker left behind by a halt that has since cleared: the ok-band read must
+  # remove it, or it would suppress the first surfacing of a genuine new halt.
+  printf '3\n' > "$state/.retry-halt-surfaced-steady"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_RETRY_PRESSURE_EVERY_POLL=1 \
     FM_RETRY_PRESSURE_BIN="$fakebin/fm-retry-pressure.sh" "$WATCH" > "$out" &
@@ -188,7 +191,7 @@ test_heartbeat_ok_band_still_absorbs() {
   fi
   [ ! -s "$out" ] || fail "ok-band heartbeat printed a wake reason: $(cat "$out")"
   assert_absent "$state/.retry-halt-surfaced-steady" \
-    "an ok band must leave no halt marker behind"
+    "an ok band must clear a stale halt marker, never leave one behind"
   reap "$pid"
   pass "a non-halt retry band leaves the no-change heartbeat absorbed as before"
 }

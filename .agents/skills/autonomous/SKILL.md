@@ -202,15 +202,9 @@ On `offer=yes`, proceed to step 5.
 On `offer=no`, queue the nudge silently for the next window
 entry: skip only steps 5-6 and continue at step 7, since the window
 gates captain contact, not dispatch.
-Two exceptions override the quiet hours. First, when step 2 reported the
-time threshold and the oldest pending decision exceeds 48 hours, contact
-the captain anyway - run steps 5-6 despite `offer=no`. Second, on a fleet
-stall - every lane blocked or held while at least one row is still
-`gate: dispatchable` in `bin/fm-queue-snapshot.sh` - contact the captain
-despite `offer=no`, likewise running steps 5-6; `docs/configuration.md`
-"Fleet-stall breakout" owns the stall definition and the once-per-episode
-reporting rule. Piercing the band permits contact; it does not compel it.
-Those are the only quiet-hours overrides.
+The single exception: when step 2 reported the time threshold and the
+oldest pending decision exceeds 48 hours, contact the captain anyway -
+run steps 5-6 despite `offer=no`. That is the only quiet-hours override.
 The attention window schedule is owned by `bin/fm-captain-window.sh`.
 
 ### Step 5 - Prepare the nudge message
