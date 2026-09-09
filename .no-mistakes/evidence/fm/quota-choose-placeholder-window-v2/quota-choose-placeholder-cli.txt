@@ -1,0 +1,14 @@
+quota-axi --json snapshot: codex weekly window is a placeholder (pace.reason=future_cycle_start),
+reported as 100% remaining with runway through_reset.
+--- BEFORE (base eb2f429) ---
+$ bin/fm-quota-choose.sh --snapshot placeholder.json --candidate codex:gpt-5.6-terra
+codex gpt-5.6-terra
+exit=0   <-- dispatched on a placeholder reading
+--- AFTER (897aef3) same snapshot ---
+$ bin/fm-quota-choose.sh --snapshot placeholder.json --candidate codex:gpt-5.6-terra
+none
+exit=1
+--- AFTER: genuinely measured headroom (50%, through_reset, unknown pace) still dispatches ---
+$ bin/fm-quota-choose.sh --snapshot measured.json --candidate codex:gpt-5.6-terra
+codex gpt-5.6-terra
+exit=0
