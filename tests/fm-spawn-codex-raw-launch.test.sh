@@ -121,6 +121,21 @@ test_quoted_env_value_codex_launch_refuses_fast() {
   pass "a raw codex launch carrying --fast is refused"
 }
 
+test_quoted_fast_modifier_is_refused() {
+  local rec id out status
+  id=rawcodex-quotedfast-a11
+  rec=$(make_case rawcodex-quotedfast "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" 'codex "--fast" --dangerously-bypass-approvals-and-sandbox' 2>&1)
+  status=$?
+  expect_code 1 "$status" "shell quoting must not smuggle the fast modifier past the guard"$'\n'"$out"
+  assert_contains "$out" "fast modifier" "refusal did not name the fast modifier"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn must not write task metadata"
+  pass "a quoted fast modifier is refused like the bare spelling"
+}
+
 test_non_codex_quoted_env_launch_still_spawns() {
   local rec id out status launch
   id=rawother-env-a3
@@ -248,6 +263,7 @@ test_env_prefixed_launch_still_classifies_codex
 test_quoted_env_value_classifies_elsewhere
 test_glob_env_value_codex_launch_is_pinned_intact
 test_quoted_env_value_codex_launch_refuses_fast
+test_quoted_fast_modifier_is_refused
 test_non_codex_quoted_env_launch_still_spawns
 test_codex_absent_from_path_is_refused
 test_failing_version_probe_is_refused

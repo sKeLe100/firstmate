@@ -91,8 +91,53 @@ run_spawn() {  # <home> <wt> <fakebin> <id> <proj> <env-prefix...> -- <extra spa
     "${extra[@]+"${extra[@]}"}" 2>&1
 }
 
+run_spawn_pairs() {  # <home> <wt> <fakebin> <spawn args...>
+  local home=$1 wt=$2 fakebin=$3
+  shift 3
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
+    CLAUDE_CONFIG_DIR='' PATH="$fakebin:$PATH" \
+    "$SPAWN" "$@" --mode no-mistakes --yolo off 2>&1
+}
+
 run_codex_spawn() {  # <home> <wt> <fakebin> <id> <proj> <env-prefix...>
   run_spawn "$@" -- --harness codex --model gpt-5 --effort high
+}
+
+# The batch refusal is a parent-side rule about half-spawned batches, so it is
+# scoped to batches that actually have more than one pair; a single pair is one
+# spawn and the lane guard owns it.
+test_multi_pair_codex_batch_is_refused() {
+  local rec id1 id2 out status
+  id1=codexbatch-a-z8
+  id2=codexbatch-b-z9
+  rec=$(make_case multibatch "$id1" "$id2")
+  read_case_record "$rec"
+
+  out=$(run_spawn_pairs "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" \
+    --harness codex --model gpt-5 --effort high)
+  status=$?
+  expect_code 1 "$status" "a multi-pair codex batch must be refused: $out"
+  assert_contains "$out" "onto codex is refused" "refusal did not name the codex batch rule"
+  [ ! -f "$HOME_DIR/state/$id1.meta" ] || fail "a refused batch must not spawn its first pair"
+  [ ! -f "$HOME_DIR/state/$id2.meta" ] || fail "a refused batch must not spawn its second pair"
+  pass "a multi-pair codex batch is refused before any pair spawns"
+}
+
+test_single_pair_codex_batch_still_spawns() {
+  local rec id out status
+  id=codexbatch-solo-z10
+  rec=$(make_case solobatch "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn_pairs "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id=$PROJ_DIR" \
+    --harness codex --model gpt-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "a single-pair codex batch is one spawn and must be allowed: $out"
+  assert_contains "$out" "spawned $id harness=codex" "the single-pair codex batch did not spawn"
+  pass "a single-pair codex batch still spawns"
 }
 
 test_live_local_codex_task_holds_the_lane() {
@@ -257,5 +302,7 @@ test_remote_codex_meta_does_not_hold_the_local_lane
 test_live_local_codex_secondmate_holds_the_lane
 test_lane_is_codex_only_in_both_directions
 test_locked_task_set_refuses_the_codex_relaunch_lane_read
+test_multi_pair_codex_batch_is_refused
+test_single_pair_codex_batch_still_spawns
 
 echo "# all fm-spawn-codex-lane-guard tests passed"

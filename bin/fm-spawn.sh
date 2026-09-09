@@ -198,10 +198,10 @@
 #   applies to every pair. A ship batch therefore carries one delivery contract, and each
 #   pair still checks it against its own brief; a batch spanning modes is two invocations.
 #   If config/crew-dispatch.json exists, shared --harness is required for crewmate
-#   and scout batches. A batch resolving to harness codex is refused outright,
+#   and scout batches. A MULTI-pair batch resolving to harness codex is refused,
 #   whatever the lane's state: pairs are spawned one at a time, so a refusal
 #   partway through would leave a half-spawned batch behind. Spawn codex tasks
-#   individually. The loop lives here, in bash, so callers never hand-write a
+#   individually; a single-pair batch is one spawn and the lane guard owns it. The loop lives here, in bash, so callers never hand-write a
 #   multi-task shell loop (the tool shell is zsh, which does not word-split unquoted
 #   $vars and silently breaks ad-hoc `for ... in $pairs` loops).
 # Launch environment (config/launch-env-allowlist):
@@ -1250,11 +1250,14 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   fi
   # The per-child lane guard cannot express this: a batch re-execs its pairs
   # sequentially, so the first codex child would already be live before the
-  # second was refused, leaving a half-spawned batch behind.
-  batch_harness=${HARNESS_ARG:-$("$FM_ROOT/bin/fm-harness.sh" crew)}
-  if [ "$batch_harness" = codex ]; then
-    echo "error: batch dispatch onto codex is refused outright; this home runs one Codex agent at a time, so spawn each codex task individually and verify it before the next" >&2
-    exit 1
+  # second was refused, leaving a half-spawned batch behind. A single pair is
+  # one spawn, so it goes through and the lane guard owns it.
+  if [ "${#POS[@]}" -gt 1 ]; then
+    batch_harness=${HARNESS_ARG:-$("$FM_ROOT/bin/fm-harness.sh" crew)}
+    if [ "$batch_harness" = codex ]; then
+      echo "error: batch dispatch of ${#POS[@]} pairs onto codex is refused; this home runs one Codex agent at a time, so spawn each codex task individually and verify it before the next" >&2
+      exit 1
+    fi
   fi
   rc=0
   shared_args=()
@@ -1762,7 +1765,14 @@ esac
 # so the reachable source is the raw-launch escape hatch; refusing on the
 # composed command line keeps the rule enforced here rather than in prose.
 if [ "$HARNESS" = codex ]; then
+  fast_noglob_was_set=1
+  case $- in *f*) ;; *) fast_noglob_was_set=0; set -f ;; esac
   for word in $LAUNCH; do
+    # Shell quoting is stripped by the pane before codex sees the word, so it
+    # is stripped here too: "--fast" and '--fast' carry the modifier exactly as
+    # the bare spelling does.
+    word=${word//\"/}
+    word=${word//\'/}
     case "$word" in
       --fast|--fast=*)
         echo "error: launch command for task $ID carries the fast modifier ('$word'); the captain's standing rule forbids launching a Codex agent with --fast. Remove it from the launch command." >&2
@@ -1770,6 +1780,7 @@ if [ "$HARNESS" = codex ]; then
         ;;
     esac
   done
+  [ "$fast_noglob_was_set" -eq 1 ] || set +f
 fi
 
 # muse and gemini are verified as CREWMATE/SCOUT adapters only. A secondmate is
