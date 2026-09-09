@@ -17,7 +17,8 @@
 # fm_crew_dispatch_validate <file>
 #   0 - valid (or the file does not exist)
 #   1 - invalid; the reason is echoed on stdout
-#   2 - cannot be checked here (jq unavailable); nothing echoed
+#   2 - cannot be checked here (jq unavailable or too old to run the filter);
+#       nothing echoed
 fm_crew_dispatch_validate() {
   local file=$1 err
   [ -f "$file" ] || return 0
@@ -28,7 +29,8 @@ fm_crew_dispatch_validate() {
   fi
   local codex_efforts
   # shellcheck disable=SC2086 # CODEX_EFFORT_TIERS is a space-separated list
-  codex_efforts=$(jq -nc '$ARGS.positional' --args $CODEX_EFFORT_TIERS)
+  codex_efforts=$(jq -nc '$ARGS.positional' --args $CODEX_EFFORT_TIERS 2>/dev/null) || return 2
+  [ -n "$codex_efforts" ] || return 2
   err=$(jq -r --argjson codex_efforts "$codex_efforts" '
     def verified($h): ["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","muse","rovo"] | index($h);
     def effort_ok($h; $e):
@@ -91,7 +93,7 @@ fm_crew_dispatch_validate() {
         else empty
         end
     end
-' "$file" 2>/dev/null || true)
+' "$file" 2>/dev/null) || return 2
   if [ -n "$err" ]; then
     echo "$err"
     return 1

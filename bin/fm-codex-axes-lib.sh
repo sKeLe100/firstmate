@@ -4,12 +4,15 @@
 #
 # Codex CLI silently launches on its own bundled default model and reasoning
 # effort when neither flag is passed, which is the confirmed root cause of the
-# 2026-09-05 burn incident. Two callers have to ask the same question about a
+# 2026-09-05 burn incident. Three callers have to ask the same question about a
 # codex launch and must never drift apart: bin/fm-spawn.sh, which composes the
-# launch flags and refuses a spawn whose axes reach no flag, and
-# bin/fm-control.sh, which mirrors that refusal on the PRE-STOP side of its
-# relaunch transaction so a doomed launch never costs a running agent. Stating
-# codex's accepted effort tiers here keeps that single owner.
+# launch flags and refuses a spawn whose axes reach no flag; bin/fm-control.sh,
+# which mirrors that refusal on the PRE-STOP side of its relaunch transaction so
+# a doomed launch never costs a running agent; and bin/fm-crew-dispatch-lib.sh,
+# which validates config/crew-dispatch.json's codex effort values against the
+# tier list below, so fm-bootstrap's CREW_DISPATCH verdict and fm-queue-snapshot's
+# dispatch_config move with it. Stating codex's accepted effort tiers here keeps
+# that single owner.
 #
 # The installed codex config schema uses model_reasoning_effort, and the
 # bundled model catalog advertises low|medium|high|xhigh. max is deliberately
