@@ -11,9 +11,9 @@
 # is eligible only when every applicable runway is measured, no applicable
 # window is synthesized or otherwise unmeasurable, and its known effective
 # percent remaining is greater than zero. Synthesized-window detection reads
-# per-window pace evidence, which only the `--json` snapshot carries. The TOON
-# row carries a per-scope confidence (field 5) instead: a value of `unknown`
-# there flags an unmeasurable scope. The first eligible
+# per-window pace evidence, which only the `--json` snapshot carries: a default
+# TOON snapshot cannot expose a placeholder window, so on that input the
+# guarantee narrows to the runway and percent checks. The first eligible
 # candidate is printed as "<harness> <model>" and the script exits 0.
 # If no candidate is quota-eligible, it prints "none" and exits 1.
 #
@@ -276,8 +276,7 @@ else
                     scope: .[1],
                     status: "known",
                     effectivePercentRemaining: (.[2] | tonumber),
-                    runway: {status: .[4]},
-                    confidence: .[5]
+                    runway: {status: .[4]}
                   }
                 })) +
                 ($attention_entries | map(. as $entry | {
@@ -341,8 +340,7 @@ effective_for_provider_model() {
       end;
     def cannot_be_checked:
       (.runway.status // "") == "unknown" or
-      applies_placeholder_window or
-      (.confidence // null) == "unknown";
+      applies_placeholder_window;
     if ($p // null) == null then {status: "unknown"}
     else ($p.quotaSemantics.effectiveAvailability // []) |
     map(select(.scope as $scope |

@@ -32,7 +32,6 @@ MUSE_EXHAUSTED="$LAB/muse-exhausted.json"
 MUSE_POSITIVE="$LAB/muse-positive.json"
 UNKNOWN_PACE="$LAB/unknown-pace.json"
 PLACEHOLDER_TOON="$LAB/placeholder-quota.toon"
-UNKNOWN_CONFIDENCE_TOON="$LAB/unknown-confidence-quota.toon"
 TOON="$LAB/quota.toon"
 RENDERER_TOON="$LAB/renderer-quota.toon"
 EMPTY_TOON="$LAB/empty-quota.toon"
@@ -429,9 +428,11 @@ out=$(call_choose --snapshot "$RENDERER_TOON" --candidate claude:default)
 [ "$out" = "claude default" ] || fail "renderer-shaped TOON snapshot returned: $out"
 ok "renderer-shaped TOON snapshot is accepted"
 
-# A TOON row with measured confidence (high) still dispatches positive quota
-# even when the provider would otherwise have a placeholder window - the TOON
-# row's confidence field is what matters, and established values pass through.
+# Known limitation, pinned deliberately: the default TOON carries no per-window
+# pace evidence, so a placeholder future-cycle window is indistinguishable from
+# measured headroom on that input and still dispatches. The row's confidence
+# column is `runway.projectionConfidence or "unknown"`, which is absent on many
+# healthy runways, so it is not a placeholder signal.
 cat > "$PLACEHOLDER_TOON" <<'TOON'
 bin: quota-axi
 generatedAt: "2030-01-01T00:00:00Z"
@@ -442,25 +443,8 @@ attention[0]:
 TOON
 out=$(call_choose --snapshot "$PLACEHOLDER_TOON" --candidate codex:gpt-5.6-terra)
 [ "$out" = "codex gpt-5.6-terra" ] \
-  || fail "TOON measured confidence dispatched; returned: $out"
-ok "TOON with established confidence dispatches positive quota"
-
-# Unknown TOON confidence flags a synthesized/unmeasurable window even when
-# the runway looks healthy and the percentage is positive - the candidate must
-# fail closed, mirroring the JSON-path synthesized-window guarantee.
-cat > "$UNKNOWN_CONFIDENCE_TOON" <<'TOON'
-bin: quota-axi
-generatedAt: "2030-01-01T00:00:00Z"
-quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
-  codex,all_models,100,-1,through_reset,unknown,weekly,2030-01-08T00:00:00Z
-exhaustion[0]:
-attention[0]:
-TOON
-if out=$(call_choose --snapshot "$UNKNOWN_CONFIDENCE_TOON" --candidate codex:gpt-5.6-terra 2>/dev/null); then
-  fail "TOON unknown confidence unexpectedly dispatched"
-fi
-[ "$out" = "none" ] || fail "TOON unknown confidence returned: $out"
-ok "TOON unknown confidence fails closed (placeholder detection)"
+  || fail "TOON placeholder limitation changed; returned: $out"
+ok "default TOON cannot detect a placeholder window (known limitation)"
 
 printf 'garbage\n' > "$LEADING_GARBAGE_NONZERO_TOON"
 cat "$TOON" >> "$LEADING_GARBAGE_NONZERO_TOON"
