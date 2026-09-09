@@ -12,7 +12,6 @@ TMP_ROOT=$(fm_test_tmproot fm-codex-usage)
 HELPER="$ROOT/bin/fm-codex-usage.sh"
 
 # Path to the real Codex usage audit fixtures.
-FIXTURES="$ROOT/tests/fixtures"
 
 # --- helper functions -------------------------------------------------------
 
@@ -47,11 +46,25 @@ mk_turn_context() {
 # --- tests ------------------------------------------------------------------
 
 test_explicit_path_reads_all_fields() {
-  # Use the real terra session fixture (43 token_count records, gpt-5.6-terra).
+  # Create an inline fixture mimicking a multi-turn terra session.
   local home out
   home="$TMP_ROOT/test1"
   mkdir -p "$home"
-  out=$(emit "$home" "$FIXTURES/terraform-session.jsonl")
+  {
+    # session_meta
+    printf '{"timestamp":"2026-09-06T19:49:48.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"abc","model_provider":"openai"}}\n'
+    # turn_context with model
+    mk_turn_context "gpt-5.6-terra"
+    mk_turn_context "gpt-5.6-terra"
+    mk_turn_context "gpt-5.6-terra"
+    # 5 token_count records at different ordinals
+    mk_line 1 60000 6000 258400 75.0 1789236167
+    mk_line 2 65000 7500 258400 76.0 1789236167
+    mk_line 3 70000 8000 258400 77.0 1789236167
+    mk_line 4 62000 3500 258400 77.5 1789236167
+    mk_line 5 65750 2030 258400 77.0 1789236167
+  } > "$TMP_ROOT/terraform-inline.jsonl"
+  out=$(emit "$home" "$TMP_ROOT/terraform-inline.jsonl")
 
   # context_tokens and window come from the last token_count's info.
   [ "$(field "$out" context_tokens)" != "" ] || fail "context_tokens missing"
@@ -61,7 +74,7 @@ test_explicit_path_reads_all_fields() {
   # models_seen from turn_context records.
   [ "$(field "$out" models_seen)" = "gpt-5.6-terra" ] || fail "models_seen should be gpt-5.6-terra: $out"
   # turns = number of token_count records.
-  [ "$(field "$out" turns)" = "43" ] || fail "turns should be 43: $out"
+  [ "$(field "$out" turns)" = "5" ] || fail "turns should be 5: $out"
   # weekly_resets_at should be populated (inherited from previous record).
   [ "$(field "$out" weekly_resets_at)" != "" ] || fail "weekly_resets_at should be populated: $out"
   pass "fm-codex-usage.sh: explicit path reads all fields correctly"
@@ -207,12 +220,17 @@ test_no_models_seen_is_none() {
 }
 
 test_astra_null_info_handled_gracefully() {
-  # The astra burn session has info=null and primary=null.
-  # It should not crash; it should emit zeros/nulls.
+  # Create an inline fixture mimicking the astra burn session:
+  # info=null, primary=null, but turn_context has model gpt-6-astra.
   local home out
   home="$TMP_ROOT/test7"
   mkdir -p "$home"
-  out=$(emit "$home" "$FIXTURES/astra-burn-session.jsonl" 2>&1)
+  {
+    printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"astra","model_provider":"openai"}}\n'
+    mk_turn_context "gpt-6-astra"
+    printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":1,"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":null}}}\n'
+  } > "$TMP_ROOT/astra-inline.jsonl"
+  out=$(emit "$home" "$TMP_ROOT/astra-inline.jsonl")
   # context_tokens should be 0 (info is null).
   [ "$(field "$out" context_tokens)" = "0" ] || fail "astra context_tokens should be 0: $out"
   # session_total should be 0.
@@ -250,19 +268,20 @@ test_config_thresholds_malformed_rejected() {
 
   # Malformed warn value.
   printf 'warn=abc\n' > "$home/config/codex-context-thresholds"
-  if FM_HOME="$home" "$HELPER" "$FIXTURES/terraform-session.jsonl" >/dev/null 2>&1; then
+  mk_line 0 1000 100 258400 50.0 1789236167 > "$TMP_ROOT/malf.jsonl"
+  if FM_HOME="$home" "$HELPER" "$TMP_ROOT/malf.jsonl" >/dev/null 2>&1; then
     fail "malformed warn value should be rejected"
   fi
 
   # warn > restart.
   printf 'warn=200000\nrestart=100000\n' > "$home/config/codex-context-thresholds"
-  if FM_HOME="$home" "$HELPER" "$FIXTURES/terraform-session.jsonl" >/dev/null 2>&1; then
+  if FM_HOME="$home" "$HELPER" "$TMP_ROOT/malf.jsonl" >/dev/null 2>&1; then
     fail "warn > restart should be rejected"
   fi
 
   # Unknown key.
   printf 'bogus=1\n' > "$home/config/codex-context-thresholds"
-  if FM_HOME="$home" "$HELPER" "$FIXTURES/terraform-session.jsonl" >/dev/null 2>&1; then
+  if FM_HOME="$home" "$HELPER" "$TMP_ROOT/malf.jsonl" >/dev/null 2>&1; then
     fail "unknown config key should be rejected"
   fi
 
@@ -338,7 +357,13 @@ test_telemetry_omits_unknown_fields() {
   local home
   home="$TMP_ROOT/test11d"
   mkdir -p "$home"
-  FM_HOME="$home" "$HELPER" --telemetry --task-id task-null "$FIXTURES/astra-burn-session.jsonl" >/dev/null \
+  # Inline minimal astra null-info fixture.
+  {
+    printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"astra","model_provider":"openai"}}\n'
+    mk_turn_context "gpt-6-astra"
+    printf '{"timestamp":"2026-09-07T23:23:43.000Z","ordinal":1,"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":null}}}\n'
+  } > "$TMP_ROOT/astra-telemetry.jsonl"
+  FM_HOME="$home" "$HELPER" --telemetry --task-id task-null "$TMP_ROOT/astra-telemetry.jsonl" >/dev/null \
     || fail "telemetry run on null-info fixture failed"
   python3 -c "
 import json, sys
