@@ -23,15 +23,18 @@
 # Usage: fm-routing-ledger-metrics.sh [--since <epoch>] [--occupancy <file>]
 #
 # Output (stable field order, one "key: value" line each):
-#   opened: <n>         count of "classified" events (a row's first entry
-#                        into the registry - see reopened below)
+#   opened: <n>          count of ids that entered the registry (an id's
+#                        FIRST classified event; re-writing an open row to
+#                        correct its purpose/risk never counts again)
 #   closed: <n>          count of "closed" events
 #   reopened: <n>        count of "classified" events for an id that was
 #                        already closed earlier in the ledger (re-entered
 #                        the registry after leaving it)
 #   escalated: <n>       count of "escalated" events, for visibility only
-#   gross_per_day: <f>   closed / observed-window-days (2 decimal places)
-#   net_per_day: <f>     (closed - opened) / observed-window-days
+#   gross_per_day: <f>   closed / observed-window-days (2 decimal places),
+#                        or "unavailable" when the window holds no events
+#   net_per_day: <f>     (closed - opened) / observed-window-days, or
+#                        "unavailable" when the window holds no events
 #   median_cycle_time_seconds: <n or "unavailable">
 #     median of (closed_epoch - first_classified_epoch) over ids that have
 #     both a classified and a later closed event; "unavailable" when no id
@@ -125,7 +128,6 @@ if os.path.isfile(ledger):
 
 events.sort(key=lambda e: e[0])
 
-opened = 0
 closed = 0
 reopened = 0
 escalated = 0
@@ -137,7 +139,6 @@ for epoch, event, item_id in events:
     if event == "classified":
         if item_id in ever_closed:
             reopened += 1
-        opened += 1
         if item_id not in first_classified:
             first_classified[item_id] = epoch
     elif event == "escalated":
@@ -156,8 +157,13 @@ else:
 window_seconds = max(now - window_start, 1)
 window_days = window_seconds / 86400.0
 
-gross_per_day = closed / window_days
-net_per_day = (closed - opened) / window_days
+opened = len(first_classified)
+if events:
+    gross_per_day = f"{closed / window_days:.2f}"
+    net_per_day = f"{(closed - opened) / window_days:.2f}"
+else:
+    gross_per_day = "unavailable"
+    net_per_day = "unavailable"
 
 median_cycle = "unavailable"
 if cycle_times:
@@ -186,8 +192,8 @@ print(f"opened: {opened}")
 print(f"closed: {closed}")
 print(f"reopened: {reopened}")
 print(f"escalated: {escalated}")
-print(f"gross_per_day: {gross_per_day:.2f}")
-print(f"net_per_day: {net_per_day:.2f}")
+print(f"gross_per_day: {gross_per_day}")
+print(f"net_per_day: {net_per_day}")
 print(f"median_cycle_time_seconds: {median_cycle}")
 print(f"pc02_idle_pct: {pc02_idle_pct}")
 PY

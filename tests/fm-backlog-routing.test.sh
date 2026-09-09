@@ -150,6 +150,40 @@ assert_grep "closed	item-c	pc02" "$home/data/routing-ledger.tsv" \
 [ "$(grep -c "closed	item-c	pc02" "$home/data/routing-ledger.tsv")" -eq 1 ] \
   || fail "item-c must be archived exactly once across the failed and retried gc"
 
+# 6c. An existing-but-unreadable registry is a refusal, never an empty or
+#     absent one: answering "absent" would make the /autonomous pass
+#     re-classify curated rows, and rewriting from an unreadable file would
+#     replace the whole registry with the single row being written.
+if [ "$(id -u)" -ne 0 ]; then
+  unread_home=$(make_home unreadable)
+  (cd "$unread_home" && tasks-axi add keep-a "first" --kind ship --repo demo >/dev/null)
+  (cd "$unread_home" && tasks-axi add keep-b "second" --kind ship --repo demo >/dev/null)
+  (cd "$unread_home" && tasks-axi add keep-c "third" --kind ship --repo demo >/dev/null)
+  run_routing "$unread_home" set keep-a pc02 >/dev/null
+  run_routing "$unread_home" set keep-b medium >/dev/null
+  registry="$unread_home/data/backlog-routing.tsv"
+  chmod 000 "$registry"
+
+  run_routing "$unread_home" set keep-c pc02 >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 2 ] || fail "set against an unreadable registry must exit 2, got $rc"
+
+  out=$(run_routing "$unread_home" get keep-a 2>/dev/null); rc=$?
+  [ "$rc" -eq 2 ] || fail "get against an unreadable registry must exit 2, got $rc"
+  assert_not_contains "$out" "absent" "an unreadable registry must never be reported as an absent row"
+
+  run_routing "$unread_home" gc keep-a >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 2 ] || fail "gc against an unreadable registry must exit 2, got $rc"
+
+  run_routing "$unread_home" list >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 2 ] || fail "list against an unreadable registry must exit 2, got $rc"
+
+  chmod 644 "$registry"
+  listed=$(run_routing "$unread_home" list)
+  assert_contains "$listed" "keep-a" "the pre-existing rows survive every refused command"
+  assert_contains "$listed" "keep-b" "the pre-existing rows survive every refused command"
+  assert_not_contains "$listed" "keep-c" "the refused set wrote nothing"
+fi
+
 # 7. list filters by class and never validates freshness itself.
 run_routing "$home" set item-b pc02 >/dev/null
 run_routing "$home" set item-c senior >/dev/null

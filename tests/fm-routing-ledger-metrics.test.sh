@@ -42,6 +42,8 @@ out=$(FM_HOME="$home" "$METRICS") || fail "metrics must succeed on an absent led
 assert_contains "$out" "opened: 0" "absent ledger reports opened: 0"
 assert_contains "$out" "median_cycle_time_seconds: unavailable" "absent ledger reports unavailable median cycle time"
 assert_contains "$out" "pc02_idle_pct: unavailable" "no --occupancy given reports unavailable idle pct"
+assert_contains "$out" "gross_per_day: unavailable" "an absent ledger has no observed window, so no rate"
+assert_contains "$out" "net_per_day: unavailable" "an absent ledger has no observed window, so no rate"
 
 # 2. opened/closed/reopened reconcile to raw classified/closed transitions,
 #    including a reopen (classified again after a prior close).
@@ -53,9 +55,16 @@ FM_HOME="$home" "$ROUTING" set item-b pc02 >/dev/null
 FM_HOME="$home" "$ROUTING" gc item-a >/dev/null
 FM_HOME="$home" "$ROUTING" set item-a pc02 >/dev/null   # reopened
 out=$(FM_HOME="$home" "$METRICS") || fail "metrics should succeed"
-assert_contains "$out" "opened: 3" "3 classified events (item-a twice, item-b once)"
+assert_contains "$out" "opened: 2" "2 ids entered the registry (item-a, item-b)"
 assert_contains "$out" "closed: 1" "1 closed event"
 assert_contains "$out" "reopened: 1" "item-a's second classification counts as reopened"
+
+# 2b. Re-writing a row that is still open (correcting its purpose) is not a
+#     new entry into the registry: opened counts ids, not writes.
+FM_HOME="$home" "$ROUTING" set item-b pc02 --purpose "corrected" >/dev/null
+out=$(FM_HOME="$home" "$METRICS") || fail "metrics should succeed after a corrective re-set"
+assert_contains "$out" "opened: 2" "re-classifying an already-open row must not raise opened"
+assert_contains "$out" "reopened: 1" "a corrective re-set of an open row is not a reopen"
 
 # 3. Median cycle time reconciles to the actual epoch delta between an id's
 #    first classified event and its closed event, using an injected ledger

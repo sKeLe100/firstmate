@@ -188,12 +188,27 @@ ledger_append() {  # <event> <id> <class> [<reason>]
 
 # Rewrites $ROUTING with $id's line replaced by $new_line (or removed when
 # new_line is empty), preserving every other row's order.
+# A registry that exists but cannot be read is a refusal, never an empty
+# registry: every caller below would otherwise answer as if the classification
+# work simply did not exist, and rewrite the file from that false premise.
+require_readable_registry() {
+  if [ -e "$ROUTING" ] && [ ! -r "$ROUTING" ]; then
+    fm_routing_log "routing registry exists but is not readable: $ROUTING"
+    return 1
+  fi
+  return 0
+}
+
 routing_rewrite() {  # <id> <new_line-or-empty>
   local id=$1 new_line=$2 tmp
+  require_readable_registry || return 1
   tmp="$ROUTING.tmp.$$"
   mkdir -p "$DATA"
   if [ -f "$ROUTING" ]; then
-    awk -F'\t' -v i="$id" '$1 != i { print }' "$ROUTING" > "$tmp"
+    if ! awk -F'\t' -v i="$id" '$1 != i { print }' "$ROUTING" > "$tmp"; then
+      rm -f "$tmp"
+      return 1
+    fi
   else
     : > "$tmp"
   fi
@@ -203,9 +218,11 @@ routing_rewrite() {  # <id> <new_line-or-empty>
   mv "$tmp" "$ROUTING" || { rm -f "$tmp"; return 1; }
 }
 
+# Exit 0 = row printed, 1 = no such row, 2 = the registry could not be read.
 routing_row_for() {  # <id>
+  require_readable_registry || return 2
   [ -f "$ROUTING" ] || return 1
-  awk -F'\t' -v i="$1" '$1 == i { print; found = 1 } END { exit found ? 0 : 1 }' "$ROUTING"
+  awk -F'\t' -v i="$1" '$1 == i { print; found = 1 } END { exit found ? 0 : 1 }' "$ROUTING" || return 1
 }
 
 cmd_set() {
@@ -259,8 +276,10 @@ cmd_escalate() {
     esac
   done
   [ -n "$reason" ] || { fm_routing_log "escalate requires --reason"; exit 2; }
-  local existing sidecar
-  existing=$(routing_row_for "$id") || { fm_routing_log "cannot escalate $id: no existing routing row"; exit 1; }
+  local existing sidecar rc
+  existing=$(routing_row_for "$id"); rc=$?
+  [ "$rc" -ne 2 ] || exit 2
+  [ "$rc" -eq 0 ] || { fm_routing_log "cannot escalate $id: no existing routing row"; exit 1; }
   local old_class
   old_class=$(printf '%s' "$existing" | cut -f2)
   sidecar=$(printf '%s' "$existing" | cut -f3)
@@ -290,8 +309,10 @@ cmd_escalate() {
 cmd_get() {
   local id=${1:-}
   [ -n "$id" ] || { fm_routing_log "get requires <id>"; exit 2; }
-  local row
-  if ! row=$(routing_row_for "$id"); then
+  local row rc
+  row=$(routing_row_for "$id"); rc=$?
+  [ "$rc" -ne 2 ] || exit 2
+  if [ "$rc" -ne 0 ]; then
     echo absent
     exit 1
   fi
@@ -326,6 +347,7 @@ cmd_list() {
       *) fm_routing_log "unknown argument: $1"; exit 2 ;;
     esac
   done
+  require_readable_registry || exit 2
   [ -f "$ROUTING" ] || exit 0
   if [ -n "$want_class" ]; then
     awk -F'\t' -v c="$want_class" '$2 == c { print }' "$ROUTING"
@@ -337,14 +359,16 @@ cmd_list() {
 cmd_gc() {
   local id=${1:-}
   [ -n "$id" ] || { fm_routing_log "gc requires <id>"; exit 2; }
-  local row lockdir="$DATA/.backlog-routing.lock" class
+  local row lockdir="$DATA/.backlog-routing.lock" class rc
   # Everything below runs under the routing lock, so the row's existence
   # check, its archive, and its removal are one indivisible step: a gc that
   # cannot finish never leaves a "closed" line behind for the next
   # heartbeat's retry to duplicate.
   acquire_lockdir "$lockdir" || exit 2
-  if ! row=$(routing_row_for "$id"); then
+  row=$(routing_row_for "$id"); rc=$?
+  if [ "$rc" -ne 0 ]; then
     release_lockdir "$lockdir"
+    [ "$rc" -ne 2 ] || exit 2
     exit 0
   fi
   class=$(printf '%s' "$row" | cut -f2)
