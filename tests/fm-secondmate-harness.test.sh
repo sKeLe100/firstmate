@@ -416,7 +416,7 @@ test_propagate_lib() {
 
 # A secondmate home may pin its own config/crew-harness independent of the
 # primary by leaving a sibling config/crew-harness.local-override marker next
-# to it (FM_LOCAL_OVERRIDABLE_CONFIG in fm-config-inherit-lib.sh). With no
+# to it (fm_config_inherit_item_overridden in fm-config-inherit-lib.sh). With no
 # marker, ordinary primary-authoritative inheritance applies unchanged. With
 # the marker present, propagation must leave crew-harness alone in both
 # directions - a changed primary value and a primary value going absent -
@@ -475,6 +475,62 @@ test_propagate_lib_local_override() {
     || fail "override removed: crew-harness did not resume inheriting after the marker was removed"
 
   pass "B1b propagate_inheritable_config: a secondmate-local crew-harness override marker is honored and reversible"
+}
+
+# The remote path converges through the receiver bin/fm-remote-inherit.sh, not
+# through propagate_inheritable_config, and the sender still transfers
+# crew-harness on every push. With the local-override marker set in the remote
+# home, the receiver must skip both the put and the absent command, leaving the
+# home's own bytes byte-exact, reporting the skip, and exiting 0 so the push is
+# not treated as a transfer failure. Every other inherited item still applies.
+test_remote_inherit_receiver_honors_local_override() {
+  local d home payload bytes hash out
+  d="$TMP_ROOT/remote-inherit-override"
+  home="$d/home"
+  mkdir -p "$home/config" "$home/data"
+  payload="$d/payload"
+  printf 'grok\n' > "$payload"
+  bytes=$(LC_ALL=C wc -c < "$payload" | tr -d ' ')
+  if command -v shasum >/dev/null 2>&1; then
+    hash=$(shasum -a 256 "$payload" | awk '{print $1}')
+  else
+    hash=$(sha256sum "$payload" | awk '{print $1}')
+  fi
+
+  printf 'claude\n' > "$home/config/crew-harness"
+  : > "$home/config/crew-harness.local-override"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-remote-inherit.sh" \
+    put config/crew-harness "$bytes" "$hash" 1 < "$payload") \
+    || fail "receiver override: put exited non-zero instead of skipping"
+  assert_contains "$out" "skipped: config/crew-harness" \
+    "receiver override: put did not report the skip"
+  [ "$(cat "$home/config/crew-harness")" = claude ] \
+    || fail "receiver override: put overwrote the pinned crew-harness"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-remote-inherit.sh" \
+    absent config/crew-harness 0 \
+    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 2 </dev/null) \
+    || fail "receiver override: absent exited non-zero instead of skipping"
+  assert_contains "$out" "skipped: config/crew-harness" \
+    "receiver override: absent did not report the skip"
+  [ "$(cat "$home/config/crew-harness")" = claude ] \
+    || fail "receiver override: absent removed the pinned crew-harness"
+
+  FM_HOME="$home" "$ROOT/bin/fm-remote-inherit.sh" \
+    put config/backlog-backend "$bytes" "$hash" 1 < "$payload" >/dev/null \
+    || fail "receiver override: a non-overridable item stopped converging"
+  [ "$(cat "$home/config/backlog-backend")" = grok ] \
+    || fail "receiver override: a non-overridable item did not receive the primary bytes"
+
+  rm -f "$home/config/crew-harness.local-override"
+  FM_HOME="$home" "$ROOT/bin/fm-remote-inherit.sh" \
+    put config/crew-harness "$bytes" "$hash" 3 < "$payload" >/dev/null \
+    || fail "receiver override: put failed after the marker was removed"
+  [ "$(cat "$home/config/crew-harness")" = grok ] \
+    || fail "receiver override: crew-harness did not resume converging after marker removal"
+
+  pass "B1c fm-remote-inherit.sh receiver: the local-override marker skips put and absent for crew-harness"
 }
 
 # ===========================================================================
@@ -2652,6 +2708,7 @@ test_pi_signed_detection_and_session_lock_identity
 test_dash_leading_process_names_are_basename_operands
 test_propagate_lib
 test_propagate_lib_local_override
+test_remote_inherit_receiver_honors_local_override
 test_spawn_split_and_inherit
 test_spawn_backward_compat_crew_fallback
 test_spawn_bare_backward_compat
