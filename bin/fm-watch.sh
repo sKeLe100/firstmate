@@ -1767,13 +1767,19 @@ retry_halt_mark_surfaced() {
 # Every heartbeat enqueue must build its payload through this helper: a literal
 # `heartbeat` payload at any one site collapses a still-queued halt row under
 # fm_wake_print_deduped's last-row-wins rule and loses the halt.
+#
+# A halt-bearing reason is prefixed `check:`, not `heartbeat:`: it stays inside
+# the wake-reason grammar every consumer parses, while a `heartbeat` prefix is
+# what bin/fm-supervise-daemon.sh's INJECT_SKIP_DEFAULT and the Pi branch's
+# heartbeat claim both treat as absorbable, which would swallow the one
+# surfacing a halted task ever gets.
 heartbeat_reason_with_queued_halts() {
   local names queued payload line
   names=${FM_HEARTBEAT_RETRY_HALT:-}
   queued=
   while IFS= read -r payload; do
     case "$payload" in
-      "heartbeat: retry halt: "*) line=${payload#heartbeat: retry halt: } ;;
+      "check: retry halt: "*) line=${payload#check: retry halt: } ;;
       *) continue ;;
     esac
     [ -n "$line" ] || continue
@@ -1783,7 +1789,7 @@ heartbeat_reason_with_queued_halts() {
   [ -z "$queued" ] || names="${names:+$names,}$queued"
   [ -n "$names" ] || { printf 'heartbeat\n'; return 0; }
   names=$(printf '%s' "$names" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)
-  printf 'heartbeat: retry halt: %s\n' "$names"
+  printf 'check: retry halt: %s\n' "$names"
 }
 
 heartbeat_scan_finds_actionable() {

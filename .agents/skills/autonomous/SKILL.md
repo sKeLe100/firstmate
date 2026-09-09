@@ -275,11 +275,12 @@ Record the number of decisions evaluated, the number ruled on, the
 number deferred, and the number dispatched.
 Append to the pass log: the epoch timestamp, the threshold that fired,
 and a one-line summary of outcomes.
-Name in that summary the standing orders step 0 applied.
-Step 10 runs after this one, so when it declines an eligible row, amend this
-pass's log line after step 10 completes to name that row and its reason,
-keeping the same single-line format, so a later pass can see what this one
-chose rather than only what it did.
+Name in that summary the standing orders step 0 applied, and any eligible row
+step 10 declined with its reason, so a later pass can see what this one chose
+rather than only what it did.
+Write that line once, after step 10 has run, so the single append-only line
+already names everything the pass decided; never go back and amend a line
+already appended.
 
 The pass log path is `state/.autonomous-pass-log`.
 Each entry is a single line: `<epoch>\t<threshold>\t<summary>`.
