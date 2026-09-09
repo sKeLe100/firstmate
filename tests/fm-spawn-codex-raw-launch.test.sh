@@ -43,7 +43,7 @@ run_spawn() {  # <home> <wt> <fakebin> <launchlog> <spawn args...>
     fm_test_run_spawn "$home" "$wt" "$fakebin" "$@" --mode no-mistakes --yolo off
 }
 
-test_quoted_env_value_still_classifies_codex() {
+test_env_prefixed_launch_still_classifies_codex() {
   local rec id out status launch
   id=rawcodex-env-a1
   rec=$(make_case rawcodex-env "$id")
@@ -59,7 +59,51 @@ test_quoted_env_value_still_classifies_codex() {
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "RUST_LOG=debug '$FAKEBIN_DIR/codex' --dangerously-bypass-approvals-and-sandbox" \
     "the launch kept its env prefix but was not pinned to the probed executable"$'\n'"actual: $launch"
-  pass "a raw codex launch behind an env prefix takes the codex guards"
+  pass "a raw codex launch behind an unquoted env prefix takes the codex guards"
+}
+
+# The documented limitation: classification is plain word splitting, so a QUOTED
+# environment value splits into words that are not an assignment and the launch
+# classifies as some other harness, bypassing the codex guards.
+test_quoted_env_value_classifies_elsewhere() {
+  local rec id out status
+  id=rawcodex-quotedenv-a9
+  rec=$(make_case rawcodex-quotedenv "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" 'RUST_LOG="a b" codex --dangerously-bypass-approvals-and-sandbox')
+  status=$?
+  expect_code 0 "$status" "a quoted env value must keep the escape hatch spawning"$'\n'"$out"
+  case "$out" in
+    *"spawned $id harness=codex"*) fail "a quoted env value is documented as classifying elsewhere, but it classified codex" ;;
+  esac
+  grep -q '^codex_exe=' "$HOME_DIR/state/$id.meta" && fail "a launch not classified codex must not record codex rediscovery evidence"
+  pass "a quoted environment value classifies as another harness (documented limitation)"
+}
+
+# Regression: word splitting must not glob-expand, or the executable span is
+# matched against text that is not in the command and the launch is duplicated.
+test_glob_env_value_codex_launch_is_pinned_intact() {
+  local rec id out status launch
+  id=rawcodex-glob-a10
+  rec=$(make_case rawcodex-glob "$id")
+  read_case_record "$rec"
+  : > "$CASE_DIR/FOO=a.txt"
+
+  out=$(cd "$CASE_DIR" && run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" 'FOO=*.txt codex --dangerously-bypass-approvals-and-sandbox')
+  status=$?
+  expect_code 0 "$status" "a glob-shaped env value must not break a raw codex launch"$'\n'"$out"
+  assert_contains "$out" "spawned $id harness=codex" "a glob-shaped env value hid the codex executable word"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "FOO=*.txt '$FAKEBIN_DIR/codex' --dangerously-bypass-approvals-and-sandbox" \
+    "the launch was mangled by glob expansion"$'\n'"actual: $launch"
+  case "$launch" in
+    *--dangerously-bypass-approvals-and-sandbox*--dangerously-bypass-approvals-and-sandbox*)
+      fail "glob expansion duplicated the launch command"$'\n'"actual: $launch" ;;
+  esac
+  pass "a glob-shaped env value leaves the pinned codex launch intact"
 }
 
 test_quoted_env_value_codex_launch_refuses_fast() {
@@ -191,16 +235,18 @@ test_non_codex_expanded_executable_still_spawns() {
 
   # shellcheck disable=SC2016  # the unexpanded $MYBIN is the input under test
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-    "$id" "$PROJ_DIR" 'some-tool --flag $MYBIN')
+    "$id" "$PROJ_DIR" '$MYBIN --flag')
   status=$?
   expect_code 0 "$status" "the unverified-adapter escape hatch must keep spawning non-codex raw launches"$'\n'"$out"
-  assert_contains "$out" "spawned $id harness=some-tool" "the escape hatch misclassified the executable"
+  assert_contains "$out" 'spawned '"$id"' harness=$MYBIN' "the escape hatch misclassified the executable"
   launch=$(cat "$LAUNCH_LOG")
-  [ "$launch" = 'some-tool --flag $MYBIN' ] || fail "a non-codex raw launch was rewritten"$'\n'"actual: $launch"
-  pass "a non-codex raw launch carrying a shell expansion still spawns verbatim"
+  [ "$launch" = '$MYBIN --flag' ] || fail "a non-codex raw launch was rewritten"$'\n'"actual: $launch"
+  pass "a non-codex raw launch whose executable word is a shell expansion still spawns verbatim"
 }
 
-test_quoted_env_value_still_classifies_codex
+test_env_prefixed_launch_still_classifies_codex
+test_quoted_env_value_classifies_elsewhere
+test_glob_env_value_codex_launch_is_pinned_intact
 test_quoted_env_value_codex_launch_refuses_fast
 test_non_codex_quoted_env_launch_still_spawns
 test_codex_absent_from_path_is_refused

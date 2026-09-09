@@ -58,16 +58,20 @@
 #       lane in both directions. An unreadable task set is refused too, rather
 #       than raced.
 #     - No fast modifier. A codex launch command carrying --fast is refused.
-#     - Per-launch executable rediscovery. codex is resolved from PATH,
-#       resolved through readlink -f and probed with --version on EVERY spawn
-#       and relaunch, never read from a prior meta; a missing codex, a failed
-#       or empty --version, and a raw codex launch naming an executable that
-#       resolves anywhere other than the just-probed binary are all refused.
-#       The resolved path and version are recorded as codex_exe=/codex_version=
-#       in state/<id>.meta as audit evidence, and the launch is pinned to the
-#       probed absolute path. These guards key off the launch's executable word
-#       being spelled codex, so a wrapper or env-prefixed raw launch classifies
-#       as another harness and does not take them.
+#     - Per-launch executable rediscovery, for LOCAL launches only (a codex
+#       secondmate routed to a remote host is published by that host and takes
+#       none of this). codex is resolved from PATH, resolved through readlink -f
+#       and probed with --version on EVERY local spawn and relaunch, never read
+#       from a prior meta; a missing codex, a failed or empty --version, and a
+#       raw codex launch naming an executable that resolves anywhere other than
+#       the just-probed binary are all refused. The resolved path and version
+#       are recorded as codex_exe=/codex_version= in state/<id>.meta as audit
+#       evidence, and the launch is pinned to the probed absolute path.
+#   All three guards key off the launch's executable word being spelled codex.
+#   A raw launch's leading unquoted NAME=value assignments are skipped, so an
+#   env-prefixed raw codex launch still classifies as codex and still takes
+#   every guard; a wrapper (env codex ..., a shell script) or a QUOTED
+#   environment value classifies as another harness and does not.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then
@@ -1701,6 +1705,11 @@ case "$ARG3" in
     RAW_LAUNCH_TAIL=""
     raw_rest=$LAUNCH
     raw_pre=""
+    # Globbing off: the spans below match each split word literally against the
+    # unexpanded command, so a word the shell had expanded (FOO=*.txt) would
+    # match nothing and silently duplicate the launch text.
+    raw_noglob_was_set=1
+    case $- in *f*) ;; *) raw_noglob_was_set=0; set -f ;; esac
     for word in $LAUNCH; do
       raw_ws=${raw_rest%%"$word"*}
       raw_rest=${raw_rest#*"$word"}
@@ -1711,6 +1720,7 @@ case "$ARG3" in
       HARNESS=$(basename "$word")
       break
     done
+    [ "$raw_noglob_was_set" -eq 1 ] || set +f
     # A raw launch is codex when this word is SPELLED codex; anything else is
     # not a codex launch and keeps the unverified-adapter escape hatch
     # untouched. Classification is deliberately as loose as it has always been
