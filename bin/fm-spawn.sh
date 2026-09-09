@@ -51,6 +51,23 @@
 #   silently bills its own expensive default when an axis is omitted, so a codex
 #   spawn or relaunch is REFUSED unless it names a model and an effort codex
 #   itself accepts (max is not one of them). A raw launch command is exempt.
+#   Three further codex spawn constraints apply, each a refusal before launch:
+#     - One live LOCAL codex agent per home. A codex spawn or relaunch is
+#       refused while another local task in this home carries harness=codex and
+#       is not positively dead; metas routed to a remote host are outside the
+#       lane in both directions. An unreadable task set is refused too, rather
+#       than raced.
+#     - No fast modifier. A codex launch command carrying --fast is refused.
+#     - Per-launch executable rediscovery. codex is resolved from PATH,
+#       resolved through readlink -f and probed with --version on EVERY spawn
+#       and relaunch, never read from a prior meta; a missing codex, a failed
+#       or empty --version, and a raw codex launch naming an executable that
+#       resolves anywhere other than the just-probed binary are all refused.
+#       The resolved path and version are recorded as codex_exe=/codex_version=
+#       in state/<id>.meta as audit evidence, and the launch is pinned to the
+#       probed absolute path. These guards key off the launch's executable word
+#       being spelled codex, so a wrapper or env-prefixed raw launch classifies
+#       as another harness and does not take them.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then
@@ -177,7 +194,10 @@
 #   applies to every pair. A ship batch therefore carries one delivery contract, and each
 #   pair still checks it against its own brief; a batch spanning modes is two invocations.
 #   If config/crew-dispatch.json exists, shared --harness is required for crewmate
-#   and scout batches. The loop lives here, in bash, so callers never hand-write a
+#   and scout batches. A batch resolving to harness codex is refused outright,
+#   whatever the lane's state: pairs are spawned one at a time, so a refusal
+#   partway through would leave a half-spawned batch behind. Spawn codex tasks
+#   individually. The loop lives here, in bash, so callers never hand-write a
 #   multi-task shell loop (the tool shell is zsh, which does not word-split unquoted
 #   $vars and silently breaks ad-hoc `for ... in $pairs` loops).
 # Launch environment (config/launch-env-allowlist):
