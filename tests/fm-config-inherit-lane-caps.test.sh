@@ -15,6 +15,8 @@ set -u
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-config-inherit-lib.sh"
 
+note() { printf '# %s\n' "$1"; }
+
 TMP_ROOT=$(fm_test_tmproot fm-config-inherit-lane-caps)
 
 # A case below makes a fixture directory unreadable; restore it even when an
@@ -117,7 +119,7 @@ test_unreadable_primary_source_reports_error_and_fails() {
   cat "$primary/config/dispatch-cap" >/dev/null 2>&1 || probe=1
   if [ "$probe" = 0 ]; then
     restore_unreadable
-    pass "skipped unreadable-primary-source case: this user can traverse a 0000 directory"
+    note "SKIP unreadable-primary-source case: this user traverses a 0000 directory, so the failure path is not reproducible here"
     return 0
   fi
 
