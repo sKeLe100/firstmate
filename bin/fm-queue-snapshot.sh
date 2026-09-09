@@ -49,7 +49,8 @@
 # bin/fm-crew-dispatch-lib.sh - the same verdict bin/fm-bootstrap.sh reports as
 # CREW_DISPATCH - not merely that it parses as JSON, so the skill never
 # publishes tiers from a config real dispatch would refuse. "unverified" means
-# that contract could not be evaluated here because jq is unavailable; the
+# that contract could not be evaluated here because jq is unavailable or could
+# not run the validity filter; the
 # caller must treat it as untrustworthy for tiers rather than guessing.
 #
 # This script DOES spend one bounded, aggregate quota-axi read per invocation
