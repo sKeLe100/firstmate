@@ -30,6 +30,8 @@ NO_APPLICABLE="$LAB/no-applicable.json"
 APPLICABLE_VETO="$LAB/applicable-veto.json"
 MUSE_EXHAUSTED="$LAB/muse-exhausted.json"
 MUSE_POSITIVE="$LAB/muse-positive.json"
+UNKNOWN_PACE="$LAB/unknown-pace.json"
+PLACEHOLDER_TOON="$LAB/placeholder-quota.toon"
 TOON="$LAB/quota.toon"
 RENDERER_TOON="$LAB/renderer-quota.toon"
 EMPTY_TOON="$LAB/empty-quota.toon"
@@ -348,6 +350,34 @@ fi
 [ "$out" = "none" ] || fail "unknown runway with positive headroom returned: $out"
 ok "unknown runway with positive headroom fails closed"
 
+# Pace measures burn rate, not whether the headroom number is real: a freshly
+# started window with too little history to pace must still dispatch.
+jq '(.providers[] | select(.provider == "codex")) = {
+      provider: "codex",
+      windows: [{
+        id: "weekly",
+        kind: "weekly",
+        resetsAt: "2030-01-08T00:00:00Z",
+        windowSeconds: 604800,
+        percentRemaining: 50,
+        pace: {status: "unknown"}
+      }],
+      quotaSemantics: {
+        status: "known",
+        effectiveAvailability: [{
+          scope: "all_models",
+          status: "known",
+          effectivePercentRemaining: 50,
+          boundedBy: ["weekly"],
+          runway: {status: "through_reset"},
+          pace: {status: "unknown", unknownWindowIds: ["weekly"]}
+        }]
+      }
+    }' "$LAB/captured.json" > "$UNKNOWN_PACE"
+out=$(call_choose --snapshot "$UNKNOWN_PACE" --candidate codex:gpt-5.6-terra)
+[ "$out" = "codex gpt-5.6-terra" ] || fail "measured headroom with unknown pace returned: $out"
+ok "unknown pace does not veto measured headroom"
+
 jq '(.providers[] | select(.provider == "claude").quotaSemantics.status) = "partial" |
     (.providers[] | select(.provider == "claude").quotaSemantics.effectiveAvailability) += [{"scope":"model:unmeasured","status":"unknown","runway":{"status":"unknown"}}]' \
   "$LAB/captured.json" > "$PARTIAL"
@@ -397,6 +427,23 @@ TOON
 out=$(call_choose --snapshot "$RENDERER_TOON" --candidate claude:default)
 [ "$out" = "claude default" ] || fail "renderer-shaped TOON snapshot returned: $out"
 ok "renderer-shaped TOON snapshot is accepted"
+
+# Known limitation, pinned deliberately: the default TOON carries no per-window
+# pace evidence, so a placeholder future-cycle window is indistinguishable from
+# measured headroom on that input and still dispatches. Detecting it there is
+# tracked separately as quota-choose-toon-confidence-mapping.
+cat > "$PLACEHOLDER_TOON" <<'TOON'
+bin: quota-axi
+generatedAt: "2030-01-01T00:00:00Z"
+quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,all_models,100,-1,through_reset,high,weekly,2030-01-08T00:00:00Z
+exhaustion[0]:
+attention[0]:
+TOON
+out=$(call_choose --snapshot "$PLACEHOLDER_TOON" --candidate codex:gpt-5.6-terra)
+[ "$out" = "codex gpt-5.6-terra" ] \
+  || fail "TOON placeholder limitation changed; returned: $out"
+ok "default TOON cannot detect a placeholder window (known limitation)"
 
 printf 'garbage\n' > "$LEADING_GARBAGE_NONZERO_TOON"
 cat "$TOON" >> "$LEADING_GARBAGE_NONZERO_TOON"

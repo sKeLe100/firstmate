@@ -10,7 +10,10 @@
 # provider-wide scopes and exact model or product scopes for <model>. A candidate
 # is eligible only when every applicable runway is measured, no applicable
 # window is synthesized or otherwise unmeasurable, and its known effective
-# percent remaining is greater than zero. The first eligible
+# percent remaining is greater than zero. Synthesized-window detection reads
+# per-window pace evidence, which only the `--json` snapshot carries: a default
+# TOON snapshot cannot expose a placeholder window, so on that input the
+# guarantee narrows to the runway and percent checks. The first eligible
 # candidate is printed as "<harness> <model>" and the script exits 0.
 # If no candidate is quota-eligible, it prints "none" and exits 1.
 #
@@ -337,8 +340,6 @@ effective_for_provider_model() {
       end;
     def cannot_be_checked:
       (.runway.status // "") == "unknown" or
-      (.pace.status? // "") == "unknown" or
-      ((.pace.unknownWindowIds? // []) | length > 0) or
       applies_placeholder_window;
     if ($p // null) == null then {status: "unknown"}
     else ($p.quotaSemantics.effectiveAvailability // []) |
