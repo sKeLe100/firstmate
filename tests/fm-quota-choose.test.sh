@@ -32,6 +32,8 @@ MUSE_EXHAUSTED="$LAB/muse-exhausted.json"
 MUSE_POSITIVE="$LAB/muse-positive.json"
 UNKNOWN_PACE="$LAB/unknown-pace.json"
 PLACEHOLDER_TOON="$LAB/placeholder-quota.toon"
+UNKNOWN_CONFIDENCE_TOON="$LAB/unknown-confidence-quota.toon"
+UNKNOWN_CONFIDENCE_JSON="$LAB/unknown-confidence.json"
 TOON="$LAB/quota.toon"
 RENDERER_TOON="$LAB/renderer-quota.toon"
 EMPTY_TOON="$LAB/empty-quota.toon"
@@ -428,10 +430,9 @@ out=$(call_choose --snapshot "$RENDERER_TOON" --candidate claude:default)
 [ "$out" = "claude default" ] || fail "renderer-shaped TOON snapshot returned: $out"
 ok "renderer-shaped TOON snapshot is accepted"
 
-# Known limitation, pinned deliberately: the default TOON carries no per-window
-# pace evidence, so a placeholder future-cycle window is indistinguishable from
-# measured headroom on that input and still dispatches. Detecting it there is
-# tracked separately as quota-choose-toon-confidence-mapping.
+# A TOON row with measured confidence (high) still dispatches positive quota
+# even when the provider would otherwise have a placeholder window - the TOON
+# row's confidence field is what matters, and established values pass through.
 cat > "$PLACEHOLDER_TOON" <<'TOON'
 bin: quota-axi
 generatedAt: "2030-01-01T00:00:00Z"
@@ -442,8 +443,57 @@ attention[0]:
 TOON
 out=$(call_choose --snapshot "$PLACEHOLDER_TOON" --candidate codex:gpt-5.6-terra)
 [ "$out" = "codex gpt-5.6-terra" ] \
-  || fail "TOON placeholder limitation changed; returned: $out"
-ok "default TOON cannot detect a placeholder window (known limitation)"
+  || fail "TOON measured confidence dispatched; returned: $out"
+ok "TOON with established confidence dispatches positive quota"
+
+# Unknown TOON confidence flags a synthesized/unmeasurable window even when
+# the runway looks healthy and the percentage is positive - the candidate must
+# fail closed, mirroring the JSON-path synthesized-window guarantee.
+cat > "$UNKNOWN_CONFIDENCE_TOON" <<'TOON'
+bin: quota-axi
+generatedAt: "2030-01-01T00:00:00Z"
+quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,all_models,100,-1,through_reset,unknown,weekly,2030-01-08T00:00:00Z
+exhaustion[0]:
+attention[0]:
+TOON
+if out=$(call_choose --snapshot "$UNKNOWN_CONFIDENCE_TOON" --candidate codex:gpt-5.6-terra 2>/dev/null); then
+  fail "TOON unknown confidence unexpectedly dispatched"
+fi
+[ "$out" = "none" ] || fail "TOON unknown confidence returned: $out"
+ok "TOON unknown confidence fails closed (placeholder detection)"
+
+# A JSON snapshot with unknown window confidence also fails closed, even when
+# the pace reason is not set to future_cycle_start - the window's confidence
+# field independently flags the unmeasurable window.
+jq '(.providers[] | select(.provider == "codex")) = {
+      provider: "codex",
+      windows: [{
+        id: "weekly",
+        kind: "weekly",
+        resetsAt: "2030-01-08T00:00:00Z",
+        windowSeconds: 604800,
+        percentRemaining: 100,
+        pace: {status: "ahead"}
+      }],
+      quotaSemantics: {
+        status: "known",
+        effectiveAvailability: [{
+          scope: "all_models",
+          status: "known",
+          effectivePercentRemaining: 100,
+          boundedBy: ["weekly"],
+          runway: {status: "through_reset"}
+        }]
+      }
+    }' "$LAB/captured.json" > "$UNKNOWN_CONFIDENCE_JSON"
+jq '(.providers[] | select(.provider == "codex") | .windows[0].confidence) = "unknown"' \
+  "$UNKNOWN_CONFIDENCE_JSON" > "$UNKNOWN_CONFIDENCE_JSON.tmp" && mv "$UNKNOWN_CONFIDENCE_JSON.tmp" "$UNKNOWN_CONFIDENCE_JSON"
+if out=$(call_choose --snapshot "$UNKNOWN_CONFIDENCE_JSON" --candidate codex:gpt-5.6-terra 2>/dev/null); then
+  fail "JSON unknown window confidence unexpectedly dispatched"
+fi
+[ "$out" = "none" ] || fail "JSON unknown window confidence returned: $out"
+ok "JSON unknown window confidence fails closed (placeholder detection)"
 
 printf 'garbage\n' > "$LEADING_GARBAGE_NONZERO_TOON"
 cat "$TOON" >> "$LEADING_GARBAGE_NONZERO_TOON"
