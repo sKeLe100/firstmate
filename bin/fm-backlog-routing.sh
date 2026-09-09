@@ -361,9 +361,12 @@ cmd_gc() {
   [ -n "$id" ] || { fm_routing_log "gc requires <id>"; exit 2; }
   local row lockdir="$DATA/.backlog-routing.lock" class rc
   # Everything below runs under the routing lock, so the row's existence
-  # check, its archive, and its removal are one indivisible step: a gc that
-  # cannot finish never leaves a "closed" line behind for the next
-  # heartbeat's retry to duplicate.
+  # check, its archive, and its removal are one step no concurrent pass can
+  # interleave with. One window remains: if the archive succeeds and the
+  # rewrite then fails (ENOSPC, a data dir gone read-only), the row survives
+  # with its "closed" line already written, and a retried gc archives it a
+  # second time - so the diagnostic below names that state explicitly rather
+  # than carrying retry/dedupe bookkeeping for it.
   acquire_lockdir "$lockdir" || exit 2
   row=$(routing_row_for "$id"); rc=$?
   if [ "$rc" -ne 0 ]; then

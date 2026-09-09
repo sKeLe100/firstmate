@@ -33,8 +33,10 @@
 #   escalated: <n>       count of "escalated" events, for visibility only
 #   gross_per_day: <f>   closed / observed-window-days (2 decimal places),
 #                        or "unavailable" when the window holds no events
-#   net_per_day: <f>     (closed - opened) / observed-window-days, or
-#                        "unavailable" when the window holds no events
+#   net_per_day: <f>     (closed - entries) / observed-window-days, where
+#                        entries is opened + reopened (every arrival into
+#                        the registry, first or repeat), or "unavailable"
+#                        when the window holds no events
 #   median_cycle_time_seconds: <n or "unavailable">
 #     median of (closed_epoch - first_classified_epoch) over ids that have
 #     both a classified and a later closed event; "unavailable" when no id
@@ -160,7 +162,7 @@ window_days = window_seconds / 86400.0
 opened = len(first_classified)
 if events:
     gross_per_day = f"{closed / window_days:.2f}"
-    net_per_day = f"{(closed - opened) / window_days:.2f}"
+    net_per_day = f"{(closed - opened - reopened) / window_days:.2f}"
 else:
     gross_per_day = "unavailable"
     net_per_day = "unavailable"

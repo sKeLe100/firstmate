@@ -66,6 +66,25 @@ out=$(FM_HOME="$home" "$METRICS") || fail "metrics should succeed after a correc
 assert_contains "$out" "opened: 2" "re-classifying an already-open row must not raise opened"
 assert_contains "$out" "reopened: 1" "a corrective re-set of an open row is not a reopen"
 
+# 2c. net_per_day counts every arrival into the registry, first or repeat:
+#     over a fixed one-day window with 2 first entries, 1 reopen and 1 close,
+#     net inflow is +2, so the net rate is -2.00 per day.
+home=$(make_home net-rate)
+now=$(date -u +%s)
+since=$((now - 86400))
+cat > "$home/data/routing-ledger.tsv" <<EOF
+$since	classified	net-a	pc02
+$since	classified	net-b	pc02
+$((now - 43200))	closed	net-a	pc02
+$((now - 43200))	classified	net-a	pc02
+EOF
+out=$(FM_HOME="$home" "$METRICS" --since "$since") || fail "metrics should succeed over a fixed window"
+assert_contains "$out" "opened: 2" "two ids entered the registry"
+assert_contains "$out" "reopened: 1" "net-a re-entered after its close"
+assert_contains "$out" "gross_per_day: 1.00" "one close over a one-day window"
+assert_contains "$out" "net_per_day: -2.00" \
+  "a reopen is an arrival: net must be (closed - opened - reopened) per day, got: $out"
+
 # 3. Median cycle time reconciles to the actual epoch delta between an id's
 #    first classified event and its closed event, using an injected ledger
 #    with controlled timestamps (the routing script's own epoch_now has
