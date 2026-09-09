@@ -237,13 +237,10 @@ while [ $# -gt 0 ]; do
       ;;
     --now)
       NOW_OVERRIDE="${2:?--now needs a value}"
-      case "$NOW_OVERRIDE" in
-        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-        *)
-          echo "fm-queue-snapshot: --now needs YYYY-MM-DD, got: $NOW_OVERRIDE" >&2
-          exit 2
-          ;;
-      esac
+      if ! python3 -c 'import sys; from datetime import datetime; datetime.strptime(sys.argv[1], "%Y-%m-%d")' "$NOW_OVERRIDE" >/dev/null 2>&1; then
+        echo "fm-queue-snapshot: --now needs YYYY-MM-DD, got: $NOW_OVERRIDE" >&2
+        exit 2
+      fi
       shift 2
       ;;
     *)
@@ -501,10 +498,15 @@ for r in rows:
     else:
         gate = "dispatchable"
     rot = "no"
-    if gate == "dispatchable" and r["priority"] in ("", "-") and r["created"]:
+    if gate == "dispatchable" and not r["priority"].isdigit() and r["created"]:
         try:
             age_days = (today - date.fromisoformat(r["created"])).days
         except ValueError:
+            print(
+                f"fm-queue-snapshot: item {r['id']} has an unparseable "
+                f"created date: {r['created']}",
+                file=sys.stderr,
+            )
             age_days = 0
         if age_days >= ROT_MIN_AGE_DAYS:
             rot = "yes"
