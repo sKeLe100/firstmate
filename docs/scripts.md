@@ -125,6 +125,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-control-lib.sh`      | One executable owner of the control-plane verb allowlist, per-harness interrupt/exit mechanics, and per-backend capability |
 | `fm-busy-lib.sh`         | Single owner of the semantic busy-state contract: verdicts, source attribution, and per-harness sources |
 | `fm-codex-axes-lib.sh`   | Single owner of which model/effort values a codex launch actually receives, shared by the spawn refusal, the pre-stop relaunch check, and the crew-dispatch config validator |
+| `fm-raw-launch-lib.sh`   | Single owner of the one-pass, quote-aware reader for a raw launch command line: word values, the command word's byte span, and the fail-closed refusals `fm-spawn.sh` classifies harness guards from |
 | `fm-busy-event.sh`       | The only writer of a task's semantic busy-state record; arms an incarnation and applies lifecycle events |
 | `fm-cache-ttl-lib.sh`    | Single owner of the prompt-cache TTL knob and the activity-age fold shared by fm-send's steer guard, the fleet snapshot's near-expiry flag, and the inactivity reconciler |
 | `fm-tmux-lib.sh`         | Shared tmux pane primitives for composer capture, verified submit, and the submit-time busy check |
