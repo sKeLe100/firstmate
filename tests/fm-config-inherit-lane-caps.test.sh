@@ -17,6 +17,18 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-config-inherit-lane-caps)
 
+# A case below makes a fixture directory unreadable; restore it even when an
+# intervening `fail` exits, or the EXIT cleanup cannot descend into it.
+UNREADABLE_DIR=""
+restore_unreadable() {
+  [ -n "$UNREADABLE_DIR" ] || return 0
+  chmod 755 "$UNREADABLE_DIR" 2>/dev/null || true
+  UNREADABLE_DIR=""
+}
+trap 'restore_unreadable; fm_test_cleanup' EXIT
+trap 'restore_unreadable; fm_test_cleanup; exit 130' INT
+trap 'restore_unreadable; fm_test_cleanup; exit 143' TERM
+
 new_home_pair() {
   local name=$1 base primary second
   base="$TMP_ROOT/$name"
@@ -99,11 +111,12 @@ test_unreadable_primary_source_reports_error_and_fails() {
   printf '9\n' > "$second/config/codex-lane-cap"
   report="$TMP_ROOT/unreadable.report"
 
+  UNREADABLE_DIR="$primary/config"
   chmod 000 "$primary/config"
   probe=0
   cat "$primary/config/dispatch-cap" >/dev/null 2>&1 || probe=1
   if [ "$probe" = 0 ]; then
-    chmod 755 "$primary/config"
+    restore_unreadable
     pass "skipped unreadable-primary-source case: this user can traverse a 0000 directory"
     return 0
   fi
@@ -112,7 +125,7 @@ test_unreadable_primary_source_reports_error_and_fails() {
   FM_CONFIG_INHERIT_REPORT="$report" \
     propagate_inheritable_config "$primary/config" "$second/config" \
     2>/dev/null || rc=$?
-  chmod 755 "$primary/config"
+  restore_unreadable
 
   [ "$rc" = 1 ] || fail "an uninspectable primary source must fail propagation with rc=1 (got $rc)"
   grep -q $'^dispatch-cap\terror\t' "$report" \

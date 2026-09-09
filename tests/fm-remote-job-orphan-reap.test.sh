@@ -41,22 +41,6 @@ pgid_of() { ps -p "$1" -o pgid= 2>/dev/null | tr -d '[:space:]'; }
 
 ppid_of() { ps -p "$1" -o ppid= 2>/dev/null | tr -d '[:space:]'; }
 
-# Orphaned means the launcher is gone and the pid was adopted by a reaper: its
-# parent chain reaches init without passing through this test run. Hosts with a
-# child subreaper (systemd --user) adopt orphans instead of pid 1, so ppid==1 is
-# not portable.
-is_orphaned() { # <pid>
-  local pid=$1 parent guard=0
-  while [ "$pid" != 1 ] && [ -n "$pid" ] && [ "$guard" -lt 64 ]; do
-    parent=$(ppid_of "$pid")
-    [ -n "$parent" ] || return 1
-    [ "$parent" = "$$" ] && return 1
-    pid=$parent
-    guard=$((guard + 1))
-  done
-  [ "$pid" = 1 ]
-}
-
 # Wait up to <seconds> for <pid> to exit; 0 when it did.
 wait_gone() { # <pid> <seconds>
   local pid=$1 deadline=$(( $(date +%s) + $2 ))
@@ -139,8 +123,8 @@ SERVE=$(pgrep -P "$WORKER" | head -n 1)
   fail "the serving child is outside the worker's process group"
 pass "the Linux start path puts the whole worker tree in its own process group"
 
-is_orphaned "$WORKER" ||
-  fail "the fixture worker is not orphaned to a reaper, so this case does not reproduce the leak"
+[ "$(ppid_of "$WORKER")" = 1 ] ||
+  fail "the fixture worker is not orphaned to init, so this case does not reproduce the leak"
 
 # The exact teardown shape that leaked in production: a fixture cleanup removes
 # the worker's state root and then stops only the single recorded worker pid -
@@ -153,7 +137,7 @@ kill -KILL "$SERVE" 2>/dev/null || true
 wait_gone "$SERVE" 10 || fail "the recorded serving child did not stop"
 alive "$WORKER" || fail "the fixture supervisor did not survive a lone child kill, so this case no longer covers the leak"
 wait_child "$WORKER" 15 || fail "the supervisor did not respawn after its recorded child pid was killed"
-pass "removing the state root and killing the recorded worker pid leaves the orphaned tree running"
+pass "removing the state root and killing the recorded worker pid leaves the tree running at ppid 1"
 
 # A worker whose code root is intact is never a reap candidate, which is what
 # keeps the account's healthy LaunchAgent worker out of scope.
