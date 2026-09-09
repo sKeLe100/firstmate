@@ -9,7 +9,7 @@ Use the router's detection and safety sections for static crew and secondmate ha
 For a profile array, load `quota-array-dispatch` after establishing harness and provider facts here.
 
 `../secondmate-provisioning/SKILL.md` owns inherited local material.
-Its harness consequence is that a secondmate's workers receive literal `config/crew-harness` and `config/crew-dispatch.json`, while the primary-only `config/secondmate-harness` is never inherited because secondmates do not spawn secondmates.
+Its harness consequence is that a secondmate's workers receive literal `config/crew-harness` (unless that home pins its own with a `config/crew-harness.local-override` marker) and `config/crew-dispatch.json`, while the primary-only `config/secondmate-harness` is never inherited because secondmates do not spawn secondmates.
 A concrete crew value such as `codex` carries that runtime into the secondmate home.
 Unset or `default` carries no concrete value, so its workers use that home's own or detected harness rather than the primary's effective crew harness.
 The inherited dispatch file applies the same best-fit profiles there.
