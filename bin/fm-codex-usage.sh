@@ -56,8 +56,13 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   exit 0
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-llm-usage-lib.sh
+. "$SCRIPT_DIR/fm-llm-usage-lib.sh"
+
 home="${FM_HOME:-$PWD}"
 data_dir="${FM_DATA_OVERRIDE:-$home/data}"
+state_dir="${FM_STATE_OVERRIDE:-$home/state}"
 
 telemetry=0
 task_id=""
@@ -67,12 +72,21 @@ rollout=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --telemetry) telemetry=1; shift ;;
-    --task-id) task_id="${2:-}"; shift 2 ;;
-    --task-id=*) task_id="${1#--task-id=}"; shift ;;
+    --task-id)
+      if [ $# -lt 2 ]; then
+        echo "fm-codex-usage: --task-id requires a value" >&2
+        exit 1
+      fi
+      task_id="$2"; shift 2 ;;
     --*) echo "fm-codex-usage: unknown flag: $1" >&2; exit 1 ;;
     *) rollout="$1"; shift ;;
   esac
 done
+
+if [ "$telemetry" -eq 1 ] && [ -z "$task_id" ]; then
+  echo "fm-codex-usage: --telemetry requires --task-id <id>" >&2
+  exit 1
+fi
 
 # Threshold resolution: defaults, then optional config/codex-context-thresholds.
 warn_tokens=150000
@@ -119,17 +133,22 @@ if [ ! -f "$rollout" ]; then
   exit 1
 fi
 
-# Run the Python parser.
-python3 - "$rollout" "$warn_tokens" "$restart_tokens" "$telemetry" "$task_id" "$data_dir" <<'PY'
+# Run the Python parser. When telemetry is requested it writes the telemetry
+# field list to $fields_file; the emission itself goes through the library.
+fields_file=""
+if [ "$telemetry" -eq 1 ]; then
+  fields_file="$(mktemp)"
+  trap 'rm -f "$fields_file"' EXIT
+fi
+
+python3 - "$rollout" "$warn_tokens" "$restart_tokens" "$fields_file" <<'PY'
 import json, os, sys, time
 from datetime import datetime, timezone
 
 path = sys.argv[1]
 warn = int(sys.argv[2])
 restart = int(sys.argv[3])
-do_telemetry = int(sys.argv[4])
-task_id = sys.argv[5]
-data_dir = sys.argv[6]
+fields_file = sys.argv[4]
 
 # Walk the file and collect all token_count and turn_context records.
 token_counts = []        # list of (ordinal, payload) for token_count events
@@ -231,19 +250,10 @@ for tc_payload in turn_contexts:
     if m:
         models_seen.add(m)
 
-# Session age from the file's mtime vs the first/last record timestamp.
+# Session age: seconds since the rollout was last appended to, matching the
+# definition bin/fm-context-usage.sh uses for the same field name.
 file_mtime = os.path.getmtime(path)
-if last_timestamp:
-    # Parse ISO timestamp to epoch for age calculation.
-    try:
-        # Handle both with and without timezone suffix.
-        ts_str = last_timestamp.replace("Z", "+00:00")
-        record_epoch = datetime.fromisoformat(ts_str).replace(tzinfo=timezone.utc).timestamp()
-        age = max(0, int(file_mtime - record_epoch))
-    except (ValueError, TypeError):
-        age = max(0, int(time.time() - file_mtime))
-else:
-    age = max(0, int(time.time() - file_mtime))
+age = max(0, int(time.time() - file_mtime))
 
 # Band derivation: context_tokens vs model_context_window.
 percent = 0.0
@@ -273,24 +283,29 @@ print(
     )
 )
 
-# Telemetry emission: write a usage event to firstmate.jsonl.
-if do_telemetry and task_id:
-    usage_file = os.path.join(data_dir, "llm-usage", "firstmate.jsonl")
-    os.makedirs(os.path.dirname(usage_file), exist_ok=True)
-    event = {
-        "schema_version": 1,
-        "ts": datetime.now(tz=timezone.utc).isoformat(),
-        "source": "firstmate",
-        "event_type": "usage",
-        "task_id": task_id,
-        "harness": "codex",
-        "rollout": path,
-        "context_tokens": context_tokens,
-        "session_total": session_total,
-        "weekly_used_percent": weekly_used if weekly_used is not None else 0.0,
-        "weekly_delta_points": weekly_delta,
-        "models_seen": ",".join(sorted(models_seen)) if models_seen else "none",
-    }
-    with open(usage_file, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(event) + "\n")
+# Telemetry fields for the caller to hand to fm_llm_usage_emit. An unknown
+# value is written empty, which the library omits from the record entirely.
+if fields_file:
+    fields = [
+        ("rollout", path),
+        ("context_tokens", str(context_tokens)),
+        ("session_total", str(session_total)),
+        ("weekly_used_percent", "" if weekly_used is None else "%.1f" % weekly_used),
+        ("weekly_delta_points", "" if not primary else "%.1f" % weekly_delta),
+        ("models_seen", ",".join(sorted(models_seen))),
+    ]
+    with open(fields_file, "w", encoding="utf-8") as fh:
+        for k, v in fields:
+            fh.write("%s=%s\n" % (k, v))
 PY
+
+if [ "$telemetry" -eq 1 ]; then
+  telemetry_fields=()
+  while IFS= read -r fline || [ -n "$fline" ]; do
+    telemetry_fields+=("$fline")
+  done < "$fields_file"
+  fm_llm_usage_emit "$data_dir" "$state_dir" usage \
+    task_id="$task_id" \
+    harness=codex \
+    "${telemetry_fields[@]+"${telemetry_fields[@]}"}"
+fi

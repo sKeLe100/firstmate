@@ -21,30 +21,11 @@ field() {
   printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"
 }
 
-# emit <home> <extra_args...> <rollout_path> - run the helper in a given
-# home, capturing stdout.  Extra flags (e.g. --telemetry --task-id foo)
-# go between the home and the rollout path.
+# emit <home> <rollout_path> - run the helper in a given home, capturing stdout.
 emit() {
-  local home="$1" shift
-  local extra_flags=() rollout=""
-  # Last positional arg is always the rollout path.
-  local last_arg="${@: -1}"
-  # Check if last arg looks like a rollout path (ends in .jsonl) or a flag.
-  case "$last_arg" in
-    *.jsonl) rollout="$last_arg" ;;
-    *) echo "fm-codex-usage: last argument must be a rollout path" >&2; return 1 ;;
-  esac
-  shift
-  # Everything between home and the rollout path is extra flags.
-  for arg in "$@"; do
-    case "$arg" in
-      --telemetry) extra_flags+=("--telemetry") ;;
-      --task-id=*) extra_flags+=("--task-id" "${arg#--task-id=}") ;;
-      --task-id) extra_flags+=("--task-id" "$2"); shift ;;
-    esac
-  done
+  local home="$1" rollout="$2"
   ( cd "$home" && FM_HOME="$home" FM_CONFIG_OVERRIDE="${FM_CONFIG_OVERRIDE:-}" CODEX_HOME="${CODEX_HOME:-}" \
-      "$HELPER" "${extra_flags[@]+"${extra_flags[@]}"}" "$rollout" )
+      "$HELPER" "$rollout" )
 }
 
 # mk_line <ordinal> <input_tokens> <output_tokens> <context_window> <used_percent> <resets_at>
@@ -322,10 +303,50 @@ row = json.loads(sys.stdin.readline())
 assert row['event_type'] == 'usage', f'event_type should be usage: {row}'
 assert row['task_id'] == 'task-abc', f'task_id should be task-abc: {row}'
 assert row['harness'] == 'codex', f'harness should be codex: {row}'
-assert row['context_tokens'] == 5000, f'context_tokens mismatch: {row}'
-assert row['weekly_used_percent'] == 60.0, f'weekly_used_percent mismatch: {row}'
+assert row['context_tokens'] == '5000', f'context_tokens mismatch: {row}'
+assert row['weekly_used_percent'] == '60.0', f'weekly_used_percent mismatch: {row}'
 " || fail "telemetry event shape incorrect: $event"
   pass "fm-codex-usage.sh: --telemetry emits a usage event to firstmate.jsonl"
+}
+
+test_telemetry_requires_task_id() {
+  local home err
+  home="$TMP_ROOT/test11b"
+  mkdir -p "$home"
+  mk_line 0 5000 500 258400 60.0 1789236167 > "$TMP_ROOT/tele-no-id.jsonl"
+  if err=$(FM_HOME="$home" "$HELPER" --telemetry "$TMP_ROOT/tele-no-id.jsonl" 2>&1 >/dev/null); then
+    fail "--telemetry without --task-id should fail"
+  fi
+  case "$err" in *"requires --task-id"*) : ;; *) fail "unhelpful diagnostic: $err" ;; esac
+  [ -e "$home/data/llm-usage/firstmate.jsonl" ] && fail "no usage event should be written"
+  pass "fm-codex-usage.sh: --telemetry without --task-id refuses"
+}
+
+test_task_id_without_value_refuses() {
+  local home err
+  home="$TMP_ROOT/test11c"
+  mkdir -p "$home"
+  mk_line 0 5000 500 258400 60.0 1789236167 > "$TMP_ROOT/tele-dangling.jsonl"
+  if err=$(FM_HOME="$home" "$HELPER" "$TMP_ROOT/tele-dangling.jsonl" --task-id 2>&1 >/dev/null); then
+    fail "--task-id with no value should fail"
+  fi
+  case "$err" in *"--task-id requires a value"*) : ;; *) fail "unhelpful diagnostic: $err" ;; esac
+  pass "fm-codex-usage.sh: --task-id with no value refuses"
+}
+
+test_telemetry_omits_unknown_fields() {
+  local home
+  home="$TMP_ROOT/test11d"
+  mkdir -p "$home"
+  FM_HOME="$home" "$HELPER" --telemetry --task-id task-null "$FIXTURES/astra-burn-session.jsonl" >/dev/null \
+    || fail "telemetry run on null-info fixture failed"
+  python3 -c "
+import json, sys
+row = json.loads(open('$home/data/llm-usage/firstmate.jsonl').readline())
+assert 'weekly_used_percent' not in row, f'unknown weekly quota must be absent: {row}'
+assert 'weekly_delta_points' not in row, f'unknown weekly delta must be absent: {row}'
+" || fail "unknown telemetry fields were written as placeholders"
+  pass "fm-codex-usage.sh: unknown telemetry fields are omitted"
 }
 
 test_missing_rollout_fails_loudly() {
@@ -411,7 +432,7 @@ test_fm_config_override_resolves_thresholds() {
   printf 'warn=200000\nrestart=250000\n' > "$TMP_ROOT/alt-config/codex-context-thresholds"
 
   # 70000 with override warn=200000 => band=ok.
-  FM_CONFIG_OVERRIDE="$TMP_ROOT/alt-config" out=$(emit "$home" "$TMP_ROOT/cfgovr.jsonl")
+  out=$(FM_CONFIG_OVERRIDE="$TMP_ROOT/alt-config" emit "$home" "$TMP_ROOT/cfgovr.jsonl")
   [ "$(field "$out" band)" = "ok" ] || fail "70000 with warn=200000 should be ok: $out"
   pass "fm-codex-usage.sh: FM_CONFIG_OVERRIDE resolves thresholds"
 }
@@ -431,6 +452,9 @@ test_config_thresholds_override
 test_config_thresholds_malformed_rejected
 test_partial_threshold_config_keeps_other_default
 test_telemetry_emits_usage_event
+test_telemetry_requires_task_id
+test_task_id_without_value_refuses
+test_telemetry_omits_unknown_fields
 test_missing_rollout_fails_loudly
 test_no_token_count_records_fails_loudly
 test_auto_discovery_finds_no_rollouts
