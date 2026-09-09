@@ -46,7 +46,9 @@
 # is "now - earliest ledger line").
 #
 # Exit codes: 0 on success (including an absent/empty ledger, reported as
-# all-zero counts and "unavailable" rates), 2 on a usage error.
+# all-zero counts and "unavailable" rates), 2 on a usage error - including a
+# non-integer --since or an --occupancy path that does not exist, which are
+# refused with a diagnostic rather than silently reported as "unavailable".
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,10 +67,20 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --since)
       SINCE="${2:?--since needs a value}"
+      case "$SINCE" in
+        ''|*[!0-9]*)
+          echo "fm-routing-ledger-metrics: --since needs an epoch-seconds integer, got: $SINCE" >&2
+          exit 2
+          ;;
+      esac
       shift 2
       ;;
     --occupancy)
       OCCUPANCY="${2:?--occupancy needs a value}"
+      if [ ! -f "$OCCUPANCY" ]; then
+        echo "fm-routing-ledger-metrics: --occupancy file does not exist: $OCCUPANCY" >&2
+        exit 2
+      fi
       shift 2
       ;;
     *)
@@ -152,7 +164,7 @@ if cycle_times:
     median_cycle = int(statistics.median(cycle_times))
 
 pc02_idle_pct = "unavailable"
-if occupancy and os.path.isfile(occupancy):
+if occupancy:
     total = 0
     free = 0
     with open(occupancy, encoding="utf-8") as fh:

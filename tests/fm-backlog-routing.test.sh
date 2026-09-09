@@ -8,7 +8,8 @@
 # real tasks-axi backlog, covering:
 #   - set/get round-trip and the sidecar/risk/purpose fields
 #   - routing-digest invalidation fixture: editing title/body/kind/repo
-#     marks a row stale; editing priority alone does not
+#     marks a row stale; editing priority alone does not; a same-length edit
+#     past the list-truncation point still marks it stale
 #   - tier-escalation fixture: escalate only moves up, refuses with no
 #     existing row, and appends a ledger line
 #   - reconciliation fixture: gc removes a row and appends a closed ledger
@@ -81,6 +82,24 @@ out=$(run_routing "$home" get item-b)
 case "$out" in
   "stale:"*) fail "editing priority alone must not invalidate the routing row (source_digest excludes priority): got '$out'" ;;
 esac
+
+# 4b. Routing-digest fixture, past the truncation point: `tasks-axi list`
+#     truncates title/body at ~150 chars, so a digest built from a list read
+#     cannot see an edit made beyond the cut. Edit one character ~400 chars
+#     into a long body, keeping the total length identical, and require the
+#     row to read stale.
+(cd "$home" && tasks-axi add item-long "long bodied item" --kind ship --repo demo >/dev/null)
+long_prefix=$(printf 'A%.0s' $(seq 1 400))
+(cd "$home" && tasks-axi update item-long --body "${long_prefix}ORIGINAL-TAIL" >/dev/null) \
+  || fail "test setup: could not give item-long a long body"
+run_routing "$home" set item-long pc02 || fail "set item-long should succeed"
+out=$(run_routing "$home" get item-long)
+assert_contains "$out" "present: pc02" "a long-bodied item classifies as present before any edit"
+(cd "$home" && tasks-axi update item-long --body "${long_prefix}REPLACED-TAIL" >/dev/null) \
+  || fail "test setup: could not edit item-long's body tail"
+out=$(run_routing "$home" get item-long)
+assert_contains "$out" "stale: pc02" \
+  "a same-length edit past the list-truncation point must still invalidate the routing row"
 
 # 5. Tier-escalation fixture: escalate moves class up, keeps sidecar,
 #    refuses a downgrade, and refuses an id with no existing row.

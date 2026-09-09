@@ -132,55 +132,33 @@ require_tasks_axi() {
   }
 }
 
-# Prints "<title>\x1f<body>\x1f<kind>\x1f<repo>" for id, or fails (exit 2)
+# Prints "<title>\x1f<body>\x1f<kind>\x1f<repo>" for id, or fails (exit 1)
 # when the item cannot be found - a digest can never be computed from a
-# partial read.
+# partial read. Reads `tasks-axi show <id> --full` rather than
+# `list --fields body`, because `list` truncates title and body at ~150
+# characters: a digest built from a truncated prefix cannot detect an edit
+# made past the cut, which is exactly the staleness `get` exists to catch.
+# `show --full` emits one "  key: value" line per field with newlines/tabs
+# escaped inside the quoted value, so each field stays on a single line and
+# the raw serialized value is a faithful, injective image of the full text.
 item_fields() {  # <id>
   local id=$1 out
-  out=$(cd "$FM_HOME" && tasks-axi list --fields body 2>/dev/null | \
-    awk -v target="$id" '
-      /^tasks\[/ {
-        h = $0
-        sub(/^tasks\[[0-9]+\]\{/, "", h)
-        sub(/\}:.*/, "", h)
-        n = split(h, cols, ",")
-        for (i = 1; i <= n; i++) { col[cols[i]] = i }
-        inblock = 1
-        next
-      }
-      /^help\[/ { inblock = 0 }
-      inblock && /^  / {
+  out=$(cd "$FM_HOME" && tasks-axi show "$id" --full 2>/dev/null | \
+    awk '
+      /^error:/ || /^code: NOT_FOUND/ { notfound = 1 }
+      /^  [a-z_]+: / {
         line = $0
         sub(/^  /, "", line)
-        # Minimal TOON-row splitter matching the convention used in
-        # fm-queue-snapshot.sh: quoted fields may contain escaped tabs/newlines.
-        nf = 0
-        f = ""
-        q = 0
-        for (i = 1; i <= length(line); i++) {
-          c = substr(line, i, 1)
-          if (c == "\"" && f == "" && !q) { q = 1 }
-          else if (q && c == "\\" && i < length(line)) {
-            nc = substr(line, i + 1, 1)
-            if (nc == "n") f = f "\n"
-            else if (nc == "t") f = f "\t"
-            else if (nc == "r") f = f "\r"
-            else f = f nc
-            i++
-          }
-          else if (q && c == "\"") { q = 0 }
-          else if (!q && c == ",") { nf++; vals[nf] = f; f = "" }
-          else { f = f c }
-        }
-        nf++; vals[nf] = f
-        rowid = vals[col["id"]]
-        if (rowid == target) {
-          printf "%s\x1f%s\x1f%s\x1f%s\n", vals[col["title"]], vals[col["body"]], vals[col["kind"]], vals[col["repo"]]
-          found = 1
-          exit
-        }
+        key = line
+        sub(/:.*$/, "", key)
+        val = line
+        sub(/^[a-z_]+: /, "", val)
+        if (!(key in f)) { f[key] = val }
       }
-      END { if (!found) exit 1 }
+      END {
+        if (notfound || !("id" in f)) { exit 1 }
+        printf "%s\x1f%s\x1f%s\x1f%s\n", f["title"], f["body"], f["kind"], f["repo"]
+      }
     ')
   [ -n "$out" ] || return 1
   printf '%s' "$out"
@@ -256,7 +234,10 @@ cmd_set() {
   routing_rewrite "$id" "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' \
     "$id" "$class" "$sidecar" "$(sanitize_field "$risk")" "$(sanitize_field "$purpose")" "$ts" "$digest")"
   release_lockdir "$lockdir"
-  ledger_append classified "$id" "$class"
+  ledger_append classified "$id" "$class" || {
+    fm_routing_log "row for $id written but the classified ledger line could not be appended"
+    exit 2
+  }
 }
 
 cmd_escalate() {
@@ -292,7 +273,10 @@ cmd_escalate() {
   routing_rewrite "$id" "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' \
     "$id" "$class" "$sidecar" "$(printf '%s' "$existing" | cut -f4)" "$(printf '%s' "$existing" | cut -f5)" "$ts" "$digest")"
   release_lockdir "$lockdir"
-  ledger_append escalated "$id" "$class" "$reason"
+  ledger_append escalated "$id" "$class" "$reason" || {
+    fm_routing_log "row for $id escalated but the escalated ledger line could not be appended"
+    exit 2
+  }
 }
 
 cmd_get() {
@@ -350,10 +334,15 @@ cmd_gc() {
     exit 0
   fi
   class=$(printf '%s' "$row" | cut -f2)
+  # Archive first: the row's class is unrecoverable once the rewrite drops
+  # it, so a contended ledger must abort the removal rather than lose it.
+  ledger_append closed "$id" "$class" || {
+    fm_routing_log "refusing to gc $id: could not append its closed ledger line"
+    exit 2
+  }
   acquire_lockdir "$lockdir" || exit 2
   routing_rewrite "$id" ""
   release_lockdir "$lockdir"
-  ledger_append closed "$id" "$class"
 }
 
 cmd_seed_from_report() {

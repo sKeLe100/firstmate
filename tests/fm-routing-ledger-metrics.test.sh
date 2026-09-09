@@ -7,7 +7,8 @@
 # hand-writes the ledger file), then verifies opened/closed/reopened/
 # gross-per-day/net-per-day/median-cycle-time reconcile to those raw
 # transitions, and that pc02_idle_pct reports "unavailable" without
-# --occupancy and a real percentage with one.
+# --occupancy and a real percentage with one, and that an unusable --since
+# or --occupancy argument is refused with exit 2.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -84,5 +85,20 @@ cat > "$occ_file" <<'EOF'
 EOF
 out=$(FM_HOME="$home" "$METRICS" --occupancy "$occ_file") || fail "metrics with --occupancy should succeed"
 assert_contains "$out" "pc02_idle_pct: 75.0" "3 of 4 samples free reconciles to 75.0%"
+
+# 5. Unusable arguments are refused with exit 2, never silently reported as
+#    "unavailable" (a typo in --occupancy would otherwise be indistinguishable
+#    from omitting the flag).
+if out=$(FM_HOME="$home" "$METRICS" --occupancy "$TMP_ROOT/no-such-occupancy.tsv" 2>/dev/null); then
+  fail "a nonexistent --occupancy path must be refused, got: $out"
+fi
+FM_HOME="$home" "$METRICS" --occupancy "$TMP_ROOT/no-such-occupancy.tsv" >/dev/null 2>&1
+[ $? -eq 2 ] || fail "a nonexistent --occupancy path must exit 2"
+
+if out=$(FM_HOME="$home" "$METRICS" --since yesterday 2>/dev/null); then
+  fail "a non-integer --since must be refused, got: $out"
+fi
+FM_HOME="$home" "$METRICS" --since yesterday >/dev/null 2>&1
+[ $? -eq 2 ] || fail "a non-integer --since must exit 2 (usage error), not 1"
 
 pass "fm-routing-ledger-metrics.sh behavior"

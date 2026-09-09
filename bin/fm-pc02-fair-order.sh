@@ -84,6 +84,9 @@ fi
 
 # One bounded title/body-length read for the whole queued set (never per
 # candidate), matching bin/fm-queue-snapshot.sh's own single-call ethos.
+# Digest freshness is a separate, per-candidate single-item read owned by
+# fm-backlog-routing.sh's `get`, because a truncated list field cannot carry
+# a trustworthy digest.
 if ! (cd "$FM_HOME" && tasks-axi list --state queued --fields body) > "$BODY_LENGTHS" 2>/dev/null; then
   echo "fm-pc02-fair-order: tasks-axi list --fields body failed" >&2
   exit 2
@@ -94,23 +97,30 @@ fi
 # validates freshness itself via `get` per candidate below, but first uses
 # `list` only to avoid calling `get` for ids the registry does not carry at
 # all (cheap prefilter, not a correctness shortcut).
-PC02_ROWS="$("$ROUTING_BIN" list --class pc02 2>/dev/null)" || PC02_ROWS=""
+if ! PC02_ROWS="$("$ROUTING_BIN" list --class pc02)"; then
+  echo "fm-pc02-fair-order: fm-backlog-routing.sh list --class pc02 failed; refusing to report an empty PC02 roster" >&2
+  exit 2
+fi
 PC02_IDS="$(printf '%s\n' "$PC02_ROWS" | awk -F'\t' 'NF { print $1 }')"
 
 FRESH_IDS=""
 while IFS= read -r cand_id; do
   [ -n "$cand_id" ] || continue
-  if out="$("$ROUTING_BIN" get "$cand_id" 2>/dev/null)"; then
-    case "$out" in
-      present:*) FRESH_IDS="$FRESH_IDS$cand_id"$'\n' ;;
-    esac
+  out="$("$ROUTING_BIN" get "$cand_id" 2>/dev/null)"; rc=$?
+  if [ "$rc" -ge 2 ]; then
+    echo "fm-pc02-fair-order: fm-backlog-routing.sh get $cand_id failed (exit $rc)" >&2
+    exit 2
   fi
+  case "$out" in
+    present:*) FRESH_IDS="$FRESH_IDS$cand_id"$'\n' ;;
+  esac
 done <<< "$PC02_IDS"
 
 FM_FAIR_ORDER_FRESH_IDS="$FRESH_IDS" \
 python3 - "$SNAPSHOT_OUT" "$BODY_LENGTHS" <<'PY'
 import csv
 import os
+import re
 import sys
 
 fresh_ids = set(x for x in os.environ.get("FM_FAIR_ORDER_FRESH_IDS", "").splitlines() if x)
@@ -184,6 +194,21 @@ with open(snap_path, encoding="utf-8") as fh:
 queued_ids = {r["id"] for r in items}
 
 # --- parse tasks-axi list --fields body for the title+body length proxy ----
+#
+# `tasks-axi list` truncates title and body at ~150 characters and appends
+# "... (truncated, <N> chars total - use show <id> --full ...)". Measuring
+# the truncated string would score every long item as the same ~150-230
+# characters, collapsing the "shortest" rotation into the created/id
+# tiebreak; the marker's own N is the real length, so use it when present.
+TRUNCATED_RE = re.compile(r"\(truncated, (\d+) chars total")
+
+
+def true_len(value):
+    match = TRUNCATED_RE.search(value)
+    if match:
+        return int(match.group(1))
+    return len(value)
+
 
 body_len = {}
 body_path = sys.argv[2]
@@ -207,7 +232,7 @@ with open(body_path, encoding="utf-8") as fh:
             continue
         row = {name: fields[i] for i, name in enumerate(columns2)}
         if "id" in row and "body" in row:
-            body_len[row["id"]] = len(row.get("title", "")) + len(row["body"])
+            body_len[row["id"]] = true_len(row.get("title", "")) + true_len(row["body"])
 
 # --- filter: dispatchable gate + fresh pc02 routing classification --------
 
