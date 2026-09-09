@@ -27,10 +27,12 @@ fm_crew_dispatch_validate() {
     echo "malformed JSON"
     return 1
   fi
-  local codex_efforts
-  # shellcheck disable=SC2086 # CODEX_EFFORT_TIERS is a space-separated list
-  codex_efforts=$(jq -nc '$ARGS.positional' --args $CODEX_EFFORT_TIERS 2>/dev/null) || return 2
-  [ -n "$codex_efforts" ] || return 2
+  local codex_efforts tier
+  codex_efforts=
+  for tier in $CODEX_EFFORT_TIERS; do
+    codex_efforts="${codex_efforts:+$codex_efforts,}\"$tier\""
+  done
+  codex_efforts="[$codex_efforts]"
   err=$(jq -r --argjson codex_efforts "$codex_efforts" '
     def verified($h): ["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","muse","rovo"] | index($h);
     def effort_ok($h; $e):

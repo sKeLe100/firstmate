@@ -260,7 +260,7 @@ When the file exists, `fm-spawn.sh` refuses crewmate and scout launches without 
 Secondmate launches are exempt because they resolve the secondmate harness and any optional secondmate model or effort tokens instead.
 Unsupported effort values are still recorded in task meta when passed to `fm-spawn.sh`, but the launch template omits any effort flag that the selected harness does not accept.
 That keeps spawn launch compatible across claude, opencode, pi, pi-signed, grok, kimi, cursor, gemini, muse, and rovo while preserving the requested profile for later audit.
-codex is the one harness excluded from that omit-and-continue rule: because Codex CLI silently bills its own default model and reasoning effort when a flag is absent, a codex spawn or relaunch that resolves no model, or an effort codex does not accept, is refused instead of launched, with `bin/fm-codex-axes-lib.sh` as the single owner of that question for both `fm-spawn.sh` and `fm-control.sh`'s pre-stop relaunch check.
+codex is the one harness excluded from that omit-and-continue rule: because Codex CLI silently bills its own default model and reasoning effort when a flag is absent, a codex spawn or relaunch that resolves no model, or an effort codex does not accept, is refused instead of launched, with `bin/fm-codex-axes-lib.sh` as the single owner of that question for `fm-spawn.sh`, `fm-control.sh`'s pre-stop relaunch check, and `fm-crew-dispatch-lib.sh`'s validation of codex effort values in `config/crew-dispatch.json` (so `fm-bootstrap`'s CREW_DISPATCH verdict and the queue snapshot's `dispatch_config` move with the tier list too).
 
 ## Optional secondmates
 
