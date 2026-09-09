@@ -1120,6 +1120,10 @@ crew_dispatch_validate() {
     echo "CREW_DISPATCH: invalid config/crew-dispatch.json - $err"
     return 0
   fi
+  if [ "$rc" -eq 2 ]; then
+    echo "CREW_DISPATCH: unverified config/crew-dispatch.json - jq could not evaluate the validity contract"
+    return 0
+  fi
   if [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ]; then
     jq -r '
     def profile($p):

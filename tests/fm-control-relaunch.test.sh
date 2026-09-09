@@ -527,7 +527,7 @@ test_harness_switch_moves_the_record_and_clears_prior_wiring() {
   mkdir -p "$dir/wt/.claude"
   printf '{"hooks":{}}\n' > "$dir/wt/.claude/settings.local.json"
   printf 'codex' > "$dir/fake/becomes"
-  out=$(run_control "$dir" rl4 relaunch --harness codex --note "switching runtime"); rc=$?
+  out=$(run_control "$dir" rl4 relaunch --harness codex --model gpt-5 --effort high --note "switching runtime"); rc=$?
   expect_code 0 "$rc" "a harness switch should succeed"$'\n'"$out"
   assert_contains "$out" "harness=codex from=claude" "the outcome should name both harnesses"
   [ "$(meta_field "$dir" rl4 harness)" = codex ] || fail "the record should follow the switch"
@@ -539,6 +539,34 @@ test_harness_switch_moves_the_record_and_clears_prior_wiring() {
   pass "fm-control relaunch: switching harness is one ordinary relaunch, and the old wiring goes with the old agent"
 }
 
+test_codex_relaunch_without_axes_refuses_before_stopping_the_agent() {
+  local dir out rc
+  dir=$(new_case codex-axes rl4c)
+  add_ship_task "$dir" rl4c claude
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl4c relaunch --harness codex --note "switching runtime"); rc=$?
+  expect_code 1 "$rc" "a codex relaunch with no model/effort should refuse"$'\n'"$out"
+  assert_contains "$out" "no model/effort codex actually receives" \
+    "the refusal should name the unresolved codex axes"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused codex relaunch must not stop the agent"
+  [ "$(meta_field "$dir" rl4c harness)" = claude ] || fail "a refused codex relaunch must leave the record alone"
+  pass "fm-control relaunch: codex refuses unresolved model/effort before the agent is stopped"
+}
+
+test_codex_relaunch_with_unreceivable_effort_refuses_before_stopping_the_agent() {
+  local dir out rc
+  dir=$(new_case codex-max rl4d)
+  add_ship_task "$dir" rl4d claude
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl4d relaunch --harness codex --model gpt-5 --effort max --note "switching runtime"); rc=$?
+  expect_code 1 "$rc" "a codex relaunch with an effort codex cannot receive should refuse"$'\n'"$out"
+  assert_contains "$out" "no model/effort codex actually receives" \
+    "the refusal should name the unreceivable codex effort"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused codex relaunch must not stop the agent"
+  [ "$(meta_field "$dir" rl4d harness)" = claude ] || fail "a refused codex relaunch must leave the record alone"
+  pass "fm-control relaunch: codex refuses an effort it cannot receive before the agent is stopped"
+}
+
 test_harness_switch_does_not_carry_the_old_profile_axes() {
   local dir out rc
   dir=$(new_case profile rl5)
@@ -546,8 +574,11 @@ test_harness_switch_does_not_carry_the_old_profile_axes() {
   sed 's/^model=default$/model=opus/; s/^effort=default$/effort=xhigh/' \
     "$dir/home/state/rl5.meta" > "$dir/home/state/rl5.meta.tmp"
   mv "$dir/home/state/rl5.meta.tmp" "$dir/home/state/rl5.meta"
-  printf 'codex' > "$dir/fake/becomes"
-  out=$(run_control "$dir" rl5 relaunch --harness codex --note "switching runtime"); rc=$?
+  # grok (not codex) here: codex now refuses a relaunch that resolves no
+  # explicit model/effort, so it cannot demonstrate the reset-to-default case
+  # this test is about.
+  printf 'grok' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl5 relaunch --harness grok --note "switching runtime"); rc=$?
   expect_code 0 "$rc" "a harness switch should succeed"$'\n'"$out"
   [ "$(meta_field "$dir" rl5 model)" = default ] \
     || fail "a model chosen for the old harness must not carry to a different one"
@@ -756,7 +787,9 @@ test_secondmate_relaunch_ignores_invalid_configured_effort_before_stop() {
   dir=$(new_case invalid-effort sm6)
   home="$dir/home"
   mkdir -p "$home/config" "$home/data/sm6"
-  printf 'codex some-model impossible\n' > "$home/config/secondmate-harness"
+  # grok (not codex) here: codex now requires an explicit, valid effort, so it
+  # cannot demonstrate an invalid token being ignored and normalized to default.
+  printf 'grok some-model impossible\n' > "$home/config/secondmate-harness"
   printf '# secondmate brief\n' > "$home/data/sm6/brief.md"
   fm_git_worktree "$dir/proj" "$dir/smhome" sm-branch
   mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin"
@@ -777,7 +810,7 @@ test_secondmate_relaunch_ignores_invalid_configured_effort_before_stop() {
   } > "$home/state/sm6.meta"
   printf '%s\n' "fm-sm6" > "$dir/fake/windows"
   printf '%s' "$dir/smhome" > "$dir/fake/cwd"
-  printf 'codex' > "$dir/fake/becomes"
+  printf 'grok' > "$dir/fake/becomes"
   out=$(run_control "$dir" sm6 relaunch); rc=$?
   expect_code 0 "$rc" "an invalid configured effort should be ignored before stop"$'\n'"$out"
   assert_contains "$out" "effort token 'impossible'" \
@@ -856,8 +889,11 @@ test_explicit_secondmate_harness_ignores_configured_profile_axes() {
   } > "$home/state/sm4.meta"
   printf '%s\n' "fm-sm4" > "$dir/fake/windows"
   printf '%s' "$dir/smhome" > "$dir/fake/cwd"
-  printf 'codex' > "$dir/fake/becomes"
-  out=$(run_control "$dir" sm4 relaunch --harness codex); rc=$?
+  # grok (not codex) here: codex now refuses a relaunch that resolves no
+  # explicit model/effort, so it cannot demonstrate the reset-to-default case
+  # this test is about.
+  printf 'grok' > "$dir/fake/becomes"
+  out=$(run_control "$dir" sm4 relaunch --harness grok); rc=$?
   expect_code 0 "$rc" "an explicit secondmate harness should relaunch"$'\n'"$out"
   [ "$(meta_field "$dir" sm4 model)" = default ] \
     || fail "an explicit secondmate harness must not inherit the configured model"
@@ -1037,7 +1073,7 @@ test_launch_failure_keeps_the_prior_record_and_reports_it() {
   # The endpoint's shell is not in the recorded worktree, so the launch owner
   # refuses AFTER the previous agent has already been stopped.
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
-  out=$(run_control "$dir" rl13 relaunch --harness codex --note "carry this forward"); rc=$?
+  out=$(run_control "$dir" rl13 relaunch --harness codex --model gpt-5 --effort high --note "carry this forward"); rc=$?
   expect_code 1 "$rc" "a failed launch should fail closed"$'\n'"$out"
   assert_contains "$out" "no agent is running" "the failure should say no agent is running"
   assert_contains "$out" "$dir/wt" "the failure should say where the work is preserved"
@@ -1058,7 +1094,7 @@ test_prepublication_failure_keeps_concurrent_durable_metadata() {
   add_ship_task "$dir" rl30 claude
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
   FM_FAKE_CWD_RACE_READY="$dir/cwd-race-ready" \
-    run_control "$dir" rl30 relaunch --harness codex --note "preserve concurrent metadata" \
+    run_control "$dir" rl30 relaunch --harness codex --model gpt-5 --effort high --note "preserve concurrent metadata" \
       > "$dir/control.out" &
   control_pid=$!
   while [ ! -e "$dir/cwd-race-ready" ] && [ "$i" -lt "$WAIT_TICKS" ]; do
@@ -1135,7 +1171,7 @@ test_post_publication_launch_failure_keeps_the_new_record() {
   add_ship_task "$dir" rl24 claude
   printf 'codex' > "$dir/fake/becomes"
   out=$(FM_FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START=1 \
-    run_control "$dir" rl24 relaunch --harness codex --note "keep the published record"); rc=$?
+    run_control "$dir" rl24 relaunch --harness codex --model gpt-5 --effort high --note "keep the published record"); rc=$?
   expect_code 1 "$rc" "a post-publication launch failure should fail closed"$'\n'"$out"
   [ "$(meta_field "$dir" rl24 harness)" = codex ] \
     || fail "a published replacement record must not be rewritten to the prior harness"
@@ -1172,7 +1208,7 @@ test_complete_journal_failure_rolls_back_from_durable_phase() {
   real_mv=$(command -v mv)
   make_mv_failure_stub "$dir"
   out=$(FM_REAL_MV="$real_mv" FM_FAKE_COMPLETE_JOURNAL_MV_FAIL=1 \
-    run_control "$dir" rl27 relaunch --harness codex --note "keep durable phase honest"); rc=$?
+    run_control "$dir" rl27 relaunch --harness codex --model gpt-5 --effort high --note "keep durable phase honest"); rc=$?
   expect_code 1 "$rc" "a failed complete journal replacement should fail closed"$'\n'"$out"
   [ "$(journal_field "$dir" rl27 phase)" = failed:launching ] \
     || fail "rollback should start from the last durable launching phase"
@@ -1603,6 +1639,8 @@ test_disabled_relaunch_clears_prior_trace_context
 test_relaunch_appends_the_progress_note_to_the_instructions
 test_relaunch_requires_a_note_for_a_ship_task
 test_harness_switch_moves_the_record_and_clears_prior_wiring
+test_codex_relaunch_without_axes_refuses_before_stopping_the_agent
+test_codex_relaunch_with_unreceivable_effort_refuses_before_stopping_the_agent
 test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement

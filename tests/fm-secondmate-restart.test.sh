@@ -537,7 +537,7 @@ test_local_restart_uses_the_home_pin_and_reports_what_ran() {
   dir=$(new_case pin)
   add_local_mate "$dir" sm1
   arm_answer "$dir" sm1
-  printf 'codex\n' > "$dir/home/config/secondmate-harness"
+  printf 'codex big-model high\n' > "$dir/home/config/secondmate-harness"
   printf 'codex' > "$dir/fake/becomes"
 
   out=$(run_restart "$dir" sm1); rc=$?

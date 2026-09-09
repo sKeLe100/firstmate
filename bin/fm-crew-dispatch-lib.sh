@@ -8,12 +8,17 @@
 # dispatch_config field. A file that merely parses as JSON is NOT valid - a rule
 # needs a non-empty `when`, `use`/`default` must be a non-empty profile object or
 # array, every harness must be a verified adapter, and any effort must be one its
-# harness supports.
+# harness supports. Codex's accepted effort tiers are not restated here:
+# bin/fm-codex-axes-lib.sh owns them and this validator is handed that same list.
+
+# shellcheck source=bin/fm-codex-axes-lib.sh disable=SC1091
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-codex-axes-lib.sh"
 
 # fm_crew_dispatch_validate <file>
 #   0 - valid (or the file does not exist)
 #   1 - invalid; the reason is echoed on stdout
-#   2 - cannot be checked here (jq unavailable); nothing echoed
+#   2 - cannot be checked here (jq unavailable or too old to run the filter);
+#       nothing echoed
 fm_crew_dispatch_validate() {
   local file=$1 err
   [ -f "$file" ] || return 0
@@ -22,13 +27,19 @@ fm_crew_dispatch_validate() {
     echo "malformed JSON"
     return 1
   fi
-  err=$(jq -r '
+  local codex_efforts tier
+  codex_efforts=
+  for tier in $CODEX_EFFORT_TIERS; do
+    codex_efforts="${codex_efforts:+$codex_efforts,}\"$tier\""
+  done
+  codex_efforts="[$codex_efforts]"
+  err=$(jq -r --argjson codex_efforts "$codex_efforts" '
     def verified($h): ["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","muse","rovo"] | index($h);
     def effort_ok($h; $e):
       if $e == null then true
       elif ($e | type) != "string" then false
       elif $h == "claude" then (["low","medium","high","xhigh","max"] | index($e))
-      elif $h == "codex" then (["low","medium","high","xhigh"] | index($e))
+      elif $h == "codex" then ($codex_efforts | index($e))
       elif $h == "grok" then (["low","medium","high"] | index($e))
       elif $h == "pi" or $h == "pi-signed" then (["low","medium","high","xhigh","max"] | index($e))
       elif $h == "muse" then (["low","medium","high","xhigh","max"] | index($e))
@@ -84,7 +95,7 @@ fm_crew_dispatch_validate() {
         else empty
         end
     end
-' "$file" 2>/dev/null || true)
+' "$file" 2>/dev/null) || return 2
   if [ -n "$err" ]; then
     echo "$err"
     return 1

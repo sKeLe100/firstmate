@@ -235,6 +235,32 @@ case "$out" in
   *) fail "expected dispatch_config: unverified without jq, got: $out" ;;
 esac
 
+# A jq that cannot run the validity filter itself (an older jq rejecting an
+# option the filter needs) must fail closed the same way a missing jq does: a
+# config whose contract was never evaluated is unverified, never present.
+if command -v jq >/dev/null 2>&1; then
+  brokenjq_dir="$TMP_ROOT/brokenjq"
+  rm -rf "$brokenjq_dir"
+  mkdir -p "$brokenjq_dir"
+  {
+    printf '%s\n' '#!/bin/sh'
+    printf '%s\n' 'for a in "$@"; do'
+    # shellcheck disable=SC2016 # literal shell text for the stub jq script
+    printf '%s\n' '  [ "$a" = --argjson ] && { echo "jq: Unknown option" >&2; exit 2; }'
+    printf '%s\n' 'done'
+    printf '%s\n' "exec $(command -v jq) \"\$@\""
+  } > "$brokenjq_dir/jq"
+  chmod +x "$brokenjq_dir/jq"
+  home=$(make_home dispatch-jq-filter-unsupported)
+  : > "$home/data/projects.md"
+  printf '%s\n' '{"rules":[],"default":[{"harness":"codex"}]}' > "$home/config/crew-dispatch.json"
+  out=$(FM_ROOT_OVERRIDE="$home" FM_HOME="$home" PATH="$brokenjq_dir:$nojq_path" "$SNAPSHOT")
+  case "$out" in
+    *"dispatch_config: unverified"*) ;;
+    *) fail "expected dispatch_config: unverified when jq cannot run the filter, got: $out" ;;
+  esac
+fi
+
 # 5b. A config that parses as JSON but breaks the crew-dispatch validity
 #     contract (the same contract bin/fm-bootstrap.sh reports as
 #     CREW_DISPATCH: invalid) is invalid here too, so the skill never matches

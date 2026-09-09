@@ -1191,6 +1191,30 @@ ROWS
   pass "bootstrap validates crew-dispatch.json and reports malformed or unverified configs"
 }
 
+test_crew_dispatch_unevaluable_contract_is_reported() {
+  local case_dir fakebin real_jq out
+  case_dir="$TMP_ROOT/dispatch-unevaluable"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  printf '%s\n' '{"rules":[],"default":[{"harness":"codex","model":"gpt-5.5","effort":"high"}]}' \
+    > "$case_dir/home/config/crew-dispatch.json"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  real_jq=$(command -v jq 2>/dev/null) || fail "jq is required for dispatch profile validation tests"
+  cat > "$fakebin/jq" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  [ "\$a" = --argjson ] && { echo "jq: Unknown option" >&2; exit 2; }
+done
+exec '$real_jq' "\$@"
+SH
+  chmod +x "$fakebin/jq"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  [ "$out" = "CREW_DISPATCH: unverified config/crew-dispatch.json - jq could not evaluate the validity contract" ] \
+    || fail "expected an unverified CREW_DISPATCH verdict, got: $out"
+  pass "bootstrap reports a crew-dispatch config whose contract could not be evaluated"
+}
+
 test_bootstrap_reporting
 test_no_mistakes_min_version
 test_gh_axi_min_version
@@ -1220,3 +1244,4 @@ test_network_phases_record_per_step_elapsed_times
 test_tasks_axi_verdict_handoff_is_consumed_once
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info
 test_crew_dispatch_validation
+test_crew_dispatch_unevaluable_contract_is_reported

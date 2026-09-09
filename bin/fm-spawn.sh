@@ -47,7 +47,10 @@
 #   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
-#   from that harness's launch rather than guessed.
+#   from that harness's launch rather than guessed. codex is the exception: it
+#   silently bills its own expensive default when an axis is omitted, so a codex
+#   spawn or relaunch is REFUSED unless it names a model and an effort codex
+#   itself accepts (max is not one of them). A raw launch command is exempt.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then
@@ -306,6 +309,8 @@ esac
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
+# shellcheck source=bin/fm-codex-axes-lib.sh
+. "$SCRIPT_DIR/fm-codex-axes-lib.sh"
 # shellcheck source=bin/fm-tasks-axi-lib.sh
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backlog-transition-lib.sh
@@ -718,6 +723,17 @@ spawn_remote_secondmate() {
       return 1
       ;;
   esac
+  # The host-local fm-spawn this launch ends at applies the codex axis guard,
+  # but only after a remote readiness pass, a remote git sync, and a consumed
+  # inheritance generation. Asking the same question here refuses an
+  # unlaunchable spawn before any of that work happens.
+  if [ "$harness" = codex ] \
+     && ! codex_axes_resolved "${model#-}" "${effort#-}"; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    echo "error: a codex remote secondmate resolves no model/effort codex actually receives (model=$model effort=$effort); pin them in config/secondmate-harness as \"codex <model> <effort>\", or pass --model/--effort explicitly, with an effort of $(codex_effort_tiers_phrase)" >&2
+    return 1
+  fi
   if ! pc02_lane_guard "$id" "${model#-}"; then
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
@@ -1715,6 +1731,100 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   fi
 fi
 
+model_flag_for_harness() {
+  local harness=$1 model=$2
+  [ -n "$model" ] && [ "$model" != default ] || return 0
+  case "$harness" in
+    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo)
+      printf -- '--model %s ' "$(shell_quote "$model")"
+      ;;
+  esac
+}
+
+effort_flag_for_harness() {
+  local harness=$1 effort=$2
+  [ -n "$effort" ] && [ "$effort" != default ] || return 0
+  case "$harness" in
+    claude)
+      case "$effort" in
+        low|medium|high|xhigh|max) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
+    codex)
+      # fm-codex-axes-lib.sh owns which tiers codex receives; omit anything
+      # else rather than passing an unsupported value.
+      if codex_effort_supported "$effort"; then
+        printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")"
+      fi
+      ;;
+    grok)
+      # grok exposes both --effort and --reasoning-effort; firstmate's profile
+      # axis is the reasoning knob. As of grok 0.2.99, --reasoning-effort accepts
+      # only low|medium|high and rejects both xhigh and max, so omit those rather
+      # than passing a known-bad value.
+      case "$effort" in
+        low|medium|high) printf -- '--reasoning-effort %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
+    pi|pi-signed)
+      # Pi 0.80.6 accepts the full shared effort vocabulary, including max, through
+      # its --thinking flag.
+      case "$effort" in
+        low|medium|high|xhigh|max) printf -- '--thinking %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
+    muse)
+      # muse 0.1.0-R708.1 --reasoning-effort accepts none|minimal|low|medium|
+      # high|xhigh|ultra and defaults to high, so low..xhigh map straight across.
+      # ultra is muse's max-CLASS level, so firstmate's max maps onto it - but
+      # only ever as an EXPLICIT captain choice, never as a fallback, because
+      # AGENTS.md section 4 forbids selecting max without captain preference and
+      # the omitted effort here leaves muse on its own high default. muse's extra
+      # none/minimal levels sit below firstmate's shared vocabulary and are
+      # deliberately unreachable rather than remapped onto low.
+      case "$effort" in
+        low|medium|high|xhigh) printf -- '--reasoning-effort %s ' "$(shell_quote "$effort")" ;;
+        max) printf -- '--reasoning-effort %s ' "$(shell_quote ultra)" ;;
+      esac
+      ;;
+    # rovo has no --effort flag on `run`; its effort mapping rides
+    # --config-override, but that flag is single-value (see
+    # rovo_config_override_flag below) so it is built there, merged with the
+    # mandatory allowedExternalPaths grant, rather than here.
+    # opencode's interactive `opencode --prompt` launch has a verified --model
+    # flag but no verified effort flag. Its `opencode run --variant` flag belongs
+    # to a different, non-interactive launch mode, so fm-spawn does not pass it.
+    # kimi likewise has no reasoning-effort flag; the requested axis stays in
+    # task metadata but never reaches the launch command. Cursor encodes effort
+    # in model ids such as cursor-grok-4.5-high, so it also receives no separate
+    # effort flag.
+  esac
+}
+
+# Codex CLI silently launches on its own bundled default model and reasoning
+# effort when neither flag is passed, which is gpt-6-astra at its most
+# expensive tier - the confirmed root cause of the 2026-09-05 incident that
+# burned 30% of the weekly window in 59 minutes. fm-control.sh's relaunch path
+# reaches codex only through this same spawn entrypoint and does not
+# re-resolve a prior model/effort on its own, so a bare relaunch hits this
+# same hole; refusing here closes both paths in one place. This is a
+# silent-default guard, not an astra-specific block: any explicitly named
+# model and effort satisfy it. A raw launch command (the unverified-adapter
+# escape hatch) is exempt: it never routes through model_flag_for_harness or
+# effort_flag_for_harness, so MODEL/EFFORT here reflect nothing about what its
+# hand-composed command line actually launches.
+if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
+  codex_remedy="Pass --model/--effort explicitly, or pin them in config/secondmate-harness as \"codex <model> <effort>\"; config/crew-harness carries only a bare adapter name and cannot supply either axis."
+  if [ -z "$(model_flag_for_harness codex "$MODEL")" ]; then
+    echo "error: codex requires an explicit --model; a model-less codex spawn or relaunch silently falls through to Codex CLI's own default model rather than firstmate's choice. $codex_remedy" >&2
+    exit 1
+  fi
+  if [ -z "$(effort_flag_for_harness codex "$EFFORT")" ]; then
+    echo "error: codex requires an explicit --effort that codex itself accepts; '${EFFORT:-<none>}' reaches no codex launch flag, so the spawn would silently fall through to Codex CLI's own default reasoning effort rather than firstmate's choice. $codex_remedy" >&2
+    exit 1
+  fi
+fi
+
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 
 # Host-memory floor: neither the dispatch cap nor the PC02 lane guard knows
@@ -1853,77 +1963,6 @@ muse_worker_meta_api_key_present() {
 muse_credential_present() {
   local auth=$1
   [ -s "$auth" ] || muse_worker_meta_api_key_present
-}
-
-model_flag_for_harness() {
-  local harness=$1 model=$2
-  [ -n "$model" ] && [ "$model" != default ] || return 0
-  case "$harness" in
-    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo)
-      printf -- '--model %s ' "$(shell_quote "$model")"
-      ;;
-  esac
-}
-
-effort_flag_for_harness() {
-  local harness=$1 effort=$2
-  [ -n "$effort" ] && [ "$effort" != default ] || return 0
-  case "$harness" in
-    claude)
-      case "$effort" in
-        low|medium|high|xhigh|max) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
-      esac
-      ;;
-    codex)
-      # The installed codex config schema uses model_reasoning_effort, and the
-      # bundled model catalog advertises low|medium|high|xhigh. Omit max rather
-      # than passing an unsupported value.
-      case "$effort" in
-        low|medium|high|xhigh) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
-      esac
-      ;;
-    grok)
-      # grok exposes both --effort and --reasoning-effort; firstmate's profile
-      # axis is the reasoning knob. As of grok 0.2.99, --reasoning-effort accepts
-      # only low|medium|high and rejects both xhigh and max, so omit those rather
-      # than passing a known-bad value.
-      case "$effort" in
-        low|medium|high) printf -- '--reasoning-effort %s ' "$(shell_quote "$effort")" ;;
-      esac
-      ;;
-    pi|pi-signed)
-      # Pi 0.80.6 accepts the full shared effort vocabulary, including max, through
-      # its --thinking flag.
-      case "$effort" in
-        low|medium|high|xhigh|max) printf -- '--thinking %s ' "$(shell_quote "$effort")" ;;
-      esac
-      ;;
-    muse)
-      # muse 0.1.0-R708.1 --reasoning-effort accepts none|minimal|low|medium|
-      # high|xhigh|ultra and defaults to high, so low..xhigh map straight across.
-      # ultra is muse's max-CLASS level, so firstmate's max maps onto it - but
-      # only ever as an EXPLICIT captain choice, never as a fallback, because
-      # AGENTS.md section 4 forbids selecting max without captain preference and
-      # the omitted effort here leaves muse on its own high default. muse's extra
-      # none/minimal levels sit below firstmate's shared vocabulary and are
-      # deliberately unreachable rather than remapped onto low.
-      case "$effort" in
-        low|medium|high|xhigh) printf -- '--reasoning-effort %s ' "$(shell_quote "$effort")" ;;
-        max) printf -- '--reasoning-effort %s ' "$(shell_quote ultra)" ;;
-      esac
-      ;;
-    # rovo has no --effort flag on `run`; its effort mapping rides
-    # --config-override, but that flag is single-value (see
-    # rovo_config_override_flag below) so it is built there, merged with the
-    # mandatory allowedExternalPaths grant, rather than here.
-    # opencode's interactive `opencode --prompt` launch has a verified --model
-    # flag but no verified effort flag. Its `opencode run --variant` flag belongs
-    # to a different, non-interactive launch mode, so fm-spawn does not pass it.
-    # kimi likewise has no reasoning-effort flag; the requested axis stays in
-    # task metadata but never reaches the launch command. Cursor encodes effort
-    # in model ids such as cursor-grok-4.5-high, so it also receives no separate
-    # effort flag.
-  esac
 }
 
 case "$LAUNCH" in
