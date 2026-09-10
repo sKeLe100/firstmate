@@ -135,21 +135,21 @@ fm_test_base_path_owned() {
   [ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]
 }
 
-# --- sandbox-cache lock (atomic ln -s, consistent with bin/fm-wake-lib.sh) --
+# --- sandbox-cache lock -----------------------------------------------------
 # Guards fm_test_base_path()'s check-build-mark so concurrent callers don't
-# race to build the same cache directory.  The lock lives at a fixed path so
-# every process on the machine shares it regardless of TMPDIR.
+# race to build the same cache directory.  The lock path is fixed (not
+# derived from TMPDIR) so every process on the machine shares it regardless
+# of environment.  fm_test_base_path() acquires the lock only around the
+# build section; callers that find the .complete marker skip the lock entirely.
 
-FM_TEST_SANDBOX_LOCK="${TMPDIR:-/tmp}/.fm-test-sandbox-lock"
+FM_TEST_SANDBOX_LOCK="/tmp/.fm-test-sandbox-base-path.lock"
 
-_fm_test_sandbox_lock_try() {
-  ln -s "$$" "$FM_TEST_SANDBOX_LOCK" 2>/dev/null \
-    || return 1
-  [ "$(readlink "$FM_TEST_SANDBOX_LOCK" 2>/dev/null)" = "$$" ]
-}
-
-_fm_test_sandbox_lock_wait() {
-  while ! _fm_test_sandbox_lock_try; do
+_fm_test_sandbox_lock_acquire() {
+  # Retry loop with 0.1s back-off, consistent with fm_lock_acquire_wait in
+  # bin/fm-wake-lib.sh.  No stale-owner detection is needed here because the
+  # caller re-checks the .complete marker after acquiring and the build
+  # section is idempotent.
+  while ! ln -s "$$" "$FM_TEST_SANDBOX_LOCK" 2>/dev/null; do
     sleep 0.1
   done
 }
@@ -167,6 +167,7 @@ _fm_test_sandbox_lock_release() {
 # would see the single entry and accept the incomplete cache.
 fm_test_base_path_populated() {
   local cache_dir=$1 expected_name
+  local dir path excluded f
   for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
     [ -d "$dir" ] || continue
     for path in "$dir"/*; do
@@ -209,10 +210,18 @@ fm_test_base_path() {
     return 0
   fi
 
-  _fm_test_sandbox_lock_wait
+  _fm_test_sandbox_lock_acquire
+
+  # Re-check the marker: a sibling that was waiting on the lock may have
+  # finished building while we waited.
+  if [ -f "$marker" ]; then
+    _fm_test_sandbox_lock_release
+    printf '%s\n' "$cache_dir"
+    return 0
+  fi
 
   (umask 077 && mkdir -p "$cache_dir") \
-    || fm_test_base_path_die "could not create sandbox cache dir $cache_dir"
+    || { _fm_test_sandbox_lock_release; fm_test_base_path_die "could not create sandbox cache dir $cache_dir"; }
 
   local dir path name excluded f
   for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
@@ -235,10 +244,10 @@ fm_test_base_path() {
   done
 
   fm_test_base_path_populated "$cache_dir" \
-    || fm_test_base_path_die "sandbox cache dir is empty: $cache_dir"
+    || { _fm_test_sandbox_lock_release; fm_test_base_path_die "sandbox cache dir is empty: $cache_dir"; }
 
   : > "$marker" \
-    || fm_test_base_path_die "could not mark $cache_dir complete"
+    || { _fm_test_sandbox_lock_release; fm_test_base_path_die "could not mark $cache_dir complete"; }
   printf '%s\n' "$cache_dir"
 
   _fm_test_sandbox_lock_release
