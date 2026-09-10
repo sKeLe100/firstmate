@@ -564,6 +564,7 @@ portable_serial_weight_hints() {
 tests/fm-afk-inject-e2e.test.sh 35792
 tests/fm-afk-pi-herdr-return-e2e.test.sh 100
 tests/fm-afk-return.test.sh 1837
+tests/fm-agentsmd-size.test.sh 100
 tests/fm-ask-user-authority.test.sh 128
 tests/fm-autonomous-pc02-lane.test.sh 661
 tests/fm-backend-cmux-smoke.test.sh 33
@@ -1403,7 +1404,11 @@ families_for_changed_path() {
     docs/fm-test-isolation-proof.json)
       printf '%s\n' pure-contract-unit
       ;;
-    .github/*|.tasks.toml|AGENTS.md|CLAUDE.md|CONTRIBUTING.md|\
+    AGENTS.md)
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' "__script__:fm-agentsmd-size.test.sh"
+      ;;
+    .github/*|.tasks.toml|CLAUDE.md|CONTRIBUTING.md|\
     docs/configuration.md|docs/supervision-protocols/*)
       printf '%s\n' pure-contract-unit
       ;;
