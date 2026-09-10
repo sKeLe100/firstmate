@@ -12,6 +12,9 @@ AGENTS="$ROOT/AGENTS.md"
 FAILED=0
 fail() { printf 'not ok - %s\n' "$1" >&2; FAILED=1; }
 pass() { printf 'ok - %s\n' "$1"; }
+pad_line() {
+  printf '# Padding line for the AGENTS.md resident-size ceiling regression test %019d\n' "$1"
+}
 
 # shellcheck disable=SC2154
 : "${TMPDIR:=/tmp}"
@@ -39,17 +42,18 @@ test_over_ceiling() {
   cp "$AGENTS" "$saved"
 
   # Create a file over 100KB by padding with comment-like lines
-  local big ceiling cur pad_lines
+  local big ceiling cur pad_width pad_lines
   ceiling=$(sed -n 's/^CEILING=\([0-9]*\).*/\1/p' "$SCRIPT")
   big=$(mktemp "${TMPDIR}/fm-size-big.XXXXXX")
   cp "$saved" "$big"
   cur=$(wc -c < "$big")
-  # Pad past the ceiling regardless of the current file size: each line below
-  # is 96 bytes, and 64 extra lines give margin above the ceiling.
-  pad_lines=$(( (ceiling - cur) / 96 + 64 ))
+  # Pad past the ceiling regardless of the current file size, deriving the
+  # per-line width from the same printf that emits the padding.
+  pad_width=$(pad_line 1 | wc -c)
+  pad_lines=$(( (ceiling - cur) / pad_width + 64 ))
   if [ "$pad_lines" -lt 64 ]; then pad_lines=64; fi
   for ((i = 1; i <= pad_lines; i++)); do
-    printf '# Padding line for the AGENTS.md resident-size ceiling regression test %019d\n' "$i"
+    pad_line "$i"
   done >> "$big"
   local big_size
   big_size=$(wc -c < "$big")
