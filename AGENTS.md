@@ -57,6 +57,8 @@ Each secondmate has a persistent isolated `FM_HOME`, including its own state, ba
 
 Tracked files hold shared instructions and tooling; `data/` holds durable private fleet records; `state/` holds runtime records and append-only status events; `config/` holds local operating choices; and `projects/` contains clones that are read-only to firstmate except under hard rule 1's concrete captain-approved project operation exception.
 
+The full per-file layout for `state/` (all `state/<id>.*` records, watcher internals, procevent sources, Relay artifacts, branch outcome stores, and their contracts) is owned by [`docs/configuration.md`](docs/configuration.md) "Operational home layout and state"; read it when you need the detail rather than keeping it resident.
+
 ```
 AGENTS.md            this file (CLAUDE.md is a real @AGENTS.md pointer to it)
 CONTRIBUTING.md      contributor workflow and repo conventions
@@ -106,51 +108,11 @@ data/                personal fleet records; LOCAL, gitignored as a whole
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
 state/               runtime records and signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth
-  <id>.turn-ended    touched by turn-end hooks
-  <id>.grok-turnend-token   firstmate-owned grok hook registry token for the task; removed by teardown
-  <id>.kimi-turnend-token   firstmate-owned Kimi hook registry token for the task; removed by teardown
-  <id>.gemini-settings.json  per-task Gemini settings with busy-state and turn-end hooks; removed by teardown
-  <id>.muse-session  muse busy-source binding (sessions root plus task worktree); removed by teardown
-  <id>.cursor-session  cursor busy-source binding (projects root, task worktree, prior conversations); removed by teardown
-  <id>.opencode-session  opencode session id bound to this task; retired on relaunch and removed by teardown
-  <id>.reconcile-nudged  epoch second of last inventory-reconcile nudge sent to this secondmate
-  <id>.backlog-close  exact backlog transition recorded by teardown before removing task record
-  <id>.inbox/          durable steering inbox for sequenced firstmate instructions; see docs/configuration.md "Operational home layout and state"
   <id>.meta          task metadata; each producer script's header owns its exact fields and mutation contract
-  <id>.herdr-presentation  quarantinable attempt and restart-binding journal for Herdr's visual projection; see docs/herdr-backend.md "Presentation spaces"
-  <id>.check.sh      authenticated slow poll for PR data and Relay shims through trusted repository scripts
-  <id>.check-trust   private content binding for an intentional custom check
-  <id>.pr-poll       private validated data sidecar for the byte-static PR merge poll
-  <id>.pr-poll-registration  private provenance record binding the task, metadata identity, sidecar, and poll publication
-  <id>.pr-poll-retirement  private crash-recovery receipt for one exact validated merged result
-  <id>.pr-poll-merge-notified  canonical PR identity of the last merge outcome delivered for this task
-  branch-outcomes.jsonl .branch-outcomes-cursor .branch-outcomes-processed .<task>.branch-outcome-index .branch-outcome-index-ready  Pi supervision-branch outcome store, cursors, and caches
-  branch-session/ .branch-session .branch-mirror-cursor  the branch's per-main-session conversations and dialog-mirror cursor
-  .branch-eligible-rows .branch-eligible-owner .main-eligible-rows  per-actor wake-row claims and branch-owner evidence
-  .lease-<task>        per-task supervision lease naming which actor (main or branch) may change that task
-  x-watch.check.sh   generated Relay poll shim; present only when opted in (section 14)
-  tool-updates.check.sh  generated watched-tool update poll shim and its .check-trust binding
-  upstream-drift.check.sh  generated upstream-drift poll shim and its .check-trust binding
-  pending-replies/   parent-owned secondmate pending-reply records (correlation id, delivery vs reply, recovery, escalation)
-  procevent/         registered process-to-event sources; see docs/configuration.md "Process-to-event sources (state/procevent)"
-  procevent-inbox/   private captured results and handled-acknowledgement markers for process-event sources; see docs/configuration.md "Process-to-event sources (state/procevent)"
-  decision-bindings/ private records marking a captured-answer source as feeding the keyed-answer intake; see docs/configuration.md "Process-to-event sources (state/procevent)"
-  when/              private condition->action watch specs, trust bindings, and single-fire markers; see docs/configuration.md "Process-to-event sources (state/procevent)"
-  inbox/             captain notes captured out of band by bin/fm-inbox.sh; see docs/configuration.md "Operational home layout and state"
-  x-inbox/           generated Relay pending mention payloads; fmx-respond drains it (section 14)
-  x-context/         generated Relay durable per-request reply context and one-wake offer markers (7-day expiry); see docs/configuration.md "Relay (.env)"
-  x-outbox/          generated Relay dry-run reply and dismiss previews; inspect when FMX_DRY_RUN is set (section 14)
-  public-followup/   generated private transport for promised public replies; see docs/configuration.md "Promised public replies (state/public-followup)"
-  x-poll.error x-poll.claim-error  generated Relay and offer-claim diagnostic dedupe markers
-  .startup-network.*  status, report, timings, and lock for the deferred startup network checks stage
-  .wake-queue        durable queued wakes retained until post-handling acknowledgement: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
-  .watcher-down      private generation-bound recovery state for watcher downtime and durable wake presentation; never touch
-  .<id>.open-decisions-cursor  per-task byte cursor bounding the OPEN DECISIONS scan cost
-  .status-presentation-cursor .status-presentation-lock  fleet-wide per-task status identity and annotation lock
+  <id>.inbox/        durable steering inbox for sequenced firstmate instructions; see docs/configuration.md "Operational home layout and state"
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
-  .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
-  .cursor-park-owner .cursor-park-owner.lock .turnend-cursor-blocks   Cursor stop-hook owner record, publication and commit lock, and bounded repair-nag budget; never touch
+  .watcher-down      private generation-bound recovery state for watcher downtime and durable wake presentation; never touch
   .hash-* .count-* .stale-* .stale-since-* .churn-since-* .paused-* .wedge-escalations-* .wedge-backoff-* .writing-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
