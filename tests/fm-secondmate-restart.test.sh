@@ -115,6 +115,7 @@ esac
 exit 0
 SH
   chmod +x "$fb/tmux"
+  fm_fake_version_tool "$fb" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}" in

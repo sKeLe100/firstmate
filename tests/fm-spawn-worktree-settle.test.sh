@@ -62,6 +62,7 @@ exit 0
 SH
   chmod +x "$fakebin/tmux"
   fm_fake_exit0 "$fakebin" treehouse
+  fm_fake_version_tool "$fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
   printf '%s\n' "$fakebin"
 }
 
@@ -81,6 +82,7 @@ make_settle_case() {
   fakebin=$(make_settle_fakebin "$case_dir/fake")
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
   printf 'codex\n' > "$home/config/crew-harness"
+  printf '%s\n' 4 > "$home/config/codex-lane-cap"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   fm_git_init_commit "$stale"
   mkdir -p "$home/data/$id"

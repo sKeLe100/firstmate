@@ -746,7 +746,7 @@ codex_lane_guard() {  # <task-id>: reserve one configured local worker/scout lan
     other_target=$(fm_backend_target_of_meta "$other_meta")
     state=unknown
     if [ -n "$other_target" ]; then
-      state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target" 2>/dev/null || printf unknown)
+      state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target" 2>/dev/null)
     fi
     [ "$state" != dead ] || continue
     occupied=$((occupied + 1))
