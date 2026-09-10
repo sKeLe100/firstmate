@@ -46,7 +46,12 @@ if [ "${1:-}" = --list-models ]; then
 fi
 exit 0
 SH
-  chmod +x "$fakebin/timeout" "$fakebin/cursor-agent"
+cat > "$fakebin/codex" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' 'codex-cli fake-test'
+exit 0
+SH
+  chmod +x "$fakebin/timeout" "$fakebin/cursor-agent" "$fakebin/codex"
   make_spawn_pi_probe "$fakebin" pi
   make_spawn_pi_probe "$fakebin" pi-signed
   printf '%s\n' "$fakebin"
@@ -345,7 +350,7 @@ test_active_dispatch_profile_allows_explicit_harness() {
   assert_contains "$out" "spawned $id harness=codex" "spawn did not report explicit codex harness"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "--model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "explicit harness launch did not thread model and effort"
   pass "active crew-dispatch profile allows an explicit resolved harness"
 }
@@ -366,7 +371,7 @@ test_active_dispatch_profile_allows_positional_harness() {
   pass "active crew-dispatch profile allows the legacy positional harness form"
 }
 
-test_active_dispatch_profile_allows_raw_launch_command() {
+test_active_dispatch_profile_refuses_raw_launch_command() {
   local rec id out status launch
   id=profile-raw-z15
   rec=$(make_spawn_case profile-raw claude "$id")
@@ -376,12 +381,9 @@ test_active_dispatch_profile_allows_raw_launch_command() {
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" "custom-agent --flag")
   status=$?
-  expect_code 0 "$status" "raw launch command should satisfy active dispatch-profile requirement"
-  assert_contains "$out" "spawned $id harness=custom-agent" "spawn did not report raw command harness"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" custom-agent default default
-  launch=$(cat "$LAUNCH_LOG")
-  [ "$launch" = "custom-agent --flag" ] || fail "raw launch command changed"$'\n'"actual: $launch"
-  pass "active crew-dispatch profile allows the raw launch-command escape hatch"
+  expect_code 1 "$status" "routine ship dispatch must refuse a raw launch command"
+  assert_contains "$out" "adapter-verification-only" "raw refusal did not explain its verification-only boundary"
+  pass "active crew-dispatch profile refuses routine raw launch commands"
 }
 
 test_raw_codex_launch_command_is_exempt_from_the_axis_guard() {
@@ -390,11 +392,11 @@ test_raw_codex_launch_command_is_exempt_from_the_axis_guard() {
   rec=$(make_spawn_case profile-raw-codex claude "$id")
   read_case_record "$rec"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-    "$id" "$PROJ_DIR" "codex --dangerously-bypass-approvals-and-sandbox")
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "codex --dangerously-bypass-approvals-and-sandbox" --scout --adapter-verification)
   status=$?
   expect_code 0 "$status" \
-    "a raw codex launch command is the documented escape hatch and must not hit the axis guard"$'\n'"$out"
+    "a raw codex adapter-verification scout is exempt from verified Codex policies"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
   case "$launch" in
     *"codex --dangerously-bypass-approvals-and-sandbox") ;;
@@ -402,7 +404,108 @@ test_raw_codex_launch_command_is_exempt_from_the_axis_guard() {
   esac
   assert_not_contains "$launch" "model_reasoning_effort" \
     "fm-spawn must not compose profile flags into a hand-written launch command"
-  pass "a raw codex launch command stays exempt from the codex model/effort guard"
+  pass "an explicit raw Codex adapter-verification scout stays outside verified policies"
+}
+
+test_adapter_verification_refuses_verified_and_non_scout_boundaries() {
+  local rec id out status
+  id=profile-raw-boundary-z15c
+  rec=$(make_spawn_case profile-raw-boundary claude "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness claude --scout --adapter-verification)
+  status=$?
+  expect_code 1 "$status" "adapter verification must reject structured adapters"
+  assert_contains "$out" "only meaningful with a raw shell launch command" \
+    "structured adapter refusal did not explain the boundary"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "custom-agent --flag" --adapter-verification)
+  status=$?
+  expect_code 1 "$status" "adapter verification must reject ship raw commands"
+  assert_contains "$out" "scout-only" "ship refusal did not name scout-only scope"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "custom-agent --flag" --secondmate --adapter-verification)
+  status=$?
+  expect_code 1 "$status" "adapter verification must reject secondmate raw commands"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "custom-agent --flag" --relaunch --adapter-verification)
+  status=$?
+  expect_code 1 "$status" "adapter verification must reject relaunch raw commands"
+  pass "adapter verification is limited to one unverified scout raw launch"
+}
+
+write_codex_meta() {  # <home> <id> <kind>
+  cat > "$1/state/$2.meta" <<EOF
+window=firstmate:fm-$2
+endpoint_task_id=$2
+harness=codex
+kind=$3
+model=gpt-5
+effort=high
+backend=unverified-test-backend
+EOF
+}
+
+test_codex_lane_cap_counts_workers_and_scouts_but_not_secondmates() {
+  local rec id out status
+  id=profile-codex-cap-z15d
+  rec=$(make_spawn_case profile-codex-cap codex "$id")
+  read_case_record "$rec"
+  printf '2\n' > "$HOME_DIR/config/codex-lane-cap"
+  write_codex_meta "$HOME_DIR" codex-ship ship
+  write_codex_meta "$HOME_DIR" codex-scout scout
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  status=$?
+  expect_code 1 "$status" "two occupied Codex worker/scout lanes must fill cap two"
+  assert_contains "$out" "Codex worker lane cap (2) is occupied by 2" \
+    "cap refusal did not report the configured boundary"
+  assert_absent "$HOME_DIR/state/$id.meta" "refused cap must not publish a task record"
+
+  rm -f "$HOME_DIR/state/codex-scout.meta"
+  write_codex_meta "$HOME_DIR" codex-secondmate secondmate
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "a Codex secondmate must not consume a worker lane: $out"
+  pass "Codex cap counts ship and scout workers while excluding secondmates"
+}
+
+test_codex_lane_cap_refuses_missing_and_malformed_policy() {
+  local rec id out status value
+  id=profile-codex-cap-policy-z15e
+  rec=$(make_spawn_case profile-codex-cap-policy codex "$id")
+  read_case_record "$rec"
+
+  rm -f "$HOME_DIR/config/codex-lane-cap"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  status=$?
+  expect_code 1 "$status" "missing Codex cap must refuse rather than infer a default"
+  assert_contains "$out" "needs-decision" "missing cap did not identify the decision"
+
+  for value in 0 -1 nope; do
+    printf '%s\n' "$value" > "$HOME_DIR/config/codex-lane-cap"
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+    status=$?
+    expect_code 1 "$status" "invalid Codex cap '$value' must refuse"
+    assert_contains "$out" "positive integer" "invalid cap '$value' did not name its contract"
+  done
+
+  rm -f "$HOME_DIR/config/codex-lane-cap"
+  mkdir "$HOME_DIR/config/codex-lane-cap"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  status=$?
+  expect_code 1 "$status" "nonregular Codex cap must refuse"
+  assert_contains "$out" "readable regular file" "nonregular cap did not name its contract"
+  pass "Codex cap fails closed for absent and malformed configuration"
 }
 
 test_claude_threads_model_and_effort() {
@@ -433,8 +536,11 @@ test_codex_threads_model_and_effort() {
   expect_code 0 "$status" "codex spawn with profile flags should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "--model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread model and reasoning effort config"
+  assert_not_contains "$launch" "--fast" "structured Codex launch must never contain a fast-service override"
+  assert_grep 'codex_exe=/' "$HOME_DIR/state/$id.meta" "Codex metadata must record the resolved executable"
+  assert_grep 'codex_version=' "$HOME_DIR/state/$id.meta" "Codex metadata must record the version probe"
   pass "codex receives --model and model_reasoning_effort profile flags"
 }
 
@@ -907,8 +1013,8 @@ printf '%s\n' "${FM_TEST_AMBIENT_SENTINEL-unset}" "${FM_TEST_ALLOWED-unset}" \
   "${FM_TEST_EMPTY-unset}" "${FM_TEST_UNSET-unset}" "$HOME" "$PATH" "$TERM" "$TMUX" "$GOTMPDIR"
 SH
     out=$(FM_TEST_AMBIENT_SENTINEL=synthetic-unrelated \
-      run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-      "$id" "$PROJ_DIR" --harness "/bin/sh '$probe'")
+      run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR" --harness "/bin/sh '$probe'" --scout --adapter-verification)
     status=$?
     expect_code 0 "$status" "allowlist=$setting spawn should succeed: $out"
     launch=$(cat "$LAUNCH_LOG")
@@ -1133,8 +1239,12 @@ test_worker_launch_delivers_role_scope() {
       printf '%s\n' "$content" > "$brief"
     fi
     cp "$HOME_DIR/data/$id/brief.md" "$CASE_DIR/brief-before"
-    cat > "$FAKEBIN_DIR/codex" <<'SH'
+cat > "$FAKEBIN_DIR/codex" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' 'codex-cli fake-role-test'
+  exit 0
+fi
 printf '%s\n' "$@" > "$FM_ROLE_PROMPT"
 SH
     chmod +x "$FAKEBIN_DIR/codex"
@@ -1180,8 +1290,11 @@ test_active_dispatch_profile_requires_explicit_harness_for_ship
 test_active_dispatch_profile_requires_explicit_harness_for_scout
 test_active_dispatch_profile_allows_explicit_harness
 test_active_dispatch_profile_allows_positional_harness
-test_active_dispatch_profile_allows_raw_launch_command
+test_active_dispatch_profile_refuses_raw_launch_command
 test_raw_codex_launch_command_is_exempt_from_the_axis_guard
+test_adapter_verification_refuses_verified_and_non_scout_boundaries
+test_codex_lane_cap_counts_workers_and_scouts_but_not_secondmates
+test_codex_lane_cap_refuses_missing_and_malformed_policy
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_refuses_max_effort

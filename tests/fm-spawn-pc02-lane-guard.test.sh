@@ -47,6 +47,7 @@ SH
   fm_fake_exit0 "$fakebin" treehouse
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
   printf 'claude\n' > "$home/config/crew-harness"
+  printf '1\n' > "$home/config/codex-lane-cap"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   touch "$home/state/.last-watcher-beat"
   for id in "$@"; do

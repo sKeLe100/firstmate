@@ -234,6 +234,10 @@ fm_test_spawn_home() {
   if [ -n "$harness" ]; then
     printf '%s\n' "$harness" > "$home/config/crew-harness"
   fi
+  # Verified Codex launches require an explicit home-local policy decision.
+  # Most generic spawn fixtures are not testing that decision, so give them
+  # the smallest valid cap and let focused Codex tests replace or remove it.
+  printf '%s\n' 1 > "$home/config/codex-lane-cap"
 }
 
 # fm_test_spawn_brief <home> <id> [captain-intent]

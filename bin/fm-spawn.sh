@@ -44,6 +44,11 @@
 #   the new incarnation.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
+#   --adapter-verification permits one explicitly unverified raw shell launch for
+#   a scout-only adapter trial.  It is refused for routine dispatch, batch,
+#   secondmate, and relaunch work, and verified-harness policies (including the
+#   Codex lane cap, executable pinning, and no-fast template guarantee) do not
+#   apply to it.
 #   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
@@ -215,6 +220,7 @@
 #     __OPINPUT__   absolute path to the canonical operational-input encoder
 #     __WORKTREE__  absolute path to the task worktree
 #     __CURSORBIN__ resolved, cursor-verified executable for a cursor launch
+#     __CODEXBIN__ resolved and version-probed executable for a Codex launch
 #     __GEMINISETTINGS__ firstmate-owned per-task gemini settings file (busy-state hooks)
 #     __ROVOBIN__   resolved, rovo-verified executable for a rovo launch
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
@@ -430,6 +436,7 @@ PURPOSE_SET=0
 REDELEGATED_FROM_SET=0
 REDELEGATION_REASON_SET=0
 RELAUNCH=0
+ADAPTER_VERIFICATION=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -457,6 +464,7 @@ for a in "$@"; do
     --scout) KIND=scout; KIND_SET=1 ;;
     --secondmate) KIND=secondmate; KIND_SET=1 ;;
     --relaunch) RELAUNCH=1 ;;
+    --adapter-verification) ADAPTER_VERIFICATION=1 ;;
     --purpose) want_value=purpose ;;
     --purpose=*) PURPOSE=${a#--purpose=}; PURPOSE_SET=1 ;;
     --redelegated-from) want_value=redelegated-from ;;
@@ -578,6 +586,13 @@ else
   fi
 fi
 
+[ "$ADAPTER_VERIFICATION" -eq 0 ] || {
+  [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = scout ] || {
+    echo "error: --adapter-verification is scout-only and refuses batch, secondmate, and relaunch launches; its raw shell command is unverified and verified-harness policies do not apply" >&2
+    exit 1
+  }
+}
+
 # pc02-single-lane-guard: PC02's llama-swap serves one model at a time, so two
 # concurrent pc02-llamaswap/* lanes starve each other - the second lane's
 # requests queue behind the first's multi-minute turns and the watcher reads
@@ -636,6 +651,100 @@ pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-
     return 1
   done
   return 0
+}
+
+read_codex_lane_cap() {  # prints the configured positive worker/scout cap
+  local cap_file="$CONFIG/codex-lane-cap" cap
+  if [ ! -e "$cap_file" ] && [ ! -L "$cap_file" ]; then
+    echo "error: needs-decision: config/codex-lane-cap is absent; choose a positive worker/scout lane cap before a verified Codex launch" >&2
+    return 1
+  fi
+  if [ ! -f "$cap_file" ] || [ ! -r "$cap_file" ]; then
+    echo "error: config/codex-lane-cap must be a readable regular file" >&2
+    return 1
+  fi
+  cap=$(cat "$cap_file") || return 1
+  case "$cap" in
+    ''|*[!0-9]*|0) echo "error: config/codex-lane-cap must contain one positive integer" >&2; return 1 ;;
+  esac
+  printf '%s\n' "$cap"
+}
+
+resolve_codex_executable() {  # prints canonical-path<TAB>version
+  local candidate resolved version dir base target hops=0
+  candidate=$(type -P -- codex 2>/dev/null) || {
+    echo "error: verified Codex launch requires an executable 'codex' on PATH" >&2
+    return 1
+  }
+  dir=$(CDPATH='' cd -- "$(dirname -- "$candidate")" 2>/dev/null && pwd -P) || {
+    echo "error: could not resolve Codex executable directory for '$candidate'" >&2
+    return 1
+  }
+  base=$(basename -- "$candidate")
+  # Follow the final executable's symlink chain without realpath/readlink -f:
+  # neither command is guaranteed on every supported host.
+  while [ -L "$dir/$base" ] && [ "$hops" -lt 16 ]; do
+    target=$(readlink -- "$dir/$base") || break
+    case "$target" in
+      /*) dir=$(CDPATH='' cd -- "$(dirname -- "$target")" 2>/dev/null && pwd -P) || break
+          base=$(basename -- "$target") ;;
+      *)  dir=$(CDPATH='' cd -- "$dir/$(dirname -- "$target")" 2>/dev/null && pwd -P) || break
+          base=$(basename -- "$target") ;;
+    esac
+    hops=$((hops + 1))
+  done
+  resolved="$dir/$base"
+  [ "$hops" -lt 16 ] || {
+    echo "error: Codex executable symlink chain is too deep: '$candidate'" >&2
+    return 1
+  }
+  [ -x "$resolved" ] || {
+    echo "error: resolved Codex executable is not executable: $resolved" >&2
+    return 1
+  }
+  version=$("$resolved" --version 2>&1) || {
+    echo "error: resolved Codex executable failed its --version probe: $resolved" >&2
+    return 1
+  }
+  [ -n "$version" ] || {
+    echo "error: resolved Codex executable returned an empty --version result: $resolved" >&2
+    return 1
+  }
+  printf '%s\t%s\n' "$resolved" "$version"
+}
+
+codex_lane_guard() {  # <task-id>: reserve one configured local worker/scout lane
+  local id=$1 cap other_meta other_task other_harness other_kind other_target state occupied=0
+  [ "$HARNESS" = codex ] && [ "$KIND" != secondmate ] || return 0
+  cap=$(read_codex_lane_cap) || return 1
+  if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
+    SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || return 1
+    if ! fm_lock_try_acquire "$SPAWN_TASK_SET_LOCK"; then
+      echo "error: this home's task set is locked, so the Codex worker-lane check cannot be authoritative; refusing to race task $id" >&2
+      return 1
+    fi
+    SPAWN_TASK_SET_LOCK_HELD=1
+  fi
+  for other_meta in "$STATE"/*.meta; do
+    [ -f "$other_meta" ] || continue
+    other_task=$(basename "$other_meta" .meta)
+    [ "$other_task" != "$id" ] || continue
+    other_harness=$(fm_meta_get "$other_meta" harness)
+    other_kind=$(fm_meta_get "$other_meta" kind)
+    [ "$other_harness" = codex ] || continue
+    case "$other_kind" in ship|scout) ;; *) continue ;; esac
+    other_target=$(fm_backend_target_of_meta "$other_meta")
+    state=unknown
+    if [ -n "$other_target" ]; then
+      state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target" 2>/dev/null || printf unknown)
+    fi
+    case "$state" in dead|missing) continue ;; esac
+    occupied=$((occupied + 1))
+  done
+  if [ "$occupied" -ge "$cap" ]; then
+    echo "error: Codex worker lane cap ($cap) is occupied by $occupied local worker/scout task(s); wait for a positively dead or missing endpoint" >&2
+    return 1
+  fi
 }
 
 spawn_remote_secondmate() {
@@ -1178,6 +1287,10 @@ if [ "$RELAUNCH" -eq 1 ] && [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart"
   exit 1
 fi
 if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in */*) false ;; *) true ;; esac; then
+  [ "$ADAPTER_VERIFICATION" -eq 0 ] || {
+    echo "error: --adapter-verification is single-scout only; batch dispatch is refused because raw shell commands are unverified and verified-harness policies do not apply" >&2
+    exit 1
+  }
   if [ "$KIND" != secondmate ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
@@ -1489,9 +1602,9 @@ launch_template() {
     claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '\''{"feedbackDrafts":"off"}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then
-        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s' '__CODEXBIN__ __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
-        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s' '__CODEXBIN__ __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       fi
       ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
@@ -1619,6 +1732,10 @@ launch_template() {
 
 case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
+    [ "$ADAPTER_VERIFICATION" -eq 1 ] || {
+      echo "error: raw shell launch commands are adapter-verification-only; use a verified harness name for routine ship/scout/secondmate dispatch, or pass --adapter-verification with one scout-only trial. Verified-harness policies (lane cap, executable pinning, and no-fast) do not apply to raw commands." >&2
+      exit 1
+    }
     RAW_LAUNCH=1
     LAUNCH=$ARG3
     HARNESS=""
@@ -1653,6 +1770,11 @@ case "$ARG3" in
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
+
+[ "$ADAPTER_VERIFICATION" -eq 0 ] || [ "$RAW_LAUNCH" -eq 1 ] || {
+  echo "error: --adapter-verification is only meaningful with a raw shell launch command; verified harness adapters must use their normal structured launch" >&2
+  exit 1
+}
 
 # muse and gemini are verified as CREWMATE/SCOUT adapters only. A secondmate is
 # a firstmate instance, so it needs a primary supervision protocol.
@@ -1823,6 +1945,17 @@ if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
     echo "error: codex requires an explicit --effort that codex itself accepts; '${EFFORT:-<none>}' reaches no codex launch flag, so the spawn would silently fall through to Codex CLI's own default reasoning effort rather than firstmate's choice. $codex_remedy" >&2
     exit 1
   fi
+fi
+
+CODEX_BIN=
+CODEX_VERSION=
+if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
+  IFS=$'\t' read -r CODEX_BIN CODEX_VERSION < <(resolve_codex_executable) || exit 1
+  [ -n "$CODEX_BIN" ] && [ -n "$CODEX_VERSION" ] || {
+    echo "error: Codex executable resolution produced incomplete audit evidence" >&2
+    exit 1
+  }
+  codex_lane_guard "$ID" || exit 1
 fi
 
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
@@ -3646,7 +3779,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort codex_exe codex_version busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -3664,6 +3797,8 @@ preserve_relaunch_meta() {
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
+  [ -z "$CODEX_BIN" ] || echo "codex_exe=$CODEX_BIN"
+  [ -z "$CODEX_VERSION" ] || echo "codex_version=$CODEX_VERSION"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   # Default-off writes no traceparent= line.
@@ -3805,6 +3940,7 @@ LAUNCH=${LAUNCH//__PIWATCH__/$sq_piwatch}
 LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 case "$HARNESS" in
   pi|pi-signed) LAUNCH=${LAUNCH//__PIBIN__/"$(shell_quote "$PI_BIN")"} ;;
+  codex) LAUNCH=${LAUNCH//__CODEXBIN__/"$(shell_quote "$CODEX_BIN")"} ;;
   cursor) LAUNCH=${LAUNCH//__CURSORBIN__/"$(shell_quote "$CURSOR_BIN")"} ;;
   gemini) LAUNCH=${LAUNCH//__GEMINISETTINGS__/"$(shell_quote "$STATE_REAL/$ID.gemini-settings.json")"} ;;
 esac

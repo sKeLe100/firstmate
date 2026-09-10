@@ -312,6 +312,10 @@ The elapsed-time dimension bounds how many concurrent cloud sessions the window'
 Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable).
 
 `config/dispatch-cap` and its Codex sibling `config/codex-lane-cap` are inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so a secondmate launches with the primary's lane limits instead of no mechanical cap at all; primary-authoritative propagation and absence-mirroring apply exactly as for `config/context-thresholds` below.
+`config/codex-lane-cap` is one positive integer limiting local verified Codex worker (called `ship` in task metadata) and scout lanes only, never a persistent secondmate supervisor.
+An absent file is an explicit needs-decision refusal rather than an inferred default, and a nonregular, unreadable, zero, negative, or nonnumeric file refuses the launch.
+Each local verified Codex spawn and relaunch resolves and probes the executable afresh, then records `codex_exe` and `codex_version` in task metadata as audit evidence only; later launches never reuse those fields as input.
+Raw shell launch commands require `--adapter-verification` and are limited to one scout-only, non-batch, non-relaunch adapter trial; verified-harness policies, including the Codex lane cap, executable pinning, and no-fast template guarantee, do not apply to that lab boundary.
 
 ### Fleet-stall breakout
 
