@@ -508,6 +508,140 @@ test_codex_lane_cap_refuses_missing_and_malformed_policy() {
   pass "Codex cap fails closed for absent and malformed configuration"
 }
 
+path_without_codex() {  # PATH with every directory that offers a codex executable removed
+  local dir out="" saved_ifs=$IFS
+  IFS=:
+  for dir in $PATH; do
+    IFS=$saved_ifs
+    [ -n "$dir" ] || dir=.
+    [ ! -x "$dir/codex" ] || { IFS=:; continue; }
+    out="${out:+$out:}$dir"
+    IFS=:
+  done
+  IFS=$saved_ifs
+  printf '%s\n' "$out"
+}
+
+test_verified_codex_launch_refuses_unresolvable_executable() {
+  local rec id out status
+  id=profile-codex-exe-z15f
+  rec=$(make_spawn_case profile-codex-exe codex "$id")
+  read_case_record "$rec"
+
+  rm -f "$FAKEBIN_DIR/codex"
+  out=$(PATH=$(path_without_codex) run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  status=$?
+  expect_code 1 "$status" "a verified Codex launch must refuse when codex is absent from PATH"
+  assert_contains "$out" "executable 'codex' on PATH" "absent codex refusal did not name the requirement"
+  assert_absent "$HOME_DIR/state/$id.meta" "refused executable discovery must not publish a task record"
+
+  cat > "$FAKEBIN_DIR/codex" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" = --version ] && exit 3
+exit 0
+SH
+  chmod +x "$FAKEBIN_DIR/codex"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  status=$?
+  expect_code 1 "$status" "a failing --version probe must refuse the launch"
+  assert_contains "$out" "failed its --version probe" "probe failure refusal did not name the probe"
+
+  cat > "$FAKEBIN_DIR/codex" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$FAKEBIN_DIR/codex"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  status=$?
+  expect_code 1 "$status" "an empty --version result must refuse the launch"
+  assert_contains "$out" "empty --version result" "empty probe refusal did not name the result"
+  assert_absent "$HOME_DIR/state/$id.meta" "refused version probe must not publish a task record"
+  pass "a verified Codex launch refuses an undiscoverable or unprobeable executable"
+}
+
+test_codex_relaunch_reresolves_executable_under_the_task_set_lock() {
+  local rec id out status lockdir holder_pid first_version
+  id=profile-codex-relaunch-z15g
+  rec=$(make_spawn_case profile-codex-relaunch codex "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "the initial verified Codex spawn should succeed: $out"
+  first_version=$(sed -n 's/^codex_version=//p' "$HOME_DIR/state/$id.meta")
+  [ -n "$first_version" ] || fail "the initial Codex spawn did not record a probed version"
+
+  # The shared spawn tmux stub answers no pane_current_command, which reads as
+  # an ambiguous endpoint; a relaunch needs a positively agent-free one.
+  cat > "$FAKEBIN_DIR/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "$*" in
+  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *"#{pane_current_command}"*) printf '%s\n' "${FM_FAKE_PANE_CMD:-zsh}"; exit 0 ;;
+esac
+case "${1:-}" in
+  display-message) printf 'firstmate\n'; exit 0 ;;
+  list-windows)
+    if [ -n "${FM_FAKE_DUPLICATE_WINDOW:-}" ]; then
+      printf '%s\n' "$FM_FAKE_DUPLICATE_WINDOW"
+    fi
+    exit 0
+    ;;
+  has-session|new-session|new-window|kill-window|set-window-option) exit 0 ;;
+  send-keys)
+    if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
+      prev=
+      for a in "$@"; do
+        if [ "$prev" = "-l" ]; then
+          printf '%s\n' "$a" >> "$FM_FAKE_LAUNCH_LOG"
+        fi
+        prev=$a
+      done
+    fi
+    exit 0
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$FAKEBIN_DIR/tmux"
+
+  lockdir="$HOME_DIR/state/.task-set.lock"
+  mkdir -p "$lockdir"
+  /bin/sleep 30 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$lockdir/pid"
+  out=$(FM_FAKE_DUPLICATE_WINDOW="fm-$id
+" FM_FAKE_PANE_CMD=zsh run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" --relaunch --model gpt-5 --effort high)
+  status=$?
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  expect_code 1 "$status" "a Codex relaunch must refuse while the task set is locked: $out"
+  assert_contains "$out" "task set is locked" "relaunch refusal did not name the task-set lock"
+  rm -rf "$lockdir"
+
+  cat > "$FAKEBIN_DIR/codex" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' 'codex-cli fake-relaunched'
+exit 0
+SH
+  chmod +x "$FAKEBIN_DIR/codex"
+  out=$(FM_FAKE_DUPLICATE_WINDOW="fm-$id
+" FM_FAKE_PANE_CMD=zsh run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" --relaunch --model gpt-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "an unlocked Codex relaunch should proceed: $out"
+  assert_grep 'codex_version=codex-cli fake-relaunched' "$HOME_DIR/state/$id.meta" \
+    "the relaunch did not re-probe the Codex executable version"
+  [ ! -d "$lockdir" ] || fail "the Codex relaunch must release the task-set lock after publication"
+  pass "a Codex relaunch re-resolves its executable and takes the task-set lock"
+}
+
 test_claude_threads_model_and_effort() {
   local rec id out status launch
   id=profile-claude-z2
@@ -1295,6 +1429,8 @@ test_raw_codex_launch_command_is_exempt_from_the_axis_guard
 test_adapter_verification_refuses_verified_and_non_scout_boundaries
 test_codex_lane_cap_counts_workers_and_scouts_but_not_secondmates
 test_codex_lane_cap_refuses_missing_and_malformed_policy
+test_verified_codex_launch_refuses_unresolvable_executable
+test_codex_relaunch_reresolves_executable_under_the_task_set_lock
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_refuses_max_effort

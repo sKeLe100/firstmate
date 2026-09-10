@@ -124,8 +124,11 @@
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
 #   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo)
 #   overrides it for this spawn (either kind). A non-flag string containing
-#   whitespace is treated as a RAW launch command - the escape hatch for verifying
-#   new adapters. For pi and pi-signed, fm-spawn resolves the selected executable
+#   whitespace is treated as a RAW launch command, which is refused unless
+#   --adapter-verification is also passed: that unverified-adapter lab is
+#   scout-only and refuses batch, secondmate, and relaunch launches, and no
+#   verified-harness policy (Codex lane cap, executable pinning, no-fast) applies
+#   to it. For pi and pi-signed, fm-spawn resolves the selected executable
 #   name from PATH once, probes that concrete path with --help, and launches the
 #   same path. It adds --tui-mode regular only when that help advertises the flag;
 #   a failed or inconclusive probe omits it so older Pi versions remain launchable.
@@ -135,7 +138,7 @@
 #   whitespace-separated tokens ("<harness> [<model>] [<effort>]"). For a
 #   --secondmate spawn, those tokens apply only when this spawn also resolves its
 #   harness from config/secondmate-harness. An explicit per-spawn --harness,
-#   positional harness arg, or raw launch command starts with clean model/effort
+#   positional harness arg, or adapter-verification raw launch command starts with clean model/effort
 #   defaults unless the caller also passes explicit --model/--effort flags. When
 #   the file governs the spawn, its model/effort tokens are re-resolved on every
 #   respawn exactly like the harness axis, and explicit --model/--effort flags
@@ -671,7 +674,7 @@ read_codex_lane_cap() {  # prints the configured positive worker/scout cap
 }
 
 resolve_codex_executable() {  # prints canonical-path<TAB>version
-  local candidate resolved version dir base target hops=0
+  local candidate resolved version dir base target link_path link_dir hops=0
   candidate=$(type -P -- codex 2>/dev/null) || {
     echo "error: verified Codex launch requires an executable 'codex' on PATH" >&2
     return 1
@@ -683,21 +686,28 @@ resolve_codex_executable() {  # prints canonical-path<TAB>version
   base=$(basename -- "$candidate")
   # Follow the final executable's symlink chain without realpath/readlink -f:
   # neither command is guaranteed on every supported host.
-  while [ -L "$dir/$base" ] && [ "$hops" -lt 16 ]; do
-    target=$(readlink -- "$dir/$base") || break
-    case "$target" in
-      /*) dir=$(CDPATH='' cd -- "$(dirname -- "$target")" 2>/dev/null && pwd -P) || break
-          base=$(basename -- "$target") ;;
-      *)  dir=$(CDPATH='' cd -- "$dir/$(dirname -- "$target")" 2>/dev/null && pwd -P) || break
-          base=$(basename -- "$target") ;;
-    esac
+  while [ -L "$dir/$base" ]; do
     hops=$((hops + 1))
+    [ "$hops" -le 16 ] || {
+      echo "error: Codex executable symlink chain is too deep: '$candidate'" >&2
+      return 1
+    }
+    link_path="$dir/$base"
+    target=$(readlink -- "$link_path") || {
+      echo "error: could not read Codex executable symlink: $link_path" >&2
+      return 1
+    }
+    case "$target" in
+      /*) link_dir=$(dirname -- "$target") ;;
+      *)  link_dir="$dir/$(dirname -- "$target")" ;;
+    esac
+    dir=$(CDPATH='' cd -- "$link_dir" 2>/dev/null && pwd -P) || {
+      echo "error: could not resolve Codex executable symlink target directory: $link_path -> $target" >&2
+      return 1
+    }
+    base=$(basename -- "$target")
   done
   resolved="$dir/$base"
-  [ "$hops" -lt 16 ] || {
-    echo "error: Codex executable symlink chain is too deep: '$candidate'" >&2
-    return 1
-  }
   [ -x "$resolved" ] || {
     echo "error: resolved Codex executable is not executable: $resolved" >&2
     return 1
@@ -738,7 +748,7 @@ codex_lane_guard() {  # <task-id>: reserve one configured local worker/scout lan
     if [ -n "$other_target" ]; then
       state=$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target" 2>/dev/null || printf unknown)
     fi
-    case "$state" in dead|missing) continue ;; esac
+    [ "$state" != dead ] || continue
     occupied=$((occupied + 1))
   done
   if [ "$occupied" -ge "$cap" ]; then
@@ -1763,11 +1773,11 @@ case "$ARG3" in
       HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
       harness_src='config/crew-harness'
     fi
-    LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); spawn a scout with --adapter-verification and a raw launch command to trial an unverified adapter" >&2; exit 1; }
     ;;
   *)
     HARNESS=$ARG3
-    LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
+    LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; spawn a scout with --adapter-verification and a raw launch command to trial an unverified adapter" >&2; exit 1; }
     ;;
 esac
 

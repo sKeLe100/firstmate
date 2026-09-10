@@ -82,6 +82,7 @@ config/context-thresholds  session-context warn/restart token-band thresholds; i
 config/codex-context-thresholds  Codex-side session-context thresholds (separate defaults); NOT inherited; see docs/configuration.md "Codex context thresholds (config/codex-context-thresholds)"
 config/working-hours  captain attention-window schedule for proactive contact; NOT inherited; see docs/configuration.md "Captain attention windows (config/working-hours)"
 config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; inherited; see docs/configuration.md "Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)"
+config/codex-lane-cap  REQUIRED positive integer cap on concurrent LOCAL Codex worker/scout lanes, excluding secondmate supervisors; absent/malformed refuses every verified Codex spawn and relaunch; inherited; see docs/configuration.md "Concurrent autonomous dispatch cap and quota ladder"
 config/host-memory-floor  free-memory MiB floor below which lanes are refused; primary-authoritative; see docs/configuration.md "Host memory floor (config/host-memory-floor)"
 config/retry-thresholds  retry-loop relaunch/round ceilings; inherited; see docs/configuration.md "Retry-loop thresholds (config/retry-thresholds)"
 config/herdr-presentation-spaces  Herdr visual projection on/off opt-in; inherited; see docs/herdr-backend.md "Presentation spaces"
