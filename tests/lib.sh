@@ -137,24 +137,21 @@ fm_test_base_path_owned() {
 
 # --- sandbox-cache lock -----------------------------------------------------
 # Guards fm_test_base_path()'s check-build-mark so concurrent callers don't
-# race to build the same cache directory.  The lock path is fixed (not
-# derived from TMPDIR) so every process on the machine shares it regardless
-# of environment.  fm_test_base_path() acquires the lock only around the
-# build section; callers that find the .complete marker skip the lock entirely.
+# race to build the same cache directory.  Uses fm_lock_acquire_wait from
+# bin/fm-wake-lib.sh (the same primitive the intent named) for the lock;
+# callers that find the .complete marker skip the lock entirely.
 
 FM_TEST_SANDBOX_LOCK="/tmp/.fm-test-sandbox-base-path.lock"
 
+# shellcheck source=bin/fm-wake-lib.sh
+. "$ROOT/bin/fm-wake-lib.sh"
+
 _fm_test_sandbox_lock_acquire() {
-  # BASHPID gives the actual subshell PID (not $$ which resolves to the
-  # parent in command substitutions), so concurrent workers each write a
-  # distinct PID and the lock correctly serialises them.
-  while ! ln -s "$BASHPID" "$FM_TEST_SANDBOX_LOCK" 2>/dev/null; do
-    sleep 0.1
-  done
+  fm_lock_acquire_wait "$FM_TEST_SANDBOX_LOCK"
 }
 
 _fm_test_sandbox_lock_release() {
-  rm -f "$FM_TEST_SANDBOX_LOCK" 2>/dev/null
+  fm_lock_release "$FM_TEST_SANDBOX_LOCK"
 }
 
 # fm_test_base_path_populated <cache_dir>
