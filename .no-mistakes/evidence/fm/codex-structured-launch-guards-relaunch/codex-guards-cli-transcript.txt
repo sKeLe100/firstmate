@@ -1,0 +1,69 @@
+=== 1. verified codex ship spawn: resolved binary is what actually launches, path+version recorded as audit metadata ===
+config/codex-lane-cap = 1
+/tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/timeout: line 3: exec: 1: not found
+spawned demo-a harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-demo-a worktree=/tmp/fm-codex-guard-demo.Df5Gw5/wt
+exit=0
+-- launch command sent to the pane --
+env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '/tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/codex' --model 'gpt-5' -c 'model_reasoning_effort="high"' --dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch '/tmp/fm-codex-guard-demo.Df5Gw5/home/state/demo-a.turn-ended'\"]" "$('/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M24VTG2S9E9RRSX0N6W8R658/bin/fm-operational-input.sh' encode launch-brief < '/tmp/fm-codex-guard-demo.Df5Gw5/home/data/demo-a/launch-brief.md')"
+-- audit metadata on the task --
+harness=codex
+model=gpt-5
+effort=high
+codex_exe=/tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/codex
+codex_version=codex-cli 0.48.0
+
+=== 2. lane cap: worker+scout lanes count, secondmate supervisors do not ===
+-- cap 2 with one live ship + one live scout --
+error: Codex worker lane cap (2) is occupied by 2 local worker/scout task(s); wait for a positively dead or missing endpoint
+exit=1
+-- same cap, the scout replaced by a codex secondmate supervisor --
+/tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/timeout: line 3: exec: 1: not found
+spawned demo-a harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-demo-a worktree=/tmp/fm-codex-guard-demo.Df5Gw5/wt
+exit=0
+
+=== 3. missing / malformed cap policy fails closed ===
+error: needs-decision: config/codex-lane-cap is absent; choose a positive worker/scout lane cap before a verified Codex launch
+exit=1
+-- cap file contains '0' --
+error: config/codex-lane-cap must contain one positive integer
+exit=1
+-- cap file contains '-1' --
+error: config/codex-lane-cap must contain one positive integer
+exit=1
+-- cap file contains 'nope' --
+error: config/codex-lane-cap must contain one positive integer
+exit=1
+
+=== 4. codex executable rediscovery: absent, unprobeable, and silent binaries all refuse before launch ===
+-- codex absent from PATH --
+error: verified Codex launch requires an executable 'codex' on PATH
+exit=1
+-- codex --version exits nonzero --
+error: resolved Codex executable failed its --version probe: /tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/codex
+exit=1
+-- codex --version prints nothing --
+error: resolved Codex executable returned an empty --version result: /tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/codex
+exit=1
+
+=== 5. explicit model/effort still required; no fast-service override in the structured template ===
+error: codex requires an explicit --effort that codex itself accepts; 'max' reaches no codex launch flag, so the spawn would silently fall through to Codex CLI's own default reasoning effort rather than firstmate's choice. Pass --model/--effort explicitly, or pin them in config/secondmate-harness as "codex <model> <effort>"; config/crew-harness carries only a bare adapter name and cannot supply either axis.
+exit=1
+error: codex requires an explicit --model; a model-less codex spawn or relaunch silently falls through to Codex CLI's own default model rather than firstmate's choice. Pass --model/--effort explicitly, or pin them in config/secondmate-harness as "codex <model> <effort>"; config/crew-harness carries only a bare adapter name and cannot supply either axis.
+exit=1
+
+=== 6. raw shell launches are refused for routine dispatch and confined to the unverified scout-only lab ===
+error: raw shell launch commands are adapter-verification-only; use a verified harness name for routine ship/scout/secondmate dispatch, or pass --adapter-verification with one scout-only trial. Verified-harness policies (lane cap, executable pinning, and no-fast) do not apply to raw commands.
+exit=1
+error: --adapter-verification is scout-only and refuses batch, secondmate, and relaunch launches; its raw shell command is unverified and verified-harness policies do not apply
+exit=1
+error: --adapter-verification is scout-only and refuses batch, secondmate, and relaunch launches; its raw shell command is unverified and verified-harness policies do not apply
+exit=1
+-- allowed only as a scout adapter-verification trial --
+/tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-codex-guard-demo.Df5Gw5/fake/fakebin/timeout: line 3: exec: 1: not found
+spawned demo-a harness=codex kind=scout window=firstmate:fm-demo-a worktree=/tmp/fm-codex-guard-demo.Df5Gw5/wt
+exit=0
+-- launched verbatim, unverified, with no codex policy applied --
+env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dangerously-bypass-approvals-and-sandbox
