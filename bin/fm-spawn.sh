@@ -674,40 +674,15 @@ read_codex_lane_cap() {  # prints the configured positive worker/scout cap
 }
 
 resolve_codex_executable() {  # prints canonical-path<TAB>version
-  local candidate resolved version dir base target link_path link_dir hops=0
+  local candidate resolved version
   candidate=$(type -P -- codex 2>/dev/null) || {
     echo "error: verified Codex launch requires an executable 'codex' on PATH" >&2
     return 1
   }
-  dir=$(CDPATH='' cd -- "$(dirname -- "$candidate")" 2>/dev/null && pwd -P) || {
-    echo "error: could not resolve Codex executable directory for '$candidate'" >&2
+  resolved=$(fm_cursor_canonical_path "$candidate") || {
+    echo "error: could not canonically resolve Codex executable '$candidate'" >&2
     return 1
   }
-  base=$(basename -- "$candidate")
-  # Follow the final executable's symlink chain without realpath/readlink -f:
-  # neither command is guaranteed on every supported host.
-  while [ -L "$dir/$base" ]; do
-    hops=$((hops + 1))
-    [ "$hops" -le 16 ] || {
-      echo "error: Codex executable symlink chain is too deep: '$candidate'" >&2
-      return 1
-    }
-    link_path="$dir/$base"
-    target=$(readlink -- "$link_path") || {
-      echo "error: could not read Codex executable symlink: $link_path" >&2
-      return 1
-    }
-    case "$target" in
-      /*) link_dir=$(dirname -- "$target") ;;
-      *)  link_dir="$dir/$(dirname -- "$target")" ;;
-    esac
-    dir=$(CDPATH='' cd -- "$link_dir" 2>/dev/null && pwd -P) || {
-      echo "error: could not resolve Codex executable symlink target directory: $link_path -> $target" >&2
-      return 1
-    }
-    base=$(basename -- "$target")
-  done
-  resolved="$dir/$base"
   [ -x "$resolved" ] || {
     echo "error: resolved Codex executable is not executable: $resolved" >&2
     return 1

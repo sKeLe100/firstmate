@@ -16,7 +16,7 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 | Model discovery | Open the current interactive session's `/model` picker. |
 | Approval bypass | `--dangerously-bypass-approvals-and-sandbox` is **required** on every launch (enforced in `bin/fm-spawn.sh`). Removing or softening this flag re-enables the `codex-auto-review` feature, which bills a second hidden model call against the weekly allocation on every approval request. |
 | Required axes | Both. Codex CLI launches on its own bundled default model and reasoning effort when a flag is absent, so `../../../bin/fm-spawn.sh` refuses a codex spawn or relaunch that names no model or an effort outside the four above, instead of the record-and-omit contract every other harness follows. |
-| Lane and executable guard | `config/codex-lane-cap` is a positive local worker (task-metadata `ship`)/scout cap that excludes secondmate supervisors; a missing file is a needs-decision refusal. Each verified local launch resolves and probes Codex afresh, records `codex_exe`/`codex_version` as audit-only metadata, and invokes the resolved path. |
+| Lane and executable guard | Each verified local launch resolves and probes Codex afresh, invokes that resolved path, and records `codex_exe`/`codex_version` as audit-only metadata. Local worker/scout launches also consume a `config/codex-lane-cap` lane; see docs/configuration.md "Concurrent autonomous dispatch cap and quota ladder", which owns that cap's contract. |
 
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
 Accept it with Enter and verify the instructions begin processing.
