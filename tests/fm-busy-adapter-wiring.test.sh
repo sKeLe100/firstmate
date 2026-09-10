@@ -378,8 +378,9 @@ test_raw_gemini_launch_has_no_semantic_wiring() {
   local rec id=busy-gm-raw out state
   rec=$(make_spawn_case gemini-raw gemini "$id")
   read_case_record "$rec"
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" 'gemini --debug')
-  expect_code 0 $? "raw gemini spawn should succeed: $out"
+  out=$(GROK_HOME="$HOME_DIR/grok-home" fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" \
+    "$id" "$PROJ_DIR" 'gemini --debug' --scout --adapter-verification)
+  expect_code 0 $? "raw gemini adapter-verification scout should succeed: $out"
   state="$HOME_DIR/state"
   assert_absent "$state/$id.busy-gen" "raw gemini launch must not arm a busy generation"
   assert_absent "$state/$id.gemini-settings.json" "raw gemini launch must not write hook settings"

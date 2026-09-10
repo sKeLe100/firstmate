@@ -773,6 +773,7 @@ test_spawn_fast_forwards_before_launch() {
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_version_tool "$fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
 
   PATH="$fakebin:$BASE_PATH" TMUX='' \
     FM_ROOT_OVERRIDE="$w/main" FM_HOME="$w/home" \
@@ -807,6 +808,7 @@ test_spawn_warns_when_sync_skipped_before_launch() {
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  fm_fake_version_tool "$fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
 
   PATH="$fakebin:$BASE_PATH" TMUX='' \
     FM_ROOT_OVERRIDE="$w/main" FM_HOME="$w/home" \
@@ -1238,6 +1240,7 @@ test_bootstrap_syncs_remote_home_to_primary_commit() {
 
   fakebin=$(make_remote_leg_ssh_stub "$w")
   fm_fake_exit0 "$fakebin" gh treehouse tmux node
+  fm_fake_version_tool "$fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
   out=$(PATH="$fakebin:$BASE_PATH" \
     FM_HOME="$home" FM_ROOT_OVERRIDE="$w/main" \
     FM_BOOTSTRAP_NETWORK=only \
@@ -1276,6 +1279,7 @@ test_bootstrap_reports_outdated_host_actionably() {
 
   fakebin=$(make_remote_leg_ssh_stub "$w")
   fm_fake_exit0 "$fakebin" gh treehouse tmux node
+  fm_fake_version_tool "$fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
   out=$(PATH="$fakebin:$BASE_PATH" \
     FM_HOME="$home" FM_ROOT_OVERRIDE="$w/main" \
     FM_BOOTSTRAP_NETWORK=only \
@@ -1312,6 +1316,7 @@ test_remote_codex_spawn_without_axes_refuses_before_remote_work() {
 
   fakebin=$(fm_fakebin "$w/nossh")
   fm_fake_exit0 "$fakebin" gh treehouse tmux node
+  fm_fake_version_tool "$fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
   # Any crossing of the remote boundary is a failure of this contract, so the
   # ssh leg records the attempt instead of serving it.
   cat > "$fakebin/fake-ssh" <<SH
@@ -1366,6 +1371,7 @@ test_remote_launch_does_not_retarget_host_copy() {
     "$w/herdr.sendfail" "$w/herdr.sock"
   cp "$herdrbin/bin/herdr" "$fakebin/herdr"
   fm_fake_exit0 "$fakebin" gh treehouse tmux node
+  fm_fake_version_tool "$fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
 
   # The real launch leg, exactly as the parent invokes it after its own sync.
   launch_out=$(PATH="$fakebin:$BASE_PATH" \

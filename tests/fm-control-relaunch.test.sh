@@ -133,13 +133,15 @@ SH
 # new_case <name> [id] -> echoes a case dir with a live claude ship task.
 new_case() {
   local id=${2:-t1} dir="$TMP_ROOT/$1-$RANDOM"
-  mkdir -p "$dir/home/state" "$dir/home/data" "$dir/fake"
+  mkdir -p "$dir/home/state" "$dir/home/data" "$dir/home/config" "$dir/fake"
+  printf '%s\n' 4 > "$dir/home/config/codex-lane-cap"
   : > "$dir/fake/literal"
   : > "$dir/fake/keys"
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
   printf '%s\n' "fm-$id" > "$dir/fake/windows"
   make_tmux_stub "$dir"
+  fm_fake_version_tool "$dir/fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
   printf '%s\n' "$dir"
 }
 

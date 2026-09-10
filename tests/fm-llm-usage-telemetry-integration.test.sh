@@ -45,6 +45,7 @@ print(obj.get(sys.argv[2], ""))
 make_tmux_stub() {  # <dir>
   local fb="$1/fakebin"
   mkdir -p "$fb"
+  fm_fake_version_tool "$fb" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
   cat > "$fb/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -113,7 +114,8 @@ test_fresh_spawn_records_purpose_in_meta_and_dispatch_event() {
   local dir home proj wt out task_id line
   dir="$TMP_ROOT/spawn-purpose-$RANDOM"
   home="$dir/home"; proj="$dir/proj"; wt="$dir/wt"
-  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$dir/fake"
+  printf '%s\n' 4 > "$home/config/codex-lane-cap"
   make_tmux_stub "$dir"
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
@@ -151,7 +153,8 @@ test_fresh_spawn_with_redelegation_records_delegation_event() {
   local dir home proj out prior_id new_id line
   dir="$TMP_ROOT/spawn-redelegate-$RANDOM"
   home="$dir/home"
-  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$dir/fake"
+  printf '%s\n' 4 > "$home/config/codex-lane-cap"
   make_tmux_stub "$dir"
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
@@ -207,7 +210,8 @@ test_fresh_spawn_without_redelegation_omits_from_task_id() {
   local dir home proj out task_id line
   dir="$TMP_ROOT/spawn-ordinary-$RANDOM"
   home="$dir/home"
-  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$dir/fake"
+  printf '%s\n' 4 > "$home/config/codex-lane-cap"
   make_tmux_stub "$dir"
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
@@ -245,7 +249,8 @@ test_fresh_spawn_rejects_path_traversal_redelegated_from() {
   local dir home out rc new_id secret
   dir="$TMP_ROOT/spawn-redelegate-unsafe-$RANDOM"
   home="$dir/home"
-  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$dir/fake"
+  printf '%s\n' 4 > "$home/config/codex-lane-cap"
   make_tmux_stub "$dir"
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
@@ -284,7 +289,8 @@ test_real_relaunch_records_delegation_event() {
   local dir home proj wt out task_id line
   dir="$TMP_ROOT/relaunch-$RANDOM"
   home="$dir/home"
-  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$dir/fake"
+  printf '%s\n' 4 > "$home/config/codex-lane-cap"
   make_tmux_stub "$dir"
   task_id=relaunch-t1
   fm_git_worktree "$dir/proj" "$dir/wt" "task-$task_id"
@@ -340,7 +346,8 @@ test_rolled_back_relaunch_journal_does_not_claim_a_relaunch() {
   local dir home out task_id
   dir="$TMP_ROOT/relaunch-rollback-$RANDOM"
   home="$dir/home"
-  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$dir/fake"
+  printf '%s\n' 4 > "$home/config/codex-lane-cap"
   make_tmux_stub "$dir"
   task_id=relaunch-t2
   fm_git_worktree "$dir/proj" "$dir/wt" "task-$task_id"

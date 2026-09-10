@@ -263,6 +263,10 @@ fm_test_make_spawn_fakebin() {
   fakebin=$(fm_fakebin "$dir")
   fm_test_fake_tmux_spawn "$fakebin"
   fm_fake_exit0 "$fakebin" treehouse "$@"
+  # A structured codex launch resolves and version-probes codex on PATH, so a
+  # silent exit-0 stub refuses the spawn. Written after fm_fake_exit0 so a suite
+  # that also lists codex as an extra tool still gets the probeable stub.
+  fm_fake_version_tool "$fakebin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
   printf '%s\n' "$fakebin"
 }
 

@@ -712,7 +712,7 @@ resolve_codex_executable() {  # prints canonical-path<TAB>version
     echo "error: resolved Codex executable is not executable: $resolved" >&2
     return 1
   }
-  version=$("$resolved" --version 2>&1) || {
+  version=$("$resolved" --version 2>/dev/null) || {
     echo "error: resolved Codex executable failed its --version probe: $resolved" >&2
     return 1
   }

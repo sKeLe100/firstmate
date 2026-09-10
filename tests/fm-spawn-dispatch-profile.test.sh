@@ -46,12 +46,7 @@ if [ "${1:-}" = --list-models ]; then
 fi
 exit 0
 SH
-cat > "$fakebin/codex" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' 'codex-cli fake-test'
-exit 0
-SH
-  chmod +x "$fakebin/timeout" "$fakebin/cursor-agent" "$fakebin/codex"
+  chmod +x "$fakebin/timeout" "$fakebin/cursor-agent"
   make_spawn_pi_probe "$fakebin" pi
   make_spawn_pi_probe "$fakebin" pi-signed
   printf '%s\n' "$fakebin"
