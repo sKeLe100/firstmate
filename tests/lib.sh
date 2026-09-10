@@ -135,17 +135,57 @@ fm_test_base_path_owned() {
   [ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]
 }
 
-# The sandbox is usable when it actually holds links, not when this particular
-# call created them. An earlier run interrupted between the link loop and the
-# marker leaves a fully populated directory; re-entering the build then skips
-# every name as already present, so a "did I create anything" count would
-# reject a complete sandbox forever.
-fm_test_base_path_populated() {
-  local entry
-  for entry in "$1"/*; do
-    [ -e "$entry" ] && return 0
+# --- sandbox-cache lock (atomic ln -s, consistent with bin/fm-wake-lib.sh) --
+# Guards fm_test_base_path()'s check-build-mark so concurrent callers don't
+# race to build the same cache directory.  The lock lives at a fixed path so
+# every process on the machine shares it regardless of TMPDIR.
+
+FM_TEST_SANDBOX_LOCK="${TMPDIR:-/tmp}/.fm-test-sandbox-lock"
+
+_fm_test_sandbox_lock_try() {
+  ln -s "$$" "$FM_TEST_SANDBOX_LOCK" 2>/dev/null \
+    || return 1
+  [ "$(readlink "$FM_TEST_SANDBOX_LOCK" 2>/dev/null)" = "$$" ]
+}
+
+_fm_test_sandbox_lock_wait() {
+  while ! _fm_test_sandbox_lock_try; do
+    sleep 0.1
   done
-  return 1
+}
+
+_fm_test_sandbox_lock_release() {
+  rm -f "$FM_TEST_SANDBOX_LOCK" 2>/dev/null
+}
+
+# fm_test_base_path_populated <cache_dir>
+#
+# Verifies that every expected executable (non-excluded, from every source dir)
+# is linked into the sandbox.  The old version only returned 0 when at least
+# one entry existed, which let a partially-built cache pass during a concurrent
+# race: Process A could write .complete while still symlinking, and Process B
+# would see the single entry and accept the incomplete cache.
+fm_test_base_path_populated() {
+  local cache_dir=$1 expected_name
+  for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
+    [ -d "$dir" ] || continue
+    for path in "$dir"/*; do
+      [ -x "$path" ] || continue
+      [ -f "$path" ] || continue
+      expected_name=${path##*/}
+      excluded=0
+      for f in $FM_TEST_FAKED_TOOL_NAMES; do
+        if [ "$expected_name" = "$f" ]; then
+          excluded=1
+          break
+        fi
+      done
+      [ "$excluded" -eq 1 ] && continue
+      [ -e "$cache_dir/$expected_name" ] \
+        || return 1
+    done
+  done
+  return 0
 }
 
 fm_test_base_path() {
@@ -168,6 +208,8 @@ fm_test_base_path() {
     printf '%s\n' "$cache_dir"
     return 0
   fi
+
+  _fm_test_sandbox_lock_wait
 
   (umask 077 && mkdir -p "$cache_dir") \
     || fm_test_base_path_die "could not create sandbox cache dir $cache_dir"
@@ -198,6 +240,8 @@ fm_test_base_path() {
   : > "$marker" \
     || fm_test_base_path_die "could not mark $cache_dir complete"
   printf '%s\n' "$cache_dir"
+
+  _fm_test_sandbox_lock_release
 }
 
 fm_test_pid_identity() {
