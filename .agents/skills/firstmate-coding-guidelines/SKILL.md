@@ -62,6 +62,7 @@ If an addition needs more than a few lines of conditional detail (detail that ma
 `AGENTS.md`'s token cost is paid by every session of every fleet member, every time, whether or not that session ever hits the situation the new lines describe.
 A skill's cost is paid only by the sessions that actually load it.
 When in doubt, write the fact into the skill or doc first by patching that owner's existing language, and add only the one-line trigger to `AGENTS.md`.
+A mechanical resident-size ceiling backs this rule: [`bin/fm-agentsmd-size.sh`](../../../bin/fm-agentsmd-size.sh) owns the exact byte budget and fails the test run when `AGENTS.md` exceeds it.
 
 ## Trigger hygiene
 
