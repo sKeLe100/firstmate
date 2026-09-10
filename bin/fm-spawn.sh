@@ -1961,10 +1961,6 @@ CODEX_BIN=
 CODEX_VERSION=
 if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
   IFS=$'\t' read -r CODEX_BIN CODEX_VERSION < <(resolve_codex_executable) || exit 1
-  [ -n "$CODEX_BIN" ] && [ -n "$CODEX_VERSION" ] || {
-    echo "error: Codex executable resolution produced incomplete audit evidence" >&2
-    exit 1
-  }
   codex_lane_guard "$ID" || exit 1
 fi
 
