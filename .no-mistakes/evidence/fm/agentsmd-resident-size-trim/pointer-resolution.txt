@@ -1,0 +1,57 @@
+### Every delegated pointer in AGENTS.md resolves to a real heading
+
+residual unresolvable '§N' pointers: 0
+
+OK    docs/cmux-backend.md "Setup"
+OK    docs/configuration.md "Away-mode wedge alarm channels (config/wedge-alarm)"
+OK    docs/configuration.md "Backlog backend (.tasks.toml / config/backlog-backend)"
+OK    docs/configuration.md "Captain Preferences (data/captain.md / data/captain-shared.md)"
+OK    docs/configuration.md "Captain attention windows (config/working-hours)"
+OK    docs/configuration.md "Codex context thresholds (config/codex-context-thresholds)"
+OK    docs/configuration.md "Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)"
+OK    docs/configuration.md "Crew dispatch profiles (config/crew-dispatch.json)"
+OK    docs/configuration.md "Harness support"
+OK    docs/configuration.md "Host memory floor (config/host-memory-floor)"
+OK    docs/configuration.md "Operational home layout and state"
+OK    docs/configuration.md "Operational learnings (data/learnings.md)"
+OK    docs/configuration.md "Pi Calm preference (config/calm)"
+OK    docs/configuration.md "Pi supervision branch model and effort (config/supervision-branch-model, config/supervision-branch-effort)"
+OK    docs/configuration.md "Primary continuity watchdog"
+OK    docs/configuration.md "Process-to-event sources (state/procevent)"
+OK    docs/configuration.md "Promised public replies (state/public-followup)"
+OK    docs/configuration.md "Relay (.env)"
+OK    docs/configuration.md "Retry-loop thresholds (config/retry-thresholds)"
+OK    docs/configuration.md "Runtime backend (config/backend / FM_BACKEND)"
+OK    docs/configuration.md "Secondmate routes (data/secondmates.md)"
+OK    docs/configuration.md "Session context thresholds (config/context-thresholds)"
+OK    docs/configuration.md "Startup memory budget (config/startup-memory-budget)"
+OK    docs/configuration.md "Stow pass horizon (config/stow-pass-horizon)"
+OK    docs/configuration.md "Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)"
+OK    docs/configuration.md "Turn-end pane-churn absorb (config/turnend-churn-absorb)"
+OK    docs/configuration.md "Upstream autosync"
+OK    docs/configuration.md "Upstream autosync (config/upstream-autosync)"
+OK    docs/configuration.md "Watched tool updates (config/watched-tools.json)"
+OK    docs/herdr-backend.md "Presentation spaces"
+
+30 quoted pointers, 0 unresolved
+
+### Safety boundaries preserved
+
+config//state entries dropped from the tree: none
+inheritance markers (inherited / NOT inherited / primary-authoritative) still on every retained key that had one:
+   LOST config/backend primary-authoritative
+   LOST config/startup-memory-budget primary-authoritative
+   LOST config/dispatch-cap primary-authoritative
+   (no output above = none lost)
+
+per-line 'LOCAL, gitignored' is now stated collectively; verified mechanically:
+  AGENTS.md:47 -> This repo is a shared template, while `.env`, `data/`, `state/`, `config/`, `projects/`, and `.no-mistakes/` are captain-private and gitignored.
+  $ git check-ignore -v config/cmux-socket-password
+  .gitignore:13:config/	config/cmux-socket-password
+
+Note on the three 'primary-authoritative' markers: each is now owned by the
+section the AGENTS.md line points at, verified in docs/configuration.md:
+  Runtime backend (config/backend / FM_BACKEND) -> "inherited into secondmate homes under the primary-authoritative contract"
+  Startup memory budget (config/startup-memory-budget) -> "the primary-authoritative per-home allowance"
+  Concurrent autonomous dispatch cap ... (config/dispatch-cap) -> "local, gitignored, primary-authoritative file"
+No safety boundary is unreachable from AGENTS.md.
