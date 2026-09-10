@@ -115,7 +115,9 @@
 #   creation through metadata publication, so concurrent same-id spawns serialize
 #   even when they select different backends. A fresh spawn first takes the
 #   per-home task-set lock and refuses rather than waits when forced teardown owns
-#   it; relaunch is exempt because the existing task's control lock covers it.
+#   it; relaunch is otherwise exempt because the existing task's control lock
+#   covers it, but the pc02 and Codex lane guards override that exemption and
+#   take the task-set lock themselves so their lane reads are authoritative.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
