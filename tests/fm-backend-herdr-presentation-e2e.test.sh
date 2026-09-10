@@ -398,7 +398,7 @@ EOF
 spawn_task() {  # <id> <home> <project>
   local id=$1 home=$2 project=$3
   FM_GATE_REFUSE_BYPASS=1 FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$project" "sh -c 'sleep 120'" --mode no-mistakes --yolo off --backend herdr
+    "$ROOT/bin/fm-spawn.sh" "$id" "$project" codex --model gpt-5-codex --effort medium --mode no-mistakes --yolo off --backend herdr
 }
 
 finish_concurrent_spawn() {  # <id> <status> <stdout> <stderr>
@@ -423,7 +423,7 @@ finish_concurrent_expected_abort() {  # <id> <status> <stdout> <stderr>
 spawn_secondmate_task() {
   local id=$1 home=$2
   FM_GATE_REFUSE_BYPASS=1 FM_SPAWN_NO_GUARD=1 FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$home" "sh -c 'sleep 120'" --secondmate --backend herdr
+    "$ROOT/bin/fm-spawn.sh" "$id" "$home" codex --model gpt-5-codex --effort medium --secondmate --backend herdr
 }
 
 teardown_task() {  # <id> <home>
@@ -491,6 +491,14 @@ assert_no_projection_mutation_since() {  # <line-count> <case-name>
   fi
 }
 
+# This suite's subject is workspace projection, not a harness, so every spawn
+# launches the stubbed verified codex adapter instead of a raw shell command
+# (raw launch commands are adapter-verification-only). Each home carries a
+# Codex worker-lane cap well above the concurrency the suite drives.
+STUB_BIN=$(fm_herdr_stub_harness_bin "$TMP_ROOT/stubbin")
+PATH="$STUB_BIN:$PATH"
+export PATH
+
 HOME_DIR="$TMP_ROOT/home"
 PROJECT_DIR="$TMP_ROOT/project"
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/config" \
@@ -504,6 +512,7 @@ touch "$HOME_DIR/state/.last-watcher-beat"
 # Presentation spaces are on by default, so the flat baseline below opts out
 # explicitly; the projected cases each restate the setting they exercise.
 printf 'off\n' > "$HOME_DIR/config/herdr-presentation-spaces"
+printf '64\n' > "$HOME_DIR/config/codex-lane-cap"
 write_ship_brief "$HOME_DIR" anchor 'Projection anchor fixture.'
 write_ship_brief "$HOME_DIR" shape 'Projection E2E fixture.'
 write_ship_brief "$HOME_DIR" order-a 'Projection ordering fixture A.'
@@ -974,6 +983,8 @@ SECOND_HOME_A="$TMP_ROOT/home-2ndmate-alpha"
 SECOND_HOME_B="$TMP_ROOT/home-2ndmate-bravo"
 mkdir -p "$SECOND_HOME_A/state" "$SECOND_HOME_A/config" "$SECOND_HOME_A/data" \
   "$SECOND_HOME_B/state" "$SECOND_HOME_B/config" "$SECOND_HOME_B/data"
+printf '64\n' > "$SECOND_HOME_A/config/codex-lane-cap"
+printf '64\n' > "$SECOND_HOME_B/config/codex-lane-cap"
 printf 'alpha\n' > "$SECOND_HOME_A/.fm-secondmate-home"
 printf 'bravo\n' > "$SECOND_HOME_B/.fm-secondmate-home"
 touch "$SECOND_HOME_A/state/.last-watcher-beat" "$SECOND_HOME_B/state/.last-watcher-beat"
@@ -981,7 +992,7 @@ touch "$SECOND_HOME_A/state/.last-watcher-beat" "$SECOND_HOME_B/state/.last-watc
 # may write config/herdr-presentation-spaces.
 git -C "$SECOND_HOME_A" init -q
 git -C "$SECOND_HOME_B" init -q
-printf 'config/herdr-presentation-spaces\nconfig/crew-harness\nconfig/crew-dispatch.json\nconfig/backlog-backend\nconfig/backend\nconfig/startup-memory-budget\n' \
+printf 'config/herdr-presentation-spaces\nconfig/codex-lane-cap\nconfig/crew-harness\nconfig/crew-dispatch.json\nconfig/backlog-backend\nconfig/backend\nconfig/startup-memory-budget\n' \
   > "$SECOND_HOME_A/.gitignore"
 cp "$SECOND_HOME_A/.gitignore" "$SECOND_HOME_B/.gitignore"
 git -C "$SECOND_HOME_A" add .gitignore

@@ -40,3 +40,34 @@ herdr_refuse_if_default() { # <session>
 herdr_safe_stop_and_delete() { # <session>
   fm_herdr_lab_teardown "$1"
 }
+
+# The marker a stubbed verified harness prints into its pane, so a suite can
+# assert its launch actually ran there.
+FM_HERDR_STUB_HARNESS_MARKER='fm-herdr-stub-harness-launched'
+
+# fm_herdr_stub_harness_bin <dir>: write a stub `codex` executable into <dir>
+# and print <dir>.
+#
+# The real-herdr suites exercise backend placement, not a harness, and used to
+# pass a raw `sh -c '...'` launch command for that. Raw launch commands are now
+# adapter-verification-only, so these suites launch the verified `codex`
+# adapter instead and stub the executable it resolves. codex is the adapter
+# whose launch template carries the RESOLVED absolute executable path, so the
+# stub reaches the pane without depending on the PATH the Herdr server itself
+# inherited. The stub answers --version for spawn's probe, announces itself in
+# the pane, and then stays alive like a real agent.
+fm_herdr_stub_harness_bin() { # <dir>
+  local dir=$1
+  mkdir -p "$dir"
+  cat > "$dir/codex" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = --version ]; then
+  printf 'codex-cli 0.0.0-herdr-test\n'
+  exit 0
+fi
+printf '%s\n' '$FM_HERDR_STUB_HARNESS_MARKER'
+exec sleep 600
+SH
+  chmod +x "$dir/codex"
+  printf '%s\n' "$dir"
+}

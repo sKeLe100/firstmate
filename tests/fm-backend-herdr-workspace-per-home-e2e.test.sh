@@ -84,11 +84,19 @@ fm_backend_source herdr || fail "fm_backend_source herdr failed"
 
 # --- scratch world: a primary-shaped home, a secondmate-shaped home, two projects ---
 
+# This suite's subject is workspace placement, not a harness, so every spawn
+# launches the stubbed verified codex adapter instead of a raw shell command
+# (raw launch commands are adapter-verification-only).
+STUB_BIN=$(fm_herdr_stub_harness_bin "$TMP_ROOT/stubbin")
+PATH="$STUB_BIN:$PATH"
+export PATH
+
 # This test asserts the per-home FLAT workspace shape, so both homes opt out of
 # the default-on presentation projection rather than depending on that default.
 PRIMARY_HOME="$TMP_ROOT/primary-home"
 mkdir -p "$PRIMARY_HOME/state" "$PRIMARY_HOME/data/cm1" "$PRIMARY_HOME/config"
 printf 'off\n' > "$PRIMARY_HOME/config/herdr-presentation-spaces"
+printf '4\n' > "$PRIMARY_HOME/config/codex-lane-cap"
 cat > "$PRIMARY_HOME/data/cm1/brief.md" <<'EOF'
 # Task
 ## Captain's intent
@@ -101,6 +109,7 @@ EOF
 SM_HOME="$TMP_ROOT/secondmate-home"
 mkdir -p "$SM_HOME/state" "$SM_HOME/data/cm2" "$SM_HOME/config" "$SM_HOME/projects" "$SM_HOME/bin"
 printf 'off\n' > "$SM_HOME/config/herdr-presentation-spaces"
+printf '4\n' > "$SM_HOME/config/codex-lane-cap"
 printf '# scratch secondmate home AGENTS.md placeholder\n' > "$SM_HOME/AGENTS.md"
 printf 'e2esm1\n' > "$SM_HOME/.fm-secondmate-home"
 printf 'trivial e2e secondmate charter: nothing to do.\n' > "$SM_HOME/data/charter.md"
@@ -131,7 +140,7 @@ PROJ2="$TMP_ROOT/scratch-project-2"; make_scratch_project "$PROJ2"
 
 CM1_OUT="$TMP_ROOT/cm1.out"; CM1_ERR="$TMP_ROOT/cm1.err"
 FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
-  "$ROOT/bin/fm-spawn.sh" cm1 "$PROJ1" "sh -c 'echo primary-crew-ok'" --mode no-mistakes --yolo off --backend herdr \
+  "$ROOT/bin/fm-spawn.sh" cm1 "$PROJ1" codex --model gpt-5-codex --effort medium --mode no-mistakes --yolo off --backend herdr \
   >"$CM1_OUT" 2>"$CM1_ERR"
 rc=$?
 [ "$rc" -eq 0 ] || fail "primary-shaped crewmate spawn failed"$'\n'"--- stdout ---"$'\n'"$(cat "$CM1_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$CM1_ERR")"
@@ -146,7 +155,7 @@ pass "real herdr E2E: a primary-shaped home spawns a crewmate on the herdr backe
 
 sleep 1
 CM1_CAPTURE=$(fm_backend_herdr_capture "$SESSION:$CM1_PANE" 30) || fail "capture failed on cm1's pane"
-assert_contains_local "$CM1_CAPTURE" "primary-crew-ok" "cm1's raw launch command did not run in its herdr pane"
+assert_contains_local "$CM1_CAPTURE" "$FM_HERDR_STUB_HARNESS_MARKER" "cm1's launch command did not run in its herdr pane"
 
 CM1_WSID=$(herdr pane get "$CM1_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
 [ -n "$CM1_WSID" ] || fail "could not read cm1's pane workspace_id"
@@ -160,7 +169,7 @@ pass "real herdr E2E: the primary-shaped home's crewmate landed in the 'firstmat
 
 SM_OUT="$TMP_ROOT/sm.out"; SM_ERR="$TMP_ROOT/sm.err"
 FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
-  "$ROOT/bin/fm-spawn.sh" e2esm1 "$SM_HOME" "sh -c 'echo secondmate-launch-ok'" --secondmate --backend herdr \
+  "$ROOT/bin/fm-spawn.sh" e2esm1 "$SM_HOME" codex --model gpt-5-codex --effort medium --secondmate --backend herdr \
   >"$SM_OUT" 2>"$SM_ERR"
 rc=$?
 [ "$rc" -eq 0 ] || fail "the primary's --secondmate spawn of e2esm1 failed"$'\n'"--- stdout ---"$'\n'"$(cat "$SM_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$SM_ERR")"
@@ -186,7 +195,7 @@ pass "real herdr E2E: a --secondmate spawn by the PRIMARY lands in the SECONDMAT
 
 CM2_OUT="$TMP_ROOT/cm2.out"; CM2_ERR="$TMP_ROOT/cm2.err"
 FM_SPAWN_NO_GUARD=1 FM_HOME="$SM_HOME" FM_ROOT_OVERRIDE="$ROOT" \
-  "$ROOT/bin/fm-spawn.sh" cm2 "$PROJ2" "sh -c 'echo sm-crew-ok'" --mode no-mistakes --yolo off --backend herdr \
+  "$ROOT/bin/fm-spawn.sh" cm2 "$PROJ2" codex --model gpt-5-codex --effort medium --mode no-mistakes --yolo off --backend herdr \
   >"$CM2_OUT" 2>"$CM2_ERR"
 rc=$?
 [ "$rc" -eq 0 ] || fail "a crewmate spawned FROM the secondmate-shaped home failed"$'\n'"--- stdout ---"$'\n'"$(cat "$CM2_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$CM2_ERR")"
@@ -201,7 +210,7 @@ pass "real herdr E2E: a crewmate spawns successfully FROM a secondmate-shaped ho
 
 sleep 1
 CM2_CAPTURE=$(fm_backend_herdr_capture "$SESSION:$CM2_PANE" 30) || fail "capture failed on cm2's pane"
-assert_contains_local "$CM2_CAPTURE" "sm-crew-ok" "cm2's raw launch command did not run in its herdr pane"
+assert_contains_local "$CM2_CAPTURE" "$FM_HERDR_STUB_HARNESS_MARKER" "cm2's launch command did not run in its herdr pane"
 
 CM2_WSID=$(herdr pane get "$CM2_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
 [ "$CM2_WSID" = "$SM_WSID" ] || fail "a crewmate spawned FROM the secondmate home should land in the SAME workspace as the secondmate's own task ($SM_WSID), got '$CM2_WSID'"

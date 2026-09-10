@@ -41,6 +41,9 @@ PARENT="$TMP_ROOT/parent"
 REMOTE_ROOT="$TMP_ROOT/remote-root"
 REMOTE_HOME="$TMP_ROOT/remote-home"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/fake")
+# A host-local codex secondmate launch resolves and version-probes `codex` on
+# PATH, so the fakebin owns that dependency rather than the host.
+fm_fake_version_tool "$FAKEBIN" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
 SSH_COUNT="$TMP_ROOT/ssh.count"
 DOCTOR_LOG="$TMP_ROOT/doctor.log"
 HERDR_STATE="$TMP_ROOT/remote-herdr.state"

@@ -110,12 +110,17 @@ git -C "$PROJ" remote add origin "file://$PROJ.origin.git"
 
 # --- spawn with NO explicit backend config; HERDR_ENV=1 is the only marker --
 
+# The subject here is backend selection, so the spawn launches the stubbed
+# verified codex adapter rather than a raw shell command.
+STUB_BIN=$(fm_herdr_stub_harness_bin "$TMP_ROOT/stubbin")
+printf '1\n' > "$CONFIG/codex-lane-cap"
+
 OUT_FILE="$TMP_ROOT/spawn.out"; ERR_FILE="$TMP_ROOT/spawn.err"
-env -u TMUX -u FM_BACKEND PATH="$PATH" HERDR_ENV=1 \
+env -u TMUX -u FM_BACKEND PATH="$STUB_BIN:$PATH" HERDR_ENV=1 \
   FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
   FM_CONFIG_OVERRIDE="$CONFIG" FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" \
   FM_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/fm-spawn.sh" "$ID" "$PROJ" "sh -c 'echo autodetect-smoke-ok'" --mode no-mistakes --yolo off \
+  "$ROOT/bin/fm-spawn.sh" "$ID" "$PROJ" codex --model gpt-5-codex --effort medium --mode no-mistakes --yolo off \
   >"$OUT_FILE" 2>"$ERR_FILE"
 status=$?
 [ "$status" -eq 0 ] || fail "fm-spawn.sh did not succeed auto-detecting herdr"$'\n'"--- stdout ---"$'\n'"$(cat "$OUT_FILE")"$'\n'"--- stderr ---"$'\n'"$(cat "$ERR_FILE")"
@@ -155,8 +160,8 @@ CAPTURED=$("$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane read "$PANE" --sour
   fail "capture failed on the auto-detected herdr pane"
 CAPTURED=$(printf '%s\n' "$CAPTURED" | tail -n 30)
 case "$CAPTURED" in
-  *autodetect-smoke-ok*) : ;;
-  *) fail "the raw launch command did not run in the auto-detected herdr pane"$'\n'"$CAPTURED" ;;
+  *"$FM_HERDR_STUB_HARNESS_MARKER"*) : ;;
+  *) fail "the launch command did not run in the auto-detected herdr pane"$'\n'"$CAPTURED" ;;
 esac
 pass "real herdr: the auto-detected spawn's launch command actually ran in the herdr pane"
 

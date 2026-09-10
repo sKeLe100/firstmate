@@ -130,12 +130,12 @@ spawn_from_launcher() {
     env HERDR_ENV=1 HERDR_PANE_ID="$pane" HERDR_SESSION="$HERDR_LAB_SESSION" \
       HERDR_SOCKET_PATH="$LAB_SOCKET" \
       FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-      "$ROOT/bin/fm-spawn.sh" "$id" "$proj" "sh -c 'echo launcher-ws-ok'" --backend herdr "$@" \
+      "$ROOT/bin/fm-spawn.sh" "$id" "$proj" "${STUB_HARNESS_ARGS[@]}" --backend herdr "$@" \
       >"$SPAWN_OUT" 2>"$SPAWN_ERR"
   else
     env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH HERDR_SESSION="$HERDR_LAB_SESSION" \
       FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-      "$ROOT/bin/fm-spawn.sh" "$id" "$proj" "sh -c 'echo launcher-ws-ok'" --backend herdr "$@" \
+      "$ROOT/bin/fm-spawn.sh" "$id" "$proj" "${STUB_HARNESS_ARGS[@]}" --backend herdr "$@" \
       >"$SPAWN_OUT" 2>"$SPAWN_ERR"
   fi
   SPAWN_RC=$?
@@ -155,15 +155,27 @@ LAB_SOCKET=$(lab session list --json 2>/dev/null \
 
 # --- scratch world ----------------------------------------------------------
 
+# This suite's subject is workspace placement, not a harness, so every spawn
+# launches the stubbed verified codex adapter instead of a raw shell command
+# (raw launch commands are adapter-verification-only). Each home therefore also
+# carries the Codex worker-lane cap policy, sized well above the number of
+# concurrent workers the suite keeps alive.
+STUB_BIN=$(fm_herdr_stub_harness_bin "$TMP_ROOT/stubbin")
+PATH="$STUB_BIN:$PATH"
+export PATH
+STUB_HARNESS_ARGS=(codex --model gpt-5-codex --effort medium)
+
 # Presentation spaces are on by default, so every home that asserts the FLAT
 # layout below opts out explicitly rather than depending on that default.
 PRIMARY_HOME="$TMP_ROOT/primary-home"
 mkdir -p "$PRIMARY_HOME/state" "$PRIMARY_HOME/config"
 printf 'off\n' > "$PRIMARY_HOME/config/herdr-presentation-spaces"
+printf '32\n' > "$PRIMARY_HOME/config/codex-lane-cap"
 SM_ID="lwsm1"
 SM_HOME="$TMP_ROOT/secondmate-home"
 mkdir -p "$SM_HOME/state" "$SM_HOME/config" "$SM_HOME/projects" "$SM_HOME/bin" "$SM_HOME/data"
 printf 'off\n' > "$SM_HOME/config/herdr-presentation-spaces"
+printf '32\n' > "$SM_HOME/config/codex-lane-cap"
 printf '# scratch secondmate home AGENTS.md placeholder\n' > "$SM_HOME/AGENTS.md"
 printf '%s\n' "$SM_ID" > "$SM_HOME/.fm-secondmate-home"
 printf 'trivial e2e secondmate charter: nothing to do.\n' > "$SM_HOME/data/charter.md"
@@ -172,6 +184,7 @@ SM2_ID="lwsm2"
 SM2_HOME="$TMP_ROOT/secondmate-home-2"
 mkdir -p "$SM2_HOME/state" "$SM2_HOME/config" "$SM2_HOME/projects" "$SM2_HOME/bin" "$SM2_HOME/data"
 printf 'off\n' > "$SM2_HOME/config/herdr-presentation-spaces"
+printf '32\n' > "$SM2_HOME/config/codex-lane-cap"
 printf '# scratch secondmate home AGENTS.md placeholder\n' > "$SM2_HOME/AGENTS.md"
 printf '%s\n' "$SM2_ID" > "$SM2_HOME/.fm-secondmate-home"
 printf 'trivial e2e secondmate charter: nothing to do.\n' > "$SM2_HOME/data/charter.md"
@@ -182,6 +195,7 @@ printf 'trivial e2e secondmate charter: nothing to do.\n' > "$SM2_HOME/data/char
 PRES_HOME="$TMP_ROOT/presentation-home"
 mkdir -p "$PRES_HOME/state" "$PRES_HOME/config"
 : > "$PRES_HOME/config/herdr-presentation-spaces"
+printf '32\n' > "$PRES_HOME/config/codex-lane-cap"
 
 write_ship_brief() {  # <file> <id>
   cat > "$1" <<EOF
@@ -291,8 +305,8 @@ WS_PRIMARY_TABS_BEFORE=$(tab_labels_of_workspace "$WS_PRIMARY")
 cat > "$TMP_ROOT/spawn-in-pane.sh" <<SPAWN
 #!/usr/bin/env bash
 set -u
-FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \\
-  "$ROOT/bin/fm-spawn.sh" dupC "$PROJ" "sh -c 'echo launcher-ws-ok'" --mode no-mistakes --yolo off --backend herdr \\
+PATH="$STUB_BIN:\$PATH" FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \\
+  "$ROOT/bin/fm-spawn.sh" dupC "$PROJ" codex --model gpt-5-codex --effort medium --mode no-mistakes --yolo off --backend herdr \\
   > "$TMP_ROOT/dupC.out" 2> "$TMP_ROOT/dupC.err"
 echo \$? > "$TMP_ROOT/dupC.rc"
 SPAWN
