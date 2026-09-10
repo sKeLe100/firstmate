@@ -17,7 +17,6 @@ NUM_WORKERS=8
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/.fm-test-race.XXXXXX") || fail "cannot create work dir"
 
 # Clear any stale sandbox cache so every worker enters the build path.
-# The lock itself is at a fixed /tmp path and does not need clearing.
 rm -rf "${TMPDIR:-/tmp}/.fm-test-sandbox-base-path."*
 
 WORKERS=()
@@ -25,33 +24,16 @@ RESULTS_FILE=$(mktemp "$WORK_DIR/results.XXXXXX") || fail "cannot create results
 
 for i in $(seq 1 "$NUM_WORKERS"); do
   (
-    # fm_test_base_path uses "${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$uid.$key"
-    # as the cache path - and the key depends only on uid + source dir contents,
-    # so every worker lands on the SAME cache directory in the shared TMPDIR.
     TMPDIR="$WORK_DIR" BASE_PATH=$(fm_test_base_path)
     # Verify the returned path is a real directory we own.
     [ -d "$BASE_PATH" ] && [ ! -L "$BASE_PATH" ] && [ -O "$BASE_PATH" ] \
       || { echo "FAIL:$i" >> "$RESULTS_FILE"; exit 1; }
-    # Verify every expected tool is linked (the populated check is a no-op
-    # on cached paths but a useful self-test).
-    for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
-      [ -d "$dir" ] || continue
-      for fpath in "$dir"/*; do
-        [ -x "$fpath" ] || continue
-        [ -f "$fpath" ] || continue
-        fname=${fpath##*/}
-        excluded=0
-        for excl in $FM_TEST_FAKED_TOOL_NAMES; do
-          [ "$fname" = "$excl" ] && { excluded=1; break; }
-        done
-        [ "$excluded" -eq 1 ] && continue
-        [ -e "$BASE_PATH/$fname" ] \
-          || { echo "MISSING:$i:$fname" >> "$RESULTS_FILE"; exit 1; }
-      done
-    done
+    # Reuse fm_test_base_path_populated rather than reimplementing the same
+    # enumeration logic, so the test asserts the exact contract being fixed.
+    fm_test_base_path_populated "$BASE_PATH" \
+      || { echo "SPARSE:$i" >> "$RESULTS_FILE"; exit 1; }
     echo "OK:$i:$BASE_PATH" \
       >> "$RESULTS_FILE"
-    # Echo the cache path for cross-worker comparison.
     echo "$BASE_PATH"
   ) &
   WORKERS+=($!)

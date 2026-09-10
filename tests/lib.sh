@@ -145,11 +145,10 @@ fm_test_base_path_owned() {
 FM_TEST_SANDBOX_LOCK="/tmp/.fm-test-sandbox-base-path.lock"
 
 _fm_test_sandbox_lock_acquire() {
-  # Retry loop with 0.1s back-off, consistent with fm_lock_acquire_wait in
-  # bin/fm-wake-lib.sh.  No stale-owner detection is needed here because the
-  # caller re-checks the .complete marker after acquiring and the build
-  # section is idempotent.
-  while ! ln -s "$$" "$FM_TEST_SANDBOX_LOCK" 2>/dev/null; do
+  # BASHPID gives the actual subshell PID (not $$ which resolves to the
+  # parent in command substitutions), so concurrent workers each write a
+  # distinct PID and the lock correctly serialises them.
+  while ! ln -s "$BASHPID" "$FM_TEST_SANDBOX_LOCK" 2>/dev/null; do
     sleep 0.1
   done
 }
