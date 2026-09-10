@@ -1,0 +1,63 @@
+operator view: verified Codex structured launch guards (fm-spawn.sh)
+codex-lane-cap = 1
+
+==== 1. verified Codex ship spawn succeeds and pins the resolved binary ====
+$ fm-spawn.sh demo-codex-ship-a <project> --harness codex --model gpt-5 --effort high
+warning: /tmp/fm-codex-evidence.oVVWuQ/case/home/data/demo-codex-ship-a/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+/tmp/fm-codex-evidence.oVVWuQ/case/fake/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-codex-evidence.oVVWuQ/case/fake/fakebin/timeout: line 3: exec: 1: not found
+spawned demo-codex-ship-a harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-demo-codex-ship-a worktree=/tmp/fm-codex-evidence.oVVWuQ/case/wt
+[exit 0]
+-- launch command actually sent to the pane:
+env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '/tmp/fm-codex-evidence.oVVWuQ/case/fake/fakebin/codex' --model 'gpt-5' -c 'model_reasoning_effort="high"' --dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch '/tmp/fm-codex-evidence.oVVWuQ/case/home/state/demo-codex-ship-a.turn-ended'\"]" "$('/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M24VTG2S9E9RRSX0N6W8R658/bin/fm-operational-input.sh' encode launch-brief < '/tmp/fm-codex-evidence.oVVWuQ/case/home/data/demo-codex-ship-a/launch-brief.md')"
+-- audit-only metadata recorded in state/demo-codex-ship-a.meta:
+harness=codex
+kind=ship
+model=gpt-5
+effort=high
+codex_exe=/tmp/fm-codex-evidence.oVVWuQ/case/fake/fakebin/codex
+codex_version=codex-cli 0.52.0
+
+==== 2. a live peer Codex worker occupies the single configured lane; the next worker refuses ====
+$ fm-spawn.sh demo-codex-ship-b <project> --harness codex --model gpt-5 --effort high
+error: Codex worker lane cap (1) is occupied by 1 local worker/scout task(s); wait for a positively dead or missing endpoint
+[exit 1]
+
+==== 2b. a Codex secondmate supervisor does NOT consume a worker lane ====
+$ fm-spawn.sh demo-codex-ship-b <project> --harness codex --model gpt-5 --effort high
+warning: /tmp/fm-codex-evidence.oVVWuQ/case/home/data/demo-codex-ship-b/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+/tmp/fm-codex-evidence.oVVWuQ/case/fake/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-codex-evidence.oVVWuQ/case/fake/fakebin/timeout: line 3: exec: 1: not found
+spawned demo-codex-ship-b harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-demo-codex-ship-b worktree=/tmp/fm-codex-evidence.oVVWuQ/case/wt
+[exit 0]
+
+==== 3. missing cap policy fails closed (needs-decision) ====
+$ rm config/codex-lane-cap && fm-spawn.sh demo-codex-ship-b ...
+error: needs-decision: config/codex-lane-cap is absent; choose a positive worker/scout lane cap before a verified Codex launch
+[exit 1]
+
+==== 4. Codex model/effort validation is still explicit ====
+$ fm-spawn.sh demo-codex-ship-b <project> --harness codex --effort max
+error: codex requires an explicit --effort that codex itself accepts; 'max' reaches no codex launch flag, so the spawn would silently fall through to Codex CLI's own default reasoning effort rather than firstmate's choice. Pass --model/--effort explicitly, or pin them in config/secondmate-harness as "codex <model> <effort>"; config/crew-harness carries only a bare adapter name and cannot supply either axis.
+[exit 1]
+
+==== 5. routine raw shell launch is refused ====
+$ fm-spawn.sh demo-codex-raw <project> 'codex --dangerously-bypass-approvals-and-sandbox' --scout
+error: raw shell launch commands are adapter-verification-only; use a verified harness name for routine ship/scout/secondmate dispatch, or pass --adapter-verification with one scout-only trial. Verified-harness policies (lane cap, executable pinning, and no-fast) do not apply to raw commands.
+[exit 1]
+
+==== 6. same raw command allowed only as an unverified scout-only adapter-verification trial ====
+$ ... --scout --adapter-verification
+/tmp/fm-codex-evidence.oVVWuQ/case/fake/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-codex-evidence.oVVWuQ/case/fake/fakebin/timeout: line 3: exec: 1: not found
+spawned demo-codex-raw harness=codex kind=scout window=firstmate:fm-demo-codex-raw worktree=/tmp/fm-codex-evidence.oVVWuQ/case/wt
+[exit 0]
+-- raw launch command sent verbatim (no __CODEXBIN__ pinning, no cap):
+env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dangerously-bypass-approvals-and-sandbox
+-- no codex_exe/codex_version audit fields on an unverified raw launch:
+matching lines: 0
+
+==== 7. adapter-verification is refused for non-scout / relaunch work ====
+$ fm-spawn.sh demo-codex-ship-b <project> 'codex ...' --adapter-verification (ship)
+error: --adapter-verification is scout-only and refuses batch, secondmate, and relaunch launches; its raw shell command is unverified and verified-harness policies do not apply
+[exit 1]
