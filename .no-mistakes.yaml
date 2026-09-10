@@ -85,6 +85,7 @@ review:
     - path: 'AGENTS.md'
       instructions: |
         Apply .agents/skills/firstmate-coding-guidelines/SKILL.md. Verify
-        AGENTS.md stays under 100KB (enforced by bin/fm-agentsmd-size.sh);
-        trim resident lookup tables duplicated in docs/configuration.md;
-        preserve all safety boundaries and hard rules verbatim.
+        AGENTS.md stays within the resident-size ceiling owned by
+        bin/fm-agentsmd-size.sh (do not re-spell the value here); trim
+        resident lookup tables duplicated in docs/configuration.md; preserve
+        all safety boundaries and hard rules verbatim.

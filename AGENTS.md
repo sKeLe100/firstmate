@@ -68,38 +68,38 @@ README.md            public overview and development notes
 skills/              standalone public installer-facing skills, committed; not loaded by firstmate
 bin/                 helper scripts, committed; read each script's header before first use
 .env                 optional Relay pairing token; LOCAL, gitignored; presence-gates section 14
-config/crew-harness      crewmate harness override (absent/default → firstmate's own); inherited; see docs/configuration.md §28
-config/crew-dispatch.json  optional crewmate dispatch profiles (natural-language harness/model/effort rules); inherited; see docs/configuration.md §30
+config/crew-harness      crewmate harness override (absent/default → firstmate's own); inherited; see docs/configuration.md "Harness support"
+config/crew-dispatch.json  optional crewmate dispatch profiles (natural-language harness/model/effort rules); inherited; see docs/configuration.md "Crew dispatch profiles (config/crew-dispatch.json)"
 config/secondmate-harness  harness for PRIMARY to launch SECONDMATE agents ("<harness> [<model>] [<effort>]"); NOT inherited
-config/backlog-backend  backlog backend override (tasks-axi or manual); inherited; see docs/configuration.md §6
-config/backend  runtime session-provider backend override (tmux/herdr/zellij/orca/cmux); inherited; see docs/configuration.md §7
-config/calm     Pi Calm presentation preference (on/off); NOT inherited; see docs/configuration.md §4
+config/backlog-backend  backlog backend override (tasks-axi or manual); inherited; see docs/configuration.md "Backlog backend (.tasks.toml / config/backlog-backend)"
+config/backend  runtime session-provider backend override (tmux/herdr/zellij/orca/cmux); inherited; see docs/configuration.md "Runtime backend (config/backend / FM_BACKEND)"
+config/calm     Pi Calm presentation preference (on/off); NOT inherited; see docs/configuration.md "Pi Calm preference (config/calm)"
 config/supervision-branch-model
-config/supervision-branch-effort  Pi supervision-branch model and effort pins; NOT inherited; see docs/configuration.md §5a
-config/startup-memory-budget  per-home startup memory budget (default 7500 tokens); inherited; see docs/configuration.md §17
-config/stow-pass-horizon  optional presence flag opting into /stow pass-count decay horizon; NOT inherited; see docs/configuration.md §25
-config/context-thresholds  session-context warn/restart token-band thresholds; inherited; see docs/configuration.md §21
-config/codex-context-thresholds  Codex-side session-context thresholds (separate defaults); NOT inherited; see docs/configuration.md §22
-config/working-hours  captain attention-window schedule for proactive contact; NOT inherited; see docs/configuration.md §18
-config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; inherited; see docs/configuration.md §19
-config/host-memory-floor  free-memory MiB floor below which lanes are refused; primary-authoritative; see docs/configuration.md §20
-config/retry-thresholds  retry-loop relaunch/round ceilings; inherited; see docs/configuration.md §23
-config/herdr-presentation-spaces  Herdr visual projection on/off opt-in; inherited; see docs/configuration.md §7
-config/trace-context  W3C trace-context propagation flag; inherited; see docs/configuration.md §10
-config/upstream-autosync  upstream autosync auto-dispatch eligibility flag; inherited; see docs/configuration.md §11
-config/turnend-churn-absorb  opt-in absorb of bare turn-end wakes on pane churn; NOT inherited; see docs/configuration.md §13
-config/primary-continuity  OPTS OUT of primary continuity watchdog (inverted polarity); inherited; see docs/configuration.md §24
-config/cmux-socket-password  cmux control-socket password; see docs/configuration.md §7
-config/wedge-alarm  away-mode wedge-alarm active-alert channels (off/auto/osascript/herdr/command); see docs/configuration.md §9
-config/watched-tools.json  watched tool updates list; NOT inherited; see docs/configuration.md §32
+config/supervision-branch-effort  Pi supervision-branch model and effort pins; NOT inherited; see docs/configuration.md "Pi supervision branch model and effort (config/supervision-branch-model, config/supervision-branch-effort)"
+config/startup-memory-budget  per-home startup memory budget (default 7500 tokens); inherited; see docs/configuration.md "Startup memory budget (config/startup-memory-budget)"
+config/stow-pass-horizon  optional presence flag opting into /stow pass-count decay horizon; NOT inherited; see docs/configuration.md "Stow pass horizon (config/stow-pass-horizon)"
+config/context-thresholds  session-context warn/restart token-band thresholds; inherited; see docs/configuration.md "Session context thresholds (config/context-thresholds)"
+config/codex-context-thresholds  Codex-side session-context thresholds (separate defaults); NOT inherited; see docs/configuration.md "Codex context thresholds (config/codex-context-thresholds)"
+config/working-hours  captain attention-window schedule for proactive contact; NOT inherited; see docs/configuration.md "Captain attention windows (config/working-hours)"
+config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; inherited; see docs/configuration.md "Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)"
+config/host-memory-floor  free-memory MiB floor below which lanes are refused; primary-authoritative; see docs/configuration.md "Host memory floor (config/host-memory-floor)"
+config/retry-thresholds  retry-loop relaunch/round ceilings; inherited; see docs/configuration.md "Retry-loop thresholds (config/retry-thresholds)"
+config/herdr-presentation-spaces  Herdr visual projection on/off opt-in; inherited; see docs/herdr-backend.md "Presentation spaces"
+config/trace-context  W3C trace-context propagation flag; inherited; see docs/configuration.md "Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)"
+config/upstream-autosync  upstream autosync auto-dispatch eligibility flag; inherited; see docs/configuration.md "Upstream autosync (config/upstream-autosync)"
+config/turnend-churn-absorb  opt-in absorb of bare turn-end wakes on pane churn; NOT inherited; see docs/configuration.md "Turn-end pane-churn absorb (config/turnend-churn-absorb)"
+config/primary-continuity  OPTS OUT of primary continuity watchdog (inverted polarity); inherited; see docs/configuration.md "Primary continuity watchdog"
+config/cmux-socket-password  cmux control-socket password; see docs/cmux-backend.md "Setup"
+config/wedge-alarm  away-mode wedge-alarm active-alert channels (off/auto/osascript/herdr/command); see docs/configuration.md "Away-mode wedge alarm channels (config/wedge-alarm)"
+config/watched-tools.json  watched tool updates list; NOT inherited; see docs/configuration.md "Watched tool updates (config/watched-tools.json)"
 config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored
 data/                personal fleet records; LOCAL, gitignored as a whole
-  backlog.md         task queue, dependencies, history; see docs/configuration.md §6
-  captain.md         domain-local captain preferences and working style; LOCAL, gitignored; see docs/configuration.md §15
-  captain-shared.md  main-authoritative shared captain preferences for secondmate inheritance; see docs/configuration.md §15
-  learnings.md       fleet-local operational facts and gotchas; see docs/configuration.md §16
+  backlog.md         task queue, dependencies, history; see docs/configuration.md "Backlog backend (.tasks.toml / config/backlog-backend)"
+  captain.md         domain-local captain preferences and working style; LOCAL, gitignored; see docs/configuration.md "Captain Preferences (data/captain.md / data/captain-shared.md)"
+  captain-shared.md  main-authoritative shared captain preferences for secondmate inheritance; see docs/configuration.md "Captain Preferences (data/captain.md / data/captain-shared.md)"
+  learnings.md       fleet-local operational facts and gotchas; see docs/configuration.md "Operational learnings (data/learnings.md)"
   projects.md        fleet navigation registry recording each project's standing delivery posture; firstmate-private
-  secondmates.md     local and remote secondmate routing table; firstmate-private; see docs/configuration.md §26
+  secondmates.md     local and remote secondmate routing table; firstmate-private; see docs/configuration.md "Secondmate routes (data/secondmates.md)"
   roundtable-marks.tsv  per-project HEAD of last design-review roundtable review; updated only by `bin/fm-roundtable-factsheet.sh --mark` (docs/roundtable-instrumentation.md)
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
@@ -115,9 +115,9 @@ state/               runtime records and signals; gitignored
   <id>.opencode-session  opencode session id bound to this task; retired on relaunch and removed by teardown
   <id>.reconcile-nudged  epoch second of last inventory-reconcile nudge sent to this secondmate
   <id>.backlog-close  exact backlog transition recorded by teardown before removing task record
-  <id>.inbox/          durable steering inbox for sequenced firstmate instructions; see docs/configuration.md §3
+  <id>.inbox/          durable steering inbox for sequenced firstmate instructions; see docs/configuration.md "Operational home layout and state"
   <id>.meta          task metadata; each producer script's header owns its exact fields and mutation contract
-  <id>.herdr-presentation  quarantinable attempt and restart-binding journal for Herdr's visual projection
+  <id>.herdr-presentation  quarantinable attempt and restart-binding journal for Herdr's visual projection; see docs/herdr-backend.md "Presentation spaces"
   <id>.check.sh      authenticated slow poll for PR data and Relay shims through trusted repository scripts
   <id>.check-trust   private content binding for an intentional custom check
   <id>.pr-poll       private validated data sidecar for the byte-static PR merge poll
@@ -132,15 +132,15 @@ state/               runtime records and signals; gitignored
   tool-updates.check.sh  generated watched-tool update poll shim and its .check-trust binding
   upstream-drift.check.sh  generated upstream-drift poll shim and its .check-trust binding
   pending-replies/   parent-owned secondmate pending-reply records (correlation id, delivery vs reply, recovery, escalation)
-  procevent/         registered process-to-event sources; see docs/configuration.md §35
-  procevent-inbox/   private captured results and handled-acknowledgement markers for process-event sources; see docs/configuration.md §35
-  decision-bindings/ private records marking a captured-answer source as feeding the keyed-answer intake; see docs/configuration.md §35
-  when/              private condition->action watch specs, trust bindings, and single-fire markers; see docs/configuration.md §35
-  inbox/             captain notes captured out of band by bin/fm-inbox.sh; see docs/configuration.md §3
+  procevent/         registered process-to-event sources; see docs/configuration.md "Process-to-event sources (state/procevent)"
+  procevent-inbox/   private captured results and handled-acknowledgement markers for process-event sources; see docs/configuration.md "Process-to-event sources (state/procevent)"
+  decision-bindings/ private records marking a captured-answer source as feeding the keyed-answer intake; see docs/configuration.md "Process-to-event sources (state/procevent)"
+  when/              private condition->action watch specs, trust bindings, and single-fire markers; see docs/configuration.md "Process-to-event sources (state/procevent)"
+  inbox/             captain notes captured out of band by bin/fm-inbox.sh; see docs/configuration.md "Operational home layout and state"
   x-inbox/           generated Relay pending mention payloads; fmx-respond drains it (section 14)
-  x-context/         generated Relay durable per-request reply context and one-wake offer markers (7-day expiry); see docs/configuration.md §33
+  x-context/         generated Relay durable per-request reply context and one-wake offer markers (7-day expiry); see docs/configuration.md "Relay (.env)"
   x-outbox/          generated Relay dry-run reply and dismiss previews; inspect when FMX_DRY_RUN is set (section 14)
-  public-followup/   generated private transport for promised public replies; see docs/configuration.md §33a
+  public-followup/   generated private transport for promised public replies; see docs/configuration.md "Promised public replies (state/public-followup)"
   x-poll.error x-poll.claim-error  generated Relay and offer-claim diagnostic dedupe markers
   .startup-network.*  status, report, timings, and lock for the deferred startup network checks stage
   .wake-queue        durable queued wakes retained until post-handling acknowledgement: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload

@@ -39,15 +39,18 @@ test_over_ceiling() {
   cp "$AGENTS" "$saved"
 
   # Create a file over 100KB by padding with comment-like lines
-  local big
+  local big ceiling cur pad_lines
+  ceiling=$(sed -n 's/^CEILING=\([0-9]*\).*/\1/p' "$SCRIPT")
   big=$(mktemp "${TMPDIR}/fm-size-big.XXXXXX")
-  {
-    cp "$saved" "$big"
-    # Add ~30KB of padding (each line ~80 bytes, need ~375 lines)
-    for i in $(seq 1 400); do
-      echo "# Padding line $i for size test - this text should be trimmed from AGENTS.md in a real repo" >> "$big"
-    done
-  }
+  cp "$saved" "$big"
+  cur=$(wc -c < "$big")
+  # Pad past the ceiling regardless of the current file size: each line below
+  # is 96 bytes, and 64 extra lines give margin above the ceiling.
+  pad_lines=$(( (ceiling - cur) / 96 + 64 ))
+  if [ "$pad_lines" -lt 64 ]; then pad_lines=64; fi
+  for ((i = 1; i <= pad_lines; i++)); do
+    printf '# Padding line for the AGENTS.md resident-size ceiling regression test %019d\n' "$i"
+  done >> "$big"
   local big_size
   big_size=$(wc -c < "$big")
 
