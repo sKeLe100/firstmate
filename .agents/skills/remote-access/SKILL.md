@@ -1,3 +1,16 @@
+---
+name: remote-access
+description: >-
+  Remote access reference for reaching PC01 (this firstmate home) from away:
+  SSH from an Android phone over Tailscale, attaching the firstmate tmux session,
+  and the self-hosted Herdr mobile monitor/approve relay.
+  Use when the captain asks how to reach PC01 remotely, SSH in from their phone,
+  attach or detach the tmux session, or re-pair the Herdr mobile app.
+user-invocable: false
+metadata:
+  internal: true
+---
+
 # Remote access reference
 
 Load when the captain needs remote access to PC01 (this firstmate home).
