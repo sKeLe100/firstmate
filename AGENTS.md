@@ -70,7 +70,7 @@ bin/                 helper scripts, committed; read each script's header before
 .env                 optional Relay pairing token; LOCAL, gitignored; presence-gates section 14
 config/crew-harness      crewmate harness override (absent/default → firstmate's own); inherited; see docs/configuration.md "Harness support"
 config/crew-dispatch.json  optional crewmate dispatch profiles (natural-language harness/model/effort rules); inherited; see docs/configuration.md "Crew dispatch profiles (config/crew-dispatch.json)"
-config/secondmate-harness  harness for PRIMARY to launch SECONDMATE agents ("<harness> [<model>] [<effort>]"); NOT inherited
+config/secondmate-harness  harness for PRIMARY to launch SECONDMATE agents ("<harness> [<model>] [<effort>]"); NOT inherited; see .agents/skills/secondmate-provisioning/SKILL.md
 config/backlog-backend  backlog backend override (tasks-axi or manual); inherited; see docs/configuration.md "Backlog backend (.tasks.toml / config/backlog-backend)"
 config/backend  runtime session-provider backend override (tmux/herdr/zellij/orca/cmux); inherited; see docs/configuration.md "Runtime backend (config/backend / FM_BACKEND)"
 config/calm     Pi Calm presentation preference (on/off); NOT inherited; see docs/configuration.md "Pi Calm preference (config/calm)"
@@ -92,7 +92,7 @@ config/primary-continuity  OPTS OUT of primary continuity watchdog (inverted pol
 config/cmux-socket-password  cmux control-socket password; see docs/cmux-backend.md "Setup"
 config/wedge-alarm  away-mode wedge-alarm active-alert channels (off/auto/osascript/herdr/command); see docs/configuration.md "Away-mode wedge alarm channels (config/wedge-alarm)"
 config/watched-tools.json  watched tool updates list; NOT inherited; see docs/configuration.md "Watched tool updates (config/watched-tools.json)"
-config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored
+config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; see docs/configuration.md "Relay (.env)"
 data/                personal fleet records; LOCAL, gitignored as a whole
   backlog.md         task queue, dependencies, history; see docs/configuration.md "Backlog backend (.tasks.toml / config/backlog-backend)"
   captain.md         domain-local captain preferences and working style; LOCAL, gitignored; see docs/configuration.md "Captain Preferences (data/captain.md / data/captain-shared.md)"

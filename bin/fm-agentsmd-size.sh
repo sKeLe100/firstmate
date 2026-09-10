@@ -4,6 +4,22 @@
 # Exit 0 if within budget, exit 1 with a diagnostic if over.
 set -euo pipefail
 
+usage() {
+  echo "Usage: bin/fm-agentsmd-size.sh"
+  echo "Assert AGENTS.md stays under a resident-size ceiling."
+  echo "Exit 0 if within budget, exit 1 with a diagnostic if over."
+}
+
+case "${1:-}" in
+  "") ;;
+  -h|--help) usage; exit 0 ;;
+  *)
+    echo "fm-agentsmd-size: unexpected argument '$1'; this check takes no arguments" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
 CEILING=102400  # 100KB resident-size ceiling for AGENTS.md
 AGENTS_FILE="$(git rev-parse --show-toplevel)/AGENTS.md"
 
