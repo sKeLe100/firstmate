@@ -17,9 +17,6 @@ REMOTE_ROOT="$TMP_ROOT/remote-root"
 REMOTE_HOME="$TMP_ROOT/remote-home"
 LOCAL_HOME="$TMP_ROOT/local-home"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/fake")
-# A host-local codex secondmate launch resolves and version-probes `codex` on
-# PATH, so the fakebin owns that dependency rather than the host.
-fm_fake_version_tool "$FAKEBIN" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
 SSH_COUNT="$TMP_ROOT/ssh.count"
 DOCTOR_LOG="$TMP_ROOT/doctor.log"
 HERDR_STATE="$TMP_ROOT/remote-herdr.state"
@@ -98,6 +95,11 @@ SH
 chmod +x "$REMOTE_ROOT/bin/tmux"
 install_remote_herdr_fixture "$REMOTE_ROOT" "$HERDR_STATE" "$HERDR_LOG" \
   "$TMP_ROOT/herdr-send-fail" "$TMP_ROOT/herdr.sock"
+# The remote host-local codex secondmate launch resolves and version-probes
+# `codex` on the remote child PATH, which is the remote code root's own bin
+# plus the operator PATH - never this host's PATH. The fixture root owns that
+# dependency exactly as it owns herdr and tmux.
+fm_fake_version_tool "$REMOTE_ROOT/bin" codex FM_FAKE_CODEX_VERSION 'codex-cli 0.0.0-test'
 git -C "$REMOTE_ROOT" init -q -b main
 git -C "$REMOTE_ROOT" config user.email test@example.com
 git -C "$REMOTE_ROOT" config user.name Test
