@@ -82,3 +82,9 @@ review:
         not just the happy path, and that a documented deliberate limitation
         has a test pinning it so a later change cannot silently reintroduce
         the rejected approach.
+    - path: 'AGENTS.md'
+      instructions: |
+        Apply .agents/skills/firstmate-coding-guidelines/SKILL.md. Verify
+        AGENTS.md stays under 100KB (enforced by bin/fm-agentsmd-size.sh);
+        trim resident lookup tables duplicated in docs/configuration.md;
+        preserve all safety boundaries and hard rules verbatim.
