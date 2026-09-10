@@ -136,6 +136,13 @@
 #   a failed or inconclusive probe omits it so older Pi versions remain launchable.
 #   A missing selected executable refuses before endpoint creation, and pi-signed
 #   never falls back to pi.
+#   For codex, every verified local spawn or relaunch re-resolves 'codex' from
+#   PATH, canonicalizes it, execute-checks and --version-probes that exact path,
+#   and launches it, recording codex_exe/codex_version as audit-only metadata.
+#   Such a launch also needs config/codex-lane-cap, whose contract
+#   docs/configuration.md "Concurrent autonomous dispatch cap and quota ladder"
+#   owns: an absent or malformed file refuses a local codex ship/scout launch,
+#   as does an already-full lane. Codex secondmates are exempt from the cap.
 #   config/secondmate-harness may also carry an optional model and effort as extra
 #   whitespace-separated tokens ("<harness> [<model>] [<effort>]"). For a
 #   --secondmate spawn, those tokens apply only when this spawn also resolves its
