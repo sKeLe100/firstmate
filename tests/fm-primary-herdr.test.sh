@@ -32,6 +32,7 @@ case "$*" in
   *'status --json'*) printf '{"client":{"protocol":19,"version":"0.9.0"},"server":{"running":true,"protocol":19,"version":"0.9.0"}}\n' ;;
   *'workspace create'*) printf '{"result":{"workspace":{"workspace_id":"w1"},"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}\n' ;;
   *'workspace list'*)
+    [ "${FAKE_WORKSPACE_LIST_RC:-0}" -eq 0 ] || exit "$FAKE_WORKSPACE_LIST_RC"
     if [ -n "${FAKE_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$FAKE_WORKSPACE_LIST"; else printf '{"result":{"workspaces":[]}}\n'; fi ;;
   *'agent list'*)
     if [ -n "${FAKE_AGENT_LIST:-}" ]; then printf '%s\n' "$FAKE_AGENT_LIST"; else printf '{"result":{"agents":[]}}\n'; fi ;;
@@ -99,9 +100,22 @@ test_normal_launch_is_explicit_and_completes() {
   log=$(cat "$TMP_ROOT/normal/log")
   printf '%s' "$out" | grep -F 'primary ready: harness=claude' >/dev/null || fail 'normal launch did not report ready'
   printf '%s' "$log" | grep -F 'agent start firstmate-primary --kind claude --pane w1:p1' >/dev/null || fail 'normal launch did not target the exact pane as Claude'
+  printf '%s' "$log" | grep -F -- "workspace create --cwd $ROOT --label firstmate --no-focus" >/dev/null || fail 'normal launch did not create the workspace from the tracked root'
   printf '%s' "$log" | grep -F -- '--dangerously-skip-permissions' >/dev/null || fail 'normal launch omitted the verified Claude execution shape'
   grep -F 'harness=claude' "$TMP_ROOT/normal/home/state/.primary-herdr" >/dev/null || fail 'normal endpoint record omitted Claude identity'
   pass 'normal startup selects Claude, records the endpoint, and waits for ownership proof'
+}
+
+test_unreadable_workspace_inventory_refuses() {
+  local home="$TMP_ROOT/unreadable-workspace/home" fake="$TMP_ROOT/unreadable-workspace/fake" log="$TMP_ROOT/unreadable-workspace/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_WORKSPACE_LIST_RC=1 \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'startup accepted an unreadable primary workspace inventory'
+  fi
+  printf '%s' "$out" | grep -F 'primary-workspace discovery was unreadable' >/dev/null || fail 'unreadable-workspace refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'unreadable-workspace discovery created a workspace'
+  pass 'an unreadable primary workspace inventory fails closed'
 }
 
 test_healthy_same_role_reconnects_without_launch() {
@@ -215,6 +229,7 @@ test_server_mode_never_starts_agent() {
 
 test_emergency_launch_is_explicit_and_completes
 test_normal_launch_is_explicit_and_completes
+test_unreadable_workspace_inventory_refuses
 test_healthy_same_role_reconnects_without_launch
 test_live_other_primary_refuses
 test_live_endpoint_without_lock_refuses

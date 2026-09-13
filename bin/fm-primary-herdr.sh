@@ -139,13 +139,19 @@ named_primary_count() {
 }
 
 primary_workspace_count() {
-  local ids count=0
-  ids=$(fm_backend_herdr_workspace_find_all "$SESSION" 2>/dev/null) || return 1
-  while IFS= read -r id; do
-    [ -n "$id" ] && count=$((count + 1))
-  done <<EOF
-$ids
-EOF
+  local label list count
+  label=$(fm_backend_herdr_workspace_label) || return 1
+  list=$(fm_backend_herdr_cli "$SESSION" workspace list 2>/dev/null) || return 1
+  count=$(jq -r --arg want "$label" '
+    if (.result.workspaces | type) != "array" then
+      error("invalid workspace inventory")
+    else
+      [.result.workspaces[] | select(.label == $want)] | length
+    end
+  ' <<<"$list") || return 1
+  case "$count" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
   printf '%s' "$count"
 }
 
@@ -236,7 +242,7 @@ case "$ENDPOINT_KIND" in
       echo "error: Herdr already has $workspace_count unrecorded workspace(s) labeled firstmate; refusing to create a conflicting primary workspace" >&2
       exit 1
     }
-    CREATE=$(fm_backend_herdr_cli "$SESSION" workspace create --cwd "$FM_HOME" --label firstmate --no-focus)
+    CREATE=$(fm_backend_herdr_cli "$SESSION" workspace create --cwd "$FM_ROOT" --label firstmate --no-focus)
     WORKSPACE=$(printf '%s' "$CREATE" | jq -er '.result.workspace.workspace_id')
     TAB=$(printf '%s' "$CREATE" | jq -er '.result.tab.tab_id')
     PANE=$(printf '%s' "$CREATE" | jq -er '.result.root_pane.pane_id')
