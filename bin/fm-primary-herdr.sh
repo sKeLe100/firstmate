@@ -196,6 +196,28 @@ verify_recorded_endpoint() {
   ' <<<"$pane_out" >/dev/null 2>&1
 }
 
+validate_positive_integer() {
+  case "$2" in
+    ''|*[!0-9]*) echo "error: $1 must be a positive integer" >&2; exit 1 ;;
+  esac
+  [ "$2" -gt 0 ] || { echo "error: $1 must be positive" >&2; exit 1; }
+}
+
+write_primary_record() {
+  local tmp
+  tmp=$(mktemp "$STATE/.primary-herdr.XXXXXX")
+  {
+    printf 'version=1\n'
+    printf 'session=%s\n' "$SESSION"
+    printf 'workspace=%s\n' "$WORKSPACE"
+    printf 'tab=%s\n' "$TAB"
+    printf 'pane=%s\n' "$PANE"
+    printf 'harness=%s\n' "$REQUESTED"
+  } > "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$RECORD"
+}
+
 report_status() {
   local ls es
   ls=$(lock_state)
@@ -211,6 +233,17 @@ fi
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 mkdir -p "$STATE"
+
+START_TIMEOUT=${FM_PRIMARY_HERDR_START_TIMEOUT:-90000}
+READY_TIMEOUT=${FM_PRIMARY_READY_TIMEOUT:-120}
+validate_positive_integer FM_PRIMARY_HERDR_START_TIMEOUT "$START_TIMEOUT"
+validate_positive_integer FM_PRIMARY_READY_TIMEOUT "$READY_TIMEOUT"
+MODEL=${FM_PRIMARY_CODEX_MODEL:-gpt-5.6-luna}
+EFFORT=${FM_PRIMARY_CODEX_EFFORT:-low}
+if [ "$MODE" = emergency ]; then
+  [ -n "$MODEL" ] || { echo "error: FM_PRIMARY_CODEX_MODEL must not be empty" >&2; exit 1; }
+  case "$EFFORT" in low|medium|high|xhigh) ;; *) echo "error: invalid Codex effort: $EFFORT" >&2; exit 1 ;; esac
+fi
 
 if ! fm_lock_try_acquire "$START_LOCK"; then
   echo "error: another primary startup is already in progress for $FM_HOME" >&2
@@ -300,26 +333,21 @@ case "$ENDPOINT_KIND" in
       exit 1
     }
     CREATE=$(fm_backend_herdr_cli "$SESSION" workspace create --cwd "$FM_ROOT" --label firstmate --no-focus)
-    WORKSPACE=$(printf '%s' "$CREATE" | jq -er '.result.workspace.workspace_id')
-    TAB=$(printf '%s' "$CREATE" | jq -er '.result.tab.tab_id')
-    PANE=$(printf '%s' "$CREATE" | jq -er '.result.root_pane.pane_id')
+    WORKSPACE=$(jq -er '.result.workspace.workspace_id | select(type == "string" and length > 0)' <<<"$CREATE")
+    TAB=$(jq -er '.result.tab.tab_id | select(type == "string" and length > 0)' <<<"$CREATE")
+    PANE=$(jq -er '.result.root_pane.pane_id | select(type == "string" and length > 0)' <<<"$CREATE")
     ;;
   *)
     echo "error: unexpected primary endpoint state: $ENDPOINT_KIND" >&2
     exit 1 ;;
 esac
 
-START_TIMEOUT=${FM_PRIMARY_HERDR_START_TIMEOUT:-90000}
-case "$START_TIMEOUT" in ''|*[!0-9]*) echo "error: FM_PRIMARY_HERDR_START_TIMEOUT must be a positive integer" >&2; exit 1 ;; esac
-[ "$START_TIMEOUT" -gt 0 ] || { echo "error: FM_PRIMARY_HERDR_START_TIMEOUT must be positive" >&2; exit 1; }
+write_primary_record
 
 if [ "$REQUESTED" = claude ]; then
   fm_backend_herdr_cli "$SESSION" agent start firstmate-primary --kind claude --pane "$PANE" --timeout "$START_TIMEOUT" -- \
     --dangerously-skip-permissions
 else
-  MODEL=${FM_PRIMARY_CODEX_MODEL:-gpt-5.6-luna}
-  EFFORT=${FM_PRIMARY_CODEX_EFFORT:-low}
-  case "$EFFORT" in low|medium|high|xhigh) ;; *) echo "error: invalid Codex effort: $EFFORT" >&2; exit 1 ;; esac
   # shellcheck disable=SC2016
   START_PROMPT='Run `bin/fm-session-start.sh` now, exactly once, before executing any other instructions. If another live session owns this home, remain read-only and report that conflict.'
   fm_backend_herdr_cli "$SESSION" agent start firstmate-primary --kind codex --pane "$PANE" --timeout "$START_TIMEOUT" -- \
@@ -327,21 +355,6 @@ else
     --dangerously-bypass-approvals-and-sandbox "$START_PROMPT"
 fi
 
-tmp=$(mktemp "$STATE/.primary-herdr.XXXXXX")
-{
-  printf 'version=1\n'
-  printf 'session=%s\n' "$SESSION"
-  printf 'workspace=%s\n' "$WORKSPACE"
-  printf 'tab=%s\n' "$TAB"
-  printf 'pane=%s\n' "$PANE"
-  printf 'harness=%s\n' "$REQUESTED"
-} > "$tmp"
-chmod 600 "$tmp"
-mv -f "$tmp" "$RECORD"
-
-READY_TIMEOUT=${FM_PRIMARY_READY_TIMEOUT:-120}
-case "$READY_TIMEOUT" in ''|*[!0-9]*) echo "error: FM_PRIMARY_READY_TIMEOUT must be a positive integer" >&2; exit 1 ;; esac
-[ "$READY_TIMEOUT" -gt 0 ] || { echo "error: FM_PRIMARY_READY_TIMEOUT must be positive" >&2; exit 1; }
 ready=0
 i=0
 while [ "$i" -lt "$READY_TIMEOUT" ]; do

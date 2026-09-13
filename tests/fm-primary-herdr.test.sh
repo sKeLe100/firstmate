@@ -30,7 +30,9 @@ set -eu
 printf '%s\n' "$*" >> "${FAKE_LOG:?}"
 case "$*" in
   *'status --json'*) printf '{"client":{"protocol":19,"version":"0.9.0"},"server":{"running":true,"protocol":19,"version":"0.9.0"}}\n' ;;
-  *'workspace create'*) printf '{"result":{"workspace":{"workspace_id":"w1"},"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}\n' ;;
+  *'workspace create'*)
+    [ "${FAKE_CREATE_RC:-0}" -eq 0 ] || exit "$FAKE_CREATE_RC"
+    if [ -n "${FAKE_CREATE_OUTPUT:-}" ]; then printf '%s\n' "$FAKE_CREATE_OUTPUT"; else printf '{"result":{"workspace":{"workspace_id":"w1"},"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}\n'; fi ;;
   *'workspace list'*)
     [ "${FAKE_WORKSPACE_LIST_RC:-0}" -eq 0 ] || exit "$FAKE_WORKSPACE_LIST_RC"
     if [ -n "${FAKE_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$FAKE_WORKSPACE_LIST"; else printf '{"result":{"workspaces":[]}}\n'; fi ;;
@@ -45,6 +47,7 @@ case "$*" in
       *) printf '{"error":{"code":"agent_not_found"}}\n' ;;
     esac ;;
   *'agent start'*)
+    [ "${FAKE_AGENT_START_RC:-0}" -eq 0 ] || exit "$FAKE_AGENT_START_RC"
     if [ -n "${FAKE_READY_PID:-}" ]; then
       printf '%s\n' "$FAKE_READY_PID" > "$FAKE_HOME/state/.lock"
       printf '%s\n' "$FAKE_READY_PID" > "$FAKE_HOME/state/.session-start-complete"
@@ -212,6 +215,42 @@ test_recorded_husk_checks_parent_relationships() {
   pass 'recorded husk reuse refuses inconsistent tab relationships'
 }
 
+test_malformed_create_response_refuses() {
+  local home="$TMP_ROOT/malformed-create/home" fake="$TMP_ROOT/malformed-create/fake" log="$TMP_ROOT/malformed-create/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_CREATE_OUTPUT='{}' \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'startup accepted a malformed workspace-create response'
+  fi
+  ! grep -F 'agent start' "$log" >/dev/null || fail 'malformed create response launched an agent'
+  [ ! -e "$home/state/.primary-herdr" ] || fail 'malformed create response wrote an endpoint record'
+  pass 'malformed workspace-create responses fail closed'
+}
+
+test_invalid_timeout_preflights_before_workspace_create() {
+  local home="$TMP_ROOT/invalid-timeout/home" fake="$TMP_ROOT/invalid-timeout/fake" log="$TMP_ROOT/invalid-timeout/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FM_PRIMARY_HERDR_START_TIMEOUT=0 \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'startup accepted an invalid Herdr start timeout'
+  fi
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'invalid timeout created a workspace'
+  pass 'invalid startup timeouts are rejected before workspace mutation'
+}
+
+test_failed_agent_start_retains_endpoint_record() {
+  local home="$TMP_ROOT/failed-start/home" fake="$TMP_ROOT/failed-start/fake" log="$TMP_ROOT/failed-start/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_AGENT_START_RC=1 \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'startup reported success after agent-start failure'
+  fi
+  grep -F 'workspace=w1' "$home/state/.primary-herdr" >/dev/null || fail 'failed agent start lost the workspace endpoint'
+  grep -F 'tab=w1:t1' "$home/state/.primary-herdr" >/dev/null || fail 'failed agent start lost the tab endpoint'
+  grep -F 'pane=w1:p1' "$home/state/.primary-herdr" >/dev/null || fail 'failed agent start lost the pane endpoint'
+  pass 'failed agent starts retain a reconcilable endpoint record'
+}
+
 test_status_does_not_create_state() {
   local home="$TMP_ROOT/status/home" out
   mkdir -p "$home/bin"
@@ -343,6 +382,9 @@ test_incomplete_record_refuses
 test_recorded_husk_checks_competing_agent
 test_recorded_husk_checks_competing_workspace
 test_recorded_husk_checks_parent_relationships
+test_malformed_create_response_refuses
+test_invalid_timeout_preflights_before_workspace_create
+test_failed_agent_start_retains_endpoint_record
 test_status_does_not_create_state
 test_healthy_same_role_reconnects_without_launch
 test_live_other_primary_refuses
