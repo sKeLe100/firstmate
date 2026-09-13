@@ -1,0 +1,12 @@
+--- first real server startup ---
+primary server ready: session=firstmate-live-test-1789274832
+--- real server reconnect ---
+primary server ready: session=firstmate-live-test-1789274832
+--- real status after server startup ---
+home=/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M2CFNEV11TAZAWGX1R0EC24Z session=firstmate-live-test-1789274832 lock=free,, endpoint=absent,,
+--- invalid timeout preflight ---
+error: FM_PRIMARY_HERDR_START_TIMEOUT must be positive
+invalid_timeout_rc=1
+--- split home refusal ---
+error: primary launcher requires FM_HOME and FM_ROOT to be the same canonical directory
+split_home_rc=1
