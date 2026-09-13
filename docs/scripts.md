@@ -158,6 +158,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-codex-usage.sh`      | Report a Codex session's context band, weekly-quota burn, and model attribution from its durable rollout file, optionally archiving the same numbers as a usage event |
 | `fm-returning-session-check.sh` | Decide bare-resume vs restart-with-carryover for a returning (pinged or restarted) session from its `fm-context-usage.sh` band and, when given a state dir and id, its idle age against the cache TTL |
 | `fm-primary-watchdog.sh` | Get a usage-limit-blocked or crashed primary back to a working session at reset, without the captain intervening |
+| `fm-primary-herdr.sh` | Start or reconnect the normal Claude or emergency Codex primary in one named Herdr session, with durable ownership and endpoint checks |
 | `fm-stow-cascade.sh`     | Enumerate this home's registered secondmates, their budget reports, and reachable transports for a `/stow` cascade; `--complete` stamps the durable stow-completion marker once the whole cascade finished |
 | `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
 | `fm-autonomous-pc02-lane.sh` | Report whether the single PC02 lane is free for the autonomous pass's dispatch-availability check |

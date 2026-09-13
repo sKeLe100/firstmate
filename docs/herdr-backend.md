@@ -29,6 +29,32 @@ An auto-detected Herdr spawn prints an opt-out notice.
 Spawn stops before creating a Herdr container or acquiring a task worktree when `herdr`, `jq`, or the protocol floor is unavailable.
 No separate first-run provisioning is required.
 
+### Primary desktop startup
+
+`bin/fm-primary-herdr.sh` is the supported launcher for a primary Firstmate that is opened from a desktop shortcut or login task.
+Use `normal` for the ordinary Claude primary, `emergency` for a deliberate Codex takeover after Claude has exited, and `server` for diagnostics or a deployment that should restore only the named Herdr server.
+The launcher records response-derived workspace, tab, pane, and harness identity in the selected home's `state/.primary-herdr`, serializes startup attempts, and reports success only after the selected harness owns the home's session lock and its matching session-start completion record exists.
+It refuses a role change while another live primary owns the home, a live endpoint without matching ownership, an unreadable endpoint, an unrecorded `firstmate-primary` agent, or an unrecorded workspace labeled `firstmate`.
+Those conservative refusals keep mutable Herdr labels out of lifecycle authority while still allowing a confirmed agent-free recorded pane to receive an explicit normal-to-emergency or emergency-to-normal handoff.
+
+The interactive Codex TUI does not have the native SessionStart transport described in [`sessionstart-nudge.md`](sessionstart-nudge.md).
+Emergency mode therefore supplies the exact session-start command as Codex's initial prompt and waits for its durable completion proof before reporting the takeover ready.
+Its model and effort default to `gpt-5.6-luna` and `low`, and may be overridden for one deliberate start with `FM_PRIMARY_CODEX_MODEL` and `FM_PRIMARY_CODEX_EFFORT`.
+Every Codex emergency launch uses the verified bypass-permissions shape required for visible host-process ancestry and session-lock ownership.
+
+A persistent secondmate remains outside this launcher.
+The main primary's locked session-start sweep recovers registered dead or missing secondmates through `fm-spawn.sh --secondmate`, while healthy or ambiguous endpoints are preserved.
+
+Example shortcut commands are:
+
+```sh
+FM_HOME=/home/example/firstmate HERDR_SESSION=firstmate bin/fm-primary-herdr.sh normal
+FM_HOME=/home/example/firstmate HERDR_SESSION=firstmate bin/fm-primary-herdr.sh emergency
+```
+
+For automatic normal recovery, let the operating system run `bin/fm-primary-herdr.sh normal --no-attach` at login and let the attended desktop shortcut run `normal` to reconnect and focus the same session.
+Do not automatically select emergency mode at boot.
+
 The required CI lane uses the pinned installers in `bin/fm-install-herdr.sh` and `bin/fm-install-treehouse.sh`.
 Those script headers own release assets, checksums, download bounds, and post-install gates.
 Real harness credential tests remain opt-in rather than part of default CI.
