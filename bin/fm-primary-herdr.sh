@@ -127,10 +127,16 @@ endpoint_state() {
   tab=$(record_value tab)
   pane=$(record_value pane)
   harness=$(record_value harness)
-  [ "$version" = 1 ] && [ "$record_session" = "$SESSION" ] \
-    && [ -n "$workspace" ] && [ -n "$tab" ] && [ -n "$pane" ] \
-    && { [ "$harness" = claude ] || [ "$harness" = codex ]; } \
-    || { printf 'invalid\t%s\t%s' "$pane" "$harness"; return 0; }
+  if [ "$version" = 1 ] && [ "$record_session" = "$SESSION" ] \
+    && [ -n "$workspace" ] && [ -n "$tab" ] && [ -n "$pane" ]; then
+    case "$harness" in
+      claude|codex) ;;
+      *) printf 'invalid\t%s\t%s' "$pane" "$harness"; return 0 ;;
+    esac
+  else
+    printf 'invalid\t%s\t%s' "$pane" "$harness"
+    return 0
+  fi
   state=$(fm_backend_herdr_pane_agent_state "$SESSION" "$pane")
   if [ "$state" = live ]; then
     identity=$(fm_backend_herdr_agent_identity_raw "$SESSION" "$pane" 2>/dev/null | cut -f1)
