@@ -36,7 +36,8 @@ case "$*" in
     if [ -n "${FAKE_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$FAKE_WORKSPACE_LIST"; else printf '{"result":{"workspaces":[]}}\n'; fi ;;
   *'agent list'*)
     if [ -n "${FAKE_AGENT_LIST:-}" ]; then printf '%s\n' "$FAKE_AGENT_LIST"; else printf '{"result":{"agents":[]}}\n'; fi ;;
-  *'pane get w1:p1'*) printf '{"result":{"pane":{"pane_id":"w1:p1"}}}\n' ;;
+  *'tab get w1:t1'*) printf '{"result":{"tab":{"tab_id":"w1:t1","workspace_id":"%s"}}}\n' "${FAKE_TAB_WORKSPACE:-w1}" ;;
+  *'pane get w1:p1'*) printf '{"result":{"pane":{"pane_id":"w1:p1","tab_id":"%s","workspace_id":"%s"}}}\n' "${FAKE_PANE_TAB:-w1:t1}" "${FAKE_PANE_WORKSPACE:-w1}" ;;
   *'agent get w1:p1'*)
     case "${FAKE_AGENT_STATE:-none}" in
       live-claude) printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' ;;
@@ -161,6 +162,56 @@ EOF
   pass 'an incomplete primary endpoint record is refused'
 }
 
+write_husk_record() {
+  local home=$1
+  cat > "$home/state/.primary-herdr" <<'EOF'
+version=1
+session=firstmate
+workspace=w1
+tab=w1:t1
+pane=w1:p1
+harness=claude
+EOF
+}
+
+test_recorded_husk_checks_competing_agent() {
+  local home="$TMP_ROOT/husk-agent/home" fake="$TMP_ROOT/husk-agent/fake" log="$TMP_ROOT/husk-agent/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FAKE_AGENT_LIST='{"result":{"agents":[{"name":"firstmate-primary"}]}}' \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'husk reuse accepted a competing primary agent'
+  fi
+  printf '%s' "$out" | grep -F 'unrecorded firstmate-primary agent' >/dev/null || fail 'husk competitor refusal was unclear'
+  ! grep -F 'agent start' "$log" >/dev/null || fail 'husk competitor launched an agent'
+  pass 'recorded husk reuse refuses a competing primary agent'
+}
+
+test_recorded_husk_checks_competing_workspace() {
+  local home="$TMP_ROOT/husk-workspace/home" fake="$TMP_ROOT/husk-workspace/fake" log="$TMP_ROOT/husk-workspace/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FAKE_WORKSPACE_LIST='{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w2","label":"firstmate"}]}}' \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'husk reuse accepted competing primary workspaces'
+  fi
+  printf '%s' "$out" | grep -F 'not the unique, consistent primary endpoint' >/dev/null || fail 'husk workspace refusal was unclear'
+  ! grep -F 'agent start' "$log" >/dev/null || fail 'husk workspace competitor launched an agent'
+  pass 'recorded husk reuse refuses competing primary workspaces'
+}
+
+test_recorded_husk_checks_parent_relationships() {
+  local home="$TMP_ROOT/husk-parent/home" fake="$TMP_ROOT/husk-parent/fake" log="$TMP_ROOT/husk-parent/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_TAB_WORKSPACE=w2 \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'husk reuse accepted an inconsistent tab parent'
+  fi
+  printf '%s' "$out" | grep -F 'not the unique, consistent primary endpoint' >/dev/null || fail 'husk parent refusal was unclear'
+  ! grep -F 'agent start' "$log" >/dev/null || fail 'inconsistent husk launched an agent'
+  pass 'recorded husk reuse refuses inconsistent tab relationships'
+}
+
 test_status_does_not_create_state() {
   local home="$TMP_ROOT/status/home" out
   mkdir -p "$home/bin"
@@ -265,6 +316,7 @@ pane=w1:p1
 harness=claude
 EOF
   out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_READY_PID=$$ \
+    FAKE_WORKSPACE_LIST='{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"}]}}' \
     FAKE_PS_COMM=codex FAKE_PS_ARGS=codex FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_PRIMARY_READY_TIMEOUT=1 "$SCRIPT" emergency --no-attach)
   printf '%s' "$out" | grep -F 'primary ready: harness=codex' >/dev/null || fail 'confirmed empty-pane handoff did not start Codex'
@@ -288,6 +340,9 @@ test_unreadable_workspace_inventory_refuses
 test_split_primary_home_refuses
 test_unreadable_agent_inventory_refuses
 test_incomplete_record_refuses
+test_recorded_husk_checks_competing_agent
+test_recorded_husk_checks_competing_workspace
+test_recorded_husk_checks_parent_relationships
 test_status_does_not_create_state
 test_healthy_same_role_reconnects_without_launch
 test_live_other_primary_refuses

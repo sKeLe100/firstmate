@@ -171,6 +171,31 @@ primary_workspace_count() {
   printf '%s' "$count"
 }
 
+verify_recorded_endpoint() {
+  local workspace=$1 tab=$2 pane=$3 label list workspace_id tab_out pane_out
+  label=$(fm_backend_herdr_workspace_label) || return 1
+  list=$(fm_backend_herdr_cli "$SESSION" workspace list 2>/dev/null) || return 1
+  workspace_id=$(jq -r --arg want "$label" '
+    if (.result.workspaces | type) != "array" then
+      error("invalid workspace inventory")
+    else
+      [.result.workspaces[] | select(.label == $want and (.workspace_id | type) == "string" and (.workspace_id | length) > 0)]
+      | if length == 1 then .[0].workspace_id else error("ambiguous workspace inventory") end
+    end
+  ' <<<"$list") || return 1
+  [ "$workspace_id" = "$workspace" ] || return 1
+  tab_out=$(fm_backend_herdr_cli "$SESSION" tab get "$tab" 2>/dev/null) || return 1
+  jq -e --arg tab "$tab" --arg workspace "$workspace" '
+    .result.tab.tab_id == $tab and .result.tab.workspace_id == $workspace
+  ' <<<"$tab_out" >/dev/null 2>&1 || return 1
+  pane_out=$(fm_backend_herdr_cli "$SESSION" pane get "$pane" 2>/dev/null) || return 1
+  jq -e --arg pane "$pane" --arg tab "$tab" --arg workspace "$workspace" '
+    .result.pane.pane_id == $pane
+    and .result.pane.tab_id == $tab
+    and .result.pane.workspace_id == $workspace
+  ' <<<"$pane_out" >/dev/null 2>&1
+}
+
 report_status() {
   local ls es
   ls=$(lock_state)
@@ -244,6 +269,18 @@ case "$ENDPOINT_KIND" in
     PANE=$ENDPOINT_PANE
     WORKSPACE=$(record_value workspace)
     TAB=$(record_value tab)
+    primary_count=$(named_primary_count) || {
+      echo "error: Herdr primary-agent discovery was unreadable; refusing a potentially duplicate startup" >&2
+      exit 1
+    }
+    [ "$primary_count" -eq 0 ] || {
+      echo "error: Herdr already reports $primary_count unrecorded firstmate-primary agent(s); refusing duplicate startup" >&2
+      exit 1
+    }
+    verify_recorded_endpoint "$WORKSPACE" "$TAB" "$PANE" || {
+      echo "error: recorded Herdr primary endpoint is not the unique, consistent primary endpoint; refusing startup" >&2
+      exit 1
+    }
     ;;
   dead|absent)
     primary_count=$(named_primary_count) || {
