@@ -117,7 +117,10 @@ lock_state() {
 
 endpoint_state() {
   local version record_session workspace tab pane harness state identity
-  [ -f "$RECORD" ] && [ ! -L "$RECORD" ] || { printf 'absent\t\t'; return 0; }
+  if [ ! -f "$RECORD" ] || [ -L "$RECORD" ]; then
+    printf 'absent\t\t'
+    return 0
+  fi
   version=$(record_value version)
   record_session=$(record_value session)
   workspace=$(record_value workspace)
