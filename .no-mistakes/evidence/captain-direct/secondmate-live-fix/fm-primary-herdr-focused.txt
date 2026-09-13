@@ -1,0 +1,21 @@
+PASS emergency startup pins Codex, records the endpoint, and waits for ownership proof
+PASS normal startup selects Claude, records the endpoint, and waits for ownership proof
+PASS an unreadable primary workspace inventory fails closed
+PASS a split primary root and home are refused before startup
+PASS an unreadable primary agent inventory fails closed
+PASS an incomplete primary endpoint record is refused
+PASS recorded husk reuse refuses a competing primary agent
+PASS recorded husk reuse refuses competing primary workspaces
+PASS recorded husk reuse refuses inconsistent tab relationships
+PASS malformed workspace-create responses fail closed
+PASS invalid startup timeouts are rejected before workspace mutation
+PASS failed agent starts retain a reconcilable endpoint record
+PASS status remains read-only when state is absent
+PASS a healthy same-role primary reconnects without duplicate launch
+PASS a live primary of the other role prevents duplicate startup
+PASS a live recorded endpoint without matching ownership is preserved and refused
+PASS an unrecorded agent rooted at the primary home prevents duplicate startup
+PASS an unrecorded primary workspace prevents conflicting creation
+PASS a confirmed empty recorded pane permits explicit role handoff
+PASS boot server mode starts no primary agent
+PASS fm-primary-herdr.test.sh
