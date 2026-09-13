@@ -181,11 +181,11 @@ test_recorded_husk_checks_competing_agent() {
   local home="$TMP_ROOT/husk-agent/home" fake="$TMP_ROOT/husk-agent/fake" log="$TMP_ROOT/husk-agent/log" out
   make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
-    FAKE_AGENT_LIST='{"result":{"agents":[{"name":"firstmate-primary"}]}}' \
+    FAKE_AGENT_LIST="{\"result\":{\"agents\":[{\"agent\":\"claude\",\"cwd\":\"$home\"}]}}" \
     FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'husk reuse accepted a competing primary agent'
   fi
-  printf '%s' "$out" | grep -F 'unrecorded firstmate-primary agent' >/dev/null || fail 'husk competitor refusal was unclear'
+  printf '%s' "$out" | grep -F 'unrecorded agent(s) rooted at the primary home' >/dev/null || fail 'husk competitor refusal was unclear'
   ! grep -F 'agent start' "$log" >/dev/null || fail 'husk competitor launched an agent'
   pass 'recorded husk reuse refuses a competing primary agent'
 }
@@ -317,17 +317,17 @@ EOF
   pass 'a live recorded endpoint without matching ownership is preserved and refused'
 }
 
-test_unrecorded_named_agent_refuses() {
+test_unrecorded_rooted_agent_refuses() {
   local home="$TMP_ROOT/unrecorded-agent/home" fake="$TMP_ROOT/unrecorded-agent/fake" log="$TMP_ROOT/unrecorded-agent/log" out
   make_home "$home"; make_fakebin "$fake"; : > "$log"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
-    FAKE_AGENT_LIST='{"result":{"agents":[{"name":"firstmate-primary"}]}}' \
+    FAKE_AGENT_LIST="{\"result\":{\"agents\":[{\"agent\":\"claude\",\"cwd\":\"$home\"}]}}" \
     FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
-    fail 'startup accepted an unrecorded named primary agent'
+    fail 'startup accepted an unrecorded agent rooted at the primary home'
   fi
-  printf '%s' "$out" | grep -F 'unrecorded firstmate-primary agent' >/dev/null || fail 'unrecorded-agent refusal was unclear'
+  printf '%s' "$out" | grep -F 'unrecorded agent(s) rooted at the primary home' >/dev/null || fail 'unrecorded-agent refusal was unclear'
   ! grep -F 'workspace create' "$log" >/dev/null || fail 'unrecorded-agent refusal created a workspace'
-  pass 'an unrecorded named primary agent prevents duplicate startup'
+  pass 'an unrecorded agent rooted at the primary home prevents duplicate startup'
 }
 
 test_unrecorded_workspace_refuses() {
@@ -389,7 +389,7 @@ test_status_does_not_create_state
 test_healthy_same_role_reconnects_without_launch
 test_live_other_primary_refuses
 test_live_endpoint_without_lock_refuses
-test_unrecorded_named_agent_refuses
+test_unrecorded_rooted_agent_refuses
 test_unrecorded_workspace_refuses
 test_confirmed_empty_pane_allows_role_handoff
 test_server_mode_never_starts_agent

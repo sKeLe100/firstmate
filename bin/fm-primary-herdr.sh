@@ -147,14 +147,14 @@ endpoint_state() {
   fi
 }
 
-named_primary_count() {
+rooted_primary_count() {
   local out count
   out=$(fm_backend_herdr_cli "$SESSION" agent list 2>/dev/null) || return 1
-  count=$(jq -r '
+  count=$(jq -r --arg home "$CANONICAL_HOME" '
     if (.result.agents | type) != "array" then
       error("invalid agent inventory")
     else
-      [.result.agents[] | select((.name // .label // "") == "firstmate-primary")] | length
+      [.result.agents[] | select(.cwd == $home or .foreground_cwd == $home)] | length
     end
   ' <<<"$out") || return 1
   case "$count" in
@@ -311,12 +311,12 @@ case "$ENDPOINT_KIND" in
     PANE=$ENDPOINT_PANE
     WORKSPACE=$(record_value workspace)
     TAB=$(record_value tab)
-    primary_count=$(named_primary_count) || {
+    primary_count=$(rooted_primary_count) || {
       echo "error: Herdr primary-agent discovery was unreadable; refusing a potentially duplicate startup" >&2
       exit 1
     }
     [ "$primary_count" -eq 0 ] || {
-      echo "error: Herdr already reports $primary_count unrecorded firstmate-primary agent(s); refusing duplicate startup" >&2
+      echo "error: Herdr already reports $primary_count unrecorded agent(s) rooted at the primary home; refusing duplicate startup" >&2
       exit 1
     }
     verify_recorded_endpoint "$WORKSPACE" "$TAB" "$PANE" || {
@@ -325,12 +325,12 @@ case "$ENDPOINT_KIND" in
     }
     ;;
   dead|absent)
-    primary_count=$(named_primary_count) || {
+    primary_count=$(rooted_primary_count) || {
       echo "error: Herdr primary-agent discovery was unreadable; refusing a potentially duplicate startup" >&2
       exit 1
     }
     [ "$primary_count" -eq 0 ] || {
-      echo "error: Herdr already reports $primary_count unrecorded firstmate-primary agent(s); refusing duplicate startup" >&2
+      echo "error: Herdr already reports $primary_count unrecorded agent(s) rooted at the primary home; refusing duplicate startup" >&2
       exit 1
     }
     workspace_count=$(primary_workspace_count) || {
