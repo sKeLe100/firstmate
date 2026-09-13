@@ -35,7 +35,7 @@ No separate first-run provisioning is required.
 Use `normal` for the ordinary Claude primary, `emergency` for a deliberate Codex takeover after Claude has exited, and `server` for diagnostics or a deployment that should restore only the named Herdr server.
 The launcher records response-derived workspace, tab, pane, and harness identity in the selected home's `state/.primary-herdr`, serializes startup attempts, and reports success only after the selected harness owns the home's session lock and its matching session-start completion record exists.
 The primary-only launcher requires `FM_HOME` and `FM_ROOT_OVERRIDE` to resolve to the same canonical Firstmate directory, because Herdr panes inherit the launcher's operational environment.
-It refuses a role change while another live primary owns the home, a live endpoint without matching ownership, an unreadable endpoint, an unrecorded `firstmate-primary` agent, or an unrecorded workspace labeled `firstmate`.
+It refuses a role change while another live primary owns the home, a live endpoint without matching ownership, an unreadable endpoint, an unrecorded agent rooted at the primary home, or an unrecorded workspace labeled `firstmate`.
 Those conservative refusals keep mutable Herdr labels out of lifecycle authority while still allowing a confirmed agent-free recorded pane to receive an explicit normal-to-emergency or emergency-to-normal handoff.
 
 The interactive Codex TUI does not have the native SessionStart transport described in [`sessionstart-nudge.md`](sessionstart-nudge.md).
