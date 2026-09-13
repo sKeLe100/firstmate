@@ -19,6 +19,7 @@
 #
 # Safety contract:
 # - FM_HOME identifies the one primary home; it defaults to this tracked root.
+# - This primary-only launcher requires canonical FM_HOME and FM_ROOT to match.
 # - HERDR_SESSION selects one explicit named session and defaults to firstmate.
 # - state/.primary-herdr records response-derived endpoint ids and the selected
 #   primary harness. Labels are presentation only and never authorize reuse.
@@ -75,15 +76,15 @@ esac
   || { echo "error: primary home is unavailable or unsafe: $FM_HOME" >&2; exit 1; }
 [ -f "$FM_ROOT/AGENTS.md" ] && [ -x "$FM_ROOT/bin/fm-session-start.sh" ] \
   || { echo "error: tracked Firstmate root is incomplete: $FM_ROOT" >&2; exit 1; }
+CANONICAL_ROOT=$(cd "$FM_ROOT" 2>/dev/null && pwd -P) || { echo "error: tracked Firstmate root is unavailable: $FM_ROOT" >&2; exit 1; }
+CANONICAL_HOME=$(cd "$FM_HOME" 2>/dev/null && pwd -P) || { echo "error: primary home is unavailable: $FM_HOME" >&2; exit 1; }
+[ "$CANONICAL_HOME" = "$CANONICAL_ROOT" ] \
+  || { echo "error: primary launcher requires FM_HOME and FM_ROOT to be the same canonical directory" >&2; exit 1; }
 
-# shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/backends/herdr.sh"
-
-mkdir -p "$STATE"
 
 record_value() { sed -n "s/^$1=//p" "$RECORD" 2>/dev/null | tail -1; }
 
@@ -115,12 +116,17 @@ lock_state() {
 }
 
 endpoint_state() {
-  local record_session pane harness state identity
+  local version record_session workspace tab pane harness state identity
   [ -f "$RECORD" ] && [ ! -L "$RECORD" ] || { printf 'absent\t\t'; return 0; }
+  version=$(record_value version)
   record_session=$(record_value session)
+  workspace=$(record_value workspace)
+  tab=$(record_value tab)
   pane=$(record_value pane)
   harness=$(record_value harness)
-  [ "$record_session" = "$SESSION" ] && [ -n "$pane" ] \
+  [ "$version" = 1 ] && [ "$record_session" = "$SESSION" ] \
+    && [ -n "$workspace" ] && [ -n "$tab" ] && [ -n "$pane" ] \
+    && { [ "$harness" = claude ] || [ "$harness" = codex ]; } \
     || { printf 'invalid\t%s\t%s' "$pane" "$harness"; return 0; }
   state=$(fm_backend_herdr_pane_agent_state "$SESSION" "$pane")
   if [ "$state" = live ]; then
@@ -133,9 +139,19 @@ endpoint_state() {
 }
 
 named_primary_count() {
-  local out
+  local out count
   out=$(fm_backend_herdr_cli "$SESSION" agent list 2>/dev/null) || return 1
-  printf '%s' "$out" | jq -er '[.result.agents[]? | select((.name // .label // "") == "firstmate-primary")] | length'
+  count=$(jq -r '
+    if (.result.agents | type) != "array" then
+      error("invalid agent inventory")
+    else
+      [.result.agents[] | select((.name // .label // "") == "firstmate-primary")] | length
+    end
+  ' <<<"$out") || return 1
+  case "$count" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s' "$count"
 }
 
 primary_workspace_count() {
@@ -166,6 +182,10 @@ if [ "$MODE" = status ]; then
   report_status
   exit 0
 fi
+
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+mkdir -p "$STATE"
 
 if ! fm_lock_try_acquire "$START_LOCK"; then
   echo "error: another primary startup is already in progress for $FM_HOME" >&2

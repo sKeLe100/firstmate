@@ -78,7 +78,7 @@ run_case() {
   make_fakebin "$fake"
   : > "$log"
   case "$mode" in normal|emergency) script_args+=(--no-attach) ;; esac
-  env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+  env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     HERDR_SESSION=firstmate FM_PRIMARY_READY_TIMEOUT=1 "$@" "$SCRIPT" "${script_args[@]}"
 }
 
@@ -100,7 +100,7 @@ test_normal_launch_is_explicit_and_completes() {
   log=$(cat "$TMP_ROOT/normal/log")
   printf '%s' "$out" | grep -F 'primary ready: harness=claude' >/dev/null || fail 'normal launch did not report ready'
   printf '%s' "$log" | grep -F 'agent start firstmate-primary --kind claude --pane w1:p1' >/dev/null || fail 'normal launch did not target the exact pane as Claude'
-  printf '%s' "$log" | grep -F -- "workspace create --cwd $ROOT --label firstmate --no-focus" >/dev/null || fail 'normal launch did not create the workspace from the tracked root'
+  printf '%s' "$log" | grep -F -- "workspace create --cwd $TMP_ROOT/normal/home --label firstmate --no-focus" >/dev/null || fail 'normal launch did not create the workspace from the tracked root'
   printf '%s' "$log" | grep -F -- '--dangerously-skip-permissions' >/dev/null || fail 'normal launch omitted the verified Claude execution shape'
   grep -F 'harness=claude' "$TMP_ROOT/normal/home/state/.primary-herdr" >/dev/null || fail 'normal endpoint record omitted Claude identity'
   pass 'normal startup selects Claude, records the endpoint, and waits for ownership proof'
@@ -110,12 +110,67 @@ test_unreadable_workspace_inventory_refuses() {
   local home="$TMP_ROOT/unreadable-workspace/home" fake="$TMP_ROOT/unreadable-workspace/fake" log="$TMP_ROOT/unreadable-workspace/log" out
   make_home "$home"; make_fakebin "$fake"; : > "$log"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_WORKSPACE_LIST_RC=1 \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$SCRIPT" normal --no-attach 2>&1); then
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'startup accepted an unreadable primary workspace inventory'
   fi
   printf '%s' "$out" | grep -F 'primary-workspace discovery was unreadable' >/dev/null || fail 'unreadable-workspace refusal was unclear'
   ! grep -F 'workspace create' "$log" >/dev/null || fail 'unreadable-workspace discovery created a workspace'
   pass 'an unreadable primary workspace inventory fails closed'
+}
+
+test_split_primary_home_refuses() {
+  local home="$TMP_ROOT/split-home/home" fake="$TMP_ROOT/split-home/fake" log="$TMP_ROOT/split-home/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'startup accepted a split primary root and home'
+  fi
+  printf '%s' "$out" | grep -F 'requires FM_HOME and FM_ROOT to be the same canonical directory' >/dev/null || fail 'split-home refusal was unclear'
+  [ ! -s "$log" ] || fail 'split-home refusal mutated Herdr'
+  pass 'a split primary root and home are refused before startup'
+}
+
+test_unreadable_agent_inventory_refuses() {
+  local home="$TMP_ROOT/unreadable-agent/home" fake="$TMP_ROOT/unreadable-agent/fake" log="$TMP_ROOT/unreadable-agent/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FAKE_AGENT_LIST='{"result":{}}' FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'startup accepted an unreadable primary agent inventory'
+  fi
+  printf '%s' "$out" | grep -F 'primary-agent discovery was unreadable' >/dev/null || fail 'unreadable-agent refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'unreadable-agent discovery created a workspace'
+  pass 'an unreadable primary agent inventory fails closed'
+}
+
+test_incomplete_record_refuses() {
+  local home="$TMP_ROOT/incomplete-record/home" fake="$TMP_ROOT/incomplete-record/fake" log="$TMP_ROOT/incomplete-record/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"
+  cat > "$home/state/.primary-herdr" <<'EOF'
+version=1
+session=firstmate
+pane=w1:p1
+harness=claude
+EOF
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'startup accepted an incomplete primary endpoint record'
+  fi
+  printf '%s' "$out" | grep -F 'recorded primary endpoint is invalid' >/dev/null || fail 'incomplete-record refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'incomplete record created a workspace'
+  pass 'an incomplete primary endpoint record is refused'
+}
+
+test_status_does_not_create_state() {
+  local home="$TMP_ROOT/status/home" out
+  mkdir -p "$home/bin"
+  cp "$ROOT/AGENTS.md" "$home/AGENTS.md"
+  cp "$ROOT/bin/fm-session-start.sh" "$home/bin/fm-session-start.sh"
+  chmod +x "$home/bin/fm-session-start.sh"
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" status)
+  printf '%s' "$out" | grep -F "home=$home" >/dev/null || fail 'status did not report the primary home'
+  [ ! -e "$home/state" ] || fail 'status created the state directory'
+  pass 'status remains read-only when state is absent'
 }
 
 test_healthy_same_role_reconnects_without_launch() {
@@ -132,7 +187,7 @@ pane=w1:p1
 harness=claude
 EOF
   out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_AGENT_STATE=live-claude \
-    FAKE_PS_COMM=claude FAKE_PS_ARGS=claude FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FAKE_PS_COMM=claude FAKE_PS_ARGS=claude FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     "$SCRIPT" normal --no-attach)
   printf '%s' "$out" | grep -F 'primary reconnected: harness=claude' >/dev/null || fail 'healthy same-role startup did not reconnect'
   ! grep -F 'agent start' "$log" >/dev/null || fail 'healthy same-role reconnect launched a duplicate agent'
@@ -144,7 +199,7 @@ test_live_other_primary_refuses() {
   make_home "$home"; make_fakebin "$fake"; : > "$log"
   printf '%s\n' "$$" > "$home/state/.lock"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_PS_COMM=codex FAKE_PS_ARGS=codex \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$SCRIPT" normal --no-attach 2>&1); then
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'normal startup accepted a live Codex owner'
   fi
   printf '%s' "$out" | grep -F 'already owned by live codex' >/dev/null || fail 'role-conflict refusal was unclear'
@@ -164,7 +219,7 @@ pane=w1:p1
 harness=claude
 EOF
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_AGENT_STATE=live-claude \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$SCRIPT" normal --no-attach 2>&1); then
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'startup accepted a live endpoint without matching lock ownership'
   fi
   printf '%s' "$out" | grep -F 'exists without matching lock ownership' >/dev/null || fail 'orphan live endpoint refusal was unclear'
@@ -177,7 +232,7 @@ test_unrecorded_named_agent_refuses() {
   make_home "$home"; make_fakebin "$fake"; : > "$log"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
     FAKE_AGENT_LIST='{"result":{"agents":[{"name":"firstmate-primary"}]}}' \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$SCRIPT" normal --no-attach 2>&1); then
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'startup accepted an unrecorded named primary agent'
   fi
   printf '%s' "$out" | grep -F 'unrecorded firstmate-primary agent' >/dev/null || fail 'unrecorded-agent refusal was unclear'
@@ -190,7 +245,7 @@ test_unrecorded_workspace_refuses() {
   make_home "$home"; make_fakebin "$fake"; : > "$log"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
     FAKE_WORKSPACE_LIST='{"result":{"workspaces":[{"workspace_id":"other","label":"firstmate"}]}}' \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$SCRIPT" normal --no-attach 2>&1); then
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'startup accepted an unrecorded primary workspace'
   fi
   printf '%s' "$out" | grep -F 'unrecorded workspace' >/dev/null || fail 'unrecorded-workspace refusal was unclear'
@@ -210,7 +265,7 @@ pane=w1:p1
 harness=claude
 EOF
   out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_READY_PID=$$ \
-    FAKE_PS_COMM=codex FAKE_PS_ARGS=codex FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FAKE_PS_COMM=codex FAKE_PS_ARGS=codex FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_PRIMARY_READY_TIMEOUT=1 "$SCRIPT" emergency --no-attach)
   printf '%s' "$out" | grep -F 'primary ready: harness=codex' >/dev/null || fail 'confirmed empty-pane handoff did not start Codex'
   grep -F 'agent start firstmate-primary --kind codex --pane w1:p1' "$log" >/dev/null || fail 'empty-pane handoff did not reuse the recorded pane'
@@ -230,6 +285,10 @@ test_server_mode_never_starts_agent() {
 test_emergency_launch_is_explicit_and_completes
 test_normal_launch_is_explicit_and_completes
 test_unreadable_workspace_inventory_refuses
+test_split_primary_home_refuses
+test_unreadable_agent_inventory_refuses
+test_incomplete_record_refuses
+test_status_does_not_create_state
 test_healthy_same_role_reconnects_without_launch
 test_live_other_primary_refuses
 test_live_endpoint_without_lock_refuses
