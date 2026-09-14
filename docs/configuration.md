@@ -309,6 +309,8 @@ The elapsed-time dimension bounds how many concurrent cloud sessions the window'
 
 `quota-axi --json` exposes only `five_hour.resetsAt` - a fixed reset timestamp - not a window-start timestamp, so elapsed time cannot be read directly and must be derived from the five-hour window's fixed duration: a window is at or before its 2.5-hour mark exactly when at least 2.5 hours remain until `five_hour.resetsAt` (`resetsAt - generatedAt >= 2.5h`), and past it once less than 2.5 hours remain.
 
+`bin/fm-dispatch-quota-cap.sh` is the ladder's executable owner: it applies the rows above to the base cap and prints `effective_cap: <n>` plus `codex_spawn: yes|no` (no whenever the Codex provider's weekly window reports ahead-of-pace), and exits 2 rather than reporting headroom when the quota reading is unavailable; its header owns its flags and exact exit codes.
+
 Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable).
 
 `config/dispatch-cap` and its Codex sibling `config/codex-lane-cap` are inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so a secondmate launches with the primary's lane limits instead of no mechanical cap at all; primary-authoritative propagation and absence-mirroring apply exactly as for `config/context-thresholds` below.
