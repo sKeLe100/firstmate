@@ -349,8 +349,10 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
   });
   // A non-login shell (no -l) skips sourcing the ambient user/system profile
   // chain, which can otherwise block for tens of seconds on a hosted CI
-  // runner; unref lets the parent's event loop exit without waiting on the
-  // piped stdout/stderr fds while this child is still alive (see
+  // runner; that is what removes the hang. unref only drops the process
+  // handle from the event loop's ref count: the piped stdout/stderr sockets
+  // stay ref'd on purpose, because readiness and the close handler below are
+  // driven by them and the arm stays alive for its watcher's whole life (see
   // data/pi-watch-arm-spawn-hang-investigation/report.md).
   armChild.unref();
   child = armChild;

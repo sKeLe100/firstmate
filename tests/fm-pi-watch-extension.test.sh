@@ -13,7 +13,7 @@ EXT="$ROOT/.pi/extensions/fm-primary-pi-watch.ts"
 export NODE_NO_WARNINGS=1
 
 # One owner for the readiness budget every unready-successor test below spends
-# on purpose. Both plugins start a successor arm through a login shell and
+# on purpose. The Pi extension starts a successor arm through a login shell and
 # SIGTERM it when it stays silent past this budget, so the budget has to outlast
 # a cold login-shell start. A successor killed before its first statement never
 # appends its arm row and never installs the TERM trap these tests observe, so
@@ -3136,9 +3136,10 @@ printf 'arm\n' >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  # HOME is isolated to a throwaway, profile-free directory here because
-  # spawnArm() launches a login shell that sources it; an ambient CI $HOME's
-  # profile chain can block that shell for tens of seconds (see
+  # HOME is isolated to a throwaway, profile-free directory so nothing from the
+  # ambient CI $HOME (profile chain, dotfiles) can leak into spawnArm()'s shell;
+  # spawnArm() no longer runs a login shell, and
+  # test_opencode_primary_watch_plugin_ignores_slow_home_profile pins that (see
   # data/pi-watch-arm-spawn-hang-investigation/report.md).
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" HOME="$node_home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
 import { existsSync, writeFileSync } from "node:fs";
@@ -3183,6 +3184,56 @@ EOF
   expect_code 0 "$status" "OpenCode watch plugin must arm only when this session owns the fleet lock"
   [ -z "$out" ] || fail "OpenCode session-lock test printed output: $out"
   pass "OpenCode watcher plugin requires session lock ownership"
+}
+
+test_opencode_primary_watch_plugin_ignores_slow_home_profile() {
+  local plugin repo home node_home log out status started elapsed
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-slow-profile-root"
+  home="$TMP_ROOT/opencode-slow-profile-home"
+  node_home="$TMP_ROOT/opencode-slow-profile-node-home"
+  log="$TMP_ROOT/opencode-slow-profile.log"
+  mkdir -p "$repo/bin" "$home/state" "$home/config" "$node_home"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  : > "$home/state/task.meta"
+  printf 'sleep 10\n' > "$node_home/.bash_profile"
+  printf 'sleep 10\n' > "$node_home/.profile"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm\n' >> "${FM_ARM_LOG:?}"
+printf 'watcher: healthy pid=1 (beacon 0s)\n'
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  started=$(date +%s)
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" HOME="$node_home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
+import { existsSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const client = { session: { promptAsync: async () => {} } };
+const hooks = await mod.FmPrimaryWatchArm({
+  client,
+  directory: process.env.WORKTREE,
+  worktree: process.env.WORKTREE,
+});
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
+for (let i = 0; i < 150 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 20));
+}
+if (!existsSync(process.env.FM_ARM_LOG)) {
+  console.error("watch arm did not run within 3s; spawnArm is blocked on HOME's profile chain");
+  process.exit(1);
+}
+EOF
+)
+  status=$?
+  elapsed=$(( $(date +%s) - started ))
+  expect_code 0 "$status" "OpenCode watch plugin must arm without sourcing HOME's profile chain: $out"
+  [ -z "$out" ] || fail "OpenCode slow-profile test printed output: $out"
+  [ "$elapsed" -lt 8 ] || fail "OpenCode watch plugin invocation took ${elapsed}s; the arm child kept node alive on HOME's profile chain"
+  pass "OpenCode watcher plugin ignores a slow HOME profile chain"
 }
 
 test_opencode_watch_arm_coordinator_respects_primary_scope() {
@@ -4015,6 +4066,7 @@ test_opencode_plugin_package_boundary_is_explicit_esm
 test_opencode_primary_watch_plugin_uses_effective_state_home
 test_opencode_primary_watch_plugin_sources_effective_config
 test_opencode_primary_watch_plugin_requires_session_lock
+test_opencode_primary_watch_plugin_ignores_slow_home_profile
 test_opencode_watch_arm_coordinator_respects_primary_scope
 test_opencode_primary_watch_plugin_rearms_after_wake
 test_opencode_pre_ready_actionable_close_preserves_its_successor
