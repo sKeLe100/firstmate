@@ -16,7 +16,7 @@ It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the b
 
 1. **Gather with one deterministic command.**
    Run `bin/fm-queue-snapshot.sh` (default 30 items) and read its output.
-   It is the single bounded, deterministic source for this listing: it shells out to `tasks-axi list --state queued` for every queued item, sorts the full set by gate class then project then newest-first by default (or by descending `priority` when the captain invoked `/queue priority`, tiebreak: tasks-axi's own return order), takes the top N, and enriches each row with more deterministic facts tasks-axi does not itself carry: `rank` (the 1-based position after that sort), `posture` (that item's project delivery mode/yolo, from `bin/fm-project-mode.sh`, the single owner of `data/projects.md` parsing), a derived `autonomy` verdict, and a derived `gate` verdict.
+   It is the single bounded, deterministic source for this listing: it shells out to `tasks-axi list --state queued` for every queued item, sorts the full set by gate class then project then newest-first by default (or by descending `priority` when the captain invoked `/queue priority`, tiebreak: tasks-axi's own return order), takes the top N, and enriches each row with more deterministic facts tasks-axi does not itself carry: `rank` (the 1-based position after that sort), `posture` (that item's project delivery mode/yolo, from `bin/fm-project-mode.sh`, the single owner of `data/projects.md` parsing), a derived `autonomy` verdict, a derived `gate` verdict, and a derived `rot` verdict (step 7 owns rendering it).
    `kind` and `created` ride through from tasks-axi's own item record unmodified; do not derive or guess either.
    The snapshot's `gate` field is one of `dispatchable`, `blocked`, `captain`, or `deferred-until <date>`, already derived from that row's own `blocked`/`hold_until` fields and its `autonomy` verdict; never re-derive it from the title or your own read of the item.
    When the snapshot's `hidden[...]` rows are present (only when `--limit` truncated the full queued set), it is the per-repo breakdown of the items the limit cut, from the same full queued set `total_queued` counts, sorted by descending count.
@@ -64,12 +64,13 @@ It never dispatches, steers, holds, blocks, reorders, or otherwise mutates the b
    Never override or re-derive this verdict from the title or your own read of the situation; a wrong "clears itself" is worse than an honest "unclear".
 
 7. **Render one numbered, two-line entry per item - a title line and a detail line.**
-   Title line: `<rank>. <id>: <short title>`.
-   Detail line, indented under it: `project: <project> - kind: <kind> - <age>d - tier: <candidates or the once-stated absent/invalid note> - <autonomy>[ - gated: <reason>]`.
+   Title line: `<rank>. <id>: <short title>`; prefix it with `[ROT] ` when the item's own `rot` field is `yes`, so a stale, unprioritized, dispatchable item is visible at a glance and never sits unnoticed.
+   Detail line, indented under it: `project: <project> - kind: <kind> - <age>d - tier: <candidates or the once-stated absent/invalid note> - <autonomy>[ - gated: <reason>][ - rot: queued <age>d with no priority set]`.
    Compute `<age>d` from the item's `created` field as whole days elapsed since that date (today's date is available to you); when `created` is empty for an item, render `age: unknown` in its place instead of a day count rather than guessing.
+   The snapshot's `rot` field is already derived (never guessed): `yes` only for a `gate: dispatchable` item - so already known neither blocked nor held - whose `priority` is not a number (unset, `-`, or any non-numeric value) and whose `created` is at least the age threshold the snapshot's own header documents (it reuses the `autonomous` skill's existing deferred-ready staleness convention rather than a new number). Render the `[ROT]` prefix and the detail-line `rot:` note exactly when `rot` is `yes`, and neither when it is `no`; never re-derive this verdict from age or priority yourself.
    Render `kind` verbatim as tasks-axi reports it (scout/ship/task/captain/etc).
    Truncate a long title to stay scannable; the id is always exact so the captain can ask about it by name.
-   Put no other field on either line - no dates, no hold details beyond the one-line gate note, no body text, no links.
+   Put no other field on either line - no dates, no hold details beyond the one-line gate note and the rot note above, no body text, no links.
    End the list with one short line making clear that any item can be asked about by id or description for full detail (body, blockers, dependencies, links) via `tasks-axi show <id> --full`, and that the list above is deliberately everything-else-omitted.
 
 8. **Answer follow-up questions about one item read-only.**
