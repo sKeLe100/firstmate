@@ -1,0 +1,12 @@
+# fm_composer_extract_selected_content (the zellij paste-proof reader) fed the real opencode 1.18.30 screen,
+# capture window cropped at the composer floor row.
+### 30 cols idle      target: rc=0 out=[]   base: rc=0 out=[Ask anything… "Fix broken tests" Buil ·GPT OSS 120B G d r]
+### 30 cols typed     target: rc=0 out=[hello there captain]   base: rc=0 out=[hello there captain Buil ·GPT OSS 120B G d r]
+  ┃
+  ┃  hello there captain
+  ┃
+  ┃  Buil ·GPT OSS 120B G
+  ┃  d                  r
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+### 100 cols idle     target: rc=0 out=[]   base: rc=0 out=[Ask anything… "Fix broken tests"]
+### 100 cols typed    target: rc=0 out=[hello there captain]   base: rc=0 out=[hello there captain]

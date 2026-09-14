@@ -1,0 +1,31 @@
+### fm_task_inbox_ring (fm-send's doorbell) against a live idle opencode 1.18.31 pane at 30 cols
+composer_state  BASE=pending  TARGET=empty
+  ┃
+  ┃  Ask anything… "Fix a
+  ┃  TODO in the codebase"
+  ┃
+  ┃  Buil ·GPT OSS 120B G
+  ┃  d                  r
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+BASE   (5dbfb794): ring rc=1   <- 1 = doorbell skipped because composer read as pending
+TARGET (aefcc272): ring rc=0   <- 0 = doorbell typed + Enter
+--- screen +5s (widened to 100 cols to read the transcript)
+ommit: 0.19GB | Faults: 0 | Ma
+chine: 15.58GB
+panic(main thread): Segmentati
+on fault at address 0x74CC8BE2
+3FFC
+oh no: Bun has crashed. This i
+ndicates a bug in Bun, not you
+r code.
+To send a redacted crash repor
+t to Bun's team,
+please file a GitHub issue usi
+ng the link below:
+ https://bun.report/1.3.14/Ba1
+0d9b296m4GugogC4664tE+quR_____
+suwxrCmsvprCi4wtpFusjtpF8s1muF
+4r338D__msvprCwpthhF+1yimF08yp
+8D6u0quCA24s6Bpgg3j0D
+bash: line 1: 1261542 Illegal
+instruction        opencode

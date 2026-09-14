@@ -1,0 +1,31 @@
+
+### width=30 with typed text  target=pending  extracted=[]
+  ┃
+  ┃  hello there captain
+  ┃
+  ┃  Buil ·GPT OSS 120B G
+  ┃  d                  r
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=30 after erasing text  target=empty
+  ┃
+  ┃  Ask anything… "Fix
+  ┃  broken tests"
+  ┃
+  ┃  Buil ·GPT OSS 120B G
+  ┃  d                  r
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=100 with typed text  target=pending  extracted=[]
+             ┃
+             ┃  hello there captain
+             ┃
+             ┃  Build · GPT OSS 120B Groq
+             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=100 after erasing text  target=empty
+             ┃
+             ┃  Ask anything… "Fix broken tests"
+             ┃
+             ┃  Build · GPT OSS 120B Groq
+             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀

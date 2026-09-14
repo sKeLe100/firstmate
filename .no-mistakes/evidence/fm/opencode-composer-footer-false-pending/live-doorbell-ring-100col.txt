@@ -1,0 +1,38 @@
+### fm_task_inbox_ring (fm-send's doorbell) against a live idle opencode 1.18.31 pane at 100 cols
+# (opencode 1.18.30/31 crashes with a Bun segfault when a long line is typed into a <=30-col pane, even via raw tmux send-keys,
+#  so the landing proof is taken at 100 cols where the same idle-hint false-pending bites the base code)
+composer_state  BASE=pending  TARGET=empty
+             ┃
+             ┃  Ask anything… "Fix a TODO in the codebase"
+             ┃
+             ┃  Build · GPT OSS 120B Groq
+             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+BASE   (5dbfb794): ring rc=1   <- 1 = doorbell skipped because composer read as pending
+TARGET (aefcc272): ring rc=0   <- 0 = doorbell typed + Enter
+--- screen +4s
+                                                                ▄
+                               █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+                               █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+                               ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+             ┃
+             ┃  Ask anything… "Fix a TODO in the codebase"
+             ┃
+             ┃  Build · GPT OSS 120B Groq
+             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                             tab agents  ctrl+p commands
+                       ● Tip Themes support dark/light variants for both modes
+  /tmp/tmp.nNq4TLTGuK:master                                                               1.18.31
+  ┃                                   ┃  organization `org_01kznzndwzer68957arjerjhce` service   ┃
+                                      ┃  tier `on_demand` on tokens per minute (TPM): Limit      ┃
+  ┃                                   ┃  8000, Requested 9970, please reduce your message size   ┃
+  ┃  : Firstmate instruction waiting: ┃  and try again. Need more tokens? Upgrade to Dev Tier    ┃
+  ┃  and act on each, then mv each han┃  today at https://console.groq.com/settings/billing      ┃
+  ┃                                   ┃                                                          ┃
+  ────────────────────────────────────────── Compaction ──────────────────────────────────────────
+     ▣  Compaction · GPT OSS 120B
+  ┃
+  ┃
+  ┃
+  ┃  Build · GPT OSS 120B Groq
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ■■⬝⬝⬝⬝⬝⬝  esc interrupt                                             tab agents  ctrl+p commands

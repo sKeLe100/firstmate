@@ -1,0 +1,24 @@
+
+
+                             ▄
+ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█
+ █  █ █▀▀▀ █  █ █    █  █ █  █
+ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+  ┃
+  ┃  Ask anything… "Fix a
+  ┃  TODO in the codebase"
+  ┃
+  ┃  Buil ·GPT OSS 120B G
+  ┃  d                  r
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   tab agents ctrl+p
+              commands
+
+
+
+
+  /tmp/tmp.          1.18.30
+  nNq4TLTGuK:
+  ma ⠴ Finishing startup…
+

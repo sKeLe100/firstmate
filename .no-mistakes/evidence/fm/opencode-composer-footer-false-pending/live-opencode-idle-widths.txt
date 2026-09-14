@@ -1,0 +1,66 @@
+
+### width=30 idle  target=empty  base=pending
+  ┃
+  ┃  Ask anything… "Fix
+  ┃  broken tests"
+  ┃
+  ┃  Buil ·GPT OSS 120B G
+  ┃  d                  r
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=28 idle  target=empty  base=pending
+  ┃
+  ┃  Ask anything… "Fix
+  ┃  broken tests"
+  ┃
+  ┃  Buil ·GPT OSS 120B G
+  ┃  d                  r
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=32 idle  target=empty  base=pending
+  ┃
+  ┃  Ask anything… "Fix
+  ┃  broken tests"
+  ┃
+  ┃  Buil ·GPT OSS 120B Gro
+  ┃  d                  q
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=34 idle  target=empty  base=pending
+  ┃
+  ┃  Ask anything… "Fix
+  ┃  broken tests"
+  ┃
+  ┃  Build ·GPT OSS 120B Groq
+  ┃
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=36 idle  target=empty  base=pending
+  ┃
+  ┃  Ask anything… "Fix broken
+  ┃  tests"
+  ┃
+  ┃  Build · GPT OSS 120B Groq
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=40 idle  target=empty  base=pending
+  ┃
+  ┃  Ask anything… "Fix broken
+  ┃  tests"
+  ┃
+  ┃  Build · GPT OSS 120B Groq
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=60 idle  target=empty  base=pending
+  ┃
+  ┃  Ask anything… "Fix broken tests"
+  ┃
+  ┃  Build · GPT OSS 120B Groq
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+### width=100 idle  target=empty  base=pending
+             ┃
+             ┃  Ask anything… "Fix broken tests"
+             ┃
+             ┃  Build · GPT OSS 120B Groq
+             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
