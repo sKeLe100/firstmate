@@ -16,6 +16,7 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 | Model discovery | Open the current interactive session's `/model` picker. |
 | Approval bypass | `--dangerously-bypass-approvals-and-sandbox` is **required** on every launch (enforced in `bin/fm-spawn.sh`). Removing or softening this flag re-enables the `codex-auto-review` feature, which bills a second hidden model call against the weekly allocation on every approval request. |
 | Required axes | Both. Codex CLI launches on its own bundled default model and reasoning effort when a flag is absent, so `../../../bin/fm-spawn.sh` refuses a codex spawn or relaunch that names no model or an effort outside the four above, instead of the record-and-omit contract every other harness follows. A raw launch command is exempt. |
+| Marker | None; identity comes from ancestry, and `../../../bin/fm-harness.sh` is what keeps a retained foreign `CLAUDECODE` from renaming it. Verified on 2026-09-01 with codex-cli 0.152.0: the pane process is the `node` npm shim and the native `codex` binary runs as its foreground child, so a tool subprocess reaches the native name directly while the shim itself is identified from its script path. |
 
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
 Accept it with Enter and verify the instructions begin processing.
