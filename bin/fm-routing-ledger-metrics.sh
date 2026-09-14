@@ -45,10 +45,12 @@
 #     percentage of samples in --occupancy reading "free"; "unavailable"
 #     without --occupancy.
 #
-# Reads the whole ledger unless --since <epoch> is given, in which case only
-# lines at or after that epoch are reconciled (the observed window for the
-# per-day rates is then "now - since" seconds; without --since, the window
-# is "now - earliest ledger line").
+# Always replays the whole ledger for per-id state (whether an id has been
+# seen or closed before), so a carry-over id is judged against its full
+# history; --since <epoch> only restricts which events are COUNTED to those
+# at or after that epoch (the observed window for the per-day rates is then
+# "now - since" seconds; without --since, the window is "now - earliest
+# ledger line").
 #
 # Exit codes: 0 on success (including an absent/empty ledger, reported as
 # all-zero counts and "unavailable" rates), 2 on a usage error - including a
@@ -124,31 +126,40 @@ if os.path.isfile(ledger):
                 epoch = int(epoch_s)
             except ValueError:
                 continue
-            if since_epoch is not None and epoch < since_epoch:
-                continue
             events.append((epoch, event, item_id))
 
 events.sort(key=lambda e: e[0])
 
+opened = 0
 closed = 0
 reopened = 0
 escalated = 0
 ever_closed = set()
 first_classified = {}
 cycle_times = []
+counted = 0
 
 for epoch, event, item_id in events:
+    in_window = since_epoch is None or epoch >= since_epoch
+    if in_window:
+        counted += 1
     if event == "classified":
         if item_id in ever_closed:
-            reopened += 1
+            if in_window:
+                reopened += 1
+        elif item_id not in first_classified:
+            if in_window:
+                opened += 1
         if item_id not in first_classified:
             first_classified[item_id] = epoch
     elif event == "escalated":
-        escalated += 1
+        if in_window:
+            escalated += 1
     elif event == "closed":
-        closed += 1
-        if item_id in first_classified:
-            cycle_times.append(epoch - first_classified[item_id])
+        if in_window:
+            closed += 1
+            if item_id in first_classified:
+                cycle_times.append(epoch - first_classified[item_id])
         ever_closed.add(item_id)
 
 now = int(time.time())
@@ -159,8 +170,7 @@ else:
 window_seconds = max(now - window_start, 1)
 window_days = window_seconds / 86400.0
 
-opened = len(first_classified)
-if events:
+if counted:
     gross_per_day = f"{closed / window_days:.2f}"
     net_per_day = f"{(closed - opened - reopened) / window_days:.2f}"
 else:

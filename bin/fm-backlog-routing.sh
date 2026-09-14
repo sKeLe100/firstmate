@@ -23,6 +23,10 @@
 # item's title, body, kind, and repo, joined with \x1f, so an edited item's
 # stale classification is detected rather than silently trusted (see `get`
 # below). A missing row is simply unclassified - never guessed here.
+# data/ is gitignored, so the report's tiering as seeded on 2026-09-14 is
+# tracked at .agents/skills/autonomous/assets/backlog-routing.tsv; a home
+# with no registry yet copies that seed into place once (the /autonomous
+# skill's step 9 names the bootstrap).
 #
 # Ledger: every `set`, `escalate`, and `gc` append one line to
 # data/routing-ledger.tsv: <epoch>\t<event>\t<id>\t<class>, where event is
@@ -51,8 +55,10 @@
 #     Prints one line: "absent", or "stale: <class>" when a row exists but
 #     its digest no longer matches the item's current title/body/kind/repo,
 #     or "present: <class> <sidecar> <risk> <purpose> <classified_at>"
-#     (sidecar/risk/purpose print as "-" when empty). Exit 0 for
-#     present/stale, exit 1 for absent, exit 2 on a usage/read error.
+#     (sidecar/risk/purpose print as "-" when empty). An item tasks-axi no
+#     longer knows (NOT_FOUND) reads as stale; a tasks-axi read that fails
+#     outright is refused instead. Exit 0 for present/stale, exit 1 for
+#     absent, exit 2 on a usage/read error.
 #   fm-backlog-routing.sh list [--class <pc02|medium|senior>]
 #     Prints every row (optionally filtered by class) as TAB-separated
 #     id/class/sidecar/risk/purpose/classified_at/source_digest, one per
@@ -132,20 +138,25 @@ require_tasks_axi() {
   }
 }
 
-# Prints "<title>\x1f<body>\x1f<kind>\x1f<repo>" for id, or fails (exit 1)
-# when the item cannot be found - a digest can never be computed from a
-# partial read. Reads `tasks-axi show <id> --full` rather than
-# `list --fields body`, because `list` truncates title and body at ~150
-# characters: a digest built from a truncated prefix cannot detect an edit
-# made past the cut, which is exactly the staleness `get` exists to catch.
-# `show --full` emits one "  key: value" line per field with newlines/tabs
-# escaped inside the quoted value, so each field stays on a single line and
-# the raw serialized value is a faithful, injective image of the full text.
+# Prints "<title>\x1f<body>\x1f<kind>\x1f<repo>" for id. Returns 1 when
+# tasks-axi answers NOT_FOUND (the item is unknown or no longer queued) and 2
+# when the read itself failed (tasks-axi missing `show --full`, a crash, or
+# output with no id field) - a digest can never be computed from a partial
+# read, and a failed read is a refusal, never an "item changed" verdict.
+# Reads `tasks-axi show <id> --full` rather than `list --fields body`,
+# because `list` truncates title and body at ~150 characters: a digest built
+# from a truncated prefix cannot detect an edit made past the cut, which is
+# exactly the staleness `get` exists to catch. `show --full` emits one
+# "  key: value" line per field with newlines/tabs escaped inside the quoted
+# value, so each field stays on a single line and the raw serialized value
+# is a faithful, injective image of the full text.
 item_fields() {  # <id>
-  local id=$1 out
-  out=$(cd "$FM_HOME" && tasks-axi show "$id" --full 2>/dev/null | \
-    awk '
-      /^error:/ || /^code: NOT_FOUND/ { notfound = 1 }
+  local id=$1 raw out
+  raw=$(cd "$FM_HOME" && tasks-axi show "$id" --full 2>/dev/null)
+  if printf '%s\n' "$raw" | grep -q '^code: NOT_FOUND'; then
+    return 1
+  fi
+  out=$(printf '%s\n' "$raw" | awk '
       /^  [a-z_]+: / {
         line = $0
         sub(/^  /, "", line)
@@ -156,11 +167,11 @@ item_fields() {  # <id>
         if (!(key in f)) { f[key] = val }
       }
       END {
-        if (notfound || !("id" in f)) { exit 1 }
+        if (!("id" in f)) { exit 1 }
         printf "%s\x1f%s\x1f%s\x1f%s\n", f["title"], f["body"], f["kind"], f["repo"]
       }
-    ')
-  [ -n "$out" ] || return 1
+    ') || return 2
+  [ -n "$out" ] || return 2
   printf '%s' "$out"
 }
 
@@ -173,6 +184,18 @@ digest_of_fields() {  # <fields-string>
     fm_routing_log "no sha256sum/shasum on PATH"
     exit 2
   fi
+}
+
+# Wraps item_fields for the commands that need a digest: NOT_FOUND and a
+# failed read are both refusals here, but with different diagnostics.
+item_fields_or_exit() {  # <id>
+  local id=$1 fields rc
+  fields=$(item_fields "$id"); rc=$?
+  case "$rc" in
+    0) printf '%s' "$fields" ;;
+    1) fm_routing_log "no such queued/known item: $id"; exit 2 ;;
+    *) fm_routing_log "could not read item $id from tasks-axi (show --full failed)"; exit 2 ;;
+  esac
 }
 
 utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -244,7 +267,7 @@ cmd_set() {
   fi
   require_tasks_axi
   local fields digest ts lockdir="$DATA/.backlog-routing.lock"
-  fields=$(item_fields "$id") || { fm_routing_log "no such queued/known item: $id"; exit 2; }
+  fields=$(item_fields_or_exit "$id") || exit $?
   digest=$(digest_of_fields "$fields")
   ts=$(utc_now)
   acquire_lockdir "$lockdir" || exit 2
@@ -289,7 +312,7 @@ cmd_escalate() {
   fi
   require_tasks_axi
   local fields digest ts lockdir="$DATA/.backlog-routing.lock"
-  fields=$(item_fields "$id") || { fm_routing_log "no such queued/known item: $id"; exit 2; }
+  fields=$(item_fields_or_exit "$id") || exit $?
   digest=$(digest_of_fields "$fields")
   ts=$(utc_now)
   acquire_lockdir "$lockdir" || exit 2
@@ -324,8 +347,13 @@ cmd_get() {
   rts=$(printf '%s' "$row" | cut -f6)
   rdigest=$(printf '%s' "$row" | cut -f7)
   require_tasks_axi
-  local fields digest
-  if ! fields=$(item_fields "$id"); then
+  local fields digest frc
+  fields=$(item_fields "$id"); frc=$?
+  if [ "$frc" -ge 2 ]; then
+    fm_routing_log "could not read item $id from tasks-axi (show --full failed); refusing to judge freshness"
+    exit 2
+  fi
+  if [ "$frc" -ne 0 ]; then
     echo "stale: $rclass"
     exit 0
   fi
@@ -398,18 +426,43 @@ cmd_seed_from_report() {
       '#### PC02-first roster'*) section=pc02; continue ;;
       '#### Medium / standard cloud roster'*) section=medium; continue ;;
       '#### Senior roster'*) section=senior; continue ;;
+      '#### Codex-as-paced-sidecar roster'*) section=codex; continue ;;
       '#### '*|'### '*|'## '*) section=""; continue ;;
     esac
     [ -n "$section" ] || continue
     case "$line" in
       '| `'*)
         local id
+        # shellcheck disable=SC2016  # literal markdown backticks, not a command substitution
         id=$(printf '%s' "$line" | sed -n 's/^| `\([^`]*\)`.*/\1/p')
         [ -n "$id" ] || continue
         # cmd_get/cmd_set exit the process on their own error paths (they
         # are also this script's top-level CLI entry points), so each call
         # here must run in a subshell or its exit would abort this whole
         # seed loop instead of just skipping one row.
+        if [ "$section" = codex ]; then
+          # A sidecar row keeps the class a class roster already gave it;
+          # an id listed only here is medium-class, as each such row states.
+          local existing eclass
+          local -a extra=()
+          if existing=$(routing_row_for "$id"); then
+            if [ "$(printf '%s' "$existing" | cut -f3)" = codex ]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+            eclass=$(printf '%s' "$existing" | cut -f2)
+            [ -z "$(printf '%s' "$existing" | cut -f4)" ] || extra+=(--risk "$(printf '%s' "$existing" | cut -f4)")
+            [ -z "$(printf '%s' "$existing" | cut -f5)" ] || extra+=(--purpose "$(printf '%s' "$existing" | cut -f5)")
+          else
+            eclass=medium
+          fi
+          if ( cmd_set "$id" "$eclass" --sidecar codex "${extra[@]}" ) >/dev/null 2>&1; then
+            seeded=$((seeded + 1))
+          else
+            skipped=$((skipped + 1))
+          fi
+          continue
+        fi
         if ( cmd_get "$id" ) >/dev/null 2>&1; then
           skipped=$((skipped + 1))
           continue

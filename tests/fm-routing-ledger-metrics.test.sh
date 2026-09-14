@@ -85,6 +85,26 @@ assert_contains "$out" "gross_per_day: 1.00" "one close over a one-day window"
 assert_contains "$out" "net_per_day: -2.00" \
   "a reopen is an arrival: net must be (closed - opened - reopened) per day, got: $out"
 
+# 2d. --since counts only events inside the window but judges each id
+#     against its whole history: a corrective re-set inside the window of
+#     an id classified before it is neither opened nor reopened, and a
+#     re-entry inside the window after a close before it is a reopen.
+home=$(make_home carry-over)
+now=$(date -u +%s)
+since=$((now - 7 * 86400))
+cat > "$home/data/routing-ledger.tsv" <<EOF
+$((now - 10 * 86400))	classified	carry-a	pc02
+$((now - 10 * 86400))	classified	carry-b	pc02
+$((now - 9 * 86400))	closed	carry-b	pc02
+$((now - 86400))	classified	carry-a	pc02
+$((now - 86400))	classified	carry-b	pc02
+$((now - 3600))	classified	carry-c	pc02
+EOF
+out=$(FM_HOME="$home" "$METRICS" --since "$since") || fail "metrics should succeed with carry-over history"
+assert_contains "$out" "opened: 1" "only carry-c first entered the registry inside the window, got: $out"
+assert_contains "$out" "reopened: 1" "carry-b re-entered inside the window after a close before it, got: $out"
+assert_contains "$out" "closed: 0" "the close before the window is not counted, got: $out"
+
 # 3. Median cycle time reconciles to the actual epoch delta between an id's
 #    first classified event and its closed event, using an injected ledger
 #    with controlled timestamps (the routing script's own epoch_now has

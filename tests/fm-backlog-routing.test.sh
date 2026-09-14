@@ -14,9 +14,12 @@
 #     existing row, and appends a ledger line
 #   - reconciliation fixture: gc removes a row and appends a closed ledger
 #     line so a reused id never inherits a stale classification
-#   - seed-from-report: parses the report's per-section tables, skips ids
-#     tasks-axi does not know about, and never re-classifies an already
-#     classified row
+#   - seed-from-report: parses the report's per-section tables, layers the
+#     Codex-as-paced-sidecar roster onto the class rosters as sidecar=codex,
+#     skips ids tasks-axi does not know about, and never re-classifies an
+#     already classified row
+#   - a tasks-axi read that fails outright is refused (exit 2), never
+#     reported as stale
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -184,6 +187,34 @@ if [ "$(id -u)" -ne 0 ]; then
   assert_not_contains "$listed" "keep-c" "the refused set wrote nothing"
 fi
 
+# 6d. A tasks-axi read that fails outright is a refusal (exit 2), never a
+#     "stale" verdict: `stale:` would drop every PC02 candidate from
+#     fm-pc02-fair-order.sh silently and send curated rows to routing
+#     review. NOT_FOUND (the item left the backlog) still reads stale.
+shim_dir="$TMP_ROOT/shim"
+mkdir -p "$shim_dir"
+real_tasks_axi=$(command -v tasks-axi)
+cat > "$shim_dir/tasks-axi" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = show ]; then
+  case "\${FM_TEST_SHOW_MODE:-}" in
+    crash) echo "boom" >&2; exit 1 ;;
+    notfound) printf 'error: "Task not found"\ncode: NOT_FOUND\n'; exit 1 ;;
+  esac
+fi
+exec "$real_tasks_axi" "\$@"
+EOF
+chmod +x "$shim_dir/tasks-axi"
+run_routing "$home" set item-b pc02 >/dev/null
+out=$(PATH="$shim_dir:$PATH" FM_TEST_SHOW_MODE=crash run_routing "$home" get item-b 2>/dev/null); rc=$?
+[ "$rc" -eq 2 ] || fail "get must exit 2 when tasks-axi show fails outright, got $rc: $out"
+assert_not_contains "$out" "stale" "a failed tasks-axi read must never be reported as stale"
+PATH="$shim_dir:$PATH" FM_TEST_SHOW_MODE=crash run_routing "$home" set item-b pc02 >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 2 ] || fail "set must exit 2 when tasks-axi show fails outright, got $rc"
+out=$(PATH="$shim_dir:$PATH" FM_TEST_SHOW_MODE=notfound run_routing "$home" get item-b); rc=$?
+[ "$rc" -eq 0 ] || fail "get on an item tasks-axi no longer knows must exit 0, got $rc"
+assert_contains "$out" "stale: pc02" "an item that left the backlog reads stale, not refused"
+
 # 7. list filters by class and never validates freshness itself.
 run_routing "$home" set item-b pc02 >/dev/null
 run_routing "$home" set item-c senior >/dev/null
@@ -201,6 +232,7 @@ seed_home=$(make_home seed)
 (cd "$seed_home" && tasks-axi add seed-pc02-item "known pc02 item" --kind ship --repo demo >/dev/null)
 (cd "$seed_home" && tasks-axi add seed-medium-item "known medium item" --kind ship --repo demo >/dev/null)
 (cd "$seed_home" && tasks-axi add seed-senior-item "known senior item" --kind ship --repo demo >/dev/null)
+(cd "$seed_home" && tasks-axi add seed-codex-only "known codex-only item" --kind ship --repo demo >/dev/null)
 fixture_report="$TMP_ROOT/fixture-report.md"
 cat > "$fixture_report" <<'EOF'
 # Fixture report
@@ -223,13 +255,22 @@ cat > "$fixture_report" <<'EOF'
 | Item | Why this tier | Gate |
 |---|---|---|
 | `seed-senior-item` | Architecture decision. | D |
+
+#### Codex-as-paced-sidecar roster
+
+| Item | Why Codex sidecar | Gate |
+|---|---|---|
+| `seed-medium-item` | Medium-class, Codex runtime familiarity useful. | D |
+| `seed-codex-only` | Medium-class, listed only here. | D |
+| `seed-senior-item` | Senior-class only if selected; never downgrade its class. | D; also listed senior |
 EOF
 out=$(run_routing "$seed_home" seed-from-report "$fixture_report") || fail "seed-from-report should succeed"
-assert_contains "$out" "seeded: 3" "seed-from-report seeds exactly the 3 known ids"
+assert_contains "$out" "seeded: 6" "seed-from-report seeds 3 class rows plus 3 sidecar annotations"
 assert_contains "$out" "skipped: 1" "seed-from-report skips the 1 unknown id"
-assert_contains "$(run_routing "$seed_home" get seed-pc02-item)" "present: pc02" "pc02 section seeds class pc02"
-assert_contains "$(run_routing "$seed_home" get seed-medium-item)" "present: medium" "medium section seeds class medium"
-assert_contains "$(run_routing "$seed_home" get seed-senior-item)" "present: senior" "senior section seeds class senior"
+assert_contains "$(run_routing "$seed_home" get seed-pc02-item)" "present: pc02 -" "pc02 section seeds class pc02 with no sidecar"
+assert_contains "$(run_routing "$seed_home" get seed-medium-item)" "present: medium codex" "the Codex roster adds sidecar=codex without changing the medium class"
+assert_contains "$(run_routing "$seed_home" get seed-senior-item)" "present: senior codex" "a cross-referenced senior row keeps senior and gains the sidecar"
+assert_contains "$(run_routing "$seed_home" get seed-codex-only)" "present: medium codex" "an id listed only in the Codex roster seeds as medium with sidecar=codex"
 
 # Re-running the seed must not touch an already-classified row (it would
 # have re-classified item silently otherwise, corrupting a curated class).
@@ -237,5 +278,7 @@ run_routing "$seed_home" set seed-pc02-item senior --purpose "manually corrected
 out=$(run_routing "$seed_home" seed-from-report "$fixture_report") || fail "re-seed should succeed"
 assert_contains "$out" "seeded: 0" "re-seed re-classifies nothing: every known id is already classified"
 assert_contains "$(run_routing "$seed_home" get seed-pc02-item)" "present: senior" "already-classified row survives re-seeding unchanged"
+assert_contains "$(run_routing "$seed_home" list --class medium)" "seed-medium-item	medium	codex" \
+  "re-seeding leaves an already-annotated sidecar row untouched"
 
 pass "fm-backlog-routing.sh behavior"
