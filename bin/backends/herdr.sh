@@ -2357,31 +2357,17 @@ fm_backend_herdr_server_running_state() {  # <session>
 # whose state cannot itself be read, still yields `unreadable` here too: absence
 # is claimed only from positive evidence of it.
 fm_backend_herdr_agent_state() {  # <target>
-  local target=$1 running
+  local target=$1
   fm_backend_herdr_parse_target "$target" || { printf 'unreadable'; return 0; }
   # A stopped server (a full host shutdown/reboot, not just a dead pane)
-  # makes every pane/agent read below fail with a connection error rather
-  # than structured JSON, which would otherwise fall through to the
-  # catch-all unreadable. `status --json`'s own `.server.running` reports
-  # this without needing a live connection to succeed, so check it first and
-  # treat a POSITIVELY read `running == false` as authoritatively missing -
-  # the same recovery branch a structurally absent pane takes. A failed,
-  # empty, or unparseable probe proves nothing and stays `unreadable`, so an
-  # ambiguous read can never license a duplicate launch onto a live endpoint.
-  local status_json
-  status_json=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" status --json 2>/dev/null) \
-    || { printf 'unreadable'; return 0; }
-  running=$(printf '%s' "$status_json" | jq -r '
-    if .server.running == true then "true"
-    elif .server.running == false then "false"
-    else "unknown"
-    end
-  ' 2>/dev/null) || { printf 'unreadable'; return 0; }
-  case "$running" in
-    true) ;;
-    false) printf 'missing'; return 0 ;;
-    *) printf 'unreadable'; return 0 ;;
-  esac
+  # makes every pane/agent read fail with a connection error rather than
+  # structured JSON. That case is settled in the catch-all branch below through
+  # fm_backend_herdr_server_running_state, which reads `status --json`'s own
+  # `.server.running` only AFTER the pane read proved uninterpretable: a
+  # POSITIVELY read `running == false` is authoritatively missing, while a
+  # failed, empty, or unparseable probe proves nothing and stays `unreadable`,
+  # so an ambiguous read can never license a duplicate launch onto a live
+  # endpoint.
   case "$(fm_backend_herdr_pane_agent_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")" in
     dead) printf 'missing' ;;
     no-agent|stale-agent) printf 'dead' ;;
