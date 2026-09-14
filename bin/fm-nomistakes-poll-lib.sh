@@ -17,8 +17,10 @@
 # Two subcommands:
 #   classify              reads one `axi status` TOON blob from stdin, prints
 #                          exactly one of: no-run | running | gate | outcome:<word>
-#                          (no-run: the blob carries only another branch's
-#                          run - the current branch has none to poll)
+#                          (no-run: no top-level `run:` object, which is what
+#                          `axi status` without --run emits when the current
+#                          branch has no run - whatever its recent-runs table
+#                          lists - so a dead drive call is never polled forever)
 #   wait [--dir DIR] [--interval SECS] [--max SECS]
 #                          polls `no-mistakes axi status` in DIR (default:
 #                          cwd) every INTERVAL seconds (default 20) until
@@ -40,7 +42,12 @@
 # including no current-branch run and a status call that hung past its own
 # bound (each status call is itself bounded via fm_nm_run_bounded, and the
 # max window counts wall-clock time, not just sleeps).
+# A status call exiting 1 with a terminal `outcome:` in its TOON (the CLI's
+# documented exit for failed/cancelled final outcomes) is reported as that
+# outcome, not as a lookup error.
 # Gate/terminal/TOON primitives are owned by bin/fm-nm-run-lib.sh.
+# FM_NMPOLL_STATUS_TIMEOUT_OVERRIDE (seconds) is a test-only knob shrinking the
+# per-status-call bound (default 30s) so the hung-call path can be exercised.
 # Exit codes for `classify`: always 0; the result word is the only signal.
 set -u
 
@@ -71,8 +78,7 @@ FM_NMPOLL_STATUS_TIMEOUT=${FM_NMPOLL_STATUS_TIMEOUT_OVERRIDE:-30}
 # classify <toon> - prints no-run | running | gate | outcome:<word>
 fm_nmpoll_classify() {
   local toon=$1 outcome status
-  if ! printf '%s\n' "$toon" | grep -Eq '^run:[[:space:]]*$' \
-    && printf '%s\n' "$toon" | grep -Eq '^other_branch_run:[[:space:]]*$'; then
+  if ! printf '%s\n' "$toon" | grep -Eq '^run:[[:space:]]*$'; then
     printf 'no-run'
     return 0
   fi
@@ -121,22 +127,27 @@ cmd_wait() {
   [ -d "$dir" ] || { printf 'error: --dir %s is not a directory\n' "$dir" >&2; return 3; }
   local start=$SECONDS toon result rc
   while :; do
-    toon=$(fm_nm_run_bounded "$dir" "$FM_NMPOLL_STATUS_TIMEOUT" axi status 2>&1)
+    toon=$(fm_nm_run_bounded "$dir" "$FM_NMPOLL_STATUS_TIMEOUT" axi status)
     rc=$?
-    if [ "$rc" -ne 0 ]; then
-      if [ "$rc" -eq 124 ]; then
-        printf 'error: no-mistakes axi status timed out after %ss in %s\n' "$FM_NMPOLL_STATUS_TIMEOUT" "$dir" >&2
-      else
-        printf '%s\n' "$toon" >&2
-        printf 'error: no-mistakes axi status failed (exit %s) in %s\n' "$rc" "$dir" >&2
-      fi
+    result=$(fm_nmpoll_classify "$toon")
+    if [ "$rc" -eq 124 ]; then
+      printf 'error: no-mistakes axi status timed out after %ss in %s\n' "$FM_NMPOLL_STATUS_TIMEOUT" "$dir" >&2
       return 3
     fi
-    result=$(fm_nmpoll_classify "$toon")
+    if [ "$rc" -ne 0 ]; then
+      case "$rc:$result" in
+        1:outcome:*) ;;
+        *)
+          printf '%s\n' "$toon" >&2
+          printf 'error: no-mistakes axi status failed (exit %s) in %s\n' "$rc" "$dir" >&2
+          return 3
+          ;;
+      esac
+    fi
     case "$result" in
       no-run)
         printf '%s\n' "$toon" >&2
-        printf 'error: no run for the current branch in %s (axi status only reports another branch'"'"'s run); is the drive call still alive and past init?\n' "$dir" >&2
+        printf 'error: no run for the current branch in %s (axi status returned no run object); the drive call is not registered - check its log\n' "$dir" >&2
         printf 'FM_NMPOLL_RESULT=no-run\n' >&2
         return 3
         ;;
