@@ -1,0 +1,3 @@
+# slow-profile probe: HOME/.bash_profile and HOME/.profile each 'sleep 10'; node harness waits max 3s for the arm to run
+[BASE 5dbfb79 (bash -lc, no unref)] exit=1 elapsed=4.0s output=arm did not run within 3s
+[TARGET 9ca1b9f (bash -c + unref)] exit=0 elapsed=0.5s output=arm ran within 3s

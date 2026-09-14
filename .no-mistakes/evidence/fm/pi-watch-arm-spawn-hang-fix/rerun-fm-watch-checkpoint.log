@@ -1,0 +1,2 @@
+ok - quiet checkpoint exits 124 with a clean checkpoint line and no live lock
+not ok - signal checkpoint exit: expected exit 0, got 124

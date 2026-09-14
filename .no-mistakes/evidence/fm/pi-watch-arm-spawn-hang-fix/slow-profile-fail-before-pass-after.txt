@@ -1,0 +1,5 @@
+HOME/.bash_profile and HOME/.profile each 'sleep 10'; drive plugin session.idle -> spawnArm; expect arm log within 3s
+base: arm ran within 3s = false (3227ms)
+base plugin (5dbfb794=base, 9ca1b9f9=fixed): exit=1 wall=3.457730422s
+fixed: arm ran within 3s = true (63ms)
+fixed plugin (5dbfb794=base, 9ca1b9f9=fixed): exit=0 wall=.236167274s
