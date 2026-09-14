@@ -1,0 +1,6 @@
+ok - direct-PR worktree pushed to origin is preserved until merge is confirmed
+ok - direct-PR worktree is torn down once its PR is confirmed merged
+ok - no-mistakes worktree with HEAD on origin is torn down (no regression)
+ok - no-mistakes worktree with genuinely unlanded work is refused (safety preserved)
+ok - local-only worktree with HEAD on a fork remote is torn down and the home summary is refreshed
+focused: done

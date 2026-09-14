@@ -1,0 +1,32 @@
+=== direct-pr-open: fm-teardown.sh task-x1  ===
+--- before: task-x1.meta
+--- stderr:
+REFUSED: direct-PR worktree /tmp/fm-teardown-tests.72V9A6/direct-pr-open/wt has not been confirmed merged.
+Land its PR, or get the captain's explicit OK to discard, then --force.
+--- exit=1
+--- after: state dir contains: task-x1.meta
+
+=== direct-pr-merged: fm-teardown.sh task-x1  ===
+--- before: task-x1.meta
+--- stderr:
+--- exit=0
+--- after: state dir contains: home-summary.json
+llm-usage-write-errors.log
+terminal-outcomes
+
+=== direct-pr-open-force: fm-teardown.sh task-x1 --force ===
+--- before: task-x1.meta
+--- stderr:
+--- exit=0
+--- after: state dir contains: home-summary.json
+llm-usage-write-errors.log
+terminal-outcomes
+
+=== direct-pr-gh-error: fm-teardown.sh task-x1  ===
+--- before: task-x1.meta
+--- stderr:
+REFUSED: direct-PR worktree /tmp/fm-teardown-tests.72V9A6/direct-pr-gh-error/wt has not been confirmed merged.
+Land its PR, or get the captain's explicit OK to discard, then --force.
+--- exit=1
+--- after: state dir contains: task-x1.meta
+

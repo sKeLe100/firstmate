@@ -1,0 +1,17 @@
+### bin/fm-teardown.sh @ base 5dbfb794 (before fix)
+=== direct-pr-open: fm-teardown.sh task-x1  ===
+--- before: task-x1.meta
+--- stderr:
+--- exit=0
+--- after: state dir contains: home-summary.json
+llm-usage-write-errors.log
+terminal-outcomes
+
+=== direct-pr-merged: fm-teardown.sh task-x1  ===
+--- before: task-x1.meta
+--- stderr:
+--- exit=0
+--- after: state dir contains: home-summary.json
+llm-usage-write-errors.log
+terminal-outcomes
+
