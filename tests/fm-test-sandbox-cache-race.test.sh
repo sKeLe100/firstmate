@@ -11,6 +11,7 @@
 
 set -euo pipefail
 
+# shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 NUM_WORKERS=8
