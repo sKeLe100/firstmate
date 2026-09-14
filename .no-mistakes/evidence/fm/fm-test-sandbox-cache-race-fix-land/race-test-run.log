@@ -1,0 +1,14 @@
+/tmp/.fm-test-race.XPMgHY/.fm-test-sandbox-base-path.1000.76027061626361
+/tmp/.fm-test-race.XPMgHY/.fm-test-sandbox-base-path.1000.76027061626361
+/tmp/.fm-test-race.XPMgHY/.fm-test-sandbox-base-path.1000.76027061626361
+/tmp/.fm-test-race.XPMgHY/.fm-test-sandbox-base-path.1000.76027061626361
+/tmp/.fm-test-race.XPMgHY/.fm-test-sandbox-base-path.1000.76027061626361
+/tmp/.fm-test-race.XPMgHY/.fm-test-sandbox-base-path.1000.76027061626361
+/tmp/.fm-test-race.XPMgHY/.fm-test-sandbox-base-path.1000.76027061626361
+/tmp/.fm-test-race.XPMgHY/.fm-test-sandbox-base-path.1000.76027061626361
+ok - concurrent sandbox-build race: 8 workers agree on one fully-populated cache
+
+real	0m18.513s
+user	0m19.277s
+sys	0m46.672s
+exit=0

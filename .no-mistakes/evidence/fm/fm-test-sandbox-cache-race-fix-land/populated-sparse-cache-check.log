@@ -1,0 +1,2 @@
+NEW (target 419f5a9a): populated(sparse dir with 1 of 1314 entries) -> REJECTED (returns 1)
+OLD (base 5dbfb794): populated(sparse dir with 1 of 1314 entries) -> ACCEPTED (returns 0)

@@ -1,0 +1,8 @@
+== NEW (target)
+NEW t=1.5s cache dir has 57 links, marker present: no
+A done 15:25:42.787 -> /tmp/.fm-slowrace.ca8zT8/.fm-test-sandbox-base-path.1000.76027061626361
+B done 15:25:43.343 -> /tmp/.fm-slowrace.ca8zT8/.fm-test-sandbox-base-path.1000.76027061626361  waited=27.823881066s  links=1303  populated=full
+== OLD (base)
+OLD t=1.5s cache dir has 53 links, marker present: no
+A done 15:26:06.478 -> /tmp/.fm-slowrace.XDrt62/.fm-test-sandbox-base-path.1000.76027061626361
+B done 15:26:06.501 -> /tmp/.fm-slowrace.XDrt62/.fm-test-sandbox-base-path.1000.76027061626361  waited=11.273951710s  links=1303  populated=full

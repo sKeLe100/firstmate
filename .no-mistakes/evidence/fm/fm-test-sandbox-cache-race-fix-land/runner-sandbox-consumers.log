@@ -1,0 +1,116 @@
+FM_TEST_BEGIN 2026-09-14T19:26:58Z tests/fm-startup-memory-budget.test.sh family=secondmate expected_gate_skip=none
+FM_TEST_BEGIN 2026-09-14T19:26:58Z tests/fm-remote-doctor.test.sh family=secondmate expected_gate_skip=none
+FM_TEST_BEGIN 2026-09-14T19:26:58Z tests/fm-stow-cascade.test.sh family=secondmate expected_gate_skip=none
+ok - each home is accounted against its own allowance instead of a fleet total
+ok - the cascade emits one stanza per registered home and refuses a double-counted registry
+ok - the completion marker waits for --complete when secondmates exist
+ok - transport follows placement and live-agent state, and a remote home without an agent defers
+ok - each stanza carries the facts a per-home receipt needs, before and after curation
+ok - one slow or unreachable home is bounded and every other home still reports
+ok - the cascade stays silent with no secondmates and never runs from a secondmate home
+FM_TEST_END 2026-09-14T19:27:16Z tests/fm-stow-cascade.test.sh exit=0 duration_ms=17688 gate_skip=false
+ok - primary bootstrap materializes only the visible default and preserves valid captain choices
+ok - budget parser accepts one exact positive value and rejects malformed or unsafe inputs
+ok - budget accounting sums the three startup files and reports safe failures
+ok - budget propagation converges through config push with exact rereads, absence, and safe rejection
+# all fm-startup-memory-budget tests passed
+FM_TEST_END 2026-09-14T19:27:23Z tests/fm-startup-memory-budget.test.sh exit=0 duration_ms=25073 gate_skip=false
+ok - a missing herdr CLI is a human gap that --fix never claims to close
+ok - an absent launch agent is a fixable gap and the read-only run changes nothing
+ok - --fix installs the dedicated fm-remote launch agent without touching default
+ok - --fix is idempotent once the host is ready
+ok - a loaded and running launch agent must match the complete owned contract
+ok - a failed reload leaves stale effective launch-agent state unready
+ok - a launch agent outside the Aqua session scope is rewritten in place
+ok - launchd failures are reported and delayed server readiness is awaited
+ok - human gaps are reported with their operator step and never claimed as fixed
+ok - a non-darwin host skips launch agents and starts its herdr server directly
+ok - --fix creates only owned version-manager wrappers and never clobbers an operator file
+ok - doctor refreshes stale worker identity before probing tools
+ok - the entrypoint symlink is recreated when absent and never overwritten when operator-owned
+FM_TEST_END 2026-09-14T19:27:25Z tests/fm-remote-doctor.test.sh exit=0 duration_ms=26792 gate_skip=false
+FM_TEST_BEGIN 2026-09-14T19:27:25Z tests/fm-procevent.test.sh family=standalone expected_gate_skip=none
+ok - no configured source means no generated state and no process
+ok - one blocking completion yields exactly one bounded normalized event
+ok - a home reached through a symlinked ancestor runs its sources normally
+not-autohandled: direct-src (left for the handler; still unacknowledged)
+ok - public start owns the process group recorded by its claim
+ok - public start never claims an inherited caller process group
+ok - an unhandled result survives restart and repeat drains, and only explicit acknowledgement stops its re-announcement
+ok - publication cannot race a handled acknowledgement
+ok - handled acknowledgement creation is private and fails safely
+ok - automatic application waits for durable publication and failed publication remains recoverable
+ok - a self-announcing adapter applies quietly and still publishes what it could not apply
+not-autohandled: ends-src (left for the handler; still unacknowledged)
+ok - an adapter-classified terminal result is captured once, announced, and retires its source automatically
+not-autohandled: open-src (left for the handler; still unacknowledged)
+ok - a source stays armed unless its own adapter classifies the result terminal
+not-autohandled: replace-src (left for the handler; still unacknowledged)
+ok - terminal retirement preserves and releases a concurrently replaced registration
+ok - failed terminal retirement is fail-closed and idempotently recoverable
+ok - one Send & End yields exactly one captured result, automatic retirement, and no recurring poll
+ok - an empty board close is captured and recorded handled without ever waking the captain
+ok - a board close carrying the captain's real answer is still announced
+ok - a transient Lavish poll interruption is retried quietly and never announced
+not-autohandled: lavish-be02f52204e20c8f (left for the handler; still unacknowledged)
+ok - an interruption that outlives the bounded retries is captured and announced
+not-autohandled: lavish-eb5b35a1f0591ca0 (left for the handler; still unacknowledged)
+ok - only the exact interruption is retried; an unrelated SERVER_ERROR still surfaces
+not-autohandled: lavish-3bff30f44b225693 (left for the handler; still unacknowledged)
+ok - only the literal two-line interruption enters the quiet retry policy
+ok - arm rejects malformed and out-of-range retry delays before registration
+ok - poll cleanup safely handles an apostrophe-containing TMPDIR
+ok - Lavish classification staging stays bounded while nonmatches stream
+ok - a drained-but-unhandled result survives a replacement session and is retired only by explicit handling, never twice
+ok - pending results preserve numeric order and distinct wake identity
+ok - one owner per canonical source across homes
+ok - retiring a never-completing source stops its runner and its blocked child
+ok - reconcile reaps a runner whose source registration is gone
+not-autohandled: stale-src (left for the handler; still unacknowledged)
+ok - stale-owner recovery removes abandoned output without displacing a live owner
+not-autohandled: cross-home-src (left for the handler; still unacknowledged)
+ok - cross-home stale recovery removes abandoned output from the old state directory
+not-autohandled: race-src (left for the handler; still unacknowledged)
+ok - concurrent stale-claim replacement starts exactly one runner
+ok - a crashed runner leader never lets a live owned group be reclaimed as stale
+ok - a truly dead generation with no surviving group is still safely reclaimed
+ok - claim replacement cannot produce a torn ownership snapshot
+ok - retirement and start share one serialized lifecycle boundary
+ok - PID reuse cannot signal an unrelated process
+ok - transient identity failure preserves the live source for retry
+ok - bounded home sweep preflights then retires every locally owned source
+ok - home sweep leaves foreign-home claims and runners untouched
+ok - home sweep refuses safely until runner identity is readable
+ok - healthy runtime behavior remains registration-only
+ok - registration rejects unrepresentable newline arguments
+ok - nonzero exit with no output stays armed and silent
+ok - oversized output is bounded rather than published whole or dropped
+ok - live output stays bounded and retirement reaps the whole source group
+ok - invalid output bounds fail closed
+ok - the adapter derives physical identity without newline path corruption
+ok - source-only homes trigger the general supervision guard
+ok - the adapter classifies published poll output safely
+ok - the adapter owns which Lavish results end a source, and payload text cannot forge one
+ok - the adapter owns which Lavish results are silent, and fails closed on everything else
+ok - read presents every annotation and a distinct session-ending message
+ok - read never certifies rows missing declared fields as complete
+ok - read keeps every annotation when the session-ending message is absent
+ok - read surfaces a typed comment on an annotated element
+ok - read still surfaces a typed comment that matches the element text
+ok - read still presents a pure annotation with no comment
+ok - read does not present choice context as a comment
+ok - read still presents a pure message with no selector
+ok - read distinguishes a feedback capture from an ended-with-nothing close
+ok - an adapter with no silence verdict keeps announcing every result
+ok - the published interfaces state the loss limitation and claim no lossless delivery
+
+all procevent tests passed
+FM_TEST_END 2026-09-14T19:29:51Z tests/fm-procevent.test.sh exit=0 duration_ms=146152 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=173612
+FM_TEST_SUMMARY_FAMILY family=secondmate count=3 duration_ms=69553 failed=0
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=146152 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-procevent.test.sh duration_ms=146152
+FM_TEST_SLOWEST rank=2 script=tests/fm-remote-doctor.test.sh duration_ms=26792
+FM_TEST_SLOWEST rank=3 script=tests/fm-startup-memory-budget.test.sh duration_ms=25073
+FM_TEST_SLOWEST rank=4 script=tests/fm-stow-cascade.test.sh duration_ms=17688
+exit=0

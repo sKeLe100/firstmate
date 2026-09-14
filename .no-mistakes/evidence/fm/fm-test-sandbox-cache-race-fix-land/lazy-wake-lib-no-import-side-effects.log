@@ -1,0 +1,5 @@
+after sourcing tests/lib.sh: STATE=<unset> FM_WAKE_QUEUE=<unset> fm_lock_acquire_wait defined? no
+repo state/ dir exists after source? no
+after fm_test_base_path build: STATE=<unset> FM_WAKE_QUEUE=<unset> fm_lock_acquire_wait defined in caller? no
+repo state/ dir exists after build? no
+files created in TMPDIR by wake-lib import: 

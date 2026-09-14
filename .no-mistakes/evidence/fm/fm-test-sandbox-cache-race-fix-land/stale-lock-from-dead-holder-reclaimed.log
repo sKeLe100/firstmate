@@ -1,0 +1,8 @@
+crashed holder pid 2976321 acquired lock
+/tmp/stale-lock.sh: line 8: 2976321 Killed                     ( FM_STATE_OVERRIDE=$T . bin/fm-wake-lib.sh; fm_lock_acquire_wait "$lock"; echo "crashed holder pid $BASHPID acquired lock"; kill -9 $BASHPID )
+lock left by dead holder: /tmp/.fm-stale.SqkWkg/.fm-test-sandbox-base-path.1000.76027061626361.lock.owner.d0BLAM
+  owner pid file: 2976321  alive? no
+caller rc=0 returned '/tmp/.fm-stale.SqkWkg/.fm-test-sandbox-base-path.1000.76027061626361' after 9.739007205s
+marker present: yes
+entries linked: 1303
+lock left behind: no

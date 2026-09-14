@@ -1,0 +1,10 @@
+lock path derived from cache dir under custom TMPDIR: /tmp/.fm-lockhold.DprIlQ/.fm-test-sandbox-base-path.1000.76027061626361.lock
+holder pid 2934530 acquired lock at 15:24:01.367
+  lock on disk: lrwxrwxrwx 1 sean_ sean_ 89 Sep 14 15:24 /tmp/.fm-lockhold.DprIlQ/.fm-test-sandbox-base-path.1000.76027061626361.lock -> /tmp/.fm-lockhold.DprIlQ/.fm-test-sandbox-base-path.1000.76027061626361.lock.owner.axVxeV
+caller starting fm_test_base_path at 15:24:02.288
+holder released at 15:24:07.423
+caller returned /tmp/.fm-lockhold.DprIlQ/.fm-test-sandbox-base-path.1000.76027061626361 at 15:24:17.473 (waited 15.168620693s)
+marker present: yes
+entries linked: 1303
+lock left behind: no
+uncontended build for comparison: 7.935272313s
