@@ -34,14 +34,15 @@ fm_crew_dispatch_validate() {
   done
   codex_efforts="[$codex_efforts]"
   err=$(jq -r --argjson codex_efforts "$codex_efforts" '
-    def verified($h): ["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","muse","rovo"] | index($h);
-    def effort_ok($h; $e):
+    def verified($h): ["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","muse","rovo","omp"] | index($h);
+    def effort_ok($h; $m; $e):
       if $e == null then true
       elif ($e | type) != "string" then false
+      elif $e == "ultra" then (($h == "pi" or $h == "pi-signed") and (($m | type) == "string") and ($m | startswith("codex-native/")) and ($m | length) > 13)
       elif $h == "claude" then (["low","medium","high","xhigh","max"] | index($e))
       elif $h == "codex" then ($codex_efforts | index($e))
       elif $h == "grok" then (["low","medium","high"] | index($e))
-      elif $h == "pi" or $h == "pi-signed" then (["low","medium","high","xhigh","max"] | index($e))
+      elif $h == "pi" or $h == "pi-signed" or $h == "omp" then (["low","medium","high","xhigh","max"] | index($e))
       elif $h == "muse" then (["low","medium","high","xhigh","max"] | index($e))
       elif $h == "rovo" then (["low","medium","high","max"] | index($e))
       elif $h == "opencode" or $h == "kimi" or $h == "cursor" then false
@@ -61,10 +62,10 @@ fm_crew_dispatch_validate() {
       or ($items | any(has("perspective") and (((.perspective | type) != "string") or (.perspective | length) == 0)));
     def bad_efforts:
       configured_profiles
-      | map({h: .harness, e: .effort})
+      | map({h: .harness, m: .model, e: .effort})
       | map(select(.e != null))
       | map(select((.h | type) == "string" and verified(.h)))
-      | map(select(. as $p | effort_ok($p.h; $p.e) | not))
+      | map(select(. as $p | effort_ok($p.h; $p.m; $p.e) | not))
       | map("\(.h):\(.e)")
       | unique;
     if type != "object" then "top-level value must be an object"

@@ -361,7 +361,7 @@ Report only true captain-relevant outcomes or a declared external wait by append
    tool can silently place the file somewhere else, and that failure is itself a \`blocked:\`
    condition to report.
 States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
-Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own; use \`blocked:\` when you are stuck and need firstmate to act.
+Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own, naming when it clears with \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) when you know; use \`blocked:\` when you are stuck and need firstmate to act.
 Use this only for material phase changes, a captain decision, a real blocker, a failure, work ready for review, or work you landed.
 Work you landed includes a merge you performed yourself under standing merge authority and one the captain merged on the forge: under that authority nothing is ever \"ready for review\", so a landed merge that goes unreported reaches the captain as silence.
 This is also how you return the answer to a marked from-firstmate request above.
@@ -480,7 +480,9 @@ The report is the only thing that survives, so anything worth keeping must be in
    Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - ONLY when you are deliberately idling on a
    known external wait you expect to clear on its own (an upstream release, a rate-limit reset):
    firstmate then leaves your idle pane alone and rechecks it on a long cadence instead of
-   treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+   treating it as a possible wedge. When you know when the wait clears, say so in the line with
+   \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) and firstmate rechecks at that time instead.
+   Use \`blocked:\` when you are stuck and need help.
    If you hit your own Claude session usage limit (as distinct from account-wide quota
    exhaustion or a real wedge), report \`paused [key=session-limit]: {harness} session usage limit, resets <ts>\`
    and STOP - do not attempt to keep working or retry in the same session once the limit clears;

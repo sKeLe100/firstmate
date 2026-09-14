@@ -44,13 +44,16 @@
 #   the new incarnation.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
-#   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
+#   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
 #   from that harness's launch rather than guessed. codex is the exception: it
 #   silently bills its own expensive default when an axis is omitted, so a codex
 #   spawn or relaunch is REFUSED unless it names a model and an effort codex
 #   itself accepts (max is not one of them). A raw launch command is exempt.
+#   Ultra is the other explicit exception: bin/fm-harness.sh validate-native-effort
+#   owns its model scope; supported Pi launches receive --codex-effort ultra,
+#   never --thinking ultra.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then
@@ -292,6 +295,11 @@
 # and every refusal; a failed registration stops this spawn rather than launching
 # a worker that would wedge on the dialog. A --secondmate launch never runs it,
 # so a claude secondmate home keeps its own one-time trust decision.
+# Every claude launch also carries the attribution-off policy in its per-launch
+# --settings JSON, so a spawned worker never writes a Co-Authored-By trailer,
+# Claude-Session link, or generated-with line into a commit or PR body;
+# launch_template() below owns the reason it cannot come from the captain's own
+# settings.
 # Publishing the record and moving this home's backlog item to In flight are one
 # step, not two: bin/fm-backlog-transition-lib.sh owns that invariant, and this
 # script performs the transition under the task's own meta lock before it reports
@@ -303,9 +311,10 @@
 # re-running the transition, so an eligible In-flight item is left untouched.
 # The transition is
 # skipped entirely for --secondmate spawns (persistent agents are not work
-# items), on a config/backlog-backend=manual home, and in a home that keeps no
-# data/backlog.md. An automatic-backend home with a backlog but no compatible
-# tasks-axi refuses before creating any lifecycle state.
+# items), on a config/backlog-backend=manual home, and in a markdown home that
+# keeps no data/backlog.md. A configured non-markdown adapter remains
+# active without a markdown file; any active automatic backend without
+# compatible tasks-axi refuses before creating lifecycle state.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off>] window=<backend-target> worktree=<path>
 # A ship task records the explicit mode/yolo it was passed; a secondmate spawn records
 # mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
@@ -546,8 +555,8 @@ if [ "$TRACEPARENT_SET" -eq 1 ]; then
   }
 fi
 case "$EFFORT" in
-  ''|low|medium|high|xhigh|max) ;;
-  *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
+  ''|low|medium|high|xhigh|max|ultra) ;;
+  *) echo "error: --effort must be one of low, medium, high, xhigh, max, ultra" >&2; exit 1 ;;
 esac
 # --purpose classifies this dispatch for the LLM usage telemetry archive
 # (docs/llm-usage-telemetry.md); it never blocks a spawn on its own, so an
@@ -759,7 +768,7 @@ spawn_remote_secondmate() {
       ;;
   esac
   case "$effort" in
-    -|low|medium|high|xhigh|max) ;;
+    -|low|medium|high|xhigh|max|ultra) ;;
     *)
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
@@ -776,6 +785,11 @@ spawn_remote_secondmate() {
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
     echo "error: a codex remote secondmate resolves no model/effort codex actually receives (model=$model effort=$effort); pin them in config/secondmate-harness as \"codex <model> <effort>\", or pass --model/--effort explicitly, with an effort of $(codex_effort_tiers_phrase)" >&2
+    return 1
+  fi
+  if [ "$effort" = ultra ] && ! "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$harness" "$model" "$effort"; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
     return 1
   fi
   if ! pc02_lane_guard "$id" "${model#-}"; then
@@ -1564,7 +1578,15 @@ launch_template() {
     # alone disables the feature; keep both so a managed override of one still
     # leaves the other in force. Both are per-launch, scoped to this invocation only,
     # and never touch the captain's global ~/.claude/settings.json.
-    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '\''{"feedbackDrafts":"off"}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+    # The same inline --settings JSON also carries the attribution policy
+    # ("attribution": {"commit": "", "pr": "", "sessionUrl": false}), which
+    # suppresses Claude Code's Co-Authored-By trailer, Claude-Session link, and
+    # generated-with line in commits and PR bodies. The captain sets that
+    # policy in the `user` settings scope, but a launched worker's settings
+    # sources are not guaranteed to load that scope, so a worker would
+    # otherwise run with attribution back on; carrying it per launch keeps the
+    # policy in force regardless of which settings scopes end up loaded.
+    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then
         printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
@@ -1833,11 +1855,20 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)
     if [ -n "$SM_EFFORT" ]; then
       case "$SM_EFFORT" in
-        low|medium|high|xhigh|max) EFFORT=$SM_EFFORT ;;
-        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max; ignoring" >&2 ;;
+        low|medium|high|xhigh|max|ultra) EFFORT=$SM_EFFORT ;;
+        *) echo "warning: config/secondmate-harness effort token '$SM_EFFORT' is not one of low, medium, high, xhigh, max, ultra; ignoring" >&2 ;;
       esac
     fi
   fi
+fi
+# Ultra is an explicit native capability, never a Pi thinking-level alias.
+# Validate the fully resolved profile before worktree or endpoint provisioning.
+if [ "$EFFORT" = ultra ]; then
+  "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$HARNESS" "$MODEL" "$EFFORT" || exit 1
+  [ "$RAW_LAUNCH" = 0 ] || {
+    echo "error: --effort ultra requires the canonical --harness pi or pi-signed launch so its native flag cannot be omitted" >&2
+    exit 1
+  }
 fi
 if [ "$HARNESS" = omp ]; then
   omp_model_validate "$OMP_BIN" "$MODEL" || exit 1
@@ -1854,7 +1885,7 @@ model_flag_for_harness() {
 }
 
 effort_flag_for_harness() {
-  local harness=$1 effort=$2
+  local harness=$1 effort=$2 model=${3:-}
   [ -n "$effort" ] && [ "$effort" != default ] || return 0
   case "$harness" in
     claude)
@@ -1878,9 +1909,21 @@ effort_flag_for_harness() {
         low|medium|high) printf -- '--reasoning-effort %s ' "$(shell_quote "$effort")" ;;
       esac
       ;;
-    pi|pi-signed|omp)
-      # Pi 0.80.6 and omp 18.1.11 accept the full shared effort vocabulary,
-      # including max, through their --thinking flag.
+    pi|pi-signed)
+      # Pi 0.80.6 accepts the full shared effort vocabulary, including max, through
+      # its --thinking flag. Ultra is Pi's native codex effort: fm-harness.sh
+      # validate-native-effort owns its model scope and it rides --codex-effort.
+      case "$effort" in
+        ultra)
+          "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$harness" "$model" "$effort" || return 1
+          printf -- '--codex-effort %s ' "$(shell_quote ultra)"
+          ;;
+        low|medium|high|xhigh|max) printf -- '--thinking %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
+    omp)
+      # omp 18.1.11 --thinking accepts off|minimal|low|medium|high|xhigh|max|auto,
+      # a superset of the shared vocabulary, so every level maps straight across.
       case "$effort" in
         low|medium|high|xhigh|max) printf -- '--thinking %s ' "$(shell_quote "$effort")" ;;
       esac
@@ -3592,6 +3635,17 @@ export default function (pi: any) {
     return busyEvent("idle", "agent-settled");
   });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
+  // A native harness can make progress inside one Pi turn. This separate
+  // marker prevents false wedge alarms without fabricating a completed turn.
+  let lastProgress = 0;
+  pi.events?.on?.("codex-native:progress", () => {
+    const now = Date.now();
+    if (now - lastProgress < 1000) return;
+    lastProgress = now;
+    execFile("$FM_ROOT/bin/fm-busy-event.sh", [
+      "progress", "$STATE_REAL", "$ID", "--gen", "$BUSY_GEN",
+    ]);
+  });
 }
 EOF
       ;;
@@ -4008,7 +4062,7 @@ sq_ompcfg=$(shell_quote "${OMP_WORKER_CFG:-$FM_ROOT/.omp/fm-worker-overlay.yml}"
 sq_opinput=$(shell_quote "$FM_ROOT/bin/fm-operational-input.sh")
 sq_worktree=$(shell_quote "$WT")
 MODELFLAG=$(model_flag_for_harness "$HARNESS" "$MODEL")
-EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT")
+EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT" "$MODEL") || exit 1
 LAUNCH=${LAUNCH//__MODELFLAG__/$MODELFLAG}
 LAUNCH=${LAUNCH//__EFFORTFLAG__/$EFFORTFLAG}
 if [ "$HARNESS" = rovo ]; then

@@ -85,6 +85,7 @@ Refresh the hints whenever the serial lane gains scripts, rather than waiting fo
 
 The current table is generated from the runner's retained maxima plus its default for the 30 unhinted scripts.
 This fork's worst shard carries ~16.22 min of assignment weight, 54% of its 30-minute job cap.
+Upstream run 34342484144 observed a shard reach about 20 minutes of passing work, so the 30-minute job cap keeps meaningful hang-tripwire margin for job setup and runner-speed spread.
 
 The single longest script, `tests/fm-watch-triage.test.sh` at 262626 ms, is the floor for any shard count.
 

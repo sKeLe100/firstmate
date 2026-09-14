@@ -69,7 +69,7 @@ README.md            public overview and development notes
 .claude/skills       symlink to .agents/skills for claude compatibility
 skills/              standalone public installer-facing skills, committed; not loaded by firstmate
 bin/                 helper scripts, committed; read each script's header before first use
-.env                 optional Relay pairing token; LOCAL, gitignored; presence-gates section 14
+.env                 optional Relay pairing token (presence-gates section 14) and mail-plane credentials (schema: docs/configuration.md "Mail plane"); LOCAL, gitignored
 config/crew-harness      crewmate harness override (absent/default → firstmate's own); inherited; see docs/configuration.md "Harness support"
 config/crew-dispatch.json  optional crewmate dispatch profiles (natural-language harness/model/effort rules); inherited; see docs/configuration.md "Crew dispatch profiles (config/crew-dispatch.json)"
 config/secondmate-harness  harness for PRIMARY to launch SECONDMATE agents ("<harness> [<model>] [<effort>]"); NOT inherited; see .agents/skills/secondmate-provisioning/SKILL.md
@@ -92,7 +92,7 @@ config/upstream-autosync  upstream autosync auto-dispatch eligibility flag; inhe
 config/turnend-churn-absorb  opt-in absorb of bare turn-end wakes on pane churn; NOT inherited; see docs/configuration.md "Turn-end pane-churn absorb (config/turnend-churn-absorb)"
 config/primary-continuity  OPTS OUT of primary continuity watchdog (inverted polarity); inherited; see docs/configuration.md "Primary continuity watchdog"
 config/cmux-socket-password  cmux control-socket password; see docs/cmux-backend.md "Setup"
-config/wedge-alarm  away-mode wedge-alarm active-alert channels (off/auto/osascript/herdr/command); see docs/configuration.md "Away-mode wedge alarm channels (config/wedge-alarm)"
+config/wedge-alarm  away-mode wedge-alarm active-alert channels (off/auto/osascript/herdr/command); absent means auto; see docs/wedge-alarm.md and docs/configuration.md "Away-mode wedge alarm channels (config/wedge-alarm)"
 config/watched-tools.json  watched tool updates list; NOT inherited; see docs/configuration.md "Watched tool updates (config/watched-tools.json)"
 config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; see docs/configuration.md "Relay (.env)"
 data/                personal fleet records; LOCAL, gitignored as a whole
@@ -110,7 +110,10 @@ state/               runtime records and signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth
   <id>.meta          task metadata; each producer script's header owns its exact fields and mutation contract
   <id>.inbox/        durable steering inbox for sequenced firstmate instructions; see docs/configuration.md "Operational home layout and state"
-  .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
+  mail.check.sh .mail-*  generated received-mail poll shim, its trust binding, and bin/fm-mail.sh's private cursors; present only after bin/fm-mail-check.sh arm (mail schema: docs/configuration.md "Mail plane")
+  .afk-contract      the away-posture record: the captain's verbatim away words, expected return, reach profile, spend cap, and structured mandate clauses; written only by bin/fm-afk-contract.sh after the captain confirms the read-back, archived under afk-contracts/ at return; its presence IS the away posture in every harness
+  afk-contracts/     archived away-posture records: one final record per away window keyed by entry time, plus any superseded mandates from that window
+  .afk               durable away-mode daemon flag on the harnesses that still launch the daemon (never on Pi); present = sub-supervisor may inject escalations (set by the daemon entry, cleared on user return)
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
   .watcher-down      private generation-bound recovery state for watcher downtime and durable wake presentation; never touch
   .hash-* .count-* .stale-* .stale-since-* .churn-since-* .paused-* .wedge-escalations-* .wedge-backoff-* .writing-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
@@ -158,7 +161,7 @@ When that section reports its checks still in progress it names exactly what is 
    When the lock could not be acquired and verified, the queue is left untouched because no session mutation is authorized, and the guard's tangle/watcher-liveness alarms still print in read-only advisory mode without drain, supervision repair, or checkout repair commands.
 4. **Supervision operating instructions** - after the wake queue and before both digests, the digest emits exactly one operating block for the detected primary harness, followed by the read-once contract that governs them.
    The script itself never starts supervision; the emitted harness protocol owns the exact wait or wake mechanism.
-5. **Fleet-state digest** - after that read-once contract and ahead of the context digest, the compact backlog listing owned by `bin/fm-session-start.sh`; every `state/<id>.meta`; a bounded tail of each task's `state/<id>.status` (labeled as wake-EVENT history, not current state, with the full log path printed for a deeper read); the `state/.afk` flag; and one cheap alive/dead read of each task's recorded backend endpoint.
+5. **Fleet-state digest** - after that read-once contract and ahead of the context digest, the compact backlog listing owned by `bin/fm-session-start.sh`; every `state/<id>.meta`; a bounded tail of each task's `state/<id>.status` (labeled as wake-EVENT history, not current state, with the full log path printed for a deeper read); the away posture (`state/.afk-contract`, plus the `state/.afk` daemon flag where a daemon runs); and one cheap alive/dead read of each task's recorded backend endpoint.
    That liveness line is a fast presence check only, not a full state read - when you need a crew's actual current state (a run-step, not just "is the pane there"), read it with `bin/fm-crew-state.sh <id>` as before; the digest deliberately skips that deeper, slower read for every task so it stays fast and bounded.
 6. **Network checks** - after the fleet-state digest, the deferred stage's result, or an explicit statement of what it has not confirmed yet.
    A read-only session runs no network checks at all and says so.
@@ -212,7 +215,7 @@ For an ordinary direct report whose endpoint is dead or metadata has no window, 
 For a dead secondmate direct report, load `secondmate-provisioning` and reconcile only that secondmate, never its whole child tree from the main home.
 Each secondmate reconciles work already in its own home and then idles; recovery never authorizes it to invent work.
 
-If away mode is present, load `/afk` and let its daemon own supervision rather than arming another cycle.
+If away mode is present, load `/afk`; where its daemon runs, let the daemon own supervision rather than arming another cycle, and on Pi keep the ordinary supervision session, which runs in both postures.
 Surface only captain-relevant decisions, review-ready PRs, failures, and credential needs; otherwise resume the emitted supervision protocol silently.
 A restart must be a non-event because durable state and live backend inventory, not conversation memory, are authoritative.
 
@@ -425,11 +428,13 @@ Harness-aware turn-end guards are structural backstops, not permission to omit t
 
 ### Away-mode stub
 
-Invoke the `/afk` skill when the captain says `/afk`, says they are going afk, `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
+Invoke the `/afk` skill when the captain says `/afk`, says they are going afk, `state/.afk-contract` or `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
 The skill owns the daemon procedure; these safety facts remain inline:
 
 - Every current daemon injection uses the `away-supervisor` kind from `bin/fm-operational-input.sh` after `FM_OPERATIONAL_PREFIX` (U+2063 INVISIBLE SEPARATOR followed by `FIRSTMATE_OP: `), while the `/afk` skill owns legacy bare-marker compatibility.
+- `state/.afk-contract` is the away posture, written only after the captain confirms the read-back of their away words; entry announces hold-for-return only, and the record's clauses are recorded, not executed, in this release.
 - While `state/.afk` exists, the daemon owns supervision; do not arm a separate watcher.
+  The daemon is never launched on Pi, where the ordinary supervision session continues under the record.
 - A marked message while away mode is active is internal escalation and does not exit away mode.
 - A message beginning `/afk` refreshes away mode.
 - Any other unmarked message means the captain returned; load `/afk`, run the return owner, and do not process that message as ordinary work until its durable catch-up gate clears.
@@ -489,7 +494,7 @@ Mention cost as a courtesy when unusually much work is running, but never block 
 
 ## 10. Backlog contract
 
-`data/backlog.md` is the durable queue.
+The configured `tasks-axi` backend is the durable queue; the tracked default is `data/backlog.md`.
 It tracks work items only, never agents; persistent secondmates never appear as backlog items.
 Work routed to a secondmate is recorded in that secondmate home's own backlog, not the main backlog.
 A decision is simply a task held for the captain: create the task with `tasks-axi add` when needed, then always hold it through `bin/fm-captain-hold.sh hold <id> --reason "<reason>"`, with `--until <date>` when the captain defers it.

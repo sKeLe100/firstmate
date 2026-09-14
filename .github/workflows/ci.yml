@@ -390,8 +390,10 @@ jobs:
   # one known defect class. Captain reviewed and accepted that residual gap.
   # Restore this job (runs-on: macos-latest, /bin/bash -n over
   # bin/fm-lint.sh --list-files, plus the fm-fleet-snapshot-view.test.sh
-  # smoke run, plus the fm-bearings-snapshot.test.sh smoke run) if
-  # Apple hardware or a hosted macOS runner becomes available.
+  # smoke run, plus the fm-bearings-snapshot.test.sh smoke run, plus upstream's
+  # later FM_TEST_ONLY=test_first_register_succeeds_with_empty_lock_list_under_bash32
+  # tests/fm-public-followup.test.sh regression) if Apple hardware or a hosted
+  # macOS runner becomes available.
 
   invariants:
     name: Repo invariants
