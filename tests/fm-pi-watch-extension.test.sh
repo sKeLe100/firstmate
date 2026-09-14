@@ -3120,12 +3120,13 @@ EOF
 }
 
 test_opencode_primary_watch_plugin_requires_session_lock() {
-  local plugin repo home log out status
+  local plugin repo home node_home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-lock-root"
   home="$TMP_ROOT/opencode-lock-home"
+  node_home="$TMP_ROOT/opencode-lock-node-home"
   log="$TMP_ROOT/opencode-lock.log"
-  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  mkdir -p "$repo/bin" "$home/state" "$home/config" "$node_home"
   git init -q "$repo"
   : > "$repo/AGENTS.md"
   : > "$home/state/task.meta"
@@ -3135,7 +3136,11 @@ printf 'arm\n' >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
+  # HOME is isolated to a throwaway, profile-free directory here because
+  # spawnArm() launches a login shell that sources it; an ambient CI $HOME's
+  # profile chain can block that shell for tens of seconds (see
+  # data/pi-watch-arm-spawn-hang-investigation/report.md).
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" HOME="$node_home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
