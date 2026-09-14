@@ -322,7 +322,7 @@ family_for_basename() {
       printf '%s\n' backend-dispatch
       ;;
     fm-check-unregister.test.sh|fm-pr-check-security.test.sh|fm-pr-merge.test.sh|\
-    fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
+    fm-review-diff.test.sh|fm-teardown.test.sh|fm-teardown-*.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
       ;;
     fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh)
@@ -695,6 +695,16 @@ tests/fm-task-delivery.test.sh 5952
 tests/fm-task-inbox.test.sh 25369
 tests/fm-teardown-endpoint-safety.test.sh 4620
 tests/fm-teardown.test.sh 97603
+tests/fm-teardown-backlog-close.sh 5700
+tests/fm-teardown-herdr.sh 5100
+tests/fm-teardown-index-lock.sh 5500
+tests/fm-teardown-landed-work.sh 9200
+tests/fm-teardown-legacy-records.sh 5500
+tests/fm-teardown-parked-run-edge.sh 7400
+tests/fm-teardown-parked-run.sh 7700
+tests/fm-teardown-pr-check.sh 4800
+tests/fm-teardown-process-reap.sh 11300
+tests/fm-teardown-secondmate.sh 8200
 tests/fm-test-fixture-cleanup.test.sh 915
 tests/fm-test-fixtures.test.sh 151
 tests/fm-test-isolation-proof.test.sh 2567
@@ -1200,6 +1210,11 @@ families_for_changed_path() {
     tests/fm-backend-herdr-eventwait.test.py)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
+      ;;
+    tests/fm-teardown-*.sh)
+      # Split teardown test files are sourced by fm-teardown.test.sh; changes
+      # to any split must re-run the wrapper that calls all tests in order.
+      printf '%s\n' "__script__:fm-teardown.test.sh"
       ;;
     tests/*.test.sh)
       # A single test file change selects only that script via basename family
