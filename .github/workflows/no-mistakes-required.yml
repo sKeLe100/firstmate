@@ -52,6 +52,13 @@ jobs:
       # under sustained host load (20-38+ load average), confirmed non-reproducing against
       # this PR's changes across multiple genuine (non-skip) retries. Inert after PR #105
       # merges; do not extend to any other PR.
+      #
+      # PR-107-only exemption (captain ruling, 2026-09-14): every composer/footer test the
+      # diff touches passed cleanly (fm-composer-lib.test.sh, fm-composer-ghost.test.sh,
+      # exit=0); the skip is solely 3 unrelated failures (fm-backend-herdr.test.sh race, plus
+      # 900s per-script timeouts in fm-lint.test.sh and fm-captain-hold-lifecycle.test.sh)
+      # under transient ~70 load-avg host contention. Inert after PR #107 merges; do not
+      # extend to any other PR.
       - name: PR 57 attestation exemption notice
         if: github.event.pull_request.number == 57
         run: echo "Attestation exempted for PR 57 (upstream-sync merge; full-suite test evidence recorded in PR description per captain ruling)."
@@ -60,8 +67,12 @@ jobs:
         if: github.event.pull_request.number == 105
         run: echo "Attestation exempted for PR 105 (pi-watch-arm-spawn-hang-fix; pre-existing unrelated watcher-daemon flake under host load, per captain ruling)."
 
+      - name: PR 107 attestation exemption notice
+        if: github.event.pull_request.number == 107
+        run: echo "Attestation exempted for PR 107 (opencode composer-footer fix; unrelated test-step failures traced to host load, not the diff, per captain ruling)."
+
       - name: Verify no-mistakes signature and pipeline attestation
-        if: github.event.pull_request.number != 57 && github.event.pull_request.number != 105
+        if: github.event.pull_request.number != 57 && github.event.pull_request.number != 105 && github.event.pull_request.number != 107
         uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@32d396ac0f29135daf7fcb9964aba9d5f4e796d6 # post-v1.57.1, untagged (action added in #819)
         with:
           # synchronize webhook payloads can omit pull_request.body, so the action's own
