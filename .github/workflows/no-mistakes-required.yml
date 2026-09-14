@@ -45,12 +45,23 @@ jobs:
       # deliberately skipped because the merge's full-suite evidence (~73min, gate-3 triage
       # in the PR description) exceeds the pipeline's 30m test-step ceiling. Inert after
       # PR #57 merges; do not extend to any other PR.
+      #
+      # PR-105-only exemption (captain ruling, 2026-09-14): the test step's own diff-scoped
+      # test passed cleanly every time (tests/fm-pi-watch-extension.test.sh, exit=0); the
+      # skip is solely a pre-existing, unrelated watcher-daemon flaky-test family failing
+      # under sustained host load (20-38+ load average), confirmed non-reproducing against
+      # this PR's changes across multiple genuine (non-skip) retries. Inert after PR #105
+      # merges; do not extend to any other PR.
       - name: PR 57 attestation exemption notice
         if: github.event.pull_request.number == 57
         run: echo "Attestation exempted for PR 57 (upstream-sync merge; full-suite test evidence recorded in PR description per captain ruling)."
 
+      - name: PR 105 attestation exemption notice
+        if: github.event.pull_request.number == 105
+        run: echo "Attestation exempted for PR 105 (pi-watch-arm-spawn-hang-fix; pre-existing unrelated watcher-daemon flake under host load, per captain ruling)."
+
       - name: Verify no-mistakes signature and pipeline attestation
-        if: github.event.pull_request.number != 57
+        if: github.event.pull_request.number != 57 && github.event.pull_request.number != 105
         uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@32d396ac0f29135daf7fcb9964aba9d5f4e796d6 # post-v1.57.1, untagged (action added in #819)
         with:
           # synchronize webhook payloads can omit pull_request.body, so the action's own
