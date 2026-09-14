@@ -22,6 +22,7 @@ classify() { printf '%s\n' "$1" | "$SCRIPT" classify; }
 # live `no-mistakes axi status` on a branch with no run of its own. Those
 # rows' gates/outcomes are not ours; classify must say no-run rather than
 # report a false gate/outcome or spin as running.
+# shellcheck disable=SC2016  # verbatim CLI capture: the help line's backticks must stay literal
 NO_RUN_TOON='current_branch: main
 runs_on_current_branch: 0
 count: 4 of 268 total
