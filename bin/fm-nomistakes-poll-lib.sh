@@ -20,7 +20,10 @@
 #                          (no-run: no top-level `run:` object, which is what
 #                          `axi status` without --run emits when the current
 #                          branch has no run - whatever its recent-runs table
-#                          lists - so a dead drive call is never polled forever)
+#                          lists - so a dead drive call is never polled forever;
+#                          `wait` tolerates it for two intervals after start so
+#                          a just-backgrounded drive call the daemon has not yet
+#                          registered is not refused on the first poll)
 #   wait [--dir DIR] [--interval SECS] [--max SECS]
 #                          polls `no-mistakes axi status` in DIR (default:
 #                          cwd) every INTERVAL seconds (default 20) until
@@ -65,7 +68,7 @@ seconds (default 20) until classify returns gate or outcome:*, or MAX seconds
 (default 480) elapse. Prints the last TOON to stdout and a final
 FM_NMPOLL_RESULT=<result> line to stderr. Exit 0 on gate, 1 on outcome, 2 when
 MAX elapsed with no gate/outcome yet (call wait again), 3 on usage error, no
-current-branch run, or a hung status call.
+current-branch run after a two-interval grace, or a hung status call.
 EOF
 }
 
@@ -146,6 +149,10 @@ cmd_wait() {
     fi
     case "$result" in
       no-run)
+        if [ $((SECONDS - start)) -lt $((interval * 2)) ]; then
+          sleep "$interval"
+          continue
+        fi
         printf '%s\n' "$toon" >&2
         printf 'error: no run for the current branch in %s (axi status returned no run object); the drive call is not registered - check its log\n' "$dir" >&2
         printf 'FM_NMPOLL_RESULT=no-run\n' >&2

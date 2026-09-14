@@ -202,9 +202,35 @@ expect_code 2 "$RC" "wait: expected still-running exit code once --max elapses"
 assert_grep "FM_NMPOLL_RESULT=running" "$TMP_ROOT/err2" "wait: expected FM_NMPOLL_RESULT=running on timeout"
 pass "11. wait returns running (exit 2) once --max elapses without a gate or outcome"
 
+# --- 12a. wait: a run the daemon has not registered yet on the first poll
+# (no run object) is retried within the grace window, then followed to its
+# gate - a just-backgrounded drive call is not refused as unreachable ---
+printf '%s\n' "$NO_RUN_TOON" > "$TMP_ROOT/no-run.toon"
+printf '0\n' > "$STATE_FILE"
+cat > "$FAKEBIN/no-mistakes" <<EOF
+#!/usr/bin/env bash
+state_file="$STATE_FILE"
+n=\$(cat "\$state_file")
+n=\$((n + 1))
+printf '%s\n' "\$n" > "\$state_file"
+if [ "\$n" -lt 2 ]; then
+  cat "$TMP_ROOT/no-run.toon"
+else
+  printf '%s\n' "$GATED_TOON"
+fi
+EOF
+chmod +x "$FAKEBIN/no-mistakes"
+OUT=$(PATH="$FAKEBIN:$PATH" "$SCRIPT" wait --dir "$TMP_ROOT" --interval 1 --max 30 2>"$TMP_ROOT/err3a")
+RC=$?
+expect_code 0 "$RC" "wait: expected gate exit code after a not-yet-registered first poll"
+assert_contains "$OUT" "01EXAMPLE" "wait: expected the gated run's TOON on stdout"
+assert_grep "FM_NMPOLL_RESULT=gate" "$TMP_ROOT/err3a" "wait: expected FM_NMPOLL_RESULT=gate after the grace retry"
+pass "12a. wait retries a first-poll no-run within the grace window and reaches the gate"
+
 # --- 12. wait: refuses (exit 3, no FM_NMPOLL_RESULT=gate/running) when axi
-# status returns no run object for the current branch, instead of acting on
-# the recent-runs table or polling a dead drive call until --max ---
+# status keeps returning no run object for the current branch past the grace
+# window, instead of acting on the recent-runs table or polling a dead drive
+# call until --max ---
 printf '%s\n' "$NO_RUN_TOON" > "$TMP_ROOT/no-run.toon"
 cat > "$FAKEBIN/no-mistakes" <<EOF
 #!/usr/bin/env bash
@@ -215,11 +241,11 @@ START=$SECONDS
 OUT=$(PATH="$FAKEBIN:$PATH" "$SCRIPT" wait --dir "$TMP_ROOT" --interval 1 --max 30 2>"$TMP_ROOT/err3")
 RC=$?
 expect_code 3 "$RC" "wait: expected refusal exit code for no-run status"
-[ $((SECONDS - START)) -lt 10 ] || fail "wait: no-run status must return immediately, not poll to --max"
+[ $((SECONDS - START)) -lt 10 ] || fail "wait: no-run status must return after the grace window, not poll to --max"
 [ -z "$OUT" ] || fail "wait: no-run status must not be printed as a result, got: $OUT"
 assert_grep "FM_NMPOLL_RESULT=no-run" "$TMP_ROOT/err3" "wait: expected FM_NMPOLL_RESULT=no-run on stderr"
 assert_grep "no run for the current branch" "$TMP_ROOT/err3" "wait: expected a diagnostic naming the missing current-branch run"
-pass "12. wait refuses immediately with exit 3 when the current branch has no run"
+pass "12. wait refuses with exit 3 when the current branch still has no run after the grace window"
 
 # --- 12b. wait: a status call exiting 1 with a terminal outcome in its TOON
 # (the CLI's documented exit for failed/cancelled final outcomes) is that
