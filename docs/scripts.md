@@ -98,6 +98,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `fm-crew-state.sh`       | Print one deterministic current-state line for a crew                                |
 | `fm-nm-run-lib.sh`       | Single owner of shared no-mistakes run-attribution primitives and rules             |
+| `fm-nomistakes-poll-lib.sh` | Bounded, correct polling of a backgrounded `no-mistakes axi run`/`respond` drive call: `classify` one `axi status` blob or `wait` for its next gate/outcome |
 | `fm-nomistakes-gate-check.sh` | Read-only detection of whether a local branch's HEAD is `equal`, `ahead`, `behind`, or `diverged` from the no-mistakes gate ref before pushing |
 | `fm-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `fm-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |

@@ -12,6 +12,11 @@
 # direction is unsafe: a false negative hides a genuinely parked run, and a
 # false positive lets teardown act on a run it does not own.
 #
+# It is also the ONE owner of the TOON field, terminal-status, and gate-shape
+# primitives (fm_nm_field, fm_nm_run_is_active, fm_nm_run_is_gated and its
+# helpers) that fm-crew-state.sh renders from and fm-nomistakes-poll-lib.sh
+# polls on, so the two never disagree about what a gate or outcome looks like.
+#
 # Bounded call to `no-mistakes "$@"` in dir $1, timeout $2 seconds. The bounded
 # form preserves stdout, stderr, and exit status; the checked form discards
 # stderr, while fm_nm_run keeps the fail-open query contract for read-only callers.
