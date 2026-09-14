@@ -135,25 +135,6 @@ fm_test_base_path_owned() {
   [ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]
 }
 
-# --- sandbox-cache lock -----------------------------------------------------
-# Guards fm_test_base_path()'s check-build-mark so concurrent callers don't
-# race to build the same cache directory.  Uses fm_lock_acquire_wait from
-# bin/fm-wake-lib.sh (the same primitive the intent named) for the lock;
-# callers that find the .complete marker skip the lock entirely.
-
-FM_TEST_SANDBOX_LOCK="/tmp/.fm-test-sandbox-base-path.lock"
-
-# shellcheck source=bin/fm-wake-lib.sh
-. "$ROOT/bin/fm-wake-lib.sh"
-
-_fm_test_sandbox_lock_acquire() {
-  fm_lock_acquire_wait "$FM_TEST_SANDBOX_LOCK"
-}
-
-_fm_test_sandbox_lock_release() {
-  fm_lock_release "$FM_TEST_SANDBOX_LOCK"
-}
-
 # fm_test_base_path_populated <cache_dir>
 #
 # Verifies that every expected executable (non-excluded, from every source dir)
@@ -196,6 +177,7 @@ fm_test_base_path() {
   uid=$(id -u) || fm_test_base_path_die 'could not determine the current user id'
   local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$uid.$key"
   local marker="$cache_dir/.complete"
+  local lock="$cache_dir.lock"
 
   if [ -e "$cache_dir" ] && ! fm_test_base_path_owned "$cache_dir"; then
     fm_test_base_path_die \
@@ -206,18 +188,23 @@ fm_test_base_path() {
     return 0
   fi
 
-  _fm_test_sandbox_lock_acquire
+  # The lock guards the check-build-mark sequence so concurrent callers don't
+  # race to build the same cache directory; callers that found the marker
+  # above never take it.
+  # shellcheck source=bin/fm-wake-lib.sh
+  FM_STATE_OVERRIDE="${TMPDIR:-/tmp}" . "$ROOT/bin/fm-wake-lib.sh"
+  fm_lock_acquire_wait "$lock"
 
   # Re-check the marker: a sibling that was waiting on the lock may have
   # finished building while we waited.
   if [ -f "$marker" ]; then
-    _fm_test_sandbox_lock_release
+    fm_lock_release "$lock"
     printf '%s\n' "$cache_dir"
     return 0
   fi
 
   (umask 077 && mkdir -p "$cache_dir") \
-    || { _fm_test_sandbox_lock_release; fm_test_base_path_die "could not create sandbox cache dir $cache_dir"; }
+    || { fm_lock_release "$lock"; fm_test_base_path_die "could not create sandbox cache dir $cache_dir"; }
 
   local dir path name excluded f
   for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
@@ -240,13 +227,13 @@ fm_test_base_path() {
   done
 
   fm_test_base_path_populated "$cache_dir" \
-    || { _fm_test_sandbox_lock_release; fm_test_base_path_die "sandbox cache dir is empty: $cache_dir"; }
+    || { fm_lock_release "$lock"; fm_test_base_path_die "sandbox cache dir is empty: $cache_dir"; }
 
   : > "$marker" \
-    || { _fm_test_sandbox_lock_release; fm_test_base_path_die "could not mark $cache_dir complete"; }
+    || { fm_lock_release "$lock"; fm_test_base_path_die "could not mark $cache_dir complete"; }
   printf '%s\n' "$cache_dir"
 
-  _fm_test_sandbox_lock_release
+  fm_lock_release "$lock"
 }
 
 fm_test_pid_identity() {
