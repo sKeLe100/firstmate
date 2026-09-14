@@ -163,6 +163,10 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
 | `fm-autonomous-pc02-lane.sh` | Report whether the single PC02 lane is free for the autonomous pass's dispatch-availability check |
 | `fm-host-memory.sh` | Report whether this host's free memory clears the launch floor, for the autonomous pass and the spawn preflight |
+| `fm-dispatch-quota-cap.sh` | Report the effective concurrent Claude dispatch cap after the quota ladder and whether the paced Codex sidecar may spawn |
+| `fm-backlog-routing.sh` | Durable pc02/medium/senior routing registry (`data/backlog-routing.tsv`) for the autonomous pass's refill step: classify, escalate, gc, list, and seed from the durable-refill report |
+| `fm-pc02-fair-order.sh` | Fair dispatch order over the routing registry's PC02-classified, currently-dispatchable roster (dependency-cleared, then priority, then a fairness rotation) |
+| `fm-routing-ledger-metrics.sh` | Reconcile `data/routing-ledger.tsv` into opened/closed/reopened, gross/net per day, and median cycle time for the routing registry |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note, dictate one, read status, ask a side question |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |

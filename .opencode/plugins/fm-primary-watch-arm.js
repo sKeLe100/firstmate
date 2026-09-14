@@ -342,11 +342,19 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     FM_CONFIG_OVERRIDE: paths.config,
     FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
-  const armChild = spawn("bash", ["-lc", 'config_dir="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" --restart'], {
+  const armChild = spawn("bash", ["-c", 'config_dir="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" --restart'], {
     cwd: paths.root,
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  // A non-login shell (no -l) skips sourcing the ambient user/system profile
+  // chain, which can otherwise block for tens of seconds on a hosted CI
+  // runner; that is what removes the hang. unref only drops the process
+  // handle from the event loop's ref count: the piped stdout/stderr sockets
+  // stay ref'd on purpose, because readiness and the close handler below are
+  // driven by them and the arm stays alive for its watcher's whole life (see
+  // data/pi-watch-arm-spawn-hang-investigation/report.md).
+  armChild.unref();
   child = armChild;
   let stdout = "";
   let stderr = "";
