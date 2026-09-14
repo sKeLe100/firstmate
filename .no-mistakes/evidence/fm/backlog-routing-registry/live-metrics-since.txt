@@ -1,0 +1,48 @@
+ledger:
+1788543121	classified	x	pc02	
+1788629521	classified	y	pc02	
+1788715921	closed	y	pc02	
+1789147921	closed	x	pc02	
+1789234321	classified	y	pc02	
+1789320721	classified	x	pc02	
+== full window
+opened: 2
+closed: 2
+reopened: 2
+escalated: 0
+gross_per_day: 0.20
+net_per_day: -0.20
+median_cycle_time_seconds: 345600
+pc02_idle_pct: unavailable
+== --since 7 days ago (x re-entry at -1d and y re-entry at -2d count reopened; x close at -3d inside; y close at -8d outside)
+opened: 0
+closed: 1
+reopened: 2
+escalated: 0
+gross_per_day: 0.14
+net_per_day: -0.14
+median_cycle_time_seconds: 604800
+pc02_idle_pct: unavailable
+rc=0
+== --since garbage
+fm-routing-ledger-metrics: --since needs an epoch-seconds integer, got: abc
+rc=2
+== empty home
+opened: 0
+closed: 0
+reopened: 0
+escalated: 0
+gross_per_day: unavailable
+net_per_day: unavailable
+median_cycle_time_seconds: unavailable
+pc02_idle_pct: unavailable
+rc=0
+== correction shape: z classified -10d, re-set (no close) -1d; --since 7d must report opened 0 reopened 0
+opened: 0
+closed: 0
+reopened: 0
+escalated: 0
+gross_per_day: 0.00
+net_per_day: 0.00
+median_cycle_time_seconds: unavailable
+pc02_idle_pct: unavailable

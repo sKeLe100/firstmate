@@ -1,0 +1,34 @@
+== calm
+effective_cap: 3
+codex_spawn: yes
+rc=0
+== five_hour<25
+effective_cap: 2
+codex_spawn: yes
+rc=0
+== five_hour<=15
+effective_cap: 1
+codex_spawn: yes
+rc=0
+== weekly-ahead-burn2.0
+effective_cap: 2
+codex_spawn: yes
+rc=0
+== reset-in-2h
+effective_cap: 2
+codex_spawn: yes
+rc=0
+== codex-ahead
+effective_cap: 3
+codex_spawn: no
+rc=0
+== malformed config/dispatch-cap
+fm-dispatch-quota-cap: /tmp/fm-live-home.9FZm/config/dispatch-cap must hold one positive integer, got: garbage
+rc=2
+== base cap 5 under five_hour<25
+effective_cap: 2
+codex_spawn: yes
+rc=0
+== no providers
+fm-dispatch-quota-cap: quota document has no claude provider
+rc=2

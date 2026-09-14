@@ -1,0 +1,44 @@
+== seed-from-report with Codex roster (unblocker already classified -> untouched; nosuch skipped)
+seeded: 2 skipped: 0
+rc=0
+present: medium codex - - 2026-09-14T17:31:15Z
+present: medium codex - - 2026-09-14T17:31:16Z
+present: pc02 - low demo 2026-09-14T17:29:47Z
+== unreadable registry (mode 000): get/list/gc/seed/fair-order must refuse with exit 2, never absent/no-op/empty
+fm-backlog-routing: routing registry exists but is not readable: /tmp/fm-live-home.9FZm/data/backlog-routing.tsv
+rc=2
+fm-backlog-routing: routing registry exists but is not readable: /tmp/fm-live-home.9FZm/data/backlog-routing.tsv
+rc=2
+fm-backlog-routing: routing registry exists but is not readable: /tmp/fm-live-home.9FZm/data/backlog-routing.tsv
+rc=2
+fm-backlog-routing: no such queued/known item: brandnew
+rc=2
+fm-backlog-routing: routing registry exists but is not readable: /tmp/fm-live-home.9FZm/data/backlog-routing.tsv
+rc=2
+fm-backlog-routing: routing registry exists but is not readable: /tmp/fm-live-home.9FZm/data/backlog-routing.tsv
+fm-pc02-fair-order: fm-backlog-routing.sh list --class pc02 failed; refusing to report an empty PC02 roster
+rc=2
+== registry intact after refusals:
+7
+unblocker	pc02	
+longone	pc02	
+med	medium	codex
+tiny	senior	
+prio	pc02	
+newpc	medium	codex
+codexonly	medium	codex
+== hard tasks-axi show --full failure: get must exit 2 (not stale); fair-order must refuse, not print empty
+fm-backlog-routing: could not read item unblocker from tasks-axi (show --full failed); refusing to judge freshness
+rc=2
+fm-pc02-fair-order: fm-backlog-routing.sh get unblocker failed (exit 2)
+rc=2
+fm-backlog-routing: seed-from-report: could not read item newpc from tasks-axi (show --full failed); aborting
+rc=2
+== NOT_FOUND still reads stale (not refusal): gc-then-delete shape
+error: "Task \"codexonly\" not found in this backlog"
+code: NOT_FOUND
+stale: medium
+rc=0
+== re-seed with the report's real '#### PC02-first roster' header; newpc2 listed in PC02 and Codex rosters
+seeded: 2 skipped: 4
+get newpc2 -> present: pc02 codex - - ...

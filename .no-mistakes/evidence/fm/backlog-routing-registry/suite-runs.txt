@@ -1,0 +1,12 @@
+== fm-pc02-fair-order
+ok - fm-pc02-fair-order.sh composition and authority/dependency/fairness/escalation/occupancy fixtures
+rc=0
+== fm-pc02-churn-e2e
+ok - end-to-end PC02 churn: three consecutive teardowns claim three distinct, correctly-sequenced tasks
+rc=0
+== fm-routing-ledger-metrics
+ok - fm-routing-ledger-metrics.sh behavior
+rc=0
+== fm-dispatch-quota-cap
+ok - fm-dispatch-quota-cap.sh: quota ladder and Codex pace gate
+rc=0
