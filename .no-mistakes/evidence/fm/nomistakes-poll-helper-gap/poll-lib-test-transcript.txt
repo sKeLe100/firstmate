@@ -1,0 +1,17 @@
+ok - 0. status with no run object classifies as no-run, never as a gate/outcome/running
+ok - 1. genuinely active step classifies as running
+ok - 2. terminal outcome:passed classifies as outcome:passed
+ok - 3. step gated at awaiting_approval classifies as gate even though top-level status is running
+ok - 4. step gated at fix_review classifies as gate
+ok - 5. top-level status:awaiting_approval classifies as gate
+ok - 6. awaiting_agent line classifies as gate
+ok - 7. empty status output classifies as no-run, not running or a false gate
+ok - 8. top-level status:failed classifies as outcome:failed
+ok - 9. --help exits 0 with usage text
+ok - 10. wait polls through a running step and stops at the gate
+ok - 11. wait returns running (exit 2) once --max elapses without a gate or outcome
+ok - 12a. wait retries a first-poll no-run within the grace window and reaches the gate
+ok - 12. wait refuses with exit 3 when the current branch still has no run after the grace window
+ok - 12b. wait honors a terminal outcome reported with exit 1 and keeps other exit-1 answers as errors
+ok - 13. wait bounds a hung axi status call and exits 3 with a diagnostic
+ok: fm-nomistakes-poll-lib.test.sh

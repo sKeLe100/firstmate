@@ -1,0 +1,25 @@
+$ wait --interval abc
+error: --interval must be a positive integer
+exit=3
+$ wait --bogus
+error: unknown argument --bogus
+Usage:
+exit=3
+$ wait --dir /nonexistent
+error: --dir /nonexistent is not a directory
+exit=3
+$ PATH without no-mistakes
+error: no-mistakes not found on PATH
+exit=3
+$ no subcommand
+exit=3
+$ frob
+error: unknown subcommand frob
+exit=3
+$ --help
+exit=0
+$ wait --dir <uninitialized worktree> (axi status exits 1 with error, no outcome)
+error: repo not initialized (run 'no-mistakes init' first)
+help[1]: Run `no-mistakes init` to set up the gate in this repository
+error: no-mistakes axi status failed (exit 1) in .
+exit=3

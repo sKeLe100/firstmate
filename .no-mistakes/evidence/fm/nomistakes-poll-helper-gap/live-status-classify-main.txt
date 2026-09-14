@@ -1,0 +1,19 @@
+# no-mistakes axi status in /home/sean_/firstmate (branch main)
+current_branch: main
+runs_on_current_branch: 0
+count: 10 of 275 total
+runs[10]{id,branch,status,head,pr}:
+  "01M2GK1SD0BXCEA26T7P27VC9A",fm/nomistakes-poll-helper-gap,running,c00f0c99,""
+  "01M2GFTW2RMKZQ6V2F27T2200J",fm/pi-watch-arm-spawn-hang-fix,running,9ca1b9f9,"https://github.com/sKeLe100/firstmate/pull/105"
+  "01M2GDMVNMDNPWQEF3T96GQYJE",fm/fm-test-sandbox-cache-race-fix-land,running,80e8ca3c,"https://github.com/sKeLe100/firstmate/pull/110"
+  "01M2GCX1BF8YPZ32FY3C124HFG",fm/opencode-composer-footer-false-pending,completed,aefcc272,"https://github.com/sKeLe100/firstmate/pull/107"
+  "01M2GCVHE89EY4NMCPAQFT5JDW",fm/nomistakes-poll-helper-gap,failed,c782278f,""
+  "01M2GAAPC4WXHHKDW8T257NZZN",fm/fm-test-sandbox-cache-race-fix-land,failed,419f5a9a,""
+  "01M2G7BC2WEWRX718NTWDBZP6J",fm/teardown-direct-pr-premature-fix,running,9aa6921a,"https://github.com/sKeLe100/firstmate/pull/104"
+  "01M2G5WZYVQS184ES56SYYENJB",fm/nomistakes-poll-helper-gap,failed,c782278f,""
+  "01M2G498PKST1T9A2CJMPXS9PT",fm/opencode-composer-footer-false-pending,failed,aefcc272,""
+  "01M2G3NJMCKGKGMA1AKAWXC7KR",fm/teardown-direct-pr-premature-fix,failed,9aa6921a,""
+help[2]: "Run no-mistakes axi run --intent \"the user's goal\" --yes to validate the current branch",No run exists for this branch; every run listed above is on another branch - inspect one deliberately with `no-mistakes axi status --run <id>`
+rc=0
+# classify:
+no-run

@@ -1,0 +1,8 @@
+== 01M2GK1SD0BXCEA26T7P27VC9A  as other-branch (live shape, cwd=main): no-run
+== 01M2GK1SD0BXCEA26T7P27VC9A  same blob with top-level key rewritten other_branch_run: -> run: (current-branch shape): running
+== 01M2GFTW2RMKZQ6V2F27T2200J  as other-branch (live shape, cwd=main): no-run
+== 01M2GFTW2RMKZQ6V2F27T2200J  same blob with top-level key rewritten other_branch_run: -> run: (current-branch shape): gate
+== 01M2GCX1BF8YPZ32FY3C124HFG  as other-branch (live shape, cwd=main): no-run
+== 01M2GCX1BF8YPZ32FY3C124HFG  same blob with top-level key rewritten other_branch_run: -> run: (current-branch shape): outcome:passed
+== 01M2GCVHE89EY4NMCPAQFT5JDW  as other-branch (live shape, cwd=main): no-run
+== 01M2GCVHE89EY4NMCPAQFT5JDW  same blob with top-level key rewritten other_branch_run: -> run: (current-branch shape): outcome:failed

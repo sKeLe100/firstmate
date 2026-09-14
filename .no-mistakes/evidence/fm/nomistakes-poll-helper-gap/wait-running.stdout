@@ -1,0 +1,51 @@
+run:
+  id: "01M2GK1SD0BXCEA26T7P27VC9A"
+  branch: fm/nomistakes-poll-helper-gap
+  status: running
+  head: c00f0c99
+  head_sha: c00f0c99d50d896f93702df24911424a138c989b
+  findings: "1 awaiting, 1 info"
+  steps[9]{step,status,findings,duration_ms}:
+    intent,completed,0,93
+    rebase,completed,0,1047
+    review,completed,0,169679
+    test,fixing,2,3079967
+    document,pending,0,0
+    lint,pending,0,0
+    push,pending,0,0
+    pr,pending,0,0
+    ci,pending,0,0
+  active_steps[1]{step,status,active_for,round_active_for,last_activity,agent_pid,round}:
+    test,fixing,1h27m,33m42s,"0s ago: claude producing output","1315306",fix 1
+branch_sync:
+  state: pipeline_owned
+  changed: false
+  local:
+    branch: fm/nomistakes-poll-helper-gap
+    head: c782278f3fd50adea0ed16027d26a095d1976ab6
+    clean: true
+  pipeline:
+    run: "01M2GK1SD0BXCEA26T7P27VC9A"
+    status: running
+    phase: pre_push
+    submitted_head: c782278f3fd50adea0ed16027d26a095d1976ab6
+    current_head: c00f0c99d50d896f93702df24911424a138c989b
+    pushed_head: ""
+    pushed_at: 0
+    push_generation: 0
+  target:
+    kind: ""
+    remote: origin
+    url: "https://github.com/sKeLe100/firstmate.git"
+    ref: ""
+  remote:
+    observed_head: ""
+    freshness: pipeline_push
+    observed_at: 0
+  relation: unknown
+  safety: blocked_pipeline_owned
+  pr_state: none
+  note: the pipeline head has moved but has not been successfully pushed; do not make local follow-up commits yet
+  next_action:
+    code: continue_active_run
+    command: no-mistakes axi status

@@ -1,0 +1,23 @@
+# in /home/sean_/.treehouse/firstmate-0c6912/10/firstmate: axi status --run 01M2GCVHE89EY4NMCPAQFT5JDW (failed run, current branch)
+run:
+  id: "01M2GCVHE89EY4NMCPAQFT5JDW"
+  branch: fm/nomistakes-poll-helper-gap
+  status: failed
+  head: c782278f
+  head_sha: c782278f3fd50adea0ed16027d26a095d1976ab6
+  findings: none
+  steps[9]{step,status,findings,duration_ms}:
+    intent,completed,0,49
+    rebase,completed,0,1048
+    review,completed,0,43575
+    test,failed,0,5819879
+    document,pending,0,0
+    lint,pending,0,0
+    push,pending,0,0
+    pr,pending,0,0
+    ci,pending,0,0
+outcome: failed
+error: "step test failed: agent run tests timed out after 30m0s: agent last produced output 1s ago (89 observed); agent reported: claude parse events: context deadline exceeded"
+rc=0
+# classify:
+outcome:failed

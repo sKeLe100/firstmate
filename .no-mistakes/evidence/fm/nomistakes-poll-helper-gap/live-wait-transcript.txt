@@ -1,0 +1,32 @@
+# wait --dir <active branch worktree> --max 0 (run is mid-test-step)
+
+real	0m0.249s
+user	0m0.077s
+sys	0m0.122s
+rc=2
+--- stderr:
+FM_NMPOLL_RESULT=running
+--- stdout head:
+run:
+  id: "01M2GK1SD0BXCEA26T7P27VC9A"
+  branch: fm/nomistakes-poll-helper-gap
+  status: running
+  head: c00f0c99
+
+# wait --dir /home/sean_/firstmate (main, no run) --interval 2  => grace 2 intervals then exit 3
+
+real	0m4.352s
+user	0m0.049s
+sys	0m0.076s
+rc=3
+--- stderr tail:
+help[2]: "Run no-mistakes axi run --intent \"the user's goal\" --yes to validate the current branch",No run exists for this branch; every run listed above is on another branch - inspect one deliberately with `no-mistakes axi status --run <id>`
+error: no run for the current branch in /home/sean_/firstmate (axi status returned no run object); the drive call is not registered - check its log
+FM_NMPOLL_RESULT=no-run
+stdout bytes: 0
+
+# wait --dir . (uninitialized gate worktree) => lookup error exit 3
+error: repo not initialized (run 'no-mistakes init' first)
+help[1]: Run `no-mistakes init` to set up the gate in this repository
+error: no-mistakes axi status failed (exit 1) in .
+rc=3
