@@ -40,6 +40,15 @@
 # call `wait` again - this mirrors the background-drive-call-then-poll shape
 # already given to no-mistakes workers.
 #
+# Caveat - branches with a prior finished run: `axi status` without --run
+# reports the branch's ACTIVE-OR-MOST-RECENT run, so if the branch already has
+# a finished no-mistakes run and the daemon has not yet registered the NEW
+# drive call, the first poll returns the OLD run's `run:` block and its
+# terminal `outcome:`, which `wait` reports as this run's result (exit 1).
+# Do not rely on `wait` on such a branch until the NEW run's own status/outcome
+# actually appears in `axi status` (e.g. confirm run.log shows it registered);
+# `wait` does not bind the run to the worktree HEAD.
+#
 # Exit codes for `wait`: 0 = gate reached, 1 = terminal outcome reached,
 # 2 = still running (max elapsed, call again), 3 = usage/lookup error,
 # including no current-branch run and a status call that hung past its own
@@ -69,6 +78,10 @@ seconds (default 20) until classify returns gate or outcome:*, or MAX seconds
 FM_NMPOLL_RESULT=<result> line to stderr. Exit 0 on gate, 1 on outcome, 2 when
 MAX elapsed with no gate/outcome yet (call wait again), 3 on usage error, no
 current-branch run after a two-interval grace, or a hung status call.
+Caveat: without --run, `axi status` reports the branch's active-or-most-recent
+run, so on a branch with a prior finished run the first poll can return the OLD
+run's terminal outcome; do not rely on wait there until the NEW run's own
+status/outcome appears in `axi status`.
 EOF
 }
 
