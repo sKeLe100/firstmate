@@ -135,17 +135,37 @@ fm_test_base_path_owned() {
   [ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]
 }
 
-# The sandbox is usable when it actually holds links, not when this particular
-# call created them. An earlier run interrupted between the link loop and the
-# marker leaves a fully populated directory; re-entering the build then skips
-# every name as already present, so a "did I create anything" count would
-# reject a complete sandbox forever.
+# fm_test_base_path_populated <cache_dir>
+#
+# The sandbox is usable only when every expected executable (non-excluded,
+# from every source dir) is linked into it - judged by what the directory
+# holds, not by what this particular call created. An earlier run interrupted
+# between the link loop and the marker leaves a fully populated directory that
+# a "did I create anything" count would reject forever, and a single-entry
+# check would accept a cache another process is still filling. The full-set
+# rule is exercised by tests/fm-test-sandbox-cache-race.test.sh.
 fm_test_base_path_populated() {
-  local entry
-  for entry in "$1"/*; do
-    [ -e "$entry" ] && return 0
+  local cache_dir=$1 expected_name
+  local dir path excluded f
+  for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
+    [ -d "$dir" ] || continue
+    for path in "$dir"/*; do
+      [ -x "$path" ] || continue
+      [ -f "$path" ] || continue
+      expected_name=${path##*/}
+      excluded=0
+      for f in $FM_TEST_FAKED_TOOL_NAMES; do
+        if [ "$expected_name" = "$f" ]; then
+          excluded=1
+          break
+        fi
+      done
+      [ "$excluded" -eq 1 ] && continue
+      [ -e "$cache_dir/$expected_name" ] \
+        || return 1
+    done
   done
-  return 1
+  return 0
 }
 
 fm_test_base_path() {
@@ -159,6 +179,7 @@ fm_test_base_path() {
   uid=$(id -u) || fm_test_base_path_die 'could not determine the current user id'
   local cache_dir="${TMPDIR:-/tmp}/.fm-test-sandbox-base-path.$uid.$key"
   local marker="$cache_dir/.complete"
+  local lock="$cache_dir.lock"
 
   if [ -e "$cache_dir" ] && ! fm_test_base_path_owned "$cache_dir"; then
     fm_test_base_path_die \
@@ -169,8 +190,23 @@ fm_test_base_path() {
     return 0
   fi
 
+  # The lock guards the check-build-mark sequence so concurrent callers don't
+  # race to build the same cache directory; callers that found the marker
+  # above never take it.
+  # shellcheck source=bin/fm-wake-lib.sh
+  FM_STATE_OVERRIDE="${TMPDIR:-/tmp}" . "$ROOT/bin/fm-wake-lib.sh"
+  fm_lock_acquire_wait "$lock"
+
+  # Re-check the marker: a sibling that was waiting on the lock may have
+  # finished building while we waited.
+  if [ -f "$marker" ]; then
+    fm_lock_release "$lock"
+    printf '%s\n' "$cache_dir"
+    return 0
+  fi
+
   (umask 077 && mkdir -p "$cache_dir") \
-    || fm_test_base_path_die "could not create sandbox cache dir $cache_dir"
+    || { fm_lock_release "$lock"; fm_test_base_path_die "could not create sandbox cache dir $cache_dir"; }
 
   local dir path name excluded f
   for dir in $FM_TEST_BASE_PATH_SOURCE_DIRS; do
@@ -193,11 +229,13 @@ fm_test_base_path() {
   done
 
   fm_test_base_path_populated "$cache_dir" \
-    || fm_test_base_path_die "sandbox cache dir is empty: $cache_dir"
+    || { fm_lock_release "$lock"; fm_test_base_path_die "sandbox cache dir is empty: $cache_dir"; }
 
   : > "$marker" \
-    || fm_test_base_path_die "could not mark $cache_dir complete"
+    || { fm_lock_release "$lock"; fm_test_base_path_die "could not mark $cache_dir complete"; }
   printf '%s\n' "$cache_dir"
+
+  fm_lock_release "$lock"
 }
 
 fm_test_pid_identity() {
