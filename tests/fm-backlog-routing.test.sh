@@ -20,6 +20,8 @@
 #     already classified row
 #   - a tasks-axi read that fails outright is refused (exit 2), never
 #     reported as stale
+#   - the tracked bootstrap seed (.agents/skills/autonomous/assets/
+#     backlog-routing.tsv) lists cleanly once copied into a fresh home
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -290,5 +292,29 @@ assert_contains "$out" "seeded: 0" "re-seed re-classifies nothing: every known i
 assert_contains "$(run_routing "$seed_home" get seed-pc02-item)" "present: senior" "already-classified row survives re-seeding unchanged"
 assert_contains "$(run_routing "$seed_home" list --class medium)" "seed-medium-item	medium	codex" \
   "re-seeding leaves an already-annotated sidecar row untouched"
+
+# 10. Bootstrap seed: the tracked seed the /autonomous skill tells a fresh home
+#     to copy into place (.agents/skills/autonomous/assets/backlog-routing.tsv)
+#     must be a registry this script accepts as-is: every row lists with a
+#     valid class, the Codex-sidecar rows survive the round-trip, and a
+#     seeded id whose item this home does not know reads stale (never
+#     present) so the copied classification is re-validated, not trusted.
+SEED_ASSET="$ROOT/.agents/skills/autonomous/assets/backlog-routing.tsv"
+boot_home=$(make_home bootstrap)
+cp "$SEED_ASSET" "$boot_home/data/backlog-routing.tsv"
+listed=$(run_routing "$boot_home" list) || fail "list should accept the tracked seed registry"
+seed_rows=$(grep -c . "$SEED_ASSET")
+listed_rows=$(printf '%s\n' "$listed" | grep -c .)
+[ "$listed_rows" -eq "$seed_rows" ] || fail "list should return every seeded row ($listed_rows != $seed_rows)"
+bad=$(printf '%s\n' "$listed" | awk -F'\t' 'NF != 7 || $2 !~ /^(pc02|medium|senior)$/ || ($3 != "" && $3 != "codex") || $1 == "" || $7 == "" { print $1 }')
+[ -z "$bad" ] || fail "seed rows with a malformed shape or class: $bad"
+pc02_listed=$(run_routing "$boot_home" list --class pc02 | grep -c .)
+[ "$pc02_listed" -gt 0 ] || fail "seed must carry a non-empty PC02 roster"
+[ "$pc02_listed" -lt "$seed_rows" ] || fail "seed must tier work beyond pc02 (medium/senior rows expected)"
+assert_contains "$(run_routing "$boot_home" list | cut -f3 | sort -u)" "codex" "seed carries the report's Codex-sidecar roster"
+first_id=$(head -n1 "$SEED_ASSET" | cut -f1)
+first_class=$(head -n1 "$SEED_ASSET" | cut -f2)
+out=$(run_routing "$boot_home" get "$first_id") || fail "get on a seeded row should exit 0 (stale), not refuse"
+assert_contains "$out" "stale: $first_class" "a seeded row whose item this home cannot see reads stale, never present"
 
 pass "fm-backlog-routing.sh behavior"
