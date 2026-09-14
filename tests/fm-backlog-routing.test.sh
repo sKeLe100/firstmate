@@ -180,6 +180,16 @@ if [ "$(id -u)" -ne 0 ]; then
   run_routing "$unread_home" list >/dev/null 2>&1; rc=$?
   [ "$rc" -eq 2 ] || fail "list against an unreadable registry must exit 2, got $rc"
 
+  seed_fixture_unreadable="$TMP_ROOT/unreadable-report.md"
+  cat > "$seed_fixture_unreadable" <<'EOF'
+#### PC02-first roster
+
+| `keep-c` | x | D |
+EOF
+  out=$(run_routing "$unread_home" seed-from-report "$seed_fixture_unreadable" 2>/dev/null); rc=$?
+  [ "$rc" -eq 2 ] || fail "seed-from-report against an unreadable registry must exit 2, got $rc: $out"
+  assert_not_contains "$out" "seeded:" "an unreadable registry must abort the seed, never report a count"
+
   chmod 644 "$registry"
   listed=$(run_routing "$unread_home" list)
   assert_contains "$listed" "keep-a" "the pre-existing rows survive every refused command"

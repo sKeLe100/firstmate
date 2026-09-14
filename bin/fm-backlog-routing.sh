@@ -436,16 +436,25 @@ cmd_seed_from_report() {
         # shellcheck disable=SC2016  # literal markdown backticks, not a command substitution
         id=$(printf '%s' "$line" | sed -n 's/^| `\([^`]*\)`.*/\1/p')
         [ -n "$id" ] || continue
-        # cmd_get/cmd_set exit the process on their own error paths (they
-        # are also this script's top-level CLI entry points), so each call
-        # here must run in a subshell or its exit would abort this whole
-        # seed loop instead of just skipping one row.
+        local frc existing rrc
+        item_fields "$id" >/dev/null; frc=$?
+        if [ "$frc" -ge 2 ]; then
+          fm_routing_log "seed-from-report: could not read item $id from tasks-axi (show --full failed); aborting"
+          exit 2
+        fi
+        if [ "$frc" -ne 0 ]; then
+          skipped=$((skipped + 1))
+          continue
+        fi
+        existing=$(routing_row_for "$id"); rrc=$?
+        [ "$rrc" -ne 2 ] || exit 2
+        # cmd_set exits the process on its own error paths (it is also this
+        # script's top-level CLI entry point), so it runs in a subshell; any
+        # failure past the checks above is a refusal, never a skip.
         if [ "$section" = codex ]; then
-          # A sidecar row keeps the class a class roster already gave it;
-          # an id listed only here is medium-class, as each such row states.
-          local existing eclass
+          local eclass
           local -a extra=()
-          if existing=$(routing_row_for "$id"); then
+          if [ "$rrc" -eq 0 ]; then
             if [ "$(printf '%s' "$existing" | cut -f3)" = codex ]; then
               skipped=$((skipped + 1))
               continue
@@ -456,22 +465,22 @@ cmd_seed_from_report() {
           else
             eclass=medium
           fi
-          if ( cmd_set "$id" "$eclass" --sidecar codex "${extra[@]}" ) >/dev/null 2>&1; then
-            seeded=$((seeded + 1))
-          else
-            skipped=$((skipped + 1))
+          if ! ( cmd_set "$id" "$eclass" --sidecar codex "${extra[@]}" ) >/dev/null; then
+            fm_routing_log "seed-from-report: could not write the sidecar row for $id; aborting"
+            exit 2
           fi
-          continue
-        fi
-        if ( cmd_get "$id" ) >/dev/null 2>&1; then
-          skipped=$((skipped + 1))
-          continue
-        fi
-        if ( cmd_set "$id" "$section" ) >/dev/null 2>&1; then
           seeded=$((seeded + 1))
-        else
-          skipped=$((skipped + 1))
+          continue
         fi
+        if [ "$rrc" -eq 0 ]; then
+          skipped=$((skipped + 1))
+          continue
+        fi
+        if ! ( cmd_set "$id" "$section" ) >/dev/null; then
+          fm_routing_log "seed-from-report: could not write the routing row for $id; aborting"
+          exit 2
+        fi
+        seeded=$((seeded + 1))
         ;;
     esac
   done < "$report"

@@ -27,9 +27,9 @@
 #                        FIRST classified event; re-writing an open row to
 #                        correct its purpose/risk never counts again)
 #   closed: <n>          count of "closed" events
-#   reopened: <n>        count of "classified" events for an id that was
-#                        already closed earlier in the ledger (re-entered
-#                        the registry after leaving it)
+#   reopened: <n>        count of re-entries: an id's first "classified"
+#                        after a "closed" (a corrective re-write of a row
+#                        that is already open never counts)
 #   escalated: <n>       count of "escalated" events, for visibility only
 #   gross_per_day: <f>   closed / observed-window-days (2 decimal places),
 #                        or "unavailable" when the window holds no events
@@ -135,6 +135,7 @@ closed = 0
 reopened = 0
 escalated = 0
 ever_closed = set()
+currently_open = set()
 first_classified = {}
 cycle_times = []
 counted = 0
@@ -144,12 +145,13 @@ for epoch, event, item_id in events:
     if in_window:
         counted += 1
     if event == "classified":
-        if item_id in ever_closed:
-            if in_window:
-                reopened += 1
-        elif item_id not in first_classified:
-            if in_window:
+        if item_id not in currently_open:
+            if item_id in ever_closed:
+                if in_window:
+                    reopened += 1
+            elif in_window:
                 opened += 1
+            currently_open.add(item_id)
         if item_id not in first_classified:
             first_classified[item_id] = epoch
     elif event == "escalated":
@@ -161,6 +163,7 @@ for epoch, event, item_id in events:
             if item_id in first_classified:
                 cycle_times.append(epoch - first_classified[item_id])
         ever_closed.add(item_id)
+        currently_open.discard(item_id)
 
 now = int(time.time())
 if events:

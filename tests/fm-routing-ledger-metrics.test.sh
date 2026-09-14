@@ -66,6 +66,12 @@ out=$(FM_HOME="$home" "$METRICS") || fail "metrics should succeed after a correc
 assert_contains "$out" "opened: 2" "re-classifying an already-open row must not raise opened"
 assert_contains "$out" "reopened: 1" "a corrective re-set of an open row is not a reopen"
 
+# 2b2. A corrective re-set of a row that re-entered after a close is still
+#      one reopen: reopened counts re-entries, not writes.
+FM_HOME="$home" "$ROUTING" set item-a pc02 --purpose "corrected after reopen" >/dev/null
+out=$(FM_HOME="$home" "$METRICS") || fail "metrics should succeed after a corrective re-set of a reopened row"
+assert_contains "$out" "reopened: 1" "a corrective re-set of an open, previously-closed row must not count as another reopen, got: $out"
+
 # 2c. net_per_day counts every arrival into the registry, first or repeat:
 #     over a fixed one-day window with 2 first entries, 1 reopen and 1 close,
 #     net inflow is +2, so the net rate is -2.00 per day.
