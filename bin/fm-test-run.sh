@@ -693,6 +693,7 @@ tests/fm-backend-zellij.test.sh 9418
 tests/fm-backend.test.sh 20061
 tests/fm-backlog-atomicity.test.sh 161989
 tests/fm-backlog-handoff.test.sh 52291
+tests/fm-backlog-routing.test.sh 59043
 tests/fm-bearings-board-render.test.sh 1528
 tests/fm-bearings-board.test.sh 4195
 tests/fm-bearings-snapshot.test.sh 116374
@@ -719,6 +720,7 @@ tests/fm-cursor-harness.test.sh 30103
 tests/fm-cursor-primary-live-e2e.test.sh 21
 tests/fm-cursor-primary.test.sh 54947
 tests/fm-daemon.test.sh 26870
+tests/fm-dispatch-quota-cap.test.sh 11272
 tests/fm-documentation-audiences.test.sh 732
 tests/fm-extension-binding.test.sh 7398
 tests/fm-fleet-snapshot-view.test.sh 8547
@@ -746,10 +748,13 @@ tests/fm-live-gate.test.sh 6000
 tests/fm-muse-harness.test.sh 55572
 tests/fm-muse-signals-live-e2e.test.sh 23
 tests/fm-no-mistakes-required.test.sh 370
+tests/fm-nomistakes-poll-lib.test.sh 8000
 tests/fm-omp-harness.test.sh 59969
 tests/fm-on.test.sh 34087
 tests/fm-opencode-primary-live-e2e.test.sh 21
 tests/fm-operational-input.test.sh 231
+tests/fm-pc02-churn-e2e.test.sh 21689
+tests/fm-pc02-fair-order.test.sh 44123
 tests/fm-peek-remote.test.sh 1018
 tests/fm-pending-reply.test.sh 86711
 tests/fm-pi-branch-extension.test.sh 22239
@@ -777,6 +782,7 @@ tests/fm-remote-secondmate-lifecycle-e2e.test.sh 209631
 tests/fm-remote-secondmate-parent-binding.test.sh 29562
 tests/fm-remote-secondmate-trace-context.test.sh 67096
 tests/fm-remote-transport-lanes.test.sh 63976
+tests/fm-routing-ledger-metrics.test.sh 15993
 tests/fm-rovo-harness.test.sh 25090
 tests/fm-secondmate-harness.test.sh 151589
 tests/fm-secondmate-lifecycle-e2e.test.sh 8793

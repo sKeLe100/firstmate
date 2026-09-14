@@ -101,6 +101,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `fm-crew-state.sh`       | Print one deterministic current-state line for a crew                                |
 | `fm-nm-run-lib.sh`       | Single owner of shared no-mistakes run-attribution primitives and rules             |
+| `fm-nomistakes-poll-lib.sh` | Bounded, correct polling of a backgrounded `no-mistakes axi run`/`respond` drive call: `classify` one `axi status` blob or `wait` for its next gate/outcome |
 | `fm-nomistakes-gate-check.sh` | Read-only detection of whether a local branch's HEAD is `equal`, `ahead`, `behind`, or `diverged` from the no-mistakes gate ref before pushing |
 | `fm-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `fm-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
@@ -168,6 +169,10 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
 | `fm-autonomous-pc02-lane.sh` | Report whether the single PC02 lane is free for the autonomous pass's dispatch-availability check |
 | `fm-host-memory.sh` | Report whether this host's free memory clears the launch floor, for the autonomous pass and the spawn preflight |
+| `fm-dispatch-quota-cap.sh` | Report the effective concurrent Claude dispatch cap after the quota ladder and whether the paced Codex sidecar may spawn |
+| `fm-backlog-routing.sh` | Durable pc02/medium/senior routing registry (`data/backlog-routing.tsv`) for the autonomous pass's refill step: classify, escalate, gc, list, and seed from the durable-refill report |
+| `fm-pc02-fair-order.sh` | Fair dispatch order over the routing registry's PC02-classified, currently-dispatchable roster (dependency-cleared, then priority, then a fairness rotation) |
+| `fm-routing-ledger-metrics.sh` | Reconcile `data/routing-ledger.tsv` into opened/closed/reopened, gross/net per day, and median cycle time for the routing registry |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note, dictate one, read status, ask a side question |
 | `fm-mail.sh`             | General-purpose mail plane: read unseen IMAP mail, send one SMTP message, or surface new mail as a `check` wake via `poll` (configuration in the home's gitignored `.env`) |
 | `fm-mail.py`             | The IMAP/SMTP engine behind `fm-mail.sh` |

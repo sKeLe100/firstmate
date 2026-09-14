@@ -145,10 +145,14 @@ The effective cap is that base reduced by the quota ladder read from
 `quota-axi --json` (schemaVersion 5) at dispatch intake, checked
 alongside the base cap rather than replacing it. `docs/configuration.md`
 owns the full ladder, including its percent-remaining floor and its
-elapsed-time-in-window dimension; read the current numbers there rather
-than from any restatement, since a restated threshold here can drift.
-Check how many autonomous Claude lanes are currently active against both
-the base cap and the ladder before treating a lane as available.
+elapsed-time-in-window dimension; `bin/fm-dispatch-quota-cap.sh` is its
+executable owner - run it and read `effective_cap: <n>` rather than
+re-deriving the ladder by hand, since a restated threshold here can drift.
+It also prints `codex_spawn: yes|no` (no whenever Codex's weekly pace is
+ahead), which is the answer step 9 uses before offering the Codex sidecar.
+If it exits 2 the quota reading is unavailable: treat that as no headroom.
+Check how many autonomous Claude lanes are currently active against that
+effective cap before treating a lane as available.
 If the cap is at or exceeded, record that new dispatch is deferred due to
 dispatch-cap occupancy and skip only steps 7-8 (the dispatch actions) later
 in the pass. The cap never suppresses captain contact: steps 4-6 still run,
@@ -286,6 +290,44 @@ and never widen the filter.
 When step 3 found no headroom - the cap, the PC02 lane, or the host-memory
 floor - leave the eligible rows queued and record them below instead.
 
+For a row this step would route through the PC02 lane specifically, do not
+dispatch snapshot order directly: run `bin/fm-pc02-fair-order.sh`, which
+joins the same snapshot against the durable routing registry
+(`data/backlog-routing.tsv`, owned by `bin/fm-backlog-routing.sh`) and
+returns the PC02-classified subset in dependency-cleared, then priority,
+then fair-rotation order - the durable refill design in
+`data/backlog-triage-durable-plan/report.md` (captain's ruling 2026-09-08).
+Dispatch its first row (after the PC02 lane and host-memory checks in step
+3), never the whole list at once - the same one-item-at-a-time contract
+step 3's PC02 note already states. Any `gate: dispatchable` row with no
+fresh routing classification - `absent` or `stale:` from
+`bin/fm-backlog-routing.sh get <id>`, whatever tier it might turn out to be -
+is not itself blocked from dispatch by this step - the snapshot's
+gate/autonomy verdict still governs whether it is eligible - but it cannot
+be fairness-ordered until classified, so route it to the "routing review"
+batch named below instead of guessing its tier from title or repo; classify
+it there (`bin/fm-backlog-routing.sh set <id> pc02|medium|senior`) rather
+than skipping it silently. Dispatchable rows whose fresh classification is
+medium or senior are unaffected by this paragraph and keep the snapshot's
+own order.
+When `data/backlog-routing.tsv` does not exist yet, bootstrap it once from
+the tracked seed before running fair-order:
+`cp .agents/skills/autonomous/assets/backlog-routing.tsv data/backlog-routing.tsv`
+(the report's tiering as seeded on 2026-09-14; rows whose items have since
+been edited read `stale:` and go to routing review like any other).
+A row whose registry sidecar reads `codex` is an execution preference, not
+a class: offer it to the single Codex lane only while step 3's
+`bin/fm-dispatch-quota-cap.sh` printed `codex_spawn: yes`; when it printed
+`no`, the row dispatches by its class like any other, never to Codex.
+
+When a PC02-routed candidate fails once (a genuine PC02 rabbit hole, not a
+transient session/quota pause), escalate it rather than looping it back
+silently: run `bin/fm-backlog-routing.sh escalate <id> medium|senior
+--reason "<what happened>"` before considering it for redispatch, per the
+report's tier-escalation rule. This step never re-derives PC02 vs.
+medium/senior from a row's content on its own; that judgment lives only in
+the routing registry.
+
 An idle lane with an eligible row is the pass failing, not the queue being
 empty: a pass that ends with headroom and an unclaimed `dispatchable` row must
 say in the step 10 log line which row it declined and why.
@@ -300,6 +342,10 @@ and a one-line summary of outcomes.
 Name in that summary the standing orders step 0 applied, and any eligible row
 step 9 declined with its reason, so a later pass can see what this one chose
 rather than only what it did.
+Name any dispatchable row step 9 found with no fresh routing classification
+as a routing-review item in this same line (id and reason "unclassified" or
+"stale"); this is a report-only batch, never a blocking one - step 9's
+dispatch of correctly-classified rows continues regardless.
 Write that line once, as this step's single append; never go back and amend a
 line already appended.
 
@@ -504,7 +550,13 @@ This skill cites these live owners rather than restating their values:
 - `quota-axi` - quota and model selection
 - `bin/fm-captain-window.sh` - captain attention window
 - `config/dispatch-cap` - concurrent autonomous dispatch cap
+- `bin/fm-dispatch-quota-cap.sh` - the effective cap after the quota
+  ladder, and whether the paced Codex sidecar may spawn
 - `bin/fm-autonomous-pc02-lane.sh` - whether the single PC02 lane is free
+- `bin/fm-backlog-routing.sh` - the durable pc02/medium/senior routing
+  registry (`data/backlog-routing.tsv`) and its ledger
+- `bin/fm-pc02-fair-order.sh` - fair dispatch order over the PC02-classified
+  roster
 - `config/crew-dispatch.json` - dispatch profiles
 - `captain-hold-lifecycle` - closing captain-held decisions
 - `ask-user-authority` - deciding ask-user findings
