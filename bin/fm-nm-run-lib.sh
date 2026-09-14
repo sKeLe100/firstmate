@@ -12,6 +12,11 @@
 # direction is unsafe: a false negative hides a genuinely parked run, and a
 # false positive lets teardown act on a run it does not own.
 #
+# It is also the ONE owner of the TOON field, terminal-status, and gate-shape
+# primitives (fm_nm_field, fm_nm_run_is_active, fm_nm_run_is_gated and its
+# helpers) that fm-crew-state.sh renders from and fm-nomistakes-poll-lib.sh
+# polls on, so the two never disagree about what a gate or outcome looks like.
+#
 # Bounded call to `no-mistakes "$@"` in dir $1, timeout $2 seconds. The bounded
 # form preserves stdout, stderr, and exit status; the checked form discards
 # stderr, while fm_nm_run keeps the fail-open query contract for read-only callers.
@@ -110,6 +115,30 @@ fm_nm_run_is_active() {  # <toon-output>
   outcome=$(fm_nm_strip_quotes "$(fm_nm_field "$1" outcome)")
   [ -z "$outcome" ] || return 1
   case "$status" in completed|failed|cancelled) return 1 ;; esac
+}
+
+# Gate detection in captured `axi status` TOON $1. ONE owner for the gate
+# shapes fm-crew-state.sh renders and fm-nomistakes-poll-lib.sh polls on: a
+# top-level `status`/`state` of awaiting_approval/fix_review, an
+# `awaiting_agent:` line, a step row whose own status is
+# awaiting_approval/fix_review, or a `gate:` block.
+fm_nm_gate_status_line() {  # <toon-output>
+  printf '%s\n' "$1" | grep -E '^[[:space:]]*(status|state):[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*$' | head -1
+}
+
+fm_nm_gate_step_row_line() {  # <toon-output>
+  printf '%s\n' "$1" | grep -E '^[[:space:]]*[^,]+,[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*,' | head -1
+}
+
+fm_nm_has_gate_block() {  # <toon-output>
+  printf '%s\n' "$1" | grep -Eq '^[[:space:]]*gate:[[:space:]]*'
+}
+
+fm_nm_run_is_gated() {  # <toon-output>
+  [ -n "$(fm_nm_gate_status_line "$1")" ] && return 0
+  printf '%s\n' "$1" | grep -Eq '^[[:space:]]*awaiting_agent:' && return 0
+  [ -n "$(fm_nm_gate_step_row_line "$1")" ] && return 0
+  fm_nm_has_gate_block "$1"
 }
 
 # The custody exemption to the head rule above: while the pipeline OWNS the

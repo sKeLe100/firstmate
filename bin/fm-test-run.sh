@@ -629,6 +629,7 @@ tests/fm-lint-workflows.test.sh 855
 tests/fm-muse-harness.test.sh 55572
 tests/fm-muse-signals-live-e2e.test.sh 23
 tests/fm-no-mistakes-required.test.sh 370
+tests/fm-nomistakes-poll-lib.test.sh 8000
 tests/fm-on.test.sh 11692
 tests/fm-opencode-primary-live-e2e.test.sh 21
 tests/fm-operational-input.test.sh 231

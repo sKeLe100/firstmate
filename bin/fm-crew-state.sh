@@ -292,7 +292,7 @@ nm_findings_count() {
 }
 nm_gate_step_row() {
   local row step rest status findings
-  row=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*[^,]+,[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*,' | head -1)
+  row=$(fm_nm_gate_step_row_line "$RUN_OUT")
   [ -n "$row" ] || return 0
   row=$(trim "$row")
   step=$(trim "${row%%,*}")
@@ -304,7 +304,7 @@ nm_gate_step_row() {
 }
 nm_gate_status() {
   local s row
-  s=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*(status|state):[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*$' | head -1)
+  s=$(fm_nm_gate_status_line "$RUN_OUT")
   if [ -n "$s" ]; then
     s=$(strip_quotes "$(trim "${s#*:}")")
     printf '%s' "$s"
@@ -314,7 +314,7 @@ nm_gate_status() {
   [ -n "$row" ] && { row=${row#*|}; printf '%s' "${row%%|*}"; }
 }
 nm_has_gate() {
-  printf '%s\n' "$RUN_OUT" | grep -Eq '^[[:space:]]*gate:[[:space:]]*'
+  fm_nm_has_gate_block "$RUN_OUT"
 }
 nm_gate_line_name() {
   local gate step

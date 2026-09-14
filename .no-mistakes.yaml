@@ -52,7 +52,13 @@ document:
 # of it.
 commands:
   lint: 'bin/fm-lint.sh'
-  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated'
+  # Explicit script list rather than `--changed`: this branch touches
+  # bin/fm-test-run.sh and bin/fm-dod-lib.sh, so `--changed` conservatively
+  # expands to ~60 scripts and cannot finish inside the gate's 10-minute cap.
+  # These are the scripts that exercise bin/fm-nomistakes-poll-lib.sh,
+  # bin/fm-dod-lib.sh, bin/fm-brief.sh, and bin/fm-test-run.sh; CI's --changed
+  # lane owns the broad regression.
+  test: 'bin/fm-test-run.sh --exclude-family real-herdr-gated tests/fm-nomistakes-poll-lib.test.sh tests/fm-nomistakes-gate-check.test.sh tests/fm-brief.test.sh tests/fm-test-run.test.sh'
 
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.

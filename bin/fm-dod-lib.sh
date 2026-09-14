@@ -198,7 +198,7 @@ EOF
 FM_DOD_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 fm_dod_block() {  # <mode> <task-id>
-  local mode=$1 id=$2 claim_check="$FM_DOD_LIB_DIR/fm-claim-check.sh"
+  local mode=$1 id=$2 claim_check="$FM_DOD_LIB_DIR/fm-claim-check.sh" poll_lib="$FM_DOD_LIB_DIR/fm-nomistakes-poll-lib.sh"
   case "$mode" in
     direct-PR)
       cat <<EOF
@@ -243,7 +243,9 @@ Do not hand-edit, commit, or fix findings yourself while a run is active - the p
 Poll long-running pipeline steps (no-mistakes runs, test loops) with synchronous foreground checks on an explicit sleep/retry cadence; do not park a background Task/Monitor call on a step that can run for many minutes.
 
 One drive call blocks until the next gate or outcome, which routinely outlives what your harness lets a single command run: Claude Code kills a command at ten minutes maximum, while one fix round is capped around thirty minutes and up to three rounds chain.
-So background the drive call and poll \`no-mistakes axi status\` from a separate call instead of sitting in one blocking hold your harness will kill.
+So background the drive call (e.g. \`no-mistakes axi run --intent "..." >run.log 2>&1 &\`) and poll with \`$poll_lib wait --dir <worktree>\` from a separate call instead of sitting in one blocking hold your harness will kill.
+Do not hand-roll your own \`axi status\` exit condition: top-level \`status: running\` stays exactly that while a step is actively running AND while a step is gated awaiting your response, so checking it alone either spins forever on a parked gate or exits before responding to one - three independent crewmates hit this on 2026-09-08. \`$poll_lib wait\` reads the real per-step/gate detail and returns only on a genuine gate, outcome, or its own bounded timeout (exit 2, meaning: call it again).
+If the branch already has a prior finished no-mistakes run, do not rely on \`$poll_lib wait\` until the NEW run's own status/outcome appears in \`no-mistakes axi status\`: without \`--run\`, \`axi status\` reports the branch's active-or-most-recent run, so a first poll before the daemon registers the new drive call returns the OLD run's terminal outcome as if it were yours.
 Where a harness's own command limit is not established, assume it bounds commands and use that same background-and-poll shape.
 A killed or timed-out call is never evidence the daemon died: the daemon accepts your response immediately and runs the round in the background, so the call was only ever waiting for a read while the run kept working.
 Reattach and keep going rather than reporting the pipeline blocked; rule 7 owns the checks that decide when a pipeline block is real.
