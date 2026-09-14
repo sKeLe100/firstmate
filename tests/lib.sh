@@ -137,11 +137,13 @@ fm_test_base_path_owned() {
 
 # fm_test_base_path_populated <cache_dir>
 #
-# Verifies that every expected executable (non-excluded, from every source dir)
-# is linked into the sandbox.  The old version only returned 0 when at least
-# one entry existed, which let a partially-built cache pass during a concurrent
-# race: Process A could write .complete while still symlinking, and Process B
-# would see the single entry and accept the incomplete cache.
+# The sandbox is usable only when every expected executable (non-excluded,
+# from every source dir) is linked into it - judged by what the directory
+# holds, not by what this particular call created. An earlier run interrupted
+# between the link loop and the marker leaves a fully populated directory that
+# a "did I create anything" count would reject forever, and a single-entry
+# check would accept a cache another process is still filling. The full-set
+# rule is exercised by tests/fm-test-sandbox-cache-race.test.sh.
 fm_test_base_path_populated() {
   local cache_dir=$1 expected_name
   local dir path excluded f
