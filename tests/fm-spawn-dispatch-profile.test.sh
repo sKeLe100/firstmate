@@ -1364,7 +1364,10 @@ test_non_claude_harness_ignores_claude_permission_mode() {
   read_case_record "$rec"
   printf 'auto\n' > "$HOME_DIR/config/claude-permission-mode"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness codex)
+  # This fork refuses a codex spawn that names no model/effort (#91), so the
+  # permission-mode check names both; the assertion is still only that the
+  # Claude-only flag stays out of a codex launch.
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high)
   status=$?
   expect_code 0 "$status" "codex spawn under claude-permission-mode=auto should succeed"
   launch=$(cat "$LAUNCH_LOG")
