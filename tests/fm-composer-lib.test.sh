@@ -359,6 +359,8 @@ test_matrix_opencode_leftbar_signals() {
   assert_screen "opencode idle, footer wraps across two rows, tmux" empty "$CAPS_TMUX" "$wrapped" ''
   assert_screen "opencode idle, footer wraps across two rows, herdr" empty "$CAPS_STYLED" "$wrapped"
   assert_screen "opencode idle, footer wraps across two rows, plain" empty "$CAPS_PLAIN" "$wrapped"
+  wrapped=$'  ┃\n  ┃  Ask anything... "What is the tech stack?"\n  ┃\n  ┃  Build ·\n  ┃  GPT-5.5 Fast OpenAI · high\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
+  assert_screen "opencode idle, footer wraps right after the dot, herdr" empty "$CAPS_STYLED" "$wrapped"
   pass "matrix: opencode's left-bar composer reads empty everywhere and scans the full active run"
 }
 
@@ -580,6 +582,14 @@ test_selected_content_is_composer_scoped_and_wrap_normalized() {
   out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
   [ "$out" = 'hello captain' ] \
     || fail "left-bar extraction should join user rows without footer furniture, got '$out'"
+  screen=$'┃ hello\n┃ captain\n┃ Build · GPT-5.5\n┃ Fast OpenAI · high'
+  out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
+  [ "$out" = 'hello captain' ] \
+    || fail "left-bar extraction should drop a footer wrapped across rows, got '$out'"
+  screen=$'┃ hello\n┃ Build ·\n┃ GPT-5.5 Fast OpenAI · high'
+  out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
+  [ "$out" = 'hello' ] \
+    || fail "left-bar extraction should drop a footer wrapped right after the dot, got '$out'"
   screen=$'╭────────────────────╮\n│ ❯ '"${ESC}[2mType a message...${ESC}[0m"$'│\n╰────────────────────╯'
   out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
   [ -z "$out" ] \

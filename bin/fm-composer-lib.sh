@@ -373,8 +373,9 @@ FM_COMPOSER_IDLE_RE_DEFAULT='^Type a message\.\.\.$|^Ask anything\.\.\.|^Plan, s
 
 # Opencode draws a mode/model footer line INSIDE its left-bar composer
 # ("Build · GPT-5.5 Fast OpenAI · high"). It is composer furniture, not typed
-# text, and only the run's LAST row is ever matched against it.
-FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT='^(Build|Plan)[[:space:]]+·[[:space:]]+'
+# text. A narrow pane wraps it across several rows (possibly right after the
+# dot), so once a row matches, it and every row below it belong to the footer.
+FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT='^(Build|Plan)[[:space:]]+·([[:space:]]|$)'
 
 # The bounded row window adapters should capture for a composer read. One
 # shared policy (previously three per-backend variables that had drifted to
@@ -1117,7 +1118,7 @@ _fm_composer_select_cursorless() {
 
 fm_composer_extract_selected_content() {  # <caps> <screen>
   local caps=$1 screen=$2 styled=0 kv plain row raw content glyph joined='' footer_re prompt_row=-1
-  local leading_blank=1 placeholder_position=0 prompt_is_shell=0
+  local leading_blank=1 placeholder_position=0 prompt_is_shell=0 footer_active=0
   footer_re=${FM_COMPOSER_LEFTBAR_FOOTER_RE:-$FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT}
   while IFS= read -r kv; do
     [ "$kv" = styled=1 ] && styled=1
@@ -1179,9 +1180,13 @@ EOF
               || { [ "$FM_COMPOSER_SELECTED_KIND" = box ] && [ "$prompt_is_shell" = 1 ]; }; } \
             && [ "$placeholder_position" = 1 ] \
             && fm_composer_idle_matches "$content" "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive; } \
-       || { [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] \
-            && [ "$row" -eq "$FM_COMPOSER_SELECTED_LAST" ] \
-            && fm_composer_idle_matches "$content" "$footer_re" sensitive; }; then
+       || [ "$footer_active" = 1 ]; then
+      row=$((row + 1))
+      continue
+    fi
+    if [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] \
+       && fm_composer_idle_matches "$content" "$footer_re" sensitive; then
+      footer_active=1
       row=$((row + 1))
       continue
     fi
