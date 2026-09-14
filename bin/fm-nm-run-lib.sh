@@ -112,6 +112,30 @@ fm_nm_run_is_active() {  # <toon-output>
   case "$status" in completed|failed|cancelled) return 1 ;; esac
 }
 
+# Gate detection in captured `axi status` TOON $1. ONE owner for the gate
+# shapes fm-crew-state.sh renders and fm-nomistakes-poll-lib.sh polls on: a
+# top-level `status`/`state` of awaiting_approval/fix_review, an
+# `awaiting_agent:` line, a step row whose own status is
+# awaiting_approval/fix_review, or a `gate:` block.
+fm_nm_gate_status_line() {  # <toon-output>
+  printf '%s\n' "$1" | grep -E '^[[:space:]]*(status|state):[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*$' | head -1
+}
+
+fm_nm_gate_step_row_line() {  # <toon-output>
+  printf '%s\n' "$1" | grep -E '^[[:space:]]*[^,]+,[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*,' | head -1
+}
+
+fm_nm_has_gate_block() {  # <toon-output>
+  printf '%s\n' "$1" | grep -Eq '^[[:space:]]*gate:[[:space:]]*'
+}
+
+fm_nm_run_is_gated() {  # <toon-output>
+  [ -n "$(fm_nm_gate_status_line "$1")" ] && return 0
+  printf '%s\n' "$1" | grep -Eq '^[[:space:]]*awaiting_agent:' && return 0
+  [ -n "$(fm_nm_gate_step_row_line "$1")" ] && return 0
+  fm_nm_has_gate_block "$1"
+}
+
 # The custody exemption to the head rule above: while the pipeline OWNS the
 # branch (branch_sync.state=pipeline_owned), the daemon's own branch
 # attribution IS the attribution for an ACTIVE run, and

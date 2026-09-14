@@ -16,7 +16,9 @@
 #
 # Two subcommands:
 #   classify              reads one `axi status` TOON blob from stdin, prints
-#                          exactly one of: running | gate | outcome:<word>
+#                          exactly one of: no-run | running | gate | outcome:<word>
+#                          (no-run: the blob carries only another branch's
+#                          run - the current branch has none to poll)
 #   wait [--dir DIR] [--interval SECS] [--max SECS]
 #                          polls `no-mistakes axi status` in DIR (default:
 #                          cwd) every INTERVAL seconds (default 20) until
@@ -34,7 +36,11 @@
 # already given to no-mistakes workers.
 #
 # Exit codes for `wait`: 0 = gate reached, 1 = terminal outcome reached,
-# 2 = still running (max elapsed, call again), 3 = usage/lookup error.
+# 2 = still running (max elapsed, call again), 3 = usage/lookup error,
+# including no current-branch run and a status call that hung past its own
+# bound (each status call is itself bounded via fm_nm_run_bounded, and the
+# max window counts wall-clock time, not just sleeps).
+# Gate/terminal/TOON primitives are owned by bin/fm-nm-run-lib.sh.
 # Exit codes for `classify`: always 0; the result word is the only signal.
 set -u
 
@@ -45,61 +51,44 @@ Usage:
   fm-nomistakes-poll-lib.sh wait [--dir DIR] [--interval SECS] [--max SECS]
 
 classify reads one `no-mistakes axi status` TOON blob from stdin and prints
-exactly one of: running, gate, outcome:<word>.
+exactly one of: no-run, running, gate, outcome:<word>.
 
 wait polls `no-mistakes axi status` in DIR (default: cwd) every INTERVAL
 seconds (default 20) until classify returns gate or outcome:*, or MAX seconds
 (default 480) elapse. Prints the last TOON to stdout and a final
 FM_NMPOLL_RESULT=<result> line to stderr. Exit 0 on gate, 1 on outcome, 2 when
-MAX elapsed with no gate/outcome yet (call wait again), 3 on usage error.
+MAX elapsed with no gate/outcome yet (call wait again), 3 on usage error, no
+current-branch run, or a hung status call.
 EOF
 }
 
-fm_nmpoll_trim() {
-  local s=${1:-}
-  s="${s#"${s%%[![:space:]]*}"}"
-  s="${s%"${s##*[![:space:]]}"}"
-  printf '%s' "$s"
-}
+FM_NMPOLL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-nm-run-lib.sh
+. "$FM_NMPOLL_LIB_DIR/fm-nm-run-lib.sh"
 
-fm_nmpoll_strip_quotes() {
-  local s
-  s=$(fm_nmpoll_trim "${1:-}")
-  case "$s" in
-    \"*\") s=${s#\"}; s=${s%\"} ;;
-  esac
-  fm_nmpoll_trim "$s"
-}
+FM_NMPOLL_STATUS_TIMEOUT=${FM_NMPOLL_STATUS_TIMEOUT_OVERRIDE:-30}
 
-# Scalar value of top-level TOON key $2 in blob $1.
-fm_nmpoll_field() {
-  printf '%s\n' "$1" | sed -n "s/^[[:space:]]*$2:[[:space:]]*\(.*\)/\1/p" | head -1
-}
-
-# classify <toon> - prints running | gate | outcome:<word>
+# classify <toon> - prints no-run | running | gate | outcome:<word>
 fm_nmpoll_classify() {
-  local toon=$1 outcome status awaiting_line gate_step_line has_gate_block
-  outcome=$(fm_nmpoll_strip_quotes "$(fm_nmpoll_field "$toon" outcome)")
+  local toon=$1 outcome status
+  if ! printf '%s\n' "$toon" | grep -Eq '^run:[[:space:]]*$' \
+    && printf '%s\n' "$toon" | grep -Eq '^other_branch_run:[[:space:]]*$'; then
+    printf 'no-run'
+    return 0
+  fi
+  outcome=$(fm_nm_strip_quotes "$(fm_nm_field "$toon" outcome)")
   if [ -n "$outcome" ]; then
     printf 'outcome:%s' "$outcome"
     return 0
   fi
-  status=$(fm_nmpoll_strip_quotes "$(fm_nmpoll_field "$toon" status)")
+  status=$(fm_nm_strip_quotes "$(fm_nm_field "$toon" status)")
   case "$status" in
     completed|failed|cancelled)
       printf 'outcome:%s' "$status"
       return 0
       ;;
-    awaiting_approval|fix_review)
-      printf 'gate'
-      return 0
-      ;;
   esac
-  awaiting_line=$(printf '%s\n' "$toon" | grep -E '^[[:space:]]*awaiting_agent:' | head -1 || true)
-  gate_step_line=$(printf '%s\n' "$toon" | grep -E '^[[:space:]]*[^,]+,[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*,' | head -1 || true)
-  has_gate_block=0
-  printf '%s\n' "$toon" | grep -Eq '^[[:space:]]*gate:[[:space:]]*' && has_gate_block=1
-  if [ -n "$awaiting_line" ] || [ -n "$gate_step_line" ] || [ "$has_gate_block" = 1 ]; then
+  if fm_nm_run_is_gated "$toon"; then
     printf 'gate'
     return 0
   fi
@@ -129,14 +118,28 @@ cmd_wait() {
     printf 'error: no-mistakes not found on PATH\n' >&2
     return 3
   fi
-  local elapsed=0 toon result
+  [ -d "$dir" ] || { printf 'error: --dir %s is not a directory\n' "$dir" >&2; return 3; }
+  local start=$SECONDS toon result rc
   while :; do
-    toon=$(cd "$dir" 2>/dev/null && no-mistakes axi status 2>&1) || {
-      printf 'error: no-mistakes axi status failed in %s\n' "$dir" >&2
+    toon=$(fm_nm_run_bounded "$dir" "$FM_NMPOLL_STATUS_TIMEOUT" axi status 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      if [ "$rc" -eq 124 ]; then
+        printf 'error: no-mistakes axi status timed out after %ss in %s\n' "$FM_NMPOLL_STATUS_TIMEOUT" "$dir" >&2
+      else
+        printf '%s\n' "$toon" >&2
+        printf 'error: no-mistakes axi status failed (exit %s) in %s\n' "$rc" "$dir" >&2
+      fi
       return 3
-    }
+    fi
     result=$(fm_nmpoll_classify "$toon")
     case "$result" in
+      no-run)
+        printf '%s\n' "$toon" >&2
+        printf 'error: no run for the current branch in %s (axi status only reports another branch'"'"'s run); is the drive call still alive and past init?\n' "$dir" >&2
+        printf 'FM_NMPOLL_RESULT=no-run\n' >&2
+        return 3
+        ;;
       gate)
         printf '%s\n' "$toon"
         printf 'FM_NMPOLL_RESULT=gate\n' >&2
@@ -148,13 +151,12 @@ cmd_wait() {
         return 1
         ;;
     esac
-    if [ "$elapsed" -ge "$max" ]; then
+    if [ $((SECONDS - start)) -ge "$max" ]; then
       printf '%s\n' "$toon"
       printf 'FM_NMPOLL_RESULT=running\n' >&2
       return 2
     fi
     sleep "$interval"
-    elapsed=$((elapsed + interval))
   done
 }
 

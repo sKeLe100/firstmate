@@ -2,10 +2,11 @@
 # Behavior tests for bin/fm-nomistakes-poll-lib.sh: exercises `classify`
 # against the three real 2026-09-08 wrong-exit-condition shapes (a top-level
 # `status: running` blob whose active step is actually gated, a genuinely
-# active step, and a terminal outcome), using TOON fixtures captured verbatim
-# from a live `no-mistakes axi status --run <id>` call plus the confirmed
-# gate/outcome field shapes from bin/fm-crew-state.sh's own regexes. Also
-# exercises `wait`'s bounded poll loop against a fake `no-mistakes` binary.
+# active step, and a terminal outcome) plus the other-branch shape `axi
+# status` emits when the current branch has no run, using field shapes
+# captured from live `no-mistakes axi status` calls. Also exercises `wait`'s
+# bounded poll loop against a fake `no-mistakes` binary, including a hung
+# status call and an other-branch-only answer.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -15,13 +16,34 @@ SCRIPT="$ROOT/bin/fm-nomistakes-poll-lib.sh"
 
 classify() { printf '%s\n' "$1" | "$SCRIPT" classify; }
 
-# --- 1. genuinely active step: real capture, no gate, no outcome ----------
-# Captured verbatim from `no-mistakes axi status --run <id>` while its `test`
-# step was actively running (top-level status: running, no outcome line).
-RUNNING_TOON='current_branch: fm/nomistakes-poll-helper-gap
+# --- 0. another branch's run: `axi status` emits `other_branch_run:` (and no
+# `run:` block) when the CURRENT branch has no run at all. Its gate/outcome
+# is not ours; classify must say so rather than report a false gate/outcome.
+# Captured verbatim from a live `no-mistakes axi status` on a branch with no
+# run while another branch's run was active.
+OTHER_BRANCH_TOON='current_branch: fm/nomistakes-poll-helper-gap
 other_branch_run:
   id: "01M2FVPY44K6ZZYZS708MTVGBA"
   branch: fm/backlog-routing-registry
+  status: running
+  head: 262c78eb
+  head_sha: 262c78ebfbb00d9dcd311f6bdb21a92e13594547
+  findings: "2 auto-fix, 1 info"
+  steps[4]{step,status,findings,duration_ms}:
+    intent,completed,0,24
+    rebase,completed,1,626
+    review,awaiting_approval,2,83704
+    test,pending,0,0'
+OUT=$(classify "$OTHER_BRANCH_TOON")
+[ "$OUT" = no-run ] || fail "other branch run: expected 'no-run', got '$OUT'"
+pass "0. another branch's gated run classifies as no-run, never as our gate"
+
+# --- 1. genuinely active step: no gate, no outcome, current-branch run: ----
+# Same field shape as the live capture above, under the `run:` key `axi
+# status` uses for the current branch's own run.
+RUNNING_TOON='run:
+  id: "01M2FVPY44K6ZZYZS708MTVGBA"
+  branch: fm/nomistakes-poll-helper-gap
   status: running
   head: 262c78eb
   head_sha: 262c78ebfbb00d9dcd311f6bdb21a92e13594547
@@ -42,11 +64,10 @@ OUT=$(classify "$RUNNING_TOON")
 [ "$OUT" = running ] || fail "active step: expected 'running', got '$OUT'"
 pass "1. genuinely active step classifies as running"
 
-# --- 2. terminal outcome: real capture, status completed + outcome: passed
-TERMINAL_TOON='current_branch: fm/nomistakes-poll-helper-gap
-other_branch_run:
+# --- 2. terminal outcome: status completed + outcome: passed
+TERMINAL_TOON='run:
   id: "01M2DMSZTRX137R2B26F9E99BW"
-  branch: captain-direct/secondmate-live-fix
+  branch: fm/nomistakes-poll-helper-gap
   status: completed
   head: 9226bdaa
   head_sha: 9226bdaa0e5b9314007541830304c3d652ca106c
@@ -72,8 +93,7 @@ pass "2. terminal outcome:passed classifies as outcome:passed"
 # records: three crewmates' loops treated top-level status:running as "keep
 # waiting" and spun forever, or treated it as "still active" too early and
 # exited before responding to the gate.
-GATED_TOON='current_branch: fm/example
-other_branch_run:
+GATED_TOON='run:
   id: "01EXAMPLE"
   branch: fm/example
   status: running
@@ -89,8 +109,7 @@ OUT=$(classify "$GATED_TOON")
 pass "3. step gated at awaiting_approval classifies as gate even though top-level status is running"
 
 # --- 4. fix_review step gate --------------------------------------------
-FIX_REVIEW_TOON='current_branch: fm/example
-other_branch_run:
+FIX_REVIEW_TOON='run:
   id: "01EXAMPLE2"
   branch: fm/example
   status: running
@@ -103,8 +122,7 @@ OUT=$(classify "$FIX_REVIEW_TOON")
 pass "4. step gated at fix_review classifies as gate"
 
 # --- 5. top-level status itself is awaiting_approval ----------------------
-TOP_GATE_TOON='current_branch: fm/example
-other_branch_run:
+TOP_GATE_TOON='run:
   id: "01EXAMPLE3"
   branch: fm/example
   status: awaiting_approval
@@ -114,8 +132,7 @@ OUT=$(classify "$TOP_GATE_TOON")
 pass "5. top-level status:awaiting_approval classifies as gate"
 
 # --- 6. awaiting_agent line signals a gate regardless of status wording ---
-AWAITING_AGENT_TOON='current_branch: fm/example
-other_branch_run:
+AWAITING_AGENT_TOON='run:
   id: "01EXAMPLE4"
   branch: fm/example
   status: running
@@ -132,8 +149,7 @@ OUT=$(classify "")
 pass "7. empty status output classifies as running, not a false gate or outcome"
 
 # --- 8. failed/cancelled terminal status without an explicit outcome line -
-FAILED_TOON='current_branch: fm/example
-other_branch_run:
+FAILED_TOON='run:
   id: "01EXAMPLE5"
   branch: fm/example
   status: failed
@@ -188,5 +204,36 @@ RC=$?
 expect_code 2 "$RC" "wait: expected still-running exit code once --max elapses"
 assert_grep "FM_NMPOLL_RESULT=running" "$TMP_ROOT/err2" "wait: expected FM_NMPOLL_RESULT=running on timeout"
 pass "11. wait returns running (exit 2) once --max elapses without a gate or outcome"
+
+# --- 12. wait: refuses (exit 3, no FM_NMPOLL_RESULT=gate) when axi status
+# only reports another branch's run, instead of acting on that run's gate ---
+cat > "$FAKEBIN/no-mistakes" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "$OTHER_BRANCH_TOON"
+EOF
+chmod +x "$FAKEBIN/no-mistakes"
+OUT=$(PATH="$FAKEBIN:$PATH" "$SCRIPT" wait --dir "$TMP_ROOT" --interval 1 --max 5 2>"$TMP_ROOT/err3")
+RC=$?
+expect_code 3 "$RC" "wait: expected refusal exit code for other-branch-only status"
+[ -z "$OUT" ] || fail "wait: other-branch run must not be printed as a result, got: $OUT"
+assert_grep "FM_NMPOLL_RESULT=no-run" "$TMP_ROOT/err3" "wait: expected FM_NMPOLL_RESULT=no-run on stderr"
+assert_grep "no run for the current branch" "$TMP_ROOT/err3" "wait: expected a diagnostic naming the missing current-branch run"
+pass "12. wait refuses with exit 3 when only another branch's run is reported"
+
+# --- 13. wait: a hung `axi status` is bounded and reported, never waited on
+# past the helper's own status timeout ---
+cat > "$FAKEBIN/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+sleep 60
+EOF
+chmod +x "$FAKEBIN/no-mistakes"
+START=$SECONDS
+OUT=$(PATH="$FAKEBIN:$PATH" FM_NMPOLL_STATUS_TIMEOUT_OVERRIDE=2 "$SCRIPT" wait --dir "$TMP_ROOT" --interval 1 --max 30 2>"$TMP_ROOT/err4")
+RC=$?
+ELAPSED=$((SECONDS - START))
+expect_code 3 "$RC" "wait: expected error exit code for a hung status call"
+[ "$ELAPSED" -lt 20 ] || fail "wait: hung status call was not bounded (took ${ELAPSED}s)"
+assert_grep "timed out" "$TMP_ROOT/err4" "wait: expected a timeout diagnostic"
+pass "13. wait bounds a hung axi status call and exits 3 with a diagnostic"
 
 echo "ok: fm-nomistakes-poll-lib.test.sh"
