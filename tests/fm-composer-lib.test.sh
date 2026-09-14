@@ -351,6 +351,32 @@ test_matrix_opencode_leftbar_signals() {
   assert_screen "opencode placeholder-like input on plain backends" unknown "$CAPS_PLAIN" "$typed"
   typed=$'┃  refactor the parser please\n┃\n┃  Build · GPT-5.5 Fast OpenAI · high'
   assert_screen "opencode multiline draft above blank cursor row" pending "$CAPS_TMUX" "$typed" 1
+  # Regression (opencode-composer-footer-false-pending): a pane narrow enough
+  # that opencode wraps its own footer line across two left-bar rows must not
+  # read the wrapped remainder as pending typed text.
+  local wrapped
+  wrapped=$'  ┃\n  ┃  Ask anything... "What is the tech stack?"\n  ┃\n  ┃  Build · GPT-5.5\n  ┃  Fast OpenAI · high\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
+  assert_screen "opencode idle, footer wraps across two rows, tmux" empty "$CAPS_TMUX" "$wrapped" ''
+  assert_screen "opencode idle, footer wraps across two rows, herdr" empty "$CAPS_STYLED" "$wrapped"
+  assert_screen "opencode idle, footer wraps across two rows, plain" empty "$CAPS_PLAIN" "$wrapped"
+  wrapped=$'  ┃\n  ┃  Ask anything... "What is the tech stack?"\n  ┃\n  ┃  Build ·\n  ┃  GPT-5.5 Fast OpenAI · high\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
+  assert_screen "opencode idle, footer wraps right after the dot, herdr" empty "$CAPS_STYLED" "$wrapped"
+  # Verbatim from real opencode 1.18.30 in tmux: the hint uses U+2026 and
+  # wraps its quoted suggestion onto a second row at <=36 cols; at <=30 cols
+  # the footer drops the spaces around the dot and wraps each segment
+  # column-wise ("Buil" / "d", "G" / "r"). All of it is furniture.
+  local live100 live36 live30 live30_typed
+  live100=$'             ┃\n             ┃  Ask anything… "Fix broken tests"\n             ┃\n             ┃  Build · GPT OSS 120B Groq\n             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
+  live36=$'  ┃\n  ┃  Ask anything… "Fix broken\n  ┃  tests"\n  ┃\n  ┃  Build · GPT OSS 120B Groq\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
+  live30=$'  ┃\n  ┃  Ask anything… "Fix\n  ┃  broken tests"\n  ┃\n  ┃  Buil ·GPT OSS 120B G\n  ┃  d                  r\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
+  assert_screen "opencode 1.18.30 idle at 100 cols (U+2026 hint), tmux" empty "$CAPS_TMUX" "$live100" ''
+  assert_screen "opencode 1.18.30 idle at 36 cols (wrapped hint), tmux" empty "$CAPS_TMUX" "$live36" ''
+  assert_screen "opencode 1.18.30 idle at 36 cols (wrapped hint), herdr" empty "$CAPS_STYLED" "$live36"
+  assert_screen "opencode 1.18.30 idle at 30 cols (squeezed column-wrapped footer), tmux" empty "$CAPS_TMUX" "$live30" ''
+  assert_screen "opencode 1.18.30 idle at 30 cols (squeezed column-wrapped footer), herdr" empty "$CAPS_STYLED" "$live30"
+  assert_screen "opencode 1.18.30 idle at 30 cols (squeezed column-wrapped footer), plain" empty "$CAPS_PLAIN" "$live30"
+  live30_typed=$'  ┃\n  ┃  hello there\n  ┃\n  ┃  Buil ·GPT OSS 120B G\n  ┃  d                  r\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
+  assert_screen "opencode 1.18.30 typed text at 30 cols stays pending, herdr" pending "$CAPS_STYLED" "$live30_typed"
   pass "matrix: opencode's left-bar composer reads empty everywhere and scans the full active run"
 }
 
@@ -572,6 +598,22 @@ test_selected_content_is_composer_scoped_and_wrap_normalized() {
   out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
   [ "$out" = 'hello captain' ] \
     || fail "left-bar extraction should join user rows without footer furniture, got '$out'"
+  screen=$'┃ hello\n┃ captain\n┃ Build · GPT-5.5\n┃ Fast OpenAI · high'
+  out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
+  [ "$out" = 'hello captain' ] \
+    || fail "left-bar extraction should drop a footer wrapped across rows, got '$out'"
+  screen=$'┃ hello\n┃ Build ·\n┃ GPT-5.5 Fast OpenAI · high'
+  out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
+  [ "$out" = 'hello' ] \
+    || fail "left-bar extraction should drop a footer wrapped right after the dot, got '$out'"
+  screen=$'┃\n┃  Ask anything… "Fix\n┃  broken tests"\n┃\n┃  Buil ·GPT OSS 120B G\n┃  d                  r'
+  out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
+  [ -z "$out" ] \
+    || fail "left-bar extraction should drop opencode 1.18.30's wrapped hint and squeezed footer, got '$out'"
+  screen=$'┃\n┃  hello there\n┃\n┃  Buil ·GPT OSS 120B G\n┃  d                  r'
+  out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
+  [ "$out" = 'hello there' ] \
+    || fail "left-bar extraction should keep typed text above a squeezed footer, got '$out'"
   screen=$'╭────────────────────╮\n│ ❯ '"${ESC}[2mType a message...${ESC}[0m"$'│\n╰────────────────────╯'
   out=$(fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$screen")
   [ -z "$out" ] \

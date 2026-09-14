@@ -367,14 +367,19 @@ FM_COMPOSER_SHELL_PROMPT_GLYPHS=$(printf '%s\n' '>' '$' '%' '#')
 # rotating quoted suggestion, hence the unanchored tail). cursor-agent renders
 # two, both anchored: `Plan, search, build anything` in a fresh session and
 # `Add a follow-up` once a turn has completed (verified live on cursor-agent
-# 2026.08.11-e8db854). FM_COMPOSER_IDLE_RE overrides for an unverified harness;
-# matching is case-insensitive.
-FM_COMPOSER_IDLE_RE_DEFAULT='^Type a message\.\.\.$|^Ask anything\.\.\.|^Plan, search, build anything$|^Add a follow-up$'
+# 2026.08.11-e8db854). opencode 1.18.30 draws its hint with a real ellipsis
+# (U+2026), older builds with three dots. FM_COMPOSER_IDLE_RE overrides for an
+# unverified harness; matching is case-insensitive.
+FM_COMPOSER_IDLE_RE_DEFAULT='^Type a message\.\.\.$|^Ask anything(\.\.\.|…)|^Plan, search, build anything$|^Add a follow-up$'
 
 # Opencode draws a mode/model footer line INSIDE its left-bar composer
 # ("Build · GPT-5.5 Fast OpenAI · high"). It is composer furniture, not typed
-# text, and only the run's LAST row is ever matched against it.
-FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT='^(Build|Plan)[[:space:]]+·[[:space:]]+'
+# text. A narrow pane squeezes it: opencode 1.18.30 drops the spaces around the
+# dot and wraps each segment column-wise ("Buil ·GPT OSS 120B G" over
+# "d                  r"), so the first footer row starts with any prefix of the
+# mode name, optional space, then the dot; once a row matches, it and every row
+# below it belong to the footer.
+FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT='^(B|Bu|Bui|Buil|Build|P|Pl|Pla|Plan)[[:space:]]*·'
 
 # The bounded row window adapters should capture for a composer read. One
 # shared policy (previously three per-backend variables that had drifted to
@@ -974,12 +979,19 @@ _fm_composer_classify_bare_wrap() {  # <screen> <styled> <glyph-row> <cursor-row
 }
 
 # _fm_composer_classify_leftbar: opencode's left-bar composer. Blank rows and
-# the idle hint read empty; the run's LAST row may be the mode/model footer
-# (composer furniture, never typed text). Real content is pending when styling
-# can prove it real, unknown otherwise.
+# the idle hint read empty; the mode/model footer (composer furniture, never
+# typed text) may be the run's LAST row, or - when the pane is narrow enough
+# that opencode wraps the footer text across more than one left-bar row - the
+# last several rows. Once a row matches the footer anchor, every row through
+# `last` is treated as the same wrapped footer rather than only that one row,
+# since nothing opencode draws follows its own footer. The idle hint wraps the
+# same way, so the non-blank rows right after a matched hint (up to the blank
+# row that separates it from the footer) are its continuation. Real content is
+# pending when styling can prove it real, unknown otherwise.
 _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
   local screen=$1 styled=$2 first=$3 last=$4
   local row raw content pending_seen=0 footer_re leading_blank=1 placeholder_position=0
+  local footer_active=0 placeholder_active=0
   footer_re=${FM_COMPOSER_LEFTBAR_FOOTER_RE:-$FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT}
   row=$first
   while [ "$row" -le "$last" ]; do
@@ -989,7 +1001,7 @@ _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
       '┃'*) content=${content#┃} ;;
     esac
     fm_composer_normalize_trim_var content
-    if [ -z "$content" ]; then row=$((row + 1)); continue; fi
+    if [ -z "$content" ]; then placeholder_active=0; row=$((row + 1)); continue; fi
     if [ "$leading_blank" = 1 ] && [ "$row" -gt "$first" ]; then
       placeholder_position=1
     else
@@ -998,10 +1010,14 @@ _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
     leading_blank=0
     if [ "$placeholder_position" = 1 ] \
        && fm_composer_idle_matches "$content" "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive; then
+      placeholder_active=1
       row=$((row + 1)); continue
     fi
-    if [ "$row" -eq "$last" ] \
-       && fm_composer_idle_matches "$content" "$footer_re" sensitive; then
+    if [ "$footer_active" = 1 ] || [ "$placeholder_active" = 1 ]; then
+      row=$((row + 1)); continue
+    fi
+    if fm_composer_idle_matches "$content" "$footer_re" sensitive; then
+      footer_active=1
       row=$((row + 1)); continue
     fi
     pending_seen=1
@@ -1109,7 +1125,7 @@ _fm_composer_select_cursorless() {
 
 fm_composer_extract_selected_content() {  # <caps> <screen>
   local caps=$1 screen=$2 styled=0 kv plain row raw content glyph joined='' footer_re prompt_row=-1
-  local leading_blank=1 placeholder_position=0 prompt_is_shell=0
+  local leading_blank=1 placeholder_position=0 prompt_is_shell=0 footer_active=0 placeholder_active=0
   footer_re=${FM_COMPOSER_LEFTBAR_FOOTER_RE:-$FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT}
   while IFS= read -r kv; do
     [ "$kv" = styled=1 ] && styled=1
@@ -1135,7 +1151,7 @@ EOF
         case "$content" in '┃'*) content=${content#┃} ;; esac
         fm_composer_normalize_trim_var content
         if [ -z "$content" ]; then
-          :
+          placeholder_active=0
         elif [ "$leading_blank" = 1 ] && [ "$row" -gt "$FM_COMPOSER_SELECTED_FIRST" ]; then
           placeholder_position=1
           leading_blank=0
@@ -1166,14 +1182,23 @@ EOF
     # OpenCode's left-bar hint and legacy shell-glyph boxed placeholders have no
     # such styling proof, so their structurally fixed positions remain the two
     # idle-regex exceptions here.
-    if [ -z "$content" ] \
-       || { { [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] \
-              || { [ "$FM_COMPOSER_SELECTED_KIND" = box ] && [ "$prompt_is_shell" = 1 ]; }; } \
-            && [ "$placeholder_position" = 1 ] \
-            && fm_composer_idle_matches "$content" "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive; } \
-       || { [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] \
-            && [ "$row" -eq "$FM_COMPOSER_SELECTED_LAST" ] \
-            && fm_composer_idle_matches "$content" "$footer_re" sensitive; }; then
+    if [ -z "$content" ] || [ "$footer_active" = 1 ] || [ "$placeholder_active" = 1 ]; then
+      row=$((row + 1))
+      continue
+    fi
+    if { [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] \
+         || { [ "$FM_COMPOSER_SELECTED_KIND" = box ] && [ "$prompt_is_shell" = 1 ]; }; } \
+       && [ "$placeholder_position" = 1 ] \
+       && fm_composer_idle_matches "$content" "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive; then
+      # A wrapped opencode hint continues on the following rows up to the blank
+      # row before its footer; the box path has no wrap to skip.
+      [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] && placeholder_active=1
+      row=$((row + 1))
+      continue
+    fi
+    if [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] \
+       && fm_composer_idle_matches "$content" "$footer_re" sensitive; then
+      footer_active=1
       row=$((row + 1))
       continue
     fi
