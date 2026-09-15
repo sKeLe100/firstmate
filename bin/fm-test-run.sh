@@ -45,8 +45,12 @@
 #   --jobs N        run the selected scripts with up to N concurrent workers.
 #                   Plain --changed and a plain list of script paths use
 #                   min(4, cpus) workers when multiple selected scripts are
-#                   admissible; --lane, --family, and --all stay serial unless
-#                   asked for concurrency explicitly.
+#                   admissible, then throttled down for host contention: 2
+#                   workers when the 5-minute load average exceeds cpus, 1
+#                   when it exceeds 2x cpus (FM_TEST_HOST_LOAD reports the
+#                   inputs and the result). --lane, --family, and --all stay
+#                   serial unless asked for concurrency explicitly; an
+#                   explicit --jobs N is never throttled.
 #                   N>1 is allowed only when every selected script is proven
 #                   safe to run concurrently: individually in the proven-isolated
 #                   set (bin/fm-test-isolation-proof.sh --list), or in a family
@@ -70,12 +74,21 @@
 #   --per-script-timeout-secs N
 #                   terminate a script that runs longer than N seconds and
 #                   record it as exit 124 (0 disables, the default). The
-#                   --changed applies 900s automatically: no real script
-#                   approaches it, so it only converts a HUNG
-#                   script into a bounded failure. --max-wall-ms is checked
-#                   after the run and so cannot catch a hang on its own.
-#                   External interruption cleanup is outside this runner's
-#                   guarantee; configured per-script bounds remain authoritative.
+#                   --changed path applies a 900s base automatically, scaled
+#                   up by max(1, load5/cpus) so host contention cannot turn a
+#                   healthy script into a false timeout: on an idle host this
+#                   still converts a HUNG script into a bounded failure, but
+#                   under real PC01 contention (measured 10-28x slowdowns)
+#                   healthy scripts do approach the unscaled bound, which is
+#                   why the bound now moves with load instead of staying
+#                   fixed. When a --changed run's only failures are exit=124
+#                   or scripts in the declared load-sensitive set, the runner
+#                   waits for load to drop and re-runs exactly those scripts
+#                   once, serially, before reporting failure (no agent
+#                   round-trip). --max-wall-ms is checked after the run and so
+#                   cannot catch a hang on its own. External interruption
+#                   cleanup is outside this runner's guarantee; configured
+#                   per-script bounds remain authoritative.
 #   --max-wall-ms N fail the run when its measured invocation wall clock exceeds
 #                   N milliseconds, including an empty selection. It is
 #                   evaluated after selection and suite execution and cannot
@@ -87,6 +100,10 @@
 # Per-script machine-parseable markers (stdout):
 #   FM_TEST_BEGIN <iso8601> <script> family=<family> expected_gate_skip=<class>
 #   FM_TEST_END <iso8601> <script> exit=<code> duration_ms=<n> gate_skip=<true|false>
+#
+# Once per automatic --changed/scripts run, before scheduling (stdout):
+#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n>
+#     Lets a later reader tell a load kill from a genuine hang.
 #
 # After all scripts (stdout):
 #   FM_TEST_SUMMARY total=<n> failed=<n> skipped_gate=<n> duration_ms=<n>
@@ -152,16 +169,27 @@ JOBS_EXPLICIT=0
 JOBS_MAX=8
 MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0
-# Bound applied automatically on the automatic --changed path, derived from
-# measured healthy runtimes with margin rather than picked: the slowest measured
-# behavior test is the 341s Herdr presentation E2E, and the slowest script in a
-# runner-file changed selection is tests/fm-calm-pi-extension.test.sh at 77s
-# once its Chrome reap terminates. 900s leaves roughly 2.6x headroom over the
-# slowest real script, so this can only ever fire on a script that is genuinely
-# stuck. It is a guard, not a speed control: a HUNG script becomes a bounded
-# failure instead of an unbounded suite, which is the shape that silently
-# outruns a caller's invocation budget.
+# Base bound applied automatically on the automatic --changed path before load
+# scaling (load_scaled_timeout_secs below), derived from measured healthy
+# runtimes with margin rather than picked: the slowest measured behavior test
+# is the 341s Herdr presentation E2E, and the slowest script in a runner-file
+# changed selection is tests/fm-calm-pi-extension.test.sh at 77s once its
+# Chrome reap terminates. 900s leaves roughly 2.6x headroom over the slowest
+# real script on an idle host, so on its own it can only ever fire on a
+# script that is genuinely stuck. It is a guard, not a speed control: a HUNG
+# script becomes a bounded failure instead of an unbounded suite, which is
+# the shape that silently outruns a caller's invocation budget. That margin
+# does not hold under real PC01 contention, where measured 10-28x slowdowns
+# let a healthy script approach or exceed 900s on its own -- the effective
+# bound is scaled by max(1, load5/cpus) for exactly that reason.
 CHANGED_DEFAULT_TIMEOUT_SECS=900
+
+# Bound and cadence for the token-free retry's wait for load5 to drop back
+# under cpus before re-running exactly the load-plausible failures once,
+# serially. FM_TEST_RUN_LOAD_RETRY_WAIT_MAX_SECS/_POLL_SECS override for tests
+# so the contract does not depend on a real 10-minute wait.
+HOST_LOAD_RETRY_WAIT_MAX_SECS=${FM_TEST_RUN_LOAD_RETRY_WAIT_MAX_SECS:-600}
+HOST_LOAD_RETRY_POLL_SECS=${FM_TEST_RUN_LOAD_RETRY_POLL_SECS:-10}
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
@@ -213,12 +241,77 @@ now_iso() {
 
 cpu_count() {
   local n
-  n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+  if [ -n "${FM_TEST_RUN_CPU_COUNT_OVERRIDE:-}" ]; then
+    n=$FM_TEST_RUN_CPU_COUNT_OVERRIDE
+  else
+    n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+  fi
   case "$n" in
     ''|*[!0-9]*) n=1 ;;
   esac
   [ "$n" -ge 1 ] || n=1
   printf '%s\n' "$n"
+}
+
+# 5-minute load average as a bare decimal (e.g. "1.23"), or "0" when it cannot
+# be read. FM_TEST_RUN_LOAD5_OVERRIDE lets tests pin a value deterministically
+# instead of depending on the real host's contention at run time.
+load5() {
+  local v=
+  if [ -n "${FM_TEST_RUN_LOAD5_OVERRIDE:-}" ]; then
+    v=$FM_TEST_RUN_LOAD5_OVERRIDE
+  elif [ -r /proc/loadavg ]; then
+    v=$(awk '{print $2}' /proc/loadavg 2>/dev/null)
+  elif command -v sysctl >/dev/null 2>&1; then
+    v=$(sysctl -n vm.loadavg 2>/dev/null | awk '{gsub(/[{}]/, ""); print $2}')
+  fi
+  case "$v" in
+    ''|*[!0-9.]*) v=0 ;;
+  esac
+  printf '%s\n' "$v"
+}
+
+# Throttle base_jobs down for host contention: never up, since --jobs picks
+# the ceiling and load is only ever a reason to ask for less. >2x cpus load5
+# drops to 1 worker (effectively serial); >1x cpus drops to at most 2.
+load_scaled_jobs() {
+  local base_jobs=$1 load=$2 cpus=$3 capped=$1
+  if awk -v l="$load" -v c="$cpus" 'BEGIN { exit !(l + 0 > 2 * c) }' </dev/null; then
+    capped=1
+  elif awk -v l="$load" -v c="$cpus" 'BEGIN { exit !(l + 0 > c) }' </dev/null; then
+    capped=2
+  fi
+  [ "$capped" -lt "$base_jobs" ] && printf '%s\n' "$capped" || printf '%s\n' "$base_jobs"
+}
+
+# Scale a base timeout bound by max(1, load5/cpus), rounded to the nearest
+# second, so a healthy script under host contention gets proportionally more
+# time before the per-script bound calls it a hang.
+load_scaled_timeout_secs() {
+  local base_secs=$1 load=$2 cpus=$3
+  awk -v b="$base_secs" -v l="$load" -v c="$cpus" '
+    BEGIN {
+      ratio = (c > 0) ? l / c : 1
+      if (ratio < 1) ratio = 1
+      printf "%d\n", (b * ratio) + 0.5
+    }
+  '
+}
+
+# Scripts whose behavior tests assert on wall-clock timing against internal
+# watcher/wake state, so they fail under host contention rather than genuine
+# regression (data/ci-pipeline-review-scout/report.md P2/P4). Kept as a small
+# declared set rather than inferred, so admission to the token-free retry
+# stays deliberate.
+is_load_sensitive_script() {
+  case "$(basename "$1")" in
+    fm-watch-triage.test.sh | fm-wake-queue.test.sh | fm-watcher-lock.test.sh | \
+      fm-watch-checkpoint.test.sh | fm-inactive-reconcile.test.sh | \
+      fm-wake-daemon-lifecycle-e2e.test.sh | fm-task-inbox.test.sh)
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # Primary family for one tests/*.test.sh basename. Unmapped scripts are
@@ -1978,20 +2071,28 @@ done
 # lane must stay strictly serial, --family is what the required Herdr lane runs,
 # and --all is a deliberate complete regression.
 AUTO_CONCURRENCY=0
+AUTO_CHANGED_RETRY_ELIGIBLE=0
+HOST_LOAD5=0
+HOST_CPUS=$(cpu_count)
 if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq 0 ]; then
+  AUTO_CHANGED_RETRY_ELIGIBLE=1
+  HOST_LOAD5=$(load5)
   if [ "$MODE" = changed ] && [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
-    PER_SCRIPT_TIMEOUT_SECS=$CHANGED_DEFAULT_TIMEOUT_SECS
+    PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_DEFAULT_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
   fi
   auto_admissible=0
   for s in "${SCRIPTS[@]}"; do
     script_allows_concurrency "$s" && auto_admissible=$((auto_admissible + 1))
   done
   if [ "$auto_admissible" -gt 1 ]; then
-    JOBS=$(cpu_count)
+    JOBS=$HOST_CPUS
     [ "$JOBS" -le 4 ] || JOBS=4
     [ "$JOBS" -ge 1 ] || JOBS=1
+    JOBS=$(load_scaled_jobs "$JOBS" "$HOST_LOAD5" "$HOST_CPUS")
     [ "$JOBS" -eq 1 ] || AUTO_CONCURRENCY=1
   fi
+  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s\n' \
+    "$HOST_LOAD5" "$HOST_CPUS" "$JOBS" "$PER_SCRIPT_TIMEOUT_SECS"
 fi
 if [ "$JOBS" -gt 1 ] || [ "$MODE" = changed ] || [ "$MODE" = scripts ]; then
   SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
@@ -2112,6 +2213,57 @@ family_bump() {
     printf '%s\t%s\t%s\t%s\n' "$fam" 1 "$dur" "$failed_delta" >>"$tmp"
   fi
   mv "$tmp" "$FAMILIES_TSV"
+}
+
+# Inverse of family_bump, for retracting one script's already-recorded
+# contribution (count, duration, failed) before recording its token-free
+# retry result in its place.
+family_unbump() {
+  local fam=$1 dur=$2 failed_delta=$3
+  local line name count duration failed_count rest
+  local tmp="$RUN_TMP/families.new"
+  : >"$tmp"
+  [ -s "$FAMILIES_TSV" ] || return 0
+  while IFS= read -r line; do
+    name=${line%%$'\t'*}
+    rest=${line#*$'\t'}
+    count=${rest%%$'\t'*}
+    rest=${rest#*$'\t'}
+    duration=${rest%%$'\t'*}
+    failed_count=${rest#*$'\t'}
+    if [ "$name" = "$fam" ]; then
+      count=$((count - 1))
+      duration=$((duration - dur))
+      failed_count=$((failed_count - failed_delta))
+      [ "$count" -ge 0 ] || count=0
+      [ "$duration" -ge 0 ] || duration=0
+      [ "$failed_count" -ge 0 ] || failed_count=0
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$name" "$count" "$duration" "$failed_count" >>"$tmp"
+  done <"$FAMILIES_TSV"
+  mv "$tmp" "$FAMILIES_TSV"
+}
+
+# Remove <script>'s existing RECORDS entry (and its family/TOTAL/FAILED
+# contribution) so a token-free retry can record its replacement result in
+# its place instead of double-counting the script.
+retry_purge_record() {
+  local script=$1
+  local tmp="$RUN_TMP/records.filtered"
+  local rscript rfamily rexpected rrc rdur rgate
+  : >"$tmp"
+  while IFS=$'\t' read -r rscript rfamily rexpected rrc rdur rgate; do
+    if [ "$rscript" = "$script" ]; then
+      local failed_delta=0
+      [ "$rrc" -ne 0 ] && failed_delta=1
+      family_unbump "$rfamily" "$rdur" "$failed_delta"
+      TOTAL=$((TOTAL - 1))
+      [ "$failed_delta" -eq 0 ] || FAILED=$((FAILED - 1))
+      continue
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rscript" "$rfamily" "$rexpected" "$rrc" "$rdur" "$rgate" >>"$tmp"
+  done <"$RECORDS"
+  mv "$tmp" "$RECORDS"
 }
 
 record_script_result() {
@@ -2348,6 +2500,45 @@ else
     fi
     run_one_serial "$script"
   done
+fi
+
+# Token-free retry (P2 item 3, data/ci-pipeline-review-scout/report.md): when
+# an automatic --changed run's only failures are exit=124 timeouts or scripts
+# in the declared load-sensitive set, host contention -- not a real
+# regression -- is the more plausible cause. Wait (bounded) for load5 to drop
+# back under cpus, then re-run exactly those scripts once, serially, before
+# returning non-zero: no agent round-trip, and a run carrying any other kind
+# of failure never qualifies, so a genuine red still returns fast. No gate
+# changes: the run still fails if the re-check fails.
+if [ "$AUTO_CHANGED_RETRY_ELIGIBLE" -eq 1 ] && [ "$MODE" = changed ] && [ "$FAILED" -gt 0 ]; then
+  RETRY_CANDIDATES=()
+  retry_all_eligible=1
+  while IFS=$'\t' read -r rscript _rfamily _rexpected rrc _rdur _rgate; do
+    [ "$rrc" -ne 0 ] || continue
+    if [ "$rrc" -eq 124 ] || is_load_sensitive_script "$rscript"; then
+      RETRY_CANDIDATES+=("$rscript")
+    else
+      retry_all_eligible=0
+    fi
+  done <"$RECORDS"
+  if [ "$retry_all_eligible" -eq 1 ] && [ "${#RETRY_CANDIDATES[@]}" -gt 0 ]; then
+    log "token-free retry: waiting for load5 < cpus ($HOST_CPUS) to re-run ${#RETRY_CANDIDATES[@]} load-plausible failure(s): ${RETRY_CANDIDATES[*]}"
+    retry_waited=0
+    RETRY_LOAD5=$(load5)
+    while :; do
+      RETRY_LOAD5=$(load5)
+      awk -v l="$RETRY_LOAD5" -v c="$HOST_CPUS" 'BEGIN { exit !(l + 0 < c) }' </dev/null && break
+      [ "$retry_waited" -lt "$HOST_LOAD_RETRY_WAIT_MAX_SECS" ] || break
+      sleep "$HOST_LOAD_RETRY_POLL_SECS"
+      retry_waited=$((retry_waited + HOST_LOAD_RETRY_POLL_SECS))
+    done
+    log "token-free retry: re-running after ${retry_waited}s wait (load5=$RETRY_LOAD5, cpus=$HOST_CPUS)"
+    for retry_script in "${RETRY_CANDIDATES[@]}"; do
+      retry_purge_record "$retry_script"
+      run_one_serial "$retry_script"
+    done
+    [ "$FAILED" -eq 0 ] && AGG_RC=0
+  fi
 fi
 
 RUN_FINISHED_ISO=$(now_iso)

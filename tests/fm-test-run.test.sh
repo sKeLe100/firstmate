@@ -16,6 +16,11 @@ RUNNER="$ROOT/bin/fm-test-run.sh"
 assert_present "$RUNNER" "bin/fm-test-run.sh is missing"
 [ -x "$RUNNER" ] || fail "bin/fm-test-run.sh must be executable"
 
+# Pin the automatic scheduler's host-load input so every test below is
+# deterministic regardless of the actual machine's contention; tests that
+# specifically exercise load-aware behavior override this per invocation.
+export FM_TEST_RUN_LOAD5_OVERRIDE=0
+
 test_list_all_exact_suite_coverage() {
   local listed expected missing extra f
   listed=$("$RUNNER" --list --all | LC_ALL=C sort)
@@ -1623,6 +1628,232 @@ SH
   pass "--fail-fast stops the --jobs scheduler after the first failure"
 }
 
+# P2 (data/ci-pipeline-review-scout/report.md): the automatic --changed/scripts
+# scheduler throttles concurrency for host contention and reports its inputs.
+test_host_load_marker_and_scheduler_throttle() {
+  local tmp repo script
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-host-load.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  for script in fm-backend-herdr-smoke.test.sh fm-daemon.test.sh fm-pi-watch-extension.test.sh; do
+    cat >"$repo/tests/$script" <<'SH'
+#!/usr/bin/env bash
+echo "ok - host load fixture"
+SH
+    chmod +x "$repo/tests/$script"
+  done
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm fixtures
+  printf '\n' >>"$repo/bin/shared-probe-lib.sh"
+
+  (cd "$repo" && FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=0.5 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/idle.out" 2>"$tmp/idle.err" \
+    || { cat "$tmp/idle.err"; rm -rf "$tmp"; fail "idle host-load fixture run failed"; }
+  grep -Fq 'FM_TEST_HOST_LOAD load5=0.5 cpus=4 jobs=4 per_script_timeout_secs=' "$tmp/idle.out" \
+    || { cat "$tmp/idle.out"; rm -rf "$tmp"; fail "idle host did not report the full jobs=4 baseline"; }
+
+  (cd "$repo" && FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=5 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/mild.out" 2>"$tmp/mild.err" \
+    || { cat "$tmp/mild.err"; rm -rf "$tmp"; fail "mild-load fixture run failed"; }
+  grep -Fq 'FM_TEST_HOST_LOAD load5=5 cpus=4 jobs=2 per_script_timeout_secs=' "$tmp/mild.out" \
+    || { cat "$tmp/mild.out"; rm -rf "$tmp"; fail "load5 > cpus did not throttle to 2 workers"; }
+
+  (cd "$repo" && FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=9 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/heavy.out" 2>"$tmp/heavy.err" \
+    || { cat "$tmp/heavy.err"; rm -rf "$tmp"; fail "heavy-load fixture run failed"; }
+  grep -Fq 'FM_TEST_HOST_LOAD load5=9 cpus=4 jobs=1 per_script_timeout_secs=' "$tmp/heavy.out" \
+    || { cat "$tmp/heavy.out"; rm -rf "$tmp"; fail "load5 > 2x cpus did not throttle to 1 worker"; }
+
+  # An explicit --jobs names its own concurrency and is never throttled or
+  # reported by the automatic host-load marker.
+  (cd "$repo" && FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=9 \
+    bin/fm-test-run.sh --changed --base HEAD --jobs 1) >"$tmp/explicit.out" 2>"$tmp/explicit.err" \
+    || { cat "$tmp/explicit.err"; rm -rf "$tmp"; fail "explicit --jobs 1 fixture run failed"; }
+  grep -Fq 'FM_TEST_HOST_LOAD' "$tmp/explicit.out" \
+    && { cat "$tmp/explicit.out"; rm -rf "$tmp"; fail "explicit --jobs must skip the host-load marker entirely"; }
+
+  rm -rf "$tmp"
+  pass "FM_TEST_HOST_LOAD reports load/cpus/jobs and throttles automatic concurrency, never an explicit --jobs"
+}
+
+# P2 item 2: CHANGED_DEFAULT_TIMEOUT_SECS scales by max(1, load5/cpus).
+test_changed_default_timeout_scales_with_host_load() {
+  local tmp repo
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-timeout-scale.XXXXXX")
+  repo="$tmp/timeout-repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
+fm_run_timed() {
+  printf '%s\n' "$1" >"$FM_TIMEOUT_SEEN_FILE"
+  shift
+  "$@"
+}
+SH
+  cat >"$repo/tests/fm-timeout-scale.test.sh" <<'SH'
+#!/usr/bin/env bash
+echo "ok - timeout scale fixture"
+SH
+  chmod +x "$repo/tests/fm-timeout-scale.test.sh"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+  printf '\n' >>"$repo/tests/fm-timeout-scale.test.sh"
+
+  (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-idle" \
+    FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=0 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/idle.out" 2>"$tmp/idle.err" \
+    || { cat "$tmp/idle.err"; rm -rf "$tmp"; fail "idle timeout-scale fixture run failed"; }
+  [ "$(cat "$tmp/seen-idle")" = 900 ] \
+    || { rm -rf "$tmp"; fail "idle host must keep the 900s base bound, got $(cat "$tmp/seen-idle")"; }
+  grep -Fq 'per_script_timeout_secs=900' "$tmp/idle.out" \
+    || { cat "$tmp/idle.out"; rm -rf "$tmp"; fail "idle host-load marker did not report the base bound"; }
+
+  (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-loaded" \
+    FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=8 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/loaded.out" 2>"$tmp/loaded.err" \
+    || { cat "$tmp/loaded.err"; rm -rf "$tmp"; fail "loaded timeout-scale fixture run failed"; }
+  [ "$(cat "$tmp/seen-loaded")" = 1800 ] \
+    || { rm -rf "$tmp"; fail "load5=2x cpus must double the bound, got $(cat "$tmp/seen-loaded")"; }
+  grep -Fq 'per_script_timeout_secs=1800' "$tmp/loaded.out" \
+    || { cat "$tmp/loaded.out"; rm -rf "$tmp"; fail "loaded host-load marker did not report the scaled bound"; }
+
+  rm -rf "$tmp"
+  pass "the --changed default per-script timeout scales by max(1, load5/cpus)"
+}
+
+# P2 item 3: the token-free retry re-runs exactly the load-plausible failures
+# once, serially, and clears a run whose only failures come from host
+# contention rather than a real regression.
+test_token_free_retry_recovers_load_sensitive_failure() {
+  local tmp repo flag
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-retry-recover.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+  flag="$tmp/attempt"
+  cat >"$repo/tests/fm-watch-triage.test.sh" <<SH
+#!/usr/bin/env bash
+n=\$(cat "$flag" 2>/dev/null || echo 0)
+n=\$((n + 1))
+echo "\$n" >"$flag"
+if [ "\$n" -lt 2 ]; then
+  echo "not ok - simulated load flake attempt \$n"
+  exit 1
+fi
+echo "ok - passed on retry attempt \$n"
+SH
+  chmod +x "$repo/tests/fm-watch-triage.test.sh"
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+
+  (cd "$repo" && FM_TEST_RUN_LOAD_RETRY_WAIT_MAX_SECS=5 FM_TEST_RUN_LOAD_RETRY_POLL_SECS=1 \
+    bin/fm-test-run.sh --changed --base HEAD~1) >"$tmp/out" 2>"$tmp/err" \
+    || { cat "$tmp/out" "$tmp/err"; rm -rf "$tmp"; fail "token-free retry should recover and exit 0"; }
+  grep -Fq 'token-free retry:' "$tmp/err" \
+    || { cat "$tmp/err"; rm -rf "$tmp"; fail "retry did not log its wait/re-run"; }
+  grep -Fq 'FM_TEST_SUMMARY total=1 failed=0' "$tmp/out" \
+    || { cat "$tmp/out"; rm -rf "$tmp"; fail "recovered retry must report a clean summary"; }
+  [ "$(grep -c '^FM_TEST_BEGIN' "$tmp/out")" -eq 2 ] \
+    || { cat "$tmp/out"; rm -rf "$tmp"; fail "retry must show two begin markers (original + one retry)"; }
+
+  rm -rf "$tmp"
+  pass "token-free retry re-runs a load-sensitive failure once and clears it without a real regression"
+}
+
+# The retry also admits a plain exit=124 timeout regardless of script name,
+# since a hang under host contention is the other half of the declared class.
+test_token_free_retry_covers_exit_124_regardless_of_name() {
+  local tmp repo flag
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-retry-124.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+  flag="$tmp/attempt"
+  cat >"$repo/tests/fm-unrelated-name.test.sh" <<SH
+#!/usr/bin/env bash
+n=\$(cat "$flag" 2>/dev/null || echo 0)
+n=\$((n + 1))
+echo "\$n" >"$flag"
+if [ "\$n" -lt 2 ]; then
+  sleep 3
+fi
+echo "ok - fast on attempt \$n"
+SH
+  chmod +x "$repo/tests/fm-unrelated-name.test.sh"
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+
+  (cd "$repo" && FM_TEST_RUN_LOAD_RETRY_WAIT_MAX_SECS=5 FM_TEST_RUN_LOAD_RETRY_POLL_SECS=1 \
+    bin/fm-test-run.sh --changed --base HEAD~1 --per-script-timeout-secs 1) >"$tmp/out" 2>"$tmp/err" \
+    || { cat "$tmp/out" "$tmp/err"; rm -rf "$tmp"; fail "an exit=124 timeout must still qualify for the token-free retry"; }
+  grep -Eq '^FM_TEST_END .+ exit=124 ' "$tmp/out" \
+    || { cat "$tmp/out"; rm -rf "$tmp"; fail "expected the first attempt to time out"; }
+  grep -Fq 'token-free retry:' "$tmp/err" \
+    || { cat "$tmp/err"; rm -rf "$tmp"; fail "exit=124 did not trigger the token-free retry"; }
+  grep -Fq 'FM_TEST_SUMMARY total=1 failed=0' "$tmp/out" \
+    || { cat "$tmp/out"; rm -rf "$tmp"; fail "recovered exit=124 retry must report a clean summary"; }
+
+  rm -rf "$tmp"
+  pass "the token-free retry admits exit=124 regardless of the load-sensitive name list"
+}
+
+# The retry must never mask a genuine regression: any failure outside the
+# exit=124/load-sensitive class disqualifies the whole run from retrying.
+test_token_free_retry_skips_when_a_failure_is_not_load_plausible() {
+  local tmp repo rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-retry-skip.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+
+  cat >"$repo/tests/fm-watch-triage.test.sh" <<'SH'
+#!/usr/bin/env bash
+echo "not ok - simulated load flake, never recovers in this test"
+exit 1
+SH
+  cat >"$repo/tests/fm-genuine-bug.test.sh" <<'SH'
+#!/usr/bin/env bash
+echo "not ok - a real regression"
+exit 1
+SH
+  chmod +x "$repo/tests/fm-watch-triage.test.sh" "$repo/tests/fm-genuine-bug.test.sh"
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+
+  set +e
+  (cd "$repo" && FM_TEST_RUN_LOAD_RETRY_WAIT_MAX_SECS=5 FM_TEST_RUN_LOAD_RETRY_POLL_SECS=1 \
+    bin/fm-test-run.sh --changed --base HEAD~1) >"$tmp/out" 2>"$tmp/err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] \
+    || { cat "$tmp/out" "$tmp/err"; rm -rf "$tmp"; fail "a run with a non-load-plausible failure must still fail, got $rc"; }
+  grep -Fq 'token-free retry:' "$tmp/err" \
+    && { cat "$tmp/err"; rm -rf "$tmp"; fail "a genuine failure alongside a load-sensitive one must never retry"; }
+  [ "$(grep -c '^FM_TEST_BEGIN' "$tmp/out")" -eq 2 ] \
+    || { cat "$tmp/out"; rm -rf "$tmp"; fail "no retry means exactly one begin marker per selected script"; }
+
+  rm -rf "$tmp"
+  pass "token-free retry never fires when any failure is outside the load-sensitive/timeout class"
+}
+
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
@@ -1655,3 +1886,8 @@ test_aggregate_json
 test_fail_fast_stops_after_first_failure
 test_fail_fast_jobs_stops_scheduling
 test_fail_fast_skips_the_unproven_serial_tail
+test_host_load_marker_and_scheduler_throttle
+test_changed_default_timeout_scales_with_host_load
+test_token_free_retry_recovers_load_sensitive_failure
+test_token_free_retry_covers_exit_124_regardless_of_name
+test_token_free_retry_skips_when_a_failure_is_not_load_plausible
