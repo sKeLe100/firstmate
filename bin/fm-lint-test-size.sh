@@ -28,7 +28,7 @@ SELF="$SELF_DIR/fm-lint-test-size.sh"
 ROOT="$(cd "$SELF_DIR/.." && pwd)"
 
 fm_lint_test_size_usage() {
-  sed -n '2,17{s/^# \{0,1\}//;p;}' "$SELF"
+  sed -n '2,20{s/^# \{0,1\}//;p;}' "$SELF"
 }
 
 EXPLICIT_ROOT=

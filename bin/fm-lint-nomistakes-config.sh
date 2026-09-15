@@ -28,7 +28,7 @@ SELF="$SELF_DIR/fm-lint-nomistakes-config.sh"
 ROOT="$(cd "$SELF_DIR/.." && pwd)"
 
 fm_lint_nomistakes_config_usage() {
-  sed -n '2,18{s/^# \{0,1\}//;p;}' "$SELF"
+  sed -n '2,23{s/^# \{0,1\}//;p;}' "$SELF"
 }
 
 EXPLICIT_ROOT=
