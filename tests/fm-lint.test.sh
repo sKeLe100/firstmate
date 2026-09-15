@@ -489,6 +489,44 @@ test_list_files_respects_changed_mode() {
   pass "fm-lint.sh --list-files reports the would-be changed set in changed mode"
 }
 
+test_nomistakes_test_command_guard_rejects_a_divergent_command() {
+  local tmp fakebin diff_file nm_yaml out rc
+  tmp=$(fm_test_tmproot fm-lint-nm-yaml-guard)
+  fakebin=$(fm_fakebin "$tmp")
+  fm_lint_stub_git "$fakebin"
+  diff_file="$tmp/diff.nul"
+  : > "$diff_file"
+  nm_yaml="$tmp/.no-mistakes.yaml"
+
+  cat > "$nm_yaml" <<'YAML'
+commands:
+  test: 'bin/fm-test-run.sh bin/fm-nomistakes-poll-lib.sh'
+YAML
+  rc=0
+  out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
+    FM_TEST_GIT_DIFF_FILE="$diff_file" FM_LINT_NM_YAML="$nm_yaml" "$LINT" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "guard accepted a .no-mistakes.yaml commands.test that diverged from canonical"$'\n'"$out"
+  assert_contains "$out" "commands.test must be the canonical invocation" \
+    "guard did not explain the divergent commands.test"
+
+  cat > "$nm_yaml" <<'YAML'
+commands:
+  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated'
+YAML
+  out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
+    FM_TEST_GIT_DIFF_FILE="$diff_file" FM_LINT_NM_YAML="$nm_yaml" "$LINT" 2>&1) \
+    || fail "guard rejected the canonical commands.test invocation"$'\n'"$out"
+
+  cat > "$nm_yaml" <<'YAML'
+commands:
+  test: "bin/fm-test-run.sh --changed --exclude-family real-herdr-gated"
+YAML
+  out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
+    FM_TEST_GIT_DIFF_FILE="$diff_file" FM_LINT_NM_YAML="$nm_yaml" "$LINT" 2>&1) \
+    || fail "guard rejected the canonical commands.test invocation written with double quotes"$'\n'"$out"
+  pass "fm-lint.sh guards .no-mistakes.yaml commands.test against a divergent invocation"
+}
+
 fm_lint_assert_flag_log() {
   local flag_log=$1 expected_follow=$2 expected_exclude=$3
   [ -s "$flag_log" ] || fail "ShellCheck was not invoked; flag log is empty"
@@ -1314,6 +1352,7 @@ test_ci_forces_full_lint_even_with_empty_diff
 test_main_branch_forces_full_lint
 test_explicit_path_bypasses_changed_logic
 test_zero_changed_files_exits_clean
+test_nomistakes_test_command_guard_rejects_a_divergent_command
 test_list_files_respects_changed_mode
 test_changed_mode_drops_external_sources_and_excludes_cross_file_codes
 test_changed_mode_invokes_shellcheck_once_per_root
