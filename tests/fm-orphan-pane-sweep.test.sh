@@ -29,6 +29,7 @@ mkdir -p "$LIVE_DIR"
 MISSING_DIR="$TMP_ROOT/deleted-cwd"
 rm -rf "$MISSING_DIR"
 
+# shellcheck disable=SC2329 # Called indirectly by fm-orphan-pane-sweep.sh via run_sweep.
 fm_backend_name() { printf herdr; }
 fm_backend_herdr_session() { printf '%s' "$SESSION"; }
 fm_backend_herdr_workspace_label() { printf 'firstmate'; }
@@ -47,6 +48,7 @@ ps() {
 WORKSPACES_FILE="$TMP_ROOT/workspaces.json"
 PANES_FILE="$TMP_ROOT/panes.json"
 
+# shellcheck disable=SC2329 # Called indirectly by fm-orphan-pane-sweep.sh via run_sweep.
 fm_backend_herdr_cli() {
   local _session=$1 first=${2:-} second=${3:-}
   shift
@@ -164,6 +166,7 @@ pass "a pane whose idle-shell proof fails is left alone rather than guessed at"
 
 reset_fixture
 printf '%s\n' "{\"result\":{\"panes\":[{\"pane_id\":\"w1:p1\",\"cwd\":\"$MISSING_DIR\",\"foreground_cwd\":\"$MISSING_DIR\"}]}}" > "$PANES_FILE"
+# shellcheck disable=SC2329 # Called indirectly by fm-orphan-pane-sweep.sh via run_sweep.
 fm_orphan_sweep_treehouse_slot() { printf '7\tavailable'; }
 out=$(run_sweep)
 case "$out" in
@@ -185,7 +188,9 @@ reset_fixture
 printf '%s\n' "{\"result\":{\"panes\":[{\"pane_id\":\"w1:p1\",\"cwd\":\"$MISSING_DIR\",\"foreground_cwd\":\"$MISSING_DIR\"}]}}" > "$PANES_FILE"
 CLI_CALL_LOG="$TMP_ROOT/cli-calls.log"
 : > "$CLI_CALL_LOG"
+# shellcheck disable=SC2329 # Called indirectly by fm-orphan-pane-sweep.sh via run_sweep.
 fm_backend_name() { printf tmux; }
+# shellcheck disable=SC2329 # Called indirectly by fm-orphan-pane-sweep.sh via run_sweep.
 fm_backend_herdr_cli() {
   printf '%s\n' "$*" >> "$CLI_CALL_LOG"
   return 1
