@@ -3,12 +3,23 @@
 # Shrink this list as each file's split lands; do not add new entries -
 # a new oversized file must be split, not grandfathered in.
 # See data/ci-pipeline-review-scout/report.md P5/P6.
+# The six fm-backlog-atomicity/fm-bearings-snapshot/fm-captain-hold-lifecycle/
+# fm-pr-merge/fm-procevent/fm-secondmate-safety entries predate this guard on
+# the fork's upstream-sync branch: they merged in from upstream before #121
+# added the guard, so grandfathering them here is that same one-time landing
+# exemption, not a new oversized file created after the guard existed.
 fm-backend-herdr.test.sh
+fm-backlog-atomicity.test.sh
+fm-bearings-snapshot.test.sh
 fm-calm-pi-extension.test.sh
+fm-captain-hold-lifecycle.test.sh
 fm-daemon.test.sh
 fm-pi-branch-extension.test.sh
 fm-pi-watch-extension.test.sh
+fm-pr-merge.test.sh
+fm-procevent.test.sh
 fm-public-followup.test.sh
+fm-secondmate-safety.test.sh
 fm-voice-relay.test.sh
 fm-watch-triage.test.sh
 fm-x-mode.test.sh
