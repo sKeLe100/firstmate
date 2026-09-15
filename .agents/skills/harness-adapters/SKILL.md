@@ -54,7 +54,7 @@ A new adapter's verified marker and command name must land in `../../../bin/fm-h
 Every emitted plan appends the selected or recorded harness reference after the named common references.
 The `harness-adapter-routing-v1` object is the machine-readable and human-visible selection contract: choose the operation, choose the scenario within it, then append the selected harness reference.
 `default` is the normal scenario when no narrower scenario applies.
-Kimi establishes its unsupported primary boundary in its selected harness reference; Muse and Gemini follow Non-negotiable safety above.
+Kimi and AGY establish their unsupported primary boundary in their selected harness reference; Muse and Gemini follow Non-negotiable safety above.
 A new tool remains undispatchable until the `verify` plan, its harness entry, every named owner, and the live checks land.
 
 ```json harness-adapter-routing-v1
