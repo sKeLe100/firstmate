@@ -155,6 +155,30 @@ fm_lint_run_workflows() {
   "$SELF_DIR/fm-lint-workflows.sh"
 }
 
+# .no-mistakes.yaml's commands.test must stay the canonical --changed
+# invocation. A per-branch workaround (a fixed script list swapped in "to
+# make the gate finish faster") landed as this repo's standing test policy
+# once already (see commit history around 32a1c6f8): every no-mistakes run
+# after that silently tested only the swapped-in scripts regardless of the
+# actual diff, while GitHub's required check still certified the test step
+# as covering the change. Fail loudly instead of letting that recur quietly.
+FM_LINT_CANONICAL_NM_TEST="bin/fm-test-run.sh --changed --exclude-family real-herdr-gated"
+fm_lint_check_nomistakes_test_command() {
+  [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
+  local nm_yaml="$ROOT/.no-mistakes.yaml"
+  [ -f "$nm_yaml" ] || return 0
+  local test_line
+  test_line=$(awk '/^[[:space:]]*test:[[:space:]]*/ { sub(/^[[:space:]]*test:[[:space:]]*/, ""); print; exit }' "$nm_yaml")
+  test_line=${test_line#\'}
+  test_line=${test_line%\'}
+  if [ "$test_line" != "$FM_LINT_CANONICAL_NM_TEST" ]; then
+    printf 'fm-lint.sh: .no-mistakes.yaml commands.test must be the canonical invocation.\n' >&2
+    printf 'fm-lint.sh: expected: %s\n' "$FM_LINT_CANONICAL_NM_TEST" >&2
+    printf 'fm-lint.sh: found:    %s\n' "$test_line" >&2
+    return 1
+  fi
+}
+
 JOBS=${FM_LINT_JOBS:-2}
 TELEMETRY=${FM_LINT_TELEMETRY:-}
 FAST=0
@@ -323,6 +347,7 @@ if [ "$CHANGED_MODE" -eq 1 ] && [ "$ROOT_COUNT" -eq 0 ]; then
   printf 'fm-lint.sh: no changed lint targets\n'
   overall_rc=0
   fm_lint_run_workflows || overall_rc=$?
+  fm_lint_check_nomistakes_test_command || overall_rc=$?
   exit "$overall_rc"
 fi
 
@@ -636,8 +661,10 @@ fi
 
 if [ "$overall_rc" -eq 0 ]; then
   fm_lint_run_workflows || overall_rc=$?
+  fm_lint_check_nomistakes_test_command || overall_rc=$?
 else
   fm_lint_run_workflows || true
+  fm_lint_check_nomistakes_test_command || true
 fi
 
 exit "$overall_rc"
