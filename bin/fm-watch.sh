@@ -2588,7 +2588,46 @@ EOF
     if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")"; then
       continue
     fi
-    tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
+    backend=$(window_backend "$w")
+    tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null)
+    if [ -z "$tail40" ] && [ "$backend" = herdr ]; then
+      # Pane capture failed for herdr. Try to recover from pane_not_found by
+      # resolving the current pane ID from workspace/tab IDs in the meta file.
+      fm_backend_source herdr
+      meta="$STATE/$task.meta"
+      if [ -f "$meta" ]; then
+        wsid=$(fm_meta_get "$meta" herdr_workspace_id) || wsid=
+        tab_id=$(fm_meta_get "$meta" herdr_tab_id) || tab_id=
+        session=$(fm_meta_get "$meta" herdr_session) || session=
+        if [ -n "$wsid" ] && [ -n "$tab_id" ] && [ -n "$session" ]; then
+          new_pane=$(fm_backend_herdr_resolve_pane_not_found "$session" "$wsid" "$tab_id" 2>/dev/null) || new_pane=
+          if [ -n "$new_pane" ]; then
+            # Successfully resolved the pane ID. Update the meta file and retry.
+            meta_lock=$(fm_meta_lock_path "$meta") || meta_lock=
+            [ -z "$meta_lock" ] || fm_lock_acquire_wait "$meta_lock"
+            if sed -i.bak "s/^herdr_pane_id=.*/herdr_pane_id=$new_pane/" "$meta" 2>/dev/null; then
+              rm -f "$meta.bak"
+              # Reconstruct the window target with the new pane ID and retry capture
+              new_w="$session:$new_pane"
+              tail40=$(fm_backend_capture "$backend" "$new_w" 40 "$(window_label "$w")" 2>/dev/null) || true
+              # If this retry succeeded, also update the cached window so later
+              # in this poll and subsequent polls use the new pane ID
+              if [ -n "$tail40" ]; then
+                sed -i.bak "s/^window=.*/window=$new_w/" "$meta" 2>/dev/null && rm -f "$meta.bak"
+                w="$new_w"
+              fi
+            else
+              # Restore from backup if sed failed
+              [ ! -f "$meta.bak" ] || mv "$meta.bak" "$meta"
+            fi
+            [ -z "$meta_lock" ] || fm_lock_release "$meta_lock"
+          fi
+        fi
+      fi
+    fi
+    if [ -z "$tail40" ]; then
+      continue
+    fi
     first_seen=1
     wedge_seed_first_observation "$key" "$task" && first_seen=0
     h=$(printf '%s' "$tail40" | hash_pane)

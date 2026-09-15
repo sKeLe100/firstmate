@@ -3126,6 +3126,17 @@ fm_backend_herdr_pane_for_tab() {  # <session> <workspace_id> <tab_id>
     '.result.panes[]? | select(.tab_id == $tab) | .pane_id' 2>/dev/null | head -1
 }
 
+# fm_backend_herdr_resolve_pane_not_found: attempt to recover from a pane_not_found
+# error by resolving the current pane ID from the workspace and tab IDs. If
+# successful, prints the new pane ID; otherwise returns 1 with no output.
+# <session> is the herdr session name; <workspace_id> and <tab_id> are from the
+# task's meta file. This is called when a pane read fails with pane_not_found.
+fm_backend_herdr_resolve_pane_not_found() {  # <session> <workspace_id> <tab_id>
+  local session=$1 wsid=$2 tab_id=$3
+  [ -n "$session" ] && [ -n "$wsid" ] && [ -n "$tab_id" ] || return 1
+  fm_backend_herdr_pane_for_tab "$session" "$wsid" "$tab_id"
+}
+
 # fm_backend_herdr_resolve_bare_selector: the live-tab-listing fallback for an
 # ad hoc selector with no meta (mirrors tmux's list-windows grep). Searches
 # every RUNNING named herdr session (herdr session list) for a tab whose label
