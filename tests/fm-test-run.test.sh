@@ -1468,6 +1468,144 @@ SH
   pass "--per-script-timeout-secs turns a hung script into a bounded failure"
 }
 
+# A ci.yml literal that a hint-table refresh can forget is exactly how the
+# 600s per-script bound lost its margin against fm-watch-triage (2026-09-14
+# red main). A portable-serial lane must derive its own hang tripwire from the
+# hint table instead, at PORTABLE_SERIAL_TIMEOUT_MULTIPLIER times the slowest
+# hint, and an explicit --per-script-timeout-secs must still override it.
+test_portable_serial_lane_derives_per_script_timeout_from_hints() {
+  local tmp repo runner hang rc began ended
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-lane-timeout.XXXXXX")
+  repo="$tmp/repo"
+  runner="$repo/bin/fm-test-run.sh"
+  hang=tests/fm-hang-fixture.test.sh
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$runner"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$runner"
+  cat >"$repo/$hang" <<'SH'
+#!/usr/bin/env bash
+sleep 3
+echo "ok - fixture slept 3s"
+SH
+  chmod +x "$repo/$hang"
+
+  # Replace the embedded hint table with one small, controlled entry so the
+  # derived bound is fast to observe: this isolated copy's own portable-serial
+  # lane contains only the fixture above, so a real repo's much larger hints
+  # never leak into the arithmetic under test.
+  python3 - "$runner" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+marker = "portable_serial_weight_hints() {\n  cat <<'EOF'\n"
+start = text.index(marker) + len(marker)
+end = text.index("\nEOF\n", start)
+text = text[:start] + "tests/fm-hang-fixture.test.sh 200" + text[end:]
+open(path, "w", encoding="utf-8").write(text)
+PY
+  grep -Fq 'tests/fm-hang-fixture.test.sh 200' "$runner" \
+    || fail "hint-table fixture splice did not land: $(cat "$runner")"
+
+  # No --per-script-timeout-secs: the lane must derive 2 * 200ms = 400ms,
+  # rounded up to 1s, and kill the 3s sleep well before it would finish.
+  began=$(date +%s)
+  set +e
+  (cd "$repo" && bin/fm-test-run.sh --lane portable-serial) >"$tmp/auto.out" 2>"$tmp/auto.err"
+  rc=$?
+  set -e
+  ended=$(date +%s)
+  [ "$rc" -ne 0 ] || fail "the derived bound did not fail the hung script: $(cat "$tmp/auto.out")"
+  [ "$((ended - began))" -lt 3 ] \
+    || fail "the derived 1s bound did not stop the 3s hang in time (took $((ended - began))s)"
+  grep -Fq 'exceeded the per-script bound' "$tmp/auto.out" \
+    || fail "the auto-derived timeout did not report a bound failure: $(cat "$tmp/auto.out")"
+
+  # An explicit --per-script-timeout-secs overrides the derived default: the
+  # same 3s hang must now complete rather than being killed at ~1s.
+  set +e
+  (cd "$repo" && bin/fm-test-run.sh --lane portable-serial --per-script-timeout-secs 15) \
+    >"$tmp/override.out" 2>"$tmp/override.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] \
+    || fail "an explicit --per-script-timeout-secs did not override the lane default: $(cat "$tmp/override.out") $(cat "$tmp/override.err")"
+  grep -Fq 'FM_TEST_SUMMARY total=1 failed=0' "$tmp/override.out" \
+    || fail "the overridden run did not complete the fixture: $(cat "$tmp/override.out")"
+
+  rm -rf "$tmp"
+  pass "a portable-serial lane derives its per-script timeout from the hint table, and an explicit flag still overrides it"
+}
+
+# --check-coverage only proves the shard partition is complete and disjoint;
+# it does not prove a present hint is still an honest number. --check-hint-drift
+# is the guard that catches a hint gone stale against what a green run actually
+# measured (the fm-watch-triage/fm-teardown drift that produced the 2026-09-14
+# red main), but only once the same script drifts on two consecutive runs -
+# a lone noisy run only warns, so shared-runner noise on one run can't turn
+# into a false red by itself.
+test_check_hint_drift_flags_stale_hint() {
+  local tmp script hint clean_json drift_json drift2_json history rc out
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-hintdrift.XXXXXX")
+  script=tests/fm-gitignore-config.test.sh
+  hint=$(sed -n "s#^${script} \\([0-9][0-9]*\\)\$#\\1#p" "$RUNNER")
+  [ -n "$hint" ] || fail "could not read the current hint for $script from $RUNNER"
+  history="$tmp/history.json"
+
+  # Exactly at the hint: no drift.
+  clean_json="$tmp/clean.json"
+  cat >"$clean_json" <<JSON
+{"scripts": [{"path": "$script", "duration_ms": $hint}]}
+JSON
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$clean_json") \
+    || fail "a measured duration at the hint must not be flagged as drift: $out"
+  assert_contains "$out" "FM_TEST_HINT_DRIFT ok" "clean run must report ok"
+  assert_contains "$out" "confirmed=0" "clean run must report zero confirmed drift"
+
+  # A measured duration reported by two lane runs: the check takes the
+  # slowest of the two, mirroring the "slowest of several green runs" honesty
+  # rule the hint table itself is built on. This is the first run to see this
+  # drift, so it must only warn, not refuse.
+  drift_json="$tmp/drift1.json"
+  cat >"$drift_json" <<JSON
+{"scripts": [{"path": "$script", "duration_ms": $((hint + 1))}]}
+JSON
+  drift2_json="$tmp/drift2.json"
+  cat >"$drift2_json" <<JSON
+{"scripts": [{"path": "$script", "duration_ms": $((hint * 3))}]}
+JSON
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$drift_json" "$drift2_json" 2>&1) \
+    || fail "a single-run drift spike must not refuse the check: $out"
+  assert_contains "$out" "$script" "the warning must name the drifting script"
+  assert_contains "$out" "measured=$((hint * 3))ms" "the warning must show the slowest measured duration across inputs"
+  assert_contains "$out" "confirmed=0" "a first-time drift must not be confirmed"
+
+  # Same script drifts again on the next run (history now records the first
+  # drift): this is the second consecutive occurrence, so it must refuse.
+  set +e
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$drift2_json" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a script that drifts on two consecutive runs must refuse: $out"
+  assert_contains "$out" "$script" "the drift report must name the stale script"
+  assert_contains "$out" "hint=${hint}ms" "the drift report must show the recorded hint"
+  assert_contains "$out" "measured=$((hint * 3))ms" "the drift report must show the slowest measured duration across inputs"
+  assert_contains "$out" "two consecutive runs" "the drift report must explain why this run refuses"
+
+  # A clean run afterward resets the history, so a one-off spike followed by
+  # recovery never haunts a later run.
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$clean_json") \
+    || fail "a clean run after a refused one must pass: $out"
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$drift_json" "$drift2_json" 2>&1) \
+    || fail "drift right after a clean run must only warn again, not refuse: $out"
+
+  rm -rf "$tmp"
+  pass "--check-hint-drift only refuses a hint that drifts on two consecutive runs, and warns on a single-run spike"
+}
+
 # The duration regression this guard exists for: a suite whose scripts are all
 # green but whose wall clock outgrew its caller's invocation budget. The caller
 # gets killed mid-run and retries invisibly, so an over-budget run has to be a
@@ -2260,10 +2398,12 @@ test_unmapped_new_test_never_inherits_family_concurrency
 test_changed_shared_fixture_selects_its_readers
 test_concurrent_runs_are_ordered_longest_first
 test_per_script_timeout_bounds_a_hang
+test_portable_serial_lane_derives_per_script_timeout_from_hints
 test_max_wall_ms_is_a_result_not_advice
 test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
+test_check_hint_drift_flags_stale_hint
 test_fail_fast_stops_after_first_failure
 test_fail_fast_jobs_stops_scheduling
 test_fail_fast_skips_the_unproven_serial_tail
