@@ -346,7 +346,7 @@ fm_backlog_done() {  # <data-dir> <id> [flag...]
   fm_backlog_mutate "$data" "done" "$id" "$@"
   rc=$?
   if [ "$rc" -eq 0 ]; then
-    fm_backlog_ledger_append done "$data" "$id"
+    fm_backlog_ledger_append "done" "$data" "$id"
   fi
   return "$rc"
 }

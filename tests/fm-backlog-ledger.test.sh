@@ -82,7 +82,7 @@ pass "fm_backlog_ledger_append_kind_repo writes correct TSV format"
 # --- test: multiple appends accumulate --------------------------------------
 
 fm_backlog_ledger_append_kind_repo started "$DATA" "test-task-1" "ship" "firstmate"
-fm_backlog_ledger_append_kind_repo done "$DATA" "test-task-1" "ship" "firstmate"
+fm_backlog_ledger_append_kind_repo "done" "$DATA" "test-task-1" "ship" "firstmate"
 fm_backlog_ledger_append_kind_repo added "$DATA" "test-task-2" "scout" "other-repo"
 
 lines=$(wc -l < "$FM_BACKLOG_LEDGER_FILE" | tr -d ' ')
@@ -99,7 +99,7 @@ FM_BACKLOG_LEDGER_FILE="$DATA/backlog-ledger.tsv"
 # Simulate a full lifecycle: added → started → done → closed
 fm_backlog_ledger_append_kind_repo added "$DATA" "cycle-task" "ship" "firstmate"
 fm_backlog_ledger_append_kind_repo started "$DATA" "cycle-task" "ship" "firstmate"
-fm_backlog_ledger_append_kind_repo done "$DATA" "cycle-task" "ship" "firstmate"
+fm_backlog_ledger_append_kind_repo "done" "$DATA" "cycle-task" "ship" "firstmate"
 fm_backlog_ledger_append_kind_repo closed "$DATA" "cycle-task" "ship" "firstmate"
 
 # Verify all four events are present
@@ -135,7 +135,7 @@ fm_backlog_ledger_append_kind_repo added "$DATA" "task-b" "scout" "other-repo"
 fm_backlog_ledger_append_kind_repo added "$DATA" "task-c" "captain" "pc02"
 fm_backlog_ledger_append_kind_repo started "$DATA" "task-a" "ship" "firstmate"
 fm_backlog_ledger_append_kind_repo started "$DATA" "task-b" "scout" "other-repo"
-fm_backlog_ledger_append_kind_repo done "$DATA" "task-a" "ship" "firstmate"
+fm_backlog_ledger_append_kind_repo "done" "$DATA" "task-a" "ship" "firstmate"
 
 # Verify per-task counts
 added_a=$(awk -F'\t' '$3 == "task-a" && $2 == "added"' "$FM_BACKLOG_LEDGER_FILE" | wc -l | tr -d ' ')
