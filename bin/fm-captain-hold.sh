@@ -945,6 +945,7 @@ close_answered() {  # <task-id> <release-0-or-1>
     mark_clear "$1" held-since
   else
     tasks_axi "done" "$1" >/dev/null || return
+    fm_backlog_ledger_append done "$DATA" "$1"
     mark_clear "$1"
   fi
 }
