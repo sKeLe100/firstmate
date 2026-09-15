@@ -50,6 +50,19 @@ confirm_posture() {  # <home>
     && FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" "$CONTRACT" confirm >/dev/null 2>&1
 }
 
+# This fork's native entry refuses before arming unless the primary pane can be
+# verified in tmux or herdr (unit_native_refuses_*), so a unit that expects a
+# native entry to SUCCEED needs a real captain pane: this opens a detached tmux
+# session tracked for GLOBAL_CLEANUP and prints its pane id, or fails.
+native_captain_pane() {  # <label> -> pane id on stdout
+  local s
+  command -v tmux >/dev/null 2>&1 || return 1
+  s="fm-test-native-$1-$$"
+  tmux new-session -d -s "$s" 2>/dev/null || return 1
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $s"
+  tmux display-message -p -t "$s" '#{pane_id}'
+}
+
 # ---------------------------------------------------------------------------
 # UNIT 0: the away-posture record is the entry. `propose` reads the mandate
 # back, `confirm` records it and announces hold-for-return; on Pi the entry
@@ -117,7 +130,7 @@ unit_pi_never_launches_the_daemon() {
 }
 
 unit_daemon_entry_requires_confirmation() {
-  local st out rc
+  local st out rc cap_pane
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-entry-record.XXXXXX")
   mkdir -p "$st/state"
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" propose --action merge --object 'task a PR' --when 'checks green' >/dev/null 2>&1
@@ -130,7 +143,9 @@ unit_daemon_entry_requires_confirmation() {
     fail "daemon entry: pending proposal was promoted or refusal was unclear (rc=$rc): $out"
   fi
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" confirm >/dev/null 2>&1
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native >/dev/null 2>&1 \
+  cap_pane=$(native_captain_pane entry-record) || { echo "skip: tmux not found (daemon entry)"; rm -rf "$st"; return 0; }
+  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux \
+    "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ -e "$st/state/.afk" ]; then
     pass "daemon entry: an explicitly confirmed record permits lifecycle preparation"
   else
@@ -156,11 +171,13 @@ unit_failed_daemon_launch_preserves_confirmed_record() {
 }
 
 unit_stop_archives_the_record_last() {
-  local st epoch
+  local st epoch cap_pane
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-stop-archive.XXXXXX")
   mkdir -p "$st/state"
   confirm_posture "$st" || fail "stop archive: could not confirm fixture posture"
-  FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native >/dev/null 2>&1 || fail "stop archive: native entry failed"
+  cap_pane=$(native_captain_pane stop-archive) || { echo "skip: tmux not found (stop archive)"; rm -rf "$st"; return 0; }
+  FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux \
+    "$LAUNCH" start-native >/dev/null 2>&1 || fail "stop archive: native entry failed"
   epoch=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" field entered_epoch)
   if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1 \
     && [ ! -e "$st/state/.afk" ] && [ ! -e "$st/state/.afk-contract" ] \
@@ -738,6 +755,9 @@ unit_native_refuses_nonexistent_target() {
   local st out rc
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native-noexist.XXXXXX")
   mkdir -p "$st/state"
+  # The confirmed-record gate runs first, so give it a record and prove the
+  # host check still refuses on its own.
+  confirm_posture "$st" || fail "native entry (nonexistent target): could not confirm fixture posture"
   set +e
   out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="%no-such-pane" \
     FM_SUPERVISOR_BACKEND=tmux bash -c '
@@ -759,6 +779,9 @@ unit_native_refuses_unsupported_backend() {
   local st out rc
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native-badbackend.XXXXXX")
   mkdir -p "$st/state"
+  # The confirmed-record gate runs first, so give it a record and prove the
+  # host check still refuses on its own.
+  confirm_posture "$st" || fail "native entry (unsupported backend): could not confirm fixture posture"
   set +e
   out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="whatever" \
     FM_SUPERVISOR_BACKEND=zellij "$LAUNCH" start-native 2>&1)
@@ -776,6 +799,9 @@ unit_native_refuses_unhosted_primary() {
   local st out rc
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native-unhosted.XXXXXX")
   mkdir -p "$st/state"
+  # The confirmed-record gate runs first, so give it a record and prove the
+  # host check still refuses on its own.
+  confirm_posture "$st" || fail "native entry (unhosted primary): could not confirm fixture posture"
   set +e
   out=$(env -u FM_SUPERVISOR_TARGET -u TMUX_PANE -u HERDR_ENV -u HERDR_PANE_ID \
     FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native 2>&1)
