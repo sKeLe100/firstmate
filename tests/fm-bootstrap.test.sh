@@ -865,6 +865,7 @@ make_routine_bootstrap_fixture() {
     printf '%s\n' 'config/crew-harness'
     printf '%s\n' 'config/crew-dispatch.json'
     printf '%s\n' 'config/startup-memory-budget'
+    printf '%s\n' 'config/upstream-autosync'
   } > "$root/.gitignore"
   printf '%s\n' 'instructions' > "$root/AGENTS.md"
   mkdir -p "$root/bin" "$root/.agents/skills"
@@ -1259,3 +1260,51 @@ test_tasks_axi_verdict_handoff_is_consumed_once
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info
 test_crew_dispatch_validation
 test_crew_dispatch_unevaluable_contract_is_reported
+
+# config/upstream-autosync gives the periodic upstream sync its own schedule:
+# bootstrap arms the drift check shim once (idempotently) and, in the network
+# phase, runs the drift check itself so an idle home with no watcher still
+# checks on the daily cadence. Without the flag, and under detect-only,
+# nothing is written.
+test_upstream_autosync_flag_arms_the_drift_check() {
+  local case_dir home out fixture root fakebin
+  case_dir="$TMP_ROOT/upstream-autosync"
+  fixture=$(make_routine_bootstrap_fixture "$case_dir")
+  root=${fixture%%|*}
+  fixture=${fixture#*|}
+  home=${fixture%%|*}
+  fakebin=${fixture#*|}
+
+  out=$(PATH="$fakebin:$BASE_PATH" FM_BACKEND=tmux FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_NETWORK=skip bash "$ROOT/bin/fm-bootstrap.sh")
+  assert_absent "$home/state/upstream-drift.check.sh" "bootstrap must not arm the drift check without config/upstream-autosync"
+  assert_not_contains "$out" "upstream autosync" "bootstrap must say nothing about upstream autosync without the flag"
+
+  : > "$home/config/upstream-autosync"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_BACKEND=tmux FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_NETWORK=skip bash "$ROOT/bin/fm-bootstrap.sh")
+  assert_absent "$home/state/upstream-drift.check.sh" "detect-only bootstrap must not arm the drift check"
+
+  out=$(PATH="$fakebin:$BASE_PATH" FM_BACKEND=tmux FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_NETWORK=skip bash "$ROOT/bin/fm-bootstrap.sh")
+  assert_present "$home/state/upstream-drift.check.sh" "bootstrap must arm the drift check with the flag present"
+  assert_present "$home/state/upstream-drift.check-trust" "the armed drift check must carry its trust binding"
+  assert_contains "$out" "BOOTSTRAP_INFO: upstream autosync armed state/upstream-drift.check.sh" \
+    "the first arming must print one completed-fact line"
+  grep -q "fm-upstream-behind-check.sh' check\|fm-upstream-behind-check.sh check" "$home/state/upstream-drift.check.sh" \
+    || fail "the armed shim must dispatch the drift check, got: $(cat "$home/state/upstream-drift.check.sh")"
+
+  out=$(PATH="$fakebin:$BASE_PATH" FM_BACKEND=tmux FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_NETWORK=skip bash "$ROOT/bin/fm-bootstrap.sh")
+  assert_not_contains "$out" "upstream autosync" "a re-arm of an already armed home must stay silent"
+
+  # The network half runs the drift check once; with no upstream remote in the
+  # fixture root it degrades quietly and prints nothing, but leaves the
+  # once-daily report stamp so the cadence is honored.
+  out=$(PATH="$fakebin:$BASE_PATH" FM_BACKEND=tmux FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_NETWORK=only bash "$ROOT/bin/fm-bootstrap.sh")
+  assert_not_contains "$out" "upstream drift" "a quiet drift check must print no drift line"
+  assert_present "$home/state/.upstream-behind-check.report" "the network half must run the drift check and leave its report"
+  pass "bootstrap arms the drift check once per home under config/upstream-autosync and polls it in the network phase"
+}
+test_upstream_autosync_flag_arms_the_drift_check
