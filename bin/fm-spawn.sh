@@ -536,28 +536,6 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
-# config/claude-remote-control eligibility preflight (docs/configuration.md
-# "Claude Remote Control"): notice-only, never a refusal, because a worker
-# whose Remote Control registration fails still launches and only loses the
-# app-visibility feature. The probe runs bounded and with stdin detached
-# (same shape as agy_model_validate above) so an unreachable or prompting
-# `claude auth status` can never stall or block a spawn.
-if [ "$CLAUDE_REMOTE_CONTROL" = on ]; then
-  claude_rc_bound=${FM_CLAUDE_RC_AUTH_TIMEOUT:-10}
-  case "$claude_rc_bound" in ''|*[!0-9]*|0*) claude_rc_bound=10 ;; esac
-  if command -v claude >/dev/null 2>&1; then
-    claude_rc_status=$(fm_run_timed "$claude_rc_bound" claude auth status 2>/dev/null < /dev/null) || claude_rc_status=''
-    claude_rc_auth_method=$(printf '%s' "$claude_rc_status" | grep -o 'authMethod=[^[:space:]]*' | cut -d= -f2)
-    if [ "$claude_rc_auth_method" != claude.ai ]; then
-      echo "notice: config/claude-remote-control is on but 'claude auth status' does not report authMethod=claude.ai (got '${claude_rc_auth_method:-none}'); Remote Control registration may fail, launching normally" >&2
-    fi
-  fi
-  for claude_rc_disabling_var in DISABLE_TELEMETRY DO_NOT_TRACK CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC DISABLE_GROWTHBOOK; do
-    if [ -n "${!claude_rc_disabling_var:-}" ]; then
-      echo "notice: config/claude-remote-control is on but \$$claude_rc_disabling_var is set, which disables Remote Control; Remote Control registration may fail, launching normally" >&2
-    fi
-  done
-fi
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -1962,6 +1940,32 @@ case "$ARG3" in
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
+
+# config/claude-remote-control eligibility preflight (docs/configuration.md
+# "Claude Remote Control"): notice-only, never a refusal, because a worker
+# whose Remote Control registration fails still launches and only loses the
+# app-visibility feature. Gated on HARNESS being claude, now that it is
+# resolved, so a codex/cursor/gemini/etc. spawn never pays the `claude auth
+# status` probe or prints a notice about a feature its launch never touches.
+# The probe runs bounded and with stdin detached (same shape as
+# agy_model_validate above) so an unreachable or prompting `claude auth
+# status` can never stall or block a spawn.
+if [ "$CLAUDE_REMOTE_CONTROL" = on ] && [ "$HARNESS" = claude ]; then
+  claude_rc_bound=${FM_CLAUDE_RC_AUTH_TIMEOUT:-10}
+  case "$claude_rc_bound" in ''|*[!0-9]*|0*) claude_rc_bound=10 ;; esac
+  if command -v claude >/dev/null 2>&1; then
+    claude_rc_status=$(fm_run_timed "$claude_rc_bound" claude auth status 2>/dev/null < /dev/null) || claude_rc_status=''
+    claude_rc_auth_method=$(printf '%s' "$claude_rc_status" | grep -o 'authMethod=[^[:space:]]*' | cut -d= -f2)
+    if [ "$claude_rc_auth_method" != claude.ai ]; then
+      echo "notice: config/claude-remote-control is on but 'claude auth status' does not report authMethod=claude.ai (got '${claude_rc_auth_method:-none}'); Remote Control registration may fail, launching normally" >&2
+    fi
+  fi
+  for claude_rc_disabling_var in DISABLE_TELEMETRY DO_NOT_TRACK CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC DISABLE_GROWTHBOOK; do
+    if [ -n "${!claude_rc_disabling_var:-}" ]; then
+      echo "notice: config/claude-remote-control is on but \$$claude_rc_disabling_var is set, which disables Remote Control; Remote Control registration may fail, launching normally" >&2
+    fi
+  done
+fi
 
 # muse, gemini, and agy are verified as CREWMATE/SCOUT adapters only. A secondmate is
 # a firstmate instance, so it needs a primary supervision protocol.
