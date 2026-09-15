@@ -23,16 +23,13 @@
 #
 # Exit codes: 0 success, 1 validation error, 2 write/lock failure.
 #
-# Caller requirements: DATA must be set (to the home's data directory) and
-# tasks-axi must be on PATH (for kind/repo resolution when the caller does
-# not supply them directly).
+# Caller requirements: tasks-axi must be on PATH (for kind/repo resolution
+# when the caller does not supply them directly).
 #
 # The ledger file path and lock path are derived from the passed-in
 # data_dir at call time, not from module-level globals set at source time.
 # This ensures correct behavior when callers pass a different data_dir
 # than the one available at source time.
-
-FM_BACKLOG_LEDGER_FILE="${FM_BACKLOG_LEDGER_FILE:-$DATA/backlog-ledger.tsv}"
 
 # Sanitize a free-text field so it can never corrupt the TSV shape
 # (strip tabs and newlines, preserving everything else).
