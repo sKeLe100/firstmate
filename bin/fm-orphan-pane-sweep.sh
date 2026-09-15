@@ -25,7 +25,7 @@
 #   (fm_backend_herdr_workspace_label, e.g. "firstmate" or "2ndmate-<id>") is
 #   always skipped: it is the home's own container, never a task.
 # - A workspace whose label matches the reserved firstmate task-presentation
-#   grammar ("<up-to-40-byte-concise-title> \xC2\xB7 p:<22-char-token>", the
+#   grammar ("└ <up-to-40-byte-concise-title> \xC2\xB7 p:<22-char-token>", the
 #   same shape fm-herdr-session-cleanup.sh parses) is always skipped even when
 #   unmatched by this home's own metadata: that grammar is reserved for SOME
 #   firstmate home's projected task, and reclaiming an orphaned one is that
@@ -73,12 +73,14 @@ fm_orphan_sweep_warn() {
 # fm-herdr-session-cleanup.sh owns the authoritative parse; this is a
 # detection-only membership test, never a mutation input).
 fm_orphan_sweep_is_projection_label() { # <label>
-  local label=$1 token rest
+  local label=$1 prefix token rest
   case "$label" in
-    *' · p:'*) ;;
+    '└ '*' · p:'*) ;;
     *) return 1 ;;
   esac
   token=${label##*' · p:'}
+  prefix=${label%" · p:$token"}
+  [ "$prefix" != "$label" ] && [ -n "${prefix#'└ '}" ] || return 1
   [ "${#token}" -eq 22 ] || return 1
   case "$token" in *[!A-Za-z0-9_-]*) return 1 ;; esac
   rest=${label#*p:}
@@ -171,8 +173,7 @@ fm_orphan_pane_sweep() {
     | select(type == "array")
     | .[]
     | select((.workspace_id | type) == "string" and (.workspace_id | length) > 0)
-    | select((.label | type) == "string")
-    | [.workspace_id, .label] | @tsv
+    | [.workspace_id, (if (.label | type) == "string" then .label else "" end)] | @tsv
   ' 2>/dev/null) || return 0
   while IFS=$'\t' read -r workspace label; do
     [ -n "$workspace" ] || continue
