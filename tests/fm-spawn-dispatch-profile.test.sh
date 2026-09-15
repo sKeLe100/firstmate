@@ -46,7 +46,15 @@ if [ "${1:-}" = --list-models ]; then
 fi
 exit 0
 SH
-  chmod +x "$fakebin/timeout" "$fakebin/cursor-agent"
+  cat > "$fakebin/claude" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then
+  printf 'loggedIn=%s  authMethod=%s  apiProvider=firstParty  subscriptionType=max\n' \
+    "${FM_FAKE_CLAUDE_LOGGED_IN:-true}" "${FM_FAKE_CLAUDE_AUTH_METHOD:-claude.ai}"
+fi
+exit 0
+SH
+  chmod +x "$fakebin/timeout" "$fakebin/cursor-agent" "$fakebin/claude"
   make_spawn_pi_probe "$fakebin" pi
   make_spawn_pi_probe "$fakebin" pi-signed
   printf '%s\n' "$fakebin"
@@ -95,6 +103,8 @@ run_spawn() {
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
     FM_FAKE_CURSOR_LIST_STATUS="${FM_TEST_CURSOR_LIST_STATUS:-0}" \
+    FM_FAKE_CLAUDE_AUTH_METHOD="${FM_TEST_CLAUDE_AUTH_METHOD:-claude.ai}" \
+    FM_FAKE_CLAUDE_LOGGED_IN="${FM_TEST_CLAUDE_LOGGED_IN:-true}" \
     GROK_HOME="$home/grok-home" \
     fm_test_run_spawn "$home" "$wt" "$fakebin" "$@"
 }
@@ -1376,6 +1386,112 @@ test_non_claude_harness_ignores_claude_permission_mode() {
   pass "config/claude-permission-mode changes claude launches only"
 }
 
+# config/claude-remote-control (docs/configuration.md "Claude Remote
+# Control"): absent and `off` both produce today's launch byte-for-byte, `on`
+# inserts a home-and-task-named `--remote-control` flag right after the
+# permission flag, and any other token refuses before endpoint or metadata.
+test_claude_remote_control_off_matches_absent_launch() {
+  local rec id out status launch expected
+  id=rc-off-z24
+  rec=$(make_spawn_case rc-off claude "$id")
+  read_case_record "$rec"
+  printf 'off\n' > "$HOME_DIR/config/claude-remote-control"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "claude spawn with claude-remote-control=off should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  expected=$(claude_expected_launch "$HOME_DIR" "$id" --dangerously-skip-permissions)
+  [ "$launch" = "$expected" ] || fail "explicit off did not reproduce the absent-file launch"$'\n'"expected: $expected"$'\n'"actual:   $launch"
+  assert_not_contains "$launch" "--remote-control" "off must never add --remote-control"
+  pass "config/claude-remote-control=off launches exactly as an absent file does"
+}
+
+test_claude_remote_control_on_adds_named_flag() {
+  local rec id out status launch
+  id=rc-on-z25
+  rec=$(make_spawn_case rc-on claude "$id")
+  read_case_record "$rec"
+  printf '  on\n' > "$HOME_DIR/config/claude-remote-control"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "claude spawn with claude-remote-control=on should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "--dangerously-skip-permissions --remote-control 'firstmate-fm-$id' --settings" \
+    "on must add a --remote-control flag named after the primary home label and task id, right after the permission flag"
+  pass "config/claude-remote-control=on names the worker firstmate-fm-<task-id>"
+}
+
+test_claude_remote_control_on_secondmate_uses_2ndmate_name() {
+  local rec id sm out status launch
+  id=rc-on-secondmate-z26
+  rec=$(make_spawn_case rc-on-secondmate claude "$id")
+  read_case_record "$rec"
+  printf 'on\n' > "$HOME_DIR/config/claude-remote-control"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+
+  out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/claude-work" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  status=$?
+  expect_code 0 "$status" "secondmate claude spawn with claude-remote-control=on should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "--remote-control 'firstmate-2ndmate-$id'" \
+    "a secondmate spawn must name its Remote Control session 2ndmate-<id>, not fm-<id>"
+  pass "config/claude-remote-control=on names a secondmate spawn firstmate-2ndmate-<id>"
+}
+
+test_claude_remote_control_on_home_label_prefixes_from_secondmate_marker() {
+  local rec id out status launch
+  id=rc-on-homelabel-z27
+  rec=$(make_spawn_case rc-on-homelabel claude "$id")
+  read_case_record "$rec"
+  printf 'on\n' > "$HOME_DIR/config/claude-remote-control"
+  printf 'pc02-lane\n' > "$HOME_DIR/.fm-secondmate-home"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "claude spawn from a secondmate home with claude-remote-control=on should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "--remote-control '2ndmate-pc02-lane-fm-$id'" \
+    "a spawn launched from a secondmate home must prefix the Remote Control name with that home's own label"
+  pass "config/claude-remote-control=on prefixes the name with the launching home's own label"
+}
+
+test_claude_remote_control_invalid_refuses_before_endpoint_or_metadata() {
+  local rec id out status
+  id=rc-invalid-z28
+  rec=$(make_spawn_case rc-invalid claude "$id")
+  read_case_record "$rec"
+  printf 'yolo\n' > "$HOME_DIR/config/claude-remote-control"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 1 "$status" "an unrecognized claude-remote-control token must refuse the spawn"
+  assert_contains "$out" "config/claude-remote-control holds 'yolo'" "refusal must name the file and the offending token"
+  assert_contains "$out" "on, off" "refusal must list the accepted values"
+  [ ! -s "$LAUNCH_LOG" ] || fail "an invalid remote-control value must launch nothing (got: $(cat "$LAUNCH_LOG"))"
+  assert_absent "$HOME_DIR/state/$id.meta" "refusal must happen before meta is written"
+  pass "an unrecognized config/claude-remote-control token refuses before any endpoint or metadata"
+}
+
+test_non_claude_harness_ignores_claude_remote_control() {
+  local rec id out status launch
+  id=rc-codex-z29
+  rec=$(make_spawn_case rc-codex codex "$id")
+  read_case_record "$rec"
+  printf 'on\n' > "$HOME_DIR/config/claude-remote-control"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "codex spawn under claude-remote-control=on should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "codex " "codex launch did not run codex"
+  assert_not_contains "$launch" "--remote-control" "the claude Remote Control flag must not leak into a codex launch"
+  pass "config/claude-remote-control changes claude launches only"
+}
+
 test_worker_launch_delivers_role_scope
 test_no_profile_keeps_claude_profile_defaults
 test_non_cursor_launch_clears_inherited_cursor_markers
@@ -1417,6 +1533,12 @@ test_claude_permission_mode_auto_swaps_only_the_permission_flag
 test_claude_permission_mode_auto_reaches_scout_launch
 test_claude_permission_mode_invalid_refuses_before_endpoint_or_metadata
 test_non_claude_harness_ignores_claude_permission_mode
+test_claude_remote_control_off_matches_absent_launch
+test_claude_remote_control_on_adds_named_flag
+test_claude_remote_control_on_secondmate_uses_2ndmate_name
+test_claude_remote_control_on_home_label_prefixes_from_secondmate_marker
+test_claude_remote_control_invalid_refuses_before_endpoint_or_metadata
+test_non_claude_harness_ignores_claude_remote_control
 test_non_claude_harness_ignores_config_dir
 test_claude_crewmate_launch_carries_the_attribution_policy
 test_claude_secondmate_launch_carries_the_attribution_policy

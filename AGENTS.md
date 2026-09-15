@@ -71,6 +71,7 @@ bin/                 helper scripts, committed; read each script's header before
 .env                 optional Relay pairing token (presence-gates section 14) and mail-plane credentials (schema: docs/configuration.md "Mail plane"); LOCAL, gitignored
 config/crew-harness      crewmate harness override (absent/default → firstmate's own); inherited; see docs/configuration.md "Harness support"
 config/claude-permission-mode  Claude worker permission posture (absent/bypass = --dangerously-skip-permissions, auto = --permission-mode auto); inherited; see docs/configuration.md "Claude permission mode"
+config/claude-remote-control  registers Claude worker launches (and, via fm-primary-herdr.sh, the primary) in the Claude Code app session list (absent/off = unchanged, on = --remote-control); inherited; see docs/configuration.md "Claude Remote Control"
 config/crew-dispatch.json  optional crewmate dispatch profiles (natural-language harness/model/effort rules); inherited; see docs/configuration.md "Crew dispatch profiles (config/crew-dispatch.json)"
 config/secondmate-harness  harness for PRIMARY to launch SECONDMATE agents ("<harness> [<model>] [<effort>]"); NOT inherited; see .agents/skills/secondmate-provisioning/SKILL.md
 config/backlog-backend  backlog backend override (tasks-axi or manual); inherited; see docs/configuration.md "Backlog backend (.tasks.toml / config/backlog-backend)"
