@@ -109,6 +109,51 @@ test_no_mistakes_origin_remote_allows() {
     || fail "nm-origin: teardown manual prompt did not preserve date-gate check"
   pass "no-mistakes worktree with HEAD on origin is torn down (no regression)"
 }
+test_direct_pr_origin_remote_refuses_until_merged() {
+  local case_dir rc
+  case_dir=$(make_case direct-pr-origin-open)
+  write_meta "$case_dir" direct-PR ship
+  wt_commit_file "$case_dir" feature.txt hello "direct PR work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+  append_pr_meta_for_current_head "$case_dir"
+  add_gh_pr_open_for_head "$case_dir" "$(git -C "$case_dir/wt" rev-parse HEAD)"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "direct-pr-origin-open: teardown should refuse before merge confirmation"
+  assert_grep "has not been confirmed merged" "$case_dir/stderr" \
+    "direct-pr-origin-open: refusal did not name the missing merge confirmation"
+  [ -f "$case_dir/state/task-x1.meta" ] \
+    || fail "direct-pr-origin-open: teardown removed metadata for an open PR"
+  pass "direct-PR worktree pushed to origin is preserved until merge is confirmed"
+}
+
+test_direct_pr_origin_remote_merged_allows() {
+  local case_dir rc
+  case_dir=$(make_case direct-pr-origin-merged)
+  write_meta "$case_dir" direct-PR ship
+  wt_commit_file "$case_dir" feature.txt hello "direct PR work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+  append_pr_meta_for_current_head "$case_dir"
+  add_gh_pr_merged_for_head "$case_dir" "$(git -C "$case_dir/wt" rev-parse HEAD)"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "direct-pr-origin-merged: teardown should succeed once the PR is merged"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "direct-pr-origin-merged: teardown printed a REFUSED line"
+  [ ! -f "$case_dir/state/task-x1.meta" ] \
+    || fail "direct-pr-origin-merged: teardown kept metadata for a merged PR"
+  pass "direct-PR worktree is torn down once its PR is confirmed merged"
+}
+
 test_no_mistakes_truly_unpushed_refuses() {
   local case_dir rc
   case_dir=$(make_case nm-unpushed)
