@@ -927,7 +927,7 @@ tests/fm-project-origin.test.sh 137
 tests/fm-public-followup.test.sh 196745
 tests/fm-questionnaire-refill-source.test.sh 139
 tests/fm-queue-snapshot.test.sh 27987
-tests/fm-quota-array-dispatch-live-e2e.test.sh 81
+tests/fm-quota-array-dispatch-live-e2e.test.sh 500
 tests/fm-quota-choose.test.sh 1461
 tests/fm-remote-backlog-handoff.test.sh 235000
 tests/fm-remote-doctor.test.sh 19000
