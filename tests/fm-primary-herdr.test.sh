@@ -53,7 +53,16 @@ case "$*" in
       printf '%s\n' "$FAKE_READY_PID" > "$FAKE_HOME/state/.session-start-complete"
     fi
     printf '{"result":{"agent":{"agent_status":"idle"}}}\n' ;;
-  *'pane process-info w1:p1'*) printf '{"result":{"shell":{"pid":1,"name":"bash","state":"S"},"foreground":{"pid":1,"pgid":1},"processes":[{"pid":1,"ppid":0,"pgid":1,"name":"bash","state":"S"}]}}\n' ;;
+  *'pane process-info'*'w1:p1'*)
+    # Upstream's process-level liveness read (fm_backend_herdr_pane_process_state)
+    # wants the pane_process_info shape: the registered agent must be visible as
+    # a foreground process, or a live registration is not trusted.
+    case "${FAKE_AGENT_STATE:-none}" in
+      live-claude) fg='{"pid":4243,"name":"claude","argv":["claude"],"argv0":"claude","cmdline":"claude"}' ;;
+      live-codex) fg='{"pid":4243,"name":"codex","argv":["codex"],"argv0":"codex","cmdline":"codex"}' ;;
+      *) fg='' ;;
+    esac
+    printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p1","shell_pid":4242,"foreground_processes":[%s]}}}\n' "$fg" ;;
   *'session attach'*) : ;;
 esac
 SH
