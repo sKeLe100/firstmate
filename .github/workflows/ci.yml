@@ -135,13 +135,14 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    # Measured whole remainder is ~63 min of serial work; this fork's balanced
-    # shards measure ~14.6 min each, so the cap stays at 30 min rather than
+    # Measured whole remainder is ~86 min of serial work; this fork's balanced
+    # shards measure ~17.3 min each, so the cap stays at 30 min rather than
     # upstream's 20. Cap is a hang tripwire, not the healthy end of the lane.
-    # --per-script-timeout-secs below is the per-script tripwire: it fails a
-    # wedged script fast, with its captured output, instead of one hung script
-    # silently burning the whole 30-minute job budget and leaving no evidence
-    # (docs/fm-test-portable-shards.md "Timeouts").
+    # bin/fm-test-run.sh derives a second, per-script tripwire for this lane
+    # automatically: it fails a wedged script fast, with its captured output,
+    # instead of one hung script silently burning the whole 30-minute job
+    # budget and leaving no evidence (docs/fm-test-portable-shards.md
+    # "Timeouts").
     timeout-minutes: 30
     strategy:
       # Every shard reports so one failure never hides another shard's result.
@@ -188,8 +189,12 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
+          # No --per-script-timeout-secs here: bin/fm-test-run.sh derives the
+          # per-script hang tripwire itself for a portable-serial lane, at
+          # PORTABLE_SERIAL_TIMEOUT_MULTIPLIER times the slowest measured hint,
+          # so a hint-table refresh can never silently lose that margin again
+          # (docs/fm-test-portable-shards.md "Timeouts").
           bin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \
-            --per-script-timeout-secs 600 \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"
       - name: Upload portable serial shard ${{ matrix.shard }} timing artifact
         if: always()
@@ -352,6 +357,35 @@ jobs:
           fi
           bin/fm-test-run.sh --aggregate-json \
             "$RUNNER_TEMP/fm-test/fm-test-timing-aggregate.json" \
+            "${inputs[@]}"
+      - name: Restore hint drift history
+        # Carries the previous run's per-script drift set forward so
+        # --check-hint-drift can require two consecutive drifting runs before
+        # refusing (a lone noisy run only warns). Keyed per run so the save
+        # below always writes a fresh entry; restore-keys picks up the most
+        # recent prior one.
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fm-test/hint-drift-history.json
+          key: fm-test-hint-drift-history-${{ github.run_id }}
+          restore-keys: |
+            fm-test-hint-drift-history-
+      - name: Check portable-serial hint table for drift
+        # Proves the balance hints embedded in bin/fm-test-run.sh are still
+        # honest against what this green run actually measured, not just that
+        # the shard partition is complete (test-coverage-guard's job). A hint
+        # that stays stale across two consecutive runs refuses here; refresh
+        # it per docs/fm-test-portable-shards.md when this fails.
+        run: |
+          set -eu
+          shopt -s nullglob
+          inputs=("$RUNNER_TEMP"/fm-test-aggregate/fm-test-timing-portable-serial-*.json)
+          if [ "${#inputs[@]}" -eq 0 ]; then
+            echo "::warning::no portable-serial timing JSON found to check for hint drift"
+            exit 0
+          fi
+          bin/fm-test-run.sh --check-hint-drift \
+            --hint-drift-history "$RUNNER_TEMP/fm-test/hint-drift-history.json" \
             "${inputs[@]}"
       - name: Upload aggregate timing artifact
         if: always()
