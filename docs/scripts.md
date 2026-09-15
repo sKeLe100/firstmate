@@ -135,6 +135,9 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-check-unregister.sh` | Retire a custom watcher check and its trust binding by validated task id            |
 | `fm-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
 | `fm-tool-update-check.sh` | Report watched tooling with an update available, and updates installed but left inert by PATH order |
+| `fm-upstream-behind-check.sh` | Read-only once-daily upstream drift report, plus the armed drift check that files the bounded `upstream-sync` item |
+| `fm-upstream-sync-item.sh` | File or refresh the one stable-id `upstream-sync` backlog item with its bounded batch and auto-dispatch eligibility |
+| `fm-upstream-batch.sh`   | Plan the next bounded upstream sync batch: the exact upstream commit to true-merge, never a rebase target |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated PR/MR-poll sidecars           |
 | `fm-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |

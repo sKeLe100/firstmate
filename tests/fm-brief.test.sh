@@ -1231,6 +1231,16 @@ test_upstream_sync_brief_carries_the_hard_gates() {
     "upstream-sync brief must state the non-pre-existing-regression stop"
   assert_grep "PR PURITY" "$brief" \
     "upstream-sync brief must state the PR-purity requirement"
+  assert_grep "BOUNDED BATCH, TRUE MERGE ONLY" "$brief" \
+    "upstream-sync brief must state the bounded-batch true-merge gate"
+  assert_grep "never \`git rebase\`" "$brief" \
+    "upstream-sync brief must forbid rebasing the fork"
+  assert_grep "is not a pending upstream commit" "$brief" \
+    "upstream-sync brief must stop when the batch target is no longer pending"
+  assert_grep "REAL CONFLICT STOP" "$brief" \
+    "upstream-sync brief must state the real-conflict stop"
+  assert_grep "needs-decision [key=upstream-conflict-<file-slug>]" "$brief" \
+    "upstream-sync brief must route a real conflict to a keyed captain decision"
 
   local scout_id
   scout_id="brief-upstream-sync-scout-d1"
@@ -1238,9 +1248,40 @@ test_upstream_sync_brief_carries_the_hard_gates() {
   echo "$out" | grep -q "error: --upstream-sync applies only to a ship brief" \
     || fail "--upstream-sync must be refused on a non-ship brief, got: $out"
 
-  pass "fm-brief.sh: --upstream-sync emits the never-yolo-merge, supervision-safety, regression, and PR-purity gates"
+  pass "fm-brief.sh: --upstream-sync emits the never-yolo-merge, supervision-safety, regression, PR-purity, bounded-batch, and real-conflict gates"
 }
 test_upstream_sync_brief_carries_the_hard_gates
+
+test_upstream_sync_brief_embeds_the_planned_batch() {
+  local home root brief id target i
+  home="$TMP_ROOT/upstream-batch-home"
+  mkdir -p "$home/state" "$home/data"
+  root="$TMP_ROOT/upstream-batch-repo"
+  mkdir -p "$root"
+  git init -q "$root"
+  git -C "$root" symbolic-ref HEAD refs/heads/main
+  git -C "$root" commit -q --allow-empty -m seed
+  git -C "$root" remote add upstream "$root"
+  git -C "$root" branch upstream-src main
+  git -C "$root" checkout -q upstream-src
+  for i in 1 2 3 4 5; do
+    git -C "$root" commit -q --allow-empty -m "upstream $i"
+  done
+  git -C "$root" update-ref refs/remotes/upstream/main refs/heads/upstream-src
+  git -C "$root" checkout -q main
+  target=$(git -C "$root" rev-list --first-parent --reverse main..refs/remotes/upstream/main | sed -n 3p)
+  id="brief-upstream-batch-d1"
+  FM_UPSTREAM_AUTOSYNC_BATCH_MAX=3 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    "$ROOT/bin/fm-brief.sh" "$id" firstmate --mode no-mistakes --upstream-sync >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "upstream-sync brief with a plannable batch was not scaffolded"
+  assert_grep "This sync is bounded to upstream commit $target - the next 3 first-parent commit(s) of the 5 pending on upstream/main, leaving 2 for the next periodic sync" "$brief" \
+    "upstream-sync brief must embed the planned batch target, size, and remainder"
+  assert_no_grep "No bounded batch was planned" "$brief" \
+    "upstream-sync brief with a planned batch must not carry the plan-first fallback"
+  pass "fm-brief.sh: --upstream-sync embeds the exact bounded batch planned at scaffold time"
+}
+test_upstream_sync_brief_embeds_the_planned_batch
 
 test_ship_brief_round_ceiling_follows_configured_thresholds() {
   local home id brief

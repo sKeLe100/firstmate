@@ -23,7 +23,8 @@
 # THRESHOLD AND ELIGIBILITY. Auto-dispatch is gated on the LOCAL, gitignored
 # `config/upstream-autosync` presence flag (absent = today's ask-only behavior,
 # unchanged) and on `behind >= FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD` (default
-# 5) or `days_behind >= FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD` (default 14),
+# 5) or `days_behind >= FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD` (default 7, the
+# weekly cadence),
 # where days_behind is the age of the OLDEST unmerged upstream commit. This script only signals eligibility; it never dispatches.
 #
 # Usage:
@@ -38,6 +39,17 @@
 #       overlap_count=<N>
 #       overlap=<path>            (one line per overlapping file, bounded)
 #       overlap_omitted=<N>       (only when the overlap list was truncated)
+#       batch_target=<sha>        (the bounded batch's merge target, when planned)
+#       batch_count=<N>
+#       batch_remaining=<N>
+#
+# BOUNDED BATCH. The note carries the next bounded batch from
+# bin/fm-upstream-batch.sh (at most FM_UPSTREAM_AUTOSYNC_BATCH_MAX first-parent
+# commits, default 20), so the dispatched sync merges exactly that batch's
+# target with a true merge and leaves the rest for the next periodic dispatch.
+# A plan that cannot be computed is stated as such in the note rather than
+# silently leaving the sync unbounded; the brief's own bounded-batch gate then
+# has the worker plan it before merging anything.
 #
 # FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD / FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD
 # override the thresholds (tests use them). FM_UPSTREAM_AUTOSYNC_OVERLAP_SHOWN
@@ -145,11 +157,28 @@ else
 fi
 delta_omitted=$(( delta_count > delta_limit ? delta_count - delta_limit : 0 ))
 
+# --- bounded batch plan -------------------------------------------------
+# Read-only and network-free: it cuts the already-fetched upstream delta.
+batch_status=unknown
+batch_target=
+batch_count=
+batch_remaining=
+batch_reason=
+batch_plan=$(FM_ROOT_OVERRIDE="$FM_ROOT" "$SCRIPT_DIR/fm-upstream-batch.sh" plan --default "$default" 2>/dev/null) || batch_plan=
+if [ -n "$batch_plan" ]; then
+  batch_status=$(printf '%s\n' "$batch_plan" | sed -n 's/^status=//p' | head -n 1)
+  batch_reason=$(printf '%s\n' "$batch_plan" | sed -n 's/^reason=//p' | head -n 1)
+  batch_target=$(printf '%s\n' "$batch_plan" | sed -n 's/^batch_target=//p' | head -n 1)
+  batch_count=$(printf '%s\n' "$batch_plan" | sed -n 's/^batch_count=//p' | head -n 1)
+  batch_remaining=$(printf '%s\n' "$batch_plan" | sed -n 's/^batch_remaining=//p' | head -n 1)
+fi
+[ "$batch_status" = ok ] && [ -n "$batch_target" ] || batch_status=unknown
+
 # --- eligibility --------------------------------------------------------
 commit_threshold="${FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD:-5}"
 case "$commit_threshold" in ''|*[!0-9]*) commit_threshold=5 ;; esac
-days_threshold="${FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD:-14}"
-case "$days_threshold" in ''|*[!0-9]*) days_threshold=14 ;; esac
+days_threshold="${FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD:-7}"
+case "$days_threshold" in ''|*[!0-9]*) days_threshold=7 ;; esac
 
 config_gate="$FM_HOME/config/upstream-autosync"
 eligible=no
@@ -183,7 +212,17 @@ note_body() {
   printf 'Auto-dispatch eligible: %s (%s)\n' "$eligible" "$eligible_reason"
   # The backticked flag text is literal note-body content, not a command substitution.
   # shellcheck disable=SC2016
-  printf 'Scaffold this task with `bin/fm-brief.sh --upstream-sync`: that flag is the only source of the four non-negotiable upstream-merge gates (never yolo-merge, supervision-safety conflict stop, non-pre-existing regression stop, PR purity). A plain ship brief silently loses them.\n'
+  printf 'Scaffold this task with `bin/fm-brief.sh --upstream-sync`: that flag is the only source of the non-negotiable upstream-merge gates (never yolo-merge, supervision-safety conflict stop, non-pre-existing regression stop, PR purity, bounded true-merge batch, real-conflict stop). A plain ship brief silently loses them.\n'
+  # Backticked command text is literal note-body content, not a command substitution.
+  # shellcheck disable=SC2016
+  if [ "$batch_status" = ok ]; then
+    printf 'Bounded batch: merge exactly upstream commit %s with a true merge (%s first-parent commits of the %s pending; %s remain for the next periodic sync). Never rebase; never merge beyond that target. Re-plan with `bin/fm-upstream-batch.sh plan` before merging.\n' \
+      "$batch_target" "$batch_count" "$behind" "$batch_remaining"
+  else
+    # shellcheck disable=SC2016
+    printf 'Bounded batch: no batch could be planned yet (%s); the worker must run `bin/fm-upstream-batch.sh plan` and merge exactly its batch_target, or stop, before merging anything.\n' \
+      "${batch_reason:-plan unavailable}"
+  fi
   printf 'Files touched both upstream and locally since merge-base (conflict risk): %s\n' "$overlap_count"
   [ -z "$overlap_shown" ] || printf '%s\n' "$overlap_shown" | sed 's/^/  - /'
   [ "$overlap_omitted" -eq 0 ] || printf '  ... and %s more\n' "$overlap_omitted"
@@ -292,4 +331,9 @@ if [ -n "$overlap_shown" ]; then
   done <<< "$overlap_shown"
 fi
 [ "$overlap_omitted" -eq 0 ] || printf 'overlap_omitted=%s\n' "$overlap_omitted"
+if [ "$batch_status" = ok ]; then
+  printf 'batch_target=%s\n' "$batch_target"
+  printf 'batch_count=%s\n' "$batch_count"
+  printf 'batch_remaining=%s\n' "$batch_remaining"
+fi
 exit 0

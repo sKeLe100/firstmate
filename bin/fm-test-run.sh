@@ -714,6 +714,9 @@ tests/fm-trace-context-lib.test.sh 209
 tests/fm-trace-context-spawn.test.sh 44702
 tests/fm-turnend-guard.test.sh 42565
 tests/fm-update.test.sh 5212
+tests/fm-upstream-batch.test.sh 2000
+tests/fm-upstream-behind-check.test.sh 27230
+tests/fm-upstream-sync-item.test.sh 13801
 tests/fm-vendor-auth-probe.test.sh 43316
 tests/fm-voice-relay.test.sh 28699
 tests/fm-wake-daemon-lifecycle-e2e.test.sh 7381

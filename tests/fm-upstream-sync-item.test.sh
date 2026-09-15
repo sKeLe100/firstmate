@@ -31,7 +31,12 @@
 #     only the first one per home.
 #   - Refreshing while a crewmate has the item in flight leaves it in flight.
 #   - An unparseable/unknown newest-upstream date reports days_behind=unknown
-#     rather than a definite 0 that can never cross the 14-day rule.
+#     rather than a definite 0 that can never cross the days rule.
+#   - The filed note and stdout carry the bounded batch (target, count,
+#     remaining) so a dispatched sync merges exactly that batch, and a repo
+#     where no batch can be planned says so in the note instead of leaving
+#     the sync silently unbounded.
+#   - The days rule defaults to the weekly cadence (7 days).
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -535,5 +540,67 @@ test_note_body_tells_the_dispatcher_to_use_the_upstream_sync_flag() {
     "sync-item: the filed item must tell the dispatcher which brief flag to scaffold with"
   pass "the filed item carries the --upstream-sync scaffolding instruction"
 }
+test_note_carries_the_bounded_batch() {
+  set -e
+  local home root out body target
+  home=$(new_home)
+  root="$TMP_ROOT/repo-batch"
+  setup_repo "$root" 9
+  out=$(FM_UPSTREAM_AUTOSYNC_BATCH_MAX=4 file_once "$home" "$root" 9)
+  target=$(git -C "$root" rev-list --first-parent --reverse main..refs/remotes/upstream/main | sed -n 4p)
+  assert_contains "$out" "batch_target=$target" "sync-item: stdout must carry the bounded batch target"
+  assert_contains "$out" "batch_count=4" "sync-item: stdout must carry the batch size"
+  assert_contains "$out" "batch_remaining=5" "sync-item: stdout must carry the remainder"
+  body=$(cat "$home/data/backlog.md")
+  assert_contains "$body" "Bounded batch: merge exactly upstream commit $target with a true merge (4 first-parent commits of the 9 pending; 5 remain for the next periodic sync)" \
+    "sync-item: the filed note must name the exact bounded batch"
+  assert_contains "$body" "Never rebase" "sync-item: the filed note must forbid rebasing"
+  pass "the filed item carries the bounded batch target, size, and remainder"
+}
+
+test_unplannable_batch_is_stated_not_silent() {
+  set -e
+  local home root out body
+  home=$(new_home)
+  root="$TMP_ROOT/repo-nobatch"
+  new_repo "$root"
+  # No upstream remote at all: the sync item still files (the count is the
+  # caller's), but the note must say no batch could be planned.
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ITEM" file 7 "$(date +%F)" main)
+  assert_contains "$out" "action=filed" "sync-item: the item must still file without a plan"
+  assert_not_contains "$out" "batch_target=" "sync-item: no plan means no target on stdout"
+  body=$(cat "$home/data/backlog.md")
+  assert_contains "$body" "Bounded batch: no batch could be planned yet (no-upstream-remote)" \
+    "sync-item: the note must state that no batch could be planned"
+  assert_contains "$body" "bin/fm-upstream-batch.sh plan" "sync-item: the note must tell the worker to plan before merging"
+  pass "a sync item with no plannable batch says so instead of leaving the sync unbounded"
+}
+
+test_days_rule_defaults_to_weekly() {
+  set -e
+  local home root out
+  home=$(new_home)
+  : > "$home/config/upstream-autosync"
+  root="$TMP_ROOT/repo-weekly"
+  new_repo "$root"
+  git -C "$root" remote add upstream "$root"
+  git -C "$root" branch upstream-src main
+  git -C "$root" checkout -q upstream-src
+  printf 'old\n' > "$root/old.txt"
+  git -C "$root" add old.txt
+  GIT_COMMITTER_DATE="$(date -d '-8 days' +%F 2>/dev/null || date -v-8d +%F) 12:00:00" \
+    git -C "$root" commit -qm "eight days old"
+  git -C "$root" update-ref refs/remotes/upstream/main refs/heads/upstream-src
+  git -C "$root" checkout -q main
+  out=$(FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD=50 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    "$ITEM" file 1 "$(date +%F)" main)
+  assert_contains "$out" "eligible=yes" "sync-item: one 8-day-old pending commit must be eligible under the 7-day default"
+  assert_contains "$out" "days threshold (7)" "sync-item: the default days threshold must be 7"
+  pass "the days rule defaults to the weekly cadence"
+}
+
 test_zero_shown_overlap_still_discloses_the_omitted_count
 test_note_body_tells_the_dispatcher_to_use_the_upstream_sync_flag
+test_note_carries_the_bounded_batch
+test_unplannable_batch_is_stated_not_silent
+test_days_rule_defaults_to_weekly

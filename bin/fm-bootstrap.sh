@@ -20,7 +20,9 @@
 #                 "BOOTSTRAP_INFO: nudged fm-<id> with '<message>'",
 #                 "SECONDMATE_LIVENESS: secondmate <id>: skipped: <reason>|respawn failed after <cause>: <reason>",
 #                 "SECONDMATE_HANDOFF: secondmate <id>: pending delivery: <n> item(s)",
-#                 "FMX: X mode on ..." or "FMX: X mode off ...".
+#                 "FMX: X mode on ..." or "FMX: X mode off ...",
+#                 "BOOTSTRAP_INFO: upstream autosync armed ..." or
+#                 "BOOTSTRAP_INFO: upstream drift: ..." (the sync item filed).
 #          When a RUNNING secondmate home is fast-forwarded, its target is
 #          firstmate's own current default-branch commit. A local worktree uses
 #          a purely local fast-forward with no origin fetch; a remote route hands
@@ -94,10 +96,10 @@
 #          reads or writes another home; the fleet snapshot's classifier and
 #          bin/fm-secondmate-reconcile.sh's nudge stay as backstops. Replayed
 #          transitions and restored In-flight rows print BOOTSTRAP_INFO facts.
-#          Set FM_BOOTSTRAP_DETECT_ONLY=1 to skip the six MUTATING sweeps
+#          Set FM_BOOTSTRAP_DETECT_ONLY=1 to skip the seven MUTATING sweeps
 #          (backlog_record_reconcile, secondmate_sync,
 #          secondmate_liveness_sweep, secondmate_handoff_resume, x_mode_setup,
-#          fleet_sync) while still
+#          fleet_sync, upstream_autosync_setup) while still
 #          printing every read-only detect line
 #          above; the TANGLE line switches to advisory-only wording with no
 #          checkout command. Used by
@@ -105,7 +107,7 @@
 #          the fleet lock, so a second concurrent session never race-mutates
 #          secondmate homes, pending handoff outboxes,
 #          X-mode artifacts, project clones, or repair instructions.
-#          Unset/0 (the default) runs all six sweeps - this flag is purely
+#          Unset/0 (the default) runs all seven sweeps - this flag is purely
 #          additive.
 #          Set FM_BOOTSTRAP_NETWORK to split this run by whether a step talks to
 #          the network, so a session start can print its digest from local reads
@@ -115,7 +117,9 @@
 #                 must never silently skip a safety sweep.
 #            skip - every LOCAL step, and none of the network ones. Skips
 #                 `gh auth status`, secondmate_liveness_sweep, secondmate_sync,
-#                 secondmate_handoff_resume, and fleet_sync.
+#                 secondmate_handoff_resume, fleet_sync, and the upstream drift
+#                 poll half of upstream_autosync_setup (its local arming half
+#                 still runs).
 #            only - ONLY those network steps and nothing else. No tool detection,
 #                 no version floors, no tangle check, no backlog
 #                 reconciliation, no x_mode_setup: those already ran on the
@@ -1103,6 +1107,48 @@ EOF
   echo "FMX: X mode on - relay poll armed via state/x-watch.check.sh; 30s watcher cadence in config/x-mode.env"
 }
 
+# Upstream autosync (opt-in): with the inherited config/upstream-autosync flag
+# present, the periodic upstream sync has a schedule of its own instead of
+# waiting for someone to arm it by hand:
+#   local half   - arms state/upstream-drift.check.sh (idempotent; the same
+#                  bytes bin/fm-upstream-behind-check.sh arm writes) so every
+#                  watcher poll drives the once-daily drift check, which files
+#                  or refreshes the bounded `upstream-sync` item.
+#   network half - runs that drift check once per session start, so a home
+#                  whose fleet was idle (no watcher) still checks on the daily
+#                  cadence and never lets a whole week of upstream pile up
+#                  unnoticed. The check's own once-daily gate makes a repeat
+#                  session start a no-op, and the only network it touches is
+#                  the fetch of upstream's remote-tracking refs.
+# Absent the flag it is a complete no-op: a home that armed the check by hand
+# keeps it, and nothing is disarmed here. Failures print one line and never
+# stop the rest of bootstrap; the upstream-sync item then simply waits for the
+# watcher's next poll or a manual `bin/fm-upstream-behind-check.sh arm`.
+upstream_autosync_setup() {
+  local gate shim line
+  gate="$CONFIG/upstream-autosync"
+  [ -f "$gate" ] || return 0
+  shim="$STATE/upstream-drift.check.sh"
+  if local_phase; then
+    if [ ! -f "$shim" ]; then
+      if FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-upstream-behind-check.sh" arm >/dev/null 2>&1; then
+        echo "BOOTSTRAP_INFO: upstream autosync armed state/upstream-drift.check.sh (config/upstream-autosync present)"
+      else
+        echo "BOOTSTRAP_INFO: upstream autosync could not arm state/upstream-drift.check.sh; run bin/fm-upstream-behind-check.sh arm"
+      fi
+    else
+      FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-upstream-behind-check.sh" arm >/dev/null 2>&1 || true
+    fi
+  fi
+  if network_phase && network_sweep_authorized 'upstream drift poll'; then
+    # Silent unless news; the one line it may print names the gap and confirms
+    # the bounded sync item was filed or refreshed for the dispatch pass.
+    line=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-upstream-behind-check.sh" check 2>/dev/null) || line=
+    [ -z "$line" ] || echo "BOOTSTRAP_INFO: $line"
+  fi
+  return 0
+}
+
 crew_dispatch_validate() {
   local file err rc
   file="$CONFIG/crew-dispatch.json"
@@ -1538,6 +1584,9 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   fi
   # x_mode_setup writes local Relay artifacts only and never leaves the machine.
   local_phase && x_mode_setup
+  __fm_timing_stamp=$(fm_timing_now_ms)
+  upstream_autosync_setup
+  fm_timing_record phase upstream-autosync "$__fm_timing_stamp"
   if [ -n "$fleet_sync_pid" ]; then
     wait "$fleet_sync_pid" || true
     cat "$fleet_sync_out"
