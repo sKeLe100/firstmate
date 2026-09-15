@@ -174,8 +174,10 @@ done
 [ "$(fm_backend_herdr_current_path "$SESSION:$PANE_ID" 2>/dev/null || true)" = "$PROJ_REAL" ] \
   || fail "the real Herdr pane did not drift out of its recorded worktree"
 
+# This fork refuses a model-less codex spawn (bin/fm-spawn.sh's explicit
+# --model rule), so the inert harness above is named with a model it ignores.
 OUT=$(env FM_HOME="$HOME_DIR" HERDR_SESSION="$SESSION" FM_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/fm-spawn.sh" hsmoke --relaunch --harness codex) \
+  "$ROOT/bin/fm-spawn.sh" hsmoke --relaunch --harness codex --model gpt-5 --effort high) \
   || fail "a drifted, agent-free Herdr pane should be re-homed and relaunched: $OUT"
 for _ in $(seq 1 20); do
   [ ! -e "$SCRATCH/codex-launched" ] || break
@@ -292,8 +294,10 @@ esac
 pass "real herdr: exit on a pane with a stale registration is idempotent success"
 
 rm -f "$SCRATCH/codex-launched"
+# This fork refuses a model-less codex spawn (bin/fm-spawn.sh's explicit
+# --model rule), so the inert harness above is named with a model it ignores.
 OUT=$(env FM_HOME="$HOME_DIR" HERDR_SESSION="$SESSION" FM_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/fm-spawn.sh" hsmoke --relaunch --harness codex) \
+  "$ROOT/bin/fm-spawn.sh" hsmoke --relaunch --harness codex --model gpt-5 --effort high) \
   || fail "a stale-registration Herdr pane should be relaunched: $OUT"
 for _ in $(seq 1 20); do
   [ ! -e "$SCRATCH/codex-launched" ] || break
