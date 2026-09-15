@@ -18,7 +18,11 @@
 # every production shell separately as a canonical, source-aware root.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
-# before merge instead of only failing to run as CI.
+# before merge instead of only failing to run as CI. It also runs
+# bin/fm-lint-test-size.sh (refuses an oversized, non-grandfathered
+# tests/*.test.sh) and bin/fm-lint-nomistakes-config.sh (refuses the PR #111
+# per-branch .no-mistakes.yaml test-command regression pattern), each in the
+# same explicit-paths-bypass and lint job, so neither needs a new CI job.
 #
 # With no explicit paths, the file set and source-following posture depend
 # on context:
@@ -423,6 +427,20 @@ fm_lint_check_nomistakes_test_command() {
   fi
 }
 
+# Default no-args lint also refuses an oversized tests/*.test.sh file that
+# isn't grandfathered in the shrinking allowlist (bin/fm-lint-test-size.sh).
+fm_lint_run_test_size() {
+  [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
+  "$SELF_DIR/fm-lint-test-size.sh"
+}
+
+# Default no-args lint also refuses a .no-mistakes.yaml carrying the PR #111
+# per-branch test-command regression pattern (bin/fm-lint-nomistakes-config.sh).
+fm_lint_run_nomistakes_config() {
+  [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
+  "$SELF_DIR/fm-lint-nomistakes-config.sh"
+}
+
 JOBS=${FM_LINT_JOBS:-2}
 TELEMETRY=${FM_LINT_TELEMETRY:-}
 FAST=0
@@ -593,6 +611,8 @@ if [ "$CHANGED_MODE" -eq 1 ] && [ "$ROOT_COUNT" -eq 0 ]; then
   fm_lint_run_backend_purity || overall_rc=$?
   fm_lint_run_workflows || overall_rc=$?
   fm_lint_check_nomistakes_test_command || overall_rc=$?
+  fm_lint_run_test_size || overall_rc=$?
+  fm_lint_run_nomistakes_config || overall_rc=$?
   exit "$overall_rc"
 fi
 
@@ -916,6 +936,18 @@ if [ "$overall_rc" -eq 0 ]; then
 else
   fm_lint_run_workflows || true
   fm_lint_check_nomistakes_test_command || true
+fi
+
+if [ "$overall_rc" -eq 0 ]; then
+  fm_lint_run_test_size || overall_rc=$?
+else
+  fm_lint_run_test_size || true
+fi
+
+if [ "$overall_rc" -eq 0 ]; then
+  fm_lint_run_nomistakes_config || overall_rc=$?
+else
+  fm_lint_run_nomistakes_config || true
 fi
 
 exit "$overall_rc"

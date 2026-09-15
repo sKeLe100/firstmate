@@ -587,6 +587,10 @@
     {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
+    },
+    {
+      "path": "tests/fm-lint-test-size-allowlist.txt",
+      "audience": "maintainer-architecture"
     }
   ]
 }

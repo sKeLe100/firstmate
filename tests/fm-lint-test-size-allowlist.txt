@@ -1,0 +1,14 @@
+# Grandfathered tests/*.test.sh files that exceed bin/fm-lint-test-size.sh's
+# ceiling (3000 lines or 100 test_ functions) as of this guard landing.
+# Shrink this list as each file's split lands; do not add new entries -
+# a new oversized file must be split, not grandfathered in.
+# See data/ci-pipeline-review-scout/report.md P5/P6.
+fm-backend-herdr.test.sh
+fm-calm-pi-extension.test.sh
+fm-daemon.test.sh
+fm-pi-branch-extension.test.sh
+fm-pi-watch-extension.test.sh
+fm-public-followup.test.sh
+fm-voice-relay.test.sh
+fm-watch-triage.test.sh
+fm-x-mode.test.sh
