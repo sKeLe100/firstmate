@@ -28,13 +28,22 @@
 #   fm-test-run.sh --aggregate-json <out.json> <lane.json> [more lane.json...]
 #
 # Hint staleness (no suite execution):
-#   fm-test-run.sh --check-hint-drift <lane.json> [more lane.json...]
-#                   Refuses when a green run's own measured duration for a
+#   fm-test-run.sh --check-hint-drift [--hint-drift-history <path>] \
+#                   <lane.json> [more lane.json...]
+#                   Flags when a green run's own measured duration for a
 #                   hinted portable-serial script exceeds that hint by more
-#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (2x), so a
-#                   stale-but-present hint stops passing silently. Takes the
-#                   slowest measured duration per script across every input
-#                   given. --check-coverage only proves the shard partition is
+#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (1.5x), taking
+#                   the slowest measured duration per script across every
+#                   input given. A script that drifts on only this run is
+#                   logged as a warning, not a failure - noise on one run is
+#                   expected. --hint-drift-history persists this run's drift
+#                   set to <path> and compares it against what was persisted
+#                   there last time; the check refuses only when the SAME
+#                   script drifts on two consecutive runs, so a genuine
+#                   regression still gets caught without one noisy run
+#                   failing the check. Without --hint-drift-history nothing
+#                   can ever be confirmed, so the check only ever warns.
+#                   --check-coverage only proves the shard partition is
 #                   complete; it does not prove the balance hints are still
 #                   honest (docs/fm-test-portable-shards.md "Coverage guard").
 #
@@ -167,6 +176,7 @@ LIST_CONCURRENT_SAFE_FAMILIES=0
 LIST_LANES=0
 CHECK_COVERAGE=0
 AGGREGATE_OUT=
+HINT_DRIFT_HISTORY=
 FAMILY=
 LANE=
 BASE_REF=origin/main
@@ -218,16 +228,16 @@ PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=27000
 PORTABLE_SERIAL_TIMEOUT_MULTIPLIER=2
 
 # How far a green run's measured duration may exceed its recorded hint before
-# --check-hint-drift refuses. A hint is a balance number, not an alarm, so some
-# slack is expected; past this the hint is stale enough that a shard can be
-# meaningfully unbalanced without any failure ever saying so
-# (docs/fm-test-portable-shards.md "Coverage guard"). 1.5x proved too tight for
-# this fork's shared-runner noise: same-day, freshly-refreshed hints still
-# swung past it on ordinary green runs (e.g. fm-fleet-snapshot-view.test.sh at
-# 1.98x hours after being set), producing repeat false reds rather than
-# catching real staleness. 2x matches the margin already judged "comfortable"
-# for the timeout tripwire above.
-PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER=2
+# --check-hint-drift counts it as drift for that run. A hint is a balance
+# number, not an alarm, so some slack is expected; past this the hint is stale
+# enough that a shard can be meaningfully unbalanced without any failure ever
+# saying so (docs/fm-test-portable-shards.md "Coverage guard"). Widened to 2x
+# once, then reverted to the original 1.5x: same-day shared-runner noise could
+# swing a single run past a tight margin, but --check-hint-drift now only
+# refuses when the SAME script drifts past the multiplier on two consecutive
+# runs (see HINT_DRIFT_HISTORY below), so a lone noisy run no longer fails the
+# check and the tighter 1.5x margin is safe again.
+PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER=1.5
 
 # Largest share of the serial lane allowed to run on the default weight above.
 # Hints are what keep the shards balanced, so once too much of the lane is
@@ -1244,26 +1254,29 @@ print(f"FM_TEST_AGGREGATE lanes={len(lanes)} total={total} failed={failed} skipp
 PY
 }
 
-# Refuses when a green run's own measured duration for a hinted
-# portable-serial script exceeds that hint by more than
-# PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER. --check-coverage only proves the
-# partition is complete, not that the balance hints are still honest, so a
-# stale-but-present hint used to pass silently forever; this is the check that
-# stops that (docs/fm-test-portable-shards.md "Coverage guard").
+# Refuses only when a hinted portable-serial script's measured duration
+# exceeds PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER on two consecutive runs (via
+# --hint-drift-history); a single drifting run is logged as a warning, not a
+# failure, since shared-runner noise can swing one run past the margin without
+# the hint actually being stale. --check-coverage only proves the partition is
+# complete, not that the balance hints are still honest; this is the check
+# that catches a hint that stays wrong run after run
+# (docs/fm-test-portable-shards.md "Coverage guard").
 check_hint_drift() {
   [ "$#" -gt 0 ] || die "--check-hint-drift requires at least one input timing JSON"
   command -v python3 >/dev/null 2>&1 || die "--check-hint-drift requires python3"
   local hints_tmp rc
   hints_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-test-hints.XXXXXX") || die "--check-hint-drift: could not create temp file"
   portable_serial_weight_hints >"$hints_tmp"
-  python3 - "$hints_tmp" "$PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER" "$@" <<'PY'
+  python3 - "$hints_tmp" "$PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER" "$HINT_DRIFT_HISTORY" "$@" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 hints_path = Path(sys.argv[1])
 multiplier = float(sys.argv[2])
-inputs = [Path(p) for p in sys.argv[3:]]
+history_path = Path(sys.argv[3]) if sys.argv[3] else None
+inputs = [Path(p) for p in sys.argv[4:]]
 
 hints = {}
 for line in hints_path.read_text(encoding="utf-8").splitlines():
@@ -1287,29 +1300,51 @@ for p in inputs:
             measured[path] = ms
 
 checked = 0
-drift = []
+drift = {}
 for path, hint_ms in hints.items():
     if path not in measured:
         continue
     checked += 1
     m = measured[path]
     if hint_ms > 0 and m > hint_ms * multiplier:
-        drift.append((path, hint_ms, m))
+        drift[path] = m / hint_ms
 
-drift.sort(key=lambda row: row[0])
-if drift:
+prior_drift = {}
+if history_path is not None and history_path.exists():
+    try:
+        prior_drift = json.loads(history_path.read_text(encoding="utf-8")).get("drift", {})
+    except (json.JSONDecodeError, OSError):
+        prior_drift = {}
+
+confirmed = sorted(p for p in drift if p in prior_drift)
+warned_only = sorted(p for p in drift if p not in prior_drift)
+
+if warned_only:
     print(
-        f"fm-test-run: hint drift: measured duration exceeds hint by more than "
-        f"{multiplier:g}x for {len(drift)} script(s):",
+        f"::warning::fm-test-run: hint drift: measured duration exceeded hint by "
+        f"more than {multiplier:g}x on this run only for {len(warned_only)} "
+        "script(s); will refuse only if this recurs on the next run:",
         file=sys.stderr,
     )
-    for path, hint_ms, m in drift:
-        ratio = m / hint_ms if hint_ms else float("inf")
-        print(f"  {path}: hint={hint_ms}ms measured={m}ms ratio={ratio:.2f}x", file=sys.stderr)
+    for path in warned_only:
+        print(f"  {path}: hint={hints[path]}ms measured={measured[path]}ms ratio={drift[path]:.2f}x", file=sys.stderr)
+
+if history_path is not None:
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    history_path.write_text(json.dumps({"drift": drift}, sort_keys=True) + "\n", encoding="utf-8")
+
+if confirmed:
+    print(
+        f"fm-test-run: hint drift: measured duration exceeded hint by more than "
+        f"{multiplier:g}x on two consecutive runs for {len(confirmed)} script(s):",
+        file=sys.stderr,
+    )
+    for path in confirmed:
+        print(f"  {path}: hint={hints[path]}ms measured={measured[path]}ms ratio={drift[path]:.2f}x", file=sys.stderr)
     print("fm-test-run: refresh the hints: docs/fm-test-portable-shards.md", file=sys.stderr)
     sys.exit(1)
 
-print(f"FM_TEST_HINT_DRIFT ok checked={checked} drift=0")
+print(f"FM_TEST_HINT_DRIFT ok checked={checked} confirmed=0 warned={len(warned_only)}")
 PY
   rc=$?
   rm -f "$hints_tmp"
@@ -2034,6 +2069,15 @@ while [ "$#" -gt 0 ]; do
       shift
       # Remaining free args are input timing JSON paths, collected below via MODE.
       MODE=hint-drift
+      ;;
+    --hint-drift-history)
+      [ "$#" -gt 1 ] || die "--hint-drift-history requires a path"
+      HINT_DRIFT_HISTORY=$2
+      shift 2
+      ;;
+    --hint-drift-history=*)
+      HINT_DRIFT_HISTORY=${1#--hint-drift-history=}
+      shift
       ;;
     --exclude-family)
       [ "$#" -gt 1 ] || die "--exclude-family requires a name"

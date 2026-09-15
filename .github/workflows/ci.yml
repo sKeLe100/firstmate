@@ -358,11 +358,23 @@ jobs:
           bin/fm-test-run.sh --aggregate-json \
             "$RUNNER_TEMP/fm-test/fm-test-timing-aggregate.json" \
             "${inputs[@]}"
+      - name: Restore hint drift history
+        # Carries the previous run's per-script drift set forward so
+        # --check-hint-drift can require two consecutive drifting runs before
+        # refusing (a lone noisy run only warns). Keyed per run so the save
+        # below always writes a fresh entry; restore-keys picks up the most
+        # recent prior one.
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fm-test/hint-drift-history.json
+          key: fm-test-hint-drift-history-${{ github.run_id }}
+          restore-keys: |
+            fm-test-hint-drift-history-
       - name: Check portable-serial hint table for drift
         # Proves the balance hints embedded in bin/fm-test-run.sh are still
         # honest against what this green run actually measured, not just that
-        # the shard partition is complete (test-coverage-guard's job).
-        # A stale-but-present hint otherwise passes silently forever; refresh
+        # the shard partition is complete (test-coverage-guard's job). A hint
+        # that stays stale across two consecutive runs refuses here; refresh
         # it per docs/fm-test-portable-shards.md when this fails.
         run: |
           set -eu
@@ -372,7 +384,9 @@ jobs:
             echo "::warning::no portable-serial timing JSON found to check for hint drift"
             exit 0
           fi
-          bin/fm-test-run.sh --check-hint-drift "${inputs[@]}"
+          bin/fm-test-run.sh --check-hint-drift \
+            --hint-drift-history "$RUNNER_TEMP/fm-test/hint-drift-history.json" \
+            "${inputs[@]}"
       - name: Upload aggregate timing artifact
         if: always()
         uses: actions/upload-artifact@v4
