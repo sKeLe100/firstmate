@@ -727,6 +727,7 @@ tests/fm-nomistakes-poll-lib.test.sh 8000
 tests/fm-on.test.sh 11692
 tests/fm-opencode-primary-live-e2e.test.sh 21
 tests/fm-operational-input.test.sh 231
+tests/fm-orphan-pane-sweep.test.sh 830
 tests/fm-pc02-churn-e2e.test.sh 21689
 tests/fm-pc02-fair-order.test.sh 44123
 tests/fm-peek-remote.test.sh 1018
