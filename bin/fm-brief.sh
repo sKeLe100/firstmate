@@ -35,7 +35,11 @@
 #   identify this repo. Briefs made without it carry a loud declaration so an
 #   omitted contract cannot be silent.
 #   --upstream-sync applies only to a ship brief for an auto-dispatched upstream
-#   sync task (docs/configuration.md "Upstream autosync").
+#   sync task (docs/configuration.md "Upstream autosync"). Besides the four
+#   hard gates it embeds the bounded batch bin/fm-upstream-batch.sh plans at
+#   scaffold time (the exact upstream commit to true-merge, never a rebase
+#   target) and the real-conflict stop; when no plan is available the gate has
+#   the worker plan it first and stops rather than merging unbounded.
 #   --perspective <slug> inserts .agents/skills/perspective-catalog/references/<slug>.md
 #   (minus its HTML maintainer comments) as a "# Perspective" section between # Task and # Setup on a
 #   ship or scout brief, and records a fixed machine-readable "Perspective: <slug>" line
@@ -425,6 +429,19 @@ fi
 
 UPSTREAM_SYNC_SECTION=
 if [ "$UPSTREAM_SYNC" -eq 1 ]; then
+# The bounded batch is planned here, at scaffold time, from the refs the drift
+# check already fetched, so the bound never depends on the dispatcher
+# remembering a flag. A plan that cannot be computed (no upstream remote here,
+# nothing pending, no merge-base) still leaves gate 5 in place: the worker
+# plans it first and merges nothing unbounded.
+UPSTREAM_BATCH_PLAN=$(FM_ROOT_OVERRIDE="$FM_ROOT" "$SCRIPT_DIR/fm-upstream-batch.sh" plan 2>/dev/null) || UPSTREAM_BATCH_PLAN=
+upstream_plan_field() { printf '%s\n' "$UPSTREAM_BATCH_PLAN" | sed -n "s/^$1=//p" | head -n 1; }
+if [ "$(upstream_plan_field status)" = ok ] && [ -n "$(upstream_plan_field batch_target)" ]; then
+  UPSTREAM_BATCH_LINE="This sync is bounded to upstream commit $(upstream_plan_field batch_target) - the next $(upstream_plan_field batch_count) first-parent commit(s) of the $(upstream_plan_field behind) pending on upstream/$(upstream_plan_field default), leaving $(upstream_plan_field batch_remaining) for the next periodic sync (list them with: $(upstream_plan_field batch_log_hint))."
+else
+  # shellcheck disable=SC2016  # literal backticked commands for the reading agent
+  UPSTREAM_BATCH_LINE="No bounded batch was planned when this brief was written ($(upstream_plan_field reason | sed 's/^$/plan unavailable/')). "'Run `bin/fm-upstream-batch.sh plan` first and treat its batch_target as this sync'"'"'s bound; if it reports status=unknown, append `blocked: no bounded upstream batch could be planned (<reason>)` and stop without merging anything.'
+fi
 # shellcheck disable=SC2016  # single quotes are deliberate: these lines are literal brief text that must reach the reading agent verbatim; only the '"'"' break-outs interpolate a literal apostrophe.
 UPSTREAM_SYNC_SECTION=$(printf '%s\n' \
 '# Upstream sync - HARD SAFETY GATES' \
@@ -435,6 +452,8 @@ UPSTREAM_SYNC_SECTION=$(printf '%s\n' \
 '2. SUPERVISION-SAFETY CONFLICT STOP. If the merge produces a conflict inside bin/fm-watch.sh, bin/fm-classify-lib.sh, bin/fm-wake-lib.sh, bin/fm-wake-drain.sh, bin/fm-task-inbox-lib.sh, or bin/fm-teardown.sh, do not resolve it yourself. Append `needs-decision: supervision-safety conflict in <file>` to the status file with a three-way summary: (a) what the local side'"'"'s hunk does, (b) what upstream'"'"'s hunk does, (c) what each version'"'"'s resulting behavior is. Stop and wait for the decision.' \
 '3. NON-PRE-EXISTING REGRESSION STOP. Run the full test suite after the merge. For every failure, reproduce it identically on the pre-merge base (checked out separately, never assumed) before calling it pre-existing. Any failure that does not reproduce identically on the pre-merge base blocks unattended progress: append `blocked: <test> fails post-merge and does not reproduce on pre-merge base` with the triage table (test, pre-merge result, post-merge result) and stop rather than shipping past it.' \
 '4. PR PURITY. This PR must contain only the merge commit plus clearly-labeled conflict-resolution commits. Never fold a regression fix or a pre-existing-failure fix into this PR. File any regression found during triage as a separate follow-up backlog item and mention it, unfixed, in this PR'"'"'s description. Document every pre-existing failure in the PR description; never "fix" one as part of this sync.' \
+'5. BOUNDED BATCH, TRUE MERGE ONLY. '"$UPSTREAM_BATCH_LINE"' Merge it with a true merge commit (`git merge --no-ff <target>`), never `--squash`, never `git rebase`, never `git pull --rebase`, and never merge anything past the target: the commits after it belong to the next periodic sync. Before merging, confirm the target is still pending with `git merge-base --is-ancestor <target> upstream/<default>` and not already an ancestor of the fork'"'"'s default branch; if either check fails, append `blocked: upstream batch target <target> is not a pending upstream commit` and stop.' \
+'6. REAL CONFLICT STOP. A conflict is mechanical only when its resolution is unambiguous and content-preserving: both sides'"'"' hunks kept adjacent, one side pure whitespace, comment, or documentation, or the same change made on both sides. Resolve those in labeled `merge conflict resolution:` commits. Any other conflict - competing behavior, a deleted-versus-modified file, or any hunk whose correct result needs a judgment about which side'"'"'s intent wins - is a real conflict: append `needs-decision [key=upstream-conflict-<file-slug>]: real conflict in <file>` with the same three-way summary as gate 2 and stop. Never push through a real conflict; the captain decides it. A no-mistakes ask-user finding raised during this sync is escalated exactly as the rules below require and is never answered by you.' \
 '' \
 'Do not bypass these gates for a build that "looks fine"; the triage table and the three-way summary are the deliverable that lets the captain approve safely.')
 fi
