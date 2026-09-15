@@ -105,6 +105,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   roundtable-marks.tsv  per-project HEAD of last design-review roundtable review; updated only by `bin/fm-roundtable-factsheet.sh --mark` (docs/roundtable-instrumentation.md)
   backlog-routing.tsv  durable pc02/medium/senior routing registry for the autonomous refill step; owned by `bin/fm-backlog-routing.sh` (its header owns the columns); bootstrap seed at `.agents/skills/autonomous/assets/backlog-routing.tsv`
   routing-ledger.tsv  append-only classified/escalated/closed event ledger for that registry; written by `bin/fm-backlog-routing.sh`, read by `bin/fm-routing-ledger-metrics.sh`
+  backlog-ledger.tsv  append-only added/started/done/closed backlog-transition ledger; written by `bin/fm-backlog-ledger-lib.sh`, read by `bin/fm-ledger-summary.sh`
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception

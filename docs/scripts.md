@@ -111,6 +111,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-tasks-axi-lib.sh`    | Shared backlog-backend selector and `tasks-axi` compatibility probe                  |
 | `fm-crew-dispatch-lib.sh` | Single owner of `config/crew-dispatch.json`'s validity contract, shared by the bootstrap diagnostic and the queue snapshot |
 | `fm-backlog-transition-lib.sh` | Pair task-record changes with their backlog transitions and replay interrupted closes |
+| `fm-backlog-ledger-lib.sh` | Append validated added/started/done/closed backlog-transition events to `data/backlog-ledger.tsv` |
+| `fm-ledger-summary.sh`   | Report backlog transition counts from `data/backlog-ledger.tsv`, optionally filtered by time window |
 | `fm-quota-axi-lib.sh`    | Shared `quota-axi` compatibility floor for the bootstrap diagnostic                  |
 | `fm-quota-axi-lib.sh`    | Shared `quota-axi` compatibility floor and quota snapshot schema validation           |
 | `fm-quota-choose.sh`     | Choose the first candidate with known positive quota from an ordered harness:model list |
