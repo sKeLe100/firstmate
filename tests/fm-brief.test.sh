@@ -1260,6 +1260,8 @@ test_upstream_sync_brief_embeds_the_planned_batch() {
   mkdir -p "$root"
   git init -q "$root"
   git -C "$root" symbolic-ref HEAD refs/heads/main
+  git -C "$root" config user.name 'Firstmate Tests'
+  git -C "$root" config user.email 'tests@example.invalid'
   git -C "$root" commit -q --allow-empty -m seed
   git -C "$root" remote add upstream "$root"
   git -C "$root" branch upstream-src main
