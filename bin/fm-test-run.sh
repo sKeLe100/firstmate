@@ -602,6 +602,7 @@ tests/fm-control.test.sh 37798
 tests/fm-cursor-harness.test.sh 30103
 tests/fm-cursor-primary-live-e2e.test.sh 21
 tests/fm-cursor-primary.test.sh 54947
+tests/fm-crew-state-env-leak.test.sh 4878
 tests/fm-daemon.test.sh 26870
 tests/fm-dispatch-quota-cap.test.sh 11272
 tests/fm-documentation-audiences.test.sh 732
