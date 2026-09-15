@@ -45,6 +45,11 @@
 # Optional quiet telemetry writes one bounded TSV snapshot of content and source
 # graph identity, wall/CPU/RSS, shard load, and competing ShellCheck processes.
 #
+# With no explicit paths, this script also verifies .no-mistakes.yaml's
+# commands.test is still the canonical `fm-test-run.sh --changed ...`
+# invocation, failing loudly if a per-branch test-command workaround has
+# been committed as the repo's standing policy.
+#
 # Usage:
 #   fm-lint.sh                         lint the context-selected file set (see above)
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
@@ -165,12 +170,14 @@ fm_lint_run_workflows() {
 FM_LINT_CANONICAL_NM_TEST="bin/fm-test-run.sh --changed --exclude-family real-herdr-gated"
 fm_lint_check_nomistakes_test_command() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
-  local nm_yaml="$ROOT/.no-mistakes.yaml"
+  local nm_yaml="${FM_LINT_NM_YAML:-$ROOT/.no-mistakes.yaml}"
   [ -f "$nm_yaml" ] || return 0
   local test_line
   test_line=$(awk '/^[[:space:]]*test:[[:space:]]*/ { sub(/^[[:space:]]*test:[[:space:]]*/, ""); print; exit }' "$nm_yaml")
   test_line=${test_line#\'}
   test_line=${test_line%\'}
+  test_line=${test_line#\"}
+  test_line=${test_line%\"}
   if [ "$test_line" != "$FM_LINT_CANONICAL_NM_TEST" ]; then
     printf 'fm-lint.sh: .no-mistakes.yaml commands.test must be the canonical invocation.\n' >&2
     printf 'fm-lint.sh: expected: %s\n' "$FM_LINT_CANONICAL_NM_TEST" >&2
