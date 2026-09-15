@@ -493,7 +493,7 @@ The report is the only thing that survives, so anything worth keeping must be in
    \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) and firstmate rechecks at that time instead.
    Use \`blocked:\` when you are stuck and need help.
    If you hit your own Claude session usage limit (as distinct from account-wide quota
-   exhaustion or a real wedge), report \`paused [key=session-limit]: {harness} session usage limit, resets <ts>\`
+   exhaustion or a real wedge), report \`$PAUSED_VERB [key=session-limit]: {harness} session usage limit, resets <ts>\`
    and STOP - do not attempt to keep working or retry in the same session once the limit clears;
    firstmate will relaunch you fresh with a carryover note. That key marks the one pause that
    clears on its own; a context-exhausted stop is NOT a pause - report \`blocked: context exhausted, relaunch to continue\`
@@ -629,7 +629,7 @@ $RULE1
    a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
    If you hit your own Claude session usage limit (as distinct from account-wide quota
-   exhaustion or a real wedge), report \`paused [key=session-limit]: {harness} session usage limit, resets <ts>\`
+   exhaustion or a real wedge), report \`$PAUSED_VERB [key=session-limit]: {harness} session usage limit, resets <ts>\`
    and STOP - do not attempt to keep working or retry in the same session once the limit clears;
    firstmate will relaunch you fresh with a carryover note. That key marks the one pause that
    clears on its own; a context-exhausted stop is NOT a pause - report \`blocked: context exhausted, relaunch to continue\`
