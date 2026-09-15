@@ -810,7 +810,7 @@ portable_serial_weight_hints() {
 tests/fm-afk-contract.test.sh 50000
 tests/fm-afk-inject-e2e.test.sh 35792
 tests/fm-afk-pi-herdr-return-e2e.test.sh 100
-tests/fm-afk-return.test.sh 29000
+tests/fm-afk-return.test.sh 76000
 tests/fm-agentsmd-size.test.sh 100
 tests/fm-agy-harness.test.sh 65000
 tests/fm-agy-signals-live-e2e.test.sh 85
@@ -910,7 +910,7 @@ tests/fm-pc02-fair-order.test.sh 44123
 tests/fm-peek-remote.test.sh 1018
 tests/fm-pending-reply.test.sh 86711
 tests/fm-pi-branch-extension.test.sh 73000
-tests/fm-pi-branch-live-e2e.test.sh 56
+tests/fm-pi-branch-live-e2e.test.sh 120
 tests/fm-pi-branch-responsiveness-live-e2e.test.sh 17000
 tests/fm-pi-codex-native.test.sh 52
 tests/fm-pi-primary-live-e2e.test.sh 81
