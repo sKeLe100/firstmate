@@ -1392,7 +1392,7 @@ test_non_claude_harness_ignores_claude_permission_mode() {
 # permission flag, and any other token refuses before endpoint or metadata.
 test_claude_remote_control_off_matches_absent_launch() {
   local rec id out status launch expected
-  id=rc-off-z24
+  id="rc-off-z24"
   rec=$(make_spawn_case rc-off claude "$id")
   read_case_record "$rec"
   printf 'off\n' > "$HOME_DIR/config/claude-remote-control"
@@ -1409,7 +1409,7 @@ test_claude_remote_control_off_matches_absent_launch() {
 
 test_claude_remote_control_on_adds_named_flag() {
   local rec id out status launch
-  id=rc-on-z25
+  id="rc-on-z25"
   rec=$(make_spawn_case rc-on claude "$id")
   read_case_record "$rec"
   printf '  on\n' > "$HOME_DIR/config/claude-remote-control"
@@ -1425,7 +1425,7 @@ test_claude_remote_control_on_adds_named_flag() {
 
 test_claude_remote_control_on_secondmate_uses_2ndmate_name() {
   local rec id sm out status launch
-  id=rc-on-secondmate-z26
+  id="rc-on-secondmate-z26"
   rec=$(make_spawn_case rc-on-secondmate claude "$id")
   read_case_record "$rec"
   printf 'on\n' > "$HOME_DIR/config/claude-remote-control"
@@ -1444,7 +1444,7 @@ test_claude_remote_control_on_secondmate_uses_2ndmate_name() {
 
 test_claude_remote_control_on_home_label_prefixes_from_secondmate_marker() {
   local rec id out status launch
-  id=rc-on-homelabel-z27
+  id="rc-on-homelabel-z27"
   rec=$(make_spawn_case rc-on-homelabel claude "$id")
   read_case_record "$rec"
   printf 'on\n' > "$HOME_DIR/config/claude-remote-control"
@@ -1461,7 +1461,7 @@ test_claude_remote_control_on_home_label_prefixes_from_secondmate_marker() {
 
 test_claude_remote_control_invalid_refuses_before_endpoint_or_metadata() {
   local rec id out status
-  id=rc-invalid-z28
+  id="rc-invalid-z28"
   rec=$(make_spawn_case rc-invalid claude "$id")
   read_case_record "$rec"
   printf 'yolo\n' > "$HOME_DIR/config/claude-remote-control"
@@ -1478,7 +1478,7 @@ test_claude_remote_control_invalid_refuses_before_endpoint_or_metadata() {
 
 test_non_claude_harness_ignores_claude_remote_control() {
   local rec id out status launch
-  id=rc-codex-z29
+  id="rc-codex-z29"
   rec=$(make_spawn_case rc-codex codex "$id")
   read_case_record "$rec"
   printf 'on\n' > "$HOME_DIR/config/claude-remote-control"
