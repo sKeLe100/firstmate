@@ -26,9 +26,11 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    # Hang tripwire only: lint executions measured at 14-16 minutes in the
-    # September 12 starvation report, so this leaves deliberate margin.
-    timeout-minutes: 25
+    # Hang tripwire only: upstream measured lint at 14-16 minutes in the
+    # September 12 starvation report; this fork's merged script set measured
+    # 20-22 minutes on main and overran a 25-minute cap on the 2026-09-14
+    # upstream sync (run 34911977448), so the cap leaves deliberate margin.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - name: Install pinned ShellCheck
@@ -166,13 +168,15 @@ jobs:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: ubuntu-latest
     # Measured whole remainder is ~63 min of serial work; this fork's balanced
-    # shards measure ~14.6 min each, so the cap stays at 30 min rather than
-    # upstream's 20. Cap is a hang tripwire, not the healthy end of the lane.
+    # shards measured ~14.6 min each before the 2026-09-14 upstream sync and a
+    # shard reached 26.5 min on that sync's merged lane (run 34911977448), so
+    # the cap is 40 min rather than upstream's 20. Cap is a hang tripwire, not
+    # the healthy end of the lane.
     # --per-script-timeout-secs below is the per-script tripwire: it fails a
     # wedged script fast, with its captured output, instead of one hung script
-    # silently burning the whole 30-minute job budget and leaving no evidence
+    # silently burning the whole job budget and leaving no evidence
     # (docs/fm-test-portable-shards.md "Timeouts").
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
@@ -229,7 +233,7 @@ jobs:
           # The Pi package is installed above and CI provides npm and tsc, so
           # any missing typecheck prerequisite is a broken lane, not a valid skip.
           bin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \
-            --per-script-timeout-secs 600 \
+            --per-script-timeout-secs 1200 \
             --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"
       - name: Upload portable serial shard ${{ matrix.shard }} timing artifact

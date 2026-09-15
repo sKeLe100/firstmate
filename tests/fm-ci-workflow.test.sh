@@ -115,7 +115,8 @@ end
   pass "every ci.yml job carries a finite timeout"
 }
 
-# The four jobs the incident found unbounded, at the report's recommended caps.
+# The four jobs the incident found unbounded, at the report's recommended caps
+# (lint raised for this fork's merged script set; ci.yml owns the measurement).
 test_previously_unbounded_jobs_keep_their_caps() {
   local job expected actual
   while read -r job expected; do
@@ -124,7 +125,7 @@ test_previously_unbounded_jobs_keep_their_caps() {
     [ "$actual" = "$expected" ] \
       || fail "$job timeout must stay $expected minutes, got $actual"
   done <<'CAPS'
-lint 25
+lint 45
 test-coverage 5
 tests-timing-aggregate 5
 invariants 5
@@ -134,6 +135,9 @@ CAPS
 
 # Cancellation makes an undersized cap costlier: a falsely tripped job now also
 # discards a run nobody replaced. These bounds were measured, not guessed.
+# This fork removed the macos-stock-bash job (captain ruling: no Apple hardware;
+# ci.yml's own comment owns the rationale), so its upstream cap row is not listed,
+# and its serial lane cap is the fork's own (ci.yml owns the measurement).
 test_measured_lanes_keep_their_existing_bounds() {
   local job expected actual
   while read -r job expected; do
@@ -144,9 +148,8 @@ test_measured_lanes_keep_their_existing_bounds() {
   done <<'CAPS'
 tests-portable-parallel-1 10
 tests-portable-parallel-2 10
-tests-portable-serial 30
+tests-portable-serial 40
 tests-herdr 75
-macos-stock-bash 10
 CAPS
   pass "the already-measured lane bounds are unchanged"
 }

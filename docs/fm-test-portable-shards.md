@@ -70,7 +70,8 @@ Refresh the hints whenever the serial lane gains scripts, rather than waiting fo
 `bin/fm-test-run.sh` owns the per-shard packing, so its `--check-coverage` output is the current account of lane size, shard composition, and balance rather than a copied table.
 Run 34342484144 observed a shard reach about 20 minutes of passing work, so the 30-minute job cap keeps meaningful hang-tripwire margin for job setup and runner-speed spread.
 
-The single longest script, `tests/fm-watch-triage.test.sh` at 262626 ms, is the floor for any shard count.
+The single longest script, `tests/fm-watch-triage.test.sh`, is the floor for any shard count.
+Its hint is the 600031 ms floor measured on the 2026-09-14 upstream sync (run 34911977448 terminated it at the then-600s per-script bound after both parents measured 414-564 s), so refresh it from the next green serial timing artifacts.
 
 Refresh the CI-derived hints by downloading the per-shard timing artifacts from several green CI runs and replacing the `portable_serial_weight_hints` table in `bin/fm-test-run.sh` with the slowest measured `duration_ms` per `path`:
 
@@ -114,7 +115,7 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 | Lane | Bound | Rationale |
 |---|---|---|
 | portable parallel 1/2 | See [CI workflow](../.github/workflows/ci.yml) | The workflow owns the parallel cap rationale and its evidence limits. |
-| portable serial 1-5 | job `timeout-minutes: 30`; per-script `--per-script-timeout-secs 600` | Current runners can take about 20 minutes; the 30-minute cap remains a hang tripwire while leaving margin for job setup and runner-speed spread. The 600s per-script bound is a deliberate second tripwire, added after a single wedged script (a rare bash signal/trap race surfacing during `tests/fm-watch-triage.test.sh`, see run [33776418360](https://github.com/kunchenguid/firstmate/actions/runs/33776418360)) silently consumed the whole 30-minute job with no captured output before GitHub cancelled it. 600s leaves over 2x margin above the lane's own slowest known script (`tests/fm-watch-triage.test.sh` at ~262.6s) while still failing a wedged script with its output long before the job cap. |
+| portable serial 1-5 | job `timeout-minutes: 40`; per-script `--per-script-timeout-secs 1200` | Current runners can take about 20 minutes; the 30-minute cap remains a hang tripwire while leaving margin for job setup and runner-speed spread. The 600s per-script bound is a deliberate second tripwire, added after a single wedged script (a rare bash signal/trap race surfacing during `tests/fm-watch-triage.test.sh`, see run [33776418360](https://github.com/kunchenguid/firstmate/actions/runs/33776418360)) silently consumed the whole 30-minute job with no captured output before GitHub cancelled it. 600s left over 2x margin above the lane's then-slowest script (`tests/fm-watch-triage.test.sh` at ~262.6s); the 2026-09-14 upstream sync merged both sides' triage cases and that script overran 600s on run 34911977448, so the bound is now 1200s and the job cap 40 minutes (a shard reached 26.5 minutes there), still failing a wedged script with its output before the job cap. |
 | Herdr | family-run step `timeout-minutes: 20`; job `timeout-minutes: 75` backstop | Healthy runs finished around 7 minutes before this lane gained `fm-backend-herdr-focus-flash-e2e`, which measures about 2 minutes against a real lab locally, so the step bound is still the hang tripwire (cleanup and timing artifacts still upload) while the job cap stays a last-resort backstop. Refresh this figure from the lane's uploaded timing artifact. |
 
 Timeouts are intended as hang tripwires; a passing coverage guard does not establish a healthy job duration.
