@@ -64,8 +64,8 @@ Each shard is still strictly serial in itself, and separate runners mean no two 
 `.github/workflows/ci.yml` derives the same `n` from `strategy.job-total` rather than a literal, so changing the shard count in either file without the other fails the lane loudly instead of leaving part of the required suite unrun.
 
 Assignment is longest-processing-time bin packing over per-script duration hints embedded in `bin/fm-test-run.sh`.
-The 184 current hints are the slowest measurements retained from the `fm-test-timing-portable-serial-*` artifacts of four green CI runs on 2026-09-15, [34921785242](https://github.com/sKeLe100/firstmate/actions/runs/34921785242), [34918872259](https://github.com/sKeLe100/firstmate/actions/runs/34918872259), [34910885603](https://github.com/sKeLe100/firstmate/actions/runs/34910885603), and [34898264601](https://github.com/sKeLe100/firstmate/actions/runs/34898264601), plus two same-day follow-up refreshes that `--check-hint-drift` forced: 6 scripts (`fm-busy-adapter-wiring`, `fm-codex-continuity-live-e2e`, `fm-pi-branch-extension`, `fm-secondmate-restart`, `fm-spawn-pool-base-freshen`, `fm-watch-arm`) against [34941467922](https://github.com/sKeLe100/firstmate/actions/runs/34941467922), and 7 more (`fm-classify-corr-token`, `fm-home-summary-refresh`, `fm-llm-usage-telemetry-integration`, `fm-remote-doctor`, `fm-roundtable-factsheet`, `fm-secondmate-sync`, `fm-trace-context-spawn`) against [34944714097](https://github.com/sKeLe100/firstmate/actions/runs/34944714097).
-Those per-script maxima total 5687428 ms of conservative balance weight, and every current portable-serial script has a measured hint (`serial_unhinted=0`).
+The 184 current hints are the slowest measurements retained from the `fm-test-timing-portable-serial-*` artifacts of four green CI runs on 2026-09-15, [34921785242](https://github.com/sKeLe100/firstmate/actions/runs/34921785242), [34918872259](https://github.com/sKeLe100/firstmate/actions/runs/34918872259), [34910885603](https://github.com/sKeLe100/firstmate/actions/runs/34910885603), and [34898264601](https://github.com/sKeLe100/firstmate/actions/runs/34898264601), plus three same-day follow-up refreshes that `--check-hint-drift` forced: 6 scripts (`fm-busy-adapter-wiring`, `fm-codex-continuity-live-e2e`, `fm-pi-branch-extension`, `fm-secondmate-restart`, `fm-spawn-pool-base-freshen`, `fm-watch-arm`) against [34941467922](https://github.com/sKeLe100/firstmate/actions/runs/34941467922), 7 more (`fm-classify-corr-token`, `fm-home-summary-refresh`, `fm-llm-usage-telemetry-integration`, `fm-remote-doctor`, `fm-roundtable-factsheet`, `fm-secondmate-sync`, `fm-trace-context-spawn`) against [34944714097](https://github.com/sKeLe100/firstmate/actions/runs/34944714097), and 4 more (`fm-daemon`, `fm-fleet-snapshot-view`, `fm-muse-harness`, `fm-wake-drain-open-decisions-cursor`) against [34950539209](https://github.com/sKeLe100/firstmate/actions/runs/34950539209).
+Those per-script maxima total 5888196 ms of conservative balance weight, and every current portable-serial script has a measured hint (`serial_unhinted=0`).
 Taking the slowest of several runs rather than a single run keeps the balance honest on a slow runner: individual scripts varied noticeably between those four runs, most sharply `tests/fm-watch-triage.test.sh` (444-484 s) and `tests/fm-remote-secondmate-lifecycle-e2e.test.sh` (roughly 170-312 s).
 A script with no hint gets the conservative `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` default; the coverage guard's `--check-coverage` reports the unmeasured share as `serial_unhinted=` and refuses past `PORTABLE_SERIAL_MAX_UNHINTED_PERCENT`, so hint drift fails the coverage guard instead of silently pushing one shard into its job cap.
 Hints only affect balance: the coverage guard keeps the partition complete and disjoint whatever they say, so a stale hint costs a slower shard rather than lost coverage.
@@ -76,15 +76,15 @@ Refresh the hints whenever the serial lane gains scripts, or whenever the covera
 
 | Lane | Script count | Estimated duration |
 |---|---:|---:|
-| `portable-serial-1of5` | 35 | 1137475 ms (~18.96 min) |
-| `portable-serial-2of5` | 36 | 1137472 ms (~18.96 min) |
-| `portable-serial-3of5` | 37 | 1137500 ms (~18.96 min) |
-| `portable-serial-4of5` | 38 | 1137480 ms (~18.96 min) |
-| `portable-serial-5of5` | 38 | 1137501 ms (~18.96 min) |
-| imbalance | | 29 ms |
+| `portable-serial-1of5` | 35 | 1177626 ms (~19.63 min) |
+| `portable-serial-2of5` | 36 | 1177649 ms (~19.63 min) |
+| `portable-serial-3of5` | 38 | 1177641 ms (~19.63 min) |
+| `portable-serial-4of5` | 38 | 1177650 ms (~19.63 min) |
+| `portable-serial-5of5` | 37 | 1177630 ms (~19.63 min) |
+| imbalance | | 24 ms |
 
 The current table is generated from the runner's retained maxima; every current portable-serial script is hinted (`serial_unhinted=0`).
-This fork's worst shard carries ~18.96 min of assignment weight, 63.2% of its 30-minute job cap.
+This fork's worst shard carries ~19.63 min of assignment weight, 65.4% of its 30-minute job cap.
 
 The single longest script, `tests/fm-watch-triage.test.sh` at 480776 ms, is the floor for any shard count.
 
