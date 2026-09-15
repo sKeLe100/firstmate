@@ -1,0 +1,48 @@
+=== Live scenario: fm-captain-hold.sh hold creates task -> ledger 'added' event ===
+$ tasks-axi show ledger-demo-1 (real task record):
+task:
+  id: ledger-demo-1
+  title: Demo ledger task
+  state: done
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: testing ledger
+  hold_kind: captain
+  hold_until: "-"
+  kind: task
+  repo: demo-repo
+  priority: "-"
+  created: "-"
+  closed: 2026-09-15
+  deps: none
+  links: none
+  body: "Resolution recorded by fm-captain-hold.\nDecision digest: 0e2b0885a3b03f291d62880f8955efbae8b4139e03354ea8ff04314a82e7eca7\nResolution mode: answered\n\nCaptain decision:\ndecision text"
+
+=== ledger file contents after hold/answer lifecycle ===
+1789503386	added	ledger-demo-1	unknown	-
+1789503468	started	ledger-demo-1	unknown	-
+1789503480	done	ledger-demo-1	unknown	-
+
+=== BUG: kind/repo columns show 'unknown'/'-' though real task has kind=task repo=demo-repo ===
+Root cause repro: fm_backlog_ledger_resolve_meta() calls bare 'tasks-axi show $id'
+without cd'ing into the tasks-axi root or passing --file, unlike fm-captain-hold.sh's
+own tasks_axi() wrapper (bin/fm-captain-hold.sh:300-310) which does both.
+$ tasks-axi show ledger-demo-1 (run from worktree cwd, no --file -- what resolve_meta does):
+error: "Task \"ledger-demo-1\" not found in this backlog"
+code: NOT_FOUND
+help[1]: Run `tasks-axi list` to see existing tasks
+
+=== fm-ledger-summary.sh driven live against a hand-built ledger ===
+--- all ---
+added: 2
+started: 1
+done: 1
+closed: 1
+total: 5
+--- since 1700000015 ---
+added: 1
+started: 0
+done: 1
+closed: 1
+total: 3
