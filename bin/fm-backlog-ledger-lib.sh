@@ -26,9 +26,13 @@
 # Caller requirements: DATA must be set (to the home's data directory) and
 # tasks-axi must be on PATH (for kind/repo resolution when the caller does
 # not supply them directly).
+#
+# The ledger file path and lock path are derived from the passed-in
+# data_dir at call time, not from module-level globals set at source time.
+# This ensures correct behavior when callers pass a different data_dir
+# than the one available at source time.
 
 FM_BACKLOG_LEDGER_FILE="${FM_BACKLOG_LEDGER_FILE:-$DATA/backlog-ledger.tsv}"
-FM_BACKLOG_LEDGER_LOCK="${FM_BACKLOG_LEDGER_LOCK:-$DATA/.backlog-ledger.lock}"
 
 # Sanitize a free-text field so it can never corrupt the TSV shape
 # (strip tabs and newlines, preserving everything else).
@@ -44,14 +48,16 @@ fm_backlog_ledger_resolve_meta() {  # <task-id>
 
   show_out=$(tasks-axi show "$id" 2>/dev/null) || return 1
   kind=$(printf '%s\n' "$show_out" | sed -n 's/^  kind: *//p' | head -1)
+  # tasks-axi quotes empty-marker fields as "\"-\"", so handle both bare
+  # and quoted variants in the normalization.
   repo=$(printf '%s\n' "$show_out" | sed -n 's/^  repo: *//p' | head -1)
 
-  # Normalize empty/placeholder values
+  # Normalize empty/placeholder values (bare or quoted)
   case "$kind" in
-    ''|'-') kind='ship' ;;
+    ''|'-'|'"-"') kind='ship' ;;
   esac
   case "$repo" in
-    ''|'-') repo='-' ;;
+    ''|'-'|'"-"') repo='-' ;;
   esac
 
   FM_LEDGER_KIND="$kind"
@@ -100,8 +106,11 @@ fm_backlog_ledger_append_kind_repo() {  # <event> <data-dir> <task-id> <kind> <r
 }
 
 # Internal: acquire the lock and write one ledger record.
+# Derives both the file path and lock path from $data_dir so the function
+# writes to the correct ledger regardless of source-time globals.
 _fm_backlog_ledger_write() {  # <event> <data-dir> <task-id> <kind> <repo>
   local event=$1 data_dir=$2 id=$3 kind=$4 repo=$5
+  local ledger_file="$data_dir/backlog-ledger.tsv"
 
   # Ensure the data directory exists
   mkdir -p "$data_dir" 2>/dev/null || return 2
@@ -123,7 +132,7 @@ _fm_backlog_ledger_write() {  # <event> <data-dir> <task-id> <kind> <repo>
     "$(date -u +%s)" "$event" "$id" \
     "$(fm_backlog_ledger_sanitize_field "$kind")" \
     "$(fm_backlog_ledger_sanitize_field "$repo")" \
-    >> "$FM_BACKLOG_LEDGER_FILE"
+    >> "$ledger_file"
 
   rmdir "$lockdir" 2>/dev/null || true
   return 0

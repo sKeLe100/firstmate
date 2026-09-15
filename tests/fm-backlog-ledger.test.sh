@@ -312,6 +312,38 @@ for i in $(seq 1 5); do
 done
 pass "ledger epochs are monotonically non-decreasing"
 
+# --- test: ledger writes to data_dir, not source-time global ---------------
+
+TEST_ROOT=$(fm_test_tmproot ledger-write-path)
+DATA="$TEST_ROOT/data"
+mkdir -p "$DATA"
+# Set a different FM_BACKLOG_LEDGER_FILE (source-time default)
+FM_BACKLOG_LEDGER_FILE="/tmp/wrong-path/backlog-ledger.tsv"
+
+# Append using a different data_dir - should write to $DATA, not FM_BACKLOG_LEDGER_FILE
+fm_backlog_ledger_append_kind_repo added "$DATA" "path-test-task" "ship" "firstmate"
+
+# The ledger should be at $DATA/backlog-ledger.tsv, not at FM_BACKLOG_LEDGER_FILE
+[ -f "$DATA/backlog-ledger.tsv" ] || fail "ledger should be in data_dir, not source-time global"
+[ ! -f "/tmp/wrong-path/backlog-ledger.tsv" ] \
+  || fail "should not write to source-time FM_BACKLOG_LEDGER_FILE path"
+pass "ledger writes to passed data_dir, not source-time global"
+
+# --- test: lock timeout returns error code 2 --------------------------------
+
+TEST_ROOT=$(fm_test_tmproot ledger-lock-timeout)
+DATA="$TEST_ROOT/data"
+mkdir -p "$DATA"
+# Create a persistent lock file to simulate contention
+mkdir -p "$DATA/.backlog-ledger.lock"
+
+# This should fail with exit code 2 after timeout
+fm_backlog_ledger_append_kind_repo added "$DATA" "lock-timeout-task" "ship" "firstmate"
+rc=$?
+rmdir "$DATA/.backlog-ledger.lock" 2>/dev/null || true
+[ "$rc" -eq 2 ] || fail "lock timeout should return exit code 2, got: $rc"
+pass "lock timeout returns exit code 2 under contention"
+
 # --- summary: all tests passed ----------------------------------------------
 
 echo "# fm-backlog-ledger.test.sh: all assertions passed"
