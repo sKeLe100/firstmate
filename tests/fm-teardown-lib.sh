@@ -19,7 +19,7 @@ fi
 FM_TEARDOWN_LIB_SOURCED=1
 
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
-PR_CHECK="$ROOT/bin/fm-pr-check.sh"
+export PR_CHECK="$ROOT/bin/fm-pr-check.sh"
 TMP_ROOT=$(fm_test_tmproot fm-teardown-tests)
 REAL_GIT_FOR_TEST=$(command -v git)
 export REAL_GIT_FOR_TEST
