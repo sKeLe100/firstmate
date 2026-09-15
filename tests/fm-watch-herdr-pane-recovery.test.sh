@@ -249,7 +249,130 @@ test_herdr_pane_recovery_holds_the_meta_lock_during_its_write() {
   pass "the herdr pane recovery's meta rewrite acquires and releases the per-task meta lock"
 }
 
+# make_herdr_pane_recovery_fail_fakebin <dir> <old_pane> <new_pane> <wsid>
+# <tab_id> <break_marker> <resolve_ok> <new_pane_readable>: a scripted `herdr`
+# CLI for the two recovery-failure paths that make_herdr_pane_recovery_fakebin
+# doesn't cover. `pane read <old_pane>` fails (pane_not_found) once
+# <break_marker> exists, same as the happy-path fake. `pane list --workspace
+# <wsid>` reports <new_pane> for <tab_id> only when <resolve_ok> is "1" (a
+# gone-tab is an empty panes array, so `fm_backend_herdr_resolve_pane_not_found`
+# comes back empty). `pane read <new_pane>` only succeeds when
+# <new_pane_readable> is "1", letting a caller simulate a resolved pane that
+# still fails to read right after reassignment.
+make_herdr_pane_recovery_fail_fakebin() {  # <dir> <old_pane> <new_pane> <wsid> <tab_id> <break_marker> <resolve_ok> <new_pane_readable>
+  local dir=$1 old_pane=$2 new_pane=$3 wsid=$4 tab_id=$5 break_marker=$6 resolve_ok=$7 new_pane_readable=$8
+  local fb="$dir/fakebin"
+  mkdir -p "$fb"
+  cat > "$fb/herdr" <<SH
+#!/usr/bin/env bash
+set -u
+case "\${1:-}" in
+  status)
+    printf '{"client":{"version":"0.7.1","protocol":14},"server":{"running":true}}\n'
+    exit 0
+    ;;
+  pane)
+    case "\${2:-}" in
+      read)
+        pane=\${3:-}
+        if [ "\$pane" = "$old_pane" ] && [ -e "$break_marker" ]; then
+          exit 1
+        fi
+        if [ "\$pane" = "$old_pane" ]; then
+          printf 'unbroken content\n'
+          exit 0
+        fi
+        if [ "\$pane" = "$new_pane" ] && [ "$new_pane_readable" = "1" ]; then
+          printf 'recovered content\n'
+          exit 0
+        fi
+        exit 1
+        ;;
+      list)
+        if [ "$resolve_ok" = "1" ]; then
+          printf '{"result":{"panes":[{"tab_id":"$tab_id","pane_id":"$new_pane"}]}}\n'
+        else
+          printf '{"result":{"panes":[]}}\n'
+        fi
+        exit 0
+        ;;
+    esac
+    exit 1
+    ;;
+  agent)
+    case "\${2:-}" in
+      get) printf '{"result":{"agent":{"agent_status":"working"}}}\n'; exit 0 ;;
+    esac
+    exit 1
+    ;;
+esac
+exit 1
+SH
+  chmod +x "$fb/herdr"
+  printf '%s\n' "$fb"
+}
+
+test_herdr_pane_recovery_leaves_meta_untouched_when_tab_is_gone() {
+  local dir state fakebin out break_marker pid
+  local session=lab old_pane=stale-pane-5 new_pane=fresh-pane-6 wsid=ws3 tab_id=tab3
+  dir=$(make_case herdr-pane-recovery-tab-gone); state="$dir/state"
+  out="$dir/watch.out"; break_marker="$dir/.pane-broken"
+  write_herdr_task_meta "$state" upstream-sync "$session" "$old_pane" "$wsid" "$tab_id"
+  : > "$break_marker"
+  fakebin=$(make_herdr_pane_recovery_fail_fakebin "$dir" "$old_pane" "$new_pane" "$wsid" "$tab_id" "$break_marker" 0 1)
+
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>"$dir/watch.err" &
+  pid=$!
+
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "watcher exited when the tab could not be resolved (pane_not_found with no matching tab): err=$(cat "$dir/watch.err")"
+  fi
+  kill -0 "$pid" 2>/dev/null \
+    || { reap "$pid"; fail "watcher exited rather than treating an unresolvable tab as no evidence for the poll"; }
+  [ ! -s "$out" ] \
+    || { reap "$pid"; fail "an unresolvable tab produced a wake instead of being absorbed as no evidence: $(cat "$out")"; }
+  [ "$(fm_meta_get "$state/upstream-sync.meta" herdr_pane_id)" = "$old_pane" ] \
+    || { reap "$pid"; fail "meta's herdr_pane_id was rewritten even though the tab could not be resolved to a new pane"; }
+  [ "$(fm_meta_get "$state/upstream-sync.meta" window)" = "$session:$old_pane" ] \
+    || { reap "$pid"; fail "meta's window= was rewritten even though the tab could not be resolved to a new pane"; }
+  reap "$pid"
+  pass "a herdr pane_not_found with no resolvable tab leaves the meta untouched and is absorbed as no evidence for that poll"
+}
+
+test_herdr_pane_recovery_writes_both_fields_together_even_when_retry_capture_fails() {
+  local dir state fakebin out break_marker pid
+  local session=lab old_pane=stale-pane-8 new_pane=fresh-pane-2 wsid=ws4 tab_id=tab4
+  dir=$(make_case herdr-pane-recovery-retry-fails); state="$dir/state"
+  out="$dir/watch.out"; break_marker="$dir/.pane-broken"
+  write_herdr_task_meta "$state" upstream-sync "$session" "$old_pane" "$wsid" "$tab_id"
+  : > "$break_marker"
+  fakebin=$(make_herdr_pane_recovery_fail_fakebin "$dir" "$old_pane" "$new_pane" "$wsid" "$tab_id" "$break_marker" 1 0)
+
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>"$dir/watch.err" &
+  pid=$!
+
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "watcher exited when the resolved pane still failed to read on retry: err=$(cat "$dir/watch.err")"
+  fi
+  kill -0 "$pid" 2>/dev/null \
+    || { reap "$pid"; fail "watcher exited rather than treating a still-failing retry capture as no evidence for the poll"; }
+  [ ! -s "$out" ] \
+    || { reap "$pid"; fail "a still-failing retry capture produced a wake instead of being absorbed as no evidence: $(cat "$out")"; }
+  [ "$(fm_meta_get "$state/upstream-sync.meta" herdr_pane_id)" = "$new_pane" ] \
+    || { reap "$pid"; fail "resolved pane id was not written to meta even though resolution succeeded"; }
+  [ "$(fm_meta_get "$state/upstream-sync.meta" window)" = "$session:$new_pane" ] \
+    || { reap "$pid"; fail "window= disagrees with herdr_pane_id after a resolved-but-unreadable retry - the two fields must be written together, not left partially updated"; }
+  reap "$pid"
+  pass "a resolved herdr pane that still fails its retry capture still gets herdr_pane_id and window= written together, never left disagreeing"
+}
+
 test_recovered_herdr_pane_rewrites_meta_and_stays_busy_absorbed
 test_herdr_pane_recovery_holds_the_meta_lock_during_its_write
+test_herdr_pane_recovery_leaves_meta_untouched_when_tab_is_gone
+test_herdr_pane_recovery_writes_both_fields_together_even_when_retry_capture_fails
 
 printf '# all fm-watch-herdr-pane-recovery tests passed\n'

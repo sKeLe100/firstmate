@@ -2970,20 +2970,16 @@ EOF
         if [ -n "$wsid" ] && [ -n "$tab_id" ] && [ -n "$session" ]; then
           new_pane=$(fm_backend_herdr_resolve_pane_not_found "$session" "$wsid" "$tab_id" 2>/dev/null) || new_pane=
           if [ -n "$new_pane" ]; then
-            # Successfully resolved the pane ID. Update the meta file and retry.
+            # Successfully resolved the pane ID. Update both fields together so
+            # the meta never passes through a herdr_pane_id/window-disagreeing
+            # state, then retry capture.
+            new_w="$session:$new_pane"
             meta_lock=$(fm_meta_lock_path "$meta") || meta_lock=
             [ -z "$meta_lock" ] || fm_lock_acquire_wait "$meta_lock"
-            if sed -i.bak "s/^herdr_pane_id=.*/herdr_pane_id=$new_pane/" "$meta" 2>/dev/null; then
+            if sed -i.bak -e "s/^herdr_pane_id=.*/herdr_pane_id=$new_pane/" -e "s/^window=.*/window=$new_w/" "$meta" 2>/dev/null; then
               rm -f "$meta.bak"
-              # Reconstruct the window target with the new pane ID and retry capture
-              new_w="$session:$new_pane"
               tail40=$(fm_backend_capture "$backend" "$new_w" 40 "$(window_label "$w")" 2>/dev/null) || true
-              # If this retry succeeded, also update the cached window so later
-              # in this poll and subsequent polls use the new pane ID
-              if [ -n "$tail40" ]; then
-                sed -i.bak "s/^window=.*/window=$new_w/" "$meta" 2>/dev/null && rm -f "$meta.bak"
-                w="$new_w"
-              fi
+              w="$new_w"
             else
               # Restore from backup if sed failed
               [ ! -f "$meta.bak" ] || mv "$meta.bak" "$meta"
