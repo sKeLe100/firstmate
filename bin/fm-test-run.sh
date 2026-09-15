@@ -807,7 +807,7 @@ list_portable_serial() {
 # balance rather than coverage. That doc owns the refresh procedure.
 portable_serial_weight_hints() {
   cat <<'EOF'
-tests/fm-afk-contract.test.sh 22000
+tests/fm-afk-contract.test.sh 50000
 tests/fm-afk-inject-e2e.test.sh 35792
 tests/fm-afk-pi-herdr-return-e2e.test.sh 100
 tests/fm-afk-return.test.sh 29000
@@ -830,7 +830,7 @@ tests/fm-backlog-read-bound.test.sh 24226
 tests/fm-backlog-routing.test.sh 59043
 tests/fm-bearings-board-lavish-live-e2e.test.sh 51
 tests/fm-bearings-board-render.test.sh 14000
-tests/fm-bearings-board.test.sh 52000
+tests/fm-bearings-board.test.sh 125000
 tests/fm-bearings-snapshot.test.sh 116374
 tests/fm-bootstrap-network-parallel.test.sh 8214
 tests/fm-bootstrap.test.sh 64000
@@ -847,7 +847,7 @@ tests/fm-classify-decision-key.test.sh 1167
 tests/fm-claude-stop-autoarm-live-e2e.test.sh 80
 tests/fm-claude-stop-autoarm.test.sh 60709
 tests/fm-claude-trust.test.sh 11268
-tests/fm-cmux-claude-composer-live-e2e.test.sh 63
+tests/fm-cmux-claude-composer-live-e2e.test.sh 130
 tests/fm-codex-continuity-live-e2e.test.sh 78
 tests/fm-codex-usage.test.sh 61912
 tests/fm-composer-matrix-live-e2e.test.sh 110
@@ -1000,7 +1000,7 @@ tests/fm-test-fixture-cleanup.test.sh 915
 tests/fm-test-fixtures.test.sh 2500
 tests/fm-test-isolation-proof.test.sh 2567
 tests/fm-test-sandbox-cache-race.test.sh 6604
-tests/fm-tmux-agent-liveness.test.sh 1516
+tests/fm-tmux-agent-liveness.test.sh 3000
 tests/fm-tool-update-check.test.sh 14176
 tests/fm-trace-context-lib.test.sh 209
 tests/fm-trace-context-spawn.test.sh 44702
