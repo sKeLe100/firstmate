@@ -15,6 +15,8 @@
 #                 <stamp>>; <n> failed attempt(s) ... last: <recorded failure>",
 #                 "BACKLOG_RECONCILE: <id>: <what this home could not reconcile>",
 #                 "TANGLE: <remediation>",
+#                 "ORPHAN_PANE: <session/pane/reason detail - see
+#                 bin/fm-orphan-pane-sweep.sh>",
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
 #                 "NUDGE_SECONDMATES: secondmate <id>: send failed: <reason>",
 #                 "BOOTSTRAP_INFO: nudged fm-<id> with '<message>'",
@@ -51,6 +53,13 @@
 #          A TANGLE line means the firstmate primary checkout (FM_ROOT) is stranded
 #          on a feature branch instead of its default branch - a crewmate's work
 #          landed in the primary instead of its own worktree; restore it per the line.
+#          An ORPHAN_PANE line means bin/fm-orphan-pane-sweep.sh found a herdr pane
+#          with no matching state/*.meta record and a strong orphan signal (its
+#          working directory no longer exists, its registered agent is confirmed
+#          dead, or it is a long-idle untracked shell); it is reported only, never
+#          closed - review it and close it by hand (herdr tab close) if it is
+#          confirmed stray. Runs unconditionally, herdr or not, and stays silent
+#          when herdr/jq are unavailable or nothing is flagged.
 #          treehouse is also MISSING when its installed version lacks
 #          "treehouse get --lease" support.
 #          no-mistakes is also MISSING when its installed version is older than
@@ -1405,6 +1414,14 @@ detect_local_config() {
     else
       echo "TANGLE: primary checkout on feature branch '$tangle_branch' (expected '$tangle_default'); the work is safe on that ref - restore the primary with: git -C $FM_ROOT checkout $tangle_default, then re-validate the branch in a proper worktree"
     fi
+  fi
+  # Orphan-pane sweep: bounded, read-only detection of herdr panes that exist
+  # entirely outside this home's own task tracking (see
+  # bin/fm-orphan-pane-sweep.sh's header for the exact scope and
+  # false-positive-avoidance rules). Detection only - it never closes
+  # anything, so it is safe to run unconditionally, unlocked or not.
+  if [ -x "$SCRIPT_DIR/fm-orphan-pane-sweep.sh" ]; then
+    "$SCRIPT_DIR/fm-orphan-pane-sweep.sh" 2>/dev/null
   fi
   crew=
   [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
