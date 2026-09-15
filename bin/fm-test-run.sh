@@ -912,7 +912,7 @@ tests/fm-pending-reply.test.sh 86711
 tests/fm-pi-branch-extension.test.sh 73000
 tests/fm-pi-branch-live-e2e.test.sh 120
 tests/fm-pi-branch-responsiveness-live-e2e.test.sh 17000
-tests/fm-pi-codex-native.test.sh 52
+tests/fm-pi-codex-native.test.sh 120
 tests/fm-pi-primary-live-e2e.test.sh 81
 tests/fm-pi-watch-extension.test.sh 42970
 tests/fm-pi-windows-shell-invocation.test.sh 5121
