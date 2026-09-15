@@ -779,6 +779,7 @@ command_hold() {
       tasks_axi add "$id" "$title" --repo "$repo" >/dev/null \
         || fail "could not create task $id"
     fi
+    fm_backlog_ledger_append added "$DATA" "$id"
   fi
   # Publish the timestamp before the captain-hold annotation. A concurrent
   # snapshot may see the harmless stamp by itself, but can never see a newly

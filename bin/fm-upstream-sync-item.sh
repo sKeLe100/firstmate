@@ -68,6 +68,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-lease-lib.sh
 . "$SCRIPT_DIR/fm-lease-lib.sh"
+# shellcheck source=bin/fm-backlog-ledger-lib.sh
+. "$SCRIPT_DIR/fm-backlog-ledger-lib.sh"
 
 ITEM_ID=upstream-sync
 ITEM_KIND=ship
@@ -262,6 +264,7 @@ if fm_tasks_axi_backend_available "$FM_HOME/config"; then
     (cd "$FM_HOME" && tasks-axi add "$ITEM_ID" "$title" \
       --kind "$ITEM_KIND" --repo "$ITEM_REPO" --body-file "$body_file" >/dev/null) \
       || { echo "error: tasks-axi add $ITEM_ID failed" >&2; exit 1; }
+    fm_backlog_ledger_append_kind_repo added "$DATA" "$ITEM_ID" "$ITEM_KIND" "$ITEM_REPO"
   fi
 else
   # data/backlog.md is a whole-file replace here. The reserved `backlog` lease

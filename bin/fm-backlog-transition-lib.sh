@@ -3,6 +3,9 @@
 # Usage: . bin/fm-tasks-axi-lib.sh; . bin/fm-backlog-transition-lib.sh
 # (this library reads that one's backend gate and never sources it itself, so a
 # caller that already sourced it keeps its memoised compatibility verdict).
+# This library sources bin/fm-backlog-ledger-lib.sh for append-only transition
+# logging; callers that also source the ledger library directly keep the
+# existing source order (tasks-axi → transition → ledger).
 #
 # INVARIANT. In ordinary successful lifecycle state, `state/<id>.meta` exists
 # <=> this home's backlog row for <id> is In flight; the one teardown crash
@@ -72,6 +75,10 @@ FM_BACKLOG_ROW_HOLD_KIND=
 # retained_incomplete | answered | stale | noop.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_CLOSE_REPLAY_RESULT=
+
+# shellcheck source=bin/fm-backlog-ledger-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-backlog-ledger-lib.sh"
 
 # Emit each byte of a value as a decimal number, locale-independently.
 # Deliberately perl rather than od: the spawn and teardown lifecycle runs under a
@@ -323,13 +330,25 @@ fm_backlog_mutate() {  # <data-dir> <verb> <id> [flag...]
 }
 
 fm_backlog_start() {  # <data-dir> <id>
+  local rc
   fm_backlog_mutate "$1" start "$2"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    fm_backlog_ledger_append started "$1" "$2"
+  fi
+  return "$rc"
 }
 
 fm_backlog_done() {  # <data-dir> <id> [flag...]
   local data=$1 id=$2
   shift 2
+  local rc
   fm_backlog_mutate "$data" "done" "$id" "$@"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    fm_backlog_ledger_append done "$data" "$id"
+  fi
+  return "$rc"
 }
 
 # Keep a captain-held row open across the removal of the work record that
