@@ -1924,8 +1924,8 @@ for transfer_case in traversal symlink hash size duplicate unexpected; do
   case "$transfer_case" in
     traversal) transfer_error="path-unsafe" ;;
     symlink) transfer_error="package-invalid" ;;
-    hash) transfer_error=integrity-mismatch ;;
-    size|duplicate) transfer_error=schema-invalid ;;
+    hash) transfer_error="integrity-mismatch" ;;
+    size|duplicate) transfer_error="schema-invalid" ;;
     unexpected) transfer_error="package-invalid" ;;
   esac
   expect_failure "$transfer_error" remote_receive_file_direct "$bad_transfer" ext-remote

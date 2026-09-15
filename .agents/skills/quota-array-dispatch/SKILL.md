@@ -30,6 +30,7 @@ The helper selects a candidate only when every applicable runway is measured (`t
 This is an optional narrow helper with two known limitations.
 It maps each harness to one primary provider family only, so a candidate whose established provider differs from that primary family is checked against the wrong quota row.
 And placeholder-window detection reads per-window pace evidence that only `quota-axi --json` carries, so on a default TOON snapshot the fail-closed guarantee narrows to the runway and percent checks.
+omp has no primary family, so the helper keys an `omp:` candidate on its model prefix, mapping only `openai-codex/` and `claude-bridge/` and refusing every other prefix; the helper's header owns that mapping.
 Authoritative multi-provider routing - including provider discovery from the harness catalog and quota matching by that explicit provider - stays owned by this skill's intake procedure above and AGENTS.md section 4, not by the helper.
 Use it only when the brief already fixed the candidate order and every candidate's provider is the harness's primary family.
 It does not replace the reasoning-class, runway-feasibility, or authentication gates above.

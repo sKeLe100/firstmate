@@ -288,6 +288,69 @@ test_matrix_herdr_halfblock_rule_bounds_bare_wrap() {
   pass "matrix: herdr half-block rules bound a bare composer's wrap region"
 }
 
+test_matrix_omp_status_row_bounds_bare_composer() {
+  # omp (Oh My Pi) draws its status line directly BELOW the borderless `❯`
+  # composer. Captured live through Herdr on omp 18.1.11 under the captain's
+  # unicode preset (idle), plus the nerd-preset idle row and the busy spinner
+  # row from the 18.1.2 investigation. Without the status-row rule the bare
+  # wrap region swallows that row and an idle omp pane reads `pending`, which
+  # skipped the doorbell on the first live omp worker.
+  local idle_unicode idle_nerd busy typed wrapped
+  idle_unicode=$'transcript line
+
+❯
+ π  · ◔ GPT-6-Astra · 🌳 …-workspace · ⑂ detached · ◫ 15.4%/272K ⟲ · (sub)'
+  idle_nerd=$'transcript line
+
+❯
+ 󰵗  ·  qwen3:8b ·  kun-agent-workspace/… ·  detached ?1 ·  36.7%/41K'
+  busy=$'transcript line
+
+  ⎋ Working…
+
+❯
+ ⠧ 11s  · ◔ GPT-6-Astra · ◫ 15.4%/272K'
+  typed=$'transcript line
+
+❯ fix the flaky test
+ π  · ◔ GPT-6-Astra · 🌳 …-workspace · ⑂ detached · ◫ 15.4%/272K ⟲ · (sub)'
+  # Non-vacuousness: each status row is real non-blank content that the wrap
+  # region would otherwise take as typed input.
+  _fm_composer_row_is_omp_status ' π  · ◔ GPT-6-Astra · 🌳 …-workspace' \
+    || fail "the unicode-preset omp status row must be recognized as furniture"
+  _fm_composer_row_is_omp_status ' 󰵗  ·  qwen3:8b ·  kun-agent-workspace/… ·  detached ?1 ·  36.7%/41K' \
+    || fail "the nerd-preset omp status row must be recognized as furniture"
+  _fm_composer_row_is_omp_status ' ⠧ 11s  · ◔ GPT-6-Astra' \
+    || fail "the busy omp spinner row must be recognized as furniture"
+  _fm_composer_row_is_omp_status 'fix the flaky test' \
+    && fail "ordinary typed text must not be mistaken for omp status furniture"
+  _fm_composer_row_is_omp_status 'please rerun the suite and report' \
+    && fail "ordinary prose must not be mistaken for omp status furniture"
+  # Only omp's identity cell opens the row: a wrapped typed row that happens
+  # to begin with a short word and a spaced middle dot is composer input.
+  _fm_composer_row_is_omp_status 'fix · tests before pushing' \
+    && fail "wrapped typed text with a middle dot must not be mistaken for omp status furniture"
+  # The ascii preset's identity cell is `pi`, but that preset separates its
+  # cells with ` - `, so a row opening `pi ·` is never omp furniture.
+  _fm_composer_row_is_omp_status 'pi · e · phi as the three constants' \
+    && fail "typed text opening 'pi ·' must not be mistaken for omp status furniture"
+  _fm_composer_row_is_omp_status ' ⣾ 3s  · ◔ GPT-6-Astra' \
+    || fail "the status-set omp spinner row must be recognized as furniture"
+  assert_screen "idle omp (unicode preset)" empty "$CAPS_STYLED" "$idle_unicode"
+  assert_screen "idle omp (nerd preset)" empty "$CAPS_STYLED" "$idle_nerd"
+  assert_screen "busy omp keeps an empty composer" empty "$CAPS_STYLED" "$busy"
+  assert_screen "typed omp text is pending" pending "$CAPS_STYLED" "$typed"
+  assert_screen "idle omp on a plain capture" empty "$CAPS_PLAIN" "$idle_unicode"
+  # The boundary must not cut a bare composer's own wrapped input: with the
+  # cursor on a continuation row that opens `fix · tests`, the composer is a
+  # proven wrap region and reads pending, exactly as it did before the rule.
+  wrapped=$'transcript line\n\n❯ please run the suite and then\nfix · tests before pushing'
+  assert_screen "wrapped typed text with a middle dot stays pending" pending "$CAPS_TMUX" "$wrapped" 3
+  wrapped=$'transcript line\n\n❯ document the constants in the order\npi · e · phi with one example each'
+  assert_screen "wrapped typed text opening 'pi ·' stays pending" pending "$CAPS_TMUX" "$wrapped" 3
+  pass "matrix: omp's status row bounds the bare composer's wrap region"
+}
+
 test_matrix_pi_separated_needs_identity() {
   # Real idle pi: a blank row between two solid rules. The blank row alone is
   # exactly what the strict rule refuses; only structure PLUS a live
@@ -328,17 +391,25 @@ test_matrix_pi_separated_needs_identity() {
 }
 
 test_matrix_opencode_leftbar_signals() {
-  # Real idle opencode: `┃`-prefixed rows holding the "Ask anything..." hint,
+  # Real idle opencode: `┃`-prefixed rows holding an "Ask anything" hint,
   # blanks, and a Build-mode footer. Two independent idle signals: the shared
   # idle-placeholder pattern (works on plain captures) and the ghost strip
   # (works on styled captures even if the pattern is overridden away).
-  local screen typed dim_screen out
+  local screen typed dim_screen captured_idle captured_pending out
   screen=$'  ┃\n  ┃  Ask anything... "What is the tech stack?"\n  ┃\n  ┃  Build · GPT-5.5 Fast OpenAI · high\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
   dim_screen=$'  ┃\n  ┃  '"${ESC}[2mAsk anything...${ESC}[0m"$'\n  ┃\n  ┃  Build · GPT-5.5 Fast OpenAI · high\n  ╹▀▀▀▀'
   assert_screen "opencode idle on tmux (cursor on hint)" empty "$CAPS_TMUX" "$dim_screen" 1
   assert_screen "opencode idle on herdr" empty "$CAPS_STYLED" "$dim_screen"
   assert_screen "opencode idle on zellij" empty "$CAPS_STYLED_NOID" "$dim_screen"
   assert_screen "opencode idle on cmux/orca" empty "$CAPS_PLAIN" "$screen"
+  # This sanitized live OpenCode 1.18.30 capture preserves its U+2026 hint and
+  # RGB 128 styling. RGB 128 is deliberately outside the ghost threshold, so
+  # the placeholder spelling is the independent empty signal. The completed-
+  # turn row above the active composer also pins the incident's idle layout.
+  captured_idle=$'  ▣ Build · Big Pickle · 3.4s\n\n  ┃\n  ┃  '"${ESC}[38;2;128;128;128mAsk anything… \"Fix a TODO in the codebase\"${ESC}[38;2;255;255;255m"$'\n  ┃\n  ┃  Build · Big Pickle OpenCode Zen\n  ╹▀▀▀▀▀▀▀▀'
+  assert_screen "opencode 1.18.30 completed-turn idle hint on tmux" empty "$CAPS_TMUX" "$captured_idle" 3
+  captured_pending=$'  ▣ Build · Big Pickle · 3.4s\n\n  ┃\n  ┃  '"${ESC}[38;2;255;255;255mReply with OK.${ESC}[38;2;255;255;255m"$'\n  ┃\n  ┃  Build · Big Pickle OpenCode Zen\n  ╹▀▀▀▀▀▀▀▀'
+  assert_screen "opencode 1.18.30 completed-turn typed composer on tmux" pending "$CAPS_TMUX" "$captured_pending" 3
   # Signal separation: with the idle pattern overridden to something that
   # cannot match, a DIM-styled hint still proves empty through the ghost strip.
   out=$(FM_COMPOSER_IDLE_RE='^NEVER-MATCHES$' fm_composer_classify_screen "$CAPS_TMUX" "$dim_screen" 1)
@@ -381,25 +452,29 @@ test_matrix_opencode_leftbar_signals() {
 }
 
 test_matrix_grok_titled_bottom_border() {
-  # Real idle grok: a bordered box whose BOTTOM border carries the model name.
-  # The audit showed the title alone flipped tmux's geometry check to
-  # ambiguous and the verdict to unknown, stranding every grok steer.
-  local titled plain_border typed placeholder_draft
-  titled=$'  ╭──────────────────────────────────────╮\n  │ ❯                                    │\n  ╰──────────────────── Grok 4.5 (high) ─╯'
+  # Grok 1.0.5 widened its titled BOTTOM border three columns past the top and
+  # content rows. This is the idle capture from issue #3436; Herdr has no
+  # cursor anchor, so the geometry mismatch used to make the proven box
+  # ambiguous and the verdict unknown, stranding away-mode injection.
+  local titled plain_border typed malformed placeholder_draft
+  titled=$'  ╭──────────────────────────────────────────────────────────────────────────╮\n  │ ❯                                                                        │\n  ╰────────────────────────────────────────────────────────── Grok 4.6 (xhigh) ─╯\n\n  Shift+Tab:mode  │  Ctrl+x:shortcuts'
   plain_border=$'  ╭──────────────────────────────────────╮\n  │ ❯                                    │\n  ╰──────────────────────────────────────╯'
   assert_screen "grok titled on tmux" empty "$CAPS_TMUX" "$titled" 1
   assert_screen "grok titled on tmux bottom-border cursor" empty "$CAPS_TMUX" "$titled" 2
-  assert_screen "grok titled on herdr" empty "$CAPS_STYLED" "$titled"
-  placeholder_draft=$'  ╭──────────────────────────────────────╮\n  │ ❯ Type a message...                  │\n  ╰──────────────────── Grok 4.5 (high) ─╯'
+  assert_screen "issue #3436 idle grok 1.0.5 on herdr" empty "$CAPS_STYLED" "$titled"
+  placeholder_draft=$'  ╭──────────────────────────────────────────────────────────────────────────╮\n  │ ❯ Type a message...                                                      │\n  ╰────────────────────────────────────────────────────────── Grok 4.6 (xhigh) ─╯'
   assert_screen "grok bright placeholder-like draft on tmux" pending "$CAPS_TMUX" "$placeholder_draft" 1
   assert_screen "grok placeholder on plain backends" empty "$CAPS_PLAIN" "$placeholder_draft"
   assert_screen "grok titled on cmux/orca" empty "$CAPS_PLAIN" "$titled"
   assert_screen "grok titled on zellij" empty "$CAPS_STYLED_NOID" "$titled"
   # The tolerance is additive: an untitled border still proves the same box.
   assert_screen "grok untitled border" empty "$CAPS_TMUX" "$plain_border" 1
-  typed=$'  ╭──────────────────────────────────────╮\n  │ ❯ deploy the fix                     │\n  ╰──────────────────── Grok 4.5 (high) ─╯'
+  typed=$'  ╭──────────────────────────────────────────────────────────────────────────╮\n  │ ❯ deploy the fix                                                         │\n  ╰────────────────────────────────────────────────────────── Grok 4.6 (xhigh) ─╯'
   assert_screen "grok typed on tmux" pending "$CAPS_TMUX" "$typed" 1
-  pass "matrix: grok's titled bottom border is tolerated as a title, not read as ambiguity"
+  assert_screen "grok typed on herdr" pending "$CAPS_STYLED" "$typed"
+  malformed=$'  ╭──────────────────────────────────────────────────────────────────────────╮\n  │ ❯                                                                        │\n  ╰────────────────────────────────────────────────────────── unknown surface ─╯'
+  assert_screen "oversized unknown title on herdr" unknown "$CAPS_STYLED" "$malformed"
+  pass "matrix: grok's real oversized titled bottom is empty while typed and unproved panes stay safe"
 }
 
 test_matrix_kimi_bordered_shell_glyph_box() {
@@ -659,6 +734,7 @@ test_matrix_codex_dim_hint_row
 test_matrix_muse_truecolor_glyph_survives_signal_loss
 test_matrix_cursor_reverse_video_placeholder_remnant
 test_matrix_herdr_halfblock_rule_bounds_bare_wrap
+test_matrix_omp_status_row_bounds_bare_composer
 test_matrix_pi_separated_needs_identity
 test_matrix_opencode_leftbar_signals
 test_matrix_grok_titled_bottom_border

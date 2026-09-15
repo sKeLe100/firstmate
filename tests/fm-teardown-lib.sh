@@ -234,6 +234,94 @@ SH
   chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
 }
 
+# Squash-merged history whose pipeline rebased the branch onto a newer main that
+# edited the same shared file. A local copy left behind by that rebase holds
+# different content for the shared file, so its per-commit patch ids against the
+# PR head differ and merge-tree against main conflicts; teardown refuses it on
+# purpose rather than reading a shared path as proof the local content landed.
+# local_mode: rebased | stale | rebased-plus-unlanded
+# Echoes: <pr_head>
+setup_squash_rebased_history() {
+  local case_dir=$1 local_mode=$2 tmp local_head pr_head
+  tmp="$case_dir/_shared_base"
+  git clone -q "$case_dir/origin.git" "$tmp"
+  printf '%s\n' base > "$tmp/shared.txt"
+  git -C "$tmp" add -- shared.txt
+  git -C "$tmp" -c user.email=t@t -c user.name=t commit -q -m "shared base"
+  git -C "$tmp" push -q origin main
+  git -C "$case_dir/wt" fetch -q origin
+  git -C "$case_dir/wt" reset -q --hard origin/main
+  rm -rf "$tmp"
+
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  printf '%s\n' base feature-edit > "$case_dir/wt/shared.txt"
+  git -C "$case_dir/wt" add -- shared.txt
+  git -C "$case_dir/wt" -c user.email=t@t -c user.name=t \
+    commit -q -m "edit shared from feature"
+  local_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+
+  tmp="$case_dir/_main_move"
+  git clone -q "$case_dir/origin.git" "$tmp"
+  printf '%s\n' base main-edit > "$tmp/shared.txt"
+  git -C "$tmp" add -- shared.txt
+  git -C "$tmp" -c user.email=t@t -c user.name=t commit -q -m "main edits shared"
+  git -C "$tmp" push -q origin main
+  rm -rf "$tmp"
+
+  tmp="$case_dir/_pipeline"
+  git clone -q "$case_dir/origin.git" "$tmp"
+  git -C "$tmp" checkout -q -b fm/task-x1
+  printf '%s\n' hello > "$tmp/feature.txt"
+  git -C "$tmp" add -- feature.txt
+  git -C "$tmp" -c user.email=t@t -c user.name=t commit -q -m "add feature"
+  printf '%s\n' base main-edit feature-edit > "$tmp/shared.txt"
+  git -C "$tmp" add -- shared.txt
+  git -C "$tmp" -c user.email=t@t -c user.name=t \
+    commit -q -m "edit shared from feature"
+  pr_head=$(git -C "$tmp" rev-parse HEAD)
+  git -C "$tmp" push -q origin "HEAD:refs/pull/7/head"
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" merge -q --squash fm/task-x1 >/dev/null
+  git -C "$tmp" -c user.email=t@t -c user.name=t commit -q -m "feat: squash (#7)"
+  git -C "$tmp" push -q origin main
+  rm -rf "$tmp"
+
+  git -C "$case_dir/project" fetch -q origin
+  git -C "$case_dir/wt" fetch -q origin "refs/pull/7/head:refs/fm-test/pr-head"
+  case "$local_mode" in
+    rebased)
+      git -C "$case_dir/wt" reset -q --hard "$pr_head"
+      ;;
+    stale)
+      git -C "$case_dir/wt" reset -q --hard "$local_head"
+      ;;
+    rebased-plus-unlanded)
+      git -C "$case_dir/wt" reset -q --hard "$pr_head"
+      wt_commit_file "$case_dir" later.txt local-only "local follow-up"
+      ;;
+    *)
+      fail "setup_squash_rebased_history: unknown local_mode $local_mode"
+      ;;
+  esac
+  printf '%s\n' "$pr_head"
+}
+
+# A refusal must leave every recovery route intact: the isolated copy, its task
+# branch still at the unlanded commit, and the durable task record. A completed
+# teardown detaches and deletes that branch and removes the record, so these hold
+# only while nothing destructive ran before the refusal was reported.
+# Args: case_dir label head-before-teardown
+assert_refusal_retained_task_state() {
+  local case_dir=$1 label=$2 head=$3
+  [ -d "$case_dir/wt" ] || fail "$label: refusal removed the isolated copy"
+  [ "$(git -C "$case_dir/wt" rev-parse --abbrev-ref HEAD 2>/dev/null)" = fm/task-x1 ] \
+    || fail "$label: refusal dropped the task branch"
+  [ "$(git -C "$case_dir/wt" rev-parse HEAD 2>/dev/null)" = "$head" ] \
+    || fail "$label: refusal moved the task branch off the unlanded commit"
+  [ -e "$case_dir/state/task-x1.meta" ] \
+    || fail "$label: refusal erased the durable task record"
+}
+
 # Override GitHub lookups to report PR 7 as still open with the supplied head.
 add_gh_pr_open_for_head() {
   local case_dir=$1 head=$2
