@@ -2051,6 +2051,7 @@ test_changed_default_timeout_scales_with_host_load() {
   repo="$tmp/timeout-repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
 fm_run_timed() {
@@ -2101,6 +2102,7 @@ test_token_free_retry_recovers_load_sensitive_failure() {
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   git -C "$repo" init -q
   git -C "$repo" add .
@@ -2144,6 +2146,7 @@ test_token_free_retry_covers_exit_124_regardless_of_name() {
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   git -C "$repo" init -q
   git -C "$repo" add .
@@ -2186,6 +2189,7 @@ test_token_free_retry_skips_when_a_failure_is_not_load_plausible() {
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   git -C "$repo" init -q
   git -C "$repo" add .

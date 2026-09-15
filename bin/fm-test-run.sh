@@ -854,7 +854,6 @@ tests/fm-mail-check.test.sh 6623
 tests/fm-mail.test.sh 27291
 tests/fm-muse-harness.test.sh 55572
 tests/fm-muse-signals-live-e2e.test.sh 23
-tests/fm-nm-test-contract.test.sh 2696
 tests/fm-no-mistakes-required-body-fetch.test.sh 535
 tests/fm-no-mistakes-required.test.sh 370
 tests/fm-nomistakes-gate-check.test.sh 1106
