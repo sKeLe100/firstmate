@@ -31,7 +31,7 @@
 #   fm-test-run.sh --check-hint-drift <lane.json> [more lane.json...]
 #                   Refuses when a green run's own measured duration for a
 #                   hinted portable-serial script exceeds that hint by more
-#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (1.5x), so a
+#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (2x), so a
 #                   stale-but-present hint stops passing silently. Takes the
 #                   slowest measured duration per script across every input
 #                   given. --check-coverage only proves the shard partition is
@@ -221,8 +221,13 @@ PORTABLE_SERIAL_TIMEOUT_MULTIPLIER=2
 # --check-hint-drift refuses. A hint is a balance number, not an alarm, so some
 # slack is expected; past this the hint is stale enough that a shard can be
 # meaningfully unbalanced without any failure ever saying so
-# (docs/fm-test-portable-shards.md "Coverage guard").
-PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER=1.5
+# (docs/fm-test-portable-shards.md "Coverage guard"). 1.5x proved too tight for
+# this fork's shared-runner noise: same-day, freshly-refreshed hints still
+# swung past it on ordinary green runs (e.g. fm-fleet-snapshot-view.test.sh at
+# 1.98x hours after being set), producing repeat false reds rather than
+# catching real staleness. 2x matches the margin already judged "comfortable"
+# for the timeout tripwire above.
+PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER=2
 
 # Largest share of the serial lane allowed to run on the default weight above.
 # Hints are what keep the shards balanced, so once too much of the lane is
