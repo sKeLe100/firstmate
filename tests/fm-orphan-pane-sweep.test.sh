@@ -80,6 +80,26 @@ out=$(run_sweep)
 pass "reserved firstmate task-presentation label is never flagged, even with a missing cwd"
 
 reset_fixture
+printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","label":"some task · p:AbCdEfGhIjKlMnOpQrStUv"}]}}' > "$WORKSPACES_FILE"
+printf '%s\n' "{\"result\":{\"panes\":[{\"pane_id\":\"w2:p1\",\"cwd\":\"$MISSING_DIR\",\"foreground_cwd\":\"$MISSING_DIR\"}]}}" > "$PANES_FILE"
+out=$(run_sweep)
+case "$out" in
+  *"pane=w2:p1"*"reason=cwd-missing"*) ;;
+  *) fail "label lacking the '└ ' prefix was treated as reserved and skipped: $out" ;;
+esac
+pass "a label with the projection token shape but no '└ ' prefix is not treated as reserved"
+
+reset_fixture
+printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w3","label":null}]}}' > "$WORKSPACES_FILE"
+printf '%s\n' "{\"result\":{\"panes\":[{\"pane_id\":\"w3:p1\",\"cwd\":\"$MISSING_DIR\",\"foreground_cwd\":\"$MISSING_DIR\"}]}}" > "$PANES_FILE"
+out=$(run_sweep)
+case "$out" in
+  *"pane=w3:p1"*"reason=cwd-missing"*) ;;
+  *) fail "workspace with a null label was dropped from the sweep instead of being evaluated: $out" ;;
+esac
+pass "a workspace with a null/missing label is still swept, not dropped"
+
+reset_fixture
 printf "herdr_session=%s\nherdr_pane_id=w1:p1\n" "$SESSION" > "$FM_STATE_OVERRIDE/task.meta"
 printf '%s\n' "{\"result\":{\"panes\":[{\"pane_id\":\"w1:p1\",\"cwd\":\"$MISSING_DIR\",\"foreground_cwd\":\"$MISSING_DIR\"}]}}" > "$PANES_FILE"
 out=$(run_sweep)
