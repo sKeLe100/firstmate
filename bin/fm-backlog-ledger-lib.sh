@@ -38,12 +38,16 @@ fm_backlog_ledger_sanitize_field() {
 }
 
 # Resolve the kind and repo for <task-id> from the backlog row via
-# tasks-axi show. Sets FM_LEDGER_KIND and FM_LEDGER_REPO globals.
+# fm_backlog_row_show, which addresses tasks-axi from the backlog root (and,
+# for the markdown backend, the home's own backlog file) exactly like every
+# other backlog reader in bin/fm-backlog-transition-lib.sh - a bare `tasks-axi
+# show` fails whenever the caller's cwd is not already that root.
+# Sets FM_LEDGER_KIND and FM_LEDGER_REPO globals.
 # Returns 0 on success, 1 if the row is not found or cannot be read.
-fm_backlog_ledger_resolve_meta() {  # <task-id>
-  local id=$1 show_out kind repo
+fm_backlog_ledger_resolve_meta() {  # <data-dir> <task-id>
+  local data_dir=$1 id=$2 show_out kind repo
 
-  show_out=$(tasks-axi show "$id" 2>/dev/null) || return 1
+  show_out=$(fm_backlog_row_show "$data_dir" "$id" 2>/dev/null) || return 1
   kind=$(printf '%s\n' "$show_out" | sed -n 's/^  kind: *//p' | head -1)
   # tasks-axi quotes empty-marker fields as "\"-\"", so handle both bare
   # and quoted variants in the normalization.
@@ -76,7 +80,7 @@ fm_backlog_ledger_append() {  # <event> <data-dir> <task-id>
   esac
 
   # Resolve kind and repo from the backlog row
-  if ! fm_backlog_ledger_resolve_meta "$id"; then
+  if ! fm_backlog_ledger_resolve_meta "$data_dir" "$id"; then
     kind="unknown"
     repo="-"
   else
