@@ -2593,8 +2593,7 @@ EOF
     if [ -z "$tail40" ] && [ "$backend" = herdr ]; then
       # Pane capture failed for herdr. Try to recover from pane_not_found by
       # resolving the current pane ID from workspace/tab IDs in the meta file.
-      . "$SCRIPT_DIR/fm-backend.sh"
-      . "$SCRIPT_DIR/backends/herdr.sh"
+      fm_backend_source herdr
       meta="$STATE/$task.meta"
       if [ -f "$meta" ]; then
         wsid=$(fm_meta_get "$meta" herdr_workspace_id) || wsid=
@@ -2604,6 +2603,8 @@ EOF
           new_pane=$(fm_backend_herdr_resolve_pane_not_found "$session" "$wsid" "$tab_id" 2>/dev/null) || new_pane=
           if [ -n "$new_pane" ]; then
             # Successfully resolved the pane ID. Update the meta file and retry.
+            meta_lock=$(fm_meta_lock_path "$meta") || meta_lock=
+            [ -z "$meta_lock" ] || fm_lock_acquire_wait "$meta_lock"
             if sed -i.bak "s/^herdr_pane_id=.*/herdr_pane_id=$new_pane/" "$meta" 2>/dev/null; then
               rm -f "$meta.bak"
               # Reconstruct the window target with the new pane ID and retry capture
@@ -2613,11 +2614,13 @@ EOF
               # in this poll and subsequent polls use the new pane ID
               if [ -n "$tail40" ]; then
                 sed -i.bak "s/^window=.*/window=$new_w/" "$meta" 2>/dev/null && rm -f "$meta.bak"
+                w="$new_w"
               fi
             else
               # Restore from backup if sed failed
               [ ! -f "$meta.bak" ] || mv "$meta.bak" "$meta"
             fi
+            [ -z "$meta_lock" ] || fm_lock_release "$meta_lock"
           fi
         fi
       fi
