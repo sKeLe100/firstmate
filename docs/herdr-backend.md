@@ -333,8 +333,8 @@ Mid-session secondmate agent-process liveness is not implemented because idle se
 A herdr pane id can go stale between polls (for example after a Herdr-side pane replacement) even while its underlying harness process stays alive, so `bin/fm-watch.sh`'s stale/wedge escalation loop does not treat an empty herdr capture as proof of death outright.
 When `fm_backend_capture` returns empty for a `backend=herdr` window, the watcher calls `fm_backend_herdr_resolve_pane_not_found` (`bin/backends/herdr.sh`) with the task's recorded `herdr_session`, `herdr_workspace_id`, and `herdr_tab_id` to re-resolve the current pane id via `fm_backend_herdr_pane_for_tab`.
 On success, the watcher rewrites `herdr_pane_id=` and `window=` in the task's `.meta` file under the meta lock (`fm_meta_lock_path`, the same lock `fm-spawn.sh`'s relaunch/recovery paths use) and retries the capture once against the new pane.
-A successful retry also updates the loop-local window variable so every downstream lookup in that same poll iteration - busy classification, task/backend resolution, wedge/pause bookkeeping - uses the recovered target instead of the stale one.
-Only a still-empty capture after this one recovery attempt is treated as no evidence for that poll.
+A successful meta rewrite also updates the loop-local window variable, even if the retry capture itself still comes back empty, so every downstream lookup in that same poll iteration - busy classification, task/backend resolution, wedge/pause bookkeeping - uses the recovered target instead of the stale one.
+A still-empty capture after this recovery attempt (unresolvable tab, or a resolved pane that still fails to read) is treated as no evidence for that poll.
 `tests/fm-watch-herdr-pane-recovery.test.sh` covers the recovery, the meta rewrite, the lock, and same-poll busy classification against the recovered pane.
 
 ## Push events and polling fallback
