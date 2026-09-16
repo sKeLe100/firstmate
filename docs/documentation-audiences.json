@@ -337,7 +337,7 @@
       "audience": "public-product"
     },
     {
-      "path": "data/no-mistakes-pr-attestation-not-refreshed/upstream-bug-report.md",
+      "path": "docs/no-mistakes-pr-attestation-rebind-bug-report.md",
       "audience": "maintainer-verification"
     },
     {
