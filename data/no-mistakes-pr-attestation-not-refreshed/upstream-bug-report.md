@@ -111,10 +111,12 @@ curl -fSL \
 
 In `restampPRAttestationWithSteps` (ci_fix.go), the rebind failure should be surfaced
 not just as a daemon log line but as a visible error that aborts the pipeline and appears
-in the pipeline output/PR body. The current code does wrap the error in
-`errAttestationWriteFailed` and returns it from `attestHeadBeforePush`, which does abort
-the push step. But the error needs to be visible in the pipeline summary (PR body) so the
-agent/captain sees it.
+in the pipeline output/PR body. The current code wraps the error in
+`errAttestationWriteFailed`, but that wrapped error is not actually propagating out of
+`attestHeadBeforePush` as a failure the push step honors — confirmed runs complete
+successfully with a stale attestation instead of aborting. The wrapping needs to actually
+cause the push step to fail, and the error needs to be visible in the pipeline summary
+(PR body) so the agent/captain sees it.
 
 Additionally, the retry loop's log messages (ci_fix.go:872-874) should be emitted through
 the step's `sctx.Log` which feeds into the visible pipeline log, not just the daemon log.
