@@ -76,9 +76,12 @@ FM_BACKLOG_ROW_HOLD_KIND=
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_CLOSE_REPLAY_RESULT=
 
+# Locate the ledger library beside this file rather than through a caller
+# global: bin/fm-x-lib.sh sources this library under `set -u` without ever
+# defining SCRIPT_DIR, so a caller-owned name would abort that sourcing.
 # shellcheck source=bin/fm-backlog-ledger-lib.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-backlog-ledger-lib.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-backlog-ledger-lib.sh"
 
 # Emit each byte of a value as a decimal number, locale-independently.
 # Deliberately perl rather than od: the spawn and teardown lifecycle runs under a

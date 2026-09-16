@@ -344,6 +344,18 @@ rmdir "$DATA/.backlog-ledger.lock" 2>/dev/null || true
 [ "$rc" -eq 2 ] || fail "lock timeout should return exit code 2, got: $rc"
 pass "lock timeout returns exit code 2 under contention"
 
+# --- test: transition lib sources the ledger without a caller SCRIPT_DIR ---
+# bin/fm-x-lib.sh sources bin/fm-backlog-transition-lib.sh under `set -u`
+# without defining SCRIPT_DIR; the ledger source line must locate its sibling
+# from its own path, or that sourcing aborts with an unbound-variable error.
+
+out=$(bash -c 'set -u; unset SCRIPT_DIR; . "$1/bin/fm-tasks-axi-lib.sh"; \
+  . "$1/bin/fm-backlog-transition-lib.sh"; \
+  declare -F fm_backlog_ledger_append >/dev/null && echo loaded' _ "$ROOT" 2>&1)
+[ "$out" = 'loaded' ] \
+  || fail "transition lib should source the ledger lib without SCRIPT_DIR, got: $out"
+pass "transition lib locates the ledger lib without a caller-owned SCRIPT_DIR"
+
 # --- summary: all tests passed ----------------------------------------------
 
 echo "# fm-backlog-ledger.test.sh: all assertions passed"
