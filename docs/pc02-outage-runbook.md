@@ -8,17 +8,18 @@ This is a recovery checklist, not an architecture doc.
 
 ## What the stack is
 
-PC02 runs llama-swap inside WSL as a systemd service. llama-swap is a single
-Go binary (`~/.local/bin/llama-swap`) that fronts two large local models
+PC02 runs llama-swap as a native Windows application at
+`C:\pc02-llm-server\bin\llama-swap.exe`. It is launched via a Windows
+Scheduled Task and fronts two large local models
 (`qwen3.8-27b-dispatch` and `qwen3.6-35b-a3b-dispatch`) with
 hot-swap-on-request, so only one holds the GPU at a time.
 
 It binds to the host's tailnet IP `100.67.55.77:8080` (not loopback). opencode
 connects via `pc02-llamaswap/<model>`.
 
-- **Binary**: `~/.local/bin/llama-swap` (installed from the llama-swap GitHub releases page)
-- **Config**: `/home/sean_/fm-pc02-llm-lab/projects/pc02-llm-lab-tooling/llama-swap/config.yaml`
-- **Service**: `llama-swap.service` (systemd user unit or system unit)
+- **Binary**: `C:\pc02-llm-server\bin\llama-swap.exe` (native Windows)
+- **Config**: `C:\pc02-llm-server\bin\native-config.yaml` (WSL path: `/mnt/c/pc02-llm-server/bin/native-config.yaml`)
+- **Launch**: Windows Scheduled Task, driven by `C:\pc02-llm-server\bin\pc02-llama-swap-autostart.ps1`
 - **Port**: `100.67.55.77:8080` (the tailnet address on `eth1`)
 - **Model cold starts**: approximately 5-6 minutes
 
@@ -45,16 +46,6 @@ ssh pc02 true
 
 If this fails, the host itself is unreachable - see "Ceiling" below.
 
-Check the llama-swap service status:
-
-```bash
-ssh pc02 "systemctl --user status llama-swap 2>&1"
-# or, if deployed as a system service:
-ssh pc02 "systemctl status llama-swap 2>&1"
-```
-
-If the service is not found, not enabled, or not active, the stack is down.
-
 Check if llama-swap's port responds:
 
 ```bash
@@ -64,29 +55,21 @@ ssh pc02 "curl -s --connect-timeout 5 http://100.67.55.77:8080/v1/models"
 
 If curl returns nothing or connection refused, llama-swap is not serving.
 
-Check if the process is running:
+Check the Windows Scheduled Task status from WSL:
 
 ```bash
-ssh pc02 "ps aux | grep llama-swap | grep -v grep"
+ssh pc02 "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command 'Get-ScheduledTask -TaskName *llama-swap* | Select-Object TaskName,State'"
 ```
 
-If no process matches, llama-swap is not running.
+If the task is not found or its State is not `Ready`/`Running`, the stack is
+likely down.
 
 ## How to restart
 
-If the systemd service is not active, start it:
+Restart llama-swap via the autostart script:
 
 ```bash
-ssh pc02 "systemctl --user start llama-swap"
-# or, if deployed as a system service:
-ssh pc02 "sudo systemctl start llama-swap"
-```
-
-If the service unit file does not exist (the unit was never deployed or was
-removed), start llama-swap manually:
-
-```bash
-ssh pc02 "bash -lc 'nohup setsid llama-swap --config /home/sean_/fm-pc02-llm-lab/projects/pc02-llm-lab-tooling/llama-swap/config.yaml --listen 100.67.55.77:8080 >/tmp/llama-swap.log 2>&1 &'"
+ssh pc02 "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command '& \"C:\\pc02-llm-server\\bin\\pc02-llama-swap-autostart.ps1\"'"
 ```
 
 Wait for the model to load. Cold starts take approximately 5-6 minutes.
@@ -102,27 +85,30 @@ the stack is back.
 
 ## If the restart itself fails
 
-**Service unit not found or config path missing:**
-The service file at `llama-swap/llama-swap.service` (from the
-`pc02-llm-lab-tooling` repo) points to
-`/home/sean_/fm-pc02-llm-lab/projects/pc02-llm-lab-tooling/llama-swap/`.
-If this directory does not exist on the host, the repo was not deployed to
-its permanent location. Either deploy the unit file and config to the correct
-paths per the `llama-swap/README.md` deploy steps, or start llama-swap
-manually as shown above with the inline config path.
-
-**llama-swap starts but crashes or fails to load a model:**
-Check the service logs:
+**Autostart script missing or executable:** Confirm the script exists:
 
 ```bash
-ssh pc02 "journalctl --user -u llama-swap --no-pager -n 50"
-# or system service:
-ssh pc02 "journalctl -u llama-swap --no-pager -n 50"
+ssh pc02 "ls -la /mnt/c/pc02-llm-server/bin/pc02-llama-swap-autostart.ps1"
 ```
 
-Look for GPU driver errors, out-of-memory, or model file corruption.
-Check that the model files referenced in `config.yaml` exist at the paths
-listed (under `fm-pc02-llm-lab/models/`).
+If the file does not exist, the `C:\pc02-llm-server\` directory may have been
+removed or relocated. Contact the captain.
+
+**Scheduled Task missing or disabled:** Check task availability:
+
+```bash
+ssh pc02 "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command 'Get-ScheduledTask -TaskName *llama-swap*'"
+```
+
+If the task does not exist, the initial setup of the autostart Scheduled Task
+needs to be recreated. Contact the captain.
+
+**llama-swap starts but crashes or fails to load a model:** Check the Windows
+application event log or any logs written by the autostart script. The script
+may write logs to `C:\pc02-llm-server\logs\` or WSL-side paths like
+`/tmp/llama-swap.log`. Check those for GPU driver errors, out-of-memory, or
+model file corruption. Verify that the model files referenced in
+`native-config.yaml` exist at the paths listed (under `C:\pc02-llm-server\models\`).
 
 **Model fails to load (llama-swap is running but the port responds with an error
 about the model):**
@@ -144,8 +130,22 @@ Or from another machine that can reach PC02's Windows host via the tailnet.
 **Windows host memory pressure:**
 If the Windows host reports "Memory needs to be freed on this machine"
 (the captain observed this on PC02), free memory by closing applications,
-then restart WSL and the llama-swap service. Memory pressure can cause
-WSL to kill processes or prevent new ones from starting.
+then restart WSL and llama-swap. Memory pressure can cause WSL to kill
+processes or prevent new ones from starting.
+
+### Historical: WSL systemd (obsolete)
+
+The following commands no longer apply to PC02's production setup, which uses
+native Windows Scheduled Tasks (documented above). They are retained for
+reference only — if you encounter a WSL systemd unit, it is a leftover from a
+prior architecture and should not be used.
+
+```bash
+ssh pc02 "systemctl --user status llama-swap 2>&1"
+ssh pc02 "systemctl status llama-swap 2>&1"
+ssh pc02 "systemctl --user start llama-swap"
+ssh pc02 "journalctl --user -u llama-swap --no-pager -n 50"
+```
 
 ## Ceiling
 

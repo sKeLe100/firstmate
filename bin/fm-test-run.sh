@@ -853,7 +853,7 @@ tests/fm-codex-usage.test.sh 61912
 tests/fm-composer-matrix-live-e2e.test.sh 110
 tests/fm-config-inherit-lane-caps.test.sh 417
 tests/fm-context-usage.test.sh 669
-tests/fm-control-relaunch.test.sh 48210
+tests/fm-control-relaunch.test.sh 200000
 tests/fm-control.test.sh 54301
 tests/fm-cursor-harness.test.sh 30103
 tests/fm-cursor-primary-live-e2e.test.sh 81
