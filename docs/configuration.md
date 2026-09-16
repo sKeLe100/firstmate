@@ -540,6 +540,18 @@ Any other value, or an unreadable file, refuses every spawn from that home, whic
 The file is a captain-wide safety preference, so it is inherited into secondmate homes under the [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) inherited-local-material contract; a secondmate's own Claude crewmates then launch on the same posture.
 The [Claude adapter reference](../.agents/skills/harness-adapters/references/harness/claude.md) records the verified shape of both launches and which once-per-machine dialog each one can meet.
 
+## Claude Remote Control (config/claude-remote-control)
+
+The optional local, gitignored `config/claude-remote-control` holds `on` or `off`, trimmed of whitespace; an absent file, and any file holding `off`, mean today's launch is unchanged.
+`on` adds `--remote-control "<name>"` to every Claude worker launch and relaunch (crewmates, scouts, and Claude secondmates), registering that session in the Claude Code app's session list (claude.ai/code and the mobile/desktop apps) so the captain can see it running without asking.
+`bin/fm-spawn.sh` names each worker `<home-label>-fm-<task-id>` (`<home-label>-2ndmate-<task-id>` when the spawn itself creates a secondmate), where `<home-label>` is `firstmate` for the primary home or `2ndmate-<secondmate-id>` for a secondmate home, so two homes launching Claude workers with the same task id never collide in the app's list.
+Any value other than `on` or `off`, or an unreadable file, refuses every spawn from that home before any endpoint, worktree, or task record exists, the same fail-closed shape as `config/claude-permission-mode`.
+When `on`, `fm-spawn.sh` also checks `claude auth status` and the four Remote-Control-disabling environment variables (`DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_GROWTHBOOK`) and prints a notice, never a refusal, when eligibility looks doubtful: a worker whose Remote Control registration fails still launches normally and only loses the app-visibility feature, so this preflight can never block a spawn.
+The file is a captain-wide preference and is inherited into secondmate homes the same way as `config/claude-permission-mode`.
+Connected devices can send prompts into a registered session; AGENTS.md hard rule 4 already treats that as direct captain intervention.
+A finished worker leaves an offline entry in the app's session list until the captain archives it there; no CLI archive path exists.
+`bin/fm-primary-herdr.sh` reads the same config to register the primary session itself as `firstmate-primary`.
+
 ## Worker launch environment (config/launch-env-allowlist)
 
 The optional local, gitignored `config/launch-env-allowlist` limits the ambient environment passed to newly launched workers, scouts, and secondmates, including relaunches.

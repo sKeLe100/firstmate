@@ -22,6 +22,10 @@
 # Primary config/claude-permission-mode is a captain-wide safety preference
 # (bypass or auto for every claude launch), so it flows down too and a
 # secondmate's own claude crewmates launch on the same permission posture.
+# Primary config/claude-remote-control is the same kind of captain-wide
+# preference (on or off for registering claude launches with Claude Code's
+# Remote Control feature), so it flows down too and a secondmate's own claude
+# crewmates register the same way.
 # It also pushes
 # the one primary-authoritative shared captain-preference file,
 # data/captain-shared.md, into each secondmate home's data/ as a read-only copy.
@@ -75,7 +79,7 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context context-thresholds retry-thresholds upstream-autosync primary-continuity launch-env-allowlist dispatch-cap codex-lane-cap claude-permission-mode}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context context-thresholds retry-thresholds upstream-autosync primary-continuity launch-env-allowlist dispatch-cap codex-lane-cap claude-permission-mode claude-remote-control}"
 
 # Items whose value is a home-SESSION enablement decision rather than durable
 # local configuration. They are inherited at the launch convergence point, where

@@ -268,6 +268,7 @@
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
 #     __BRIEF__    absolute path to data/<task-id>/brief.md
 #     __CLAUDEPERMFLAG__ the claude permission flag selected by config/claude-permission-mode
+#     __CLAUDERCFLAG__ the --remote-control flag selected by config/claude-remote-control (empty when off)
 #     __PIBIN__    quoted concrete Pi-family executable path resolved from PATH
 #     __PITUIMODE__ optional --tui-mode regular when that executable advertises it
 #     __TURNEND__  absolute path to state/<task-id>.turn-ended (for harnesses whose
@@ -473,6 +474,29 @@ case "$CLAUDE_PERMISSION_MODE" in
   auto) CLAUDE_PERM_FLAG='--permission-mode auto' ;;
   *) CLAUDE_PERM_FLAG='--dangerously-skip-permissions' ;;
 esac
+# config/claude-remote-control (docs/configuration.md "Claude Remote
+# Control"): resolved once per spawn or relaunch, mirroring
+# config/claude-permission-mode above. Registering a worker with Claude
+# Code's Remote Control feature is purely additive to app visibility, so an
+# eligibility doubt below is a notice, never a spawn refusal.
+if ! CLAUDE_RC_PRESENT=$(fm_config_source_present "$CONFIG/claude-remote-control"); then
+  exit 1
+fi
+CLAUDE_REMOTE_CONTROL=off
+if [ "$CLAUDE_RC_PRESENT" = 1 ]; then
+  if [ ! -f "$CONFIG/claude-remote-control" ] || [ ! -r "$CONFIG/claude-remote-control" ]; then
+    echo "error: config/claude-remote-control must be a readable regular file holding one of: on, off" >&2
+    exit 1
+  fi
+  CLAUDE_REMOTE_CONTROL=$(tr -d '[:space:]' < "$CONFIG/claude-remote-control" || true)
+  case "$CLAUDE_REMOTE_CONTROL" in
+    on|off) ;;
+    *)
+      echo "error: config/claude-remote-control holds '$CLAUDE_REMOTE_CONTROL'; accepted values are: on, off (the default when the file is absent)" >&2
+      exit 1
+      ;;
+  esac
+fi
 SUB_HOME_MARKER=".fm-secondmate-home"
 if [ -e "$STATE" ] || [ -L "$STATE" ]; then
   fm_backlog_directory_present "$STATE" "state directory" || {
@@ -1696,7 +1720,11 @@ launch_template() {
     # __CLAUDEPERMFLAG__ is the permission flag config/claude-permission-mode
     # selects (header above): --dangerously-skip-permissions by default, or
     # --permission-mode auto for a captain who refuses bypass mode.
-    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+    # __CLAUDERCFLAG__ is empty unless config/claude-remote-control is on, in
+    # which case it carries a trailing-spaced `--remote-control "<name>" ` so
+    # this worker registers in the Claude Code app's session list
+    # (docs/configuration.md "Claude Remote Control").
+    claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ __CLAUDERCFLAG__--settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}'\'' __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     codex)
       if [ "$kind" = secondmate ]; then
         printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
@@ -1912,6 +1940,32 @@ case "$ARG3" in
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
+
+# config/claude-remote-control eligibility preflight (docs/configuration.md
+# "Claude Remote Control"): notice-only, never a refusal, because a worker
+# whose Remote Control registration fails still launches and only loses the
+# app-visibility feature. Gated on HARNESS being claude, now that it is
+# resolved, so a codex/cursor/gemini/etc. spawn never pays the `claude auth
+# status` probe or prints a notice about a feature its launch never touches.
+# The probe runs bounded and with stdin detached (same shape as
+# agy_model_validate above) so an unreachable or prompting `claude auth
+# status` can never stall or block a spawn.
+if [ "$CLAUDE_REMOTE_CONTROL" = on ] && [ "$HARNESS" = claude ]; then
+  claude_rc_bound=${FM_CLAUDE_RC_AUTH_TIMEOUT:-10}
+  case "$claude_rc_bound" in ''|*[!0-9]*|0*) claude_rc_bound=10 ;; esac
+  if command -v claude >/dev/null 2>&1; then
+    claude_rc_status=$(fm_run_timed "$claude_rc_bound" claude auth status 2>/dev/null < /dev/null) || claude_rc_status=''
+    claude_rc_auth_method=$(printf '%s' "$claude_rc_status" | grep -o 'authMethod=[^[:space:]]*' | cut -d= -f2)
+    if [ "$claude_rc_auth_method" != claude.ai ]; then
+      echo "notice: config/claude-remote-control is on but 'claude auth status' does not report authMethod=claude.ai (got '${claude_rc_auth_method:-none}'); Remote Control registration may fail, launching normally" >&2
+    fi
+  fi
+  for claude_rc_disabling_var in DISABLE_TELEMETRY DO_NOT_TRACK CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC DISABLE_GROWTHBOOK; do
+    if [ -n "${!claude_rc_disabling_var:-}" ]; then
+      echo "notice: config/claude-remote-control is on but \$$claude_rc_disabling_var is set, which disables Remote Control; Remote Control registration may fail, launching normally" >&2
+    fi
+  done
+fi
 
 # muse, gemini, and agy are verified as CREWMATE/SCOUT adapters only. A secondmate is
 # a firstmate instance, so it needs a primary supervision protocol.
@@ -4354,6 +4408,21 @@ EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT" "$MODEL") || exit 1
 LAUNCH=${LAUNCH//__MODELFLAG__/$MODELFLAG}
 LAUNCH=${LAUNCH//__EFFORTFLAG__/$EFFORTFLAG}
 LAUNCH=${LAUNCH//__CLAUDEPERMFLAG__/$CLAUDE_PERM_FLAG}
+CLAUDE_RC_FLAG=''
+if [ "$CLAUDE_REMOTE_CONTROL" = on ]; then
+  claude_rc_home_label=firstmate
+  if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
+    claude_rc_marker_id=$(tr -d '[:space:]' < "$FM_HOME/$SUB_HOME_MARKER" 2>/dev/null || true)
+    [ -z "$claude_rc_marker_id" ] || claude_rc_home_label="2ndmate-$claude_rc_marker_id"
+  fi
+  if [ "$KIND" = secondmate ]; then
+    claude_rc_name="$claude_rc_home_label-2ndmate-$ID"
+  else
+    claude_rc_name="$claude_rc_home_label-fm-$ID"
+  fi
+  CLAUDE_RC_FLAG=$(printf -- '--remote-control %s ' "$(shell_quote "$claude_rc_name")")
+fi
+LAUNCH=${LAUNCH//__CLAUDERCFLAG__/$CLAUDE_RC_FLAG}
 if [ "$HARNESS" = rovo ]; then
   ROVOCONFIGOVERRIDE=$(rovo_config_override_flag "$EFFORT" "$DATA" "$STATE" "$ID") || {
     echo "error: could not resolve this task's home paths for rovo's allowedExternalPaths grant" >&2

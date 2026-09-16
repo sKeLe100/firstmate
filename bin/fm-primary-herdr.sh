@@ -41,12 +41,17 @@
 #   FM_PRIMARY_CODEX_EFFORT         emergency effort (low|medium|high|xhigh)
 #   FM_PRIMARY_READY_TIMEOUT        seconds to await startup proof (120)
 #   FM_PRIMARY_HERDR_START_TIMEOUT  Herdr agent readiness milliseconds (90000)
+#
+# config/claude-remote-control (docs/configuration.md "Claude Remote
+# Control") registers a claude-mode primary as "firstmate-primary" in the
+# Claude Code app's session list; absent or "off" launches unchanged.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 SESSION="${HERDR_SESSION:-firstmate}"
 RECORD="$STATE/.primary-herdr"
 START_LOCK="$STATE/.primary-launch.lock"
@@ -85,6 +90,31 @@ CANONICAL_HOME=$(cd "$FM_HOME" 2>/dev/null && pwd -P) || { echo "error: primary 
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/backends/herdr.sh"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-config-inherit-lib.sh"
+
+# config/claude-remote-control (docs/configuration.md "Claude Remote
+# Control"): same fail-closed on/off contract as bin/fm-spawn.sh, resolved
+# once per launch so a malformed file refuses instead of launching silently
+# without the app-visibility the captain configured.
+if ! CLAUDE_RC_PRESENT=$(fm_config_source_present "$CONFIG/claude-remote-control"); then
+  exit 1
+fi
+CLAUDE_REMOTE_CONTROL=off
+if [ "$CLAUDE_RC_PRESENT" = 1 ]; then
+  if [ ! -f "$CONFIG/claude-remote-control" ] || [ ! -r "$CONFIG/claude-remote-control" ]; then
+    echo "error: config/claude-remote-control must be a readable regular file holding one of: on, off" >&2
+    exit 1
+  fi
+  CLAUDE_REMOTE_CONTROL=$(tr -d '[:space:]' < "$CONFIG/claude-remote-control" || true)
+  case "$CLAUDE_REMOTE_CONTROL" in
+    on|off) ;;
+    *)
+      echo "error: config/claude-remote-control holds '$CLAUDE_REMOTE_CONTROL'; accepted values are: on, off (the default when the file is absent)" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 record_value() { sed -n "s/^$1=//p" "$RECORD" 2>/dev/null | tail -1; }
 
@@ -354,8 +384,10 @@ esac
 write_primary_record
 
 if [ "$REQUESTED" = claude ]; then
+  CLAUDE_RC_ARGS=()
+  [ "$CLAUDE_REMOTE_CONTROL" != on ] || CLAUDE_RC_ARGS=(--remote-control firstmate-primary)
   fm_backend_herdr_cli "$SESSION" agent start firstmate-primary --kind claude --pane "$PANE" --timeout "$START_TIMEOUT" -- \
-    --dangerously-skip-permissions
+    --dangerously-skip-permissions "${CLAUDE_RC_ARGS[@]}"
 else
   # shellcheck disable=SC2016
   START_PROMPT='Run `bin/fm-session-start.sh` now, exactly once, before executing any other instructions. If another live session owns this home, remain read-only and report that conflict.'
