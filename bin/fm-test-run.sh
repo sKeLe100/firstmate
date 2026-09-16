@@ -828,7 +828,7 @@ tests/fm-backlog-atomicity.test.sh 161989
 tests/fm-backlog-handoff.test.sh 52291
 tests/fm-backlog-read-bound.test.sh 24226
 tests/fm-backlog-routing.test.sh 59043
-tests/fm-bearings-board-lavish-live-e2e.test.sh 51
+tests/fm-bearings-board-lavish-live-e2e.test.sh 156
 tests/fm-bearings-board-render.test.sh 14000
 tests/fm-bearings-board.test.sh 125000
 tests/fm-bearings-snapshot.test.sh 116374
