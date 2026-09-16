@@ -24,7 +24,7 @@ runs the correct underlying call (`gh pr edit` against the PR body), but on gh C
 handle cleanly:
 
 ```
-gh pr edit <pr-selector> --base <repo> --body-file -
+gh pr edit <pr-selector> --repo <repo> --body-file -
 # Returns exit 1 with:
 # projectCards: Field 'projectCards' doesn't exist on type 'PullRequest' ...
 ```
