@@ -201,10 +201,12 @@ mkdir -p "$DATA"
 LEDGER="$DATA/backlog-ledger.tsv"
 
 # Write known entries directly
-printf '1000\tadded\ttask-1\tship\tfirstmate\n' >> "$LEDGER"
-printf '1001\tadded\ttask-2\tscout\tother\n' >> "$LEDGER"
-printf '1002\tstarted\ttask-1\tship\tfirstmate\n' >> "$LEDGER"
-printf '1003\tdone\ttask-1\tship\tfirstmate\n' >> "$LEDGER"
+{
+  printf '1000\tadded\ttask-1\tship\tfirstmate\n'
+  printf '1001\tadded\ttask-2\tscout\tother\n'
+  printf '1002\tstarted\ttask-1\tship\tfirstmate\n'
+  printf '1003\tdone\ttask-1\tship\tfirstmate\n'
+} >> "$LEDGER"
 
 output=$(FM_BACKLOG_LEDGER_OVERRIDE="$LEDGER" "$ROOT/bin/fm-ledger-summary.sh" 2>/dev/null)
 expected='added: 2
@@ -222,9 +224,11 @@ DATA="$TEST_ROOT/data"
 mkdir -p "$DATA"
 LEDGER="$DATA/backlog-ledger.tsv"
 
-printf '1000\tadded\ttask-1\tship\tfirstmate\n' >> "$LEDGER"
-printf '2000\tstarted\ttask-1\tship\tfirstmate\n' >> "$LEDGER"
-printf '3000\tdone\ttask-1\tship\tfirstmate\n' >> "$LEDGER"
+{
+  printf '1000\tadded\ttask-1\tship\tfirstmate\n'
+  printf '2000\tstarted\ttask-1\tship\tfirstmate\n'
+  printf '3000\tdone\ttask-1\tship\tfirstmate\n'
+} >> "$LEDGER"
 
 output=$(FM_BACKLOG_LEDGER_OVERRIDE="$LEDGER" "$ROOT/bin/fm-ledger-summary.sh" --since 2000 2>/dev/null)
 expected='added: 0
