@@ -337,6 +337,10 @@
       "audience": "public-product"
     },
     {
+      "path": "data/no-mistakes-pr-attestation-not-refreshed/upstream-bug-report.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/agent-control.md",
       "audience": "maintainer-architecture"
     },
