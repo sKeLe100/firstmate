@@ -853,7 +853,7 @@ tests/fm-codex-usage.test.sh 61912
 tests/fm-composer-matrix-live-e2e.test.sh 110
 tests/fm-config-inherit-lane-caps.test.sh 417
 tests/fm-context-usage.test.sh 669
-tests/fm-control-relaunch.test.sh 48210
+tests/fm-control-relaunch.test.sh 175038
 tests/fm-control.test.sh 54301
 tests/fm-cursor-harness.test.sh 30103
 tests/fm-cursor-primary-live-e2e.test.sh 81
@@ -959,7 +959,7 @@ tests/fm-send-agy-confirm.test.sh 3595
 tests/fm-send-cache-stale-guard.test.sh 20398
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 63
 tests/fm-send-inbox.test.sh 38956
-tests/fm-send-remote-delivery.test.sh 27686
+tests/fm-send-remote-delivery.test.sh 73079
 tests/fm-send-resolve-key.test.sh 19619
 tests/fm-send-secondmate-marker-herdr-e2e.test.sh 51
 tests/fm-send-secondmate-marker.test.sh 6252
