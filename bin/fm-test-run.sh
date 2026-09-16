@@ -832,7 +832,7 @@ tests/fm-bearings-board-lavish-live-e2e.test.sh 156
 tests/fm-bearings-board-render.test.sh 14000
 tests/fm-bearings-board.test.sh 125000
 tests/fm-bearings-snapshot.test.sh 116374
-tests/fm-bootstrap-network-parallel.test.sh 8214
+tests/fm-bootstrap-network-parallel.test.sh 22385
 tests/fm-bootstrap.test.sh 64000
 tests/fm-branch-supervision.test.sh 14000
 tests/fm-busy-adapter-wiring.test.sh 49731
@@ -877,7 +877,7 @@ tests/fm-harness-adapter-references.test.sh 120
 tests/fm-harness-liveness-drift-live-e2e.test.sh 1300
 tests/fm-harness-precedence.test.sh 4062
 tests/fm-herdr-attached-viewer-live-e2e.test.sh 19000
-tests/fm-herdr-pi-stale-registration-live-e2e.test.sh 55
+tests/fm-herdr-pi-stale-registration-live-e2e.test.sh 109
 tests/fm-herdr-session-cleanup.test.sh 6704
 tests/fm-herdr-submit-confirm-live-e2e.test.sh 82
 tests/fm-herdr-version-floor-live-e2e.test.sh 85
@@ -914,7 +914,7 @@ tests/fm-pi-branch-live-e2e.test.sh 120
 tests/fm-pi-branch-responsiveness-live-e2e.test.sh 17000
 tests/fm-pi-codex-native.test.sh 120
 tests/fm-pi-primary-live-e2e.test.sh 81
-tests/fm-pi-watch-extension.test.sh 42970
+tests/fm-pi-watch-extension.test.sh 83825
 tests/fm-pi-windows-shell-invocation.test.sh 5121
 tests/fm-pr-check-security.test.sh 172215
 tests/fm-primary-herdr.test.sh 4000
@@ -949,8 +949,8 @@ tests/fm-routing-ledger-metrics.test.sh 15993
 tests/fm-rovo-harness.test.sh 25090
 tests/fm-rovo-signals-live-e2e.test.sh 212
 tests/fm-secondmate-harness.test.sh 151589
-tests/fm-secondmate-lifecycle-e2e.test.sh 8793
-tests/fm-secondmate-liveness.test.sh 18146
+tests/fm-secondmate-lifecycle-e2e.test.sh 19228
+tests/fm-secondmate-liveness.test.sh 37366
 tests/fm-secondmate-reconcile.test.sh 130000
 tests/fm-secondmate-restart.test.sh 119085
 tests/fm-secondmate-safety.test.sh 57689
@@ -974,15 +974,15 @@ tests/fm-spawn-host-memory.test.sh 5440
 tests/fm-spawn-pc02-lane-guard.test.sh 11846
 tests/fm-spawn-pool-base-freshen.test.sh 156000
 tests/fm-spawn-worktree-settle.test.sh 13000
-tests/fm-startup-memory-budget.test.sh 6964
+tests/fm-startup-memory-budget.test.sh 18833
 tests/fm-startup-network.test.sh 62274
 tests/fm-stat-shadowing.test.sh 54
-tests/fm-stow-cascade.test.sh 3101
+tests/fm-stow-cascade.test.sh 6033
 tests/fm-subagent-pretool-check.test.sh 1030
 tests/fm-supervision-events.test.sh 719
 tests/fm-tangle-guard.test.sh 9662
 tests/fm-task-delivery.test.sh 24000
-tests/fm-task-inbox.test.sh 25369
+tests/fm-task-inbox.test.sh 47037
 tests/fm-tasks-axi.test.sh 2116
 tests/fm-teardown-endpoint-safety.test.sh 42000
 tests/fm-teardown.test.sh 221000
