@@ -463,29 +463,31 @@ fm_claude_pre_exit_check() {  # <backend> <target> <label>
     return 0
   }
   # Workspace trust dialog: "Quick safety check: Is this a project you created
-  # or one you trust?" - cursor on "No"
+  # or one you trust?" - cursor on "No". The title text is very specific.
   case "$tail" in
-    *"Quick safety check"*|*"trust"*|*"Is this a project you created"*)
+    *"Quick safety check"*|*"Is this a project you created"*)
       die "pre-exit: workspace trust dialog visible; do not type /exit into a modal dialog. Inspect and dismiss the dialog first"
       ;;
   esac
   # External CLAUDE.md import dialog: "Allow external CLAUDE.md file imports?"
+  # Requires the full action text, not just the filename.
   case "$tail" in
-    *"disable external imports"*|*"CLAUDE.md"*|*"external import"*)
+    *"Allow external"*|*"disable external imports"*)
       die "pre-exit: CLAUDE.md external-import dialog visible; do not type /exit into a modal dialog. Inspect and dismiss the dialog first"
       ;;
   esac
-  # Bypass-permissions confirmation: "Allow external CLAUDE.md file imports?"
-  # and the third separate dialog "bypass permissions" with cursor on "No, exit"
+  # Bypass-permissions confirmation: separate dialog from trust/import.
+  # Requires the full action text, not just a standalone keyword.
   case "$tail" in
-    *"bypass"*|*"permission"*|*"Allow external access"*)
+    *"Allow external access"*|*"bypass permissions"*)
       die "pre-exit: bypass-permissions dialog visible; do not type /exit into a modal dialog. Inspect and dismiss the dialog first"
       ;;
   esac
   # AskUserQuestion / tool permission prompt: a live modal asking the user
   # for a decision. Typing /exit into this would submit the prompt text.
+  # "AskUserQuestion" is the explicit tool-call marker.
   case "$tail" in
-    *"AskUserQuestion"*|*"ask user"*|*"tool permission"*|*"Access to run"*)
+    *"AskUserQuestion"*|*"Access to run"*)
       die "pre-exit: AskUserQuestion/tool-permission dialog visible; do not type /exit into a modal dialog. Answer the question first"
       ;;
   esac

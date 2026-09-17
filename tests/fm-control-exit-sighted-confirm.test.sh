@@ -14,7 +14,9 @@
 #   4. claude, workspace-trust on pre-exit: pre-exit check refuses.
 #   5. claude, "Background work is running" before submit: pre-exit does NOT
 #      refuse (only checks for different modals), sight-confirm handles it.
-#   6. codex: claude-specific checks are no-ops, exit proceeds normally.
+#   6. claude, idle composer with broad substrings (CLAUDE.md, trust, etc.):
+#      does NOT falsely refuse on ordinary transcript text.
+#   7. codex: claude-specific checks are no-ops, exit proceeds normally.
 
 set -u
 
@@ -183,6 +185,18 @@ run_exit_case claude 1 \
 echo "$EXIT_ERR" | grep -qi "trust" || fail "T4: refusal should mention trust dialog"
 pass "T4: claude workspace-trust on pre-exit: check refuses instead of typing /exit"
 
+# --- T7: claude, idle composer with broad substrings does NOT refuse ----------
+#
+# Ordinary Claude Code transcript text can contain words like "trust",
+# "CLAUDE.md", "permission", or "bypass" in its reasoning. The pre-exit
+# check must NOT refuse on these alone - it requires specific dialog UI text.
+run_exit_case claude 1 \
+  "I checked the CLAUDE.md file for trust settings.
+The permission model allows bypass in certain cases.
+Idle composer ready."
+[ "$EXIT_RC" -eq 0 ] || fail "T7: claude broad substrings in idle text should NOT refuse, rc=$EXIT_RC err=$EXIT_ERR"
+pass "T7: claude idle composer with broad substrings (CLAUDE.md, trust, permission, bypass) does NOT trigger false-positive refusal"
+
 # --- T5: claude, exit dialog visible before /exit submit ---------------------
 run_exit_case claude 1 \
   "Background work is running
@@ -191,10 +205,10 @@ Enter to confirm · Esc to cancel"
 [ "$EXIT_RC" -eq 0 ] || fail "T5: claude exit dialog before submit should succeed, rc=$EXIT_RC err=$EXIT_ERR"
 pass "T5: claude exit dialog on pre-exit: does NOT refuse (sight-confirm handles it)"
 
-# --- T6: codex, claude-specific checks are no-ops ---------------------------
+# --- T8: codex, claude-specific checks are no-ops ---------------------------
 run_exit_case codex 1 \
   "idle composer"
-[ "$EXIT_RC" -eq 0 ] || fail "T6: codex should exit 0 (claude checks no-ops), rc=$EXIT_RC err=$EXIT_ERR"
-pass "T6: codex: claude-specific checks do not fire, exit proceeds normally"
+[ "$EXIT_RC" -eq 0 ] || fail "T8: codex should exit 0 (claude checks no-ops), rc=$EXIT_RC err=$EXIT_ERR"
+pass "T8: codex: claude-specific checks do not fire, exit proceeds normally"
 
 echo "All tests passed"
