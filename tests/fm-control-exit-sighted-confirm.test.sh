@@ -157,7 +157,11 @@ run_exit_case claude 1 \
 pass "T1: claude idle composer: sight-confirm does not fire on plain composer"
 
 # --- T2: claude, "Background work is running" dialog -------------------------
-run_exit_case claude 1 \
+# dead_at=3 so the agent stays alive for the sight-confirm poll loop:
+# call 1 = initial do_exit check (alive), call 2 = sight-confirm poll 1 (alive),
+# call 3 = wait_agent_state (dead). This ensures the sight-confirm loop
+# actually runs and can match the dialog markers.
+run_exit_case claude 3 \
   "idle composer" \
   "Background work is running
 ❯ 1. Exit and stop tasks
@@ -198,7 +202,10 @@ Idle composer ready."
 pass "T7: claude idle composer with broad substrings (CLAUDE.md, trust, permission, bypass) does NOT trigger false-positive refusal"
 
 # --- T5: claude, exit dialog visible before /exit submit ---------------------
-run_exit_case claude 1 \
+# dead_at=3 so the sight-confirm loop can actually run: the pre-exit check
+# does NOT refuse (the exit dialog is not a different modal), /exit submits,
+# and sight-confirm matches the dialog and sends Enter.
+run_exit_case claude 3 \
   "Background work is running
 ❯ 1. Exit and stop tasks
 Enter to confirm · Esc to cancel"
