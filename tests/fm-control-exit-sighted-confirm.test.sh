@@ -143,10 +143,9 @@ OVERRIDE
   export AGENT_STATE_DEAD_AT="$dead_at"
   export FM_GATE_REFUSE_BYPASS=1
 
-  local out err rc
-  out=$("$patched" t1 exit 2>"$case_dir/err") && rc=0 || rc=$?
+  local rc
+  "$patched" t1 exit >/dev/null 2>"$case_dir/err" && rc=0 || rc=$?
   EXIT_RC=$rc
-  EXIT_OUT="$out"
   EXIT_ERR=$(cat "$case_dir/err" 2>/dev/null || true)
 }
 
