@@ -450,6 +450,89 @@ retire_busy_incarnation() {
   fi
 }
 
+# fm_claude_pre_exit_check: before typing /exit, capture the pane tail once
+# and refuse if it shows a different modal dialog (permission prompt,
+# AskUserQuestion, trust/import/bypass) instead of the normal idle composer.
+# Claude's workspace-trust, external-imports, and bypass-permissions dialogs
+# all put the cursor on their declining option, so typing /exit into them
+# would submit the dialog text instead of exiting.
+fm_claude_pre_exit_check() {  # <backend> <target> <label>
+  local tail
+  tail=$(fm_backend_capture "$1" "$2" 200 "$3" 2>/dev/null) || {
+    echo "pre-exit: capture failed, proceeding cautiously" >&2
+    return 0
+  }
+  # Workspace trust dialog: "Quick safety check: Is this a project you created
+  # or one you trust?" - cursor on "No"
+  case "$tail" in
+    *"Quick safety check"*|*"trust"*|*"Is this a project you created"*)
+      die "pre-exit: workspace trust dialog visible; do not type /exit into a modal dialog. Inspect and dismiss the dialog first"
+      ;;
+  esac
+  # External CLAUDE.md import dialog: "Allow external CLAUDE.md file imports?"
+  case "$tail" in
+    *"disable external imports"*|*"CLAUDE.md"*|*"external import"*)
+      die "pre-exit: CLAUDE.md external-import dialog visible; do not type /exit into a modal dialog. Inspect and dismiss the dialog first"
+      ;;
+  esac
+  # Bypass-permissions confirmation: "Allow external CLAUDE.md file imports?"
+  # and the third separate dialog "bypass permissions" with cursor on "No, exit"
+  case "$tail" in
+    *"bypass"*|*"permission"*|*"Allow external access"*)
+      die "pre-exit: bypass-permissions dialog visible; do not type /exit into a modal dialog. Inspect and dismiss the dialog first"
+      ;;
+  esac
+  # AskUserQuestion / tool permission prompt: a live modal asking the user
+  # for a decision. Typing /exit into this would submit the prompt text.
+  case "$tail" in
+    *"AskUserQuestion"*|*"ask user"*|*"tool permission"*|*"Access to run"*)
+      die "pre-exit: AskUserQuestion/tool-permission dialog visible; do not type /exit into a modal dialog. Answer the question first"
+      ;;
+  esac
+  return 0
+}
+
+# fm_claude_exit_confirm: Claude's exit confirmation dialog (verified 2.1.273)
+# is the only Claude dialog whose default selection is the accepting option.
+# After submitting /exit, Claude renders "Background work is running" with
+# "❯ 1. Exit and stop tasks" selected and "Enter to confirm · Esc to cancel"
+# below. A sighted confirm sends Enter only when all three required patterns
+# are present in the pane tail, preventing accidental acceptance of a live
+# tool-permission prompt or AskUserQuestion dialog that might also appear.
+#
+# This is backend-agnostic (works on both tmux and Herdr via the shared
+# fm_backend_capture / fm_backend_send_key interface) and only fires when
+# HARNESS=claude. Cap at 2 sighted confirms.
+fm_claude_exit_confirm() {  # <backend> <target> <label>
+  local confirm_max=2 confirm=0
+  while [ "$confirm" -lt "$confirm_max" ]; do
+    local state
+    state=$(agent_state)
+    [ "$state" = alive ] || break
+    local tail
+    tail=$(fm_backend_capture "$1" "$2" 200 "$3" 2>/dev/null) || {
+      sleep "$POLL"
+      confirm=$((confirm + 1))
+      continue
+    }
+    local has_bg has_exit has_footer
+    has_bg=$(printf '%s\n' "$tail" | grep -c "Background work is running" || true)
+    has_exit=$(printf '%s\n' "$tail" | grep -c "Exit and stop tasks" || true)
+    has_footer=$(printf '%s\n' "$tail" | grep -c "Enter to confirm" || true)
+    if [ "$has_bg" -gt 0 ] && [ "$has_exit" -gt 0 ] && [ "$has_footer" -gt 0 ]; then
+      fm_backend_send_key "$1" "$2" Enter "$3" || {
+        sleep "$POLL"
+        confirm=$((confirm + 1))
+        continue
+      }
+      return 0
+    fi
+    sleep "$POLL"
+    confirm=$((confirm + 1))
+  done
+  return 0
+}
+
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped` or `stopped`.
 do_exit() {
@@ -483,6 +566,13 @@ do_exit() {
       ;;
   esac
   cmd=$(fm_control_exit_command "$HARNESS")
+  # Pre-exit dialog check (Claude only): refuse if a different modal dialog is
+  # showing instead of the normal idle composer. Claude's workspace-trust,
+  # external-imports, bypass-permissions, and AskUserQuestion dialogs all put
+  # the cursor on their declining option, so typing /exit into them would
+  # submit the dialog text instead of exiting.
+  [ "$HARNESS" = claude ] \
+    && fm_claude_pre_exit_check "$BACKEND" "$T" "$LABEL" || true
   # The submit verdict is NOT the postcondition here: a successful exit command
   # destroys the composer the verdict is read from, so a post-exit read can
   # legitimately report anything. Only a hard transport failure aborts; the
@@ -493,6 +583,13 @@ do_exit() {
     || die "the exit command could not be sent to task $ID on $BACKEND"
   [ "$verdict" != send-failed ] \
     || die "the exit command could not be sent to task $ID on $BACKEND"
+  # Sight-confirm Claude's exit dialog (Claude only): after submitting /exit,
+  # Claude renders "Background work is running" with "❯ 1. Exit and stop tasks"
+  # selected and "Enter to confirm · Esc to cancel" below. A sighted confirm
+  # sends Enter only when all three required patterns are present, preventing
+  # accidental acceptance of a live tool-permission prompt or AskUserQuestion.
+  [ "$HARNESS" = claude ] \
+    && fm_claude_exit_confirm "$BACKEND" "$T" "$LABEL" || true
   state=$(wait_agent_state "$EXIT_WAIT" dead) || {
     die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
   }
