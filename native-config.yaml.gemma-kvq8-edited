@@ -1,0 +1,285 @@
+# Native Windows llama-swap config - restores WSL2 production's 4-entry
+# multi-model swapping, path-translated to native Windows.
+# Backend: LM Studio's own bundled, signed (Element Labs Inc.) llama-server.exe.
+# CUDA vendor DLLs are put on PATH by the launching PowerShell wrapper before
+# llama-swap.exe itself starts, so every spawned child inherits it.
+
+# healthCheckTimeout is global-only in this llama-swap version (confirmed
+# by testing: a per-model override under models.<name> parses without
+# error but has no effect; a global-level 300 fixed it, applies to every
+# entry). Raised from the 120s default because the MTP entry's --no-mmap
+# cold load (~215s) exceeds it - real timeout observed and confirmed
+# before this was set. Side effect: any entry that is genuinely broken
+# now takes up to 5 min to report failure instead of 2 min - acceptable
+# tradeoff for a home-lab single-operator setup.
+logLevel: info
+globalTTL: 600
+healthCheckTimeout: 300
+
+models:
+  qwen3.8-27b:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model D:\pc02-llm-models\Qwen3.8-27B-UD-Q2_K_XL.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -np 1
+
+  # --no-mmap added 2026-08-22 after a real A/B (captain-requested,
+  # applied only after testing showed a genuine benefit): eliminates a
+  # real first-request-and-ramp penalty from mmap page faults on the
+  # --n-cpu-moe CPU-resident expert tensors (13.8 -> ~20 tok/s taking
+  # several requests to ramp with mmap, vs an immediate, consistent ~20
+  # tok/s from the first request with --no-mmap; VRAM cost was a wash,
+  # ~11954MB vs ~11998MB). Plausibly also the fix for the documented
+  # llama-swap abort-and-retry-on-cold-start pattern for this model
+  # (learnings.md). NOT applied to the qwen3.8-27b entries - they have
+  # no --n-cpu-moe (fully GPU-resident, --n-gpu-layers 99 with no CPU
+  # offload), so there are no CPU-resident tensors for mmap to matter to.
+  qwen3.6-35b-a3b:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\.lmstudio\models\unsloth\Qwen3.6-35B-A3B-GGUF\Qwen3.6-35B-A3B-Q4_K_M.gguf
+      --n-gpu-layers 99
+      --n-cpu-moe 21
+      --flash-attn on
+      -c 4096
+      --reasoning off
+      -np 1
+      --no-mmap
+
+  # Raised to its full native 262144 context, 2026-08-23 (captain ruling
+  # corr=2575d3be17212238, MEASURE FIRST instruction). Real per-entry
+  # curve: an isolated test hung twice on the D:\ drive's cold HDD read
+  # (ST8000DM004, spinning disk, not the C:\ SSD) - not a real hang, just
+  # slow (~5-6 min cold, confirmed by waiting it out); every subsequent
+  # reload was equally slow, OS file-cache did not visibly help. At
+  # -c 262144 with q8_0 KV cache and --no-kv-offload (KV cache in system
+  # RAM, not VRAM), real-tested: 12022MB VRAM, real generation confirmed,
+  # real measured decode speed 9.7 tok/s on a genuinely-filled ~9200-token
+  # prompt - slower, not wrong, matches the captain's explicit "correct
+  # over fast" preference. See
+  # data/pc02-agentic-roster-expand/context-sizing-investigation-2026-08-23.md.
+  qwen3.8-27b-dispatch:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model D:\pc02-llm-models\Qwen3.8-27B-UD-Q2_K_XL.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -c 262144
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --no-kv-offload
+      -np 1
+
+  # Raised to its full native 262144 context, 2026-08-23 (captain ruling
+  # corr=2575d3be17212238). Real-tested combined with q8_0 KV cache and
+  # --no-kv-offload (KV cache moved to system RAM): 11798MB VRAM, real
+  # generation confirmed. Real measured decode speed on a genuinely
+  # filled ~24k-token prompt: 11.9 tok/s (down from ~56 tok/s at 16k on
+  # VRAM alone) - inside the captain's own expected 15-40 tok/s range for
+  # MoE RAM offload, and explicitly acceptable to him ("cares about
+  # correct not fast"). Decode speed on VRAM alone (no offload, no quant)
+  # was flat 54-58 tok/s from a short prompt up to a real 27,655-token
+  # filled context before this change - see the investigation doc for
+  # the full real ctx-size x VRAM x tok/s table this decision is based on.
+  # --reasoning on (was off) 2026-08-24 (pc02-duty-officer-config-fixes):
+  # the prior "thinking-channel FAIL" was a serving-config artifact, not a
+  # model limitation - thinking exists but was arriving inline in content
+  # instead of a separate reasoning_content field with --reasoning off.
+  qwen3.6-35b-a3b-dispatch:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\.lmstudio\models\unsloth\Qwen3.6-35B-A3B-GGUF\Qwen3.6-35B-A3B-Q4_K_M.gguf
+      --n-gpu-layers 99
+      --n-cpu-moe 21
+      --flash-attn on
+      -c 262144
+      --reasoning on
+      -np 1
+      --chat-template-file C:\Users\sean_\.lmstudio\qwen3.6-35b-a3b-patched.jinja
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --no-kv-offload
+      --no-mmap
+
+  # MTP (speculative-decoding) variant of the 35B-A3B model, added
+  # 2026-08-22. NOT the default dispatch model - available entry only,
+  # captain decides based on the A/B report. --no-mmap is required: with
+  # mmap (llama.cpp's default for CPU-offloaded tensor overrides), this
+  # build hit a severe first-request cold-page-fault penalty AND every
+  # n-cpu-moe value up to 24 looked like it hit the same VRAM-cliff
+  # pattern known from the standard build - --no-mmap fixed both, giving
+  # clean, immediate ~50 tok/s from the very first request with no
+  # warmup needed. n-cpu-moe 21 (the standard build's value) is NOT
+  # enough for this ~11% larger file - confirmed via real generation
+  # test, catastrophic slowdown. n-cpu-moe 24 is the smallest tested
+  # value that is both VRAM-safe (~370-490MB headroom) and fast once
+  # --no-mmap is set. --no-mmap's eager full-file read also makes cold
+  # load take ~215s, longer than llama-swap's 2-minute default health
+  # check timeout - confirmed by a real timeout on the first live test
+  # through the proxy, fixed via the global healthCheckTimeout above.
+  qwen3.6-35b-a3b-mtp-dispatch:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model D:\pc02-llm-models\Qwen3.6-35B-A3B-MTP-UD-Q4_K_M.gguf
+      --n-gpu-layers 99
+      --n-cpu-moe 24
+      --flash-attn on
+      -c 16384
+      --reasoning off
+      -np 1
+      --spec-type draft-mtp
+      --no-mmap
+
+  # --- Small models, migrated from Ollama (Phase 1, 2026-08-22) ---
+  # Two Ollama-specific Modelfile patches (qwen3-8b-nothink-fix,
+  # gemma-fixed) were dropped per captain instruction; base weights below
+  # are unpatched. think:false is not guaranteed honored on qwen3-8b, and
+  # gemma-4-12b-it-qat may leak channel/thinking tags in some responses.
+
+  # Deliberately kept at 8192, NOT re-served for agentic use (captain
+  # ruling 2026-08-23, corr=81237c4f6029bd26): this is the one model our
+  # main-home test caught NARRATING fake tool calls rather than emitting
+  # real ones - worst use of the tightest VRAM margin (602MB headroom at
+  # 16k, real-tested). See
+  # data/pc02-agentic-roster-expand/assessment-2026-08-23.md for the
+  # tool-calling-fix investigation.
+  deepseek-r1-14b:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\.lmstudio\models\ollama-library\deepseek-r1-14b\DeepSeek-R1-14B.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -c 8192
+      -np 1
+
+  # Deliberately kept at 8192 (captain ruling 2026-08-23,
+  # corr=81237c4f6029bd26): real-tested at 16k, fits but with only 913MB
+  # headroom. HELD pending pc02-desktop-vram-baseline-reduction landing,
+  # then re-measure before raising this to 16384.
+  qwen2.5-coder-14b-instruct:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\.lmstudio\models\Qwen\Qwen2.5-Coder-14B-Instruct-GGUF\Qwen2.5-Coder-14B-Instruct-Q4_0.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -c 8192
+      -np 1
+
+  # --- Re-served at 16k for agentic use, 2026-08-23 (pc02-agentic-roster-expand,
+  # captain rulings corr=81237c4f6029bd26). Real per-entry VRAM verified on
+  # isolated test instances before this change - see
+  # data/pc02-agentic-roster-expand/assessment-2026-08-23.md.
+  #
+  # SCRAPPED 2026-08-23 (pc02-scrap-failed-models, captain ruling after
+  # data/pc02-local-lane-long-trial/report.md - report lives in the main
+  # firstmate home, not this one): lfm2.5-2.6b (wrote wrong content to
+  # disk while appearing to succeed), qwen3-8b (hallucinated file paths,
+  # 0/3), qwen2.5-coder-7b-instruct (narrated fake edits, 0/2, context
+  # size ruled out as the cause), and qwen3.5-9b (once produced correct-
+  # format but factually wrong content - disqualifying regardless of
+  # task class) were all removed entirely from this served roster - not
+  # held, not restricted, scrapped. qwen3.5-9b's patched template
+  # (qwen3.5-9b-patched.jinja) is left in place as harmless orphaned
+  # debris, same as the earlier gpu-guard script - not explicitly named
+  # for removal. The underlying GGUF files were NOT deleted from disk,
+  # only these serving entries; a separate explicit approval would be
+  # needed to reclaim that disk space. mistral-nemo KEPT despite its own
+  # 0/2 failure - captain ruled it's a chat-template role-alternation
+  # refusal (opencode's message construction violates the template's
+  # strict user/assistant alternation), not a model defect - see
+  # pc02-mistral-nemo-template-recheck (low priority, not pursued this
+  # pass, no concrete gap identified that the three already-working
+  # models - gemma-4-12b-it-qat, qwen3.6-35b-a3b-dispatch,
+  # qwen3.8-27b-dispatch - don't cover).
+  mistral-nemo:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\.lmstudio\models\ollama-library\mistral-nemo\Mistral-Nemo.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -c 16384
+      -np 1
+
+  meta-llama-3.1-8b-instruct:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\.lmstudio\models\bartowski\Meta-Llama-3.1-8B-Instruct-GGUF\Meta-Llama-3.1-8B-Instruct-Q8_0.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -c 16384
+      -np 1
+
+  # Raised to its full native 262144 context, 2026-08-23 (captain ruling
+  # corr=2575d3be17212238). Real-tested end to end on VRAM ALONE, no KV
+  # quantization or RAM offload needed: 11914MB, 374MB headroom, real
+  # generation confirmed - gemma-4's sliding-window-attention layers
+  # (1024-token window, confirmed in its own GGUF metadata) keep KV cache
+  # growth sub-linear, unlike the two Qwen entries above. See
+  # data/pc02-agentic-roster-expand/context-sizing-investigation-2026-08-23.md.
+  gemma-4-12b-it-qat:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\.lmstudio\models\google\gemma-4-12B-it-qat-q4_0-gguf\gemma-4-12b-it-qat-q4_0.gguf
+      --mmproj C:\Users\sean_\.lmstudio\models\google\gemma-4-12B-it-qat-q4_0-gguf\mmproj-gemma-4-12b-it-qat-q4_0.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -c 262144
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      -np 1
+
+  # New family added 2026-08-23 (pc02-agentic-roster-expand, captain
+  # ruling corr=81237c4f6029bd26): GLM-4-9B-0414, official THUDM base,
+  # bartowski GGUF requant, explicitly tuned for function calling.
+  # Real-tested isolated: 9001MB VRAM at 16k (comfortable), and its own
+  # bundled template DOES have a genuine tools-preamble (unlike
+  # deepseek-r1-14b's empty one) - the model correctly identifies the
+  # right tool and formats matching JSON arguments. NOT using the
+  # forced --chat-template chatglm4 override - tested and it broke the
+  # model's own bundled template entirely (garbage unrelated output).
+  # KNOWN LIMITATION, not yet resolved: llama-server's OpenAI-compatible
+  # endpoint does not parse this model's native tool-call output into a
+  # structured tool_calls field - it lands in plain content instead, and
+  # the model does not reliably stop and wait for a real result (one
+  # real test showed it continuing past its own call with a hallucinated
+  # fake tool response). Real improvement over deepseek-r1-14b (which
+  # never even attempts a call), but not yet clean end-to-end agentic
+  # tool use - flag for the follow-up agentic trial to characterize
+  # properly with more real trials.
+  glm4-9b-0414:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\.lmstudio\models\bartowski\THUDM_GLM-4-9B-0414-GGUF\THUDM_GLM-4-9B-0414-Q6_K.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -c 16384
+      -np 1
+
+  qwen3.8-27b-bartowski-q4_k_m:
+    cmd: >
+      C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
+      --port ${PORT}
+      --model C:\Users\sean_\models\bartowski\Qwen3.8-27B-GGUF\Qwen3.8-27B-Q4_K_M.gguf
+      --n-gpu-layers 99
+      --flash-attn on
+      -c 262144
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --no-kv-offload
+      --no-mmap
+      --spec-type draft-mtp
+      -ot "blk\.([89]|[1-5][0-9]|6[0-3])\.ffn_(gate|up|down)\.weight=CPU"
+      -np 1
