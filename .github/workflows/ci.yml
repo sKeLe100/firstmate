@@ -229,6 +229,19 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # ubuntu-latest ships Ruby and Chrome preinstalled; the self-hosted fleet
+      # does not, so tests/fm-ci-workflow.test.sh (needs `ruby`) and
+      # tests/fm-calm-pi-extension.test.sh (needs a Chrome/Chromium binary)
+      # fail here without an explicit install.
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - name: Install pinned Chrome for rendered export DOM assertions
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+        with:
+          chrome-version: stable
+      - run: echo "FM_CHROME_BIN=${{ steps.setup-chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
       - name: Require tmux for e2e tests
         run: |
           set -eu
