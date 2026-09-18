@@ -23,13 +23,9 @@ jobs:
   check:
     name: PR must be raised via no-mistakes
     runs-on: [self-hosted, fm-parallel]
-    # Same policy as the self-hosted jobs in ci.yml: a fork PR must never be
-    # scheduled onto the maintainer's own machines, even for a job that only
-    # reads the PR body and never checks out the head code.
     if: >-
       github.event.pull_request.user.login != 'github-actions[bot]' &&
-      github.event.pull_request.user.login != 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
       - name: Fetch PR body from the API
         id: pr
