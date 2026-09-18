@@ -34,6 +34,12 @@
 #   deepseek: spent 0.54 CAD of 20.00 CAD (2.7% used), 29 days left, expected ~0.67 CAD by now -> on-pace
 #   pool=deepseek verdict=on-pace total_cad=20.00 spent_cad=0.54 remaining_cad=19.46 expected_cad=0.67 days_left=29 daily_allowance_cad=0.67 exhausted=false
 #
+# For an opencode_stats pool, when a parsed model has no entry in that pool's
+# rates_usd_per_mtok map, its tokens are excluded from spend rather than
+# priced at zero, the human line gets a "WARN unpriced models excluded from
+# spend: <models>" note, and the machine line gets a trailing
+# `unpriced_models=<comma-separated models>` field.
+#
 # Verdict is `ahead` when spend is more than 20% above the linear pace,
 # `behind` when more than 20% below, and `on-pace` otherwise. A pool whose
 # source could not be read prints `verdict=unknown` with a `note=` field.
@@ -48,7 +54,7 @@
 set -euo pipefail
 
 usage() {
-  sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # fm_credit_epoch_day <YYYY-MM-DD> -> integer days since Unix epoch (UTC).

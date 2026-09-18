@@ -191,3 +191,49 @@ out=$("$BIN" --config "$TMP_ROOT/empty.json" 2>&1)
 code=$?
 assert_equals "1" "$code" "an empty pools array fails"
 assert_contains "$out" "malformed config" "the failure names the malformed config"
+
+# A pool missing a required field (here: total) refuses with a diagnostic
+# instead of silently pricing at zero.
+cat > "$TMP_ROOT/invalid-pool.json" <<'JSON'
+{
+  "fx_usd_cad": 1.37,
+  "pools": [
+    { "id": "deepseek", "currency": "CAD",
+      "window_start": "2026-09-17", "window_end": "2026-10-17",
+      "source": "deepseek_api" }
+  ]
+}
+JSON
+out=$(PATH="$fake:$PATH" DEEPSEEK_API_KEY=test "$BIN" --config "$TMP_ROOT/invalid-pool.json" --now 2026-09-18 2>&1)
+code=$?
+assert_equals "1" "$code" "a pool missing a required field fails"
+assert_contains "$out" "missing/invalid required fields" "the failure names the invalid pool"
+assert_contains "$out" "deepseek" "the failure identifies which pool is invalid"
+
+# A Gemini stats model absent from rates_usd_per_mtok is flagged, not priced
+# at zero, so it cannot silently suppress the early-exhaustion WARN.
+cat > "$TMP_ROOT/unpriced.json" <<'JSON'
+{
+  "fx_usd_cad": 1.37,
+  "pools": [
+    {
+      "id": "gemini",
+      "total": 25.0,
+      "currency": "CAD",
+      "window_start": "2026-09-17",
+      "window_end": "2026-10-17",
+      "source": "opencode_stats",
+      "rates_usd_per_mtok": {
+        "gemini-3.8-flash": { "input": 0.75, "output": 3.75 }
+      }
+    }
+  ]
+}
+JSON
+out=$(PATH="$fake:$PATH" "$BIN" --config "$TMP_ROOT/unpriced.json" --now 2026-09-18 2>&1)
+code=$?
+assert_equals "0" "$code" "an unpriced Gemini model does not fail the run"
+assert_contains "$out" "WARN unpriced models excluded from spend: gemini-openai/gemini-3.1-pro-preview" \
+  "the human line flags the unpriced model instead of pricing it at zero"
+assert_contains "$out" "unpriced_models=gemini-openai/gemini-3.1-pro-preview" \
+  "the machine line carries the unpriced_models field"
