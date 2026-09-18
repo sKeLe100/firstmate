@@ -164,8 +164,12 @@ fm_credit_opencode_tokens() {
 
 # fm_credit_gemini_usd <stats_text> <rates_json>
 # Prices parsed Gemini token counts with the pool's per-model USD/1M rates.
+# Prints two lines: the priced total, then a comma-separated list (possibly
+# empty) of models with no matching rate entry. Those models' tokens are
+# excluded from the total rather than silently priced at zero, so the caller
+# can flag them instead of letting them suppress the early-exhaustion WARN.
 fm_credit_gemini_usd() {
-  local stats="$1" rates="$2" total="0" line model input output rate inr outr
+  local stats="$1" rates="$2" total="0" line model input output rate inr outr unpriced=""
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     model="${line#model=}"; model="${model%% *}"
@@ -175,12 +179,15 @@ fm_credit_gemini_usd() {
       to_entries[]
       | select(.key as $k | $m | endswith($k))
       | "\(.value.input) \(.value.output)"' <<<"$rates" 2>/dev/null | head -1)"
-    [ -n "$rate" ] || continue
+    if [ -z "$rate" ]; then
+      unpriced="${unpriced:+$unpriced,}$model"
+      continue
+    fi
     inr="${rate%% *}"; outr="${rate##* }"
     total="$(awk -v t="$total" -v i="$input" -v o="$output" -v ir="$inr" -v orate="$outr" \
       'BEGIN { printf "%.6f", t + (i * ir + o * orate) / 1000000 }')"
   done < <(printf '%s\n' "$stats" | fm_credit_opencode_tokens)
-  printf '%s\n' "$total"
+  printf '%s\n%s\n' "$total" "$unpriced"
 }
 
 # fm_credit_deepseek_remaining <fx_usd_cad> [<balance_currency_override>]
@@ -244,8 +251,16 @@ fm_credit_pool_spent() {
         printf 'unknown opencode stats returned nothing\n'
         return 0
       fi
-      printf '%s estimated from opencode token stats\n' \
-        "$(fm_credit_pace_convert "$(fm_credit_gemini_usd "$stats" "$rates")" USD "$fx")"
+      local gemini_out usd_total unpriced_models note
+      gemini_out="$(fm_credit_gemini_usd "$stats" "$rates")"
+      usd_total="$(sed -n '1p' <<<"$gemini_out")"
+      unpriced_models="$(sed -n '2p' <<<"$gemini_out")"
+      note="estimated from opencode token stats"
+      if [ -n "$unpriced_models" ]; then
+        note="${note}; WARN unpriced models excluded from spend: ${unpriced_models}"
+      fi
+      printf '%s %s|unpriced_models=%s\n' \
+        "$(fm_credit_pace_convert "$usd_total" USD "$fx")" "$note" "$unpriced_models"
       ;;
     *)
       printf 'unknown unsupported source: %s\n' "$src"
@@ -279,6 +294,22 @@ main() {
     echo "fm-cloud-credit-pace: malformed config (need a non-empty pools array): $config_path" >&2
     return 1
   fi
+  local invalid_pools
+  invalid_pools="$(jq -r '
+    [.pools[] |
+      select(
+        (has("id") | not) or (.id | type != "string") or
+        (has("total") | not) or (.total | type != "number") or
+        (has("window_start") | not) or (.window_start | type != "string") or
+        (has("window_end") | not) or (.window_end | type != "string") or
+        (has("source") | not) or (.source | type != "string")
+      ) | (.id // "?")
+    ] | join(", ")
+  ' "$config_path" 2>/dev/null)"
+  if [ -n "$invalid_pools" ]; then
+    echo "fm-cloud-credit-pace: pool(s) missing/invalid required fields (id, total, window_start, window_end, source): $invalid_pools" >&2
+    return 1
+  fi
 
   local fx today now_day
   fx="$(jq -r '.fx_usd_cad // 1.37' "$config_path")"
@@ -301,10 +332,17 @@ main() {
     window_days="$((end_day - start_day))"
     elapsed="$((now_day - start_day))"
 
-    local spent_raw spent_cad note
+    local spent_raw spent_cad note unpriced_models
     spent_raw="$(fm_credit_pool_spent "$pool_json" "$total_cad" "$elapsed" "$fx")"
     spent_cad="${spent_raw%% *}"
     note="${spent_raw#* }"
+    unpriced_models=""
+    case "$note" in
+      *"|unpriced_models="*)
+        unpriced_models="${note##*|unpriced_models=}"
+        note="${note%%|unpriced_models=*}"
+        ;;
+    esac
 
     if [ "$spent_cad" = "unknown" ]; then
       printf '%s: spend unknown (%s)\n' "$id" "$note"
@@ -317,7 +355,11 @@ main() {
     pct="$(fm_credit_pace_percent "$total_cad" "$spent_cad")"
     human="$(fm_credit_pace_human "$id" "$pct" "$fields")"
     printf '%s [%s]\n' "$human" "$note"
-    printf 'pool=%s %s\n' "$id" "$fields"
+    if [ -n "$unpriced_models" ]; then
+      printf 'pool=%s %s unpriced_models=%s\n' "$id" "$fields" "$unpriced_models"
+    else
+      printf 'pool=%s %s\n' "$id" "$fields"
+    fi
 
     local remaining days_left end_human
     remaining="$(awk '{for(i=1;i<=NF;i++){split($i,kv,"="); if(kv[1]=="remaining_cad") print kv[2]}}' <<<"$fields")"
