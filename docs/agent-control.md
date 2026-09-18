@@ -117,9 +117,11 @@ Backend capability comes from each adapter's real surface, not from a policy cho
 
 Per-harness interrupt keys, repeat counts, composer clears, exit commands, and supported task kinds live in `bin/fm-control-lib.sh` and are exercised for every verified harness by `tests/fm-control.test.sh`, with adapters outside its lane pinning their control mechanics in their own harness suites.
 The empirical basis for each adapter's value is the `harness-adapters` skill's verification record for that adapter.
+Claude's `exit` additionally sight-confirms a post-`/exit` "Background work is running" dialog and refuses on a different pre-`/exit` modal, both in `do_exit()` in `bin/fm-control.sh` itself rather than the per-harness table, pinned by `tests/fm-control-exit-sighted-confirm.test.sh` ([`claude.md`](../.agents/skills/harness-adapters/references/harness/claude.md)).
 
 ## Verification
 
 - `tests/fm-control.test.sh` - the adapter contract for its verified-harness lane (adapters outside the lane pin their control mechanics in their own harness suites), the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
 - `tests/fm-control-relaunch.test.sh` - the relaunch transaction: identity preservation, harness switching, the progress note, checkpoint refusals, and rollback after a failed launch.
 - `tests/fm-control-herdr-smoke.test.sh` - the second state-verified backend against the real herdr binary, on an isolated throwaway lab session.
+- `tests/fm-control-exit-sighted-confirm.test.sh` - Claude's pre-`/exit` dialog refusal and post-`/exit` sighted confirm, including the false-positive case for ordinary idle-composer text.

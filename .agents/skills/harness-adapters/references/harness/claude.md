@@ -7,7 +7,7 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 | Fact | Value |
 |---|---|
 | Busy | Owned hooks: `UserPromptSubmit` opens while `Stop`, `StopFailure`, and `SessionEnd` close; manual interrupt emits no hook, so control reports delivered keys and live endpoint only, publishes no idle event or cancellation claim, and usually leaves `claude-hook` busy. |
-| Exit | `/exit`. |
+| Exit | `/exit`. Claude renders a "Background work is running" confirmation dialog after `/exit` (verified 2.1.273): the selection shows "❯ 1. Exit and stop tasks" and the footer reads "Enter to confirm · Esc to cancel". This is the only Claude dialog whose default is the accepting option. Firstmate confirms sighted: it polls the pane and sends Enter only when all three patterns ("Background work is running", "Exit and stop tasks", "Enter to confirm") are present, preventing accidental acceptance of a live tool-permission prompt or AskUserQuestion dialog. Escape dismisses the dialog with background work intact. |
 | Interrupt | Single Escape. |
 | Skill | `/<skill>`, for example `/no-mistakes`. |
 | Model | `--model <model>`; discover through the interactive `/model` picker, with alias or full-name shape documented by `claude --help`. |
