@@ -221,12 +221,14 @@ models:
       -np 1
 
   # Raised to its full native 262144 context, 2026-08-23 (captain ruling
-  # corr=2575d3be17212238). Real-tested end to end on VRAM ALONE, no KV
-  # quantization or RAM offload needed: 11914MB, 374MB headroom, real
-  # generation confirmed - gemma-4's sliding-window-attention layers
+  # corr=2575d3be17212238). gemma-4's sliding-window-attention layers
   # (1024-token window, confirmed in its own GGUF metadata) keep KV cache
   # growth sub-linear, unlike the two Qwen entries above. See
   # data/pc02-agentic-roster-expand/context-sizing-investigation-2026-08-23.md.
+  # KV cache switched to q8_0 K+V, 2026-09-17: f16 KV at this context
+  # overflowed 12GB VRAM to shared RAM, causing erratic 49-59 tok/s. q8_0
+  # measured 77/65 tok/s (+32%), TTFT 0.43s, prefill 5x faster, identical
+  # 48-item quality spot check. Deployed to PC02 and smoke-tested.
   gemma-4-12b-it-qat:
     cmd: >
       C:\Users\sean_\.lmstudio\extensions\backends\llama.cpp-win-x86_64-nvidia-cuda-avx2-2.28.2\llama-server.exe
