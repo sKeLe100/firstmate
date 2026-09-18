@@ -1946,6 +1946,11 @@ families_for_changed_path() {
       ;;
     README.md|LICENSE|assets/*|docs/*|.gitignore)
       ;;
+    *-edited)
+      # Record-only snapshot of an already-deployed, already-smoke-tested
+      # remote config (see the "Record:" commit convention). It documents a
+      # change made outside this repo, so no test in this repo consumes it.
+      ;;
     *)
       if [ -e "$path" ]; then
         families_for_test_reference "$path" \
