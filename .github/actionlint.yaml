@@ -1,0 +1,5 @@
+self-hosted-runner:
+  labels:
+    - fm-exclusive
+    - fm-parallel
+    - fm-pc02

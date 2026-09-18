@@ -177,8 +177,9 @@
 # times. Missing parallel hints are reported without failing this guard.
 #
 # portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
-# split it across separate runners, so two of its stateful scripts still never
-# share a machine. This script owns <n>: a lane whose <n> disagrees with the
+# split the remainder into <n> shards that CI queues one at a time on the
+# fm-exclusive runner, so two of its stateful scripts still never share a
+# machine. This script owns <n>: a lane whose <n> disagrees with the
 # configured shard count is refused, so a CI matrix cannot silently drop a shard.
 # --changed is conservative: it over-selects related families rather than
 # under-selecting, and never expands to the complete suite unless --all. The one
@@ -250,8 +251,9 @@ CHANGED_DEFAULT_TIMEOUT_SECS=900
 HOST_LOAD_RETRY_WAIT_MAX_SECS=${FM_TEST_RUN_LOAD_RETRY_WAIT_MAX_SECS:-600}
 HOST_LOAD_RETRY_POLL_SECS=${FM_TEST_RUN_LOAD_RETRY_POLL_SECS:-10}
 
-# How many separate-runner shards the portable serial remainder splits into.
-# One owner: CI lane names carry this count and are refused when they disagree.
+# How many shards the portable serial remainder splits into; CI queues them one
+# at a time on the fm-exclusive runner. One owner: CI lane names carry this
+# count and are refused when they disagree.
 PORTABLE_SERIAL_SHARDS=5
 
 # Balance hint for a portable-serial script with no measured duration, close to
@@ -1175,7 +1177,7 @@ select_lane() {
       done < <(list_portable_serial)
       ;;
     portable-serial-*)
-      # One separate-runner shard of the same remainder, still serial in itself.
+      # One shard of the same remainder, still serial in itself.
       shard=$(portable_serial_shard_index "$want")
       while IFS=$'\t' read -r idx s; do
         [ -n "$s" ] || continue

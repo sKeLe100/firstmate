@@ -1,8 +1,11 @@
 # Local self-hosted runner (reference notes)
 
-CI runs on GitHub-hosted runners today (the repo is public, so hosted minutes
-are free). This file preserves what was learned while trialing a self-hosted
-runner for Linux CI jobs, in case that direction is revisited.
+Linux CI jobs run on the self-hosted runner fleet (see the `runs-on` routing in
+`.github/workflows/ci.yml`): stateful/one-at-a-time lanes on
+`[self-hosted, fm-exclusive]`, the parallel-safe bulk on
+`[self-hosted, fm-parallel]`, and light lanes only on `[self-hosted, fm-pc02]`.
+This file preserves what was learned while trialing a self-hosted runner for
+Linux CI jobs, and the gotchas below still apply to every self-hosted lane.
 
 ## What was registered
 
