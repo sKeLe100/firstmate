@@ -536,6 +536,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-gemini-guard-lib.sh
+. "$SCRIPT_DIR/fm-gemini-guard-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -770,6 +772,49 @@ pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-
     echo "error: PC02 lane occupied: task '$other_task' already holds a live $other_model endpoint and PC02 serves one model at a time; wait for that task or dispatch '$id' to the rule's next candidate" >&2
     return 1
   done
+  return 0
+}
+
+# Gemini-family session cap (data/captain.md "PROVIDER SESSION CAPS"): at most
+# two concurrent Gemini-family sessions. Mirrors pc02_lane_guard's authoritative
+# critical section - the count and this task's meta publication share the
+# task-set lock - and counts only other tasks whose resolved model is a Gemini
+# model and whose endpoint is not provably dead, so a dead Gemini task never
+# blocks a fresh launch. The deterministic under-cap decision lives in
+# fm_gemini_session_cap_ok (bin/fm-gemini-guard-lib.sh).
+gemini_lane_guard() {  # <task-id> <model>: 0 iff under the Gemini session cap
+  local id=$1 model=$2 other_meta other_task other_model other_target count=0
+  fm_gemini_model_is_gemini "$model" || return 0
+  if [ "$SPAWN_TASK_SET_LOCK_HELD" != 1 ]; then
+    SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
+      echo "error: could not resolve the task-set lock for $STATE" >&2
+      return 1
+    }
+    if ! fm_lock_try_acquire "$SPAWN_TASK_SET_LOCK"; then
+      echo "error: this home's task set is locked by another operation, so the Gemini session cap cannot be made authoritative; refusing to launch task $id onto $model rather than racing it" >&2
+      return 1
+    fi
+    SPAWN_TASK_SET_LOCK_HELD=1
+  fi
+  for other_meta in "$STATE"/*.meta; do
+    [ -f "$other_meta" ] || continue
+    other_task=$(basename "$other_meta" .meta)
+    [ "$other_task" != "$id" ] || continue
+    other_model=$(fm_meta_get "$other_meta" model)
+    fm_gemini_model_is_gemini "$other_model" || continue
+    if [ -z "$(fm_meta_get "$other_meta" remote_host)" ]; then
+      other_target=$(fm_backend_target_of_meta "$other_meta")
+      if [ -n "$other_target" ] \
+        && [ "$(fm_backend_agent_alive "$(fm_backend_of_meta "$other_meta")" "$other_target")" = dead ]; then
+        continue
+      fi
+    fi
+    count=$((count + 1))
+  done
+  if ! fm_gemini_session_cap_ok "$count"; then
+    echo "error: Gemini session cap reached: $count live Gemini-family sessions already running and the cap is $FM_GEMINI_SESSION_CAP; wait for a slot or dispatch '$id' to a non-Gemini candidate" >&2
+    return 1
+  fi
   return 0
 }
 
@@ -2192,6 +2237,13 @@ if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
 fi
 
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
+gemini_lane_guard "$ID" "${MODEL:-}" || exit 1
+# Gemini dispatch/quota preflight (bin/fm-gemini-guard-lib.sh owns the check):
+# fail-closed model allowlist, exact catalog support, positive auth and quota,
+# input-size rejection, and the before-launch accounting baseline. A non-Gemini
+# model passes through untouched.
+gemini_input_tokens=$(fm_gemini_estimate_input_tokens "$DATA/$ID/brief.md")
+fm_gemini_preflight "$HARNESS" "$MODEL" "$STATE" "$ID" "$gemini_input_tokens" || exit 1
 
 # Host-memory floor: neither the dispatch cap nor the PC02 lane guard knows
 # what this machine can carry, and an agent launched with no memory left wedges

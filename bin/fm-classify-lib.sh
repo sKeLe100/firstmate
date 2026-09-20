@@ -275,6 +275,57 @@ status_paused_until() {  # <status-line> -> epoch on stdout
   fm_utc_iso_to_epoch "$token"
 }
 
+# --- provider quota-exhaustion loop classification ---------------------------
+#
+# The captain's Gemini loop policy (data/captain.md "GEMINI PREFLIGHT AND LOOP
+# POLICY") is the trigger, but the classifier is provider-generic: repeated
+# RESOURCE_EXHAUSTED or quota responses are not progress, and the bounded,
+# terminal verdict is the deterministic signal the supervisor consumes to
+# interrupt the worker and hold or deliberately re-route it instead of
+# auto-churning. The verdict here is classification only; the interrupt and
+# hold action is the supervisor's existing control plane (bin/fm-control.sh
+# interrupt) plus a captain hold, and worktree preservation is the existing
+# teardown unlanded-work check. The terminal verdict is `hold`, never a
+# discard, so a loop never authorizes throwing work away.
+
+# 0 when a single status line signals a provider quota-exhaustion event.
+# Matched case-insensitively against the gRPC status and the quota phrases the
+# providers actually emit: RESOURCE_EXHAUSTED, "quota exceeded", and
+# "exceeded your current quota".
+status_is_quota_exhaustion_line() {  # <status-line>
+  local line=${1:-}
+  [ -n "$line" ] || return 1
+  printf '%s\n' "$line" | grep -Eqi 'RESOURCE_EXHAUSTED|quota[[:space:]]+exceeded|exceeded[[:space:]]+your[[:space:]]+current[[:space:]]+quota' >/dev/null
+}
+
+# Prints the number of quota-exhaustion status lines in <status-file>.
+status_quota_exhaustion_count() {  # <status-file> -> count
+  local file=${1:-} count=0 line
+  [ -r "$file" ] || { printf '0'; return 0; }
+  while IFS= read -r line; do
+    status_is_quota_exhaustion_line "$line" && count=$((count + 1))
+  done < "$file"
+  printf '%s' "$count"
+}
+
+# 0 when <status-file> shows a bounded terminal quota loop: more quota-
+# exhaustion events than the retry budget allows (default one retry, so the
+# second exhaustion is terminal). Prints "<count> <verdict>" on stdout, where
+# verdict is `retry` (under budget, one bounded retry remains) or `hold`
+# (terminal: interrupt and hold or deliberately re-route, preserving work).
+status_provider_quota_loop() {  # <status-file> [retries-allowed] -> "<count> <verdict>"
+  local file=${1:-} retries=${2:-1} count verdict
+  case "$retries" in ''|*[!0-9]*) retries=1 ;; esac
+  count=$(status_quota_exhaustion_count "$file")
+  if [ "$count" -gt "$retries" ]; then
+    verdict=hold
+  else
+    verdict=retry
+  fi
+  printf '%s %s' "$count" "$verdict"
+  [ "$verdict" = hold ]
+}
+
 # --- durable keyed decisions ------------------------------------------------
 #
 # The status stream is an append-only EVENT log. Reading it last-event-wins
