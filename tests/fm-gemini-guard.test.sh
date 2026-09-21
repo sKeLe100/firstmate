@@ -277,6 +277,26 @@ test_quota_loop_is_bounded_then_hold() {
   pass "fm-classify-lib.sh: a repeated quota response is one retry then a terminal hold"
 }
 
+test_quota_loop_resets_after_intervening_success() {
+  local status="$TMP_ROOT/windowed.status" out
+  printf 'working: hit RESOURCE_EXHAUSTED\n' > "$status"
+  printf 'done: retried and finished cleanly\n' >> "$status"
+  printf 'working: on unrelated later work\n' >> "$status"
+  printf 'done: unrelated work finished\n' >> "$status"
+  printf 'working: hit RESOURCE_EXHAUSTED again, much later\n' >> "$status"
+  out=$(status_provider_quota_loop "$status")
+  [ "$out" = '1 retry' ] \
+    || fail "two isolated quota incidents separated by successful unrelated work must not trip hold, got '$out'"
+  status_provider_quota_loop "$status" >/dev/null \
+    && fail "an isolated later incident after intervening success is not yet a terminal loop"
+
+  printf 'working: Quota exceeded again\n' >> "$status"
+  out=$(status_provider_quota_loop "$status")
+  [ "$out" = '2 hold' ] \
+    || fail "a genuine back-to-back second exhaustion right after the first must still hold, got '$out'"
+  pass "fm-classify-lib.sh: the loop count windows to the trailing streak, not the status file's whole lifetime"
+}
+
 test_quota_loop_never_discards_work() {
   local status="$TMP_ROOT/discard.status" out
   printf 'working: hit RESOURCE_EXHAUSTED\nworking: RESOURCE_EXHAUSTED again\n' > "$status"
@@ -309,4 +329,5 @@ test_preflight_writes_the_accounting_baseline
 test_preflight_refuses_an_unwritable_baseline
 test_quota_line_detection
 test_quota_loop_is_bounded_then_hold
+test_quota_loop_resets_after_intervening_success
 test_quota_loop_never_discards_work

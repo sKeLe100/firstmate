@@ -298,13 +298,26 @@ status_is_quota_exhaustion_line() {  # <status-line>
   printf '%s\n' "$line" | grep -Eqi 'RESOURCE_EXHAUSTED|quota[[:space:]]+exceeded|exceeded[[:space:]]+your[[:space:]]+current[[:space:]]+quota' >/dev/null
 }
 
-# Prints the number of quota-exhaustion status lines in <status-file>.
-status_quota_exhaustion_count() {  # <status-file> -> count
-  local file=${1:-} count=0 line
+# Prints the length of the CURRENT trailing run of quota-exhaustion status
+# lines in <status-file>: consecutive quota-exhaustion events counting back
+# from the last line, stopping at the first non-exhaustion line. A status
+# stream is append-only for a task's whole life, so an unwindowed lifetime
+# count would sum two isolated incidents separated by days of unrelated,
+# successful work into a false "loop". Any intervening non-exhaustion status
+# line (a working/done/etc event) proves the earlier incident resolved, so it
+# resets the streak rather than merely delaying it.
+status_quota_exhaustion_count() {  # <status-file> -> trailing streak count
+  local file=${1:-} count=0
+  local -a lines=()
+  local line i
   [ -r "$file" ] || { printf '0'; return 0; }
   while IFS= read -r line; do
-    status_is_quota_exhaustion_line "$line" && count=$((count + 1))
+    lines+=("$line")
   done < "$file"
+  for (( i = ${#lines[@]} - 1; i >= 0; i-- )); do
+    status_is_quota_exhaustion_line "${lines[$i]}" || break
+    count=$((count + 1))
+  done
   printf '%s' "$count"
 }
 
