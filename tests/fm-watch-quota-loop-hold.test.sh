@@ -29,9 +29,11 @@ WAKES_LOG="$TMP_ROOT/wakes.log"
 : > "$WAKES_LOG"
 fm_wake_append() { printf '%s|%s|%s\n' "$1" "$2" "$3" >> "$WAKES_LOG"; }
 wake() { printf 'woke:%s\n' "$1" >> "$WAKES_LOG"; }
-# fm-control.sh/fm-captain-hold.sh are best-effort side effects
-# (quota_loop_hold_check swallows their failures); there is no real task
-# endpoint in this hermetic test, so let them fail silently as designed.
+# There is no real task endpoint in this hermetic test, so fm-control.sh and
+# fm-captain-hold.sh fail as they would for an untracked task. The dedup
+# marker still persists on that attempt (so the check does not spin forever
+# retrying a doomed action), but the failure must show up in the wake reason
+# rather than being reported as a successful interrupt+hold.
 
 wake_count() { grep -c '^woke:' "$WAKES_LOG" 2>/dev/null || true; }
 
@@ -49,6 +51,19 @@ test_first_loop_fires_once_then_dedupes() {
   quota_loop_hold_check "$task"
   [ "$(wake_count)" = 1 ] || fail "re-polling the same unchanged status file must not re-fire the hold, got $(wake_count) wakes"
   pass "fm-watch.sh: a quota loop interrupts and holds once, then dedupes on the unchanged status file"
+}
+
+test_failed_action_is_surfaced_not_claimed_successful() {
+  local task=quota-hold-t3 statusf
+  statusf="$STATE/$task.status"
+  : > "$WAKES_LOG"
+  printf 'working: hit RESOURCE_EXHAUSTED\n' > "$statusf"
+  printf 'working: Quota exceeded again\n' >> "$statusf"
+
+  quota_loop_hold_check "$task"
+  grep -q 'FAILED' "$WAKES_LOG" || fail "an interrupt/hold that fails against an untracked task must be surfaced as FAILED in the wake reason, not silently claimed as handled"
+  grep -q 'interrupted and held for the captain to hold or reroute' "$WAKES_LOG" && fail "a failed interrupt/hold must not claim the success wording"
+  pass "fm-watch.sh: a failed interrupt/hold is surfaced in the wake reason instead of falsely claiming success"
 }
 
 test_second_independent_loop_after_recovery_still_fires() {
@@ -80,5 +95,6 @@ test_second_independent_loop_after_recovery_still_fires() {
 
 test_first_loop_fires_once_then_dedupes
 test_second_independent_loop_after_recovery_still_fires
+test_failed_action_is_surfaced_not_claimed_successful
 
 echo "# all fm-watch-quota-loop-hold tests passed"

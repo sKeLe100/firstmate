@@ -1468,6 +1468,7 @@ captain_call_stale_bound() {  # <window-key> <task>
 # interrupts once.
 quota_loop_hold_check() {  # <task> -> 0 (acted, caller should wake and stop) | 1
   local task=$1 statusf marker verdict count size prior reason
+  local interrupt_out interrupt_rc hold_out hold_rc
   [ -n "$task" ] || return 1
   statusf="$STATE/$task.status"
   [ -r "$statusf" ] || return 1
@@ -1482,11 +1483,17 @@ quota_loop_hold_check() {  # <task> -> 0 (acted, caller should wake and stop) | 
   case "$prior" in ''|*[!0-9]*) prior=0 ;; esac
   [ "$size" -gt "$prior" ] || return 1
   printf '%s' "$size" > "$marker"
-  reason="quota-loop: $task ($count repeated provider quota-exhaustion events; interrupted and held for the captain to hold or reroute)"
-  "$SCRIPT_DIR/fm-control.sh" "$task" interrupt >/dev/null 2>&1 || true
-  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" hold "$task" \
-    --reason "repeated provider quota exhaustion ($count events) interrupted the worker; preserved work is held pending captain hold or reroute" \
-    >/dev/null 2>&1 || true
+  interrupt_out=$("$SCRIPT_DIR/fm-control.sh" "$task" interrupt 2>&1); interrupt_rc=$?
+  hold_out=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" hold "$task" \
+    --reason "repeated provider quota exhaustion ($count events) interrupted the worker; preserved work is held pending captain hold or reroute" 2>&1); hold_rc=$?
+  if [ "$interrupt_rc" -ne 0 ] || [ "$hold_rc" -ne 0 ]; then
+    reason="quota-loop: $task ($count repeated provider quota-exhaustion events;"
+    [ "$interrupt_rc" -eq 0 ] || reason="$reason interrupt FAILED: ${interrupt_out:-no output};"
+    [ "$hold_rc" -eq 0 ] || reason="$reason captain-hold FAILED: ${hold_out:-no output};"
+    reason="$reason not confirmed handled)"
+  else
+    reason="quota-loop: $task ($count repeated provider quota-exhaustion events; interrupted and held for the captain to hold or reroute)"
+  fi
   fm_wake_append stale "$task" "$reason" || true
   wake "$reason"
 }
