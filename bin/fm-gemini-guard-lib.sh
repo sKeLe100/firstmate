@@ -223,6 +223,51 @@ fm_gemini_write_baseline() {
   return 0
 }
 
+# fm_gemini_record_completion <state-dir> <task-id> [quota-json]
+#   Writes the after half of the captain's before/after accounting pair: a
+#   completion timestamp and the current quota availability, appended beside
+#   the before-launch baseline fm_gemini_write_baseline recorded. The raw
+#   after-quota snapshot is stored alongside the before one (both under
+#   <state-dir>) so the delta between them can be re-derived, matching the
+#   before half's own "re-derived" contract. A 0 no-op when <task-id> has no
+#   recorded baseline (a non-Gemini dispatch never wrote one), so the
+#   completion/interrupt path can call this unconditionally.
+fm_gemini_record_completion() {
+  local state=${1:-} id=${2:-} quota=${3:-}
+  local baseline after_record after_quota_path now quota_source quota_available
+  baseline="$state/$id.gemini-baseline"
+  [ -r "$baseline" ] || return 0
+  after_record="$state/$id.gemini-accounting"
+  after_quota_path="$state/$id.gemini-accounting.quota.json"
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || now=unknown
+  if [ -n "$quota" ]; then
+    quota_source='quota-axi'
+  else
+    quota_source='unknown'
+  fi
+  if fm_gemini_quota_ok "$quota"; then
+    quota_available=true
+  else
+    quota_available=false
+  fi
+  {
+    cat "$baseline"
+    printf 'completed_at=%s\n' "$now"
+    printf 'after_quota_source=%s\n' "$quota_source"
+    printf 'after_quota_available=%s\n' "$quota_available"
+  } > "$after_record" 2>/dev/null || {
+    echo "error: could not write the Gemini after-launch accounting record to $after_record" >&2
+    return 1
+  }
+  if [ -n "$quota" ]; then
+    printf '%s\n' "$quota" > "$after_quota_path" 2>/dev/null || {
+      echo "error: could not write the Gemini after-launch quota snapshot to $after_quota_path" >&2
+      return 1
+    }
+  fi
+  return 0
+}
+
 # fm_gemini_preflight <harness> <model> <state-dir> <task-id> [input-tokens]
 #   The fail-closed preflight for a Gemini dispatch. Returns 0 (allow) or 1
 #   (refuse, with the reason on stderr). A non-Gemini model, or a non-Gemini
@@ -261,7 +306,9 @@ fm_gemini_preflight() {
       ;;
   esac
   if ! fm_gemini_input_tokens_ok "$model" "$tokens"; then
-    echo "error: oversized Flash-Lite input ($tokens estimated tokens) exceeds the $FM_GEMINI_FLASH_LITE_MAX_INPUT_TOKENS_DEFAULT-token bound; reject instead of sending it" >&2
+    local flash_lite_bound=${FM_GEMINI_FLASH_LITE_MAX_INPUT_TOKENS:-$FM_GEMINI_FLASH_LITE_MAX_INPUT_TOKENS_DEFAULT}
+    case "$flash_lite_bound" in ''|*[!0-9]*) flash_lite_bound=$FM_GEMINI_FLASH_LITE_MAX_INPUT_TOKENS_DEFAULT ;; esac
+    echo "error: oversized Flash-Lite input ($tokens estimated tokens) exceeds the $flash_lite_bound-token bound; reject instead of sending it" >&2
     return 1
   fi
   [ "$harness" = opencode ] || return 0

@@ -1450,6 +1450,38 @@ captain_call_stale_bound() {  # <window-key> <task>
   stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
 }
 
+# --- provider quota loop: interrupt and hold --------------------------------
+# bin/fm-classify-lib.sh's status_provider_quota_loop is the classifier for a
+# bounded, terminal RESOURCE_EXHAUSTED/quota loop. This is its one live caller:
+# a `hold` verdict interrupts the worker through the existing control plane
+# (bin/fm-control.sh interrupt) and hands the task to the existing captain-hold
+# mechanics (bin/fm-captain-hold.sh hold), which preserves the worktree through
+# the same teardown open-call guard task_captain_call_open already reads above -
+# the terminal verdict is never a discard. Idempotent per distinct exhaustion
+# count via .quota-hold-<task>: a status file re-polled every cycle at the same
+# count interrupts once, and a fresh exhaustion past that count fires again.
+quota_loop_hold_check() {  # <task> -> 0 (acted, caller should wake and stop) | 1
+  local task=$1 marker verdict count prior reason
+  [ -n "$task" ] || return 1
+  [ -r "$STATE/$task.status" ] || return 1
+  verdict=$(status_provider_quota_loop "$STATE/$task.status") || true
+  case "$verdict" in *' hold') ;; *) return 1 ;; esac
+  count=${verdict%% *}
+  case "$count" in ''|*[!0-9]*) return 1 ;; esac
+  marker="$STATE/.quota-hold-$task"
+  prior=$(cat "$marker" 2>/dev/null || echo 0)
+  case "$prior" in ''|*[!0-9]*) prior=0 ;; esac
+  [ "$count" -gt "$prior" ] || return 1
+  printf '%s' "$count" > "$marker"
+  reason="quota-loop: $task ($count repeated provider quota-exhaustion events; interrupted and held for the captain to hold or reroute)"
+  "$SCRIPT_DIR/fm-control.sh" "$task" interrupt >/dev/null 2>&1 || true
+  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" hold "$task" \
+    --reason "repeated provider quota exhaustion ($count events) interrupted the worker; preserved work is held pending captain hold or reroute" \
+    >/dev/null 2>&1 || true
+  fm_wake_append stale "$task" "$reason" || true
+  wake "$reason"
+}
+
 # Surface a stale pane no classifier could resolve, so firstmate inspects it: it
 # may have finished through an interactive menu that wrote no status, be waiting on
 # a decision, or be wedged. pause_state_class deliberately answers `none` for a
@@ -2942,6 +2974,7 @@ EOF
     # exemption below, because a mate's steers land in an inbox too.
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
     key=$(window_key "$w")
+    quota_loop_hold_check "$task"
     last=$(last_status_line "$STATE/$task.status")
     if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$key"

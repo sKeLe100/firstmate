@@ -142,6 +142,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-llm-usage-lib.sh
 . "$SCRIPT_DIR/fm-llm-usage-lib.sh"
+# shellcheck source=bin/fm-gemini-guard-lib.sh
+. "$SCRIPT_DIR/fm-gemini-guard-lib.sh"
 
 POLL=${FM_CONTROL_POLL:-0.5}
 SETTLE_WAIT=${FM_CONTROL_SETTLE_WAIT:-5}
@@ -442,6 +444,22 @@ do_interrupt() {
   cancel=$(deliver_interrupt) || return $?
   proof=$(verify_interrupt_running) || return $?
   printf '%s cancel=%s' "$proof" "$cancel"
+}
+
+# gemini_record_completion_best_effort: the after half of the captain's
+# Gemini before/after accounting pair (bin/fm-gemini-guard-lib.sh
+# fm_gemini_write_baseline owns the before half, written at launch preflight).
+# A no-op when the task never recorded a baseline (a non-Gemini dispatch).
+# Best-effort and never blocks a lifecycle action: the interrupt or exit this
+# runs alongside is already the authoritative outcome.
+gemini_record_completion_best_effort() {
+  [ -f "$STATE/$ID.gemini-baseline" ] || return 0
+  local quota_bin bound quota
+  quota_bin=${FM_GEMINI_QUOTA_AXI_BIN:-quota-axi}
+  bound=${FM_GEMINI_CATALOG_TIMEOUT:-15}
+  case "$bound" in ''|*[!0-9]*|0) bound=15 ;; esac
+  quota=$(fm_run_timed "$bound" "$quota_bin" --json 2>/dev/null </dev/null) || quota=
+  fm_gemini_record_completion "$STATE" "$ID" "$quota" 2>/dev/null || true
 }
 
 retire_busy_incarnation() {
@@ -899,10 +917,12 @@ case "$VERB" in
       *) die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle key into an unattributed endpoint" ;;
     esac
     proof=$(do_interrupt)
+    gemini_record_completion_best_effort
     echo "interrupt-delivered $ID harness=$HARNESS backend=$BACKEND verified=$proof"
     ;;
   exit)
     result=$(do_exit)
+    gemini_record_completion_best_effort
     echo "$result $ID harness=$HARNESS backend=$BACKEND endpoint=$T worktree=$WT"
     ;;
   relaunch)
