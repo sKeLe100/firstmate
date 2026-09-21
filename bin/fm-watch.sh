@@ -1457,22 +1457,31 @@ captain_call_stale_bound() {  # <window-key> <task>
 # (bin/fm-control.sh interrupt) and hands the task to the existing captain-hold
 # mechanics (bin/fm-captain-hold.sh hold), which preserves the worktree through
 # the same teardown open-call guard task_captain_call_open already reads above -
-# the terminal verdict is never a discard. Idempotent per distinct exhaustion
-# count via .quota-hold-<task>: a status file re-polled every cycle at the same
-# count interrupts once, and a fresh exhaustion past that count fires again.
+# the terminal verdict is never a discard. Idempotent per distinct status-file
+# state via .quota-hold-<task>: the marker records the status file's byte size
+# (monotonically increasing - the status stream is append-only) at the last
+# fire, not the windowed streak count. status_quota_exhaustion_count's streak
+# resets to 0 after any intervening success, so a SECOND independent
+# back-to-back loop can legitimately reach the same count as the first; keying
+# the marker on file growth instead of on that count means it still fires,
+# while a re-poll of the exact same unchanged file (same size) still only
+# interrupts once.
 quota_loop_hold_check() {  # <task> -> 0 (acted, caller should wake and stop) | 1
-  local task=$1 marker verdict count prior reason
+  local task=$1 statusf marker verdict count size prior reason
   [ -n "$task" ] || return 1
-  [ -r "$STATE/$task.status" ] || return 1
-  verdict=$(status_provider_quota_loop "$STATE/$task.status") || true
+  statusf="$STATE/$task.status"
+  [ -r "$statusf" ] || return 1
+  verdict=$(status_provider_quota_loop "$statusf") || true
   case "$verdict" in *' hold') ;; *) return 1 ;; esac
   count=${verdict%% *}
   case "$count" in ''|*[!0-9]*) return 1 ;; esac
+  size=$(wc -c < "$statusf" 2>/dev/null) || size=0
+  case "$size" in ''|*[!0-9]*) size=0 ;; esac
   marker="$STATE/.quota-hold-$task"
   prior=$(cat "$marker" 2>/dev/null || echo 0)
   case "$prior" in ''|*[!0-9]*) prior=0 ;; esac
-  [ "$count" -gt "$prior" ] || return 1
-  printf '%s' "$count" > "$marker"
+  [ "$size" -gt "$prior" ] || return 1
+  printf '%s' "$size" > "$marker"
   reason="quota-loop: $task ($count repeated provider quota-exhaustion events; interrupted and held for the captain to hold or reroute)"
   "$SCRIPT_DIR/fm-control.sh" "$task" interrupt >/dev/null 2>&1 || true
   FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" hold "$task" \
