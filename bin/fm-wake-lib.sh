@@ -922,6 +922,15 @@ fm_lock_try_acquire() {
     return 0
   fi
 
+  # Fail closed when the lock cannot even be resolved: a missing parent
+  # directory means there is neither a lock to reclaim nor a directory in which
+  # to create one. Without this, the steal recursion below re-enters
+  # fm_lock_try_acquire on the .steal path forever - each level's
+  # fm_lock_try_create also fails - and the caller polls forever against a lock
+  # it can never obtain, which is what an orphaned worker (its state directory
+  # removed out from under it) used to do.
+  [ -d "$(dirname "$lockdir")" ] || return 1
+
   fm_current_pid current || return 1
   pid=$(cat "$lockdir/pid" 2>/dev/null || true)
   if [ -n "$pid" ] && [ "$pid" = "$current" ]; then

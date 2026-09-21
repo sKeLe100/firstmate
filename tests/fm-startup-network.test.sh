@@ -473,6 +473,40 @@ EOF
   pass "fm-startup-network: an abandoned run reports as needing a rerun, never as in progress forever"
 }
 
+# The detached worker outlives the command that launched it, and in a test run
+# that is exactly what makes it a fixture. When the top-level orchestrator (the
+# runner, or the test script that owns the worker) is torn down, the worker's
+# whole state directory is removed out from under it. That used to leave the
+# worker polling its publish lock forever - fm_lock_acquire_wait only ever
+# retries, and with its state directory gone it can never create the lock again
+# - which is how six-to-nine fixtures became permanent orphans polling against a
+# dead lock holder. The worker must settle on its own instead.
+test_a_worker_whose_state_directory_is_removed_settles_instead_of_spinning() {
+  local rec home root log worker_pid waited=0
+  rec=$(new_world orphan-settles)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  printf '%s\n' $$ > "$home/state/.lock"
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=1 \
+    run_stage "$home" "$root" start --locked 1 --harvest-pid $$
+  worker_pid=$(sed -n 's/^pid=//p' "$home/state/.startup-network.status")
+  case "$worker_pid" in ''|*[!0-9]*) fail "the worker never recorded its pid" ;; esac
+  # Wait until the worker has published and is inside its delivery wait - the
+  # exact poll a torn-down fixture would otherwise spin forever on.
+  run_stage "$home" "$root" wait 30 >/dev/null || fail "the worker never published"
+
+  # Remove the world the way a dead orchestrator's teardown does.
+  rm -rf "$home"
+  while kill -0 "$worker_pid" 2>/dev/null && [ "$waited" -lt 50 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  ! kill -0 "$worker_pid" 2>/dev/null \
+    || fail "the orphaned worker still polled after its state directory was removed"
+  pass "fm-startup-network: a worker whose state directory is removed settles instead of polling forever"
+}
+
 test_locked_start_is_not_satisfied_by_an_inflight_probe() {
   local rec home root log waited=0
   rec=$(new_world probe-then-locked)
@@ -770,6 +804,7 @@ test_deferred_invalid_secondmate_markers_queue_durable_findings
 test_mutating_sweeps_are_refused_when_the_lock_changed_hands
 test_the_stage_bound_is_reported_not_swallowed
 test_an_abandoned_run_reads_as_needing_a_rerun
+test_a_worker_whose_state_directory_is_removed_settles_instead_of_spinning
 test_locked_start_is_not_satisfied_by_an_inflight_probe
 test_start_is_single_flight
 test_start_reserves_its_generation_before_returning
