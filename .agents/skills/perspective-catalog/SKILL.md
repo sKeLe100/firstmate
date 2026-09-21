@@ -1,9 +1,7 @@
 ---
 name: perspective-catalog
 description: >-
-  Agent-only catalog of opt-in worker perspectives and the intake procedure that selects one.
-  Load at every scout intake whose purpose class is review, investigation, or planning, and at any intake where the captain explicitly names a perspective slug, before scaffolding the brief, and before adding, editing, or removing a catalog fragment.
-  Owns the fixed seven-entry catalog, the selection precedence, the purpose-class defaults, and the may/may-not rule for fragment content; bin/fm-brief.sh --perspective owns the insertion mechanics.
+  Agent-only catalog of worker perspectives; load at scout intake for review, investigation, or planning, when the captain names a perspective slug, before scaffolding the brief, or when editing catalog fragments.
 user-invocable: false
 metadata:
   internal: true

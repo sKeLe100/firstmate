@@ -1,8 +1,7 @@
 ---
 name: decision-hold-lifecycle
 description: >-
-  Renamed pointer kept for in-flight briefs: the decisions concept collapsed into "a task held for the captain".
-  Load captain-hold-lifecycle instead; this stub only redirects and will be removed one release after the collapse.
+  Deprecated stub kept for in-flight briefs; load captain-hold-lifecycle instead for tasks held for the captain.
 user-invocable: false
 metadata:
   internal: true

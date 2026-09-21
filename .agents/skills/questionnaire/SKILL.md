@@ -1,10 +1,9 @@
 ---
 name: questionnaire
 description: >-
-  Walk the captain through the pending decision bundle one interactive batch at a time, recording each ruling durably, and when nothing needs ruling offer a senior-tier project-review scout that refills the bundle with grounded candidate next steps.
-  Use when the captain invokes /questionnaire or says he is ready for the decision batch, asks to rule on pending decisions, or asks to be walked through what is waiting on him.
-  Never fire autonomously: decisions are filed into the durable bundle as they arise and drained only on the captain's invocation.
+  Walk the captain through the pending decision bundle when the captain invokes /questionnaire, says they are ready for the decision batch, asks to rule on pending decisions, or asks what is waiting on them.
 user-invocable: true
+disable-model-invocation: true
 metadata:
   internal: true
 ---

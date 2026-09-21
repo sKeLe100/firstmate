@@ -1,7 +1,9 @@
 ---
 name: queue
-description: Show the next queued work items at a glance, grouped by whether each is dispatchable, blocked, needs the captain, or deferred - project, kind, age, dispatch tier. Use when the captain invokes /queue (or `/queue lanes` for the full lane hierarchy, `/queue priority` for the old flat priority-sorted view) or asks "what's queued", "what's next", "show me the queue", or similar.
+description: >-
+  Show the next queued work items at a glance when the captain invokes /queue (or /queue lanes, /queue priority) or asks "what's queued", "what's next", "show me the queue", or similar.
 user-invocable: true
+disable-model-invocation: true
 metadata:
   internal: true
 ---
