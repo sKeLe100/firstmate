@@ -279,11 +279,15 @@ test_quota_loop_is_bounded_then_hold() {
 
 test_quota_loop_resets_after_intervening_success() {
   local status="$TMP_ROOT/windowed.status" out
-  printf 'working: hit RESOURCE_EXHAUSTED\n' > "$status"
-  printf 'done: retried and finished cleanly\n' >> "$status"
-  printf 'working: on unrelated later work\n' >> "$status"
-  printf 'done: unrelated work finished\n' >> "$status"
-  printf 'working: hit RESOURCE_EXHAUSTED again, much later\n' >> "$status"
+  {
+    printf 'working: hit RESOURCE_EXHAUSTED\n'
+    printf 'done: retried and finished cleanly\n'
+  } > "$status"
+  {
+    printf 'working: on unrelated later work\n'
+    printf 'done: unrelated work finished\n'
+    printf 'working: hit RESOURCE_EXHAUSTED again, much later\n'
+  } >> "$status"
   out=$(status_provider_quota_loop "$status")
   [ "$out" = '1 retry' ] \
     || fail "two isolated quota incidents separated by successful unrelated work must not trip hold, got '$out'"
