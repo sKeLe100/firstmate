@@ -329,25 +329,32 @@ report_requires_wake() {  # <state>
     "$REPORT_FILE" 2>/dev/null
 }
 
-# Acquire the publish lock without polling forever. The lock lives inside this
-# worker's state directory, and every other holder (a harvest composing the
-# digest, a later start reserving its generation, a competing worker publishing)
-# holds it only briefly, so an ordinary wait is short. The one condition that
-# makes the lock permanently unobtainable is this worker's state directory being
-# removed out from under it - exactly what happens when the test invocation that
-# launched it is torn down while the worker is still running. fm_lock_acquire_wait
+# Acquire a lock inside this worker's state directory without polling forever.
+# Every other holder (a harvest composing the digest, a later start reserving
+# its generation, a competing worker publishing) holds any of these locks only
+# briefly, so an ordinary wait is short. The one condition that makes a lock
+# permanently unobtainable is this worker's state directory being removed out
+# from under it - exactly what happens when the test invocation that launched
+# it is torn down while the worker is still running. fm_lock_acquire_wait
 # cannot see that (it only ever retries), so a worker stuck in it would poll
 # forever against a dead lock holder. Checking the state directory on every
-# attempt makes the worker fail closed instead. Returns 0 when the lock is held,
-# 1 when the state directory is gone.
-publish_lock_acquire() {
+# attempt makes the worker fail closed instead. Returns 0 when the lock is
+# held, 1 when the state directory is gone. Every fm_lock_acquire_wait call
+# inside cmd_run's worker lifecycle - not just await_delivery/publish - must
+# route through this so the whole lifecycle fails closed, not just its tail.
+state_lock_acquire() {  # <lockdir>
+  local lockdir=$1
   while :; do
-    if fm_lock_try_acquire "$PUBLISH_LOCK"; then
+    if fm_lock_try_acquire "$lockdir"; then
       return 0
     fi
     [ -d "$STATE" ] || return 1
     sleep 0.1
   done
+}
+
+publish_lock_acquire() {
+  state_lock_acquire "$PUBLISH_LOCK"
 }
 
 await_delivery() {  # <generation> <state>
@@ -447,7 +454,7 @@ cmd_run() {  # <locked> <lock-pid> <generation>
   budget=$(stage_budget)
   phases=probe
   if [ -n "$generation" ]; then
-    fm_lock_acquire_wait "$PUBLISH_LOCK"
+    state_lock_acquire "$PUBLISH_LOCK" || return 1
     if [ "$(status_get generation)" = "$generation" ] && [ "$(status_get pid)" = "$$" ]; then
       internal=1
       started=$(status_get started)
@@ -470,7 +477,7 @@ cmd_run() {  # <locked> <lock-pid> <generation>
 
   if [ "$internal" -eq 0 ]; then
     generation="$(now).$$.manual"
-    fm_lock_acquire_wait "$PUBLISH_LOCK"
+    state_lock_acquire "$PUBLISH_LOCK" || return 1
     if [ "$(status_get state)" = running ] && worker_alive; then
       fm_lock_release "$PUBLISH_LOCK"
       return 1
@@ -498,7 +505,11 @@ EOF
   stage_started=$(fm_timing_now_ms)
   rc=0
   if [ "$sweep_locked" -eq 1 ]; then
-    fm_lock_acquire_wait "$STATE/.lock.acquire"
+    if ! state_lock_acquire "$STATE/.lock.acquire"; then
+      rm -f "$out" 2>/dev/null || true
+      [ -z "$timings" ] || rm -f "$timings" 2>/dev/null || true
+      return 1
+    fi
     lease_held=1
     if ! lock_unchanged "$lock_pid"; then
       sweep_locked=0
