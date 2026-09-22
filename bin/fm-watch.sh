@@ -775,16 +775,18 @@ secondmate_oldest_queue_row() {  # <queue-path>
 # forever. A mate mid-turn has not stopped draining its queue - it simply drains
 # between turns - so this gate, not the elapsed interval, is what separates a
 # healthy mate from a frozen wake loop. The bound is measured on <idle>, how long
-# the queue's drain position has not moved, because a mate's turns end in its own
-# home and this home holds no completed-turn evidence to age them by
-# (busy_turn_over_age, whose spawn-record fallback would age every mate from its
-# launch). Any absence of proof (no window, a failed capture, an idle or unknown
-# verdict, a queue frozen past the bound) is NOT an active turn, so a frozen
-# queue still escalates.
-secondmate_in_active_turn() {  # <window> <idle>
-  local w=$1 idle=$2 tail40
+# the queue's drain position has not moved, and is joined with
+# busy_turn_over_age's completed-turn/native-harness signal: only when both
+# agree the turn is over does the gate return early. Any absence of proof (no
+# window, a failed capture, an idle or unknown verdict, a queue frozen past
+# the bound with no completed-turn evidence) is NOT an active turn, so a
+# frozen queue still escalates.
+secondmate_in_active_turn() {  # <window> <idle> <task>
+  local w=$1 idle=$2 task=$3 tail40
   [ -n "$w" ] || return 1
-  [ "$idle" -lt "$BUSY_TURN_MAX_SECS" ] || return 1
+  if busy_turn_over_age "$task" && [ "$idle" -ge "$BUSY_TURN_MAX_SECS" ]; then
+    return 1
+  fi
   tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || return 1
   window_is_busy "$w" "$tail40"
 }
@@ -864,7 +866,7 @@ EOF
     [ "$episode_alerted" -eq 0 ] || continue
     idle=$((now - observed_at))
     [ "$idle" -ge "$threshold" ] || continue
-    ! secondmate_in_active_turn "$(fm_backend_target_of_meta "$meta")" "$idle" || continue
+    ! secondmate_in_active_turn "$(fm_backend_target_of_meta "$meta")" "$idle" "$task" || continue
     receipt="$receipt_dir/$row_key"
     if [ "$(cat "$receipt" 2>/dev/null || true)" = "$row_key" ]; then
       fm_wake_secondmate_stall_marker_write "$task" "$row_key" || return 1
