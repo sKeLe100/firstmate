@@ -1661,6 +1661,12 @@ families_for_changed_path() {
       # to any split must re-run the wrapper that calls all tests in order.
       printf '%s\n' "__script__:fm-teardown.test.sh"
       ;;
+    tests/fm-crew-state-lib.sh)
+      # Shared harness sourced by both crew-state test files; a change to it
+      # must re-run both suites.
+      printf '%s\n' "__script__:fm-crew-state.test.sh"
+      printf '%s\n' "__script__:fm-crew-state-ci.test.sh"
+      ;;
     tests/*.test.sh)
       # A single test file change selects only that script via basename family
       # resolution in the caller; emit a marker family of __script__
