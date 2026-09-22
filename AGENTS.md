@@ -1,6 +1,7 @@
 # Firstmate
 
 This is the supervisor contract for primary firstmates and persistent secondmates.
+A ship or scout worker launched by Firstmate into a worktree of this repository follows the current worker role contract at the start of its `FIRSTMATE_OP: v1 launch-brief`, including the exact steering inbox named there; it does not become a supervisor by loading this file.
 Merely storing a ship or scout brief in a home does not select the worker role for the agent running here.
 
 You are the first mate.
@@ -66,36 +67,37 @@ README.md            public overview and development notes
 .tasks.toml          tracked tasks-axi markdown backend config for the default backlog backend (section 10)
 .agents/skills/      firstmate-loaded internal skills, committed; each carries metadata.internal=true for installers
 .claude/skills       symlink to .agents/skills for claude compatibility
+.claude/mods/        Claude Code mods (function-hooks plugins), committed; Calm's module may load through CLAUDE_CODE_ENABLE_FUNCTION_HOOKS or tengu_plugin_hooks_modules, but activates only when CLAUDE_CODE_ENABLE_FUNCTION_HOOKS is exactly "1" and is otherwise a complete no-op (docs/calm.md)
 skills/              standalone public installer-facing skills, committed; not loaded by firstmate
 bin/                 helper scripts, committed; read each script's header before first use
 .env                 optional Relay pairing token (presence-gates section 14) and mail-plane credentials (schema: docs/configuration.md "Mail plane"); LOCAL, gitignored
-config/crew-harness      crewmate harness override (absent/default → firstmate's own); inherited; see docs/configuration.md "Harness support"
-config/claude-permission-mode  Claude worker permission posture (absent/bypass = --dangerously-skip-permissions, auto = --permission-mode auto); inherited; see docs/configuration.md "Claude permission mode"
+config/crew-harness  crewmate harness override; LOCAL, gitignored; absent or "default" = same as firstmate. Inherited as the literal file: a concrete primary adapter value also controls a secondmate home's own crewmates (section 4)
+config/claude-permission-mode  optional one-token permission posture for every Claude worker launch: absent or "bypass" keeps --dangerously-skip-permissions, "auto" launches with --permission-mode auto; LOCAL, gitignored; inherited by secondmate homes; see docs/configuration.md "Claude permission mode"
 config/claude-remote-control  registers Claude worker launches (and, via fm-primary-herdr.sh, the primary) in the Claude Code app session list (absent/off = unchanged, on = --remote-control); inherited; see docs/configuration.md "Claude Remote Control"
-config/crew-dispatch.json  optional crewmate dispatch profiles (natural-language harness/model/effort rules); inherited; see docs/configuration.md "Crew dispatch profiles (config/crew-dispatch.json)"
-config/secondmate-harness  harness for PRIMARY to launch SECONDMATE agents ("<harness> [<model>] [<effort>]"); NOT inherited; see .agents/skills/secondmate-provisioning/SKILL.md
-config/backlog-backend  backlog backend override (tasks-axi or manual); inherited; see docs/configuration.md "Backlog backend (.tasks.toml / config/backlog-backend)"
-config/backend  runtime session-provider backend override (tmux/herdr/zellij/orca/cmux); inherited; see docs/configuration.md "Runtime backend (config/backend / FM_BACKEND)"
-config/calm     Pi Calm presentation preference (on/off); NOT inherited; see docs/configuration.md "Pi Calm preference (config/calm)"
-config/supervision-branch-model
-config/supervision-branch-effort  Pi supervision-branch model and effort pins; NOT inherited; see docs/configuration.md "Pi supervision branch model and effort (config/supervision-branch-model, config/supervision-branch-effort)"
-config/startup-memory-budget  per-home startup memory budget (default 7500 tokens); inherited; see docs/configuration.md "Startup memory budget (config/startup-memory-budget)"
-config/stow-pass-horizon  optional presence flag opting into /stow pass-count decay horizon; NOT inherited; see docs/configuration.md "Stow pass horizon (config/stow-pass-horizon)"
+config/crew-dispatch.json  optional crewmate dispatch profiles; LOCAL, gitignored; firstmate-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (section 4). Inherited by secondmate homes
+config/secondmate-harness  harness the PRIMARY uses to launch SECONDMATE agents, optionally followed by a model and effort token on the same line ("<harness> [<model>] [<effort>]"; section 4); LOCAL, gitignored; absent or "default" harness falls back to config/crew-harness then firstmate's own. The primary's own setting; NOT inherited into secondmate homes (secondmates do not spawn secondmates)
+config/backlog-backend  backlog backend override; LOCAL, gitignored; absent or "tasks-axi" = the configured tasks-axi backend, "manual" = force routine backlog updates to hand-editing; inherited by secondmate homes (section 10)
+config/backend  runtime session-provider backend override for new tasks; LOCAL, gitignored; absent = falls through to runtime auto-detection (the runtime firstmate itself is executing inside), then tmux; tmux is the verified reference backend (docs/tmux-backend.md), herdr has its own required CI lane (docs/herdr-backend.md), while zellij, orca, and cmux remain experimental with no dedicated real-backend CI lane (docs/zellij-backend.md, docs/orca-backend.md, docs/cmux-backend.md) - herdr and cmux can also be selected by runtime auto-detection, zellij and orca never are (always explicit), and codex-app is not accepted; see docs/codex-app-backend.md; inherited by secondmate homes under the primary-authoritative contract in secondmate-provisioning
+config/calm     Calm presentation preference shared by the Pi extension and the Claude Code mod; LOCAL, gitignored, and not inherited; see docs/configuration.md "Calm preference"
+config/supervision-branch-model config/supervision-branch-effort  Pi supervision-branch model and reasoning-effort pins written by /supervision-model; LOCAL, gitignored, independently settable, and not inherited; see docs/configuration.md "Pi supervision branch model and effort"
+config/startup-memory-budget     primary-authoritative per-home startup-memory budget; LOCAL, gitignored, materialized as 7,500 estimated tokens by locked primary bootstrap and inherited into secondmate homes; see docs/configuration.md "Startup memory budget"
+config/stow-pass-horizon  optional presence flag opting this home in to /stow's default-off pass-count decay horizon; LOCAL, gitignored, and not inherited; see docs/configuration.md "Stow pass horizon"
 config/context-thresholds  session-context warn/restart token-band thresholds; inherited; see docs/configuration.md "Session context thresholds (config/context-thresholds)"
 config/codex-context-thresholds  Codex-side session-context thresholds (separate defaults); NOT inherited; see docs/configuration.md "Codex context thresholds (config/codex-context-thresholds)"
 config/working-hours  captain attention-window schedule for proactive contact; NOT inherited; see docs/configuration.md "Captain attention windows (config/working-hours)"
 config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; inherited; see docs/configuration.md "Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)"
 config/host-memory-floor  free-memory MiB floor below which lanes are refused; primary-authoritative; see docs/configuration.md "Host memory floor (config/host-memory-floor)"
 config/retry-thresholds  retry-loop relaunch/round ceilings; inherited; see docs/configuration.md "Retry-loop thresholds (config/retry-thresholds)"
-config/herdr-presentation-spaces  Herdr visual projection on/off opt-in; inherited; see docs/herdr-backend.md "Presentation spaces"
-config/trace-context  W3C trace-context propagation flag; inherited; see docs/configuration.md "Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)"
+config/herdr-presentation-spaces  optional "off" opt-out from, or "on" opt-in to, Herdr's default-on disposable single-task visual projection, which is unconfigured-default-on only at or above a Herdr version floor; LOCAL, gitignored; inherited by secondmate homes; see docs/herdr-backend.md "Presentation spaces"
+config/trace-context  optional presence flag enabling default-off native W3C trace-context propagation to spawned agents; LOCAL, gitignored; inherited by secondmate homes; see docs/configuration.md "Trace context propagation" and docs/trace-context.md
 config/upstream-autosync  upstream autosync auto-dispatch eligibility flag; inherited; see docs/configuration.md "Upstream autosync (config/upstream-autosync)"
-config/turnend-churn-absorb  opt-in absorb of bare turn-end wakes on pane churn; NOT inherited; see docs/configuration.md "Turn-end pane-churn absorb (config/turnend-churn-absorb)"
+config/turnend-churn-absorb  optional presence flag opting this home into the default-off absorb of bare turn-end wakes on pane churn; LOCAL, gitignored, and not inherited; see docs/configuration.md "Turn-end pane-churn absorb"
 config/primary-continuity  OPTS OUT of primary continuity watchdog (inverted polarity); inherited; see docs/configuration.md "Primary continuity watchdog"
-config/cmux-socket-password  cmux control-socket password; see docs/cmux-backend.md "Setup"
-config/wedge-alarm  away-mode wedge-alarm active-alert channels (off/auto/osascript/herdr/command); absent means auto; see docs/wedge-alarm.md and docs/configuration.md "Away-mode wedge alarm channels (config/wedge-alarm)"
-config/watched-tools.json  watched tool updates list; NOT inherited; see docs/configuration.md "Watched tool updates (config/watched-tools.json)"
-config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; see docs/configuration.md "Relay (.env)"
+config/cmux-socket-password  optional cmux control-socket password; LOCAL, gitignored; read fresh on every cmux CLI call and passed through without ever overriding an operator's own ambient CMUX_SOCKET_PASSWORD when absent (docs/cmux-backend.md "Setup")
+config/wedge-alarm  optional away-mode wedge-alarm active-alert directives; LOCAL, gitignored; absent means auto (macOS Notification Center when available); see docs/wedge-alarm.md
+config/watched-tools.json  optional list of the tools this home depends on, read by the update check armed with bin/fm-tool-update-check.sh; LOCAL, gitignored, firstmate-maintained but human-editable, and NOT inherited by secondmate homes; see docs/configuration.md "Watched tool updates"
+config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; source before arming watcher when present
+
 data/                personal fleet records; LOCAL, gitignored as a whole
   backlog.md         task queue, dependencies, history; see docs/configuration.md "Backlog backend (.tasks.toml / config/backlog-backend)"
   captain.md         domain-local captain preferences and working style; LOCAL, gitignored; see docs/configuration.md "Captain Preferences (data/captain.md / data/captain-shared.md)"
@@ -120,7 +122,9 @@ state/               runtime records and signals; gitignored
   .afk               durable away/quiet-mode daemon flag on the harnesses that still launch the daemon (never on Pi); present = sub-supervisor may inject escalations, first line `away` (default, set by /afk, cleared on user return) or `quiet` (set by /quiet, cleared only on explicit /quiet off) per the single owner fm_afk_mode() in bin/fm-wake-lib.sh
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
   .watcher-down      private generation-bound recovery state for watcher downtime and durable wake presentation; never touch
-  .hash-* .count-* .stale-* .stale-since-* .churn-since-* .paused-* .wedge-escalations-* .wedge-backoff-* .writing-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
+  .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
+  .cursor-park-owner .cursor-park-owner.lock .turnend-cursor-blocks   Cursor stop-hook owner record, publication and commit lock, and bounded repair-nag budget; never touch
+  .hash-* .count-* .stale-* .stale-since-* .churn-since-* .paused-* .wedge-escalations-* .wedge-backoff-* .writing-* .waiting-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
