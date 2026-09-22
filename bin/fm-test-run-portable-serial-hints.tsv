@@ -63,7 +63,7 @@ tests/fm-gotmp.test.sh	3100
 tests/fm-grok-continuity-live-e2e.test.sh	62
 tests/fm-grok-stop-live-e2e.test.sh	72
 tests/fm-guard-stale-banner.test.sh	32981
-tests/fm-harness-adapter-instructions-live-e2e.test.sh	60
+tests/fm-harness-adapter-instructions-live-e2e.test.sh	128
 tests/fm-harness-adapter-references.test.sh	120
 tests/fm-harness-liveness-drift-live-e2e.test.sh	1300
 tests/fm-harness-precedence.test.sh	4062
@@ -168,7 +168,7 @@ tests/fm-spawn-worktree-settle.test.sh	13000
 tests/fm-startup-memory-budget.test.sh	6964
 tests/fm-startup-network.test.sh	62274
 tests/fm-stat-shadowing.test.sh	54
-tests/fm-stow-cascade.test.sh	3101
+tests/fm-stow-cascade.test.sh	7639
 tests/fm-subagent-pretool-check.test.sh	1030
 tests/fm-supervision-events.test.sh	719
 tests/fm-tangle-guard.test.sh	9662
