@@ -1450,6 +1450,54 @@ captain_call_stale_bound() {  # <window-key> <task>
   stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
 }
 
+# --- provider quota loop: interrupt and hold --------------------------------
+# bin/fm-classify-lib.sh's status_provider_quota_loop is the classifier for a
+# bounded, terminal RESOURCE_EXHAUSTED/quota loop. This is its one live caller:
+# a `hold` verdict interrupts the worker through the existing control plane
+# (bin/fm-control.sh interrupt) and hands the task to the existing captain-hold
+# mechanics (bin/fm-captain-hold.sh hold), which preserves the worktree through
+# the same teardown open-call guard task_captain_call_open already reads above -
+# the terminal verdict is never a discard. Idempotent per distinct status-file
+# state via .quota-hold-<task>: the marker records the status file's byte size
+# (monotonically increasing - the status stream is append-only) at the last
+# fire, not the windowed streak count. status_quota_exhaustion_count's streak
+# resets to 0 after any intervening success, so a SECOND independent
+# back-to-back loop can legitimately reach the same count as the first; keying
+# the marker on file growth instead of on that count means it still fires,
+# while a re-poll of the exact same unchanged file (same size) still only
+# interrupts once.
+quota_loop_hold_check() {  # <task> -> 0 (acted, caller should wake and stop) | 1
+  local task=$1 statusf marker verdict count size prior reason
+  local interrupt_out interrupt_rc hold_out hold_rc
+  [ -n "$task" ] || return 1
+  statusf="$STATE/$task.status"
+  [ -r "$statusf" ] || return 1
+  verdict=$(status_provider_quota_loop "$statusf") || true
+  case "$verdict" in *' hold') ;; *) return 1 ;; esac
+  count=${verdict%% *}
+  case "$count" in ''|*[!0-9]*) return 1 ;; esac
+  size=$(wc -c < "$statusf" 2>/dev/null) || size=0
+  case "$size" in ''|*[!0-9]*) size=0 ;; esac
+  marker="$STATE/.quota-hold-$task"
+  prior=$(cat "$marker" 2>/dev/null || echo 0)
+  case "$prior" in ''|*[!0-9]*) prior=0 ;; esac
+  [ "$size" -gt "$prior" ] || return 1
+  printf '%s' "$size" > "$marker"
+  interrupt_out=$("$SCRIPT_DIR/fm-control.sh" "$task" interrupt 2>&1); interrupt_rc=$?
+  hold_out=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" hold "$task" \
+    --reason "repeated provider quota exhaustion ($count events) interrupted the worker; preserved work is held pending captain hold or reroute" 2>&1); hold_rc=$?
+  if [ "$interrupt_rc" -ne 0 ] || [ "$hold_rc" -ne 0 ]; then
+    reason="quota-loop: $task ($count repeated provider quota-exhaustion events;"
+    [ "$interrupt_rc" -eq 0 ] || reason="$reason interrupt FAILED: ${interrupt_out:-no output};"
+    [ "$hold_rc" -eq 0 ] || reason="$reason captain-hold FAILED: ${hold_out:-no output};"
+    reason="$reason not confirmed handled)"
+  else
+    reason="quota-loop: $task ($count repeated provider quota-exhaustion events; interrupted and held for the captain to hold or reroute)"
+  fi
+  fm_wake_append stale "$task" "$reason" || true
+  wake "$reason"
+}
+
 # Surface a stale pane no classifier could resolve, so firstmate inspects it: it
 # may have finished through an interactive menu that wrote no status, be waiting on
 # a decision, or be wedged. pause_state_class deliberately answers `none` for a
@@ -2942,6 +2990,7 @@ EOF
     # exemption below, because a mate's steers land in an inbox too.
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
     key=$(window_key "$w")
+    quota_loop_hold_check "$task"
     last=$(last_status_line "$STATE/$task.status")
     if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$key"
