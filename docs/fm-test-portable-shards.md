@@ -56,7 +56,7 @@ Each shard is still strictly serial in itself, and separate runners mean no two 
 `bin/fm-test-run.sh` owns `n` and refuses any lane whose `of<n>` disagrees with it.
 `.github/workflows/ci.yml` derives the same `n` from `strategy.job-total` rather than a literal, so changing the shard count in either file without the other fails the lane loudly instead of leaving part of the required suite unrun.
 
-Assignment is longest-processing-time bin packing over per-script duration hints embedded in `bin/fm-test-run.sh`.
+Assignment is longest-processing-time bin packing over per-script duration hints in the `bin/fm-test-run-portable-serial-hints.tsv` sidecar.
 The embedded hints include the slowest measurements retained from the `fm-test-timing-portable-serial-*` artifacts of three green CI runs on 2026-09-01, [33558082172](https://github.com/kunchenguid/firstmate/actions/runs/33558082172), [33523597838](https://github.com/kunchenguid/firstmate/actions/runs/33523597838), and [33463326167](https://github.com/kunchenguid/firstmate/actions/runs/33463326167), the completed-script measurements from [run 34342484144](https://github.com/kunchenguid/firstmate/actions/runs/34342484144), plus the 5121 ms native-Windows focused runner measurement for `tests/fm-pi-windows-shell-invocation.test.sh` from 2026-09-06T21:02Z.
 The 40 scripts the 2026-09-14 upstream sync brought into the lane without a hint (26 fork-only scripts and 14 upstream scripts) take the slowest `fm-test-timing-portable-serial-*` measurement across three green fork runs on 2026-09-14, [34898264601](https://github.com/sKeLe100/firstmate/actions/runs/34898264601), [34892839508](https://github.com/sKeLe100/firstmate/actions/runs/34892839508), and [34888276335](https://github.com/sKeLe100/firstmate/actions/runs/34888276335), and three green upstream runs the same day, [34905271653](https://github.com/kunchenguid/firstmate/actions/runs/34905271653), [34905197169](https://github.com/kunchenguid/firstmate/actions/runs/34905197169), and [34884602287](https://github.com/kunchenguid/firstmate/actions/runs/34884602287).
 Taking the slowest of several CI runs rather than a single run keeps the balance honest on a slow runner.
@@ -73,7 +73,7 @@ Run 34342484144 observed a shard reach about 20 minutes of passing work, so the 
 The single longest script, `tests/fm-watch-triage.test.sh`, is the floor for any shard count.
 Its hint is the 600031 ms floor measured on the 2026-09-14 upstream sync (run 34911977448 terminated it at the then-600s per-script bound after both parents measured 414-564 s), so refresh it from the next green serial timing artifacts.
 
-Refresh the CI-derived hints by downloading the per-shard timing artifacts from several green CI runs and replacing the `portable_serial_weight_hints` table in `bin/fm-test-run.sh` with the slowest measured `duration_ms` per `path`:
+Refresh the CI-derived hints by downloading the per-shard timing artifacts from several green CI runs and replacing `bin/fm-test-run-portable-serial-hints.tsv` with the slowest measured `duration_ms` per `path`:
 
 Run this from the home's own clone so `gh` resolves the repository whose CI
 produced the artifacts (this home's runs live in its own fork, not the upstream
@@ -84,7 +84,7 @@ for run in <run-id> <run-id> <run-id>; do
   gh run download "$run" --pattern 'fm-test-timing-portable-serial-*' -D "/tmp/fm-serial/$run"
 done
 jq -r '.scripts[] | [.path, .duration_ms] | @tsv' /tmp/fm-serial/*/*.json \
-  | awk -F'\t' '$2 > m[$1] { m[$1] = $2 } END { for (p in m) print p, m[p] }' \
+  | awk -F'\t' '$2 > m[$1] { m[$1] = $2 } END { for (p in m) printf "%s\t%s\n", p, m[p] }' \
   | LC_ALL=C sort
 bin/fm-test-run.sh --check-coverage
 ```

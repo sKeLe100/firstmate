@@ -16,6 +16,13 @@ RUNNER="$ROOT/bin/fm-test-run.sh"
 assert_present "$RUNNER" "bin/fm-test-run.sh is missing"
 [ -x "$RUNNER" ] || fail "bin/fm-test-run.sh must be executable"
 
+copy_runner_fixture() {
+  local target=$1
+  mkdir -p "$(dirname "$target")"
+  cp "$RUNNER" "$target"
+  cp "$ROOT/bin/fm-test-run-portable-serial-hints.tsv" "$(dirname "$target")/"
+}
+
 # Pin the automatic scheduler's host-load input so every test below is
 # deterministic regardless of the actual machine's contention; tests that
 # specifically exercise load-aware behavior override this per invocation.
@@ -97,7 +104,7 @@ test_changed_file_selection_is_conservative() {
 init_changed_fixture_repo() {
   local repo=$1 script
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$repo/bin/fm-test-run.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   for script in \
@@ -192,7 +199,7 @@ init_primary_and_linked_worktree() {
   git -C "$repo" worktree add --quiet -b linked-probe "$linked"
   for tree in "$repo" "$linked"; do
     mkdir -p "$tree/bin" "$tree/tests"
-    cp "$RUNNER" "$tree/bin/fm-test-run.sh"
+    copy_runner_fixture "$tree/bin/fm-test-run.sh"
     cp "$ROOT/tests/git-config-helpers.sh" "$tree/tests/"
     chmod +x "$tree/bin/fm-test-run.sh"
     cat >"$tree/tests/probe.test.sh" <<PROBE
@@ -517,7 +524,7 @@ PY
   timeout_repo="$tmp/timeout-repo"
   timeout_script=tests/fm-calm-pi-extension.test.sh
   mkdir -p "$timeout_repo/bin" "$timeout_repo/tests"
-  cp "$RUNNER" "$timeout_repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$timeout_repo/bin/fm-test-run.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$timeout_repo/tests/"
   cat >"$timeout_repo/bin/fm-timeout-lib.sh" <<'SH'
 fm_run_timed() {
@@ -669,7 +676,7 @@ test_family_proofs_run_in_separate_concurrent_phases() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-family-phases.XXXXXX")
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$repo/bin/fm-test-run.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   chmod +x "$repo/bin/fm-test-run.sh"
@@ -1022,7 +1029,7 @@ test_list_scheduled_non_lane_selections_use_serial_weights() {
   tmp=$(fm_test_tmproot fm-test-run-non-lane-schedule)
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$repo/bin/fm-test-run.sh"
   for script in "${scripts[@]}"; do
     printf '#!/usr/bin/env bash\nexit 0\n' >"$repo/$script"
     chmod +x "$repo/$script"
@@ -1297,7 +1304,7 @@ test_unmapped_new_test_never_inherits_family_concurrency() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-unmapped.XXXXXX")
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$repo/bin/fm-test-run.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   # Two members of the proven residual family, plus a test basename the family
@@ -1415,7 +1422,7 @@ test_per_script_timeout_bounds_a_hang() {
   runner="$repo/bin/fm-test-run.sh"
   hang=tests/fm-hang-fixture.test.sh
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$runner"
+  copy_runner_fixture "$runner"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   grandchild_pid="$tmp/grandchild.pid"
@@ -1474,13 +1481,14 @@ SH
 # hint table instead, at PORTABLE_SERIAL_TIMEOUT_MULTIPLIER times the slowest
 # hint, and an explicit --per-script-timeout-secs must still override it.
 test_portable_serial_lane_derives_per_script_timeout_from_hints() {
-  local tmp repo runner hang rc began ended
+  local tmp repo runner hints hang rc began ended
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-lane-timeout.XXXXXX")
   repo="$tmp/repo"
   runner="$repo/bin/fm-test-run.sh"
   hang=tests/fm-hang-fixture.test.sh
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$runner"
+  copy_runner_fixture "$runner"
+  hints="$repo/bin/fm-test-run-portable-serial-hints.tsv"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$runner"
@@ -1491,24 +1499,11 @@ echo "ok - fixture slept 3s"
 SH
   chmod +x "$repo/$hang"
 
-  # Replace the embedded hint table with one small, controlled entry so the
-  # derived bound is fast to observe: this isolated copy's own portable-serial
-  # lane contains only the fixture above, so a real repo's much larger hints
-  # never leak into the arithmetic under test.
-  python3 - "$runner" <<'PY'
-import re
-import sys
-
-path = sys.argv[1]
-text = open(path, encoding="utf-8").read()
-marker = "portable_serial_weight_hints() {\n  cat <<'EOF'\n"
-start = text.index(marker) + len(marker)
-end = text.index("\nEOF\n", start)
-text = text[:start] + "tests/fm-hang-fixture.test.sh 200" + text[end:]
-open(path, "w", encoding="utf-8").write(text)
-PY
-  grep -Fq 'tests/fm-hang-fixture.test.sh 200' "$runner" \
-    || fail "hint-table fixture splice did not land: $(cat "$runner")"
+  # Replace the sidecar with one controlled entry so the derived bound is fast
+  # to observe without inspecting or modifying implementation source.
+  printf '%s\t%s\n' "$hang" 200 >"$hints"
+  grep -Fq "$hang" "$hints" \
+    || fail "hint-sidecar fixture did not land: $(cat "$hints")"
 
   # No --per-script-timeout-secs: the lane must derive 2 * 200ms = 400ms,
   # rounded up to 1s, and kill the 3s sleep well before it would finish.
@@ -1551,8 +1546,9 @@ test_check_hint_drift_flags_stale_hint() {
   local tmp script hint clean_json drift_json drift2_json history rc out
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-hintdrift.XXXXXX")
   script=tests/fm-gitignore-config.test.sh
-  hint=$(sed -n "s#^${script} \\([0-9][0-9]*\\)\$#\\1#p" "$RUNNER")
-  [ -n "$hint" ] || fail "could not read the current hint for $script from $RUNNER"
+  hint=$(awk -F '\t' -v script="$script" '$1 == script { print $2; exit }' \
+    "$ROOT/bin/fm-test-run-portable-serial-hints.tsv")
+  [ -n "$hint" ] || fail "could not read the current hint for $script from the sidecar"
   history="$tmp/history.json"
 
   # Exactly at the hint: no drift.
@@ -1606,6 +1602,37 @@ JSON
   pass "--check-hint-drift only refuses a hint that drifts on two consecutive runs, and warns on a single-run spike"
 }
 
+test_portable_serial_hint_sidecar_fails_closed() {
+  local tmp input missing malformed out rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-hint-sidecar.XXXXXX")
+  input="$tmp/timing.json"
+  printf '%s\n' '{"scripts": []}' >"$input"
+  missing="$tmp/missing.tsv"
+
+  set +e
+  out=$(FM_TEST_RUN_PORTABLE_SERIAL_HINTS_FILE="$missing" \
+    "$RUNNER" --check-hint-drift "$input" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "a missing hint sidecar must fail with usage exit 2, got $rc: $out"
+  assert_contains "$out" "sidecar is missing or unreadable" \
+    "a missing hint sidecar must name the failure"
+
+  malformed="$tmp/malformed.tsv"
+  printf '%s\n' 'tests/fm-gitignore-config.test.sh 62' >"$malformed"
+  set +e
+  out=$(FM_TEST_RUN_PORTABLE_SERIAL_HINTS_FILE="$malformed" \
+    "$RUNNER" --check-hint-drift "$input" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "a malformed hint sidecar must fail with usage exit 2, got $rc: $out"
+  assert_contains "$out" "sidecar is malformed" \
+    "a malformed hint sidecar must name the failure"
+
+  rm -rf "$tmp"
+  pass "portable-serial hint sidecars are read and invalid sidecars fail closed"
+}
+
 # The duration regression this guard exists for: a suite whose scripts are all
 # green but whose wall clock outgrew its caller's invocation budget. The caller
 # gets killed mid-run and retries invisibly, so an over-budget run has to be a
@@ -1617,7 +1644,7 @@ test_max_wall_ms_is_a_result_not_advice() {
   runner="$repo/bin/fm-test-run.sh"
   fast=tests/fm-budget-fixture.test.sh
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$runner"
+  copy_runner_fixture "$runner"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cat >"$repo/$fast" <<'SH'
 #!/usr/bin/env bash
@@ -1682,7 +1709,7 @@ test_jobs_parallel_scheduler_and_failure_propagation() {
   c=tests/fm-lint.test.sh
   d=tests/fm-supervision-instructions.test.sh
   mkdir -p "$repo/bin" "$repo/tests" "$evidence" "$fake_bin"
-  cp "$RUNNER" "$runner"
+  copy_runner_fixture "$runner"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cat >"$fake_bin/stat" <<'SH'
 #!/usr/bin/env bash
@@ -2059,7 +2086,7 @@ test_fail_fast_jobs_stops_scheduling() {
   )
   last=${proven[$(( ${#proven[@]} - 1 ))]}
   mkdir -p "$repo/bin" "$repo/tests" "$evidence" "$fake_bin"
-  cp "$RUNNER" "$runner"
+  copy_runner_fixture "$runner"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cat >"$fake_bin/stat" <<'SH'
 #!/usr/bin/env bash
@@ -2188,7 +2215,7 @@ test_changed_default_timeout_scales_with_host_load() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-timeout-scale.XXXXXX")
   repo="$tmp/timeout-repo"
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$repo/bin/fm-test-run.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
@@ -2238,7 +2265,7 @@ test_token_free_retry_recovers_load_sensitive_failure() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-retry-recover.XXXXXX")
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$repo/bin/fm-test-run.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
@@ -2282,7 +2309,7 @@ test_token_free_retry_covers_exit_124_regardless_of_name() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-retry-124.XXXXXX")
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$repo/bin/fm-test-run.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
@@ -2325,7 +2352,7 @@ test_token_free_retry_skips_when_a_failure_is_not_load_plausible() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-retry-skip.XXXXXX")
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  copy_runner_fixture "$repo/bin/fm-test-run.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
@@ -2404,6 +2431,7 @@ test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
 test_check_hint_drift_flags_stale_hint
+test_portable_serial_hint_sidecar_fails_closed
 test_fail_fast_stops_after_first_failure
 test_fail_fast_jobs_stops_scheduling
 test_fail_fast_skips_the_unproven_serial_tail
