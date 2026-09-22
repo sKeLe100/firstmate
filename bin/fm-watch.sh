@@ -801,8 +801,10 @@ secondmate_in_active_turn() {  # <window> <idle> <task>
 # never to the interval. A moved position ends an alerted episode and starts a
 # new observation interval, so a newly-oldest row cannot alert immediately while
 # a later genuine freeze remains visible. A mate demonstrably inside an active
-# turn defers its escalation, but only while this same interval is under
-# BUSY_TURN_MAX_SECS, so a turn that never ends cannot hide a frozen queue.
+# turn defers its escalation while either signal still places it within its
+# turn: busy_turn_over_age is false (its meta/progress is newer than
+# BUSY_TURN_MAX_SECS) or this same interval is under BUSY_TURN_MAX_SECS. Only
+# when both are past the bound does the escalation fire.
 # Receipts close the append-before-marker crash window without changing the
 # foreign queue.
 secondmate_wake_stall_tick() {
@@ -1014,7 +1016,9 @@ wedge_wait_evidence() {  # <task> -> `declared` or `held` on stdout
 # record is archived rather than starting a cadence nobody could act on.
 # The escalation counter is left alone, exactly as the write deferral leaves it:
 # this is not an escalation, and a later genuine one must keep the
-# demand-inspection history it had already earned.
+# demand-inspection history it had already earned. The backoff exponent IS
+# reset, also as the write deferral does, so a wait that ends re-escalates at the
+# base threshold rather than at the pace an earlier spell had backed off to.
 wedge_defer_wait() {  # <window> <task> <since-file> <triage-label> <idle-age> <declared|held>
   local win=$1 task=$2 since_file=$3 label=$4 age=$5 evidence=$6 key mtime wage min_age kind action waited
   if [ "$evidence" = held ]; then
@@ -1029,6 +1033,7 @@ wedge_defer_wait() {  # <window> <task> <since-file> <triage-label> <idle-age> <
     action='confirm the wait still holds'
   fi
   key=$(window_key "$win")
+  echo 0 > "$STATE/.wedge-backoff-$key"
   mtime=$(stat_mtime "$STATE/$task.status")
   case "$mtime" in
     ''|*[!0-9]*)

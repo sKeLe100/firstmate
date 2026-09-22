@@ -2695,7 +2695,7 @@ wedge_threshold_round() {  # <state> <fakebin> <out> <capture> <window> <verdict
     FM_FAKE_TMUX_CURRENT_COMMAND=grok FM_FAKE_CREW_STATE="$verdict" \
     FM_WATCH_HANDLING_SUCCESSOR=1 \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
-    FM_PAUSE_RESURFACE_SECS="${FM_TEST_PAUSE_RESURFACE:-999}" FM_STALE_ESCALATE_SECS=1 \
+    FM_PAUSE_RESURFACE_SECS="${FM_TEST_PAUSE_RESURFACE:-999}" FM_STALE_ESCALATE_SECS="${FM_TEST_STALE_ESCALATE:-1}" \
     FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" >> "$out" &
   pid=$!
@@ -2825,6 +2825,41 @@ test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict() {
   grep -F 'demand-deep-inspection: same pane has wedge-escalated 3 times in a row' "$out" >/dev/null \
     || fail "an undeclared working lane lost the demand-deep-inspection wording: $(cat "$out")"
   pass "a declared wait is not wedge-escalated by a working verdict, while an elapsed declaration and an undeclared lane both keep the unchanged ladder"
+}
+
+# A declared wait that defers a backed-off lane is genuine accounting for the
+# quiet, exactly like a worktree write, so it must reset the backoff exponent too:
+# once the wait ends, the next escalation is owed at the base threshold, not at
+# the pace the earlier escalations had backed off to.
+test_wedge_wait_deferral_resets_backoff_to_base_threshold() {
+  local dir state fakebin out capture window key statusf future past
+  local working='state: working · source: run-step · ci running'
+  future=$(iso_utc_at "$(( $(date +%s) + 7200 ))")
+  dir=$(wedge_threshold_fixture declared-wait-backoff-reset "paused: waiting on the build queue until $future" 0)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  statusf="$state/wedge.status"
+  # Two escalations deep: the backed-off threshold is 240 * 4 = 960s.
+  printf '2\n' > "$state/.wedge-escalations-$key"
+  printf '2\n' > "$state/.wedge-backoff-$key"
+  echo $(( $(date +%s) - 1000 )) > "$state/.stale-since-$key"
+  FM_TEST_STALE_ESCALATE=240 wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+    || fail "a declared wait at the backed-off threshold was wedge-escalated: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a declared wait at the backed-off threshold queued a wedge wake: $(cat "$state/.wake-queue")"
+
+  # The wait ends. 300s of quiet is past the base 240s but short of the 960s
+  # the lane had backed off to before the wait deferred it.
+  past=$(iso_utc_at "$(( $(date +%s) - 60 ))")
+  printf 'paused: waiting on the build queue until %s\n' "$past" > "$statusf"
+  printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-wedge_status"
+  echo $(( $(date +%s) - 300 )) > "$state/.stale-since-$key"
+  FM_TEST_STALE_ESCALATE=240 wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a lane whose declared wait ended did not re-escalate at the base threshold: $(cat "$out")"
+  grep -F "possible wedge, escalation 3" "$out" >/dev/null \
+    || fail "the post-wait escalation lost its escalation history: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the post-wait escalation"
+  pass "a declared-wait deferral resets wedge backoff so the lane re-escalates at the base threshold once the wait ends"
 }
 
 # The other status-line record. A verified `captain-held:` transfer also reaches
@@ -5908,6 +5943,7 @@ test_absorbed_replacement_wait_does_not_inherit_the_old_throttle
 test_live_declared_wait_churn_honors_the_resurface_throttle
 test_live_paused_until_controls_recheck_time
 test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict
+test_wedge_wait_deferral_resets_backoff_to_base_threshold
 test_wedge_threshold_recheck_names_the_captain_for_a_held_lane
 test_open_captain_call_bounds_stale_churn
 test_stale_churn_without_a_captain_call_still_alarms
