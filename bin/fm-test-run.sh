@@ -807,8 +807,8 @@ list_portable_serial() {
 # balance rather than coverage. That doc owns the refresh procedure.
 #
 # The TSV sidecar intentionally has one "<path><TAB><milliseconds>" row per
-# script. Hint-only updates are therefore conflict-resolvable by a union that
-# keeps the larger duration for duplicate paths.
+# script, kept out of this script so a hint-only update no longer conflicts
+# with unrelated code changes in the same file.
 portable_serial_weight_hints() {
   local hints_file
   hints_file=${FM_TEST_RUN_PORTABLE_SERIAL_HINTS_FILE:-"$ROOT/bin/fm-test-run-portable-serial-hints.tsv"}

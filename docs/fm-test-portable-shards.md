@@ -73,7 +73,7 @@ Run 34342484144 observed a shard reach about 20 minutes of passing work, so the 
 The single longest script, `tests/fm-watch-triage.test.sh`, is the floor for any shard count.
 Its hint is the 600031 ms floor measured on the 2026-09-14 upstream sync (run 34911977448 terminated it at the then-600s per-script bound after both parents measured 414-564 s), so refresh it from the next green serial timing artifacts.
 
-Refresh the CI-derived hints by downloading the per-shard timing artifacts from several green CI runs and replacing the `portable_serial_weight_hints` table in `bin/fm-test-run.sh` with the slowest measured `duration_ms` per `path`:
+Refresh the CI-derived hints by downloading the per-shard timing artifacts from several green CI runs and replacing `bin/fm-test-run-portable-serial-hints.tsv` with the slowest measured `duration_ms` per `path`:
 
 Run this from the home's own clone so `gh` resolves the repository whose CI
 produced the artifacts (this home's runs live in its own fork, not the upstream
@@ -84,7 +84,7 @@ for run in <run-id> <run-id> <run-id>; do
   gh run download "$run" --pattern 'fm-test-timing-portable-serial-*' -D "/tmp/fm-serial/$run"
 done
 jq -r '.scripts[] | [.path, .duration_ms] | @tsv' /tmp/fm-serial/*/*.json \
-  | awk -F'\t' '$2 > m[$1] { m[$1] = $2 } END { for (p in m) print p, m[p] }' \
+  | awk -F'\t' '$2 > m[$1] { m[$1] = $2 } END { for (p in m) printf "%s\t%s\n", p, m[p] }' \
   | LC_ALL=C sort
 bin/fm-test-run.sh --check-coverage
 ```
