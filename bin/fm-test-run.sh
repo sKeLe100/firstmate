@@ -122,8 +122,8 @@
 #   --per-script-timeout-secs N
 #                   terminate a script that runs longer than N seconds and
 #                   record it as exit 124 (0 disables, the default). The
-#                   --changed path applies a 900s base automatically (1800s
-#                   for the declared load-sensitive set), scaled
+#                   --changed path applies a 900s base automatically (1500s
+#                   for tests/fm-watch-triage.test.sh), scaled
 #                   up by max(1, load5/cpus) so host contention cannot turn a
 #                   healthy script into a false timeout: on an idle host this
 #                   still converts a HUNG script into a bounded failure, but
@@ -156,7 +156,7 @@
 #   FM_TEST_END <iso8601> <script> exit=<code> duration_ms=<n> gate_skip=<true|false>
 #
 # Once per automatic --changed/scripts run, before scheduling (stdout):
-#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n>
+#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n> watch_triage_timeout_secs=<n>
 #     Lets a later reader tell a load kill from a genuine hang.
 #
 # After all scripts (stdout):
@@ -288,12 +288,11 @@ PER_SCRIPT_TIMEOUT_SECS=0
 # let a healthy script approach or exceed 900s on its own -- the effective
 # bound is scaled by max(1, load5/cpus) for exactly that reason.
 CHANGED_DEFAULT_TIMEOUT_SECS=900
-# Base for the declared load-sensitive set (is_load_sensitive_script) on the
-# same automatic --changed path, scaled the same way. fm-watch-triage alone
-# measured 924s on PC01 under full-suite load against the 900s base, so these
-# scripts get twice the general base rather than a false timeout.
-CHANGED_LOAD_SENSITIVE_TIMEOUT_SECS=1800
-LOAD_SENSITIVE_PER_SCRIPT_TIMEOUT_SECS=
+# Base for tests/fm-watch-triage.test.sh on the same automatic --changed path,
+# scaled the same way: it measured 924s on PC01 under full-suite load against
+# the 900s base, so it alone gets this longer base rather than a false timeout.
+CHANGED_WATCH_TRIAGE_TIMEOUT_SECS=1500
+WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=
 
 # Bound and cadence for the token-free retry's wait for load5 to drop back
 # under cpus before re-running exactly the load-plausible failures once,
@@ -2686,7 +2685,7 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
   HOST_LOAD5=$(load5)
   if [ "$MODE" = changed ] && [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
     PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_DEFAULT_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
-    LOAD_SENSITIVE_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_LOAD_SENSITIVE_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
+    WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_WATCH_TRIAGE_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
   fi
   auto_admissible=0
   for s in "${SCRIPTS[@]}"; do
@@ -2699,8 +2698,9 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
     JOBS=$(load_scaled_jobs "$JOBS" "$HOST_LOAD5" "$HOST_CPUS")
     [ "$JOBS" -eq 1 ] || AUTO_CONCURRENCY=1
   fi
-  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s\n' \
-    "$HOST_LOAD5" "$HOST_CPUS" "$JOBS" "$PER_SCRIPT_TIMEOUT_SECS"
+  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s watch_triage_timeout_secs=%s\n' \
+    "$HOST_LOAD5" "$HOST_CPUS" "$JOBS" "$PER_SCRIPT_TIMEOUT_SECS" \
+    "${WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS:-$PER_SCRIPT_TIMEOUT_SECS}"
 fi
 if [ "$JOBS" -gt 1 ] || [ "$MODE" = changed ] || [ "$MODE" = scripts ]; then
   SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
@@ -2928,8 +2928,8 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   . "$ROOT/tests/git-config-helpers.sh" || return
   local rc bound=$PER_SCRIPT_TIMEOUT_SECS
   : "$id"
-  if [ -n "$LOAD_SENSITIVE_PER_SCRIPT_TIMEOUT_SECS" ] && is_load_sensitive_script "$script"; then
-    bound=$LOAD_SENSITIVE_PER_SCRIPT_TIMEOUT_SECS
+  if [ -n "$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-watch-triage.test.sh ]; then
+    bound=$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS
   fi
   set +e
   if [ "$stream" -eq 1 ]; then
