@@ -1035,7 +1035,7 @@ tests/fm-spawn-worktree-settle.test.sh 13000
 tests/fm-startup-memory-budget.test.sh 6964
 tests/fm-startup-network.test.sh 62274
 tests/fm-stat-shadowing.test.sh 54
-tests/fm-stow-cascade.test.sh 5924
+tests/fm-stow-cascade.test.sh 7406
 tests/fm-subagent-pretool-check.test.sh 1030
 tests/fm-supervision-events.test.sh 719
 tests/fm-tangle-guard.test.sh 9662
