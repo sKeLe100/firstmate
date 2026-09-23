@@ -2942,7 +2942,13 @@ ORPHAN_DESCENDANT=$(cat "$TMP_ROOT/orphan-dead.descendant")
 
 # The reproduction condition itself: the listener is already an orphan in the
 # kernel's sense before anything is asserted about reaping it.
-orphan_ppid=$(ps -o ppid= -p "$ORPHAN_PID" 2>/dev/null | tr -d '[:space:]')
+# Reparenting is not instantaneous under load; poll with a bounded wait.
+orphan_ppid=""
+for _ in $(seq 1 50); do
+  orphan_ppid=$(ps -o ppid= -p "$ORPHAN_PID" 2>/dev/null | tr -d '[:space:]')
+  [ "$orphan_ppid" = "1" ] && break
+  sleep 0.05
+done
 [ "$orphan_ppid" = 1 ] \
   || fail "the listener under test was not reparented away from its session (ppid $orphan_ppid)"
 kill -0 -"$ORPHAN_PID" 2>/dev/null \

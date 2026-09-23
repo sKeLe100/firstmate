@@ -566,15 +566,18 @@ test_exhausted_settle_window_keeps_a_non_shell_foreground_live() {
 }
 
 test_registered_agent_with_an_agent_descendant_outside_the_foreground_stays_alive() {
-  local lab sleep_bin shell_pid out shell_verdict
+  local lab sleep_bin shell_pid out shell_verdict pi_bin
   sleep_bin=$(command -v sleep) || fail "sleep not found"
   lab="$TMP_ROOT/stale-reg-descendant-bin"; mkdir -p "$lab"
-  # A symlink to a real long-running binary so the kernel records `pi` as the
-  # executable identity (a copied platform binary fails code signing on macOS).
-  ln -sf "$sleep_bin" "$lab/pi"
+  # A small executable named `pi` so the kernel records that name, independent
+  # of multicall binaries or symlink target dispatch. A copied binary preserves
+  # the argv0 identity on every host; macOS code-signing is not required for a
+  # plain sleep binary in a test scratch directory.
+  pi_bin="$lab/pi"
+  cp "$sleep_bin" "$pi_bin" && chmod +x "$pi_bin" || fail "could not create host-independent pi binary"
   # A real shell whose child is that agent-named process, while the canned
   # foreground view shows only the shell (a suspended or backgrounded agent).
-  sh -c "'$lab/pi' 300; :" &
+  sh -c "'$pi_bin' 300; :" &
   shell_pid=$!
   sleep 0.3
   out=$(stale_registration_case descendant idle "$(shell_only_process_info "$shell_pid")")
