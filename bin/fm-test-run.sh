@@ -122,7 +122,8 @@
 #   --per-script-timeout-secs N
 #                   terminate a script that runs longer than N seconds and
 #                   record it as exit 124 (0 disables, the default). The
-#                   --changed path applies a 900s base automatically, scaled
+#                   --changed path applies a 900s base automatically (1800s
+#                   for the declared load-sensitive set), scaled
 #                   up by max(1, load5/cpus) so host contention cannot turn a
 #                   healthy script into a false timeout: on an idle host this
 #                   still converts a HUNG script into a bounded failure, but
@@ -287,6 +288,12 @@ PER_SCRIPT_TIMEOUT_SECS=0
 # let a healthy script approach or exceed 900s on its own -- the effective
 # bound is scaled by max(1, load5/cpus) for exactly that reason.
 CHANGED_DEFAULT_TIMEOUT_SECS=900
+# Base for the declared load-sensitive set (is_load_sensitive_script) on the
+# same automatic --changed path, scaled the same way. fm-watch-triage alone
+# measured 924s on PC01 under full-suite load against the 900s base, so these
+# scripts get twice the general base rather than a false timeout.
+CHANGED_LOAD_SENSITIVE_TIMEOUT_SECS=1800
+LOAD_SENSITIVE_PER_SCRIPT_TIMEOUT_SECS=
 
 # Bound and cadence for the token-free retry's wait for load5 to drop back
 # under cpus before re-running exactly the load-plausible failures once,
@@ -1075,7 +1082,7 @@ tests/fm-watch-checkpoint.test.sh 5779
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 58731
 tests/fm-watch-retry-band.test.sh 7547
-tests/fm-watch-triage.test.sh 1500000
+tests/fm-watch-triage.test.sh 600031
 tests/fm-watcher-lock.test.sh 88554
 tests/fm-worktree-guard.test.sh 3041
 EOF
@@ -2679,6 +2686,7 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
   HOST_LOAD5=$(load5)
   if [ "$MODE" = changed ] && [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
     PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_DEFAULT_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
+    LOAD_SENSITIVE_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_LOAD_SENSITIVE_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
   fi
   auto_admissible=0
   for s in "${SCRIPTS[@]}"; do
@@ -2918,30 +2926,33 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   local GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
   # shellcheck source=tests/git-config-helpers.sh
   . "$ROOT/tests/git-config-helpers.sh" || return
-  local rc
+  local rc bound=$PER_SCRIPT_TIMEOUT_SECS
   : "$id"
+  if [ -n "$LOAD_SENSITIVE_PER_SCRIPT_TIMEOUT_SECS" ] && is_load_sensitive_script "$script"; then
+    bound=$LOAD_SENSITIVE_PER_SCRIPT_TIMEOUT_SECS
+  fi
   set +e
   if [ "$stream" -eq 1 ]; then
-    if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
+    if [ "$bound" -gt 0 ]; then
       # Expansion is intentionally deferred to the child bash passed to -c.
       # shellcheck disable=SC2016
-      fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash -c \
+      fm_run_timed "$bound" bash -c \
         'bash "$1" 2>&1 | tee "$2"; exit "${PIPESTATUS[0]}"' _ "$script" "$out"
       rc=$?
     else
       bash "$script" 2>&1 | tee "$out"
       rc=${PIPESTATUS[0]}
     fi
-  elif [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
-    fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash "$script" >"$out" 2>&1
+  elif [ "$bound" -gt 0 ]; then
+    fm_run_timed "$bound" bash "$script" >"$out" 2>&1
     rc=$?
   else
     bash "$script" >"$out" 2>&1
     rc=$?
   fi
-  if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ] && [ "$rc" -eq 124 ]; then
+  if [ "$bound" -gt 0 ] && [ "$rc" -eq 124 ]; then
     printf 'not ok - %s exceeded the per-script bound of %ss and was terminated\n' \
-      "$script" "$PER_SCRIPT_TIMEOUT_SECS" >>"$out"
+      "$script" "$bound" >>"$out"
     [ "$stream" -eq 1 ] && tail -1 "$out"
   fi
   return "$rc"
