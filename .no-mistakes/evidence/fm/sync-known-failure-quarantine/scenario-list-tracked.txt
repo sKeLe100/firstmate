@@ -1,0 +1,12 @@
+$ bin/fm-test-run.sh --list --all | wc -l
+250
+$ bin/fm-test-run.sh --list --all --exclude-quarantined  (stdout count, stderr)
+rc=0
+245
+fm-test-run: quarantined skip: tests/fm-backend-herdr.test.sh (signature: coreutils: unknown program 'pi', owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-calm-pi-extension.test.sh (signature: Chrome or Chromium is required for rendered export DOM assertions, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent.test.sh (signature: the listener under test was not reparented away from its session, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-pair-dedup.test.sh (signature: no process-event result, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-watch-triage.test.sh (signature: exceeded the per-script bound, owner: sync-preexisting-test-failures)
+--- quarantined scripts present in excluded stdout? (expect none)
+done

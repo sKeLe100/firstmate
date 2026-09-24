@@ -1,0 +1,99 @@
+FM_TEST_HOST_LOAD load5=3.47 cpus=16 jobs=4 per_script_timeout_secs=0
+FM_TEST_BEGIN 2026-09-24T22:44:55Z tests/fm-brief.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-09-24T22:44:55Z tests/fm-test-run.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract
+ok - fm-brief.sh: bash -n succeeds
+/tmp/fm-test-run.Asbk2Q/w1/tmp/fm-brief.IbHjlW/heredoc-in-substitution.sh:2
+ok - fm-brief.sh: no heredoc is nested inside a command substitution (Bash 3.2 parse-safe)
+ok - fm-brief.sh: --help renders the complete header
+ok - fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly
+ok - fm-brief.sh: ship --mode is required and closed-set validated
+ok - fm-brief.sh: the explicit ship mode wins over the registered posture
+ok - fm-brief.sh: --yolo and scout/secondmate --mode are refused, never silently dropped
+ok - fm-brief.sh: faster paths use configured authority without stacked review
+ok - fm-brief.sh: no-mistakes DOD keeps its apostrophe prose and bans --yes outright
+ok - fm-brief.sh: no-mistakes ask-user findings use one event plus a verbatim snapshot
+ok - fm-brief.sh: ship project-memory wording carries the AGENTS.md authoring bar
+ok - fm-brief.sh: --herdr-lab emits the complete hard safety contract
+ok - fm-brief.sh: --perspective inserts the catalog fragment between Task and Setup with its marker
+ok - fm-brief.sh: --perspective refuses unknown, empty, unsafe, and charter-scoped slugs
+ok - fm-brief.sh: --perspective strips HTML comments and keeps the prose around them
+ok - perspective-catalog: every catalog slug renders a bounded, dated brief
+ok - fm-brief.sh: --herdr-lab uses its quoted Firstmate-owned helper path
+ok - fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible
+ok - fm-brief.sh: the documented {TASK} and {FIRSTMATE_SPEC} fills cannot corrupt the Herdr safety gate
+ok - fm-brief.sh: Herdr lab contract covers scouts and rejects secondmate misuse
+ok - fm-brief.sh: --no-projects scaffolds a project-less charter and guards misuse
+ok - fm-brief.sh: marked requests avoid generic acknowledgements and preserve material reporting
+ok - fm-brief.sh: relative directory inputs ignore CDPATH, render stable absolute charter paths, or fail loudly
+ok - fm-brief.sh: custom pause verb renders in every scaffold
+ok - fm-brief.sh: investigation and visual-review completions load the shared decision policy
+ok - fm-brief.sh: ship and scout scaffolds teach the classifier's authoritative key placement
+ok - fm-brief: scout and secondmate code paths still scaffold well-formed briefs
+ok - fm-brief.sh: status appends and scout reports require ls -la verification before trust
+ok - fm-brief.sh: pt-tracker ship brief carries the tracker-entry law; other briefs are unaffected
+ok - fm-brief.sh: ship brief names a runnable context helper and numbers rules contiguously
+ok - fm-brief.sh: ship brief carries the retry-loop failsafe rule with its ceilings and key
+ok - fm-brief.sh: --upstream-sync emits the never-yolo-merge, supervision-safety, regression, PR-purity, bounded-batch, and real-conflict gates
+ok - fm-brief.sh: --upstream-sync embeds the exact bounded batch planned at scaffold time
+ok - fm-brief.sh: retry-loop review-round ceiling follows config/retry-thresholds
+ok - fm-brief.sh: scout Lavish hosting follows the bootstrap lavish-axi floor
+FM_TEST_END 2026-09-24T22:45:15Z tests/fm-brief.test.sh exit=0 duration_ms=19905 gate_skip=false
+ok - exact suite coverage: --all lists every tests/*.test.sh once
+ok - family selection returns a proper subset of the suite
+ok - single-script selection lists exactly that path
+ok - changed-file selection stays conservative (never silent full suite)
+ok - a task marker refuses execution in the primary checkout and leaves worktrees and inspection alone
+ok - runner and its documentation surfaces select their curated family, not just their contract owners
+ok - shell line-ending policy selects runner coverage
+ok - quarantine list change selects runner coverage
+fm-test-run: no tests selected for changes vs HEAD (map is conservative; use --all for the complete suite)
+ok - changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source
+ok - a bin reference selects the referencing scripts, and consumers still select their curated families
+ok - changed defaults to bounded automatic scheduling with serial override
+ok - Windows emulation exempts only synthetic POSIX modes
+ok - a plain script list defaults to bounded automatic concurrency without an automatic timeout
+ok - family proofs run concurrently only within separate family phases
+ok - empty changed selection emits deterministic text and JSON summaries
+ok - timing markers and JSON artifact are valid
+ok - aggregate exit reflects any script failure
+ok - gate-skip accounting is honest and non-failing
+ok - a gate skip records why it skipped
+ok - a script that actually ran records no skip reason
+ok - live guards are recorded as a capability class, not a bare env opt-in
+ok - fail-on-gate-skip converts herdr-not-found into a hard failure
+ok - exclude-family drops the named primary family after selection
+ok - exclude-quarantined drops exactly the listed scripts and reports each skip loudly
+ok - proven-isolated scheduling ignores parallel hints
+ok - family, all, changed, and script selections ignore parallel hints
+ok - portable shard union, disjointness, and coverage guard hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - portable serial shards are a deterministic disjoint cover of the serial lane
+ok - coverage guard reports and bounds the unmeasured portable serial share
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
+ok - --jobs refuses non-proven / stateful selections
+ok - --jobs admits and schedules a family with a recorded concurrent proof
+ok - an unclassified new test stays serial while the proven residual family runs concurrently
+ok - a changed shared test fixture selects its readers while an unread tests/ path still refuses
+ok - a concurrent run starts the longest-hint script first
+ok - --per-script-timeout-secs turns a hung script into a bounded failure
+ok - a portable-serial lane derives its per-script timeout from the hint table, and an explicit flag still overrides it
+ok - --max-wall-ms fails an over-budget run and refuses a malformed budget
+ok - jobs scheduler runs proven scripts; failure propagates; non-proven refused
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+ok - aggregate-json merges lane timing artifacts
+ok - --check-hint-drift only refuses a hint that drifts on two consecutive runs, and warns on a single-run spike
+ok - --check-hint-drift ignores a ratio-only swing under PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS
+ok - --fail-fast stops after the first failure and is off by default
+ok - --fail-fast stops the --jobs scheduler after the first failure
+ok - --fail-fast stops the unproven serial remainder after a concurrent failure
+ok - FM_TEST_HOST_LOAD reports load/cpus/jobs and throttles automatic concurrency, never an explicit --jobs
+ok - the --changed default per-script timeout scales by max(1, load5/cpus)
+ok - token-free retry re-runs a load-sensitive failure once and clears it without a real regression
+ok - the token-free retry admits exit=124 regardless of the load-sensitive name list
+ok - token-free retry never fires when any failure is outside the load-sensitive/timeout class
+FM_TEST_END 2026-09-24T22:49:11Z tests/fm-test-run.test.sh exit=0 duration_ms=255982 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=256195
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=275887 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-test-run.test.sh duration_ms=255982
+FM_TEST_SLOWEST rank=2 script=tests/fm-brief.test.sh duration_ms=19905

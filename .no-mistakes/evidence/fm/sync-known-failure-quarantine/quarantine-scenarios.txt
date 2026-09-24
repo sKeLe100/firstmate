@@ -1,0 +1,53 @@
+### S1: --list --all --exclude-quarantined against the tracked tests/fm-test-quarantine.tsv
+exit=0
+selected without flag: 250  with flag: 245
+dropped:
+tests/fm-backend-herdr.test.sh
+tests/fm-calm-pi-extension.test.sh
+tests/fm-procevent.test.sh
+tests/fm-wake-pair-dedup.test.sh
+tests/fm-watch-triage.test.sh
+stderr:
+fm-test-run: quarantined skip: tests/fm-backend-herdr.test.sh (signature: coreutils: unknown program 'pi', owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-calm-pi-extension.test.sh (signature: Chrome or Chromium is required for rendered export DOM assertions, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent.test.sh (signature: the listener under test was not reparented away from its session, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-pair-dedup.test.sh (signature: no process-event result, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-watch-triage.test.sh (signature: exceeded the per-script bound, owner: sync-preexisting-test-failures)
+FM_TEST_QUARANTINED in stdout? 0
+
+### S2: real run, fixture quarantine naming one of two scripts
+FM_TEST_QUARANTINED tests/fm-transition-lib.test.sh signature=sig-x reason=reason-x owner=owner-x
+fm-test-run: quarantined skip: tests/fm-transition-lib.test.sh (signature: sig-x, owner: owner-x)
+FM_TEST_QUARANTINE_SUMMARY quarantined=1
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=256
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=138 failed=0
+exit=0
+
+### S3 (adversarial): a NON-quarantined failing script still fails the run
+exit=1
+FM_TEST_QUARANTINED tests/fm-transition-lib.test.sh signature=sig-x reason=reason-x owner=owner-x
+FM_TEST_QUARANTINE_SUMMARY quarantined=1
+FM_TEST_BEGIN 2026-09-24T22:44:25Z tests/fm-zz-nmfail.test.sh family=unclassified expected_gate_skip=none
+FM_TEST_END 2026-09-24T22:44:25Z tests/fm-zz-nmfail.test.sh exit=1 duration_ms=22 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=127
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=22 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-zz-nmfail.test.sh duration_ms=22
+
+### S4 (adversarial): explicit missing quarantine file is refused
+fm-test-run: quarantine list not readable: /tmp/tmp.pCkL5x2h8r/typo.tsv (set by --quarantine-file or FM_TEST_QUARANTINE_FILE)
+exit=2
+fm-test-run: quarantine list not readable: /tmp/tmp.pCkL5x2h8r/typo.tsv (set by --quarantine-file or FM_TEST_QUARANTINE_FILE)
+exit=2
+
+### S5: default tracked list absent -> logged, run continues (copy of repo without the tsv)
+exit=0
+selected: 250
+fm-test-run: quarantine list not readable: /tmp/tmp.pCkL5x2h8r/copy/tests/fm-test-quarantine.tsv (nothing quarantined)
+
+### S6: upstream-sync ship brief gate 3 renders the full-suite quarantine command
+exit=0
+3. NON-PRE-EXISTING REGRESSION STOP. Run the test suite after the merge with `bin/fm-test-run.sh --all --exclude-quarantined --pc02-if-idle`. The `--exclude-quarantined` flag drops exactly the scripts in the tracked `tests/fm-test-quarantine.tsv` list, each printed as a loud `FM_TEST_QUARANTINED` line and summed in `FM_TEST_QUARANTINE_SUMMARY` - those are known pre-existing host-sensitive failures owned by follow-up items, excluded on purpose and never hidden. For every NON-quarantined failure, reproduce it identically on the pre-merge base (checked out separately, never assumed) before calling it pre-existing. Any failure that does not reproduce identically on the pre-merge base blocks unattended progress: append `blocked: <test> fails post-merge and does not reproduce on pre-merge base` with the triage table (test, pre-merge result, post-merge result) and stop rather than shipping past it.
+
+### S7: --changed selection resolves on this branch (quarantine tsv mapped)
+tests/fm-test-run.test.sh
+exit=0
