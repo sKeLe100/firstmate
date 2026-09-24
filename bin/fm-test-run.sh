@@ -123,7 +123,8 @@
 #                   terminate a script that runs longer than N seconds and
 #                   record it as exit 124 (0 disables, the default). The
 #                   --changed path applies a 900s base automatically (1500s
-#                   for tests/fm-watch-triage.test.sh), scaled
+#                   for tests/fm-watch-triage.test.sh and
+#                   tests/fm-captain-hold-lifecycle.test.sh), scaled
 #                   up by max(1, load5/cpus) so host contention cannot turn a
 #                   healthy script into a false timeout: on an idle host this
 #                   still converts a HUNG script into a bounded failure, but
@@ -156,7 +157,7 @@
 #   FM_TEST_END <iso8601> <script> exit=<code> duration_ms=<n> gate_skip=<true|false>
 #
 # Once per automatic --changed/scripts run, before scheduling (stdout):
-#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n> watch_triage_timeout_secs=<n>
+#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n> watch_triage_timeout_secs=<n> captain_hold_timeout_secs=<n>
 #     Lets a later reader tell a load kill from a genuine hang.
 #
 # After all scripts (stdout):
