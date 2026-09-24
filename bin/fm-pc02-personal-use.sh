@@ -81,9 +81,10 @@ PS1
     # with no visible window) that flips the same flag file over `wsl.exe`
     # and shows a brief confirmation popup. `wsl.exe` with no `-d` targets
     # PC02's only registered distro, the same one `ssh pc02` lands in.
-    toggle_vbs=$(cat <<'VBS'
+    flag_q=$(printf '%q' "$PERSONAL_USE_FLAG")
+    toggle_vbs=$(cat <<VBS
 Set objShell = CreateObject("WScript.Shell")
-toggleCmd = "if [ -f ~/.fm-pc02-personal-use ]; then rm -f ~/.fm-pc02-personal-use; echo OFF; else touch ~/.fm-pc02-personal-use; echo ON; fi"
+toggleCmd = "if [ -f ~/$flag_q ]; then rm -f ~/$flag_q; echo OFF; else touch ~/$flag_q; echo ON; fi"
 Set objExec = objShell.Exec("wsl.exe bash -lc """ & toggleCmd & """")
 Do While objExec.Status = 0
   WScript.Sleep 50

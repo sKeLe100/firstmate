@@ -55,8 +55,8 @@ echo "not ok - intentional fixture failure"
 exit 1
 SH
   chmod +x "$ROOT/$fail_script"
-  # A later real offload's --delete rsync removes this from PC02's mirror
-  # once it is gone from $ROOT, so cleanup here only needs the local copy.
+  # Each offload's PC02 mirror is removed when its run ends, so cleanup
+  # here only needs the local copy.
   out=$("$SCRIPT" "$fail_script" 2>&1)
   status=$?
   rm -f "$ROOT/$fail_script"

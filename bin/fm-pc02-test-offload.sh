@@ -22,7 +22,8 @@
 #     authoritative.
 #   - ssh access ("ssh pc02" lands in PC02's WSL) is the path documented in
 #     docs/pc02-outage-runbook.md, which also owns llama-swap's tailnet
-#     address used by the llama-swap HTTP check below.
+#     address (FM_PC02_OFFLOAD_LLAMASWAP_URL's default) used by the
+#     llama-swap occupancy check below.
 #   - git-dir/git-common-dir resolution is fm-primary-scope-lib.sh's
 #     fm_resolve_git_path, needed because this script's own worktree is
 #     typically a linked git worktree (bin/fm-spawn.sh's isolated task
@@ -36,8 +37,10 @@
 #      (bin/fm-pc02-personal-use.sh owns the PC01-side on/off/status toggle;
 #      docs/pc02-outage-runbook.md documents the captain's no-terminal
 #      Windows desktop toggle that writes the same file).
-#   2. Automatic: PC02's own llama-swap HTTP endpoint responding (any live
-#      LLM session, not just one firstmate dispatched), Windows-side CPU and
+#   2. Automatic: PC02's own llama-swap /running endpoint listing any loaded
+#      model (any live LLM session, not just one firstmate dispatched; an
+#      idle llama-swap with nothing loaded does not count, and one that is
+#      not answering at all is serving nothing), Windows-side CPU and
 #      GPU utilization (a game or other heavy foreground use shows up here
 #      without needing per-process foreground-window detection), each
 #      against a configurable busy threshold.
@@ -50,7 +53,9 @@
 # never also runs the suite again locally (the two would double whatever
 # time budget the caller enforces, such as no-mistakes' 30-minute test-agent
 # deadline); the remote execution itself is still bounded
-# (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS) because an orphaned background process
+# (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, enforced by `timeout` on PC02 itself so
+# the remote suite's process group is killed there rather than orphaned
+# behind a dropped ssh client) because an orphaned background process
 # a test under it leaves running can hold the ssh channel open long after
 # fm-test-run.sh itself has finished on PC02 - observed empirically running
 # this repo's own full --changed suite through this script, not a
@@ -76,9 +81,13 @@
 #                                      back, since the remote work already
 #                                      spent is not worth discarding blind
 #   FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
-#                                      the ssh target's home, holding the
-#                                      mirrored worktree and git store
+#                                      the ssh target's home, holding one
+#                                      private mirror (worktree + git store)
+#                                      per offload run, removed when the run
+#                                      ends so concurrent runs never share one
 #                                      (default: .fm-pc02-test-offload)
+#   FM_PC02_OFFLOAD_LLAMASWAP_URL       llama-swap base URL as PC02 reaches it
+#                                      (default: http://100.67.55.77:8080)
 #   FM_PC02_OFFLOAD_REQUIRED_TOOLS      space-separated tool list PC02 must
 #                                      have (default: see REQUIRED_TOOLS
 #                                      below); override only to reflect a
@@ -122,8 +131,11 @@ PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-3600}"
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
-REMOTE_WORKTREE="$REMOTE_BASE/worktree"
-REMOTE_COMMON="$REMOTE_BASE/common.git"
+REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
+REMOTE_WORKTREE="$REMOTE_RUN/worktree"
+REMOTE_COMMON="$REMOTE_RUN/common.git"
+REMOTE_RUN_CREATED=0
+LLAMASWAP_URL="${FM_PC02_OFFLOAD_LLAMASWAP_URL:-http://100.67.55.77:8080}"
 PERSONAL_USE_FLAG="${FM_PC02_OFFLOAD_PERSONAL_USE_FLAG:-.fm-pc02-personal-use}"
 RESOURCE_CHECK_PS1="${FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1:-/mnt/c/pc02-llm-server/bin/fm-pc02-resource-check.ps1}"
 CPU_BUSY_PCT="${FM_PC02_OFFLOAD_CPU_BUSY_PCT:-50}"
@@ -136,12 +148,18 @@ GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
 # is required outright by tests/fm-calm-pi-extension.test.sh's rendered-export
 # guard, none of them optional capabilities. A host missing any of these
 # would fail differently than PC01, not just thinner, so no-mistakes would
-# judge a different outcome. Require them on PC02 too rather than risk that;
-# see data/pc02-local-test-offload/host-changes.md for how PC02 got each one.
+# judge a different outcome. Require them on PC02 too rather than risk that.
 REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint ruby chromium}"
+
+remove_remote_run() {
+  [ "$REMOTE_RUN_CREATED" -eq 1 ] || return 0
+  timeout "$PROBE_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "rm -rf $(printf '%q' "$REMOTE_RUN")")" >/dev/null 2>&1 \
+    || echo "fm-pc02-test-offload: could not remove PC02 mirror $REMOTE_RUN" >&2
+}
 
 run_local() {  # <reason>
   echo "fm-pc02-test-offload: $1; running on PC01" >&2
+  remove_remote_run
   exec "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}"
 }
 
@@ -164,8 +182,8 @@ fi
 probe_cmd=$(cat <<PROBE
 [ -f "\$HOME/$PERSONAL_USE_FLAG" ] && echo "personal-use:on"
 for t in $REQUIRED_TOOLS; do command -v "\$t" >/dev/null 2>&1 || echo "missing:\$t"; done
-if curl -s --connect-timeout 3 -o /dev/null -w '%{http_code}' http://100.67.55.77:8080/health 2>/dev/null | grep -q '^2'; then
-  echo "llama-swap:responding"
+if ls_running=\$(curl -sf --connect-timeout 3 --max-time 5 $(printf '%q' "$LLAMASWAP_URL/running") 2>/dev/null); then
+  echo "llama-swap-running:\$(printf '%s' "\$ls_running" | jq -r '.running | length' 2>/dev/null)"
 fi
 if [ -f "$RESOURCE_CHECK_PS1" ]; then
   rc_win_path=\$(wslpath -w "$RESOURCE_CHECK_PS1" 2>/dev/null)
@@ -186,13 +204,13 @@ fi
 
 personal_use=0
 missing_tools=
-llama_swap_responding=0
+llama_swap_running=0
 resource_line=
 while IFS= read -r probe_line; do
   case "$probe_line" in
     personal-use:on) personal_use=1 ;;
     missing:*) missing_tools="$missing_tools ${probe_line#missing:}" ;;
-    llama-swap:responding) llama_swap_responding=1 ;;
+    llama-swap-running:*) llama_swap_running="${probe_line#llama-swap-running:}" ;;
     resource:*) resource_line="${probe_line#resource:}" ;;
   esac
 done <<PROBE_OUT
@@ -205,7 +223,12 @@ PROBE_OUT
 [ "$personal_use" -ne 1 ] || run_local "PC02 personal-use switch is on"
 
 # Layer 2 (automatic): any live LLM session at all, not just a firstmate one.
-[ "$llama_swap_responding" -ne 1 ] || run_local "PC02 llama-swap is responding to a live session"
+# An unparseable /running answer is Layer 3 - "unclear" - and routes local.
+case "$llama_swap_running" in
+  0) ;;
+  '' | *[!0-9]*) run_local "PC02 llama-swap running-model check unclear (got '$llama_swap_running'); treating as busy" ;;
+  *) run_local "PC02 llama-swap has $llama_swap_running model(s) loaded for a live session" ;;
+esac
 
 # Layer 2 (automatic): Windows-wide CPU/GPU utilization. A missing or
 # unparseable resource line is Layer 3 - "unclear" - and also routes local.
@@ -241,6 +264,7 @@ git_dir=$(fm_resolve_git_path "$ROOT" --git-dir) || run_local "could not resolve
 git_common_dir=$(fm_resolve_git_path "$ROOT" --git-common-dir) || run_local "could not resolve this worktree's git-common-dir"
 
 mkdir_cmd="mkdir -p $(printf '%q' "$REMOTE_WORKTREE") $(printf '%q' "$REMOTE_COMMON")"
+REMOTE_RUN_CREATED=1
 mkdir_out=$(timeout "$PROBE_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "$mkdir_cmd")" 2>&1)
 mkdir_rc=$?
 if [ "$mkdir_rc" -ne 0 ]; then
@@ -295,18 +319,20 @@ fi
 
 # 4. Run the exact same fm-test-run.sh invocation on PC02, streaming its
 # output live; its exit code becomes this script's exit code unchanged.
-# Bounded by RUN_TIMEOUT: an orphaned background process a test leaves
-# running on PC02 can hold the ssh channel open long after fm-test-run.sh
-# itself exits there (see header), so this is not merely defensive. A run
+# Bounded by RUN_TIMEOUT on PC02 itself: an orphaned background process a
+# test leaves running there can hold the ssh channel open long after
+# fm-test-run.sh itself exits (see header), so this is not merely defensive.
+# The remote `timeout` kills the whole remote process group; the local one
+# is only a backstop for a wedged ssh connection. A run
 # that hits this bound fails outright (exit 124) rather than falling back to
 # a second local run, which would silently double the caller's time budget.
 echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
-remote_test_cmd="cd $(printf '%q' "$REMOTE_WORKTREE") && exec bin/fm-test-run.sh"
+remote_test_cmd="cd $(printf '%q' "$REMOTE_WORKTREE") && exec timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-test-run.sh"
 for a in "${ARGS[@]}"; do
   remote_test_cmd="$remote_test_cmd $(printf '%q' "$a")"
 done
 # shellcheck disable=SC2029 # deliberate client-side expansion: remote_test_cmd is already %q-quoted for the remote shell's re-parse.
-timeout "$RUN_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "$remote_test_cmd")"
+timeout "$((RUN_TIMEOUT + 30))" ssh "$HOST" "bash -lc $(printf '%q' "$remote_test_cmd")"
 rc=$?
 if [ "$rc" -eq 124 ]; then
   echo "fm-pc02-test-offload: remote run on PC02 exceeded ${RUN_TIMEOUT}s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry" >&2
@@ -332,5 +358,7 @@ if [ -n "$json_path" ]; then
   timeout "$SYNC_TIMEOUT" rsync -az -e ssh "$HOST:$remote_json" "$local_json" >/dev/null 2>&1 \
     || echo "fm-pc02-test-offload: could not retrieve --json artifact from PC02 ($json_path)" >&2
 fi
+
+remove_remote_run
 
 exit "$rc"

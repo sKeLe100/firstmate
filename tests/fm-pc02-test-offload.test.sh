@@ -152,12 +152,12 @@ SH
   pass "the captain's personal-use switch falls back to a local run"
 }
 
-test_llama_swap_responding_falls_back_to_local() {
+test_llama_swap_loaded_model_falls_back_to_local() {
   local fakebin out status
   fakebin=$(fm_fakebin "$TMP_ROOT/llama-swap-live")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-printf 'llama-swap:responding\nresource:cpu=1 gpu=0\n'
+printf 'llama-swap-running:1\nresource:cpu=1 gpu=0\n'
 exit 0
 SH
   chmod +x "$fakebin/ssh"
@@ -165,10 +165,53 @@ SH
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
-  expect_code 0 "$status" "a responding llama-swap must still run the real suite locally: $out"
-  assert_contains "$out" "PC02 llama-swap is responding" \
+  expect_code 0 "$status" "a llama-swap with a loaded model must still run the real suite locally: $out"
+  assert_contains "$out" "PC02 llama-swap has 1 model(s) loaded" \
     "llama-swap fallback did not explain why: $out"
-  pass "llama-swap responding to any live session falls back to a local run"
+  pass "llama-swap holding a loaded model for any live session falls back to a local run"
+}
+
+test_idle_llama_swap_does_not_block_offload() {
+  local fakebin out status
+  fakebin=$(fm_fakebin "$TMP_ROOT/llama-swap-idle")
+  cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf 'llama-swap-running:0\nresource:cpu=1 gpu=0\n'
+exit 0
+SH
+  chmod +x "$fakebin/ssh"
+  cat > "$fakebin/rsync" <<'SH'
+#!/usr/bin/env bash
+exit 11
+SH
+  chmod +x "$fakebin/rsync"
+
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "the rsync-failure fallback must still run the real suite locally: $out"
+  assert_contains "$out" "rsync to PC02 failed or timed out" \
+    "an idle llama-swap with no loaded model stopped the offload before the sync: $out"
+  pass "a healthy llama-swap with no loaded model does not block offloading"
+}
+
+test_unclear_llama_swap_answer_falls_back_to_local() {
+  local fakebin out status
+  fakebin=$(fm_fakebin "$TMP_ROOT/llama-swap-unclear")
+  cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf 'llama-swap-running:\nresource:cpu=1 gpu=0\n'
+exit 0
+SH
+  chmod +x "$fakebin/ssh"
+
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "an unclear llama-swap answer must still run the real suite locally: $out"
+  assert_contains "$out" "PC02 llama-swap running-model check unclear" \
+    "unclear llama-swap fallback did not explain why: $out"
+  pass "an unparseable llama-swap /running answer defaults to a local run"
 }
 
 test_high_cpu_falls_back_to_local() {
@@ -260,7 +303,9 @@ test_missing_required_tool_falls_back_to_local
 test_slow_probe_times_out_and_falls_back
 test_rsync_failure_falls_back_to_local
 test_personal_use_switch_falls_back_to_local
-test_llama_swap_responding_falls_back_to_local
+test_llama_swap_loaded_model_falls_back_to_local
+test_idle_llama_swap_does_not_block_offload
+test_unclear_llama_swap_answer_falls_back_to_local
 test_high_cpu_falls_back_to_local
 test_high_gpu_falls_back_to_local
 test_unclear_resource_check_falls_back_to_local
