@@ -1548,11 +1548,13 @@ PY
 # a lone noisy run only warns, so shared-runner noise on one run can't turn
 # into a false red by itself.
 test_check_hint_drift_flags_stale_hint() {
-  local tmp script hint clean_json drift_json drift2_json history rc out
+  local tmp script hint floor_ms clean_json drift_json drift2_json history rc out
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-hintdrift.XXXXXX")
   script=tests/fm-gitignore-config.test.sh
   hint=$(sed -n "s#^${script} \\([0-9][0-9]*\\)\$#\\1#p" "$RUNNER")
   [ -n "$hint" ] || fail "could not read the current hint for $script from $RUNNER"
+  floor_ms=$(sed -n 's/^PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=\([0-9][0-9]*\)$/\1/p' "$RUNNER")
+  [ -n "$floor_ms" ] || fail "could not read PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS from $RUNNER"
   history="$tmp/history.json"
 
   # Exactly at the hint: no drift.
@@ -1571,16 +1573,20 @@ JSON
   # drift, so it must only warn, not refuse.
   drift_json="$tmp/drift1.json"
   cat >"$drift_json" <<JSON
-{"scripts": [{"path": "$script", "duration_ms": $((hint + 1))}]}
+{"scripts": [{"path": "$script", "duration_ms": $((hint + floor_ms + 1))}]}
 JSON
+  # Comfortably larger than drift_json above even after the floor's absolute
+  # offset, so it remains the slowest of the two regardless of the floor
+  # value: a plain hint*3 stopped being reliably the larger figure once
+  # drift_json itself had to add floor_ms to clear the floor on a small hint.
   drift2_json="$tmp/drift2.json"
   cat >"$drift2_json" <<JSON
-{"scripts": [{"path": "$script", "duration_ms": $((hint * 3))}]}
+{"scripts": [{"path": "$script", "duration_ms": $((hint + floor_ms * 2))}]}
 JSON
   out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$drift_json" "$drift2_json" 2>&1) \
     || fail "a single-run drift spike must not refuse the check: $out"
   assert_contains "$out" "$script" "the warning must name the drifting script"
-  assert_contains "$out" "measured=$((hint * 3))ms" "the warning must show the slowest measured duration across inputs"
+  assert_contains "$out" "measured=$((hint + floor_ms * 2))ms" "the warning must show the slowest measured duration across inputs"
   assert_contains "$out" "confirmed=0" "a first-time drift must not be confirmed"
 
   # Same script drifts again on the next run (history now records the first
@@ -1592,7 +1598,7 @@ JSON
   [ "$rc" -ne 0 ] || fail "a script that drifts on two consecutive runs must refuse: $out"
   assert_contains "$out" "$script" "the drift report must name the stale script"
   assert_contains "$out" "hint=${hint}ms" "the drift report must show the recorded hint"
-  assert_contains "$out" "measured=$((hint * 3))ms" "the drift report must show the slowest measured duration across inputs"
+  assert_contains "$out" "measured=$((hint + floor_ms * 2))ms" "the drift report must show the slowest measured duration across inputs"
   assert_contains "$out" "two consecutive runs" "the drift report must explain why this run refuses"
 
   # A clean run afterward resets the history, so a one-off spike followed by
@@ -1604,6 +1610,43 @@ JSON
 
   rm -rf "$tmp"
   pass "--check-hint-drift only refuses a hint that drifts on two consecutive runs, and warns on a single-run spike"
+}
+
+# A sub-floor swing on a very short script can cross the 1.5x ratio purely
+# from scheduler noise; PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS keeps the ratio
+# meaningful only once the absolute excess is worth caring about.
+test_check_hint_drift_ignores_sub_floor_swings() {
+  local tmp script hint floor_ms under_json over_json history out
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-hintdrift-floor.XXXXXX")
+  script=tests/fm-backend-zellij-smoke.test.sh
+  hint=$(sed -n "s#^${script} \\([0-9][0-9]*\\)\$#\\1#p" "$RUNNER")
+  [ -n "$hint" ] || fail "could not read the current hint for $script from $RUNNER"
+  floor_ms=$(sed -n 's/^PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=\([0-9][0-9]*\)$/\1/p' "$RUNNER")
+  [ -n "$floor_ms" ] || fail "could not read PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS from $RUNNER"
+  history="$tmp/history.json"
+
+  # Past the 1.5x ratio but under the absolute floor: must not be flagged at all.
+  under_json="$tmp/under.json"
+  cat >"$under_json" <<JSON
+{"scripts": [{"path": "$script", "duration_ms": $((hint * 2))}]}
+JSON
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$under_json") \
+    || fail "a sub-floor ratio swing must not be flagged: $out"
+  assert_contains "$out" "FM_TEST_HINT_DRIFT ok" "sub-floor swing must report ok"
+  assert_contains "$out" "confirmed=0" "sub-floor swing must not be confirmed"
+  assert_contains "$out" "warned=0" "sub-floor swing must not even warn"
+
+  # Past both the ratio and the floor: must warn as ordinary first-time drift.
+  over_json="$tmp/over.json"
+  cat >"$over_json" <<JSON
+{"scripts": [{"path": "$script", "duration_ms": $((hint + floor_ms + 1))}]}
+JSON
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$over_json" 2>&1) \
+    || fail "a past-floor ratio swing must warn, not refuse: $out"
+  assert_contains "$out" "$script" "a past-floor swing must be named as drift"
+
+  rm -rf "$tmp"
+  pass "--check-hint-drift ignores a ratio-only swing under PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS"
 }
 
 # The duration regression this guard exists for: a suite whose scripts are all
@@ -2404,6 +2447,7 @@ test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
 test_check_hint_drift_flags_stale_hint
+test_check_hint_drift_ignores_sub_floor_swings
 test_fail_fast_stops_after_first_failure
 test_fail_fast_jobs_stops_scheduling
 test_fail_fast_skips_the_unproven_serial_tail

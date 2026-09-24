@@ -33,9 +33,10 @@
 #                   <lane.json> [more lane.json...]
 #                   Flags when a green run's own measured duration for a
 #                   hinted portable-serial script exceeds that hint by more
-#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (1.5x), taking
-#                   the slowest measured duration per script across every
-#                   input given. A script that drifts on only this run is
+#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (1.5x) and by
+#                   at least PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS (250ms),
+#                   taking the slowest measured duration per script across
+#                   every input given. A script that drifts on only this run is
 #                   logged as a warning, not a failure - noise on one run is
 #                   expected. --hint-drift-history persists this run's drift
 #                   set to <path> and compares it against what was persisted
@@ -276,6 +277,13 @@ PORTABLE_SERIAL_TIMEOUT_MULTIPLIER=2
 # runs (see HINT_DRIFT_HISTORY below), so a lone noisy run no longer fails the
 # check and the tighter 1.5x margin is safe again.
 PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER=1.5
+
+# Absolute floor, in milliseconds, a measured duration must exceed its hint by
+# before --check-hint-drift counts it as drift, even past the ratio above. A
+# ~50ms script crossing the 1.5x ratio on a ~30ms swing (51->88ms, 54->82ms) is
+# scheduler noise, not a script that grew; 250ms absorbs that noise while a
+# script genuinely drifting in the 1-2s range (e.g. 1106->2985ms) still flags.
+PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=250
 
 # Largest share of the serial lane allowed to run on the default weight above.
 # Hints are what keep the shards balanced, so once too much of the lane is
@@ -869,10 +877,10 @@ tests/fm-gate-refuse.test.sh 4977
 tests/fm-gemini-harness.test.sh 1349
 tests/fm-gitignore-config.test.sh 62
 tests/fm-gotmp.test.sh 3100
-tests/fm-grok-continuity-live-e2e.test.sh 62
+tests/fm-grok-continuity-live-e2e.test.sh 181
 tests/fm-grok-stop-live-e2e.test.sh 72
 tests/fm-guard-stale-banner.test.sh 32981
-tests/fm-harness-adapter-instructions-live-e2e.test.sh 60
+tests/fm-harness-adapter-instructions-live-e2e.test.sh 105
 tests/fm-harness-adapter-references.test.sh 120
 tests/fm-harness-liveness-drift-live-e2e.test.sh 1300
 tests/fm-harness-precedence.test.sh 4062
@@ -897,7 +905,7 @@ tests/fm-muse-harness.test.sh 55572
 tests/fm-muse-signals-live-e2e.test.sh 81
 tests/fm-no-mistakes-required-body-fetch.test.sh 535
 tests/fm-no-mistakes-required.test.sh 370
-tests/fm-nomistakes-gate-check.test.sh 1106
+tests/fm-nomistakes-gate-check.test.sh 2985
 tests/fm-nomistakes-poll-lib.test.sh 8000
 tests/fm-omp-harness.test.sh 59969
 tests/fm-omp-primary-live-e2e.test.sh 110
@@ -960,8 +968,8 @@ tests/fm-send-cache-stale-guard.test.sh 20398
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 63
 tests/fm-send-inbox.test.sh 38956
 tests/fm-send-remote-delivery.test.sh 27686
-tests/fm-send-resolve-key.test.sh 19619
-tests/fm-send-secondmate-marker-herdr-e2e.test.sh 51
+tests/fm-send-resolve-key.test.sh 31315
+tests/fm-send-secondmate-marker-herdr-e2e.test.sh 88
 tests/fm-send-secondmate-marker.test.sh 6252
 tests/fm-session-lock-ancestry.test.sh 4200
 tests/fm-session-start.test.sh 156952
@@ -977,7 +985,7 @@ tests/fm-spawn-worktree-settle.test.sh 13000
 tests/fm-startup-memory-budget.test.sh 6964
 tests/fm-startup-network.test.sh 62274
 tests/fm-stat-shadowing.test.sh 54
-tests/fm-stow-cascade.test.sh 3101
+tests/fm-stow-cascade.test.sh 5924
 tests/fm-subagent-pretool-check.test.sh 1030
 tests/fm-supervision-events.test.sh 719
 tests/fm-tangle-guard.test.sh 9662
@@ -1411,7 +1419,8 @@ PY
 }
 
 # Refuses only when a hinted portable-serial script's measured duration
-# exceeds PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER on two consecutive runs (via
+# exceeds its hint by more than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER and by at
+# least PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS on two consecutive runs (via
 # --hint-drift-history); a single drifting run is logged as a warning, not a
 # failure, since shared-runner noise can swing one run past the margin without
 # the hint actually being stale. --check-coverage only proves the partition is
@@ -1424,15 +1433,16 @@ check_hint_drift() {
   local hints_tmp rc
   hints_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-test-hints.XXXXXX") || die "--check-hint-drift: could not create temp file"
   portable_serial_weight_hints >"$hints_tmp"
-  python3 - "$hints_tmp" "$PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER" "$HINT_DRIFT_HISTORY" "$@" <<'PY'
+  python3 - "$hints_tmp" "$PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER" "$PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS" "$HINT_DRIFT_HISTORY" "$@" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 hints_path = Path(sys.argv[1])
 multiplier = float(sys.argv[2])
-history_path = Path(sys.argv[3]) if sys.argv[3] else None
-inputs = [Path(p) for p in sys.argv[4:]]
+floor_ms = int(sys.argv[3])
+history_path = Path(sys.argv[4]) if sys.argv[4] else None
+inputs = [Path(p) for p in sys.argv[5:]]
 
 hints = {}
 for line in hints_path.read_text(encoding="utf-8").splitlines():
@@ -1462,7 +1472,7 @@ for path, hint_ms in hints.items():
         continue
     checked += 1
     m = measured[path]
-    if hint_ms > 0 and m > hint_ms * multiplier:
+    if hint_ms > 0 and m > hint_ms * multiplier and (m - hint_ms) >= floor_ms:
         drift[path] = m / hint_ms
 
 prior_drift = {}
@@ -1478,7 +1488,7 @@ warned_only = sorted(p for p in drift if p not in prior_drift)
 if warned_only:
     print(
         f"::warning::fm-test-run: hint drift: measured duration exceeded hint by "
-        f"more than {multiplier:g}x on this run only for {len(warned_only)} "
+        f"more than {multiplier:g}x and by at least {floor_ms}ms on this run only for {len(warned_only)} "
         "script(s); will refuse only if this recurs on the next run:",
         file=sys.stderr,
     )
@@ -1492,7 +1502,7 @@ if history_path is not None:
 if confirmed:
     print(
         f"fm-test-run: hint drift: measured duration exceeded hint by more than "
-        f"{multiplier:g}x on two consecutive runs for {len(confirmed)} script(s):",
+        f"{multiplier:g}x and by at least {floor_ms}ms on two consecutive runs for {len(confirmed)} script(s):",
         file=sys.stderr,
     )
     for path in confirmed:
