@@ -55,12 +55,15 @@
 # deadline); the remote execution itself is still bounded
 # (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, enforced by `timeout` on PC02 itself so
 # the remote suite's process group is killed there rather than orphaned
-# behind a dropped ssh client) because an orphaned background process
-# a test under it leaves running can hold the ssh channel open long after
-# fm-test-run.sh itself has finished on PC02 - observed empirically running
-# this repo's own full --changed suite through this script, not a
-# hypothetical - so a run that hits this bound is reported as a failure
-# rather than silently doubling the budget with a second local run.
+# behind a dropped ssh client), and a run that hits this bound is reported
+# as a failure rather than silently doubling the budget with a second local
+# run. An orphaned background process a test leaves running can otherwise
+# hold the ssh channel open long after fm-test-run.sh itself has finished on
+# PC02 - observed empirically running this repo's own full --changed suite
+# through this script, not a hypothetical - so as soon as fm-test-run.sh
+# exits there, the rest of its process group is killed and its own exit code
+# is returned. The per-run PC02 mirror, and any of its processes still
+# running, are removed on every exit path, including an interrupt.
 #
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
@@ -153,9 +156,21 @@ REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shell
 
 remove_remote_run() {
   [ "$REMOTE_RUN_CREATED" -eq 1 ] || return 0
-  timeout "$PROBE_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "rm -rf $(printf '%q' "$REMOTE_RUN")")" >/dev/null 2>&1 \
+  REMOTE_RUN_CREATED=0
+  local run_q cleanup_cmd
+  run_q=$(printf '%q' "$REMOTE_RUN")
+  cleanup_cmd="[ -f $run_q/pgid ] && kill -KILL -- \"-\$(cat $run_q/pgid)\" 2>/dev/null; rm -rf $run_q"
+  timeout "$PROBE_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "$cleanup_cmd")" >/dev/null 2>&1 \
     || echo "fm-pc02-test-offload: could not remove PC02 mirror $REMOTE_RUN" >&2
 }
+
+on_signal() {  # <exit code>
+  [ -z "${remote_ssh_pid:-}" ] || kill "$remote_ssh_pid" 2>/dev/null
+  exit "$1"
+}
+trap remove_remote_run EXIT
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
 
 run_local() {  # <reason>
   echo "fm-pc02-test-offload: $1; running on PC01" >&2
@@ -322,18 +337,30 @@ fi
 # Bounded by RUN_TIMEOUT on PC02 itself: an orphaned background process a
 # test leaves running there can hold the ssh channel open long after
 # fm-test-run.sh itself exits (see header), so this is not merely defensive.
-# The remote `timeout` kills the whole remote process group; the local one
-# is only a backstop for a wedged ssh connection. A run
+# The remote `timeout` kills the whole remote process group, and so does the
+# wrapper once fm-test-run.sh returns, so a straggler cannot pin the channel;
+# the local one is only a backstop for a wedged ssh connection. A run
 # that hits this bound fails outright (exit 124) rather than falling back to
 # a second local run, which would silently double the caller's time budget.
 echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
-remote_test_cmd="cd $(printf '%q' "$REMOTE_WORKTREE") && exec timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-test-run.sh"
+remote_suite_cmd="timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-test-run.sh"
 for a in "${ARGS[@]}"; do
-  remote_test_cmd="$remote_test_cmd $(printf '%q' "$a")"
+  remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
 done
+remote_test_cmd="cd $(printf '%q' "$REMOTE_WORKTREE") || exit 1
+$remote_suite_cmd &
+pgid=\$!
+echo \"\$pgid\" > ../pgid
+wait \"\$pgid\"
+rc=\$?
+kill -KILL -- \"-\$pgid\" 2>/dev/null
+exit \"\$rc\""
 # shellcheck disable=SC2029 # deliberate client-side expansion: remote_test_cmd is already %q-quoted for the remote shell's re-parse.
-timeout "$((RUN_TIMEOUT + 30))" ssh "$HOST" "bash -lc $(printf '%q' "$remote_test_cmd")"
+timeout "$((RUN_TIMEOUT + 30))" ssh "$HOST" "bash -lc $(printf '%q' "$remote_test_cmd")" &
+remote_ssh_pid=$!
+wait "$remote_ssh_pid"
 rc=$?
+remote_ssh_pid=
 if [ "$rc" -eq 124 ]; then
   echo "fm-pc02-test-offload: remote run on PC02 exceeded ${RUN_TIMEOUT}s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry" >&2
 fi
@@ -358,7 +385,5 @@ if [ -n "$json_path" ]; then
   timeout "$SYNC_TIMEOUT" rsync -az -e ssh "$HOST:$remote_json" "$local_json" >/dev/null 2>&1 \
     || echo "fm-pc02-test-offload: could not retrieve --json artifact from PC02 ($json_path)" >&2
 fi
-
-remove_remote_run
 
 exit "$rc"
