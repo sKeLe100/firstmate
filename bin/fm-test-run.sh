@@ -81,7 +81,10 @@
 #                   this flag so known pre-existing failures cannot stall a sync.
 #   --quarantine-file <path>
 #                   read the quarantine list from <path> instead of the tracked
-#                   default (mostly for tests and fixture repos).
+#                   default (mostly for tests and fixture repos). An explicit
+#                   path (flag or FM_TEST_QUARANTINE_FILE) that is missing or
+#                   unreadable is refused; a missing tracked default only logs
+#                   and quarantines nothing.
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
@@ -2133,8 +2136,7 @@ apply_exclude_families() {
 # exclude; see that file's header and docs/configuration.md "Upstream autosync".
 # Reads the list's non-comment lines, each "<script>\t<signature>\t<reason>\t<owner>",
 # and prints them one per line for the caller. An empty list quarantines
-# nothing; an unreadable default list is reported, and an unreadable list named
-# by --quarantine-file or FM_TEST_QUARANTINE_FILE is refused.
+# nothing; apply_exclude_quarantined checks readability before calling this.
 quarantine_entries() {
   local file=$1
   awk -F'\t' '
