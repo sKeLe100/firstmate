@@ -164,6 +164,7 @@ remove_remote_run() {
     || echo "fm-pc02-test-offload: could not remove PC02 mirror $REMOTE_RUN" >&2
 }
 
+# shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 on_signal() {  # <exit code>
   [ -z "${remote_ssh_pid:-}" ] || kill "$remote_ssh_pid" 2>/dev/null
   exit "$1"
