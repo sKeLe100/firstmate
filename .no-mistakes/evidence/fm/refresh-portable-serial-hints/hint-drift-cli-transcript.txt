@@ -1,0 +1,39 @@
+# noise.json: {"scripts": [{"path":"tests/fm-backend-zellij-smoke.test.sh","duration_ms":200}]}
+$ bin/fm-test-run.sh --check-hint-drift /tmp/tmp.BqmKl3e7c0/noise.json
+FM_TEST_HINT_DRIFT ok checked=1 confirmed=0 warned=0
+[exit 0]
+
+# edge.json: {"scripts": [{"path":"tests/fm-backend-zellij-smoke.test.sh","duration_ms":273}]}
+$ bin/fm-test-run.sh --check-hint-drift /tmp/tmp.BqmKl3e7c0/edge.json
+::warning::fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on this run only for 1 script(s); will refuse only if this recurs on the next run:
+  tests/fm-backend-zellij-smoke.test.sh: hint=23ms measured=273ms ratio=11.87x
+FM_TEST_HINT_DRIFT ok checked=1 confirmed=0 warned=1
+[exit 0]
+
+# edgeminus.json: {"scripts": [{"path":"tests/fm-backend-zellij-smoke.test.sh","duration_ms":272}]}
+$ bin/fm-test-run.sh --check-hint-drift /tmp/tmp.BqmKl3e7c0/edgeminus.json
+FM_TEST_HINT_DRIFT ok checked=1 confirmed=0 warned=0
+[exit 0]
+
+# refreshed.json: {"scripts": [{"path":"tests/fm-nomistakes-gate-check.test.sh","duration_ms":2985},{"path":"tests/fm-send-secondmate-marker-herdr-e2e.test.sh","duration_ms":88},{"path":"tests/fm-send-resolve-key.test.sh","duration_ms":31315},{"path":"tests/fm-stow-cascade.test.sh","duration_ms":5924},{"path":"tests/fm-grok-continuity-live-e2e.test.sh","duration_ms":181},{"path":"tests/fm-harness-adapter-instructions-live-e2e.test.sh","duration_ms":105}]}
+$ bin/fm-test-run.sh --check-hint-drift /tmp/tmp.BqmKl3e7c0/refreshed.json
+FM_TEST_HINT_DRIFT ok checked=6 confirmed=0 warned=0
+[exit 0]
+
+# real.json: {"scripts": [{"path":"tests/fm-harness-liveness-drift-live-e2e.test.sh","duration_ms":2500}]}
+$ bin/fm-test-run.sh --check-hint-drift --hint-drift-history /tmp/tmp.BqmKl3e7c0/h.json /tmp/tmp.BqmKl3e7c0/real.json
+::warning::fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on this run only for 1 script(s); will refuse only if this recurs on the next run:
+  tests/fm-harness-liveness-drift-live-e2e.test.sh: hint=1300ms measured=2500ms ratio=1.92x
+FM_TEST_HINT_DRIFT ok checked=1 confirmed=0 warned=1
+[exit 0]
+
+$ bin/fm-test-run.sh --check-hint-drift --hint-drift-history /tmp/tmp.BqmKl3e7c0/h.json /tmp/tmp.BqmKl3e7c0/real.json
+fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on two consecutive runs for 1 script(s):
+  tests/fm-harness-liveness-drift-live-e2e.test.sh: hint=1300ms measured=2500ms ratio=1.92x
+fm-test-run: refresh the hints: docs/fm-test-portable-shards.md
+[exit 1]
+
+$ bin/fm-test-run.sh --check-coverage
+FM_TEST_COVERAGE ok total=248 parallel=24 parallel_max_ms=417163 parallel_imbalance_ms=2894 parallel_unhinted=0 serial=208 serial_shards=5 serial_unhinted=0 herdr=16
+[exit 0]
+
