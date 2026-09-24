@@ -1,0 +1,12 @@
+# no-mistakes no-mistakes version v1.72.0 (9fcc865) 2026-09-08T13:12:43Z
+## binary config schema strings
+steps.errTestAgentTimeout
+test_agent_timeout: "30m"
+yaml:"test_agent_timeout"
+## global ~/.no-mistakes/config.yaml timeout keys
+26:ci_timeout: "168h"
+35:daemon_connect_timeout: "3s"
+## branch .no-mistakes.yaml (python yaml parse)
+test_agent_timeout = '60m'
+commands.test = 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated'
+test = {'evidence': {'store_in_repo': True}}
