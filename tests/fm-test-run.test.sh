@@ -998,6 +998,53 @@ test_exclude_family() {
   pass "exclude-family drops the named primary family after selection"
 }
 
+test_exclude_quarantined() {
+  local listed quarantine_file script signature reason owner tmp qfile out
+  quarantine_file="$ROOT/tests/fm-test-quarantine.tsv"
+  assert_present "$quarantine_file" "the tracked quarantine list is missing"
+
+  # Every entry must name an existing test script and carry four tab-separated
+  # columns, so a renamed or deleted test cannot leave a stale, silently
+  # ignored entry behind.
+  while IFS=$'\t' read -r script signature reason owner; do
+    [ -n "$script" ] || continue
+    assert_present "$ROOT/$script" "quarantine entry names a missing script: $script"
+    [ -n "$signature" ] || fail "quarantine entry for $script has an empty signature"
+    [ -n "$reason" ] || fail "quarantine entry for $script has an empty reason"
+    [ -n "$owner" ] || fail "quarantine entry for $script has an empty owner"
+  done < <(grep -v '^[[:space:]]*#' "$quarantine_file" | grep -v '^[[:space:]]*$')
+
+  # --exclude-quarantined drops exactly the listed scripts and keeps stdout a
+  # clean path list; the loud markers go to stderr, not the path list.
+  listed=$("$RUNNER" --list --all --exclude-quarantined 2>/dev/null)
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-wake-pair-dedup.test.sh' \
+    && fail "exclude-quarantined left a quarantined script selected"
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-lint.test.sh' \
+    || fail "exclude-quarantined must retain non-quarantined scripts"
+  assert_not_contains "$listed" "FM_TEST_QUARANTINED" \
+    "--list stdout must stay a clean path list"
+
+  # The flag is opt-in: without it nothing is excluded.
+  listed=$("$RUNNER" --list --all 2>/dev/null)
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-wake-pair-dedup.test.sh' \
+    || fail "absence of --exclude-quarantined must keep the script"
+
+  # A run reports every quarantined skip loudly and runs nothing quarantined.
+  tmp=$(fm_test_tmproot fm-test-quarantine)
+  qfile="$tmp/q.tsv"
+  printf 'tests/fm-transition-lib.test.sh\tsig-x\treason-x\towner-x\n' > "$qfile"
+  out=$("$RUNNER" --quarantine-file "$qfile" --exclude-quarantined \
+    tests/fm-transition-lib.test.sh 2>/dev/null)
+  assert_contains "$out" "FM_TEST_QUARANTINED tests/fm-transition-lib.test.sh" \
+    "run mode must print the quarantined marker"
+  assert_contains "$out" "FM_TEST_QUARANTINE_SUMMARY quarantined=1" \
+    "run mode must print the quarantine summary"
+  assert_contains "$out" "FM_TEST_SUMMARY total=0" \
+    "a fully-quarantined selection runs nothing"
+
+  pass "exclude-quarantined drops exactly the listed scripts and reports each skip loudly"
+}
+
 test_list_scheduled_proven_isolated_uses_serial_weights() {
   local tmp
   tmp=$(fm_test_tmproot fm-test-run-proven-schedule)
@@ -2428,6 +2475,7 @@ test_a_run_that_ran_records_no_skip_reason
 test_live_guards_expect_a_capability_skip_class
 test_fail_on_gate_skip_token
 test_exclude_family
+test_exclude_quarantined
 test_list_scheduled_proven_isolated_uses_serial_weights
 test_list_scheduled_non_lane_selections_use_serial_weights
 test_portable_shard_union_and_coverage_guard

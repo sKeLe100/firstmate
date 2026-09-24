@@ -1,0 +1,23 @@
+# tests/fm-test-quarantine.tsv - known pre-existing host-sensitive test
+# failures that an upstream sync validation must exclude, never silently.
+#
+# One entry per line, four TAB-separated columns:
+#   <script>	<signature>	<reason>	<owner>
+#   script     tests/<name>.test.sh path (must exist in this repo)
+#   signature  a grep-able substring of the failure's output
+#   reason     why this failure is host-sensitive and pre-existing on main
+#   owner      the backlog item id that owns fixing (and thereby removing) the entry
+#
+# Owned by bin/fm-test-run.sh's --exclude-quarantined flag: it drops exactly
+# the scripts named here from a selection and prints one FM_TEST_QUARANTINED
+# line per skip plus an FM_TEST_QUARANTINE_SUMMARY, so a quarantined skip is
+# never hidden. Every entry is a failure reproduced on origin/main, cited in
+# its reason column; a test whose failure is fixed should be removed from this
+# file by the owner item that lands the fix, so the quarantine can only shrink.
+# docs/configuration.md "Upstream autosync" is the one prose owner of this
+# contract; bin/fm-test-run.sh's header owns the exact flag and file mechanics.
+tests/fm-wake-pair-dedup.test.sh	no process-event result	host-sensitive process-event runner identity confirmation (systemd subreaper reparenting); the fixture registers/reconciles a source through bin/fm-procevent.sh, whose "cannot confirm runner identity" refusal surfaces here as a captured-result miss. Pre-existing on main: data/upstream-sync/triage.md row 6 (base 12901276)	sync-preexisting-test-failures
+tests/fm-backend-herdr.test.sh	coreutils: unknown program 'pi'	uutils multicall coreutils rejects the agent-named `pi` fake descendant process, so the "live agent-named descendant" assertions read the host as unreadable. Pre-existing on main: data/upstream-sync/triage.md row 5; data/upstream-sync-failure-deep-review/report.md defect 1; PR https://github.com/sKeLe100/firstmate/pull/136	sync-preexisting-test-failures
+tests/fm-procevent.test.sh	the listener under test was not reparented away from its session	listener reparenting timing flake: the test observes a non-1 ppid under systemd --user subreaper adoption. Pre-existing on main: data/upstream-sync/triage.md row 8; data/upstream-sync-failure-deep-review/report.md defect 3; PR https://github.com/sKeLe100/firstmate/pull/136	sync-preexisting-test-failures
+tests/fm-watch-triage.test.sh	exceeded the per-script bound	host-load-sensitive suite exceeds the 900s per-script bound under full-suite load (passes alone at ~924s). Pre-existing on main: data/upstream-sync/triage.md row 4; PR https://github.com/sKeLe100/firstmate/pull/136	sync-preexisting-test-failures
+tests/fm-calm-pi-extension.test.sh	Chrome or Chromium is required for rendered export DOM assertions	Chrome/Chromium is absent from the validation host PATH, so the rendered-export DOM guard fails. Pre-existing on main: data/upstream-sync/triage.md row 7; data/upstream-sync-failure-deep-review/report.md defect 2	sync-preexisting-test-failures
