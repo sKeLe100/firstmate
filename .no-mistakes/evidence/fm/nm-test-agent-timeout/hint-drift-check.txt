@@ -1,0 +1,19 @@
+## NEW hint (target) — two consecutive real runs (run2, run3) with drift history
+$ bin/fm-test-run.sh --check-hint-drift --hint-drift-history H run2.json
+FM_TEST_HINT_DRIFT ok checked=1 confirmed=0 warned=0
+exit=0
+$ bin/fm-test-run.sh --check-hint-drift --hint-drift-history H run3.json
+FM_TEST_HINT_DRIFT ok checked=1 confirmed=0 warned=0
+exit=0
+
+## OLD hint (base 183511dd, 8214ms) — same two real runs
+$ fm-test-run-base.sh --check-hint-drift --hint-drift-history H run2.json
+::warning::fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on this run only for 1 script(s); will refuse only if this recurs on the next run:
+  tests/fm-bootstrap-network-parallel.test.sh: hint=8214ms measured=14098ms ratio=1.72x
+FM_TEST_HINT_DRIFT ok checked=1 confirmed=0 warned=1
+exit=0
+$ fm-test-run-base.sh --check-hint-drift --hint-drift-history H run3.json
+fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on two consecutive runs for 1 script(s):
+  tests/fm-bootstrap-network-parallel.test.sh: hint=8214ms measured=12655ms ratio=1.54x
+fm-test-run: refresh the hints: docs/fm-test-portable-shards.md
+exit=1

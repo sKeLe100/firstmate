@@ -1,0 +1,3 @@
+error: agent run tests timed out after 30m0s: agent last produced output 163ms ago (82 observed); agent reported: claude parse events: context deadline exceeded
+error: agent run tests timed out after 30m0s: agent last produced output 167ms ago (103 observed); agent reported: claude parse events: context deadline exceeded
+error: agent run tests timed out after 30m0s: agent last produced output 374ms ago (91 observed); agent reported: claude parse events: context deadline exceeded
