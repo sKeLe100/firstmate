@@ -33,9 +33,10 @@
 #                   <lane.json> [more lane.json...]
 #                   Flags when a green run's own measured duration for a
 #                   hinted portable-serial script exceeds that hint by more
-#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (1.5x), taking
-#                   the slowest measured duration per script across every
-#                   input given. A script that drifts on only this run is
+#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (1.5x) and by
+#                   at least PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS (250ms),
+#                   taking the slowest measured duration per script across
+#                   every input given. A script that drifts on only this run is
 #                   logged as a warning, not a failure - noise on one run is
 #                   expected. --hint-drift-history persists this run's drift
 #                   set to <path> and compares it against what was persisted
@@ -279,10 +280,10 @@ PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER=1.5
 
 # Absolute floor, in milliseconds, a measured duration must exceed its hint by
 # before --check-hint-drift counts it as drift, even past the ratio above. A
-# ~50ms script crossing the 1.5x ratio on a ~35ms swing is scheduler noise, not
-# a script that grew; the floor keeps the ratio meaningful for longer scripts
-# while ignoring sub-floor swings on the shortest ones.
-PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=1000
+# ~50ms script crossing the 1.5x ratio on a ~30ms swing (51->88ms, 54->82ms) is
+# scheduler noise, not a script that grew; 250ms absorbs that noise while a
+# script genuinely drifting in the 1-2s range (e.g. 1106->2985ms) still flags.
+PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=250
 
 # Largest share of the serial lane allowed to run on the default weight above.
 # Hints are what keep the shards balanced, so once too much of the lane is
@@ -1418,7 +1419,8 @@ PY
 }
 
 # Refuses only when a hinted portable-serial script's measured duration
-# exceeds PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER on two consecutive runs (via
+# exceeds its hint by more than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER and by at
+# least PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS on two consecutive runs (via
 # --hint-drift-history); a single drifting run is logged as a warning, not a
 # failure, since shared-runner noise can swing one run past the margin without
 # the hint actually being stale. --check-coverage only proves the partition is
@@ -1486,7 +1488,7 @@ warned_only = sorted(p for p in drift if p not in prior_drift)
 if warned_only:
     print(
         f"::warning::fm-test-run: hint drift: measured duration exceeded hint by "
-        f"more than {multiplier:g}x on this run only for {len(warned_only)} "
+        f"more than {multiplier:g}x and by at least {floor_ms}ms on this run only for {len(warned_only)} "
         "script(s); will refuse only if this recurs on the next run:",
         file=sys.stderr,
     )
@@ -1500,7 +1502,7 @@ if history_path is not None:
 if confirmed:
     print(
         f"fm-test-run: hint drift: measured duration exceeded hint by more than "
-        f"{multiplier:g}x on two consecutive runs for {len(confirmed)} script(s):",
+        f"{multiplier:g}x and by at least {floor_ms}ms on two consecutive runs for {len(confirmed)} script(s):",
         file=sys.stderr,
     )
     for path in confirmed:
