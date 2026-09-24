@@ -1,0 +1,50 @@
+### Personal-use switch (layer 1)
+$ bin/fm-pc02-personal-use.sh status
+off
+$ bin/fm-pc02-personal-use.sh on
+on
+$ bin/fm-test-run.sh tests/fm-pc02-fair-order.test.sh --pc02-if-idle
+fm-pc02-test-offload: PC02 personal-use switch is on; running on PC01
+FM_TEST_HOST_LOAD load5=3.08 cpus=16 jobs=1 per_script_timeout_secs=0
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=5911
+exit=0
+$ bin/fm-pc02-personal-use.sh off
+off
+$ bin/fm-pc02-personal-use.sh status
+off
+$ bin/fm-test-run.sh tests/fm-pc02-fair-order.test.sh --pc02-if-idle
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_HOST_LOAD load5=0.15 cpus=16 jobs=1 per_script_timeout_secs=0
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=4786
+exit=0
+
+### Resource-usage check with live Windows CPU reading (threshold forced to 1%)
+$ FM_PC02_OFFLOAD_CPU_BUSY_PCT=1 bin/fm-test-run.sh tests/fm-pc02-fair-order.test.sh --pc02-if-idle
+fm-pc02-test-offload: PC02 host CPU busy (4.6% >= 1%); running on PC01
+FM_TEST_HOST_LOAD load5=3.06 cpus=16 jobs=1 per_script_timeout_secs=0
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=5699
+exit=0
+
+### Live LLM session check: llama-swap not answering (connection refused) = serving nothing, so offload proceeds (documented design)
+$ FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:1/x bin/fm-test-run.sh tests/fm-pc02-fair-order.test.sh --pc02-if-idle
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_HOST_LOAD load5=0.15 cpus=16 jobs=1 per_script_timeout_secs=0
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=4816
+exit=0
+
+### Unreachable PC02
+$ FM_PC02_OFFLOAD_HOST=pc02-does-not-exist.invalid bin/fm-test-run.sh tests/fm-pc02-fair-order.test.sh --pc02-if-idle
+fm-pc02-test-offload: PC02 unreachable (ssh probe exit 255); running on PC01
+FM_TEST_HOST_LOAD load5=2.93 cpus=16 jobs=1 per_script_timeout_secs=0
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=5600
+exit=0
+
+### Missing personal resource-check script (unclear -> PC01)
+$ FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1=/mnt/c/nope.ps1 bin/fm-test-run.sh tests/fm-pc02-fair-order.test.sh --pc02-if-idle
+fm-pc02-test-offload: PC02 resource check unclear (got 'script-missing'); treating as busy; running on PC01
+FM_TEST_HOST_LOAD load5=2.94 cpus=16 jobs=1 per_script_timeout_secs=0
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=5588
+exit=0
+
+### Remote mirrors left on PC02
+(end)

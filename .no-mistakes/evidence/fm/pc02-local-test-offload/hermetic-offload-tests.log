@@ -1,0 +1,23 @@
+ok - --help prints the whole documented contract
+ok - FM_PC02_OFFLOAD_DISABLE=1 always runs locally without touching ssh or rsync
+ok - a live PC02 LLM lane falls back to a local run without touching ssh
+ok - an unreachable PC02 falls back to a local run
+ok - PC02 missing a required tool falls back to a local run rather than a thinner remote run
+ok - a stuck or slow probe times out and falls back rather than hanging
+ok - a failed rsync to PC02 falls back to a local run
+ok - the captain's personal-use switch falls back to a local run
+ok - llama-swap holding a loaded model for any live session falls back to a local run
+ok - a healthy llama-swap with no loaded model does not block offloading
+ok - an unparseable llama-swap /running answer defaults to a local run
+ok - a Windows-wide CPU utilization over the threshold falls back to a local run
+ok - a Windows GPU-engine utilization over the threshold falls back to a local run
+ok - an unparseable or missing resource read defaults to a local run rather than an idle guess
+ok - fm-test-run.sh --pc02-if-idle strips the flag and forwards every other argument unchanged
+ok - a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror
+ok - a green remote run exits 0, returns its --json artifact, and removes its mirror
+ok - TERM during a remote run kills the remote suite and removes its mirror
+# all fm-pc02-test-offload tests passed
+
+real	0m9.001s
+user	0m2.342s
+sys	0m2.791s

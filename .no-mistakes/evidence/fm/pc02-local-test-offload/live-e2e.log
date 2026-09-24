@@ -1,0 +1,8 @@
+ok - a real PC02 offload runs the suite remotely and returns its markers and --json artifact
+ok - a failing remote-offloaded script returns its real exit code, not a wrapper success
+ok - an orphaned background process on PC02 times out rather than hanging the offload forever
+# all fm-pc02-test-offload-live-e2e tests passed
+
+real	0m34.846s
+user	0m1.997s
+sys	0m1.100s

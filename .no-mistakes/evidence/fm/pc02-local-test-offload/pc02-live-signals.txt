@@ -1,0 +1,17 @@
+== llama-swap /running ==
+ http=000
+== llama-swap /health ==
+ http=000
+== resource check ==
+cpu=8.8 gpu=0
+== tools ==
+git: /usr/bin/git
+bash: /usr/bin/bash
+python3: /usr/bin/python3
+jq: /home/sean_/.local/bin/jq
+node: /home/sean_/.local/bin/node
+shellcheck: /home/sean_/.local/bin/shellcheck
+actionlint: /home/sean_/.local/bin/actionlint
+ruby: /home/sean_/.local/bin/ruby
+chromium: /home/sean_/.local/bin/chromium
+nproc=16
