@@ -170,6 +170,13 @@ and an unreachable or unclear check does the same rather than guessing PC02
 is free. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut
 or its resource-check script ever need to be redeployed (safe to re-run).
 
+**Warning**: `wsl --shutdown` (see "WSL is not running" above) drops all
+remote access to PC02, including this offload path, until someone reaches
+the Windows desktop directly and runs `wsl` again - an SSH session cannot
+trigger that restart itself, because `sshd` runs inside WSL. Only apply a
+`.wslconfig` change or other edit needing a WSL restart when physical/RDP
+access to the Windows desktop is available to bring it back up.
+
 ## Ceiling
 
 This runbook covers recovery of llama-swap when the host is reachable.

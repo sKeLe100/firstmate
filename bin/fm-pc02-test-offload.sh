@@ -131,13 +131,14 @@ GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
 
 # Tools whose absence hard-fails a real test rather than gracefully
 # gate-skipping it - actionlint and shellcheck are pinned versions
-# bin/fm-lint.sh refuses to run without, and ruby is required outright by
-# tests/fm-ci-workflow.test.sh (`command -v ruby || fail ...`), not an
-# optional capability. A host missing any of these would fail differently
-# than PC01, not just thinner, so no-mistakes would judge a different
-# outcome. Require them on PC02 too rather than risk that; see
-# data/pc02-local-test-offload/host-changes.md for how PC02 got each one.
-REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint ruby}"
+# bin/fm-lint.sh refuses to run without, ruby is required outright by
+# tests/fm-ci-workflow.test.sh (`command -v ruby || fail ...`), and chromium
+# is required outright by tests/fm-calm-pi-extension.test.sh's rendered-export
+# guard, none of them optional capabilities. A host missing any of these
+# would fail differently than PC01, not just thinner, so no-mistakes would
+# judge a different outcome. Require them on PC02 too rather than risk that;
+# see data/pc02-local-test-offload/host-changes.md for how PC02 got each one.
+REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint ruby chromium}"
 
 run_local() {  # <reason>
   echo "fm-pc02-test-offload: $1; running on PC01" >&2
