@@ -268,6 +268,135 @@ SH
   pass "an unparseable or missing resource read defaults to a local run rather than an idle guess"
 }
 
+# fake_pc02 <dir> builds a fakebin whose ssh and rsync treat <dir>/home as
+# PC02's home: the readiness probe reports an idle, tool-ready host, and every
+# other remote command (mkdir, retarget, HEAD check, the real test run, and
+# cleanup) really runs there, so the remote wrapper and its cleanup execute
+# for real. fd 9 is the ssh channel itself, letting a fixture leave a
+# straggler that holds the channel open the way a real one does.
+fake_pc02() {
+  local dir=$1 fakebin real_rsync
+  real_rsync=$(command -v rsync)
+  fakebin=$(fm_fakebin "$dir")
+  mkdir -p "$dir/home"
+  cat > "$fakebin/ssh" <<SH
+#!/usr/bin/env bash
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    -o) shift 2 ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+shift
+case "\$*" in
+  *personal-use*) printf 'resource:cpu=1 gpu=0\\n'; exit 0 ;;
+esac
+cd "$dir/home" || exit 255
+exec 9>&1
+HOME="$dir/home" exec bash -c "\$*"
+SH
+  cat > "$fakebin/rsync" <<SH
+#!/usr/bin/env bash
+args=()
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    -e) shift 2; continue ;;
+    pc02:/*) args+=("\${1#pc02:}") ;;
+    pc02:*) args+=("$dir/home/\${1#pc02:}") ;;
+    *) args+=("\$1") ;;
+  esac
+  shift
+done
+exec "$real_rsync" "\${args[@]}"
+SH
+  chmod +x "$fakebin/ssh" "$fakebin/rsync"
+  printf '%s\n' "$fakebin"
+}
+
+remote_runs_left() {  # <fake pc02 dir>
+  find "$1/home/.fm-pc02-test-offload" -mindepth 1 -maxdepth 1 -name 'run-*' 2>/dev/null | wc -l | tr -d ' '
+}
+
+test_remote_run_returns_suite_exit_code_despite_straggler() {
+  local dir fakebin fixture out status start elapsed
+  command -v rsync >/dev/null 2>&1 || { pass "skip: rsync not installed"; return; }
+  dir="$TMP_ROOT/remote-straggler"
+  fakebin=$(fake_pc02 "$dir")
+  fixture="$dir/straggler-fail.test.sh"
+  cat > "$fixture" <<'SH'
+#!/usr/bin/env bash
+if { true >&9; } 2>/dev/null; then sleep 30 >&9 2>&1 & fi
+echo "not ok - intentional fixture failure"
+exit 1
+SH
+  chmod +x "$fixture"
+
+  start=$(date +%s)
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    "$SCRIPT" "$fixture" 2>&1)
+  status=$?
+  elapsed=$(( $(date +%s) - start ))
+  expect_code 1 "$status" "a failing remote suite's exit code must come back unchanged: $out"
+  assert_contains "$out" "PC02 idle and ready; running tests remotely" "the run never went remote: $out"
+  assert_contains "$out" "exit=1" "the remote fm-test-run.sh markers did not come back: $out"
+  [ "$elapsed" -lt 25 ] || fail "a straggler holding the channel kept the run open ${elapsed}s: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
+  pass "a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror"
+}
+
+test_remote_run_passes_through_green_suite_and_json() {
+  local dir fakebin out status
+  command -v rsync >/dev/null 2>&1 || { pass "skip: rsync not installed"; return; }
+  dir="$TMP_ROOT/remote-green"
+  fakebin=$(fake_pc02 "$dir")
+  printf '#!/usr/bin/env bash\necho "ok - fixture"\n' > "$dir/green.test.sh"
+  chmod +x "$dir/green.test.sh"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    "$SCRIPT" "$dir/green.test.sh" --json "$dir/out.json" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a passing remote suite must exit 0: $out"
+  python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$dir/out.json" \
+    || fail "the --json artifact did not come back as valid JSON: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
+  pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
+}
+
+test_term_mid_remote_run_removes_mirror_and_kills_suite() {
+  local dir fakebin fixture pid status _
+  command -v rsync >/dev/null 2>&1 || { pass "skip: rsync not installed"; return; }
+  dir="$TMP_ROOT/remote-term"
+  fakebin=$(fake_pc02 "$dir")
+  fixture="$dir/hang.test.sh"
+  cat > "$fixture" <<SH
+#!/usr/bin/env bash
+touch "$dir/suite-started"
+sleep 60
+touch "$dir/suite-survived"
+SH
+  chmod +x "$fixture"
+
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 300); do
+    [ -f "$dir/suite-started" ] && break
+    sleep 0.1
+  done
+  [ -f "$dir/suite-started" ] || { kill "$pid" 2>/dev/null; fail "the remote suite never started: $(cat "$dir/out.log")"; }
+  kill -TERM "$pid"
+  wait "$pid"
+  status=$?
+  expect_code 143 "$status" "a TERM mid-run must exit 143: $(cat "$dir/out.log")"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "TERM mid-run left the per-run PC02 mirror behind: $(cat "$dir/out.log")"
+  sleep 1
+  [ ! -e "$dir/suite-survived" ] || fail "TERM mid-run left the remote suite running"
+  pass "TERM during a remote run kills the remote suite and removes its mirror"
+}
+
 test_help_prints_the_whole_documented_contract() {
   local out status
   out=$("$SCRIPT" --help 2>&1)
@@ -310,5 +439,8 @@ test_high_cpu_falls_back_to_local
 test_high_gpu_falls_back_to_local
 test_unclear_resource_check_falls_back_to_local
 test_pc02_if_idle_flag_forwards_through_fm_test_run
+test_remote_run_returns_suite_exit_code_despite_straggler
+test_remote_run_passes_through_green_suite_and_json
+test_term_mid_remote_run_removes_mirror_and_kills_suite
 
 echo "# all fm-pc02-test-offload tests passed"
