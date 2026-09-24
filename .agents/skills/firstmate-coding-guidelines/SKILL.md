@@ -115,7 +115,7 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 
 ## No-mistakes test configuration
 
-This repository pins `commands.test` in `.no-mistakes.yaml` to the canonical `bin/fm-test-run.sh --changed --exclude-family real-herdr-gated` invocation, and `bin/fm-lint.sh` fails when that line drifts from it.
+This repository pins `commands.test` in `.no-mistakes.yaml` to the canonical `bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle` invocation, and `bin/fm-lint.sh` fails when that line drifts from it.
 Never swap in a per-branch workaround such as a fixed script list, a family, or the full suite: PR #111 did exactly that to fit a gate time cap, and every later run silently tested only those scripts while the required check still certified full coverage (fork PR #115 restored the pin and added the guard).
 CI owns broad deterministic regression coverage; the no-mistakes Test step still runs its intent-targeted evidence agent on top of the pinned baseline.
 

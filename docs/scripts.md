@@ -172,6 +172,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-stow-cascade.sh`     | Enumerate this home's registered secondmates, their budget reports, and reachable transports for a `/stow` cascade; `--complete` stamps the durable stow-completion marker once the whole cascade finished |
 | `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
 | `fm-autonomous-pc02-lane.sh` | Report whether the single PC02 lane is free for the autonomous pass's dispatch-availability check |
+| `fm-pc02-test-offload.sh` | Run an `fm-test-run.sh` invocation on PC02 when it is idle and ready, otherwise locally (`fm-test-run.sh --pc02-if-idle`) |
+| `fm-pc02-personal-use.sh` | Turn PC02's personal-use switch, which keeps test offloading on PC01, on or off; report its status; install its Windows desktop toggle |
 | `fm-host-memory.sh` | Report whether this host's free memory clears the launch floor, for the autonomous pass and the spawn preflight |
 | `fm-dispatch-quota-cap.sh` | Report the effective concurrent Claude dispatch cap after the quota ladder and whether the paced Codex sidecar may spawn |
 | `fm-backlog-routing.sh` | Durable pc02/medium/senior routing registry (`data/backlog-routing.tsv`) for the autonomous pass's refill step: classify, escalate, gc, list, and seed from the durable-refill report |

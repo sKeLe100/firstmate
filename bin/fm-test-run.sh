@@ -125,6 +125,11 @@
 #                   interrupt a running script; per-script hangs are
 #                   bounded by --per-script-timeout-secs. Pathological output
 #                   sinks that block finalization are explicitly out of scope.
+#   --pc02-if-idle  route this run to PC02 when it is idle from LLM duty,
+#                   reachable, and tool-ready, falling back to running here
+#                   otherwise; bin/fm-pc02-test-offload.sh (its own header)
+#                   is the single owner of the readiness checks and remote
+#                   mechanics, and its exit code is returned unchanged.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -206,6 +211,24 @@ RUN_STARTED_MS=$(now_ms)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
+
+# --pc02-if-idle routes this run through bin/fm-pc02-test-offload.sh instead
+# of running here; strip it out before the option parser below (which has no
+# case arm for it) ever sees it.
+PC02_IF_IDLE=0
+FM_TEST_RUN_FILTERED_ARGS=()
+for fm_test_run_arg in "$@"; do
+  if [ "$fm_test_run_arg" = "--pc02-if-idle" ]; then
+    PC02_IF_IDLE=1
+  else
+    FM_TEST_RUN_FILTERED_ARGS+=("$fm_test_run_arg")
+  fi
+done
+unset fm_test_run_arg
+if [ "$PC02_IF_IDLE" -eq 1 ]; then
+  exec "$ROOT/bin/fm-pc02-test-offload.sh" "${FM_TEST_RUN_FILTERED_ARGS[@]}"
+fi
+set -- "${FM_TEST_RUN_FILTERED_ARGS[@]}"
 
 MODE=
 LIST_ONLY=0
