@@ -277,6 +277,13 @@ PORTABLE_SERIAL_TIMEOUT_MULTIPLIER=2
 # check and the tighter 1.5x margin is safe again.
 PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER=1.5
 
+# Absolute floor, in milliseconds, a measured duration must exceed its hint by
+# before --check-hint-drift counts it as drift, even past the ratio above. A
+# ~50ms script crossing the 1.5x ratio on a ~35ms swing is scheduler noise, not
+# a script that grew; the floor keeps the ratio meaningful for longer scripts
+# while ignoring sub-floor swings on the shortest ones.
+PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=1000
+
 # Largest share of the serial lane allowed to run on the default weight above.
 # Hints are what keep the shards balanced, so once too much of the lane is
 # unmeasured the balance is guesswork and one shard can reach its CI job cap
@@ -1424,15 +1431,16 @@ check_hint_drift() {
   local hints_tmp rc
   hints_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-test-hints.XXXXXX") || die "--check-hint-drift: could not create temp file"
   portable_serial_weight_hints >"$hints_tmp"
-  python3 - "$hints_tmp" "$PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER" "$HINT_DRIFT_HISTORY" "$@" <<'PY'
+  python3 - "$hints_tmp" "$PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER" "$PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS" "$HINT_DRIFT_HISTORY" "$@" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 hints_path = Path(sys.argv[1])
 multiplier = float(sys.argv[2])
-history_path = Path(sys.argv[3]) if sys.argv[3] else None
-inputs = [Path(p) for p in sys.argv[4:]]
+floor_ms = int(sys.argv[3])
+history_path = Path(sys.argv[4]) if sys.argv[4] else None
+inputs = [Path(p) for p in sys.argv[5:]]
 
 hints = {}
 for line in hints_path.read_text(encoding="utf-8").splitlines():
@@ -1462,7 +1470,7 @@ for path, hint_ms in hints.items():
         continue
     checked += 1
     m = measured[path]
-    if hint_ms > 0 and m > hint_ms * multiplier:
+    if hint_ms > 0 and m > hint_ms * multiplier and (m - hint_ms) >= floor_ms:
         drift[path] = m / hint_ms
 
 prior_drift = {}
