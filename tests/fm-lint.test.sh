@@ -515,7 +515,7 @@ YAML
 
   cat > "$nm_yaml" <<'YAML'
 commands:
-  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated'
+  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle'
 YAML
   out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
     FM_TEST_GIT_DIFF_FILE="$diff_file" FM_LINT_NM_YAML="$nm_yaml" "$LINT" 2>&1) \
@@ -523,7 +523,7 @@ YAML
 
   cat > "$nm_yaml" <<'YAML'
 commands:
-  test: "bin/fm-test-run.sh --changed --exclude-family real-herdr-gated"
+  test: "bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle"
 YAML
   out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
     FM_TEST_GIT_DIFF_FILE="$diff_file" FM_LINT_NM_YAML="$nm_yaml" "$LINT" 2>&1) \
