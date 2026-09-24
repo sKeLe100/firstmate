@@ -869,10 +869,10 @@ tests/fm-gate-refuse.test.sh 4977
 tests/fm-gemini-harness.test.sh 1349
 tests/fm-gitignore-config.test.sh 62
 tests/fm-gotmp.test.sh 3100
-tests/fm-grok-continuity-live-e2e.test.sh 62
+tests/fm-grok-continuity-live-e2e.test.sh 181
 tests/fm-grok-stop-live-e2e.test.sh 72
 tests/fm-guard-stale-banner.test.sh 32981
-tests/fm-harness-adapter-instructions-live-e2e.test.sh 60
+tests/fm-harness-adapter-instructions-live-e2e.test.sh 105
 tests/fm-harness-adapter-references.test.sh 120
 tests/fm-harness-liveness-drift-live-e2e.test.sh 1300
 tests/fm-harness-precedence.test.sh 4062
@@ -897,7 +897,7 @@ tests/fm-muse-harness.test.sh 55572
 tests/fm-muse-signals-live-e2e.test.sh 81
 tests/fm-no-mistakes-required-body-fetch.test.sh 535
 tests/fm-no-mistakes-required.test.sh 370
-tests/fm-nomistakes-gate-check.test.sh 1106
+tests/fm-nomistakes-gate-check.test.sh 2985
 tests/fm-nomistakes-poll-lib.test.sh 8000
 tests/fm-omp-harness.test.sh 59969
 tests/fm-omp-primary-live-e2e.test.sh 110
@@ -960,7 +960,7 @@ tests/fm-send-cache-stale-guard.test.sh 20398
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 63
 tests/fm-send-inbox.test.sh 38956
 tests/fm-send-remote-delivery.test.sh 27686
-tests/fm-send-resolve-key.test.sh 19619
+tests/fm-send-resolve-key.test.sh 31315
 tests/fm-send-secondmate-marker-herdr-e2e.test.sh 51
 tests/fm-send-secondmate-marker.test.sh 6252
 tests/fm-session-lock-ancestry.test.sh 4200
@@ -977,7 +977,7 @@ tests/fm-spawn-worktree-settle.test.sh 13000
 tests/fm-startup-memory-budget.test.sh 6964
 tests/fm-startup-network.test.sh 62274
 tests/fm-stat-shadowing.test.sh 54
-tests/fm-stow-cascade.test.sh 3101
+tests/fm-stow-cascade.test.sh 5924
 tests/fm-subagent-pretool-check.test.sh 1030
 tests/fm-supervision-events.test.sh 719
 tests/fm-tangle-guard.test.sh 9662
