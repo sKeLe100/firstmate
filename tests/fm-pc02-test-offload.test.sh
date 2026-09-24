@@ -347,19 +347,22 @@ SH
 }
 
 test_remote_run_passes_through_green_suite_and_json() {
-  local dir fakebin out status
+  local dir fakebin out status json_rel
   command -v rsync >/dev/null 2>&1 || { pass "skip: rsync not installed"; return; }
   dir="$TMP_ROOT/remote-green"
   fakebin=$(fake_pc02 "$dir")
   printf '#!/usr/bin/env bash\necho "ok - fixture"\n' > "$dir/green.test.sh"
   chmod +x "$dir/green.test.sh"
+  json_rel=".fm-pc02-offload-test-$$.json"
+  rm -f "$ROOT/$json_rel"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
-    "$SCRIPT" "$dir/green.test.sh" --json "$dir/out.json" 2>&1)
+    "$SCRIPT" "$dir/green.test.sh" --json "$json_rel" 2>&1)
   status=$?
+  mv "$ROOT/$json_rel" "$dir/out.json" 2>/dev/null
   expect_code 0 "$status" "a passing remote suite must exit 0: $out"
   python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$dir/out.json" \
-    || fail "the --json artifact did not come back as valid JSON: $out"
+    || fail "the relative --json artifact was not pulled back from the PC02 mirror as valid JSON: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
 }
@@ -372,9 +375,9 @@ test_term_mid_remote_run_removes_mirror_and_kills_suite() {
   fixture="$dir/hang.test.sh"
   cat > "$fixture" <<SH
 #!/usr/bin/env bash
+echo "\$\$" > "$dir/suite-pid"
 touch "$dir/suite-started"
 sleep 60
-touch "$dir/suite-survived"
 SH
   chmod +x "$fixture"
 
@@ -392,8 +395,11 @@ SH
   status=$?
   expect_code 143 "$status" "a TERM mid-run must exit 143: $(cat "$dir/out.log")"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "TERM mid-run left the per-run PC02 mirror behind: $(cat "$dir/out.log")"
-  sleep 1
-  [ ! -e "$dir/suite-survived" ] || fail "TERM mid-run left the remote suite running"
+  for _ in $(seq 1 30); do
+    kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || break
+    sleep 0.1
+  done
+  ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "TERM mid-run left the remote suite running"
   pass "TERM during a remote run kills the remote suite and removes its mirror"
 }
 
