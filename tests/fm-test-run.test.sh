@@ -2402,6 +2402,61 @@ SH
   pass "the --changed path bounds fm-watch-triage at its own load-scaled 1500s base"
 }
 
+# fm-captain-hold-lifecycle measured 296s standalone but hit the 900s base
+# under PC01 full-suite load, so on the --changed path it also gets a longer,
+# still load-scaled bound, the same treatment as fm-watch-triage above.
+test_changed_captain_hold_gets_its_own_scaled_timeout() {
+  local tmp repo s
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-captain-hold-timeout.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
+fm_run_timed() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      *.test.sh) printf '%s %s\n' "$(basename "$arg")" "$1" >>"$FM_TIMEOUT_SEEN_FILE" ;;
+    esac
+  done
+  shift
+  "$@"
+}
+SH
+  for s in fm-captain-hold-lifecycle fm-wake-queue; do
+    printf '#!/usr/bin/env bash\necho "ok - %s fixture"\n' "$s" >"$repo/tests/$s.test.sh"
+    chmod +x "$repo/tests/$s.test.sh"
+  done
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+  printf '\n' >>"$repo/tests/fm-captain-hold-lifecycle.test.sh"
+  printf '\n' >>"$repo/tests/fm-wake-queue.test.sh"
+
+  (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-idle" \
+    FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=0 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/idle.out" 2>"$tmp/idle.err" \
+    || { cat "$tmp/idle.err"; rm -rf "$tmp"; fail "idle captain-hold timeout fixture run failed"; }
+  grep -qx 'fm-captain-hold-lifecycle.test.sh 1500' "$tmp/seen-idle" \
+    || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "idle host must bound fm-captain-hold-lifecycle at 1500s"; }
+  grep -qx 'fm-wake-queue.test.sh 900' "$tmp/seen-idle" \
+    || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "other load-sensitive scripts must keep the 900s base"; }
+  grep -Fq 'per_script_timeout_secs=900 watch_triage_timeout_secs=1500 captain_hold_timeout_secs=1500' "$tmp/idle.out" \
+    || { cat "$tmp/idle.out"; rm -rf "$tmp"; fail "idle host-load marker did not report the captain-hold bound"; }
+
+  (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-loaded" \
+    FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=8 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/loaded.out" 2>"$tmp/loaded.err" \
+    || { cat "$tmp/loaded.err"; rm -rf "$tmp"; fail "loaded captain-hold timeout fixture run failed"; }
+  grep -qx 'fm-captain-hold-lifecycle.test.sh 3000' "$tmp/seen-loaded" \
+    || { cat "$tmp/seen-loaded"; rm -rf "$tmp"; fail "load5=2x cpus must double the fm-captain-hold-lifecycle bound"; }
+
+  rm -rf "$tmp"
+  pass "the --changed path bounds fm-captain-hold-lifecycle at its own load-scaled 1500s base"
+}
+
 # P2 item 3: the token-free retry re-runs exactly the load-plausible failures
 # once, serially, and clears a run whose only failures come from host
 # contention rather than a real regression.
@@ -2585,6 +2640,7 @@ test_fail_fast_skips_the_unproven_serial_tail
 test_host_load_marker_and_scheduler_throttle
 test_changed_default_timeout_scales_with_host_load
 test_changed_watch_triage_gets_its_own_scaled_timeout
+test_changed_captain_hold_gets_its_own_scaled_timeout
 test_token_free_retry_recovers_load_sensitive_failure
 test_token_free_retry_covers_exit_124_regardless_of_name
 test_token_free_retry_skips_when_a_failure_is_not_load_plausible

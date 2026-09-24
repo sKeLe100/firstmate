@@ -293,6 +293,12 @@ CHANGED_DEFAULT_TIMEOUT_SECS=900
 # the 900s base, so it alone gets this longer base rather than a false timeout.
 CHANGED_WATCH_TRIAGE_TIMEOUT_SECS=1500
 WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=
+# Same treatment for tests/fm-captain-hold-lifecycle.test.sh: its portable-serial
+# hint measures 296s alone, but it hit the 900s base under PC01 full-suite
+# contention (load5/cpus stays under 1 here even under real load, so the
+# load_scaled_timeout_secs multiplier below never engages on this host).
+CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS=1500
+CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=
 
 # Bound and cadence for the token-free retry's wait for load5 to drop back
 # under cpus before re-running exactly the load-plausible failures once,
@@ -2686,6 +2692,7 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
   if [ "$MODE" = changed ] && [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
     PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_DEFAULT_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
     WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_WATCH_TRIAGE_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
+    CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
   fi
   auto_admissible=0
   for s in "${SCRIPTS[@]}"; do
@@ -2698,9 +2705,10 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
     JOBS=$(load_scaled_jobs "$JOBS" "$HOST_LOAD5" "$HOST_CPUS")
     [ "$JOBS" -eq 1 ] || AUTO_CONCURRENCY=1
   fi
-  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s watch_triage_timeout_secs=%s\n' \
+  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s watch_triage_timeout_secs=%s captain_hold_timeout_secs=%s\n' \
     "$HOST_LOAD5" "$HOST_CPUS" "$JOBS" "$PER_SCRIPT_TIMEOUT_SECS" \
-    "${WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS:-$PER_SCRIPT_TIMEOUT_SECS}"
+    "${WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS:-$PER_SCRIPT_TIMEOUT_SECS}" \
+    "${CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS:-$PER_SCRIPT_TIMEOUT_SECS}"
 fi
 if [ "$JOBS" -gt 1 ] || [ "$MODE" = changed ] || [ "$MODE" = scripts ]; then
   SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
@@ -2930,6 +2938,8 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   : "$id"
   if [ -n "$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-watch-triage.test.sh ]; then
     bound=$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS
+  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-captain-hold-lifecycle.test.sh ]; then
+    bound=$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS
   fi
   set +e
   if [ "$stream" -eq 1 ]; then
