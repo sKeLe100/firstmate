@@ -56,7 +56,11 @@ find_chrome() {
     printf '%s\n' "$FM_CHROME_BIN"
     return 0
   fi
+  # chrome-headless-shell comes first: it is Chrome's dedicated --dump-dom
+  # binary, and a full Chrome for Testing build on a display-less WSL host
+  # never writes the dump before the render timeout.
   for candidate in \
+    chrome-headless-shell \
     google-chrome \
     google-chrome-stable \
     chromium \
