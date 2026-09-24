@@ -1992,6 +1992,11 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-lint-test-size.test.sh"
       printf '%s\n' "__script__:fm-lint.test.sh"
       ;;
+    tests/fm-test-quarantine.tsv)
+      # --exclude-quarantined's tracked list, whose format and runner
+      # behavior are exercised by the runner's own contract test.
+      printf '%s\n' "__script__:fm-test-run.test.sh"
+      ;;
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;

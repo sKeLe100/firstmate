@@ -1402,6 +1402,22 @@ test_unmapped_new_test_never_inherits_family_concurrency() {
   pass "an unclassified new test stays serial while the proven residual family runs concurrently"
 }
 
+test_quarantine_list_change_selects_runner_contract() {
+  local tmp repo listed
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-quarantine-map.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  # The owner item that lands a fix removes its quarantine entry; that edit
+  # must select the runner contract rather than refuse as an unmapped path.
+  printf '# quarantine\n' >"$repo/tests/fm-test-quarantine.tsv"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) \
+    || fail "a quarantine list change must not refuse --changed selection"
+  assert_contains "$listed" "tests/fm-test-run.test.sh" \
+    "quarantine list change selects the runner contract"
+  rm -rf "$tmp"
+  pass "quarantine list change selects runner coverage"
+}
+
 test_changed_shared_fixture_selects_its_readers() {
   local tmp repo listed rc
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-fixture.XXXXXX")
@@ -2472,6 +2488,7 @@ test_changed_file_selection_is_conservative
 test_task_marker_refuses_the_primary_checkout
 test_changed_runner_surfaces_select_their_family
 test_shell_line_ending_policy_selects_runner_contract
+test_quarantine_list_change_selects_runner_contract
 test_changed_dependency_selection_and_unmapped_failure
 test_changed_bin_reference_selects_per_script_not_per_family
 test_changed_uses_bounded_automatic_concurrency
