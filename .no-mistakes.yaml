@@ -37,9 +37,14 @@ commands:
 
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.
+# The pinned full-suite invocation above can exceed the 30m default test agent
+# timeout under host load (see tests/fm-watch-triage.test.sh's own load-aware
+# timeout raise in this same PR), so raise it here too.
 test:
   evidence:
     store_in_repo: true
+
+test_agent_timeout: "60m"
 
 # Maintainability rules the Review step applies to the surfaces where this repo
 # has repeatedly paid for getting them wrong. Kept as pointers for the same
