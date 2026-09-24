@@ -1,0 +1,12 @@
+== BASE, two consecutive runs with shared --hint-drift-history ==
+  tests/fm-stow-cascade.test.sh: hint=3101ms measured=5924ms ratio=1.91x
+FM_TEST_HINT_DRIFT ok checked=208 confirmed=0 warned=5
+exit=0
+  tests/fm-stow-cascade.test.sh: hint=3101ms measured=5924ms ratio=1.91x
+fm-test-run: refresh the hints: docs/fm-test-portable-shards.md
+exit=1
+== HEAD, two consecutive runs with shared --hint-drift-history ==
+FM_TEST_HINT_DRIFT ok checked=208 confirmed=0 warned=0
+exit=0
+FM_TEST_HINT_DRIFT ok checked=208 confirmed=0 warned=0
+exit=0

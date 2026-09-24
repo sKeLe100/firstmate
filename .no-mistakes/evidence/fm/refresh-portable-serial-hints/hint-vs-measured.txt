@@ -1,0 +1,6 @@
+== measured max vs head hint for changed scripts ==
+tests/fm-grok-continuity-live-e2e.test.sh 181 | hint: tests/fm-grok-continuity-live-e2e.test.sh 181
+tests/fm-nomistakes-gate-check.test.sh 2985 | hint: tests/fm-nomistakes-gate-check.test.sh 2985
+tests/fm-send-resolve-key.test.sh 31315 | hint: tests/fm-send-resolve-key.test.sh 31315
+tests/fm-harness-adapter-instructions-live-e2e.test.sh 105 | hint: tests/fm-harness-adapter-instructions-live-e2e.test.sh 105
+tests/fm-stow-cascade.test.sh 5924 | hint: tests/fm-stow-cascade.test.sh 5924

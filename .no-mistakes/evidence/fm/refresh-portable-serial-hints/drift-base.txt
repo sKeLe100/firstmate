@@ -1,0 +1,8 @@
+::warning::fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x on this run only for 5 script(s); will refuse only if this recurs on the next run:
+  tests/fm-grok-continuity-live-e2e.test.sh: hint=62ms measured=181ms ratio=2.92x
+  tests/fm-harness-adapter-instructions-live-e2e.test.sh: hint=60ms measured=105ms ratio=1.75x
+  tests/fm-nomistakes-gate-check.test.sh: hint=1106ms measured=2985ms ratio=2.70x
+  tests/fm-send-resolve-key.test.sh: hint=19619ms measured=31315ms ratio=1.60x
+  tests/fm-stow-cascade.test.sh: hint=3101ms measured=5924ms ratio=1.91x
+FM_TEST_HINT_DRIFT ok checked=208 confirmed=0 warned=5
+exit=0
