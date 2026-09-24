@@ -2127,15 +2127,11 @@ apply_exclude_families() {
 # which pre-existing host-sensitive failures an upstream-sync validation may
 # exclude; see that file's header and docs/configuration.md "Upstream autosync".
 # Reads the list's non-comment lines, each "<script>\t<signature>\t<reason>\t<owner>",
-# and prints them one per line for the caller. An empty, missing, or unreadable
-# list quarantines nothing (and is reported, never a silent no-op).
+# and prints them one per line for the caller. An empty list quarantines
+# nothing; an unreadable default list is reported, and an unreadable list named
+# by --quarantine-file or FM_TEST_QUARANTINE_FILE is refused.
 quarantine_entries() {
-  local file=${QUARANTINE_FILE:-${FM_TEST_QUARANTINE_FILE:-}}
-  [ -n "$file" ] || file="$ROOT/tests/fm-test-quarantine.tsv"
-  if [ ! -r "$file" ]; then
-    log "quarantine list not readable: $file (nothing quarantined)"
-    return 0
-  fi
+  local file=$1
   awk -F'\t' '
     /^[[:space:]]*#/ { next }
     /^[[:space:]]*$/ { next }
@@ -2148,14 +2144,25 @@ quarantine_entries() {
 # hidden. A quarantined script that is not in the current selection is not a
 # skip of this run, so it is not reported here.
 apply_exclude_quarantined() {
-  local s script signature reason owner entry
+  local s script signature reason owner entry file
   local -a kept=()
   local -a entries=()
   QUARANTINED_COUNT=0
   [ "$EXCLUDE_QUARANTINED" -eq 1 ] || return 0
+  file=${QUARANTINE_FILE:-${FM_TEST_QUARANTINE_FILE:-}}
+  if [ -n "$file" ]; then
+    [ -f "$file" ] && [ -r "$file" ] \
+      || die "quarantine list not readable: $file (set by --quarantine-file or FM_TEST_QUARANTINE_FILE)"
+  else
+    file="$ROOT/tests/fm-test-quarantine.tsv"
+    if [ ! -r "$file" ]; then
+      log "quarantine list not readable: $file (nothing quarantined)"
+      return 0
+    fi
+  fi
   while IFS= read -r entry; do
     [ -n "$entry" ] && entries+=("$entry")
-  done < <(quarantine_entries)
+  done < <(quarantine_entries "$file")
   for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
     for entry in "${entries[@]+"${entries[@]}"}"; do
       IFS=$'\t' read -r script signature reason owner <<<"$entry"

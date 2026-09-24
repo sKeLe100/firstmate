@@ -1014,25 +1014,37 @@ test_exclude_quarantined() {
     [ -n "$owner" ] || fail "quarantine entry for $script has an empty owner"
   done < <(grep -v '^[[:space:]]*#' "$quarantine_file" | grep -v '^[[:space:]]*$')
 
+  tmp=$(fm_test_tmproot fm-test-quarantine)
+  qfile="$tmp/q.tsv"
+  printf '# comment\n\ntests/fm-transition-lib.test.sh\tsig-x\treason-x\towner-x\n' > "$qfile"
+
   # --exclude-quarantined drops exactly the listed scripts and keeps stdout a
   # clean path list; the loud markers go to stderr, not the path list.
-  listed=$("$RUNNER" --list --all --exclude-quarantined 2>/dev/null)
-  printf '%s\n' "$listed" | grep -Fq 'tests/fm-wake-pair-dedup.test.sh' \
+  listed=$("$RUNNER" --quarantine-file "$qfile" --list --all --exclude-quarantined 2>/dev/null)
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-transition-lib.test.sh' \
     && fail "exclude-quarantined left a quarantined script selected"
-  printf '%s\n' "$listed" | grep -Fq 'tests/fm-lint.test.sh' \
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-lint.test.sh' \
     || fail "exclude-quarantined must retain non-quarantined scripts"
   assert_not_contains "$listed" "FM_TEST_QUARANTINED" \
     "--list stdout must stay a clean path list"
 
   # The flag is opt-in: without it nothing is excluded.
-  listed=$("$RUNNER" --list --all 2>/dev/null)
-  printf '%s\n' "$listed" | grep -Fq 'tests/fm-wake-pair-dedup.test.sh' \
+  listed=$("$RUNNER" --quarantine-file "$qfile" --list --all 2>/dev/null)
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-transition-lib.test.sh' \
     || fail "absence of --exclude-quarantined must keep the script"
 
+  # An explicitly named quarantine list that is missing is refused, never a
+  # silent change of selection.
+  if out=$("$RUNNER" --quarantine-file "$tmp/missing.tsv" --list --all --exclude-quarantined 2>&1); then
+    fail "a missing --quarantine-file must be refused"
+  fi
+  assert_contains "$out" "quarantine list not readable: $tmp/missing.tsv" \
+    "a missing --quarantine-file must name the path"
+  if out=$(FM_TEST_QUARANTINE_FILE="$tmp/missing.tsv" "$RUNNER" --list --all --exclude-quarantined 2>&1); then
+    fail "a missing FM_TEST_QUARANTINE_FILE must be refused"
+  fi
+
   # A run reports every quarantined skip loudly and runs nothing quarantined.
-  tmp=$(fm_test_tmproot fm-test-quarantine)
-  qfile="$tmp/q.tsv"
-  printf 'tests/fm-transition-lib.test.sh\tsig-x\treason-x\towner-x\n' > "$qfile"
   out=$("$RUNNER" --quarantine-file "$qfile" --exclude-quarantined \
     tests/fm-transition-lib.test.sh 2>/dev/null)
   assert_contains "$out" "FM_TEST_QUARANTINED tests/fm-transition-lib.test.sh" \
