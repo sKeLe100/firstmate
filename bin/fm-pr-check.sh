@@ -5,7 +5,14 @@
 # live only in a private sidecar and are never interpolated into shell source.
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
 # including a merge request on a self-hosted GitLab instance.
-# Usage: fm-pr-check.sh <task-id> <pr-url>
+# A task records one PR at a time. Re-recording the same canonical URL refreshes
+# pr_head= and re-arms the poll; recording a different URL over an existing pr=
+# is refused unless --rebind is given. A rebind archives the replaced URL as a
+# pr_prior=<url> line (kept ahead of pr= so the terminal-identity contract in
+# bin/fm-pr-lib.sh still holds, and accumulated across rebinds) and re-arms the
+# poll against the new PR. --rebind with no different pr= recorded is refused,
+# so a rebind is always an explicit replacement.
+# Usage: fm-pr-check.sh <task-id> <pr-url> [--rebind]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +27,10 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-parent-channel-lib.sh
 . "$SCRIPT_DIR/fm-parent-channel-lib.sh"
 
-if [ "$#" -ne 2 ]; then
+REBIND=0
+if [ "$#" -eq 3 ] && [ "$3" = --rebind ]; then
+  REBIND=1
+elif [ "$#" -ne 2 ]; then
   echo "error: invalid PR check request" >&2
   exit 2
 fi
@@ -104,6 +114,24 @@ META_LOCK_HELD=1
 META_DEVICE=$(fm_pr_file_device "$META") || exit 1
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ "$META_DEVICE" = "$STATE_DEVICE" ] || { echo "error: task metadata is unavailable" >&2; exit 1; }
+# The rebind guard reads the recorded PR under the metadata lock, so a
+# concurrent writer cannot slip a different pr= between the check and the
+# rewrite. A recorded value that does not parse is compared literally.
+PRIOR_URL=
+if fm_pr_metadata_identity_parse "$META"; then
+  PRIOR_URL=$FM_PR_META_URL
+else
+  PRIOR_URL=$(grep '^pr=' "$META" | head -1 | cut -d= -f2- || true)
+fi
+if [ -n "$PRIOR_URL" ] && [ "$PRIOR_URL" != "$URL" ]; then
+  if [ "$REBIND" != 1 ]; then
+    echo "error: task $ID already records PR $PRIOR_URL; pass --rebind to replace it" >&2
+    exit 1
+  fi
+elif [ "$REBIND" = 1 ]; then
+  echo "error: task $ID records no different PR to rebind" >&2
+  exit 2
+fi
 META_TMP=$(mktemp "$STATE/.fm-pr-meta.XXXXXX") || exit 1
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
@@ -111,6 +139,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     *) printf '%s\n' "$line" >> "$META_TMP" || exit 1 ;;
   esac
 done < "$META"
+[ "$REBIND" != 1 ] || printf 'pr_prior=%s\n' "$PRIOR_URL" >> "$META_TMP" || exit 1
 printf 'pr=%s\n' "$URL" >> "$META_TMP" || exit 1
 [ -z "$PR_HEAD" ] || printf 'pr_head=%s\n' "$PR_HEAD" >> "$META_TMP" || exit 1
 chmod 0600 "$META_TMP" || exit 1

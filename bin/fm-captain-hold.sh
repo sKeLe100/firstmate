@@ -40,8 +40,8 @@
 #   fm-captain-hold.sh reconcile note <task-id> --note-file <path>
 #
 # `mark` is the only writer of the firstmate-owned sidecar data/task-marks.tsv
-# (<task-id>\t<key>\t<value>), which carries machine marks such as `held-since`
-# and the autonomous pass's `deferred-since` that must not go into the task row
+# (<task-id>\t<key>\t<value>), which carries machine marks such as the
+# autonomous pass's `deferred-since` that must not go into the task row
 # tasks-axi owns. `set` never overwrites an existing value and refuses an empty
 # one (an empty mark is indistinguishable from an absent one), `clear` with no
 # key drops every mark for the task, and both rewrite the whole file under
@@ -53,6 +53,8 @@
 # question gates over minting a new row. The command records a UTC `Captain
 # hold set:` timestamp in the task body: repeating an active hold preserves the
 # existing timestamp, while re-holding released work starts a new lifecycle.
+# That stamp is the single source of a captain call's age: every reader that
+# ages a hold reads it, falling back only to the row's own creation date.
 # A task already closed is refused rather than reopened. `--until` records the
 # captain's own deferral date through `tasks-axi hold --until`, so a "revisit
 # later" answer is stored as a date instead of a live card.
@@ -918,7 +920,6 @@ command_hold() {
   show=$TASK_SHOW_OUTPUT
   hold_kind=$(show_field_value "$show" hold_kind)
   [ "$hold_kind" = captain ] || fail "task $id did not retain its captain hold"
-  stamp_since "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   occurrence=$(( $(resolution_record_count "$(show_field "$show" body)") + 1 ))
   [ -n "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
     || fail "task $id lost its hold-set stamp while being held"
@@ -959,21 +960,6 @@ write_resolution_record() {  # <task-id> <mode> <shown-body>
   rm -f -- "$tmp"
 }
 
-
-# Record a `held-since` mark for task $id in the firstmate-owned sidecar
-# data/task-marks.tsv (<task-id>\t<key>\t<value>), the same shape as
-# data/roundtable-marks.tsv. The mark is written on the first hold and not reset
-# by a later re-hold, so it reflects when the captain call was actually raised;
-# closing the call clears it (see close_answered), so a task re-held after a
-# release ages from the new call. It lives in the sidecar rather than the backlog row because
-# tasks-axi owns the row's trailing metadata block: it already writes its own
-# `since` word (the task's creation date) and its parser rejects any word it
-# does not know. Marks for task ids no longer present in backlog.md are pruned
-# lazily on each write.
-stamp_since() {
-  local id=$1 ts=$2
-  mark_set "$id" held-since "$ts"
-}
 
 # Take the sidecar lock for the duration of one read-prune-write sequence, so a
 # concurrent writer cannot base its rewrite on a file this one is replacing.
@@ -1078,9 +1064,10 @@ apply_pending_retained_artifact() {  # <task-id>
   esac
 }
 
-# The close command's own status is this function's status: clearing the
-# firstmate-owned held-since mark must never mask a failed close, and a mark is
-# only dropped once the close it belongs to actually landed.
+# The close command's own status is this function's status: clearing a
+# firstmate-owned mark must never mask a failed close, and a mark is only
+# dropped once the close it belongs to actually landed. A release clears only a
+# legacy `held-since` mark, retired now that the body stamp alone ages a hold.
 close_answered() {  # <task-id> <release-0-or-1>
   if [ "$2" = 1 ]; then
     tasks_axi unhold "$1" >/dev/null || return

@@ -147,9 +147,12 @@
 # backend probe remains the compatibility owner and this script asks
 # `tasks-axi list` for the compact identity fields plus blocked_by, hold_kind,
 # and hold_reason, never body. The groups are the tool's own filters
-# (`--state in_flight`, `--state held`, `--state queued --blocked`, and
-# `tasks-axi ready`), so this script never reimplements task state; the groups
-# can overlap, because an in-flight item that is also held appears under both.
+# (`--state in_flight`, `--state held`, `--state queued --blocked`), so this
+# script never reimplements task state; the groups can overlap, because an
+# in-flight item that is also held appears under both. The ready group is the
+# `gate: dispatchable` rows of bin/fm-queue-snapshot.sh --dispatchable, the one
+# owner of what is ready to dispatch; `tasks-axi ready` is read only for its
+# public-followup obligations line.
 # When manual mode is selected, or tasks-axi is unavailable or incompatible,
 # this script prints only backlog section headings and item title lines, so
 # title-line hold and blocked-by metadata remain visible while indented bodies
@@ -492,30 +495,24 @@ strip_axi_help() {
   awk '/^help\[/ { exit } { print }'
 }
 
-# Bound the dispatchable-now listing without rewriting the tool's own rendering:
-# `tasks-axi ready` rows are the indented lines under its ready[N]{...} header,
-# and every other line it prints (its count, its public-followup line) passes
-# through untouched. Whatever is cut is disclosed exactly.
+# Print the dispatchable-now listing bin/fm-queue-snapshot.sh --dispatchable
+# already bounded to QUEUED_LIMIT, disclosing exactly what it cut, then the
+# public-followup obligations line from `tasks-axi ready` untouched.
 print_ready_queued_bounded() {
-  local ready=$1
-  printf '%s\n' "$ready" | awk -v max="$QUEUED_LIMIT" '
-    /^help\[/ { exit }
-    /^ready\[/ { rows = 1; print; next }
-    rows && /^[[:space:]]/ {
-      total++
-      if (shown < max) { print; shown++ }
-      next
-    }
-    { rows = 0; print }
-    END {
-      if (total > 0) {
-        printf "(shown %d of %d ready queued item(s))\n", shown, total
-        if (total > shown) {
-          printf "(%d more queued - bin/fm-tasks-axi.sh ready)\n", total - shown
-        }
-      }
-    }
-  '
+  local ready=$1 axi_ready=$2 shown total
+  shown=$(printf '%s\n' "$ready" | sed -n 's/^count: \([0-9][0-9]*\)$/\1/p')
+  total=$(printf '%s\n' "$ready" | sed -n 's/^total_dispatchable: \([0-9][0-9]*\)$/\1/p')
+  printf '%s\n' "$ready" | grep -v '^count: \|^total_dispatchable: ' || true
+  if [ "${total:-0}" -gt 0 ]; then
+    printf '(shown %s of %s ready queued item(s))\n' "${shown:-0}" "$total"
+    if [ "$total" -gt "${shown:-0}" ]; then
+      printf '(%s more queued - bin/fm-queue-snapshot.sh --dispatchable --limit %s)\n' \
+        "$(( total - ${shown:-0} ))" "$total"
+    fi
+  else
+    printf '(no queued item is ready to dispatch)\n'
+  fi
+  printf '%s\n' "$axi_ready" | grep '^ready_public_followups:' || true
 }
 
 HOLD_REASON_CHAR_LIMIT=${FM_SESSION_START_HOLD_REASON_CHAR_LIMIT:-250}
@@ -638,15 +635,18 @@ dedupe_held_against_in_flight() {
 }
 
 print_backlog_tasks_axi_compact() {
-  local path=$1 in_flight held blocked ready err in_flight_ids
+  local path=$1 in_flight held blocked ready axi_ready err in_flight_ids
   if ! in_flight=$(tasks-axi list --file "$path" --state in_flight --fields "$BACKLOG_FIELDS" 2>&1); then
     err=$in_flight
   elif ! held=$(tasks-axi list --file "$path" --state held --fields "$BACKLOG_FIELDS" 2>&1); then
     err=$held
   elif ! blocked=$(tasks-axi list --file "$path" --state queued --blocked --fields "$BACKLOG_FIELDS" 2>&1); then
     err=$blocked
-  elif ! ready=$(tasks-axi ready --file "$path" 2>&1); then
-    err=$ready
+  elif ! axi_ready=$(tasks-axi ready --file "$path" 2>&1); then
+    err=$axi_ready
+  elif ! ready=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$(dirname "$path")" \
+      "$SCRIPT_DIR/fm-queue-snapshot.sh" --dispatchable --limit "$QUEUED_LIMIT" 2>/dev/null); then
+    err="bin/fm-queue-snapshot.sh --dispatchable failed"
   else
     printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown once with hold fields capped to %s chars; ready queued bounded to %s; task bodies omitted)\n' \
       "$HOLD_REASON_CHAR_LIMIT" "$QUEUED_LIMIT"
@@ -658,7 +658,7 @@ print_backlog_tasks_axi_compact() {
     printf '\nblocked queued:\n'
     printf '%s\n' "$blocked" | strip_axi_help | cap_hold_reason_field
     printf '\nready queued (dispatchable now):\n'
-    print_ready_queued_bounded "$ready"
+    print_ready_queued_bounded "$ready" "$axi_ready"
     return 0
   fi
   printf 'tasks-axi compact listing failed; falling back to title-line rendering.\n'

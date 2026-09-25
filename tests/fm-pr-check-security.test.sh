@@ -2263,7 +2263,7 @@ test_authority_persistence_refuses_rebound_metadata() {
     || fail "rebind: could not arm the original poll"
   cat > "$dir/rebind.sh" <<SH
 #!/usr/bin/env bash
-"$PR_CHECK" task-a "$url_b" >/dev/null
+"$PR_CHECK" task-a "$url_b" --rebind >/dev/null
 SH
   chmod +x "$dir/rebind.sh"
   set +e
@@ -2365,7 +2365,7 @@ test_authority_retirement_preserves_replacement() {
   queue_merge "$dir" "$url_a"
   cat > "$dir/replace-authority.sh" <<SH
 #!/usr/bin/env bash
-"$PR_CHECK" task-a "$url_b" >/dev/null
+"$PR_CHECK" task-a "$url_b" --rebind >/dev/null
 (
   FM_TEST_GH_GRAPHQL_STATE=OPEN FM_TEST_GH_GRAPHQL_MERGED=false \\
   FM_TEST_GH_GRAPHQL_QUEUED=true \\
@@ -2417,7 +2417,56 @@ SH
   pass "poll retirement preserves a replacement authority record"
 }
 
+test_rebind_is_guarded_and_archives_prior() {
+  local dir state url_a url_b url_c rc
+  url_a=https://github.com/o/r/pull/1
+  url_b=https://github.com/o/r/pull/2
+  url_c=https://github.com/o/r/pull/3
+  dir=$(make_case rebind-guard)
+  state="$dir/home/state"
+  write_task_meta "$dir" task-a
+
+  set +e
+  run_check_entry "$dir" task-a "$url_a" --rebind > /dev/null 2> "$dir/empty.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "rebind: --rebind with no recorded PR was not refused (rc=$rc)"
+  assert_no_grep 'pr=' "$state/task-a.meta" "rebind: refused rebind changed metadata"
+
+  run_check_entry "$dir" task-a "$url_a" >/dev/null 2> "$dir/seed.err" \
+    || fail "rebind: could not record the original PR: $(cat "$dir/seed.err")"
+  set +e
+  run_check_entry "$dir" task-a "$url_a" --rebind > /dev/null 2> "$dir/same.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "rebind: --rebind onto the recorded PR was not refused (rc=$rc)"
+
+  set +e
+  run_check_entry "$dir" task-a "$url_b" > /dev/null 2> "$dir/plain.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "rebind: an unguarded different PR was not refused (rc=$rc)"
+  assert_grep "pass --rebind" "$dir/plain.err" "rebind: refusal did not name the guarded path"
+  grep -qxF "pr=$url_a" "$state/task-a.meta" || fail "rebind: refused replacement changed pr="
+  assert_no_grep 'pr_prior=' "$state/task-a.meta" "rebind: refused replacement archived a prior"
+  grep -qxF "$url_a" "$state/task-a.pr-poll" || fail "rebind: refused replacement re-armed the poll"
+
+  run_check_entry "$dir" task-a "$url_b" --rebind >/dev/null 2> "$dir/rebind.err" \
+    || fail "rebind: guarded rebind failed: $(cat "$dir/rebind.err")"
+  run_check_entry "$dir" task-a "$url_c" --rebind >/dev/null 2> "$dir/rebind2.err" \
+    || fail "rebind: second guarded rebind failed: $(cat "$dir/rebind2.err")"
+  [ "$(grep '^pr=\|^pr_prior=' "$state/task-a.meta")" = "pr_prior=$url_a
+pr_prior=$url_b
+pr=$url_c" ] || fail "rebind: metadata did not archive priors ahead of the new pr=: $(cat "$state/task-a.meta")"
+  fm_pr_metadata_identity_parse "$state/task-a.meta" && [ "$FM_PR_META_URL" = "$url_c" ] \
+    || fail "rebind: rebound metadata no longer parses to the new identity"
+  grep -qxF "$url_c" "$state/task-a.pr-poll" || fail "rebind: poll was not re-armed on the new PR"
+  fm_pr_poll_artifacts_valid "$state" task-a "$POLL" || fail "rebind: re-armed poll artifacts were invalid"
+  pass "PR replacement requires --rebind and archives the prior as pr_prior="
+}
+
 test_parser_matrix
+test_rebind_is_guarded_and_archives_prior
 test_gitlab_merge_watch
 test_merged_poll_retires_once
 test_merged_poll_reregistration_after_notification_is_absorbed

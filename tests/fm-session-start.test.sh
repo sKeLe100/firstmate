@@ -109,11 +109,14 @@ SH
 }
 
 # make_fake_tasks_axi_compact <fakebin>: a tasks-axi boundary that answers the
-# four group filters the startup listing composes (in-flight, held, blocked
-# queued, and the dispatchable ready set) and REFUSES anything the recovery
-# listing must never ask for: a body field, an unfiltered whole-backlog listing,
-# or done rows. FM_FAKE_TASKS_AXI_READY sizes the ready set so the queued bound
-# can be driven past its limit.
+# three group filters the startup listing composes (in-flight, held, blocked
+# queued), the queued listing bin/fm-queue-snapshot.sh derives the dispatchable
+# set from, and `ready` for its public-followup line, and REFUSES anything the
+# recovery listing must never ask for: a body field, an unfiltered whole-backlog
+# listing, or done rows. FM_FAKE_TASKS_AXI_READY sizes the dispatchable set so
+# the queued bound can be driven past its limit; its queued listing also
+# carries a captain-kind row and a lapsed captain date hold that `ready` alone would
+# count, and neither may reach the dispatchable listing.
 make_fake_tasks_axi_compact() {
   local fakebin=$1
   cat > "$fakebin/tasks-axi" <<'SH'
@@ -124,6 +127,7 @@ log=${FM_FAKE_TASKS_AXI_LOG:-}
 ready_count=${FM_FAKE_TASKS_AXI_READY:-2}
 require_file() {
   case "$*" in *'--file '*) return 0 ;; esac
+  [ -n "${TASKS_AXI_FILE:-}" ] && return 0
   printf '%s\n' 'missing explicit backlog file' >&2
   exit 9
 }
@@ -191,6 +195,17 @@ case "${1:-}" in
         task_header 1
         printf '%s\n' '  blocked-followup,queued,scout,firstmate,Follow compact startup,compact-startup,"-","-"'
         ;;
+      *'--state queued --fields blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created'*)
+        printf 'count: %s\n' "$((ready_count + 2))"
+        printf 'tasks[%s]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created}:\n' "$((ready_count + 2))"
+        printf '%s\n' '  captain-call,queued,captain,firstmate,Captain call,no,none,no,"-","-","-","-",2026-07-01'
+        printf '%s\n' '  lapsed-date,queued,ship,firstmate,Lapsed captain date hold,no,none,no,captain,revisit,2026-07-02,"-",2026-07-01'
+        i=1
+        while [ "$i" -le "$ready_count" ]; do
+          printf '  ready-%s,queued,ship,firstmate,Ready item %s,no,none,no,"-","-","-","-",2026-07-01\n' "$i" "$i"
+          i=$((i + 1))
+        done
+        ;;
       *)
         printf '%s\n' 'startup recovery must not request an unfiltered whole-backlog listing' >&2
         exit 9
@@ -249,6 +264,9 @@ case "\${1:-}" in
         ;;
       *'--state queued'*'--blocked'*)
         printf 'tasks[0]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
+        ;;
+      *'--state queued --fields'*)
+        printf 'count: 0\n'
         ;;
       *)
         exit 9
@@ -1794,6 +1812,7 @@ $rec
 EOF
   make_fake_toolchain "$fakebin"
   make_fake_tasks_axi_compact "$fakebin"
+  printf '%s\n' '- firstmate [no-mistakes +yolo] - fixture project (added 2026-07-01)' > "$home/data/projects.md"
   make_fake_ps_claude "$fakebin"
   write_long_body_backlog "$home/data/backlog.md"
   mkdir -p "$home/projects/firstmate"
@@ -1814,8 +1833,12 @@ EOF
     "tasks-axi compact listing omitted a held row or its hold metadata"
   assert_contains "$out" 'blocked-followup,queued,scout,firstmate,Follow compact startup,compact-startup,"-","-"' \
     "tasks-axi compact listing omitted blocked-by metadata"
-  assert_contains "$out" "ready-3,queued,ship,firstmate,Ready item 3" \
+  assert_contains "$out" "ready-3,ship,firstmate,-,Ready item 3" \
     "tasks-axi compact listing omitted a dispatchable queued row inside the bound"
+  assert_not_contains "$out" "captain-call" \
+    "a captain-kind row reached the dispatchable listing"
+  assert_not_contains "$out" "lapsed-date" \
+    "a lapsed date hold reached the dispatchable listing"
   assert_not_contains "$out" "OVERSIZED-BODY-LINE" "tasks-axi compact digest leaked an in-flight task body"
   assert_not_contains "$out" "QUEUED-BODY-LINE" "tasks-axi compact digest leaked a queued task body"
   assert_not_contains "$out" "DONE-ROW-LINE" "tasks-axi compact digest listed a done row at startup"
@@ -1898,18 +1921,19 @@ $rec
 EOF
   make_fake_toolchain "$fakebin"
   make_fake_tasks_axi_compact "$fakebin"
+  printf '%s\n' '- firstmate [no-mistakes +yolo] - fixture project (added 2026-07-01)' > "$home/data/projects.md"
   make_fake_ps_claude "$fakebin"
   write_long_body_backlog "$home/data/backlog.md"
 
   out=$(FM_FAKE_TASKS_AXI_READY=7 FM_SESSION_START_QUEUED_LIMIT=3 \
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "ready-3,queued,ship,firstmate,Ready item 3" \
+  assert_contains "$out" "ready-3,ship,firstmate,-,Ready item 3" \
     "the queued bound dropped a row inside its own limit"
-  assert_not_contains "$out" "ready-4,queued" "the queued bound did not actually bound the ready listing"
+  assert_not_contains "$out" "ready-4," "the queued bound did not actually bound the ready listing"
   assert_contains "$out" "(shown 3 of 7 ready queued item(s))" \
     "the bounded queued listing did not report what it showed"
-  assert_contains "$out" "(4 more queued - bin/fm-tasks-axi.sh ready)" \
+  assert_contains "$out" "(4 more queued - bin/fm-queue-snapshot.sh --dispatchable --limit 7)" \
     "the bounded queued listing did not disclose an exact remainder and how to see it"
 
   # The bound is for dispatchable work only: held and blocked rows stay whole.

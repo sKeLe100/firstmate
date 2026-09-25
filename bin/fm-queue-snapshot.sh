@@ -95,7 +95,15 @@
 # rather than an artifact of a handful of manually-tagged items.
 #
 # Usage: fm-queue-snapshot.sh [--limit N] [--priority] [--now YYYY-MM-DD]
+#                              [--dispatchable]
 #   (default N=30)
+#   --dispatchable prints only the rows whose `gate` is "dispatchable", in
+#   the same rank order, as the compact listing documented under "Dispatchable
+#   output" below, and stops there: it spends no quota-axi read. This `gate`
+#   is firstmate's one definition of ready to dispatch; the session-start
+#   digest's ready listing and the heartbeat's refill both read it here rather
+#   than deriving their own (a raw `tasks-axi ready` would count captain-kind
+#   rows and lapsed `hold_until` dates as ready).
 #   --now is for the colocated test only; without it the `rot` field's age
 #   check reads the real system date, matching the --now convention
 #   bin/fm-captain-window.sh already uses for the same reason.
@@ -201,6 +209,12 @@
 #     Firstmate has no configured concurrency cap by default (AGENTS.md
 #     section 7), so this script never reports one.
 #
+# Dispatchable output (--dispatchable only):
+#   count: <n shown>
+#   total_dispatchable: <n>
+#   dispatchable[<n>]{rank,id,kind,repo,priority,title}:
+#     <csv row>...   -- same CSV rules as items above; absent when n is 0 --
+#
 # Fails loudly (exit 1) when tasks-axi is missing or its list call errors,
 # rather than reporting an empty queue that might just be a broken lookup.
 set -euo pipefail
@@ -217,6 +231,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 LIMIT=30
 SORT_MODE=gate
 NOW_OVERRIDE=""
+DISPATCHABLE_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --limit)
@@ -235,6 +250,10 @@ while [ $# -gt 0 ]; do
       ;;
     --priority)
       SORT_MODE=priority
+      shift
+      ;;
+    --dispatchable)
+      DISPATCHABLE_ONLY=1
       shift
       ;;
     --now)
@@ -309,6 +328,7 @@ FM_QUEUE_SORT_MODE="$SORT_MODE" \
 FM_QUEUE_CFG="$CFG" \
 FM_QUEUE_STATE_DIR="$FM_HOME/state" \
 FM_QUEUE_NOW="$NOW_OVERRIDE" \
+FM_QUEUE_DISPATCHABLE_ONLY="$DISPATCHABLE_ONLY" \
 python3 - "$TMP_LIST" <<'PY'
 import csv
 import glob
@@ -326,6 +346,7 @@ sort_mode = os.environ["FM_QUEUE_SORT_MODE"]
 cfg_path = os.environ["FM_QUEUE_CFG"]
 state_dir = os.environ["FM_QUEUE_STATE_DIR"]
 now_override = os.environ["FM_QUEUE_NOW"]
+dispatchable_only = os.environ["FM_QUEUE_DISPATCHABLE_ONLY"] == "1"
 
 # Reuses the >24-hour deferred-ready staleness convention from the
 # `autonomous` skill (see fm-queue-snapshot.sh's header) rounded to one full
@@ -543,6 +564,21 @@ else:
             deferred_date(e[5]),
         ),
     )
+
+if dispatchable_only:
+    ready = [e for e in sorted_enriched if e[5] == "dispatchable"]
+    shown = ready[:limit]
+    print(f"count: {len(shown)}")
+    print(f"total_dispatchable: {len(ready)}")
+    if shown:
+        print(f"dispatchable[{len(shown)}]{{rank,id,kind,repo,priority,title}}:")
+        writer = csv.writer(sys.stdout, lineterminator="\n")
+        for rank, e in enumerate(shown, start=1):
+            r = e[0]
+            cells = [one_line(str(v)) for v in
+                     (rank, r["id"], r["kind"], e[1], r["priority"], r["title"])]
+            writer.writerow(["  " + cells[0]] + cells[1:])
+    sys.exit(0)
 
 ranked_enriched = sorted_enriched[:limit]
 hidden_rows_src = [e[0] for e in sorted_enriched[limit:]]

@@ -1271,6 +1271,21 @@ busy_turn_over_age() {  # <task>
   [ "$(age_of "$f")" -ge "$BUSY_TURN_MAX_SECS" ]
 }
 
+# 0 when handle_paused_stale may resurface this sighting, so the backlog read
+# that decides its wording is worth paying: the window's re-surface marker does
+# not already hold <scope> (a first sight, or a marker a captain-call scope
+# wrote, which only that read can re-derive), or the cadence has run out. A pure
+# read that only gates that backlog read; resurface_absorbed still decides.
+paused_recheck_due() {  # <window-key> <scope> <status-age> <last-line> <now>
+  local throttle="$STATE/.paused-resurfaced-$1" scope=$2 age=$3 last=$4 now=$5 until
+  [ "$(cat "$throttle" 2>/dev/null || true)" = "$scope" ] || return 0
+  if until=$(status_paused_until "$last") && [ "$now" -ge "$until" ]; then
+    return 0
+  fi
+  [ "$age" -ge "$PAUSE_RESURFACE_SECS" ] \
+    && [ "$(age_of "$throttle")" -ge "$PAUSE_RESURFACE_SECS" ]
+}
+
 # Absorb a stale pane under a declared external-wait pause (paused:) or a
 # dead-agent captain-held transfer, and re-surface it once every
 # PAUSE_RESURFACE_SECS for a recheck so it cannot rot invisibly. Called on any
@@ -1287,8 +1302,21 @@ busy_turn_over_age() {  # <task>
 # captain themself for a verified hold. Only the captain-held verb takes the second
 # wording; a caller that reached the bounded cadence off pause tracking alone, with
 # no declaring verb left on the log, keeps the external-wait wording it always had.
+#
+# The status verb alone cannot say whether a wait is really the captain's: a
+# `paused:` line is also written over work the captain holds, and a
+# `captain-held:` line can outlive a hold the backlog has since released. So once
+# a recheck is actually due, the backlog's own `open` predicate
+# (task_captain_call_open) decides, never the line's prose: a paused wait the
+# backlog holds for the captain takes the captain wording and the call's
+# lifecycle scope, and a captain-held line whose backlog row is no longer held
+# resurfaces as a record divergence. The read runs only where paused_recheck_due
+# says a re-surface is possible - at most once per stale hash for a wait already
+# bound to a captain call, the same cost surface_nonterminal_stale pays - and a
+# backlog that cannot be read, a row this home does not carry, and a secondmate
+# window (whose holds live in its own home) keep the wording the verb alone gives.
 handle_paused_stale() {  # <window> <task> <hash>
-  local win=$1 task=$2 h=$3 key statusf mtime age detail reason declaration last until now min_age
+  local win=$1 task=$2 h=$3 key statusf mtime age detail reason declaration last until now min_age hold_rc
   key=$(window_key "$win")
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
@@ -1302,13 +1330,30 @@ handle_paused_stale() {  # <window> <task> <hash>
   last=$(last_status_line "$statusf")
   min_age=$PAUSE_RESURFACE_SECS
   declaration="declared:$(fm_wake_signal_sig "$statusf" || true)"
-  if status_is_captain_held "$last"; then
+  hold_rc=
+  if [ "$(window_kind "$win")" != secondmate ] \
+    && paused_recheck_due "$key" "$declaration" "$age" "$last" "$now"; then
+    hold_rc=0
+    task_captain_call_open "$task" || hold_rc=$?
+  fi
+  if status_is_captain_held "$last" && [ "$hold_rc" = 1 ]; then
+    detail="captain-held, backlog not held"
+    reason="captain-held ${age}s, but the backlog no longer holds this task for the captain - the two records disagree; reconcile the hold or the status line"
+  elif status_is_captain_held "$last"; then
     if afk_record_present; then
       triage_log "absorbed stale (captain-held, never rechecked while the away-posture record exists): $win"
       return 0
     fi
     detail="captain-held, awaiting the captain"
     reason="captain-held ${age}s, awaiting the captain - verified hold transfer, rechecked on a long cadence not a wedge; answer the held decision or release the hold"
+  elif status_is_paused "$last" && [ "$hold_rc" = 0 ]; then
+    if afk_record_present; then
+      triage_log "absorbed stale (paused, held for the captain, never rechecked while the away-posture record exists): $win"
+      return 0
+    fi
+    detail="paused, held for the captain"
+    reason="paused ${age}s, held for the captain - the backlog records an open captain call, rechecked on a long cadence not a wedge; answer the held decision or release the hold"
+    declaration=$(captain_call_declaration "$task" "$CAPTAIN_CALL_IDENTITY")
   elif until=$(status_paused_until "$last"); then
     if [ "$now" -lt "$until" ] && [ "$age" -lt "$PAUSE_RESURFACE_SECS" ]; then
       triage_log "absorbed stale (paused until $(( until - now ))s from now, declared time not reached): $win"
@@ -1505,13 +1550,17 @@ STALE_WAIT_DECLARATION=
 
 CAPTAIN_CALL_IDENTITY=
 
+# Returns `open`'s own exit status (0 open, 1 not, 2 could not be established,
+# 3 no such task here), so a caller that must tell "released" from "cannot tell"
+# or "not this home's row" can.
 task_captain_call_open() {  # <task>
-  local task=$1
+  local task=$1 rc=0
   CAPTAIN_CALL_IDENTITY=
   [ -n "$task" ] || return 1
   CAPTAIN_CALL_IDENTITY=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" \
-    open "$task" --identity 2>/dev/null) || return 1
-  return 0
+    open "$task" --identity --distinguish-absent 2>/dev/null) || rc=$?
+  [ "$rc" -eq 0 ] || CAPTAIN_CALL_IDENTITY=
+  return "$rc"
 }
 
 # The identity a re-surface throttle is bound to: the task's whole status-log

@@ -63,11 +63,10 @@ Read `decisions_open` as an array of rows, each carrying `id`, `key`,
 `verb`, `summary`, `owner`, `declared_priority`, `since`, and
 `created_at` (the last two per the captain's timestamp ruling: `since`
 is the human-readable timestamp of when the captain call was raised, read
-from the `held-since` mark in `data/task-marks.tsv` and falling back to the
-row's own tasks-axi creation date on rows written before the sidecar
-existed; `created_at` is the epoch seconds derived from the `hold_set` body
-stamp, falling back to `held_since` then `since`, absent when none is
-present).
+from the row body's `Captain hold set:` stamp (`bin/fm-captain-hold.sh`
+owns its reset rules) and falling back to the row's own tasks-axi creation
+date; `created_at` is the same value as epoch seconds, absent when neither
+is present).
 Step 2's `fm-autonomous-thresholds.sh` call counts only chat-rulable
 rows toward the bundle-size threshold and finds the oldest chat-rulable
 row by `created_at` for the time-threshold check, counting every open
