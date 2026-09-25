@@ -122,7 +122,9 @@
 #   --per-script-timeout-secs N
 #                   terminate a script that runs longer than N seconds and
 #                   record it as exit 124 (0 disables, the default). The
-#                   --changed path applies a 900s base automatically, scaled
+#                   --changed path applies a 900s base automatically (1500s
+#                   for tests/fm-watch-triage.test.sh and
+#                   tests/fm-captain-hold-lifecycle.test.sh), scaled
 #                   up by max(1, load5/cpus) so host contention cannot turn a
 #                   healthy script into a false timeout: on an idle host this
 #                   still converts a HUNG script into a bounded failure, but
@@ -155,7 +157,7 @@
 #   FM_TEST_END <iso8601> <script> exit=<code> duration_ms=<n> gate_skip=<true|false>
 #
 # Once per automatic --changed/scripts run, before scheduling (stdout):
-#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n>
+#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n> watch_triage_timeout_secs=<n> captain_hold_timeout_secs=<n>
 #     Lets a later reader tell a load kill from a genuine hang.
 #
 # After all scripts (stdout):
@@ -287,6 +289,17 @@ PER_SCRIPT_TIMEOUT_SECS=0
 # let a healthy script approach or exceed 900s on its own -- the effective
 # bound is scaled by max(1, load5/cpus) for exactly that reason.
 CHANGED_DEFAULT_TIMEOUT_SECS=900
+# Base for tests/fm-watch-triage.test.sh on the same automatic --changed path,
+# scaled the same way: it measured 924s on PC01 under full-suite load against
+# the 900s base, so it alone gets this longer base rather than a false timeout.
+CHANGED_WATCH_TRIAGE_TIMEOUT_SECS=1500
+WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=
+# Same treatment for tests/fm-captain-hold-lifecycle.test.sh: its portable-serial
+# hint measures 296s alone, but it hit the 900s base under PC01 full-suite
+# contention (load5/cpus stays under 1 here even under real load, so the
+# load_scaled_timeout_secs multiplier below never engages on this host).
+CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS=1500
+CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=
 
 # Bound and cadence for the token-free retry's wait for load5 to drop back
 # under cpus before re-running exactly the load-plausible failures once,
@@ -1029,7 +1042,7 @@ tests/fm-spawn-worktree-settle.test.sh 13000
 tests/fm-startup-memory-budget.test.sh 6964
 tests/fm-startup-network.test.sh 62274
 tests/fm-stat-shadowing.test.sh 54
-tests/fm-stow-cascade.test.sh 5924
+tests/fm-stow-cascade.test.sh 7406
 tests/fm-subagent-pretool-check.test.sh 1030
 tests/fm-supervision-events.test.sh 719
 tests/fm-tangle-guard.test.sh 9662
@@ -2679,6 +2692,8 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
   HOST_LOAD5=$(load5)
   if [ "$MODE" = changed ] && [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
     PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_DEFAULT_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
+    WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_WATCH_TRIAGE_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
+    CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
   fi
   auto_admissible=0
   for s in "${SCRIPTS[@]}"; do
@@ -2691,8 +2706,10 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
     JOBS=$(load_scaled_jobs "$JOBS" "$HOST_LOAD5" "$HOST_CPUS")
     [ "$JOBS" -eq 1 ] || AUTO_CONCURRENCY=1
   fi
-  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s\n' \
-    "$HOST_LOAD5" "$HOST_CPUS" "$JOBS" "$PER_SCRIPT_TIMEOUT_SECS"
+  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s watch_triage_timeout_secs=%s captain_hold_timeout_secs=%s\n' \
+    "$HOST_LOAD5" "$HOST_CPUS" "$JOBS" "$PER_SCRIPT_TIMEOUT_SECS" \
+    "${WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS:-$PER_SCRIPT_TIMEOUT_SECS}" \
+    "${CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS:-$PER_SCRIPT_TIMEOUT_SECS}"
 fi
 if [ "$JOBS" -gt 1 ] || [ "$MODE" = changed ] || [ "$MODE" = scripts ]; then
   SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
@@ -2918,30 +2935,35 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   local GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
   # shellcheck source=tests/git-config-helpers.sh
   . "$ROOT/tests/git-config-helpers.sh" || return
-  local rc
+  local rc bound=$PER_SCRIPT_TIMEOUT_SECS
   : "$id"
+  if [ -n "$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-watch-triage.test.sh ]; then
+    bound=$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS
+  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-captain-hold-lifecycle.test.sh ]; then
+    bound=$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS
+  fi
   set +e
   if [ "$stream" -eq 1 ]; then
-    if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
+    if [ "$bound" -gt 0 ]; then
       # Expansion is intentionally deferred to the child bash passed to -c.
       # shellcheck disable=SC2016
-      fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash -c \
+      fm_run_timed "$bound" bash -c \
         'bash "$1" 2>&1 | tee "$2"; exit "${PIPESTATUS[0]}"' _ "$script" "$out"
       rc=$?
     else
       bash "$script" 2>&1 | tee "$out"
       rc=${PIPESTATUS[0]}
     fi
-  elif [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
-    fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash "$script" >"$out" 2>&1
+  elif [ "$bound" -gt 0 ]; then
+    fm_run_timed "$bound" bash "$script" >"$out" 2>&1
     rc=$?
   else
     bash "$script" >"$out" 2>&1
     rc=$?
   fi
-  if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ] && [ "$rc" -eq 124 ]; then
+  if [ "$bound" -gt 0 ] && [ "$rc" -eq 124 ]; then
     printf 'not ok - %s exceeded the per-script bound of %ss and was terminated\n' \
-      "$script" "$PER_SCRIPT_TIMEOUT_SECS" >>"$out"
+      "$script" "$bound" >>"$out"
     [ "$stream" -eq 1 ] && tail -1 "$out"
   fi
   return "$rc"

@@ -2348,6 +2348,72 @@ SH
   pass "the --changed default per-script timeout scales by max(1, load5/cpus)"
 }
 
+# assert_changed_script_gets_own_scaled_timeout <script-stem> <marker-field>:
+# on the --changed path <script-stem> alone gets a longer, still load-scaled
+# 1500s bound while other load-sensitive scripts keep the 900s base.
+assert_changed_script_gets_own_scaled_timeout() {
+  local stem=$1 field=$2 tmp repo s
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-$stem-timeout.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
+fm_run_timed() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      *.test.sh) printf '%s %s\n' "$(basename "$arg")" "$1" >>"$FM_TIMEOUT_SEEN_FILE" ;;
+    esac
+  done
+  shift
+  "$@"
+}
+SH
+  for s in "$stem" fm-wake-queue; do
+    printf '#!/usr/bin/env bash\necho "ok - %s fixture"\n' "$s" >"$repo/tests/$s.test.sh"
+    chmod +x "$repo/tests/$s.test.sh"
+  done
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+  printf '\n' >>"$repo/tests/$stem.test.sh"
+  printf '\n' >>"$repo/tests/fm-wake-queue.test.sh"
+
+  (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-idle" \
+    FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=0 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/idle.out" 2>"$tmp/idle.err" \
+    || { cat "$tmp/idle.err"; rm -rf "$tmp"; fail "idle $stem timeout fixture run failed"; }
+  grep -qx "$stem.test.sh 1500" "$tmp/seen-idle" \
+    || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "idle host must bound $stem at 1500s"; }
+  grep -qx 'fm-wake-queue.test.sh 900' "$tmp/seen-idle" \
+    || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "other load-sensitive scripts must keep the 900s base"; }
+  grep -q "^FM_TEST_HOST_LOAD .* per_script_timeout_secs=900 .*${field}_timeout_secs=1500" "$tmp/idle.out" \
+    || { cat "$tmp/idle.out"; rm -rf "$tmp"; fail "idle host-load marker did not report the $field bound"; }
+
+  (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-loaded" \
+    FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=8 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/loaded.out" 2>"$tmp/loaded.err" \
+    || { cat "$tmp/loaded.err"; rm -rf "$tmp"; fail "loaded $stem timeout fixture run failed"; }
+  grep -qx "$stem.test.sh 3000" "$tmp/seen-loaded" \
+    || { cat "$tmp/seen-loaded"; rm -rf "$tmp"; fail "load5=2x cpus must double the $stem bound"; }
+
+  rm -rf "$tmp"
+  pass "the --changed path bounds $stem at its own load-scaled 1500s base"
+}
+
+# fm-watch-triage measured 924s under PC01 full-suite load against the 900s base.
+test_changed_watch_triage_gets_its_own_scaled_timeout() {
+  assert_changed_script_gets_own_scaled_timeout fm-watch-triage watch_triage
+}
+
+# fm-captain-hold-lifecycle measured 296s standalone but hit the 900s base
+# under PC01 full-suite load.
+test_changed_captain_hold_gets_its_own_scaled_timeout() {
+  assert_changed_script_gets_own_scaled_timeout fm-captain-hold-lifecycle captain_hold
+}
+
 # P2 item 3: the token-free retry re-runs exactly the load-plausible failures
 # once, serially, and clears a run whose only failures come from host
 # contention rather than a real regression.
@@ -2530,6 +2596,8 @@ test_fail_fast_jobs_stops_scheduling
 test_fail_fast_skips_the_unproven_serial_tail
 test_host_load_marker_and_scheduler_throttle
 test_changed_default_timeout_scales_with_host_load
+test_changed_watch_triage_gets_its_own_scaled_timeout
+test_changed_captain_hold_gets_its_own_scaled_timeout
 test_token_free_retry_recovers_load_sensitive_failure
 test_token_free_retry_covers_exit_124_regardless_of_name
 test_token_free_retry_skips_when_a_failure_is_not_load_plausible
