@@ -14,14 +14,14 @@ export FM_HOME="$TEST_STATE"
 
 test_checkpoint_writes_json() {
   "$BIN" || fail "checkpoint script must exit 0"
-  out=$(ls "$TEST_STATE"/precompact-checkpoint-*.json 2>/dev/null | head -1)
+  out=$(find "$TEST_STATE" -maxdepth 1 -name 'precompact-checkpoint-*.json' 2>/dev/null | head -1)
   [ -f "$out" ] || fail "checkpoint file not written"
   jq . "$out" >/dev/null 2>&1 || fail "checkpoint is not valid JSON"
   pass "checkpoint written and valid JSON"
 }
 
 test_checkpoint_contains_keys() {
-  out=$(ls "$TEST_STATE"/precompact-checkpoint-*.json 2>/dev/null | head -1)
+  out=$(find "$TEST_STATE" -maxdepth 1 -name 'precompact-checkpoint-*.json' 2>/dev/null | head -1)
   jq -e '.timestamp and .wake_queue and .open_decisions and .tasks_in_flight' "$out" >/dev/null || fail "required keys missing"
   pass "checkpoint contains required top-level keys"
 }
@@ -41,7 +41,7 @@ test_checkpoint_extracts_seeded_state() {
   : > "$TEST_STATE/task-123.meta"
 
   "$BIN" || fail "checkpoint script must exit 0"
-  out=$(ls "$TEST_STATE"/precompact-checkpoint-*.json 2>/dev/null | head -1)
+  out=$(find "$TEST_STATE" -maxdepth 1 -name 'precompact-checkpoint-*.json' 2>/dev/null | head -1)
   [ -f "$out" ] || fail "checkpoint file not written"
 
   jq -e '.wake_queue == [{"seq":42,"ts":"1700000000","kind":"signal"}]' "$out" >/dev/null \
