@@ -1266,6 +1266,8 @@ test_upstream_sync_brief_carries_the_hard_gates() {
   done
   assert_grep "NON-PRE-EXISTING REGRESSION STOP" "$brief" \
     "upstream-sync brief must state the non-pre-existing-regression stop"
+  assert_grep "--exclude-quarantined" "$brief" \
+    "upstream-sync brief must run the suite with --exclude-quarantined"
   assert_grep "PR PURITY" "$brief" \
     "upstream-sync brief must state the PR-purity requirement"
   assert_grep "BOUNDED BATCH, TRUE MERGE ONLY" "$brief" \

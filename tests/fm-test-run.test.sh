@@ -998,6 +998,65 @@ test_exclude_family() {
   pass "exclude-family drops the named primary family after selection"
 }
 
+test_exclude_quarantined() {
+  local listed quarantine_file script signature reason owner tmp qfile out
+  quarantine_file="$ROOT/tests/fm-test-quarantine.tsv"
+  assert_present "$quarantine_file" "the tracked quarantine list is missing"
+
+  # Every entry must name an existing test script and carry four tab-separated
+  # columns, so a renamed or deleted test cannot leave a stale, silently
+  # ignored entry behind.
+  while IFS=$'\t' read -r script signature reason owner; do
+    [ -n "$script" ] || continue
+    assert_present "$ROOT/$script" "quarantine entry names a missing script: $script"
+    [ -n "$signature" ] || fail "quarantine entry for $script has an empty signature"
+    [ -n "$reason" ] || fail "quarantine entry for $script has an empty reason"
+    [ -n "$owner" ] || fail "quarantine entry for $script has an empty owner"
+  done < <(grep -v '^[[:space:]]*#' "$quarantine_file" | grep -v '^[[:space:]]*$')
+
+  tmp=$(fm_test_tmproot fm-test-quarantine)
+  qfile="$tmp/q.tsv"
+  printf '# comment\n\ntests/fm-transition-lib.test.sh\tsig-x\treason-x\towner-x\n' > "$qfile"
+
+  # --exclude-quarantined drops exactly the listed scripts and keeps stdout a
+  # clean path list; the loud markers go to stderr, not the path list.
+  listed=$("$RUNNER" --quarantine-file "$qfile" --list --all --exclude-quarantined 2>/dev/null)
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-transition-lib.test.sh' \
+    && fail "exclude-quarantined left a quarantined script selected"
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-lint.test.sh' \
+    || fail "exclude-quarantined must retain non-quarantined scripts"
+  assert_not_contains "$listed" "FM_TEST_QUARANTINED" \
+    "--list stdout must stay a clean path list"
+
+  # The flag is opt-in: without it nothing is excluded.
+  listed=$("$RUNNER" --quarantine-file "$qfile" --list --all 2>/dev/null)
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-transition-lib.test.sh' \
+    || fail "absence of --exclude-quarantined must keep the script"
+
+  # An explicitly named quarantine list that is missing is refused, never a
+  # silent change of selection.
+  if out=$("$RUNNER" --quarantine-file "$tmp/missing.tsv" --list --all --exclude-quarantined 2>&1); then
+    fail "a missing --quarantine-file must be refused"
+  fi
+  assert_contains "$out" "quarantine list not readable: $tmp/missing.tsv" \
+    "a missing --quarantine-file must name the path"
+  if out=$(FM_TEST_QUARANTINE_FILE="$tmp/missing.tsv" "$RUNNER" --list --all --exclude-quarantined 2>&1); then
+    fail "a missing FM_TEST_QUARANTINE_FILE must be refused"
+  fi
+
+  # A run reports every quarantined skip loudly and runs nothing quarantined.
+  out=$("$RUNNER" --quarantine-file "$qfile" --exclude-quarantined \
+    tests/fm-transition-lib.test.sh 2>/dev/null)
+  assert_contains "$out" "FM_TEST_QUARANTINED tests/fm-transition-lib.test.sh" \
+    "run mode must print the quarantined marker"
+  assert_contains "$out" "FM_TEST_QUARANTINE_SUMMARY quarantined=1" \
+    "run mode must print the quarantine summary"
+  assert_contains "$out" "FM_TEST_SUMMARY total=0" \
+    "a fully-quarantined selection runs nothing"
+
+  pass "exclude-quarantined drops exactly the listed scripts and reports each skip loudly"
+}
+
 test_list_scheduled_proven_isolated_uses_serial_weights() {
   local tmp
   tmp=$(fm_test_tmproot fm-test-run-proven-schedule)
@@ -1341,6 +1400,22 @@ test_unmapped_new_test_never_inherits_family_concurrency() {
     || fail "the unmapped fixture did not land in the catch-all family: $(cat "$tmp/serial.out")"
   rm -rf "$tmp"
   pass "an unclassified new test stays serial while the proven residual family runs concurrently"
+}
+
+test_quarantine_list_change_selects_runner_contract() {
+  local tmp repo listed
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-quarantine-map.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  # The owner item that lands a fix removes its quarantine entry; that edit
+  # must select the runner contract rather than refuse as an unmapped path.
+  printf '# quarantine\n' >"$repo/tests/fm-test-quarantine.tsv"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) \
+    || fail "a quarantine list change must not refuse --changed selection"
+  assert_contains "$listed" "tests/fm-test-run.test.sh" \
+    "quarantine list change selects the runner contract"
+  rm -rf "$tmp"
+  pass "quarantine list change selects runner coverage"
 }
 
 test_changed_shared_fixture_selects_its_readers() {
@@ -2413,6 +2488,7 @@ test_changed_file_selection_is_conservative
 test_task_marker_refuses_the_primary_checkout
 test_changed_runner_surfaces_select_their_family
 test_shell_line_ending_policy_selects_runner_contract
+test_quarantine_list_change_selects_runner_contract
 test_changed_dependency_selection_and_unmapped_failure
 test_changed_bin_reference_selects_per_script_not_per_family
 test_changed_uses_bounded_automatic_concurrency
@@ -2428,6 +2504,7 @@ test_a_run_that_ran_records_no_skip_reason
 test_live_guards_expect_a_capability_skip_class
 test_fail_on_gate_skip_token
 test_exclude_family
+test_exclude_quarantined
 test_list_scheduled_proven_isolated_uses_serial_weights
 test_list_scheduled_non_lane_selections_use_serial_weights
 test_portable_shard_union_and_coverage_guard

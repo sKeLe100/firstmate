@@ -67,6 +67,24 @@
 #                   drop scripts whose primary family matches <name> after selection
 #                   (repeatable; portable CI lanes exclude real-herdr-gated so the
 #                   dedicated required Herdr lane owns that coverage)
+#   --exclude-quarantined
+#                   drop every script named in the tracked quarantine list
+#                   (tests/fm-test-quarantine.tsv, override with --quarantine-file
+#                   or FM_TEST_QUARANTINE_FILE) from the selection, after family
+#                   exclusion. Each quarantined skip prints one loud
+#                   `FM_TEST_QUARANTINED <script> signature=<...> reason=<...>
+#                   owner=<...>` line and the run ends with an
+#                   `FM_TEST_QUARANTINE_SUMMARY quarantined=<n>` line, so a
+#                   pre-existing host-sensitive failure is excluded loudly rather
+#                   than hidden. docs/configuration.md "Upstream autosync" owns
+#                   the quarantine contract; the upstream-sync brief gate uses
+#                   this flag so known pre-existing failures cannot stall a sync.
+#   --quarantine-file <path>
+#                   read the quarantine list from <path> instead of the tracked
+#                   default (mostly for tests and fixture repos). An explicit
+#                   path (flag or FM_TEST_QUARANTINE_FILE) that is missing or
+#                   unreadable is refused; a missing tracked default only logs
+#                   and quarantines nothing.
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
@@ -245,6 +263,9 @@ BASE_REF=origin/main
 JSON_PATH=
 SCRIPTS=()
 EXCLUDE_FAMILIES=()
+EXCLUDE_QUARANTINED=0
+QUARANTINE_FILE=
+QUARANTINED_COUNT=0
 FAIL_ON_GATE_SKIP=
 JOBS=1
 FAIL_FAST=
@@ -1974,6 +1995,11 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-lint-test-size.test.sh"
       printf '%s\n' "__script__:fm-lint.test.sh"
       ;;
+    tests/fm-test-quarantine.tsv)
+      # --exclude-quarantined's tracked list, whose format and runner
+      # behavior are exercised by the runner's own contract test.
+      printf '%s\n' "__script__:fm-test-run.test.sh"
+      ;;
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;
@@ -2101,6 +2127,71 @@ apply_exclude_families() {
       fi
     done
     [ "$keep" -eq 1 ] && kept+=("$s")
+  done
+  SCRIPTS=("${kept[@]+"${kept[@]}"}")
+}
+
+# The tracked quarantine list (tests/fm-test-quarantine.tsv) is the one owner of
+# which pre-existing host-sensitive failures an upstream-sync validation may
+# exclude; see that file's header and docs/configuration.md "Upstream autosync".
+# Reads the list's non-comment lines, each "<script>\t<signature>\t<reason>\t<owner>",
+# and prints them one per line for the caller. An empty list quarantines
+# nothing; apply_exclude_quarantined checks readability before calling this.
+quarantine_entries() {
+  local file=$1
+  awk -F'\t' '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    NF >= 1 && $1 != "" { print }
+  ' "$file"
+}
+
+# Drop every selected script named in the quarantine list, printing one loud
+# FM_TEST_QUARANTINED line per dropped script so a quarantine exclusion is never
+# hidden. A quarantined script that is not in the current selection is not a
+# skip of this run, so it is not reported here.
+apply_exclude_quarantined() {
+  local s script signature reason owner entry file
+  local -a kept=()
+  local -a entries=()
+  QUARANTINED_COUNT=0
+  [ "$EXCLUDE_QUARANTINED" -eq 1 ] || return 0
+  file=${QUARANTINE_FILE:-${FM_TEST_QUARANTINE_FILE:-}}
+  if [ -n "$file" ]; then
+    [ -f "$file" ] && [ -r "$file" ] \
+      || die "quarantine list not readable: $file (set by --quarantine-file or FM_TEST_QUARANTINE_FILE)"
+  else
+    file="$ROOT/tests/fm-test-quarantine.tsv"
+    if [ ! -r "$file" ]; then
+      log "quarantine list not readable: $file (nothing quarantined)"
+      return 0
+    fi
+  fi
+  while IFS= read -r entry; do
+    [ -n "$entry" ] && entries+=("$entry")
+  done < <(quarantine_entries "$file")
+  for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
+    for entry in "${entries[@]+"${entries[@]}"}"; do
+      IFS=$'\t' read -r script signature reason owner <<<"$entry"
+      [ -n "$script" ] || continue
+      if [ "$script" = "$s" ]; then
+        signature=${signature:-}
+        reason=${reason:-}
+        owner=${owner:-}
+        # The machine-parseable marker rides stdout only in a real run: --list
+        # and --list-scheduled keep stdout as a clean path list. The stderr log
+        # is loud in every mode, so a quarantine skip is never hidden.
+        if [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
+          printf 'FM_TEST_QUARANTINED %s signature=%s reason=%s owner=%s\n' \
+            "$script" "$signature" "$reason" "$owner"
+        fi
+        log "quarantined skip: $script (signature: ${signature:-<none>}, owner: ${owner:-<none>})"
+        QUARANTINED_COUNT=$((QUARANTINED_COUNT + 1))
+        s=
+        break
+      fi
+    done
+    [ -n "$s" ] && kept+=("$s")
   done
   SCRIPTS=("${kept[@]+"${kept[@]}"}")
 }
@@ -2336,6 +2427,19 @@ while [ "$#" -gt 0 ]; do
       EXCLUDE_FAMILIES+=("${1#--exclude-family=}")
       shift
       ;;
+    --exclude-quarantined)
+      EXCLUDE_QUARANTINED=1
+      shift
+      ;;
+    --quarantine-file)
+      [ "$#" -gt 1 ] || die "--quarantine-file requires a path"
+      QUARANTINE_FILE=$2
+      shift 2
+      ;;
+    --quarantine-file=*)
+      QUARANTINE_FILE=${1#--quarantine-file=}
+      shift
+      ;;
     --fail-on-gate-skip)
       [ "$#" -gt 1 ] || die "--fail-on-gate-skip requires a token (e.g. 'herdr not found')"
       FAIL_ON_GATE_SKIP=$2
@@ -2484,6 +2588,13 @@ esac
 apply_exclude_families
 if [ "${#EXCLUDE_FAMILIES[@]}" -gt 0 ]; then
   SELECTION_DESC="${SELECTION_DESC};exclude-family=$(IFS=,; printf '%s' "${EXCLUDE_FAMILIES[*]}")"
+fi
+apply_exclude_quarantined
+if [ "$EXCLUDE_QUARANTINED" -eq 1 ]; then
+  SELECTION_DESC="${SELECTION_DESC};exclude-quarantined"
+  if [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
+    printf 'FM_TEST_QUARANTINE_SUMMARY quarantined=%s\n' "${QUARANTINED_COUNT:-0}"
+  fi
 fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
