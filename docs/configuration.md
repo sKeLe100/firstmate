@@ -17,7 +17,76 @@ Untracked files and directories whose names begin with `scratchpad` are also git
 
 `bin/fm-spawn.sh` owns the base task-metadata fields it emits, while the runtime-backend section below owns backend-specific fields and selector interpretation.
 The producing PR and Relay helpers own the fields they append, `bin/fm-classify-lib.sh` owns status-event vocabulary, and `bin/fm-crew-state.sh` owns current-state reconciliation.
-Wake, watcher, away-mode, and Relay-specific state mechanics remain with their named scripts and reference sections rather than being duplicated into one exhaustive state tree here.
+The routing table below maps every file to its owner; wake, watcher, away-mode, and Relay-specific state mechanics remain with their named scripts and reference sections, so the table points at those owners rather than restating their mechanics.
+
+```
+AGENTS.md            the supervisor contract (CLAUDE.md is a real @AGENTS.md pointer to it)
+CONTRIBUTING.md      contributor workflow and repo conventions
+README.md            public overview and development notes
+.github/workflows/   shared CI and PR enforcement, committed
+.tasks.toml          tracked tasks-axi markdown backend config for the default backlog backend
+.agents/skills/      firstmate-loaded internal skills, committed; each carries metadata.internal=true for installers
+.claude/skills       symlink to .agents/skills for claude compatibility
+skills/              standalone public installer-facing skills, committed; not loaded by firstmate
+bin/                 helper scripts, committed; read each script's header before first use
+.env                 optional Relay pairing token and mail-plane credentials (schema: docs/configuration.md "Mail plane"); LOCAL, gitignored
+config/crew-harness      crewmate harness override (absent/default → firstmate's own); inherited; see "Harness support"
+config/claude-permission-mode  Claude worker permission posture (absent/bypass = --dangerously-skip-permissions, auto = --permission-mode auto); inherited; see "Claude permission mode"
+config/claude-remote-control  registers Claude worker launches (and, via fm-primary-herdr.sh, the primary) in the Claude Code app session list (absent/off = unchanged, on = --remote-control); inherited; see "Claude Remote Control"
+config/crew-dispatch.json  optional crewmate dispatch profiles (natural-language harness/model/effort rules); inherited; see "Crew dispatch profiles (config/crew-dispatch.json)"
+config/secondmate-harness  harness for PRIMARY to launch SECONDMATE agents ("<harness> [<model>] [<effort>]"); NOT inherited; see .agents/skills/secondmate-provisioning/SKILL.md
+config/backlog-backend  backlog backend override (tasks-axi or manual); inherited; see "Backlog backend (.tasks.toml / config/backlog-backend)"
+config/backend  runtime session-provider backend override (tmux/herdr/zellij/orca/cmux); inherited; see "Runtime backend (config/backend / FM_BACKEND)"
+config/calm     Pi Calm presentation preference (on/off); NOT inherited; see "Pi Calm preference (config/calm)"
+config/supervision-branch-model
+config/supervision-branch-effort  Pi supervision-branch model and effort pins; NOT inherited; see "Pi supervision branch model and effort (config/supervision-branch-model, config/supervision-branch-effort)"
+config/startup-memory-budget  per-home startup memory budget (default 7500 tokens); inherited; see "Startup memory budget (config/startup-memory-budget)"
+config/stow-pass-horizon  optional presence flag opting into /stow pass-count decay horizon; NOT inherited; see "Stow pass horizon (config/stow-pass-horizon)"
+config/context-thresholds  session-context warn/restart token-band thresholds; inherited; see "Session context thresholds (config/context-thresholds)"
+config/codex-context-thresholds  Codex-side session-context thresholds (separate defaults); NOT inherited; see "Codex context thresholds (config/codex-context-thresholds)"
+config/working-hours  captain attention-window schedule for proactive contact; NOT inherited; see "Captain attention windows (config/working-hours)"
+config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; inherited; see "Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)"
+config/host-memory-floor  free-memory MiB floor below which lanes are refused; primary-authoritative; see "Host memory floor (config/host-memory-floor)"
+config/retry-thresholds  retry-loop relaunch/round ceilings; inherited; see "Retry-loop thresholds (config/retry-thresholds)"
+config/herdr-presentation-spaces  Herdr visual projection on/off opt-in; inherited; see docs/herdr-backend.md "Presentation spaces"
+config/trace-context  W3C trace-context propagation flag; inherited; see "Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)"
+config/upstream-autosync  upstream autosync auto-dispatch eligibility flag; inherited; see "Upstream autosync (config/upstream-autosync)"
+config/turnend-churn-absorb  opt-in absorb of bare turn-end wakes on pane churn; NOT inherited; see "Turn-end pane-churn absorb (config/turnend-churn-absorb)"
+config/primary-continuity  OPTS OUT of primary continuity watchdog (inverted polarity); inherited; see "Primary continuity watchdog"
+config/cmux-socket-password  cmux control-socket password; see docs/cmux-backend.md "Setup"
+config/wedge-alarm  away-mode wedge-alarm active-alert channels (off/auto/osascript/herdr/command); absent means auto; see docs/wedge-alarm.md and "Away-mode wedge alarm channels (config/wedge-alarm)"
+config/watched-tools.json  watched tool updates list; NOT inherited; see "Watched tool updates (config/watched-tools.json)"
+config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; see "Relay (.env)"
+data/                personal fleet records; LOCAL, gitignored as a whole
+  backlog.md         task queue, dependencies, history; see "Backlog backend (.tasks.toml / config/backlog-backend)"
+  captain.md         domain-local captain preferences and working style; LOCAL, gitignored; see "Captain Preferences (data/captain.md / data/captain-shared.md)"
+  captain-shared.md  main-authoritative shared captain preferences for secondmate inheritance; see "Captain Preferences (data/captain.md / data/captain-shared.md)"
+  learnings.md       fleet-local operational facts and gotchas; see "Operational learnings (data/learnings.md)"
+  projects.md        fleet navigation registry recording each project's standing delivery posture; firstmate-private
+  secondmates.md     local and remote secondmate routing table; firstmate-private; see "Secondmate routes (data/secondmates.md)"
+  roundtable-marks.tsv  per-project HEAD of last design-review roundtable review; updated only by `bin/fm-roundtable-factsheet.sh --mark` (docs/roundtable-instrumentation.md)
+  backlog-routing.tsv  durable pc02/medium/senior routing registry for the autonomous refill step; owned by `bin/fm-backlog-routing.sh` (its header owns the columns); bootstrap seed at `.agents/skills/autonomous/assets/backlog-routing.tsv`
+  routing-ledger.tsv  append-only classified/escalated/closed event ledger for that registry; written by `bin/fm-backlog-routing.sh`, read by `bin/fm-routing-ledger-metrics.sh`
+  <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
+  <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
+projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
+state/               runtime records and signals; gitignored
+  <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth
+  <id>.meta          task metadata; each producer script's header owns its exact fields and mutation contract
+  <id>.inbox/        durable steering inbox for sequenced firstmate instructions
+  <id>.merge-authority  private canonical-PR-bound authority persisted after firstmate's forge merge request is accepted and consumed by a later merged poll; bin/fm-merge-authority-lib.sh owns its format and lifecycle
+  mail.check.sh .mail-*  generated received-mail poll shim, its trust binding, and bin/fm-mail.sh's private cursors; present only after bin/fm-mail-check.sh arm (mail schema: "Mail plane")
+  .afk-contract      the away-posture record: the captain's verbatim away words, expected return, reach profile, spend cap, and structured mandate clauses; written only by bin/fm-afk-contract.sh after the captain confirms the read-back, archived under afk-contracts/ at return; its presence IS the away posture in every harness
+  afk-contracts/     archived away-posture records: one final record per away window keyed by entry time, plus any superseded mandates from that window
+  .afk               durable away/quiet-mode daemon flag on the harnesses that still launch the daemon (never on Pi); present = sub-supervisor may inject escalations, first line `away` (default, set by /afk, cleared on user return) or `quiet` (set by /quiet, cleared only on explicit /quiet off) per the single owner fm_afk_mode() in bin/fm-wake-lib.sh
+  .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
+  .watcher-down      private generation-bound recovery state for watcher downtime and durable wake presentation; never touch
+  .hash-* .count-* .stale-* .stale-since-* .churn-since-* .paused-* .wedge-escalations-* .wedge-backoff-* .writing-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
+  .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
+  .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
+  .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
+.no-mistakes/        local validation state and evidence; gitignored
+```
 
 `bin/fm-session-start.sh`'s header is the single owner of session-start ordering, composed commands, digest contents, and the digest's startup mechanism.
 `bin/fm-startup-network.sh`'s header owns the deferred startup stage that keeps every external-network call and the potentially slow inactive-outcome scan off that digest's blocking path, including its state files and the safety argument for running them later.
@@ -237,7 +306,7 @@ The list lives at `tests/fm-test-quarantine.tsv` - one entry per line, each nami
 The `--upstream-sync` brief gate tells the worker to run the suite with `--exclude-quarantined` and to reproduce any *non*-quarantined failure on the pre-merge base before treating it as pre-existing; a quarantined failure is an expected, documented skip, never hidden and never a license to skip anything else.
 The file's own header owns the column format and the `--exclude-quarantined` flag mechanics live in `bin/fm-test-run.sh`'s header; this section is the prose owner of the contract, and the quarantine can only shrink as its owning backlog items land their fixes.
 `bin/fm-brief.sh --upstream-sync` scaffolds a ship brief with these gates, the bounded-batch true-merge gate, and the real-conflict stop as explicit, generated instructions; see its header for the exact flag contract. That flag is the only thing that emits them, so the brief for the `upstream-sync` item must always be scaffolded with `bin/fm-brief.sh --upstream-sync` - a plain ship brief silently loses every one of those gates. The filed item's own note body repeats that instruction so it travels with the item.
-`config/upstream-autosync` is inherited by secondmate homes like other `config/` files (AGENTS.md section 2).
+`config/upstream-autosync` is inherited by secondmate homes like other `config/` files (see the routing table in "Operational home layout and state").
 
 ## Prompt-cache steer guard (config/cache-ttl-seconds)
 

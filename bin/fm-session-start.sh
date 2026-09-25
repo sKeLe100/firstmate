@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fm-session-start.sh - one command for the whole session start.
 #
-# Collapses AGENTS.md sections 3 (bootstrap) and 5 (recovery) into ONE script
+# Collapses AGENTS.md sections 3 (session start) and 5 (recovery) into ONE script
 # producing ONE ordered digest, so a session starts in one or two turns
 # instead of the six-plus separate reads the old docs required: run
 # fm-bootstrap.sh, then separately read data/projects.md, data/secondmates.md,
@@ -873,7 +873,7 @@ fi
 # separate 900-second cadence remains unchanged.
 # Presented records are this turn's first work queue and remain durable until
 # post-handling acknowledgement. The drain's separate OPEN DECISIONS section
-# remains actionable even when that queue is empty (AGENTS.md sections 3 and 8).
+# remains actionable even when that queue is empty (AGENTS.md section 8).
 # The drain also runs fm-guard.sh internally on the locked path, so the
 # tangle/watcher-liveness alarms land right here too, ahead of the bulk digest
 # below. The read-only path never touches the queue because it lacks mutation
