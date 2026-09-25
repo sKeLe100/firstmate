@@ -266,7 +266,11 @@ FIELDS="blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,create
 # the full queue before the requested N is applied; --limit here would
 # truncate to tasks-axi's raw return order first and could drop a
 # high-priority item that falls outside the first N in that raw order.
-if ! (cd "$FM_HOME" && tasks-axi list --state queued --fields "$FIELDS") \
+# Routed through fm-tasks-axi.sh, the single owner of tasks-axi addressing
+# (docs/configuration.md "Backlog backend"), rather than a bare `cd
+# "$FM_HOME" && tasks-axi` that ignores FM_DATA_OVERRIDE and a non-markdown
+# adapter.
+if ! "$SCRIPT_DIR/fm-tasks-axi.sh" list --state queued --fields "$FIELDS" \
   > "$TMP_LIST" 2> "$TMP_ERR"; then
   echo "fm-queue-snapshot: tasks-axi list failed: $(cat "$TMP_ERR")" >&2
   exit 1

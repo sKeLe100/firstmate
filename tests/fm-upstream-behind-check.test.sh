@@ -399,49 +399,11 @@ run_drift() {
   FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_UPSTREAM_CHECK_INTERVAL=0 "$CHECK" "$@"
 }
 
-# The sync-item write and the episode baseline are one unit of work: filing
-# nothing but baselining anyway loses a whole threshold-sized block of drift.
-# The skip is provoked through the real refusal path - a live `backlog` lease
-# held by the OTHER supervision actor - not by stubbing the child.
-test_a_skipped_sync_item_write_leaves_the_episode_baseline() {
-  set -e
-  local home root bare out holder record
-
-  home=$(new_home)
-  mkdir -p "$home/config"
-  printf 'manual\n' > "$home/config/backlog-backend"
-  root="$TMP_ROOT/drift-skip"
-  bare="$TMP_ROOT/drift-skip-upstream.git"
-  drift_fixture "$root" "$bare" 6
-  record="$home/state/.upstream-drift"
-
-  mkdir -p "$home/state"
-  sleep 30 &
-  holder=$!
-  printf '%s\n' "$holder" > "$home/state/.lock"
-  printf 'branch\t%s\t%s\n' "$holder" "$(date +%s)" > "$home/state/.lease-backlog"
-
-  out=$(FM_SUPERVISION_ACTOR=main FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check 2>/dev/null)
-  kill "$holder" 2>/dev/null || true
-  wait "$holder" 2>/dev/null || true
-
-  assert_contains "$out" "6 commits behind upstream" "drift-skip: the drift line must still be reported"
-  assert_absent "$record" \
-    "drift-skip: a sync-item write that filed nothing must not re-baseline the episode, or the next filing waits a whole extra threshold"
-
-  # With the contention gone the next poll refiles and baselines for real - the
-  # drift was deferred, not consumed. Whether that retry also re-reports is the
-  # cooldown's business, asserted separately.
-  FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check >/dev/null 2>&1
-  assert_present "$record" "drift-skip: a successful write must baseline the episode"
-  pass "a skipped sync-item write leaves the episode baseline so the next poll retries"
-}
-
-# A HARD write failure is the other way nothing gets filed: the sync-item
-# script exits non-zero with nothing on stdout, so a gate that only looks for
-# the "action=skipped" string would re-baseline anyway. The failure is provoked
-# for real - tasks-axi keeps its backlog at <home>/backlog.md, and a directory
-# in that path makes the add fail - rather than by stubbing the child.
+# A HARD write failure means nothing gets filed: the sync-item script exits
+# non-zero with nothing on stdout. The failure is provoked for real -
+# fm-tasks-axi.sh addresses this home's backlog at <home>/data/backlog.md, and
+# a directory in that path makes the add fail - rather than by stubbing the
+# child.
 test_a_failed_sync_item_write_leaves_the_episode_baseline() {
   set -e
   local home root bare out record
@@ -449,7 +411,7 @@ test_a_failed_sync_item_write_leaves_the_episode_baseline() {
 
   home=$(new_home)
   rm -f "$home/config/backlog-backend"
-  mkdir -p "$home/backlog.md"
+  mkdir -p "$home/data/backlog.md"
   root="$TMP_ROOT/drift-hardfail"
   bare="$TMP_ROOT/drift-hardfail-upstream.git"
   drift_fixture "$root" "$bare" 6
@@ -461,7 +423,7 @@ test_a_failed_sync_item_write_leaves_the_episode_baseline() {
     "drift-hardfail: a sync-item write that failed outright must not re-baseline the episode"
 
   # Clear the fault: the next poll files for real and only then baselines.
-  rmdir "$home/backlog.md"
+  rmdir "$home/data/backlog.md"
   FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check >/dev/null 2>&1
   assert_present "$record" "drift-hardfail: a successful write must baseline the episode"
   pass "a failed sync-item write leaves the episode baseline so the next poll retries"
@@ -478,7 +440,7 @@ test_a_persistent_filing_failure_nags_once_per_cooldown() {
 
   home=$(new_home)
   rm -f "$home/config/backlog-backend"
-  mkdir -p "$home/backlog.md"
+  mkdir -p "$home/data/backlog.md"
   root="$TMP_ROOT/drift-cooldown"
   bare="$TMP_ROOT/drift-cooldown-upstream.git"
   drift_fixture "$root" "$bare" 6
@@ -501,7 +463,7 @@ test_a_persistent_filing_failure_nags_once_per_cooldown() {
     "drift-cooldown: once the window elapses the unfiled episode reports again"
 
   # A transient failure refiles on the very next poll, cooldown notwithstanding.
-  rmdir "$home/backlog.md"
+  rmdir "$home/data/backlog.md"
   FM_UPSTREAM_DRIFT_THRESHOLD=6 run_drift "$home" "$root" check >/dev/null 2>&1
   assert_present "$record" "drift-cooldown: the retry inside the window must still file and baseline"
   assert_absent "$home/state/.upstream-drift-attempted" \
@@ -521,7 +483,7 @@ test_an_unfiled_episode_reports_why_on_its_next_line() {
 
   home=$(new_home)
   rm -f "$home/config/backlog-backend"
-  mkdir -p "$home/backlog.md"
+  mkdir -p "$home/data/backlog.md"
   root="$TMP_ROOT/drift-reason"
   bare="$TMP_ROOT/drift-reason-upstream.git"
   drift_fixture "$root" "$bare" 6
@@ -542,7 +504,7 @@ test_an_unfiled_episode_reports_why_on_its_next_line() {
   assert_contains "$second" "6 commits behind upstream" "drift-reason: the drift line itself is unchanged"
 
   # Once the filing lands the episode is clean again and carries no stale cause.
-  rmdir "$home/backlog.md"
+  rmdir "$home/data/backlog.md"
   FM_UPSTREAM_DRIFT_RETRY_COOLDOWN_SECONDS=0 FM_UPSTREAM_DRIFT_THRESHOLD=6 \
     run_drift "$home" "$root" check >/dev/null 2>&1
   assert_absent "$attempt" "drift-reason: a successful filing must clear the recorded cause"
@@ -779,7 +741,6 @@ test_upstream_missing_default_branch
 test_files_directly_under_skills_dir_are_not_named_as_skills
 test_degrade_preserves_last_known_good_and_retries
 test_drift_trigger_fires_once_per_episode
-test_a_skipped_sync_item_write_leaves_the_episode_baseline
 test_a_failed_sync_item_write_leaves_the_episode_baseline
 test_a_persistent_filing_failure_nags_once_per_cooldown
 test_an_unfiled_episode_reports_why_on_its_next_line

@@ -14,11 +14,10 @@
 # drift check's own episode-dedup shape (one open episode = one open task) and
 # adds no second concurrency mechanism.
 #
-# BACKEND. Uses tasks-axi when bin/fm-tasks-axi-lib.sh reports it available and
-# compatible, per config/backlog-backend (AGENTS.md section 10); otherwise
-# hand-edits data/backlog.md the same way firstmate does when the backend is
-# `manual`, upserting the block between the `<!-- upstream-sync:start -->` and
-# `<!-- upstream-sync:end -->` markers.
+# BACKEND. Every read and write goes through bin/fm-tasks-axi.sh, the single
+# owner of tasks-axi addressing (docs/configuration.md "Backlog backend");
+# bootstrap requires compatible tasks-axi on every profile, so there is no
+# manual-backend fallback to maintain here.
 #
 # THRESHOLD AND ELIGIBILITY. Auto-dispatch is gated on the LOCAL, gitignored
 # `config/upstream-autosync` presence flag (absent = today's ask-only behavior,
@@ -62,21 +61,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
-# shellcheck source=bin/fm-tasks-axi-lib.sh
-. "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-lease-lib.sh
-. "$SCRIPT_DIR/fm-lease-lib.sh"
-
 ITEM_ID=upstream-sync
 ITEM_KIND=ship
 ITEM_REPO=firstmate
-BACKLOG_MD="$FM_HOME/data/backlog.md"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-BACKLOG_WRITE_LOCK="$STATE/.fm-upstream-sync-item.lock"
-MARK_START="<!-- upstream-sync:start -->"
-MARK_END="<!-- upstream-sync:end -->"
+TASKS_AXI_BIN="$SCRIPT_DIR/fm-tasks-axi.sh"
 
 usage() {
   sed -n '2,/^set -u/p' "$SCRIPT_DIR/fm-upstream-sync-item.sh" | sed -n 's/^# \{0,1\}//p'
@@ -233,88 +221,38 @@ note_body() {
 
 title="Upstream sync ($behind commits behind)"
 action=filed
-if fm_tasks_axi_backend_available "$FM_HOME/config"; then
-  # `tasks-axi show <id>` is the existence probe: it exits non-zero with
-  # NOT_FOUND for an unknown id and covers every state, so the one stable id
-  # is refreshed rather than re-filed no matter which column it currently
-  # sits in. The body is the only channel the eligibility signal survives on,
-  # so a failed write is an error here, not a silent no-op.
-  body_file=$(mktemp "${TMPDIR:-/tmp}/fm-upstream-sync-body.XXXXXX") || exit 1
-  trap 'rm -f "$body_file"' EXIT
-  note_body > "$body_file"
-  if item_shown=$(cd "$FM_HOME" && tasks-axi show "$ITEM_ID" 2>/dev/null); then
-    action=refreshed
-    # A closed item must come back to Queued or the refreshed payload is not
-    # dispatchable; a queued item needs nothing and an in_flight item must be
-    # left alone, because reopen would pull back a crewmate's active work.
-    item_state=$(printf '%s\n' "$item_shown" | sed -n 's/^[[:space:]]*state:[[:space:]]*//p' | head -n 1)
-    case "$item_state" in
-      done|closed)
-        (cd "$FM_HOME" && tasks-axi reopen "$ITEM_ID" >/dev/null) \
-          || { echo "error: tasks-axi reopen $ITEM_ID failed; the refreshed sync item is not dispatchable" >&2; exit 1; }
-        ;;
-    esac
-    (cd "$FM_HOME" && tasks-axi update "$ITEM_ID" --title "$title" \
-      --kind "$ITEM_KIND" --repo "$ITEM_REPO" \
-      --body-file "$body_file" --archive-body >/dev/null) \
-      || { echo "error: tasks-axi update $ITEM_ID failed; the sync item carries no eligibility signal" >&2; exit 1; }
-  else
-    (cd "$FM_HOME" && tasks-axi add "$ITEM_ID" "$title" \
-      --kind "$ITEM_KIND" --repo "$ITEM_REPO" --body-file "$body_file" >/dev/null) \
-      || { echo "error: tasks-axi add $ITEM_ID failed" >&2; exit 1; }
-  fi
+# fm-tasks-axi.sh requires the data directory to already exist; this script
+# used to create it itself on the manual hand-edit path, so keep that
+# self-sufficiency now that every write goes through tasks-axi.
+mkdir -p "$FM_HOME/data" 2>/dev/null || true
+# `tasks-axi show <id>` is the existence probe: it exits non-zero with
+# NOT_FOUND for an unknown id and covers every state, so the one stable id
+# is refreshed rather than re-filed no matter which column it currently
+# sits in. The body is the only channel the eligibility signal survives on,
+# so a failed write is an error here, not a silent no-op.
+body_file=$(mktemp "${TMPDIR:-/tmp}/fm-upstream-sync-body.XXXXXX") || exit 1
+trap 'rm -f "$body_file"' EXIT
+note_body > "$body_file"
+if item_shown=$("$TASKS_AXI_BIN" show "$ITEM_ID" 2>/dev/null); then
+  action=refreshed
+  # A closed item must come back to Queued or the refreshed payload is not
+  # dispatchable; a queued item needs nothing and an in_flight item must be
+  # left alone, because reopen would pull back a crewmate's active work.
+  item_state=$(printf '%s\n' "$item_shown" | sed -n 's/^[[:space:]]*state:[[:space:]]*//p' | head -n 1)
+  case "$item_state" in
+    done|closed)
+      "$TASKS_AXI_BIN" reopen "$ITEM_ID" >/dev/null \
+        || { echo "error: tasks-axi reopen $ITEM_ID failed; the refreshed sync item is not dispatchable" >&2; exit 1; }
+      ;;
+  esac
+  "$TASKS_AXI_BIN" update "$ITEM_ID" --title "$title" \
+    --kind "$ITEM_KIND" --repo "$ITEM_REPO" \
+    --body-file "$body_file" --archive-body >/dev/null \
+    || { echo "error: tasks-axi update $ITEM_ID failed; the sync item carries no eligibility signal" >&2; exit 1; }
 else
-  # data/backlog.md is a whole-file replace here. The reserved `backlog` lease
-  # is READ here only: it is actor-scoped and outlives any single process, so
-  # this unattended script must never claim or release it - a same-actor claim
-  # would refresh, and the release would drop, a lease the supervising session
-  # still holds. Concurrency between unattended writers is handled by the
-  # repo's process-scoped lock instead. The tasks-axi path above needs neither,
-  # because tasks-axi owns its own locks.
-  mkdir -p "$(dirname "$BACKLOG_MD")" 2>/dev/null || true
-  mkdir -p "$STATE" 2>/dev/null || true
-  [ -f "$BACKLOG_MD" ] || : > "$BACKLOG_MD"
-  self_actor=$(fm_lease_actor 2>/dev/null) || self_actor=main
-  if fm_lease_live backlog && [ "$FM_LEASE_ACTOR" != "$self_actor" ]; then
-    echo "warning: the backlog lease is held by the $FM_LEASE_ACTOR supervision actor; skipping the sync item write this episode" >&2
-    action=skipped
-  else
-    fm_lock_acquire_wait "$BACKLOG_WRITE_LOCK"
-    trap 'fm_lock_release "$BACKLOG_WRITE_LOCK"' EXIT
-    block=$(printf '%s\n### %s\n%s\n%s\n' "$MARK_START" "$ITEM_ID" "$(note_body)" "$MARK_END")
-    tmp=$(mktemp "$BACKLOG_MD.XXXXXX")
-    # awk is the single matcher for the marker pair, so detection and rewrite
-    # can never disagree: it reports substituted (0), no block present (2), or
-    # an unterminated block (1), and a lost end marker must not swallow every
-    # item after the block. data/backlog.md is hand-edited, so the markers are
-    # matched with surrounding whitespace trimmed. The block travels through
-    # the environment: awk -v expands backslash escapes, which would mangle an
-    # upstream commit subject.
-    FM_SYNC_BLOCK="$block" awk -v start="$MARK_START" -v end="$MARK_END" '
-      function trim(l) { gsub(/^[ \t]+|[ \t]+$/, "", l); return l }
-      trim($0) == start { if (!found) print ENVIRON["FM_SYNC_BLOCK"]; found=1; skip=1; next }
-      trim($0) == end { if (skip) { skip=0; next } }
-      skip { next }
-      { print }
-      END { exit (skip ? 1 : (found ? 0 : 2)) }
-    ' "$BACKLOG_MD" > "$tmp"
-    rewrite_rc=$?
-    case "$rewrite_rc" in
-      0)
-        action=refreshed
-        mv -f "$tmp" "$BACKLOG_MD"
-        ;;
-      2)
-        rm -f "$tmp"
-        { printf '\n'; printf '%s\n' "$block"; } >> "$BACKLOG_MD"
-        ;;
-      *)
-        rm -f "$tmp"
-        echo "error: $BACKLOG_MD has an unterminated $MARK_START block; leaving it untouched" >&2
-        action=skipped
-        ;;
-    esac
-  fi
+  "$TASKS_AXI_BIN" add "$ITEM_ID" "$title" \
+    --kind "$ITEM_KIND" --repo "$ITEM_REPO" --body-file "$body_file" >/dev/null \
+    || { echo "error: tasks-axi add $ITEM_ID failed" >&2; exit 1; }
 fi
 
 printf 'item_id=%s\n' "$ITEM_ID"

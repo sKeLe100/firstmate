@@ -32,7 +32,7 @@ path_without() {  # <tool-to-omit>
   rm -rf "$dir"
   mkdir -p "$dir"
   for tool in awk basename bash cat cut dirname env grep head jq mktemp node paste \
-    python3 rm sed sh tr tasks-axi uname wc quota-axi; do
+    perl python3 rm sed sh tr tasks-axi uname wc quota-axi; do
     [ "$tool" = "$omit" ] && continue
     src=$(command -v "$tool" 2>/dev/null) || continue
     [ -n "$src" ] && ln -s "$src" "$dir/$tool"
