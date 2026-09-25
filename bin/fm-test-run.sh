@@ -33,9 +33,10 @@
 #                   <lane.json> [more lane.json...]
 #                   Flags when a green run's own measured duration for a
 #                   hinted portable-serial script exceeds that hint by more
-#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (1.5x), taking
-#                   the slowest measured duration per script across every
-#                   input given. A script that drifts on only this run is
+#                   than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER (1.5x) and by
+#                   at least PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS (250ms),
+#                   taking the slowest measured duration per script across
+#                   every input given. A script that drifts on only this run is
 #                   logged as a warning, not a failure - noise on one run is
 #                   expected. --hint-drift-history persists this run's drift
 #                   set to <path> and compares it against what was persisted
@@ -66,6 +67,24 @@
 #                   drop scripts whose primary family matches <name> after selection
 #                   (repeatable; portable CI lanes exclude real-herdr-gated so the
 #                   dedicated required Herdr lane owns that coverage)
+#   --exclude-quarantined
+#                   drop every script named in the tracked quarantine list
+#                   (tests/fm-test-quarantine.tsv, override with --quarantine-file
+#                   or FM_TEST_QUARANTINE_FILE) from the selection, after family
+#                   exclusion. Each quarantined skip prints one loud
+#                   `FM_TEST_QUARANTINED <script> signature=<...> reason=<...>
+#                   owner=<...>` line and the run ends with an
+#                   `FM_TEST_QUARANTINE_SUMMARY quarantined=<n>` line, so a
+#                   pre-existing host-sensitive failure is excluded loudly rather
+#                   than hidden. docs/configuration.md "Upstream autosync" owns
+#                   the quarantine contract; the upstream-sync brief gate uses
+#                   this flag so known pre-existing failures cannot stall a sync.
+#   --quarantine-file <path>
+#                   read the quarantine list from <path> instead of the tracked
+#                   default (mostly for tests and fixture repos). An explicit
+#                   path (flag or FM_TEST_QUARANTINE_FILE) that is missing or
+#                   unreadable is refused; a missing tracked default only logs
+#                   and quarantines nothing.
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
@@ -103,7 +122,9 @@
 #   --per-script-timeout-secs N
 #                   terminate a script that runs longer than N seconds and
 #                   record it as exit 124 (0 disables, the default). The
-#                   --changed path applies a 900s base automatically, scaled
+#                   --changed path applies a 900s base automatically (1500s
+#                   for tests/fm-watch-triage.test.sh and
+#                   tests/fm-captain-hold-lifecycle.test.sh), scaled
 #                   up by max(1, load5/cpus) so host contention cannot turn a
 #                   healthy script into a false timeout: on an idle host this
 #                   still converts a HUNG script into a bounded failure, but
@@ -124,6 +145,11 @@
 #                   interrupt a running script; per-script hangs are
 #                   bounded by --per-script-timeout-secs. Pathological output
 #                   sinks that block finalization are explicitly out of scope.
+#   --pc02-if-idle  route this run to PC02 when it is idle from LLM duty,
+#                   reachable, and tool-ready, falling back to running here
+#                   otherwise; bin/fm-pc02-test-offload.sh (its own header)
+#                   is the single owner of the readiness checks and remote
+#                   mechanics, and its exit code is returned unchanged.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -131,7 +157,7 @@
 #   FM_TEST_END <iso8601> <script> exit=<code> duration_ms=<n> gate_skip=<true|false>
 #
 # Once per automatic --changed/scripts run, before scheduling (stdout):
-#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n>
+#   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n> watch_triage_timeout_secs=<n> captain_hold_timeout_secs=<n>
 #     Lets a later reader tell a load kill from a genuine hang.
 #
 # After all scripts (stdout):
@@ -206,6 +232,24 @@ RUN_STARTED_MS=$(now_ms)
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
+# --pc02-if-idle routes this run through bin/fm-pc02-test-offload.sh instead
+# of running here; strip it out before the option parser below (which has no
+# case arm for it) ever sees it.
+PC02_IF_IDLE=0
+FM_TEST_RUN_FILTERED_ARGS=()
+for fm_test_run_arg in "$@"; do
+  if [ "$fm_test_run_arg" = "--pc02-if-idle" ]; then
+    PC02_IF_IDLE=1
+  else
+    FM_TEST_RUN_FILTERED_ARGS+=("$fm_test_run_arg")
+  fi
+done
+unset fm_test_run_arg
+if [ "$PC02_IF_IDLE" -eq 1 ]; then
+  exec "$ROOT/bin/fm-pc02-test-offload.sh" "${FM_TEST_RUN_FILTERED_ARGS[@]}"
+fi
+set -- "${FM_TEST_RUN_FILTERED_ARGS[@]}"
+
 MODE=
 LIST_ONLY=0
 LIST_SCHEDULED=0
@@ -221,6 +265,9 @@ BASE_REF=origin/main
 JSON_PATH=
 SCRIPTS=()
 EXCLUDE_FAMILIES=()
+EXCLUDE_QUARANTINED=0
+QUARANTINE_FILE=
+QUARANTINED_COUNT=0
 FAIL_ON_GATE_SKIP=
 JOBS=1
 FAIL_FAST=
@@ -242,6 +289,17 @@ PER_SCRIPT_TIMEOUT_SECS=0
 # let a healthy script approach or exceed 900s on its own -- the effective
 # bound is scaled by max(1, load5/cpus) for exactly that reason.
 CHANGED_DEFAULT_TIMEOUT_SECS=900
+# Base for tests/fm-watch-triage.test.sh on the same automatic --changed path,
+# scaled the same way: it measured 924s on PC01 under full-suite load against
+# the 900s base, so it alone gets this longer base rather than a false timeout.
+CHANGED_WATCH_TRIAGE_TIMEOUT_SECS=1500
+WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=
+# Same treatment for tests/fm-captain-hold-lifecycle.test.sh: its portable-serial
+# hint measures 296s alone, but it hit the 900s base under PC01 full-suite
+# contention (load5/cpus stays under 1 here even under real load, so the
+# load_scaled_timeout_secs multiplier below never engages on this host).
+CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS=1500
+CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=
 
 # Bound and cadence for the token-free retry's wait for load5 to drop back
 # under cpus before re-running exactly the load-plausible failures once,
@@ -276,6 +334,13 @@ PORTABLE_SERIAL_TIMEOUT_MULTIPLIER=2
 # runs (see HINT_DRIFT_HISTORY below), so a lone noisy run no longer fails the
 # check and the tighter 1.5x margin is safe again.
 PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER=1.5
+
+# Absolute floor, in milliseconds, a measured duration must exceed its hint by
+# before --check-hint-drift counts it as drift, even past the ratio above. A
+# ~50ms script crossing the 1.5x ratio on a ~30ms swing (51->88ms, 54->82ms) is
+# scheduler noise, not a script that grew; 250ms absorbs that noise while a
+# script genuinely drifting in the 1-2s range (e.g. 1106->2985ms) still flags.
+PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=250
 
 # Largest share of the serial lane allowed to run on the default weight above.
 # Hints are what keep the shards balanced, so once too much of the lane is
@@ -837,7 +902,7 @@ tests/fm-bearings-board-lavish-live-e2e.test.sh 51
 tests/fm-bearings-board-render.test.sh 14000
 tests/fm-bearings-board.test.sh 125000
 tests/fm-bearings-snapshot.test.sh 116374
-tests/fm-bootstrap-network-parallel.test.sh 8214
+tests/fm-bootstrap-network-parallel.test.sh 13353
 tests/fm-bootstrap.test.sh 64000
 tests/fm-branch-supervision.test.sh 14000
 tests/fm-busy-adapter-wiring.test.sh 49731
@@ -875,10 +940,10 @@ tests/fm-gate-refuse.test.sh 4977
 tests/fm-gemini-harness.test.sh 1349
 tests/fm-gitignore-config.test.sh 62
 tests/fm-gotmp.test.sh 3100
-tests/fm-grok-continuity-live-e2e.test.sh 62
+tests/fm-grok-continuity-live-e2e.test.sh 181
 tests/fm-grok-stop-live-e2e.test.sh 72
 tests/fm-guard-stale-banner.test.sh 32981
-tests/fm-harness-adapter-instructions-live-e2e.test.sh 60
+tests/fm-harness-adapter-instructions-live-e2e.test.sh 105
 tests/fm-harness-adapter-references.test.sh 120
 tests/fm-harness-liveness-drift-live-e2e.test.sh 1300
 tests/fm-harness-precedence.test.sh 4062
@@ -903,7 +968,7 @@ tests/fm-muse-harness.test.sh 55572
 tests/fm-muse-signals-live-e2e.test.sh 81
 tests/fm-no-mistakes-required-body-fetch.test.sh 535
 tests/fm-no-mistakes-required.test.sh 370
-tests/fm-nomistakes-gate-check.test.sh 1106
+tests/fm-nomistakes-gate-check.test.sh 2985
 tests/fm-nomistakes-poll-lib.test.sh 8000
 tests/fm-omp-harness.test.sh 59969
 tests/fm-omp-primary-live-e2e.test.sh 110
@@ -966,8 +1031,8 @@ tests/fm-send-cache-stale-guard.test.sh 20398
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 63
 tests/fm-send-inbox.test.sh 38956
 tests/fm-send-remote-delivery.test.sh 27686
-tests/fm-send-resolve-key.test.sh 19619
-tests/fm-send-secondmate-marker-herdr-e2e.test.sh 51
+tests/fm-send-resolve-key.test.sh 31315
+tests/fm-send-secondmate-marker-herdr-e2e.test.sh 88
 tests/fm-send-secondmate-marker.test.sh 6252
 tests/fm-session-lock-ancestry.test.sh 4200
 tests/fm-session-start.test.sh 156952
@@ -983,7 +1048,7 @@ tests/fm-spawn-worktree-settle.test.sh 13000
 tests/fm-startup-memory-budget.test.sh 6964
 tests/fm-startup-network.test.sh 62274
 tests/fm-stat-shadowing.test.sh 54
-tests/fm-stow-cascade.test.sh 3101
+tests/fm-stow-cascade.test.sh 7406
 tests/fm-subagent-pretool-check.test.sh 1030
 tests/fm-supervision-events.test.sh 719
 tests/fm-tangle-guard.test.sh 9662
@@ -1417,7 +1482,8 @@ PY
 }
 
 # Refuses only when a hinted portable-serial script's measured duration
-# exceeds PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER on two consecutive runs (via
+# exceeds its hint by more than PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER and by at
+# least PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS on two consecutive runs (via
 # --hint-drift-history); a single drifting run is logged as a warning, not a
 # failure, since shared-runner noise can swing one run past the margin without
 # the hint actually being stale. --check-coverage only proves the partition is
@@ -1430,15 +1496,16 @@ check_hint_drift() {
   local hints_tmp rc
   hints_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-test-hints.XXXXXX") || die "--check-hint-drift: could not create temp file"
   portable_serial_weight_hints >"$hints_tmp"
-  python3 - "$hints_tmp" "$PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER" "$HINT_DRIFT_HISTORY" "$@" <<'PY'
+  python3 - "$hints_tmp" "$PORTABLE_SERIAL_HINT_DRIFT_MULTIPLIER" "$PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS" "$HINT_DRIFT_HISTORY" "$@" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 hints_path = Path(sys.argv[1])
 multiplier = float(sys.argv[2])
-history_path = Path(sys.argv[3]) if sys.argv[3] else None
-inputs = [Path(p) for p in sys.argv[4:]]
+floor_ms = int(sys.argv[3])
+history_path = Path(sys.argv[4]) if sys.argv[4] else None
+inputs = [Path(p) for p in sys.argv[5:]]
 
 hints = {}
 for line in hints_path.read_text(encoding="utf-8").splitlines():
@@ -1468,7 +1535,7 @@ for path, hint_ms in hints.items():
         continue
     checked += 1
     m = measured[path]
-    if hint_ms > 0 and m > hint_ms * multiplier:
+    if hint_ms > 0 and m > hint_ms * multiplier and (m - hint_ms) >= floor_ms:
         drift[path] = m / hint_ms
 
 prior_drift = {}
@@ -1484,7 +1551,7 @@ warned_only = sorted(p for p in drift if p not in prior_drift)
 if warned_only:
     print(
         f"::warning::fm-test-run: hint drift: measured duration exceeded hint by "
-        f"more than {multiplier:g}x on this run only for {len(warned_only)} "
+        f"more than {multiplier:g}x and by at least {floor_ms}ms on this run only for {len(warned_only)} "
         "script(s); will refuse only if this recurs on the next run:",
         file=sys.stderr,
     )
@@ -1498,7 +1565,7 @@ if history_path is not None:
 if confirmed:
     print(
         f"fm-test-run: hint drift: measured duration exceeded hint by more than "
-        f"{multiplier:g}x on two consecutive runs for {len(confirmed)} script(s):",
+        f"{multiplier:g}x and by at least {floor_ms}ms on two consecutive runs for {len(confirmed)} script(s):",
         file=sys.stderr,
     )
     for path in confirmed:
@@ -1963,6 +2030,11 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-lint-test-size.test.sh"
       printf '%s\n' "__script__:fm-lint.test.sh"
       ;;
+    tests/fm-test-quarantine.tsv)
+      # --exclude-quarantined's tracked list, whose format and runner
+      # behavior are exercised by the runner's own contract test.
+      printf '%s\n' "__script__:fm-test-run.test.sh"
+      ;;
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;
@@ -2090,6 +2162,71 @@ apply_exclude_families() {
       fi
     done
     [ "$keep" -eq 1 ] && kept+=("$s")
+  done
+  SCRIPTS=("${kept[@]+"${kept[@]}"}")
+}
+
+# The tracked quarantine list (tests/fm-test-quarantine.tsv) is the one owner of
+# which pre-existing host-sensitive failures an upstream-sync validation may
+# exclude; see that file's header and docs/configuration.md "Upstream autosync".
+# Reads the list's non-comment lines, each "<script>\t<signature>\t<reason>\t<owner>",
+# and prints them one per line for the caller. An empty list quarantines
+# nothing; apply_exclude_quarantined checks readability before calling this.
+quarantine_entries() {
+  local file=$1
+  awk -F'\t' '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    NF >= 1 && $1 != "" { print }
+  ' "$file"
+}
+
+# Drop every selected script named in the quarantine list, printing one loud
+# FM_TEST_QUARANTINED line per dropped script so a quarantine exclusion is never
+# hidden. A quarantined script that is not in the current selection is not a
+# skip of this run, so it is not reported here.
+apply_exclude_quarantined() {
+  local s script signature reason owner entry file
+  local -a kept=()
+  local -a entries=()
+  QUARANTINED_COUNT=0
+  [ "$EXCLUDE_QUARANTINED" -eq 1 ] || return 0
+  file=${QUARANTINE_FILE:-${FM_TEST_QUARANTINE_FILE:-}}
+  if [ -n "$file" ]; then
+    [ -f "$file" ] && [ -r "$file" ] \
+      || die "quarantine list not readable: $file (set by --quarantine-file or FM_TEST_QUARANTINE_FILE)"
+  else
+    file="$ROOT/tests/fm-test-quarantine.tsv"
+    if [ ! -r "$file" ]; then
+      log "quarantine list not readable: $file (nothing quarantined)"
+      return 0
+    fi
+  fi
+  while IFS= read -r entry; do
+    [ -n "$entry" ] && entries+=("$entry")
+  done < <(quarantine_entries "$file")
+  for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
+    for entry in "${entries[@]+"${entries[@]}"}"; do
+      IFS=$'\t' read -r script signature reason owner <<<"$entry"
+      [ -n "$script" ] || continue
+      if [ "$script" = "$s" ]; then
+        signature=${signature:-}
+        reason=${reason:-}
+        owner=${owner:-}
+        # The machine-parseable marker rides stdout only in a real run: --list
+        # and --list-scheduled keep stdout as a clean path list. The stderr log
+        # is loud in every mode, so a quarantine skip is never hidden.
+        if [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
+          printf 'FM_TEST_QUARANTINED %s signature=%s reason=%s owner=%s\n' \
+            "$script" "$signature" "$reason" "$owner"
+        fi
+        log "quarantined skip: $script (signature: ${signature:-<none>}, owner: ${owner:-<none>})"
+        QUARANTINED_COUNT=$((QUARANTINED_COUNT + 1))
+        s=
+        break
+      fi
+    done
+    [ -n "$s" ] && kept+=("$s")
   done
   SCRIPTS=("${kept[@]+"${kept[@]}"}")
 }
@@ -2325,6 +2462,19 @@ while [ "$#" -gt 0 ]; do
       EXCLUDE_FAMILIES+=("${1#--exclude-family=}")
       shift
       ;;
+    --exclude-quarantined)
+      EXCLUDE_QUARANTINED=1
+      shift
+      ;;
+    --quarantine-file)
+      [ "$#" -gt 1 ] || die "--quarantine-file requires a path"
+      QUARANTINE_FILE=$2
+      shift 2
+      ;;
+    --quarantine-file=*)
+      QUARANTINE_FILE=${1#--quarantine-file=}
+      shift
+      ;;
     --fail-on-gate-skip)
       [ "$#" -gt 1 ] || die "--fail-on-gate-skip requires a token (e.g. 'herdr not found')"
       FAIL_ON_GATE_SKIP=$2
@@ -2474,6 +2624,13 @@ apply_exclude_families
 if [ "${#EXCLUDE_FAMILIES[@]}" -gt 0 ]; then
   SELECTION_DESC="${SELECTION_DESC};exclude-family=$(IFS=,; printf '%s' "${EXCLUDE_FAMILIES[*]}")"
 fi
+apply_exclude_quarantined
+if [ "$EXCLUDE_QUARANTINED" -eq 1 ]; then
+  SELECTION_DESC="${SELECTION_DESC};exclude-quarantined"
+  if [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
+    printf 'FM_TEST_QUARANTINE_SUMMARY quarantined=%s\n' "${QUARANTINED_COUNT:-0}"
+  fi
+fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
 fi
@@ -2557,6 +2714,8 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
   HOST_LOAD5=$(load5)
   if [ "$MODE" = changed ] && [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
     PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_DEFAULT_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
+    WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_WATCH_TRIAGE_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
+    CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=$(load_scaled_timeout_secs "$CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS" "$HOST_LOAD5" "$HOST_CPUS")
   fi
   auto_admissible=0
   for s in "${SCRIPTS[@]}"; do
@@ -2569,8 +2728,10 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
     JOBS=$(load_scaled_jobs "$JOBS" "$HOST_LOAD5" "$HOST_CPUS")
     [ "$JOBS" -eq 1 ] || AUTO_CONCURRENCY=1
   fi
-  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s\n' \
-    "$HOST_LOAD5" "$HOST_CPUS" "$JOBS" "$PER_SCRIPT_TIMEOUT_SECS"
+  printf 'FM_TEST_HOST_LOAD load5=%s cpus=%s jobs=%s per_script_timeout_secs=%s watch_triage_timeout_secs=%s captain_hold_timeout_secs=%s\n' \
+    "$HOST_LOAD5" "$HOST_CPUS" "$JOBS" "$PER_SCRIPT_TIMEOUT_SECS" \
+    "${WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS:-$PER_SCRIPT_TIMEOUT_SECS}" \
+    "${CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS:-$PER_SCRIPT_TIMEOUT_SECS}"
 fi
 if [ "$JOBS" -gt 1 ] || [ "$MODE" = changed ] || [ "$MODE" = scripts ]; then
   SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
@@ -2796,30 +2957,35 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   local GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
   # shellcheck source=tests/git-config-helpers.sh
   . "$ROOT/tests/git-config-helpers.sh" || return
-  local rc
+  local rc bound=$PER_SCRIPT_TIMEOUT_SECS
   : "$id"
+  if [ -n "$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-watch-triage.test.sh ]; then
+    bound=$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS
+  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-captain-hold-lifecycle.test.sh ]; then
+    bound=$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS
+  fi
   set +e
   if [ "$stream" -eq 1 ]; then
-    if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
+    if [ "$bound" -gt 0 ]; then
       # Expansion is intentionally deferred to the child bash passed to -c.
       # shellcheck disable=SC2016
-      fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash -c \
+      fm_run_timed "$bound" bash -c \
         'bash "$1" 2>&1 | tee "$2"; exit "${PIPESTATUS[0]}"' _ "$script" "$out"
       rc=$?
     else
       bash "$script" 2>&1 | tee "$out"
       rc=${PIPESTATUS[0]}
     fi
-  elif [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
-    fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash "$script" >"$out" 2>&1
+  elif [ "$bound" -gt 0 ]; then
+    fm_run_timed "$bound" bash "$script" >"$out" 2>&1
     rc=$?
   else
     bash "$script" >"$out" 2>&1
     rc=$?
   fi
-  if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ] && [ "$rc" -eq 124 ]; then
+  if [ "$bound" -gt 0 ] && [ "$rc" -eq 124 ]; then
     printf 'not ok - %s exceeded the per-script bound of %ss and was terminated\n' \
-      "$script" "$PER_SCRIPT_TIMEOUT_SECS" >>"$out"
+      "$script" "$bound" >>"$out"
     [ "$stream" -eq 1 ] && tail -1 "$out"
   fi
   return "$rc"

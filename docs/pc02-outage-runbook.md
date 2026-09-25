@@ -147,6 +147,37 @@ ssh pc02 "systemctl --user start llama-swap"
 ssh pc02 "journalctl --user -u llama-swap --no-pager -n 50"
 ```
 
+## PC02 as a test host
+
+Besides serving models, PC02's stronger hardware can run this repo's own
+heavy `bin/fm-test-run.sh` suites (including the no-mistakes test step) when
+PC02 is not needed for anything else. `bin/fm-test-run.sh --pc02-if-idle`
+(see its own header) execs into `bin/fm-pc02-test-offload.sh`, which is the
+single owner of every readiness check and the sync/execution mechanics; read
+its header and `--help` for the exact contract rather than duplicating it
+here.
+
+**The captain's personal-use switch**: a Desktop shortcut on PC02 named
+"PC02 Personal Use Toggle" flips a flag with no terminal - one double-click
+turns it on (test offloading stays on PC01 only) or off (PC02 may pick up
+idle test runs again), with a brief popup confirming the new state. The same
+switch is reachable from PC01 with `bin/fm-pc02-personal-use.sh
+on|off|status`. Besides that manual switch, every offload attempt also
+checks automatically whether PC02's llama-swap has any model loaded for a
+live session (its `/running` endpoint; a healthy llama-swap with nothing
+loaded does not block offloading), and whether Windows-wide CPU or GPU utilization looks busy (a game
+or other heavy foreground use); any of those routes the run to PC01 instead,
+and an unreachable or unclear check does the same rather than guessing PC02
+is free. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut
+or its resource-check script ever need to be redeployed (safe to re-run).
+
+**Warning**: `wsl --shutdown` (see "WSL is not running" above) drops all
+remote access to PC02, including this offload path, until someone reaches
+the Windows desktop directly and runs `wsl` again - an SSH session cannot
+trigger that restart itself, because `sshd` runs inside WSL. Only apply a
+`.wslconfig` change or other edit needing a WSL restart when physical/RDP
+access to the Windows desktop is available to bring it back up.
+
 ## Ceiling
 
 This runbook covers recovery of llama-swap when the host is reachable.

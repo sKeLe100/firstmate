@@ -86,8 +86,8 @@
 # full commit list, so the report itself never grows into a raw commit dump.
 #
 # Output: multiple `key=value` lines on stdout, one per field, published
-# atomically to $FM_HOME/state/.upstream-behind-check.report (gitignored, per
-# AGENTS.md section 2 - a volatile per-run marker, not tracked material):
+# atomically to $FM_HOME/state/.upstream-behind-check.report (gitignored - a
+# volatile per-run marker, not tracked material; docs/configuration.md "Operational home layout and state"):
 #   status=ok
 #   behind=<N>
 #   ahead=<N>
@@ -284,7 +284,7 @@ drift_record_write() {  # <behind>
 }
 
 action_check() {
-  local threshold behind status detail line refresh_timeout report prev_reason default newest sync_item_filed sync_item_out sync_item_err sync_item_reason
+  local threshold behind status detail line refresh_timeout report prev_reason default newest sync_item_filed sync_item_err sync_item_reason
   threshold=$(drift_threshold)
 
   # Discarded output: a plain refresh prints the whole report, and this check
@@ -353,9 +353,9 @@ action_check() {
   default=$(default_branch "$FM_ROOT" 2>/dev/null) || default=
   newest=$(report_field newest_upstream_date)
   # The baseline records that this episode was FILED, so it may only be written
-  # when the sync item actually landed: the child must have run, exited 0, and
-  # not reported a skip. A hard write failure exits non-zero with nothing on
-  # stdout, and a missing default branch never runs the child at all; both must
+  # when the sync item actually landed: the child must have run and exited 0.
+  # A hard write failure exits non-zero, and a missing default branch never
+  # runs the child at all; both must
   # leave the baseline alone so the next poll refiles, rather than deferring the
   # next filing by a whole threshold. The child's stderr is captured rather than
   # trusted to reach anyone: the watcher discards check stderr, so the cause is
@@ -365,12 +365,9 @@ action_check() {
   sync_item_reason=
   if [ -n "$default" ]; then
     sync_item_err=$(mktemp "$STATE/.upstream-drift-err.XXXXXX" 2>/dev/null) || sync_item_err=
-    if sync_item_out=$("$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default" \
-      2> "${sync_item_err:-/dev/null}"); then
-      case "$sync_item_out" in
-        *action=skipped*) sync_item_reason="the backlog write was skipped" ;;
-        *) sync_item_filed=yes ;;
-      esac
+    if "$SCRIPT_DIR/fm-upstream-sync-item.sh" file "$behind" "$newest" "$default" \
+      > /dev/null 2> "${sync_item_err:-/dev/null}"; then
+      sync_item_filed=yes
     else
       sync_item_reason="the backlog write failed"
     fi

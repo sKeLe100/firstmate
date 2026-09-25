@@ -303,6 +303,13 @@ Two firstmate-specific rules layer on top of that guidance:
 
 After any custody recovery on a rebased branch, run \`bin/fm-nomistakes-gate-check.sh\` before pushing; treat a \`diverged\` result as an immediate \`blocked:\` report rather than pushing anyway.
 
+If a current, explicit captain instruction completely invalidates the work being validated, firstmate keeps this task with you instead of routing it away.
+Cancel the active run through no-mistakes axi's supported abort command and confirm through axi status that the run has stopped before changing any code.
+Then follow \`branch_sync.next_action\` from structured axi status: use axi sync's supported guarded recovery only when its code is \`recover_custody\`, and otherwise proceed only when structured status confirms that branch ownership is already returned and no recovery is required.
+Custody recovery settles branch ownership, not content: replace the obsolete work from the correct pre-invalidation base rather than building on top of the recovered-but-obsolete head, keeping the obsolete run's own pipeline-fix commits out of what gets validated and shipped.
+Apart from that single supported abort, do not hand-edit, commit, restart, or start a second validation run while the obsolete run still owns the branch.
+Once ownership is settled, validate exactly once against that final head so no obsolete or intermediate head is ever treated as authoritative.
+
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary before reporting (do not silence the gate, and do not hand-edit or recommit once the run is closed out).
 Append \`done: PR {url} checks green\` and stop. You are finished.
 EOF

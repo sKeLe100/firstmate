@@ -2941,9 +2941,27 @@ KEEP_PID=$(cat "$HKEEP/state/procevent/keep-src.runner")
 ORPHAN_DESCENDANT=$(cat "$TMP_ROOT/orphan-dead.descendant")
 
 # The reproduction condition itself: the listener is already an orphan in the
-# kernel's sense before anything is asserted about reaping it.
+# kernel's sense before anything is asserted about reaping it. It is adopted by
+# pid 1 or by a child subreaper (for example `systemd --user`), so "detached"
+# means no process on its parent chain is this test shell.
+# Reparenting is not instantaneous under load; poll with a bounded wait.
+detached_from_test_shell() {  # <pid>
+  local p
+  p=$(ps -o ppid= -p "$1" 2>/dev/null | tr -d '[:space:]')
+  [ -n "$p" ] || return 1
+  while [ -n "$p" ] && [ "$p" -gt 1 ]; do
+    [ "$p" = "$$" ] && return 1
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d '[:space:]')
+  done
+  return 0
+}
+orphan_detached=no
+for _ in $(seq 1 50); do
+  detached_from_test_shell "$ORPHAN_PID" && { orphan_detached=yes; break; }
+  sleep 0.05
+done
 orphan_ppid=$(ps -o ppid= -p "$ORPHAN_PID" 2>/dev/null | tr -d '[:space:]')
-[ "$orphan_ppid" = 1 ] \
+[ "$orphan_detached" = yes ] \
   || fail "the listener under test was not reparented away from its session (ppid $orphan_ppid)"
 kill -0 -"$ORPHAN_PID" 2>/dev/null \
   || fail "the listener's process group was not running"

@@ -73,6 +73,8 @@ SH
   for child in child-a child-b; do
     [ -e "$home/state/$child.meta" ] && [ -d "$case_dir/$child-wt" ] \
       || { : > "$release"; wait "$holder_pid" 2>/dev/null || true; fail "descendant-locks: refusal removed $child state or worktree"; }
+    [ -e "$home/state/$child.opencode-session" ] \
+      || { : > "$release"; wait "$holder_pid" 2>/dev/null || true; fail "descendant-locks: refusal removed $child's opencode-session record"; }
   done
 
   : > "$release"
@@ -85,6 +87,48 @@ SH
   [ -s "$case_dir/kill.log" ] && [ -s "$case_dir/treehouse.log" ] \
     || fail "descendant-locks: uncontended retry did not perform endpoint and worktree cleanup"
   pass "forced secondmate teardown holds every descendant lifecycle and metadata lock"
+}
+test_forced_secondmate_teardown_removes_each_processed_childs_opencode_session() {
+  local case_dir home rc snapshot_2 kill_calls
+  case_dir=$(make_case child-opencode-session-cleanup)
+  write_meta "$case_dir" local-only secondmate
+  configure_secondmate_with_tmux_children "$case_dir"
+  home="$case_dir/secondmate-home"
+  : > "$case_dir/kill.log"
+  # Each child's own endpoint kill happens before that same child's session-file
+  # cleanup, but after every earlier child's cleanup has already completed
+  # (cleanup_firstmate_home_children processes one child fully per loop
+  # iteration). So snapshotting state/ at child-b's kill call - the second tmux
+  # invocation, since *.meta globs child-a before child-b - proves child-a's
+  # opencode-session record is already gone while child-b's still exists,
+  # without needing the whole run to fail or finish early.
+  cat > "$case_dir/fakebin/tmux" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$case_dir/kill.log"
+ls "$home/state" > "$case_dir/state-at-kill-\$(wc -l < "$case_dir/kill.log").txt" 2>/dev/null
+exit 0
+SH
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/tmux" "$case_dir/fakebin/treehouse"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "child-opencode-session-cleanup: forced teardown should complete: $(cat "$case_dir/stderr")"
+  kill_calls=$(wc -l < "$case_dir/kill.log" | tr -d ' ')
+  [ "$kill_calls" -ge 2 ] \
+    || fail "child-opencode-session-cleanup: expected a kill call for each of child-a and child-b, got $kill_calls"
+  snapshot_2="$case_dir/state-at-kill-2.txt"
+  [ -f "$snapshot_2" ] || fail "child-opencode-session-cleanup: missing the state snapshot taken at child-b's kill call"
+  grep -q '^child-a\.opencode-session$' "$snapshot_2" \
+    && fail "child-opencode-session-cleanup: child-a's opencode-session record still existed when child-b's cleanup began"
+  grep -q '^child-b\.opencode-session$' "$snapshot_2" \
+    || fail "child-opencode-session-cleanup: child-b's opencode-session record was removed before its own cleanup ran"
+  [ ! -d "$home" ] \
+    || fail "child-opencode-session-cleanup: the secondmate home should be fully retired on success"
+  pass "forced secondmate teardown removes each processed child's opencode-session record as it is cleaned up"
 }
 test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconfirmed() {
   local case_dir home nested_home log closed rc

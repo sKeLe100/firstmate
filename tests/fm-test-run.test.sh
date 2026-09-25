@@ -998,6 +998,65 @@ test_exclude_family() {
   pass "exclude-family drops the named primary family after selection"
 }
 
+test_exclude_quarantined() {
+  local listed quarantine_file script signature reason owner tmp qfile out
+  quarantine_file="$ROOT/tests/fm-test-quarantine.tsv"
+  assert_present "$quarantine_file" "the tracked quarantine list is missing"
+
+  # Every entry must name an existing test script and carry four tab-separated
+  # columns, so a renamed or deleted test cannot leave a stale, silently
+  # ignored entry behind.
+  while IFS=$'\t' read -r script signature reason owner; do
+    [ -n "$script" ] || continue
+    assert_present "$ROOT/$script" "quarantine entry names a missing script: $script"
+    [ -n "$signature" ] || fail "quarantine entry for $script has an empty signature"
+    [ -n "$reason" ] || fail "quarantine entry for $script has an empty reason"
+    [ -n "$owner" ] || fail "quarantine entry for $script has an empty owner"
+  done < <(grep -v '^[[:space:]]*#' "$quarantine_file" | grep -v '^[[:space:]]*$')
+
+  tmp=$(fm_test_tmproot fm-test-quarantine)
+  qfile="$tmp/q.tsv"
+  printf '# comment\n\ntests/fm-transition-lib.test.sh\tsig-x\treason-x\towner-x\n' > "$qfile"
+
+  # --exclude-quarantined drops exactly the listed scripts and keeps stdout a
+  # clean path list; the loud markers go to stderr, not the path list.
+  listed=$("$RUNNER" --quarantine-file "$qfile" --list --all --exclude-quarantined 2>/dev/null)
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-transition-lib.test.sh' \
+    && fail "exclude-quarantined left a quarantined script selected"
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-lint.test.sh' \
+    || fail "exclude-quarantined must retain non-quarantined scripts"
+  assert_not_contains "$listed" "FM_TEST_QUARANTINED" \
+    "--list stdout must stay a clean path list"
+
+  # The flag is opt-in: without it nothing is excluded.
+  listed=$("$RUNNER" --quarantine-file "$qfile" --list --all 2>/dev/null)
+  printf '%s\n' "$listed" | grep -Fxq 'tests/fm-transition-lib.test.sh' \
+    || fail "absence of --exclude-quarantined must keep the script"
+
+  # An explicitly named quarantine list that is missing is refused, never a
+  # silent change of selection.
+  if out=$("$RUNNER" --quarantine-file "$tmp/missing.tsv" --list --all --exclude-quarantined 2>&1); then
+    fail "a missing --quarantine-file must be refused"
+  fi
+  assert_contains "$out" "quarantine list not readable: $tmp/missing.tsv" \
+    "a missing --quarantine-file must name the path"
+  if out=$(FM_TEST_QUARANTINE_FILE="$tmp/missing.tsv" "$RUNNER" --list --all --exclude-quarantined 2>&1); then
+    fail "a missing FM_TEST_QUARANTINE_FILE must be refused"
+  fi
+
+  # A run reports every quarantined skip loudly and runs nothing quarantined.
+  out=$("$RUNNER" --quarantine-file "$qfile" --exclude-quarantined \
+    tests/fm-transition-lib.test.sh 2>/dev/null)
+  assert_contains "$out" "FM_TEST_QUARANTINED tests/fm-transition-lib.test.sh" \
+    "run mode must print the quarantined marker"
+  assert_contains "$out" "FM_TEST_QUARANTINE_SUMMARY quarantined=1" \
+    "run mode must print the quarantine summary"
+  assert_contains "$out" "FM_TEST_SUMMARY total=0" \
+    "a fully-quarantined selection runs nothing"
+
+  pass "exclude-quarantined drops exactly the listed scripts and reports each skip loudly"
+}
+
 test_list_scheduled_proven_isolated_uses_serial_weights() {
   local tmp
   tmp=$(fm_test_tmproot fm-test-run-proven-schedule)
@@ -1343,6 +1402,22 @@ test_unmapped_new_test_never_inherits_family_concurrency() {
   pass "an unclassified new test stays serial while the proven residual family runs concurrently"
 }
 
+test_quarantine_list_change_selects_runner_contract() {
+  local tmp repo listed
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-quarantine-map.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  # The owner item that lands a fix removes its quarantine entry; that edit
+  # must select the runner contract rather than refuse as an unmapped path.
+  printf '# quarantine\n' >"$repo/tests/fm-test-quarantine.tsv"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) \
+    || fail "a quarantine list change must not refuse --changed selection"
+  assert_contains "$listed" "tests/fm-test-run.test.sh" \
+    "quarantine list change selects the runner contract"
+  rm -rf "$tmp"
+  pass "quarantine list change selects runner coverage"
+}
+
 test_changed_shared_fixture_selects_its_readers() {
   local tmp repo listed rc
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-fixture.XXXXXX")
@@ -1548,11 +1623,13 @@ PY
 # a lone noisy run only warns, so shared-runner noise on one run can't turn
 # into a false red by itself.
 test_check_hint_drift_flags_stale_hint() {
-  local tmp script hint clean_json drift_json drift2_json history rc out
+  local tmp script hint floor_ms clean_json drift_json drift2_json history rc out
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-hintdrift.XXXXXX")
   script=tests/fm-gitignore-config.test.sh
   hint=$(sed -n "s#^${script} \\([0-9][0-9]*\\)\$#\\1#p" "$RUNNER")
   [ -n "$hint" ] || fail "could not read the current hint for $script from $RUNNER"
+  floor_ms=$(sed -n 's/^PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=\([0-9][0-9]*\)$/\1/p' "$RUNNER")
+  [ -n "$floor_ms" ] || fail "could not read PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS from $RUNNER"
   history="$tmp/history.json"
 
   # Exactly at the hint: no drift.
@@ -1571,16 +1648,20 @@ JSON
   # drift, so it must only warn, not refuse.
   drift_json="$tmp/drift1.json"
   cat >"$drift_json" <<JSON
-{"scripts": [{"path": "$script", "duration_ms": $((hint + 1))}]}
+{"scripts": [{"path": "$script", "duration_ms": $((hint + floor_ms + 1))}]}
 JSON
+  # Comfortably larger than drift_json above even after the floor's absolute
+  # offset, so it remains the slowest of the two regardless of the floor
+  # value: a plain hint*3 stopped being reliably the larger figure once
+  # drift_json itself had to add floor_ms to clear the floor on a small hint.
   drift2_json="$tmp/drift2.json"
   cat >"$drift2_json" <<JSON
-{"scripts": [{"path": "$script", "duration_ms": $((hint * 3))}]}
+{"scripts": [{"path": "$script", "duration_ms": $((hint + floor_ms * 2))}]}
 JSON
   out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$drift_json" "$drift2_json" 2>&1) \
     || fail "a single-run drift spike must not refuse the check: $out"
   assert_contains "$out" "$script" "the warning must name the drifting script"
-  assert_contains "$out" "measured=$((hint * 3))ms" "the warning must show the slowest measured duration across inputs"
+  assert_contains "$out" "measured=$((hint + floor_ms * 2))ms" "the warning must show the slowest measured duration across inputs"
   assert_contains "$out" "confirmed=0" "a first-time drift must not be confirmed"
 
   # Same script drifts again on the next run (history now records the first
@@ -1592,7 +1673,7 @@ JSON
   [ "$rc" -ne 0 ] || fail "a script that drifts on two consecutive runs must refuse: $out"
   assert_contains "$out" "$script" "the drift report must name the stale script"
   assert_contains "$out" "hint=${hint}ms" "the drift report must show the recorded hint"
-  assert_contains "$out" "measured=$((hint * 3))ms" "the drift report must show the slowest measured duration across inputs"
+  assert_contains "$out" "measured=$((hint + floor_ms * 2))ms" "the drift report must show the slowest measured duration across inputs"
   assert_contains "$out" "two consecutive runs" "the drift report must explain why this run refuses"
 
   # A clean run afterward resets the history, so a one-off spike followed by
@@ -1604,6 +1685,43 @@ JSON
 
   rm -rf "$tmp"
   pass "--check-hint-drift only refuses a hint that drifts on two consecutive runs, and warns on a single-run spike"
+}
+
+# A sub-floor swing on a very short script can cross the 1.5x ratio purely
+# from scheduler noise; PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS keeps the ratio
+# meaningful only once the absolute excess is worth caring about.
+test_check_hint_drift_ignores_sub_floor_swings() {
+  local tmp script hint floor_ms under_json over_json history out
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-hintdrift-floor.XXXXXX")
+  script=tests/fm-backend-zellij-smoke.test.sh
+  hint=$(sed -n "s#^${script} \\([0-9][0-9]*\\)\$#\\1#p" "$RUNNER")
+  [ -n "$hint" ] || fail "could not read the current hint for $script from $RUNNER"
+  floor_ms=$(sed -n 's/^PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS=\([0-9][0-9]*\)$/\1/p' "$RUNNER")
+  [ -n "$floor_ms" ] || fail "could not read PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS from $RUNNER"
+  history="$tmp/history.json"
+
+  # Past the 1.5x ratio but under the absolute floor: must not be flagged at all.
+  under_json="$tmp/under.json"
+  cat >"$under_json" <<JSON
+{"scripts": [{"path": "$script", "duration_ms": $((hint * 2))}]}
+JSON
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$under_json") \
+    || fail "a sub-floor ratio swing must not be flagged: $out"
+  assert_contains "$out" "FM_TEST_HINT_DRIFT ok" "sub-floor swing must report ok"
+  assert_contains "$out" "confirmed=0" "sub-floor swing must not be confirmed"
+  assert_contains "$out" "warned=0" "sub-floor swing must not even warn"
+
+  # Past both the ratio and the floor: must warn as ordinary first-time drift.
+  over_json="$tmp/over.json"
+  cat >"$over_json" <<JSON
+{"scripts": [{"path": "$script", "duration_ms": $((hint + floor_ms + 1))}]}
+JSON
+  out=$("$RUNNER" --check-hint-drift --hint-drift-history "$history" "$over_json" 2>&1) \
+    || fail "a past-floor ratio swing must warn, not refuse: $out"
+  assert_contains "$out" "$script" "a past-floor swing must be named as drift"
+
+  rm -rf "$tmp"
+  pass "--check-hint-drift ignores a ratio-only swing under PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS"
 }
 
 # The duration regression this guard exists for: a suite whose scripts are all
@@ -2230,6 +2348,72 @@ SH
   pass "the --changed default per-script timeout scales by max(1, load5/cpus)"
 }
 
+# assert_changed_script_gets_own_scaled_timeout <script-stem> <marker-field>:
+# on the --changed path <script-stem> alone gets a longer, still load-scaled
+# 1500s bound while other load-sensitive scripts keep the 900s base.
+assert_changed_script_gets_own_scaled_timeout() {
+  local stem=$1 field=$2 tmp repo s
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-$stem-timeout.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
+fm_run_timed() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      *.test.sh) printf '%s %s\n' "$(basename "$arg")" "$1" >>"$FM_TIMEOUT_SEEN_FILE" ;;
+    esac
+  done
+  shift
+  "$@"
+}
+SH
+  for s in "$stem" fm-wake-queue; do
+    printf '#!/usr/bin/env bash\necho "ok - %s fixture"\n' "$s" >"$repo/tests/$s.test.sh"
+    chmod +x "$repo/tests/$s.test.sh"
+  done
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+  printf '\n' >>"$repo/tests/$stem.test.sh"
+  printf '\n' >>"$repo/tests/fm-wake-queue.test.sh"
+
+  (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-idle" \
+    FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=0 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/idle.out" 2>"$tmp/idle.err" \
+    || { cat "$tmp/idle.err"; rm -rf "$tmp"; fail "idle $stem timeout fixture run failed"; }
+  grep -qx "$stem.test.sh 1500" "$tmp/seen-idle" \
+    || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "idle host must bound $stem at 1500s"; }
+  grep -qx 'fm-wake-queue.test.sh 900' "$tmp/seen-idle" \
+    || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "other load-sensitive scripts must keep the 900s base"; }
+  grep -q "^FM_TEST_HOST_LOAD .* per_script_timeout_secs=900 .*${field}_timeout_secs=1500" "$tmp/idle.out" \
+    || { cat "$tmp/idle.out"; rm -rf "$tmp"; fail "idle host-load marker did not report the $field bound"; }
+
+  (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-loaded" \
+    FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=8 \
+    bin/fm-test-run.sh --changed --base HEAD) >"$tmp/loaded.out" 2>"$tmp/loaded.err" \
+    || { cat "$tmp/loaded.err"; rm -rf "$tmp"; fail "loaded $stem timeout fixture run failed"; }
+  grep -qx "$stem.test.sh 3000" "$tmp/seen-loaded" \
+    || { cat "$tmp/seen-loaded"; rm -rf "$tmp"; fail "load5=2x cpus must double the $stem bound"; }
+
+  rm -rf "$tmp"
+  pass "the --changed path bounds $stem at its own load-scaled 1500s base"
+}
+
+# fm-watch-triage measured 924s under PC01 full-suite load against the 900s base.
+test_changed_watch_triage_gets_its_own_scaled_timeout() {
+  assert_changed_script_gets_own_scaled_timeout fm-watch-triage watch_triage
+}
+
+# fm-captain-hold-lifecycle measured 296s standalone but hit the 900s base
+# under PC01 full-suite load.
+test_changed_captain_hold_gets_its_own_scaled_timeout() {
+  assert_changed_script_gets_own_scaled_timeout fm-captain-hold-lifecycle captain_hold
+}
+
 # P2 item 3: the token-free retry re-runs exactly the load-plausible failures
 # once, serially, and clears a run whose only failures come from host
 # contention rather than a real regression.
@@ -2370,6 +2554,7 @@ test_changed_file_selection_is_conservative
 test_task_marker_refuses_the_primary_checkout
 test_changed_runner_surfaces_select_their_family
 test_shell_line_ending_policy_selects_runner_contract
+test_quarantine_list_change_selects_runner_contract
 test_changed_dependency_selection_and_unmapped_failure
 test_changed_bin_reference_selects_per_script_not_per_family
 test_changed_uses_bounded_automatic_concurrency
@@ -2385,6 +2570,7 @@ test_a_run_that_ran_records_no_skip_reason
 test_live_guards_expect_a_capability_skip_class
 test_fail_on_gate_skip_token
 test_exclude_family
+test_exclude_quarantined
 test_list_scheduled_proven_isolated_uses_serial_weights
 test_list_scheduled_non_lane_selections_use_serial_weights
 test_portable_shard_union_and_coverage_guard
@@ -2404,11 +2590,14 @@ test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
 test_check_hint_drift_flags_stale_hint
+test_check_hint_drift_ignores_sub_floor_swings
 test_fail_fast_stops_after_first_failure
 test_fail_fast_jobs_stops_scheduling
 test_fail_fast_skips_the_unproven_serial_tail
 test_host_load_marker_and_scheduler_throttle
 test_changed_default_timeout_scales_with_host_load
+test_changed_watch_triage_gets_its_own_scaled_timeout
+test_changed_captain_hold_gets_its_own_scaled_timeout
 test_token_free_retry_recovers_load_sensitive_failure
 test_token_free_retry_covers_exit_124_regardless_of_name
 test_token_free_retry_skips_when_a_failure_is_not_load_plausible

@@ -57,7 +57,11 @@ find_chrome() {
     printf '%s\n' "$FM_CHROME_BIN"
     return 0
   fi
+  # chrome-headless-shell comes first: it is Chrome's dedicated --dump-dom
+  # binary, and a full Chrome for Testing build on a display-less WSL host
+  # never writes the dump before the render timeout.
   for candidate in \
+    chrome-headless-shell \
     google-chrome \
     google-chrome-stable \
     chromium \
@@ -87,8 +91,10 @@ find_chrome() {
 # version, and each attempt's exit status, stderr tail, and whether the helper
 # timed the attempt out - when it did, the exit status is only this helper's own
 # kill signal. The extra flags remove Chrome's background-network and /dev/shm
-# dependencies, which are the start-up surfaces that fail on a runner; neither
-# changes the rendered DOM of a local file.
+# dependencies, which are the start-up surfaces that fail on a runner, and the
+# field-trial config Chrome for Testing bakes in, under which a full build on a
+# fresh profile never writes the dump (seen on WSL); none changes the rendered
+# DOM of a local file.
 render_export_dom() {
   local chrome=$1 source_file=$2 out_file=$3 pi_version=$4
   local attempt pid status wait_count wait_limit reap_wait log profile report timed_out
@@ -106,6 +112,7 @@ render_export_dom() {
       --no-sandbox \
       --disable-dev-shm-usage \
       --disable-background-networking \
+      --disable-field-trial-config \
       --user-data-dir="$profile" \
       --virtual-time-budget=2000 \
       --dump-dom \

@@ -48,6 +48,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks             |
 | `fm-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for fm-lock.sh and the Claude Stop auto-arm |
 | `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity with single-flight exit-2 rewake (docs/watcher-continuity.md) |
+| `fm-precompact-checkpoint.sh` | Non-blocking PreCompact hook writing a compaction checkpoint (wake queue, open decisions, tasks in flight) |
 | `fm-turnend-guard.sh`    | Shared primary turn-end guard predicate so no turn ends blind (docs/turnend-guard.md) |
 | `fm-turnend-guard-grok.sh` | Grok Stop-hook adapter for the primary turn-end guard                              |
 | `fm-kimi-turnend-hook.sh` | Surgically install or remove Kimi's guarded global crew turn-end hook                |
@@ -154,6 +155,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-parent-channel-lib.sh` | Resolve a secondmate home's parent channel and append a captain-facing outcome line to it at most once |
 | `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode, write the ship instructions carrying that mode's definition of done, and supersede the task's brief so a later relaunch cannot revive stale scout delivery text |
 | `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed scout deliverables, retire secondmate homes |
+| `fm-opencode-session-sweep.sh` | One-time owner-run sweep of orphaned `state/<id>.opencode-session` files left behind by teardowns that predate its per-task cleanup |
 | `fm-harness.sh`          | Detect the running harness, resolve crew or secondmate harness, model, and effort, and validate the native-only `ultra` effort |
 | `fm-lock.sh`             | Per-home firstmate session lock                                                      |
 | `fm-x-lib.sh`            | Shared Relay config, relay, and reply-threading helpers                              |
@@ -174,6 +176,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-stow-cascade.sh`     | Enumerate this home's registered secondmates, their budget reports, and reachable transports for a `/stow` cascade; `--complete` stamps the durable stow-completion marker once the whole cascade finished |
 | `fm-captain-window.sh`   | Report the captain's current attention band and whether proactive contact may be offered |
 | `fm-autonomous-pc02-lane.sh` | Report whether the single PC02 lane is free for the autonomous pass's dispatch-availability check |
+| `fm-pc02-test-offload.sh` | Run an `fm-test-run.sh` invocation on PC02 when it is idle and ready, otherwise locally (`fm-test-run.sh --pc02-if-idle`) |
+| `fm-pc02-personal-use.sh` | Turn PC02's personal-use switch, which keeps test offloading on PC01, on or off; report its status; install its Windows desktop toggle |
 | `fm-host-memory.sh` | Report whether this host's free memory clears the launch floor, for the autonomous pass and the spawn preflight |
 | `fm-dispatch-quota-cap.sh` | Report the effective concurrent Claude dispatch cap after the quota ladder and whether the paced Codex sidecar may spawn |
 | `fm-backlog-routing.sh` | Durable pc02/medium/senior routing registry (`data/backlog-routing.tsv`) for the autonomous pass's refill step: classify, escalate, gc, list, and seed from the durable-refill report |

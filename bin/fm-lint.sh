@@ -408,7 +408,7 @@ fm_lint_run_backend_purity() {
 # after that silently tested only the swapped-in scripts regardless of the
 # actual diff, while GitHub's required check still certified the test step
 # as covering the change. Fail loudly instead of letting that recur quietly.
-FM_LINT_CANONICAL_NM_TEST="bin/fm-test-run.sh --changed --exclude-family real-herdr-gated"
+FM_LINT_CANONICAL_NM_TEST="bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle"
 fm_lint_check_nomistakes_test_command() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   local nm_yaml="${FM_LINT_NM_YAML:-$ROOT/.no-mistakes.yaml}"

@@ -565,13 +565,29 @@ test_exhausted_settle_window_keeps_a_non_shell_foreground_live() {
   pass "herdr stale registration: an exhausted settle window still reads a non-shell foreground as live"
 }
 
+# Install a long-running executable named `pi` in <dir>, so the kernel records
+# `pi` as the process identity. A symlink to the real sleep binary keeps that
+# identity on macOS (a copied platform binary fails code signing there), but a
+# multicall coreutils (uutils) dispatches on argv0 and rejects `pi`; there, a
+# `pi` script that waits on a sleep child carries the name instead (Linux
+# reports a script's own basename as its comm).
+make_fake_pi() {  # <dir>
+  local dir=$1 sleep_bin
+  sleep_bin=$(command -v sleep) || fail "sleep not found"
+  ln -sf "$sleep_bin" "$dir/pi"
+  "$dir/pi" 0 2>/dev/null && return 0
+  rm -f "$dir/pi"
+  printf '#!/bin/sh\n%s "$@" &\ntrap '\''kill $! 2>/dev/null; exit 143'\'' TERM\nwait\n' \
+    "'$sleep_bin'" >"$dir/pi"
+  chmod +x "$dir/pi"
+  "$dir/pi" 0 || fail "could not create an agent-named pi process"
+}
+
 test_registered_agent_with_an_agent_descendant_outside_the_foreground_stays_alive() {
   local lab sleep_bin shell_pid out shell_verdict
   sleep_bin=$(command -v sleep) || fail "sleep not found"
   lab="$TMP_ROOT/stale-reg-descendant-bin"; mkdir -p "$lab"
-  # A symlink to a real long-running binary so the kernel records `pi` as the
-  # executable identity (a copied platform binary fails code signing on macOS).
-  ln -sf "$sleep_bin" "$lab/pi"
+  make_fake_pi "$lab"
   # A real shell whose child is that agent-named process, while the canned
   # foreground view shows only the shell (a suspended or backgrounded agent).
   sh -c "'$lab/pi' 300; :" &
@@ -595,13 +611,12 @@ test_registered_agent_with_an_agent_descendant_outside_the_foreground_stays_aliv
 }
 
 test_agent_descendant_under_a_spaced_install_path_stays_alive() {
-  local lab sleep_bin shell_pid out
-  sleep_bin=$(command -v sleep) || fail "sleep not found"
+  local lab shell_pid out
   # The executable path the process table reports contains a space (the macOS
   # `/Library/Application Support/...` shape), so a field-split read of the
   # process table sees only a fragment of the name.
   lab="$TMP_ROOT/stale-reg-spaced-bin/Application Support/Some Dir"; mkdir -p "$lab"
-  ln -sf "$sleep_bin" "$lab/pi"
+  make_fake_pi "$lab"
   sh -c "'$lab/pi' 300; :" &
   shell_pid=$!
   sleep 0.3

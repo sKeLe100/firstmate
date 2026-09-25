@@ -152,7 +152,7 @@ require_tasks_axi() {
 # is a faithful, injective image of the full text.
 item_fields() {  # <id>
   local id=$1 raw out
-  raw=$(cd "$FM_HOME" && tasks-axi show "$id" --full 2>/dev/null)
+  raw=$("$SCRIPT_DIR/fm-tasks-axi.sh" show "$id" --full 2>/dev/null)
   if printf '%s\n' "$raw" | grep -q '^code: NOT_FOUND'; then
     return 1
   fi

@@ -67,8 +67,8 @@ A mechanical resident-size ceiling backs this rule: [`bin/fm-agentsmd-size.sh`](
 ## Trigger hygiene
 
 A new skill is dead weight if nothing loads it.
-Every new skill needs its load trigger declared inline: section 13 for agent-only reference skills, or the relevant operating section for anything else.
-State the trigger as a condition ("load before X", "load on Y wake"), never as a vague pointer.
+Every new skill needs its load trigger stated as a condition ("load before X", "load on Y wake") in its own `description` - the listing an agent reads every turn - never as a vague pointer.
+Section 13 for agent-only reference skills, or the relevant operating section for anything else, then carries a one-line pointer to the skill, because the trigger already rides the description.
 Briefs for tasks that touch firstmate's own tracked material should tell the crewmate to load this skill.
 `bin/fm-brief.sh`'s `REPO` argument is a caller-supplied string with no reliable signal that it names firstmate's own repo, unlike a project registered in `data/projects.md`, so there is no clean point inside the scaffold to detect this case automatically.
 Firstmate adds this skill's load instruction to firstmate-repo briefs by hand instead.
@@ -115,7 +115,7 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 
 ## No-mistakes test configuration
 
-This repository pins `commands.test` in `.no-mistakes.yaml` to the canonical `bin/fm-test-run.sh --changed --exclude-family real-herdr-gated` invocation, and `bin/fm-lint.sh` fails when that line drifts from it.
+This repository pins `commands.test` in `.no-mistakes.yaml` to the canonical `bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle` invocation, and `bin/fm-lint.sh` fails when that line drifts from it.
 Never swap in a per-branch workaround such as a fixed script list, a family, or the full suite: PR #111 did exactly that to fit a gate time cap, and every later run silently tested only those scripts while the required check still certified full coverage (fork PR #115 restored the pin and added the guard).
 CI owns broad deterministic regression coverage; the no-mistakes Test step still runs its intent-targeted evidence agent on top of the pinned baseline.
 
