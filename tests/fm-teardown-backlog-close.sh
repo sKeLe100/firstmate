@@ -217,6 +217,111 @@ test_retain_keeps_the_routing_row_for_the_still_open_item() {
     || fail "retain-keeps-routing: the routing row for a still-open item must not be garbage collected"
   pass "a retain transition (captain hold) leaves the routing row in place, since the item is still open"
 }
+# Parking retires the worker but keeps its work where it is: unlanded commits
+# and uncommitted edits survive in place on their branch, the local copy is
+# never returned, and the row goes back to Queued held as parked with the
+# retained copy's path recorded on it.
+test_park_retains_the_local_copy_and_queues_the_item_held_parked() {
+  local case_dir out show
+  case_dir=$(make_case park-retains-copy)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  wt_commit "$case_dir" "unlanded experiment"
+  printf 'scratch\n' > "$case_dir/wt/uncommitted.txt"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >> "$case_dir/treehouse.log"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  FM_DATA_OVERRIDE="$case_dir/data" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-backlog-routing.sh" set task-x1 pc02 >/dev/null \
+    || fail "park-retains-copy: fixture could not seed a routing row"
+
+  out=$(run_teardown "$case_dir" --park) || fail "park-retains-copy: park failed: $out"
+  assert_contains "$out" "parked" "park-retains-copy: the outcome did not say the task was parked"
+  assert_absent "$case_dir/state/task-x1.meta" "park-retains-copy: the task record survived the park"
+  [ -f "$case_dir/wt/uncommitted.txt" ] \
+    || fail "park-retains-copy: an uncommitted edit in the retained copy was lost"
+  [ "$(git -C "$case_dir/wt" rev-parse --abbrev-ref HEAD)" = fm/task-x1 ] \
+    || fail "park-retains-copy: the retained copy left its task branch"
+  git -C "$case_dir/wt" log -1 --format=%s | grep -qx 'unlanded experiment' \
+    || fail "park-retains-copy: the unlanded commit is gone from the retained copy"
+  if grep -q 'return' "$case_dir/treehouse.log" 2>/dev/null; then
+    fail "park-retains-copy: the retained copy was returned to the pool: $(cat "$case_dir/treehouse.log")"
+  fi
+  show=$(tasks-axi show task-x1 --full --file "$case_dir/data/backlog.md")
+  [ "$(backlog_row_state "$case_dir")" = queued ] \
+    || fail "park-retains-copy: the item did not return to Queued: $show"
+  printf '%s\n' "$show" | grep -qx '  held: yes' \
+    || fail "park-retains-copy: the item is not held: $show"
+  printf '%s\n' "$show" | grep -qx '  hold_kind: parked' \
+    || fail "park-retains-copy: the item is not held as parked: $show"
+  printf '%s\n' "$show" | grep -F "Retained local copy: $case_dir/wt" >/dev/null \
+    || fail "park-retains-copy: the retained copy path was not recorded on the item: $show"
+  FM_DATA_OVERRIDE="$case_dir/data" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-backlog-routing.sh" get task-x1 >/dev/null 2>&1 \
+    || fail "park-retains-copy: the routing row for a still-open item was garbage collected"
+  pass "parking keeps the local copy in place and returns the item to Queued held as parked"
+}
+
+# Parking replaces the row's hold, so it must never run over a captain call, and
+# it keeps the copy, so it has no business beside --force. Both refusals leave
+# the record and the row exactly as they were.
+test_park_refuses_a_captain_call_and_force() {
+  local case_dir rc
+  case_dir=$(make_case park-refusals)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  set +e
+  run_teardown "$case_dir" --park --force > "$case_dir/out1" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "park-refusals: --park --force was not refused (rc=$rc): $(cat "$case_dir/out1")"
+  FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" FM_CONFIG_OVERRIDE="$case_dir/config" \
+    "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --reason "fixture hold" >/dev/null \
+    || fail "park-refusals: fixture could not hold the item for the captain"
+  set +e
+  run_teardown "$case_dir" --park > "$case_dir/out2" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "park-refusals: parking over an open captain call succeeded"
+  grep -q 'held for the captain' "$case_dir/out2" \
+    || fail "park-refusals: the refusal did not name the captain call: $(cat "$case_dir/out2")"
+  [ -f "$case_dir/state/task-x1.meta" ] || fail "park-refusals: the refusal removed the task record"
+  [ "$(backlog_row_state "$case_dir")" = in_flight ] \
+    || fail "park-refusals: the refusal moved the item"
+  pass "parking refuses an open captain call and --force, changing nothing"
+}
+
+# A park interrupted after its pending record was written replays at the next
+# session start into the same parked row, exactly as a close or a retention does.
+test_park_pending_record_replays_to_a_parked_row() {
+  local case_dir out
+  case_dir=$(make_case park-replay)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  out=$(
+    # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-backlog-transition-lib.sh"
+    fm_backlog_close_marker_write "$case_dir/state" task-x1 "$case_dir/data" \
+      teardown-test-task-x1 --park --copy "$case_dir/wt" \
+      || { echo "write: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+    fm_backlog_close_marker_replay "$case_dir/state" "$case_dir/state/task-x1.backlog-close" \
+      "$case_dir/data" || { echo "replay: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+    printf '%s\n' "$FM_BACKLOG_CLOSE_REPLAY_RESULT"
+  ) || fail "park-replay: $out"
+  [ "$out" = parked_incomplete ] || fail "park-replay: replay reported $out, not parked_incomplete"
+  assert_absent "$case_dir/state/task-x1.meta" "park-replay: replay left the task record"
+  assert_absent "$case_dir/state/task-x1.backlog-close" "park-replay: replay left the pending record"
+  tasks-axi show task-x1 --file "$case_dir/data/backlog.md" | grep -qx '  hold_kind: parked' \
+    || fail "park-replay: the replayed item is not held as parked"
+  [ -d "$case_dir/wt" ] || fail "park-replay: replay touched the retained copy"
+  pass "an interrupted park replays into the same parked row"
+}
+
 test_legacy_record_never_accepts_a_corrupt_spawn_gen() {
   local case_dir rc
   case_dir=$(make_case legacy-corrupt)
