@@ -86,8 +86,8 @@
 # full commit list, so the report itself never grows into a raw commit dump.
 #
 # Output: multiple `key=value` lines on stdout, one per field, published
-# atomically to $FM_HOME/state/.upstream-behind-check.report (gitignored, per
-# AGENTS.md section 2 - a volatile per-run marker, not tracked material):
+# atomically to $FM_HOME/state/.upstream-behind-check.report (gitignored - a
+# volatile per-run marker, not tracked material; docs/configuration.md "Operational home layout and state"):
 #   status=ok
 #   behind=<N>
 #   ahead=<N>

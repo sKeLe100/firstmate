@@ -67,8 +67,8 @@ A mechanical resident-size ceiling backs this rule: [`bin/fm-agentsmd-size.sh`](
 ## Trigger hygiene
 
 A new skill is dead weight if nothing loads it.
-Every new skill needs its load trigger declared inline: section 13 for agent-only reference skills, or the relevant operating section for anything else.
-State the trigger as a condition ("load before X", "load on Y wake"), never as a vague pointer.
+Every new skill needs its load trigger stated as a condition ("load before X", "load on Y wake") in its own `description` - the listing an agent reads every turn - never as a vague pointer.
+Section 13 for agent-only reference skills, or the relevant operating section for anything else, then carries a one-line pointer to the skill, because the trigger already rides the description.
 Briefs for tasks that touch firstmate's own tracked material should tell the crewmate to load this skill.
 `bin/fm-brief.sh`'s `REPO` argument is a caller-supplied string with no reliable signal that it names firstmate's own repo, unlike a project registered in `data/projects.md`, so there is no clean point inside the scaffold to detect this case automatically.
 Firstmate adds this skill's load instruction to firstmate-repo briefs by hand instead.
