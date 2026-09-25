@@ -30,7 +30,7 @@
 #   fm-upstream-sync-item.sh file <behind> <newest_upstream_date> <default-branch>
 #     Files or refreshes the backlog item and prints:
 #       item_id=upstream-sync
-#       action=filed|refreshed|skipped
+#       action=filed|refreshed
 #       behind=<N>
 #       days_behind=<N>|unknown
 #       eligible=yes|no

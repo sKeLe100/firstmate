@@ -3522,7 +3522,7 @@ if [ "$BACKLOG_CLOSED" = 1 ]; then
   # A retain transition returns the row to Queued rather than closing it, so
   # its routing classification (if any) is still current work, not debris.
   if [ "$BACKLOG_TRANSITION" != retain ]; then
-    "$SCRIPT_DIR/fm-backlog-routing.sh" gc "$ID" >/dev/null 2>&1 || true
+    "$SCRIPT_DIR/fm-backlog-routing.sh" gc "$ID" >/dev/null || true
   fi
 elif [ "$KIND" = secondmate ] && [ ! -e "$STATE" ] && [ ! -L "$STATE" ]; then
   # A nested remote retirement can keep its route record inside the home being
@@ -3536,7 +3536,7 @@ else
     echo "error: $ID's endpoint and local copy are cleaned up, but its task record could not be removed ($FM_BACKLOG_TRANSITION_ERROR)" >&2
     exit 1
   fi
-  "$SCRIPT_DIR/fm-backlog-routing.sh" gc "$ID" >/dev/null 2>&1 || true
+  "$SCRIPT_DIR/fm-backlog-routing.sh" gc "$ID" >/dev/null || true
 fi
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
