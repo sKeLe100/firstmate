@@ -67,6 +67,7 @@ done
 
 ROUTING_BIN="$SCRIPT_DIR/fm-backlog-routing.sh"
 SNAPSHOT_BIN="$SCRIPT_DIR/fm-queue-snapshot.sh"
+TASKS_AXI_BIN="$SCRIPT_DIR/fm-tasks-axi.sh"
 
 SNAPSHOT_OUT="$(mktemp "${TMPDIR:-/tmp}/fm-pc02-fair-order-snap.XXXXXX")"
 BODY_LENGTHS="$(mktemp "${TMPDIR:-/tmp}/fm-pc02-fair-order-body.XXXXXX")"
@@ -87,7 +88,9 @@ fi
 # Digest freshness is a separate, per-candidate single-item read owned by
 # fm-backlog-routing.sh's `get`, because a truncated list field cannot carry
 # a trustworthy digest.
-if ! (cd "$FM_HOME" && tasks-axi list --state queued --fields body) > "$BODY_LENGTHS" 2>/dev/null; then
+# Routed through fm-tasks-axi.sh, the single owner of tasks-axi addressing,
+# rather than a bare `cd "$FM_HOME" && tasks-axi`.
+if ! "$TASKS_AXI_BIN" list --state queued --fields body > "$BODY_LENGTHS" 2>/dev/null; then
   echo "fm-pc02-fair-order: tasks-axi list --fields body failed" >&2
   exit 2
 fi

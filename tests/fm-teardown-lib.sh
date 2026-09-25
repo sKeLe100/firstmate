@@ -984,6 +984,7 @@ configure_secondmate_with_tmux_children() {  # <case-dir>
       "kind=ship" \
       "mode=local-only"
     : > "$home/state/$child.status"
+    printf 'ses_%s\n' "$child" > "$home/state/$child.opencode-session"
   done
 }
 

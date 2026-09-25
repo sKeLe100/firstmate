@@ -173,6 +173,50 @@ test_retained_legacy_stamp_still_faces_the_endpoint_gate() {
     || fail "legacy-stamp-retained: the flag-less refusal modified the task record"
   pass "a legacy stamp a failed rollback left behind still faces the endpoint gate"
 }
+test_close_removes_opencode_session_and_gcs_the_routing_row() {
+  local case_dir out
+  case_dir=$(make_case opencode-routing-close)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  wt_commit "$case_dir" "landed work"
+  add_fork_with_pushed_branch "$case_dir"
+  : > "$case_dir/state/task-x1.opencode-session"
+  FM_DATA_OVERRIDE="$case_dir/data" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-backlog-routing.sh" set task-x1 pc02 >/dev/null \
+    || fail "opencode-routing-close: fixture could not seed a routing row"
+
+  out=$(run_teardown "$case_dir") || fail "opencode-routing-close: teardown failed: $out"
+  [ "$(backlog_row_state "$case_dir")" = "done" ] \
+    || fail "opencode-routing-close: teardown returned success with its backlog item still open"
+  assert_absent "$case_dir/state/task-x1.opencode-session" \
+    "opencode-routing-close: teardown left the opencode session id file behind"
+  FM_DATA_OVERRIDE="$case_dir/data" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-backlog-routing.sh" get task-x1 >/dev/null 2>&1 \
+    && fail "opencode-routing-close: the routing row survived a real close"
+  pass "closing a task removes its opencode session id file and its routing classification"
+}
+test_retain_keeps_the_routing_row_for_the_still_open_item() {
+  local case_dir out
+  case_dir=$(make_case retain-keeps-routing)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" FM_CONFIG_OVERRIDE="$case_dir/config" \
+    "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --reason "fixture hold" >/dev/null \
+    || fail "retain-keeps-routing: fixture could not hold the item for the captain"
+  wt_commit "$case_dir" "work in progress"
+  add_fork_with_pushed_branch "$case_dir"
+  FM_DATA_OVERRIDE="$case_dir/data" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-backlog-routing.sh" set task-x1 pc02 >/dev/null \
+    || fail "retain-keeps-routing: fixture could not seed a routing row"
+
+  out=$(run_teardown "$case_dir") || fail "retain-keeps-routing: teardown failed: $out"
+  [ "$(backlog_row_state "$case_dir")" = "queued" ] \
+    || fail "retain-keeps-routing: a captain-held item must return to Queued, not close"
+  FM_DATA_OVERRIDE="$case_dir/data" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-backlog-routing.sh" get task-x1 >/dev/null 2>&1 \
+    || fail "retain-keeps-routing: the routing row for a still-open item must not be garbage collected"
+  pass "a retain transition (captain hold) leaves the routing row in place, since the item is still open"
+}
 test_legacy_record_never_accepts_a_corrupt_spawn_gen() {
   local case_dir rc
   case_dir=$(make_case legacy-corrupt)

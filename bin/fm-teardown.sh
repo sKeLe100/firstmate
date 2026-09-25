@@ -3064,8 +3064,8 @@ cleanup_firstmate_home_children() {
       "$sub_state/$child_id.pi-ext.ts" "$sub_state/$child_id.omp-ext.ts" \
       "$sub_state/$child_id.grok-turnend-token" "$sub_state/$child_id.kimi-turnend-token" \
       "$sub_state/$child_id.muse-session" "$sub_state/$child_id.muse-session-current" \
-      "$sub_state/$child_id.cursor-session" "$sub_state/$child_id.reconcile-nudged" \
-      "$sub_state/.$child_id.branch-outcome-index"
+      "$sub_state/$child_id.cursor-session" "$sub_state/$child_id.opencode-session" \
+      "$sub_state/$child_id.reconcile-nudged" "$sub_state/.$child_id.branch-outcome-index"
   done
 }
 
@@ -3492,6 +3492,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.omp-ext.ts" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
   "$STATE/$ID.muse-session-current" "$STATE/$ID.cursor-session" \
+  "$STATE/$ID.opencode-session" \
   "$STATE/$ID.control-relaunch" "$STATE/$ID.control-relaunch.meta-prior" \
   "$STATE/$ID.control-relaunch.brief-prior" "$STATE/$ID.control-relaunch.note" \
   "$STATE/$ID.reconcile-nudged" "$STATE/$ID.gemini-settings.json" \
@@ -3518,6 +3519,11 @@ if [ "$BACKLOG_CLOSED" = 1 ]; then
     fi
     exit 1
   fi
+  # A retain transition returns the row to Queued rather than closing it, so
+  # its routing classification (if any) is still current work, not debris.
+  if [ "$BACKLOG_TRANSITION" != retain ]; then
+    "$SCRIPT_DIR/fm-backlog-routing.sh" gc "$ID" >/dev/null || true
+  fi
 elif [ "$KIND" = secondmate ] && [ ! -e "$STATE" ] && [ ! -L "$STATE" ]; then
   # A nested remote retirement can keep its route record inside the home being
   # removed. remove_firstmate_home above already performed that physical
@@ -3530,6 +3536,7 @@ else
     echo "error: $ID's endpoint and local copy are cleaned up, but its task record could not be removed ($FM_BACKLOG_TRANSITION_ERROR)" >&2
     exit 1
   fi
+  "$SCRIPT_DIR/fm-backlog-routing.sh" gc "$ID" >/dev/null || true
 fi
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0

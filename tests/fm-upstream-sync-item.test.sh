@@ -11,18 +11,11 @@
 #     eligible=yes.
 #   - At/above-threshold drift with config/upstream-autosync ABSENT reports
 #     eligible=no, i.e. today's ask-only behavior is unchanged.
-#   - On the default tasks-axi backend the item really carries the required
-#     payload (eligibility line, commit count, delta) and its title is
-#     refreshed on the second episode instead of keeping the stale count.
-#   - A data/backlog.md whose upstream-sync end marker was lost is left
-#     untouched rather than truncated from the start marker onward.
-#   - The manual write is skipped, not raced, while the reserved `backlog`
-#     lease is held by the other supervision actor.
-#   - A `backlog` lease held by this script's OWN actor survives the run: the
-#     lease is actor-scoped and outlives any single process, so this
-#     unattended script must never release the supervising session's lease.
-#   - A hand-indented marker pair is still refreshed in place, rather than
-#     reporting action=refreshed while silently dropping the new payload.
+#   - The item really carries the required payload (eligibility line, commit
+#     count, delta) and its title is refreshed on the second episode instead
+#     of keeping the stale count.
+#   - Every read and write goes through bin/fm-tasks-axi.sh; there is no
+#     manual-backend hand-edit fallback to exercise.
 #   - The gate really is inherited by a secondmate home, as AGENTS.md and
 #     docs/configuration.md promise: propagating the primary's config with the
 #     declared allowlist leaves the secondmate reporting eligible=yes.
@@ -42,6 +35,8 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found (this script has no manual-backend fallback)"; exit 0; }
+
 ITEM="$ROOT/bin/fm-upstream-sync-item.sh"
 
 fm_git_identity fmtest fmtest@example.invalid
@@ -53,7 +48,6 @@ new_home() {
   h=$(mktemp -d "$TMP_ROOT/home-XXXXXX") || return 1
   mkdir -p "$h/state" "$h/data"
   mkdir -p "$h/config"
-  printf 'manual\n' > "$h/config/backlog-backend"
   printf '%s\n' "$h"
 }
 
@@ -67,8 +61,7 @@ new_repo() {
   git -C "$dir" commit -qm seed
 }
 
-# Builds a repo where upstream has N extra commits past the local branch, with
-# no tasks-axi on PATH so the manual data/backlog.md fallback is exercised.
+# Builds a repo where upstream has N extra commits past the local branch.
 setup_repo() {  # <root-dir> <upstream-commits>
   local root=$1 n=$2 i
   new_repo "$root"
@@ -102,8 +95,9 @@ test_dedup_refreshes_in_place() {
   out2=$(file_once "$home" "$root" 4)
   assert_contains "$out2" "action=refreshed" "sync-item: second call for the same item must refresh"
 
-  count=$(grep -c "upstream-sync:start" "$home/data/backlog.md")
-  [ "$count" -eq 1 ] || fail "sync-item: dedup must leave exactly one filed block, found $count"
+  count=$(cd "$home" && tasks-axi list --state queued \
+    | grep -c "^  upstream-sync,")
+  [ "$count" -eq 1 ] || fail "sync-item: dedup must leave exactly one queued item, found $count"
   pass "filing twice for one open episode refreshes the item in place, never duplicates it"
 }
 
@@ -159,9 +153,7 @@ test_at_threshold_stays_ineligible_without_config() {
 test_tasks_axi_backend_carries_payload_and_refreshes_title() {
   set -e
   local home root out1 out2 shown
-  command -v tasks-axi >/dev/null 2>&1 || { echo "skip - tasks-axi not installed"; return 0; }
   home=$(new_home)
-  rm -f "$home/config/backlog-backend"
   : > "$home/config/upstream-autosync"
   root="$TMP_ROOT/repo-axi"
   setup_repo "$root" 6
@@ -187,75 +179,6 @@ test_tasks_axi_backend_carries_payload_and_refreshes_title() {
   pass "the tasks-axi backend carries the full payload and refreshes the title in place"
 }
 
-test_missing_end_marker_leaves_backlog_intact() {
-  set -e
-  local home root before after
-  home=$(new_home)
-  root="$TMP_ROOT/repo-marker"
-  setup_repo "$root" 3
-
-  file_once "$home" "$root" 3 >/dev/null
-  # Lose the end marker the way a hand edit would, then keep a later item.
-  grep -v -- "upstream-sync:end" "$home/data/backlog.md" > "$home/data/backlog.md.tmp"
-  mv "$home/data/backlog.md.tmp" "$home/data/backlog.md"
-  printf '### later-item\nmust survive\n' >> "$home/data/backlog.md"
-  before=$(cat "$home/data/backlog.md")
-
-  file_once "$home" "$root" 4 >/dev/null 2>&1 || true
-  after=$(cat "$home/data/backlog.md")
-  [ "$before" = "$after" ] || fail "sync-item: an unterminated block must leave data/backlog.md untouched"
-  assert_contains "$after" "later-item" "sync-item: items after an unterminated block must not be truncated"
-  pass "a lost end marker abandons the rewrite instead of truncating the backlog"
-}
-
-test_held_backlog_lease_skips_the_write() {
-  set -e
-  local home root out before holder
-  home=$(new_home)
-  root="$TMP_ROOT/repo-lease"
-  setup_repo "$root" 3
-
-  file_once "$home" "$root" 3 >/dev/null
-  before=$(cat "$home/data/backlog.md")
-  # A lease only reads as live when its pid is the session-lock holder
-  # (bin/fm-lease-lib.sh fm_lease_live), so stand up both for a live branch.
-  sleep 30 &
-  holder=$!
-  printf '%s\n' "$holder" > "$home/state/.lock"
-  printf 'branch\t%s\t%s\n' "$holder" "$(date +%s)" > "$home/state/.lease-backlog"
-
-  out=$(FM_SUPERVISION_ACTOR=main file_once "$home" "$root" 9 2>/dev/null)
-  kill "$holder" 2>/dev/null || true
-  wait "$holder" 2>/dev/null || true
-  assert_contains "$out" "action=skipped" "sync-item: a contended backlog lease must skip the write"
-  assert_contains "$out" "eligible=" "sync-item: a skipped write must still report eligibility"
-  [ "$before" = "$(cat "$home/data/backlog.md")" ] \
-    || fail "sync-item: the write must not proceed while the other actor holds the backlog lease"
-  pass "a backlog lease held by the other actor skips the write instead of racing it"
-}
-
-test_same_actor_backlog_lease_survives_the_run() {
-  set -e
-  local home root holder out
-  home=$(new_home)
-  root="$TMP_ROOT/repo-samelease"
-  setup_repo "$root" 3
-
-  # The supervising session of the SAME actor is mid-write under its lease.
-  sleep 30 &
-  holder=$!
-  printf '%s\n' "$holder" > "$home/state/.lock"
-  printf 'main\t%s\t%s\n' "$holder" "$(date +%s)" > "$home/state/.lease-backlog"
-
-  out=$(FM_SUPERVISION_ACTOR=main file_once "$home" "$root" 3 2>/dev/null)
-  kill "$holder" 2>/dev/null || true
-  wait "$holder" 2>/dev/null || true
-  assert_contains "$out" "action=filed" "sync-item: an own-actor lease must not block this write"
-  [ -e "$home/state/.lease-backlog" ] \
-    || fail "sync-item: the run released the supervising session's own backlog lease, freeing the other actor to race it"
-  pass "a backlog lease held by this script's own actor survives the run"
-}
-
 test_unknown_date_is_not_reported_as_zero_days() {
   set -e
   local home root out
@@ -276,31 +199,6 @@ test_unknown_date_is_not_reported_as_zero_days() {
   assert_not_contains "$(cat "$home/data/backlog.md")" "is 0 days old" \
     "sync-item: the filed note must not assert a freshly-synced 0-day age it does not know"
   pass "an unknown newest-upstream date reports unknown rather than a definite zero"
-}
-
-test_indented_markers_are_still_refreshed() {
-  set -e
-  local home root out body
-  home=$(new_home)
-  : > "$home/config/upstream-autosync"
-  root="$TMP_ROOT/repo-indent"
-  setup_repo "$root" 8
-
-  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ITEM" file 3 "$(date +%F)" main >/dev/null
-  # data/backlog.md is hand-edited; an editor reindents the marker pair.
-  sed -i -E 's/^(<!-- upstream-sync:(start|end) -->)$/  \1/' "$home/data/backlog.md"
-
-  out=$(FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD=5 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
-    "$ITEM" file 8 "$(date +%F)" main)
-  assert_contains "$out" "action=refreshed" "sync-item: an indented marker pair must still refresh in place"
-  body=$(cat "$home/data/backlog.md")
-  assert_contains "$body" "8 commits behind" "sync-item: the refresh must actually replace the stale payload"
-  assert_contains "$body" "Auto-dispatch eligible: yes" \
-    "sync-item: the refreshed block must carry the new eligibility signal"
-  assert_not_contains "$body" "3 commits behind" "sync-item: the stale payload must not survive the refresh"
-  [ "$(grep -c "upstream-sync:start" "$home/data/backlog.md")" -eq 1 ] \
-    || fail "sync-item: the refresh must not leave a second sync block"
-  pass "a hand-indented marker pair is refreshed in place, not silently skipped"
 }
 
 # Exercises the real propagation entry point with the DECLARED allowlist (no
@@ -342,9 +240,7 @@ axi_state() {  # <home> <id>
 test_refresh_reopens_a_completed_item() {
   set -e
   local home root out
-  command -v tasks-axi >/dev/null 2>&1 || { echo "skip - tasks-axi not installed"; return 0; }
   home=$(new_home)
-  rm -f "$home/config/backlog-backend"
   : > "$home/config/upstream-autosync"
   root="$TMP_ROOT/repo-reopen"
   setup_repo "$root" 9
@@ -365,9 +261,7 @@ test_refresh_reopens_a_completed_item() {
 test_refresh_leaves_an_in_flight_item_alone() {
   set -e
   local home root
-  command -v tasks-axi >/dev/null 2>&1 || { echo "skip - tasks-axi not installed"; return 0; }
   home=$(new_home)
-  rm -f "$home/config/backlog-backend"
   : > "$home/config/upstream-autosync"
   root="$TMP_ROOT/repo-inflight"
   setup_repo "$root" 9
@@ -430,7 +324,9 @@ test_commit_delta_is_capped_with_a_truncation_marker() {
   FM_UPSTREAM_AUTOSYNC_DELTA_SHOWN=3 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
     "$ITEM" file 7 "$(date +%F)" main >/dev/null
   body=$(cat "$home/data/backlog.md")
-  shown=$(printf '%s\n' "$body" | grep -c "^[0-9a-f]\{7,\} upstream ")
+  # tasks-axi indents every stored body line by 2 spaces on top of note_body's
+  # own formatting, so the match tolerates that added indent.
+  shown=$(printf '%s\n' "$body" | grep -c "^[[:space:]]*[0-9a-f]\{7,\} upstream ")
   [ "$shown" -eq 3 ] \
     || fail "sync-item: the commit delta must be capped at the configured limit, printed $shown"
   assert_contains "$body" "... and 4 more" \
@@ -467,7 +363,9 @@ test_overlap_list_is_capped_with_a_truncation_marker() {
     "sync-item: truncated overlap on stdout must disclose how many files were omitted"
 
   body=$(cat "$home/data/backlog.md")
-  shown=$(printf '%s\n' "$body" | grep -c '^  - shared-')
+  # tasks-axi indents every stored body line by 2 spaces on top of note_body's
+  # own "  - " bullet indent, so the match tolerates that added indent.
+  shown=$(printf '%s\n' "$body" | grep -c '^[[:space:]]*- shared-')
   [ "$shown" -eq 2 ] || fail "sync-item: the note's overlap list must be capped, printed $shown"
   assert_contains "$body" "... and 3 more" \
     "sync-item: a truncated overlap list must disclose the omitted count, as the docs promise"
@@ -479,11 +377,7 @@ test_below_threshold_stays_ineligible_with_config
 test_at_threshold_is_eligible_with_config
 test_at_threshold_stays_ineligible_without_config
 test_tasks_axi_backend_carries_payload_and_refreshes_title
-test_missing_end_marker_leaves_backlog_intact
-test_held_backlog_lease_skips_the_write
-test_same_actor_backlog_lease_survives_the_run
 test_unknown_date_is_not_reported_as_zero_days
-test_indented_markers_are_still_refreshed
 test_gate_is_inherited_by_a_secondmate_home
 test_refresh_reopens_a_completed_item
 test_refresh_leaves_an_in_flight_item_alone
