@@ -39,12 +39,26 @@ if [ -z "$IN_FLIGHT" ] || [ "$IN_FLIGHT" = "null" ]; then
   IN_FLIGHT="[]"
 fi
 
-jq -n \
-  --arg ts "$TS" \
-  --argjson wake "$WAKE_ROWS" \
-  --argjson decisions "$DECISIONS" \
-  --argjson inflight "$IN_FLIGHT" \
-  '{timestamp:$ts, wake_queue:$wake, open_decisions:$decisions, tasks_in_flight:$inflight}' \
-  > "$OUT" 2>/dev/null || { echo "fm-precompact-checkpoint: jq failed, writing empty checkpoint to $OUT" >&2; echo '{}' > "$OUT"; }
+JSON_TRANSPORT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fm-precompact-checkpoint.XXXXXX" 2>/dev/null)"
+if [ -n "$JSON_TRANSPORT_DIR" ]; then
+  trap 'rm -rf "$JSON_TRANSPORT_DIR"' EXIT
+  WAKE_ROWS_FILE="$JSON_TRANSPORT_DIR/wake.json"
+  DECISIONS_FILE="$JSON_TRANSPORT_DIR/decisions.json"
+  IN_FLIGHT_FILE="$JSON_TRANSPORT_DIR/inflight.json"
+  printf '%s\n' "$WAKE_ROWS" > "$WAKE_ROWS_FILE"
+  printf '%s\n' "$DECISIONS" > "$DECISIONS_FILE"
+  printf '%s\n' "$IN_FLIGHT" > "$IN_FLIGHT_FILE"
+
+  jq -n \
+    --arg ts "$TS" \
+    --slurpfile wake "$WAKE_ROWS_FILE" \
+    --slurpfile decisions "$DECISIONS_FILE" \
+    --slurpfile inflight "$IN_FLIGHT_FILE" \
+    '{timestamp:$ts, wake_queue:$wake[0], open_decisions:$decisions[0], tasks_in_flight:$inflight[0]}' \
+    > "$OUT" 2>/dev/null || { echo "fm-precompact-checkpoint: jq failed, writing empty checkpoint to $OUT" >&2; echo '{}' > "$OUT"; }
+else
+  echo "fm-precompact-checkpoint: failed to create temp transport dir, writing empty checkpoint to $OUT" >&2
+  echo '{}' > "$OUT"
+fi
 
 exit 0
