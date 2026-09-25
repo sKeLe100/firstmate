@@ -3,19 +3,14 @@
 # Exercises the script through its public interface (the bin/ executable).
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 BIN="$ROOT/bin/fm-precompact-checkpoint.sh"
 
-oneTimeSetUp() {
-  TEST_STATE="$(mktemp -d "$ROOT/state.test.XXXXXX")"
-  export FM_STATE_OVERRIDE="$TEST_STATE"
-  export FM_HOME="$TEST_STATE"
-}
-
-oneTimeTearDown() {
-  rm -rf "$TEST_STATE"
-}
+TEST_STATE="$(fm_test_tmproot precompact-checkpoint)"
+export FM_STATE_OVERRIDE="$TEST_STATE"
+export FM_HOME="$TEST_STATE"
 
 test_checkpoint_writes_json() {
   "$BIN" || fail "checkpoint script must exit 0"
@@ -60,4 +55,7 @@ test_checkpoint_extracts_seeded_state() {
   pass "checkpoint extracts seeded wake queue, decisions, and in-flight tasks"
 }
 
-. shunit2
+test_checkpoint_writes_json
+test_checkpoint_contains_keys
+test_never_blocks
+test_checkpoint_extracts_seeded_state
