@@ -156,13 +156,15 @@ fm_pr_metadata_identity_parse "$META" || exit 1
 [ "$FM_PR_META_PROVIDER" = "$PROVIDER" ] && [ "$FM_PR_META_URL" = "$URL" ] \
   && [ "$FM_PR_META_HOST" = "$HOST" ] && [ "$FM_PR_META_PATH" = "$PROJECT_PATH" ] \
   && [ "$FM_PR_META_NUMBER" = "$NUMBER" ] || exit 1
-fm_lock_release "$META_LOCK"
-META_LOCK_HELD=0
-
+# The poll is published under the same metadata lock, so two concurrent
+# recordings (a rebind racing another) cannot leave pr= naming one PR while the
+# armed poll watches the other: whichever holds the lock last writes both.
 fm_pr_poll_publish_prepared || {
   echo "error: could not publish PR poll" >&2
   exit 1
 }
+fm_lock_release "$META_LOCK"
+META_LOCK_HELD=0
 # In a secondmate home the registration itself is a captain-facing fact:
 # publish the child's PR-ready line with the canonical URL just recorded, so it
 # reaches the parent whether or not the mate model appends anything

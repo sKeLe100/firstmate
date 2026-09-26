@@ -2983,13 +2983,16 @@ run_hold() {  # <dir> <args...>
     FM_CONFIG_OVERRIDE="$dir/config" "$ROOT/bin/fm-captain-hold.sh" "$@" >/dev/null 2>&1
 }
 
-make_hold_home() {  # <name> <status-line> <hold|nohold>
-  local name=$1 line=$2 hold=$3 dir state
+# <hold|nohold|norow|unreadable>: norow files the backlog without this task's
+# row, and unreadable leaves the backlog unreadable once the fixture is built.
+make_hold_home() {  # <name> <status-line> <hold|nohold|norow|unreadable>
+  local name=$1 line=$2 hold=$3 dir state row=held-merge
   dir=$(make_case "$name"); state="$dir/state"
   mkdir -p "$dir/data" "$dir/config"
   cp "$ROOT/.tasks.toml" "$dir/.tasks.toml" || return 1
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
-  (cd "$dir" && tasks-axi add held-merge 'delivered work' --file data/backlog.md) >/dev/null 2>&1 \
+  [ "$hold" != norow ] || row=other-work
+  (cd "$dir" && tasks-axi add "$row" 'delivered work' --file data/backlog.md) >/dev/null 2>&1 \
     || return 1
   if [ "$hold" = hold ]; then
     run_hold "$dir" hold held-merge --reason 'awaiting the captain on the merge' || return 1
@@ -2998,6 +3001,7 @@ make_hold_home() {  # <name> <status-line> <hold|nohold>
     > "$state/held-merge.meta"
   printf '%s\n' "$line" > "$state/held-merge.status"
   printf '%s' "$(seen_sig "$state/held-merge.status")" > "$state/.seen-held-merge_status"
+  [ "$hold" != unreadable ] || chmod 000 "$dir/data/backlog.md" || return 1
   printf '%s\n' "$dir"
 }
 
@@ -3227,7 +3231,9 @@ test_paused_recheck_reads_the_backlog_captain_call() {
   for spec in \
     'paused-held|paused: holding for the upstream tool release|hold|held for the captain|awaiting external' \
     'paused-unheld|paused: holding for the upstream tool release|nohold|awaiting external|held for the captain' \
-    'captain-held-released|captain-held [key=route]: tracked by held-merge|nohold|no longer holds this task for the captain|verified hold transfer'
+    'captain-held-released|captain-held [key=route]: tracked by held-merge|nohold|no longer holds this task for the captain|verified hold transfer' \
+    'captain-held-norow|captain-held [key=route]: tracked by held-merge|norow|carries no row for this task|verified hold transfer' \
+    'captain-held-unreadable|captain-held [key=route]: tracked by held-merge|unreadable|could not be read to confirm the captain hold|verified hold transfer'
   do
     IFS='|' read -r name line hold expect reject <<EOF_SPEC
 $spec
@@ -3246,8 +3252,49 @@ EOF_SPEC
       || fail "[$name] recheck did not read '$expect': $(cat "$state/.wake-queue" 2>/dev/null)"
     grep -F "$reject" "$state/.wake-queue" >/dev/null \
       && fail "[$name] recheck used the wrong wording '$reject': $(cat "$state/.wake-queue")"
+    chmod 600 "$dir/data/backlog.md" 2>/dev/null || true
   done
-  pass "a declared wait's recheck names the captain only when the backlog holds the task, and flags a released captain-held line"
+  pass "a declared wait's recheck names the captain only when the backlog holds the task, and flags a released, missing, or unverifiable captain-held line"
+}
+
+# A paused wait over an open captain call pays the backlog read once per
+# recheck cadence, not on every stale poll: once the captain-scoped recheck is
+# recorded, a later sighting inside the cadence keeps that scope without reading
+# the backlog again. The backlog is made unreadable after the first recheck, so
+# a second read would change the wording and wake at once.
+test_paused_captain_recheck_reads_backlog_once_per_cadence() {
+  local dir state out capture statusf back surfaced
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (paused captain recheck throttle)"; return 0; }
+  dir=$(make_hold_home paused-held-throttle 'paused: holding for the upstream tool release' hold) \
+    || fail "throttle: could not build the backlog fixture"
+  state="$dir/state"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  statusf="$state/held-merge.status"
+  back=$(( $(date +%s) - 500 ))
+  if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
+  else touch -m -d "@$back" "$statusf"; fi
+  printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-held-merge_status"
+  FM_HOLD_PAUSE_RESURFACE_SECS=240 hold_watch_surface "$dir" "$out" "$capture" 'idle bare shell' \
+    || fail "throttle: the aged captain-held pause did not re-surface"
+  grep -F "held for the captain" "$state/.wake-queue" >/dev/null \
+    || fail "throttle: first recheck did not name the captain: $(cat "$state/.wake-queue" 2>/dev/null)"
+  ack_stopped_cycle "$state" || fail "throttle: could not acknowledge the first recheck"
+  surfaced=$(grep -c "stale: test:fm-held-merge" "$out" || true)
+  chmod 000 "$dir/data/backlog.md"
+  printf 'idle bare shell, a later tick\n' > "$capture"
+  FM_HOLD_PAUSE_RESURFACE_SECS=240 hold_watch_launch "$dir" "$out" "$capture"
+  if ! wait_live "$HOLD_WATCH_PID" 80; then
+    chmod 600 "$dir/data/backlog.md"
+    fail "throttle: a sighting inside the cadence re-read the backlog and woke: $(tail -3 "$out")"
+  fi
+  reap "$HOLD_WATCH_PID"
+  chmod 600 "$dir/data/backlog.md"
+  [ "$(grep -c "stale: test:fm-held-merge" "$out" || true)" = "$surfaced" ] \
+    || fail "throttle: a second recheck surfaced inside the cadence: $(tail -3 "$out")"
+  grep -F "absorbed stale (paused, held for the captain" "$state/.watch-triage.log" 2>/dev/null \
+    | [ "$(wc -l)" -ge 2 ] \
+    || fail "throttle: the later sighting was not absorbed under the captain scope: $(cat "$state/.watch-triage.log" 2>/dev/null)"
+  pass "a paused wait over a captain call reads the backlog once per recheck cadence"
 }
 
 test_secondmate_paused_resurfaces_in_normal_mode() {
@@ -5985,6 +6032,7 @@ test_stale_churn_without_a_captain_call_still_alarms
 test_failed_wake_append_does_not_arm_the_captain_hold_throttle
 test_reheld_captain_call_starts_its_own_resurface_window
 test_paused_recheck_reads_the_backlog_captain_call
+test_paused_captain_recheck_reads_backlog_once_per_cadence
 test_secondmate_paused_resurfaces_in_normal_mode
 test_secondmate_captain_held_resurfaces_in_normal_mode
 test_secondmate_nonpaused_stale_remains_suppressed

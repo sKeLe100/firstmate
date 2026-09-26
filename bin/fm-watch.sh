@@ -1273,12 +1273,24 @@ busy_turn_over_age() {  # <task>
 
 # 0 when handle_paused_stale may resurface this sighting, so the backlog read
 # that decides its wording is worth paying: the window's re-surface marker does
-# not already hold <scope> (a first sight, or a marker a captain-call scope
-# wrote, which only that read can re-derive), or the cadence has run out. A pure
+# not already hold this status signature (a first sight, or a new status event),
+# or the cadence has run out. A marker a captain-call scope wrote for the same
+# signature (captain_call_declaration) counts as already held, so a paused wait
+# over an open captain call pays the read once per cadence, not once per stale
+# poll. When it returns 1 over such a marker, PAUSED_RECHECK_CAPTAIN_SCOPE holds
+# that marker, so the caller keeps the captain scope it proved last time rather
+# than falling back to a plain scope that would not match the throttle. A pure
 # read that only gates that backlog read; resurface_absorbed still decides.
+PAUSED_RECHECK_CAPTAIN_SCOPE=
 paused_recheck_due() {  # <window-key> <scope> <status-age> <last-line> <now>
-  local throttle="$STATE/.paused-resurfaced-$1" scope=$2 age=$3 last=$4 now=$5 until
-  [ "$(cat "$throttle" 2>/dev/null || true)" = "$scope" ] || return 0
+  local throttle="$STATE/.paused-resurfaced-$1" scope=$2 age=$3 last=$4 now=$5 until marker
+  PAUSED_RECHECK_CAPTAIN_SCOPE=
+  marker=$(cat "$throttle" 2>/dev/null || true)
+  case "$marker" in
+    "$scope") ;;
+    captain-hold:*":${scope#declared:}") PAUSED_RECHECK_CAPTAIN_SCOPE=$marker ;;
+    *) return 0 ;;
+  esac
   if until=$(status_paused_until "$last") && [ "$now" -ge "$until" ]; then
     return 0
   fi
@@ -1310,13 +1322,16 @@ paused_recheck_due() {  # <window-key> <scope> <status-age> <last-line> <now>
 # (task_captain_call_open) decides, never the line's prose: a paused wait the
 # backlog holds for the captain takes the captain wording and the call's
 # lifecycle scope, and a captain-held line whose backlog row is no longer held
-# resurfaces as a record divergence. The read runs only where paused_recheck_due
-# says a re-surface is possible - at most once per stale hash for a wait already
-# bound to a captain call, the same cost surface_nonterminal_stale pays - and a
-# backlog that cannot be read, a row this home does not carry, and a secondmate
-# window (whose holds live in its own home) keep the wording the verb alone gives.
+# resurfaces as a record divergence. Only an open answer proves a captain-held
+# line: a row this home does not carry also resurfaces as a divergence, and a
+# backlog that cannot be read resurfaces as a hold that could not be verified,
+# so neither can hide a real wedge behind the long cadence. The read runs only
+# where paused_recheck_due says a re-surface is possible - at most once per
+# cadence - and a paused line the backlog does not hold for the captain, or a
+# secondmate window (whose holds live in its own home), keeps the wording the
+# verb alone gives.
 handle_paused_stale() {  # <window> <task> <hash>
-  local win=$1 task=$2 h=$3 key statusf mtime age detail reason declaration last until now min_age hold_rc
+  local win=$1 task=$2 h=$3 key statusf mtime age detail reason declaration last until now min_age hold_rc hold_scope
   key=$(window_key "$win")
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
@@ -1331,14 +1346,25 @@ handle_paused_stale() {  # <window> <task> <hash>
   min_age=$PAUSE_RESURFACE_SECS
   declaration="declared:$(fm_wake_signal_sig "$statusf" || true)"
   hold_rc=
-  if [ "$(window_kind "$win")" != secondmate ] \
-    && paused_recheck_due "$key" "$declaration" "$age" "$last" "$now"; then
-    hold_rc=0
-    task_captain_call_open "$task" || hold_rc=$?
+  hold_scope=
+  if [ "$(window_kind "$win")" != secondmate ]; then
+    if paused_recheck_due "$key" "$declaration" "$age" "$last" "$now"; then
+      hold_rc=0
+      task_captain_call_open "$task" || hold_rc=$?
+    elif [ -n "$PAUSED_RECHECK_CAPTAIN_SCOPE" ]; then
+      hold_rc=0
+      hold_scope=$PAUSED_RECHECK_CAPTAIN_SCOPE
+    fi
   fi
   if status_is_captain_held "$last" && [ "$hold_rc" = 1 ]; then
     detail="captain-held, backlog not held"
     reason="captain-held ${age}s, but the backlog no longer holds this task for the captain - the two records disagree; reconcile the hold or the status line"
+  elif status_is_captain_held "$last" && [ "$hold_rc" = 3 ]; then
+    detail="captain-held, no backlog row"
+    reason="captain-held ${age}s, but this home's backlog carries no row for this task - the two records disagree; reconcile the hold or the status line"
+  elif status_is_captain_held "$last" && [ -n "$hold_rc" ] && [ "$hold_rc" != 0 ]; then
+    detail="captain-held, hold unverified"
+    reason="captain-held ${age}s, but the backlog could not be read to confirm the captain hold - check the backlog and confirm the hold still stands"
   elif status_is_captain_held "$last"; then
     if afk_record_present; then
       triage_log "absorbed stale (captain-held, never rechecked while the away-posture record exists): $win"
@@ -1353,7 +1379,7 @@ handle_paused_stale() {  # <window> <task> <hash>
     fi
     detail="paused, held for the captain"
     reason="paused ${age}s, held for the captain - the backlog records an open captain call, rechecked on a long cadence not a wedge; answer the held decision or release the hold"
-    declaration=$(captain_call_declaration "$task" "$CAPTAIN_CALL_IDENTITY")
+    declaration=${hold_scope:-$(captain_call_declaration "$task" "$CAPTAIN_CALL_IDENTITY")}
   elif until=$(status_paused_until "$last"); then
     if [ "$now" -lt "$until" ] && [ "$age" -lt "$PAUSE_RESURFACE_SECS" ]; then
       triage_log "absorbed stale (paused until $(( until - now ))s from now, declared time not reached): $win"

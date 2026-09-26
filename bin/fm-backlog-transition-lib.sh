@@ -1283,12 +1283,25 @@ fm_backlog_close_marker_replay() {  # <state-dir> <marker-path> <authorized-data
     fi
     row_state=
   fi
+  # A parked task's local copy has already been kept while its task record is
+  # gone, so the pending record is the only link left to it. A row that is
+  # missing or already closed cannot take the parked hold, and retiring the
+  # record would strand the copy with nothing pointing at it: keep the record
+  # and refuse, so every startup reports it until the item is reopened or
+  # re-added, after which the next replay parks it as recorded.
+  if [ "$FM_BACKLOG_CLOSE_VALIDATED_MODE" = park ]; then
+    case "$row_state" in
+      done\ *|'')
+        FM_BACKLOG_TRANSITION_ERROR="parked task $id kept its local copy at ${args[1]-} but its backlog item is ${row_state:+closed}${row_state:-missing}; reopen or re-add $id and the next startup holds it as parked"
+        return 1
+        ;;
+    esac
+  fi
   case "$row_state" in
     done\ *)
       if [ "$mode" != close ]; then
-        # The captain's answer, or a later close of a parked row, closed it
-        # before this replay; the transition owes it nothing more than retiring
-        # the record.
+        # The captain's answer closed it before this replay; the transition owes
+        # it nothing more than retiring the record.
         fm_backlog_close_marker_remove "$marker" "$state" || return 1
         FM_BACKLOG_CLOSE_REPLAY_RESULT=answered
         return 0

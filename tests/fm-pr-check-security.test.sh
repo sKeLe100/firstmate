@@ -2465,8 +2465,43 @@ pr=$url_c" ] || fail "rebind: metadata did not archive priors ahead of the new p
   pass "PR replacement requires --rebind and archives the prior as pr_prior="
 }
 
+# A rebind racing another recording must not leave pr= naming one PR while the
+# armed poll watches the other, so the poll is published while the metadata
+# lock is still held. A shimmed mv records whether that lock exists at the
+# moment the poll's check file lands.
+test_rebind_publishes_poll_under_metadata_lock() {
+  local dir state url_a url_b real_mv
+  url_a=https://github.com/o/r/pull/1
+  url_b=https://github.com/o/r/pull/2
+  dir=$(make_case rebind-lock)
+  state="$dir/home/state"
+  write_task_meta "$dir" task-a
+  run_check_entry "$dir" task-a "$url_a" >/dev/null 2> "$dir/seed.err" \
+    || fail "rebind lock: could not record the original PR: $(cat "$dir/seed.err")"
+  real_mv=$(command -v mv)
+  cat > "$dir/fakebin/mv" <<SH
+#!/usr/bin/env bash
+for dest in "\$@"; do :; done
+case "\$dest" in
+  */task-a.check.sh)
+    if [ -e "$state/.meta-task-a.lock" ]; then echo held; else echo free; fi >> "$dir/mv-lock.log" ;;
+esac
+exec "$real_mv" "\$@"
+SH
+  chmod +x "$dir/fakebin/mv"
+  run_check_entry "$dir" task-a "$url_b" --rebind >/dev/null 2> "$dir/rebind.err" \
+    || fail "rebind lock: guarded rebind failed: $(cat "$dir/rebind.err")"
+  [ "$(cat "$dir/mv-lock.log" 2>/dev/null)" = held ] \
+    || fail "rebind lock: the poll was published after the metadata lock was released: $(cat "$dir/mv-lock.log" 2>/dev/null)"
+  [ ! -e "$state/.meta-task-a.lock" ] || fail "rebind lock: the metadata lock was left behind"
+  grep -qxF "pr=$url_b" "$state/task-a.meta" && grep -qxF "$url_b" "$state/task-a.pr-poll" \
+    || fail "rebind lock: metadata and poll were not both rebound"
+  pass "a rebind publishes its poll under the metadata lock, keeping pr= and the poll paired"
+}
+
 test_parser_matrix
 test_rebind_is_guarded_and_archives_prior
+test_rebind_publishes_poll_under_metadata_lock
 test_gitlab_merge_watch
 test_merged_poll_retires_once
 test_merged_poll_reregistration_after_notification_is_absorbed

@@ -381,6 +381,71 @@ test_park_replay_escalates_to_retain_over_a_captain_hold() {
   pass "an interrupted park replayed over a captain hold escalates to retain, keeping the hold"
 }
 
+# The pending record is the only link left to a parked copy once its task
+# record is gone, so a row that was closed or removed before replay must not
+# retire it: replay refuses and keeps the record, and once the item is reopened
+# or re-added the next replay parks it as recorded.
+test_park_replay_keeps_the_record_when_the_row_is_closed_or_missing() {
+  local case_dir variant out
+  for variant in closed missing; do
+    case_dir=$(make_case "park-replay-$variant")
+    write_meta "$case_dir" no-mistakes ship
+    seed_backlog_in_flight "$case_dir"
+    if [ "$variant" = closed ]; then
+      tasks-axi done task-x1 --file "$case_dir/data/backlog.md" >/dev/null \
+        || fail "park-replay-$variant: fixture could not close the item"
+    else
+      printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' \
+        > "$case_dir/data/backlog.md"
+    fi
+    out=$(
+      # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+      . "$ROOT/bin/fm-tasks-axi-lib.sh"
+      # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+      . "$ROOT/bin/fm-backlog-transition-lib.sh"
+      fm_backlog_close_marker_write "$case_dir/state" task-x1 "$case_dir/data" \
+        teardown-test-task-x1 --park --copy "$case_dir/wt" \
+        || { echo "write: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+      if fm_backlog_close_marker_replay "$case_dir/state" "$case_dir/state/task-x1.backlog-close" \
+          "$case_dir/data"; then
+        echo "replayed: $FM_BACKLOG_CLOSE_REPLAY_RESULT"
+        exit 1
+      fi
+      printf '%s\n' "$FM_BACKLOG_TRANSITION_ERROR"
+    ) || fail "park-replay-$variant: replay did not refuse: $out"
+    printf '%s\n' "$out" | grep -F "kept its local copy at $case_dir/wt" >/dev/null \
+      || fail "park-replay-$variant: the refusal did not name the retained copy: $out"
+    [ -f "$case_dir/state/task-x1.backlog-close" ] \
+      || fail "park-replay-$variant: the refusal retired the pending record"
+    [ -d "$case_dir/wt" ] || fail "park-replay-$variant: the refusal touched the retained copy"
+    if [ "$variant" = closed ]; then
+      tasks-axi reopen task-x1 --file "$case_dir/data/backlog.md" >/dev/null \
+        || fail "park-replay-$variant: fixture could not reopen the item"
+    else
+      tasks-axi add task-x1 "teardown fixture task" --file "$case_dir/data/backlog.md" >/dev/null \
+        || fail "park-replay-$variant: fixture could not re-add the item"
+    fi
+    out=$(
+      # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+      . "$ROOT/bin/fm-tasks-axi-lib.sh"
+      # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+      . "$ROOT/bin/fm-backlog-transition-lib.sh"
+      fm_backlog_close_marker_replay "$case_dir/state" "$case_dir/state/task-x1.backlog-close" \
+        "$case_dir/data" || { echo "replay: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+      printf '%s\n' "$FM_BACKLOG_CLOSE_REPLAY_RESULT"
+    ) || fail "park-replay-$variant: replay after recovery failed: $out"
+    case "$out" in
+      parked|parked_incomplete) ;;
+      *) fail "park-replay-$variant: replay after recovery reported $out" ;;
+    esac
+    assert_absent "$case_dir/state/task-x1.backlog-close" \
+      "park-replay-$variant: the recovered replay left the pending record"
+    tasks-axi show task-x1 --file "$case_dir/data/backlog.md" | grep -qx '  hold_kind: parked' \
+      || fail "park-replay-$variant: the recovered item is not held as parked"
+  done
+  pass "an interrupted park keeps its record while the item is closed or missing, and parks once it is back"
+}
+
 test_legacy_record_never_accepts_a_corrupt_spawn_gen() {
   local case_dir rc
   case_dir=$(make_case legacy-corrupt)
