@@ -294,6 +294,28 @@ test_park_refuses_a_captain_call_and_force() {
   pass "parking refuses an open captain call and --force, changing nothing"
 }
 
+# Parking keeps the local copy in place instead of returning it, so it refuses
+# outright when the task has no local copy of its own left to keep.
+test_park_refuses_a_missing_local_copy() {
+  local case_dir rc
+  case_dir=$(make_case park-missing-copy)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  rm -rf "$case_dir/wt"
+
+  set +e
+  run_teardown "$case_dir" --park > "$case_dir/out1" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "park-missing-copy: parking with no local copy succeeded"
+  grep -q 'has no local copy of its own to retain' "$case_dir/out1" \
+    || fail "park-missing-copy: the refusal did not name the missing copy: $(cat "$case_dir/out1")"
+  [ -f "$case_dir/state/task-x1.meta" ] || fail "park-missing-copy: the refusal removed the task record"
+  [ "$(backlog_row_state "$case_dir")" = in_flight ] \
+    || fail "park-missing-copy: the refusal moved the item"
+  pass "parking refuses a task with no local copy of its own to retain"
+}
+
 # A park interrupted after its pending record was written replays at the next
 # session start into the same parked row, exactly as a close or a retention does.
 test_park_pending_record_replays_to_a_parked_row() {
@@ -320,6 +342,43 @@ test_park_pending_record_replays_to_a_parked_row() {
     || fail "park-replay: the replayed item is not held as parked"
   [ -d "$case_dir/wt" ] || fail "park-replay: replay touched the retained copy"
   pass "an interrupted park replays into the same parked row"
+}
+
+# If the row becomes an open captain call in the window between marker staging
+# and replay (a process crash during teardown), replay must never overwrite
+# that hold with a parked hold, since that would drop the captain's question;
+# it escalates to a retain and still records the retained copy's path.
+test_park_replay_escalates_to_retain_over_a_captain_hold() {
+  local case_dir out show
+  case_dir=$(make_case park-replay-captain)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" FM_CONFIG_OVERRIDE="$case_dir/config" \
+    "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --reason "fixture hold" >/dev/null \
+    || fail "park-replay-captain: fixture could not hold the item for the captain"
+  out=$(
+    # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-backlog-transition-lib.sh"
+    fm_backlog_close_marker_write "$case_dir/state" task-x1 "$case_dir/data" \
+      teardown-test-task-x1 --park --copy "$case_dir/wt" \
+      || { echo "write: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+    fm_backlog_close_marker_replay "$case_dir/state" "$case_dir/state/task-x1.backlog-close" \
+      "$case_dir/data" || { echo "replay: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+    printf '%s\n' "$FM_BACKLOG_CLOSE_REPLAY_RESULT"
+  ) || fail "park-replay-captain: $out"
+  [ "$out" = retained_incomplete ] \
+    || fail "park-replay-captain: replay reported $out, not retained_incomplete"
+  assert_absent "$case_dir/state/task-x1.meta" "park-replay-captain: replay left the task record"
+  assert_absent "$case_dir/state/task-x1.backlog-close" \
+    "park-replay-captain: replay left the pending record"
+  show=$(tasks-axi show task-x1 --full --file "$case_dir/data/backlog.md")
+  printf '%s\n' "$show" | grep -qx '  hold_kind: captain' \
+    || fail "park-replay-captain: the captain hold was replaced: $show"
+  printf '%s\n' "$show" | grep -F "Retained local copy: $case_dir/wt" >/dev/null \
+    || fail "park-replay-captain: the retained copy path was not recorded on the item: $show"
+  pass "an interrupted park replayed over a captain hold escalates to retain, keeping the hold"
 }
 
 test_legacy_record_never_accepts_a_corrupt_spawn_gen() {
