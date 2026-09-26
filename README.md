@@ -120,7 +120,7 @@ Start `omp` with this checkout as its working directory: it auto-discovers the t
 
 For Grok, `--trust` is needed once per clone so project hooks and the turn-end guard load; `/hooks-trust` inside Grok works too.
 For Pi, approve the project trust prompt once per clone on first launch so the tracked `.pi/extensions/*.ts` files auto-load.
-Pi's `/calm` toggle hides supported transcript chrome, including canonically classified Firstmate operational user rows, and uses a Calm-only animated working boat during active runs while preserving all model context and session data.
+The `/calm` toggle on Pi, and on Claude Code behind its default-off early-access function-hooks flag, hides supported transcript chrome, including canonically classified Firstmate operational user rows, and uses a Calm-only animated working boat during active runs while preserving all model context and session data.
 Those Calm-hidden operational inputs remain ordinary user-role messages with unchanged delivery, ordering, authority, persistence, and exports.
 The preference persists for the effective Firstmate home, and toggling it off restores ordinary rendering.
 [Calm's current behavior and supported limits](docs/calm.md) are separate from its [version-scoped maintainer evidence](docs/calm-mode-feasibility.md).
@@ -190,7 +190,7 @@ Claude and grok use the slash form shown here; codex uses the same names with `$
 | `/bearings`        | Generate a concise four-section chat digest from bounded fleet state, including registered remote-home ledgers; use `/bearings file` to also replace today's dated report in `data/`, and add `include PRs` for live GitHub enrichment |
 | `/queue`           | List the next queued backlog items as a numbered list grouped into dispatchable, blocked, needs-the-captain, and deferred sections - the needs-the-captain section is split into sub-groups by the underlying cause, so the captain can see why each item needs them (`/queue priority` renders the old flat priority-ordered list instead), opening with a one-line lane-availability summary (`/queue lanes` shows the full per-tier hierarchy and what task class each lane serves), and giving each item its project, kind, age in days, dispatch tier candidates, and whether it clears itself or needs the captain along with the reason behind that verdict; when the listing is capped below the full queue it says so with a "showing N of M queued" header plus a hidden-by-project breakdown; it never mutates the backlog, and every item can be asked about for full detail |
 | `/questionnaire`   | Walk the captain through the pending decision bundle one interactive batch at a time, recording each ruling durably; when nothing needs ruling, offer a senior-tier project-review scout that refills the bundle with grounded candidate next steps |
-| `/updatefirstmate` | Fast-forward the running firstmate and its secondmates, then persist and restart every live mate successfully left on the target commit - including already-current homes - with an honest re-read nudge only when restart cannot be proven |
+| `/updatefirstmate` | Guardedly update the running firstmate and its secondmates - fast-forward, or reconcile a redundant post-squash-merge divergence - then persist and restart every live mate successfully left on the target commit - including already-current homes - with an honest re-read nudge only when restart cannot be proven |
 | `/stow`            | Sweep the session for uncaptured durable knowledge, persist the open work records this session knows are unfiled or now wrong, curate tiered startup memory with decay and cold archival, enforce each home's budget or surface the required decision, cascade to registered second mates, and report what is safe to reset |
 
 Bearings invocation examples:
@@ -218,7 +218,7 @@ Firstmate's skills live in two separate places with different audiences:
 - [docs/configuration.md](docs/configuration.md) - environment variables, `FM_HOME`, runtime backend selection, optional Relay and its X and Discord setup steps, trusted external process-event adapter setup, the files you set, and harness support.
 - [docs/extension-bindings.md](docs/extension-bindings.md) - maintainer architecture for the narrow trusted external `process-event-adapter/1` package, binding, handshake, and evidence boundary.
 - [docs/remote-secondmates.md](docs/remote-secondmates.md) - current setup, routing, transfer, recovery, and safety behavior for whole-home remote second mates.
-- [docs/calm.md](docs/calm.md) - current Pi `/calm` behavior and supported presentation limits.
+- [docs/calm.md](docs/calm.md) - current `/calm` behavior on Pi and Claude Code and its supported presentation limits.
 - [docs/voice-relay.md](docs/voice-relay.md) - the optional spoken interface: setup on both machines, measured round-trip cost, what a spoken answer may read, and what this build does not do yet.
 - [docs/wedge-alarm.md](docs/wedge-alarm.md) - configure the active alert for an away-mode escalation delivery that gets stuck.
 - [docs/tmux-backend.md](docs/tmux-backend.md) - current setup and limits for the tmux reference backend.
@@ -244,3 +244,13 @@ Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md) for the workf
 ## License
 
 MIT - see [LICENSE](LICENSE).
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=kunchenguid%2Ffirstmate&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=kunchenguid/firstmate&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=kunchenguid/firstmate&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=kunchenguid/firstmate&type=date&legend=top-left" />
+ </picture>
+</a>

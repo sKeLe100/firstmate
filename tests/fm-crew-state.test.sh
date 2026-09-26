@@ -40,479 +40,19 @@
 #       provably down (explicit daemon-status probe fails) reads unknown -
 #       "unverified", never failed; the same record with the daemon up stays
 #       failed.
+
+# TMP_ROOT and the FM_FAKE_* variables are read by the sourced
+# fm-crew-state-lib.sh harness (new_case and the fake binaries); shellcheck
+# cannot see those reads across the source boundary.
+# shellcheck disable=SC2034
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=/dev/null
-. "$ROOT/bin/fm-classify-lib.sh"
+# shellcheck source=tests/fm-crew-state-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-crew-state-lib.sh"
 
-CREW_STATE="$ROOT/bin/fm-crew-state.sh"
 TMP_ROOT=$(fm_test_tmproot fm-crew-state)
 fm_git_identity fmtest fmtest@example.invalid
 
-# A real git repo checked out on <branch>, so the helper's branch attribution
-# (git symbolic-ref) resolves like it would for a live crew worktree.
-make_repo_on_branch() {  # <dir> <branch>
-  local dir=$1 branch=$2
-  mkdir -p "$dir"
-  git -C "$dir" init -q
-  git -C "$dir" commit -q --allow-empty -m init
-  git -C "$dir" checkout -q -b "$branch"
-  # Real worktree HEAD for run head-binding (fixtures read FM_FAKE_RUN_HEAD).
-  FM_FAKE_RUN_HEAD=$(git -C "$dir" rev-parse HEAD)
-  export FM_FAKE_RUN_HEAD
-}
-
-# A fakebin with a fake `no-mistakes` (serves the env-driven run output) and a
-# fake `tmux` (serves a busy or idle pane). The fake no-mistakes mirrors the real
-# command surface the helper uses: `axi status`, `axi status --run <id>` (the
-# `axi` surface - no runs-listing subcommand exists under it, verified against
-# the real CLI), and the actual top-level run-listing command, `no-mistakes
-# runs --limit N`, which is plain text - no run id, no quoting - serving
-# FM_FAKE_RUNS_LIST verbatim.
-make_fakebin() {  # <dir> -> echoes fakebin path
-  local dir=$1 fb="$1/fakebin"
-  mkdir -p "$fb"
-  cat > "$fb/no-mistakes" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "${1:-}" in
-  axi)
-    shift
-    case "${1:-}" in
-      status)
-        shift
-        if [ "${1:-}" = --run ]; then printf '%s\n' "${FM_FAKE_AXI_STATUS_RUN:-}"
-        else printf '%s\n' "${FM_FAKE_AXI_STATUS:-}"; fi ;;
-      logs)
-        printf '%s\n' "${FM_FAKE_CI_LOGS:-}" ;;
-    esac
-    ;;
-  runs)
-    printf '%s\n' "${FM_FAKE_RUNS_LIST:-}" ;;
-  daemon)
-    # FM_FAKE_DAEMON_DOWN: the explicit down-probe fails, as the real
-    # `no-mistakes daemon status` does when the daemon is not running.
-    [ "${FM_FAKE_DAEMON_DOWN:-0}" = 1 ] && exit 1
-    printf '%s\n' 'daemon running (pid 4242)'
-    exit 0 ;;
-esac
-exit 0
-SH
-  cat > "$fb/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-# FM_FAKE_TMUX_MISSING: the window is authoritatively gone - every addressed
-# call fails, but the session inventory still answers successfully and simply
-# omits the window, which is what proves absence.
-# FM_FAKE_TMUX_UNREADABLE: tmux itself cannot answer - it fails to execute (a
-# trimmed PATH) or errors non-definitively - so even the inventory fails, with
-# a message that is NOT one of the definitive no-session/no-server/no-socket
-# responses that fm_backend_tmux_agent_state owns as death.
-[ "${FM_FAKE_TMUX_UNREADABLE:-0}" = 1 ] && { printf 'no current client\n' >&2; exit 1; }
-case "${1:-}" in
-  list-windows)
-    # A successful but empty inventory: it omits the crew's window, so absence
-    # is proved by the answer rather than by an addressed call failing. Only
-    # reached once display-message has already failed.
-    ;;
-  display-message)
-    [ "${FM_FAKE_TMUX_MISSING:-0}" = 1 ] && exit 1
-    printf '%%1\n' ;;
-  capture-pane)
-    [ "${FM_FAKE_TMUX_MISSING:-0}" = 1 ] && exit 1
-    if [ "${FM_FAKE_BUSY:-0}" = 1 ]; then printf 'work in progress\n%s\n' "${FM_FAKE_BUSY_TEXT:-esc to interrupt}"
-    else printf 'all quiet\n> \n'; fi ;;
-esac
-exit 0
-SH
-  cat > "$fb/herdr" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "${1:-}" in
-  status)
-    [ "${2:-}" = --json ] && {
-      printf '{"client":{"version":"0.7.1","protocol":14},"server":{"running":true}}\n'
-      exit 0
-    } ;;
-  server)
-    exit 0 ;;
-  pane)
-    case "${2:-}" in
-      read)
-        [ "${FM_FAKE_HERDR_MISSING:-0}" = 1 ] && exit 1
-        [ "${FM_FAKE_HERDR_READ_FAIL:-0}" = 1 ] && exit 1
-        if [ "${FM_FAKE_HERDR_BUSY:-0}" = 1 ]; then printf 'work in progress\nesc to interrupt\n'
-        else printf 'all quiet\n> \n'; fi
-        exit 0 ;;
-      get)
-        if [ "${FM_FAKE_HERDR_MISSING:-0}" = 1 ]; then
-          printf '{"error":{"code":"pane_not_found","message":"no such pane"}}\n'
-          exit 1
-        fi
-        printf '{"result":{"pane":{"pane_id":"%s"}}}\n' "${3:-}"
-        exit 0 ;;
-      process-info)
-        # The process-level view a registration is verified against (#4115):
-        # `agent` puts a live claude in the foreground, `shell` a bare zsh whose
-        # pid is the test script itself (a real, long-lived process with no
-        # harness descendant, so the adapter's real process-table walk finds
-        # it), and anything else answers nothing (unreadable).
-        pane=""; args=("$@"); for ((i=0; i<${#args[@]}; i++)); do [ "${args[$i]}" = --pane ] && pane=${args[$((i+1))]:-}; done
-        case "${FM_FAKE_HERDR_PROCESS:-agent}" in
-          agent) printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":%s,"foreground_process_group_id":424242,"foreground_processes":[{"pid":424242,"name":"claude","argv0":"claude"}]}}}\n' "$pane" "${FM_FAKE_HERDR_SHELL_PID:-$PPID}" ;;
-          shell) printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":%s,"foreground_process_group_id":%s,"foreground_processes":[{"pid":%s,"name":"zsh","argv0":"zsh","argv":["-zsh"]}]}}}\n' "$pane" "${FM_FAKE_HERDR_SHELL_PID:-$PPID}" "${FM_FAKE_HERDR_SHELL_PID:-$PPID}" "${FM_FAKE_HERDR_SHELL_PID:-$PPID}" ;;
-        esac
-        exit 0 ;;
-    esac ;;
-  agent)
-    case "${2:-}" in
-      get)
-        if [ "${FM_FAKE_HERDR_HUSK:-0}" = 1 ]; then
-          printf '{"error":{"code":"agent_not_found","message":"no agent in pane"}}\n'
-          exit 0
-        fi
-        [ -n "${FM_FAKE_HERDR_AGENT_STATUS:-}" ] || exit 1
-        printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "$FM_FAKE_HERDR_AGENT_STATUS"
-        exit 0 ;;
-    esac ;;
-esac
-exit 0
-SH
-  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/herdr"
-  printf '%s\n' "$fb"
-}
-
-make_no_timeout_toolbin() {  # <dir> -> echoes toolbin path
-  local dir=$1 tb="$1/notimeoutbin" tool real
-  mkdir -p "$tb"
-  for tool in bash git grep sed head cut tail dirname perl; do
-    real=$(command -v "$tool" || true)
-    [ -n "$real" ] || fail "missing tool for no-timeout path: $tool"
-    ln -s "$real" "$tb/$tool"
-  done
-  printf '%s\n' "$tb"
-}
-
-# Run the helper for one case dir. FM_FAKE_* env (run output, busy flag) are read
-# from the caller's environment by the fakes above.
-run_crew_state() {  # <case-dir> <id>
-  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" "$2"
-}
-
-new_case() {  # <name> -> echoes case dir with an empty state/
-  local d="$TMP_ROOT/$1"
-  mkdir -p "$d/state"
-  printf '%s\n' "$d"
-}
-
-arm_idle_record() {  # <state-dir> <id>
-  local state=$1 id=$2 gen
-  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" "$id")
-  "$ROOT/bin/fm-busy-event.sh" apply "$state" "$id" idle --gen "$gen" \
-    --source claude-hook --event stop
-}
-
-# Clear the fake-driver vars and (re-)mark them exported, so the per-test plain
-# assignments below stay exported into the fakes without an `export VAR=$(...)`
-# command-substitution assignment (SC2155).
-reset_fakes() {
-  FM_FAKE_AXI_STATUS=""
-  FM_FAKE_AXI_STATUS_RUN=""
-  FM_FAKE_RUNS_LIST=""
-  FM_FAKE_BUSY=0
-  FM_FAKE_BUSY_TEXT=
-  FM_FAKE_TMUX_MISSING=0
-  FM_FAKE_TMUX_UNREADABLE=0
-  FM_FAKE_HERDR_BUSY=0
-  FM_FAKE_HERDR_MISSING=0
-  FM_FAKE_HERDR_READ_FAIL=0
-  FM_FAKE_HERDR_HUSK=0
-  FM_FAKE_HERDR_AGENT_STATUS=""
-  FM_FAKE_HERDR_PROCESS=agent
-  FM_FAKE_HERDR_SHELL_PID=$$
-  FM_FAKE_CI_LOGS=""
-  FM_FAKE_DAEMON_DOWN=0
-  export FM_FAKE_AXI_STATUS FM_FAKE_AXI_STATUS_RUN FM_FAKE_RUNS_LIST FM_FAKE_BUSY FM_FAKE_BUSY_TEXT FM_FAKE_TMUX_MISSING FM_FAKE_TMUX_UNREADABLE
-  export FM_FAKE_HERDR_BUSY FM_FAKE_HERDR_MISSING FM_FAKE_HERDR_READ_FAIL FM_FAKE_HERDR_HUSK FM_FAKE_HERDR_AGENT_STATUS FM_FAKE_HERDR_PROCESS FM_FAKE_HERDR_SHELL_PID FM_FAKE_CI_LOGS
-  export FM_FAKE_DAEMON_DOWN
-}
-
-# --- run-object fixtures (TOON, as `no-mistakes axi status` emits) -----------
-
-run_running() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: running
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: ""
-  findings: none
-  steps[2]{step,status,findings,duration_ms}:
-    intent,completed,0,0
-    review,running,0,0
-EOF
-}
-
-run_fixing() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: fixing
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: ""
-  findings: none
-EOF
-}
-
-# A fixing run whose active step reports FRESH activity. `axi status` emits the
-# active_steps table only while a step is running or fixing, and leaves
-# last_activity unprefixed while step-log or agent lifecycle events keep
-# arriving - that is the client's own recency verdict.
-run_fixing_active_recent() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: fixing
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: ""
-  findings: none
-  active_steps[1]{step,active_for,last_activity,agent_pid,round}:
-    review,12m3s,8s,44121,"auto-fix 1/3"
-EOF
-}
-
-# The same run gone QUIET: the client prefixes last_activity with `quiet` once
-# nothing has arrived for longer than its configured quiet warning. This is the
-# shape a run record keeps when the daemon really did die under it.
-run_fixing_active_quiet() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: fixing
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: ""
-  findings: none
-  active_steps[1]{step,active_for,last_activity,agent_pid,round}:
-    review,42m8s,"quiet 31m2s",44121,"auto-fix 1/3"
-EOF
-}
-
-run_top_level_ci() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: ci
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: "https://github.com/o/r/pull/2"
-  findings: none
-EOF
-}
-
-run_parked() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: awaiting_approval
-  awaiting_agent: parked 2m10s
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: ""
-  findings[2]{id,severity,file,line,action,description}:
-    r1,warning,a.go,,auto-fix,ignored error
-    r2,error,b.go,,ask-user,changes product behavior
-gate: review
-EOF
-}
-
-run_parked_scalar_gate_running() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: running
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: ""
-  findings[1]{id,severity,file,line,action,description}:
-    r1,error,b.go,,ask-user,changes product behavior
-gate: review
-EOF
-}
-
-run_parked_in_gate_block() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: running
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: ""
-  findings[1]{id,severity,file,line,action,description}:
-    r1,error,b.go,,ask-user,changes product behavior
-gate:
-  step: review
-  status: fix_review
-steps[3]{step,status,findings,duration_ms}:
-  intent,completed,0,0
-  review,fix_review,1,0
-  test,pending,0,0
-EOF
-}
-
-run_passed() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: completed
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: "https://github.com/o/r/pull/1"
-  findings: none
-outcome: passed
-EOF
-}
-
-run_failed() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: completed
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: ""
-  findings: none
-outcome: failed
-EOF
-}
-
-# The 2026-09-05 jr-voice orphaned-CI-monitor shape: every substantive step
-# completed, only ci failed (after the shared daemon restarted under its
-# merge poll), and GitHub read the PR green and mergeable.
-run_failed_ci_orphan() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: failed
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: "https://github.com/o/r/pull/203"
-  findings: none
-outcome: failed
-steps[9]{step,status,findings,duration_ms}:
-  intent,completed,0,0
-  rebase,completed,0,0
-  review,completed,0,0
-  test,completed,0,0
-  document,completed,0,0
-  lint,completed,0,0
-  push,completed,0,0
-  pr,completed,0,0
-  ci,failed,0,76127890
-EOF
-}
-
-# Same shape but with no outcome line: only top-level status reads failed.
-run_failed_ci_orphan_status_only() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: failed
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: "https://github.com/o/r/pull/203"
-  findings: none
-steps[9]{step,status,findings,duration_ms}:
-  intent,completed,0,0
-  rebase,completed,0,0
-  review,completed,0,0
-  test,completed,0,0
-  document,completed,0,0
-  lint,completed,0,0
-  push,completed,0,0
-  pr,completed,0,0
-  ci,failed,0,76127890
-EOF
-}
-
-# A second failed step (lint) disqualifies the orphaned-monitor reclassification.
-run_failed_ci_orphan_second_failure() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: failed
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: "https://github.com/o/r/pull/203"
-  findings: none
-steps[9]{step,status,findings,duration_ms}:
-  intent,completed,0,0
-  rebase,completed,0,0
-  review,completed,0,0
-  test,completed,0,0
-  document,completed,0,0
-  lint,failed,0,0
-  push,completed,0,0
-  pr,completed,0,0
-  ci,failed,0,76127890
-EOF
-}
-
-run_ci_monitoring() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: running
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: "https://github.com/o/r/pull/2"
-  findings: none
-  steps[4]{step,status,findings,duration_ms}:
-    intent,completed,0,0
-    review,completed,0,0
-    push,completed,0,0
-    ci,running,0,0
-EOF
-}
-
-run_fixing_ci_running() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: fixing
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: "https://github.com/o/r/pull/2"
-  findings: none
-  steps[4]{step,status,findings,duration_ms}:
-    intent,completed,0,0
-    review,completed,0,0
-    push,completed,0,0
-    ci,running,0,0
-EOF
-}
-
-run_ci_fixing() {  # <branch>
-  cat <<EOF
-run:
-  id: "01RUN"
-  branch: $1
-  status: fixing
-  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
-  pr: "https://github.com/o/r/pull/2"
-  findings: none
-  steps[4]{step,status,findings,duration_ms}:
-    intent,completed,0,0
-    review,completed,0,0
-    push,completed,0,0
-    ci,fixing,0,0
-EOF
-}
 
 # ---------------------------------------------------------------------------
 # (a) active run-step is authoritative
@@ -725,398 +265,6 @@ test_gate_block_parked_not_superseded() {
   pass "gate block parked run is not flagged superseded"
 }
 
-test_ci_ready_done_log_beats_monitoring_run() {
-  reset_fakes
-  local d; d=$(new_case ci-ready)
-  make_repo_on_branch "$d/wt" fm/feat-ci
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-ci.meta" "window=fm:fm-feat-ci" "worktree=$d/wt" "kind=ship"
-  printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-ci.status"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ci)"
-  local out; out=$(run_crew_state "$d" feat-ci)
-  assert_contains "$out" "state: done" "ci-ready status log -> done"
-  assert_contains "$out" "source: status-log" "ci-ready state comes from the status log"
-  assert_contains "$out" "checks green" "ci-ready detail preserves the report"
-  assert_not_contains "$out" "state: working" "ci-ready is not hidden by monitoring run"
-  pass "ci-ready status log beats monitoring run"
-}
-
-# Regression for the PR #252 incident: the crew's own status log never got a
-# "done: ... checks green" line (log_reports_ci_ready above does not apply),
-# but the ci step's log tail shows CI is actually green and only waiting on
-# merge/close. fm-crew-state must surface this as done, not "validating
-# (running)", so a green PR is never silently absorbed as still-in-progress.
-test_ci_monitoring_checks_green_surfaces_done() {
-  reset_fakes
-  local d; d=$(new_case ci-green)
-  make_repo_on_branch "$d/wt" fm/feat-cigreen
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cigreen.meta" "window=fm:fm-feat-cigreen" "worktree=$d/wt" "kind=ship"
-  # No status-log line at all: the crew never reported its own checks-green line.
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cigreen)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-CI checks running, waiting for results...
-all CI checks passed - still monitoring until merged or closed
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-cigreen)
-  assert_contains "$out" "state: done" "green ci-monitor run -> done"
-  assert_contains "$out" "source: run-step" "green ci-monitor -> run-step source"
-  assert_contains "$out" "checks green" "green ci-monitor detail mentions checks green"
-  assert_not_contains "$out" "state: working" "green ci-monitor must not read as still validating"
-  pass "ci-monitoring run with checks already green surfaces done"
-}
-
-test_top_level_ci_checks_green_surfaces_done() {
-  reset_fakes
-  local d; d=$(new_case top-level-ci-green)
-  make_repo_on_branch "$d/wt" fm/feat-topcigreen
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-topcigreen.meta" "window=fm:fm-feat-topcigreen" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_top_level_ci fm/feat-topcigreen)"
-  FM_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
-  local out; out=$(run_crew_state "$d" feat-topcigreen)
-  assert_contains "$out" "state: done" "top-level ci with green log -> done"
-  assert_contains "$out" "source: run-step" "top-level ci green -> run-step source"
-  assert_contains "$out" "checks green" "top-level ci green detail mentions checks green"
-  assert_not_contains "$out" "state: working" "top-level ci green must not stay working"
-  pass "top-level ci status uses ci log green marker"
-}
-
-test_ci_monitoring_no_checks_terminal_surfaces_done() {
-  reset_fakes
-  local d; d=$(new_case ci-nochecks)
-  make_repo_on_branch "$d/wt" fm/feat-cinochecks
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cinochecks.meta" "window=fm:fm-feat-cinochecks" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinochecks)"
-  FM_FAKE_CI_LOGS="no CI checks reported - still monitoring until merged or closed"
-  local out; out=$(run_crew_state "$d" feat-cinochecks)
-  assert_contains "$out" "state: done" "terminal no-checks ci-monitor run -> done"
-  assert_contains "$out" "checks green" "terminal no-checks ci-monitor detail mentions checks green"
-  pass "terminal no-checks ci-monitor marker surfaces done"
-}
-
-test_ci_monitoring_green_then_rearm_stays_working() {
-  reset_fakes
-  local d; d=$(new_case ci-green-then-rearm)
-  make_repo_on_branch "$d/wt" fm/feat-cirearm
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cirearm.meta" "window=fm:fm-feat-cirearm" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cirearm)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-all CI checks passed - still monitoring until merged or closed
-base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-cirearm)
-  assert_contains "$out" "state: working" "base-advance rearm marker -> working"
-  assert_not_contains "$out" "state: done" "base-advance rearm marker must not read as done"
-  assert_not_contains "$out" "checks green" "base-advance rearm marker must not read as checks green"
-  pass "base-advance rearm after green stays working"
-}
-
-test_ci_monitoring_no_checks_yet_stays_working() {
-  reset_fakes
-  local d; d=$(new_case ci-nochecks-yet)
-  make_repo_on_branch "$d/wt" fm/feat-cinochecksyet
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cinochecksyet.meta" "window=fm:fm-feat-cinochecksyet" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinochecksyet)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-no CI checks reported - still monitoring until merged or closed
-base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
-no CI checks reported yet, waiting for checks to register...
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-cinochecksyet)
-  assert_contains "$out" "state: working" "pending no-checks marker -> working"
-  assert_not_contains "$out" "state: done" "pending no-checks marker must not read as done"
-  assert_not_contains "$out" "checks green" "pending no-checks marker must not read as checks green"
-  pass "pending no-checks ci-monitor marker stays working"
-}
-
-test_ci_monitoring_repeated_poll_failure_surfaces_wedge() {
-  reset_fakes
-  local d; d=$(new_case ci-wedge)
-  make_repo_on_branch "$d/wt" fm/feat-ciwedge
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-ciwedge.meta" "window=fm:fm-feat-ciwedge" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwedge)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-CI checks running, waiting for results...
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-ciwedge)
-  assert_contains "$out" "state: failed" "repeated identical poll failures -> failed"
-  assert_contains "$out" "CI polling wedge" "wedge detail names the wedge"
-  pass "repeated identical CI poll failures surface a wedge"
-}
-
-# Transient early poll failures followed by normal pending-checks polling are
-# forward progress, not a wedge: the run must keep reading as working.
-test_ci_monitoring_transient_errors_then_pending_not_wedged() {
-  reset_fakes
-  local d; d=$(new_case ci-transient)
-  make_repo_on_branch "$d/wt" fm/feat-citransient
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-citransient.meta" "window=fm:fm-feat-citransient" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-citransient)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-no CI checks reported yet, waiting for checks to register...
-no CI checks reported yet, waiting for checks to register...
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-citransient)
-  assert_contains "$out" "state: working" "transient errors then pending polling -> working"
-  assert_not_contains "$out" "state: failed" "healthy pending run must not be reported failed"
-  assert_not_contains "$out" "CI polling wedge" "healthy pending run must not be called a wedge"
-  pass "transient poll errors followed by pending checks are not a wedge"
-}
-
-# A per-poll heartbeat emitted alongside every failing poll is not progress:
-# interleaved (and trailing) heartbeat lines must not mask a real wedge.
-test_ci_monitoring_interleaved_heartbeat_still_wedged() {
-  reset_fakes
-  local d; d=$(new_case ci-wedge-heartbeat)
-  make_repo_on_branch "$d/wt" fm/feat-ciwedgehb
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-ciwedgehb.meta" "window=fm:fm-feat-ciwedgehb" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwedgehb)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-CI checks running, waiting for results...
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-CI checks running, waiting for results...
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-CI checks running, waiting for results...
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-CI checks running, waiting for results...
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-CI checks running, waiting for results...
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-ciwedgehb)
-  assert_contains "$out" "state: failed" "heartbeat interleaved with repeated failures -> failed"
-  assert_contains "$out" "CI polling wedge" "trailing heartbeat must not mask the wedge"
-  pass "per-poll heartbeats interleaved with repeated failures still wedge"
-}
-
-# A prefix that repeats early but is followed by real progress must not be
-# reported as wedged just because some other error prefix trails the log.
-test_ci_monitoring_repeated_errors_then_green_not_wedged() {
-  reset_fakes
-  local d; d=$(new_case ci-wedge-then-green)
-  make_repo_on_branch "$d/wt" fm/feat-ciwedgegreen
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-ciwedgegreen.meta" "window=fm:fm-feat-ciwedgegreen" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwedgegreen)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-all CI checks passed - still monitoring until merged or closed
-log: --verbose "gh pr view 36" exit status 1
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-ciwedgegreen)
-  assert_not_contains "$out" "CI polling wedge" "progress after the repeated prefix clears the wedge"
-  assert_not_contains "$out" "state: failed" "green run must not be reported failed"
-  pass "repeated errors followed by green progress are not a wedge"
-}
-
-# Regression: log lines carrying a trailing carriage return (captured gh
-# output) must still re-match their own prefix, so the progress marker after
-# them is seen and a green run is not reported as terminally wedged.
-test_ci_monitoring_crlf_errors_then_green_not_wedged() {
-  reset_fakes
-  local d; d=$(new_case ci-wedge-crlf)
-  make_repo_on_branch "$d/wt" fm/feat-cicrlf
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cicrlf.meta" "window=fm:fm-feat-cicrlf" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cicrlf)"
-  local err; err=$(printf 'log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1\r')
-  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\nall CI checks passed - still monitoring until merged or closed\n' \
-    "$err" "$err" "$err" "$err" "$err")
-  local out; out=$(run_crew_state "$d" feat-cicrlf)
-  assert_not_contains "$out" "CI polling wedge" "CRLF errors followed by green are not a wedge"
-  assert_not_contains "$out" "state: failed" "green run with CRLF errors must not be reported failed"
-  pass "carriage-return-terminated poll errors re-match their own prefix"
-}
-
-# Regression: a log mixing CR-terminated and plain copies of the SAME failing
-# poll must group into one prefix, so the split does not hide a real wedge.
-test_ci_monitoring_mixed_line_endings_still_wedged() {
-  reset_fakes
-  local d; d=$(new_case ci-wedge-mixed-eol)
-  make_repo_on_branch "$d/wt" fm/feat-cimixedeol
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cimixedeol.meta" "window=fm:fm-feat-cimixedeol" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cimixedeol)"
-  local plain cr
-  plain='log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1'
-  cr=$(printf '%s\r' "$plain")
-  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$cr" "$plain" "$cr" "$plain" "$cr" "$plain")
-  local out; out=$(run_crew_state "$d" feat-cimixedeol)
-  assert_contains "$out" "state: failed" "mixed line endings must not split one wedged prefix"
-  assert_contains "$out" "CI polling wedge" "mixed-line-ending wedge is still detected"
-  pass "mixed CR and plain copies of one failing poll still wedge"
-}
-
-# Regression: an error prefix that itself begins with digits (e.g. an HTTP
-# status) must survive the count parse and still be recognized as a wedge.
-test_ci_monitoring_numeric_error_prefix_still_wedged() {
-  reset_fakes
-  local d; d=$(new_case ci-wedge-numeric)
-  make_repo_on_branch "$d/wt" fm/feat-cinumeric
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cinumeric.meta" "window=fm:fm-feat-cinumeric" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinumeric)"
-  local err='warning: could not check CI: 404 Not Found (HTTP 404)'
-  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n' "$err" "$err" "$err" "$err" "$err")
-  local out; out=$(run_crew_state "$d" feat-cinumeric)
-  assert_contains "$out" "state: failed" "numeric-leading error prefix -> failed"
-  assert_contains "$out" "404 Not Found (HTTP 404)" "numeric-leading prefix is reported intact"
-  pass "an error prefix starting with digits is preserved and wedges"
-}
-
-# A repo with no CI workflows logs the green "no CI checks reported - still
-# monitoring" marker every poll; flaky poll errors among those lines must not
-# turn that green run into a wedge.
-test_ci_monitoring_no_checks_green_marker_not_wedged() {
-  reset_fakes
-  local d; d=$(new_case ci-wedge-nochecks)
-  make_repo_on_branch "$d/wt" fm/feat-cinochecks
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cinochecks.meta" "window=fm:fm-feat-cinochecks" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinochecks)"
-  local err green
-  err='log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1'
-  green='no CI checks reported - still monitoring until merged or closed'
-  FM_FAKE_CI_LOGS=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-    "$green" "$err" "$green" "$err" "$green" "$err" "$green" "$err" "$green" "$err" "$green")
-  local out; out=$(run_crew_state "$d" feat-cinochecks)
-  assert_not_contains "$out" "CI polling wedge" "the no-checks green marker is progress, not heartbeat noise"
-  assert_not_contains "$out" "state: failed" "a green no-checks run must not be reported failed"
-  pass "flaky poll errors around the no-checks green marker are not a wedge"
-}
-
-test_ci_monitoring_still_waiting_stays_working() {
-  reset_fakes
-  local d; d=$(new_case ci-waiting)
-  make_repo_on_branch "$d/wt" fm/feat-ciwait
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-ciwait.meta" "window=fm:fm-feat-ciwait" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwait)"
-  FM_FAKE_CI_LOGS="CI checks running, waiting for results..."
-  local out; out=$(run_crew_state "$d" feat-ciwait)
-  assert_contains "$out" "state: working" "ci step still red -> working"
-  assert_not_contains "$out" "checks green" "no green marker present -> no checks-green detail"
-  pass "ci-monitoring run with checks not yet green stays working"
-}
-
-# A later merge-conflict auto-fix round after an earlier green reading must
-# not be masked: the MOST RECENT marker in the log tail wins.
-test_ci_monitoring_green_then_new_issue_stays_working() {
-  reset_fakes
-  local d; d=$(new_case ci-green-then-issue)
-  make_repo_on_branch "$d/wt" fm/feat-cirelapse
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cirelapse.meta" "window=fm:fm-feat-cirelapse" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cirelapse)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-all CI checks passed - still monitoring until merged or closed
-base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
-issues detected: merge conflict - auto-fixing (attempt 2/10)...
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-cirelapse)
-  assert_contains "$out" "state: working" "a later relapse marker must win over an earlier green one"
-  assert_not_contains "$out" "state: done" "relapsed ci run must not read as done"
-  pass "a fresh issue after an earlier green reading is not masked"
-}
-
-test_ci_ready_done_log_relapse_stays_working() {
-  reset_fakes
-  local d; d=$(new_case ci-ready-then-relapse)
-  make_repo_on_branch "$d/wt" fm/feat-cireadyrelapse
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cireadyrelapse.meta" "window=fm:fm-feat-cireadyrelapse" "worktree=$d/wt" "kind=ship"
-  printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-cireadyrelapse.status"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cireadyrelapse)"
-  FM_FAKE_CI_LOGS=$(cat <<'EOF'
-all CI checks passed - still monitoring until merged or closed
-base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
-CI checks running, waiting for results...
-EOF
-)
-  local out; out=$(run_crew_state "$d" feat-cireadyrelapse)
-  assert_contains "$out" "state: working" "a stale ready status must not mask a later CI relapse"
-  assert_contains "$out" "source: run-step" "relapsed ci run remains run-step sourced"
-  assert_not_contains "$out" "state: done" "relapsed ci run with stale done log must not read as done"
-  pass "stale checks-green status log does not mask CI relapse"
-}
-
-test_ci_fixing_after_green_stays_working() {
-  reset_fakes
-  local d; d=$(new_case ci-fixing-after-green)
-  make_repo_on_branch "$d/wt" fm/feat-cifixing
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-cifixing.meta" "window=fm:fm-feat-cifixing" "worktree=$d/wt" "kind=ship"
-  printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-cifixing.status"
-  FM_FAKE_AXI_STATUS="$(run_ci_fixing fm/feat-cifixing)"
-  FM_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
-  local out; out=$(run_crew_state "$d" feat-cifixing)
-  assert_contains "$out" "state: working" "ci fixing step must stay working"
-  assert_contains "$out" "source: run-step" "ci fixing remains run-step sourced"
-  assert_not_contains "$out" "state: done" "ci fixing must not read as checks-green done"
-  pass "ci fixing is not overridden by an earlier green marker"
-}
-
-test_top_level_fixing_ci_running_after_green_stays_working() {
-  reset_fakes
-  local d; d=$(new_case top-level-fixing-ci-running)
-  make_repo_on_branch "$d/wt" fm/feat-topfixingci
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-topfixingci.meta" "window=fm:fm-feat-topfixingci" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_fixing_ci_running fm/feat-topfixingci)"
-  FM_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
-  local out; out=$(run_crew_state "$d" feat-topfixingci)
-  assert_contains "$out" "state: working" "top-level fixing with ci running must stay working"
-  assert_contains "$out" "source: run-step" "top-level fixing with ci running remains run-step sourced"
-  assert_contains "$out" "validating (fixing)" "top-level fixing keeps fixing detail"
-  assert_not_contains "$out" "state: done" "top-level fixing must not use stale green marker"
-  pass "top-level fixing is not overridden by a stale ci running row"
-}
-
-test_top_level_fixing_done_log_stays_working() {
-  reset_fakes
-  local d; d=$(new_case top-level-fixing-done-log)
-  make_repo_on_branch "$d/wt" fm/feat-topfixing
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-topfixing.meta" "window=fm:fm-feat-topfixing" "worktree=$d/wt" "kind=ship"
-  printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-topfixing.status"
-  FM_FAKE_AXI_STATUS="$(run_fixing fm/feat-topfixing)"
-  FM_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
-  local out; out=$(run_crew_state "$d" feat-topfixing)
-  assert_contains "$out" "state: working" "top-level fixing must stay working"
-  assert_contains "$out" "source: run-step" "top-level fixing remains run-step sourced"
-  assert_contains "$out" "validating (fixing)" "top-level fixing keeps fixing detail"
-  assert_not_contains "$out" "state: done" "top-level fixing must not read as stale checks-green done"
-  pass "top-level fixing is not overridden by a stale done log"
-}
 
 # (d) terminal run-step is authoritative
 test_terminal_passed() {
@@ -1129,7 +277,161 @@ test_terminal_passed() {
   local out; out=$(run_crew_state "$d" feat-d)
   assert_contains "$out" "state: done" "passed run -> done"
   assert_contains "$out" "source: run-step" "passed -> run-step source"
+  assert_contains "$out" "run passed: PR merged" "passed run reports merged only after the PR record says merged"
+  assert_not_contains "$out" "merged/closed" "passed merged PR must not keep the old ambiguous label"
   pass "terminal passed run is authoritative"
+}
+
+test_terminal_passed_uses_matching_retirement_receipt_without_forge() {
+  reset_fakes
+  local d url read_log out
+  d=$(new_case passed-receipt)
+  url=https://github.com/o/r/pull/1
+  make_repo_on_branch "$d/wt" fm/feat-dreceipt
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-dreceipt.meta" "window=fm:fm-feat-dreceipt" \
+    "worktree=$d/wt" "kind=ship" "pr=$url"
+  seed_retired_pr_receipt "$d/state" feat-dreceipt "$url"
+  read_log="$d/pr-read.log"
+  : > "$read_log"
+  FM_FAKE_PR_READ_LOG=$read_log
+  FM_FAKE_PR_READ_FAIL=1
+  FM_FAKE_AXI_STATUS="$(run_passed_no_pr fm/feat-dreceipt)"
+  out=$(run_crew_state "$d" feat-dreceipt)
+  assert_contains "$out" "state: done" "passed run with retired PR receipt -> done"
+  assert_contains "$out" "run passed: PR merged" "matching retirement receipt is local merged evidence"
+  [ ! -s "$read_log" ] || fail "matching retirement receipt still attempted a forge read"
+  pass "terminal passed run uses matching retirement receipt without forge"
+}
+
+test_terminal_passed_no_forge_switch_skips_read_but_keeps_receipt() {
+  reset_fakes
+  local d url read_log out
+  d=$(new_case passed-no-forge-switch)
+  url=https://github.com/o/r/pull/1
+  make_repo_on_branch "$d/wt" fm/feat-dnoforge
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-dnoforge.meta" "window=fm:fm-feat-dnoforge" \
+    "worktree=$d/wt" "kind=ship" "pr=$url"
+  read_log="$d/pr-read.log"
+  : > "$read_log"
+  FM_FAKE_PR_READ_LOG=$read_log
+  FM_FAKE_AXI_STATUS="$(run_passed_with_pr fm/feat-dnoforge "$url")"
+
+  out=$(FM_CREW_STATE_NO_FORGE=1 run_crew_state "$d" feat-dnoforge)
+  assert_contains "$out" "run passed: PR state unknown (forge read skipped)" "no-forge mode reports skipped read"
+  assert_not_contains "$out" "PR merged" "no-forge mode without a receipt must not report merged"
+  [ ! -s "$read_log" ] || fail "no-forge mode invoked a forge read"
+
+  seed_retired_pr_receipt "$d/state" feat-dnoforge "$url"
+  out=$(FM_CREW_STATE_NO_FORGE=1 run_crew_state "$d" feat-dnoforge)
+  assert_contains "$out" "run passed: PR merged" "no-forge mode still trusts a matching retirement receipt"
+  [ ! -s "$read_log" ] || fail "no-forge mode with a receipt invoked a forge read"
+  pass "terminal passed no-forge mode preserves local receipt evidence"
+}
+
+test_terminal_passed_with_open_pr_does_not_claim_merged() {
+  reset_fakes
+  local d; d=$(new_case passed-open-pr)
+  make_repo_on_branch "$d/wt" fm/feat-dopen
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-dopen.meta" "window=fm:fm-feat-dopen" \
+    "worktree=$d/wt" "kind=ship" "pr=https://github.com/o/r/pull/1"
+  FM_FAKE_PR_STATE=OPEN
+  FM_FAKE_PR_MERGED=false
+  FM_FAKE_AXI_STATUS="$(run_passed fm/feat-dopen)"
+  local out; out=$(run_crew_state "$d" feat-dopen)
+  assert_contains "$out" "state: done" "passed run with open PR -> done"
+  assert_contains "$out" "run passed: PR open" "open PR state is named"
+  assert_not_contains "$out" "merged/closed" "open PR must not get the old merged/closed label"
+  assert_not_contains "$out" "PR merged" "open PR must not be reported merged"
+  pass "terminal passed run with open PR does not claim merged"
+}
+
+test_terminal_passed_run_pr_overrides_stale_metadata() {
+  reset_fakes
+  local d; d=$(new_case passed-stale-meta)
+  make_repo_on_branch "$d/wt" fm/feat-dstale
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-dstale.meta" "window=fm:fm-feat-dstale" \
+    "worktree=$d/wt" "kind=ship" "pr=https://github.com/o/r/pull/47"
+  FM_FAKE_PR_47_STATE=MERGED
+  FM_FAKE_PR_47_MERGED=true
+  FM_FAKE_PR_48_STATE=OPEN
+  FM_FAKE_PR_48_MERGED=false
+  FM_FAKE_AXI_STATUS="$(run_passed_with_pr fm/feat-dstale https://github.com/o/r/pull/48)"
+  local out; out=$(run_crew_state "$d" feat-dstale)
+  assert_contains "$out" "state: done" "passed run with stale task metadata -> done"
+  assert_contains "$out" "run passed: PR open" "run PR identity outranks stale task metadata"
+  assert_not_contains "$out" "PR merged" "stale merged metadata must not report merged"
+  pass "terminal passed run PR overrides stale task metadata"
+}
+
+test_terminal_passed_without_readable_pr_identity_reports_unknown() {
+  reset_fakes
+  local d; d=$(new_case passed-no-pr)
+  make_repo_on_branch "$d/wt" fm/feat-dnopr
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-dnopr.meta" "window=fm:fm-feat-dnopr" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_passed_no_pr fm/feat-dnopr)"
+  local out; out=$(run_crew_state "$d" feat-dnopr)
+  assert_contains "$out" "state: done" "passed run without PR identity -> done"
+  assert_contains "$out" "run passed: PR state unknown (no PR identity)" "missing PR identity is honest unknown"
+  assert_not_contains "$out" "merged/closed" "unknown PR state must not get the old merged/closed label"
+  assert_not_contains "$out" "PR merged" "unknown PR state must not be reported merged"
+  pass "terminal passed run without readable PR identity reports unknown"
+}
+
+test_terminal_passed_with_open_gitlab_mr_does_not_claim_merged() {
+  reset_fakes
+  local d read_log out
+  d=$(new_case passed-open-gitlab-mr)
+  make_repo_on_branch "$d/wt" fm/feat-dgitlabopen
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-dgitlabopen.meta" "window=fm:fm-feat-dgitlabopen" \
+    "worktree=$d/wt" "kind=ship" "pr=https://git.example.com/group/subgroup/repo/-/merge_requests/9"
+  read_log="$d/glab-read.log"
+  : > "$read_log"
+  FM_FAKE_GLAB_READ_LOG=$read_log
+  FM_FAKE_GLAB_STATE=opened
+  FM_FAKE_AXI_STATUS="$(run_passed_with_pr fm/feat-dgitlabopen https://git.example.com/group/subgroup/repo/-/merge_requests/9)"
+  out=$(run_crew_state "$d" feat-dgitlabopen)
+  assert_contains "$out" "run passed: PR open" "open GitLab MR state is named"
+  assert_not_contains "$out" "PR merged" "open GitLab MR must not be reported merged"
+  assert_grep 'git.example.com|mr view 9 -R https://git.example.com/group/subgroup/repo -F json' "$read_log" \
+    "GitLab MR read uses the parsed host and project URL"
+  pass "terminal passed run reads open GitLab MR state"
+}
+
+test_terminal_passed_with_merged_gitlab_mr_reports_merged() {
+  reset_fakes
+  local d out
+  d=$(new_case passed-merged-gitlab-mr)
+  make_repo_on_branch "$d/wt" fm/feat-dgitlabmerged
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-dgitlabmerged.meta" "window=fm:fm-feat-dgitlabmerged" \
+    "worktree=$d/wt" "kind=ship" "pr=https://gitlab.com/group/repo/-/merge_requests/10"
+  FM_FAKE_GLAB_STATE=merged
+  FM_FAKE_AXI_STATUS="$(run_passed_with_pr fm/feat-dgitlabmerged https://gitlab.com/group/repo/-/merge_requests/10)"
+  out=$(run_crew_state "$d" feat-dgitlabmerged)
+  assert_contains "$out" "run passed: PR merged" "merged GitLab MR is reported merged"
+  pass "terminal passed run reads merged GitLab MR state"
+}
+
+test_terminal_passed_with_failed_gitlab_read_reports_unknown() {
+  reset_fakes
+  local d out
+  d=$(new_case passed-unreadable-gitlab-mr)
+  make_repo_on_branch "$d/wt" fm/feat-dgitlabunknown
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-dgitlabunknown.meta" "window=fm:fm-feat-dgitlabunknown" \
+    "worktree=$d/wt" "kind=ship" "pr=https://gitlab.com/group/repo/-/merge_requests/11"
+  FM_FAKE_GLAB_READ_FAIL=1
+  FM_FAKE_AXI_STATUS="$(run_passed_with_pr fm/feat-dgitlabunknown https://gitlab.com/group/repo/-/merge_requests/11)"
+  out=$(run_crew_state "$d" feat-dgitlabunknown)
+  assert_contains "$out" "run passed: PR state unknown (unreadable)" "failed GitLab read is honest unknown"
+  assert_not_contains "$out" "PR merged" "failed GitLab read must not be reported merged"
+  pass "terminal passed run handles failed GitLab read"
 }
 
 test_terminal_failed() {
@@ -2704,27 +2006,15 @@ test_genuine_daemon_down_reports_blocked
 test_genuine_parked_not_superseded
 test_scalar_gate_parked_not_superseded
 test_gate_block_parked_not_superseded
-test_ci_ready_done_log_beats_monitoring_run
-test_ci_monitoring_checks_green_surfaces_done
-test_top_level_ci_checks_green_surfaces_done
-test_ci_monitoring_no_checks_terminal_surfaces_done
-test_ci_monitoring_green_then_rearm_stays_working
-test_ci_monitoring_no_checks_yet_stays_working
-test_ci_monitoring_repeated_poll_failure_surfaces_wedge
-test_ci_monitoring_transient_errors_then_pending_not_wedged
-test_ci_monitoring_interleaved_heartbeat_still_wedged
-test_ci_monitoring_repeated_errors_then_green_not_wedged
-test_ci_monitoring_crlf_errors_then_green_not_wedged
-test_ci_monitoring_mixed_line_endings_still_wedged
-test_ci_monitoring_numeric_error_prefix_still_wedged
-test_ci_monitoring_no_checks_green_marker_not_wedged
-test_ci_monitoring_still_waiting_stays_working
-test_ci_monitoring_green_then_new_issue_stays_working
-test_ci_ready_done_log_relapse_stays_working
-test_ci_fixing_after_green_stays_working
-test_top_level_fixing_ci_running_after_green_stays_working
-test_top_level_fixing_done_log_stays_working
 test_terminal_passed
+test_terminal_passed_uses_matching_retirement_receipt_without_forge
+test_terminal_passed_no_forge_switch_skips_read_but_keeps_receipt
+test_terminal_passed_with_open_pr_does_not_claim_merged
+test_terminal_passed_run_pr_overrides_stale_metadata
+test_terminal_passed_without_readable_pr_identity_reports_unknown
+test_terminal_passed_with_open_gitlab_mr_does_not_claim_merged
+test_terminal_passed_with_merged_gitlab_mr_reports_merged
+test_terminal_passed_with_failed_gitlab_read_reports_unknown
 test_terminal_failed
 test_terminal_failed_ci_orphan_after_green_reads_done
 test_terminal_failed_ci_orphan_status_only_reads_done

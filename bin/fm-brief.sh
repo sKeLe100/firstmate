@@ -122,6 +122,7 @@ esac
 # shellcheck source=bin/fm-dod-lib.sh
 . "$SCRIPT_DIR/fm-dod-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
+CREWMATE_PAUSE_WAIT_EXAMPLES='an upstream release, a rate-limit reset, a scheduled window, or your own validation round'
 
 resolve_directory_input() {
   local name=$1 path=$2 resolved
@@ -506,7 +507,7 @@ The report is the only thing that survives, so anything worth keeping must be in
    https:// URL exactly as the forge printed it, never a bare number such as "PR 108"; firstmate
    copies that URL from your line rather than assembling one.
    Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - ONLY when you are deliberately idling on a
-   known external wait you expect to clear on its own (an upstream release, a rate-limit reset):
+   known external wait you expect to clear on its own ($CREWMATE_PAUSE_WAIT_EXAMPLES):
    firstmate then leaves your idle pane alone and rechecks it on a long cadence instead of
    treating it as a possible wedge. When you know when the wait clears, say so in the line with
    \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) and firstmate rechecks at that time instead.
@@ -567,19 +568,16 @@ fi
 case "$MODE" in
   direct-PR)
     SETUP2=""
-    RULE1='1. Never push to the default branch (push only your `fm/'"$ID"'` branch). Never merge a PR.'
     ;;
   local-only)
     SETUP2=""
-    RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
     ;;
   *)  # no-mistakes
     SETUP2="
 2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
-    RULE1='1. Never push to the default branch. Never merge a PR.'
     ;;
 esac
-
+RULE1=$(fm_ship_rule_one "$MODE" "$ID") || exit 1
 DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 
 # The tracker-entry law: pt-tracker requires a planning-surface entry and
@@ -644,8 +642,8 @@ $RULE1
    A mid-task \`working:\` line (including setup complete) is nonterminal: do not end the
    turn after it; continue the same stage until a defined \`done:\` gate under Definition of done.
    Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - ONLY when you are deliberately idling on a
-   known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
-   a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
+   known external wait you expect to clear on its own ($CREWMATE_PAUSE_WAIT_EXAMPLES):
+   firstmate then leaves your idle pane alone and rechecks it on a long
    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
    If you hit your own Claude session usage limit (as distinct from account-wide quota
    exhaustion or a real wedge), report \`$PAUSED_VERB [key=session-limit]: {harness} session usage limit, resets <ts>\`
