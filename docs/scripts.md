@@ -170,6 +170,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-public-followup-collect.sh` | Read and retire the typed terminal results a remote work home staged for the home that owes the public reply |
 | `fm-context-usage.sh`    | Report a Claude session's real context usage and warn/restart context band from the harness's durable transcript records |
 | `fm-codex-usage.sh`      | Report a Codex session's context band, weekly-quota burn, and model attribution from its durable rollout file, optionally archiving the same numbers as a usage event |
+| `fm-cloud-credit-pace.sh` | Report each prepaid cloud-credit pool's spend-to-date, linear-pace verdict, remaining budget, and daily allowance from live balance or estimated token stats |
 | `fm-returning-session-check.sh` | Decide bare-resume vs restart-with-carryover for a returning (pinged or restarted) session from its `fm-context-usage.sh` band and, when given a state dir and id, its idle age against the cache TTL |
 | `fm-primary-watchdog.sh` | Get a usage-limit-blocked or crashed primary back to a working session at reset, without the captain intervening |
 | `fm-primary-herdr.sh` | Start or reconnect the normal Claude or emergency Codex primary in one named Herdr session, with durable ownership and endpoint checks |

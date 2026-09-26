@@ -1,0 +1,29 @@
+{
+  "_comment": "Example budgets file for bin/fm-cloud-credit-pace.sh. Copy to config/cloud-credit-budgets.json (captain-private, gitignored) and edit there. Each pool has a one-time total spread over [window_start, window_end); the script reports spend-to-date, a linear-pace verdict, and a remaining daily allowance. `balance_currency` forces the currency the live endpoint's number is treated as; omit it to honor whatever currency the endpoint reports. DeepSeek's balance endpoint labels its nominal funded amount USD while the captain funded and tracks that pool in CAD, so its balance_currency is CAD to treat the number 1:1 as the CAD pool; drop that key to apply fx_usd_cad to a genuinely USD balance. Fields other than the ones the script reads are ignored, so descriptive keys and comments are safe.",
+  "fx_usd_cad": 1.37,
+  "pools": [
+    {
+      "id": "deepseek",
+      "description": "DeepSeek prepaid pool, live via GET /user/balance.",
+      "total": 20.0,
+      "currency": "CAD",
+      "balance_currency": "CAD",
+      "window_start": "2026-09-17",
+      "window_end": "2026-10-17",
+      "source": "deepseek_api"
+    },
+    {
+      "id": "gemini",
+      "description": "Gemini prepaid pool, estimated from opencode token counts.",
+      "total": 25.0,
+      "currency": "CAD",
+      "window_start": "2026-09-17",
+      "window_end": "2026-10-17",
+      "source": "opencode_stats",
+      "rates_usd_per_mtok": {
+        "gemini-3.8-flash": { "input": 0.75, "output": 3.75 },
+        "gemini-3.1-pro-preview": { "input": 2.0, "output": 12.0 }
+      }
+    }
+  ]
+}
