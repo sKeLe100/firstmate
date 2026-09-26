@@ -606,9 +606,9 @@ fm_backlog_append_body_line() {  # <authorized-data-dir> <id> <line>
     FM_BACKLOG_TRANSITION_ERROR="could not decode the task body of $id"
     return 1
   }
-  case $'\n'"$body"$'\n' in
-    *$'\n'"$line"$'\n'*) return 0 ;;
-  esac
+  while IFS= read -r existing_line || [ -n "$existing_line" ]; do
+    [ "$existing_line" = "$line" ] && return 0
+  done <<< "$body"
   new_body=$line
   [ -z "$body" ] || new_body=$(printf '%s\n\n%s' "$body" "$line")
   tmp=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-backlog-body-line.XXXXXX") || {

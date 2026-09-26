@@ -514,6 +514,32 @@ test_retain_refuses_a_missing_copy_during_hold_escalation() {
   pass "hold escalation refuses a deleted retained copy before changing the row"
 }
 
+test_body_line_deduplication_treats_globs_literally() {
+  local case_dir copy other line show count out
+  case_dir=$(make_case body-line-literal)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  copy="$case_dir/a*b"
+  other="$case_dir/axb"
+  mkdir -p "$copy"
+  line="Retained local copy: $copy"
+  out=$(
+    # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-backlog-transition-lib.sh"
+    fm_backlog_append_body_line "$case_dir/data" task-x1 "Retained local copy: $other" \
+      || { echo "seed: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+    fm_backlog_park "$case_dir/data" task-x1 --copy "$copy" \
+      || { echo "park: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+  ) || fail "body-line-literal: park failed: $out"
+  show=$(tasks-axi show task-x1 --full --file "$case_dir/data/backlog.md")
+  count=$(printf '%s\n' "$show" | grep -F -o "$line" | wc -l | tr -d ' ')
+  [ "$count" -eq 1 ] \
+    || fail "body-line-literal: wildcard path was treated as a pattern and omitted from the body: $show"
+  pass "body-line deduplication compares wildcard paths literally"
+}
+
 test_legacy_record_never_accepts_a_corrupt_spawn_gen() {
   local case_dir rc
   case_dir=$(make_case legacy-corrupt)

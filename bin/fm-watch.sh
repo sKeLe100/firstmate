@@ -1380,6 +1380,9 @@ handle_paused_stale() {  # <window> <task> <hash>
     detail="paused, held for the captain"
     reason="paused ${age}s, held for the captain - the backlog records an open captain call, rechecked on a long cadence not a wedge; answer the held decision or release the hold"
     declaration=${hold_scope:-$(captain_call_declaration "$task" "$CAPTAIN_CALL_IDENTITY")}
+  elif status_is_paused "$last" && [ "$hold_rc" = 2 ]; then
+    detail="paused, captain hold unverified"
+    reason="paused ${age}s, but the backlog could not be read to confirm the captain hold - check the backlog and confirm the hold still stands"
   elif until=$(status_paused_until "$last"); then
     if [ "$now" -lt "$until" ] && [ "$age" -lt "$PAUSE_RESURFACE_SECS" ]; then
       triage_log "absorbed stale (paused until $(( until - now ))s from now, declared time not reached): $win"

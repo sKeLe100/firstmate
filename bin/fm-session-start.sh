@@ -645,8 +645,8 @@ print_backlog_tasks_axi_compact() {
   elif ! axi_ready=$(tasks-axi ready --file "$path" 2>&1); then
     err=$axi_ready
   elif ! ready=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$(dirname "$path")" \
-      "$SCRIPT_DIR/fm-queue-snapshot.sh" --dispatchable --limit "$QUEUED_LIMIT" 2>/dev/null); then
-    err="bin/fm-queue-snapshot.sh --dispatchable failed"
+      "$SCRIPT_DIR/fm-queue-snapshot.sh" --dispatchable --limit "$QUEUED_LIMIT" 2>&1); then
+    err="bin/fm-queue-snapshot.sh --dispatchable failed: ${ready:-no output}"
   else
     printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown once with hold fields capped to %s chars; ready queued bounded to %s; task bodies omitted)\n' \
       "$HOLD_REASON_CHAR_LIMIT" "$QUEUED_LIMIT"

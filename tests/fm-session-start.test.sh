@@ -172,6 +172,14 @@ case "${1:-}" in
     ;;
   list)
     case "$*" in
+      *'--fields blocked,blocked_by,held,hold_kind,hold_reason,hold_until,priority,created'*)
+        if [ "${FM_FAKE_TASKS_AXI_DISPATCH_FAIL:-0}" = 1 ]; then
+          printf '%s\n' 'fixture dispatchable read failed' >&2
+          exit 17
+        fi
+        ;;
+    esac
+    case "$*" in
       *'--fields '*'body'*|*'--fields='*'body'*)
         printf '%s\n' 'unexpected body field requested' >&2
         exit 9
@@ -2094,6 +2102,24 @@ EOF
   pass "unavailable or incompatible tasks-axi falls back to compact manual backlog rendering"
 }
 
+test_backlog_compact_dispatchable_error_is_preserved() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-compact-dispatch-error)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_tasks_axi_compact "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  write_long_body_backlog "$home/data/backlog.md"
+
+  out=$(FM_FAKE_TASKS_AXI_DISPATCH_FAIL=1 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "bin/fm-queue-snapshot.sh --dispatchable failed: fm-queue-snapshot: tasks-axi list failed: fixture dispatchable read failed" \
+    "dispatchable snapshot failure lost the concrete backend error"
+  pass "dispatchable snapshot failures preserve the backend diagnostic in startup fallback"
+}
+
 # --- runtime bound -----------------------------------------------------------
 #
 # The digest runs on a session-open hook that blocks session initialization, so
@@ -2920,6 +2946,7 @@ test_backlog_declared_next_session_priority_is_called_out
 test_backlog_declared_next_session_priority_drops_once_done
 test_backlog_declared_next_session_priority_tolerates_heading_and_newline_variants
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
+test_backlog_compact_dispatchable_error_is_preserved
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence
 test_next_step_afk_delegates_to_daemon
