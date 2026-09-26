@@ -1073,4 +1073,42 @@ case "$err" in
   *) fail "--now 'not-a-date' gave no usable error message: $err" ;;
 esac
 
+# 22. --dispatchable lists exactly the gate "dispatchable" rows, in rank order,
+#     in its compact shape: a captain-kind row and a lapsed captain-kind date
+#     hold (both of which `tasks-axi ready` counts as ready) stay out, a lapsed
+#     plain date hold is a cleared time gate and is in, and --limit bounds the
+#     rows while total_dispatchable still counts all of them.
+home=$(make_home dispatchable-only)
+printf '%s\n' '- demo-proj [direct-PR +yolo] - test project (added 2026-08-20)' > "$home/data/projects.md"
+(
+  cd "$home" || exit 1
+  tasks-axi add ready-a "ready work" --kind ship --repo demo-proj --priority 2 >/dev/null
+  tasks-axi add call-b "captain call" --kind captain --repo demo-proj >/dev/null
+  tasks-axi add lapsed-c "lapsed captain date hold" --kind ship --repo demo-proj >/dev/null
+  tasks-axi hold lapsed-c --reason "revisit" --kind captain --until 2020-01-01 >/dev/null
+  tasks-axi add lapsed-d "lapsed plain date hold" --kind ship --repo demo-proj >/dev/null
+  tasks-axi hold lapsed-d --reason "revisit" --until 2020-01-01 >/dev/null
+)
+out=$(run_snapshot "$home" --dispatchable)
+case "$out" in
+  *"total_dispatchable: 2"*"dispatchable[2]{rank,id,kind,repo,priority,title}:"*) ;;
+  *) fail "--dispatchable did not report exactly the two dispatchable rows: $out" ;;
+esac
+case "$out" in
+  *"ready-a,ship,demo-proj,2,ready work"*) ;;
+  *) fail "--dispatchable dropped a dispatchable row: $out" ;;
+esac
+case "$out" in
+  *"lapsed-d,ship,demo-proj,-,lapsed plain date hold"*) ;;
+  *) fail "--dispatchable dropped a cleared plain time gate: $out" ;;
+esac
+case "$out" in
+  *call-b*|*lapsed-c*|*hierarchy_lanes*|*live_slots*) fail "--dispatchable listed a gated row or the full report: $out" ;;
+esac
+out=$(run_snapshot "$home" --dispatchable --limit 1)
+case "$out" in
+  *"count: 1"*"total_dispatchable: 2"*"dispatchable[1]{"*) ;;
+  *) fail "--dispatchable --limit 1 did not bound rows while counting all: $out" ;;
+esac
+
 echo "PASS fm-queue-snapshot.test.sh"

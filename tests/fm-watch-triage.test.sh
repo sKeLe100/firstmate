@@ -3215,6 +3215,41 @@ test_reheld_captain_call_starts_its_own_resurface_window() {
 
 
 
+# A declared wait's recheck wording comes from the backlog's own captain-call
+# predicate, never from the status line's prose: a `paused:` line over a task the
+# backlog holds for the captain names the captain, the same line with no hold
+# keeps the external-wait wording, and a `captain-held:` line whose backlog row is
+# no longer held surfaces as a disagreement between the two records.
+test_paused_recheck_reads_the_backlog_captain_call() {
+  local spec name line hold expect reject dir state out capture statusf back
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (paused recheck backlog read)"; return 0; }
+  for spec in \
+    'paused-held|paused: holding for the upstream tool release|hold|held for the captain|awaiting external' \
+    'paused-unheld|paused: holding for the upstream tool release|nohold|awaiting external|held for the captain' \
+    'captain-held-released|captain-held [key=route]: tracked by held-merge|nohold|no longer holds this task for the captain|verified hold transfer'
+  do
+    IFS='|' read -r name line hold expect reject <<EOF_SPEC
+$spec
+EOF_SPEC
+    dir=$(make_hold_home "$name" "$line" "$hold") \
+      || fail "[$name] could not build the backlog fixture"
+    state="$dir/state"; out="$dir/watch.out"; capture="$dir/pane.txt"
+    statusf="$state/held-merge.status"
+    back=$(( $(date +%s) - 500 ))
+    if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
+    else touch -m -d "@$back" "$statusf"; fi
+    printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-held-merge_status"
+    FM_HOLD_PAUSE_RESURFACE_SECS=240 hold_watch_surface "$dir" "$out" "$capture" 'idle bare shell' \
+      || fail "[$name] the aged declared wait did not re-surface"
+    grep -F "$expect" "$state/.wake-queue" >/dev/null \
+      || fail "[$name] recheck did not read '$expect': $(cat "$state/.wake-queue" 2>/dev/null)"
+    grep -F "$reject" "$state/.wake-queue" >/dev/null \
+      && fail "[$name] recheck used the wrong wording '$reject': $(cat "$state/.wake-queue")"
+  done
+  pass "a declared wait's recheck names the captain only when the backlog holds the task, and flags a released captain-held line"
+}
+
 test_secondmate_paused_resurfaces_in_normal_mode() {
   local dir state fakebin out capture_file statusf window key pane_hash sig pid back
   dir=$(make_case secondmate-paused-resurface); state="$dir/state"; fakebin="$dir/fakebin"
@@ -5949,6 +5984,7 @@ test_open_captain_call_bounds_stale_churn
 test_stale_churn_without_a_captain_call_still_alarms
 test_failed_wake_append_does_not_arm_the_captain_hold_throttle
 test_reheld_captain_call_starts_its_own_resurface_window
+test_paused_recheck_reads_the_backlog_captain_call
 test_secondmate_paused_resurfaces_in_normal_mode
 test_secondmate_captain_held_resurfaces_in_normal_mode
 test_secondmate_nonpaused_stale_remains_suppressed

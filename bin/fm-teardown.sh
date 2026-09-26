@@ -160,7 +160,22 @@
 # releases its durable treehouse lease so the pool slot is freed,
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
+# Parking (--park) is cleanup that keeps the work where it is: a ship or scout
+# task whose worker is being retired while its local copy must survive (a
+# paused experiment, a copy the captain asked to preserve) loses its endpoint,
+# volatile state, and task record exactly as a teardown does, but its local
+# copy and branch are neither returned, reset, nor removed, and its pool slot
+# stays claimed by this task. Because nothing is discarded, the landed-work and
+# scout-report gates do not apply. The backlog transition is `mode=park`
+# (bin/fm-backlog-transition-lib.sh fm_backlog_park): the row returns to Queued
+# held as `parked`, with the retained copy's path recorded on it. Parking
+# refuses a row that is still an open captain call, since replacing that hold
+# would drop the captain's question, a home whose backlog is not automatic,
+# and a local copy that is missing or not this task's. It still concludes a
+# no-mistakes run parked at a gate and reaps leaked processes (Fix 1 and Fix 2
+# below), which free fleet resources without touching the copy's files.
 # Usage: fm-teardown.sh <task-id> [--force] [--legacy-record]
+#        fm-teardown.sh <task-id> --park [--legacy-record]
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
 #   when the captain has explicitly said to discard the work.
@@ -305,10 +320,12 @@ fi
 ID=$1
 FORCE=
 LEGACY_RECORD_GIVEN=0
+PARK=0
 shift
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) FORCE=--force ;;
+    --park) PARK=1 ;;
     --legacy-record) LEGACY_RECORD_GIVEN=1 ;;
     *)
       echo "error: invalid teardown request" >&2
@@ -317,6 +334,10 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+if [ "$PARK" = 1 ] && [ "$FORCE" = --force ]; then
+  echo "error: --park keeps the local copy, so it cannot be combined with --force" >&2
+  exit 2
+fi
 fm_backlog_directory_present "$STATE" "state directory" || {
   echo "error: teardown refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
   exit 1
@@ -434,6 +455,10 @@ fm_backlog_record_present "$META" "task record" "$STATE" || {
 }
 TEARDOWN_META_KIND=$(fm_meta_get "$META" kind)
 [ -n "$TEARDOWN_META_KIND" ] || TEARDOWN_META_KIND=ship
+if [ "$PARK" = 1 ] && [ "$TEARDOWN_META_KIND" != ship ] && [ "$TEARDOWN_META_KIND" != scout ]; then
+  echo "error: only a ship or scout task can be parked; $ID is kind $TEARDOWN_META_KIND" >&2
+  exit 1
+fi
 TEARDOWN_CLEANUP_RECOVERY=$(fm_meta_get "$META" cleanup_recovery)
 TEARDOWN_META_SPAWN_GEN=
 TEARDOWN_LEGACY_PENDING=0
@@ -494,14 +519,24 @@ fi
 # Cleanup never closes a captain call (see the header). Asked here, before any
 # destructive step, so "cannot tell" can refuse while everything is intact.
 TEARDOWN_BACKLOG_TRANSITION=close
+if [ "$PARK" = 1 ] && [ "$TEARDOWN_BACKLOG_APPLIES" != 1 ]; then
+  echo "error: task $ID cannot be parked because this home's backlog is not updated automatically (${TEARDOWN_BACKLOG_SKIP_REASON:-no automatic backlog transition}); nothing was changed" >&2
+  exit 1
+fi
 if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
   TEARDOWN_CAPTAIN_OPEN_STATUS=0
   TEARDOWN_CAPTAIN_OPEN_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
     "$SCRIPT_DIR/fm-captain-hold.sh" open "$ID" 2>&1) || TEARDOWN_CAPTAIN_OPEN_STATUS=$?
   case "$TEARDOWN_CAPTAIN_OPEN_STATUS" in
-    0) TEARDOWN_BACKLOG_TRANSITION=retain ;;
-    1) ;;
+    0)
+      if [ "$PARK" = 1 ]; then
+        echo "error: task $ID is still held for the captain; parking would replace that hold, so answer or release the call first; nothing was changed" >&2
+        exit 1
+      fi
+      TEARDOWN_BACKLOG_TRANSITION=retain
+      ;;
+    1) [ "$PARK" != 1 ] || TEARDOWN_BACKLOG_TRANSITION=park ;;
     *)
       echo "error: task $ID cannot be torn down because whether its backlog item is still held for the captain could not be read; fix that read and retry rather than risk closing a captain call with no recorded answer" >&2
       [ -z "$TEARDOWN_CAPTAIN_OPEN_OUT" ] || printf '%s\n' "$TEARDOWN_CAPTAIN_OPEN_OUT" >&2
@@ -1418,6 +1453,10 @@ BACKLOG_DONE_ARGS=()
 backlog_done_args() {
   local data_relative
   BACKLOG_DONE_ARGS=()
+  if [ "$PARK" = 1 ]; then
+    BACKLOG_DONE_ARGS=(--copy "$WT")
+    return 0
+  fi
   case "$KIND" in
     scout)
       data_relative=$(fm_backlog_data_relative "$DATA") || return 1
@@ -1451,10 +1490,12 @@ backlog_refresh_reminder() {
   else
     backlog_display="${DATA%/}/backlog.md"
   fi
-  if [ "$BACKLOG_CLOSED" = 1 ] && [ "$BACKLOG_TRANSITION" = retain ]; then
+  if [ "$BACKLOG_CLOSED" = 1 ] && [ "$BACKLOG_TRANSITION" = park ]; then
+    printf '%s\n' "Backlog: $ID is back in Queued in $backlog_display, held as parked; its local copy is retained at $WT."
+  elif [ "$BACKLOG_CLOSED" = 1 ] && [ "$BACKLOG_TRANSITION" = retain ]; then
     printf '%s\n' "Backlog: $ID stays open in $backlog_display, still held for the captain with its deliverable recorded. Relay the question and close it only with bin/fm-captain-hold.sh answer."
   elif [ "$BACKLOG_CLOSED" = 1 ]; then
-    printf '%s\n' "Backlog: $ID is closed in $backlog_display. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due."
+    printf '%s\n' "Backlog: $ID is closed in $backlog_display. Run bin/fm-queue-snapshot.sh --dispatchable for the queued work ready to dispatch now."
   else
     printf '%s\n' "Backlog: $ID just finished ($BACKLOG_SKIP_REASON). Update $backlog_display - move $ID to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due."
   fi
@@ -3139,6 +3180,13 @@ remove_secondmate_registry_entry() {
 
 require_exclusive_task_worktree_slot || exit 1
 require_owned_task_worktree_slot || exit 1
+if [ "$PARK" = 1 ]; then
+  if ! teardown_owns_worktree || [ -z "$WT" ] || [ ! -d "$WT" ] || [ -L "$WT" ] \
+     || ! fm_backlog_park_copy_valid "$WT"; then
+    echo "REFUSED: task $ID has no local copy of its own to retain at ${WT:-<missing>}; nothing was changed" >&2
+    exit 1
+  fi
+fi
 
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
 
@@ -3183,7 +3231,7 @@ if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
   cleanup_firstmate_home_children "$HOME_PATH" || exit $?
 fi
 
-if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
+if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ] && [ "$PARK" != 1 ]; then
   REPORT="$DATA/$ID/report.md"
   if [ ! -f "$REPORT" ]; then
     echo "REFUSED: scout task $ID has no report at $REPORT." >&2
@@ -3246,7 +3294,7 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ] &&
   ORCA_PATH_MATCH_VERIFIED=1
 fi
 
-if teardown_owns_worktree && [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
+if teardown_owns_worktree && [ -d "$WT" ] && [ "$FORCE" != "--force" ] && [ "$PARK" != 1 ]; then
   if validate_worktree_teardown_safety; then
     :
   else
@@ -3279,7 +3327,7 @@ fi
 BACKLOG_CLOSED=0
 BACKLOG_TRANSITION=$TEARDOWN_BACKLOG_TRANSITION
 BACKLOG_TRANSITION_FLAGS=()
-[ "$BACKLOG_TRANSITION" = close ] || BACKLOG_TRANSITION_FLAGS=(--retain)
+[ "$BACKLOG_TRANSITION" = close ] || BACKLOG_TRANSITION_FLAGS=("--$BACKLOG_TRANSITION")
 BACKLOG_SKIP_REASON=
 if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
   backlog_done_args || {
@@ -3373,7 +3421,14 @@ fi
 "$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
 
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
-if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
+# A parked task keeps its branch and local copy; only firstmate's own signal
+# hooks go, so the retained copy cannot fire signals for a retired worker.
+if [ "$PARK" = 1 ]; then
+  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
+    "$WT/.opencode/plugins/fm-busy-state.js" \
+    "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
+  [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
+elif [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
   if [ "$ORCA_PATH_MATCH_VERIFIED" != 1 ]; then
     require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
     ORCA_PATH_MATCH_VERIFIED=1
@@ -3539,6 +3594,7 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 if [ "$KIND" != secondmate ]; then
   llm_usage_result=landed
   [ "$FORCE" != "--force" ] || llm_usage_result=abandoned
+  [ "$PARK" != 1 ] || llm_usage_result=parked
   fm_llm_usage_emit "$DATA" "$STATE" outcome \
     "task_id=$ID" "kind=$KIND" "purpose=$LLM_USAGE_PURPOSE" \
     "harness=$LLM_USAGE_HARNESS" "model=$LLM_USAGE_MODEL" "mode=$MODE" \
@@ -3569,16 +3625,18 @@ if [ "$BACKLOG_CLOSED" = 1 ]; then
       "$DATA" "$ID" "$STATE" "${BACKLOG_DONE_ARGS[@]+"${BACKLOG_DONE_ARGS[@]}"}"; then
     fm_lock_release "$META_LOCK"
     META_LOCK_HELD=0
-    if [ "$BACKLOG_TRANSITION" = retain ]; then
+    if [ "$BACKLOG_TRANSITION" = park ]; then
+      echo "error: $ID's endpoint is cleaned up and its local copy retained at $WT, but its backlog item could not be returned to Queued held as parked ($FM_BACKLOG_TRANSITION_ERROR); the pending park is recorded and the next session start retries it" >&2
+    elif [ "$BACKLOG_TRANSITION" = retain ]; then
       echo "error: $ID's endpoint and local copy are cleaned up, but its captain-held backlog item could not be returned to Queued atomically ($FM_BACKLOG_TRANSITION_ERROR); the pending retention is recorded and the next session start retries it" >&2
     else
       echo "error: $ID's endpoint and local copy are cleaned up, but its backlog item could not be closed atomically ($FM_BACKLOG_TRANSITION_ERROR); the pending close is recorded and the next session start retries it" >&2
     fi
     exit 1
   fi
-  # A retain transition returns the row to Queued rather than closing it, so
-  # its routing classification (if any) is still current work, not debris.
-  if [ "$BACKLOG_TRANSITION" != retain ]; then
+  # A retain or park transition returns the row to Queued rather than closing
+  # it, so its routing classification (if any) is still current work, not debris.
+  if [ "$BACKLOG_TRANSITION" = close ]; then
     "$SCRIPT_DIR/fm-backlog-routing.sh" gc "$ID" >/dev/null || true
   fi
 elif [ "$KIND" = secondmate ] && [ ! -e "$STATE" ] && [ ! -L "$STATE" ]; then
@@ -3605,7 +3663,9 @@ fi
 if [ -d "$STATE" ]; then
   "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 fi
-if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ]; then
+if [ "$PARK" = 1 ]; then
+  echo "teardown $ID parked (window $T; local copy retained at $WT)"
+elif [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ]; then
   echo "teardown $ID complete (window $T, worktree $WT, legacy record accepted without spawn_gen: endpoint $TEARDOWN_LEGACY_ENDPOINT, incarnation $TEARDOWN_META_SPAWN_GEN)"
 elif teardown_owns_worktree; then
   echo "teardown $ID complete (window $T, worktree $WT)"

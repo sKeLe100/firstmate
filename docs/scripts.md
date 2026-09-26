@@ -72,7 +72,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `backends/cmux.sh`       | Experimental cmux session-provider adapter                                           |
 | `fm-config-push.sh`      | Push declared inherited local material to live local or remote secondmates and send the placement-specific config reread when changed |
 | `fm-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for fleet sync and home seeding, or infer a registered project from a backlog id's `-`-delimited prefix (`--infer-project-from-id`) for the queue snapshot |
-| `fm-queue-snapshot.sh`   | Backlog-read-only snapshot of the top queued backlog items ranked by gate class then project (or by descending priority under `--priority`), with project posture, derived gate class, derived autonomy, a derived `rot` staleness flag, the configured lane hierarchy, and one bounded aggregate quota read, for the `queue` skill |
+| `fm-queue-snapshot.sh`   | Backlog-read-only snapshot of the top queued backlog items ranked by gate class then project (or by descending priority under `--priority`), with project posture, derived gate class, derived autonomy, a derived `rot` staleness flag, the configured lane hierarchy, and one bounded aggregate quota read, for the `queue` skill; `--dispatchable` prints only the ready-to-dispatch rows, the one ready definition the session-start digest also reads |
 | `fm-questionnaire-refill-source.sh` | Duplication guard for the `questionnaire` skill's empty-bundle Refill step: find the newest `data/*roundtable*/report.md` or `data/*roadmap*/report.md` within its 14-day staleness ceiling, exit 1 when none is fresh enough, or exit 2 on a usage error |
 | `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `fm-review-diff.sh`      | Review a crewmate branch or resolved PR head against the authoritative base          |
@@ -146,7 +146,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-upstream-batch.sh`   | Plan the next bounded upstream sync batch: the exact upstream commit to true-merge, never a rebase target |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated PR/MR-poll sidecars           |
-| `fm-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
+| `fm-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll; replacing a recorded PR needs `--rebind`, which archives it as `pr_prior=` |
 | `fm-pr-merge.sh`         | Record PR metadata, merge a task's canonical full GitHub or GitLab URL, then refuse an outcome it cannot prove landed or queued |
 | `fm-pr-state.sh`         | Read-only: print one line per GitHub pull-request blocker it can see, reporting on checks that have reported rather than verdicting merge-readiness |
 | `fm-pr-reviewers.sh`     | Read-only: suggest reviewers from GitHub's own author mapping of recent commits on a pull request's changed files, never requesting one |
@@ -154,7 +154,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-merge-authority-lib.sh` | Resolve merge authority at the gate, persist it against the accepted canonical PR, and identity-check its later poll consumption |
 | `fm-parent-channel-lib.sh` | Resolve a secondmate home's parent channel and append a captain-facing outcome line to it at most once |
 | `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode, write the ship instructions carrying that mode's definition of done, and supersede the task's brief so a later relaunch cannot revive stale scout delivery text |
-| `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed scout deliverables, retire secondmate homes |
+| `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed scout deliverables, retire secondmate homes, or `--park` a task with its local copy retained |
 | `fm-opencode-session-sweep.sh` | One-time owner-run sweep of orphaned `state/<id>.opencode-session` files left behind by teardowns that predate its per-task cleanup |
 | `fm-harness.sh`          | Detect the running harness, resolve crew or secondmate harness, model, and effort, and validate the native-only `ultra` effort |
 | `fm-lock.sh`             | Per-home firstmate session lock                                                      |

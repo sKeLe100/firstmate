@@ -592,8 +592,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | {id,key:.id,verb:"captain-hold",
             summary:hold_summary(.title; .hold_reason),owner:"(main)",
             declared_priority:is_declared_next_session_priority,
-            since:((.held_since // .since) // null),
-            created_at:((.hold_set // .held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
+            since:((.hold_set // .since) // null),
+            created_at:((.hold_set // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
      + [ (.secondmate_current.records // [])[] as $m
          | ([ $m.decisions_open[]?
               | select(.source == "backlog" and .verb == "captain-hold")
@@ -602,8 +602,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
                  summary:hold_summary((.summary // .id);
                                       (.reason // "captain decision pending")),owner:$m.id,
                  declared_priority:(.declared_priority // false),
-                 since:((.held_since // .since) // null),
-                 created_at:((.hold_set // .held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
+                 since:((.hold_set // .since) // null),
+                 created_at:((.hold_set // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
             + [ $m.queued[]?
                 | select($all_decisions == 1 and .hold_kind == "captain")
                 | select(.id as $id
@@ -615,8 +615,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
                    summary:hold_summary((.title // .id);
                                         (.hold_reason // "captain decision pending")),owner:$m.id,
                    declared_priority:(.declared_priority // false),
-                   since:((.held_since // .since) // null),
-                   created_at:((.hold_set // .held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ])[] ]
+                   since:((.hold_set // .since) // null),
+                   created_at:((.hold_set // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ])[] ]
      | sort_by(if .declared_priority then 0 else 1 end)) as $decisions_all
   | ([ .backlog.records[]
          | . as $record

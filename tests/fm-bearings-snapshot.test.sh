@@ -1186,6 +1186,38 @@ EOF
   pass "captain-held tasks of any kind reach Captain's Call, deferral is honored, and landed excludes answered calls"
 }
 
+# Hold timing has one source: the row body's `Captain hold set:` stamp, falling
+# back only to the row's own creation date. A legacy `held-since` sidecar mark
+# carrying a different time must not change either field.
+test_hold_age_reads_only_the_hold_set_stamp() {
+  local home fakebin json
+  home=$(make_home hold-age-single-source)
+  mkdir -p "$home/data"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] stamped-call - Stamped captain call (repo: firstmate) (kind: captain) (since 2026-07-01) (hold: stamped choice) (hold-kind: captain)
+  Captain hold set: 2026-07-09T12:00:00Z
+- [ ] unstamped-call - Unstamped captain call (repo: firstmate) (kind: captain) (since 2026-07-02) (hold: unstamped choice) (hold-kind: captain)
+
+## Done
+EOF
+  printf 'stamped-call\theld-since\t2026-07-05T00:00:00Z\nunstamped-call\theld-since\t2026-07-06T00:00:00Z\n' \
+    > "$home/data/task-marks.tsv"
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    (.decisions_open | any(.[]; .id == "stamped-call"
+        and .since == "2026-07-09T12:00:00Z"
+        and .created_at == ("2026-07-09T12:00:00Z" | fromdateiso8601)))
+      and (.decisions_open | any(.[]; .id == "unstamped-call"
+        and .since == "2026-07-02"
+        and .created_at == ("2026-07-02T00:00:00Z" | fromdateiso8601)))
+  ' >/dev/null || fail "hold age did not come from the hold-set stamp alone: $json"
+  pass "a captain call ages from its hold-set stamp, falling back only to the row's creation date"
+}
+
 test_undated_hold_phrasing_and_aging_projection() {
   local home mate fakebin json
   home=$(make_home undated-aging-proj)
@@ -3361,6 +3393,7 @@ test_partial_github_failure_degrades
 test_perl_fallback_bounds_github_call
 test_section_caps_and_expansion_flags
 test_collapsed_captain_call_deferral_and_landed
+test_hold_age_reads_only_the_hold_set_stamp
 test_undated_hold_phrasing_and_aging_projection
 test_blocked_deferred_hold_has_concrete_disclosure
 test_revealed_deferred_holds_show_their_deferral_reason
