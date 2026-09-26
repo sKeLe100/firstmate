@@ -3689,6 +3689,26 @@ test_parse_target() {
   pass "fm_backend_herdr_parse_target: splits '<session>:<pane_id>' on the FIRST colon (pane_id itself contains one)"
 }
 
+test_session_prefixed_pane_ids_are_normalized_for_read_and_close() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/session-prefixed-pane"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf 'idle composer\n' > "$resp/1.out"
+  : > "$resp/2.out"
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_capture default:default:w2M:p2 200' "$ROOT" )
+  [ "$out" = 'idle composer' ] || fail "session-prefixed pane target did not read through the bare pane id, got '$out'"
+  PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_explicit_close_pane_confirmed default default:w2M:p2' "$ROOT"
+  expect_code 0 $? "session-prefixed pane id should close after normalization"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''read'$'\x1f''w2M:p2' \
+    "pane read passed a session-prefixed pane id to Herdr"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''close'$'\x1f''w2M:p2' \
+    "pane close passed a session-prefixed pane id to Herdr"
+  pass "session-prefixed Herdr pane ids normalize for pane read and close"
+}
+
 test_normalize_key() {
   ( . "$ROOT/bin/backends/herdr.sh"
     [ "$(fm_backend_herdr_normalize_key Enter)" = enter ] || exit 1
@@ -5441,6 +5461,7 @@ test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk
 test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only
 test_parse_target
+test_session_prefixed_pane_ids_are_normalized_for_read_and_close
 test_normalize_key
 test_capture_calls_pane_read
 test_capture_works_around_small_lines_bug

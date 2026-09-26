@@ -1012,6 +1012,7 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
   local skip_restore=0
   FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=""
   [ -n "$pane_id" ] || return 0
+  pane_id=$(fm_backend_herdr_normalize_pane_id "$session" "$pane_id") || return 1
   before=$(fm_backend_herdr_projection_focus_snapshot "$session") || {
     echo "warning: herdr presentation cleanup could not capture exact active workspace and tab; refusing focus-unsafe pane close" >&2
     return 1
@@ -1411,6 +1412,7 @@ fm_backend_herdr_pane_idle_shell_pid() {  # <session> <pane-id>
 fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
   local session=$1 pane=$2 info shell_pid foreground_pgid count
   local process_pid name argv0 shell_name rows stat ps_bin
+  pane=$(fm_backend_herdr_normalize_pane_id "$session" "$pane") || return 1
   info=$(fm_backend_herdr_cli "$session" pane process-info --pane "$pane" 2>/dev/null) || return 1
   printf '%s' "$info" | jq -e --arg pane "$pane" '
     .result.type == "pane_process_info"
@@ -2033,6 +2035,7 @@ fm_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> [<launcher-
 # as dead|present|unknown from its JSON body, never from process exit status.
 fm_backend_herdr_pane_presence_state() {  # <session> <pane_id>
   local session=$1 pane_id=$2 out code pid
+  pane_id=$(fm_backend_herdr_normalize_pane_id "$session" "$pane_id") || { printf 'unknown'; return 0; }
   out=$(fm_backend_herdr_cli "$session" pane get "$pane_id" 2>&1)
   code=$(printf '%s' "$out" | jq -r '.error.code // empty' 2>/dev/null)
   if [ -n "$code" ]; then
@@ -2061,6 +2064,7 @@ fm_backend_herdr_workspace_presence_state() {  # <session> <workspace_id>
 # succeed only when a structured follow-up proves the exact pane is gone.
 fm_backend_herdr_explicit_close_pane_confirmed() {  # <session> <pane_id>
   local session=$1 pane_id=$2 presence
+  pane_id=$(fm_backend_herdr_normalize_pane_id "$session" "$pane_id") || return 1
   fm_backend_herdr_cli "$session" pane close "$pane_id" >/dev/null 2>&1 || return 1
   presence=$(fm_backend_herdr_pane_presence_state "$session" "$pane_id")
   [ "$presence" = dead ]
@@ -2124,6 +2128,7 @@ fm_backend_herdr_pane_process_state() {  # <session> <pane_id>
 fm_backend_herdr_pane_process_state_sample() {  # <session> <pane_id>
   local session=$1 pane_id=$2 info shell_pid count i pid name argv0 args verdict
   local others=0 ps_bin rows
+  pane_id=$(fm_backend_herdr_normalize_pane_id "$session" "$pane_id") || { printf 'unreadable'; return 0; }
   info=$(fm_backend_herdr_cli "$session" pane process-info --pane "$pane_id" 2>/dev/null) \
     || { printf 'unreadable'; return 0; }
   printf '%s' "$info" | jq -e --arg pane "$pane_id" '
@@ -2252,6 +2257,7 @@ EOF
 #                 backstop the husk check depends on.
 fm_backend_herdr_pane_agent_state() {  # <session> <pane_id>
   local session=$1 pane_id=$2 out code presence status
+  pane_id=$(fm_backend_herdr_normalize_pane_id "$session" "$pane_id") || { printf 'unknown'; return 0; }
   presence=$(fm_backend_herdr_pane_presence_state "$session" "$pane_id")
   if [ "$presence" != present ]; then
     case "$presence" in
@@ -2945,14 +2951,30 @@ fm_backend_herdr_projection_endpoint_matches_journal() {  # <session> <workspace
   [ "$matches" = "$workspace_id" ]
 }
 
+# fm_backend_herdr_normalize_pane_id: accept Herdr's legacy session-prefixed
+# pane ids at the adapter boundary, then keep every CLI request pane-local.
+# A task target already supplies the session separately, so an echoed
+# "default:w2M:p2" pane id must become "w2M:p2" before pane read or close.
+fm_backend_herdr_normalize_pane_id() {  # <session> <pane-id>
+  local session=$1 pane_id=$2 prefix
+  [ -n "$session" ] && [ -n "$pane_id" ] || return 1
+  prefix="$session:"
+  case "$pane_id" in "$prefix"*) pane_id=${pane_id#"$prefix"} ;; esac
+  [ -n "$pane_id" ] || return 1
+  printf '%s' "$pane_id"
+}
+
 # fm_backend_herdr_parse_target: split "<session>:<pane_id>" (pane_id itself
-# contains a colon, e.g. "w1:p2") on the FIRST colon only. Sets
-# FM_BACKEND_HERDR_SESSION and FM_BACKEND_HERDR_PANE for the caller.
+# contains a colon, e.g. "w1:p2") on the FIRST colon only. A legacy pane id
+# can itself be session-prefixed, so normalize that second field before setting
+# FM_BACKEND_HERDR_PANE for every read, send, and close caller.
 fm_backend_herdr_parse_target() {  # <target>
   local target=$1
   FM_BACKEND_HERDR_SESSION=${target%%:*}
   FM_BACKEND_HERDR_PANE=${target#*:}
-  [ -n "$FM_BACKEND_HERDR_SESSION" ] && [ -n "$FM_BACKEND_HERDR_PANE" ] && [ "$FM_BACKEND_HERDR_PANE" != "$target" ]
+  [ -n "$FM_BACKEND_HERDR_SESSION" ] && [ -n "$FM_BACKEND_HERDR_PANE" ] && [ "$FM_BACKEND_HERDR_PANE" != "$target" ] \
+    || return 1
+  FM_BACKEND_HERDR_PANE=$(fm_backend_herdr_normalize_pane_id "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
 }
 
 fm_backend_herdr_target_ready() {  # <target>
@@ -3068,8 +3090,9 @@ fm_backend_herdr_capture_ansi() {  # <target> <lines>
 # silently omitted is exactly the drift class that consolidation removes.
 
 fm_backend_herdr_agent_identity_raw() {  # <session> <pane> -> <agent>\t<status>
-  local out
-  out=$(fm_backend_herdr_cli "$1" agent get "$2" 2>/dev/null) || return 1
+  local session=$1 pane=$2 out
+  pane=$(fm_backend_herdr_normalize_pane_id "$session" "$pane") || return 1
+  out=$(fm_backend_herdr_cli "$session" agent get "$pane" 2>/dev/null) || return 1
   printf '%s' "$out" | jq -r '[.result.agent.agent // "", .result.agent.agent_status // ""] | @tsv' 2>/dev/null
 }
 
@@ -3433,6 +3456,7 @@ fm_backend_herdr_classify_submit_agent_status() {  # <raw-agent_status>
 # only add latency without adding safety.
 fm_backend_herdr_agent_status_raw() {  # <session> <pane_id>
   local session=$1 pane_id=$2 out
+  pane_id=$(fm_backend_herdr_normalize_pane_id "$session" "$pane_id") || { printf ''; return 0; }
   out=$(fm_backend_herdr_cli "$session" agent get "$pane_id" 2>/dev/null) || { printf ''; return 0; }
   printf '%s' "$out" | jq -r '.result.agent.agent_status // empty' 2>/dev/null
 }
