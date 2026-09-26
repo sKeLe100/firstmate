@@ -669,7 +669,11 @@ fm_backlog_retain() {  # <data-dir> <id> [flag...]
         ;;
       --note) deliverable="${deliverable:+$deliverable; }$arg" ;;
       --copy)
-        if [ -z "$copy_line" ] && fm_backlog_park_copy_valid "$arg"; then
+        if ! fm_backlog_park_copy_present "$arg"; then
+          FM_BACKLOG_TRANSITION_ERROR="retained local copy is not a real directory at $arg"
+          return 1
+        fi
+        if [ -z "$copy_line" ]; then
           copy_line="Retained local copy: $arg"
         fi
         ;;
@@ -704,6 +708,11 @@ fm_backlog_park_copy_valid() {  # <path>
   return 0
 }
 
+fm_backlog_park_copy_present() {  # <path>
+  fm_backlog_park_copy_valid "$1" \
+    && fm_backlog_directory_present "$1" "retained local copy"
+}
+
 # Return a parked task's row to Queued held as parked, recording the retained
 # local copy both as one body line (left alone when already present) and in the
 # hold reason, so the digest and /queue show where the work waits. Idempotent,
@@ -715,8 +724,8 @@ fm_backlog_park() {  # <data-dir> <id> --copy <absolute-path>
     return 1
   fi
   FM_BACKLOG_TRANSITION_ERROR=
-  if [ "${3:-}" != --copy ] || ! fm_backlog_park_copy_valid "${4:-}"; then
-    FM_BACKLOG_TRANSITION_ERROR="a parked task needs one absolute --copy path"
+  if [ "${3:-}" != --copy ] || ! fm_backlog_park_copy_present "${4:-}"; then
+    FM_BACKLOG_TRANSITION_ERROR="a parked task needs one existing real directory --copy path"
     return 1
   fi
   copy=$4
@@ -1250,6 +1259,10 @@ fm_backlog_close_marker_replay() {  # <state-dir> <marker-path> <authorized-data
   args=("${FM_BACKLOG_CLOSE_VALIDATED_ARGS[@]+"${FM_BACKLOG_CLOSE_VALIDATED_ARGS[@]}"}")
   if [ "${args[0]-}" = --note ]; then
     args[1]="local main"
+  fi
+  if [ "$mode" = park ] && ! fm_backlog_park_copy_present "${args[1]-}"; then
+    FM_BACKLOG_TRANSITION_ERROR="parked task $id kept its local copy at ${args[1]-}, but that retained copy is not a real directory"
+    return 1
   fi
   meta="$state/$id.meta"
   if [ -e "$meta" ] || [ -L "$meta" ]; then

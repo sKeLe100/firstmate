@@ -446,6 +446,74 @@ test_park_replay_keeps_the_record_when_the_row_is_closed_or_missing() {
   pass "an interrupted park keeps its record while the item is closed or missing, and parks once it is back"
 }
 
+test_park_replay_refuses_a_missing_retained_copy() {
+  local case_dir out rc missing
+  case_dir=$(make_case park-replay-missing-copy)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  missing="$case_dir/wt"
+  out=$(
+    # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-backlog-transition-lib.sh"
+    fm_backlog_close_marker_write "$case_dir/state" task-x1 "$case_dir/data" \
+      teardown-test-task-x1 --park --copy "$missing" \
+      || { echo "write: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+  ) || fail "park-replay-missing-copy: marker staging failed: $out"
+  rm -rf "$missing"
+  set +e
+  out=$(
+    # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-backlog-transition-lib.sh"
+    fm_backlog_close_marker_replay "$case_dir/state" "$case_dir/state/task-x1.backlog-close" \
+      "$case_dir/data" || { printf '%s\n' "$FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+    printf '%s\n' replayed
+  )
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "park-replay-missing-copy: replay accepted a deleted retained copy: $out"
+  printf '%s\n' "$out" | grep -F 'not a real directory' >/dev/null \
+    || fail "park-replay-missing-copy: refusal did not identify the missing retained copy: $out"
+  [ -f "$case_dir/state/task-x1.backlog-close" ] \
+    || fail "park-replay-missing-copy: replay retired the marker"
+  [ -f "$case_dir/state/task-x1.meta" ] \
+    || fail "park-replay-missing-copy: replay removed the task record before proving retention"
+  pass "park replay refuses a deleted retained copy and keeps the recovery record"
+}
+
+test_retain_refuses_a_missing_copy_during_hold_escalation() {
+  local case_dir out rc missing
+  case_dir=$(make_case retain-missing-copy)
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" FM_CONFIG_OVERRIDE="$case_dir/config" \
+    "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --reason "fixture hold" >/dev/null \
+    || fail "retain-missing-copy: fixture could not hold the item for the captain"
+  missing="$case_dir/wt"
+  rm -rf "$missing"
+  set +e
+  out=$(
+    # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
+    . "$ROOT/bin/fm-backlog-transition-lib.sh"
+    fm_backlog_retain "$case_dir/data" task-x1 --copy "$missing" \
+      || { printf '%s\n' "$FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+    printf '%s\n' retained
+  )
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "retain-missing-copy: hold escalation accepted a deleted retained copy: $out"
+  printf '%s\n' "$out" | grep -F 'not a real directory' >/dev/null \
+    || fail "retain-missing-copy: refusal did not identify the missing retained copy: $out"
+  tasks-axi show task-x1 --file "$case_dir/data/backlog.md" | grep -qx '  hold_kind: captain' \
+    || fail "retain-missing-copy: refusal changed the captain hold"
+  pass "hold escalation refuses a deleted retained copy before changing the row"
+}
+
 test_legacy_record_never_accepts_a_corrupt_spawn_gen() {
   local case_dir rc
   case_dir=$(make_case legacy-corrupt)
