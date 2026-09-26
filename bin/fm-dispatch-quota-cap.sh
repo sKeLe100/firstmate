@@ -18,17 +18,22 @@
 #
 # Base cap: config/dispatch-cap (absent = 3; malformed = refused). Ladder,
 # each row applied as a ceiling on the running cap, tightest wins:
-#   five_hour.percentRemaining < 25, or seven_day pace.status "ahead" with
-#     pace.burnMultiple > 1.5                                 -> cap 2
+#   five_hour.percentRemaining < 25                           -> cap 2
 #   five_hour.percentRemaining <= 15                          -> cap 1
-#   less than 2.5h until five_hour.resetsAt (window past its
-#     2.5-hour mark; resetsAt - generatedAt < 2.5h)           -> cap 2
+#   pace: for each of five_hour and seven_day whose pace.status is "ahead",
+#     burnMultiple > 1.15 -> cap 2, burnMultiple > 1.5 -> cap 1.  The
+#     five_hour pace is ignored during the window's first 30 minutes, when a
+#     small early spend reads as a large multiple.
+# The ladder only reacts to burn outrunning the time left, so spend that is
+# on pace keeps the base cap right up to the reset: the goal is for Claude
+# usage to ride out the full window, not to stop early.
 # Codex: codex_spawn is "no" whenever the codex provider's weekly window
 # reports pace.status "ahead"; "yes" otherwise.
 #
-# Output (two "key: value" lines, stable order):
+# Output ("key: value" lines, stable order):
 #   effective_cap: <n>
 #   codex_spawn: yes|no
+#   claude_pace: <burnMultiple the pace rows used, 0.00 when none applied>
 #
 # Exit codes: 0 on success; 2 when the base cap is malformed, quota-axi is
 # missing or returns an unexpected schema, or the claude/codex windows the
@@ -145,26 +150,32 @@ week = window("claude", "seven_day")
 codex_week = window("codex", "weekly")
 
 five_pct = number(five, "percentRemaining")
-week_pace = week.get("pace") if isinstance(week.get("pace"), dict) else {}
-week_ahead = week_pace.get("status") == "ahead"
-burn = week_pace.get("burnMultiple")
-burn = burn if isinstance(burn, (int, float)) and not isinstance(burn, bool) else 0
+
+def pace_burn(w):
+    pace = w.get("pace") if isinstance(w.get("pace"), dict) else {}
+    if pace.get("status") != "ahead":
+        return 0
+    burn = pace.get("burnMultiple")
+    return burn if isinstance(burn, (int, float)) and not isinstance(burn, bool) else 0
 
 generated = parse_ts(doc.get("generatedAt"), "generatedAt")
 resets = parse_ts(five.get("resetsAt"), "five_hour.resetsAt")
-remaining_seconds = (resets - generated).total_seconds()
+elapsed_seconds = 5 * 3600 - (resets - generated).total_seconds()
+
+pace = pace_burn(week)
+if elapsed_seconds >= 30 * 60:
+    pace = max(pace, pace_burn(five))
 
 cap = base
-if five_pct < 25 or (week_ahead and burn > 1.5):
+if five_pct < 25 or pace > 1.15:
     cap = min(cap, 2)
-if five_pct <= 15:
+if five_pct <= 15 or pace > 1.5:
     cap = min(cap, 1)
-if remaining_seconds < 2.5 * 3600:
-    cap = min(cap, 2)
 
 codex_pace = codex_week.get("pace") if isinstance(codex_week.get("pace"), dict) else {}
 codex_spawn = "no" if codex_pace.get("status") == "ahead" else "yes"
 
 print(f"effective_cap: {cap}")
 print(f"codex_spawn: {codex_spawn}")
+print(f"claude_pace: {pace:.2f}")
 PY
