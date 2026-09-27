@@ -3709,6 +3709,23 @@ test_session_prefixed_pane_ids_are_normalized_for_read_and_close() {
   pass "session-prefixed Herdr pane ids normalize for pane read and close"
 }
 
+test_session_prefixed_pane_ids_are_normalized_for_seeded_tab_prune() {
+  local dir log resp fb
+  dir="$TMP_ROOT/session-prefixed-prune"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tabs":[{"tab_id":"w2M:t1","label":"1"},{"tab_id":"w2M:t2","label":"fm-task"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"panes":[{"pane_id":"default:w2M:p2","tab_id":"w2M:t1"}]}}\n' > "$resp/2.out"
+  printf '{"error":{"code":"agent_not_found"}}\n' > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_prune_seeded_default_tab default w2M w2M:t1' "$ROOT"
+  expect_code 0 $? "seeded-tab prune should succeed with a session-prefixed pane id"
+  assert_contains "$(cat "$log")" $'\x1f''agent'$'\x1f''get'$'\x1f''w2M:p2' \
+    "seeded-tab prune passed a session-prefixed pane id to agent get"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''close'$'\x1f''w2M:p2' \
+    "seeded-tab prune passed a session-prefixed pane id to pane close"
+  pass "session-prefixed Herdr pane ids normalize for seeded-tab prune"
+}
+
 test_normalize_key() {
   ( . "$ROOT/bin/backends/herdr.sh"
     [ "$(fm_backend_herdr_normalize_key Enter)" = enter ] || exit 1
@@ -5462,6 +5479,7 @@ test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only
 test_parse_target
 test_session_prefixed_pane_ids_are_normalized_for_read_and_close
+test_session_prefixed_pane_ids_are_normalized_for_seeded_tab_prune
 test_normalize_key
 test_capture_calls_pane_read
 test_capture_works_around_small_lines_bug

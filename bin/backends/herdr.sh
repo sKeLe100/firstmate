@@ -3555,10 +3555,13 @@ fm_backend_herdr_wait_for_working() {  # <session> <pane_id> <budget-seconds> <p
 # of <session>, via one pane list call filtered by tab_id (never assumes a
 # tab-number/pane-number correspondence - herdr numbers them independently).
 fm_backend_herdr_pane_for_tab() {  # <session> <workspace_id> <tab_id>
-  local session=$1 wsid=$2 tab_id=$3 panes
+  local session=$1 wsid=$2 tab_id=$3 panes pane_id
   panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$wsid" 2>/dev/null) || return 1
-  printf '%s' "$panes" | jq -r --arg tab "$tab_id" \
+  pane_id=$(printf '%s' "$panes" | jq -r --arg tab "$tab_id" \
     '.result.panes[]? | select(.tab_id == $tab) | .pane_id' 2>/dev/null | head -1
+  )
+  [ -n "$pane_id" ] || return 0
+  fm_backend_herdr_normalize_pane_id "$session" "$pane_id"
 }
 
 # fm_backend_herdr_resolve_bare_selector: the live-tab-listing fallback for an
