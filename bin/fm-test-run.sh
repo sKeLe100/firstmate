@@ -1088,7 +1088,7 @@ tests/fm-wake-drain-open-decisions.test.sh 6240
 tests/fm-wake-drain-outcome-backstop.test.sh 59000
 tests/fm-wake-drain-unread-status.test.sh 35078
 tests/fm-wake-pair-dedup.test.sh 61865
-tests/fm-wake-queue.test.sh 56674
+tests/fm-wake-queue.test.sh 85704
 tests/fm-watch-arm.test.sh 69464
 tests/fm-watch-checkpoint.test.sh 5779
 tests/fm-watch-pc02-cadence.test.sh 17332
