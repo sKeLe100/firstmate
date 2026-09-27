@@ -146,7 +146,7 @@ The effective cap is that base reduced by the quota ladder read from
 `quota-axi --json` (schemaVersion 5) at dispatch intake, checked
 alongside the base cap rather than replacing it. `docs/configuration.md`
 owns the full ladder, including its percent-remaining floor and its
-elapsed-time-in-window dimension; `bin/fm-dispatch-quota-cap.sh` is its
+pace-based dimension; `bin/fm-dispatch-quota-cap.sh` is its
 executable owner - run it and read `effective_cap: <n>` rather than
 re-deriving the ladder by hand, since a restated threshold here can drift.
 It also prints `codex_spawn: yes|no` (no whenever Codex's weekly pace is
