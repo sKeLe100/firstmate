@@ -2300,8 +2300,10 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   pid=$!
   wait_for_exit "$pid" 100 || fail "watcher did not re-surface a declared pause past the threshold"
   grep -F "stale: $window" "$out" >/dev/null || fail "re-surface did not print a stale wake"
+  grep -F "awaiting external" "$out" >/dev/null \
+    || fail "re-surface did not retain the external-wait wording"
   grep -F "could not be read to confirm the captain hold" "$out" >/dev/null \
-    || fail "re-surface did not surface the unverified captain hold"
+    && fail "a declared pause was mislabeled as an unverified captain hold"
   grep -F "possible wedge" "$out" >/dev/null && fail "a declared pause was mislabeled a possible wedge"
   [ -e "$state/.paused-resurfaced-$key" ] || fail "the paused re-surface throttle marker was not recorded"
   [ ! -e "$state/.stale-since-$key" ] || fail "a paused re-surface must not use the wedge timer"
@@ -2385,8 +2387,8 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   wait_for_exit "$pid" 100 || fail "captain-held dead-agent pane did not re-surface on the bounded cadence"
-  grep -F "awaiting the captain" "$state/.wake-queue" >/dev/null \
-    || fail "captain-held dead-agent pane surfaced as a stopped crew instead of a captain-owned recheck: $(cat "$state/.wake-queue")"
+  grep -F "could not be read to confirm the captain hold" "$state/.wake-queue" >/dev/null \
+    || fail "captain-held dead-agent pane did not surface the unverified hold: $(cat "$state/.wake-queue")"
   grep -F "awaiting external" "$state/.wake-queue" >/dev/null \
     && fail "captain-held dead-agent pane borrowed the pause verb's external-wait wording"
 
@@ -3232,7 +3234,7 @@ test_paused_recheck_reads_the_backlog_captain_call() {
   for spec in \
     'paused-held|paused: holding for the upstream tool release|hold|held for the captain|awaiting external' \
     'paused-unheld|paused: holding for the upstream tool release|nohold|awaiting external|held for the captain' \
-    'paused-unreadable|paused: holding for the upstream tool release|unreadable|could not be read to confirm the captain hold|awaiting external' \
+    'paused-unreadable|paused: holding for the upstream tool release|unreadable|awaiting external|could not be read to confirm the captain hold' \
     'captain-held-released|captain-held [key=route]: tracked by held-merge|nohold|no longer holds this task for the captain|verified hold transfer' \
     'captain-held-norow|captain-held [key=route]: tracked by held-merge|norow|carries no row for this task|verified hold transfer' \
     'captain-held-unreadable|captain-held [key=route]: tracked by held-merge|unreadable|could not be read to confirm the captain hold|verified hold transfer'
@@ -3293,8 +3295,8 @@ test_paused_captain_recheck_reads_backlog_once_per_cadence() {
   chmod 600 "$dir/data/backlog.md"
   [ "$(grep -c "stale: test:fm-held-merge" "$out" || true)" = "$surfaced" ] \
     || fail "throttle: a second recheck surfaced inside the cadence: $(tail -3 "$out")"
-  grep -F "absorbed stale (paused, held for the captain" "$state/.watch-triage.log" 2>/dev/null \
-    | [ "$(wc -l)" -ge 2 ] \
+  absorbed=$(grep -F "absorbed stale (paused, held for the captain" "$state/.watch-triage.log" 2>/dev/null | wc -l)
+  [ "$absorbed" -ge 2 ] \
     || fail "throttle: the later sighting was not absorbed under the captain scope: $(cat "$state/.watch-triage.log" 2>/dev/null)"
   pass "a paused wait over a captain call reads the backlog once per recheck cadence"
 }
@@ -4383,8 +4385,10 @@ test_busy_declared_pause_is_rechecked_not_wedge_escalated() {
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   wait_for_exit "$pid" 100 || { reap "$pid"; fail "a declared pause past the long cadence was never rechecked"; }
+  grep -F "awaiting external" "$out" >/dev/null \
+    || fail "the recheck did not retain the external-wait wording: $(cat "$out")"
   grep -F "could not be read to confirm the captain hold" "$out" >/dev/null \
-    || fail "the recheck did not surface the unverified captain hold: $(cat "$out")"
+    && fail "a declared pause was mislabeled as an unverified captain hold: $(cat "$out")"
   grep -F "possible wedge" "$out" >/dev/null && fail "a declared pause on a busy pane was mislabeled a possible wedge: $(cat "$out")"
   [ -e "$state/.paused-resurfaced-$key" ] || fail "the declared-pause re-surface throttle was cleared by the busy-turn bound"
   [ ! -e "$state/.stale-since-$key" ] || fail "a declared-pause recheck used the wedge timer"

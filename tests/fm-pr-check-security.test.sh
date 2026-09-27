@@ -2494,8 +2494,10 @@ SH
   [ "$(cat "$dir/mv-lock.log" 2>/dev/null)" = held ] \
     || fail "rebind lock: the poll was published after the metadata lock was released: $(cat "$dir/mv-lock.log" 2>/dev/null)"
   [ ! -e "$state/.meta-task-a.lock" ] || fail "rebind lock: the metadata lock was left behind"
-  grep -qxF "pr=$url_b" "$state/task-a.meta" && grep -qxF "$url_b" "$state/task-a.pr-poll" \
-    || fail "rebind lock: metadata and poll were not both rebound"
+  grep -qxF "pr=$url_b" "$state/task-a.meta" \
+    || fail "rebind lock: metadata was not rebound"
+  grep -qxF "$url_b" "$state/task-a.pr-poll" \
+    || fail "rebind lock: poll was not rebound"
   pass "a rebind publishes its poll under the metadata lock, keeping pr= and the poll paired"
 }
 
