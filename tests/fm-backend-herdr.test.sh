@@ -1463,16 +1463,16 @@ test_create_task_creates_and_parses_ids() {
   local dir log resp fb out
   dir="$TMP_ROOT/create-task"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '{"result":{"tabs":[]}}\n' > "$resp/1.out"
-  printf '{"result":{"tab":{"tab_id":"w1:t2"},"root_pane":{"pane_id":"w1:p2"}}}\n' > "$resp/2.out"
+  printf '{"result":{"tab":{"tab_id":"w1:t2"},"root_pane":{"pane_id":"fmtest:w1:p2"}}}\n' > "$resp/2.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-newtask /tmp/proj' "$ROOT" )
-  [ "$out" = "w1:t2 w1:p2" ] || fail "create_task should echo '<tab_id> <pane_id>', got '$out'"
+  [ "$out" = "w1:t2 w1:p2" ] || fail "create_task should echo a session-local '<tab_id> <pane_id>', got '$out'"
   assert_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''create'$'\x1f''--workspace'$'\x1f''w1'$'\x1f''--cwd'$'\x1f''/tmp/proj'$'\x1f''--label'$'\x1f''fm-newtask' \
     "create_task did not call tab create with workspace/cwd/label"
   assert_not_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''close' \
     "create_task must never prune when called with no seeded default tab id (the 4th arg defaults to empty)"
-  pass "fm_backend_herdr_create_task: creates a tab and parses tab_id/pane_id from the JSON response, prunes nothing when no seeded tab id is given"
+  pass "fm_backend_herdr_create_task: normalizes response pane ids and prunes nothing without a seeded tab"
 }
 
 # --- container_ensure / create_task: --no-focus and per-home label ----------
@@ -1905,7 +1905,7 @@ test_projection_journal_v2_binds_and_advances_exact_endpoint() {
     home=$(fm_backend_herdr_projection_home_identity "$2") || exit 1
     label=$(fm_backend_herdr_projection_workspace_label fm-hibit-r1 "$token")
     fm_backend_herdr_projection_journal_bind \
-      "$journal" fm-hibit-r1 "$home" lab-session w2 w2:t2 w2:p2 w1 firstmate "$label" fm-fm-hibit-r1 || exit 1
+      "$journal" fm-hibit-r1 "$home" lab-session w2 w2:t2 lab-session:w2:p2 w1 firstmate "$label" fm-fm-hibit-r1 || exit 1
     fm_backend_herdr_projection_journal_snapshot "$journal" fm-hibit-r1 || exit 1
     printf "%s|%s|%s|%s|%s|%s|%s\n" \
       "$FM_BACKEND_HERDR_JOURNAL_VERSION" \
@@ -1916,7 +1916,7 @@ test_projection_journal_v2_binds_and_advances_exact_endpoint() {
       "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" \
       "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL"
     fm_backend_herdr_projection_journal_replace_endpoint \
-      "$journal" fm-hibit-r1 w2:t2 w2:p2 w2:t3 w2:p3 || exit 1
+      "$journal" fm-hibit-r1 w2:t2 lab-session:w2:p2 w2:t3 lab-session:w2:p3 || exit 1
     fm_backend_herdr_projection_journal_snapshot "$journal" fm-hibit-r1 || exit 1
     printf "%s|%s\n" "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" "$FM_BACKEND_HERDR_JOURNAL_PANE_ID"
   ' "$ROOT" "$state" "$home") || fail "version 2 projection journal binding failed"
@@ -1939,18 +1939,18 @@ test_projection_create_uses_exact_response_ids_and_leaves_one_task_pane() {
   local dir state log resp fb out token journal
   dir="$TMP_ROOT/projection-create"; state="$dir/state"; mkdir -p "$dir/responses" "$state"
   log="$dir/log"; resp="$dir/responses"; : > "$log"
-  printf '{"result":{"workspace":{"workspace_id":"w9"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"w9:p1"}}}\n' > "$resp/1.out"
-  printf '{"result":{"tab":{"tab_id":"w9:t2"},"root_pane":{"pane_id":"w9:p2"}}}\n' > "$resp/2.out"
+  printf '{"result":{"workspace":{"workspace_id":"w9"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"fmtest:w9:p1"}}}\n' > "$resp/1.out"
+  printf '{"result":{"tab":{"tab_id":"w9:t2"},"root_pane":{"pane_id":"fmtest:w9:p2"}}}\n' > "$resp/2.out"
   printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/3.out"
-  printf '{"result":{"panes":[{"pane_id":"w9:p1","tab_id":"w9:t1"},{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/4.out"
+  printf '{"result":{"panes":[{"pane_id":"fmtest:w9:p1","tab_id":"w9:t1"},{"pane_id":"fmtest:w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/4.out"
   printf '{"error":{"code":"agent_not_found"}}\n' > "$resp/5.out"
-  printf '{"result":{"pane":{"pane_id":"w9:p1","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/6.out"
+  printf '{"result":{"pane":{"pane_id":"fmtest:w9:p1","tab_id":"w9:t1","workspace_id":"w9"}}}\n' > "$resp/6.out"
   # The emptying-close plan's tab list proves the seeded prune is NOT
   # workspace-emptying (the task tab remains), so the close stays plain.
   printf '{"result":{"tabs":[{"tab_id":"w9:t1","label":"1","workspace_id":"w9"},{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/7.out"
   printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/9.out"
   printf '{"result":{"tabs":[{"tab_id":"w9:t2","label":"fm-task-p2","workspace_id":"w9"}]}}\n' > "$resp/10.out"
-  printf '{"result":{"panes":[{"pane_id":"w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/11.out"
+  printf '{"result":{"panes":[{"pane_id":"fmtest:w9:p2","tab_id":"w9:t2"}]}}\n' > "$resp/11.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
     bash -c '
@@ -1979,7 +1979,7 @@ test_projection_create_uses_exact_response_ids_and_leaves_one_task_pane() {
     "projection create did not prune the exact seeded root pane"
   assert_not_contains "$(cat "$log")" $'workspace\x1fclose' \
     "projection create must never call workspace close"
-  pass "herdr presentation create: exact response IDs yield one normal task pane with no workspace-close authority"
+  pass "herdr presentation create: session-prefixed response pane ids normalize with no workspace-close authority"
 }
 
 test_projection_create_never_closes_a_concurrent_same_label_tab() {
@@ -3571,7 +3571,7 @@ test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
     bash -c '
       . "$0/bin/backends/herdr.sh"
       fm_backend_herdr_projection_reclaim_task \
-        fmtest "$1" fm-hibit-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-fm-hibit-r1 /tmp/project || exit 1
+        fmtest "$1" fm-hibit-r1 "$2" w2 w2:t2 fmtest:w2:p2 firstmate fm-fm-hibit-r1 /tmp/project || exit 1
       printf "%s %s" "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" "$FM_BACKEND_HERDR_PROJECTION_PANE_ID"
     ' "$ROOT" "$journal" "$home") || fail "exact agent-free projection reclaim failed"
   [ "$out" = "w2:t3 w2:p3" ] || fail "reclaim did not return exact replacement ids: $out"
@@ -3687,6 +3687,43 @@ test_parse_target() {
     [ "$FM_BACKEND_HERDR_PANE" = "w1:p2" ] || { echo "pane mismatch: $FM_BACKEND_HERDR_PANE" >&2; exit 1; }
   ) || fail "fm_backend_herdr_parse_target did not split session:pane on the first colon only"
   pass "fm_backend_herdr_parse_target: splits '<session>:<pane_id>' on the FIRST colon (pane_id itself contains one)"
+}
+
+test_session_prefixed_pane_ids_are_normalized_for_read_and_close() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/session-prefixed-pane"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf 'idle composer\n' > "$resp/1.out"
+  : > "$resp/2.out"
+  printf '{"error":{"code":"pane_not_found"}}\n' > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_capture default:default:w2M:p2 200' "$ROOT" )
+  [ "$out" = 'idle composer' ] || fail "session-prefixed pane target did not read through the bare pane id, got '$out'"
+  PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_explicit_close_pane_confirmed default default:w2M:p2' "$ROOT"
+  expect_code 0 $? "session-prefixed pane id should close after normalization"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''read'$'\x1f''w2M:p2' \
+    "pane read passed a session-prefixed pane id to Herdr"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''close'$'\x1f''w2M:p2' \
+    "pane close passed a session-prefixed pane id to Herdr"
+  pass "session-prefixed Herdr pane ids normalize for pane read and close"
+}
+
+test_session_prefixed_pane_ids_are_normalized_for_seeded_tab_prune() {
+  local dir log resp fb
+  dir="$TMP_ROOT/session-prefixed-prune"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tabs":[{"tab_id":"w2M:t1","label":"1"},{"tab_id":"w2M:t2","label":"fm-task"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"panes":[{"pane_id":"default:w2M:p2","tab_id":"w2M:t1"}]}}\n' > "$resp/2.out"
+  printf '{"error":{"code":"agent_not_found"}}\n' > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_prune_seeded_default_tab default w2M w2M:t1' "$ROOT"
+  expect_code 0 $? "seeded-tab prune should succeed with a session-prefixed pane id"
+  assert_contains "$(cat "$log")" $'\x1f''agent'$'\x1f''get'$'\x1f''w2M:p2' \
+    "seeded-tab prune passed a session-prefixed pane id to agent get"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''close'$'\x1f''w2M:p2' \
+    "seeded-tab prune passed a session-prefixed pane id to pane close"
+  pass "session-prefixed Herdr pane ids normalize for seeded-tab prune"
 }
 
 test_normalize_key() {
@@ -5441,6 +5478,8 @@ test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk
 test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only
 test_parse_target
+test_session_prefixed_pane_ids_are_normalized_for_read_and_close
+test_session_prefixed_pane_ids_are_normalized_for_seeded_tab_prune
 test_normalize_key
 test_capture_calls_pane_read
 test_capture_works_around_small_lines_bug

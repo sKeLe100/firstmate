@@ -239,6 +239,7 @@ herdr_pane_id=<pane-id>
 ```
 
 A Herdr pane id contains a colon, so the adapter splits `window=` on the first colon only.
+Herdr may echo a session-prefixed pane id such as `default:w2M:p2`; because the session is already supplied separately, the adapter strips that matching prefix before every pane-scoped read, send, or close operation.
 The recorded pane is the operational fast path.
 Workspace and tab ids support verification and cleanup but are not inferred from mutable labels during normal operation.
 
