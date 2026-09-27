@@ -1708,6 +1708,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
     HERDR_WORKSPACE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_workspace_id)
     HERDR_TAB_ID=$(fm_meta_get "$RELAUNCH_META" herdr_tab_id)
     HERDR_PANE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_pane_id)
+    HERDR_PANE_ID=$(fm_backend_herdr_normalize_pane_id "$HERDR_SES" "$HERDR_PANE_ID") || {
+      echo "error: task $ID has an invalid recorded Herdr pane; refusing to relaunch" >&2
+      exit 1
+    }
   fi
   # With no explicit harness, a relaunch reuses the harness already recorded
   # for this task. It must NOT fall through to the fresh-spawn config
@@ -3145,6 +3149,10 @@ herdr_projection_existing_meta_allows_flat() { # <meta>
     }
     old_pane=$(herdr_projection_meta_field_exact "$meta" herdr_pane_id) || {
       echo "error: existing herdr metadata for $ID has an ambiguous pane; refusing duplicate launch" >&2
+      return 1
+    }
+    old_pane=$(fm_backend_herdr_normalize_pane_id "$old_session" "$old_pane") || {
+      echo "error: existing herdr metadata for $ID has an invalid pane; refusing duplicate launch" >&2
       return 1
     }
     [ "$target_session" = "$old_session" ] && [ "$target_pane" = "$old_pane" ] || {
