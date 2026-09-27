@@ -1,0 +1,5 @@
+session=fm-lab-prefixed-live-2071633
+pane=w1:p2
+prefixed_input=fm-lab-prefixed-live-2071633:w1:p2
+readback_nonempty=yes
+close_result=PASS normalized prefixed pane id closed and was confirmed absent
