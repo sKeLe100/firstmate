@@ -1245,6 +1245,8 @@ test_no_run_idle_pane_paused_split() {
   out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=restart run_crew_state "$d" feat-psplit)
   assert_contains "$out" "state: paused" "keyed session-limit pause stays self-clearing even at restart band"
   pass "paused: splits into self-clearing (session-limit key or ok band) and blocked (exhausted band)"
+}
+
 test_secondmate_open_block_survives_unrelated_append() {
   reset_fakes
   local d out suffix gen
