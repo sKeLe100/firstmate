@@ -471,7 +471,9 @@ jobs:
   # bin/fm-lint.sh --list-files, plus the fm-fleet-snapshot-view.test.sh
   # smoke run, plus the fm-bearings-snapshot.test.sh smoke run, plus upstream's
   # later FM_TEST_ONLY=test_first_register_succeeds_with_empty_lock_list_under_bash32
-  # tests/fm-public-followup.test.sh regression) if Apple hardware or a hosted
+  # tests/fm-public-followup.test.sh regression, plus
+  # FM_TEST_ONLY=test_turn_ended_churn_existing_marker_absorbed
+  # tests/fm-watch-triage.test.sh) if Apple hardware or a hosted
   # macOS runner becomes available.
 
   invariants:
