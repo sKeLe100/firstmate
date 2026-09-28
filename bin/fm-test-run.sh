@@ -916,7 +916,7 @@ tests/fm-calm-claude-mod.test.sh 1252
 tests/fm-calm-pi-extension.test.sh 79000
 tests/fm-captain-window.test.sh 354
 tests/fm-check-unregister.test.sh 481
-tests/fm-ci-workflow.test.sh 2261
+tests/fm-ci-workflow.test.sh 4357
 tests/fm-claim-check.test.sh 360
 tests/fm-classify-corr-token.test.sh 49294
 tests/fm-classify-decision-key.test.sh 3336
