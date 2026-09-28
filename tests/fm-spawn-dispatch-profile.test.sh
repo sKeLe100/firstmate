@@ -523,7 +523,7 @@ test_codex_crewmate_launch_disables_the_hook_layer() {
   rec=$(make_spawn_case profile-codex-hooks codex "$id")
   read_case_record "$rec"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5 --effort high)
   status=$?
   expect_code 0 "$status" "codex crewmate spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
@@ -548,7 +548,7 @@ test_codex_secondmate_launch_keeps_the_hook_layer() {
   sm="$CASE_DIR/secondmate-home"
   make_seeded_secondmate_home "$sm" "$id"
 
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate --model gpt-5 --effort high)
   status=$?
   expect_code 0 "$status" "codex secondmate spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
