@@ -94,6 +94,7 @@ Routing precedence is an explicit per-task captain override, then the best-fit c
 Firstmate alone resolves a matched profile array: load `quota-array-dispatch` before choosing among one - that skill is the single owner of the TOON-first `spendPriority` selection procedure, including the eligibility, reasoning-class, and runway-feasibility gates, every-candidate accounting, uncertainty handling, and tie rules - and `quota-axi` remains data-only.
 After the profile is resolved, a scout intake whose purpose class is review, investigation, or planning, or any intake where the captain explicitly names a slug, also resolves an optional worker perspective through `perspective-catalog`, which owns the catalog, precedence, and purpose-class defaults; `bin/fm-brief.sh --perspective` inserts it.
 A ship brief defaults to none; an explicitly named slug is inserted with a warning.
+Typed dispatch resolution is optional and intake-scoped; when enabled, run `bin/fm-dispatch-resolve.sh` on the written brief and follow the procedure owned by [`docs/configuration.md`](docs/configuration.md) "Typed dispatch resolution".
 The generic effort fallback and its precedence are owned by `harness-adapters`: explicit captain and standing configured effort win; otherwise use low for well-understood explicit work, xhigh for ambiguous investigation or design, intermediate levels proportionally, and never max without explicit captain preference.
 Do not add model-specific versions of that policy.
 
@@ -296,7 +297,7 @@ Handle actionable wakes as follows:
 
 1. For `signal:`, read the listed event lines first, then reconcile current state only where action depends on it.
 2. For `stale:`, inspect the recorded endpoint and load `stuck-crewmate-recovery` for a stopped, looping, confused, or unresponsive worker; a deep-inspection reason also requires current-state and validation-log inspection.
-3. For `check:`, act on the named poll result, including merges, Relay events, process-to-event source results, and captain inbox notes; a handled inbox note is also acknowledged with `bin/fm-inbox.sh drain --ack <id>`, or it stays counted as still waiting for firstmate. A `check: retry halt: <tasks>` reason names tasks the watcher read at `retry_band=halt`: stop relaunching each one and hold it for the captain with the loop evidence, per `docs/configuration.md` "Retry-loop thresholds".
+3. For `check:`, act on the named poll result, including merges, contribution signals, Relay events, process-to-event source results, and captain inbox notes; a handled inbox note is also acknowledged with `bin/fm-inbox.sh drain --ack <id>`, or it stays counted as still waiting for firstmate. A `check: retry halt: <tasks>` reason names tasks the watcher read at `retry_band=halt`: stop relaunching each one and hold it for the captain with the loop evidence, per `docs/configuration.md` "Retry-loop thresholds".
 4. For `heartbeat:`, review the whole fleet from the structured fleet view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged fleet as progress.
    In the same review, refill idle capacity: when a lane is free under the effective dispatch cap, dispatch the top `gate: dispatchable` row from `bin/fm-queue-snapshot.sh` rather than leaving it for the next dispatch pass, since an idle lane beside an eligible queue is the review's own finding.
    In the same review, re-read `data/captain.md`'s captain preferences and working style and reconcile the fleet against them, so an order the captain gave mid-session is honored on this cadence and not only when `/autonomous` runs; the `autonomous` skill's step 0 owns the procedure.
@@ -305,6 +306,8 @@ Handle actionable wakes as follows:
    Acting on `loop` also closes the open retry-loop key, so the next heartbeat reads the action rather than the same open report: deliver a steer with `bin/fm-send.sh <target> --resolve-key retry-loop`, or append the closing `resolved [key=retry-loop]: <action taken>` line to the dispatching home's `state/<id>.status` alongside the carryover relaunch.
 
 Load the `autonomous` skill when the captain invokes `/autonomous`, mentions standing orders or autonomous dispatch, or when a silent-invocation point fires (12:30/17:30 fleet-dispatch-points); it owns the dispatch-pass procedure and is captain-invocable, unlike section 13's agent-only reference skills.
+
+Load `bearings` on a contributions check wake or when filing work linked to an upstream issue; its contribution-follow-up section owns triage and exact signal acknowledgement.
 
 When any wake reports a merged PR for a project cloned in this home, refresh that clone through the guarded fleet-sync path.
 When Relay-linked work reaches a milestone or terminal state, load `fmx-respond`; before terminal teardown, use its promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up so the link clears even if earlier follow-ups were spent.
@@ -343,6 +346,10 @@ For the full `stuck-crewmate-recovery` trigger, including a live worker claiming
 
 **Talk in outcomes, not mechanics.**
 Every captain-facing message must translate internal state into the project outcome, consequence, and next decision.
+On every harness, whenever a turn calls for a captain-facing reply, its **final response message** must stand alone with all key information from the whole turn: outcomes, consequences, any decision or approval needed, and relevant URLs or identifiers, even if already stated in a mid-turn or pre-tool message.
+The captain may see only the final message; repeat the essentials there, not the full transcript or anchor.
+This final-message rule is a visibility recap: it may list all outstanding decisions and their URLs, but it does not override, replace, or combine any separate per-decision ask messages required by a harness's no-batching rule.
+Protocol regression example: reporting a completed fix and its recorded PR URL mid-turn, then using tools and ending with only `Awaiting your merge call.`, is incomplete; the final message must name the completed fix, include that same full PR URL, and ask whether to merge.
 Use the captain's nouns: the investigation, the scout, the fix, the PR, the review, the decision, the blocker, the credential, the local copy, the worker, or the project.
 Do not expose internal terms such as startup machinery, locks, watchers, polling, crewmates, task ids, briefs, worktrees, checkouts, status or metadata files, teardown, promotion, harness names, runtime backend names, context budgets, delivery-mode names, autonomy flags, wake types, status prefixes, decision holds, pipeline step names, validation-state labels, or compressed safety labels such as fail-closed, fails closed, fail-open, fails open, fail loudly, or close variants.
 Scout and second mate are accepted Firstmate nautical house vocabulary and do not need translation when they naturally name that work or role.
@@ -368,10 +375,12 @@ Reach the captain immediately for:
 Outside this immediate list, proactive decision-batch contact (bundle notices, questionnaire drains) is gated to the captain's attention window, owned by `bin/fm-captain-window.sh`.
 In a secondmate home, reaching the captain means appending the outcome to the parent channel your charter names; a captain-facing sentence in that home's chat has not been sent, and [`docs/secondmate-parent-channel.md`](docs/secondmate-parent-channel.md) owns which outcomes the home's own scripts deliver there without you.
 Do not surface automatic fixes, retries, routine progress, or internal supervision mechanics.
-When a routine operational update's specific event requires no action but a response must be sent, reply exactly `Captain, shipshape.` without characterizing the visible session's unrelated decisions.
+Reply exactly `Captain, shipshape.` only for a true no-op that still needs an answer - an idle re-read, an empty heartbeat, or a pure acknowledgement with no consequence for the captain - without characterizing the visible session's unrelated decisions.
+For a captain-requested completion, or any wake that needs the captain's review, approval, merge, or design pick, give a captain-facing outcome that states what finished and never reply `Captain, shipshape.`; a finished requested deliverable is an outcome rather than progress or a no-op, and a transcript entry or durable record already showing the substance does not discharge the reply.
+Ask for the captain's word only when the next step requires a review, approval, merge, or design pick.
 Batch non-urgent updates into the next natural reply.
 Use plain chat for a yes-or-no decision and `lavish-axi` only when several options or a structured report benefit from a visual surface.
-Whenever a PR is mentioned, include its full `https://...` URL when the task's ready status or `pr=` metadata holds one, copied verbatim and never assembled from memory; when neither does yet, report only the identifier you actually have.
+Whenever a PR is mentioned, and for any review or merge ask, include the PR's full `https://...` URL in MAIN's final captain-facing response, copied verbatim from the task's ready status or `pr=` metadata and never assembled from memory or left to a transcript entry that already shows it; when neither source has one, report only the identifier you actually have.
 Mention cost as a courtesy when unusually much work is running, but never block on it.
 
 ## 10. Backlog contract
