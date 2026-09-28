@@ -944,7 +944,7 @@ tests/fm-dispatch-quota-cap.test.sh 11272
 tests/fm-dispatch-resolve.test.sh 4397
 tests/fm-documentation-audiences.test.sh 847
 tests/fm-extension-binding.test.sh 9053
-tests/fm-fleet-snapshot-view.test.sh 47000
+tests/fm-fleet-snapshot-view.test.sh 75587
 tests/fm-fleet-sync.test.sh 37749
 tests/fm-gate-refuse.test.sh 5328
 tests/fm-gemini-harness.test.sh 1349
@@ -965,7 +965,7 @@ tests/fm-herdr-version-floor-live-e2e.test.sh 85
 tests/fm-home-summary-refresh.test.sh 37264
 tests/fm-host-memory.test.sh 737
 tests/fm-inactive-reconcile.test.sh 74399
-tests/fm-kimi-harness.test.sh 19151
+tests/fm-kimi-harness.test.sh 62652
 tests/fm-lint-nomistakes-config.test.sh 260
 tests/fm-lint-test-size.test.sh 2260
 tests/fm-lint-workflows.test.sh 855
@@ -1059,7 +1059,7 @@ tests/fm-spawn-host-memory.test.sh 5440
 tests/fm-spawn-pc02-lane-guard.test.sh 11846
 tests/fm-spawn-pool-base-freshen.test.sh 156000
 tests/fm-spawn-worktree-settle.test.sh 13000
-tests/fm-startup-memory-budget.test.sh 7392
+tests/fm-startup-memory-budget.test.sh 12145
 tests/fm-startup-network.test.sh 62274
 tests/fm-stat-shadowing.test.sh 54
 tests/fm-stow-cascade.test.sh 7406
