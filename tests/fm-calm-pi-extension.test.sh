@@ -3322,7 +3322,7 @@ test_find_chrome_playwright_cache() {
   mkdir -p "$(dirname "$fake_chrome")"
   printf '#!/bin/sh\nexit 0\n' >"$fake_chrome"
   chmod +x "$fake_chrome"
-  found=$(HOME="$fake_home" PATH="/nonexistent" find_chrome) \
+  found=$(unset FM_CHROME_BIN; HOME="$fake_home" PATH="/nonexistent" find_chrome) \
     || fail "find_chrome did not discover the Playwright-installed chrome-headless-shell"
   [ "$found" = "$fake_chrome" ] \
     || fail "find_chrome returned $found instead of the Playwright chrome-headless-shell"
