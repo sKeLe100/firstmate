@@ -949,6 +949,7 @@ fm_rearm_resurface_decide() {
   if [ "$count" -eq $((limit + 1)) ]; then
     FM_REARM_RESURFACE_REASON="check: rearm-resurface stalled - the same queued wake resurfaced $limit times with no drain or acknowledgement; automatic resurfacing is paused until the queue changes, a drain succeeds, or the session restarts. If bin/fm-wake-drain.sh cannot run, report that blocker to the captain once instead of retrying."
   elif [ "$count" -gt $((limit + 1)) ]; then
+    # shellcheck disable=SC2034 # Read by callers after the function returns.
     FM_REARM_RESURFACE_REASON=
   fi
 }

@@ -638,8 +638,6 @@ else
   printf 'wake drain: queue lock could not be acquired safely\n' >&2
   exit 1
 fi
-# A drain that reached the queue is progress for the resurface bound.
-fm_rearm_resurface_reset
 DRAIN_LOCK_HELD=true
 reclaim_stale_branch_grant_locked || exit 1
 [ "$ACTOR" != main ] || retire_unconsumable_rows_locked
@@ -759,6 +757,7 @@ if [ -n "$ACK_THROUGH" ]; then
     printf 'wake drain: acknowledged wakes through %s (%s row(s) consumed), but a newer recovery episode is pending; re-run bin/fm-wake-drain.sh and use the new WAKE_ACK_REQUIRED command\n' \
       "$ACK_THROUGH" "$ACK_REMOVED" >&2
   fi
+  fm_rearm_resurface_reset
   exit 0
 fi
 
@@ -784,6 +783,7 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
     printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation %s\n' "${RECOVERY_MARKER_TOKEN##*:}" >&2
   fi
   assert_watcher_liveness
+  fm_rearm_resurface_reset
   exit 0
 fi
 
@@ -802,6 +802,7 @@ if [ "$ACTOR" = main ]; then
     DRAIN_LOCK_HELD=false
     (print_status_presentation) || true
     assert_watcher_liveness
+    fm_rearm_resurface_reset
     exit 0
   fi
 fi
@@ -864,4 +865,5 @@ printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --a
 
 (print_status_presentation "$RAW_ROWS") || true
 assert_watcher_liveness
+fm_rearm_resurface_reset
 exit 0
