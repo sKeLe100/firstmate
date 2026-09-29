@@ -377,8 +377,8 @@ test_remote_reply_in_transit_resolves_without_escalation() {
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] \
     || fail "an in-transit reply pulled in by the forced poll should resolve the record"
-  if grep -Fq "blocked [key=pending-reply-$corr]:" "$state/hibit.status"; then
-    status_line=$(grep -F "blocked [key=pending-reply-$corr]:" "$state/hibit.status")
+  if grep -Fq "blocked [key=pending-reply-$corr]" "$state/hibit.status"; then
+    status_line=$(grep -F "blocked [key=pending-reply-$corr]" "$state/hibit.status")
     fail "an in-transit reply must not trigger a repost demand"$'\n'"$status_line"
   fi
   pass "a remote reply still in ingest transit resolves locally instead of escalating"
@@ -430,8 +430,8 @@ test_primed_scan_signature_cannot_mask_forced_ingest() {
     || fail "an ingest append must change the parent status signature"
   [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] \
     || fail "a primed scan signature must not stop the post-ingest re-scan from resolving"
-  if grep -Fq "blocked [key=pending-reply-$corr]:" "$state/hibit.status"; then
-    status_line=$(grep -F "blocked [key=pending-reply-$corr]:" "$state/hibit.status")
+  if grep -Fq "blocked [key=pending-reply-$corr]" "$state/hibit.status"; then
+    status_line=$(grep -F "blocked [key=pending-reply-$corr]" "$state/hibit.status")
     fail "a cached scan signature must not turn an ingested reply into a repost demand"$'\n'"$status_line"
   fi
   pass "a primed scan signature cannot mask a reply the forced ingest just landed"
@@ -469,7 +469,7 @@ test_remote_genuinely_missing_reply_still_escalates() {
     || fail "a genuinely missing reply must still escalate after the forced poll finds nothing"
   status_line=$(tail -1 "$state/hibit.status")
   case "$status_line" in
-    "blocked [key=pending-reply-$corr]:"*pending-reply-missed*) : ;;
+    "blocked [key=pending-reply-$corr]"*pending-reply-missed*) : ;;
     *) fail "genuinely missing reply should still publish one blocked line"$'\n'"$status_line" ;;
   esac
   pass "a genuinely missing remote reply still escalates after the forced poll finds nothing"
