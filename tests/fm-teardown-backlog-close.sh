@@ -522,7 +522,7 @@ test_body_line_deduplication_treats_globs_literally() {
   copy="$case_dir/a*b"
   other="$case_dir/axb"
   mkdir -p "$copy"
-  line="Retained local copy: $copy"
+  want="Retained local copy: $copy"
   out=$(
     # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
     . "$ROOT/bin/fm-tasks-axi-lib.sh"
@@ -534,7 +534,7 @@ test_body_line_deduplication_treats_globs_literally() {
       || { echo "park: $FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
   ) || fail "body-line-literal: park failed: $out"
   show=$(tasks-axi show task-x1 --full --file "$case_dir/data/backlog.md")
-  count=$(printf '%s\n' "$show" | grep -F -o "$line" | wc -l | tr -d ' ')
+  count=$(printf '%s\n' "$show" | grep -F -o "$want" | wc -l | tr -d ' ')
   [ "$count" -eq 1 ] \
     || fail "body-line-literal: wildcard path was treated as a pattern and omitted from the body: $show"
   pass "body-line deduplication compares wildcard paths literally"
