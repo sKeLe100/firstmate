@@ -19,13 +19,13 @@ mk_home() {  # <name>
   printf '%s' "$h"
 }
 
-# quota_doc <name> <five_pct> <hours-until-reset> <week-status> <week-burn> <codex-status>
+# quota_doc <name> <five_pct> <hours-until-reset> <week-status> <week-burn> <codex-status> [<five-status> <five-burn>]
 quota_doc() {
   local f="$TMP_ROOT/$1.json"
-  python3 - "$f" "$2" "$3" "$4" "$5" "$6" <<'PY'
+  python3 - "$f" "$2" "$3" "$4" "$5" "$6" "${7:-behind}" "${8:-0.5}" <<'PY'
 import json, sys
 from datetime import datetime, timedelta, timezone
-f, five_pct, hours, wstatus, wburn, cstatus = sys.argv[1:]
+f, five_pct, hours, wstatus, wburn, cstatus, fstatus, fburn = sys.argv[1:]
 gen = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
 resets = gen + timedelta(hours=float(hours))
 doc = {
@@ -35,7 +35,7 @@ doc = {
         {"provider": "claude", "windows": [
             {"id": "five_hour", "kind": "session", "resetsAt": resets.isoformat(),
              "percentRemaining": float(five_pct),
-             "pace": {"status": "behind", "burnMultiple": 0.5}},
+             "pace": {"status": fstatus, "burnMultiple": float(fburn)}},
             {"id": "seven_day", "kind": "weekly", "percentRemaining": 80,
              "pace": {"status": wstatus, "burnMultiple": float(wburn)}},
         ]},
@@ -65,21 +65,37 @@ assert_contains "$out" "codex_spawn: yes" "Codex behind pace may spawn, got: $ou
 out=$(run_cap "$home" "$(quota_doc low5h 20 4 behind 0.8 behind)") || fail "low five-hour quota must succeed"
 assert_contains "$out" "effective_cap: 2" "five_hour < 25% lowers the cap to 2, got: $out"
 
-# 3. Weekly pace ahead with burnMultiple > 1.5: base 3 becomes 2.
+# 3. Weekly pace ahead with burnMultiple > 1.5: base 3 becomes 1.
 out=$(run_cap "$home" "$(quota_doc ahead 80 4 ahead 2.4 behind)") || fail "ahead-of-pace quota must succeed"
-assert_contains "$out" "effective_cap: 2" "seven_day ahead with burn > 1.5 lowers the cap to 2, got: $out"
+assert_contains "$out" "effective_cap: 1" "seven_day ahead with burn > 1.5 lowers the cap to 1, got: $out"
 
-# 3b. Weekly ahead but burnMultiple at or under 1.5 does not trip that row.
-out=$(run_cap "$home" "$(quota_doc mild 80 4 ahead 1.2 behind)") || fail "mildly-ahead quota must succeed"
-assert_contains "$out" "effective_cap: 3" "seven_day ahead with burn <= 1.5 leaves the cap at 3, got: $out"
+# 3b. Weekly ahead but burnMultiple at or under 1.15 does not trip a pace row.
+out=$(run_cap "$home" "$(quota_doc mild 80 4 ahead 1.1 behind)") || fail "mildly-ahead quota must succeed"
+assert_contains "$out" "effective_cap: 3" "seven_day ahead with burn <= 1.15 leaves the cap at 3, got: $out"
 
 # 4. five_hour at or under 15% remaining: base 3 becomes 1.
 out=$(run_cap "$home" "$(quota_doc floor 15 4 behind 0.8 behind)") || fail "floor quota must succeed"
 assert_contains "$out" "effective_cap: 1" "five_hour <= 15% lowers the cap to 1, got: $out"
 
-# 5. Past the 2.5-hour mark of the window (less than 2.5h to reset): ceiling 2.
+# 5. Late in the window with spend on pace: no throttle, usage rides out the window.
 out=$(run_cap "$home" "$(quota_doc late 80 2 behind 0.8 behind)") || fail "late-window quota must succeed"
-assert_contains "$out" "effective_cap: 2" "under 2.5h until resetsAt caps at 2, got: $out"
+assert_contains "$out" "effective_cap: 3" "an on-pace late window keeps the base cap, got: $out"
+
+# 5b. five_hour pace ahead past its first 30 minutes: > 1.15 caps at 2, > 1.5 at 1.
+out=$(run_cap "$home" "$(quota_doc five-warm 80 3 behind 0.8 behind ahead 1.3)") || fail "five-warm quota must succeed"
+assert_contains "$out" "effective_cap: 2" "five_hour burn 1.3 caps at 2, got: $out"
+assert_contains "$out" "claude_pace: 1.30" "the pace line reports the burn used, got: $out"
+out=$(run_cap "$home" "$(quota_doc five-hot 80 3 behind 0.8 behind ahead 1.8)") || fail "five-hot quota must succeed"
+assert_contains "$out" "effective_cap: 1" "five_hour burn 1.8 caps at 1, got: $out"
+
+# 5c. five_hour pace inside the first 30 minutes is ignored as early noise.
+out=$(run_cap "$home" "$(quota_doc five-early 80 4.75 behind 0.8 behind ahead 3.0)") || fail "five-early quota must succeed"
+assert_contains "$out" "effective_cap: 3" "early-window five_hour pace is ignored, got: $out"
+assert_contains "$out" "claude_pace: 0.00" "no pace row applied, got: $out"
+
+# 5d. Weekly pace ahead between 1.15 and 1.5 caps at 2.
+out=$(run_cap "$home" "$(quota_doc week-warm 80 4 ahead 1.3 behind)") || fail "week-warm quota must succeed"
+assert_contains "$out" "effective_cap: 2" "seven_day burn 1.3 caps at 2, got: $out"
 
 # 6. Codex weekly pace ahead yields no Codex spawn, independent of the Claude cap.
 out=$(run_cap "$home" "$(quota_doc codex-ahead 80 4 behind 0.8 ahead)") || fail "codex-ahead quota must succeed"

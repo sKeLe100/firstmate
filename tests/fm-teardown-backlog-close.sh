@@ -392,7 +392,7 @@ test_park_replay_keeps_the_record_when_the_row_is_closed_or_missing() {
     write_meta "$case_dir" no-mistakes ship
     seed_backlog_in_flight "$case_dir"
     if [ "$variant" = closed ]; then
-      tasks-axi done "task-x1" --file "$case_dir/data/backlog.md" >/dev/null \
+      tasks-axi "done" "task-x1" --file "$case_dir/data/backlog.md" >/dev/null \
         || fail "park-replay-$variant: fixture could not close the item"
     else
       printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' \

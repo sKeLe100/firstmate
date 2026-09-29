@@ -20,12 +20,12 @@
     },
     {
       "when": "The task is a read-only review of a diff, PR, or authority record that someone else produced.",
-      "use": { "harness": "opencode", "model": "gpt-5.5", "effort": "high", "perspective": "independent-reviewer" },
+      "use": { "harness": "opencode", "model": "gpt-5.5", "provider": "codex", "perspective": "independent-reviewer" },
       "why": "Review work gets the independent-reviewer perspective so the reviewer recounts claims instead of confirming them."
     }
   ],
   "default": [
     { "harness": "codex", "model": "gpt-5.5", "effort": "medium" },
-    { "harness": "pi", "model": "anthropic/claude-sonnet-5", "effort": "medium" }
+    { "harness": "pi", "model": "anthropic/claude-sonnet-5", "effort": "medium", "provider": "claude" }
   ]
 }

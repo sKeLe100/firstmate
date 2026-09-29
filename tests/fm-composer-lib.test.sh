@@ -541,6 +541,12 @@ test_matrix_opencode_leftbar_signals() {
   assert_screen "opencode 1.18.30 idle at 30 cols (squeezed column-wrapped footer), tmux" empty "$CAPS_TMUX" "$live30" ''
   assert_screen "opencode 1.18.30 idle at 30 cols (squeezed column-wrapped footer), herdr" empty "$CAPS_STYLED" "$live30"
   assert_screen "opencode 1.18.30 idle at 30 cols (squeezed column-wrapped footer), plain" empty "$CAPS_PLAIN" "$live30"
+  # OpenCode 1.18.32 places its own keyboard-shortcut chrome directly below
+  # the composer floor, with no separating blank row. That chrome must not
+  # make a provably idle composer look stale or block lifecycle controls.
+  local chrome
+  chrome=$'  ┃\n  ┃  Ask anything… "Fix broken tests"\n  ┃\n  ┃  Build · GPT OSS 120B Groq\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n                              tab agents  ctrl+p commands'
+  assert_screen "opencode idle with shortcut chrome immediately below" empty "$CAPS_STYLED" "$chrome"
   live30_typed=$'  ┃\n  ┃  hello there\n  ┃\n  ┃  Buil ·GPT OSS 120B G\n  ┃  d                  r\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
   assert_screen "opencode 1.18.30 typed text at 30 cols stays pending, herdr" pending "$CAPS_STYLED" "$live30_typed"
   pass "matrix: opencode's left-bar composer reads empty everywhere and scans the full active run"

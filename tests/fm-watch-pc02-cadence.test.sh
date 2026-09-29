@@ -28,6 +28,8 @@ fm_wake_append() { printf '%s|%s|%s\n' "$1" "$2" "$3" >> "$WAKES_LOG"; }
 wake() { :; }
 triage_log() { :; }
 crew_worktree_written_since() { return 1; }
+# The dead-record probe reads a live backend; these lanes have a live agent.
+wedge_dead_record() { return 1; }
 
 write_meta() {  # <task> <harness> <model>
   printf 'window=firstmate:fm-%s\nharness=%s\nkind=ship\nmodel=%s\n' "$1" "$2" "$3" \
@@ -66,7 +68,7 @@ test_fresh_step_survives_other_sessions_log_traffic() {
       "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" "$i" >> "$FM_OPENCODE_LOG"
     i=$(( i + 1 ))
   done
-  wedge_timer_check win8 "$since_file" test "$esc_file" pc02-task
+  wedge_timer_check win8 "$since_file" test "$esc_file" pc02-task hash
   [ ! -s "$WAKES_LOG" ] \
     || fail "a fresh step buried under other sessions' log traffic must still absorb: $(cat "$WAKES_LOG")"
   pass "the liveness read reaches this task's step line under a busy shared log"
@@ -130,7 +132,7 @@ test_idle_floor_holds_escalation_below_600s() {
   since_file="$STATE/.stale-since-x1"
   esc_file="$STATE/.wedge-escalations-x1"
   echo "$(( $(date +%s) - 300 ))" > "$since_file"
-  wedge_timer_check win1 "$since_file" test "$esc_file" pc02-task
+  wedge_timer_check win1 "$since_file" test "$esc_file" pc02-task hash
   [ ! -s "$WAKES_LOG" ] || fail "300s idle must stay under the 600s pc02 floor: $(cat "$WAKES_LOG")"
   pass "a pc02 lane idle 300s does not escalate despite the 240s default threshold"
 }
@@ -143,7 +145,7 @@ test_fresh_loop_step_resets_timer_instead_of_escalating() {
   echo "$(( $(date +%s) - 700 ))" > "$since_file"
   bind_session pc02-task
   log_step_at "$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%S.000Z)"
-  wedge_timer_check win2 "$since_file" test "$esc_file" pc02-task
+  wedge_timer_check win2 "$since_file" test "$esc_file" pc02-task hash
   [ ! -s "$WAKES_LOG" ] || fail "a fresh loop step must absorb, not escalate: $(cat "$WAKES_LOG")"
   [ -s "$since_file" ] || fail "absorb must restart the quiet-spell timer"
   [ "$(( $(date +%s) - $(cat "$since_file") ))" -lt 60 ] || fail "restarted timer should be recent"
@@ -158,7 +160,7 @@ test_stale_log_escalates_past_floor() {
   echo "$(( $(date +%s) - 700 ))" > "$since_file"
   bind_session pc02-task
   log_step_at "$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%S.000Z)"
-  wedge_timer_check win3 "$since_file" test "$esc_file" pc02-task
+  wedge_timer_check win3 "$since_file" test "$esc_file" pc02-task hash
   grep -q "possible wedge" "$WAKES_LOG" || fail "700s idle with only stale loop steps must escalate"
   pass "a pc02 lane past the floor with no fresh loop step still escalates"
 }
@@ -169,7 +171,7 @@ test_non_pc02_lane_keeps_default_threshold() {
   since_file="$STATE/.stale-since-x4"
   esc_file="$STATE/.wedge-escalations-x4"
   echo "$(( $(date +%s) - 300 ))" > "$since_file"
-  wedge_timer_check win4 "$since_file" test "$esc_file" cloud-task
+  wedge_timer_check win4 "$since_file" test "$esc_file" cloud-task hash
   grep -q "possible wedge" "$WAKES_LOG" || fail "a non-pc02 lane idle 300s must escalate at the 240s default"
   pass "non-pc02 lanes keep the default escalation threshold"
 }
@@ -182,7 +184,7 @@ test_other_sessions_steps_do_not_absorb() {
   echo "$(( $(date +%s) - 700 ))" > "$since_file"
   bind_session pc02-task ses_mine
   log_step_at "$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%S.000Z)" ses_someone_else
-  wedge_timer_check win5 "$since_file" test "$esc_file" pc02-task
+  wedge_timer_check win5 "$since_file" test "$esc_file" pc02-task hash
   grep -q "possible wedge" "$WAKES_LOG" \
     || fail "another opencode session's fresh steps must not mask this lane's wedge"
   pass "a fresh step from a different opencode session does not absorb the wedge"
@@ -195,7 +197,7 @@ test_unbound_session_does_not_absorb() {
   esc_file="$STATE/.wedge-escalations-x6"
   echo "$(( $(date +%s) - 700 ))" > "$since_file"
   log_step_at "$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%S.000Z)"
-  wedge_timer_check win6 "$since_file" test "$esc_file" pc02-task
+  wedge_timer_check win6 "$since_file" test "$esc_file" pc02-task hash
   grep -q "possible wedge" "$WAKES_LOG" \
     || fail "with no recorded session binding the absorb must not fire"
   pass "no session binding means no loop-step absorb"
@@ -212,7 +214,7 @@ test_absorb_clears_write_tracking() {
   key=$(window_key win7)
   echo "$(( $(date +%s) - 7200 ))" > "$STATE/.writing-since-$key"
   : > "$STATE/.writing-resurfaced-$key"
-  wedge_timer_check win7 "$since_file" test "$esc_file" pc02-task
+  wedge_timer_check win7 "$since_file" test "$esc_file" pc02-task hash
   [ ! -e "$STATE/.writing-since-$key" ] \
     || fail "the absorb's timer reset must drop the stale write-deferral chain"
   [ ! -e "$STATE/.writing-resurfaced-$key" ] \

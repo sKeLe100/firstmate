@@ -8,6 +8,7 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-calm-pi-extension)
 EXT="$ROOT/.pi/extensions/fm-calm.ts"
 ASSISTANT_LAYOUT="$ROOT/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+PRESERVATION="$ROOT/.pi/extensions/lib/fm-calm-preservation.ts"
 OPERATIONAL_USER_LAYOUT="$ROOT/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
 VISIBILITY="$ROOT/.pi/extensions/lib/fm-calm-visibility.ts"
 WORKING_SHIP="$ROOT/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -52,14 +53,26 @@ wait_for_text() {
 }
 
 find_chrome() {
-  local candidate
+  local candidate headless_shell
   if [ -n "${FM_CHROME_BIN:-}" ] && [ -x "$FM_CHROME_BIN" ]; then
     printf '%s\n' "$FM_CHROME_BIN"
     return 0
   fi
   # chrome-headless-shell comes first: it is Chrome's dedicated --dump-dom
-  # binary, and a full Chrome for Testing build on a display-less WSL host
-  # never writes the dump before the render timeout.
+  # binary. A full Chrome for Testing build on a display-less WSL host bakes in
+  # a field-trial config under which --dump-dom never writes a byte before the
+  # render timeout (render_export_dom's --disable-field-trial-config works
+  # around it, but the headless shell has no such dependency). Playwright
+  # installs the headless shell under ~/.cache/ms-playwright without putting it
+  # on PATH, so look there before falling back to a full browser build.
+  for headless_shell in \
+    "$HOME"/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell
+  do
+    if [ -x "$headless_shell" ]; then
+      printf '%s\n' "$headless_shell"
+      return 0
+    fi
+  done
   for candidate in \
     chrome-headless-shell \
     google-chrome \
@@ -152,6 +165,12 @@ render_export_dom() {
   printf 'chrome=%s chrome_version=%s pi=%s; %s' \
     "$chrome" "$("$chrome" --version 2>&1 | head -1)" "$pi_version" \
     "$(tr '\n' ' ' <"$report")"
+  case "$chrome" in
+    *headless*) ;;
+    *)
+      printf '; hint: a full Chrome for Testing build can stall --dump-dom on a display-less WSL host - install chrome-headless-shell (npx playwright install chromium-headless-shell) or point FM_CHROME_BIN at its chrome-headless-shell binary'
+      ;;
+  esac
   return 1
 }
 
@@ -176,6 +195,7 @@ test_home_resolution() {
     "$fixture/launch-cwd"
   cp "$EXT" "$fixture/project/.pi/extensions/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$fixture/project/.pi/extensions/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$fixture/project/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$fixture/project/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -299,6 +319,7 @@ test_pi_compat_degraded_adapter() {
     "$fixture/project/node_modules/@earendil-works"
   cp "$EXT" "$fixture/project/.pi/extensions/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$fixture/project/.pi/extensions/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$fixture/project/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$fixture/project/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -399,6 +420,7 @@ test_pi_compat_missing_adapter_exports() {
     "$fixture/project/.pi/extensions/lib" \
     "$fixture/project/node_modules/@earendil-works/pi-coding-agent"
   cp "$ASSISTANT_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$fixture/project/.pi/extensions/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$fixture/project/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$fixture/project/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -460,6 +482,7 @@ test_builtin_gate_load_time() {
     "$fixture/home-on/config"
   cp "$EXT" "$fixture/project/.pi/extensions/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$fixture/project/.pi/extensions/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$fixture/project/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$fixture/project/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -547,6 +570,7 @@ test_calm_activation_collision_and_regression_bound() {
     "$fixture/home/config"
   cp "$EXT" "$fixture/project/.pi/extensions/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$fixture/project/.pi/extensions/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$fixture/project/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$fixture/project/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$fixture/project/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -762,6 +786,7 @@ test_rendering_and_session_lifecycle() {
   mkdir -p "$fixture/home" "$fixture/lib" "$fixture/node_modules/@earendil-works"
   cp "$EXT" "$fixture/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$fixture/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$fixture/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$fixture/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$fixture/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$fixture/lib/fm-calm-working-ship.ts"
@@ -1480,6 +1505,7 @@ test_calm_mid_turn_working_notes() {
   mkdir -p "$fixture/home" "$fixture/lib" "$fixture/node_modules/@earendil-works"
   cp "$EXT" "$fixture/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$fixture/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$fixture/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$fixture/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$fixture/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$fixture/lib/fm-calm-working-ship.ts"
@@ -1508,6 +1534,7 @@ setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 // the same module URLs, so they share one live visibility policy exactly the way a
 // single Pi process does.
 const visibility = await import(pathToFileURL(`${process.cwd()}/lib/fm-calm-visibility.ts`).href);
+const preservation = await import(pathToFileURL(`${process.cwd()}/lib/fm-calm-preservation.ts`).href);
 const calmPreferencePath = `${process.env.FM_HOME}/config/calm`;
 const components = [];
 const ui = {
@@ -1569,12 +1596,49 @@ const assistantBase = {
   timestamp: 1,
 };
 const toolCall = { type: "toolCall", id: "calm-mid-turn-tool", name: "read", arguments: { path: "sample.txt" } };
+const substantiveLongText = "SUBSTANTIVE_LONG_MIDTURN_REPORT " + "context ".repeat(35);
+const substantiveMultilineText = "SUBSTANTIVE_MIDTURN_REPORT\nAdditional context needed to continue.";
+const belowThresholdText = "b".repeat(preservation.CALM_PRESERVE_MIN_CHARS - 1);
+const atThresholdText = "t".repeat(preservation.CALM_PRESERVE_MIN_CHARS);
+if (preservation.CALM_PRESERVE_MIN_CHARS !== 240) {
+  throw new Error(`Pi Calm preservation threshold changed to ${preservation.CALM_PRESERVE_MIN_CHARS}`);
+}
 const messages = {
   // The reported incident: narration emitted in the same assistant message as a tool call.
   midTurn: {
     ...assistantBase,
     stopReason: "toolUse",
     content: [{ type: "text", text: "MIDTURN_WORKING_NOTE" }, toolCall],
+  },
+  // Substantive mid-turn content must remain visible even when the message also calls a tool.
+  substantiveLong: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [{ type: "text", text: substantiveLongText }, toolCall],
+  },
+  substantiveMultiline: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [{ type: "text", text: substantiveMultilineText }, toolCall],
+  },
+  belowThreshold: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [{ type: "text", text: belowThresholdText }, toolCall],
+  },
+  atThreshold: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [{ type: "text", text: atThresholdText }, toolCall],
+  },
+  mixedBlocks: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [
+      { type: "text", text: "MIXED_SHORT_WORKING_NOTE" },
+      { type: "text", text: substantiveLongText },
+      toolCall,
+    ],
   },
   // The genuine reply that ends a response, which Calm never hides.
   finalReply: {
@@ -1641,8 +1705,14 @@ if (readFileSync(calmPreferencePath, "utf8") !== "on\n") {
   throw new Error("plain /calm from off did not persist on");
 }
 if (rendered("midTurn").length !== 0) {
-  throw new Error(`Calm on left mid-turn working-note rows: ${JSON.stringify(rendered("midTurn"))}`);
+  throw new Error(`Calm on left short mid-turn working-note rows: ${JSON.stringify(rendered("midTurn"))}`);
 }
+requireVisible("substantiveLong", "SUBSTANTIVE_LONG_MIDTURN_REPORT", "Calm on");
+requireVisible("substantiveMultiline", "SUBSTANTIVE_MIDTURN_REPORT", "Calm on");
+requireHidden("belowThreshold", belowThresholdText.slice(0, 32), "Calm on");
+requireVisible("atThreshold", atThresholdText.slice(0, 32), "Calm on");
+requireHidden("mixedBlocks", "MIXED_SHORT_WORKING_NOTE", "Calm on");
+requireVisible("mixedBlocks", "SUBSTANTIVE_LONG_MIDTURN_REPORT", "Calm on");
 requireHidden("truncatedMidTurn", "TRUNCATED_MIDTURN_NOTE", "Calm on");
 // Pi owns the wording of its truncation notice; Calm must leave that row's own notice
 // standing rather than collapsing an incomplete response to nothing.
@@ -1741,6 +1811,7 @@ test_operational_followup_turn_e2e() {
   fm_git_init_commit "$project"
   cp "$EXT" "$project/.pi/extensions/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$project/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$project/.pi/extensions/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$project/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$project/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$project/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -2116,6 +2187,7 @@ test_hidden_block_geometry_e2e() {
   fm_git_init_commit "$project"
   cp "$EXT" "$project/.pi/extensions/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$project/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$project/.pi/extensions/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$project/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$project/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$project/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -2351,6 +2423,7 @@ test_working_ship_geometry_and_lifecycle() {
   mkdir -p "$fixture/home" "$fixture/lib" "$fixture/node_modules/@earendil-works"
   cp "$EXT" "$fixture/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$fixture/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$fixture/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$fixture/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$fixture/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$fixture/lib/fm-calm-working-ship.ts"
@@ -3242,6 +3315,20 @@ JS
   pass "Pi Calm working ship keeps its centered two-row asymmetric Unicode boat inside a deterministic long-wave trough, paints all water standard blue and the whole boat standard yellow with balanced resets, keeps ANSI-stripped width exact, reverses cleanly at both edges and every width, clamps visible and hidden resizes, falls back deterministically when narrow, freezes and resumes across settle/start without hidden-time jumps or duplicate timers, resets only on a fresh session, and leaves Calm-off visibility untouched"
 }
 
+test_find_chrome_playwright_cache() {
+  local fake_home fake_chrome found
+  fake_home="$TMP_ROOT/find-chrome-home"
+  fake_chrome="$fake_home/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell"
+  mkdir -p "$(dirname "$fake_chrome")"
+  printf '#!/bin/sh\nexit 0\n' >"$fake_chrome"
+  chmod +x "$fake_chrome"
+  found=$(unset FM_CHROME_BIN; HOME="$fake_home" PATH="/nonexistent" find_chrome) \
+    || fail "find_chrome did not discover the Playwright-installed chrome-headless-shell"
+  [ "$found" = "$fake_chrome" ] \
+    || fail "find_chrome returned $found instead of the Playwright chrome-headless-shell"
+  pass "find_chrome discovers chrome-headless-shell from the Playwright cache when it is not on PATH"
+}
+
 # The rendered-DOM assertions below depend on a real browser, so the render step
 # itself is the part that fails for reasons that have nothing to do with Calm.
 # This pins that guard with real processes and no browser: one clean render, one
@@ -3381,6 +3468,7 @@ test_interactive_terminal_e2e() {
   : > "$project/AGENTS.md"
   cp "$EXT" "$project/.pi/extensions/fm-calm.ts"
   cp "$ASSISTANT_LAYOUT" "$project/.pi/extensions/lib/fm-calm-assistant-layout.ts"
+  cp "$PRESERVATION" "$project/.pi/extensions/lib/fm-calm-preservation.ts"
   cp "$OPERATIONAL_USER_LAYOUT" "$project/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
   cp "$VISIBILITY" "$project/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$WORKING_SHIP" "$project/.pi/extensions/lib/fm-calm-working-ship.ts"
@@ -4239,5 +4327,6 @@ test_calm_mid_turn_working_notes
 test_operational_followup_turn_e2e
 test_hidden_block_geometry_e2e
 test_working_ship_geometry_and_lifecycle
+test_find_chrome_playwright_cache
 test_export_dom_render_guard
 test_interactive_terminal_e2e

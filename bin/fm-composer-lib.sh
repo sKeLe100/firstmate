@@ -428,6 +428,10 @@ FM_COMPOSER_IDLE_RE_DEFAULT='^Type a message\.\.\.$|^Ask anything(\.\.\.|…)|^P
 # mode name, optional space, then the dot; once a row matches, it and every row
 # below it belong to the footer.
 FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT='^(B|Bu|Bui|Buil|Build|P|Pl|Pla|Plan)[[:space:]]*·'
+
+# OpenCode keeps this keyboard-shortcut chrome immediately below its left-bar
+# composer floor. It is part of the same idle surface, not transcript activity.
+FM_COMPOSER_LEFTBAR_CHROME_RE_DEFAULT='^tab[[:space:]]+agents[[:space:]]+ctrl\+p[[:space:]]+commands$'
 # omp (Oh My Pi) draws a one-row status line directly BELOW its borderless
 # composer: an identity or spinner cell, then middle-dot separated model, path,
 # git, and context cells. Verified live through Herdr on omp 18.1.11:
@@ -1218,7 +1222,7 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
 }
 
 _fm_composer_select_cursorless() {
-  local plain=$1 generic=-1 next boundary raw trimmed
+  local plain=$1 generic=-1 next boundary raw trimmed chrome_re
   FM_COMPOSER_SELECTED_KIND=
   FM_COMPOSER_SELECTED_FIRST=-1
   FM_COMPOSER_SELECTED_LAST=-1
@@ -1296,8 +1300,12 @@ _fm_composer_select_cursorless() {
     trimmed=$raw
     fm_composer_normalize_trim_var trimmed
     if [ -n "$trimmed" ] && ! fm_composer_row_has_edge "$trimmed"; then
-      FM_COMPOSER_SELECTED_KIND=
-      return 1
+      chrome_re=${FM_COMPOSER_LEFTBAR_CHROME_RE:-$FM_COMPOSER_LEFTBAR_CHROME_RE_DEFAULT}
+      if [ "$FM_COMPOSER_SELECTED_KIND" != leftbar ] \
+        || ! fm_composer_idle_matches "$trimmed" "$chrome_re" insensitive; then
+        FM_COMPOSER_SELECTED_KIND=
+        return 1
+      fi
     fi
   fi
   [ -n "$FM_COMPOSER_SELECTED_KIND" ]

@@ -61,6 +61,15 @@ case "${1:-}" in
       esac
     done
     payload=${1:-}
+    # fm-spawn stages a long launch in a file and sends `. '<file>'`; read the
+    # staged command itself, as upstream's spawn tests do.
+    case "$payload" in
+      ". '"*"'")
+        staged=${payload#". '"}
+        staged=${staged%"'"}
+        [ ! -f "$staged" ] || payload=$(cat "$staged")
+        ;;
+    esac
     if [ "$literal" = 1 ]; then
       printf '%s\n' "$payload" >> "$D/literal"
       case "$payload" in
