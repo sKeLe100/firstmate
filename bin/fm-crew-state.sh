@@ -67,9 +67,11 @@
 #      forward-progress marker after its last occurrence) and overrides
 #      working -> failed, so a poll that can never progress surfaces as
 #      terminal instead of monitoring forever (see nm_ci_wedge_detected).
-#      A per-poll heartbeat trailing those failures is not progress unless no
-#      heartbeat is interleaved with them, but any genuine progress marker
-#      after the last failure - including a green one - clears the wedge.
+#      Any heartbeat in or after the repeated failures clears the wedge: a
+#      heartbeat is only emitted by a poll that succeeded, so its presence
+#      proves the loop recovered and the errors are flaky, not a stuck loop.
+#      A genuine wedge has no heartbeat at all, because the failing check
+#      command never reaches the point of emitting one.
 #      The wedge verdict is taken before the marker parse, so it wins over a
 #      green marker that PRECEDES the repeated failures. The coarse
 #      cross-branch fallback (where the log may belong to another branch's
@@ -672,11 +674,11 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   warnings=$(printf '%s\n' "$log_tail" | grep -E '^warning: could not check CI:|^log: --verbose .+exit status 1' || true)
   [ -n "$warnings" ] || return 1
   # Markers that indicate real forward CI progress, and per-poll heartbeat
-  # markers that merely say the loop ran again. Together they cover every
-  # marker the parser in nm_ci_checks_state below recognizes, plus terminal
-  # markers ("PR has been merged", "checks green", "outcome=") that only
-  # appear on the wedge path; the split between the two lists is what keeps a
-  # trailing heartbeat from masking a wedge.
+  # markers that merely say a poll succeeded (the loop ran again without
+  # failing). Together they cover every marker the parser in nm_ci_checks_state
+  # below recognizes, plus terminal markers ("PR has been merged", "checks
+  # green", "outcome=") that only appear on the wedge path. Both lists clear a
+  # wedge: a heartbeat is proof a poll recovered, so it is never noise.
   local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|no CI checks reported - still monitoring|outcome=|checks failed|issues detected'
   local heartbeat_markers='no CI checks reported yet|CI checks running'
   # Extract the error prefix from each warning line (e.g.,
@@ -713,10 +715,12 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     [ -n "$span" ] || continue
     first_error_line=${span%% *}
     last_error_line=${span##* }
-    # Real progress after the last occurrence always clears the wedge. A
-    # heartbeat there only counts when no heartbeat is interleaved with the
-    # repeated errors: a heartbeat the failing loop emits on every poll is
-    # noise, and must not mask a wedge just because it trails the last error.
+    # Real progress after the last occurrence always clears the wedge. Any
+    # heartbeat in or after the repeated-error span also clears it: a heartbeat
+    # is only emitted when a poll succeeds, so its presence proves the loop
+    # recovered on at least one poll and the repeated errors are flaky, not a
+    # stuck loop. A genuine wedge has no heartbeat at all - the check command
+    # fails every poll, so no poll ever reaches the point of emitting one.
     local progress_count heartbeat_after heartbeat_interleaved
     progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
       | grep -cE "$progress_markers" || true)
@@ -725,9 +729,7 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     heartbeat_interleaved=$(printf '%s\n' "$log_tail" \
       | sed -n "${first_error_line},${last_error_line}p" \
       | grep -cE "$heartbeat_markers" || true)
-    if [ "$heartbeat_after" -gt 0 ] && [ "$heartbeat_interleaved" -eq 0 ]; then
-      progress_count=$((progress_count + heartbeat_after))
-    fi
+    progress_count=$((progress_count + heartbeat_after + heartbeat_interleaved))
     if [ "$progress_count" -eq 0 ]; then
       printf '%d:%s' "$count" "$error_type"
       return 0

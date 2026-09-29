@@ -177,15 +177,18 @@ EOF
   pass "transient poll errors followed by pending checks are not a wedge"
 }
 
-# A per-poll heartbeat emitted alongside every failing poll is not progress:
-# interleaved (and trailing) heartbeat lines must not mask a real wedge.
-test_ci_monitoring_interleaved_heartbeat_still_wedged() {
+# A heartbeat interleaved with repeated identical errors proves the loop
+# recovered on at least one poll, so it is a healthy-but-flaky run, not a
+# wedge: interleaved heartbeats must clear the wedge rather than disqualify
+# the trailing one (heartbeat_interleaved is nonzero by construction on any
+# long healthy run with transient errors).
+test_ci_monitoring_interleaved_heartbeat_not_wedged() {
   reset_fakes
-  local d; d=$(new_case ci-wedge-heartbeat)
-  make_repo_on_branch "$d/wt" fm/feat-ciwedgehb
+  local d; d=$(new_case ci-flaky-heartbeat)
+  make_repo_on_branch "$d/wt" fm/feat-ciflakyhb
   make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-ciwedgehb.meta" "window=fm:fm-feat-ciwedgehb" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwedgehb)"
+  fm_write_meta "$d/state/feat-ciflakyhb.meta" "window=fm:fm-feat-ciflakyhb" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciflakyhb)"
   FM_FAKE_CI_LOGS=$(cat <<'EOF'
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 CI checks running, waiting for results...
@@ -199,10 +202,11 @@ log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 CI checks running, waiting for results...
 EOF
 )
-  local out; out=$(run_crew_state "$d" feat-ciwedgehb)
-  assert_contains "$out" "state: failed" "heartbeat interleaved with repeated failures -> failed"
-  assert_contains "$out" "CI polling wedge" "trailing heartbeat must not mask the wedge"
-  pass "per-poll heartbeats interleaved with repeated failures still wedge"
+  local out; out=$(run_crew_state "$d" feat-ciflakyhb)
+  assert_contains "$out" "state: working" "heartbeats interleaved with repeated failures -> working"
+  assert_not_contains "$out" "state: failed" "a healthy flaky run must not be reported failed"
+  assert_not_contains "$out" "CI polling wedge" "interleaved heartbeats prove recovery, not a wedge"
+  pass "per-poll heartbeats interleaved with transient failures are not a wedge"
 }
 
 # A prefix that repeats early but is followed by real progress must not be
@@ -304,6 +308,37 @@ test_ci_monitoring_no_checks_green_marker_not_wedged() {
   assert_not_contains "$out" "CI polling wedge" "the no-checks green marker is progress, not heartbeat noise"
   assert_not_contains "$out" "state: failed" "a green no-checks run must not be reported failed"
   pass "flaky poll errors around the no-checks green marker are not a wedge"
+}
+
+# A repo with no CI workflows spends its first polls in the pending "no CI
+# checks reported yet" state before the green "still monitoring" marker lands.
+# Transient errors interleaved with that pending marker must not wedge the run.
+test_ci_monitoring_no_checks_yet_heartbeat_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-wedge-nochecks-yet)
+  make_repo_on_branch "$d/wt" fm/feat-cinochecksyet
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cinochecksyet.meta" "window=fm:fm-feat-cinochecksyet" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinochecksyet)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+no CI checks reported yet, waiting for checks to register...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-cinochecksyet)
+  assert_contains "$out" "state: working" "pending no-checks heartbeats around errors -> working"
+  assert_not_contains "$out" "CI polling wedge" "the pending no-checks heartbeat proves recovery, not a wedge"
+  assert_not_contains "$out" "state: failed" "a healthy no-checks run must not be reported failed"
+  pass "flaky poll errors around the pending no-checks heartbeat are not a wedge"
 }
 
 test_ci_monitoring_still_waiting_stays_working() {
@@ -419,12 +454,13 @@ test_ci_monitoring_green_then_rearm_stays_working
 test_ci_monitoring_no_checks_yet_stays_working
 test_ci_monitoring_repeated_poll_failure_surfaces_wedge
 test_ci_monitoring_transient_errors_then_pending_not_wedged
-test_ci_monitoring_interleaved_heartbeat_still_wedged
+test_ci_monitoring_interleaved_heartbeat_not_wedged
 test_ci_monitoring_repeated_errors_then_green_not_wedged
 test_ci_monitoring_crlf_errors_then_green_not_wedged
 test_ci_monitoring_mixed_line_endings_still_wedged
 test_ci_monitoring_numeric_error_prefix_still_wedged
 test_ci_monitoring_no_checks_green_marker_not_wedged
+test_ci_monitoring_no_checks_yet_heartbeat_not_wedged
 test_ci_monitoring_still_waiting_stays_working
 test_ci_monitoring_green_then_new_issue_stays_working
 test_ci_ready_done_log_relapse_stays_working
