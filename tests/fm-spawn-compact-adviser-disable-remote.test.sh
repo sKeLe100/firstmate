@@ -92,7 +92,7 @@ printf '%s\n' "${COMPACT_ADVISER_DISABLE-unset}"
 SH
 chmod +x "$PROBEBIN/codex"
 
-printf 'codex\n' > "$PARENT/config/secondmate-harness"
+printf 'codex gpt-5 medium\n' > "$PARENT/config/secondmate-harness"
 printf 'tmux\n' > "$PARENT/config/backend"
 printf 'codex\n' > "$PARENT/config/crew-harness"
 printf '## In flight\n\n## Queued\n\n## Done\n' > "$PARENT/data/backlog.md"

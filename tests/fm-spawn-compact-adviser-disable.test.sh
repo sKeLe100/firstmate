@@ -105,7 +105,7 @@ test_ship_allowlist_absent() {
   local rec out status seen
   rec=$(make_case ship-open codex ship-open-a1)
   read_case "$rec"
-  out=$(run_case_spawn ship-open-a1 "$PROJ_DIR" --mode no-mistakes --yolo off)
+  out=$(run_case_spawn ship-open-a1 "$PROJ_DIR" --mode no-mistakes --yolo off --model gpt-5 --effort medium)
   status=$?
   expect_code 0 "$status" "ship spawn without an allowlist should succeed: $out"
   assert_pane_export_precedes_launch "$PANE_LOG" "ship, allowlist absent"
@@ -125,7 +125,7 @@ test_ship_allowlist_enabled() {
   # operational floor and nothing else, so it is where a floor either holds or
   # is lost.
   : > "$HOME_DIR/config/launch-env-allowlist"
-  out=$(run_case_spawn ship-filtered-a1 "$PROJ_DIR" --mode no-mistakes --yolo off)
+  out=$(run_case_spawn ship-filtered-a1 "$PROJ_DIR" --mode no-mistakes --yolo off --model gpt-5 --effort medium)
   status=$?
   expect_code 0 "$status" "ship spawn under an allowlist should succeed: $out"
   assert_pane_export_precedes_launch "$PANE_LOG" "ship, allowlist enabled"
@@ -149,7 +149,7 @@ test_launch_command_carries_the_switch_without_the_pane_export() {
     rec=$(make_case "ship-nopane-$setting" codex "ship-nopane-$setting-a1")
     read_case "$rec"
     [ "$setting" = absent ] || : > "$HOME_DIR/config/launch-env-allowlist"
-    out=$(run_case_spawn "ship-nopane-$setting-a1" "$PROJ_DIR" --mode no-mistakes --yolo off)
+    out=$(run_case_spawn "ship-nopane-$setting-a1" "$PROJ_DIR" --mode no-mistakes --yolo off --model gpt-5 --effort medium)
     status=$?
     expect_code 0 "$status" "allowlist=$setting spawn should succeed: $out"
     install_env_probe "$FAKEBIN_DIR" codex
@@ -175,7 +175,7 @@ test_secondmate_launch() {
     printf '# Firstmate\n' > "$sm/AGENTS.md"
     printf '%s\n' "sm-$setting" > "$sm/.fm-secondmate-home"
     printf 'charter for sm-%s\n' "$setting" > "$sm/data/charter.md"
-    out=$(run_case_spawn "sm-$setting" "$sm" --secondmate)
+    out=$(run_case_spawn "sm-$setting" "$sm" --secondmate --model gpt-5 --effort medium)
     status=$?
     expect_code 0 "$status" "secondmate spawn with allowlist=$setting should succeed: $out"
     assert_pane_export_precedes_launch "$PANE_LOG" "secondmate, allowlist $setting"
@@ -282,8 +282,8 @@ test_relaunch_rebuilds_the_switch() {
       echo "mode=no-mistakes"
       echo "yolo=off"
       echo "tasktmp=$dir/tasktmp"
-      echo "model=default"
-      echo "effort=default"
+      echo "model=gpt-5"
+      echo "effort=medium"
     } > "$home/state/$id.meta"
 
     mkdir -p "$dir/user-home"
