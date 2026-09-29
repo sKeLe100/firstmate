@@ -2062,10 +2062,15 @@ families_for_changed_path() {
       # behavior are exercised by the runner's own contract test.
       printf '%s\n' "__script__:fm-test-run.test.sh"
       ;;
+    tests/*.py)
+      # A python repro/driver is selected by the suites that name it.
+      families_for_test_reference "$(basename "$path")" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;
-    README.md|LICENSE|assets/*|docs/*|.gitignore)
+    README.md|VISION.md|LICENSE|assets/*|docs/*|.gitignore)
       ;;
     *-edited)
       # Record-only snapshot of an already-deployed, already-smoke-tested

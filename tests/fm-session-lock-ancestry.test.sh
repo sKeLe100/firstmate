@@ -13,6 +13,17 @@
 # shellcheck disable=SC2016 # single quotes are deliberate: $FM_HOME and $$ expand inside the fixture child
 set -u
 
+# A process is orphaned once its parent is init or the host's subreaper (WSL2 and
+# systemd user sessions reparent orphans to a systemd that is not PID 1).
+fm_fixture_orphaned() {
+  local pp
+  pp=$(ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ')
+  [ "$pp" = 1 ] && return 0
+  case "$(ps -o comm= -p "$pp" 2>/dev/null)" in init|systemd*) return 0 ;; esac
+  return 1
+}
+export -f fm_fixture_orphaned
+
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -469,7 +480,7 @@ make_primary_home() {  # <dir>
 #!/usr/bin/env bash
 if [ "${FM_FIXTURE_ORPHAN_HERE:-0}" = 1 ]; then
   i=0
-  while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 ]; do
+  while [ "$i" -lt 200 ] && ! fm_fixture_orphaned $$; do
     sleep 0.05
     i=$((i + 1))
   done
@@ -482,7 +493,7 @@ SH
   cat > "$dir/daemon.sh" <<'SH'
 #!/usr/bin/env bash
 i=0
-while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 ]; do
+while [ "$i" -lt 200 ] && ! fm_fixture_orphaned $$; do
   sleep 0.05
   i=$((i + 1))
 done
@@ -640,7 +651,7 @@ make_background_session_home() {  # <dir>
   cat > "$dir/frontend.sh" <<'SH'
 #!/usr/bin/env bash
 i=0
-while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 ]; do
+while [ "$i" -lt 200 ] && ! fm_fixture_orphaned $$; do
   sleep 0.05
   i=$((i + 1))
 done
@@ -795,11 +806,11 @@ test_e2e_background_session_keeps_its_lock_across_a_recycled_chain() {
   # the front-end that holds the lock stays alive.
   kill -TERM "$daemon"
   i=0
-  while [ "$i" -lt 200 ] && { kill -0 "$daemon" 2>/dev/null || [ "$(ps -o ppid= -p "$ptyhost" 2>/dev/null | tr -d ' ')" != 1 ]; }; do
+  while [ "$i" -lt 200 ] && { kill -0 "$daemon" 2>/dev/null || ! fm_fixture_orphaned "$ptyhost"; }; do
     sleep 0.05
     i=$((i + 1))
   done
-  [ "$(ps -o ppid= -p "$ptyhost" 2>/dev/null | tr -d ' ')" = 1 ] || fail "the pty-host was not reparented to init after the daemon ended"
+  fm_fixture_orphaned "$ptyhost" || fail "the pty-host was not reparented to init after the daemon ended"
   kill -0 "$frontend" 2>/dev/null || fail "the front-end died with the daemon, so the recycled case cannot be exercised"
 
   # Phase 2: the same session id over the broken chain - the reported drift.
