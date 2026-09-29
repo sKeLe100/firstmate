@@ -1051,7 +1051,7 @@ tests/fm-send-resolve-key.test.sh 31315
 tests/fm-send-secondmate-marker-herdr-e2e.test.sh 88
 tests/fm-send-secondmate-marker.test.sh 6252
 tests/fm-session-lock-ancestry.test.sh 17794
-tests/fm-session-start.test.sh 179350
+tests/fm-session-start.test.sh 275201
 tests/fm-sessionstart-hook-live-e2e.test.sh 110
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 110
 tests/fm-sessionstart-nudge.test.sh 66247
