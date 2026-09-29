@@ -228,11 +228,19 @@ fm_brief_intent_address_line() {  # <file>
   '
 }
 
+# The `nm-<run>-<step>` decision key this block mandates is load-bearing beyond
+# the brief itself: the watcher binds an open `needs-decision` to the run a
+# crew's current state reports by matching exactly that shape
+# (wedge_wait_evidence in bin/fm-watch.sh, through
+# status_has_open_needs_decision in bin/fm-classify-lib.sh), which is what buys
+# a lane parked at a human-owed gate the long recheck cadence instead of a
+# wedge escalation. A gate escalated under any other key still reads as a
+# suspected wedge.
 fm_ask_user_escalation_block() {  # <data-dir> <task-id>
   local data=$1 id=$2
   cat <<EOF
    For a no-mistakes ask-user gate specifically, escalate all ask-user findings as one event plus one snapshot file, using that same shape even when the gate holds only a single ask-user finding: write only the ask-user findings, verbatim and unparaphrased (id, severity, file, line, description, authority), to \`$data/$id/nm-<run>-findings.txt\`, then report the gate with
-   \`needs-decision [key=nm-<run>-<step>]: ask-user findings=<id1>,<id2>,... file=$data/$id/nm-<run>-findings.txt\`
+   \`needs-decision [at=<epoch>] [key=nm-<run>-<step>]: ask-user findings=<id1>,<id2>,... file=$data/$id/nm-<run>-findings.txt\`
    naming every ask-user finding id from that gate. The status line only points at the file; it never restates or summarizes a finding's content.
 EOF
 }
@@ -249,7 +257,7 @@ Delivery contract: mode=direct-PR
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 Before opening the PR, run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary or the missing commit before proceeding, never silence the gate.
-When it is implemented, committed, and the claim check passes, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+When it is implemented, committed, and the claim check passes, push your branch and open a PR with \`gh-axi\`, then append \`done [at=<epoch>]: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
       ;;
@@ -261,7 +269,7 @@ This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$id\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
 Before reporting done, run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary or the missing commit first, never silence the gate.
-When it is implemented, committed, and the claim check passes, append \`done: ready in branch fm/$id\` to the status file and stop.
+When it is implemented, committed, and the claim check passes, append \`done [at=<epoch>]: ready in branch fm/$id\` to the status file and stop.
 The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
 EOF
       ;;
@@ -270,7 +278,7 @@ EOF
 # Definition of done
 Delivery contract: mode=no-mistakes
 The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
+When you believe it is complete, append \`done [at=<epoch>]: {summary}\` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
 
 You drive no-mistakes by responding to its gates, not by implementing fixes.
@@ -311,7 +319,7 @@ Apart from that single supported abort, do not hand-edit, commit, restart, or st
 Once ownership is settled, validate exactly once against that final head so no obsolete or intermediate head is ever treated as authoritative.
 
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary before reporting (do not silence the gate, and do not hand-edit or recommit once the run is closed out).
-Append \`done: PR {url} checks green\` and stop. You are finished.
+Append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
 EOF
       ;;
     *)

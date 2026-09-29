@@ -318,7 +318,7 @@ test_second_missed_turn_escalates_once_and_stays_durable() {
   [ "$(phase_of "$state" "$corr")" = escalated ] || fail "phase should be escalated"
   status_line=$(tail -1 "$state/hibit.status")
   case "$status_line" in
-    "blocked [key=pending-reply-$corr]:"*pending-reply-missed:*pending-reply-id=$corr*) : ;;
+    "blocked [key=pending-reply-$corr]"*pending-reply-missed:*pending-reply-id=$corr*) : ;;
     *) fail "parent status should carry one blocked missed-report line"$'\n'"$status_line" ;;
   esac
   [ ! -s "$state/.wake-queue" ] || fail "direct escalation must not enqueue a duplicate check wake"
@@ -328,7 +328,7 @@ test_second_missed_turn_escalates_once_and_stays_durable() {
     :
   fi
   [ "$(phase_of "$state" "$corr")" = escalated ] || fail "phase must stay escalated"
-  escalations=$(grep -Fc "blocked [key=pending-reply-$corr]:" "$state/hibit.status")
+  escalations=$(grep -Fc "blocked [key=pending-reply-$corr]" "$state/hibit.status")
   [ "$escalations" = 1 ] || fail "missed recovery should publish one escalation, got $escalations"
   # Durable record retained (never silently expired).
   rec=$(fm_pending_reply_path "$state" "$corr")
@@ -377,8 +377,8 @@ test_remote_reply_in_transit_resolves_without_escalation() {
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] \
     || fail "an in-transit reply pulled in by the forced poll should resolve the record"
-  if grep -Fq "blocked [key=pending-reply-$corr]:" "$state/hibit.status"; then
-    status_line=$(grep -F "blocked [key=pending-reply-$corr]:" "$state/hibit.status")
+  if grep -Fq "blocked [key=pending-reply-$corr]" "$state/hibit.status"; then
+    status_line=$(grep -F "blocked [key=pending-reply-$corr]" "$state/hibit.status")
     fail "an in-transit reply must not trigger a repost demand"$'\n'"$status_line"
   fi
   pass "a remote reply still in ingest transit resolves locally instead of escalating"
@@ -430,8 +430,8 @@ test_primed_scan_signature_cannot_mask_forced_ingest() {
     || fail "an ingest append must change the parent status signature"
   [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] \
     || fail "a primed scan signature must not stop the post-ingest re-scan from resolving"
-  if grep -Fq "blocked [key=pending-reply-$corr]:" "$state/hibit.status"; then
-    status_line=$(grep -F "blocked [key=pending-reply-$corr]:" "$state/hibit.status")
+  if grep -Fq "blocked [key=pending-reply-$corr]" "$state/hibit.status"; then
+    status_line=$(grep -F "blocked [key=pending-reply-$corr]" "$state/hibit.status")
     fail "a cached scan signature must not turn an ingested reply into a repost demand"$'\n'"$status_line"
   fi
   pass "a primed scan signature cannot mask a reply the forced ingest just landed"
@@ -469,7 +469,7 @@ test_remote_genuinely_missing_reply_still_escalates() {
     || fail "a genuinely missing reply must still escalate after the forced poll finds nothing"
   status_line=$(tail -1 "$state/hibit.status")
   case "$status_line" in
-    "blocked [key=pending-reply-$corr]:"*pending-reply-missed*) : ;;
+    "blocked [key=pending-reply-$corr]"*pending-reply-missed*) : ;;
     *) fail "genuinely missing reply should still publish one blocked line"$'\n'"$status_line" ;;
   esac
   pass "a genuinely missing remote reply still escalates after the forced poll finds nothing"
@@ -571,7 +571,7 @@ test_escalation_publication_failure_retries() {
   rmdir "$target"
   fm_pending_reply_maybe_escalate "$state" "$corr" || fail "escalation retry should succeed"
   [ "$(phase_of "$state" "$corr")" = escalated ] || fail "successful retry should commit escalation"
-  escalations=$(grep -Fc "blocked [key=pending-reply-$corr]:" "$target")
+  escalations=$(grep -Fc "blocked [key=pending-reply-$corr]" "$target")
   [ "$escalations" = 1 ] || fail "successful retry should publish exactly once, got $escalations"
   pass "failed escalation publication remains retryable and publishes once"
 }
@@ -591,7 +591,7 @@ test_legacy_escalation_closes_default_decision() {
   printf 'done [corr=%s]: delayed legacy reply\n' "$corr" >> "$state/hibit.status"
 
   fm_pending_reply_try_resolve "$state" "$corr" || fail "legacy reply should resolve its record"
-  [ "$(grep -Fc "resolved [key=default]: pending-reply-resolved: task=hibit pending-reply-id=$corr" "$state/hibit.status")" -eq 1 ] \
+  [ "$(sed -E 's/ \[at=[0-9]+\]//' "$state/hibit.status" | grep -Fc "resolved [key=default]: pending-reply-resolved: task=hibit pending-reply-id=$corr")" -eq 1 ] \
     || fail "legacy escalation did not append one guarded default-key resolution"
   open=$(status_open_decisions "$state/hibit.status")
   [ -z "$open" ] || fail "resolved legacy escalation remained open: $open"
@@ -616,7 +616,7 @@ test_legacy_escalation_does_not_close_taken_default_decision() {
   printf 'done [corr=%s]: delayed legacy reply\n' "$corr" >> "$state/hibit.status"
 
   fm_pending_reply_try_resolve "$state" "$corr" || fail "legacy reply should resolve its record"
-  if grep -Fq 'resolved [key=default]: pending-reply-resolved:' "$state/hibit.status"; then
+  if grep -Fq 'resolved [key=default]' "$state/hibit.status"; then
     fail "legacy escalation emitted an unsafe default-key resolution"
   fi
   fm_pending_reply_tick "$state" || fail "legacy close retry failed"
@@ -648,7 +648,7 @@ test_foreign_blocker_is_not_selected_as_escalation() {
     "pending-reply closure cleared the foreign release decision"
   assert_not_contains "$open" "pending-reply-$corr" \
     "genuine keyed escalation remained open"
-  assert_no_grep 'resolved [key=release]: pending-reply-resolved:' "$state/hibit.status" \
+  assert_no_grep 'resolved [key=release]' "$state/hibit.status" \
     "foreign release decision was selected as the pending-reply escalation"
   [ -n "$(fm_pending_reply_get "$rec" escalation_closed_epoch)" ] \
     || fail "genuine keyed escalation closure was not recorded"
@@ -819,7 +819,7 @@ test_delivery_confirmation_fallback_reconciles() {
       || fail "delivery uncertainty should use its distinct escalation"
     fm_pending_reply_tick_one "$state" "$prepared_corr" unknown \
       || fail "repeated delivery-unknown tick should be inert"
-    escalations=$(grep -Fc "blocked [key=pending-reply-$prepared_corr]:" "$state/hibit.status")
+    escalations=$(grep -Fc "blocked [key=pending-reply-$prepared_corr]" "$state/hibit.status")
     [ "$escalations" = 1 ] \
       || fail "delivery-unknown escalation should publish once, got $escalations"
     printf 'done [corr=%s]: late report proves delivery\n' "$prepared_corr" >> "$state/hibit.status"
@@ -828,7 +828,7 @@ test_delivery_confirmation_fallback_reconciles() {
       || fail "late report should resolve escalated delivery-unknown"
     [ "$(fm_pending_reply_get "$prepared_rec" delivered_epoch)" = 5760 ] \
       || fail "late report should provide delivery evidence"
-    escalations=$(grep -Fc "blocked [key=pending-reply-$prepared_corr]:" "$state/hibit.status")
+    escalations=$(grep -Fc "blocked [key=pending-reply-$prepared_corr]" "$state/hibit.status")
     [ "$escalations" = 1 ] || fail "late report must not re-escalate delivery-unknown"
     fm_pending_reply_tick "$state" || fail "resolved late report should remain idempotent"
     [ "$(phase_of "$state" "$prepared_corr")" = resolved ] \
@@ -870,12 +870,12 @@ test_delivery_confirmation_serializes_with_reconciliation() {
     entered="$home/mark-delivered.entered"
     release="$home/mark-delivered.release"
     fm_pending_reply_mark_delivered() {
-      local pending_state=$1 pending_corr=$2 epoch=$3 pending_rec phase
+      local pending_state=$1 pending_corr=$2 pending_epoch=$3 pending_rec phase
       printf '%s\n' "${BASHPID:-$$}" >> "$calls"
       : > "$entered"
       while [ ! -e "$release" ]; do /bin/sleep 0.01; done
       pending_rec=$(fm_pending_reply_path "$pending_state" "$pending_corr")
-      fm_pending_reply_set "$pending_rec" delivered_epoch "$epoch" || return 1
+      fm_pending_reply_set "$pending_rec" delivered_epoch "$pending_epoch" || return 1
       phase=$(fm_pending_reply_get "$pending_rec" phase)
       [ "$phase" != delivery_unknown ] \
         || fm_pending_reply_set "$pending_rec" phase awaiting_report
@@ -1421,7 +1421,7 @@ test_mirrored_remote_reply_never_triggers_a_repost() {
 }
 
 test_same_basename_self_home_corr_resolves_on_tick() {
-  local home state sm_home corr rec parent_status hook_log
+  local home state sm_home corr rec parent_status hook_log fb out
   home=$(setup_parent same-basename-repair)
   state="$home/state"
   sm_home=$(bind_local_mate "$home" mate)
@@ -1459,6 +1459,9 @@ test_same_basename_self_home_corr_resolves_on_tick() {
     || fail "resolved_epoch must be set after the restatement copy"
   grep -Fq "corr=$corr" "$parent_status" \
     || fail "parent channel must receive the restated corr= line"
+  if status_line_at_epoch "$(tail -1 "$parent_status")" >/dev/null; then
+    fail "a relayed copy must not acquire an emission time: $(cat "$parent_status")"
+  fi
   if grep -Fq pending-reply-missed "$parent_status"; then
     fail "same-basename self-home corr must not escalate as pending-reply-missed"
   fi
@@ -1469,6 +1472,31 @@ test_same_basename_self_home_corr_resolves_on_tick() {
     "$(fm_pending_reply_get "$rec" wrong_home_first_sighting)")" = \
     "$sm_home/state/mate.status:1" ] \
     || fail "first wrong-home sighting must display the readable mate-home path and line"
+  fm_pending_reply_restatement_copy_same_basename "$state" "$corr" "$sm_home" \
+    || fail "repeated restatement copy should succeed"
+  fm_parent_channel_report "$sm_home" "$sm_home/state" "$(cat "$sm_home/state/mate.status")" \
+    || fail "publication retry of a recovered reply should succeed"
+  cmp -s "$sm_home/state/mate.status" "$parent_status" \
+    || fail "recovery and retries must preserve the legacy reply bytes without duplicates"
+  fm_write_secondmate_meta "$state/mate.meta" "$sm_home"
+  fb=$(make_stubs "$home")
+  out=$(PATH="$fb:$PATH" FM_HOME="$home" "$ROOT/bin/fm-fleet-snapshot.sh" --json) \
+    || fail "snapshot of the recovered reply should succeed"
+  printf '%s' "$out" | jq -e '
+    .tasks[] | select(.id == "mate") | .paths.status_log.last_event
+    | has("age_seconds") and .age_seconds == null
+  ' >/dev/null || fail "recovered legacy reply must retain an unknown age"
+  printf '%s' "$out" | jq -e '
+    .secondmate_current.records[] | select(.id == "mate") | .parent_event
+    | has("age_seconds") and .age_seconds == null
+  ' >/dev/null || fail "secondmate summary must retain the recovered reply's unknown age"
+  fm_parent_channel_report "$sm_home" "$sm_home/state" 'done: new report' \
+    || fail "new publication should succeed"
+  status_line_at_epoch "$(tail -1 "$parent_status")" >/dev/null \
+    || fail "new publication must still receive an emission time"
+  fm_parent_channel_report "$sm_home" "$sm_home/state" 'done: new report' \
+    || fail "new publication retry should succeed"
+  [ "$(wc -l < "$parent_status")" -eq 2 ] || fail "new publication retry must not duplicate the event"
   unset FM_PENDING_REPLY_SEND_HOOK
   pass "same-basename self-home corr= is restated onto the parent channel and resolves"
 }
@@ -1492,7 +1520,7 @@ test_same_basename_reply_resolves_after_recovery_failure() {
   rec=$(fm_pending_reply_path "$state" "$corr")
   parent_status=$(fm_pending_reply_get "$rec" parent_status)
   fm_write_secondmate_meta "$state/mate.meta" "$sm_home"
-  printf 'done [corr=%s]: answer landed after recovery failure\n' "$corr" \
+  printf 'done [corr=%s] [at=11000]: answer landed after recovery failure\n' "$corr" \
     > "$sm_home/state/mate.status"
 
   fm_pending_reply_tick "$state"
@@ -1500,6 +1528,8 @@ test_same_basename_reply_resolves_after_recovery_failure() {
     || fail "late same-basename reply must resolve before recovery failure escalation"
   grep -Fq "corr=$corr" "$parent_status" \
     || fail "late reply must be restated onto the parent channel"
+  cmp -s "$sm_home/state/mate.status" "$parent_status" \
+    || fail "recovery must preserve the reply's original emission time"
   if grep -Fq pending-reply-recovery-delivery "$parent_status"; then
     fail "authorized late reply must prevent recovery delivery escalation"
   fi
@@ -1683,7 +1713,7 @@ test_escalated_undelivered_correlation_stays_retryable() {
   fm_pending_reply_maybe_escalate "$state" "$corr" || fail "delivery-unknown escalation should fire"
   [ "$(phase_of "$state" "$corr")" = escalated ] || fail "phase should be escalated"
   [ -z "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || fail "escalation must not invent delivery"
-  [ "$(grep -cF "blocked [key=pending-reply-$corr]:" "$state/hibit.status")" = 1 ] \
+  [ "$(grep -cF "blocked [key=pending-reply-$corr]" "$state/hibit.status")" = 1 ] \
     || fail "delivery-unknown escalation should publish once"
   fm_pending_reply_corr_reusable "$state" "$corr" hibit \
     || fail "an escalated undelivered correlation must stay reusable by its owner"

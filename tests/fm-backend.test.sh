@@ -400,9 +400,9 @@ test_backend_name_cmux_fallback_notice() {
 
 # fm_backend_name's auto-detect step: fires only when FM_BACKEND/config/backend
 # are both absent, selects between the three markers exactly as
-# fm_backend_detect does, and is loud only when it selects herdr or cmux -
-# never when it selects tmux (today's default-path behavior must stay
-# byte-for-byte silent).
+# fm_backend_detect does, and is loud only when it selects experimental cmux -
+# never when it selects verified herdr or tmux (today's default-path behavior
+# must stay byte-for-byte silent).
 test_backend_name_autodetect_notice() {
   local dir cfg out errfile
 
@@ -417,10 +417,7 @@ test_backend_name_autodetect_notice() {
   : > "$errfile"
   out=$(unset TMUX CMUX_WORKSPACE_ID; HERDR_ENV=1 FM_BACKEND='' FM_BACKEND_CONFIG_DIR="$cfg" fm_backend_name 2>"$errfile")
   [ "$out" = herdr ] || fail "fm_backend_name should auto-detect herdr from HERDR_ENV=1, got '$out'"
-  assert_contains "$(cat "$errfile")" "EXPERIMENTAL herdr backend" \
-    "fm_backend_name did not print a loud notice when auto-detecting herdr"
-  assert_contains "$(cat "$errfile")" "config/backend" \
-    "fm_backend_name's auto-detect notice did not name the opt-out"
+  [ ! -s "$errfile" ] || fail "fm_backend_name must keep verified Herdr auto-detection silent"$'\n'"$(cat "$errfile")"
 
   : > "$errfile"
   out=$(unset HERDR_ENV CMUX_WORKSPACE_ID; TMUX='fake,1,0' FM_BACKEND='' FM_BACKEND_CONFIG_DIR="$cfg" fm_backend_name 2>"$errfile")
@@ -447,7 +444,7 @@ test_backend_name_autodetect_notice() {
   [ "$out" = tmux ] || fail "nested tmux-in-cmux should auto-detect tmux (innermost first), got '$out'"
   [ -s "$errfile" ] && fail "nested tmux-in-cmux auto-detect (result tmux) must stay silent"$'\n'"$(cat "$errfile")"
 
-  pass "fm_backend_name: auto-detect selects herdr or cmux (loud notice) or tmux (silent, including nested tmux-in-herdr/tmux-in-cmux)"
+  pass "fm_backend_name: verified Herdr and tmux stay silent while experimental cmux remains loud"
 }
 
 # Explicit configuration (FM_BACKEND env or config/backend) always wins over
@@ -815,7 +812,10 @@ run_spawn_case() {  # <bin-root> <fakebin> <log> <state> <data> <config> <proj> 
   local bin=$1 fb=$2 log=$3 state=$4 data=$5 config=$6 proj=$7; shift 7
   [ "${1:-}" = -- ] && shift
   : > "$log"
-  env PATH="$fb:$PATH" FM_ROOT_OVERRIDE="$bin" HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' \
+  # The shared Treehouse project lock lives in the home's state dir, which a
+  # fresh checkout does not have; give spawn a home that owns one.
+  mkdir -p "$TMP_ROOT/spawn-home/state"
+  env PATH="$fb:$PATH" FM_ROOT_OVERRIDE="$bin" FM_HOME="$TMP_ROOT/spawn-home" HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' \
     FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" \
     FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_TMUX_LOG="$log" \

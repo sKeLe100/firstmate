@@ -66,6 +66,10 @@ case "${1:-}" in
   daemon)
     # FM_FAKE_DAEMON_DOWN: the explicit down-probe fails, as the real
     # `no-mistakes daemon status` does when the daemon is not running.
+    # FM_FAKE_DAEMON_TIMEOUT: the probe does not answer at all, which is what
+    # the bounded call reports as 124 when `timeout` kills a slow daemon status.
+    [ -z "${FM_FAKE_DAEMON_PROBE_LOG:-}" ] || printf 'probe\n' >> "$FM_FAKE_DAEMON_PROBE_LOG"
+    [ "${FM_FAKE_DAEMON_TIMEOUT:-0}" = 1 ] && exit 124
     [ "${FM_FAKE_DAEMON_DOWN:-0}" = 1 ] && exit 1
     printf '%s\n' 'daemon running (pid 4242)'
     exit 0 ;;
@@ -259,6 +263,8 @@ reset_fakes() {
   FM_FAKE_HERDR_SHELL_PID=$$
   FM_FAKE_CI_LOGS=""
   FM_FAKE_DAEMON_DOWN=0
+  FM_FAKE_DAEMON_TIMEOUT=0
+  FM_FAKE_DAEMON_PROBE_LOG=
   FM_FAKE_PR_STATE=MERGED
   FM_FAKE_PR_MERGED=true
   FM_FAKE_PR_READ_FAIL=0
@@ -270,7 +276,7 @@ reset_fakes() {
   unset FM_FAKE_PR_47_STATE FM_FAKE_PR_47_MERGED FM_FAKE_PR_48_STATE FM_FAKE_PR_48_MERGED
   export FM_FAKE_AXI_STATUS FM_FAKE_AXI_STATUS_RUN FM_FAKE_RUNS_LIST FM_FAKE_BUSY FM_FAKE_BUSY_TEXT FM_FAKE_TMUX_MISSING FM_FAKE_TMUX_UNREADABLE
   export FM_FAKE_HERDR_BUSY FM_FAKE_HERDR_MISSING FM_FAKE_HERDR_READ_FAIL FM_FAKE_HERDR_HUSK FM_FAKE_HERDR_AGENT_STATUS FM_FAKE_HERDR_PROCESS FM_FAKE_HERDR_SHELL_PID FM_FAKE_CI_LOGS
-  export FM_FAKE_DAEMON_DOWN FM_FAKE_AXI_HOME
+  export FM_FAKE_DAEMON_DOWN FM_FAKE_DAEMON_TIMEOUT FM_FAKE_DAEMON_PROBE_LOG FM_FAKE_AXI_HOME
   export FM_FAKE_AXI_HOME_ERROR FM_FAKE_AXI_STATUS_RUN_ERROR FM_FAKE_AXI_STATUS_ERROR
   export FM_FAKE_PR_STATE FM_FAKE_PR_MERGED FM_FAKE_PR_READ_FAIL FM_FAKE_PR_READ_LOG FM_FAKE_PR_STATE_AXI
   export FM_FAKE_GLAB_STATE FM_FAKE_GLAB_READ_FAIL FM_FAKE_GLAB_READ_LOG
@@ -381,6 +387,95 @@ run:
   findings[2]{id,severity,file,line,action,description}:
     r1,warning,a.go,,auto-fix,ignored error
     r2,error,b.go,,ask-user,changes product behavior
+gate: review
+EOF
+}
+
+# A gate owed the CREWMATE's own answer: every finding's `action` column is
+# auto-fix. The free-text `description` column is where this repository's own
+# review output routinely quotes finding actions, so one row spells the token out
+# the way an enumeration does - surrounded by commas, in the exact shape a
+# substring or unanchored-regex derivation would accept - and the branch name
+# carries it too. Both are the counterexample: the ONLY thing that may mint the
+# human-decision component is the `action` column read by position.
+run_parked_crewmate_gate_with_ask_user_prose() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: fix_review
+  awaiting_agent: parked 2m10s
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: ""
+  findings[2]{id,severity,file,line,action,description}:
+    r1,warning,a.go,,auto-fix,the action field is one of no-op, auto-fix, ask-user, so pick one
+    r2,warning,b.go,,auto-fix,ignored error
+gate: review
+EOF
+}
+
+# The same gate with the findings table's columns in a different order, so the
+# derivation is proven to read the column INDEX out of the header rather than
+# assuming action is the fifth field. Only the last row is owed a human.
+run_parked_reordered_columns() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: awaiting_approval
+  awaiting_agent: parked 2m10s
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: ""
+  findings[2]{severity,action,id,file,line,description}:
+    warning,auto-fix,r1,a.go,,ignored error
+    error,ask-user,r2,b.go,,changes product behavior
+gate: review
+EOF
+}
+
+# The same crewmate-owed gate with `description` placed BEFORE `action` in the
+# header. Every row's real action column is auto-fix, but one description spells
+# the token out surrounded by commas at exactly the comma offset the `action`
+# index lands on, so a derivation that reads the index from the header and then
+# walks raw commas to it accepts free text as the action. The table's shape is
+# not provably safe here, so the only correct answer is to keep the ladder.
+run_parked_free_text_before_action() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: fix_review
+  awaiting_agent: parked 2m10s
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: ""
+  findings[1]{id,severity,file,line,description,action}:
+    r1,warning,a.go,12,the action field is one of auto-fix, ask-user,auto-fix
+gate: review
+EOF
+}
+
+# The same crewmate-owed gate preceded by an UNBRACED `findings[N]:` block from
+# an earlier, already-resolved round. The braced header that follows is the live
+# gate's table and is the one the column index is read from, so the rows walked
+# must be that table's rows too. An earlier block carrying `ask-user` at the very
+# comma offset the braced header's `action` index resolves to is the counter-
+# example: a row scan that anchors on the looser unbraced pattern reads the wrong
+# block's rows at the right block's index, and mints the component for a gate
+# whose every action is auto-fix.
+run_parked_unbraced_findings_precursor() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: fix_review
+  awaiting_agent: parked 2m10s
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: ""
+  findings[2]:
+    prior-1,warning,a.go,ask-user,an earlier already-resolved block
+    prior-2,info,b.go,ask-user,another earlier row
+  findings[1]{id,severity,file,action,description}:
+    r1,warning,a.go,auto-fix,the live gate is owed to the crewmate
 gate: review
 EOF
 }
