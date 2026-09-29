@@ -916,15 +916,12 @@ fm_recovery_marker_reopen_announced() {
 # docs/watcher-continuity.md "Resurface bound" owns the contract. The streak
 # record is "<fingerprint>\t<count>"; the fingerprint covers the queue bytes
 # and the session-lock owner, so a new wake, an acknowledgement, or a session
-# restart starts a fresh streak, and a drain resets it explicitly. Sets
+# restart starts a fresh streak. A drain that only presents an unacknowledged
+# row changes neither and must not reset the streak on its own. Sets
 # FM_REARM_RESURFACE_REASON to the reason to deliver, or empty to stay quiet.
 # Any record read or write failure delivers the ordinary reason.
 FM_REARM_RESURFACE_STREAK="$STATE/.rearm-resurface-streak"
 FM_REARM_RESURFACE_REASON=
-
-fm_rearm_resurface_reset() {
-  rm -f -- "$FM_REARM_RESURFACE_STREAK" 2>/dev/null || true
-}
 
 fm_rearm_resurface_decide() {
   local limit=${FM_REARM_RESURFACE_LIMIT:-3} fingerprint queue_sum lock_owner record prior count=1 tmp

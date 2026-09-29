@@ -293,27 +293,44 @@ test_undrainable_queue_resurface_is_bounded() {
     || fail "bounded resurfacing dropped or rewrote the durable wake"
   pass "an undrainable queued wake resurfaces a bounded number of times, escalates once, then stays quiet and live"
 
-  # Progress by drain: a drain that reaches the queue resets the streak.
+  # A presentation-only drain neither consumes the row nor changes the queue,
+  # so it must not reset the streak on its own: only an actual acknowledgement,
+  # a new wake, or a session restart does.
   FM_HOME="$dir/home" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-wake-drain.sh" \
     > "$dir/drain.out" 2> "$dir/drain.err" || fail "drain failed: $(cat "$dir/drain.err")"
-  expect_resurface_close "$dir" "$dir/c6.out" 'check: rearm-resurface' "after drain"
-  ! grep -qF 'stalled' "$dir/c6.out" || fail "a drain did not reset the resurface bound: $(cat "$dir/c6.out")"
-  [ "$(streak_count "$state")" = 1 ] || fail "a drain did not restart the streak at 1"
+  [ "$(cat "$state/.wake-queue")" = "$queue_before" ] \
+    || fail "a presentation-only drain rewrote the durable queue"
+  expect_resurface_quiet "$dir" "$dir/c6.out" 6 "after presentation-only drain"
+
+  # Progress by acknowledgement: run the exact WAKE_ACK_REQUIRED command the
+  # drain printed, which actually consumes the presented row and changes the
+  # queue's fingerprint.
+  ack_through=$(sed -n 's/.*--ack-through \([0-9]\{1,\}\) --recovery-generation.*/\1/p' "$dir/drain.err" | tail -1)
+  ack_gen=$(sed -n 's/.*--recovery-generation \([^[:space:]]\{1,\}\)$/\1/p' "$dir/drain.err" | tail -1)
+  [ -n "$ack_through" ] && [ -n "$ack_gen" ] \
+    || fail "could not parse the WAKE_ACK_REQUIRED command: $(cat "$dir/drain.err")"
+  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-wake-drain.sh" \
+    --ack-through "$ack_through" --recovery-generation "$ack_gen" \
+    > "$dir/ack.out" 2> "$dir/ack.err" || fail "acknowledgement failed: $(cat "$dir/ack.err")"
+  append_wake "$state" check second 'check: a new wake arrived' || fail "could not append a new wake"
+  expect_resurface_close "$dir" "$dir/c7.out" 'check: rearm-resurface' "after acknowledgement"
+  ! grep -qF 'stalled' "$dir/c7.out" || fail "an acknowledgement did not reset the resurface bound: $(cat "$dir/c7.out")"
+  [ "$(streak_count "$state")" = 1 ] || fail "an acknowledgement did not restart the streak at 1"
 
   # Progress by a new wake: exhaust the bound again, then a new row resets it.
-  expect_resurface_close "$dir" "$dir/c7.out" 'check: rearm-resurface' "post-drain cycle 2"
-  expect_resurface_close "$dir" "$dir/c8.out" 'check: rearm-resurface stalled' "post-drain cycle 3"
-  append_wake "$state" check second 'check: a new wake arrived' || fail "could not append a new wake"
-  expect_resurface_close "$dir" "$dir/c9.out" 'check: rearm-resurface' "after new wake"
-  ! grep -qF 'stalled' "$dir/c9.out" || fail "a new wake did not reset the resurface bound: $(cat "$dir/c9.out")"
+  expect_resurface_close "$dir" "$dir/c8.out" 'check: rearm-resurface' "post-ack cycle 2"
+  expect_resurface_close "$dir" "$dir/c9.out" 'check: rearm-resurface stalled' "post-ack cycle 3"
+  append_wake "$state" check third 'check: another new wake arrived' || fail "could not append another new wake"
+  expect_resurface_close "$dir" "$dir/c10.out" 'check: rearm-resurface' "after another new wake"
+  ! grep -qF 'stalled' "$dir/c10.out" || fail "a new wake did not reset the resurface bound: $(cat "$dir/c10.out")"
 
   # Progress by session restart: a new session-lock owner resets the streak.
-  expect_resurface_close "$dir" "$dir/c10.out" 'check: rearm-resurface' "post-wake cycle 2"
-  expect_resurface_close "$dir" "$dir/c11.out" 'check: rearm-resurface stalled' "post-wake cycle 3"
+  expect_resurface_close "$dir" "$dir/c11.out" 'check: rearm-resurface' "post-wake cycle 2"
+  expect_resurface_close "$dir" "$dir/c12.out" 'check: rearm-resurface stalled' "post-wake cycle 3"
   printf '%s\n' "$$" > "$state/.lock"
-  expect_resurface_close "$dir" "$dir/c12.out" 'check: rearm-resurface' "after session restart"
-  ! grep -qF 'stalled' "$dir/c12.out" || fail "a session restart did not reset the resurface bound: $(cat "$dir/c12.out")"
-  pass "a drain, a new wake, or a session restart restores ordinary resurface delivery"
+  expect_resurface_close "$dir" "$dir/c13.out" 'check: rearm-resurface' "after session restart"
+  ! grep -qF 'stalled' "$dir/c13.out" || fail "a session restart did not reset the resurface bound: $(cat "$dir/c13.out")"
+  pass "an acknowledgement, a new wake, or a session restart restores ordinary resurface delivery, but a presentation-only drain does not"
 }
 
 test_handling_successor_does_not_go_blind
