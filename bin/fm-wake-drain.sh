@@ -638,6 +638,8 @@ else
   printf 'wake drain: queue lock could not be acquired safely\n' >&2
   exit 1
 fi
+# A drain that reached the queue is progress for the resurface bound.
+fm_rearm_resurface_reset
 DRAIN_LOCK_HELD=true
 reclaim_stale_branch_grant_locked || exit 1
 [ "$ACTOR" != main ] || retire_unconsumable_rows_locked

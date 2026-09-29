@@ -912,6 +912,47 @@ fm_recovery_marker_reopen_announced() {
   fm_recovery_transition "$1" reopen-announced
 }
 
+# Bound consecutive recovery resurfaces of one unchanged, undrained queue.
+# docs/watcher-continuity.md "Resurface bound" owns the contract. The streak
+# record is "<fingerprint>\t<count>"; the fingerprint covers the queue bytes
+# and the session-lock owner, so a new wake, an acknowledgement, or a session
+# restart starts a fresh streak, and a drain resets it explicitly. Sets
+# FM_REARM_RESURFACE_REASON to the reason to deliver, or empty to stay quiet.
+# Any record read or write failure delivers the ordinary reason.
+FM_REARM_RESURFACE_STREAK="$STATE/.rearm-resurface-streak"
+FM_REARM_RESURFACE_REASON=
+
+fm_rearm_resurface_reset() {
+  rm -f -- "$FM_REARM_RESURFACE_STREAK" 2>/dev/null || true
+}
+
+fm_rearm_resurface_decide() {
+  local limit=${FM_REARM_RESURFACE_LIMIT:-3} fingerprint queue_sum lock_owner record prior count=1 tmp
+  case "$limit" in ''|*[!0-9]*|0) limit=3 ;; esac
+  FM_REARM_RESURFACE_REASON='check: rearm-resurface'
+  queue_sum=$(cksum < "$FM_WAKE_QUEUE" 2>/dev/null) || queue_sum=absent
+  lock_owner=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
+  fingerprint="${queue_sum// /:}|${lock_owner}"
+  if [ -f "$FM_REARM_RESURFACE_STREAK" ] && [ ! -L "$FM_REARM_RESURFACE_STREAK" ]; then
+    record=$(sed -n '1p' "$FM_REARM_RESURFACE_STREAK" 2>/dev/null || true)
+    prior=${record##*$'\t'}
+    if [ "${record%$'\t'*}" = "$fingerprint" ]; then
+      case "$prior" in ''|*[!0-9]*) ;; *) count=$((prior + 1)) ;; esac
+    fi
+  fi
+  tmp=$(mktemp "$FM_REARM_RESURFACE_STREAK.tmp.XXXXXX" 2>/dev/null) || return 0
+  if ! printf '%s\t%s\n' "$fingerprint" "$count" > "$tmp" \
+    || ! mv -f -- "$tmp" "$FM_REARM_RESURFACE_STREAK"; then
+    rm -f -- "$tmp" 2>/dev/null || true
+    return 0
+  fi
+  if [ "$count" -eq $((limit + 1)) ]; then
+    FM_REARM_RESURFACE_REASON="check: rearm-resurface stalled - the same queued wake resurfaced $limit times with no drain or acknowledgement; automatic resurfacing is paused until the queue changes, a drain succeeds, or the session restarts. If bin/fm-wake-drain.sh cannot run, report that blocker to the captain once instead of retrying."
+  elif [ "$count" -gt $((limit + 1)) ]; then
+    FM_REARM_RESURFACE_REASON=
+  fi
+}
+
 fm_lock_try_acquire() {
   local lockdir=$1 pid steal cur rc steal_owner primary_owner current
   FM_LOCK_HELD_PID=
