@@ -159,6 +159,67 @@ fm_harness_pid_alive() {
   fm_harness_process_matches "$comm" "$args"
 }
 
+# --- session-lock file format (single owner) --------------------------------
+# state/.lock is at most two lines:
+#   line 1: the harness PID that holds the home's session lock (required)
+#   line 2: the stable session identity (optional). Only harnesses that need
+#           PID-independent ownership record it - today just Codex, whose
+#           isolated PID namespaces make every sandbox's harness PID 1, so a
+#           bare PID is ambiguous across sandboxes.
+# fm_session_lock_read is the ONE owner of this format. Everything else that
+# wants the lock PID reads line 1 (through this function, or `sed -n '1p'`);
+# nothing else parses the identity line. Callers that need the identity must
+# call this function directly (not in a command substitution, which runs in a
+# subshell and would drop the globals below) and read FM_LOCK_IDENTITY.
+
+# fm_session_lock_read <state-dir>
+# Prints the PID from line 1, and sets FM_LOCK_PID / FM_LOCK_IDENTITY.
+# Returns 1 when the lock is absent, a symlink, or line 1 is not a bare decimal.
+FM_LOCK_PID=''
+FM_LOCK_IDENTITY=''
+fm_session_lock_read() {  # <state-dir>
+  local state=$1 lock_file pid identity
+  lock_file="$state/.lock"
+  FM_LOCK_PID=''
+  FM_LOCK_IDENTITY=''
+  [ -f "$lock_file" ] && [ ! -L "$lock_file" ] || return 1
+  pid=$(sed -n '1p' "$lock_file" 2>/dev/null || true)
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  identity=$(sed -n '2p' "$lock_file" 2>/dev/null || true)
+  FM_LOCK_PID=$pid
+  FM_LOCK_IDENTITY=$identity
+  printf '%s\n' "$pid"
+  return 0
+}
+
+# Resolve this process's stable Codex session identity, if available.
+#
+# The identity is the Codex session id. The tracked Codex hook entry points
+# thread it from their payload's session_id into FM_SESSION_LOCK_IDENTITY,
+# which is the deterministic cross-sandbox source at both lock acquisition
+# (SessionStart) and lock check (Stop). CODEX_THREAD_ID / CODEX_SESSION_ID are
+# read as a fallback for a Codex build that exports them directly.
+#
+# Returns 0 and prints the identity, or 1 when none is available (a non-Codex
+# session, or a Codex session whose identity could not be resolved).
+fm_harness_session_identity() {
+  if [ -n "${FM_SESSION_LOCK_IDENTITY:-}" ]; then
+    printf '%s\n' "$FM_SESSION_LOCK_IDENTITY"
+    return 0
+  fi
+  if [ -n "${CODEX_THREAD_ID:-}" ]; then
+    printf '%s\n' "$CODEX_THREAD_ID"
+    return 0
+  fi
+  if [ -n "${CODEX_SESSION_ID:-}" ]; then
+    printf '%s\n' "$CODEX_SESSION_ID"
+    return 0
+  fi
+  return 1
+}
+
 # True when state dir $1 holds a session lock whose pid is ANY harness ancestor
 # of the current process: this script runs inside the session that owns the
 # home's fleet lock. Membership is the honest test of that question, because the
@@ -167,15 +228,35 @@ fm_harness_pid_alive() {
 # and an inner pid when a harness-named daemon parents the session. A missing
 # lock, a malformed lock, a lock held by a harness outside this ancestry, or an
 # ancestry that cannot be resolved all fail closed.
+#
+# When the lock records a stable session identity, PID membership alone is not
+# enough: the caller's identity must equal it, and a caller that cannot resolve
+# its own identity fails closed. That is what stops a non-owning Codex sandbox
+# (harness PID 1, different session id) from claiming the owner's lock.
 fm_session_lock_owned_by_self() {
-  local state=$1 lock_pid pids pid
-  lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
-  case "$lock_pid" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
+  local state=$1 lock_pid lock_identity pids pid my_identity
+  fm_session_lock_read "$state" >/dev/null || return 1
+  lock_pid=$FM_LOCK_PID
+  lock_identity=$FM_LOCK_IDENTITY
   pids=$(fm_harness_ancestry_pids) || return 1
   while IFS= read -r pid; do
-    [ "$pid" = "$lock_pid" ] && return 0
+    if [ "$pid" = "$lock_pid" ]; then
+      if [ -n "$lock_identity" ]; then
+        if ! my_identity=$(fm_harness_session_identity); then
+          return 1
+        fi
+        [ "$my_identity" = "$lock_identity" ] && return 0
+      else
+        # Legacy single-line lock (PID only). PID membership is the owner test,
+        # but a Codex sandbox whose harness is namespace PID 1 collides with
+        # every other Codex sandbox, so a caller that carries a session identity
+        # cannot safely claim a PID-1 legacy lock by PID alone: fail closed.
+        if [ "$lock_pid" = "1" ] && fm_harness_session_identity >/dev/null 2>&1; then
+          return 1
+        fi
+        return 0
+      fi
+    fi
   done <<EOF
 $pids
 EOF

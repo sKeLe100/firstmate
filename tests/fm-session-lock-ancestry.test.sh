@@ -438,11 +438,108 @@ test_e2e_namespace_local_bwrap_refuses_primary_lock() {
   pass "session-lock e2e: namespace-local bwrap PID 1 refuses the primary lock"
 }
 
+# --- Codex thread-identity ownership -----------------------------------------
+# Codex runs every shell tool in its own PID namespace, where the harness is PID
+# 1 in each sandbox, so a bare lock PID collides across separate threads. The
+# lock records the stable session identity (the Codex session_id) on line 2, and
+# ownership requires the caller's identity to match. These cases drive that
+# matrix behind the same deterministic per-pid ps used by the unit layer above.
+
+make_codex_pid1_ps() {  # <fakebin>
+  local fakebin=$1
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+set -u
+field= pid=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) field=$2; shift 2 ;;
+    -p) pid=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$pid:$field" in
+  1:comm=) printf '%s\n' codex ;;
+  1:args=) printf '%s\n' 'codex-linux-sandbox' ;;
+  1:ppid=) printf '%s\n' 0 ;;
+  *:comm=) printf '%s\n' bash ;;
+  *:args=) printf '%s\n' 'bash /repo/bin/fm-watch.sh' ;;
+  *:ppid=) printf '%s\n' 1 ;;
+esac
+SH
+  chmod +x "$fakebin/ps"
+}
+
+test_codex_identity_binds_ownership_across_sandboxes() {
+  local dir fakebin
+  dir="$TMP_ROOT/codex-identity"
+  fakebin=$(fm_fakebin "$dir")
+  mkdir -p "$dir/state"
+  make_codex_pid1_ps "$fakebin"
+  printf '1\nthread-owner-01a0bfdb\n' > "$dir/state/.lock"
+
+  # The same Codex thread, in a separate sandbox invocation: owner.
+  FM_SESSION_LOCK_IDENTITY="thread-owner-01a0bfdb" lib_eval "$fakebin" \
+    "fm_session_lock_owned_by_self '$dir/state'" \
+    || fail "the owning Codex thread did not recognize its own lock"
+
+  # A different Codex thread whose sandbox collides on PID 1: rejected.
+  if FM_SESSION_LOCK_IDENTITY="thread-nonowner-01a0bff6" lib_eval "$fakebin" \
+    "fm_session_lock_owned_by_self '$dir/state'"; then
+    fail "a non-owning Codex thread with colliding PID 1 claimed the owner's lock"
+  fi
+
+  # A caller that cannot resolve a session identity against an identity-bearing
+  # lock fails closed, rather than falling back to the ambiguous PID.
+  if lib_eval "$fakebin" "fm_session_lock_owned_by_self '$dir/state'"; then
+    fail "a caller with no session identity claimed an identity-bearing lock"
+  fi
+  pass "session-lock: Codex thread identity binds ownership across sandboxes and fails closed when missing"
+}
+
+test_codex_legacy_pid1_lock_is_ambiguous_and_fails_closed() {
+  local dir fakebin
+  dir="$TMP_ROOT/codex-legacy-pid1"
+  fakebin=$(fm_fakebin "$dir")
+  mkdir -p "$dir/state"
+  make_codex_pid1_ps "$fakebin"
+  # A legacy single-line lock: PID only, no identity recorded.
+  printf '1\n' > "$dir/state/.lock"
+
+  # A Codex caller that carries a session identity cannot claim a PID-1 legacy
+  # lock by PID alone: every Codex sandbox reports PID 1, so that match proves
+  # nothing and must fail closed.
+  if FM_SESSION_LOCK_IDENTITY="thread-owner-01a0bfdb" lib_eval "$fakebin" \
+    "fm_session_lock_owned_by_self '$dir/state'"; then
+    fail "a Codex caller claimed a PID-1 legacy lock with no recorded identity"
+  fi
+  pass "session-lock: a Codex caller does not claim a PID-1 legacy lock by PID alone"
+}
+
+test_codex_fm_lock_records_identity_roundtrip() {
+  local dir fakebin out
+  dir="$TMP_ROOT/codex-lock-roundtrip"
+  fakebin=$(fm_fakebin "$dir")
+  mkdir -p "$dir/state"
+  make_codex_pid1_ps "$fakebin"
+  # Acquiring the lock under a Codex identity must write both lines, and a
+  # re-read through the single format owner must see the same identity.
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_SESSION_LOCK_IDENTITY="thread-owner-01a0bfdb" \
+    "$ROOT/bin/fm-lock.sh" 2>&1) || fail "fm-lock.sh could not acquire under a Codex identity: $out"
+  assert_contains "$out" "lock acquired" "fm-lock.sh must report acquisition"
+  [ "$(sed -n '1p' "$dir/state/.lock")" = "1" ] || fail "lock line 1 must be the harness PID 1, got: $(sed -n '1p' "$dir/state/.lock")"
+  [ "$(sed -n '2p' "$dir/state/.lock")" = "thread-owner-01a0bfdb" ] || fail "lock line 2 must be the Codex identity, got: $(sed -n '2p' "$dir/state/.lock")"
+  pass "session-lock: fm-lock.sh records the Codex identity on the lock and round-trips it"
+}
+
 test_version_named_session_is_identified_on_both_platforms
 test_harness_at_namespace_pid1_is_examined
 test_ordinary_paths_are_never_harness_processes
 test_harness_beyond_a_gap_never_owns_the_lock
 test_competing_version_named_session_is_seen_as_live
+test_codex_identity_binds_ownership_across_sandboxes
+test_codex_legacy_pid1_lock_is_ambiguous_and_fails_closed
+test_codex_fm_lock_records_identity_roundtrip
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock

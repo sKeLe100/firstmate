@@ -61,6 +61,7 @@ COMPLETION_FILE="$STATE/.session-start-complete"
 
 SOURCE=
 PI_PREREQUISITE=0
+CODEX_HOOK=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --source)
@@ -71,6 +72,10 @@ while [ $# -gt 0 ]; do
       ;;
     --source=*) SOURCE=${1#--source=}; shift ;;
     --pi-prerequisite) PI_PREREQUISITE=1; shift ;;
+    # The tracked Codex SessionStart hook passes --codex so this wrapper can
+    # thread the payload's session_id into FM_SESSION_LOCK_IDENTITY, the stable
+    # cross-sandbox identity the session lock needs for PID-independent ownership.
+    --codex) CODEX_HOOK=1; shift ;;
     *) shift ;;
   esac
 done
@@ -94,13 +99,13 @@ session_start_completed() {
   [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ] || return 1
   [ -f "$COMPLETION_FILE" ] && [ ! -L "$COMPLETION_FILE" ] || return 1
   fm_session_lock_owned_by_self "$STATE" || return 1
-  lock_pid=$(cat "$STATE/.lock" 2>/dev/null) || return 1
+  lock_pid=$(sed -n '1p' "$STATE/.lock" 2>/dev/null) || return 1
   completion_pid=$(cat "$COMPLETION_FILE" 2>/dev/null) || return 1
   case "$lock_pid" in ''|*[!0-9]*) return 1 ;; esac
   [ "$completion_pid" = "$lock_pid" ]
 }
 
-if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
+if [ ! -t 0 ] && { [ -z "$SOURCE" ] || [ "$CODEX_HOOK" -eq 1 ]; }; then
   # Claude and Codex both deliver a JSON SessionStart payload on stdin whose
   # `source` field carries startup|resume|clear|compact. Parsed without jq so a
   # host missing it still gets correct routing rather than silent full runs.
@@ -118,13 +123,31 @@ if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
   if fm_hook_payload_is_foreign_host "$PAYLOAD"; then
     exit 0
   fi
-  SOURCE=$(printf '%s' "$PAYLOAD" | awk '
-    BEGIN { RS = "\"" }
-    seen == 2 { print; exit }
-    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
-    seen == 1 { seen = 0 }
-    $0 == "source" { seen = 1 }
-  ')
+  if [ -z "$SOURCE" ]; then
+    SOURCE=$(printf '%s' "$PAYLOAD" | awk '
+      BEGIN { RS = "\"" }
+      seen == 2 { print; exit }
+      seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
+      seen == 1 { seen = 0 }
+      $0 == "source" { seen = 1 }
+    ')
+  fi
+  if [ "$CODEX_HOOK" -eq 1 ]; then
+    # Codex session_id is the stable session identity across separate sandbox
+    # invocations (the session lock's PID is ambiguous there). Thread it so
+    # fm-lock.sh records it and fm_session_lock_owned_by_self can compare it.
+    session_id=$(printf '%s' "$PAYLOAD" | awk '
+      BEGIN { RS = "\"" }
+      seen == 2 { print; exit }
+      seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
+      seen == 1 { seen = 0 }
+      $0 == "session_id" { seen = 1 }
+    ')
+    case "$session_id" in
+      ''|*[!0-9a-zA-Z_-]*) : ;;
+      *) export FM_SESSION_LOCK_IDENTITY="$session_id" ;;
+    esac
+  fi
 fi
 
 case "$SOURCE" in

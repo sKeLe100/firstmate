@@ -164,6 +164,30 @@ fi
 # so this exempts them while guarding every real secondmate home.
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+
+# In the default (non --claude / --cursor) mode, bind Codex lock ownership to the
+# stable session identity from the Stop payload. A Codex PID namespace gives
+# every sandbox's harness PID 1, so a non-owner thread collides with the owner's
+# lock PID; its session_id is the one stable cross-sandbox identity. Pi/OpenCode/
+# OMP also use default mode, but their payloads carry no session_id and their
+# locks carry no identity, so they keep the legacy PID-only path.
+#
+# In a primary checkout with a session lock, if the lock is held by another
+# session (for example, a non-owning Codex sandbox thread with a colliding PID
+# or a different thread identity), this non-owner must silently stand down.
+#
+# --claude and --cursor are deliberately excluded: Claude's Stop-owned auto-arm
+# and Cursor's park adapter own their lock-ownership checks and their own
+# cooperative recovery, so standing down here would short-circuit those paths.
+if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CURSOR_MODE" -eq 0 ]; then
+  FM_SESSION_LOCK_IDENTITY=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null || true)
+  if [ -f "$STATE/.lock" ] && ! fm_session_lock_owned_by_self "$STATE"; then
+    exit 0
+  fi
+fi
+
 # --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"

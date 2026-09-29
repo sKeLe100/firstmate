@@ -192,6 +192,8 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
+  cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
   chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh"
@@ -2199,6 +2201,60 @@ test_hook_no_afk_ignores_poll_derived_grace() {
   pass "fm-turnend-guard: with away mode off, the poll-derived grace never applies"
 }
 
+# Codex runs the guard in its own PID namespace where the harness is PID 1, so a
+# session lock whose PID is 1 is ambiguous across separate Codex sandboxes. These
+# cases pin the identity stand-down added to the guard: a non-owner thread with a
+# different session_id silently stands down before the supervision predicate,
+# while the true owner still reaches the block when supervision is absent.
+
+make_codex_guard_ps() {
+  local fakebin=$1 real_ps
+  real_ps=$(command -v ps) || return 1
+  cat > "$fakebin/ps" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  '-o comm= -p 1') printf '%s\n' codex ;;
+  '-o args= -p 1') printf '%s\n' 'codex-linux-sandbox' ;;
+  '-o ppid= -p 1') printf '%s\n' 0 ;;
+  '-o comm= -p '*) printf '%s\n' bash ;;
+  '-o args= -p '*) printf '%s\n' bash ;;
+  '-o ppid= -p '*) printf '%s\n' 1 ;;
+  *) exec "$real_ps" "\$@" ;;
+esac
+SH
+  chmod +x "$fakebin/ps"
+}
+
+test_hook_non_owner_codex_thread_stands_down() {
+  local dir fakebin home out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-codex-nonowner")
+  fakebin=$(fm_fakebin "$TMP_ROOT/hook-codex-nonowner-fake")
+  make_codex_guard_ps "$fakebin"
+  home=$(cd "$dir" && pwd)
+  : > "$dir/state/task1.meta"
+  printf '1\nowner-thread-01a0bfdb\n' > "$dir/state/.lock"
+  out=$(printf '{"session_id":"nonowner-thread-01a0bff6","stop_hook_active":false}' \
+    | PATH="$fakebin:$PATH" FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
+  expect_code 0 "$status" "a non-owning Codex thread must silently stand down"
+  [ -z "$out" ] || fail "non-owner Codex thread produced guard output: $out"
+  pass "fm-turnend-guard: a non-owning Codex thread with a colliding PID silently stands down"
+}
+
+test_hook_owner_codex_thread_still_blocks_without_supervision() {
+  local dir fakebin home out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-codex-owner")
+  fakebin=$(fm_fakebin "$TMP_ROOT/hook-codex-owner-fake")
+  make_codex_guard_ps "$fakebin"
+  home=$(cd "$dir" && pwd)
+  : > "$dir/state/task1.meta"
+  printf '1\nowner-thread-01a0bfdb\n' > "$dir/state/.lock"
+  out=$(printf '{"session_id":"owner-thread-01a0bfdb","stop_hook_active":false}' \
+    | PATH="$fakebin:$PATH" FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
+  expect_code 2 "$status" "the true owner must still block when supervision is genuinely absent"
+  assert_contains "$out" "TURN WOULD END BLIND" "the true owner must still receive the blind-supervision refusal"
+  pass "fm-turnend-guard: the owning Codex thread still blocks without supervision"
+}
+
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon
@@ -2288,3 +2344,5 @@ test_hook_away_daemon_allows_beacon_within_poll_derived_grace
 test_hook_away_daemon_blocks_dead_daemon_despite_poll_derived_grace
 test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace
 test_hook_no_afk_ignores_poll_derived_grace
+test_hook_non_owner_codex_thread_stands_down
+test_hook_owner_codex_thread_still_blocks_without_supervision

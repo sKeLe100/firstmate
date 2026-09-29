@@ -135,7 +135,7 @@ pid_harness() { # <pid>
 
 lock_state() {
   local pid harness
-  pid=$(cat "$STATE/.lock" 2>/dev/null || true)
+  pid=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
   case "$pid" in ''|*[!0-9]*) printf 'free\t\t'; return 0 ;; esac
   if fm_harness_pid_alive "$pid"; then
     harness=$(pid_harness "$pid" 2>/dev/null || printf unknown)
@@ -399,7 +399,7 @@ fi
 ready=0
 i=0
 while [ "$i" -lt "$READY_TIMEOUT" ]; do
-  lock_pid=$(cat "$STATE/.lock" 2>/dev/null || true)
+  lock_pid=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
   complete_pid=$(cat "$STATE/.session-start-complete" 2>/dev/null || true)
   if [ -n "$lock_pid" ] && [ "$lock_pid" = "$complete_pid" ] \
      && fm_harness_pid_alive "$lock_pid" \
