@@ -1,0 +1,5 @@
+ok - the --changed path bounds fm-watch-triage at its own load-scaled 1500s base
+ok - the --changed path bounds fm-captain-hold-lifecycle at its own load-scaled 1500s base
+ok - token-free retry re-runs a load-sensitive failure once and clears it without a real regression
+ok - the token-free retry admits exit=124 regardless of the load-sensitive name list
+ok - token-free retry never fires when any failure is outside the load-sensitive/timeout class
