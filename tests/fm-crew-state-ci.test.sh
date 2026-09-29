@@ -168,6 +168,10 @@ log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 no CI checks reported yet, waiting for checks to register...
 no CI checks reported yet, waiting for checks to register...
+no CI checks reported yet, waiting for checks to register...
+no CI checks reported yet, waiting for checks to register...
+no CI checks reported yet, waiting for checks to register...
+no CI checks reported yet, waiting for checks to register...
 EOF
 )
   local out; out=$(run_crew_state "$d" feat-citransient)
@@ -177,18 +181,14 @@ EOF
   pass "transient poll errors followed by pending checks are not a wedge"
 }
 
-# A heartbeat interleaved with repeated identical errors proves the loop
-# recovered on at least one poll, so it is a healthy-but-flaky run, not a
-# wedge: interleaved heartbeats must clear the wedge rather than disqualify
-# the trailing one (heartbeat_interleaved is nonzero by construction on any
-# long healthy run with transient errors).
-test_ci_monitoring_interleaved_heartbeat_not_wedged() {
+# One error per heartbeat is a stuck loop, not a healthy flaky run.
+test_ci_monitoring_interleaved_heartbeat_still_wedged() {
   reset_fakes
-  local d; d=$(new_case ci-flaky-heartbeat)
-  make_repo_on_branch "$d/wt" fm/feat-ciflakyhb
+  local d; d=$(new_case ci-stuck-heartbeat)
+  make_repo_on_branch "$d/wt" fm/feat-cistuckhb
   make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-ciflakyhb.meta" "window=fm:fm-feat-ciflakyhb" "worktree=$d/wt" "kind=ship"
-  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciflakyhb)"
+  fm_write_meta "$d/state/feat-cistuckhb.meta" "window=fm:fm-feat-cistuckhb" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cistuckhb)"
   FM_FAKE_CI_LOGS=$(cat <<'EOF'
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 CI checks running, waiting for results...
@@ -202,11 +202,43 @@ log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 CI checks running, waiting for results...
 EOF
 )
+  local out; out=$(run_crew_state "$d" feat-cistuckhb)
+  assert_contains "$out" "state: failed" "one error per heartbeat -> failed"
+  assert_contains "$out" "CI polling wedge" "error density >= 50% is a wedge"
+  pass "heartbeats no more frequent than errors still wedge"
+}
+
+# Heartbeats clearly outnumbering transient errors is a healthy flaky run.
+test_ci_monitoring_interleaved_heartbeat_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-flaky-heartbeat)
+  make_repo_on_branch "$d/wt" fm/feat-ciflakyhb
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-ciflakyhb.meta" "window=fm:fm-feat-ciflakyhb" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciflakyhb)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+CI checks running, waiting for results...
+EOF
+)
   local out; out=$(run_crew_state "$d" feat-ciflakyhb)
-  assert_contains "$out" "state: working" "heartbeats interleaved with repeated failures -> working"
+  assert_contains "$out" "state: working" "heartbeats outnumbering repeated failures -> working"
   assert_not_contains "$out" "state: failed" "a healthy flaky run must not be reported failed"
-  assert_not_contains "$out" "CI polling wedge" "interleaved heartbeats prove recovery, not a wedge"
-  pass "per-poll heartbeats interleaved with transient failures are not a wedge"
+  assert_not_contains "$out" "CI polling wedge" "outnumbering heartbeats prove recovery, not a wedge"
+  pass "heartbeats outnumbering transient failures are not a wedge"
 }
 
 # A prefix that repeats early but is followed by real progress must not be
@@ -324,11 +356,15 @@ test_ci_monitoring_no_checks_yet_heartbeat_not_wedged() {
 no CI checks reported yet, waiting for checks to register...
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 no CI checks reported yet, waiting for checks to register...
-log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 no CI checks reported yet, waiting for checks to register...
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 no CI checks reported yet, waiting for checks to register...
+no CI checks reported yet, waiting for checks to register...
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
+no CI checks reported yet, waiting for checks to register...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+no CI checks reported yet, waiting for checks to register...
 no CI checks reported yet, waiting for checks to register...
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 no CI checks reported yet, waiting for checks to register...
@@ -454,6 +490,7 @@ test_ci_monitoring_green_then_rearm_stays_working
 test_ci_monitoring_no_checks_yet_stays_working
 test_ci_monitoring_repeated_poll_failure_surfaces_wedge
 test_ci_monitoring_transient_errors_then_pending_not_wedged
+test_ci_monitoring_interleaved_heartbeat_still_wedged
 test_ci_monitoring_interleaved_heartbeat_not_wedged
 test_ci_monitoring_repeated_errors_then_green_not_wedged
 test_ci_monitoring_crlf_errors_then_green_not_wedged

@@ -67,11 +67,10 @@
 #      forward-progress marker after its last occurrence) and overrides
 #      working -> failed, so a poll that can never progress surfaces as
 #      terminal instead of monitoring forever (see nm_ci_wedge_detected).
-#      Any heartbeat in or after the repeated failures clears the wedge: a
-#      heartbeat is only emitted by a poll that succeeded, so its presence
-#      proves the loop recovered and the errors are flaky, not a stuck loop.
-#      A genuine wedge has no heartbeat at all, because the failing check
-#      command never reaches the point of emitting one.
+#      Per-poll heartbeats from the first repeated failure onward clear the
+#      wedge only when they outnumber the failures (error density below 50%):
+#      a run failing at least as often as it heartbeats is stuck, while a long
+#      healthy run with occasional transient errors is not.
 #      The wedge verdict is taken before the marker parse, so it wins over a
 #      green marker that PRECEDES the repeated failures. The coarse
 #      cross-branch fallback (where the log may belong to another branch's
@@ -677,8 +676,8 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
   # markers that merely say a poll succeeded (the loop ran again without
   # failing). Together they cover every marker the parser in nm_ci_checks_state
   # below recognizes, plus terminal markers ("PR has been merged", "checks
-  # green", "outcome=") that only appear on the wedge path. Both lists clear a
-  # wedge: a heartbeat is proof a poll recovered, so it is never noise.
+  # green", "outcome=") that only appear on the wedge path. Progress markers
+  # always clear a wedge; heartbeats clear it only by outnumbering the errors.
   local progress_markers='base branch advanced|PR has been merged|CI checks passed|checks green|no CI checks reported - still monitoring|outcome=|checks failed|issues detected'
   local heartbeat_markers='no CI checks reported yet|CI checks running'
   # Extract the error prefix from each warning line (e.g.,
@@ -715,21 +714,18 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     [ -n "$span" ] || continue
     first_error_line=${span%% *}
     last_error_line=${span##* }
-    # Real progress after the last occurrence always clears the wedge. Any
-    # heartbeat in or after the repeated-error span also clears it: a heartbeat
-    # is only emitted when a poll succeeds, so its presence proves the loop
-    # recovered on at least one poll and the repeated errors are flaky, not a
-    # stuck loop. A genuine wedge has no heartbeat at all - the check command
-    # fails every poll, so no poll ever reaches the point of emitting one.
-    local progress_count heartbeat_after heartbeat_interleaved
+    # Real progress after the last occurrence always clears the wedge.
+    # Heartbeats from the first occurrence onward only clear it when they
+    # outnumber the errors: a run that fails at least as often as it heartbeats
+    # is stuck, while a long healthy run with occasional transient errors is not.
+    local progress_count heartbeat_count
     progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
       | grep -cE "$progress_markers" || true)
-    heartbeat_after=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
+    heartbeat_count=$(printf '%s\n' "$log_tail" | tail -n +"$first_error_line" \
       | grep -cE "$heartbeat_markers" || true)
-    heartbeat_interleaved=$(printf '%s\n' "$log_tail" \
-      | sed -n "${first_error_line},${last_error_line}p" \
-      | grep -cE "$heartbeat_markers" || true)
-    progress_count=$((progress_count + heartbeat_after + heartbeat_interleaved))
+    if [ "$heartbeat_count" -gt "$count" ]; then
+      progress_count=$((progress_count + 1))
+    fi
     if [ "$progress_count" -eq 0 ]; then
       printf '%d:%s' "$count" "$error_type"
       return 0
