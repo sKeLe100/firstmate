@@ -1050,7 +1050,7 @@ tests/fm-send-remote-delivery.test.sh 27717
 tests/fm-send-resolve-key.test.sh 31315
 tests/fm-send-secondmate-marker-herdr-e2e.test.sh 88
 tests/fm-send-secondmate-marker.test.sh 6252
-tests/fm-session-lock-ancestry.test.sh 4200
+tests/fm-session-lock-ancestry.test.sh 17794
 tests/fm-session-start.test.sh 179350
 tests/fm-sessionstart-hook-live-e2e.test.sh 110
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 110
@@ -1091,7 +1091,7 @@ tests/fm-tmux-agent-liveness.test.sh 3000
 tests/fm-tool-update-check.test.sh 14176
 tests/fm-trace-context-lib.test.sh 227
 tests/fm-trace-context-spawn.test.sh 49071
-tests/fm-turnend-foreign-owner-arm-fix.test.sh 2397
+tests/fm-turnend-foreign-owner-arm-fix.test.sh 5575
 tests/fm-turnend-guard.test.sh 42565
 tests/fm-update.test.sh 12000
 tests/fm-upstream-batch.test.sh 2000
@@ -1111,7 +1111,7 @@ tests/fm-watch-checkpoint.test.sh 6076
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 58946
 tests/fm-watch-retry-band.test.sh 7547
-tests/fm-watch-triage.test.sh 697969
+tests/fm-watch-triage.test.sh 1060497
 tests/fm-watcher-lock.test.sh 108940
 tests/fm-worktree-guard.test.sh 3041
 EOF
