@@ -2788,7 +2788,16 @@ resurface_after_downtime() {
     fi
     [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
   fi
-  wake "check: rearm-resurface"
+  # A queue nobody can drain must not force a turn at every Stop forever
+  # (docs/watcher-continuity.md "Resurface bound"). A suppressed resurface
+  # leaves the queue and marker untouched and keeps this watcher supervising.
+  fm_rearm_resurface_decide
+  if [ -z "$FM_REARM_RESURFACE_REASON" ]; then
+    WATCHER_RECOVERY_PENDING=0
+    triage_log "absorbed rearm-resurface: queued wake unchanged and still undrained after the resurface bound"
+    return 0
+  fi
+  wake "$FM_REARM_RESURFACE_REASON"
 }
 
 while :; do
