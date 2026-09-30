@@ -312,6 +312,8 @@ test_undrainable_queue_resurface_is_bounded() {
   FM_HOME="$dir/home" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-wake-drain.sh" \
     --ack-through "$ack_through" --recovery-generation "$ack_gen" \
     > "$dir/ack.out" 2> "$dir/ack.err" || fail "acknowledgement failed: $(cat "$dir/ack.err")"
+  [ ! -e "$state/.rearm-resurface-streak" ] \
+    || fail "an acknowledgement left the resurface streak record behind"
   append_wake "$state" check second 'check: a new wake arrived' || fail "could not append a new wake"
   expect_resurface_close "$dir" "$dir/c7.out" 'check: rearm-resurface' "after acknowledgement"
   ! grep -qF 'stalled' "$dir/c7.out" || fail "an acknowledgement did not reset the resurface bound: $(cat "$dir/c7.out")"

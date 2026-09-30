@@ -916,7 +916,8 @@ fm_recovery_marker_reopen_announced() {
 # docs/watcher-continuity.md "Resurface bound" owns the contract. The streak
 # record is "<fingerprint>\t<count>"; the fingerprint covers the queue bytes
 # and the session-lock owner, so a new wake, an acknowledgement, or a session
-# restart starts a fresh streak. A drain that only presents an unacknowledged
+# restart starts a fresh streak; the drain clears the record when it completes an
+# acknowledgement, because an empty queue leaves the fingerprint unchanged. A drain that only presents an unacknowledged
 # row changes neither and must not reset the streak on its own. Sets
 # FM_REARM_RESURFACE_REASON to the reason to deliver, or empty to stay quiet.
 # Any record read or write failure delivers the ordinary reason.
@@ -944,7 +945,7 @@ fm_rearm_resurface_decide() {
     return 0
   fi
   if [ "$count" -eq $((limit + 1)) ]; then
-    FM_REARM_RESURFACE_REASON="check: rearm-resurface stalled - the same queued wake resurfaced $limit times with no drain or acknowledgement; automatic resurfacing is paused until the queue changes, a drain succeeds, or the session restarts. If bin/fm-wake-drain.sh cannot run, report that blocker to the captain once instead of retrying."
+    FM_REARM_RESURFACE_REASON="check: rearm-resurface stalled - the same queued wake resurfaced $limit times with no drain or acknowledgement; automatic resurfacing is paused until the queue changes, a recovery is acknowledged, or the session restarts. If bin/fm-wake-drain.sh cannot run, report that blocker to the captain once instead of retrying."
   elif [ "$count" -gt $((limit + 1)) ]; then
     # shellcheck disable=SC2034 # Read by callers after the function returns.
     FM_REARM_RESURFACE_REASON=

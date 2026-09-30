@@ -68,7 +68,7 @@ An acknowledged episode does not freeze the generation, because the next downtim
 A queue the model cannot drain, because the drain is denied, fails, or has no one to run it, must not force a new turn at every harness turn end.
 `bin/fm-wake-lib.sh` (`fm_rearm_resurface_decide`) counts consecutive `check: rearm-resurface` announcements against a fingerprint of the queue bytes and the session-lock owner in `state/.rearm-resurface-streak`.
 After `FM_REARM_RESURFACE_LIMIT` (default 3) ordinary announcements of one unchanged queue, the watcher delivers one distinct `check: rearm-resurface stalled` escalation, then absorbs further recovery announcements and keeps supervising.
-A new wake or acknowledgement changes the queue and a session restart changes the lock owner, so ordinary delivery resumes on the next change; a drain that only presents an unacknowledged row changes neither and does not reset the streak.
+A new wake or row acknowledgement changes the queue, a completed drain acknowledgement clears the streak record (an empty queue would otherwise leave the fingerprint unchanged across episodes), and a session restart changes the lock owner, so ordinary delivery resumes on the next change; a drain that only presents an unacknowledged row changes neither and does not reset the streak.
 The bound never drops, rewrites, or acknowledges a queued row, never delays a new wake, and fails open to the ordinary announcement when its record cannot be read or written.
 
 ## Per-actor acknowledgement
