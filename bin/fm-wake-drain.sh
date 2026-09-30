@@ -735,7 +735,9 @@ if [ -n "$ACK_THROUGH" ]; then
   fi
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
-  rm -f -- "$FM_REARM_RESURFACE_STREAK" 2>/dev/null || true
+  if [ "$ACK_REMOVED" -gt 0 ] || [ "${RECOVERY_ACK_STATUS:-}" = 0 ]; then
+    rm -f -- "$FM_REARM_RESURFACE_STREAK" 2>/dev/null || true
+  fi
   if [ "$ACK_REMOVED" -eq 0 ] && [ "$PRESENTED_MAX" -gt "$ACK_THROUGH" ]; then
     # Nothing at or below the cutoff was this actor's to consume, while a
     # presented row above it is still waiting: the caller acknowledged an

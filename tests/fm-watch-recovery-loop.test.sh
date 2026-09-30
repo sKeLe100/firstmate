@@ -309,6 +309,14 @@ test_undrainable_queue_resurface_is_bounded() {
   ack_gen=$(sed -n 's/.*--recovery-generation \([^[:space:]]\{1,\}\)$/\1/p' "$dir/drain.err" | tail -1)
   [ -n "$ack_through" ] && [ -n "$ack_gen" ] \
     || fail "could not parse the WAKE_ACK_REQUIRED command: $(cat "$dir/drain.err")"
+  streak_before=$(streak_count "$state")
+  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-wake-drain.sh" \
+    --ack-through 0 --recovery-generation "$ack_gen" \
+    > "$dir/stale.out" 2> "$dir/stale.err" || true
+  [ "$(cat "$state/.wake-queue")" = "$queue_before" ] \
+    || fail "a stale acknowledgement consumed the queued wake"
+  [ "$(streak_count "$state")" = "$streak_before" ] \
+    || fail "a stale acknowledgement that consumed nothing reset the streak: $(cat "$dir/stale.err")"
   FM_HOME="$dir/home" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-wake-drain.sh" \
     --ack-through "$ack_through" --recovery-generation "$ack_gen" \
     > "$dir/ack.out" 2> "$dir/ack.err" || fail "acknowledgement failed: $(cat "$dir/ack.err")"
