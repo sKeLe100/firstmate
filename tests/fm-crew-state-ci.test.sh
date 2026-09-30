@@ -199,13 +199,37 @@ CI checks running, waiting for results...
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
 CI checks running, waiting for results...
 log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
-CI checks running, waiting for results...
 EOF
 )
   local out; out=$(run_crew_state "$d" feat-cistuckhb)
   assert_contains "$out" "state: failed" "one error per heartbeat -> failed"
   assert_contains "$out" "CI polling wedge" "error density >= 50% is a wedge"
   pass "heartbeats no more frequent than errors still wedge"
+}
+
+# A burst of errors followed by successful polls is recovery, not a wedge.
+test_ci_monitoring_errors_then_heartbeats_not_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-burst-recovery)
+  make_repo_on_branch "$d/wt" fm/feat-cirecover
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cirecover.meta" "window=fm:fm-feat-cirecover" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cirecover)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+CI checks running, waiting for results...
+CI checks running, waiting for results...
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-cirecover)
+  assert_contains "$out" "state: working" "heartbeats after the last error -> working"
+  assert_not_contains "$out" "CI polling wedge" "polling recovered after the burst"
+  pass "heartbeats after the last error are recovery, not a wedge"
 }
 
 # Heartbeats clearly outnumbering transient errors is a healthy flaky run.
@@ -492,6 +516,7 @@ test_ci_monitoring_repeated_poll_failure_surfaces_wedge
 test_ci_monitoring_transient_errors_then_pending_not_wedged
 test_ci_monitoring_interleaved_heartbeat_still_wedged
 test_ci_monitoring_interleaved_heartbeat_not_wedged
+test_ci_monitoring_errors_then_heartbeats_not_wedged
 test_ci_monitoring_repeated_errors_then_green_not_wedged
 test_ci_monitoring_crlf_errors_then_green_not_wedged
 test_ci_monitoring_mixed_line_endings_still_wedged

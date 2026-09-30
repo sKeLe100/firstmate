@@ -104,8 +104,9 @@
 #      forward-progress marker after its last occurrence) and overrides
 #      working -> failed, so a poll that can never progress surfaces as
 #      terminal instead of monitoring forever (see nm_ci_wedge_detected).
-#      Per-poll heartbeats from the first repeated failure onward clear the
-#      wedge only when they outnumber the failures (error density below 50%):
+#      Any heartbeat after the last failure is recovery. Heartbeats within the
+#      repeated-failure span clear the wedge only when they outnumber the
+#      failures (error density below 50%):
 #      a run failing at least as often as it heartbeats is stuck, while a long
 #      healthy run with occasional transient errors is not.
 #      The wedge verdict is taken before the marker parse, so it wins over a
@@ -865,14 +866,14 @@ nm_ci_wedge_detected() {  # <log_tail> -> 0 if wedge detected, prints "count:err
     [ -n "$span" ] || continue
     first_error_line=${span%% *}
     last_error_line=${span##* }
-    # Real progress after the last occurrence always clears the wedge.
-    # Heartbeats from the first occurrence onward only clear it when they
+    # Any progress or heartbeat after the last occurrence is recovery. Within
+    # the repeated-error span, heartbeats only clear the wedge when they
     # outnumber the errors: a run that fails at least as often as it heartbeats
     # is stuck, while a long healthy run with occasional transient errors is not.
     local progress_count heartbeat_count
     progress_count=$(printf '%s\n' "$log_tail" | tail -n +"$((last_error_line + 1))" \
-      | grep -cE "$progress_markers" || true)
-    heartbeat_count=$(printf '%s\n' "$log_tail" | tail -n +"$first_error_line" \
+      | grep -cE "$progress_markers|$heartbeat_markers" || true)
+    heartbeat_count=$(printf '%s\n' "$log_tail" | sed -n "${first_error_line},${last_error_line}p" \
       | grep -cE "$heartbeat_markers" || true)
     if [ "$heartbeat_count" -gt "$count" ]; then
       progress_count=$((progress_count + 1))
