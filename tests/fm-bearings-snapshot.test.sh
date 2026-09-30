@@ -1106,6 +1106,35 @@ test_toon_json_parity() {
   pass "TOON and JSON are parity representations of the same model"
 }
 
+# A scalar string array (upstream.skills) must render as an inline primitive
+# array in the default TOON output rather than crashing the renderer, which
+# assumes arrays hold uniform objects for its tabular form.
+test_toon_renders_primitive_string_arrays() {
+  local home fakebin json toon
+  home=$(make_home toon-primitive); write_fixture "$home"
+  cat > "$home/state/.upstream-behind-check.report" <<'EOF'
+status=ok
+behind=3
+ahead=0
+newest_upstream_date=2026-09-29
+skills_total=3
+skills_shown=3
+checked_at=1783792800
+skill=afk
+skill=queue
+skill=stow
+EOF
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    .upstream.skills == ["afk", "queue", "stow"]
+  ' >/dev/null || fail "upstream.skills must stay a string array in JSON: $json"
+  toon=$(run "$home" "$fakebin")
+  assert_contains "$toon" 'skills[3]: afk,queue,stow' \
+    "default TOON must render the string array as an inline primitive array"
+  pass "default TOON renders a scalar string array as an inline primitive array"
+}
+
 test_open_decision_surfaces_end_to_end() {
   local home fakebin json
   home=$(make_home e2e-decision); write_fixture "$home"
@@ -3335,6 +3364,7 @@ test_registry_unavailability_and_bounds_are_explicit
 test_current_landed_baseline_is_repeatable_and_prior_report_independent
 test_default_is_bounded_and_local_only
 test_toon_json_parity
+test_toon_renders_primitive_string_arrays
 test_landed_includes_secondmate_home_merges
 test_landed_accepts_only_kind_owned_delivery_artifacts
 test_kind_fallback_matches_tasks_axi_word_boundaries

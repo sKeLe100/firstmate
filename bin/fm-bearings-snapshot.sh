@@ -778,10 +778,10 @@ if [ "$FORMAT" = json ]; then
 fi
 
 # --- TOON renderer (output boundary; parity with the JSON model) ------------
-# Nested objects use indented keys; arrays of uniform scalar objects use
-# the tabular array form
-# (key[N]{fields}: + comma rows at +2 indent), and the empty-array form (key: []),
-# per the TOON spec. Quoting follows the spec exactly.
+# Nested objects use indented keys; arrays of scalars use the inline primitive
+# form (key[N]: + comma values); arrays of uniform scalar objects use the tabular
+# array form (key[N]{fields}: + comma rows at +2 indent); and the empty-array form
+# (key: []), per the TOON spec. Quoting follows the spec exactly.
 TOON=$(printf '%s\n' "$MODEL" | jq -r '
   def q:
     tostring
@@ -804,6 +804,8 @@ TOON=$(printf '%s\n' "$MODEL" | jq -r '
       "\($k): ", ($v | to_entries[] | emit(.key;.value) | "  " + .)
     elif ($v | type) == "array" then
       if ($v | length) == 0 then "\($k): []"
+      elif all($v[]; type != "object" and type != "array") then
+        "\($k)[\($v | length)]: " + ([$v[] | scal] | join(","))
       else
         ($v[0] | keys_unsorted) as $ks
         | ( "\($k)[\($v | length)]{\($ks | map(q) | join(","))}:",
