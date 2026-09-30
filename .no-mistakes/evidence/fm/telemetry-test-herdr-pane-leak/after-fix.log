@@ -1,0 +1,18 @@
+ok - fm-spawn.sh: a real spawn records purpose in the task's own meta and in a dispatch archive record
+ok - fm-spawn.sh: a real redelegated spawn records from_task_id in both dispatch and delegation events
+ok - fm-spawn.sh: a fresh spawn without --redelegated-from omits from_task_id from its dispatch record
+ok - fm-spawn.sh: a path-traversing --redelegated-from is refused before any meta is read
+ok - fm-spawn.sh: spawns are isolated onto the fake tmux backend and never target the live default Herdr session
+ok - fm-control.sh relaunch: a real harness switch records the delegation chain, reusing --note as reason
+warning: You appear to have cloned an empty repository.
+ok - fm-teardown.sh: a real landed teardown records an outcome=landed archive record
+warning: You appear to have cloned an empty repository.
+ok - fm-teardown.sh: a real --force teardown of unlanded work records an outcome=abandoned archive record
+ok - fm-control.sh relaunch: a rolled-back relaunch leaves a journal that does not claim a relaunch happened
+warning: You appear to have cloned an empty repository.
+ok - fm-teardown.sh: an outcome after a completed relaunch records retried=true
+warning: You appear to have cloned an empty repository.
+ok - fm-teardown.sh: a rolled-back relaunch is not reported as retried
+warning: You appear to have cloned an empty repository.
+ok - fm-teardown.sh: telemetry follows FM_DATA_OVERRIDE instead of FM_HOME/data
+ok - no case in this file reached herdr, so no live panes are left behind
