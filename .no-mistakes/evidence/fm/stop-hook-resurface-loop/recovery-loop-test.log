@@ -1,0 +1,4 @@
+ok - a resurfacing handling successor stays alive and supervises instead of going blind
+ok - unacknowledged recovery is announced at most once per generation and the successor stays alive
+ok - an undrainable queued wake resurfaces a bounded number of times, escalates once, then stays quiet and live
+ok - an acknowledgement, a new wake, or a session restart restores ordinary resurface delivery, but a presentation-only drain does not
