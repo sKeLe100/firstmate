@@ -12,6 +12,11 @@
 #      archive record, reusing the relaunch's own required --note as reason.
 #   4. A real fm-teardown.sh run records an "outcome" archive record, landed
 #      on the ordinary path and abandoned on --force.
+# Every spawn is pinned to --backend tmux so it runs against this file's fake
+# tmux stub, never the live default Herdr session: without that pin, a spawn
+# under an ambient HERDR_ENV=1 auto-detects herdr and opens real Claude panes
+# in the live default session. A dedicated regression case re-asserts that
+# isolation.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -91,11 +96,21 @@ case "${1:-}" in
     printf 'fakepane\n'; exit 0 ;;
   capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
-  new-window|new-session|has-session|kill-window) exit 0 ;;
+  new-window|new-session) printf '%s\n' "$1" >> "$D/tmux-calls"; exit 0 ;;
+  has-session|kill-window) exit 0 ;;
 esac
 exit 0
 SH
   chmod +x "$fb/tmux"
+  # A spawn that leaks past the fake tmux backend and reaches a real herdr would
+  # create live panes in the default session. This stub records any such call so
+  # the regression case can prove herdr was never targeted.
+  cat > "$fb/herdr" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_DIR:-/tmp}/herdr-calls"
+exit 0
+SH
+  chmod +x "$fb/herdr"
   cat > "$fb/treehouse" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -113,7 +128,7 @@ SH
 #!/usr/bin/env bash
 exit 0
 SH
-  chmod +x "$fb/treehouse" "$fb/gh-axi" "$fb/gh" "$fb/no-mistakes"
+  chmod +x "$fb/treehouse" "$fb/gh-axi" "$fb/gh" "$fb/no-mistakes" "$fb/herdr"
 }
 
 # --- 1 & 2: fresh spawn dispatch + redelegation ----------------------------
@@ -135,7 +150,7 @@ test_fresh_spawn_records_purpose_in_meta_and_dispatch_event() {
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
     FM_SPAWN_NO_GUARD=1 \
     "$SPAWN" "$task_id" "$proj" --mode no-mistakes --yolo off --purpose code \
-      --harness claude 2>&1)
+      --harness claude --backend tmux 2>&1)
   local rc=$?
   [ "$rc" -eq 0 ] || fail "spawn failed: $out"
 
@@ -183,7 +198,8 @@ test_fresh_spawn_with_redelegation_records_delegation_event() {
     "$SPAWN" "$new_id" "$dir/proj" --mode no-mistakes --yolo off \
       --harness claude --purpose code \
       --redelegated-from "$prior_id" \
-      --redelegation-reason "codex looped on the same edit three times" 2>&1)
+      --redelegation-reason "codex looped on the same edit three times" \
+      --backend tmux 2>&1)
   local rc=$?
   [ "$rc" -eq 0 ] || fail "redelegated spawn failed: $out"
 
@@ -230,7 +246,7 @@ test_fresh_spawn_without_redelegation_omits_from_task_id() {
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
     FM_SPAWN_NO_GUARD=1 \
     "$SPAWN" "$task_id" "$dir/proj" --mode no-mistakes --yolo off \
-      --harness claude --purpose review 2>&1)
+      --harness claude --purpose review --backend tmux 2>&1)
   local rc=$?
   [ "$rc" -eq 0 ] || fail "ordinary spawn failed: $out"
 
@@ -273,7 +289,7 @@ test_fresh_spawn_rejects_path_traversal_redelegated_from() {
     "$SPAWN" "$new_id" "$dir/proj" --mode no-mistakes --yolo off \
       --harness claude \
       --redelegated-from "../../$(basename "$dir")/secret" \
-      --redelegation-reason "traversal attempt" 2>&1)
+      --redelegation-reason "traversal attempt" --backend tmux 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "fm-spawn.sh accepted a path-traversing --redelegated-from: $out"
   case "$out" in
@@ -285,6 +301,40 @@ test_fresh_spawn_rejects_path_traversal_redelegated_from() {
     fail "an out-of-state meta file leaked into the archive"
   fi
   pass "fm-spawn.sh: a path-traversing --redelegated-from is refused before any meta is read"
+}
+
+test_spawn_isolates_from_the_live_herdr_session() {
+  local dir home proj wt out task_id
+  dir="$TMP_ROOT/no-herdr-leak-$RANDOM"
+  home="$dir/home"; proj="$dir/proj"; wt="$dir/wt"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+  fm_git_worktree "$proj" "$wt" "task-no-herdr-leak"
+  task_id=no-herdr-leak
+  mkdir -p "$home/data/$task_id"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  printf '%s' "$wt" > "$dir/fake/cwd"
+
+  # HERDR_ENV=1 is the leak condition: firstmate itself runs under herdr, so a
+  # spawn with no explicit backend auto-detects herdr and opens real panes in
+  # the live default session. --backend tmux must keep the spawn on the fake
+  # tmux stub, where no real pane is ever created.
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 HERDR_ENV=1 \
+    "$SPAWN" "$task_id" "$proj" --mode no-mistakes --yolo off --purpose code \
+      --harness claude --backend tmux 2>&1)
+  local rc=$?
+  [ "$rc" -eq 0 ] || fail "isolated spawn failed: $out"
+
+  [ ! -e "$dir/fake/herdr-calls" ] \
+    || fail "a spawn reached the real herdr path; it would have opened a live pane in the default session"
+  grep -q '^backend=' "$home/state/$task_id.meta" \
+    && fail "the isolated spawn recorded a non-tmux backend instead of the fake tmux stub: $(grep '^backend=' "$home/state/$task_id.meta")"
+  [ -s "$dir/fake/tmux-calls" ] \
+    || fail "the fake tmux stub was never exercised, so the spawn left no evidence of a fake (paneless) backend"
+  pass "fm-spawn.sh: spawns are isolated onto the fake tmux backend and never target the live default Herdr session"
 }
 
 # --- 3: real fm-control.sh relaunch -----------------------------------------
@@ -581,6 +631,7 @@ test_fresh_spawn_records_purpose_in_meta_and_dispatch_event
 test_fresh_spawn_with_redelegation_records_delegation_event
 test_fresh_spawn_without_redelegation_omits_from_task_id
 test_fresh_spawn_rejects_path_traversal_redelegated_from
+test_spawn_isolates_from_the_live_herdr_session
 test_real_relaunch_records_delegation_event
 test_teardown_records_landed_outcome
 test_teardown_records_abandoned_outcome_on_force
