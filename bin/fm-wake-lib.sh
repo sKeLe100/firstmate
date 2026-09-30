@@ -925,7 +925,7 @@ FM_REARM_RESURFACE_STREAK="$STATE/.rearm-resurface-streak"
 FM_REARM_RESURFACE_REASON=
 
 fm_rearm_resurface_decide() {
-  local limit=${FM_REARM_RESURFACE_LIMIT:-3} fingerprint queue_sum lock_owner record prior count=1 tmp
+  local limit=${FM_REARM_RESURFACE_LIMIT:-3} fingerprint queue_sum lock_owner record prior_count count=1 tmp
   case "$limit" in ''|*[!0-9]*|0) limit=3 ;; esac
   FM_REARM_RESURFACE_REASON='check: rearm-resurface'
   queue_sum=$(cksum < "$FM_WAKE_QUEUE" 2>/dev/null) || queue_sum=absent
@@ -933,9 +933,9 @@ fm_rearm_resurface_decide() {
   fingerprint="${queue_sum// /:}|${lock_owner}"
   if [ -f "$FM_REARM_RESURFACE_STREAK" ] && [ ! -L "$FM_REARM_RESURFACE_STREAK" ]; then
     record=$(sed -n '1p' "$FM_REARM_RESURFACE_STREAK" 2>/dev/null || true)
-    prior=${record##*$'\t'}
+    prior_count=${record##*$'\t'}
     if [ "${record%$'\t'*}" = "$fingerprint" ]; then
-      case "$prior" in ''|*[!0-9]*) ;; *) count=$((prior + 1)) ;; esac
+      case "$prior_count" in ''|*[!0-9]*) ;; *) count=$((prior_count + 1)) ;; esac
     fi
   fi
   tmp=$(mktemp "$FM_REARM_RESURFACE_STREAK.tmp.XXXXXX" 2>/dev/null) || return 0
