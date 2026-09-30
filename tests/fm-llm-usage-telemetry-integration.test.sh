@@ -15,8 +15,8 @@
 # Every spawn is pinned to --backend tmux so it runs against this file's fake
 # tmux stub, never the live default Herdr session: without that pin, a spawn
 # under an ambient HERDR_ENV=1 auto-detects herdr and opens real Claude panes
-# in the live default session. A dedicated regression case re-asserts that
-# isolation.
+# in the live default session. The file exports HERDR_ENV=1 and a final check
+# asserts no case ever called the herdr stub.
 set -u
 
 # shellcheck source=tests/lib.sh
