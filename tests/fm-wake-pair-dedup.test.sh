@@ -68,7 +68,14 @@ seed_captured_procevent_result() {  # <dir> <source-id>
     sleep 0.1
     i=$((i + 1))
   done
-  pe_case "$dir" retire "$id" >/dev/null || return 1
+  # The runner may still be mid-exit when the queue fills; retire refuses to
+  # signal a runner whose identity it cannot yet confirm, so retry until it can.
+  i=0
+  until pe_case "$dir" retire "$id" >/dev/null 2>&1; do
+    i=$((i + 1))
+    [ "$i" -lt 50 ] || return 1
+    sleep 0.1
+  done
   [ -s "$dir/state/.wake-queue" ]
 }
 

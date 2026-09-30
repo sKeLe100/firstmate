@@ -53,14 +53,26 @@ wait_for_text() {
 }
 
 find_chrome() {
-  local candidate
+  local candidate headless_shell
   if [ -n "${FM_CHROME_BIN:-}" ] && [ -x "$FM_CHROME_BIN" ]; then
     printf '%s\n' "$FM_CHROME_BIN"
     return 0
   fi
   # chrome-headless-shell comes first: it is Chrome's dedicated --dump-dom
-  # binary, and a full Chrome for Testing build on a display-less WSL host
-  # never writes the dump before the render timeout.
+  # binary. A full Chrome for Testing build on a display-less WSL host bakes in
+  # a field-trial config under which --dump-dom never writes a byte before the
+  # render timeout (render_export_dom's --disable-field-trial-config works
+  # around it, but the headless shell has no such dependency). Playwright
+  # installs the headless shell under ~/.cache/ms-playwright without putting it
+  # on PATH, so look there before falling back to a full browser build.
+  for headless_shell in \
+    "$HOME"/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell
+  do
+    if [ -x "$headless_shell" ]; then
+      printf '%s\n' "$headless_shell"
+      return 0
+    fi
+  done
   for candidate in \
     chrome-headless-shell \
     google-chrome \
@@ -153,6 +165,12 @@ render_export_dom() {
   printf 'chrome=%s chrome_version=%s pi=%s; %s' \
     "$chrome" "$("$chrome" --version 2>&1 | head -1)" "$pi_version" \
     "$(tr '\n' ' ' <"$report")"
+  case "$chrome" in
+    *headless*) ;;
+    *)
+      printf '; hint: a full Chrome for Testing build can stall --dump-dom on a display-less WSL host - install chrome-headless-shell (npx playwright install chromium-headless-shell) or point FM_CHROME_BIN at its chrome-headless-shell binary'
+      ;;
+  esac
   return 1
 }
 
@@ -3297,6 +3315,20 @@ JS
   pass "Pi Calm working ship keeps its centered two-row asymmetric Unicode boat inside a deterministic long-wave trough, paints all water standard blue and the whole boat standard yellow with balanced resets, keeps ANSI-stripped width exact, reverses cleanly at both edges and every width, clamps visible and hidden resizes, falls back deterministically when narrow, freezes and resumes across settle/start without hidden-time jumps or duplicate timers, resets only on a fresh session, and leaves Calm-off visibility untouched"
 }
 
+test_find_chrome_playwright_cache() {
+  local fake_home fake_chrome found
+  fake_home="$TMP_ROOT/find-chrome-home"
+  fake_chrome="$fake_home/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell"
+  mkdir -p "$(dirname "$fake_chrome")"
+  printf '#!/bin/sh\nexit 0\n' >"$fake_chrome"
+  chmod +x "$fake_chrome"
+  found=$(unset FM_CHROME_BIN; HOME="$fake_home" PATH="/nonexistent" find_chrome) \
+    || fail "find_chrome did not discover the Playwright-installed chrome-headless-shell"
+  [ "$found" = "$fake_chrome" ] \
+    || fail "find_chrome returned $found instead of the Playwright chrome-headless-shell"
+  pass "find_chrome discovers chrome-headless-shell from the Playwright cache when it is not on PATH"
+}
+
 # The rendered-DOM assertions below depend on a real browser, so the render step
 # itself is the part that fails for reasons that have nothing to do with Calm.
 # This pins that guard with real processes and no browser: one clean render, one
@@ -4295,5 +4327,6 @@ test_calm_mid_turn_working_notes
 test_operational_followup_turn_e2e
 test_hidden_block_geometry_e2e
 test_working_ship_geometry_and_lifecycle
+test_find_chrome_playwright_cache
 test_export_dom_render_guard
 test_interactive_terminal_e2e
