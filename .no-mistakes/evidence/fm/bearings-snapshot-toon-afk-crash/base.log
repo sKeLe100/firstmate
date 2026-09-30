@@ -1,0 +1,3 @@
+ok - TOON and JSON are parity representations of the same model
+fm-bearings-snapshot: TOON rendering failed
+not ok - default TOON must render the string array as an inline primitive array (missing: 'skills[3]: afk,queue,stow')
