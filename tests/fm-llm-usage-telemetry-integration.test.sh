@@ -26,6 +26,7 @@ SPAWN="$ROOT/bin/fm-spawn.sh"
 CONTROL="$ROOT/bin/fm-control.sh"
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
 TMP_ROOT=$(fm_test_tmproot fm-llm-usage-integration)
+export HERDR_ENV=1
 
 require_python3() {
   command -v python3 >/dev/null 2>&1 || fail "python3 is required by this test to validate JSONL output"
@@ -322,7 +323,7 @@ test_spawn_isolates_from_the_live_herdr_session() {
   # the live default session. --backend tmux must keep the spawn on the fake
   # tmux stub, where no real pane is ever created.
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
-    FM_SPAWN_NO_GUARD=1 HERDR_ENV=1 \
+    FM_SPAWN_NO_GUARD=1 \
     "$SPAWN" "$task_id" "$proj" --mode no-mistakes --yolo off --purpose code \
       --harness claude --backend tmux 2>&1)
   local rc=$?
@@ -639,3 +640,11 @@ test_rolled_back_relaunch_journal_does_not_claim_a_relaunch
 test_teardown_outcome_reports_retried_only_for_a_completed_relaunch
 test_teardown_outcome_omits_retried_after_a_rolled_back_relaunch
 test_teardown_archives_into_the_overridden_data_dir
+
+test_no_case_reached_herdr() {
+  local leaked
+  leaked=$(find "$TMP_ROOT" -name herdr-calls -print 2>/dev/null)
+  [ -z "$leaked" ] || fail "a case reached the herdr backend under HERDR_ENV=1 and would have opened live panes: $leaked"
+  pass "no case in this file reached herdr, so no live panes are left behind"
+}
+test_no_case_reached_herdr
