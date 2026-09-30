@@ -207,6 +207,34 @@ EOF
   pass "heartbeats no more frequent than errors still wedge"
 }
 
+# The verdict for an alternating error/heartbeat loop must not depend on
+# whether the tail is cut on an error or on a heartbeat.
+test_ci_monitoring_interleaved_heartbeat_tail_on_heartbeat_wedged() {
+  reset_fakes
+  local d; d=$(new_case ci-stuck-heartbeat-tail)
+  make_repo_on_branch "$d/wt" fm/feat-cistuckhbt
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cistuckhbt.meta" "window=fm:fm-feat-cistuckhbt" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cistuckhbt)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+log: --verbose "gh api repos/o/r/commits/abc/check-runs" exit status 1
+CI checks running, waiting for results...
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-cistuckhbt)
+  assert_contains "$out" "state: failed" "alternating log ending on a heartbeat -> failed"
+  assert_contains "$out" "CI polling wedge" "a single trailing heartbeat is not recovery"
+  pass "alternating error/heartbeat log is wedged whichever line ends the tail"
+}
+
 # A burst of errors followed by successful polls is recovery, not a wedge.
 test_ci_monitoring_errors_then_heartbeats_not_wedged() {
   reset_fakes
@@ -516,6 +544,7 @@ test_ci_monitoring_repeated_poll_failure_surfaces_wedge
 test_ci_monitoring_transient_errors_then_pending_not_wedged
 test_ci_monitoring_interleaved_heartbeat_still_wedged
 test_ci_monitoring_interleaved_heartbeat_not_wedged
+test_ci_monitoring_interleaved_heartbeat_tail_on_heartbeat_wedged
 test_ci_monitoring_errors_then_heartbeats_not_wedged
 test_ci_monitoring_repeated_errors_then_green_not_wedged
 test_ci_monitoring_crlf_errors_then_green_not_wedged
