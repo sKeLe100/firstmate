@@ -115,7 +115,13 @@ jobs:
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
-          npm install -g @earendil-works/pi-coding-agent
+          # Pinned to the last version the Pi extension renderers and export
+          # assertions were verified against: Pi 0.99 (2026-09-29) changed the
+          # stock tool-call renderer to inline the call arguments and began
+          # rendering display:false custom messages into the export DOM, which
+          # breaks fm-pi-branch-extension and fm-calm-pi-extension. Bump only
+          # with a deliberate Pi 0.99 compatibility migration.
+          npm install -g @earendil-works/pi-coding-agent@0.87.1
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
       - name: Run portable parallel shard 1
         run: |
@@ -231,10 +237,14 @@ jobs:
       # The Pi extension tests read the installed Pi package's own types and
       # runtime, so without it they gate-skip and pass silently. It is a public
       # npm package and needs no credential, so CI can hold the real thing.
+      # Pinned to the last version the Pi extension renderers and export
+      # assertions were verified against (see the parallel-1 install step for
+      # the Pi 0.99 drift that forced the pin); bump only with a deliberate
+      # Pi 0.99 compatibility migration.
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
-          npm install -g @earendil-works/pi-coding-agent
+          npm install -g @earendil-works/pi-coding-agent@0.87.1
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
       - name: Run portable serial shard ${{ matrix.shard }}
         env:
