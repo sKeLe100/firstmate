@@ -3,7 +3,6 @@ name: quiet
 description: >-
   Enter quiet supervision mode when the captain invokes /quiet or asks for quiet mode, quiet-while-present, or fewer routine wake turns while staying in the session.
 user-invocable: true
-disable-model-invocation: true
 metadata:
   internal: true
 ---

@@ -3,7 +3,6 @@ name: updatefirstmate
 description: >-
   Self-update a running firstmate and its secondmates when the captain invokes /updatefirstmate, asks to "update firstmate", or asks to "pull the latest firstmate".
 user-invocable: true
-disable-model-invocation: true
 metadata:
   internal: true
 ---
