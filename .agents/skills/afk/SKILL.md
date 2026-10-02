@@ -3,7 +3,6 @@ name: afk
 description: >-
   Enter the away posture when the captain invokes /afk, says they are going afk, `state/.afk-contract` or `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
 user-invocable: true
-disable-model-invocation: true
 metadata:
   internal: true
 ---

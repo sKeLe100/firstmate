@@ -3,7 +3,6 @@ name: bearings
 description: >-
   Generate a fleet digest when the captain invokes /bearings, asks for a bearings report, morning brief, status report, catch-up, "where did I leave off", or "what's in the works", on a contributions check wake, when filing work linked to an upstream issue, or on a bearings board procevent wake.
 user-invocable: true
-disable-model-invocation: true
 metadata:
   internal: true
 ---

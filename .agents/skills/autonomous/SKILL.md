@@ -3,7 +3,6 @@ name: autonomous
 description: >-
   Run an autonomous dispatch pass when the captain invokes /autonomous, mentions standing orders or autonomous dispatch, or when a silent fleet-dispatch point fires.
 user-invocable: true
-disable-model-invocation: true
 metadata:
   internal: true
 ---

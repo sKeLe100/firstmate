@@ -3,7 +3,6 @@ name: stow
 description: >-
   Sweep session knowledge, file open work records, and curate startup memory when the captain invokes /stow, asks to "stow what you've learned", or before a session reset or context compaction.
 user-invocable: true
-disable-model-invocation: true
 metadata:
   internal: true
 ---
