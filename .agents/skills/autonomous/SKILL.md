@@ -1,12 +1,7 @@
 ---
 name: autonomous
 description: >-
-  Run an autonomous dispatch pass: evaluate open decisions for bundling,
-  check whether nudge thresholds are met, and execute a structured
-  dispatch cycle that minimizes unnecessary captain contact.
-  Use when the captain invokes /autonomous, mentions standing orders
-  or autonomous dispatch, or when a silent-invocation point (12:30/17:30
-  fleet-dispatch-points) fires.
+  Run an autonomous dispatch pass when the captain invokes /autonomous, mentions standing orders or autonomous dispatch, or when a silent fleet-dispatch point fires.
 user-invocable: true
 metadata:
   internal: true
