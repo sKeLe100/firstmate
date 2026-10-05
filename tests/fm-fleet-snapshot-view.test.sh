@@ -623,6 +623,28 @@ test_large_backlog_survives_argv_limit() {
   pass "a backlog whose JSON exceeds the exec argv limit still produces a full snapshot"
 }
 
+# The contribution-input mode used by the local contribution poll must also
+# survive a backlog larger than one jq argv argument.
+test_large_backlog_contribution_input_survives_argv_limit() {
+  local home out i
+  home=$(make_home large-contribution-backlog)
+  {
+    printf '## In flight\n\n## Queued\n\n## Done\n'
+    for i in $(seq 1 3000); do
+      printf -- '- [x] contribution-task-%04d - Synthetic contribution record %04d for argv-limit regression coverage https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-%02d)\n' \
+        "$i" "$i" "$i" "$(((i % 28) + 1))"
+    done
+  } > "$home/data/backlog.md"
+  out=$(FM_HOME="$home" "$SNAPSHOT" --contribution-input 2>"$TMP_ROOT/large-contribution-backlog.err")
+  [ -s "$TMP_ROOT/large-contribution-backlog.err" ] \
+    && fail "large contribution-input backlog must not error: $(cat "$TMP_ROOT/large-contribution-backlog.err")"
+  printf '%s' "$out" | jq -e '
+    (.backlog.records | length) == 3000
+    and (.tasks | type) == "array"
+  ' >/dev/null || fail "large contribution-input backlog must emit the full record set: $out"
+  pass "contribution-input survives a backlog whose JSON exceeds the exec argv limit"
+}
+
 # Scout report pointers accumulate durably in data/<id>/report.md and were the
 # last data-scaling payload still handed to the final jq through --argjson.
 # 1400 pointers push that single argument past the kernel per-argument limit.
@@ -1450,6 +1472,7 @@ test_scout_reports_include_teardown_reports
 test_batched_scout_reports_byte_identical
 test_scout_reports_home_with_regex_metacharacters
 test_large_backlog_survives_argv_limit
+test_large_backlog_contribution_input_survives_argv_limit
 test_many_secondmate_summaries_survive_argv_limit
 test_many_scout_reports_survive_argv_limit
 test_interrupted_snapshot_leaves_no_temp_files
