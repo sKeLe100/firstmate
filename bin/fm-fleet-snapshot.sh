@@ -124,30 +124,6 @@ cleanup_json_files() {
   rm -rf -- "$JSON_TRANSPORT_DIR"
 }
 
-# Stage JSON blobs in a mode-0700 temporary directory before passing them to
-# jq. Keeping non-constant JSON out of argv avoids the kernel's per-argument
-# limit when a backlog or task list grows large.
-json_tmpfile() {  # <json>
-  local json=$1 path
-  if [ -z "$JSON_TRANSPORT_DIR" ]; then
-    JSON_TRANSPORT_DIR=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/fm-fleet-snapshot.XXXXXX") || return 1
-  fi
-  path=$(umask 077; mktemp "$JSON_TRANSPORT_DIR/json.XXXXXX") || return 1
-  printf '%s\n' "$json" > "$path" || return 1
-  printf '%s\n' "$path"
-}
-
-json_args_tmpfile() {  # <backlog-json-file> <tasks-json-file>
-  local backlog_file=$1 tasks_file=$2 path
-  if [ -z "$JSON_TRANSPORT_DIR" ]; then
-    JSON_TRANSPORT_DIR=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/fm-fleet-snapshot.XXXXXX") || return 1
-  fi
-  path=$(umask 077; mktemp "$JSON_TRANSPORT_DIR/json-args.XXXXXX") || return 1
-  jq -n --slurpfile backlog "$backlog_file" --slurpfile tasks "$tasks_file" \
-    '{backlog:$backlog[0],tasks:$tasks[0]}' > "$path" || return 1
-  printf '%s\n' "$path"
-}
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -2035,13 +2011,14 @@ contribution_tasks_json() {
 if [ "$OUTPUT_MODE" = contribution-input ]; then
   # Reuse the canonical backlog parser, without observing workers or other homes.
   contribution_tasks=$(contribution_tasks_json) || { echo "fm-fleet-snapshot: contribution task read failed" >&2; exit 1; }
-  backlog_file=$(json_tmpfile "$BACKLOG_JSON") \
-    || { echo "fm-fleet-snapshot: contribution backlog staging failed" >&2; exit 1; }
-  tasks_file=$(json_tmpfile "$contribution_tasks") \
-    || { echo "fm-fleet-snapshot: contribution task staging failed" >&2; exit 1; }
-  args_file=$(json_args_tmpfile "$backlog_file" "$tasks_file") \
-    || { echo "fm-fleet-snapshot: contribution input staging failed" >&2; exit 1; }
-  jq '.' "$args_file"
+  JSON_TRANSPORT_DIR=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/fm-fleet-snapshot.XXXXXX") \
+    || { echo "fm-fleet-snapshot: contribution staging failed" >&2; exit 1; }
+  backlog_file="$JSON_TRANSPORT_DIR/backlog.json"
+  tasks_file="$JSON_TRANSPORT_DIR/tasks.json"
+  { printf '%s\n' "$BACKLOG_JSON" > "$backlog_file" && printf '%s\n' "$contribution_tasks" > "$tasks_file"; } \
+    || { echo "fm-fleet-snapshot: contribution staging failed" >&2; exit 1; }
+  jq -n --slurpfile backlog "$backlog_file" --slurpfile tasks "$tasks_file" \
+    '{backlog:$backlog[0],tasks:$tasks[0]}'
   exit 0
 fi
 prefetch_task_current_states || { echo "fm-fleet-snapshot: task observation failed" >&2; exit 1; }
@@ -2065,10 +2042,8 @@ CONTRIBUTION_TASKS_JSON=$(contribution_tasks_json) \
   || { echo "fm-fleet-snapshot: contribution task read failed" >&2; exit 1; }
 printf '%s\n' "$CONTRIBUTION_TASKS_JSON" > "$JSON_TRANSPORT_DIR/contribution-tasks.json" \
   || { echo "fm-fleet-snapshot: contribution task staging failed" >&2; exit 1; }
-contribution_input_file=$(json_args_tmpfile "$BACKLOG_JSON_FILE" "$JSON_TRANSPORT_DIR/contribution-tasks.json") \
-  || { echo "fm-fleet-snapshot: contribution input staging failed" >&2; exit 1; }
-cp "$contribution_input_file" "$JSON_TRANSPORT_DIR/contribution-input.json" \
-  || { echo "fm-fleet-snapshot: contribution input staging failed" >&2; exit 1; }
+jq -n --slurpfile backlog "$BACKLOG_JSON_FILE" --slurpfile tasks "$JSON_TRANSPORT_DIR/contribution-tasks.json" \
+  '{backlog:$backlog[0],tasks:$tasks[0]}' > "$JSON_TRANSPORT_DIR/contribution-input.json"
 FM_CONTRIBUTIONS_NOW="$SNAPSHOT_NOW" "$SCRIPT_DIR/fm-contributions.sh" snapshot \
   "$JSON_TRANSPORT_DIR/contribution-input.json" > "$CONTRIBUTIONS_JSON_FILE" \
   || { echo "fm-fleet-snapshot: contribution coverage unavailable" >&2; exit 1; }
