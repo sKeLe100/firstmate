@@ -1,0 +1,11 @@
+== BASE (before fix)
+bin/.base-snap.sh: line 2014: /home/sean_/.local/bin/jq: Argument list too long
+exit=0
+== FIXED
+exit=0
+3976704
+3000
+"array"
+leftover tmp:
+== FULL snapshot
+exit=0

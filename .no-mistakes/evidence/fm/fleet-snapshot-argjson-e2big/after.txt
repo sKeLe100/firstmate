@@ -1,0 +1,5 @@
+ok - a backlog whose JSON exceeds the exec argv limit still produces a full snapshot
+ok - contribution-input survives a backlog whose JSON exceeds the exec argv limit
+ok - twenty registered secondmate summaries accumulate past the exec argv limit
+ok - scout report pointers exceeding the exec argv limit still produce a full snapshot
+ok - an interrupted snapshot cleans up its temp files
