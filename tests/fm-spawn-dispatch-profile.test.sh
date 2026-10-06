@@ -1990,7 +1990,7 @@ test_claude_remote_control_off_matches_absent_launch() {
   status=$?
   expect_code 0 "$status" "claude spawn with claude-remote-control=off should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  expected=$(claude_expected_launch "$HOME_DIR" "$id" --dangerously-skip-permissions)
+  expected=$(claude_expected_launch "$launch" "$HOME_DIR" "$id" --dangerously-skip-permissions)
   [ "$launch" = "$expected" ] || fail "explicit off did not reproduce the absent-file launch"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   assert_not_contains "$launch" "--remote-control" "off must never add --remote-control"
   pass "config/claude-remote-control=off launches exactly as an absent file does"
@@ -2007,7 +2007,7 @@ test_claude_remote_control_on_adds_named_flag() {
   status=$?
   expect_code 0 "$status" "claude spawn with claude-remote-control=on should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "--dangerously-skip-permissions --remote-control 'firstmate-fm-$id' --settings" \
+  assert_contains "$launch" "--dangerously-skip-permissions --remote-control 'firstmate-fm-$id' $(claude_worker_add_dirs "$HOME_DIR" "$id")--settings" \
     "on must add a --remote-control flag named after the primary home label and task id, right after the permission flag"
   pass "config/claude-remote-control=on names the worker firstmate-fm-<task-id>"
 }
