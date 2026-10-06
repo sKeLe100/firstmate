@@ -177,7 +177,7 @@ test_secondmate_launch() {
     printf 'charter for sm-%s\n' "$setting" > "$sm/data/charter.md"
     printf '%s\n' 'projects/' 'state/' 'data/' 'config/' '.no-mistakes/' > "$sm/.gitignore"
     git -C "$sm" init -q -b main
-    out=$(run_case_spawn "sm-$setting" "$sm" --secondmate)
+    out=$(run_case_spawn "sm-$setting" "$sm" --secondmate --model gpt-5 --effort medium)
     status=$?
     expect_code 0 "$status" "secondmate spawn with allowlist=$setting should succeed: $out"
     assert_pane_export_precedes_launch "$PANE_LOG" "secondmate, allowlist $setting"
@@ -202,7 +202,7 @@ test_launch_exports_task_inbox() {
     read_case "$rec"
     : > "$HOME_DIR/config/launch-env-allowlist"
     if [ "$kind" = ship ]; then
-      out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
+      out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off --model gpt-5 --effort medium)
     else
       sm="$CASE_DIR/secondmate-home"
       mkdir -p "$sm/bin" "$sm/data"
@@ -211,7 +211,7 @@ test_launch_exports_task_inbox() {
       printf 'charter for %s\n' "$id" > "$sm/data/charter.md"
       printf '%s\n' 'projects/' 'state/' 'data/' 'config/' '.no-mistakes/' > "$sm/.gitignore"
       git -C "$sm" init -q -b main
-      out=$(run_case_spawn "$id" "$sm" --secondmate)
+      out=$(run_case_spawn "$id" "$sm" --secondmate --model gpt-5 --effort medium)
     fi
     status=$?
     expect_code 0 "$status" "$kind spawn should succeed: $out"
