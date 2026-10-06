@@ -63,9 +63,9 @@
 #     live watcher was confirmed, and never withholds the wake for it; the
 #     next Stop's foreground arm attaches to that live cycle. The supervision
 #     host owns its own successors, so its path is unchanged.
-#   - Supervision host: a home that runs it (by default on this Claude
-#     primary; docs/configuration.md "Supervision host" owns the gate and its
-#     opt-out) runs bin/fm-supervision-host.sh in the arm's place, bound
+#   - Supervision host: a home with config/supervision-host and no
+#     config/supervision-host-off (docs/configuration.md "Supervision host"
+#     owns the gate) runs bin/fm-supervision-host.sh in the arm's place, bound
 #     to this generation.
 #     To this hook it is an arm that also takes away-posture wakes itself and
 #     ends its own park before the hook timeout with a "supervision-host:"

@@ -594,7 +594,7 @@ tests/fm-turnend-guard.test.sh
 
 ## Supervision host
 
-This pre-flip evidence supports [supervision-host.md](../supervision-host.md)'s Claude engine, away-wake path, and failure direction; its no-file baseline describes the earlier opt-in release, not the current Claude default.
+This pre-flip evidence supports [supervision-host.md](../supervision-host.md)'s Claude engine, away-wake path, and failure direction; its no-file baseline describes the earlier opt-in release and matches the current opt-in gate.
 It was measured on 2026-09-23 on macOS 26.6.2 arm64 with Claude Code 2.1.281 as both primary and engine (model `sonnet`), Pi 0.87.0 workers on `openai-codex/gpt-5.6-sol`, and Herdr 0.9.0, in disposable lab homes on private tmux sockets and named Herdr lab sessions.
 
 The opt-in live guard refreshes the engine evidence:

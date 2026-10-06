@@ -176,8 +176,8 @@ $rec
 EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
-  # A Claude home runs the supervision host by default and then presents its
-  # outcomes; this case pins a home that does not run it.
+  # An explicit opt-out pins this Claude home to the path that does not present
+  # supervision-host outcomes.
   : > "$home/config/supervision-host-off"
 
   FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append \
