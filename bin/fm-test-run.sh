@@ -1040,7 +1040,7 @@ tests/fm-queue-snapshot.test.sh 27987
 tests/fm-quota-array-dispatch-live-e2e.test.sh 50
 tests/fm-quota-choose.test.sh 2860
 tests/fm-remote-backlog-handoff.test.sh 82063
-tests/fm-remote-doctor.test.sh 14460
+tests/fm-remote-doctor.test.sh 22893
 tests/fm-remote-entrypoint.test.sh 134
 tests/fm-remote-herdr-guard.test.sh 3140
 tests/fm-remote-job-orphan-reap.test.sh 2985
@@ -1088,7 +1088,7 @@ tests/fm-spawn-orca-worktree.test.sh 2400
 tests/fm-spawn-pc02-lane-guard.test.sh 11846
 tests/fm-spawn-pool-base-freshen.test.sh 68652
 tests/fm-spawn-worktree-settle.test.sh 9309
-tests/fm-startup-memory-budget.test.sh 8086
+tests/fm-startup-memory-budget.test.sh 12413
 tests/fm-startup-network.test.sh 72106
 tests/fm-stat-shadowing.test.sh 75
 tests/fm-stow-cascade.test.sh 7215
