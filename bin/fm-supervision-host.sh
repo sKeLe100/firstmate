@@ -7,7 +7,7 @@
 #   fm-supervision-host.sh park [--restart]
 #
 # A primary's arm owner runs this in place of bin/fm-watch-arm.sh when the home
-# runs the host (by default on Claude, by config/supervision-host elsewhere,
+# runs the host (only with config/supervision-host on every supported primary,
 # never with config/supervision-host-off; docs/configuration.md "Supervision
 # host"): the Claude Stop auto-arm
 # (bin/fm-claude-stop-autoarm.sh), the Cursor stop-hook park

@@ -83,8 +83,9 @@
 #   extensions    Pi: the watcher, turn-end guard, and branch extensions are
 #                 loaded by the process holding the lab session lock, at the
 #                 current on-disk builds.
-#   host          Claude: with --expect-host yes (the default on Claude unless
-#                 --supervision-host off) the supervision host runs; with no,
+#   host          Claude: with --expect-host yes (the default for a Claude lab,
+#                 which writes config/supervision-host unless explicitly told
+#                 none or off) the supervision host runs; with no,
 #                 none runs. Skipped when the lab has no mate or worker, since
 #                 an empty fleet arms nothing.
 #   watcher       a live watcher with a fresh beacon holds this home's lock
