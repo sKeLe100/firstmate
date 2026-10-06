@@ -10,8 +10,8 @@
 #
 # THE HOME GATE (config/supervision-host-off, config/supervision-host).
 # docs/configuration.md "Supervision host" owns both files: the inherited
-# opt-out flag, the home-local engine line's schema, the default on a Claude
-# primary, and the no-engine outcome; this file implements them
+# opt-out flag, the home-local engine line's schema, and the no-engine outcome;
+# this file implements them with an explicit opt-in required
 # (fm_supervision_host_enabled, fm_supervision_host_config) and holds the
 # verified-engine list and each engine's default model
 # (docs/supervision-host.md "Engines"). Every reader of either file asks
@@ -66,14 +66,12 @@ fm_supervision_host_primary() {
 
 # fm_supervision_host_enabled <config-dir> [<primary-harness>]: 0 iff this home
 # runs the supervision host. A present supervision-host-off opts out on every
-# primary; otherwise a supervision-host file opts in, and with neither file a
-# Claude primary runs the host at its default engine and every other primary
-# does not. The primary is detected (fm_supervision_host_primary) only when
-# both files are absent and the caller did not name one.
+# primary; otherwise a supervision-host file opts in, and with neither file
+# the host stays off on every primary.
 fm_supervision_host_enabled() {
   [ ! -e "$1/supervision-host-off" ] && [ ! -L "$1/supervision-host-off" ] || return 1
   [ ! -f "$1/supervision-host" ] || return 0
-  [ "${2-$(fm_supervision_host_primary)}" = claude ]
+  return 1
 }
 
 fm_supervision_engine_verified() {  # <engine>

@@ -19,10 +19,9 @@ test_selected_harness_block_only() {
   pass "renderer prints exactly the selected harness block"
 }
 
-# A Claude home runs the host by default, so its block carries the host
-# protocol with no file, exactly as with an opting-in file; an off file
-# renders the plain block.
-test_supervision_host_protocol_on_a_claude_home_unless_off() {
+# A Claude home carries the host protocol only with an opting-in file;
+# no file or an off file renders the plain block.
+test_supervision_host_protocol_on_an_opted_in_claude_home() {
   local home config plain hosted other
   home="$TMP_ROOT/host-home"
   config="$TMP_ROOT/host-config"
@@ -31,10 +30,10 @@ test_supervision_host_protocol_on_a_claude_home_unless_off() {
   plain=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness claude)
   assert_not_contains "$plain" "Supervision host" "a claude home opted out by config/supervision-host-off rendered the host protocol"
   rm -f "$config/supervision-host-off"
-  hosted=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness claude)
+  assert_equals "$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness claude)" "$plain" \
+    "a claude home without config/supervision-host must render the plain block"
   : > "$config/supervision-host"
-  assert_equals "$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness claude)" "$hosted" \
-    "a claude home without config/supervision-host must render exactly what an opted-in claude home renders"
+  hosted=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness claude)
   assert_contains "$hosted" "- Supervision host: on;" "an opted-in claude home did not render the host state line"
   assert_contains "$hosted" "Mode: Claude Stop-hook-owned supervision." "the host protocol replaced the claude protocol instead of adding to it"
   assert_contains "$hosted" "supervision-host: cycle boundary" "the host protocol did not tell main how to handle a park boundary"
@@ -46,12 +45,12 @@ test_supervision_host_protocol_on_a_claude_home_unless_off() {
   rm -f "$config/supervision-host"
   other=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness pi)
   assert_not_contains "$other" "Supervision host" "a pi primary without config/supervision-host rendered the host protocol"
-  pass "renderer adds the supervision-host protocol on a claude home unless config/supervision-host-off opts it out, leaving the claude block intact"
+  pass "renderer adds the supervision-host protocol only on an opted-in claude home, leaving the claude block intact"
 }
 
 # Each non-Pi arm owner gets the host protocol in its own terms, and only its
 # own terms; Grok's model-owned arm command becomes the host; a home with
-# config/supervision-host-off, or a non-Claude home without the file, renders exactly what
+# config/supervision-host-off, or a home without the file, renders exactly what
 # it did before, with no tag or placeholder.
 test_supervision_host_protocol_on_every_arm_owner() {
   local home config harness plain hosted body
@@ -63,11 +62,9 @@ test_supervision_host_protocol_on_every_arm_owner() {
     plain=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness "$harness")
     assert_not_contains "$plain" "Supervision host" "$harness: a home opted out by config/supervision-host-off rendered the host protocol"
     assert_not_contains "$plain" "__FM_" "$harness: a placeholder leaked into the rendered block"
-    if [ "$harness" != claude ]; then
-      rm -f "$config/supervision-host" "$config/supervision-host-off"
-      assert_equals "$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness "$harness")" "$plain" \
-        "$harness: a home without config/supervision-host must render the plain block"
-    fi
+    rm -f "$config/supervision-host" "$config/supervision-host-off"
+    assert_equals "$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness "$harness")" "$plain" \
+      "$harness: a home without config/supervision-host must render the plain block"
     rm -f "$config/supervision-host-off"
     : > "$config/supervision-host"
     hosted=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness "$harness")
@@ -304,7 +301,7 @@ test_pi_snippet_uses_effective_extension_path() {
   pass "pi supervision snippet renders the effective extension path"
 }
 
-test_supervision_host_protocol_on_a_claude_home_unless_off
+test_supervision_host_protocol_on_an_opted_in_claude_home
 test_supervision_host_protocol_on_every_arm_owner
 test_selected_harness_block_only
 test_unknown_fallback

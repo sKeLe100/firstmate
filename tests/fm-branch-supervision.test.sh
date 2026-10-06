@@ -961,8 +961,8 @@ test_unmarked_guard_with_a_lease_file_holds_exclusivity_through_mutation() {
 # A home that runs the supervision host has a branch actor that can claim a
 # task no one has leased yet, so its unmarked main must exclude that first
 # claim for the whole guarded mutation, while a home that does not run it
-# keeps taking no lock at all. A Claude home runs it by default and an off
-# file opts out; another primary needs the file (bin/fm-supervision-engine-lib.sh
+# keeps taking no lock at all. Every primary needs the opt-in file and an off
+# file opts out (bin/fm-supervision-engine-lib.sh
 # owns the gate, and FM_TEST_HARNESS pins the primary it judges).
 test_host_home_unmarked_guard_excludes_the_first_claim() {
   local home operation_pid claim_pid claim_status out harness line
@@ -985,14 +985,14 @@ test_host_home_unmarked_guard_excludes_the_first_claim() {
     rm -f "$home/config/supervision-host" "$home/config/supervision-host-off"
     [ "$line" = - ] || : > "$home/config/supervision-host-off"
     for harness in claude codex; do
-      [ "$line:$harness" != -:claude ] || continue
       out=$(probe_lock "$harness")
       [ "$out" = no-lock ] || fail "a $harness home whose config/supervision-host is ${line/-/absent} engaged the lease-command lock: $out"
     done
   done
   rm -f "$home/config/supervision-host" "$home/config/supervision-host-off"
+  : > "$home/config/supervision-host"
   out=$(probe_lock claude)
-  [ "$out" = lock-taken ] || fail "a Claude home without config/supervision-host runs the host, so its unmarked guard must take the lease-command lock: $out"
+  [ "$out" = lock-taken ] || fail "an opted-in Claude home's unmarked guard must take the lease-command lock: $out"
 
   : > "$home/config/supervision-host"
   # The positional parameter belongs to the nested shell.
