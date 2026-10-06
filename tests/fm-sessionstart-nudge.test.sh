@@ -1085,6 +1085,7 @@ test_run_creates_missing_state_on_a_fresh_primary() {
   # dir manufactured for it, so the existing scope refusal is unchanged.
   fm_git_worktree "$base" "$linked" fm/run-fresh-linked
   mkdir -p "$linked/bin"
+  stage_run_bin "$linked"
   : > "$linked/AGENTS.md"
   assert_absent "$linked/state" "the linked fixture already had a state dir before the assertion began"
   expect_silent_zero "linked worktree fresh state run" run_hook "$linked" --source startup
