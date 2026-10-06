@@ -841,6 +841,7 @@ test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
   lint="$test_root/bin/fm-lint.sh"
   cp "$LINT" "$lint"
   cp "$ROOT/bin/fm-lint-workflows.sh" "$test_root/bin/"
+  cp "$ROOT/bin/fm-lint-test-size.sh" "$ROOT/bin/fm-lint-nomistakes-config.sh" "$test_root/bin/"
   cp "$ROOT"/.github/workflows/* "$test_root/.github/workflows/"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$test_root/bin/backends/noop.sh"
   fixture="$test_root/tests/fm-lint-local-exclude-fixture.test.sh"
@@ -1196,6 +1197,7 @@ test_rejects_direct_beads_cli_invocations() {
   mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests"
   lint_copy="$tmp/repo/bin/fm-lint.sh"
   cp "$LINT" "$lint_copy"
+  cp "$ROOT/bin/fm-lint-test-size.sh" "$ROOT/bin/fm-lint-nomistakes-config.sh" "$tmp/repo/bin/"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -1931,6 +1933,7 @@ test_sidecar_result_exit_reflects_final_status() {
   mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/.github/workflows"
   cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$tmp/repo/bin/fm-timeout-lib.sh"
+  cp "$ROOT/bin/fm-lint-test-size.sh" "$ROOT/bin/fm-lint-nomistakes-config.sh" "$tmp/repo/bin/"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
