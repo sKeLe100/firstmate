@@ -1209,7 +1209,7 @@ unit_supervision_host_quiet_statement() {
   out=$(FM_TEST_HARNESS=cursor quiet_in "$st" "$LAUNCH" quiet-check); rc=$?
   [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "quiet-check on a cursor home without config/supervision-host must exit 1 silently (rc=$rc): $out"
   out=$(quiet_in "$st" "$LAUNCH" quiet-check); rc=$?
-  quiet_expect 0 'Quiet mode needs nothing on this home' "quiet-check on a claude home without config/supervision-host must say quiet mode needs nothing"
+  [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "quiet-check on a claude home without config/supervision-host must exit 1 silently (rc=$rc): $out"
   printf 'claude\n' > "$st/config/supervision-host"
   out=$(FM_TEST_HARNESS=pi quiet_in "$st" "$LAUNCH" quiet-check); rc=$?
   [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "quiet-check on a pi home must exit 1 silently (rc=$rc): $out"
