@@ -443,7 +443,8 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     printf 'escalate|stale + actionable status: %s' "$event"
     return
   fi
-  if [ -n "$last" ] && status_is_paused_or_captain_held "$last" "$(fm_meta_get "$state/$task.meta" worktree)"; then
+  declared=$(status_declared_wait_line "$state/$task.status")
+  if [ -n "$declared" ] && status_is_paused_or_captain_held "$declared" "$(fm_meta_get "$state/$task.meta" worktree)"; then
     # A DECLARED external-wait pause or a verified captain-held transfer
     # (fm-classify-lib.sh owns which declarations qualify): an idle pane is
     # EXPECTED, so this is not a wedge. The caller records a pause marker (long
