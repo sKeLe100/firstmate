@@ -306,7 +306,7 @@ test_a_pin_governs_only_its_own_runner() {
   new_case scope codex
   mkdir -p "$CASE/work"
   printf '%s\n' "$CASE/work" > "$HOME_DIR/config/claude-account"
-  out=$(spawn_ship "$id-codex"); rc=$?
+  out=$(spawn_ship "$id-codex" --model gpt-5 --effort high); rc=$?
   expect_code 0 "$rc" "a codex spawn must ignore a Claude pin: $out"
   assert_not_contains "$out" "account=" "a codex spawn must not report a Claude pin"
   out=$(spawn_ship "$id-pi" --harness pi --model gpt-5.5); rc=$?
