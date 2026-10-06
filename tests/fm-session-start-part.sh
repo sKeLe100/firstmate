@@ -8,6 +8,7 @@ test_perl_timeout_fallback_reports_signal_death_nonzero() {
   for cmd in bash perl sleep kill cat rm mktemp; do
     command -v "$cmd" >/dev/null 2>&1 && ln -s "$(command -v "$cmd")" "$toolbin/$cmd"
   done
+  # shellcheck disable=SC2153 # ROOT is supplied by fm-session-start.test.sh when sourcing this part.
   PATH="$toolbin" bash -c '
     . "$1/bin/fm-timeout-lib.sh"
     [ "$(fm_timeout_mechanism)" = perl ] || { echo "mechanism: $(fm_timeout_mechanism)" >&2; exit 99; }
