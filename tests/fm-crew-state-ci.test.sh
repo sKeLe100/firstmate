@@ -90,7 +90,7 @@ test_ci_monitoring_no_checks_terminal_surfaces_done() {
   pass "terminal no-checks ci-monitor marker surfaces done"
 }
 
-test_ci_monitoring_green_then_rearm_stays_working() {
+test_ci_monitoring_green_then_rearm_stays_green() {
   reset_fakes
   local d; d=$(new_case ci-green-then-rearm)
   make_repo_on_branch "$d/wt" fm/feat-cirearm
@@ -100,13 +100,16 @@ test_ci_monitoring_green_then_rearm_stays_working() {
   FM_FAKE_CI_LOGS=$(cat <<'EOF'
 all CI checks passed - still monitoring until merged or closed
 base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
+base branch advanced (bbbbbbb..ccccccc), re-arming CI monitor timeout
 EOF
 )
   local out; out=$(run_crew_state "$d" feat-cirearm)
-  assert_contains "$out" "state: working" "base-advance rearm marker -> working"
-  assert_not_contains "$out" "state: done" "base-advance rearm marker must not read as done"
-  assert_not_contains "$out" "checks green" "base-advance rearm marker must not read as checks green"
-  pass "base-advance rearm after green stays working"
+  assert_contains "$out" "state: done" "a base-advance re-arm after green keeps the PR green"
+  assert_contains "$out" "source: run-step" "re-armed green monitoring stays run-step sourced"
+  assert_contains "$out" "checks green: PR ready for review" "re-armed green monitoring reads held for merge"
+  assert_contains "$out" "https://github.com/o/r/pull/2" "the held-for-merge reading names the run's PR"
+  assert_not_contains "$out" "state: working" "a re-arm line must not read as checks not ready"
+  pass "base-advance re-arm after green stays checks green"
 }
 
 test_ci_monitoring_no_checks_yet_stays_working() {
@@ -538,7 +541,7 @@ test_ci_ready_done_log_beats_monitoring_run
 test_ci_monitoring_checks_green_surfaces_done
 test_top_level_ci_checks_green_surfaces_done
 test_ci_monitoring_no_checks_terminal_surfaces_done
-test_ci_monitoring_green_then_rearm_stays_working
+test_ci_monitoring_green_then_rearm_stays_green
 test_ci_monitoring_no_checks_yet_stays_working
 test_ci_monitoring_repeated_poll_failure_surfaces_wedge
 test_ci_monitoring_transient_errors_then_pending_not_wedged

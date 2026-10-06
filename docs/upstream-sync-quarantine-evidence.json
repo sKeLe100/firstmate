@@ -1,0 +1,195 @@
+{
+  "record": "Bounded f470a01c upstream-sync quarantine evidence",
+  "date_utc": "2026-10-06",
+  "host": "SeansDesktop (PC02, WSL)",
+  "base": "42a39f46620c95ce7dcd79884bb6b961a6ca7adf",
+  "upstream": "f470a01c098c1536d83b802874bd954a2c04b506",
+  "owner": "sync-preexisting-test-failures",
+  "authority": "Firstmate ruling 015 approved the quota quarantine after identical full-script failures on all three trees. Ruling 017 approved exclusions for full-script failures also reproduced on pure pinned upstream, without production or assertion fixes. Rulings 018 and 019 authorized this tracked ledger and the four reason-column references.",
+  "tools": {
+    "bash --version": "GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)",
+    "git --version": "git version 2.53.0",
+    "node --version": "v22.22.1",
+    "tasks-axi --version": "0.2.6",
+    "timeout --version": "timeout (uutils coreutils) 0.8.0",
+    "jq --version": "jq-1.8.2",
+    "tmux -V": "tmux 3.6",
+    "python3 --version": "Python 3.14.4",
+    "perl version": "Perl v5.40.1"
+  },
+  "tool_version_provenance": "Read-only version snapshot on PC02 after the recorded campaign, 2026-10-06; no intervening tool upgrade is known. These were not captured inside each original test invocation.",
+  "duration_provenance": "Merged durations are canonical runner duration_ms. Controls are log-creation to atomic-exit-file-creation wall intervals, including git rev-parse and command startup, reconstructed from retained filesystem birth timestamps; they are not isolated test durations.",
+  "command_provenance": "The merged command field preserves the executed shell expression; merged_selection gives its exact scripts array. Control commands ran once per tree, sequentially, in the stated immutable checkout. No reruns were made for this ledger. Offload-disabled runner text saying PC01 is generic fallback wording; hostname recorded by each driver is SeansDesktop (PC02).",
+  "entries": [
+    {
+      "test": "tests/fm-procevent-quota.test.sh",
+      "signature": "provider retire targeted the wrong source",
+      "three_way_behavior": "Base delegates provider retirement to the generic private-state owner. Upstream preserves that retirement contract and adds schema-6 handling elsewhere. Merged test, quota adapter and generic process-event owner equal pinned upstream; all three reach the same refusal and retirement assertion. The environmental cause is unconfirmed.",
+      "merged": {
+        "commit": "6ad806d903a542f8e91f4d3bccd860d4ee863395",
+        "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/worktree",
+        "exit": 1,
+        "duration_ms": 2405,
+        "batch": "020",
+        "selection_slugs": "fm-agy-harness fm-backend-herdr fm-calm-pi-extension fm-composer-codex-idle-live-e2e fm-peek-remote fm-pending-reply fm-pi-branch-extension fm-pi-branch-live-e2e fm-pi-branch-responsiveness-live-e2e fm-pi-codex-native fm-pi-primary-live-e2e fm-pi-primary-types fm-pi-seeded-home-trust-live-e2e fm-pi-watch-extension fm-pi-windows-shell-invocation fm-pr-check-security fm-pr-merge fm-pr-reviewers fm-pr-state-live-e2e fm-pr-state fm-precompact-checkpoint fm-primary-herdr fm-primary-watchdog fm-procevent-quota fm-procevent-when fm-procevent fm-project-origin fm-public-followup fm-questionnaire-refill-source fm-queue-snapshot fm-quota-array-dispatch-live-e2e fm-quota-choose fm-remote-backlog-handoff fm-remote-delta-read fm-remote-doctor fm-remote-entrypoint fm-remote-herdr-guard fm-remote-job-claim-reap fm-remote-job-claim-retention fm-remote-job-launchagent fm-remote-job-orphan-reap fm-remote-job fm-remote-reply fm-remote-secondmate-control-launch-settle fm-remote-secondmate-lifecycle-e2e fm-remote-secondmate-parent-binding fm-remote-secondmate-relaunch fm-remote-secondmate-trace-context fm-remote-transport-lanes fm-retry-pressure fm-returning-session-check fm-review-diff fm-roundtable-coverage fm-roundtable-factsheet fm-routing-ledger-metrics fm-rovo-harness fm-rovo-signals-live-e2e fm-secondmate-harness fm-secondmate-lifecycle-e2e fm-secondmate-liveness fm-secondmate-reconcile fm-secondmate-restart fm-secondmate-safety fm-secondmate-sync fm-send-agy-confirm fm-send-cache-stale-guard fm-send-inbox-doorbell-live-e2e fm-send-inbox fm-send-popup-settle fm-send-remote-delivery fm-send-resolve-key fm-send-secondmate-marker-herdr-e2e fm-send-secondmate-marker fm-send-settle fm-send-strict fm-session-lock-ancestry fm-session-start fm-sessionstart-hook-live-e2e fm-sessionstart-instruction-refresh-live-e2e fm-sessionstart-nudge fm-shared-captain-inheritance fm-spawn-batch fm-spawn-compact-adviser-disable-remote fm-spawn-compact-adviser-disable fm-spawn-dispatch-profile fm-spawn-host-memory fm-spawn-orca-worktree fm-spawn-pc02-lane-guard fm-spawn-pool-base-freshen fm-spawn-worktree-settle fm-startup-memory-budget fm-startup-network fm-stat-shadowing fm-stow-cascade fm-subagent-pretool-check fm-supervision-events fm-supervision-host-attended-live-e2e fm-supervision-host-live-e2e fm-supervision-host fm-supervision-instructions fm-tangle-guard fm-task-delivery fm-task-inbox fm-tasks-axi fm-teardown-endpoint-safety fm-teardown fm-test-fixture-cleanup fm-test-fixtures fm-test-isolation-proof fm-test-run fm-test-sandbox-cache-race fm-timeout-lib fm-tmux-agent-liveness fm-tmux-submit-busy fm-tool-update-check fm-trace-context-lib fm-trace-context-spawn fm-transition-lib fm-turnend-foreign-owner-arm-fix fm-turnend-guard fm-update fm-upstream-batch fm-upstream-behind-check fm-upstream-sync-item fm-vendor-auth-probe fm-voice-relay fm-wake-daemon-lifecycle-e2e fm-wake-drain-open-decisions-cursor fm-wake-drain-open-decisions fm-wake-drain-outcome-backstop fm-wake-drain-unread-status fm-wake-pair-dedup fm-wake-queue fm-watch-arm fm-watch-checkpoint fm-watch-pc02-cadence fm-watch-recovery-loop fm-watch-retry-band fm-watch-triage fm-watcher-lock fm-worker-account-live-e2e fm-worker-account fm-worktree-guard fm-x-mode"
+      },
+      "controls": {
+        "premerge-base": {
+          "commit": "42a39f46620c95ce7dcd79884bb6b961a6ca7adf",
+          "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/premerge-base",
+          "exit": 1,
+          "artifact_wall_interval_ms": 2502.199,
+          "log_created_at": "2026-10-06 00:58:41.850050944 -0400",
+          "exit_created_at": "2026-10-06 00:58:44.352249986 -0400",
+          "result": "FAIL; same signature as merged"
+        },
+        "pure-upstream": {
+          "commit": "f470a01c098c1536d83b802874bd954a2c04b506",
+          "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/pure-upstream",
+          "exit": 1,
+          "artifact_wall_interval_ms": 2404.788,
+          "log_created_at": "2026-10-06 00:58:44.359461464 -0400",
+          "exit_created_at": "2026-10-06 00:58:46.764249781 -0400",
+          "result": "FAIL; same signature as merged"
+        }
+      },
+      "artifact_sha256": {
+        "remaining-020.log": "3a95c0fb327ad07fa183dbb4732ac6f78a6902cd95fa4c3b0454ec82cf8e63de",
+        "remaining-020.json": "a628f3432318cc52c69c7bbf602be8047cb3f0d71e28845379602c30450c81ff",
+        "procevent-quota-premerge-base-021.log": "6e077da09a2174a06a0f1681584176cbb4f90fc778aeccdc5fbbee0edfd128ac",
+        "procevent-quota-premerge-base-021.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "procevent-quota-pure-upstream-021.log": "1f1b5624e02a7b0ec368c09789f634e46daeb8f1566b855e40cd9da5ac449253",
+        "procevent-quota-pure-upstream-021.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      }
+    },
+    {
+      "test": "tests/fm-public-followup.test.sh",
+      "signature": "a wake whose line could not be written must stay queued",
+      "three_way_behavior": "Base lacks rejection-wake draining and this assertion. Upstream prints a queued wake before removing it and tests closed-stdout retention. Merged write/drain owners equal upstream; failing assertions are preserved. Both merged and upstream fail the new case; base passes without that case. Cause is unconfirmed.",
+      "merged": {
+        "commit": "7925f4d5c95d7734d7527a35b72446b53711fdd6",
+        "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/worktree",
+        "exit": 1,
+        "duration_ms": 491008,
+        "batch": "022",
+        "selection_slugs": "fm-agy-harness fm-backend-herdr fm-calm-pi-extension fm-composer-codex-idle-live-e2e fm-procevent-when fm-procevent fm-project-origin fm-public-followup fm-questionnaire-refill-source fm-queue-snapshot fm-quota-array-dispatch-live-e2e fm-quota-choose fm-remote-backlog-handoff fm-remote-delta-read fm-remote-doctor fm-remote-entrypoint fm-remote-herdr-guard fm-remote-job-claim-reap fm-remote-job-claim-retention fm-remote-job-launchagent fm-remote-job-orphan-reap fm-remote-job fm-remote-reply fm-remote-secondmate-control-launch-settle fm-remote-secondmate-lifecycle-e2e fm-remote-secondmate-parent-binding fm-remote-secondmate-relaunch fm-remote-secondmate-trace-context fm-remote-transport-lanes fm-retry-pressure fm-returning-session-check fm-review-diff fm-roundtable-coverage fm-roundtable-factsheet fm-routing-ledger-metrics fm-rovo-harness fm-rovo-signals-live-e2e fm-secondmate-harness fm-secondmate-lifecycle-e2e fm-secondmate-liveness fm-secondmate-reconcile fm-secondmate-restart fm-secondmate-safety fm-secondmate-sync fm-send-agy-confirm fm-send-cache-stale-guard fm-send-inbox-doorbell-live-e2e fm-send-inbox fm-send-popup-settle fm-send-remote-delivery fm-send-resolve-key fm-send-secondmate-marker-herdr-e2e fm-send-secondmate-marker fm-send-settle fm-send-strict fm-session-lock-ancestry fm-session-start fm-sessionstart-hook-live-e2e fm-sessionstart-instruction-refresh-live-e2e fm-sessionstart-nudge fm-shared-captain-inheritance fm-spawn-batch fm-spawn-compact-adviser-disable-remote fm-spawn-compact-adviser-disable fm-spawn-dispatch-profile fm-spawn-host-memory fm-spawn-orca-worktree fm-spawn-pc02-lane-guard fm-spawn-pool-base-freshen fm-spawn-worktree-settle fm-startup-memory-budget fm-startup-network fm-stat-shadowing fm-stow-cascade fm-subagent-pretool-check fm-supervision-events fm-supervision-host-attended-live-e2e fm-supervision-host-live-e2e fm-supervision-host fm-supervision-instructions fm-tangle-guard fm-task-delivery fm-task-inbox fm-tasks-axi fm-teardown-endpoint-safety fm-teardown fm-test-fixture-cleanup fm-test-fixtures fm-test-isolation-proof fm-test-run fm-test-sandbox-cache-race fm-timeout-lib fm-tmux-agent-liveness fm-tmux-submit-busy fm-tool-update-check fm-trace-context-lib fm-trace-context-spawn fm-transition-lib fm-turnend-foreign-owner-arm-fix fm-turnend-guard fm-update fm-upstream-batch fm-upstream-behind-check fm-upstream-sync-item fm-vendor-auth-probe fm-voice-relay fm-wake-daemon-lifecycle-e2e fm-wake-drain-open-decisions-cursor fm-wake-drain-open-decisions fm-wake-drain-outcome-backstop fm-wake-drain-unread-status fm-wake-pair-dedup fm-wake-queue fm-watch-arm fm-watch-checkpoint fm-watch-pc02-cadence fm-watch-recovery-loop fm-watch-retry-band fm-watch-triage fm-watcher-lock fm-worker-account-live-e2e fm-worker-account fm-worktree-guard fm-x-mode fm-procevent-quota"
+      },
+      "controls": {
+        "premerge-base": {
+          "commit": "42a39f46620c95ce7dcd79884bb6b961a6ca7adf",
+          "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/premerge-base",
+          "exit": 0,
+          "artifact_wall_interval_ms": 185782.717,
+          "log_created_at": "2026-10-06 01:15:33.657443746 -0400",
+          "exit_created_at": "2026-10-06 01:18:39.440160397 -0400",
+          "result": "PASS; new case absent"
+        },
+        "pure-upstream": {
+          "commit": "f470a01c098c1536d83b802874bd954a2c04b506",
+          "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/pure-upstream",
+          "exit": 1,
+          "artifact_wall_interval_ms": 483566.904,
+          "log_created_at": "2026-10-06 01:18:39.445224980 -0400",
+          "exit_created_at": "2026-10-06 01:26:43.012128871 -0400",
+          "result": "FAIL; same signature as merged"
+        }
+      },
+      "artifact_sha256": {
+        "remaining-022.log": "ead4fdf0745d4ba8c65226d5d08937b53c7edded9b10c9e143b2be25db2f4dd8",
+        "remaining-022.json": "7d950b3d817adfbe8eedb4c1388a6c52ef99830b9f237688425f77a2e36d785f",
+        "public-followup-premerge-base-023.log": "f64ca1a2aa3e29bd6e5dde926193c2fd46ec63f1482c42a9357689677222a857",
+        "public-followup-premerge-base-023.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "public-followup-pure-upstream-023.log": "448dc01229b11b271ff20d678c06e53b496aca705518db419cfc99490cf92443",
+        "public-followup-pure-upstream-023.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      }
+    },
+    {
+      "test": "tests/fm-supervision-host.test.sh",
+      "signature": "a routine outcome a drain could not print must follow on the next drain",
+      "three_way_behavior": "Base predates this test: exit 127 means absent, not a failed test. The merged test and host owner equal upstream at this test head. Wake-drain differs only in retained acknowledgement/rearm reset, outside this fixture; outcome printing/read-cursor behavior equals upstream. Both available scripts fail the same closed-stdout retention assertion. Cause is unconfirmed; actual operational host remains off.",
+      "merged": {
+        "commit": "5c542ec085272c4b8ed84393aca3db8f48cce63b",
+        "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/worktree",
+        "exit": 1,
+        "duration_ms": 59359,
+        "batch": "048",
+        "selection_slugs": "fm-agy-harness fm-backend-herdr fm-calm-pi-extension fm-composer-codex-idle-live-e2e fm-procevent fm-remote-secondmate-lifecycle-e2e fm-remote-transport-lanes fm-secondmate-harness fm-session-lock-ancestry fm-spawn-pc02-lane-guard fm-spawn-pool-base-freshen fm-spawn-worktree-settle fm-startup-memory-budget fm-startup-network fm-stat-shadowing fm-stow-cascade fm-subagent-pretool-check fm-supervision-events fm-supervision-host-attended-live-e2e fm-supervision-host-live-e2e fm-supervision-host fm-supervision-instructions fm-tangle-guard fm-task-delivery fm-task-inbox fm-tasks-axi fm-teardown-endpoint-safety fm-teardown fm-test-fixture-cleanup fm-test-fixtures fm-test-isolation-proof fm-test-run fm-test-sandbox-cache-race fm-timeout-lib fm-tmux-agent-liveness fm-tmux-submit-busy fm-tool-update-check fm-trace-context-lib fm-trace-context-spawn fm-transition-lib fm-turnend-foreign-owner-arm-fix fm-turnend-guard fm-update fm-upstream-batch fm-upstream-behind-check fm-upstream-sync-item fm-vendor-auth-probe fm-voice-relay fm-wake-daemon-lifecycle-e2e fm-wake-drain-open-decisions-cursor fm-wake-drain-open-decisions fm-wake-drain-outcome-backstop fm-wake-drain-unread-status fm-wake-pair-dedup fm-wake-queue fm-watch-arm fm-watch-checkpoint fm-watch-pc02-cadence fm-watch-recovery-loop fm-watch-retry-band fm-watch-triage fm-watcher-lock fm-worker-account-live-e2e fm-worker-account fm-worktree-guard fm-x-mode fm-procevent-quota fm-public-followup"
+      },
+      "controls": {
+        "premerge-base": {
+          "commit": "42a39f46620c95ce7dcd79884bb6b961a6ca7adf",
+          "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/premerge-base",
+          "exit": 127,
+          "artifact_wall_interval_ms": 104.0,
+          "log_created_at": "2026-10-06 03:16:11.607662895 -0400",
+          "exit_created_at": "2026-10-06 03:16:11.711662886 -0400",
+          "result": "absent; not a test failure"
+        },
+        "pure-upstream": {
+          "commit": "f470a01c098c1536d83b802874bd954a2c04b506",
+          "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/pure-upstream",
+          "exit": 1,
+          "artifact_wall_interval_ms": 56459.925,
+          "log_created_at": "2026-10-06 03:16:11.715733931 -0400",
+          "exit_created_at": "2026-10-06 03:17:08.175658620 -0400",
+          "result": "FAIL; same signature as merged"
+        }
+      },
+      "artifact_sha256": {
+        "remaining-048.log": "b0b37b57040ed57e7b8da0011f60fbae91968b2644e6a058135ca37ef262554a",
+        "remaining-048.json": "72aaff43b8ea9077875e2f4b597ce496f5b413db6d47596029b6adfe4458029c",
+        "supervision-host-premerge-base-049.log": "212038ee8c82be1b7e9be7af08362878cacf21bdcdb46ac5c2afd3ba46207d1b",
+        "supervision-host-premerge-base-049.exit": "743c7850cccfba5e53a9002663ec1ddd1079315a98bdbfdde10e6044f56abefe",
+        "supervision-host-pure-upstream-049.log": "33dfae262016038e19350af403544d26efbab38d05be935bd44dc280b277b8ba",
+        "supervision-host-pure-upstream-049.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      }
+    },
+    {
+      "test": "tests/fm-task-delivery.test.sh",
+      "signature": "a ref-format-valid metacharacter prefix should promote safely",
+      "three_way_behavior": "Base lacks the new metacharacter promotion case and passes. Merged promotion owner equals upstream; test differences are two role-fixture harness selections outside the failing case. Both merged and upstream fail the preserved metacharacter-prefix assertion with private disk TMPDIR. No shorter-path retry was made; cause is unconfirmed.",
+      "merged": {
+        "commit": "ab9610ac1c0c36db14a8400c15aa6a590afdf09e",
+        "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/worktree",
+        "exit": 1,
+        "duration_ms": 21467,
+        "batch": "050",
+        "selection_slugs": "fm-agy-harness fm-backend-herdr fm-calm-pi-extension fm-composer-codex-idle-live-e2e fm-procevent fm-remote-secondmate-lifecycle-e2e fm-remote-transport-lanes fm-secondmate-harness fm-session-lock-ancestry fm-supervision-instructions fm-tangle-guard fm-task-delivery fm-task-inbox fm-tasks-axi fm-teardown-endpoint-safety fm-teardown fm-test-fixture-cleanup fm-test-fixtures fm-test-isolation-proof fm-test-run fm-test-sandbox-cache-race fm-timeout-lib fm-tmux-agent-liveness fm-tmux-submit-busy fm-tool-update-check fm-trace-context-lib fm-trace-context-spawn fm-transition-lib fm-turnend-foreign-owner-arm-fix fm-turnend-guard fm-update fm-upstream-batch fm-upstream-behind-check fm-upstream-sync-item fm-vendor-auth-probe fm-voice-relay fm-wake-daemon-lifecycle-e2e fm-wake-drain-open-decisions-cursor fm-wake-drain-open-decisions fm-wake-drain-outcome-backstop fm-wake-drain-unread-status fm-wake-pair-dedup fm-wake-queue fm-watch-arm fm-watch-checkpoint fm-watch-pc02-cadence fm-watch-recovery-loop fm-watch-retry-band fm-watch-triage fm-watcher-lock fm-worker-account-live-e2e fm-worker-account fm-worktree-guard fm-x-mode fm-procevent-quota fm-public-followup fm-supervision-host"
+      },
+      "controls": {
+        "premerge-base": {
+          "commit": "42a39f46620c95ce7dcd79884bb6b961a6ca7adf",
+          "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/premerge-base",
+          "exit": 0,
+          "artifact_wall_interval_ms": 26031.998,
+          "log_created_at": "2026-10-06 03:21:20.055641009 -0400",
+          "exit_created_at": "2026-10-06 03:21:46.087639197 -0400",
+          "result": "PASS; new case absent"
+        },
+        "pure-upstream": {
+          "commit": "f470a01c098c1536d83b802874bd954a2c04b506",
+          "cwd": "/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339/pure-upstream",
+          "exit": 1,
+          "artifact_wall_interval_ms": 20626.151,
+          "log_created_at": "2026-10-06 03:21:46.089486128 -0400",
+          "exit_created_at": "2026-10-06 03:22:06.715637692 -0400",
+          "result": "FAIL; same signature as merged"
+        }
+      },
+      "artifact_sha256": {
+        "remaining-050.log": "854f63fa841490ab68a7dd3e0b2365c767cd77da13ccc9280014dc840f0abe4c",
+        "remaining-050.json": "cbea2c7bf39146c7c43f55726e44049bd95cae76d12016be367a71cee369dcdb",
+        "task-delivery-premerge-base-051.log": "451df6f4bbbe0a9b2e21e1ab2681eeae9626222d5d14e9b8cb8bfd5b3de27655",
+        "task-delivery-premerge-base-051.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "task-delivery-pure-upstream-051.log": "aef845de9ee3d9ff77121a59af485fe8fef1aef49f1c976ca836848eef21254e",
+        "task-delivery-pure-upstream-051.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      }
+    }
+  ],
+  "command_environment": "Each driver exported PATH=/home/sean_/.npm-global/bin:/home/sean_/.local/bin:$PATH and run_root=/home/sean_/.fm-pc02-test-offload/run-3162644834-3356339. Earlier quota/public-followup commands inherited default TMPDIR; supervision-host/task-delivery explicitly used run_root/test-tmp. Controls additionally isolated global/system Git configuration. The comparison timeout command was preceded by git rev-parse HEAD in a redirected subshell.",
+  "command_templates": {
+    "merged": "env -u FM_HOME -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_DATA_OVERRIDE -u FM_PROJECTS_OVERRIDE -u FM_LIVE ${tmpdir_assignment}FM_PC02_OFFLOAD_DISABLE=1 FM_AFK_PI_HERDR_E2E=0 FM_HERDR_VERSION_FLOOR_LIVE_E2E=0 FM_HERDR_PI_STALE_REGISTRATION_LIVE_E2E=0 FM_SEND_MARKER_HERDR_E2E=0 FM_HERDR_SUBMIT_CONFIRM_LIVE=0 FM_HERDR_ATTACHED_VIEWER_LIVE_E2E=0 timeout 14400 bin/fm-test-run.sh --jobs 1 --exclude-quarantined --exclude-family real-herdr-gated --pc02-if-idle --fail-fast --json ../remaining-${batch}.json \"${scripts[@]}\"",
+    "control": "env -u FM_HOME -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_DATA_OVERRIDE -u FM_PROJECTS_OVERRIDE -u FM_LIVE GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 ${tmpdir_assignment}FM_PC02_OFFLOAD_DISABLE=1 FM_AFK_PI_HERDR_E2E=0 FM_HERDR_VERSION_FLOOR_LIVE_E2E=0 FM_HERDR_PI_STALE_REGISTRATION_LIVE_E2E=0 FM_SEND_MARKER_HERDR_E2E=0 FM_HERDR_SUBMIT_CONFIRM_LIVE=0 FM_HERDR_ATTACHED_VIEWER_LIVE_E2E=0 timeout 900 bash ${test}",
+    "expansion": "batch and test are entry fields; tmpdir_assignment is empty for batches 020/022 and TMPDIR=\"$run_root/test-tmp\" followed by a space for 048/050. Exact scripts array is reconstructed from the ordered space-separated merged.selection_slugs: each slug maps to tests/<slug>.test.sh. Commands ran in merged.cwd or the controls.cwd; run_root and PATH are stated below. The templates are a compact representation of the preserved commands, not claims of a new invocation."
+  }
+}

@@ -1032,7 +1032,7 @@ tasks[6]{id,state,kind,repo,title,blocked,blocked_by,held,hold_kind,hold_reason,
   rot-blocked,queued,ship,rot-proj,blocked old item,yes,rot-old,no,"-","-","-","-",2026-08-20
   rot-held,queued,ship,rot-proj,held old item,no,none,yes,captain,"needs a call","-","-",2026-08-20
   rot-fresh,queued,ship,rot-proj,fresh item,no,none,no,"-","-","-","-",2026-09-08
-  rot-nodate,queued,ship,rot-proj,no date item,no,none,no,"-","-","-","-",
+  rot-nodate,queued,ship,rot-proj,no date item,no,none,no,"-","-","-","-",""
 OUT
 STUB
 chmod +x "$stub_dir/tasks-axi"

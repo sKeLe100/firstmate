@@ -15,12 +15,16 @@ set -u
 CREW_STATE="$ROOT/bin/fm-crew-state.sh"
 # A real git repo checked out on <branch>, so the helper's branch attribution
 # (git symbolic-ref) resolves like it would for a live crew worktree.
+# Stamp origin/main at the current HEAD so a later ship done: is not refused
+# solely for being a fixture with no remote-tracking refs; tests that need an
+# unpreserved named head point those refs at a different commit.
 make_repo_on_branch() {  # <dir> <branch>
   local dir=$1 branch=$2
   mkdir -p "$dir"
   git -C "$dir" init -q
   git -C "$dir" commit -q --allow-empty -m init
   git -C "$dir" checkout -q -b "$branch"
+  git -C "$dir" update-ref refs/remotes/origin/main "$(git -C "$dir" rev-parse HEAD)"
   # Real worktree HEAD for run head-binding (fixtures read FM_FAKE_RUN_HEAD).
   FM_FAKE_RUN_HEAD=$(git -C "$dir" rev-parse HEAD)
   export FM_FAKE_RUN_HEAD
