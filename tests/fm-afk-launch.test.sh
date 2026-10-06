@@ -213,7 +213,7 @@ unit_pi_enter_stop_does_not_claim_a_daemon_terminal() {
 }
 
 unit_daemon_entry_requires_the_record() {
-  local st out rc
+  local st out rc cap_pane
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-entry-record.XXXXXX")
   mkdir -p "$st/state"
   out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native 2>&1)
@@ -224,8 +224,10 @@ unit_daemon_entry_requires_the_record() {
   else
     fail "daemon entry: started without a record or the refusal was unclear (rc=$rc): $out"
   fi
+  cap_pane=$(native_captain_pane entry-record) || { echo "skip: tmux not found (daemon entry)"; rm -rf "$st"; return 0; }
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS fm-test-native-entry-record-$$"
   if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" enter --words 'merge task a PR when green' >/dev/null 2>&1 \
-    && FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native >/dev/null 2>&1 \
+    && FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ -e "$st/state/.afk" ]; then
     pass "daemon entry: enter then start-native run back to back with no confirmation between them"
   else
@@ -255,7 +257,10 @@ unit_stop_archives_the_record_last() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-stop-archive.XXXXXX")
   mkdir -p "$st/state"
   enter_posture "$st" || fail "stop archive: could not enter fixture posture"
-  FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native >/dev/null 2>&1 || fail "stop archive: native entry failed"
+  cap_pane=$(native_captain_pane stop-archive) || { echo "skip: tmux not found (stop archive)"; rm -rf "$st"; return 0; }
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS fm-test-native-stop-archive-$$"
+  FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux \
+    "$LAUNCH" start-native >/dev/null 2>&1 || fail "stop archive: native entry failed"
   epoch=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" field entered_epoch)
   if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1 \
     && [ ! -e "$st/state/.afk" ] && [ ! -e "$st/state/.afk-contract" ] \
@@ -450,7 +455,9 @@ unit_mode_refresh_preserves_quiet() {
 # A live quiet daemon must follow the record when /afk turns it into away;
 # a refresh before that entry must not silently turn quiet into away.
 unit_mode_quiet_daemon_to_away() {
-  local command st sleep_pid lock mode rc
+  local command st sleep_pid lock mode rc cap_pane
+  cap_pane=$(native_captain_pane quiet-refresh) || { echo "skip: tmux not found (quiet refresh)"; return 0; }
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS fm-test-native-quiet-refresh-$$"
   for command in start start-native; do
     st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-quiet-to-away.XXXXXX")
     mkdir -p "$st/state"
@@ -465,7 +472,7 @@ unit_mode_quiet_daemon_to_away() {
     printf '%s' "$sleep_pid" > "$lock/pid"
     ( . "$ROOT/bin/fm-wake-lib.sh"; fm_pid_identity "$sleep_pid" > "$lock/pid-identity" 2>/dev/null ) || true
 
-    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET=unused \
+    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" \
       FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" "$command" >/dev/null 2>&1
     rc=$?
     mode=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" mode)
@@ -481,7 +488,7 @@ unit_mode_quiet_daemon_to_away() {
     if [ "$rc" -ne 0 ] || [ "$mode" != away ]; then
       fail "$command: /afk did not convert the live quiet record to away (rc=$rc, record=$mode)"
     fi
-    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET=unused \
+    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" \
       FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" "$command" >/dev/null 2>&1
     rc=$?
     if [ "$rc" -eq 0 ] && [ "$(head -n 1 "$st/state/.afk")" = away ] \
@@ -987,12 +994,16 @@ unit_native_refuses_unhosted_primary() {
 }
 
 unit_native_lifecycle() {
-  local st out
+  local st out cap_session cap_pane
+  command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (native lifecycle)"; return 0; }
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-native.XXXXXX")
   mkdir -p "$st/state"
   : > "$st/state/.subsuper-escalations"
+  cap_session="fm-test-native-lifecycle-$$"
+  tmux new-session -d -s "$cap_session" 2>/dev/null || { fail "native lifecycle: could not create captain session"; rm -rf "$st"; return 0; }
+  cap_pane=$(tmux display-message -p -t "$cap_session" '#{pane_id}')
   enter_posture "$st" || fail "native lifecycle: could not enter fixture posture"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native >/dev/null 2>&1 \
+  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ "$(cut -f1 "$st/state/.afk-daemon-terminal")" = none ] \
     && [ -e "$st/state/.afk" ] \
     && [ ! -e "$st/state/.subsuper-escalations" ]; then
@@ -1017,14 +1028,16 @@ unit_native_lifecycle() {
 # off; quiet mode still does, a plain refresh of a running quiet daemon is
 # still allowed, and an off file keeps the away daemon.
 unit_supervision_host_claude_home_runs_no_away_daemon() {
-  local st out rc line
+  local st out rc line cap_pane
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-host.XXXXXX")
   mkdir -p "$st/state" "$st/config"
+  cap_pane=$(native_captain_pane host-claude) || { echo "skip: tmux not found (host quiet daemon)"; rm -rf "$st"; return 0; }
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS fm-test-native-host-claude-$$"
   for line in - ''; do
     rm -f "$st/config/supervision-host" "$st/state/.afk-contract"
     [ "$line" = - ] || printf '%s\n' "$line" > "$st/config/supervision-host"
     FM_CONFIG_OVERRIDE="$st/config" enter_posture "$st" || fail "supervision host: could not enter fixture posture"
-    out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" "$LAUNCH" start-native 2>&1)
+    out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" start-native 2>&1)
     rc=$?
     if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -F 'runs the supervision host (docs/supervision-host.md)' >/dev/null \
       && [ ! -e "$st/state/.afk" ] && [ ! -e "$st/state/.afk-daemon-terminal" ] && [ -f "$st/state/.afk-contract" ]; then
@@ -1036,9 +1049,9 @@ unit_supervision_host_claude_home_runs_no_away_daemon() {
   rm -f "$st/state/.afk-contract"
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_MODE=quiet "$CONTRACT" enter >/dev/null 2>&1 \
     || fail "supervision host: could not enter quiet fixture posture"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_AFK_MODE=quiet "$LAUNCH" start-native >/dev/null 2>&1 \
+  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux FM_AFK_MODE=quiet "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ "$(head -n 1 "$st/state/.afk")" = quiet ] \
-    && FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" "$LAUNCH" start-native >/dev/null 2>&1 \
+    && FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ "$(head -n 1 "$st/state/.afk")" = quiet ]; then
     pass "supervision host: quiet start-native and a plain refresh of the quiet daemon still prepare the daemon"
   else
@@ -1047,7 +1060,7 @@ unit_supervision_host_claude_home_runs_no_away_daemon() {
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" "$LAUNCH" stop >/dev/null 2>&1 || true
   : > "$st/config/supervision-host-off"
   FM_CONFIG_OVERRIDE="$st/config" enter_posture "$st" || fail "supervision host: could not enter the off fixture posture"
-  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" "$LAUNCH" start-native 2>&1)
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_CONFIG_OVERRIDE="$st/config" FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" start-native 2>&1)
   rc=$?
   if [ "$rc" -eq 0 ] && [ "$(head -n 1 "$st/state/.afk" 2>/dev/null)" = away ]; then
     pass "supervision host: config/supervision-host-off keeps the away daemon on a claude home"
@@ -1123,12 +1136,16 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
 # the attended supervision host runs. quiet_in <home> runs a command there.
 QUIET_MIRROR='{"seq":1,"key":"k","tag":"captain","text":"watch the fleet"}'
 quiet_home() {  # <home>
+  local cap_pane
   mkdir -p "$1/state" "$1/config"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$1/claude-engine"
   chmod +x "$1/claude-engine"
   printf 'claude\n' > "$1/config/supervision-host"
   printf '%s\n' "$$" > "$1/state/.lock"
   printf '%s\n' "$QUIET_MIRROR" > "$1/state/.host-mirror.jsonl"
+  cap_pane=$(native_captain_pane "quiet-$(basename "$1")") || { fail "quiet fixture: could not create native pane"; return 1; }
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS fm-test-native-quiet-$(basename "$1")-$$"
+  printf '%s\n' "$cap_pane" > "$1/native-pane"
 }
 # Judge the last quiet command's $rc and $out: <status> and a <fragment> of its output.
 quiet_expect() {  # <status> <fragment> <failure>
@@ -1139,7 +1156,8 @@ quiet_expect() {  # <status> <fragment> <failure>
 quiet_in() {  # <home> <command...>
   local home=$1
   shift
-  FM_SUPERVISION_ENGINE_CLAUDE_BIN="${QUIET_ENGINE-$home/claude-engine}" FM_HOME="$home" \
+  FM_SUPERVISOR_TARGET="$(cat "$home/native-pane")" FM_SUPERVISOR_BACKEND=tmux \
+    FM_SUPERVISION_ENGINE_CLAUDE_BIN="${QUIET_ENGINE-$home/claude-engine}" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" "$@" 2>&1
 }
 
@@ -1356,7 +1374,7 @@ unit_supervision_host_quiet_failed_start() {
   rm -f "$st/state/.host-mirror.jsonl"
   quiet_in "$st" env FM_AFK_MODE=quiet "$LAUNCH" enter --words "stay quiet" >/dev/null \
     || fail "a second quiet entry without the dialog mirror must record quiet mode"
-  out=$(quiet_in "$st" env FM_SUPERVISOR_TARGET=unused "$LAUNCH" start-native); rc=$?
+  out=$(quiet_in "$st" "$LAUNCH" start-native); rc=$?
   [ "$rc" -eq 0 ] && [ "$(head -n 1 "$st/state/.afk")" = quiet ] \
     || fail "a successful quiet start must keep the quiet record and flag (rc=$rc): $out"
   quiet_in "$st" "$LAUNCH" stop >/dev/null || true
