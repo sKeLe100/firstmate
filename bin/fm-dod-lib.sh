@@ -82,6 +82,8 @@
 # and a `## Captain's intent` line opening with a Captain label or address
 # through the helpers below. Other mentions of `--intent` point here rather than
 # restating the rule.
+# The post-green fm-claim-check.sh gate verifies the worker's own done summary,
+# never the composed `--intent` text, so its output never becomes intent content.
 # Every heredoc here stays outside a command substitution: `VAR=$(cat <<EOF ...)`
 # breaks parsing of the whole file on Bash 3.2 (tests/fm-brief.test.sh).
 # fm_brief_worker_role owns the ship/scout role scope. bin/fm-spawn.sh is its one
@@ -279,13 +281,13 @@ EOF
 # the pipeline, what `--intent` may carry, and the two firstmate-specific rules.
 # Written once; only the two sentences about a green PR depend on the forge,
 # because on gerrit the ci step is skipped and there is no PR to report.
+FM_DOD_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 fm_nm_driving_block() {  # <forge>
-  local guard_dir claim_check
-  guard_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  claim_check="$guard_dir/fm-claim-check.sh"
+  local claim_check="$FM_DOD_LIB_DIR/fm-claim-check.sh" poll_lib="$FM_DOD_LIB_DIR/fm-nomistakes-poll-lib.sh"
   local pr_return_line='' pr_reattach_clause=';' drive_block wait_cfg
   if [ "$1" != gerrit ]; then
-    pr_return_line="Before reporting a green PR, run \`$claim_check main\` piping in the intended \`done:\` summary; correct any unverified claim before reporting.
+    pr_return_line="Before reporting a green PR, run \`$claim_check main\` piping in the intended \`done:\` summary; if it reports unverified paths, fix the summary before reporting, never silence the gate, and never hand-edit or recommit once the run is closed out.
 Only a drive call's return reports the green PR: \`no-mistakes axi status\` shows progress but never reports \`checks-passed\` while the ci step is still monitoring the PR for merge, so never wait on a status poll for the next gate or outcome.
 "
     pr_reattach_clause="; once checks are green it returns \`checks-passed\` immediately, and"
@@ -302,6 +304,8 @@ ${pr_return_line}Whenever a drive call returns without a gate or an outcome - it
   else
     drive_block="One drive call blocks until the next gate or outcome, which routinely outlives what your harness lets a single command run: Claude Code kills a command at ten minutes maximum, while one fix round is capped around thirty minutes and up to three rounds chain.
 So background the drive call instead of sitting in one blocking hold your harness will kill, and read its return when it finishes.
+Poll with \`$poll_lib wait --dir <worktree>\` from a separate foreground call. Never derive completion from top-level \`status: running\`: it covers both active work and a parked gate. The helper reads step and gate detail and returns on a genuine gate, outcome, or bounded timeout (exit 2 means call it again).
+If the branch has a prior finished run, confirm the NEW run's own status or outcome appears in \`no-mistakes axi status\` before polling: without \`--run\`, status reports the active or most-recent run, so an early poll can return the old outcome.
 Declare that wait using the brief's status-reporting rule before waiting on the backgrounded drive call.
 Where a harness's own command limit is not established, assume it bounds commands and use that same backgrounded shape.
 ${pr_return_line}Whenever a drive call returns without a gate or an outcome - its own wait elapsed, or it was killed or timed out - reattach at once by re-running \`no-mistakes axi run\` without flags, backgrounded the same way${pr_reattach_clause} if it refuses because no run is active, read the finished outcome from \`no-mistakes axi status\`."
@@ -368,6 +372,7 @@ EOF
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>]
   local mode=$1 id=$2 forge=${4:-none}
   local branch=${3:-fm/$id}
+  local claim_check="$FM_DOD_LIB_DIR/fm-claim-check.sh"
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   case "$mode:$forge" in
     direct-PR:gerrit)
@@ -424,6 +429,7 @@ Delivery contract: mode=direct-PR
 Ship branch: $branch
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
+Before opening the PR, run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary or the missing commit before proceeding, never silence the gate.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\` that is ready for review, not a draft.
 Before you report done, read the PR back from the forge and confirm it is not a draft (\`gh-axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`gh-axi pr ready <number>\`.
 A draft cannot be merged, so a done report on one leaves the merge unasked.
@@ -442,6 +448,7 @@ This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`$branch\`. Do NOT push, do NOT open a PR, do NOT merge.
 A \`done:\` is accepted when the named head is on this project's shared local branch, not only on a detached copy; the check tests that head, not merely that a branch moved.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
+Before reporting done, run \`$claim_check main\` piping in your intended \`done:\` summary; if it reports unverified paths, fix the summary or the missing commit first, never silence the gate.
 When it is implemented and committed, append \`done [at=<epoch>]: ready in branch $branch\` to the status file and stop.
 The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
 EOF
