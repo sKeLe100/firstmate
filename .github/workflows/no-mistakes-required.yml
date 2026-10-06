@@ -73,7 +73,7 @@ jobs:
 
       - name: Verify no-mistakes signature and pipeline attestation
         if: github.event.pull_request.number != 57 && github.event.pull_request.number != 105 && github.event.pull_request.number != 107
-        uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@32d396ac0f29135daf7fcb9964aba9d5f4e796d6 # post-v1.57.1, untagged (action added in #819)
+        uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970 # v1.80.1
         with:
           # synchronize webhook payloads can omit pull_request.body, so the action's own
           # GITHUB_EVENT_PATH fallback sees an empty body and fails. Fetch the body live

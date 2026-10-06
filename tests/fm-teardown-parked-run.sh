@@ -265,3 +265,47 @@ EOF
     "parked-run-terminal-unfetched: teardown concluded a run from a terminal unfetched row"
   pass "a terminal unfetched-head row is stale history and never concludes a run"
 }
+
+test_parked_own_run_concludes_on_passed_with_override_after_abort() {
+  local case_dir rc head
+  case_dir=$(make_case parked-run-abort-passed-with-override)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+
+  local rc=0
+  FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+  FM_FAKE_AXI_STATUS_AFTER_ABORT='run:
+  id: "01RUN"
+  outcome: passed-with-override
+ci_override_reason: "live checks not all passed: Lint (fail)"' \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "parked-run-abort-passed-with-override: teardown should still succeed"
+  assert_no_grep "REFUSED" "$case_dir/stderr" \
+    "parked-run-abort-passed-with-override: a passing override outcome must not be reported as still parked"
+  pass "a run that lands on passed-with-override after abort is still recognized as terminal"
+}
+
+test_parked_own_run_concludes_on_passed_with_skips_after_abort() {
+  local case_dir rc head
+  case_dir=$(make_case parked-run-abort-passed-with-skips)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+
+  local rc=0
+  FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+  FM_FAKE_AXI_STATUS_AFTER_ABORT='run:
+  id: "01RUN"
+  outcome: passed-with-skips
+automatic_skips: "publication skipped: no-mistakes.yaml pr.enabled=false"' \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "parked-run-abort-passed-with-skips: teardown should still succeed"
+  assert_no_grep "REFUSED" "$case_dir/stderr" \
+    "parked-run-abort-passed-with-skips: a passing skips outcome must not be reported as still parked"
+  pass "a run that lands on passed-with-skips after abort is still recognized as terminal"
+}
