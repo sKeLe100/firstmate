@@ -688,11 +688,11 @@ print_backlog_tasks_axi_compact() {
       "$HOLD_REASON_CHAR_LIMIT" "$QUEUED_LIMIT"
     in_flight_ids=$(printf '%s\n' "$in_flight" | awk '/^  / { id = $0; sub(/^[[:space:]]+/, "", id); sub(/,.*$/, "", id); print id }')
     printf '\nin flight:\n'
-    printf '%s\n' "$in_flight" | fm_hold_reason_decode_stream | strip_axi_help
-    printf '\nheld (captain- or time-gated; an in-flight item that is also held appears in both groups):\n'
-    printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help
+    printf '%s\n' "$in_flight" | fm_hold_reason_decode_stream | strip_axi_help | cap_hold_reason_field
+    printf '\nheld (captain- or time-gated; an in-flight item that is also held is listed once, above):\n'
+    dedupe_held_against_in_flight "$in_flight_ids" "$(printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help)" | cap_hold_reason_field
     printf '\nblocked queued:\n'
-    printf '%s\n' "$blocked" | fm_hold_reason_decode_stream | strip_axi_help
+    printf '%s\n' "$blocked" | fm_hold_reason_decode_stream | strip_axi_help | cap_hold_reason_field
     printf '\nready queued (dispatchable now):\n'
     print_ready_queued_bounded "$ready"
     return 0

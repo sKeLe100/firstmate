@@ -220,7 +220,7 @@ make_fake_tasks_axi_dupe_and_long_reason() {
 set -u
 case "\${1:-}" in
   --version|-v|-V)
-    printf '%s\n' '0.2.4'
+    printf '%s\n' '0.2.6'
     exit 0
     ;;
   update)
