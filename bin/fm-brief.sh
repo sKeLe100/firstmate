@@ -416,6 +416,18 @@ shell_quote() {
 }
 
 STATUS_FILE=$(shell_quote "$STATE/$ID.status")
+IFS= read -r -d '' CREWMATE_STATUS_GUARDS <<EOF || true
+   If you hit your own Claude session usage limit (as distinct from account-wide quota
+   exhaustion or a real wedge), report \`$PAUSED_VERB [key=session-limit]: {harness} session usage limit, resets <ts>\`
+   and STOP - do not attempt to keep working or retry in the same session once the limit clears;
+   firstmate will relaunch you fresh with a carryover note. That key marks the one pause that
+   clears on its own; a context-exhausted stop is NOT a pause - report \`blocked: context exhausted, relaunch to continue\`
+   so firstmate relaunches you instead of waiting it out.
+   After every append, verify with \`ls -la $STATUS_FILE\` that the line landed at that exact
+   path with recent content; do not trust the append, and do not report \`done\`, until that
+   verification succeeds - a write tool can silently place the file somewhere else, and that
+   failure is itself a \`blocked:\` condition to report.
+EOF
 # The worker's status command: the plain append always carries the line, then
 # the opt-in fleet ledger (docs/fleet-ledger.md) records it at once, costing one
 # file test when the flag is absent. A host without that flag, such as a remote
@@ -714,6 +726,7 @@ The report is the only thing that survives, so anything worth keeping must be in
    https:// URL exactly as the forge printed it, never a bare number such as "PR 108"; firstmate
    copies that URL from your line rather than assembling one.
 $CREWMATE_PAUSE_INSTRUCTIONS
+$CREWMATE_STATUS_GUARDS
 5. If you hit the same obstacle twice, append \`blocked [at=<epoch>]: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision [at=<epoch>]: {summary of options}\` and stop. Firstmate will reply with the decision.
@@ -812,6 +825,7 @@ $RULE1
 2. Keep project edits inside this worktree; keep proof and scratch output outside it, under \`$DATA/$ID/\` or a temporary directory.
    Outside the worktree, write only that task material and the status and steering-inbox records authorized below.
    Leave the worktree clean before reporting done.
+   The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or $FM_ROOT/bin/fm-context-usage.sh for actual context numbers.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`$STATUS_APPEND\`
@@ -827,8 +841,9 @@ $RULE1
    A mid-task \`working:\` line (including setup complete) is nonterminal: do not end the
    turn after it; continue the same stage until a defined \`done:\` gate under Definition of done.
 $CREWMATE_PAUSE_INSTRUCTIONS
+$CREWMATE_STATUS_GUARDS
 5. If you hit the same obstacle twice, append \`blocked [at=<epoch>]: {why}\` and stop; firstmate will help.
-6. If a decision belongs above the implementation worker (product choices, destructive actions),
+6. If a decision belongs above the implementation worker ($DECISION_CASES),
    append \`needs-decision [at=<epoch>]: {summary of options}\` and stop. Firstmate will reply with the decision.
 $ASK_USER_BLOCK
    To let firstmate target its answer at this exact decision (\`--resolve-key\`), give it a stable key:
@@ -837,6 +852,15 @@ $ASK_USER_BLOCK
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved [at=<epoch>]: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 $SHARED_INFRA_RULE
+
+8. Retry-loop failsafe: track your own validation repetition instead of grinding.
+   Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
+   still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after $ROUND_CEILING review
+   rounds without the review step approving, or after roughly 2 hours cycling the same pipeline
+   step without progress, stop: commit work in progress, then append
+   \`blocked [key=retry-loop]: {round/no-op/elapsed evidence}\` and wait for firstmate.
+   Never retry the same failing action a third time unchanged - a retry that changes nothing
+   re-enters the same loop, and reporting the loop early is cheaper than a stale-session rescue.
 
 $WAIT_BLOCK$INBOX_SECTION$TRACKER_LAW_SECTION
 
