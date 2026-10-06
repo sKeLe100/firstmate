@@ -281,7 +281,7 @@ PER_SCRIPT_TIMEOUT_SECS=0
 CHANGED_DEFAULT_TIMEOUT_SECS=1500
 # Base for tests/fm-watch-triage.test.sh on the same automatic --changed path,
 # scaled the same way: it measured 924s on PC01 under full-suite load against
-# the 900s base, so it alone gets this longer base rather than a false timeout.
+# former 900s base; its explicit base now matches the upstream default.
 CHANGED_WATCH_TRIAGE_TIMEOUT_SECS=1500
 WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=
 # Same treatment for tests/fm-captain-hold-lifecycle.test.sh: its portable-serial

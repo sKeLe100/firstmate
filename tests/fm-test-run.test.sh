@@ -2420,18 +2420,18 @@ SH
     FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=0 \
     bin/fm-test-run.sh --changed --base HEAD) >"$tmp/idle.out" 2>"$tmp/idle.err" \
     || { cat "$tmp/idle.err"; rm -rf "$tmp"; fail "idle timeout-scale fixture run failed"; }
-  [ "$(cat "$tmp/seen-idle")" = 900 ] \
-    || { rm -rf "$tmp"; fail "idle host must keep the 900s base bound, got $(cat "$tmp/seen-idle")"; }
-  grep -Fq 'per_script_timeout_secs=900' "$tmp/idle.out" \
+  [ "$(cat "$tmp/seen-idle")" = 1500 ] \
+    || { rm -rf "$tmp"; fail "idle host must keep the 1500s base bound, got $(cat "$tmp/seen-idle")"; }
+  grep -Fq 'per_script_timeout_secs=1500' "$tmp/idle.out" \
     || { cat "$tmp/idle.out"; rm -rf "$tmp"; fail "idle host-load marker did not report the base bound"; }
 
   (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-loaded" \
     FM_TEST_RUN_CPU_COUNT_OVERRIDE=4 FM_TEST_RUN_LOAD5_OVERRIDE=8 \
     bin/fm-test-run.sh --changed --base HEAD) >"$tmp/loaded.out" 2>"$tmp/loaded.err" \
     || { cat "$tmp/loaded.err"; rm -rf "$tmp"; fail "loaded timeout-scale fixture run failed"; }
-  [ "$(cat "$tmp/seen-loaded")" = 1800 ] \
+  [ "$(cat "$tmp/seen-loaded")" = 3000 ] \
     || { rm -rf "$tmp"; fail "load5=2x cpus must double the bound, got $(cat "$tmp/seen-loaded")"; }
-  grep -Fq 'per_script_timeout_secs=1800' "$tmp/loaded.out" \
+  grep -Fq 'per_script_timeout_secs=3000' "$tmp/loaded.out" \
     || { cat "$tmp/loaded.out"; rm -rf "$tmp"; fail "loaded host-load marker did not report the scaled bound"; }
 
   rm -rf "$tmp"
@@ -2439,8 +2439,8 @@ SH
 }
 
 # assert_changed_script_gets_own_scaled_timeout <script-stem> <marker-field>:
-# on the --changed path <script-stem> alone gets a longer, still load-scaled
-# 1500s bound while other load-sensitive scripts keep the 900s base.
+# on the --changed path <script-stem> retains an explicit load-scaled
+# 1500s bound, with ordinary scripts using the same upstream base.
 assert_changed_script_gets_own_scaled_timeout() {
   local stem=$1 field=$2 tmp repo s
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-$stem-timeout.XXXXXX")
@@ -2477,9 +2477,9 @@ SH
     || { cat "$tmp/idle.err"; rm -rf "$tmp"; fail "idle $stem timeout fixture run failed"; }
   grep -qx "$stem.test.sh 1500" "$tmp/seen-idle" \
     || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "idle host must bound $stem at 1500s"; }
-  grep -qx 'fm-wake-queue.test.sh 900' "$tmp/seen-idle" \
-    || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "other load-sensitive scripts must keep the 900s base"; }
-  grep -q "^FM_TEST_HOST_LOAD .* per_script_timeout_secs=900 .*${field}_timeout_secs=1500" "$tmp/idle.out" \
+  grep -qx 'fm-wake-queue.test.sh 1500' "$tmp/seen-idle" \
+    || { cat "$tmp/seen-idle"; rm -rf "$tmp"; fail "other load-sensitive scripts must keep the 1500s base"; }
+  grep -q "^FM_TEST_HOST_LOAD .* per_script_timeout_secs=1500 .*${field}_timeout_secs=1500" "$tmp/idle.out" \
     || { cat "$tmp/idle.out"; rm -rf "$tmp"; fail "idle host-load marker did not report the $field bound"; }
 
   (cd "$repo" && FM_TIMEOUT_SEEN_FILE="$tmp/seen-loaded" \
