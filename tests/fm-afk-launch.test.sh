@@ -66,12 +66,13 @@ enter_posture() {  # <home>
 # native entry to SUCCEED needs a real captain pane: this opens a detached tmux
 # session tracked for GLOBAL_CLEANUP and prints its pane id, or fails.
 native_captain_pane() {  # <label> -> pane id on stdout
-  local s
+  local s pane
   command -v tmux >/dev/null 2>&1 || return 1
   s="fm-test-native-$1-$$"
-  tmux new-session -d -s "$s" 2>/dev/null || return 1
+  pane=$(tmux new-session -d -P -F '#{pane_id}' -s "$s" 2>/dev/null) || return 1
+  [ -n "$pane" ] || return 1
   TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $s"
-  tmux display-message -p -t "$s" '#{pane_id}'
+  printf '%s\n' "$pane"
 }
 
 # ---------------------------------------------------------------------------
@@ -1136,15 +1137,17 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
 # the attended supervision host runs. quiet_in <home> runs a command there.
 QUIET_MIRROR='{"seq":1,"key":"k","tag":"captain","text":"watch the fleet"}'
 quiet_home() {  # <home>
-  local cap_pane
+  local cap_pane cap_label
   mkdir -p "$1/state" "$1/config"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$1/claude-engine"
   chmod +x "$1/claude-engine"
   printf 'claude\n' > "$1/config/supervision-host"
   printf '%s\n' "$$" > "$1/state/.lock"
   printf '%s\n' "$QUIET_MIRROR" > "$1/state/.host-mirror.jsonl"
-  cap_pane=$(native_captain_pane "quiet-$(basename "$1")") || { fail "quiet fixture: could not create native pane"; return 1; }
-  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS fm-test-native-quiet-$(basename "$1")-$$"
+  cap_label="quiet-$(basename "$1")"
+  cap_label=${cap_label//./-}
+  cap_pane=$(native_captain_pane "$cap_label") || { fail "quiet fixture: could not create native pane"; return 1; }
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS fm-test-native-$cap_label-$$"
   printf '%s\n' "$cap_pane" > "$1/native-pane"
 }
 # Judge the last quiet command's $rc and $out: <status> and a <fragment> of its output.
