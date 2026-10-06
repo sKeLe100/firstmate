@@ -1874,8 +1874,8 @@ unit_flag_write_failure_aborts
 e2e_herdr
 e2e_tmux
 
-[ "$FAILED" -eq 0 ] || exit 1
-
 unit_native_refuses_nonexistent_target
 unit_native_refuses_unsupported_backend
 unit_native_refuses_unhosted_primary
+
+[ "$FAILED" -eq 0 ] || exit 1
