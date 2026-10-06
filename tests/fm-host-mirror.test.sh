@@ -14,7 +14,6 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-MIRROR="$ROOT/bin/fm-host-mirror.sh"
 command -v jq >/dev/null 2>&1 || { printf 'skip: jq absent\n'; exit 0; }
 
 TMP_ROOT=$(fm_test_tmproot fm-host-mirror)
@@ -24,12 +23,14 @@ FAKE_CLAUDE="$FAKEBIN/claude"
 trap fm_test_cleanup EXIT
 unset FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_CONFIG_OVERRIDE CLAUDE_PROJECT_DIR CURSOR_PROJECT_DIR
 
-# A primary checkout: git, AGENTS.md, and this repo's bin.
+# A primary checkout: git, AGENTS.md, and its own copy of this repo's bin.
+# The primary-scope guard checks the sourced library's physical Git identity.
 PRIMARY_ROOT="$TMP_ROOT/primary"
 mkdir -p "$PRIMARY_ROOT"
 git init -q "$PRIMARY_ROOT"
 : > "$PRIMARY_ROOT/AGENTS.md"
-ln -s "$ROOT/bin" "$PRIMARY_ROOT/bin"
+cp -R "$ROOT/bin" "$PRIMARY_ROOT/bin"
+MIRROR="$PRIMARY_ROOT/bin/fm-host-mirror.sh"
 
 make_home() {  # <name> [1 (empty config/supervision-host) | 0 (none) | off (config/supervision-host-off)]
   local home="$TMP_ROOT/$1"
