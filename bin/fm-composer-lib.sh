@@ -1727,9 +1727,16 @@ EOF
         "$((FM_COMPOSER_SCAN_BOX_TOP + 1))" "$((FM_COMPOSER_SCAN_BOX_BOTTOM - 1))"
       return 0
     fi
+    local leftbar_floor=''
+    if [ "$FM_COMPOSER_SCAN_LEFTBAR_END" -ge 0 ] \
+       && [ "$cy" -eq "$((FM_COMPOSER_SCAN_LEFTBAR_END + 1))" ]; then
+      leftbar_floor=$(_fm_composer_screen_row "$cy" "$plain")
+      fm_composer_normalize_trim_var leftbar_floor
+    fi
     if [ "$FM_COMPOSER_SCAN_LEFTBAR_START" -ge 0 ] \
        && [ "$cy" -ge "$FM_COMPOSER_SCAN_LEFTBAR_START" ] \
-       && [ "$cy" -le "$FM_COMPOSER_SCAN_LEFTBAR_END" ]; then
+       && { [ "$cy" -le "$FM_COMPOSER_SCAN_LEFTBAR_END" ] \
+         || { [ -n "$leftbar_floor" ] && _fm_composer_leftbar_floor_row "$leftbar_floor"; }; }; then
       _fm_composer_classify_leftbar "$screen" "$styled" \
         "$FM_COMPOSER_SCAN_LEFTBAR_START" "$FM_COMPOSER_SCAN_LEFTBAR_END"
       return 0

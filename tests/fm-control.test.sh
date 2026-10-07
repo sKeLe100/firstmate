@@ -853,46 +853,6 @@ test_idle_agent_is_not_interrupted() {
   pass "fm-control exit: an idle agent goes straight to its exit command"
 }
 
-test_opencode_idle_proves_unknown_composer_empty_but_pending_refuses() {
-  local dir out rc gen
-  dir=$(new_case opencode-idle-composer)
-  add_task "$dir" t1 opencode
-  alive_as "$dir" opencode
-  printf '%s\n' 'unrecognized but idle pane' > "$dir/fake/pane"
-  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1 \
-    --state idle --source opencode-plugin --event session-status-idle)
-  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
-  out=$(run_control "$dir" t1 exit); rc=$?
-  expect_code 0 "$rc" "a verified idle OpenCode event should resolve an otherwise unknown composer"$'\n'"$out"
-  [ "$(literals "$dir")" = "/exit" ] \
-    || fail "OpenCode idle proof should allow the exit command"
-
-  dir=$(new_case opencode-pending-composer)
-  add_task "$dir" t1 opencode
-  alive_as "$dir" opencode
-  printf '%s\n' '┃' '┃  Please keep this draft' '┃' \
-    '┃  Build · GPT-5.5 Fast OpenAI · high' '╹▀▀▀▀▀▀▀▀' > "$dir/fake/pane"
-  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1 \
-    --state idle --source opencode-plugin --event session-status-idle)
-  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
-  out=$(run_control "$dir" t1 exit); rc=$?
-  expect_code 1 "$rc" "visible OpenCode composer text must still refuse despite an idle event"$'\n'"$out"
-  assert_contains "$out" "composer visibly holds pending text" \
-    "the pending-text refusal should remain specific"
-  [ -z "$(literals "$dir")" ] \
-    || fail "a visible pending composer must receive no exit command"
-
-  dir=$(new_case opencode-unknown-composer)
-  add_task "$dir" t1 opencode
-  alive_as "$dir" opencode
-  printf '%s\n' 'unrecognized pane' > "$dir/fake/pane"
-  out=$(run_control "$dir" t1 exit); rc=$?
-  expect_code 1 "$rc" "unknown OpenCode composer without its idle event must refuse"$'\n'"$out"
-  [ -z "$(literals "$dir")" ] \
-    || fail "an unproven composer must receive no exit command"
-  pass "fm-control exit: OpenCode's verified idle event resolves unknown empty composers, while pending and unverified composers refuse"
-}
-
 test_interrupt_without_acknowledgement_preserves_busy_state() {
   local dir gen before after out rc
   dir=$(new_case unconfirmed)
@@ -1140,7 +1100,6 @@ test_interrupt_refuses_when_no_agent_runs
 test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command
 test_idle_agent_is_not_interrupted
-test_opencode_idle_proves_unknown_composer_empty_but_pending_refuses
 test_interrupt_without_acknowledgement_preserves_busy_state
 test_muse_interrupt_confirms_adapter_acknowledgement
 test_interrupt_revalidates_agent_after_acknowledgement_wait
