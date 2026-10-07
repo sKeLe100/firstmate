@@ -632,6 +632,7 @@ do_exit() {
   fi
   composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
     || composer_state=unknown
+  composer_state=$(fm_control_composer_state "$HARNESS" "$composer_state" "$(busy_verdict)")
   case "$composer_state" in
     empty) ;;
     pending)

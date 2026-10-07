@@ -366,6 +366,20 @@ fm_control_endpoint_absence_verdict() {  # <backend> <target>
   esac
 }
 
+# fm_control_composer_state: OpenCode's session.status idle event is a
+# verified adapter-owned idle proof when the pane classifier cannot resolve
+# its empty composer shape. A visible pending verdict always wins, and every
+# other unknown remains unknown. <harness> <composer-state> <busy-verdict>.
+fm_control_composer_state() {
+  local harness=${1-} composer=${2-} busy=${3-}
+  if [ "$harness" = opencode ] && [ "$composer" = unknown ] \
+    && [ "$busy" = 'idle opencode-plugin' ]; then
+    printf 'empty'
+  else
+    printf '%s' "$composer"
+  fi
+}
+
 # The per-task wiring artifacts a harness leaves behind, so a relaunch that
 # changes harness (or re-arms the same one with a fresh busy generation) can
 # clear the previous incarnation's wiring instead of leaving a stale hook
