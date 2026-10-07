@@ -76,7 +76,7 @@ The `answer` subcommand records the captain's exact words and resolves the call 
 | --- | --- |
 | `answer` | Closes a question-shaped call. |
 | `answer --release` | Frees a captain-gated work item to proceed without completing it. |
-| `answer --force` | Overrides the refusal when the task still has a live endpoint. |
+| `answer --force` | Overrides the refusal when the task still has a live endpoint. Without it, `answer` refuses to close such a task; an unreadable or unknown endpoint state does not block. |
 
 It requires a non-empty captain decision file of at most 8192 bytes.
 It then works in this order:
