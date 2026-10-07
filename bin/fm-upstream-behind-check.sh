@@ -37,7 +37,7 @@
 # nothing extra in between), then prints one line naming the gap and asking for
 # an upstream sync task when the refresh reports the fork at least
 # FM_UPSTREAM_DRIFT_THRESHOLD commits behind (default DRIFT_THRESHOLD_DEFAULT
-# below, 25). It prints nothing at all otherwise, so it composes with the
+# below, 5). It prints nothing at all otherwise, so it composes with the
 # existing watcher state-check contract rather than needing a schedule of its
 # own; `arm` writes state/upstream-drift.check.sh and binds its bytes with
 # fm-check-register.sh so the watcher turns that one line into a `check:` wake.
