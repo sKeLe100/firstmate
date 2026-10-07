@@ -2328,7 +2328,7 @@ make_secondmate_liveness_case() {
   printf 'sm1\n' > "$home/.fm-secondmate-home"
   printf '# Firstmate\n' > "$home/AGENTS.md"
   printf 'charter\n' > "$home/data/charter.md"
-  printf 'codex\n' > "$dir/config/crew-harness"
+  printf 'codex gpt-5 high\n' > "$dir/config/secondmate-harness"
   printf 'window=firstmate:fm-sm1\nkind=secondmate\nharness=claude\nbackend=tmux\nhome=%s\n' \
     "$home" > "$dir/state/sm1.meta"
   cat > "$fakebin/tmux" <<'SH'
