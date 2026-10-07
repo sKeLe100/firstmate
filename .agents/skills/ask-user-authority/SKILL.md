@@ -1,7 +1,8 @@
 ---
 name: ask-user-authority
 description: >-
-  Agent-only decision procedure for ask-user findings; load before deciding any ask-user finding.
+  Agent-only decision procedure for ask-user findings.
+  Load before deciding any ask-user finding.
 user-invocable: false
 metadata:
   internal: true

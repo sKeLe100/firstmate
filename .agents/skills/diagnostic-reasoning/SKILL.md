@@ -1,7 +1,8 @@
 ---
 name: diagnostic-reasoning
 description: >-
-  Agent-only procedure for diagnosing reported bugs; load before scoping a reported bug and before acting on a diagnostic report.
+  Agent-only procedure for diagnosing reported bugs.
+  Load before scoping a reported bug and before acting on a diagnostic report.
 user-invocable: false
 metadata:
   internal: true
