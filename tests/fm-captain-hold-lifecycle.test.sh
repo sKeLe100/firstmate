@@ -918,7 +918,7 @@ test_answer_refuses_when_endpoint_is_alive() {
   fi
   assert_grep "live endpoint" "$home/live-answer.err" \
     "the refusal did not mention the live endpoint"
-  assert_grep "\-\-force" "$home/live-answer.err" \
+  assert_grep "use --force" "$home/live-answer.err" \
     "the refusal did not mention --force"
 
   # --force bypasses the guard.
