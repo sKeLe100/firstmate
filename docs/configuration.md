@@ -867,7 +867,7 @@ When present, `bin/fm-upstream-sync-item.sh` files or refreshes a single stable-
 
 The filed task carries a **bounded batch** from `bin/fm-upstream-batch.sh` (at most `FM_UPSTREAM_AUTOSYNC_BATCH_MAX` first-parent commits, default 20), so the sync merges exactly that batch's target with a true merge and leaves the rest for the next periodic dispatch. A plan that cannot be computed is stated in the note rather than silently leaving the sync unbounded.
 
-The merge always needs the captain's word; firstmate never merges an upstream sync on its own. The sync item uses `direct-PR` or `no-mistakes` delivery mode per the project's registered posture, and the brief enforces the bounded-batch gate (the worker plans the batch before merging anything). A landing via true merge brings `behind` back down, which the drift check's baseline mechanism uses to silence the armed trigger until the next threshold-sized block of new drift accumulates.
+The merge always needs the captain's word; firstmate never merges an upstream sync on its own. The brief enforces the bounded-batch gate (the worker plans the batch before merging anything). A landing via true merge brings `behind` back down, which the drift check's baseline mechanism uses to silence the armed trigger until the next threshold-sized block of new drift accumulates.
 
 ## Primary continuity watchdog
 
