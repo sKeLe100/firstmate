@@ -856,6 +856,19 @@ Like the context bands, callers act on the reported band rather than re-deriving
 The two sensors share one actuator and cannot fight: the context band owns restart timing, the retry band owns the note content and the relaunch-versus-hold choice, and `restart` plus `halt` resolves to checkpoint-then-hold rather than another relaunch.
 The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), like its sibling.
 
+## Upstream autosync (config/upstream-autosync)
+
+`config/upstream-autosync` is an optional local, gitignored presence flag that opts this home in to automatic upstream sync dispatch. Its absence leaves the default ask-only behavior unchanged. The flag is inherited by secondmate homes through `FM_INHERITABLE_CONFIG`.
+
+When present, `bin/fm-upstream-sync-item.sh` files or refreshes a single stable-id (`upstream-sync`) ship task in the backlog whenever the armed drift check (`bin/fm-upstream-behind-check.sh` `check` action) reports the fork at or beyond the dispatch threshold. Auto-dispatch eligibility requires both the presence flag and one of:
+
+- `behind >= FM_UPSTREAM_AUTOSYNC_COMMIT_THRESHOLD` (default 5 commits behind upstream), or
+- `days_behind >= FM_UPSTREAM_AUTOSYNC_DAYS_THRESHOLD` (default 7 days since the oldest unmerged upstream commit).
+
+The filed task carries a **bounded batch** from `bin/fm-upstream-batch.sh` (at most `FM_UPSTREAM_AUTOSYNC_BATCH_MAX` first-parent commits, default 20), so the sync merges exactly that batch's target with a true merge and leaves the rest for the next periodic dispatch. A plan that cannot be computed is stated in the note rather than silently leaving the sync unbounded.
+
+The merge always needs the captain's word; firstmate never merges an upstream sync on its own. The brief enforces the bounded-batch gate (the worker plans the batch before merging anything). A landing via true merge brings `behind` back down, which the drift check's baseline mechanism uses to silence the armed trigger until the next threshold-sized block of new drift accumulates.
+
 ## Primary continuity watchdog
 
 `config/primary-continuity` controls this section.
