@@ -882,6 +882,56 @@ test_answer_records_and_closes() {
   pass "answer records the captain's words, closes idempotently, and releases routed work"
 }
 
+# `answer` refuses to close a task whose recorded endpoint is still alive unless
+# --force is supplied, preventing an answered hold from silently closing a task
+# whose worker is still running.
+test_answer_refuses_when_endpoint_is_alive() {
+  local home id
+  home=$(make_home answer-live-endpoint)
+  id=sample-live-endpoint-task
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Guard the live-endpoint answer" --kind scout --repo sample --start >/dev/null \
+    || fail "could not create the live-endpoint origin"
+  write_origin_meta "$home" "$id"
+  printf 'done: report complete\n' > "$home/state/$id.status"
+  printf '# Guard review\n\nOne captain choice remains.\n' > "$home/data/$id/report.md"
+  run_captain "$home" hold sample-live-call \
+    --title "Choose the live-endpoint option" --reason "captain call pending" --repo sample >/dev/null \
+    || fail "could not register the captain-held task"
+
+  # Write a meta file so task_endpoint_alive finds a backend to check.
+  fm_write_meta "$home/state/sample-live-call.meta" \
+    "backend=tmux" \
+    "window=firstmate:fm-sample-live-call" \
+    "worktree=$home/projects/missing-sample-live-call" \
+    "project=$home/projects/sample" \
+    "harness=codex" \
+    "kind=ship" \
+    "spawn_gen=fixture-sample-live-call"
+
+  # FM_FORCE_ENDPOINT_ALIVE=1 makes task_endpoint_alive return 0 (alive)
+  # so the guard fires even without a real tmux server.
+  printf 'Captain chose the live-endpoint option.\n' > "$home/live-decision.txt"
+  if FM_FORCE_ENDPOINT_ALIVE=1 run_captain "$home" answer sample-live-call --decision-file "$home/live-decision.txt" \
+    > "$home/live-answer.out" 2> "$home/live-answer.err"; then
+    fail "answer succeeded with a live endpoint (no --force)"
+  fi
+  assert_grep "live endpoint" "$home/live-answer.err" \
+    "the refusal did not mention the live endpoint"
+  assert_grep "\-\-force" "$home/live-answer.err" \
+    "the refusal did not mention --force"
+
+  # --force bypasses the guard.
+  FM_FORCE_ENDPOINT_ALIVE=1 run_captain "$home" answer sample-live-call --decision-file "$home/live-decision.txt" --force >/dev/null \
+    || fail "answer --force failed on a live endpoint"
+  local show
+  show=$(tasks_in "$home" show sample-live-call --full)
+  assert_contains "$show" "state: done" "an answered captain-held task did not close after --force"
+  assert_contains "$show" "Resolution mode: answered" "the answered task did not record its close path"
+
+  pass "answer refuses to close a task with a live endpoint unless --force is given"
+}
+
 # The machine-owned `since` metadata word must be written for every first
 # hold and must never rewrite the captain's own title: a title containing the
 # ordinary word "since" still gets stamped, and a title ending in its own
