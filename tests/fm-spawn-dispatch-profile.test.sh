@@ -1346,7 +1346,12 @@ test_pi_exclude_tools_absent_and_empty_lists() {
     rec=$(make_spawn_case "excl-${harness}-empty" "$harness" "$id")
     read_case_record "$rec"
     write_exclude_file "$HOME_DIR" '# nothing yet' ''
-    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    if [ "$harness" = codex ]; then
+      out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+        "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+    else
+      out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    fi
     status=$?
     expect_code 0 "$status" "$harness spawn with an empty exclusion list should succeed"$'\n'"$out"
     assert_not_contains "$(cat "$LAUNCH_LOG")" "--exclude-tools" "$harness must receive no exclusion flag"
@@ -1361,7 +1366,12 @@ test_exclude_tools_non_pi_runtime_refuses_non_empty_list() {
     rec=$(make_spawn_case "excl-refuse-${harness}" "$harness" "$id")
     read_case_record "$rec"
     write_exclude_file "$HOME_DIR" 'mcp__srv__writeTool'
-    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    if [ "$harness" = codex ]; then
+      out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+        "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+    else
+      out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    fi
     status=$?
     expect_code 1 "$status" "$harness spawn with a non-empty exclusion list must refuse"
     assert_contains "$out" "config/crew-exclude-tools" "the $harness refusal must name the config file"

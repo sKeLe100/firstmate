@@ -892,7 +892,8 @@ test_exclude_tools_refusals_happen_before_the_agent_stops() {
   [ "$(cat "$dir/fake/command")" = pi ] || fail "a malformed exclusion list stopped the running agent"
   [ ! -s "$dir/fake/literal" ] || fail "a refused relaunch sent lifecycle input"
   printf '%s\n' 'mcp__srv__writeTool' > "$dir/home/config/crew-exclude-tools"
-  out=$(run_control "$dir" "$id" relaunch --harness codex --note "switch runtime"); rc=$?
+  out=$(run_control "$dir" "$id" relaunch --harness codex --model gpt-5 --effort high \
+    --note "switch runtime"); rc=$?
   expect_code 1 "$rc" "relaunching onto a runtime that cannot hide tools must refuse"
   assert_contains "$out" "config/crew-exclude-tools" "refusal must name the config file"
   [ "$(cat "$dir/fake/command")" = pi ] || fail "an unhonorable exclusion list stopped the running agent"

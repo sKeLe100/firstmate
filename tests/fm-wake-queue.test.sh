@@ -694,16 +694,6 @@ test_secondmate_active_turn_defers_stall_until_the_turn_ends() {
   printf '%s\t7\tcheck\trouted\tcheck: routed row\n' "$row_epoch" \
     > "$sub/state/.wake-queue"
   fakebin="$dir/fakebin"
-  real_date=$(command -v date)
-  cat > "$fakebin/date" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = +%s ]; then
-  cat "\${FM_FAKE_NOW_FILE:?}"
-else
-  exec "$real_date" "\$@"
-fi
-SH
-  chmod +x "$fakebin/date"
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}" in

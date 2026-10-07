@@ -373,6 +373,27 @@ test_teardown_retains_v1_journal_when_projected_workspace_present() {
   pass "teardown retains a v1 presentation journal while its token workspace is still present"
 }
 
+test_teardown_retains_v1_journal_when_projected_workspace_present() {
+  local case_dir log closed
+  case_dir=$(make_case retain-v1-journal-workspace-present)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_v1_orphan_workspace_case "$case_dir"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
+
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "retain-v1-journal-workspace-present: teardown failed: $(cat "$case_dir/stderr")"
+  assert_present "$case_dir/state/task-x1.herdr-presentation" \
+    "a v1 journal whose token workspace is still present was wrongly retired, stranding the workspace"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "retain-v1-journal-workspace-present: teardown did not complete"
+  assert_grep "retaining herdr presentation journal" "$case_dir/stderr" \
+    "teardown retained the v1 journal without saying why"
+  assert_not_contains "$(cat "$log")" "workspace close" \
+    "retain-v1-journal-workspace-present: teardown must not escalate to workspace cleanup"
+  pass "teardown retains a v1 presentation journal while its token workspace is still present"
+}
+
 test_teardown_retains_v1_journal_when_workspace_query_ambiguous() {
   local case_dir log closed
   case_dir=$(make_case retain-v1-journal-workspace-ambiguous)
