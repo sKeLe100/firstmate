@@ -899,20 +899,44 @@ test_answer_refuses_when_endpoint_is_alive() {
     --title "Choose the live-endpoint option" --reason "captain call pending" --repo sample >/dev/null \
     || fail "could not register the captain-held task"
 
-  # Write a meta file so task_endpoint_alive finds a backend to check.
-  fm_write_meta "$home/state/sample-live-call.meta" \
-    "backend=tmux" \
-    "window=firstmate:fm-sample-live-call" \
-    "worktree=$home/projects/missing-sample-live-call" \
-    "project=$home/projects/sample" \
-    "harness=codex" \
-    "kind=ship" \
-    "spawn_gen=fixture-sample-live-call"
+  local call
+  for call in sample-live-call sample-dead-call; do
+    [ "$call" = sample-live-call ] || run_captain "$home" hold "$call" \
+      --title "Choose the dead-endpoint option" --reason "captain call pending" --repo sample >/dev/null \
+      || fail "could not register the second captain-held task"
+    fm_write_meta "$home/state/$call.meta" \
+      "backend=tmux" \
+      "window=firstmate:fm-$call" \
+      "worktree=$home/projects/missing-$call" \
+      "project=$home/projects/sample" \
+      "harness=codex" \
+      "kind=ship" \
+      "spawn_gen=fixture-$call"
+  done
 
-  # FM_FORCE_ENDPOINT_ALIVE=1 makes task_endpoint_alive return 0 (alive)
-  # so the guard fires even without a real tmux server.
-  printf 'Captain chose the live-endpoint option.\n' > "$home/live-decision.txt"
-  if FM_FORCE_ENDPOINT_ALIVE=1 run_captain "$home" answer sample-live-call --decision-file "$home/live-decision.txt" \
+  local fb=$home/fakebin
+  mkdir -p "$fb"
+  cat > "$fb/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  list-windows) cat "$FAKE_TMUX_WINDOWS" 2>/dev/null; exit 0 ;;
+  display-message) echo /dev/pts/fake; exit 0 ;;
+esac
+exit 0
+SH
+  cat > "$fb/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *"args="*) echo codex ;;
+  *) echo "1 1 1 codex" ;;
+esac
+SH
+  chmod +x "$fb/tmux" "$fb/ps"
+  printf 'fm-sample-live-call\n' > "$home/windows"
+  export FAKE_TMUX_WINDOWS="$home/windows"
+
+  printf 'Captain chose the option.\n' > "$home/live-decision.txt"
+  if run_captain "$home" answer sample-live-call --decision-file "$home/live-decision.txt" \
     > "$home/live-answer.out" 2> "$home/live-answer.err"; then
     fail "answer succeeded with a live endpoint (no --force)"
   fi
@@ -921,13 +945,18 @@ test_answer_refuses_when_endpoint_is_alive() {
   assert_grep "use --force" "$home/live-answer.err" \
     "the refusal did not mention --force"
 
-  # --force bypasses the guard.
-  FM_FORCE_ENDPOINT_ALIVE=1 run_captain "$home" answer sample-live-call --decision-file "$home/live-decision.txt" --force >/dev/null \
+  run_captain "$home" answer sample-live-call --decision-file "$home/live-decision.txt" --force >/dev/null \
     || fail "answer --force failed on a live endpoint"
   local show
   show=$(tasks_in "$home" show sample-live-call --full)
   assert_contains "$show" "state: done" "an answered captain-held task did not close after --force"
   assert_contains "$show" "Resolution mode: answered" "the answered task did not record its close path"
+
+  run_captain "$home" answer sample-dead-call --decision-file "$home/live-decision.txt" >/dev/null \
+    || fail "answer was refused although the recorded endpoint is not live"
+  show=$(tasks_in "$home" show sample-dead-call --full)
+  assert_contains "$show" "state: done" "a dead-endpoint captain-held task did not close without --force"
+  unset FAKE_TMUX_WINDOWS
 
   pass "answer refuses to close a task with a live endpoint unless --force is given"
 }
