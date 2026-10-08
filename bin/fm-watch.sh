@@ -3794,10 +3794,10 @@ EOF
     if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")"; then
       continue
     fi
-    first_seen=1
-    wedge_seed_first_observation "$key" "$task" && first_seen=0
     watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" || continue
     tail40=$WATCHER_CAPTURE
+    first_seen=1
+    wedge_seed_first_observation "$key" "$task" && first_seen=0
     h=$(printf '%s' "$tail40" | hash_pane)
     hf="$STATE/.hash-$key"
     cf="$STATE/.count-$key"
