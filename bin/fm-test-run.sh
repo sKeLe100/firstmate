@@ -1079,7 +1079,7 @@ tests/fm-session-start.test.sh 363574
 tests/fm-sessionstart-hook-live-e2e.test.sh 50
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 49
 tests/fm-sessionstart-nudge.test.sh 71802
-tests/fm-shared-captain-inheritance.test.sh 7991
+tests/fm-shared-captain-inheritance.test.sh 14587
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 67968
 tests/fm-spawn-compact-adviser-disable.test.sh 21654
 tests/fm-spawn-dispatch-profile.test.sh 197548
@@ -1092,7 +1092,7 @@ tests/fm-startup-memory-budget.test.sh 12413
 tests/fm-startup-network.test.sh 72106
 tests/fm-stat-shadowing.test.sh 75
 tests/fm-stow-cascade.test.sh 7215
-tests/fm-subagent-pretool-check.test.sh 998
+tests/fm-subagent-pretool-check.test.sh 1290
 tests/fm-supervision-events.test.sh 673
 tests/fm-supervision-host-attended-live-e2e.test.sh 49
 tests/fm-supervision-host-live-e2e.test.sh 75
