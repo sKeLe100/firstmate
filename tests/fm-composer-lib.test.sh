@@ -732,6 +732,11 @@ test_matrix_opencode_leftbar_signals() {
   local chrome
   chrome=$'  ┃\n  ┃  Ask anything… "Fix broken tests"\n  ┃\n  ┃  Build · GPT OSS 120B Groq\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n                              tab agents  ctrl+p commands'
   assert_screen "opencode idle with shortcut chrome immediately below" empty "$CAPS_STYLED" "$chrome"
+  # A tmux cursor parked on the composer's own floor row (`╹▀▀▀`) still
+  # belongs to the left-bar composer: idle reads empty, a draft stays pending.
+  assert_screen "opencode 1.18.30 idle, cursor on the floor row, tmux" empty "$CAPS_TMUX" "$captured_idle" 6
+  assert_screen "opencode 1.18.30 draft, cursor on the floor row, tmux" pending "$CAPS_TMUX" "$captured_pending" 6
+  assert_screen "opencode cursor below the floor row stays unknown, tmux" unknown "$CAPS_TMUX" "$captured_idle" 7
   live30_typed=$'  ┃\n  ┃  hello there\n  ┃\n  ┃  Buil ·GPT OSS 120B G\n  ┃  d                  r\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
   assert_screen "opencode 1.18.30 typed text at 30 cols stays pending, herdr" pending "$CAPS_STYLED" "$live30_typed"
   pass "matrix: opencode's left-bar composer reads empty everywhere and scans the full active run"
