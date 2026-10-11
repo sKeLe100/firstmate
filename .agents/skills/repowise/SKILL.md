@@ -5,6 +5,8 @@ description: >-
   Route project-backed commands to the assigned worker; do not enable indexing, MCP, plugins, or hooks.
 user-invocable: true
 disable-model-invocation: true
+metadata:
+  internal: true
 ---
 
 # RepoWise
