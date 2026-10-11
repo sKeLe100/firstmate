@@ -52,7 +52,7 @@ REPOWISE_SKIP_EDITOR_SETUP=1
 These are telemetry/editor limits, not a guarantee of no network or home-directory writes.
 Read `repowise --version` and the relevant command's installed `--help` under the same process-local environment before issuing a project query.
 Verify its target-path options, workspace selection and output format.
-The source baseline is RepoWise `v0.55.0`; another version needs a focused check of the relevant query and side effects, not an automatic upgrade.
+Use the version baseline and upstream review recorded in the [operator integration guide](../../../docs/repowise.md); another version needs a focused check of the relevant query and side effects, not an automatic upgrade.
 Keep the working directory at the assigned checkout, pass its absolute path through the supported target option, and select single-repository mode where supported.
 If a command cannot unambiguously target that checkout, do not run it.
 An ancestor `.repowise-workspace.yaml` is not permission to query its other repositories.
