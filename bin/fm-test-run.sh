@@ -1079,7 +1079,7 @@ tests/fm-session-start.test.sh 363574
 tests/fm-sessionstart-hook-live-e2e.test.sh 50
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 49
 tests/fm-sessionstart-nudge.test.sh 71802
-tests/fm-shared-captain-inheritance.test.sh 7991
+tests/fm-shared-captain-inheritance.test.sh 13218
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 67968
 tests/fm-spawn-compact-adviser-disable.test.sh 21654
 tests/fm-spawn-dispatch-profile.test.sh 197548
