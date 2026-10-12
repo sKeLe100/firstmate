@@ -85,6 +85,6 @@ Graph/risk output remains advisory; ordinary source inspection, tests and the se
 ## Verification
 
 Structural changes to the skill and this page use `bin/fm-doc-audience-check.sh` and the normal Firstmate delivery checks.
-A separately authorized live pilot must verify filesystem/network side effects, transcript scope, persistent editor opt-outs, keyless provider behavior, isolated checkout identity, stale/uncommitted-file handling, and useful retrieval against live files.
+Any further live check, including the unproven seams above, must verify filesystem/network side effects, transcript scope, persistent editor opt-outs, keyless provider behavior, isolated checkout identity, stale/uncommitted-file handling, and useful retrieval against live files.
 Record the installed version, exact commands and measured results in the task's private evidence.
-No live pilot is implied by the presence of this skill.
+The presence of this skill does not authorize indexing a project; see Deployment status.
