@@ -4,8 +4,9 @@ Firstmate includes a [RepoWise skill](../.agents/skills/repowise/SKILL.md) for C
 RepoWise is available on opted-in projects: CLI retrieval, structural by default, and semantic search when the local embedding endpoint is up.
 When the harness discovers Firstmate's skill directory, use `/repowise` in Claude Code or `$repowise` where that syntax is supported.
 Otherwise name RepoWise in the task and have the worker's brief reference the skill's path in the Firstmate code root.
+Projects listed in `config/repowise` get a short `Repository context` section in ship and scout briefs naming the skill and embedding endpoint; see [RepoWise project opt-in](configuration.md#repowise-project-opt-in-configrepowise).
 Firstmate routes project-backed execution to the assigned worker because retrieval can write cache/database state.
-There is no automatic installation, indexing, MCP registration, plugin, or hook integration, and no spawn or brief integration yet.
+There is no automatic installation, indexing, MCP registration, plugin, or hook integration; the only spawn-time effect is the opt-in brief section.
 If RepoWise is absent, stale, or unused, normal Firstmate workflows remain available on `rg` and file reads.
 
 ## Deployment status
