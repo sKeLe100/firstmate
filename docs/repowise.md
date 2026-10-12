@@ -29,12 +29,12 @@ Consult the [official project](https://github.com/repowise-dev/repowise) and the
 Do not apply the official unattended initialization recipe or plugin install commands as part of an ordinary Firstmate task.
 
 The skill owns execution checks, permitted query commands, process-local environment limits and fallback behavior.
-It does not authorize installation or refresh an index that is missing or stale.
-Approval to query an existing index must also cover its cache writes and effective configuration; no command is assumed filesystem read-only solely because it retrieves information.
+On an opted-in project it authorizes a worker to cold-build (`repowise init`) and refresh (`repowise update`) the index in its own assigned checkout, but not installation or upgrade of the CLI.
+Those commands write cache and database state and read effective configuration; no command is assumed filesystem read-only solely because it retrieves information.
 
 ## Pilot configuration boundaries
 
-An approved pilot should start with a cold, independent index in one assigned checkout, with automatic worktree seeding and ancestor workspace selection disabled.
+An opted-in project's index starts cold and independent in one assigned checkout, with automatic worktree seeding and ancestor workspace selection disabled.
 Upstream [worktree seeding](https://github.com/repowise-dev/repowise/blob/v0.55.0/packages/cli/src/repowise/cli/worktree.py#L185-L236) copies the whole `.repowise` directory, including any saved credentials or inherited policy it contains.
 Do not share a writable cache with the canonical clone, another worker, or another home.
 An existing directory or reused worktree path does not prove index identity or freshness.
@@ -59,7 +59,7 @@ RepoWise's inspected local-exclude reader uses a literal `.git/info/exclude`, wh
 ## Verified pilot results and remaining seams
 
 The pinned install used `uv tool install --python 3.13 repowise==0.55.0` with task-local uv tool/bin directories; the durable operator executable is `~/.local/bin/repowise`.
-Init used `DO_NOT_TRACK=1`, `REPOWISE_TELEMETRY_DISABLED=1`, mock provider/embedder, no prose, no workspace or seed, no editor setup or hooks, and explicit exclusions.
+The pilot init used `DO_NOT_TRACK=1`, `REPOWISE_TELEMETRY_DISABLED=1`, mock provider/embedder (structural only; the semantic path adds `--embedder openai` against the local endpoint), no prose, no workspace or seed, no editor setup or hooks, and explicit exclusions.
 The contained offline init succeeded in 10.82 seconds and produced a 4.0 MB index; its only network attempt was the optional GitHub tree-sitter language-pack manifest fetch for COBOL, and indexing continued without that parser.
 For clone-only write boundaries, keep every `XDG_*` config, data, cache and state directory under the approved checkout; the contained pilot placed RepoWise index and cache files under `.repowise/`.
 The offline index-only incremental refresh succeeded after a committed fixture change, updating one changed file in 2.50 seconds with no degraded stages.
@@ -90,4 +90,4 @@ Graph/risk output remains advisory; ordinary source inspection, tests and the se
 Structural changes to the skill and this page use `bin/fm-doc-audience-check.sh` and the normal Firstmate delivery checks.
 Any further live check, including the unproven seams above, must verify filesystem/network side effects, transcript scope, persistent editor opt-outs, keyless provider behavior, isolated checkout identity, stale/uncommitted-file handling, and useful retrieval against live files.
 Record the installed version, exact commands and measured results in the task's private evidence.
-The presence of this skill does not authorize indexing a project; see Deployment status.
+Indexing is authorized only on opted-in projects, in the worker's own checkout; see Deployment status.

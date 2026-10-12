@@ -29,10 +29,11 @@ A worker uses only its assigned checkout, the paths authorized by its brief, and
    Do not install or upgrade it.
 3. Check the checkout's `.repowise/` index for provenance:
    - `.repowise/mcp.json` names this checkout's absolute path.
-   - The indexed commit is an ancestor of HEAD.
+   - The indexed commit (the `indexed_commit` field that `repowise search` or `repowise status` prints) is an ancestor of HEAD.
    - `.repowise/config.yaml` names the embedder this policy expects (`mock`, or the local endpoint below).
    - No `.repowise/.env` is present.
-   If every check passes and the indexed commit differs from HEAD, refresh with `repowise update <abs path> --index-only --no-workspace`.
+   If every check passes and the indexed commit differs from HEAD, refresh with `repowise update <abs path> --index-only --no-workspace`, using the embedder recorded in `.repowise/config.yaml`.
+   Never silently downgrade: if the recorded embedder is the local endpoint and it is unreachable, rebuild the index structurally under step 4 instead of refreshing it.
    If any check fails, or the index is absent and the task is a retrieval question, remove this checkout's `.repowise/` and cold-build it under step 4.
    Remove-and-rebuild applies only to the worker's own assigned checkout; never copy an index between checkouts, pool slots, or homes, and never touch another checkout's `.repowise/`.
 4. Before invoking the CLI, set the process-local environment and confirm the embedder:
