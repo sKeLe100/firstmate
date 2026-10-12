@@ -1092,7 +1092,7 @@ tests/fm-startup-memory-budget.test.sh 12413
 tests/fm-startup-network.test.sh 72106
 tests/fm-stat-shadowing.test.sh 75
 tests/fm-stow-cascade.test.sh 7215
-tests/fm-subagent-pretool-check.test.sh 998
+tests/fm-subagent-pretool-check.test.sh 1290
 tests/fm-supervision-events.test.sh 673
 tests/fm-supervision-host-attended-live-e2e.test.sh 49
 tests/fm-supervision-host-live-e2e.test.sh 75

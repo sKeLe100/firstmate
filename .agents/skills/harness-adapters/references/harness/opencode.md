@@ -23,6 +23,7 @@ If the pane shows the exit banner, use the verified resume path above.
 
 OpenCode 1.18.32 may render `tab agents ctrl+p commands` shortcut chrome immediately below the left-bar composer floor.
 The shared classifier treats that exact row as idle-surface furniture, so an otherwise empty composer remains `empty` for lifecycle controls and away-mode injection.
+An idle composer whose cursor sits on that floor row is classified through the left-bar shape too; a draft there stays pending, and a cursor below the floor row stays `unknown`.
 
 ## Busy-queued Enter
 
