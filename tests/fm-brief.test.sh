@@ -572,6 +572,23 @@ EOF
   pass "fm-brief.sh: RepoWise context is inserted only for configured projects"
 }
 
+test_repowise_malformed_config_warns_and_ship_brief_gets_section() {
+  local home out
+  home="$TMP_ROOT/repowise-bad-home"
+  mkdir -p "$home/data" "$home/config"
+  printf 'projects=pt-tracker\nendpoint=ftp://example.invalid/x\n' > "$home/config/repowise"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-repowise-bad pt-tracker --scout 2>&1 >/dev/null) \
+    || fail "malformed RepoWise config refused the brief"
+  case "$out" in *"config/repowise needs an endpoint="*) ;; *) fail "malformed RepoWise config gave no diagnostic: $out" ;; esac
+  assert_no_grep "# Repository context" "$home/data/brief-repowise-bad/brief.md" "malformed config unexpectedly added RepoWise context"
+
+  printf 'projects=pt-tracker\nendpoint=http://127.0.0.1:8090/v1/embeddings\n' > "$home/config/repowise"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-repowise-ship pt-tracker --mode no-mistakes >/dev/null 2>&1 \
+    || fail "enabled RepoWise ship brief was refused"
+  assert_grep "# Repository context" "$home/data/brief-repowise-ship/brief.md" "ship brief lacks Repository context"
+  pass "fm-brief.sh: malformed RepoWise config warns; ship briefs get the section"
+}
+
 test_perspective_flag_refuses_unknown_or_unsafe_slug() {
   local home out rc
   home="$TMP_ROOT/perspective-refuse-home"
@@ -1757,6 +1774,7 @@ test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_perspective_flag_inserts_catalog_fragment_and_marker
 test_repowise_opt_in_inserts_repository_context_only_for_enabled_project
+test_repowise_malformed_config_warns_and_ship_brief_gets_section
 test_perspective_flag_refuses_unknown_or_unsafe_slug
 test_perspective_strip_keeps_prose_around_comments
 test_perspective_catalog_fragments_stay_within_bounds
