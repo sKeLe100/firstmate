@@ -4314,6 +4314,7 @@ test_opencode_primary_watch_plugin_ignores_slow_home_profile() {
   mkdir -p "$repo/bin" "$home/state" "$home/config" "$node_home"
   git init -q "$repo"
   : > "$repo/AGENTS.md"
+  cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
   : > "$home/state/task.meta"
   printf 'sleep 10\n' > "$node_home/.bash_profile"
   printf 'sleep 10\n' > "$node_home/.profile"
