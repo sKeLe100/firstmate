@@ -80,6 +80,9 @@ SH
   # plain text with no run id and no quoting - see the ledger fixtures below),
   # and `runs` appends its own invocation to FM_FAKE_NM_RUNS_LOG when set, so
   # a test can prove whether the ledger fallback ever engaged.
+  # The bare `axi` overview answers FM_FAKE_AXI_OVERVIEW verbatim (empty by
+  # default, so no repository resolves and the pipeline-spend record is
+  # written as unavailable).
   # This keeps every case hermetic - without it, `command -v no-mistakes`
   # would fall through to whatever real binary happens to be on the test
   # runner's own PATH. Tests exercising the run-abort path override
@@ -91,6 +94,8 @@ case "${1:-}" in
   axi)
     shift
     case "${1:-}" in
+      '')
+        printf '%s\n' "${FM_FAKE_AXI_OVERVIEW:-}" ;;
       status)
         shift
         run_id=""
