@@ -276,6 +276,33 @@ test_claude_hooks_semantic_lifecycle() {
   pass "claude hooks open on UserPromptSubmit and close on Stop, StopFailure, and SessionEnd"
 }
 
+test_repowise_index_excluded_only_for_listed_projects() {
+  local rec id out listed unlisted
+  rec=$(make_spawn_case repowise-listed claude busy-rw-1)
+  read_case_record "$rec"
+  printf '%s\n' "$(basename "$PROJ_DIR")" > "$HOME_DIR/config/repowise"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" busy-rw-1 "$PROJ_DIR")
+  expect_code 0 $? "listed-project spawn should succeed: $out"
+  listed=$WT_DIR
+  mkdir -p "$listed/.repowise"
+  touch "$listed/.repowise/x"
+  [ -z "$(git -C "$listed" status --porcelain | grep -F .repowise || true)" ] \
+    || fail "a config/repowise project must not show .repowise/ in git status"
+
+  id=busy-rw-2
+  rec=$(make_spawn_case repowise-unlisted claude "$id")
+  read_case_record "$rec"
+  printf '%s\n' 'some-other-project' > "$HOME_DIR/config/repowise"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "unlisted-project spawn should succeed: $out"
+  unlisted=$WT_DIR
+  mkdir -p "$unlisted/.repowise"
+  touch "$unlisted/.repowise/x"
+  git -C "$unlisted" status --porcelain | grep -Fq '.repowise' \
+    || fail "a project absent from config/repowise must keep .repowise/ visible"
+  pass "spawn excludes .repowise/ from git status only for projects listed in config/repowise"
+}
+
 test_claude_hooks_stale_incarnation_harmless() {
   local rec id=busy-cl-2 out state settings
   rec=$(make_spawn_case claude-stale claude "$id")
@@ -432,6 +459,7 @@ test_pi_extension_stale_incarnation_rejected
 test_kimi_and_grok_install_no_unverified_wiring
 test_opencode_plugin_semantic_lifecycle
 test_claude_hooks_semantic_lifecycle
+test_repowise_index_excluded_only_for_listed_projects
 test_claude_hooks_stale_incarnation_harmless
 test_gemini_hooks_semantic_lifecycle
 test_gemini_hooks_stale_incarnation_harmless

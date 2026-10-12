@@ -4889,6 +4889,13 @@ exclude_path() {
   mkdir -p "$(dirname "$EXCL")"
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >>"$EXCL"
 }
+# A project listed in config/repowise (one name per line) keeps its RepoWise
+# index out of git status, so it never reads as an untracked change or blocks
+# teardown's dirty check.
+if [ "$KIND" != secondmate ] && [ -f "$CONFIG/repowise" ] &&
+  grep -qxF "$(basename "$PROJ_ABS")" "$CONFIG/repowise"; then
+  exclude_path '.repowise/'
+fi
 if [ "$RELAUNCH" -eq 1 ]; then
   # Retire the previous incarnation's per-task harness wiring before arming the
   # new one. Without this, a harness switch would leave the old adapter's hook
