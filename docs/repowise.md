@@ -9,21 +9,20 @@ If RepoWise is absent or unused, normal Firstmate workflows remain available.
 
 ## Deployment status
 
-The initial integration provides the retrieval procedure and its boundaries; it does not enable live project indexing.
-A real-project pilot requires a recorded decision about initialization's local conversation-history access, a named checkout, and permission for the tool/cache paths it can write.
-Keep that decision in the owning home's ordinary task records rather than a global enable flag or committed project instructions.
+RepoWise 0.55.0 is installed durably at `~/.local/bin/repowise`.
+The verified pilot used a disposable `game-gallery` checkout; broader rollout remains out of scope.
+A first real-project index, recommended: `game-gallery`, requires the captain's per-project word and a recorded task scope rather than a global enable flag or committed project instructions.
 
-In the reviewed [RepoWise v0.55.0 initialization code](https://github.com/repowise-dev/repowise/blob/v0.55.0/packages/cli/src/repowise/cli/commands/init_cmd/command.py#L109-L124), initialization recovers savings from local agent transcripts separately from decision capture.
-Session decision capture defaults off, but disabling it does not disable this separate read.
-No supported initialization opt-out for that read was established by the integration review.
-Prefer a verified no-history path or explicitly authorize the limited local read for a pilot; do not treat a keyless run as history-free.
+The captain ruled on 2026-10-12 that the privacy concern about RepoWise reading local agent transcripts at init is lifted for the pilot.
+The verified init backfilled local savings by opening 505 Codex session paths under `~/.codex/sessions` and zero Claude transcript paths; transcript contents were not manually inspected and no history was sent to a provider.
+This scoped permission is not a general history review or provider-transmission authorization.
 
 ## Operator prerequisites
 
 The operator owns any installation and machine configuration changes.
 RepoWise requires Python 3.11 or newer; use an isolated, pinned installation rather than modifying Firstmate's dependencies.
 The source baseline is [`v0.55.0`](https://github.com/repowise-dev/repowise/releases/tag/v0.55.0), not a floating checkout of upstream main.
-This baseline records the reviewed interface and does not claim a completed live compatibility test.
+The pilot verified the pinned install, init, offline refresh and MCP stdio handshake; see the task pilot report for full command transcripts and measurements.
 Consult the [official project](https://github.com/repowise-dev/repowise) and the installed command's help before an approved setup.
 Do not apply the official unattended initialization recipe or plugin install commands as part of an ordinary Firstmate task.
 
@@ -54,6 +53,19 @@ In a Firstmate checkout this includes private operational state, project clones,
 For other projects, choose exclusions according to their actual source layout.
 RepoWise's inspected local-exclude reader uses a literal `.git/info/exclude`, which is not the linked-worktree layout; Git cleanliness alone is not proof that private files were excluded from indexing.
 
+## Verified pilot results and remaining seams
+
+The pinned install used `uv tool install --python 3.13 repowise==0.55.0` with task-local uv tool/bin directories; the durable operator executable is `~/.local/bin/repowise`.
+Init used `DO_NOT_TRACK=1`, `REPOWISE_TELEMETRY_DISABLED=1`, mock provider/embedder, no prose, no workspace or seed, no editor setup or hooks, and explicit exclusions.
+The contained offline init succeeded in 10.82 seconds and produced a 4.0 MB index; its only network attempt was the optional GitHub tree-sitter language-pack manifest fetch for COBOL, and indexing continued without that parser.
+For clone-only write boundaries, keep every `XDG_*` config, data, cache and state directory under the approved checkout; the contained pilot placed RepoWise index and cache files under `.repowise/`.
+The offline index-only incremental refresh succeeded after a committed fixture change, updating one changed file in 2.50 seconds with no degraded stages.
+The MCP stdio JSON-RPC handshake completed `initialize` and `tools/list`, exposing ten tools; Claude Code's local health check connected successfully.
+When the CLI is absent, the skill's fallback was verified: report the missing executable and continue with ordinary repository tools such as `rg`.
+
+Worktree identity across tasks, regression against Firstmate hooks, cleanup and landing authority remain unproven.
+Broad rollout stays out of scope until those seams are validated.
+
 ## Privacy, cost and compatibility limits
 
 Telemetry is enabled by default in the reviewed release.
@@ -73,6 +85,6 @@ Graph/risk output remains advisory; ordinary source inspection, tests and the se
 ## Verification
 
 Structural changes to the skill and this page use `bin/fm-doc-audience-check.sh` and the normal Firstmate delivery checks.
-A separately authorized live pilot must verify filesystem/network side effects, transcript scope, persistent editor opt-outs, keyless provider behavior, isolated checkout identity, stale/uncommitted-file handling, and useful retrieval against live files.
+Any further live check, including the unproven seams above, must verify filesystem/network side effects, transcript scope, persistent editor opt-outs, keyless provider behavior, isolated checkout identity, stale/uncommitted-file handling, and useful retrieval against live files.
 Record the installed version, exact commands and measured results in the task's private evidence.
-No live pilot is implied by the presence of this skill.
+The presence of this skill does not authorize indexing a project; see Deployment status.
