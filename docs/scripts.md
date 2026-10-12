@@ -105,6 +105,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-supervisor-target-lib.sh` | Resolve and validate the shared supervisor target and backend for the daemon and launcher |
 | `fm-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `fm-crew-state.sh`       | Print one deterministic current-state line for a crew                                |
+| `fm-project-capacity-lib.sh` | Per-project concurrent-worker cap on this machine and the spawn-fits check |
+| `fm-exclude-tools-lib.sh` | Shared parsing and runtime-support checks for `config/crew-exclude-tools` |
 | `fm-nm-run-lib.sh`       | Single owner of shared no-mistakes run-attribution primitives and rules             |
 | `fm-nomistakes-poll-lib.sh` | Bounded, correct polling of a backgrounded `no-mistakes axi run`/`respond` drive call: `classify` one `axi status` blob or `wait` for its next gate/outcome |
 | `fm-nomistakes-gate-check.sh` | Read-only detection of whether a local branch's HEAD is `equal`, `ahead`, `behind`, or `diverged` from the no-mistakes gate ref before pushing |
