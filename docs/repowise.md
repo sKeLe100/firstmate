@@ -1,17 +1,19 @@
 # Optional RepoWise integration
 
-Firstmate includes an explicitly invoked [RepoWise skill](../.agents/skills/repowise/SKILL.md) for direct CLI retrieval from an existing, approved repository index.
+Firstmate includes a [RepoWise skill](../.agents/skills/repowise/SKILL.md) for CLI retrieval from a repository index in the assigned worker's checkout.
+RepoWise is available on opted-in projects: CLI retrieval, structural by default, and semantic search when the local embedding endpoint is up.
 When the harness discovers Firstmate's skill directory, use `/repowise` in Claude Code or `$repowise` where that syntax is supported.
-Otherwise explicitly request RepoWise in the task and have the worker's brief reference the skill's path in the Firstmate code root.
+Otherwise name RepoWise in the task and have the worker's brief reference the skill's path in the Firstmate code root.
 Firstmate routes project-backed execution to the assigned worker because retrieval can write cache/database state.
-There is no automatic installation, indexing, MCP registration, plugin, hook, or spawn integration.
-If RepoWise is absent or unused, normal Firstmate workflows remain available.
+There is no automatic installation, indexing, MCP registration, plugin, or hook integration, and no spawn or brief integration yet.
+If RepoWise is absent, stale, or unused, normal Firstmate workflows remain available on `rg` and file reads.
 
 ## Deployment status
 
 RepoWise 0.55.0 is installed durably at `~/.local/bin/repowise`.
-The verified pilot used a disposable `game-gallery` checkout; broader rollout remains out of scope.
-A first real-project index, recommended: `game-gallery`, requires the captain's per-project word and a recorded task scope rather than a global enable flag or committed project instructions.
+The captain's decisions are to offer the CLI only on opted-in projects, with no MCP or hooks by default, and to pilot on `pt-tracker` first.
+Semantic search uses the captain's local PC02 embedding service on the tailnet, with nomic-embed-text and no hosted provider.
+The per-project opt-in list and the spawn and brief integration are later slices; until they land, opt-in is the captain's explicit word for the task.
 
 The captain ruled on 2026-10-12 that the privacy concern about RepoWise reading local agent transcripts at init is lifted for the pilot.
 The verified init backfilled local savings by opening 505 Codex session paths under `~/.codex/sessions` and zero Claude transcript paths; transcript contents were not manually inspected and no history was sent to a provider.
@@ -27,18 +29,19 @@ Consult the [official project](https://github.com/repowise-dev/repowise) and the
 Do not apply the official unattended initialization recipe or plugin install commands as part of an ordinary Firstmate task.
 
 The skill owns execution checks, permitted query commands, process-local environment limits and fallback behavior.
-It does not authorize installation or refresh an index that is missing or stale.
-Approval to query an existing index must also cover its cache writes and effective configuration; no command is assumed filesystem read-only solely because it retrieves information.
+On an opted-in project it authorizes a worker to cold-build (`repowise init`) and refresh (`repowise update`) the index in its own assigned checkout, but not installation or upgrade of the CLI.
+Those commands write cache and database state and read effective configuration; no command is assumed filesystem read-only solely because it retrieves information.
 
 ## Pilot configuration boundaries
 
-An approved pilot should start with a cold, independent index in one assigned checkout, with automatic worktree seeding and ancestor workspace selection disabled.
+An opted-in project's index starts cold and independent in one assigned checkout, with automatic worktree seeding and ancestor workspace selection disabled.
 Upstream [worktree seeding](https://github.com/repowise-dev/repowise/blob/v0.55.0/packages/cli/src/repowise/cli/worktree.py#L185-L236) copies the whole `.repowise` directory, including any saved credentials or inherited policy it contains.
 Do not share a writable cache with the canonical clone, another worker, or another home.
 An existing directory or reused worktree path does not prove index identity or freshness.
 
-Use a keyless provider/embedder configuration and explicitly disable model-backed decisions, session capture and session discovery.
-Mock embeddings support the restricted baseline but do not provide meaningful semantic search.
+Use a keyless provider and explicitly disable model-backed decisions, session capture and session discovery.
+The embedder is either the local PC02 endpoint, set explicitly in the child process, or `mock` when that endpoint is down.
+Mock embeddings give structural and full-text retrieval only, not semantic search.
 `--no-prose` alone is insufficient: initialization can still resolve a decision provider from an explicit provider or ambient API keys.
 The [upstream init interface](https://github.com/repowise-dev/repowise/blob/v0.55.0/packages/cli/src/repowise/cli/commands/init_cmd/command.py) and effective child-process configuration must agree with the approved policy.
 Do not persist API keys, silently adopt remote database overrides, or print credential values while checking configuration.
@@ -56,7 +59,7 @@ RepoWise's inspected local-exclude reader uses a literal `.git/info/exclude`, wh
 ## Verified pilot results and remaining seams
 
 The pinned install used `uv tool install --python 3.13 repowise==0.55.0` with task-local uv tool/bin directories; the durable operator executable is `~/.local/bin/repowise`.
-Init used `DO_NOT_TRACK=1`, `REPOWISE_TELEMETRY_DISABLED=1`, mock provider/embedder, no prose, no workspace or seed, no editor setup or hooks, and explicit exclusions.
+The pilot init used `DO_NOT_TRACK=1`, `REPOWISE_TELEMETRY_DISABLED=1`, mock provider/embedder (structural only; the semantic path adds `--embedder openai` against the local endpoint), no prose, no workspace or seed, no editor setup or hooks, and explicit exclusions.
 The contained offline init succeeded in 10.82 seconds and produced a 4.0 MB index; its only network attempt was the optional GitHub tree-sitter language-pack manifest fetch for COBOL, and indexing continued without that parser.
 For clone-only write boundaries, keep every `XDG_*` config, data, cache and state directory under the approved checkout; the contained pilot placed RepoWise index and cache files under `.repowise/`.
 The offline index-only incremental refresh succeeded after a committed fixture change, updating one changed file in 2.50 seconds with no degraded stages.
@@ -64,7 +67,7 @@ The MCP stdio JSON-RPC handshake completed `initialize` and `tools/list`, exposi
 When the CLI is absent, the skill's fallback was verified: report the missing executable and continue with ordinary repository tools such as `rg`.
 
 Worktree identity across tasks, regression against Firstmate hooks, cleanup and landing authority remain unproven.
-Broad rollout stays out of scope until those seams are validated.
+Pilot measurements on `pt-tracker` decide whether the opt-in stays; broad rollout waits until those seams are validated.
 
 ## Privacy, cost and compatibility limits
 
@@ -87,4 +90,4 @@ Graph/risk output remains advisory; ordinary source inspection, tests and the se
 Structural changes to the skill and this page use `bin/fm-doc-audience-check.sh` and the normal Firstmate delivery checks.
 Any further live check, including the unproven seams above, must verify filesystem/network side effects, transcript scope, persistent editor opt-outs, keyless provider behavior, isolated checkout identity, stale/uncommitted-file handling, and useful retrieval against live files.
 Record the installed version, exact commands and measured results in the task's private evidence.
-The presence of this skill does not authorize indexing a project; see Deployment status.
+Indexing is authorized only on opted-in projects, in the worker's own checkout; see Deployment status.
