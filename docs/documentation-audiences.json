@@ -293,6 +293,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/repowise/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/secondmate-provisioning/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -466,6 +470,10 @@
     },
     {
       "path": "docs/remote-secondmates.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/repowise.md",
       "audience": "operator-current"
     },
     {
