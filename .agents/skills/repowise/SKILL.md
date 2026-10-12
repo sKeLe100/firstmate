@@ -2,7 +2,7 @@
 name: repowise
 description: >-
   Use only when explicitly asked to use RepoWise for repository context or CLI retrieval.
-  Route project-backed commands to the assigned worker; do not enable indexing, MCP, plugins, or hooks.
+  Route project-backed commands to the assigned worker; do not add automatic indexing, MCP registration, plugins, or hooks.
 user-invocable: true
 disable-model-invocation: true
 metadata:
@@ -35,9 +35,9 @@ An explicit skill invocation permits these checks; it does not authorize install
    A `.repowise/.env` file, an unverified global fallback, or an index built with a different embedder requires clarification from firstmate rather than a silent override.
    Inspect only authorized paths; do not scan global configuration or histories to satisfy this check.
 
-Index creation and refresh remain disabled in this integration pending a separately recorded pilot decision and task scope.
-Turning off session decision capture does not disable initialization's separate local transcript savings backfill.
-Never read Claude/Codex transcripts to operate this skill.
+Index creation and refresh require a separately recorded pilot decision and named checkout/task scope.
+For the authorized RepoWise 0.55.0 pilot, local transcript savings backfill was permitted; init opened Codex session files under `~/.codex/sessions` and no Claude transcript paths.
+This permission is pilot-scoped and does not authorize general history review or provider transmission.
 
 ## Direct CLI retrieval
 
@@ -50,6 +50,7 @@ REPOWISE_SKIP_EDITOR_SETUP=1
 ```
 
 These are telemetry/editor limits, not a guarantee of no network or home-directory writes.
+In the verified 0.55.0 pilot, the only network attempt during init was an optional GitHub fetch for the COBOL tree-sitter language-pack manifest; offline initialization still succeeded without that parser.
 Read `repowise --version` and the relevant command's installed `--help` under the same process-local environment before issuing a project query.
 Verify its target-path options, workspace selection and output format.
 Use the version baseline and upstream review recorded in the [operator integration guide](../../../docs/repowise.md); another version needs a focused check of the relevant query and side effects, not an automatic upgrade.
@@ -73,7 +74,7 @@ Mock embeddings provide a keyless baseline, not meaningful semantic vectors.
 An empty graph edge or low risk score does not prove an edit is safe, particularly for shell or dynamic dispatch.
 
 Do not call `ask`, generation, decision capture, publishing, watch, initialization, update, or other mutating/provider-backed commands through this retrieval skill.
-Do not start MCP or the dashboard, install the Claude plugin, register global settings, install Git/editor hooks, generate repository guidance, or share a base index.
+The MCP stdio handshake was verified separately and exposed ten tools, but this skill does not register or automatically start MCP, the dashboard, plugins, global settings, Git/editor hooks, generated repository guidance, or shared base indexes.
 Those are separate optional integrations, not fallback actions.
 
 ## Result and fallback
