@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 # Tests for bin/fm-teardown.sh - thin wrapper that sources all split test files.
-#
-# The original fm-teardown.test.sh (3546 lines) was split into smaller files
-# to reduce per-script test timeout under concurrent/loaded conditions.
-# This wrapper sources the shared library and all split test files, then
-# runs every test function in the same order the original file used.
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -14,7 +9,7 @@ set -u
 
 fm_git_identity fmtest fmtest@example.invalid
 
-# Source all split test files (each defines test_* functions only)
+# Source all split test files (each defines test_* functions only).
 # shellcheck source=tests/fm-teardown-landed-work.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-landed-work.sh"
 # shellcheck source=tests/fm-teardown-pr-check.sh
@@ -29,17 +24,17 @@ fm_git_identity fmtest fmtest@example.invalid
 . "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-secondmate.sh"
 # shellcheck source=tests/fm-teardown-herdr.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-herdr.sh"
+# shellcheck source=tests/fm-teardown-pipeline-spend.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-pipeline-spend.sh"
 # shellcheck source=tests/fm-teardown-parked-run.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-parked-run.sh"
 # shellcheck source=tests/fm-teardown-parked-run-edge.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-parked-run-edge.sh"
 # shellcheck source=tests/fm-teardown-process-reap.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-process-reap.sh"
-
 # shellcheck source=tests/fm-teardown-source-guards.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-source-guards.sh"
 
-# Run all test functions in the original order
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
 test_teardown_closes_a_gerrit_task_with_its_change_url_as_a_note
@@ -69,8 +64,8 @@ test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
 test_teardown_retires_task_watcher_markers_and_orphan_journal
 test_teardown_retains_journal_bound_to_another_pane
 test_teardown_retires_v1_journal_when_projected_workspace_gone
-test_teardown_retains_v1_journal_when_projected_workspace_present
-test_teardown_retains_v1_journal_when_workspace_query_ambiguous
+test_teardown_retires_v1_journal_when_projected_workspace_present
+test_teardown_retires_v1_journal_when_workspace_query_ambiguous
 test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
 test_no_pr_recorded_discovers_merged_pr_by_branch_allows
@@ -83,6 +78,7 @@ test_squash_merged_stale_local_refuses_when_forge_unreachable
 test_pr_check_does_not_refresh_stale_pr_head
 test_pr_check_records_remote_head_when_local_lags
 test_content_in_default_fallback_allows
+test_content_fallback_uses_recorded_base_branch
 test_content_fallback_refreshes_stale_origin_ref
 test_dirty_worktree_refuses
 test_untracked_only_refusal_diagnostic
@@ -113,6 +109,9 @@ test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds
 test_persistent_index_lock_exhausts_retries_and_refuses_loudly
 test_empty_retry_wait_uses_default_without_aborting
 test_fractional_legacy_retry_wait_refuses_without_arithmetic_error
+test_teardown_records_the_task_pipeline_spend
+test_teardown_skips_pipeline_spend_when_disabled
+test_teardown_records_unavailable_spend_for_a_gone_worktree
 test_parked_own_run_is_aborted_before_teardown
 test_parked_own_run_concludes_on_passed_with_override_after_abort
 test_parked_own_run_concludes_on_passed_with_skips_after_abort
