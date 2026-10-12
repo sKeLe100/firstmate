@@ -22,7 +22,7 @@
 # Usage:
 #   fm-captain-hold.sh hold <task-id> --reason <reason> \
 #     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--until YYYY-MM-DD]
-#   fm-captain-hold.sh answer <task-id> --decision-file <path> [--release]
+#   fm-captain-hold.sh answer <task-id> --decision-file <path> [--release] [--force]
 #   fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
 #   fm-captain-hold.sh reconcile-requests --source-id <source-id> --source <provenance>   (task ids on stdin)
 #   fm-captain-hold.sh bind <source-id> [<legacy-origin> | --any-origin]
@@ -83,7 +83,8 @@
 # through a close, so an ordinary finished task cannot be dressed up as an
 # answered captain call. A hold that expired by date (`--until` in the past) is
 # still answerable: the surviving hold annotations, not tasks-axi's live
-# `held:` bit, prove the captain owned it.
+# `held:` bit, prove the captain owned it. `--force` bypasses the live-endpoint
+# guard so a stale worker record or a host migration does not block the close.
 #
 # ONE KEYED-ANSWER INTAKE, FED BY EVERY CHANNEL.
 # "A keyed answer resolves its matching captain-held task" is a single
@@ -247,6 +248,9 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 # shellcheck source=bin/fm-parent-channel-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-parent-channel-lib.sh"
+# shellcheck source=bin/fm-backend.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-backend.sh"
 
 PARENT_HOLD_PUBLISHED=0
 publish_parent_hold() {  # <task-id> <occurrence> <verb> <note>
@@ -1215,14 +1219,33 @@ remove_interrupted_answer_stamp() {  # <task-id>
   rm -f -- "$tmp"
 }
 
+# Check whether the task's recorded endpoint is still alive.
+# Returns 0 when the endpoint exists and the agent is alive, 1 otherwise
+# (no meta file, no backend, agent dead, or check unavailable).
+# FM_FORCE_ENDPOINT_ALIVE=1 overrides the check to always return alive
+# (used by tests to simulate a running worker without a real backend).
+task_endpoint_alive() {  # <task-id>
+  [ "${FM_FORCE_ENDPOINT_ALIVE:-0}" = 1 ] && return 0
+  local meta="$STATE/${1}.meta" backend target
+  [ -f "$meta" ] || return 1
+  backend=$(fm_meta_get "$meta" backend)
+  [ -n "$backend" ] || return 1
+  target=$(fm_backend_target_of_meta "$meta")
+  [ -n "$target" ] || return 1
+  local state
+  state=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null) || return 1
+  [ "$state" = "alive" ]
+}
+
 command_answer() {
-  local id=${1:-} decision_file='' release=0 show state hold_kind body outcome recorded_mode occurrence
+  local id=${1:-} decision_file='' release=0 force=0 show state hold_kind body outcome recorded_mode occurrence
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --decision-file) shift; decision_file=${1:-} ;;
       --release) release=1 ;;
+      --force) force=1 ;;
       *) usage >&2; exit 2 ;;
     esac
     shift
@@ -1300,6 +1323,9 @@ command_answer() {
       publish_parent_resolution_then_retire "$id" $((occurrence - 1)) "$outcome"
       printf '%s: %s\n' "$outcome" "$id"
       return 0
+    fi
+    if [ "$force" != 1 ] && task_endpoint_alive "$id"; then
+      fail "task $id still has a live endpoint; use --force to override"
     fi
     write_resolution_record "$id" "$outcome" "$body"
     if ! close_answered "$id" "$release"; then
