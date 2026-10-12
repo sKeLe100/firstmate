@@ -603,6 +603,54 @@ exit 0
 fi
 
 REPO=${POS[1]}
+REPO_NAME=${REPO%/}
+REPO_NAME=${REPO_NAME##*/}
+REPO_NAME=${REPO_NAME%.git}
+# RepoWise is available only to projects named in the home-local config.
+REPOWISE_SECTION=
+REPOWISE_FILE="$CONFIG/repowise"
+if [ -f "$REPOWISE_FILE" ] && [ -r "$REPOWISE_FILE" ]; then
+  REPOWISE_PROJECTS=
+  REPOWISE_ENDPOINT=
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      projects=*) REPOWISE_PROJECTS=${line#projects=} ;;
+      endpoint=*) REPOWISE_ENDPOINT=${line#endpoint=} ;;
+    esac
+  done < "$REPOWISE_FILE"
+  case "$REPOWISE_ENDPOINT" in
+    http://*|https://*)
+      case "$REPOWISE_ENDPOINT" in *[![:print:]]*|*' '*) REPOWISE_ENDPOINT= ;; esac ;;
+    *) REPOWISE_ENDPOINT= ;;
+  esac
+  if [ -n "$REPOWISE_ENDPOINT" ]; then
+    repowise_remaining=$REPOWISE_PROJECTS
+    while :; do
+      repowise_project=${repowise_remaining%%,*}
+      repowise_project=$(printf '%s' "$repowise_project" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+      if [ "$repowise_project" = "$REPO_NAME" ]; then
+        # shellcheck disable=SC2016 # This text is literal brief content; its backticks must survive scaffold expansion.
+        REPOWISE_SECTION=$(printf '%s\n' \
+          '# Repository context' \
+          'Use the `repowise` skill for repository context when a question benefits from indexed history, co-change, blast radius, hotspots, or concept search.' \
+          'Run the RepoWise CLI only in this assigned checkout, and verify retrieved paths and claims against live files.' \
+          "Embedding endpoint: $REPOWISE_ENDPOINT")
+        break
+      fi
+      [ "$repowise_remaining" != "$repowise_project" ] || break
+      case "$repowise_remaining" in *,*) repowise_remaining=${repowise_remaining#*,} ;; *) break ;; esac
+    done
+  fi
+fi
+if [ -n "$REPOWISE_SECTION" ]; then
+  if [ -n "$PERSPECTIVE_SECTION" ]; then
+    PERSPECTIVE_SECTION="$REPOWISE_SECTION
+
+$PERSPECTIVE_SECTION"
+  else
+    PERSPECTIVE_SECTION=$REPOWISE_SECTION
+  fi
+fi
 
 if [ "$HERDR_LAB" -eq 1 ]; then
 HERDR_LAB_HELPER=$(shell_quote "$FM_ROOT/bin/fm-herdr-lab.sh")
@@ -810,9 +858,6 @@ DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
 # REPO is a caller-supplied free string, so match on its normalized basename:
 # owner/pt-tracker, /path/to/pt-tracker, and pt-tracker.git all name the repo the
 # law applies to, and a spelling mismatch would silently fail the law open.
-REPO_NAME=${REPO%/}
-REPO_NAME=${REPO_NAME##*/}
-REPO_NAME=${REPO_NAME%.git}
 if [ "$REPO_NAME" = pt-tracker ]; then
 IFS= read -r -d '' TRACKER_LAW_SECTION <<'EOF' || true
 
