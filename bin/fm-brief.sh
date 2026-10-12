@@ -32,6 +32,10 @@
 #   omitting both still fails loudly so an accidental omission is never silent.
 #   Set FM_SECONDMATE_CHARTER='<charter>' to fill the charter text.
 #   Set FM_SECONDMATE_SCOPE='<scope>' to write a routing scope distinct from the charter text.
+#   Ship and scout briefs gain a short "Repository context" section naming the
+#   RepoWise skill and embedding endpoint when the project is listed in
+#   config/repowise (see docs/configuration.md); a present but malformed or
+#   unreadable config warns on stderr and adds no section.
 #   --herdr-lab is mandatory when the task will issue Herdr lifecycle commands.
 #   It adds the hard isolation contract backed by bin/fm-herdr-lab.sh.
 #   The flag must be explicit because {TASK} and {FIRSTMATE_SPEC} are filled
@@ -609,7 +613,9 @@ REPO_NAME=${REPO_NAME%.git}
 # RepoWise is available only to projects named in the home-local config.
 REPOWISE_SECTION=
 REPOWISE_FILE="$CONFIG/repowise"
-if [ -f "$REPOWISE_FILE" ] && [ -r "$REPOWISE_FILE" ]; then
+if [ -f "$REPOWISE_FILE" ] && [ ! -r "$REPOWISE_FILE" ]; then
+  echo "warning: $REPOWISE_FILE is unreadable; no Repository context section added" >&2
+elif [ -f "$REPOWISE_FILE" ]; then
   REPOWISE_PROJECTS=
   REPOWISE_ENDPOINT=
   while IFS= read -r line || [ -n "$line" ]; do
@@ -623,7 +629,9 @@ if [ -f "$REPOWISE_FILE" ] && [ -r "$REPOWISE_FILE" ]; then
       case "$REPOWISE_ENDPOINT" in *[![:print:]]*|*' '*) REPOWISE_ENDPOINT= ;; esac ;;
     *) REPOWISE_ENDPOINT= ;;
   esac
-  if [ -n "$REPOWISE_ENDPOINT" ]; then
+  if [ -z "$REPOWISE_ENDPOINT" ]; then
+    echo "warning: $REPOWISE_FILE needs an endpoint= line with a plain http(s) URL without spaces; no Repository context section added" >&2
+  else
     repowise_remaining=$REPOWISE_PROJECTS
     while :; do
       repowise_project=${repowise_remaining%%,*}

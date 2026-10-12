@@ -1227,7 +1227,7 @@ endpoint=http://100.67.55.77:8090/v1/embeddings
 ```
 
 `bin/fm-brief.sh` adds a short `Repository context` section only when the brief's normalized project name exactly matches an entry and the endpoint is a plain HTTP(S) URL.
-An absent file or an unlisted project adds no section.
+An absent file or an unlisted project adds no section silently; a present file that is unreadable or lacks a valid `endpoint=` adds no section and prints a warning on stderr.
 The config is local to this home and is not inherited into secondmate homes.
 The [RepoWise skill](../.agents/skills/repowise/SKILL.md) owns worker retrieval behavior and safety checks.
 
