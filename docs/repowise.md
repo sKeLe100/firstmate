@@ -1,17 +1,19 @@
 # Optional RepoWise integration
 
-Firstmate includes an explicitly invoked [RepoWise skill](../.agents/skills/repowise/SKILL.md) for direct CLI retrieval from an existing, approved repository index.
+Firstmate includes a [RepoWise skill](../.agents/skills/repowise/SKILL.md) for CLI retrieval from a repository index in the assigned worker's checkout.
+RepoWise is available on opted-in projects: CLI retrieval, structural by default, and semantic search when the local embedding endpoint is up.
 When the harness discovers Firstmate's skill directory, use `/repowise` in Claude Code or `$repowise` where that syntax is supported.
-Otherwise explicitly request RepoWise in the task and have the worker's brief reference the skill's path in the Firstmate code root.
+Otherwise name RepoWise in the task and have the worker's brief reference the skill's path in the Firstmate code root.
 Firstmate routes project-backed execution to the assigned worker because retrieval can write cache/database state.
-There is no automatic installation, indexing, MCP registration, plugin, hook, or spawn integration.
-If RepoWise is absent or unused, normal Firstmate workflows remain available.
+There is no automatic installation, indexing, MCP registration, plugin, or hook integration, and no spawn or brief integration yet.
+If RepoWise is absent, stale, or unused, normal Firstmate workflows remain available on `rg` and file reads.
 
 ## Deployment status
 
 RepoWise 0.55.0 is installed durably at `~/.local/bin/repowise`.
-The verified pilot used a disposable `game-gallery` checkout; broader rollout remains out of scope.
-A first real-project index, recommended: `game-gallery`, requires the captain's per-project word and a recorded task scope rather than a global enable flag or committed project instructions.
+The captain's decisions are to offer the CLI only on opted-in projects, with no MCP or hooks by default, and to pilot on `pt-tracker` first.
+Semantic search uses the captain's local PC02 embedding service on the tailnet, with nomic-embed-text and no hosted provider.
+The per-project opt-in list and the spawn and brief integration are later slices; until they land, opt-in is the captain's explicit word for the task.
 
 The captain ruled on 2026-10-12 that the privacy concern about RepoWise reading local agent transcripts at init is lifted for the pilot.
 The verified init backfilled local savings by opening 505 Codex session paths under `~/.codex/sessions` and zero Claude transcript paths; transcript contents were not manually inspected and no history was sent to a provider.
@@ -37,8 +39,9 @@ Upstream [worktree seeding](https://github.com/repowise-dev/repowise/blob/v0.55.
 Do not share a writable cache with the canonical clone, another worker, or another home.
 An existing directory or reused worktree path does not prove index identity or freshness.
 
-Use a keyless provider/embedder configuration and explicitly disable model-backed decisions, session capture and session discovery.
-Mock embeddings support the restricted baseline but do not provide meaningful semantic search.
+Use a keyless provider and explicitly disable model-backed decisions, session capture and session discovery.
+The embedder is either the local PC02 endpoint, set explicitly in the child process, or `mock` when that endpoint is down.
+Mock embeddings give structural and full-text retrieval only, not semantic search.
 `--no-prose` alone is insufficient: initialization can still resolve a decision provider from an explicit provider or ambient API keys.
 The [upstream init interface](https://github.com/repowise-dev/repowise/blob/v0.55.0/packages/cli/src/repowise/cli/commands/init_cmd/command.py) and effective child-process configuration must agree with the approved policy.
 Do not persist API keys, silently adopt remote database overrides, or print credential values while checking configuration.
@@ -64,7 +67,7 @@ The MCP stdio JSON-RPC handshake completed `initialize` and `tools/list`, exposi
 When the CLI is absent, the skill's fallback was verified: report the missing executable and continue with ordinary repository tools such as `rg`.
 
 Worktree identity across tasks, regression against Firstmate hooks, cleanup and landing authority remain unproven.
-Broad rollout stays out of scope until those seams are validated.
+Pilot measurements on `pt-tracker` decide whether the opt-in stays; broad rollout waits until those seams are validated.
 
 ## Privacy, cost and compatibility limits
 
