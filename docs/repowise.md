@@ -14,7 +14,7 @@ If RepoWise is absent, stale, or unused, normal Firstmate workflows remain avail
 RepoWise 0.55.0 is installed durably at `~/.local/bin/repowise`.
 The captain's decisions are to offer the CLI only on opted-in projects, with no MCP or hooks by default, and to pilot on `pt-tracker` first.
 Semantic search uses the captain's local PC02 embedding service on the tailnet, with nomic-embed-text and no hosted provider.
-The per-project opt-in list and the spawn and brief integration are later slices; until they land, opt-in is the captain's explicit word for the task.
+The per-project opt-in list and brief section ship via `config/repowise`; the spawn integration is a later slice, and until it lands a project not listed there opts in only by the captain's explicit word for the task.
 
 The captain ruled on 2026-10-12 that the privacy concern about RepoWise reading local agent transcripts at init is lifted for the pilot.
 The verified init backfilled local savings by opening 505 Codex session paths under `~/.codex/sessions` and zero Claude transcript paths; transcript contents were not manually inspected and no history was sent to a provider.
