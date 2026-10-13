@@ -52,6 +52,43 @@ test_lane_occupied_falls_back_to_local() {
   pass "a live PC02 LLM lane falls back to a local run without touching ssh"
 }
 
+test_missing_supervising_home_falls_back_to_local() {
+  local out status
+  out=$(PATH="/nonexistent-so-ssh-is-absent:$PATH" FM_HOME="$TMP_ROOT/no-supervising-home" \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a missing supervising home must still run locally: $out"
+  assert_contains "$out" "state directory is unavailable or unreadable" \
+    "missing-home fallback did not preserve the fail-closed lane result: $out"
+  assert_contains "$out" "PC02 lane check reported" "missing-home fallback did not explain the local route: $out"
+  pass "a missing supervising home refuses the lane probe and falls back locally"
+}
+
+test_supervising_home_is_passed_to_lane_probe() {
+  local home fakebin out status
+  home="$TMP_ROOT/supervising-home"
+  mkdir -p "$home/state"
+  fakebin=$(fm_fakebin "$TMP_ROOT/supervising-home-tools")
+  cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf 'resource:cpu=1 gpu=0\n'
+exit 0
+SH
+  cat > "$fakebin/rsync" <<'SH'
+#!/usr/bin/env bash
+exit 11
+SH
+  chmod +x "$fakebin/ssh" "$fakebin/rsync"
+
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a readable supervising home should permit the remaining offload checks: $out"
+  assert_contains "$out" "rsync to PC02 failed or timed out" \
+    "the lane probe did not read the supplied supervising home before continuing: $out"
+  pass "the offload probe scans the supplied supervising home before checking PC02"
+}
+
 test_unreachable_host_falls_back_to_local() {
   local fakebin out status
   fakebin=$(fm_fakebin "$TMP_ROOT/unreachable")
@@ -433,6 +470,8 @@ test_pc02_if_idle_flag_forwards_through_fm_test_run() {
 test_help_prints_the_whole_documented_contract
 test_disable_env_var_skips_every_pc02_check
 test_lane_occupied_falls_back_to_local
+test_missing_supervising_home_falls_back_to_local
+test_supervising_home_is_passed_to_lane_probe
 test_unreachable_host_falls_back_to_local
 test_missing_required_tool_falls_back_to_local
 test_slow_probe_times_out_and_falls_back
