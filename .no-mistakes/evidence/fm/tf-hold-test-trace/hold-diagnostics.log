@@ -1,0 +1,10 @@
+ok - a failing case preserves its diagnostic directory
+ok - a failing exit preserves diagnostics and still cleans registered fixtures
+ok - TERM snapshots fixture locks before cleanup, cleans up, and preserves once
+ok - a passing case preserves no failure diagnostics
+ok - a timed-out barrier exits 124, preserves diagnostics, and reaps the child
+ok - a timed-out fixture child does not keep the output pipe open
+
+real	0m5.413s
+user	0m0.728s
+sys	0m2.462s
