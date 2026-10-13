@@ -27,7 +27,7 @@ mkdir -p "$RUN_TRACE_DIR"
 
 set -T
 trap 'FM_TEST_LAST_COMMAND=$BASH_COMMAND' DEBUG
-trap 'fm_test_preserve_diagnostics $?' EXIT
+fm_test_install_exit_traps
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }

@@ -16,6 +16,7 @@ run_scenario() {  # <name> <body>; leaves $scenario_out, $scenario_rc, $scenario
   cat > "$dir/scenario.sh" <<SH
 #!/usr/bin/env bash
 set -u
+. "$ROOT/tests/lib.sh"
 . "$DIAG_LIB"
 TMP_ROOT="$dir/fixture"
 DIAGNOSTIC_ROOT="$dir/diag"
@@ -26,7 +27,7 @@ mkdir -p "\$DIAGNOSTIC_ROOT"
 : > "\$CASE_TRACE"
 set -T
 trap 'FM_TEST_LAST_COMMAND=\$BASH_COMMAND' DEBUG
-trap 'fm_test_preserve_diagnostics \$?' EXIT
+fm_test_install_exit_traps
 $body
 SH
   scenario_out=$(bash "$dir/scenario.sh" 2>&1)
@@ -84,7 +85,41 @@ test_timed_out_child_does_not_hold_the_pipe_open() {
   pass "a timed-out fixture child does not keep the output pipe open"
 }
 
+test_exit_removes_registered_fixtures_after_preserving() {
+  run_scenario cleanup-on-exit 'extra=$(fm_test_tmproot fm-hold-diag-extra)
+echo "$extra" > "$TMP_ROOT/extra-path"
+: > "$extra/lock-evidence.lock"
+exit 4'
+  local extra
+  extra=$(cat "$TMP_ROOT/cleanup-on-exit/fixture/extra-path")
+  [ -n "$extra" ] || fail "scenario did not register a fixture: $scenario_out"
+  [ "$scenario_rc" -eq 4 ] || fail "exit status must survive cleanup, got $scenario_rc"
+  [ -n "$scenario_diag" ] || fail "a failing exit must preserve diagnostics"
+  [ ! -e "$extra" ] || fail "a failing exit must still remove registered fixtures"
+  pass "a failing exit preserves diagnostics and still cleans registered fixtures"
+}
+
+test_term_snapshots_before_cleanup() {
+  local dir="$TMP_ROOT/term" extra
+  run_scenario term 'extra=$(fm_test_tmproot fm-hold-diag-term)
+echo "$extra" > "$TMP_ROOT/extra-path"
+TMP_ROOT=$extra
+: > "$extra/held.lock"
+kill -TERM $$
+sleep 5'
+  extra=$(cat "$dir/fixture/extra-path")
+  [ -n "$extra" ] || fail "scenario did not register a fixture: $scenario_out"
+  [ "$scenario_rc" -eq 143 ] || fail "TERM must exit 143, got $scenario_rc"
+  [ -n "$scenario_diag" ] || fail "TERM must preserve diagnostics"
+  grep -q 'held.lock' "$scenario_diag/diagnostic.txt" || fail "TERM diagnostics must be captured before cleanup removes the fixture"
+  [ ! -e "$extra" ] || fail "TERM must still remove registered fixtures"
+  [ "$(find "$dir/diag" -maxdepth 1 -name 'failure-*' -type d | wc -l)" -eq 1 ] || fail "diagnostics must be preserved once"
+  pass "TERM snapshots fixture locks before cleanup, cleans up, and preserves once"
+}
+
 test_failing_case_preserves_diagnostics
+test_exit_removes_registered_fixtures_after_preserving
+test_term_snapshots_before_cleanup
 test_passing_case_preserves_nothing
 test_timed_out_barrier_exits_124_and_reaps_the_child
 test_timed_out_child_does_not_hold_the_pipe_open

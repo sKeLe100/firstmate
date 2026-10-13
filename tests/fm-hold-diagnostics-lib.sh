@@ -6,6 +6,8 @@ fm_test_preserve_diagnostics() {
   local rc=$1 stamp dest last_command=$FM_TEST_LAST_COMMAND
   trap - DEBUG
   [ "$rc" -eq 0 ] && return 0
+  [ -z "${FM_TEST_DIAGNOSTICS_DONE:-}" ] || return 0
+  FM_TEST_DIAGNOSTICS_DONE=1
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   dest="$DIAGNOSTIC_ROOT/failure-$stamp-$$"
   mkdir -p "$dest" || return 0
@@ -24,6 +26,19 @@ fm_test_preserve_diagnostics() {
   } > "$dest/diagnostic.txt"
   cp "$CASE_TRACE" "$dest/cases.tsv" 2>/dev/null || true
   printf 'failure diagnostic: %s\n' "$dest" >&2
+}
+
+fm_test_finish() {  # <exit status>
+  fm_test_preserve_diagnostics "$1" || true
+  fm_test_cleanup
+}
+
+fm_test_install_exit_traps() {
+  trap 'fm_test_finish $?' EXIT
+  trap 'fm_test_finish 130; exit 130' INT
+  trap 'fm_test_finish 143; exit 143' TERM
+  trap 'fm_test_finish 129; exit 129' HUP
+  trap 'fm_test_finish 131; exit 131' QUIT
 }
 
 run_case() {  # <case function>
