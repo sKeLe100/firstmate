@@ -1,0 +1,22 @@
+== old run 1
+/bin/bash: line 6: bin/.old-run.sh: Permission denied
+exit=126
+== old run 2
+/bin/bash: line 6: bin/.old-run.sh: Permission denied
+exit=126
+== new run 1
+FM_TEST_HINT_DRIFT ok checked=231 confirmed=0 warned=0
+exit=0
+== new run 2
+FM_TEST_HINT_DRIFT ok checked=231 confirmed=0 warned=0
+exit=0
+== old run 1
+::warning::fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on this run only for 1 script(s); will refuse only if this recurs on the next run:
+  tests/fm-spawn-dispatch-profile.test.sh: hint=197548ms measured=343491ms ratio=1.74x
+FM_TEST_HINT_DRIFT ok checked=231 confirmed=0 warned=1
+exit=0
+== old run 2
+fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on two consecutive runs for 1 script(s):
+  tests/fm-spawn-dispatch-profile.test.sh: hint=197548ms measured=343491ms ratio=1.74x
+fm-test-run: refresh the hints: docs/fm-test-portable-shards.md
+exit=1
