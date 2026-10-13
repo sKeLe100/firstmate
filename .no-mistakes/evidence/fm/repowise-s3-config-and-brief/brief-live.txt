@@ -1,0 +1,18 @@
+--- pt-tracker ship
+10:# Repository context
+11-Use the `repowise` skill for repository context when a question benefits from indexed history, co-change, blast radius, hotspots, or concept search.
+12-Run the RepoWise CLI only in this assigned checkout, and verify retrieved paths and claims against live files.
+13-Embedding endpoint: http://100.67.55.77:8090/v1/embeddings
+14-# Herdr lifecycle declaration - NOT ENABLED
+15-**HARD SAFETY GATE:** this scaffold cannot inspect the task text filled in above.
+16-If the task will start, stop, delete, restart, profile, or otherwise drive Herdr lifecycle behavior, stop and regenerate the brief with `--herdr-lab` before dispatch.
+--- other: matches=0
+--- pt-tracker scout
+10:# Repository context
+11-Use the `repowise` skill for repository context when a question benefits from indexed history, co-change, blast radius, hotspots, or concept search.
+12-Run the RepoWise CLI only in this assigned checkout, and verify retrieved paths and claims against live files.
+13-Embedding endpoint: http://100.67.55.77:8090/v1/embeddings
+14-# Herdr lifecycle declaration - NOT ENABLED
+--- malformed
+warning: /tmp/fm-lab.J8oKc5/config/repowise needs an endpoint= line with a plain http(s) URL without spaces; no Repository context section added
+matches=0
