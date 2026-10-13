@@ -5,7 +5,7 @@ RepoWise is available on opted-in projects: CLI retrieval, structural by default
 When the harness discovers Firstmate's skill directory, use `/repowise` in Claude Code or `$repowise` where that syntax is supported.
 Otherwise name RepoWise in the task and have the worker's brief reference the skill's path in the Firstmate code root.
 Firstmate routes project-backed execution to the assigned worker because retrieval can write cache/database state.
-There is no automatic installation, indexing, MCP registration, plugin, or hook integration, and no spawn or brief integration yet.
+There is no automatic installation, indexing, MCP registration, plugin, or hook integration, and no brief integration yet. The only spawn integration is that `fm-spawn` excludes `.repowise/` from git status for projects listed in `config/repowise`.
 If RepoWise is absent, stale, or unused, normal Firstmate workflows remain available on `rg` and file reads.
 
 ## Deployment status
@@ -13,7 +13,7 @@ If RepoWise is absent, stale, or unused, normal Firstmate workflows remain avail
 RepoWise 0.55.0 is installed durably at `~/.local/bin/repowise`.
 The captain's decisions are to offer the CLI only on opted-in projects, with no MCP or hooks by default, and to pilot on `pt-tracker` first.
 Semantic search uses the captain's local PC02 embedding service on the tailnet, with nomic-embed-text and no hosted provider.
-The per-project opt-in list and the spawn and brief integration are later slices; until they land, opt-in is the captain's explicit word for the task.
+The `config/repowise` opt-in list (`projects=<name>[,<name>...]`) currently drives only the spawn-time `.repowise/` git-status exclusion, whose contract `bin/fm-spawn.sh` owns; the brief integration is a later slice, and until it lands, opt-in is the captain's explicit word for the task.
 
 The captain ruled on 2026-10-12 that the privacy concern about RepoWise reading local agent transcripts at init is lifted for the pilot.
 The verified init backfilled local savings by opening 505 Codex session paths under `~/.codex/sessions` and zero Claude transcript paths; transcript contents were not manually inspected and no history was sent to a provider.
