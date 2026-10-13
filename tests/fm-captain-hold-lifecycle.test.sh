@@ -26,6 +26,7 @@ mkdir -p "$RUN_TRACE_DIR"
 : > "$CASE_TRACE"
 
 set -T
+# shellcheck disable=SC2016 # expansion is deliberately deferred to trap time
 trap 'FM_TEST_LAST_COMMAND=$BASH_COMMAND' DEBUG
 fm_test_install_exit_traps
 

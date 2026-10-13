@@ -55,6 +55,7 @@ run_case ok_case'
 }
 
 test_timed_out_barrier_exits_124_and_reaps_the_child() {
+  # shellcheck disable=SC2016 # script body is deliberately single-quoted
   run_scenario timed-out-barrier 'hung_case() {
   sleep 30 &
   local pid=$!
@@ -86,6 +87,7 @@ test_timed_out_child_does_not_hold_the_pipe_open() {
 }
 
 test_exit_removes_registered_fixtures_after_preserving() {
+  # shellcheck disable=SC2016 # script body is deliberately single-quoted
   run_scenario cleanup-on-exit 'extra=$(fm_test_tmproot fm-hold-diag-extra)
 echo "$extra" > "$TMP_ROOT/extra-path"
 : > "$extra/lock-evidence.lock"
@@ -101,6 +103,7 @@ exit 4'
 
 test_term_snapshots_before_cleanup() {
   local dir="$TMP_ROOT/term" extra
+  # shellcheck disable=SC2016 # script body is deliberately single-quoted
   run_scenario term 'extra=$(fm_test_tmproot fm-hold-diag-term)
 echo "$extra" > "$TMP_ROOT/extra-path"
 TMP_ROOT=$extra
