@@ -327,10 +327,18 @@ while [ "\$#" -gt 0 ]; do
 done
 shift
 case "\$*" in
-  *personal-use*) printf 'resource:cpu=1 gpu=0\\n'; exit 0 ;;
+  *personal-use*)
+    if [ -f "$dir/active-suite" ]; then
+      printf 'test-suite-active\\nresource:cpu=1 gpu=0\\n'
+    else
+      printf 'resource:cpu=1 gpu=0\\n'
+    fi
+    exit 0
+    ;;
 esac
 cd "$dir/home" || exit 255
 exec 9>&1
+printf '%s\n' "\$*" >> "$dir/ssh.log"
 HOME="$dir/home" exec bash -c "\$*"
 SH
   cat > "$fakebin/rsync" <<SH
@@ -402,6 +410,37 @@ test_remote_run_passes_through_green_suite_and_json() {
     || fail "the relative --json artifact was not pulled back from the PC02 mirror as valid JSON: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
+}
+
+test_remote_invocation_is_serial_and_script_bounded() {
+  local dir fakebin fixture out status
+  command -v rsync >/dev/null 2>&1 || { pass "skip: rsync not installed"; return; }
+  dir="$TMP_ROOT/remote-bounds"
+  fakebin=$(fake_pc02 "$dir")
+  printf '#!/usr/bin/env bash\necho "ok - bounded fixture"\n' > "$dir/bounded.test.sh"
+  chmod +x "$dir/bounded.test.sh"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    "$SCRIPT" "$dir/bounded.test.sh" --jobs 4 --per-script-timeout-secs 0 2>&1)
+  status=$?
+  expect_code 0 "$status" "the bounded remote fixture should pass: $out"
+  assert_contains "$(cat "$dir/ssh.log")" "--jobs 1 --per-script-timeout-secs 1500" \
+    "remote runs must override parallelism and disabled script bounds: $(cat "$dir/ssh.log")"
+  pass "remote offloads use one worker and the 1500-second per-script bound"
+}
+
+test_active_remote_suite_falls_back_locally() {
+  local dir fakebin out status
+  dir="$TMP_ROOT/remote-active"
+  fakebin=$(fake_pc02 "$dir")
+  touch "$dir/active-suite"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "an occupied PC02 must run locally: $out"
+  assert_contains "$out" "PC02 already has a test suite running" "active suite was not detected: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "an occupied host received a new remote run"
+  pass "an active PC02 test suite routes a second suite to PC01"
 }
 
 test_term_mid_remote_run_removes_mirror_and_kills_suite() {
@@ -486,6 +525,8 @@ test_unclear_resource_check_falls_back_to_local
 test_pc02_if_idle_flag_forwards_through_fm_test_run
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
+test_remote_invocation_is_serial_and_script_bounded
+test_active_remote_suite_falls_back_locally
 test_term_mid_remote_run_removes_mirror_and_kills_suite
 
 echo "# all fm-pc02-test-offload tests passed"
