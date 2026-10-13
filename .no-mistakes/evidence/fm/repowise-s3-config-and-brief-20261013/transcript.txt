@@ -1,0 +1,17 @@
+== enabled ship
+# Repository context
+Use the `repowise` skill for repository context when a question benefits from indexed history, co-change, blast radius, hotspots, or concept search.
+Run the RepoWise CLI only in this assigned checkout, and verify retrieved paths and claims against live files.
+Embedding endpoint: http://10.0.0.1:8090/v1/embeddings
+# Herdr lifecycle declaration - NOT ENABLED
+== enabled scout
+1
+== unlisted (substring)
+0
+== no config
+0
+== bad endpoint (space)
+warning: /tmp/tmp.Wf808D15gy/config/repowise needs an endpoint= line with a plain http(s) URL without spaces; no Repository context section added
+0
+== bad endpoint (shell meta)
+13:Embedding endpoint: http://a/$(id)`x`
