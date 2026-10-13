@@ -1805,6 +1805,12 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-crew-state.test.sh"
       printf '%s\n' "__script__:fm-crew-state-ci.test.sh"
       ;;
+    tests/fm-hold-diagnostics-lib.sh)
+      # Shared diagnostics harness sourced by the lifecycle test and its own
+      # behavioral test; a change to it must re-run both.
+      printf '%s\n' "__script__:fm-hold-diagnostics.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-lifecycle.test.sh"
+      ;;
     tests/*.test.sh)
       # A single test file change selects only that script via basename family
       # resolution in the caller; emit a marker family of __script__
