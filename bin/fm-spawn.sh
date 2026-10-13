@@ -48,6 +48,9 @@
 #   base_branch= in state/<id>.meta, which a relaunch reuses and later review and
 #   cleanup read; it is refused on secondmates and relaunches, and without it
 #   nothing changes.
+#   config/repowise (projects=<name>[,<name>...], exact names; endpoint= is ignored;
+#   absent means none) makes a spawn for a listed project exclude .repowise/ from
+#   git status in the worker's work area.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
 #   first in the private launch-brief overlay, including the exact task-owned
 #   steering inbox. This never rewrites a project's instruction files or a
@@ -4889,6 +4892,28 @@ exclude_path() {
   mkdir -p "$(dirname "$EXCL")"
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >>"$EXCL"
 }
+# A project named in config/repowise's projects= list (comma-separated exact
+# names; other keys such as endpoint= are ignored) keeps its RepoWise index out
+# of git status, so it never reads as an untracked change or blocks teardown's
+# dirty check.
+repowise_project_listed() {
+  local name=$1 line item
+  [ -f "$CONFIG/repowise" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+      projects=*)
+        local IFS=,
+        for item in ${line#projects=}; do
+          [ "$item" = "$name" ] && return 0
+        done
+        ;;
+    esac
+  done <"$CONFIG/repowise"
+  return 1
+}
+if [ "$KIND" != secondmate ] && repowise_project_listed "$(basename "$PROJ_ABS")"; then
+  exclude_path '.repowise/'
+fi
 if [ "$RELAUNCH" -eq 1 ]; then
   # Retire the previous incarnation's per-task harness wiring before arming the
   # new one. Without this, a harness switch would leave the old adapter's hook

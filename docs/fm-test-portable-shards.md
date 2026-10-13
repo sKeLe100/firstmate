@@ -150,7 +150,7 @@ This fork keeps two measured normal-tier overrides, each still a hang tripwire r
 | Job | Bound | Rationale |
 |---|---|---|
 | lint partitions | 45 minutes | This fork's merged script set measured 20-22 minutes on main and overran a 25-minute cap on the 2026-09-14 upstream sync. |
-| portable serial 1-9 | job 40 minutes; per-script bound derived by `bin/fm-test-run.sh` | A merged lane previously measured 26.5 minutes. The per-script bound remains a second tripwire derived at `PORTABLE_SERIAL_TIMEOUT_MULTIPLIER` (2x) the slowest hint, currently 2 x 697969 ms rounded up to 1396s, so a wedged script fails with captured output before the job cap. Pass `--per-script-timeout-secs` explicitly to override it for one invocation. |
+| portable serial 1-9 | job 40 minutes; per-script bound derived by `bin/fm-test-run.sh` | A merged lane previously measured 26.5 minutes. The per-script bound remains a second tripwire derived at `PORTABLE_SERIAL_TIMEOUT_MULTIPLIER` (2x) the slowest hint, currently 2 x 1074843 ms rounded up to 2150s, so a wedged script fails with captured output before the job cap. Pass `--per-script-timeout-secs` explicitly to override it for one invocation. |
 
 The fork also removed the macOS stock Bash job (the workflow's own comment owns that ruling), so it belongs to no tier.
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) holds the executable values and names each job's tier or fork override beside its `timeout-minutes`; `bin/fm-test-run.sh` owns the portable-serial per-script bound, derived from the hint table so it cannot lose margin independently of a hint refresh.

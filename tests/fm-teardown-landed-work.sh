@@ -557,6 +557,32 @@ assert_dirty_diagnostic() {
   pass "$kind/$mode: dirty refusal classifies leftovers and preserves work"
 }
 
+test_repowise_index_only_worktree_is_not_unlanded_work() {
+  local case_dir rc excl
+  case_dir=$(make_case repowise-only)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  mkdir "$case_dir/wt/.repowise"
+  touch "$case_dir/wt/.repowise/x"
+
+  # Without the spawn-time exclusion the index shows as untracked and refuses.
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 1 "$rc" "repowise-only: an unexcluded .repowise/ must still refuse"
+  grep -Fq '.repowise/' "$case_dir/stderr" || fail "repowise-only: refusal did not name .repowise/"
+
+  # With the exclusion fm-spawn writes for a config/repowise project, it is ignored.
+  excl=$(git -C "$case_dir/wt" rev-parse --git-path info/exclude)
+  mkdir -p "$(dirname "$excl")"
+  echo '.repowise/' >> "$excl"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "repowise-only: an excluded .repowise/ must not count as unlanded work"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "repowise-only: REFUSED printed for an excluded .repowise/"
+  pass "a ship worktree holding only an excluded .repowise/ passes the dirty check"
+}
+
 test_untracked_only_refusal_diagnostic() {
   assert_dirty_diagnostic untracked no-mistakes
   assert_dirty_diagnostic untracked local-only

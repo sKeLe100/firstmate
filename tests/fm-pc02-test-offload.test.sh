@@ -52,6 +52,43 @@ test_lane_occupied_falls_back_to_local() {
   pass "a live PC02 LLM lane falls back to a local run without touching ssh"
 }
 
+test_missing_supervising_home_falls_back_to_local() {
+  local out status
+  out=$(PATH="/nonexistent-so-ssh-is-absent:$PATH" FM_HOME="$TMP_ROOT/no-supervising-home" \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a missing supervising home must still run locally: $out"
+  assert_contains "$out" "state directory is unavailable or unreadable" \
+    "missing-home fallback did not preserve the fail-closed lane result: $out"
+  assert_contains "$out" "PC02 lane check reported" "missing-home fallback did not explain the local route: $out"
+  pass "a missing supervising home refuses the lane probe and falls back locally"
+}
+
+test_supervising_home_is_passed_to_lane_probe() {
+  local home fakebin out status
+  home="$TMP_ROOT/supervising-home"
+  mkdir -p "$home/state"
+  fakebin=$(fm_fakebin "$TMP_ROOT/supervising-home-tools")
+  cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf 'resource:cpu=1 gpu=0\n'
+exit 0
+SH
+  cat > "$fakebin/rsync" <<'SH'
+#!/usr/bin/env bash
+exit 11
+SH
+  chmod +x "$fakebin/ssh" "$fakebin/rsync"
+
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a readable supervising home should permit the remaining offload checks: $out"
+  assert_contains "$out" "rsync to PC02 failed or timed out" \
+    "the lane probe did not read the supplied supervising home before continuing: $out"
+  pass "the offload probe scans the supplied supervising home before checking PC02"
+}
+
 test_unreachable_host_falls_back_to_local() {
   local fakebin out status
   fakebin=$(fm_fakebin "$TMP_ROOT/unreachable")
@@ -290,10 +327,18 @@ while [ "\$#" -gt 0 ]; do
 done
 shift
 case "\$*" in
-  *personal-use*) printf 'resource:cpu=1 gpu=0\\n'; exit 0 ;;
+  *personal-use*)
+    if [ -f "$dir/active-suite" ]; then
+      printf 'test-suite-active\\nresource:cpu=1 gpu=0\\n'
+    else
+      printf 'resource:cpu=1 gpu=0\\n'
+    fi
+    exit 0
+    ;;
 esac
 cd "$dir/home" || exit 255
 exec 9>&1
+printf '%s\n' "\$*" >> "$dir/ssh.log"
 HOME="$dir/home" exec bash -c "\$*"
 SH
   cat > "$fakebin/rsync" <<SH
@@ -367,6 +412,37 @@ test_remote_run_passes_through_green_suite_and_json() {
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
 }
 
+test_remote_invocation_is_serial_and_script_bounded() {
+  local dir fakebin fixture out status
+  command -v rsync >/dev/null 2>&1 || { pass "skip: rsync not installed"; return; }
+  dir="$TMP_ROOT/remote-bounds"
+  fakebin=$(fake_pc02 "$dir")
+  printf '#!/usr/bin/env bash\necho "ok - bounded fixture"\n' > "$dir/bounded.test.sh"
+  chmod +x "$dir/bounded.test.sh"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    "$SCRIPT" "$dir/bounded.test.sh" --jobs 4 --per-script-timeout-secs 0 2>&1)
+  status=$?
+  expect_code 0 "$status" "the bounded remote fixture should pass: $out"
+  assert_contains "$(cat "$dir/ssh.log")" "--jobs 1 --per-script-timeout-secs 1500" \
+    "remote runs must override parallelism and disabled script bounds: $(cat "$dir/ssh.log")"
+  pass "remote offloads use one worker and the 1500-second per-script bound"
+}
+
+test_active_remote_suite_falls_back_locally() {
+  local dir fakebin out status
+  dir="$TMP_ROOT/remote-active"
+  fakebin=$(fake_pc02 "$dir")
+  touch "$dir/active-suite"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "an occupied PC02 must run locally: $out"
+  assert_contains "$out" "PC02 already has a test suite running" "active suite was not detected: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "an occupied host received a new remote run"
+  pass "an active PC02 test suite routes a second suite to PC01"
+}
+
 test_term_mid_remote_run_removes_mirror_and_kills_suite() {
   local dir fakebin fixture pid status _
   command -v rsync >/dev/null 2>&1 || { pass "skip: rsync not installed"; return; }
@@ -433,6 +509,8 @@ test_pc02_if_idle_flag_forwards_through_fm_test_run() {
 test_help_prints_the_whole_documented_contract
 test_disable_env_var_skips_every_pc02_check
 test_lane_occupied_falls_back_to_local
+test_missing_supervising_home_falls_back_to_local
+test_supervising_home_is_passed_to_lane_probe
 test_unreachable_host_falls_back_to_local
 test_missing_required_tool_falls_back_to_local
 test_slow_probe_times_out_and_falls_back
@@ -447,6 +525,8 @@ test_unclear_resource_check_falls_back_to_local
 test_pc02_if_idle_flag_forwards_through_fm_test_run
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
+test_remote_invocation_is_serial_and_script_bounded
+test_active_remote_suite_falls_back_locally
 test_term_mid_remote_run_removes_mirror_and_kills_suite
 
 echo "# all fm-pc02-test-offload tests passed"

@@ -68,6 +68,21 @@ test_free_when_no_pc02_meta_exists() {
   pass "PC02 lane reads free when no task holds a pc02-llamaswap meta"
 }
 
+test_explicit_home_is_scanned() {
+  local rec home fakebin out status
+  rec=$(make_home explicit-home)
+  IFS='|' read -r home fakebin <<< "$rec"
+  write_meta "$home" pc02-holder pc02-llamaswap/qwen3.6-27b-dispatch
+
+  out=$(FM_HOME="$TMP_ROOT/other-home" FM_ROOT_OVERRIDE='' \
+    PATH="$fakebin:$PATH" TMUX="fake,1,0" FM_FAKE_WINDOWS="fm-pc02-holder" \
+    "$SCRIPT" --home "$home" 2>&1)
+  status=$?
+  expect_code 1 "$status" "an explicitly passed home must be scanned: $out"
+  assert_contains "$out" "occupied: pc02-holder" "explicit home was not used: $out"
+  pass "an explicit supervising home selects the lane occupancy state"
+}
+
 test_occupied_when_pc02_lane_alive() {
   local rec home fakebin out status
   rec=$(make_home alive)
@@ -157,8 +172,31 @@ test_missing_state_dir_refuses_instead_of_reading_free() {
     PATH="$fakebin:$PATH" TMUX="fake,1,0" "$SCRIPT" 2>&1)
   status=$?
   expect_code 2 "$status" "a missing state directory must refuse, not read free: $out"
-  assert_contains "$out" "state directory is unavailable" "missing state dir lacked a concrete diagnostic: $out"
+  assert_contains "$out" "state directory is unavailable or unreadable" "missing state dir lacked a concrete diagnostic: $out"
   pass "a missing state directory refuses instead of silently reading free"
+}
+
+test_unreadable_state_dir_refuses_instead_of_reading_free() {
+  local rec home fakebin out status state
+  rec=$(make_home unreadable)
+  IFS='|' read -r home fakebin <<< "$rec"
+  state="$home/state"
+  chmod 000 "$state"
+  if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
+    chmod 755 "$TMP_ROOT" "$TMP_ROOT/unreadable" "$home"
+    out=$(runuser -u nobody -- env FM_HOME="$home" FM_ROOT_OVERRIDE='' \
+      PATH="$fakebin:$PATH" TMUX="fake,1,0" "$SCRIPT" 2>&1)
+    status=$?
+  else
+    out=$(FM_HOME="$home" FM_ROOT_OVERRIDE='' PATH="$fakebin:$PATH" \
+      TMUX="fake,1,0" "$SCRIPT" 2>&1)
+    status=$?
+  fi
+  chmod 700 "$state"
+  expect_code 2 "$status" "an unreadable state directory must refuse, not read free: $out"
+  assert_contains "$out" "state directory is unavailable or unreadable" \
+    "unreadable state dir lacked a concrete diagnostic: $out"
+  pass "an unreadable state directory refuses instead of silently reading free"
 }
 
 test_help_prints_the_whole_documented_contract() {
@@ -177,7 +215,9 @@ directory (never a silent free)." "--help truncated the exit-codes contract: $ou
 
 test_help_prints_the_whole_documented_contract
 test_free_when_no_pc02_meta_exists
+test_explicit_home_is_scanned
 test_missing_state_dir_refuses_instead_of_reading_free
+test_unreadable_state_dir_refuses_instead_of_reading_free
 test_non_opencode_harness_still_holds_pc02_lane
 test_stray_argument_is_a_usage_error
 test_occupied_when_pc02_lane_alive
