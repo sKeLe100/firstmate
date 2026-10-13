@@ -3,6 +3,11 @@
 # is simply a task waiting on the captain", its completion gate, its recorded
 # answers, the record-divergence guard over its two records, and the legacy
 # compatibility for pre-collapse decision identities.
+#
+# Each run appends per-case progress to $FM_TEST_DIAGNOSTIC_DIR/runs/*/cases.tsv
+# (default /tmp/fm-captain-hold-diagnostics-<uid>), and a failing or timed-out
+# run preserves a failure-* directory there; tests/fm-hold-diagnostics-lib.sh
+# owns the format and the bounded fixture waits.
 set -u
 
 # shellcheck source=tests/lib.sh
