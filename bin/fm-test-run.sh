@@ -1083,7 +1083,7 @@ tests/fm-sessionstart-nudge.test.sh 71802
 tests/fm-shared-captain-inheritance.test.sh 13218
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 67968
 tests/fm-spawn-compact-adviser-disable.test.sh 21654
-tests/fm-spawn-dispatch-profile.test.sh 197548
+tests/fm-spawn-dispatch-profile.test.sh 304123
 tests/fm-spawn-host-memory.test.sh 5440
 tests/fm-spawn-orca-worktree.test.sh 2400
 tests/fm-spawn-pc02-lane-guard.test.sh 11846
