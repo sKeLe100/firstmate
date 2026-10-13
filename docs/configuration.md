@@ -138,6 +138,7 @@ config/retry-thresholds  retry-loop relaunch/round ceilings; inherited; see "Ret
 config/herdr-presentation-spaces  Herdr visual projection on/off opt-in; inherited; see docs/herdr-backend.md "Presentation spaces"
 config/trace-context  W3C trace-context propagation flag; inherited; see "Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)"
 config/lavish-axi-host  per-machine Lavish server address exported into every worker launch; LOCAL, gitignored; inherited; see "Lavish server address (config/lavish-axi-host)"
+config/repowise  opted-in project names and embedding endpoint for worker briefs; LOCAL, gitignored; NOT inherited; see "RepoWise project opt-in (config/repowise)"
 config/upstream-autosync  upstream autosync auto-dispatch eligibility flag; inherited; see "Upstream autosync (config/upstream-autosync)"
 config/turnend-churn-absorb  opt-in absorb of bare turn-end wakes on pane churn; NOT inherited; see "Turn-end pane-churn absorb (config/turnend-churn-absorb)"
 config/wedge-defer-parked-gate  opt-in deferral of a wedge escalation for a lane parked at a validation gate awaiting the supervisor's own still-open decision; NOT inherited; see "Parked-gate wait deferral (config/wedge-defer-parked-gate)"
@@ -1213,6 +1214,22 @@ An absent or blank file changes nothing, while a present path that is not a read
 The text is static and never executed or expanded; secondmate charters never take it, and the file is local to each home rather than part of secondmate inherited configuration.
 
 `bin/fm-brief.sh`'s header owns the placement rule and its safety argument.
+
+## RepoWise project opt-in (config/repowise)
+
+The optional local, gitignored `config/repowise` opts named projects into RepoWise context in their worker briefs.
+It contains one `projects=` line with comma-separated project names and one `endpoint=` line with the HTTP(S) embedding endpoint.
+For example:
+
+```text
+projects=pt-tracker
+endpoint=http://100.67.55.77:8090/v1/embeddings
+```
+
+`bin/fm-brief.sh` adds a short `Repository context` section only when the brief's normalized project name exactly matches an entry and the endpoint is a plain HTTP(S) URL.
+An absent file or an unlisted project adds no section silently; a present file that is unreadable or lacks a valid `endpoint=` adds no section and prints a warning on stderr.
+The config is local to this home and is not inherited into secondmate homes.
+The [RepoWise skill](../.agents/skills/repowise/SKILL.md) owns worker retrieval behavior and safety checks.
 
 ## Worker launch environment (config/launch-env-allowlist)
 
