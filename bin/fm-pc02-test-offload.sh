@@ -185,7 +185,13 @@ command -v rsync >/dev/null 2>&1 || run_local "rsync not available on PC01"
 
 # 1. Is PC02 serving as an LLM right now? Reuse the fleet's existing
 # occupancy scan (local, bounded, no network) rather than a second detector.
-lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" 2>&1)
+# Pass the operational home explicitly: the test runner may execute from a
+# validation checkout that has code but no private state directory.
+if [ -n "${FM_HOME:-}" ]; then
+  lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" --home "$FM_HOME" 2>&1)
+else
+  lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" 2>&1)
+fi
 lane_rc=$?
 if [ "$lane_rc" -ne 0 ] || [ "$lane_out" != "free" ]; then
   run_local "PC02 lane check reported '$lane_out' (rc=$lane_rc)"
