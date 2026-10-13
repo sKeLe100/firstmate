@@ -3,6 +3,11 @@
 # is simply a task waiting on the captain", its completion gate, its recorded
 # answers, the record-divergence guard over its two records, and the legacy
 # compatibility for pre-collapse decision identities.
+#
+# Each run appends per-case progress to $FM_TEST_DIAGNOSTIC_DIR/runs/*/cases.tsv
+# (default /tmp/fm-captain-hold-diagnostics-<uid>), and a failing or timed-out
+# run preserves a failure-* directory there; tests/fm-hold-diagnostics-lib.sh
+# owns the format and the bounded fixture waits.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -10,11 +15,25 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$ROOT/bin/fm-timeout-lib.sh"
+# shellcheck source=tests/fm-hold-diagnostics-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-hold-diagnostics-lib.sh"
 
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
 BEARINGS="$ROOT/bin/fm-bearings-snapshot.sh"
 TMP_ROOT=$(fm_test_tmproot fm-captain-hold)
 TASKS_AXI_BIN=$(command -v tasks-axi || true)
+DIAGNOSTIC_ROOT=${FM_TEST_DIAGNOSTIC_DIR:-/tmp/fm-captain-hold-diagnostics-$(id -u)}
+RUN_TRACE_DIR="$DIAGNOSTIC_ROOT/runs/run-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+CASE_TRACE="$RUN_TRACE_DIR/cases.tsv"
+FM_TEST_LAST_COMMAND=initialization
+FM_TEST_ACTIVE_CASE=initialization
+mkdir -p "$RUN_TRACE_DIR"
+: > "$CASE_TRACE"
+
+set -T
+# shellcheck disable=SC2016 # expansion is deliberately deferred to trap time
+trap 'FM_TEST_LAST_COMMAND=$BASH_COMMAND' DEBUG
+fm_test_install_exit_traps
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
@@ -156,10 +175,10 @@ run_pr_merge() {  # <home> <id> <url>
 
 wait_for_test_file() {  # <path> <pid>
   local path=$1 pid=$2 i=0
-  while [ "$i" -lt 500 ]; do
+  while [ "$i" -lt 300 ]; do
     [ -e "$path" ] && return 0
     kill -0 "$pid" 2>/dev/null || return 1
-    sleep 0.01
+    sleep 0.1
     i=$((i + 1))
   done
   return 1
@@ -173,9 +192,12 @@ if [ "${FM_TEST_REUSE_TEARDOWN:-}" = 1 ] \
     && [ ! -e "${FM_TEST_REUSE_TEARDOWN_ONCE:-}" ]; then
   : > "$FM_TEST_REUSE_TEARDOWN_ONCE"
   : > "$FM_TEST_REUSE_TEARDOWN_READY"
-  while [ ! -e "$FM_TEST_REUSE_TEARDOWN_RELEASE" ]; do
-    "$FM_TEST_REAL_SLEEP" 0.01
+  i=0
+  while [ ! -e "$FM_TEST_REUSE_TEARDOWN_RELEASE" ] && [ "$i" -lt 300 ]; do
+    "$FM_TEST_REAL_SLEEP" 0.1
+    i=$((i + 1))
   done
+  [ -e "$FM_TEST_REUSE_TEARDOWN_RELEASE" ] || { echo "timed out waiting for teardown release barrier" >&2; exit 124; }
 fi
 exec "$FM_TEST_REAL_PERL" "$@"
 SH
@@ -185,9 +207,12 @@ if [ "${FM_TEST_REUSE_MERGE:-}" = 1 ] && [ "${1:-}" = 0.1 ] \
     && [ ! -e "${FM_TEST_REUSE_MERGE_ONCE:-}" ]; then
   : > "$FM_TEST_REUSE_MERGE_ONCE"
   : > "$FM_TEST_REUSE_MERGE_READY"
-  while [ ! -e "$FM_TEST_REUSE_MERGE_RELEASE" ]; do
-    "$FM_TEST_REAL_SLEEP" 0.01
+  i=0
+  while [ ! -e "$FM_TEST_REUSE_MERGE_RELEASE" ] && [ "$i" -lt 300 ]; do
+    "$FM_TEST_REAL_SLEEP" 0.1
+    i=$((i + 1))
   done
+  [ -e "$FM_TEST_REUSE_MERGE_RELEASE" ] || { echo "timed out waiting for merge release barrier" >&2; exit 124; }
 fi
 exec "$FM_TEST_REAL_SLEEP" "$@"
 SH
@@ -3740,7 +3765,7 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
   teardown_pid=$!
   if ! wait_for_test_file "$teardown_ready" "$teardown_pid"; then
     : > "$teardown_release"
-    wait "$teardown_pid" 2>/dev/null || true
+    bounded_fixture_wait "$teardown_pid" "teardown pid" 60 || true
     fail "forced PR cleanup did not reach its task-locked synchronization point"
   fi
 
@@ -3753,19 +3778,19 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
   if ! wait_for_test_file "$merge_ready" "$merge_pid"; then
     : > "$teardown_release"
     : > "$merge_release"
-    wait "$teardown_pid" 2>/dev/null || true
-    wait "$merge_pid" 2>/dev/null || true
+    bounded_fixture_wait "$teardown_pid" "teardown pid" 60 || true
+    bounded_fixture_wait "$merge_pid" "merge pid" 60 || true
     fail "the PR merge did not wait behind forced cleanup"
   fi
 
   : > "$teardown_release"
   set +e
-  wait "$teardown_pid"
+  bounded_fixture_wait "$teardown_pid" "teardown pid" 60
   teardown_rc=$?
   set -e
   if [ "$teardown_rc" -ne 0 ]; then
     : > "$merge_release"
-    wait "$merge_pid" 2>/dev/null || true
+    bounded_fixture_wait "$merge_pid" "merge pid" 60 || true
     fail "forced PR cleanup failed before the task could be reused: $(cat "$home/reuse-teardown.err")"
   fi
 
@@ -3780,7 +3805,7 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
   tasks_in "$home" start "$id" >/dev/null || fail "could not start the reused PR task"
   : > "$merge_release"
   set +e
-  wait "$merge_pid"
+  bounded_fixture_wait "$merge_pid" "merge pid" 60
   merge_rc=$?
   set -e
 
@@ -3830,7 +3855,7 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
   local_teardown_pid=$!
   if ! wait_for_test_file "$local_teardown_ready" "$local_teardown_pid"; then
     : > "$local_teardown_release"
-    wait "$local_teardown_pid" 2>/dev/null || true
+    bounded_fixture_wait "$local_teardown_pid" "local teardown pid" 60 || true
     fail "forced local cleanup did not reach its task-locked synchronization point"
   fi
 
@@ -3848,19 +3873,19 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
   if ! wait_for_test_file "$local_merge_ready" "$local_merge_pid"; then
     : > "$local_teardown_release"
     : > "$local_merge_release"
-    wait "$local_teardown_pid" 2>/dev/null || true
-    wait "$local_merge_pid" 2>/dev/null || true
+    bounded_fixture_wait "$local_teardown_pid" "local teardown pid" 60 || true
+    bounded_fixture_wait "$local_merge_pid" "local merge pid" 60 || true
     fail "the local merge did not wait behind forced cleanup"
   fi
 
   : > "$local_teardown_release"
   set +e
-  wait "$local_teardown_pid"
+  bounded_fixture_wait "$local_teardown_pid" "local teardown pid" 60
   local_teardown_rc=$?
   set -e
   if [ "$local_teardown_rc" -ne 0 ]; then
     : > "$local_merge_release"
-    wait "$local_merge_pid" 2>/dev/null || true
+    bounded_fixture_wait "$local_merge_pid" "local merge pid" 60 || true
     fail "forced local cleanup failed before the task could be reused: $(cat "$local_home/reuse-teardown.err")"
   fi
 
@@ -3882,7 +3907,7 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
     || fail "could not start the reused local task"
   : > "$local_merge_release"
   set +e
-  wait "$local_merge_pid"
+  bounded_fixture_wait "$local_merge_pid" "local merge pid" 60
   local_merge_rc=$?
   set -e
   after=$(git -C "$local_new_repo" rev-parse main)
@@ -3934,7 +3959,9 @@ if [ "${1:-}" = -qxF ] && [ "${2:-}" = "pr=${FM_TEST_RACE_PR_URL:-}" ] \
     && [ "${3:-}" = "${FM_TEST_RACE_PR_META:-}" ]; then
   "$FM_TEST_REAL_GREP" "$@" || exit $?
   : > "$FM_TEST_RACE_READY"
-  while [ ! -e "$FM_TEST_RACE_RELEASE" ]; do sleep 0.01; done
+  i=0
+  while [ ! -e "$FM_TEST_RACE_RELEASE" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$FM_TEST_RACE_RELEASE" ] || { echo "timed out waiting for PR metadata release barrier" >&2; exit 124; }
   exit 0
 fi
 exec "$FM_TEST_REAL_GREP" "$@"
@@ -3954,7 +3981,7 @@ SH
   done
   if [ ! -e "$ready" ]; then
     : > "$release"
-    wait "$merge_pid" 2>/dev/null || true
+    bounded_fixture_wait "$merge_pid" "merge pid" 60 || true
     fail "the PR merge did not reach the post-metadata synchronization point"
   fi
   set +e
@@ -3965,7 +3992,7 @@ SH
   teardown_rc=$?
   set -e
   : > "$release"
-  wait "$merge_pid"
+  bounded_fixture_wait "$merge_pid" "merge pid" 60
   merge_rc=$?
 
   # Without early lock ownership, forced cleanup succeeds after metadata is
@@ -4012,7 +4039,9 @@ SH
 if [ "$*" = "-C ${FM_TEST_RACE_REPO:-} rev-parse --short main" ]; then
   output=$("$FM_TEST_REAL_GIT" "$@") || exit $?
   : > "$FM_TEST_RACE_READY"
-  while [ ! -e "$FM_TEST_RACE_RELEASE" ]; do sleep 0.01; done
+  i=0
+  while [ ! -e "$FM_TEST_RACE_RELEASE" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$FM_TEST_RACE_RELEASE" ] || { echo "timed out waiting for local validation release barrier" >&2; exit 124; }
   printf '%s\n' "$output"
   exit 0
 fi
@@ -4037,7 +4066,7 @@ SH
   done
   if [ ! -e "$local_ready" ]; then
     : > "$local_release"
-    wait "$local_pid" 2>/dev/null || true
+    bounded_fixture_wait "$local_pid" "local pid" 60 || true
     fail "the local merge did not reach the post-validation synchronization point"
   fi
   set +e
@@ -4048,7 +4077,7 @@ SH
   local_teardown_rc=$?
   set -e
   : > "$local_release"
-  wait "$local_pid"
+  bounded_fixture_wait "$local_pid" "local pid" 60
   local_merge_rc=$?
   after=$(git -C "$local_repo" rev-parse main)
 
@@ -4757,66 +4786,66 @@ SH
   pass "marked hold reasons round-trip through public reads, fleet, startup, and return without changing other fields"
 }
 
-test_hold_reason_round_trips_awkward_characters
-test_hold_origins_precede_backend_holds
-test_historical_self_inventory_has_workable_repair
-test_inventory_compares_backend_identities
-test_origin_is_never_its_own_inventory_entry
-test_complete_refuses_an_entry_held_for_another_origin
-test_uninventoried_report_decision_refuses_completion
-test_hold_decodes_a_bare_scalar_body_without_the_nonref_default
-test_retained_body_keeps_its_utf8_bytes
-test_completion_gate_attests_and_transfers
-test_answer_records_and_closes
-test_answer_refuses_when_endpoint_is_alive
-test_since_stamp_survives_awkward_titles
-test_release_frees_held_work
-test_hold_stamp_precedes_hold_visibility
-test_interrupted_answer_preserves_hold_age
-test_deferral_leaves_captains_call_until_due
-test_out_of_band_close_is_recordable
-test_visual_review_uses_shared_completion_owner
-test_none_inventory_and_resolved_prose_do_not_create_holds
-test_terminal_single_owner_status_decision_does_not_block_empty_inventory
-test_secondmate_hold_stays_in_authoritative_home
-test_secondmate_home_publishes_holds_and_answers
-test_secondmate_reconcile_publishes_before_request_retirement
-test_bound_channel_answers_close_at_answer_time
-test_reconcile_never_closes_through_the_keyed_answer_intake
-test_normal_answers_retire_pending_reconcile_requests
-test_reconcile_closes_with_evidence_or_keeps_the_call_open
-test_reconcile_outcomes_retry_partial_failures_once
-test_unbound_source_closes_no_hold
-test_legacy_identities_keep_working
-test_board_answer_reaches_the_keyed_answer_intake
-test_chat_channel_feeds_the_same_keyed_answer_intake
-test_origin_slug_validation_precedes_path_construction
-test_status_resolution_over_an_open_hold_is_signalled
-test_legitimate_holds_produce_no_divergence_signal
-test_teardown_never_closes_a_captain_held_task
-test_retained_row_artifacts_survive_captain_answers
-test_interrupted_cleanup_keeps_the_captain_call_recoverable
-test_answer_before_cleanup_replay_preserves_the_retained_report
-test_answer_before_cleanup_replay_notes_a_retained_gerrit_change
-test_unusable_pending_close_record_names_its_reason
-test_relocated_report_does_not_wedge_an_answer_before_replay
-test_teardown_retains_captain_calls_in_a_relocated_backlog
-test_teardown_retains_a_gerrit_captain_call_with_its_change_url
-test_merge_approval_releases_before_zero_done_retention
-test_pr_merge_entrypoint_refuses_a_captain_held_task
-test_local_merge_entrypoint_refuses_a_captain_held_task
-test_pr_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one
-test_local_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one
-test_merge_entrypoints_validate_identity_and_state_before_locking
-test_merge_entrypoints_refuse_a_reused_task_incarnation
-test_merge_entrypoints_serialize_forced_teardown_before_task_reads
-test_released_merge_passes_the_entrypoint_and_lands
-test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read
-test_verify_resolves_a_hold_migrated_to_beads_notes
-test_verify_resolves_a_hold_migrated_under_the_configured_prefix
-test_marker_noted_row_wins_over_a_prefix_namesake
-test_complete_accepts_a_migrated_inventory_on_beads
-test_verify_names_the_unresolvable_legacy_id_once
-test_verify_resolves_a_pre_collapse_key_through_its_derived_marker
-test_captain_hold_mutations_address_the_beads_backend
-test_hold_creates_a_captain_row_when_beads_requires_due_without_custom_type
+run_case test_hold_reason_round_trips_awkward_characters
+run_case test_hold_origins_precede_backend_holds
+run_case test_historical_self_inventory_has_workable_repair
+run_case test_inventory_compares_backend_identities
+run_case test_origin_is_never_its_own_inventory_entry
+run_case test_complete_refuses_an_entry_held_for_another_origin
+run_case test_uninventoried_report_decision_refuses_completion
+run_case test_hold_decodes_a_bare_scalar_body_without_the_nonref_default
+run_case test_retained_body_keeps_its_utf8_bytes
+run_case test_completion_gate_attests_and_transfers
+run_case test_answer_records_and_closes
+run_case test_answer_refuses_when_endpoint_is_alive
+run_case test_since_stamp_survives_awkward_titles
+run_case test_release_frees_held_work
+run_case test_hold_stamp_precedes_hold_visibility
+run_case test_interrupted_answer_preserves_hold_age
+run_case test_deferral_leaves_captains_call_until_due
+run_case test_out_of_band_close_is_recordable
+run_case test_visual_review_uses_shared_completion_owner
+run_case test_none_inventory_and_resolved_prose_do_not_create_holds
+run_case test_terminal_single_owner_status_decision_does_not_block_empty_inventory
+run_case test_secondmate_hold_stays_in_authoritative_home
+run_case test_secondmate_home_publishes_holds_and_answers
+run_case test_secondmate_reconcile_publishes_before_request_retirement
+run_case test_bound_channel_answers_close_at_answer_time
+run_case test_reconcile_never_closes_through_the_keyed_answer_intake
+run_case test_normal_answers_retire_pending_reconcile_requests
+run_case test_reconcile_closes_with_evidence_or_keeps_the_call_open
+run_case test_reconcile_outcomes_retry_partial_failures_once
+run_case test_unbound_source_closes_no_hold
+run_case test_legacy_identities_keep_working
+run_case test_board_answer_reaches_the_keyed_answer_intake
+run_case test_chat_channel_feeds_the_same_keyed_answer_intake
+run_case test_origin_slug_validation_precedes_path_construction
+run_case test_status_resolution_over_an_open_hold_is_signalled
+run_case test_legitimate_holds_produce_no_divergence_signal
+run_case test_teardown_never_closes_a_captain_held_task
+run_case test_retained_row_artifacts_survive_captain_answers
+run_case test_interrupted_cleanup_keeps_the_captain_call_recoverable
+run_case test_answer_before_cleanup_replay_preserves_the_retained_report
+run_case test_answer_before_cleanup_replay_notes_a_retained_gerrit_change
+run_case test_unusable_pending_close_record_names_its_reason
+run_case test_relocated_report_does_not_wedge_an_answer_before_replay
+run_case test_teardown_retains_captain_calls_in_a_relocated_backlog
+run_case test_teardown_retains_a_gerrit_captain_call_with_its_change_url
+run_case test_merge_approval_releases_before_zero_done_retention
+run_case test_pr_merge_entrypoint_refuses_a_captain_held_task
+run_case test_local_merge_entrypoint_refuses_a_captain_held_task
+run_case test_pr_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one
+run_case test_local_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one
+run_case test_merge_entrypoints_validate_identity_and_state_before_locking
+run_case test_merge_entrypoints_refuse_a_reused_task_incarnation
+run_case test_merge_entrypoints_serialize_forced_teardown_before_task_reads
+run_case test_released_merge_passes_the_entrypoint_and_lands
+run_case test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read
+run_case test_verify_resolves_a_hold_migrated_to_beads_notes
+run_case test_verify_resolves_a_hold_migrated_under_the_configured_prefix
+run_case test_marker_noted_row_wins_over_a_prefix_namesake
+run_case test_complete_accepts_a_migrated_inventory_on_beads
+run_case test_verify_names_the_unresolvable_legacy_id_once
+run_case test_verify_resolves_a_pre_collapse_key_through_its_derived_marker
+run_case test_captain_hold_mutations_address_the_beads_backend
+run_case test_hold_creates_a_captain_row_when_beads_requires_due_without_custom_type
