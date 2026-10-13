@@ -1,0 +1,10 @@
+ok - claude hooks open on UserPromptSubmit and close on Stop, StopFailure, and SessionEnd
+ok - spawn excludes .repowise/ from git status only for projects listed in config/repowise
+
+ok - herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure
+ok - a ship worktree holding only an excluded .repowise/ passes the dirty check
+ok - gh lookup error with content not in default refuses (fail-safe)
+ok - --legacy-record teardown rolls its stamp back when the close marker write fails
+ok - a legacy stamp a failed rollback left behind still faces the endpoint gate
+ok - lock mtime read failures leave worktree index.lock in place and refuse teardown
+ok - transient index.lock cleared after first failed return is retried successfully without force-remove
