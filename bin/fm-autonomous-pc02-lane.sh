@@ -16,6 +16,9 @@
 #
 # Usage: fm-autonomous-pc02-lane.sh [--home <firstmate-home>]
 #
+# --home takes precedence over FM_HOME and reads <home>/state directly,
+# ignoring FM_STATE_OVERRIDE.
+#
 # Scans state/*.meta for a task whose meta shows a pc02-llamaswap/* model,
 # exactly as pc02_lane_guard matches. A match is occupied unless its
 # recorded endpoint reads back positively dead (fm_backend_agent_alive = dead); ambiguous or
@@ -36,7 +39,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
