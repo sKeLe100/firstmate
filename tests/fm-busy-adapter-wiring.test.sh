@@ -280,7 +280,7 @@ test_repowise_index_excluded_only_for_listed_projects() {
   local rec id out listed unlisted
   rec=$(make_spawn_case repowise-listed claude busy-rw-1)
   read_case_record "$rec"
-  printf '%s\n' "$(basename "$PROJ_DIR")" > "$HOME_DIR/config/repowise"
+  printf 'endpoint=http://127.0.0.1:1/v1\nprojects=other-a,%s\n' "$(basename "$PROJ_DIR")" > "$HOME_DIR/config/repowise"
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" busy-rw-1 "$PROJ_DIR")
   expect_code 0 $? "listed-project spawn should succeed: $out"
   listed=$WT_DIR
@@ -292,7 +292,7 @@ test_repowise_index_excluded_only_for_listed_projects() {
   id=busy-rw-2
   rec=$(make_spawn_case repowise-unlisted claude "$id")
   read_case_record "$rec"
-  printf '%s\n' 'some-other-project' > "$HOME_DIR/config/repowise"
+  printf 'endpoint=%s\nprojects=some-other-project\n' "$(basename "$PROJ_DIR")" > "$HOME_DIR/config/repowise"
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
   expect_code 0 $? "unlisted-project spawn should succeed: $out"
   unlisted=$WT_DIR
