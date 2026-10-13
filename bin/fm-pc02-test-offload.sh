@@ -54,14 +54,14 @@
 # time budget the caller enforces, such as no-mistakes' 30-minute test-agent
 # deadline); the remote execution itself is still bounded
 # (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, enforced by `timeout` on PC02 itself so
-# the remote suite's process group is killed there rather than orphaned
+# the remote suite's session is killed there rather than orphaned
 # behind a dropped ssh client), and a run that hits this bound is reported
 # as a failure rather than silently doubling the budget with a second local
 # run. An orphaned background process a test leaves running can otherwise
 # hold the ssh channel open long after fm-test-run.sh itself has finished on
 # PC02 - observed empirically running this repo's own full --changed suite
 # through this script, not a hypothetical - so as soon as fm-test-run.sh
-# exits there, the rest of its process group is killed and its own exit code
+# exits there, the rest of its session is killed and its own exit code
 # is returned. The per-run PC02 mirror, and any of its processes still
 # running, are removed on every exit path, including an interrupt.
 #
@@ -133,6 +133,7 @@ HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-3600}"
+SCRIPT_TIMEOUT=1500
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
@@ -159,7 +160,7 @@ remove_remote_run() {
   REMOTE_RUN_CREATED=0
   local run_q cleanup_cmd
   run_q=$(printf '%q' "$REMOTE_RUN")
-  cleanup_cmd="[ -f $run_q/pgid ] && kill -KILL -- \"-\$(cat $run_q/pgid)\" 2>/dev/null; rm -rf $run_q"
+  cleanup_cmd="[ -f $run_q/pgid ] && pkill -KILL -s \"\$(cat $run_q/pgid)\" 2>/dev/null; rm -rf $run_q"
   timeout "$PROBE_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "$cleanup_cmd")" >/dev/null 2>&1 \
     || echo "fm-pc02-test-offload: could not remove PC02 mirror $REMOTE_RUN" >&2
 }
@@ -207,6 +208,7 @@ for t in $REQUIRED_TOOLS; do command -v "\$t" >/dev/null 2>&1 || echo "missing:\
 if ls_running=\$(curl -sf --connect-timeout 3 --max-time 5 $(printf '%q' "$LLAMASWAP_URL/running") 2>/dev/null); then
   echo "llama-swap-running:\$(printf '%s' "\$ls_running" | jq -r '.running | length' 2>/dev/null)"
 fi
+if pgrep -af '[f]m-test-run\\.sh' >/dev/null 2>&1; then echo "test-suite-active"; fi
 if [ -f "$RESOURCE_CHECK_PS1" ]; then
   rc_win_path=\$(wslpath -w "$RESOURCE_CHECK_PS1" 2>/dev/null)
   rc_out=\$(/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -File "\$rc_win_path" 2>/dev/null)
@@ -228,12 +230,14 @@ personal_use=0
 missing_tools=
 llama_swap_running=0
 resource_line=
+suite_active=0
 while IFS= read -r probe_line; do
   case "$probe_line" in
     personal-use:on) personal_use=1 ;;
     missing:*) missing_tools="$missing_tools ${probe_line#missing:}" ;;
     llama-swap-running:*) llama_swap_running="${probe_line#llama-swap-running:}" ;;
     resource:*) resource_line="${probe_line#resource:}" ;;
+    test-suite-active) suite_active=1 ;;
   esac
 done <<PROBE_OUT
 $probe_out
@@ -273,6 +277,7 @@ esac
 if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
 fi
+[ "$suite_active" -ne 1 ] || run_local "PC02 already has a test suite running"
 
 # 3. Mirror the current worktree onto PC02: working-tree files, this
 # worktree's own per-worktree git-dir (HEAD, index, refs, logs), and the
@@ -344,23 +349,28 @@ fi
 # Bounded by RUN_TIMEOUT on PC02 itself: an orphaned background process a
 # test leaves running there can hold the ssh channel open long after
 # fm-test-run.sh itself exits (see header), so this is not merely defensive.
-# The remote `timeout` kills the whole remote process group, and so does the
-# wrapper once fm-test-run.sh returns, so a straggler cannot pin the channel;
+# The remote `timeout` bounds the run; the wrapper kills its session when
+# fm-test-run.sh returns, including nested per-script timeout groups, so a
+# straggler cannot pin the channel;
 # the local one is only a backstop for a wedged ssh connection. A run
 # that hits this bound fails outright (exit 124) rather than falling back to
 # a second local run, which would silently double the caller's time budget.
 echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
-remote_suite_cmd="timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-test-run.sh"
+remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-test-run.sh"
 for a in "${ARGS[@]}"; do
   remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
 done
+remote_suite_cmd="$remote_suite_cmd --jobs 1"
+remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
+# Keep job control off: setsid must exec in place so $! is the session ID
+# written to pgid and used to clean up the complete suite session.
 remote_test_cmd="cd $(printf '%q' "$REMOTE_WORKTREE") || exit 1
 $remote_suite_cmd &
 pgid=\$!
 echo \"\$pgid\" > ../pgid
 wait \"\$pgid\"
 rc=\$?
-kill -KILL -- \"-\$pgid\" 2>/dev/null
+pkill -KILL -s \"\$pgid\" 2>/dev/null
 exit \"\$rc\""
 # shellcheck disable=SC2029 # deliberate client-side expansion: remote_test_cmd is already %q-quoted for the remote shell's re-parse.
 timeout "$((RUN_TIMEOUT + 30))" ssh "$HOST" "bash -lc $(printf '%q' "$remote_test_cmd")" &
