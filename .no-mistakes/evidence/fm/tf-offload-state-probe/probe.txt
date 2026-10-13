@@ -1,0 +1,20 @@
+## A: --home with empty state -> free
+free
+rc=0
+## B: FM_HOME env, cwd/root without state -> free
+free
+rc=0
+## C: unreadable/missing home -> refuse rc2
+fm-autonomous-pc02-lane.sh: state directory is unavailable or unreadable: /tmp/tmp.cmDnR4iQZd/nope/state
+rc=2
+## D: no FM_HOME, root w/o state -> refuse rc2
+fm-autonomous-pc02-lane.sh: state directory is unavailable or unreadable: /tmp/tmp.UzVcUK6NKC/state
+rc=2
+## E: occupied meta (remote_host) via --home
+occupied: t1
+rc=1
+## F: --home beats FM_HOME and FM_STATE_OVERRIDE
+occupied: t1
+rc=1
+## help
+18:--home takes precedence over FM_HOME and reads <home>/state directly,
