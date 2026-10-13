@@ -65,6 +65,21 @@
 # is returned. The per-run PC02 mirror, and any of its processes still
 # running, are removed on every exit path, including an interrupt.
 #
+# Remote run conditions (always applied to an offloaded run):
+#   - Serial, per-script bounded: the remote fm-test-run.sh is invoked with
+#     --jobs 1 and --per-script-timeout-secs 1500 appended, overriding any
+#     --jobs or --per-script-timeout-secs the caller passed, including larger
+#     values. The whole run stays capped by FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS
+#     (3600s); because the run is serialized, a large --all or --family run
+#     may exceed that cap and exit 124.
+#   - Host slot check: before mirroring, PC02 is probed for an already
+#     running test suite; if one is active the run falls back to local. This
+#     check is best-effort, not a reservation: it holds nothing, so two
+#     offloads probing at the same moment can both see an idle PC02 and both
+#     start. Any leftover process on PC02 whose command line mentions
+#     fm-test-run.sh also makes PC02 read as busy and routes the run to local
+#     fallback until it is gone.
+#
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
 #
