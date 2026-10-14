@@ -14,6 +14,8 @@ set -u
 SCRIPT="$ROOT/bin/fm-pc02-test-offload.sh"
 TMP_ROOT=$(fm_test_tmproot fm-pc02-test-offload)
 mkdir -p "$TMP_ROOT/empty-state"
+export FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9
+export FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1="$TMP_ROOT/no-such-resource-check.ps1"
 
 # --list-families is real, fast, deterministic, and independent of cwd
 # state, so it doubles as proof that a fallback path actually reached the
@@ -386,7 +388,6 @@ SH
   start=$(date +%s)
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
     "$SCRIPT" "$fixture" 2>&1)
   status=$?
   elapsed=$(( $(date +%s) - start ))
@@ -409,7 +410,6 @@ test_remote_run_passes_through_green_suite_and_json() {
   rm -f "$ROOT/$json_rel"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
     "$SCRIPT" "$dir/green.test.sh" --json "$json_rel" 2>&1)
   status=$?
   mv "$ROOT/$json_rel" "$dir/out.json" 2>/dev/null
@@ -429,7 +429,6 @@ test_remote_invocation_is_serial_and_script_bounded() {
   chmod +x "$dir/bounded.test.sh"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
     "$SCRIPT" "$dir/bounded.test.sh" --jobs 4 --per-script-timeout-secs 0 2>&1)
   status=$?
   expect_code 0 "$status" "the bounded remote fixture should pass: $out"
@@ -464,7 +463,6 @@ test_decoy_host_suite_does_not_affect_remote_probe() {
   decoy_pid=$!
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
     "$SCRIPT" "$dir/green.test.sh" 2>&1)
   status=$?
   kill "$decoy_pid" 2>/dev/null || true
@@ -492,7 +490,6 @@ SH
 
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
     "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
   pid=$!
   for _ in $(seq 1 300); do
