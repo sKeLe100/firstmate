@@ -337,11 +337,8 @@ done
 shift
 case "\$*" in
   *personal-use*)
-    if "\$FM_PC02_OFFLOAD_PGREP" -af '[f]m-test-run\\.sh' >/dev/null 2>&1; then
-      printf 'test-suite-active\\nresource:cpu=1 gpu=0\\n'
-    else
-      printf 'resource:cpu=1 gpu=0\\n'
-    fi
+    probe_out=\$(HOME="$dir/home" bash -c "\$*" 2>&1)
+    printf '%s\\n' "\${probe_out//resource:script-missing/resource:cpu=1 gpu=0}"
     exit 0
     ;;
 esac
