@@ -165,6 +165,33 @@ test_no_profile_keeps_claude_profile_defaults() {
   pass "no --model/--effort records defaults and types the claude launch instructions"
 }
 
+test_purpose_values_are_accepted_and_unknown_values_refused() {
+  local purpose rec id out status
+  for purpose in search web-research research design writing incident; do
+    id="purpose-$purpose-z1"
+    rec=$(make_spawn_case "purpose-$purpose" claude "$id")
+    read_case_record "$rec"
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR" --purpose "$purpose")
+    status=$?
+    expect_code 0 "$status" "spawn should accept --purpose $purpose: $out"
+    assert_grep "purpose=$purpose" "$HOME_DIR/state/$id.meta" \
+      "spawn did not record purpose=$purpose"
+  done
+
+  id='purpose-unknown-z1'
+  rec=$(make_spawn_case purpose-unknown claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --purpose unlisted 2>&1)
+  status=$?
+  expect_code 1 "$status" "spawn should refuse an unlisted purpose"
+  assert_contains "$out" "--purpose must be one of" \
+    "unknown-purpose refusal did not explain the accepted values"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "unknown purpose created task metadata"
+  pass "spawn records the added purpose values and refuses unknown values"
+}
+
 # Claude Code strips U+2063 from the launch-prompt argument, so a claude launch
 # publishes the launch-brief envelope as a record in the receiving home's
 # operational inbox and passes only a printable doorbell naming it. Parsing the
@@ -2392,6 +2419,7 @@ test_non_claude_harness_ignores_claude_remote_control() {
 }
 
 test_worker_launch_delivers_role_scope
+test_purpose_values_are_accepted_and_unknown_values_refused
 test_no_profile_keeps_claude_profile_defaults
 test_claude_launch_brief_publishes_record_doorbell
 test_claude_secondmate_launch_brief_publishes_into_its_own_home

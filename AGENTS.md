@@ -188,7 +188,7 @@ Classify the deliverable:
 
 Resolve every ship task's concrete delivery mode and `yolo` merge posture at intake.
 Pass the mode explicitly to the brief, and pass both values explicitly to the spawn and any scout promotion; each command refuses to guess the values it consumes.
-Also resolve a purpose class (code, planning, review, summarize, mechanical, investigation) for every dispatch and pass it to `fm-spawn.sh --purpose`, and when a fresh spawn replaces a failed attempt on the same backlog item, pass `--redelegated-from`/`--redelegation-reason` too, so the LLM usage telemetry archive stays complete (`docs/llm-usage-telemetry.md`).
+Also resolve a purpose class (code, planning, review, summarize, mechanical, investigation, search, web-research, research, design, writing, incident) for every dispatch and pass it to `fm-spawn.sh --purpose`, and when a fresh spawn replaces a failed attempt on the same backlog item, pass `--redelegated-from`/`--redelegation-reason` too, so the LLM usage telemetry archive stays complete (`docs/llm-usage-telemetry.md`).
 A current explicit captain instruction wins; otherwise the project's registry entry is the captain's standing posture, and dropping below its rigor needs a reason you can state.
 Resolve the project's registered ship-branch prefix the same way, via `bin/fm-project-mode.sh --branch-prefix <project>`, and pass it explicitly to the brief, ship spawn, and scout promotion as `--branch-prefix` (default `fm/` needs no flag).
 When the work must start from and target a branch other than the project's default, such as a named feature or release branch, pass it to the ship or scout brief and spawn as `--base-branch <branch>`; any promotion reads it from task meta.
