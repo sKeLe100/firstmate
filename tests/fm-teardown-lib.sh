@@ -152,13 +152,14 @@ SH
   printf '%s\n' "$case_dir"
 }
 
-# Write a meta file for the task. Args: case_dir mode kind
+# Write a meta file for the task. Args: case_dir mode kind [worktree]
 write_meta() {
   local case_dir=$1 mode=$2 kind=$3
+  local wt=${4:-$case_dir/wt}
   fm_write_meta "$case_dir/state/task-x1.meta" \
     "window=firstmate:fm-task-x1" \
     "endpoint_task_id=task-x1" \
-    "worktree=$case_dir/wt" \
+    "worktree=$wt" \
     "project=$case_dir/project" \
     "kind=$kind" \
     "mode=$mode" \
