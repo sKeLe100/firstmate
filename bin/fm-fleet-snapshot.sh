@@ -2016,6 +2016,8 @@ contribution_tasks_json() {
 
 if [ "$OUTPUT_MODE" = contribution-input ]; then
   # Reuse the canonical backlog parser, without observing workers or other homes.
+  # The backlog JSON can exceed Linux MAX_ARG_STRLEN (128 KiB) as one --argjson
+  # argument, so both documents ride temp files via --slurpfile instead of argv.
   contribution_tasks=$(contribution_tasks_json) || { echo "fm-fleet-snapshot: contribution task read failed" >&2; exit 1; }
   JSON_TRANSPORT_DIR=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/fm-fleet-snapshot.XXXXXX") \
     || { echo "fm-fleet-snapshot: contribution staging failed" >&2; exit 1; }
