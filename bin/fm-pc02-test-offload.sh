@@ -86,6 +86,8 @@
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
 #                                      PC02 check
+#   FM_PC02_OFFLOAD_PGREP              remote process-listing command
+#                                      (default: pgrep)
 #   FM_PC02_OFFLOAD_HOST                ssh target (default: pc02)
 #   FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS  bound for the reachability/personal-use/
 #                                      resource/tool probe and the post-sync
@@ -148,6 +150,7 @@ HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-3600}"
+REMOTE_PGREP="${FM_PC02_OFFLOAD_PGREP:-pgrep}"
 SCRIPT_TIMEOUT=1500
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
@@ -223,7 +226,7 @@ for t in $REQUIRED_TOOLS; do command -v "\$t" >/dev/null 2>&1 || echo "missing:\
 if ls_running=\$(curl -sf --connect-timeout 3 --max-time 5 $(printf '%q' "$LLAMASWAP_URL/running") 2>/dev/null); then
   echo "llama-swap-running:\$(printf '%s' "\$ls_running" | jq -r '.running | length' 2>/dev/null)"
 fi
-if pgrep -af '[f]m-test-run\\.sh' >/dev/null 2>&1; then echo "test-suite-active"; fi
+if $(printf '%q' "$REMOTE_PGREP") -af '[f]m-test-run\\.sh' >/dev/null 2>&1; then echo "test-suite-active"; fi
 if [ -f "$RESOURCE_CHECK_PS1" ]; then
   rc_win_path=\$(wslpath -w "$RESOURCE_CHECK_PS1" 2>/dev/null)
   rc_out=\$(/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -File "\$rc_win_path" 2>/dev/null)
