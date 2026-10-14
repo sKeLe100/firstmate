@@ -1029,7 +1029,7 @@ test_secondmate_claude_relaunch_keeps_local_settings() {
   dir=$(new_case smlocal sml)
   home="$dir/home"
   mkdir -p "$home/config" "$home/data/sml"
-  printf 'codex\n' > "$home/config/secondmate-harness"
+  printf 'codex gpt-5 high\n' > "$home/config/secondmate-harness"
   printf '# secondmate brief\n' > "$home/data/sml/brief.md"
   fm_git_worktree "$dir/proj" "$dir/smhome" sm-local-branch
   mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin" "$dir/smhome/.claude"

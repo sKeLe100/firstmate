@@ -461,6 +461,16 @@ seed_secondmate_home() { # <home> <id> [home Stop guard]
   local home=$1 id=$2 guard=${3:-$ROOT/bin/fm-turnend-guard.sh}
   mkdir -p "$home/bin" "$home/data" "$home/state" "$home/config" "$home/projects"
   cp "$guard" "$home/bin/fm-turnend-guard.sh"
+  # The fork keys primary scope to the library's physical checkout.
+  # Stage the guard's dependencies beside the fixture's own guard.
+  local name
+  for name in fm-supervision-lib.sh fm-primary-scope-lib.sh fm-hook-host-lib.sh \
+    fm-wake-lib.sh fm-path-lib.sh fm-session-lock-lib.sh fm-cursor-lib.sh \
+    fm-supervision-instructions.sh fm-supervision-engine-lib.sh fm-harness.sh; do
+    cp "$ROOT/bin/$name" "$home/bin/$name"
+  done
+  mkdir -p "$home/docs"
+  cp -R "$ROOT/docs/supervision-protocols" "$home/docs/supervision-protocols"
   printf '# Firstmate\n' > "$home/AGENTS.md"
   printf '%s\n' "$id" > "$home/.fm-secondmate-home"
   printf 'charter\n' > "$home/data/charter.md"
@@ -470,6 +480,10 @@ seed_secondmate_home() { # <home> <id> [home Stop guard]
 spawn_secondmate_harness() { # <case-dir> <id> <harness> [extra fake tools...]
   local case_dir=$1 id=$2 harness=$3 primary sm fakebin
   shift 3
+  local -a codex_axes=()
+  if [ "$harness" = codex ]; then
+    codex_axes=(--model gpt-5 --effort high)
+  fi
   primary="$case_dir/primary"
   sm="$case_dir/sm"
   mkdir -p "$case_dir"
@@ -482,7 +496,7 @@ spawn_secondmate_harness() { # <case-dir> <id> <harness> [extra fake tools...]
   fi
   : > "$case_dir/launch.log"
   FM_BACKEND=tmux FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" \
-    fm_test_run_spawn "$primary" "$sm" "$fakebin" "$id" "$sm" "$harness" --secondmate
+    fm_test_run_spawn "$primary" "$sm" "$fakebin" "$id" "$sm" "$harness" --secondmate "${codex_axes[@]}"
 }
 
 secondmate_stall_watch() { # <primary> <id> <out> [seconds]
@@ -576,7 +590,7 @@ test_secondmate_claude_spawn_arms_busy_for_the_stall_gate() {
 run_secondmate_stop_guard() { # <sm-home>
   printf '{"stop_hook_active":false,"session_id":"sm-guard"}' \
     | CLAUDECODE=1 FM_ROOT_OVERRIDE="$1" FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 \
-      bash "$ROOT/bin/fm-turnend-guard.sh" --claude >/dev/null 2>&1
+      bash "$1/bin/fm-turnend-guard.sh" --claude >/dev/null 2>&1
 }
 
 run_secondmate_local_stop_hooks() { # <settings-file>

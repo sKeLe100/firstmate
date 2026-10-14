@@ -97,6 +97,10 @@ seed_home() {  # <home> <id>
 
 spawn_mate() {  # <case> <id> <harness> <sleeper-dir> <shim-dir>
   local case_dir=$1 id=$2 harness=$3 sleeper=$4 shim=$5
+  local -a codex_axes=()
+  if [ "$harness" = codex ]; then
+    codex_axes=(--model gpt-5 --effort high)
+  fi
   local primary="$case_dir/primary" sm="$case_dir/sm" user_home="$case_dir/user-home"
   mkdir -p "$case_dir" "$user_home"
   fm_test_spawn_home "$primary" "$harness"
@@ -108,7 +112,7 @@ spawn_mate() {  # <case> <id> <harness> <sleeper-dir> <shim-dir>
     FM_SPAWN_NO_GUARD=1 \
     env -u TMUX -u TMUX_PANE \
     PATH="$sleeper:$shim:$PATH" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$sm" "$harness" --secondmate
+    "$ROOT/bin/fm-spawn.sh" "$id" "$sm" "$harness" --secondmate "${codex_axes[@]}"
 }
 
 # Start the real binary with no positional brief and no keystrokes.
