@@ -73,7 +73,7 @@ WebUI chats are out of scope here; the serving side classifies those
 |---|---|
 | `task_id` | the dispatched task's id |
 | `kind` | `ship` \| `scout` \| `secondmate` |
-| `purpose` | `code` \| `planning` \| `review` \| `summarize` \| `mechanical` \| `investigation` \| `unspecified` |
+| `purpose` | `code` \| `planning` \| `review` \| `summarize` \| `mechanical` \| `investigation` \| `search` \| `web-research` \| `research` \| `design` \| `writing` \| `incident` \| `unspecified` |
 | `harness` | resolved harness adapter name |
 | `model` | resolved model name, when the harness/profile carries one |
 | `effort` | resolved effort level, when the harness carries one |

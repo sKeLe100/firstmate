@@ -1115,7 +1115,7 @@ tests/fm-teardown-process-reap.sh 11300
 tests/fm-teardown-secondmate.sh 8200
 tests/fm-teardown.test.sh 202132
 tests/fm-test-fixture-cleanup.test.sh 1446
-tests/fm-test-fixtures.test.sh 1802
+tests/fm-test-fixtures.test.sh 6739
 tests/fm-test-isolation-proof.test.sh 2866
 tests/fm-test-sandbox-cache-race.test.sh 6604
 tests/fm-timeout-lib.test.sh 10750

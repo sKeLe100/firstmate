@@ -525,7 +525,7 @@
 #   identity is owned by the parent home that holds its task metadata, while the
 #   pane export happens on the remote host (bin/fm-remote-secondmate-control.sh).
 #   Local spawns never pass it and resolve their own carrier exactly as before.
-#   --purpose <code|planning|review|summarize|mechanical|investigation> tags a
+#   --purpose <code|planning|review|summarize|mechanical|investigation|search|web-research|research|design|writing|incident> tags a
 #   fresh ship/scout/secondmate dispatch for the LLM usage telemetry archive
 #   (docs/llm-usage-telemetry.md); omitted records "unspecified" and never
 #   blocks the spawn. A relaunch carries its task's existing purpose forward
@@ -965,8 +965,8 @@ esac
 # (docs/llm-usage-telemetry.md); it never blocks a spawn on its own, so an
 # omitted value records "unspecified" rather than refusing.
 case "$PURPOSE" in
-  ''|code|planning|review|summarize|mechanical|investigation) ;;
-  *) echo "error: --purpose must be one of code, planning, review, summarize, mechanical, investigation" >&2; exit 1 ;;
+  ''|code|planning|review|summarize|mechanical|investigation|search|web-research|research|design|writing|incident) ;;
+  *) echo "error: --purpose must be one of code, planning, review, summarize, mechanical, investigation, search, web-research, research, design, writing, incident" >&2; exit 1 ;;
 esac
 # --redelegated-from/--redelegation-reason record a delegation-chain event
 # (docs/llm-usage-telemetry.md) when this fresh spawn replaces a failed
