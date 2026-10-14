@@ -14,6 +14,8 @@ set -u
 SCRIPT="$ROOT/bin/fm-pc02-test-offload.sh"
 TMP_ROOT=$(fm_test_tmproot fm-pc02-test-offload)
 mkdir -p "$TMP_ROOT/empty-state"
+export FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9
+export FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1="$TMP_ROOT/no-such-resource-check.ps1"
 
 # --list-families is real, fast, deterministic, and independent of cwd
 # state, so it doubles as proof that a fallback path actually reached the
@@ -316,6 +318,15 @@ fake_pc02() {
   real_rsync=$(command -v rsync)
   fakebin=$(fm_fakebin "$dir")
   mkdir -p "$dir/home"
+  cat > "$fakebin/pgrep" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >> "$dir/pgrep.log"
+if [ -f "$dir/active-suite" ]; then
+  printf '%s\n' '123 fm-test-run.sh'
+  exit 0
+fi
+exit 1
+SH
   cat > "$fakebin/ssh" <<SH
 #!/usr/bin/env bash
 while [ "\$#" -gt 0 ]; do
@@ -328,11 +339,8 @@ done
 shift
 case "\$*" in
   *personal-use*)
-    if [ -f "$dir/active-suite" ]; then
-      printf 'test-suite-active\\nresource:cpu=1 gpu=0\\n'
-    else
-      printf 'resource:cpu=1 gpu=0\\n'
-    fi
+    probe_out=\$(HOME="$dir/home" bash -c "\$*" 2>&1)
+    printf '%s\\n' "\${probe_out//resource:script-missing/resource:cpu=1 gpu=0}"
     exit 0
     ;;
 esac
@@ -355,7 +363,7 @@ while [ "\$#" -gt 0 ]; do
 done
 exec "$real_rsync" "\${args[@]}"
 SH
-  chmod +x "$fakebin/ssh" "$fakebin/rsync"
+  chmod +x "$fakebin/pgrep" "$fakebin/ssh" "$fakebin/rsync"
   printf '%s\n' "$fakebin"
 }
 
@@ -379,7 +387,7 @@ SH
 
   start=$(date +%s)
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$fixture" 2>&1)
   status=$?
   elapsed=$(( $(date +%s) - start ))
@@ -401,7 +409,7 @@ test_remote_run_passes_through_green_suite_and_json() {
   json_rel=".fm-pc02-offload-test-$$.json"
   rm -f "$ROOT/$json_rel"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$dir/green.test.sh" --json "$json_rel" 2>&1)
   status=$?
   mv "$ROOT/$json_rel" "$dir/out.json" 2>/dev/null
@@ -420,7 +428,7 @@ test_remote_invocation_is_serial_and_script_bounded() {
   printf '#!/usr/bin/env bash\necho "ok - bounded fixture"\n' > "$dir/bounded.test.sh"
   chmod +x "$dir/bounded.test.sh"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$dir/bounded.test.sh" --jobs 4 --per-script-timeout-secs 0 2>&1)
   status=$?
   expect_code 0 "$status" "the bounded remote fixture should pass: $out"
@@ -435,12 +443,35 @@ test_active_remote_suite_falls_back_locally() {
   fakebin=$(fake_pc02 "$dir")
   touch "$dir/active-suite"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   expect_code 0 "$status" "an occupied PC02 must run locally: $out"
   assert_contains "$out" "PC02 already has a test suite running" "active suite was not detected: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "an occupied host received a new remote run"
   pass "an active PC02 test suite routes a second suite to PC01"
+}
+
+test_decoy_host_suite_does_not_affect_remote_probe() {
+  local dir fakebin decoy_pid out status
+  command -v rsync >/dev/null 2>&1 || { pass "skip: rsync not installed"; return; }
+  dir="$TMP_ROOT/remote-decoy-host-suite"
+  fakebin=$(fake_pc02 "$dir")
+  printf '#!/usr/bin/env bash\necho "ok - hermetic fixture"\n' > "$dir/green.test.sh"
+  chmod +x "$dir/green.test.sh"
+  bash -c 'exec -a fm-test-run.sh sleep 30' &
+  decoy_pid=$!
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "$dir/green.test.sh" 2>&1)
+  status=$?
+  kill "$decoy_pid" 2>/dev/null || true
+  wait "$decoy_pid" 2>/dev/null || true
+  expect_code 0 "$status" "a host decoy suite must not affect the fake PC02 process probe: $out"
+  assert_contains "$out" "PC02 idle and ready; running tests remotely" \
+    "the fixture read the host process table instead of its fake process listing: $out"
+  [ -s "$dir/pgrep.log" ] || fail "the remote process check did not use the fixture's fake pgrep"
+  pass "a real host process matching fm-test-run.sh cannot affect the fake PC02 process probe"
 }
 
 test_term_mid_remote_run_removes_mirror_and_kills_suite() {
@@ -458,7 +489,7 @@ SH
   chmod +x "$fixture"
 
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9 \
+    FM_PC02_OFFLOAD_PGREP="$fakebin/pgrep" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
   pid=$!
   for _ in $(seq 1 300); do
@@ -527,6 +558,7 @@ test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_is_serial_and_script_bounded
 test_active_remote_suite_falls_back_locally
+test_decoy_host_suite_does_not_affect_remote_probe
 test_term_mid_remote_run_removes_mirror_and_kills_suite
 
 echo "# all fm-pc02-test-offload tests passed"
