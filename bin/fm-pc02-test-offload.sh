@@ -71,14 +71,13 @@
 #     --jobs or --per-script-timeout-secs the caller passed, including larger
 #     values. The whole run stays capped by FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS
 #     (3600s); because the run is serialized, a large --all or --family run
-#     may exceed that cap and exit 124.
-#   - Host slot check: before mirroring, PC02 is probed for an already
-#     running test suite; if one is active the run falls back to local. This
-#     check is best-effort, not a reservation: it holds nothing, so two
-#     offloads probing at the same moment can both see an idle PC02 and both
-#     start. Any leftover process on PC02 whose command line mentions
-#     fm-test-run.sh also makes PC02 read as busy and routes the run to local
-#     fallback until it is gone.
+#     or --changed selection may exceed that cap and exit 124.
+#   - Host slot: one nonblocking flock on PC02's ~/.fm-pc02-test-slot.lock
+#     covers transfer and execution. Contention or an unclear claim routes
+#     local. The file is never unlinked: a dead owner's kernel lock is
+#     released automatically, so a leftover file or process name is harmless.
+#   - Supervising-home selection and per-machine configuration are owned by
+#     docs/configuration.md's "PC02 test offload" section.
 #
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
@@ -86,8 +85,6 @@
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
 #                                      PC02 check
-#   FM_PC02_OFFLOAD_PGREP              remote process-listing command
-#                                      (default: pgrep)
 #   FM_PC02_OFFLOAD_HOST                ssh target (default: pc02)
 #   FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS  bound for the reachability/personal-use/
 #                                      resource/tool probe and the post-sync
@@ -150,13 +147,15 @@ HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-3600}"
-REMOTE_PGREP="${FM_PC02_OFFLOAD_PGREP:-pgrep}"
 SCRIPT_TIMEOUT=1500
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
 REMOTE_COMMON="$REMOTE_RUN/common.git"
 REMOTE_RUN_CREATED=0
+claim_pid=
+claim_open=0
+claim_tmp=
 LLAMASWAP_URL="${FM_PC02_OFFLOAD_LLAMASWAP_URL:-http://100.67.55.77:8080}"
 PERSONAL_USE_FLAG="${FM_PC02_OFFLOAD_PERSONAL_USE_FLAG:-.fm-pc02-personal-use}"
 RESOURCE_CHECK_PS1="${FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1:-/mnt/c/pc02-llm-server/bin/fm-pc02-resource-check.ps1}"
@@ -173,6 +172,15 @@ GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
 # judge a different outcome. Require them on PC02 too rather than risk that.
 REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint ruby chromium}"
 
+release_claim() {
+  if [ "$claim_open" -eq 1 ]; then
+    exec 6>&- 7<&-
+    claim_open=0
+  fi
+  if [ -n "$claim_pid" ]; then wait "$claim_pid" 2>/dev/null || true; claim_pid=; fi
+  if [ -n "$claim_tmp" ]; then rm -rf "$claim_tmp"; claim_tmp=; fi
+}
+
 remove_remote_run() {
   [ "$REMOTE_RUN_CREATED" -eq 1 ] || return 0
   REMOTE_RUN_CREATED=0
@@ -185,16 +193,17 @@ remove_remote_run() {
 
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 on_signal() {  # <exit code>
-  [ -z "${remote_ssh_pid:-}" ] || kill "$remote_ssh_pid" 2>/dev/null
   exit "$1"
 }
-trap remove_remote_run EXIT
+trap 'remove_remote_run; release_claim' EXIT
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
+trap 'on_signal 129' HUP
 
 run_local() {  # <reason>
   echo "fm-pc02-test-offload: $1; running on PC01" >&2
   remove_remote_run
+  release_claim
   exec "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}"
 }
 
@@ -206,10 +215,22 @@ command -v rsync >/dev/null 2>&1 || run_local "rsync not available on PC01"
 # occupancy scan (local, bounded, no network) rather than a second detector.
 # Pass the operational home explicitly: the test runner may execute from a
 # validation checkout that has code but no private state directory.
-if [ -n "${FM_HOME:-}" ]; then
-  lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" --home "$FM_HOME" 2>&1)
-else
+lane_home=${FM_HOME:-}
+home_file="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home"
+if [ -z "$lane_home" ] && { [ -e "$home_file" ] || [ -L "$home_file" ]; }; then
+  if ! IFS= read -r lane_home < "$home_file" || [[ "$lane_home" != /* ]]; then
+    run_local "supervising home configuration unavailable or invalid ($home_file)"
+  fi
+fi
+if [ -z "$lane_home" ]; then
+  common=$(fm_resolve_git_path "$ROOT" --git-common-dir) || run_local "cannot resolve supervising primary clone"
+  [ "$(basename "$common")" = .git ] || run_local "common git store does not identify a primary clone"
+  lane_home=$(dirname "$common")
+fi
+if [ -n "${FM_STATE_OVERRIDE:-}" ] && [ -z "${FM_HOME:-}" ] && [ ! -e "$home_file" ] && [ ! -L "$home_file" ]; then
   lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" 2>&1)
+else
+  lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" --home "$lane_home" 2>&1)
 fi
 lane_rc=$?
 if [ "$lane_rc" -ne 0 ] || [ "$lane_out" != "free" ]; then
@@ -226,7 +247,6 @@ for t in $REQUIRED_TOOLS; do command -v "\$t" >/dev/null 2>&1 || echo "missing:\
 if ls_running=\$(curl -sf --connect-timeout 3 --max-time 5 $(printf '%q' "$LLAMASWAP_URL/running") 2>/dev/null); then
   echo "llama-swap-running:\$(printf '%s' "\$ls_running" | jq -r '.running | length' 2>/dev/null)"
 fi
-if $(printf '%q' "$REMOTE_PGREP") -af '[f]m-test-run\\.sh' >/dev/null 2>&1; then echo "test-suite-active"; fi
 if [ -f "$RESOURCE_CHECK_PS1" ]; then
   rc_win_path=\$(wslpath -w "$RESOURCE_CHECK_PS1" 2>/dev/null)
   rc_out=\$(/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -File "\$rc_win_path" 2>/dev/null)
@@ -248,14 +268,12 @@ personal_use=0
 missing_tools=
 llama_swap_running=0
 resource_line=
-suite_active=0
 while IFS= read -r probe_line; do
   case "$probe_line" in
     personal-use:on) personal_use=1 ;;
     missing:*) missing_tools="$missing_tools ${probe_line#missing:}" ;;
     llama-swap-running:*) llama_swap_running="${probe_line#llama-swap-running:}" ;;
     resource:*) resource_line="${probe_line#resource:}" ;;
-    test-suite-active) suite_active=1 ;;
   esac
 done <<PROBE_OUT
 $probe_out
@@ -295,7 +313,30 @@ esac
 if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
 fi
-[ "$suite_active" -ne 1 ] || run_local "PC02 already has a test suite running"
+# The same SSH shell owns the lock while waiting for transfer, then runs the
+# suite under it. EOF before execution releases it; EOF during execution
+# cannot release it ahead of the bounded suite. No PID-file reclamation race.
+# shellcheck disable=SC2016 # HOME and command expand on PC02.
+claim_cmd='exec 8> "$HOME/.fm-pc02-test-slot.lock" || exit 1
+flock -n 8 || exit 75
+printf "claimed\n"
+IFS= read -r -t '"$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5))"' command || exit 1
+eval "$command"'
+# FIFOs keep this compatible with stock macOS Bash (which has no coproc).
+claim_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-pc02-claim.XXXXXX") || run_local "cannot prepare claim channel"
+mkfifo "$claim_tmp/in" "$claim_tmp/out" || run_local "cannot prepare claim pipes"
+exec 6<>"$claim_tmp/in"
+timeout "$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5 + RUN_TIMEOUT + 30))" \
+  ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+  "$HOST" "bash -lc $(printf '%q' "$claim_cmd")" \
+  6>&- <"$claim_tmp/in" >"$claim_tmp/out" &
+claim_pid=$!
+exec 7<"$claim_tmp/out"
+claim_open=1
+if ! IFS= read -r -t "$PROBE_TIMEOUT" claim_reply <&7 || [ "$claim_reply" != claimed ]; then
+  kill "$claim_pid" 2>/dev/null || true
+  run_local "PC02 test slot busy or claim unavailable"
+fi
 
 # 3. Mirror the current worktree onto PC02: working-tree files, this
 # worktree's own per-worktree git-dir (HEAD, index, refs, logs), and the
@@ -390,12 +431,15 @@ wait \"\$pgid\"
 rc=\$?
 pkill -KILL -s \"\$pgid\" 2>/dev/null
 exit \"\$rc\""
-# shellcheck disable=SC2029 # deliberate client-side expansion: remote_test_cmd is already %q-quoted for the remote shell's re-parse.
-timeout "$((RUN_TIMEOUT + 30))" ssh "$HOST" "bash -lc $(printf '%q' "$remote_test_cmd")" &
-remote_ssh_pid=$!
-wait "$remote_ssh_pid"
+# printf %q keeps the multiline command as one protocol line. Execution is
+# inside the lock-owning SSH shell, so its descendants also retain the lock.
+printf '%s\n' "$(printf '%q' bash) -c $(printf '%q' "$remote_test_cmd")" >&6 || exit 1
+cat <&7 &
+stream_pid=$!
+wait "$claim_pid"
 rc=$?
-remote_ssh_pid=
+claim_pid=
+wait "$stream_pid" || true
 if [ "$rc" -eq 124 ]; then
   echo "fm-pc02-test-offload: remote run on PC02 exceeded ${RUN_TIMEOUT}s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry" >&2
 fi

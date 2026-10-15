@@ -732,7 +732,7 @@ The tracked `.no-mistakes.yaml` sets `test.evidence.store_in_repo: true` and pin
 Storing evidence in the repo publishes each run's test artifacts to the orphan `no-mistakes/evidence` branch and links them from the PR body, instead of keeping them on local disk under the no-mistakes home.
 
 That branch shares no history with code branches, so evidence never enters a pushed feature branch or the default branch; the worktree's `.no-mistakes/` stays local and CI rejects tracked entries under that path.
-The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md#no-mistakes-test-configuration) owns why `commands.test` stays absent and targeted validation belongs to the evidence path.
+The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md#no-mistakes-test-configuration) owns the canonical `commands.test` policy and targeted evidence validation.
 
 `commands.test` executes code, so no-mistakes honors it only from the default-branch copy of `.no-mistakes.yaml`; a pushed branch cannot change what the gate runs.
 `bin/fm-lint.sh` guards this canonical `commands.test` value on every no-mistakes lint run and fails loudly if the tracked file drifts from it, so a per-branch workaround can no longer land silently as standing policy; the check's exact mechanics are owned by that script's own header comment.
@@ -741,6 +741,19 @@ It also sets `review.path_instructions` for `bin/*.sh` and `tests/*.test.sh`, wh
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
+
+## PC02 test offload
+
+The pipeline's canonical Test command can offload with `FM_HOME` unset.
+The supervising home is selected from `FM_HOME`, then the per-machine `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` file, then the primary clone containing the current worktree's common `.git` directory.
+For an operational home separate from that primary clone (including a validation clone with no private state), create that configuration file with one absolute operational-home path followed by a newline.
+An invalid or unreadable configuration, or an unavailable home state directory, keeps testing local; a configured home is never skipped in favor of a guessed home.
+The existing `FM_STATE_OVERRIDE` remains available for direct probes when neither `FM_HOME` nor a machine configuration selects a home.
+
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic host-slot lock, cleanup, serial execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
+The host slot coordinates offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
+A large serial `--changed` selection can exceed the existing 3600-second whole-run cap, just as an `--all` or `--family` selection can.
+The cap remains unchanged: exceeding it fails with exit 124 and does not rerun the suite locally or omit selected tests.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 
