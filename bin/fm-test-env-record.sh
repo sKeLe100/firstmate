@@ -21,11 +21,19 @@ fm_test_env_record_main() {
   printf 'shell=bash version=%s flags=%s argv0=%s pid=%s ppid=%s\n' \
     "$(clean_value "${BASH_VERSION:-unknown}")" "${-:-}" \
     "$(basename -- "$0")" "$$" "$PPID"
-  if shopt -q login_shell 2>/dev/null; then
-    printf 'login_shell=yes\n'
-  else
-    printf 'login_shell=no\n'
+  local runner_login=no parent_login=unknown parent_arg
+  shopt -q login_shell 2>/dev/null && runner_login=yes
+  if [ -r "/proc/$PPID/cmdline" ]; then
+    parent_login=no
+    local parent_idx=0
+    while IFS= read -r -d '' parent_arg && [ "$parent_idx" -lt 3 ]; do
+      case "$parent_idx:$parent_arg" in
+        0:-* | *:--login | [12]:-*l*) parent_login=yes; break ;;
+      esac
+      parent_idx=$((parent_idx + 1))
+    done < "/proc/$PPID/cmdline"
   fi
+  printf 'runner_login_shell=%s parent_login_shell=%s\n' "$runner_login" "$parent_login"
   local path_entries=() path_entry
   IFS=: read -r -a path_entries <<<"${PATH:-}"
   printf 'path_entries='

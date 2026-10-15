@@ -90,7 +90,7 @@ test_environment_record_is_compact_safe_and_emitted_once() {
   [ "$(printf '%s\n' "$out" | awk '/^FM_TEST_ENV_RECORD v=1$/ {record=NR} /^FM_TEST_BEGIN / {begin=NR} END {print (record > 0 && begin > record) ? "yes" : "no"}')" = yes ] \
     || fail "the environment record must precede the first test marker: $out"
   case "$out" in *do-not-print-this-secret*) fail "the environment record leaked a secret sentinel" ;; esac
-  for field in '^shell=bash .*flags=.*argv0=' '^login_shell=(yes|no)$' '^path_entries=' '^shell_options=' '^os=.* kernel=.* machine=' '^process_model=.* subreaper=' '^tmpdir_fs=' '^ulimit=' '^tool=bash (path=.* version=.*|absent)$' '^tool=node (path=.* version=.*|absent)$' '^tool=pi (path=.* version=.*|absent)$' '^tool=tasks-axi (path=.* version=.*|absent)$' '^tool=timeout (path=.* version=.*|absent)$' '^tool=git (path=.* version=.*|absent)$' '^tool=herdr (path=.* version=.*|absent)$' '^tool=tmux (path=.* version=.*|absent)$' '^tool=rsync (path=.* version=.*|absent)$' '^tool=no-mistakes (path=.* version=.*|absent)$' '^chrome_startup=(ok|failed|missing)'; do
+  for field in '^shell=bash .*flags=.*argv0=' '^runner_login_shell=(yes|no) parent_login_shell=(yes|no|unknown)$' '^path_entries=' '^shell_options=' '^os=.* kernel=.* machine=' '^process_model=.* subreaper=' '^tmpdir_fs=' '^ulimit=' '^tool=bash (path=.* version=.*|absent)$' '^tool=node (path=.* version=.*|absent)$' '^tool=pi (path=.* version=.*|absent)$' '^tool=tasks-axi (path=.* version=.*|absent)$' '^tool=timeout (path=.* version=.*|absent)$' '^tool=git (path=.* version=.*|absent)$' '^tool=herdr (path=.* version=.*|absent)$' '^tool=tmux (path=.* version=.*|absent)$' '^tool=rsync (path=.* version=.*|absent)$' '^tool=no-mistakes (path=.* version=.*|absent)$' '^chrome_startup=(ok|failed|missing)'; do
     printf '%s\n' "$out" | grep -Eq "$field" || fail "environment record omitted $field: $out"
   done
 
@@ -112,6 +112,10 @@ test_environment_record_is_compact_safe_and_emitted_once() {
   helper_out=$(PATH="$fakebin" /bin/bash "$ROOT/bin/fm-test-env-record.sh" 2>&1)
   assert_contains "$helper_out" 'tool=timeout absent' "a missing timeout should be reported as absent: $helper_out"
   assert_contains "$helper_out" 'chrome_startup=failed reason=timeout-missing' "a missing timeout must not read as a Chrome fault: $helper_out"
+  helper_out=$(/bin/bash -lc "/bin/bash '$ROOT/bin/fm-test-env-record.sh'; :" 2>&1)
+  assert_contains "$helper_out" 'parent_login_shell=yes' "a login parent shell must be recorded: $helper_out"
+  helper_out=$(/bin/bash -c "/bin/bash '$ROOT/bin/fm-test-env-record.sh'; :" 2>&1)
+  assert_contains "$helper_out" 'parent_login_shell=no' "a non-login parent shell must be recorded: $helper_out"
   printf '#!/bin/sh\nsleep 30\n' >"$fakebin/node"
   chmod +x "$fakebin/node"
   ln -sf "$(command -v timeout)" "$fakebin/timeout"
