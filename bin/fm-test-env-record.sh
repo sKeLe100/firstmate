@@ -21,19 +21,9 @@ fm_test_env_record_main() {
   printf 'shell=bash version=%s flags=%s argv0=%s pid=%s ppid=%s\n' \
     "$(clean_value "${BASH_VERSION:-unknown}")" "${-:-}" \
     "$(basename -- "$0")" "$$" "$PPID"
-  local runner_login=no parent_login=unknown parent_arg
+  local runner_login=no
   shopt -q login_shell 2>/dev/null && runner_login=yes
-  if [ -r "/proc/$PPID/cmdline" ]; then
-    parent_login=no
-    local parent_idx=0
-    while IFS= read -r -d '' parent_arg && [ "$parent_idx" -lt 3 ]; do
-      case "$parent_idx:$parent_arg" in
-        0:-* | *:--login | [12]:-*l*) parent_login=yes; break ;;
-      esac
-      parent_idx=$((parent_idx + 1))
-    done < "/proc/$PPID/cmdline"
-  fi
-  printf 'runner_login_shell=%s parent_login_shell=%s\n' "$runner_login" "$parent_login"
+  printf 'runner_login_shell=%s\n' "$runner_login"
   local path_entries=() path_entry
   IFS=: read -r -a path_entries <<<"${PATH:-}"
   printf 'path_entries='
@@ -113,7 +103,7 @@ fm_test_env_tool_record() {  # <tool> <version arguments...>
   fi
   timeout_path=$(type -P timeout 2>/dev/null || true)
   if [ -z "$timeout_path" ]; then
-    version="unprobed-timeout-missing"
+    version="probe-skipped"
   else
     version=$("$timeout_path" 5 "$path" "$@" 2>&1 </dev/null) || status=$?
     version=${version%%$'\n'*}
