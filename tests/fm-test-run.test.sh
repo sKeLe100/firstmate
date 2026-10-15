@@ -1013,9 +1013,9 @@ test_exclude_quarantined() {
   quarantine_file="$ROOT/tests/fm-test-quarantine.tsv"
   assert_present "$quarantine_file" "the tracked quarantine list is missing"
 
-  # Every entry must name an existing test script and carry four tab-separated
-  # columns, so a renamed or deleted test cannot leave a stale, silently
-  # ignored entry behind.
+  # Every entry must name an existing test and retain the original four
+  # fields; test_quarantine_diagnostics validates migrated evidence through
+  # the public parser as well.
   while IFS=$'\t' read -r script signature reason owner; do
     [ -n "$script" ] || continue
     assert_present "$ROOT/$script" "quarantine entry names a missing script: $script"
@@ -1065,6 +1065,62 @@ test_exclude_quarantined() {
     "a fully-quarantined selection runs nothing"
 
   pass "exclude-quarantined drops exactly the listed scripts and reports each skip loudly"
+}
+
+test_quarantine_diagnostics() {
+  local tmp repo runner qfile out rc status line
+  tmp=$(fm_test_tmproot fm-quarantine-diagnostics)
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/"
+  runner="$repo/bin/fm-test-run.sh"
+  qfile="$repo/tests/fm-test-quarantine.tsv"
+  # Migrated rows carry reproduction context; old four-column rows still work.
+  printf 'tests/fm-brief.test.sh\trecorded failure\treason\towner\tbase-sha; FAIL\thead-sha; FAIL\tfixture host\t2026-10-13\n' >"$qfile"
+  printf 'tests/fm-pr-merge.test.sh\told symptom\treason\towner\n' >>"$qfile"
+  printf 'echo "not ok - old symptom"; exit 1\n' >"$repo/tests/fm-pr-merge.test.sh"
+  for status in matched changed newly-passing skipped additional; do
+    case "$status" in
+      matched) line='echo "not ok - recorded failure"; exit 1' ;;
+      changed) line='echo "not ok - different failure"; exit 1' ;;
+      newly-passing) line='echo "ok - original case passes"; exit 0' ;;
+      skipped) line='echo "skip: missing capability"; exit 0' ;;
+      additional) line='echo "not ok - recorded failure"; echo "not ok - new defect"; exit 1' ;;
+    esac
+    printf '%s\n' "$line" >"$repo/tests/fm-brief.test.sh"
+    out=$("$runner" --diagnose-quarantined --all --jobs 1 --fail-fast --per-script-timeout-secs 5 2>&1) && rc=0 || rc=$?
+    expect_code 0 "$rc" "diagnostic failures must not block the gate"
+    [ "$status" != additional ] || status=changed
+    assert_contains "$out" "FM_TEST_QUARANTINE_DIAGNOSTIC tests/fm-brief.test.sh status=$status" "wrong signature classification"
+    assert_contains "$out" "FM_TEST_QUARANTINE_DIAGNOSTIC tests/fm-pr-merge.test.sh status=matched" "diagnostics must continue past first failure"
+    assert_contains "$out" "FM_TEST_SUMMARY total=2" "diagnostics must select only quarantines"
+    assert_contains "$out" "FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-pr-merge.test.sh" "legacy context must be visible"
+  done
+  out=$("$runner" --diagnose-quarantined --list --all --per-script-timeout-secs 5 2>/dev/null)
+  [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" -eq 2 ] || fail "diagnostic list must contain only paths"
+  # Ordinary gates retain the real failure, even with a quarantine file present.
+  out=$("$runner" --jobs 1 tests/fm-pr-merge.test.sh 2>&1) && rc=0 || rc=$?
+  expect_code 1 "$rc" "ordinary execution must still fail quarantined scripts"
+  for line in \
+    'tests/fm-brief.test.sh	sig	reason' \
+    'tests/fm-brief.test.sh	sig	reason	owner	base	head	host	bad-date' \
+    'tests/fm-brief.test.sh	sig	reason	owner		head	host	2026-10-13'; do
+    printf '%b\n' "$line" >"$qfile"
+    out=$("$runner" --exclude-quarantined --all --list 2>&1) && rc=0 || rc=$?
+    expect_code 2 "$rc" "malformed quarantine evidence must refuse"
+  done
+  printf 'tests/fm-brief.test.sh\tsig\treason\towner\n' >"$qfile"
+  cat "$qfile" "$qfile" >"$tmp/duplicate.tsv"
+  out=$("$runner" --quarantine-file "$tmp/duplicate.tsv" --exclude-quarantined --all --list 2>&1) && rc=0 || rc=$?
+  expect_code 2 "$rc" "duplicate quarantines must refuse"
+  out=$("$runner" --diagnose-quarantined --all --per-script-timeout-secs 0 2>&1) && rc=0 || rc=$?
+  expect_code 2 "$rc" "diagnostics must require a positive bound"
+  out=$("$runner" --diagnose-quarantined --exclude-quarantined --all --per-script-timeout-secs 5 2>&1) && rc=0 || rc=$?
+  expect_code 2 "$rc" "diagnostics must refuse exclusion"
+  # Validate every migrated tracked record through the public parser.
+  "$RUNNER" --quarantine-file "$ROOT/tests/fm-test-quarantine.tsv" --exclude-quarantined --all --list >"$tmp/list" \
+    || fail "tracked migrated quarantine records are invalid"
+  pass "quarantine diagnostics classify drift without weakening ordinary gates"
 }
 
 test_list_scheduled_proven_isolated_uses_serial_weights() {
@@ -2671,6 +2727,7 @@ test_live_guards_expect_a_capability_skip_class
 test_fail_on_gate_skip_token
 test_exclude_family
 test_exclude_quarantined
+test_quarantine_diagnostics
 test_list_scheduled_proven_isolated_uses_serial_weights
 test_list_scheduled_non_lane_selections_use_serial_weights
 test_portable_shard_union_and_coverage_guard

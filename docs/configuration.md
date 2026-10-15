@@ -943,6 +943,21 @@ The filed task carries a **bounded batch** from `bin/fm-upstream-batch.sh` (at m
 
 The merge always needs the captain's word; firstmate never merges an upstream sync on its own. The brief enforces the bounded-batch gate (the worker plans the batch before merging anything). A landing via true merge brings `behind` back down, which the drift check's baseline mechanism uses to silence the armed trigger until the next threshold-sized block of new drift accumulates.
 
+Quarantine dispositions live in `tests/fm-test-quarantine.tsv`; `bin/fm-test-run.sh --help` owns the row format, validation, and diagnostic flags.
+Each disposition names a follow-up owner and records base/head outcomes, host context, failure signature, and the last successful reproduction of that failure.
+Missing historical evidence remains explicitly unrecorded and visible until the owner supplies it.
+Imported upstream failures whose fork base passes or lacks the case remain distinct from failures reproduced on the fork base.
+Installing a dependency, an isolated pass, or matching an old symptom does not justify retirement: the owner must demonstrate the original failing case passing in its relevant context.
+
+Coverage currently differs: canonical no-mistakes Test selects changed subjects, excludes the real-Herdr family, and includes quarantined subjects; manual upstream-sync validation selects all subjects and excludes quarantined subjects, including those outside the changed set.
+CI's portable and Herdr lanes also exclude quarantined subjects.
+For identical initial subject and family selections, adding `--exclude-quarantined` removes exactly the intersection with the ledger; compare the runner's `--list` output with and without that flag to publish the actual paths for a candidate rather than comparing totals.
+The runner reports each removed path and the total in execution mode.
+No selection is a substitute for the other, and quarantine diagnostics do not certify the gate selection.
+Aligning canonical Test with manual sync would change the pinned Test contract and requires a separate explicit decision; this upkeep preserves both selections.
+Use the runner's bounded quarantine diagnostic mode to report changed signatures, newly passing subjects, and capability skips without letting known failures block the diagnostic invocation.
+A match establishes only the recorded output symptom; retained output and owner follow-up are still necessary for failures masked by an earlier assertion.
+
 ## Primary continuity watchdog
 
 `config/primary-continuity` controls this section.
