@@ -21,6 +21,18 @@ fm_test_env_record_main() {
   printf 'shell=bash version=%s flags=%s argv0=%s pid=%s ppid=%s\n' \
     "$(clean_value "${BASH_VERSION:-unknown}")" "${-:-}" \
     "$(basename -- "$0")" "$$" "$PPID"
+  if shopt -q login_shell 2>/dev/null; then
+    printf 'login_shell=yes\n'
+  else
+    printf 'login_shell=no\n'
+  fi
+  local path_entries=() path_entry
+  IFS=: read -r -a path_entries <<<"${PATH:-}"
+  printf 'path_entries='
+  for path_entry in "${path_entries[@]:0:20}"; do
+    printf '%s:' "$(clean_value "$path_entry" | cut -c1-120)"
+  done
+  printf '\n'
   printf 'shell_options='
   set -o | awk '$2 == "on" {printf "%s%s", sep, $1; sep=","} END {print ""}'
   printf 'os=%s kernel=%s machine=%s\n' "$(uname -s 2>/dev/null || echo unknown)" \
@@ -43,6 +55,9 @@ fm_test_env_record_main() {
 
   fm_test_env_tool_record bash --version
   fm_test_env_tool_record node --version
+  fm_test_env_tool_record pi --version
+  fm_test_env_tool_record tasks-axi --version
+  fm_test_env_tool_record timeout --version
   fm_test_env_tool_record git --version
   fm_test_env_tool_record herdr --version
   fm_test_env_tool_record tmux -V
@@ -56,6 +71,8 @@ fm_test_env_record_main() {
   done
   if [ -z "$chrome" ]; then
     printf 'chrome_startup=missing\n'
+  elif ! type -P timeout >/dev/null 2>&1; then
+    printf 'chrome_startup=failed reason=timeout-missing path=%s\n' "$chrome"
   else
     chrome_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-chrome.XXXXXX" 2>/dev/null || true)
     if [ -z "$chrome_tmp" ]; then
