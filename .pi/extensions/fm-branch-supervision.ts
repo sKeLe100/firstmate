@@ -1681,19 +1681,12 @@ ${context.command}
     // getEntries() here loses the captain request that the next wake may answer.
     // Stage it verbatim and remember the future persisted index for turn_end's
     // duplicate suppression. Operational extension injections are not dialog.
-    // Newer Pi tags the event with messageType and carries a custom message
-    // instead of a prompt; the Pi version CI pins (0.87.1) has neither field.
-    const { messageType, message } = event as {
-      messageType?: "user" | "custom";
-      message?: { role?: string; customType?: string; content?: unknown };
-    };
     processingOpenedThisRun =
-      messageType === "custom" &&
-      message !== undefined &&
-      isProcessingCustomMessage(message) &&
+      event.messageType === "custom" &&
+      isProcessingCustomMessage(event.message) &&
       queuedProcessingContent !== null &&
-      message.content === queuedProcessingContent;
-    if (messageType === "custom") return;
+      event.message.content === queuedProcessingContent;
+    if (event.messageType !== "user") return;
     const trimmed = event.prompt.trim();
     if (!trimmed || isOperationalUserText(trimmed)) return;
     const file = currentMainSession.getSessionFile() ?? "";
