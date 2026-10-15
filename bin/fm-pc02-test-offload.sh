@@ -451,7 +451,7 @@ exit \"\$rc\""
 # printf %q keeps the multiline command as one protocol line. Execution is
 # inside the lock-owning SSH shell, so its descendants also retain the lock.
 printf '%s\n' "$(printf '%q' bash) -c $(printf '%q' "$remote_test_cmd")" >&6 || exit 1
-cat <&7 &
+cat <&7 6>&- &
 stream_pid=$!
 wait "$claim_pid"
 rc=$?

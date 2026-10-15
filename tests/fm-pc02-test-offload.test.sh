@@ -598,6 +598,43 @@ SH
   pass "TERM with a transport that ignores stdin EOF still stops the remote suite and frees the slot"
 }
 
+test_sigkill_of_driver_stops_remote_suite_and_frees_slot() {
+  local dir fakebin fixture pid _
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-kill"
+  fakebin=$(fake_pc02 "$dir")
+  fixture="$dir/hang.test.sh"
+  cat > "$fixture" <<SH
+#!/usr/bin/env bash
+echo "\$\$" > "$dir/suite-pid"
+touch "$dir/suite-started"
+sleep 60
+SH
+  chmod +x "$fixture"
+
+  PATH="$fakebin:$PATH" FM_FAKE_SSH_DETACH=1 FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 300); do
+    [ -f "$dir/suite-started" ] && break
+    sleep 0.1
+  done
+  [ -f "$dir/suite-started" ] || { kill "$pid" 2>/dev/null; fail "the remote suite never started: $(cat "$dir/out.log")"; }
+  kill -KILL "$pid"
+  wait "$pid" 2>/dev/null
+  for _ in $(seq 1 100); do
+    kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || break
+    sleep 0.1
+  done
+  ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "SIGKILL of the driver left the remote suite running"
+  flock -n "$dir/home/.fm-pc02-test-slot.lock" true || fail "the slot stayed held after the suite ended"
+  pkill -TERM -f "$dir/home" 2>/dev/null || true
+  pass "abrupt loss of the driver stops the remote suite and frees the slot"
+}
+
 test_bare_common_store_needs_machine_file_unless_state_override() {
   local dir fakebin wt out status
   dir="$TMP_ROOT/bare-common"
@@ -813,6 +850,7 @@ test_active_remote_suite_falls_back_locally
 test_decoy_host_suite_does_not_affect_remote_probe
 test_term_mid_remote_run_removes_mirror_and_kills_suite
 test_term_with_transport_ignoring_eof_stops_suite_and_frees_slot
+test_sigkill_of_driver_stops_remote_suite_and_frees_slot
 test_bare_common_store_needs_machine_file_unless_state_override
 test_machine_home_config_without_fm_home
 test_primary_clone_home_without_environment_or_config
