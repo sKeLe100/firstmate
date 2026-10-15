@@ -919,7 +919,7 @@ tests/fm-bearings-snapshot.test.sh 186219
 tests/fm-bootstrap-network-parallel.test.sh 30424
 tests/fm-bootstrap.test.sh 50965
 tests/fm-branch-supervision.test.sh 22979
-tests/fm-busy-adapter-wiring.test.sh 31642
+tests/fm-busy-adapter-wiring.test.sh 82204
 tests/fm-busy-state.test.sh 3185
 tests/fm-calm-claude-mod-live-e2e.test.sh 47
 tests/fm-calm-claude-mod-plugin.test.sh 77
@@ -1141,7 +1141,7 @@ tests/fm-wake-drain-unread-status.test.sh 24251
 tests/fm-wake-pair-dedup.test.sh 61865
 tests/fm-wake-queue.test.sh 165906
 tests/fm-watch-arm.test.sh 113076
-tests/fm-watch-checkpoint.test.sh 11234
+tests/fm-watch-checkpoint.test.sh 22937
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 59092
 tests/fm-watch-retry-band.test.sh 7547
