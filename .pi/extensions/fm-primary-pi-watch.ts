@@ -1200,7 +1200,8 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on?.("before_agent_start", (event) => {
-    if (event.messageType !== "user") return;
+    // Newer Pi tags custom-message starts with messageType; Pi 0.87.1 has no field.
+    if ((event as { messageType?: string }).messageType === "custom") return;
     consumeWake(generation, event.prompt);
   });
   pi.on?.("message_start", (event) => {
