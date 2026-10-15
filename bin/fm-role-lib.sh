@@ -222,9 +222,9 @@ fm_role_git_common_dir() {
 }
 
 # fm_role_publication_target <git-dir> - the repository a default publication
-# (gh pr/issue, a no-mistakes PR) would reach: the first of upstream, github,
-# origin that is configured, in the order gh prefers, normalized to
-# host/owner/repo or path:<abs>. Empty when the repo has no such remote.
+# (gh pr/issue, a no-mistakes PR) would reach: the push URL of the first of
+# upstream, github, origin whose push URL is neither empty nor DISABLED,
+# normalized to host/owner/repo or path:<abs>. Empty when no remote qualifies.
 fm_role_publication_target() {
   local dir=$1 remote url=''
   for remote in upstream github origin; do
