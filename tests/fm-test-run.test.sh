@@ -333,6 +333,16 @@ test_changed_dependency_selection_and_unmapped_failure() {
   git -C "$repo" add tests/git-config-helpers.sh
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm git-config-helper-change
 
+  # Split-test parts map to the wrappers that name them, without a curated
+  # per-part entry in the runner.
+  : >"$repo/tests/fm-pr-check-security-part.sh"
+  printf '\n# tests/fm-pr-check-security-part.sh\n' >>"$repo/tests/fm-pr-check-security.test.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-pr-check-security.test.sh" \
+    "changed split-test part selects its wrapper suite"
+  git -C "$repo" add tests/fm-pr-check-security-part.sh tests/fm-pr-check-security.test.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm split-test-part-change
+
   printf '\n' >>"$repo/tests/fm-backend-herdr-eventwait.test.py"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   assert_contains "$listed" "tests/fm-backend-herdr-smoke.test.sh" "eventwait test selects Herdr coverage"

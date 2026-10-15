@@ -1047,7 +1047,7 @@ tests/fm-remote-entrypoint.test.sh 134
 tests/fm-remote-herdr-guard.test.sh 3140
 tests/fm-remote-job-orphan-reap.test.sh 2985
 tests/fm-remote-job.test.sh 133201
-tests/fm-remote-reply.test.sh 140887
+tests/fm-remote-reply.test.sh 216935
 tests/fm-remote-secondmate-control-launch-settle.test.sh 721
 tests/fm-remote-secondmate-lifecycle-e2e.test.sh 345655
 tests/fm-remote-secondmate-parent-binding.test.sh 76775
@@ -2114,6 +2114,12 @@ families_for_changed_path() {
       # tests/fixtures/<dir>/<name>-fixture.sh and scan for its basename
       # instead of the fixture directory its readers actually name.
       families_for_test_reference "$(basename "$path")" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
+    tests/*-part.sh)
+      # Split-test blocks are sourced or run by their wrapper suites. Resolve
+      # consumers from their references so adding a new part needs no map edit.
+      scripts_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     bin/*)
