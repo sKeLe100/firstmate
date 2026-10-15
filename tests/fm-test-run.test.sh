@@ -112,6 +112,13 @@ test_environment_record_is_compact_safe_and_emitted_once() {
   helper_out=$(PATH="$fakebin" /bin/bash "$ROOT/bin/fm-test-env-record.sh" 2>&1)
   assert_contains "$helper_out" 'tool=timeout absent' "a missing timeout should be reported as absent: $helper_out"
   assert_contains "$helper_out" 'chrome_startup=failed reason=timeout-missing' "a missing timeout must not read as a Chrome fault: $helper_out"
+  printf '#!/bin/sh\nsleep 30\n' >"$fakebin/node"
+  chmod +x "$fakebin/node"
+  ln -sf "$(command -v timeout)" "$fakebin/timeout"
+  ln -sf "$(command -v sleep)" "$fakebin/sleep"
+  helper_out=$(PATH="$fakebin" /bin/bash "$ROOT/bin/fm-test-env-record.sh" 2>&1)
+  assert_contains "$helper_out" 'tool=node path=' "the hanging tool was not recorded: $helper_out"
+  assert_contains "$helper_out" 'version=timed-out' "a hanging version probe must be bounded and recorded as timed-out: $helper_out"
   unset FM_TEST_ENV_SECRET_SENTINEL
   pass "the runner emits one bounded secret-free environment record and records missing tools safely"
 }

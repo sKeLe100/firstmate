@@ -96,15 +96,25 @@ fm_test_env_record_main() {
 }
 
 fm_test_env_tool_record() {  # <tool> <version arguments...>
-  local tool=$1 path version
+  local tool=$1 path version status=0 timeout_path
   shift
   path=$(type -P "$tool" 2>/dev/null || true)
   if [ -z "$path" ]; then
     printf 'tool=%s absent\n' "$tool"
     return 0
   fi
-  version=$("$path" "$@" 2>&1 | head -n 1 || true)
-  [ -n "$version" ] || version="version-unavailable"
+  timeout_path=$(type -P timeout 2>/dev/null || true)
+  if [ -z "$timeout_path" ]; then
+    version="unprobed-timeout-missing"
+  else
+    version=$("$timeout_path" 5 "$path" "$@" 2>&1 </dev/null) || status=$?
+    version=${version%%$'\n'*}
+    if [ "$status" -eq 124 ]; then
+      version="timed-out"
+    elif [ -z "$version" ]; then
+      version="version-unavailable"
+    fi
+  fi
   printf 'tool=%s path=%s version=%s\n' "$tool" "$path" "$(clean_value "$version")"
 }
 
