@@ -1,0 +1,18 @@
+== A: real part change (after fix)
+tests/fm-pr-check-security.test.sh
+tests/fm-test-run.test.sh
+rc=0
+== B: orphan part, no wrapper references it
+fm-test-run: no changed-test mapping for source path: tests/zz-orphan-part.sh
+rc=2
+== C: baseline (pre-fix runner) on A
+fm-test-run: no changed-test mapping for source path: tests/fm-pr-check-security-part.sh
+rc=2
+ok - the --changed path bounds fm-captain-hold-lifecycle at its own load-scaled 1500s base
+ok - token-free retry re-runs a load-sensitive failure once and clears it without a real regression
+ok - the token-free retry admits exit=124 regardless of the load-sensitive name list
+ok - token-free retry never fires when any failure is outside the load-sensitive/timeout class
+FM_TEST_END 2026-10-15T16:36:21Z tests/fm-test-run.test.sh exit=0 duration_ms=572274 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=572396
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=572274 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-test-run.test.sh duration_ms=572274
