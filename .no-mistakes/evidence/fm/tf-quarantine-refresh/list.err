@@ -1,0 +1,27 @@
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-pair-dedup.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-backend-herdr.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-procevent.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-watch-triage.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-calm-pi-extension.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-queue.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-secondmate-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-transport-lanes.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-composer-codex-idle-live-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-agy-harness.test.sh
+fm-test-run: quarantined skip: tests/fm-agy-harness.test.sh (signature: a zero model bound disabled the deadline, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-backend-herdr.test.sh (signature: coreutils: unknown program 'pi', owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-calm-pi-extension.test.sh (signature: Pi queued-row queued_mixed case did not list the captain's queued follow-up, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-composer-codex-idle-live-e2e.test.sh (signature: idle screen never classified empty, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent-quota.test.sh (signature: provider retire targeted the wrong source, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent.test.sh (signature: the listener under test was not reparented away from its session, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-public-followup.test.sh (signature: a wake whose line could not be written must stay queued, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-remote-secondmate-lifecycle-e2e.test.sh (signature: remote spawn never reached its blocked inheritance write, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-remote-transport-lanes.test.sh (signature: concurrent sequence claims were not unique and monotonic, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-secondmate-harness.test.sh (signature: first config push did not reach pointer delivery, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-session-lock-ancestry.test.sh (signature: the pty-host was not reparented to init after the daemon ended, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-supervision-host.test.sh (signature: a routine outcome a drain could not print must follow on the next drain, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-task-delivery.test.sh (signature: a ref-format-valid metacharacter prefix should promote safely, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-pair-dedup.test.sh (signature: no process-event result, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-queue.test.sh (signature: a foreign queue with no progress did not alert, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-watch-triage.test.sh (signature: exceeded the per-script bound, owner: sync-preexisting-test-failures)
