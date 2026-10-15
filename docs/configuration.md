@@ -744,6 +744,12 @@ Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](f
 
 ## PC02 test offload
 
+Every executing `bin/fm-test-run.sh` invocation prints one `FM_TEST_ENV_RECORD` before starting tests, from the shell that will run them.
+For an offloaded run this means the record comes from PC02's remote login shell.
+The record includes selected tool versions and paths, Bash mode and options, soft limits, OS/kernel, process identifiers and session model, TMPDIR filesystem type, and a token-free headless Chrome startup result.
+Missing tools and browser startup failures are recorded as data and do not change the test result; the record never dumps the process environment.
+`bin/fm-test-env-record.sh` owns the exact fields and privacy-safe probes, and `tests/fm-test-run.test.sh` plus `tests/fm-pc02-test-offload.test.sh` pin the local and fake-remote behavior.
+
 The pipeline's canonical Test command can offload with `FM_HOME` unset.
 The supervising home is selected from `FM_HOME`, then the per-machine `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` file, then the primary clone containing the current worktree's common `.git` directory.
 A separate bare common store (such as a no-mistakes gate worktree's) identifies no primary clone, so offload from the gate Test step starts only after `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` exists; the local-fallback diagnostic names that resolved path.

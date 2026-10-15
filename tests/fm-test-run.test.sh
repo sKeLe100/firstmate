@@ -72,6 +72,42 @@ test_single_script_selection() {
   pass "single-script selection lists exactly that path"
 }
 
+test_environment_record_is_compact_safe_and_emitted_once() {
+  local out helper_out fakebin tool tmp_root
+  tmp_root=$(fm_test_tmproot fm-test-run-env-record)
+  export FM_TEST_ENV_SECRET_SENTINEL='do-not-print-this-secret'
+  out=$("$RUNNER" tests/fm-classify-corr-token.test.sh 2>&1)
+  case "$out" in
+    *FM_TEST_ENV_RECORD\ v=1*) ;;
+    *) fail "an executing runner invocation omitted its environment record: $out" ;;
+  esac
+  [ "$(printf '%s\n' "$out" | grep -c '^FM_TEST_ENV_RECORD v=1$')" -eq 1 ] \
+    || fail "the runner must emit exactly one environment record: $out"
+  [ "$(printf '%s\n' "$out" | grep -c '^FM_TEST_ENV_RECORD_END$')" -eq 1 ] \
+    || fail "the environment record did not have one end marker: $out"
+  [ "$(printf '%s\n' "$out" | grep -c '^FM_TEST_BEGIN ')" -eq 1 ] \
+    || fail "the fixture test did not execute exactly once: $out"
+  [ "$(printf '%s\n' "$out" | awk '/^FM_TEST_ENV_RECORD v=1$/ {record=NR} /^FM_TEST_BEGIN / {begin=NR} END {print (record > 0 && begin > record) ? "yes" : "no"}')" = yes ] \
+    || fail "the environment record must precede the first test marker: $out"
+  case "$out" in *do-not-print-this-secret*) fail "the environment record leaked a secret sentinel" ;; esac
+  for field in '^shell=bash .*flags=.*argv0=' '^shell_options=' '^os=.* kernel=.* machine=' '^process_model=.* subreaper=' '^tmpdir_fs=' '^ulimit=' '^tool=bash (path=.* version=.*|absent)$' '^tool=node (path=.* version=.*|absent)$' '^tool=git (path=.* version=.*|absent)$' '^tool=herdr (path=.* version=.*|absent)$' '^tool=tmux (path=.* version=.*|absent)$' '^tool=rsync (path=.* version=.*|absent)$' '^tool=no-mistakes (path=.* version=.*|absent)$' '^chrome_startup=(ok|failed|missing)'; do
+    printf '%s\n' "$out" | grep -Eq "$field" || fail "environment record omitted $field: $out"
+  done
+
+  fakebin=$(fm_fakebin "$tmp_root/env-record-path")
+  for tool in tr cut df awk stat uname ps basename head mktemp rm timeout env; do
+    local found
+    found=$(command -v "$tool")
+    [ -n "$found" ] && ln -sf "$found" "$fakebin/$tool"
+  done
+  ln -sf "$(command -v bash)" "$fakebin/bash"
+  helper_out=$(PATH="$fakebin" /bin/bash "$ROOT/bin/fm-test-env-record.sh" 2>&1)
+  assert_contains "$helper_out" 'tool=node absent' "a missing tool should be reported as absent: $helper_out"
+  assert_contains "$helper_out" 'FM_TEST_ENV_RECORD_END' "a missing tool broke record generation: $helper_out"
+  unset FM_TEST_ENV_SECRET_SENTINEL
+  pass "the runner emits one bounded secret-free environment record and records missing tools safely"
+}
+
 test_changed_file_selection_is_conservative() {
   local listed all_count fam_count listed_count
   # A path-mapped pure unit should not expand to --all.
@@ -2650,6 +2686,7 @@ SH
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
+test_environment_record_is_compact_safe_and_emitted_once
 test_changed_file_selection_is_conservative
 test_task_marker_refuses_the_primary_checkout
 test_changed_runner_surfaces_select_their_family

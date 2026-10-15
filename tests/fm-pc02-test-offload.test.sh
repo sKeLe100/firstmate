@@ -442,6 +442,9 @@ test_remote_run_passes_through_green_suite_and_json() {
   expect_code 0 "$status" "a passing remote suite must exit 0: $out"
   python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$dir/out.json" \
     || fail "the relative --json artifact was not pulled back from the PC02 mirror as valid JSON: $out"
+  assert_contains "$out" 'FM_TEST_ENV_RECORD v=1' "the fake PC02 shell did not emit its own environment record: $out"
+  [ "$(printf '%s\n' "$out" | grep -c '^FM_TEST_ENV_RECORD v=1$')" -eq 1 ] \
+    || fail "the fake PC02 path should emit one environment record: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
 }

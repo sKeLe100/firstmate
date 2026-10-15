@@ -148,6 +148,9 @@
 # Once per automatic --changed/scripts run, before scheduling (stdout):
 #   FM_TEST_HOST_LOAD load5=<n> cpus=<n> jobs=<n> per_script_timeout_secs=<n> watch_triage_timeout_secs=<n> captain_hold_timeout_secs=<n>
 #     Lets a later reader tell a load kill from a genuine hang.
+#   FM_TEST_ENV_RECORD v=1 ... FM_TEST_ENV_RECORD_END
+#     One bounded snapshot from the actual test shell before execution;
+#     bin/fm-test-env-record.sh owns its fields and token-free probes.
 #
 # After all scripts (stdout):
 #   FM_TEST_SUMMARY total=<n> failed=<n> skipped_gate=<n> duration_ms=<n>
@@ -2688,6 +2691,14 @@ esac
 # who named no selection mode is told that rather than this.
 if [ -n "${MODE:-}" ] && [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
   refuse_primary_checkout_for_task
+fi
+
+# Emit the actual runner shell's bounded environment snapshot once, before
+# selecting or starting tests. Offloaded invocations reach this point on PC02.
+if [ -n "${MODE:-}" ] && [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ] \
+  && [ -f "$ROOT/bin/fm-test-env-record.sh" ]; then
+  . "$ROOT/bin/fm-test-env-record.sh"
+  fm_test_env_record_main || echo 'FM_TEST_ENV_RECORD unavailable (snapshot helper failed)'
 fi
 
 case "${MODE:-}" in
