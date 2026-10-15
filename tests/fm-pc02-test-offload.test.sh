@@ -349,6 +349,20 @@ case "\$*" in
     ;;
 esac
 cd "$dir/home" || exit 255
+if [ -n "\${FM_FAKE_SSH_DETACH:-}" ]; then
+  case "\$*" in
+    *'rm -rf'*) exit 255 ;;
+    *fm-pc02-test-slot.lock*)
+      mkdir -p "$dir/relay"
+      rm -f "$dir/relay/in"; mkfifo "$dir/relay/in"
+      cat <&0 > "$dir/relay/in" &
+      catpid=\$!
+      HOME="$dir/home" bash -c "\$*" < "$dir/relay/in" &
+      trap 'kill "\$catpid" 2>/dev/null; exit 143' TERM
+      while :; do sleep 0.1; done
+      ;;
+  esac
+fi
 exec 9>&1
 printf '%s\n' "\$*" >> "$dir/ssh.log"
 # The source worktree may contain normal read-only hook directories.
@@ -542,6 +556,48 @@ SH
   pass "TERM during a remote run kills the remote suite and removes its mirror"
 }
 
+test_term_with_transport_ignoring_eof_stops_suite_and_frees_slot() {
+  local dir fakebin fixture pid status start elapsed _
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-term-detach"
+  fakebin=$(fake_pc02 "$dir")
+  fixture="$dir/hang.test.sh"
+  cat > "$fixture" <<SH
+#!/usr/bin/env bash
+echo "\$\$" > "$dir/suite-pid"
+touch "$dir/suite-started"
+sleep 60
+SH
+  chmod +x "$fixture"
+
+  PATH="$fakebin:$PATH" FM_FAKE_SSH_DETACH=1 FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 300); do
+    [ -f "$dir/suite-started" ] && break
+    sleep 0.1
+  done
+  [ -f "$dir/suite-started" ] || { kill "$pid" 2>/dev/null; fail "the remote suite never started: $(cat "$dir/out.log")"; }
+  flock -n "$dir/home/.fm-pc02-test-slot.lock" true && fail "the host slot was not held during the run"
+  start=$SECONDS
+  kill -TERM "$pid"
+  wait "$pid"
+  status=$?
+  elapsed=$((SECONDS - start))
+  expect_code 143 "$status" "a TERM mid-run must exit 143: $(cat "$dir/out.log")"
+  [ "$elapsed" -le 20 ] || fail "TERM cleanup was not bounded (${elapsed}s)"
+  for _ in $(seq 1 50); do
+    kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || break
+    sleep 0.1
+  done
+  ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "dropping the transport left the remote suite running"
+  flock -n "$dir/home/.fm-pc02-test-slot.lock" true || fail "the slot stayed held after the suite ended"
+  pass "TERM with a transport that ignores stdin EOF still stops the remote suite and frees the slot"
+}
+
 test_machine_home_config_without_fm_home() {
   local dir fakebin out status config
   dir="$TMP_ROOT/machine-home"
@@ -723,6 +779,7 @@ test_remote_invocation_is_serial_and_script_bounded
 test_active_remote_suite_falls_back_locally
 test_decoy_host_suite_does_not_affect_remote_probe
 test_term_mid_remote_run_removes_mirror_and_kills_suite
+test_term_with_transport_ignoring_eof_stops_suite_and_frees_slot
 test_machine_home_config_without_fm_home
 test_primary_clone_home_without_environment_or_config
 test_concurrent_offloads_have_one_winner

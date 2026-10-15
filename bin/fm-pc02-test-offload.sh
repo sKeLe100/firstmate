@@ -177,7 +177,16 @@ release_claim() {
     exec 6>&- 7<&-
     claim_open=0
   fi
-  if [ -n "$claim_pid" ]; then wait "$claim_pid" 2>/dev/null || true; claim_pid=; fi
+  if [ -n "$claim_pid" ]; then
+    kill "$claim_pid" 2>/dev/null || true
+    for _ in $(seq 1 100); do
+      kill -0 "$claim_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    kill -KILL "$claim_pid" 2>/dev/null || true
+    wait "$claim_pid" 2>/dev/null || true
+    claim_pid=
+  fi
   if [ -n "$claim_tmp" ]; then rm -rf "$claim_tmp"; claim_tmp=; fi
 }
 
@@ -326,7 +335,7 @@ eval "$command"'
 claim_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-pc02-claim.XXXXXX") || run_local "cannot prepare claim channel"
 mkfifo "$claim_tmp/in" "$claim_tmp/out" || run_local "cannot prepare claim pipes"
 exec 6<>"$claim_tmp/in"
-timeout "$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5 + RUN_TIMEOUT + 30))" \
+timeout --kill-after=5 "$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5 + RUN_TIMEOUT + 30))" \
   ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
   "$HOST" "bash -lc $(printf '%q' "$claim_cmd")" \
   6>&- <"$claim_tmp/in" >"$claim_tmp/out" &
@@ -421,14 +430,21 @@ for a in "${ARGS[@]}"; do
 done
 remote_suite_cmd="$remote_suite_cmd --jobs 1"
 remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
+# The watcher reads the ssh stdin: if the transport drops, EOF kills the suite
+# session. The lock (fd 8) is held by the suite itself, so a surviving old
+# suite keeps the slot until it actually terminates.
 # Keep job control off: setsid must exec in place so $! is the session ID
 # written to pgid and used to clean up the complete suite session.
-remote_test_cmd="cd $(printf '%q' "$REMOTE_WORKTREE") || exit 1
+remote_test_cmd="exec 5<&0
+cd $(printf '%q' "$REMOTE_WORKTREE") || exit 1
 $remote_suite_cmd &
 pgid=\$!
 echo \"\$pgid\" > ../pgid
+(exec 8>&-; while read -r _; do :; done; pkill -KILL -s \"\$pgid\" 2>/dev/null) <&5 &
+watcher=\$!
 wait \"\$pgid\"
 rc=\$?
+kill \"\$watcher\" 2>/dev/null
 pkill -KILL -s \"\$pgid\" 2>/dev/null
 exit \"\$rc\""
 # printf %q keeps the multiline command as one protocol line. Execution is
