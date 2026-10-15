@@ -598,6 +598,39 @@ SH
   pass "TERM with a transport that ignores stdin EOF still stops the remote suite and frees the slot"
 }
 
+test_bare_common_store_needs_machine_file_unless_state_override() {
+  local dir fakebin wt out status
+  dir="$TMP_ROOT/bare-common"
+  fakebin=$(fm_fakebin "$dir/tools")
+  mkdir -p "$dir/seed" "$dir/config"
+  git -C "$dir/seed" init -q . || fail "could not init seed repo"
+  git -C "$dir/seed" -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m seed || fail "could not seed commit"
+  git clone -q --bare "$dir/seed" "$dir/gate.git" || fail "could not create bare store"
+  git -C "$dir/gate.git" worktree add -q --detach "$dir/wt" HEAD || fail "could not add gate-style worktree"
+  wt="$dir/wt"
+  cp -R "$ROOT/bin" "$wt/bin"
+  cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+printf 'resource:cpu=1 gpu=0\n'
+SH
+  printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
+  chmod +x "$fakebin/ssh" "$fakebin/rsync"
+
+  out=$(env -u FM_HOME -u FM_STATE_OVERRIDE PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$dir/config" \
+    "$wt/bin/fm-pc02-test-offload.sh" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  expect_code 0 "$?" "a bare common store without a machine file must run locally: $out"
+  assert_contains "$out" "common git store does not identify a primary clone" "bare store was not refused: $out"
+  assert_contains "$out" "$dir/config/firstmate/test-offload-home" "diagnostic did not name the resolved machine file: $out"
+  assert_contains "$out" "one absolute operational-home path followed by a newline" "diagnostic did not say what to put in the file: $out"
+
+  out=$(env -u FM_HOME PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$dir/config" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    "$wt/bin/fm-pc02-test-offload.sh" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  expect_code 0 "$?" "FM_STATE_OVERRIDE in a bare common store must run: $out"
+  assert_contains "$out" "rsync to PC02 failed" "FM_STATE_OVERRIDE did not bypass git-common-dir discovery: $out"
+  pass "a gate-style bare common store needs the machine file, while FM_STATE_OVERRIDE bypasses discovery"
+}
+
 test_machine_home_config_without_fm_home() {
   local dir fakebin out status config
   dir="$TMP_ROOT/machine-home"
@@ -780,6 +813,7 @@ test_active_remote_suite_falls_back_locally
 test_decoy_host_suite_does_not_affect_remote_probe
 test_term_mid_remote_run_removes_mirror_and_kills_suite
 test_term_with_transport_ignoring_eof_stops_suite_and_frees_slot
+test_bare_common_store_needs_machine_file_unless_state_override
 test_machine_home_config_without_fm_home
 test_primary_clone_home_without_environment_or_config
 test_concurrent_offloads_have_one_winner

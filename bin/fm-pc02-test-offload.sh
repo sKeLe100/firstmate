@@ -226,17 +226,18 @@ command -v rsync >/dev/null 2>&1 || run_local "rsync not available on PC01"
 # validation checkout that has code but no private state directory.
 lane_home=${FM_HOME:-}
 home_file="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home"
+home_hint="put one absolute operational-home path followed by a newline in $home_file"
 if [ -z "$lane_home" ] && { [ -e "$home_file" ] || [ -L "$home_file" ]; }; then
   if ! IFS= read -r lane_home < "$home_file" || [[ "$lane_home" != /* ]]; then
-    run_local "supervising home configuration unavailable or invalid ($home_file)"
+    run_local "supervising home configuration unavailable or invalid ($home_file); $home_hint"
   fi
 fi
-if [ -z "$lane_home" ]; then
-  common=$(fm_resolve_git_path "$ROOT" --git-common-dir) || run_local "cannot resolve supervising primary clone"
-  [ "$(basename "$common")" = .git ] || run_local "common git store does not identify a primary clone"
+if [ -z "$lane_home" ] && [ -z "${FM_STATE_OVERRIDE:-}" ]; then
+  common=$(fm_resolve_git_path "$ROOT" --git-common-dir) || run_local "cannot resolve supervising primary clone; $home_hint"
+  [ "$(basename "$common")" = .git ] || run_local "common git store does not identify a primary clone; $home_hint"
   lane_home=$(dirname "$common")
 fi
-if [ -n "${FM_STATE_OVERRIDE:-}" ] && [ -z "${FM_HOME:-}" ] && [ ! -e "$home_file" ] && [ ! -L "$home_file" ]; then
+if [ -z "$lane_home" ]; then
   lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" 2>&1)
 else
   lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" --home "$lane_home" 2>&1)
