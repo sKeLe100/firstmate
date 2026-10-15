@@ -2116,6 +2116,12 @@ families_for_changed_path() {
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
+    tests/*-part.sh)
+      # Split-test blocks are sourced or run by their wrapper suites. Resolve
+      # consumers from their references so adding a new part needs no map edit.
+      scripts_for_test_reference "$(basename "$path")" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
     bin/*)
       # A deleted script has no consuming suite left to select, the same rule
       # the fixture case above applies. Refusing on its absent mapping would
