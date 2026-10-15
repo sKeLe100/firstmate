@@ -247,6 +247,40 @@ test_check_equivalent_remote_spellings_are_one_repo() {
   pass "fm-role.sh check: equivalent remote spellings resolve to one publication target"
 }
 
+# Fetch-only remotes do not identify where this checkout can publish. Preserve
+# the upstream preference when it has a usable push URL, and refuse when all
+# preferred remotes are explicitly disabled.
+test_publication_target_skips_disabled_push_urls() {
+  local repo target
+  repo="$TMP_ROOT/publication-target-remotes"
+  git init -q "$repo" || fail "could not initialize publication target fixture"
+  git -C "$repo" remote add upstream https://github.com/original/firstmate.git
+  git -C "$repo" config remote.upstream.pushurl DISABLED
+  git -C "$repo" remote add origin https://github.com/fork/firstmate.git
+  target=$(fm_role_publication_target "$repo")
+  assert_equals "github.com/fork/firstmate" "$target" \
+    "a disabled upstream push URL must be skipped in favor of origin"
+
+  git -C "$repo" config --unset-all remote.upstream.pushurl
+  target=$(fm_role_publication_target "$repo")
+  assert_equals "github.com/original/firstmate" "$target" \
+    "a pushable upstream must retain precedence over origin"
+
+  git -C "$repo" config remote.upstream.pushurl DISABLED
+  git -C "$repo" remote add github https://github.com/another/firstmate.git
+  git -C "$repo" config remote.github.pushurl DISABLED
+  git -C "$repo" config remote.origin.pushurl DISABLED
+  target=$(fm_role_publication_target "$repo")
+  assert_equals "" "$target" \
+    "publication target resolution must be empty when every candidate is disabled"
+
+  git -C "$repo" config remote.upstream.pushurl ''
+  target=$(fm_role_publication_target "$repo")
+  assert_equals "" "$target" \
+    "an explicitly empty push URL must not fall back to a fetch-only target"
+  pass "fm_role_publication_target: disabled remotes are skipped and no publishable target refuses"
+}
+
 # Firstmate run from a fork, dispatching to a separate clone of the parent:
 # their origins and git dirs differ, but they share firstmate's root commit,
 # so the task still meets the role/consent gate. A fork's maintainer scope
@@ -679,6 +713,7 @@ test_check_foreign_project_passes_through
 test_check_maintainer_scope_authorizes
 test_check_wrong_scope_and_remote_presence_do_not_authorize
 test_check_equivalent_remote_spellings_are_one_repo
+test_publication_target_skips_disabled_push_urls
 test_check_fork_lineage_reaches_the_gate
 test_check_undeterminable_lineage_and_target_refuse
 test_check_task_consent_authorizes_one_task

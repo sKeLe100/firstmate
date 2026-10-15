@@ -226,12 +226,26 @@ fm_role_git_common_dir() {
 # origin that is configured, in the order gh prefers, normalized to
 # host/owner/repo or path:<abs>. Empty when the repo has no such remote.
 fm_role_publication_target() {
-  local dir=$1 remote url=
+  local dir=$1 remote url='' push_urls
   for remote in upstream github origin; do
-    if url=$(git -C "$dir" remote get-url "$remote" 2>/dev/null) && [ -n "$url" ]; then
-      break
+    url=$(git -C "$dir" remote get-url "$remote" 2>/dev/null) || url=
+    [ -n "$url" ] || continue
+    # A remote with an explicit push URL is eligible only when that push URL
+    # can actually publish. In particular, DISABLED is the sentinel used by
+    # fetch-only clones; an explicitly empty push URL also means no push.
+    if push_urls=$(git -C "$dir" config --get-all "remote.$remote.pushurl" 2>/dev/null); then
+      if [ -z "$push_urls" ]; then
+        url=
+        continue
+      fi
+      case $push_urls in
+        DISABLED)
+          url=
+          continue
+          ;;
+      esac
     fi
-    url=
+    break
   done
   [ -n "$url" ] || return 0
   fm_role_remote_identity "$url" "$dir"

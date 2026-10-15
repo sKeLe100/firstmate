@@ -677,7 +677,9 @@ Role is never inferred from GitHub identity, forge permissions, remotes, reposit
 `bin/fm-role.sh report` prints the resolved role with no network call, and the session-start digest shows it in the HOME ROLE subsection.
 
 `bin/fm-role-lib.sh` owns the fail-closed parser, self-repository detection, and the gate that `bin/fm-brief.sh`, `bin/fm-spawn.sh`, and `bin/fm-promote.sh` apply.
-The publication target is selected from the first configured remote in the order `upstream`, `github`, `origin`; see `bin/fm-role-lib.sh` for URL and local-path normalization.
+The publication target is selected from the first remote in the order `upstream`, `github`, `origin` that has a usable push URL; a remote with an explicitly empty push URL or the `DISABLED` sentinel is skipped.
+When no push URL is configured, the remote's fetch URL is treated as its push URL, following Git's default behavior.
+See `bin/fm-role-lib.sh` for URL and local-path normalization.
 A task's project counts as the firstmate repository when it shares the code root's lineage - the same git common dir, or a root commit of the code root's history, which every fork, the parent, and any clone of either share - computed offline; undeterminable lineage (for example a shallow clone sharing no root commit) and an undeterminable publication target are refused, even under task consent.
 Secondmate homes inherit the primary's resolved role, never its raw file: a primary file that resolves to user for any reason propagates as revocation.
 In a secondmate home the file is honored only while the inheritance receipt `config/.fm-inherit-firstmate-role.generation` proves the exact bytes the primary last published (`bin/fm-config-inherit-lib.sh`); a role file with no matching receipt or a stale grant authorizes nothing.
