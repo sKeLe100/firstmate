@@ -274,10 +274,10 @@ test_publication_target_skips_disabled_push_urls() {
   assert_equals "" "$target" \
     "publication target resolution must be empty when every candidate is disabled"
 
-  git -C "$repo" config remote.upstream.pushurl ''
+  git -C "$repo" config remote.upstream.pushurl https://github.com/sKeLe100/firstmate.git
   target=$(fm_role_publication_target "$repo")
-  assert_equals "" "$target" \
-    "an explicitly empty push URL must not fall back to a fetch-only target"
+  assert_equals "github.com/skele100/firstmate" "$target" \
+    "the push URL, not the fetch URL, must identify the publication target"
   pass "fm_role_publication_target: disabled remotes are skipped and no publishable target refuses"
 }
 
