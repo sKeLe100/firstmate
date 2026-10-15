@@ -742,6 +742,20 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test 
 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
 
+## PC02 test offload
+
+The pipeline's canonical Test command can offload with `FM_HOME` unset.
+The supervising home is selected from `FM_HOME`, then the per-machine `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` file, then the primary clone containing the current worktree's common `.git` directory.
+A separate bare common store (such as a no-mistakes gate worktree's) identifies no primary clone, so offload from the gate Test step starts only after `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` exists; the local-fallback diagnostic names that resolved path.
+For an operational home separate from that primary clone (including a validation clone with no private state), create that configuration file with one absolute operational-home path followed by a newline.
+An invalid or unreadable configuration, or an unavailable home state directory, keeps testing local; a configured home is never skipped in favor of a guessed home.
+`FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
+
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic host-slot lock, cleanup, serial execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
+The host slot coordinates offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
+A large serial `--changed` selection can exceed the existing 3600-second whole-run cap, just as an `--all` or `--family` selection can.
+The cap remains unchanged: exceeding it fails with exit 124 and does not rerun the suite locally or omit selected tests.
+
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 
 Domain-local preferences for one captain's fleet live locally in each home's `data/captain.md`; it is gitignored and printed in the session-start context digest after `data/projects.md` and optional `data/secondmates.md`.

@@ -1003,7 +1003,7 @@ tests/fm-mail.test.sh 9684
 tests/fm-muse-harness.test.sh 46548
 tests/fm-muse-signals-live-e2e.test.sh 52
 tests/fm-nm-test-contract.test.sh 853
-tests/fm-no-mistakes-required-live-lookup.test.sh 535
+tests/fm-no-mistakes-required-live-lookup.test.sh 1423
 tests/fm-no-mistakes-required.test.sh 270
 tests/fm-nomistakes-gate-check.test.sh 2985
 tests/fm-nomistakes-poll-lib.test.sh 8000
