@@ -147,12 +147,24 @@ re-deriving the ladder by hand, since a restated threshold here can drift.
 It also prints `codex_spawn: yes|no` (no whenever Codex's weekly pace is
 ahead), which is the answer step 9 uses before offering the Codex sidecar.
 If it exits 2 the quota reading is unavailable: treat that as no headroom.
-Check how many autonomous Claude lanes are currently active against that
-effective cap before treating a lane as available.
-If the cap is at or exceeded, record that new dispatch is deferred due to
-dispatch-cap occupancy and skip only steps 7-8 (the dispatch actions) later
-in the pass. The cap never suppresses captain contact: steps 4-6 still run,
-so an owed nudge still reaches the captain.
+Count only the recorded autonomous Claude lanes that are actually live
+against that effective cap before treating a lane as available, never every
+lane merely on record.
+`bin/fm-crew-state.sh <id>` is the authoritative per-lane liveness reader;
+`bin/fm-fleet-snapshot.sh --json` projects the same reconciled reading per
+row as `tasks[].current_state`, so read every recorded task there - a
+`kind: secondmate` row is not a dispatched lane - and reconcile each lane's
+liveness before it is counted.
+A lane occupies a slot only while its reconciled state is a live session:
+`working`, `parked`, `blocked`, or `paused`.
+Drop every dead or stale lane from the count - a `current_state` of `done`,
+`failed`, or `unknown` frees its slot - because counting a dead or stale
+session as occupied blocks eligible dispatch for no reason.
+If the reconciled live count is at or exceeds the effective cap, record that
+new dispatch is deferred due to dispatch-cap occupancy and skip only steps
+7-8 (the dispatch actions) later in the pass. The cap never suppresses
+captain contact: steps 4-6 still run, so an owed nudge still reaches the
+captain.
 
 Do not hardcode the cap value here: read the live config and the live
 quota, and use the built-in default base of 3 when `config/dispatch-cap`
@@ -548,6 +560,8 @@ This skill cites these live owners rather than restating their values:
 - `config/dispatch-cap` - concurrent autonomous dispatch cap
 - `bin/fm-dispatch-quota-cap.sh` - the effective cap after the quota
   ladder, and whether the paced Codex sidecar may spawn
+- `bin/fm-crew-state.sh` - the authoritative per-lane liveness reader
+- `bin/fm-fleet-snapshot.sh` - the per-task reconciled liveness projection
 - `bin/fm-autonomous-pc02-lane.sh` - whether the single PC02 lane is free
 - `bin/fm-backlog-routing.sh` - the durable pc02/medium/senior routing
   registry (`data/backlog-routing.tsv`) and its ledger
