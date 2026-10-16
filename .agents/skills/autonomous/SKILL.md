@@ -157,9 +157,12 @@ row as `tasks[].current_state`, so read every recorded task there - a
 liveness before it is counted.
 A lane occupies a slot only while its reconciled state is a live session:
 `working`, `parked`, `blocked`, or `paused`.
-Drop every dead or stale lane from the count - a `current_state` of `done`,
-`failed`, or `unknown` frees its slot - because counting a dead or stale
-session as occupied blocks eligible dispatch for no reason.
+Drop a lane from the count only on a positive terminal reading - a
+`current_state` of `done` or `failed`, or a dead or missing endpoint - because
+counting a dead or stale session as occupied blocks eligible dispatch for no
+reason. A `current_state` of `unknown` is an unavailable reading, not a dead
+lane (a down daemon reads every live lane `unknown`): it still occupies its
+slot and needs reconciling.
 If the reconciled live count is at or exceeds the effective cap, record that
 new dispatch is deferred due to dispatch-cap occupancy and skip only steps
 7-8 (the dispatch actions) later in the pass. The cap never suppresses
