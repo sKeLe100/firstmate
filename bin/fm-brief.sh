@@ -1018,6 +1018,11 @@ $SHARED_INFRA_RULE
 
 $WAIT_BLOCK$INBOX_SECTION$TRACKER_LAW_SECTION
 
+# Bug fixes
+When this task fixes a bug, read and follow \`$FM_ROOT/.agents/skills/diagnostic-reasoning/SKILL.md\`, which owns the bug-diagnosis reasoning procedure.
+Fix the defect at its producer - the code that creates the bad value or state - rather than only guarding the throw site where the symptom surfaces.
+If a throw-site guard is still the right fix, justify in your report why the producer cannot be fixed directly.
+
 # Project memory
 A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in that project, so edit it only to correct information that is factually wrong - including information your own change made wrong - and never to add knowledge because it is missing.
 A correction edits only the wrong text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add sections, headings, or pointers alongside it.
