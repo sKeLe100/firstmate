@@ -68,23 +68,33 @@
 #                   (repeatable; portable CI lanes exclude real-herdr-gated so the
 #                   dedicated required Herdr lane owns that coverage)
 #   --exclude-quarantined
-#                   drop every script named in the tracked quarantine list
-#                   (tests/fm-test-quarantine.tsv, override with --quarantine-file
-#                   or FM_TEST_QUARANTINE_FILE) from the selection, after family
-#                   exclusion. Each quarantined skip prints one loud
-#                   `FM_TEST_QUARANTINED <script> signature=<...> reason=<...>
-#                   owner=<...>` line and the run ends with an
-#                   `FM_TEST_QUARANTINE_SUMMARY quarantined=<n>` line, so a
-#                   pre-existing host-sensitive failure is excluded loudly rather
-#                   than hidden. docs/configuration.md "Upstream autosync" owns
-#                   the quarantine contract; the upstream-sync brief gate uses
-#                   this flag so known pre-existing failures cannot stall a sync.
+#                   drop listed scripts from the selection and report each
+#                   FM_TEST_QUARANTINED plus FM_TEST_QUARANTINE_SUMMARY.
+#   --diagnose-quarantined
+#                   run only quarantined scripts intersecting the selection,
+#                   serially, once, with a required positive per-script bound.
+#                   Report FM_TEST_QUARANTINE_DIAGNOSTIC status=matched,
+#                   changed, newly-passing, or skipped; failing test exits remain
+#                   visible in FM_TEST_END/JSON but do not fail this diagnostic
+#                   invocation. Never combine with --exclude-quarantined.
+#                   Signature comparison uses a literal substring of output and
+#                   flags extra "not ok" assertions when the signature names
+#                   an assertion. A match is
+#                   evidence of the recorded symptom, not proof of root cause.
 #   --quarantine-file <path>
-#                   read the quarantine list from <path> instead of the tracked
-#                   default (mostly for tests and fixture repos). An explicit
-#                   path (flag or FM_TEST_QUARANTINE_FILE) that is missing or
-#                   unreadable is refused; a missing tracked default only logs
-#                   and quarantines nothing.
+#                   override tests/fm-test-quarantine.tsv (also available via
+#                   FM_TEST_QUARANTINE_FILE). Explicit unreadable files fail;
+#                   an absent default logs and quarantines nothing.
+#                   TSV columns: script, literal signature, reason, owner,
+#                   base context, head context, host context, reproduced date
+#                   (YYYY-MM-DD, the last successful reproduction of failure).
+#                   Context records immutable SHA plus observed outcome, and
+#                   host plus relevant tools/conditions. Legacy four-column
+#                   rows remain valid; extended rows require all eight fields.
+#                   Historical gaps use "unrecorded" and emit
+#                   FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE; never infer a date
+#                   from a commit date. Duplicate paths/malformed rows fail.
+#                   docs/configuration.md "Upstream autosync" owns policy.
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
@@ -262,6 +272,8 @@ JSON_PATH=
 SCRIPTS=()
 EXCLUDE_FAMILIES=()
 EXCLUDE_QUARANTINED=0
+DIAGNOSE_QUARANTINED=0
+QUARANTINE_ENTRIES=()
 QUARANTINE_FILE=
 QUARANTINED_COUNT=0
 FAIL_ON_GATE_SKIP=
@@ -2281,35 +2293,13 @@ apply_exclude_families() {
   SCRIPTS=("${kept[@]+"${kept[@]}"}")
 }
 
-# The tracked quarantine list (tests/fm-test-quarantine.tsv) is the one owner of
-# which pre-existing host-sensitive failures an upstream-sync validation may
-# exclude; see that file's header and docs/configuration.md "Upstream autosync".
-# Reads the list's non-comment lines, each "<script>\t<signature>\t<reason>\t<owner>",
-# and prints them one per line for the caller. An empty list quarantines
-# nothing; apply_exclude_quarantined checks readability before calling this.
-quarantine_entries() {
-  local file=$1
-  awk -F'\t' '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    NF >= 1 && $1 != "" { print }
-  ' "$file"
-}
-
-# Drop every selected script named in the quarantine list, printing one loud
-# FM_TEST_QUARANTINED line per dropped script so a quarantine exclusion is never
-# hidden. A quarantined script that is not in the current selection is not a
-# skip of this run, so it is not reported here.
-apply_exclude_quarantined() {
-  local s script signature reason owner entry file
-  local -a kept=()
-  local -a entries=()
-  QUARANTINED_COUNT=0
-  [ "$EXCLUDE_QUARANTINED" -eq 1 ] || return 0
+# Validate before consuming: process-substitution errors must not turn a
+# malformed ledger into a successful empty selection.
+load_quarantine_entries() {
+  local file entry
   file=${QUARANTINE_FILE:-${FM_TEST_QUARANTINE_FILE:-}}
   if [ -n "$file" ]; then
-    [ -f "$file" ] && [ -r "$file" ] \
-      || die "quarantine list not readable: $file (set by --quarantine-file or FM_TEST_QUARANTINE_FILE)"
+    [ -f "$file" ] && [ -r "$file" ] || die "quarantine list not readable: $file (set by --quarantine-file or FM_TEST_QUARANTINE_FILE)"
   else
     file="$ROOT/tests/fm-test-quarantine.tsv"
     if [ ! -r "$file" ]; then
@@ -2317,12 +2307,77 @@ apply_exclude_quarantined() {
       return 0
     fi
   fi
+  awk -F'\t' '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    {
+      if (NF != 4 && NF != 8) { print "invalid quarantine field count at line " NR > "/dev/stderr"; bad=1 }
+      for (i=1; i<=NF; i++) if ($i == "") { print "empty quarantine field at line " NR > "/dev/stderr"; bad=1 }
+      if (seen[$1]++) { print "duplicate quarantine path: " $1 > "/dev/stderr"; bad=1 }
+      if (NF == 8 && $8 != "unrecorded" && $8 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) {
+        print "invalid quarantine reproduction date at line " NR > "/dev/stderr"; bad=1
+      }
+    }
+    END { exit bad }
+  ' "$file" || die "invalid quarantine list: $file"
   while IFS= read -r entry; do
-    [ -n "$entry" ] && entries+=("$entry")
-  done < <(quarantine_entries "$file")
+    case "$entry" in ''|\#*) continue ;; esac
+    [ -n "${entry//[[:space:]]/}" ] || continue
+    local script=${entry%%$'\t'*}
+    case "$script" in tests/*.test.sh) ;; *) die "invalid quarantine script: $script" ;; esac
+    [ -f "$ROOT/$script" ] || die "quarantine script missing: $script"
+    QUARANTINE_ENTRIES+=("$entry")
+    if [ "$(printf '%s' "$entry" | awk -F'\t' '{print NF}')" -eq 4 ] || [[ "$entry" == *unrecorded* ]]; then
+      log "FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE $script"
+    fi
+  done < <(awk '!/^[[:space:]]*#/ && !/^[[:space:]]*$/ {print}' "$file")
+}
+
+select_diagnostic_quarantines() {
+  local s entry
+  local -a selected=()
   for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
-    for entry in "${entries[@]+"${entries[@]}"}"; do
-      IFS=$'\t' read -r script signature reason owner <<<"$entry"
+    for entry in "${QUARANTINE_ENTRIES[@]+"${QUARANTINE_ENTRIES[@]}"}"; do
+      if [ "$s" = "${entry%%$'\t'*}" ]; then
+        selected+=("$s")
+        break
+      fi
+    done
+  done
+  SCRIPTS=("${selected[@]+"${selected[@]}"}")
+}
+
+report_quarantine_signature() {
+  local script=$1 rc=$2 out=$3 entry signature rest status
+  for entry in "${QUARANTINE_ENTRIES[@]}"; do
+    [ "$script" = "${entry%%$'\t'*}" ] || continue
+    rest=${entry#*$'\t'}
+    signature=${rest%%$'\t'*}
+    status=changed
+    if [ "$rc" -eq 0 ]; then
+      if detect_gate_skip "$out"; then status=skipped; else status=newly-passing; fi
+    elif grep -Fq -- "$signature" "$out"; then
+      status=matched
+      if awk '/^not ok([[:space:]]|$)/' "$out" | grep -Fq -- "$signature"; then
+        if awk '/^not ok([[:space:]]|$)/' "$out" | grep -Fv -- "$signature" | grep -q .; then status=changed; fi
+      fi
+    fi
+    printf 'FM_TEST_QUARANTINE_DIAGNOSTIC %s status=%s exit=%s signature=%s\n' "$script" "$status" "$rc" "$signature"
+    return
+  done
+}
+
+# Drop every selected script named in the quarantine list, printing one loud
+# FM_TEST_QUARANTINED line per dropped script so a quarantine exclusion is never
+# hidden. A quarantined script that is not in the current selection is not a
+# skip of this run, so it is not reported here.
+apply_exclude_quarantined() {
+  local s script signature reason owner entry
+  local -a kept=()
+  QUARANTINED_COUNT=0
+  [ "$EXCLUDE_QUARANTINED" -eq 1 ] || return 0
+  for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
+    for entry in "${QUARANTINE_ENTRIES[@]+"${QUARANTINE_ENTRIES[@]}"}"; do
+      IFS=$'\t' read -r script signature reason owner _ <<<"$entry"
       [ -n "$script" ] || continue
       if [ "$script" = "$s" ]; then
         signature=${signature:-}
@@ -2577,6 +2632,10 @@ while [ "$#" -gt 0 ]; do
       EXCLUDE_FAMILIES+=("${1#--exclude-family=}")
       shift
       ;;
+    --diagnose-quarantined)
+      DIAGNOSE_QUARANTINED=1
+      shift
+      ;;
     --exclude-quarantined)
       EXCLUDE_QUARANTINED=1
       shift
@@ -2746,6 +2805,21 @@ esac
 apply_exclude_families
 if [ "${#EXCLUDE_FAMILIES[@]}" -gt 0 ]; then
   SELECTION_DESC="${SELECTION_DESC};exclude-family=$(IFS=,; printf '%s' "${EXCLUDE_FAMILIES[*]}")"
+fi
+if [ "$DIAGNOSE_QUARANTINED" -eq 1 ]; then
+  [ "$EXCLUDE_QUARANTINED" -eq 0 ] || die "--diagnose-quarantined conflicts with --exclude-quarantined"
+  [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ] || die "--diagnose-quarantined requires a positive --per-script-timeout-secs"
+  JOBS=1
+  JOBS_EXPLICIT=1
+  FAIL_FAST=0
+  AUTO_CHANGED_RETRY_ELIGIBLE=0
+fi
+if [ "$EXCLUDE_QUARANTINED" -eq 1 ] || [ "$DIAGNOSE_QUARANTINED" -eq 1 ]; then
+  load_quarantine_entries
+fi
+if [ "$DIAGNOSE_QUARANTINED" -eq 1 ]; then
+  select_diagnostic_quarantines
+  SELECTION_DESC="${SELECTION_DESC};diagnose-quarantined"
 fi
 apply_exclude_quarantined
 if [ "$EXCLUDE_QUARANTINED" -eq 1 ]; then
@@ -3065,7 +3139,10 @@ record_script_result() {
   if [ "$rc" -ne 0 ]; then
     FAILED=$((FAILED + 1))
     fail_delta=1
-    AGG_RC=1
+    [ "$DIAGNOSE_QUARANTINED" -eq 1 ] || AGG_RC=1
+  fi
+  if [ "$DIAGNOSE_QUARANTINED" -eq 1 ]; then
+    report_quarantine_signature "$script" "$rc" "$out"
   fi
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
