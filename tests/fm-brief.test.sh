@@ -567,6 +567,44 @@ test_ask_user_escalation_format() {
   pass "fm-brief.sh: no-mistakes ask-user findings use one event plus a verbatim snapshot"
 }
 
+# A scaffolded ship brief cannot know whether its task is a bug fix, so it tells
+# bug-fix tasks to fix the defect at its producer rather than only at the throw
+# site, and to justify any throw-site guard, pointing at the diagnostic-reasoning
+# skill that owns the reasoning procedure instead of copying its content.
+test_ship_brief_teaches_fix_at_producer() {
+  local home id brief skill
+  home="$TMP_ROOT/fix-at-producer-home"
+  mkdir -p "$home/data"
+  id="brief-fix-producer-f1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+
+  # It must point bug-fix tasks at the diagnostic-reasoning skill by path, and
+  # that path must resolve in this repo.
+  assert_grep "diagnostic-reasoning" "$brief" \
+    "ship brief does not point bug-fix tasks at the diagnostic-reasoning skill"
+  skill="$ROOT/.agents/skills/diagnostic-reasoning/SKILL.md"
+  [ -f "$skill" ] || fail "the ship brief points at a missing diagnostic-reasoning skill"
+  assert_grep "$skill" "$brief" \
+    "ship brief did not render the diagnostic-reasoning skill's real absolute path"
+
+  # It must carry the producer-first instruction and require a throw-site guard
+  # to be justified.
+  assert_grep "Fix the defect at its producer" "$brief" \
+    "ship brief does not tell bug-fix tasks to fix at the producer"
+  assert_grep "justify in your report why the producer cannot be fixed directly" "$brief" \
+    "ship brief does not require a throw-site guard to be justified"
+
+  # It points at the skill rather than copying the skill's reasoning content.
+  assert_no_grep "initiating trigger" "$brief" \
+    "ship brief copied the diagnostic-reasoning procedure instead of pointing at it"
+  assert_no_grep "masking condition" "$brief" \
+    "ship brief copied the diagnostic-reasoning procedure instead of pointing at it"
+  pass "fm-brief.sh: ship brief tells bug-fix tasks to fix at the producer and justify throw-site guards"
+}
+
 # The project-memory section bounds crewmate edits of a project's AGENTS.md or
 # CLAUDE.md to corrections of factually wrong information - including wrong
 # information the task itself introduced - and never invites additions of
@@ -1849,6 +1887,7 @@ test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
 test_ask_user_escalation_format
 test_ship_project_memory_wording
+test_ship_brief_teaches_fix_at_producer
 test_herdr_lab_contract_is_explicit_and_complete
 test_perspective_flag_inserts_catalog_fragment_and_marker
 test_repowise_opt_in_inserts_repository_context_only_for_enabled_project
