@@ -546,7 +546,7 @@ test_build_reopens_a_session_the_captain_ended() {
   data="$home/payload.json"
   board="$home/.lavish/bearings-board.html"
   write_valid_payload "$data"
-  out=$(run_board "$home" build "$data") || {
+  out=$(run_board "$home" build "$data" 2>&1) || {
     sid=$(run_lavish_source_id "$home" "$board")
     dump_board_fixture_diagnostics "$home" "$sid" "$out"
     fail "the first build failed"
@@ -732,6 +732,10 @@ test_build_fails_when_reconcile_cannot_establish_a_listener() {
   write_valid_payload "$data"
   run_board "$home" build "$data" >/dev/null || fail "could not establish the listener fixture"
   sid=$(run_lavish_source_id "$home" "$home/.lavish/bearings-board.html")
+  await_board_listener_ready "$home" "$sid" || {
+    dump_board_fixture_diagnostics "$home" "$sid" "listener did not become ready"
+    fail "the fixture listener did not become ready"
+  }
   cat > "$home/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 exit 1
