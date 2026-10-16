@@ -134,6 +134,8 @@ Family selection is the ordinary local path; `--all` is deliberate full regressi
 CI owns broad regression across required portable parallel shards, the portable serial lane's separate-runner shards, the Herdr lane, lint, invariants, and the coverage guard in [`.github/workflows/ci.yml`](.github/workflows/ci.yml); this fork does not run upstream's stock macOS Bash compatibility job (no Apple hardware, captain ruling recorded in the workflow).
 All CI jobs run on GitHub-hosted runners.
 Pushing a new head to a pull request cancels that pull request's still-running CI so only the current head is validated; pushes to `main` are never cancelled, and the workflow owns that contract and its rationale.
+Set the repository variable `FM_CI_SKIP_PUSH` to `1` to skip push runs of `CI` while retaining pull-request checks.
+Each retained job uses a job-level condition, so skipped jobs report success rather than leaving the pull request pending; with the variable unset, retained jobs run on both events.
 Use `bin/fm-test-run.sh --list-lanes` for exact lane names and `--help` for `--jobs` rules and required gate-skip flags when reproducing a lane locally.
 Leave the `sleep 0.1` cadence in the suites' bounded condition waits alone.
 Those sleeps look like recoverable overhead - `fm-watch-triage.test.sh` alone issues about 1,900 of them, each paying a flat ~100ms scheduler wake-up penalty on macOS - but they are not overhead added to the clock; they are how a test waits for a subject that only moves on `fm-watch.sh`'s own one-second `FM_POLL` cadence.

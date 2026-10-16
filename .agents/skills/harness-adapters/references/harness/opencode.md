@@ -1,6 +1,6 @@
 # OpenCode
 
-Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue behavior re-verified on 2026-07-20 using 1.18.4.
+Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue behavior re-verified on 2026-07-20 using 1.18.4 and composer furniture re-verified on 2026-09-18 using 1.18.31.
 
 ## Operating facts
 
@@ -24,6 +24,11 @@ If the pane shows the exit banner, use the verified resume path above.
 OpenCode 1.18.32 may render `tab agents ctrl+p commands` shortcut chrome immediately below the left-bar composer floor.
 The shared classifier treats that exact row as idle-surface furniture, so an otherwise empty composer remains `empty` for lifecycle controls and away-mode injection.
 An idle composer whose cursor sits on that floor row is classified through the left-bar shape too; a draft there stays pending, and a cursor below the floor row stays `unknown`.
+
+Since OpenCode 1.18.0 (upstream anomalyco/opencode#36457, merged 2026-07-11) the idle composer draws the pane's working directory and git branch right-aligned inside the composer rows above the Build footer, wrapped over up to three rail-width fragments whose final fragment continues onto the footer row's right end, whenever the pane has an active session and no higher-priority footer hint.
+That cwd:branch indicator is composer furniture, never typed text, and the shared classifier in `../../../../../bin/fm-composer-lib.sh` (`_fm_composer_leftbar_cwd_start`) recognises it structurally by position and shape, for a cwd under `$HOME` (`~/...`) or an absolute cwd outside it, so an idle or busy pane still reads proven `empty`.
+An earlier read treated those fragments as unsent typed input, which made every idle 1.18.x tmux worker unsteerable (observed live on 1.18.31) until the doorbell was typed by hand.
+Without a cursor anchor a full-pane capture of this version still defers as `unknown` because the status rail below the composer floor row is contiguous, non-blank content; that deferral is the strict posture, not a misclassification.
 
 ## Busy-queued Enter
 
