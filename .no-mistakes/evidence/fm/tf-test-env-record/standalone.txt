@@ -1,0 +1,37 @@
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=hB argv0=fm-test-env-record.sh pid=1031850 ppid=1031848
+runner_login_shell=no
+path_entries=/home/sean_/.local/bin:/home/sean_/.npm-global/bin:/home/sean_/bin:/home/sean_/.npm-global/bin:/home/sean_/.local/bin:/home/sean_/.local/bin:/home/sean_/go/bin:/home/sean_/.cargo/bin:/home/sean_/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:
+shell_options=braceexpand,hashall,interactive-comments
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=1031850 ppid=1031848 pgid=1031850 sid=1031848 subreaper=not-exposed-by-procfs
+tmpdir_fs=tmpfs
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 59379
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 59379
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/home/sean_/.local/bin/node version=v24.10.0
+tool=pi path=/home/sean_/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=/home/sean_/.npm-global/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (uutils coreutils) 0.8.0
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=/home/sean_/.local/bin/herdr version=herdr 0.9.4
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=/home/sean_/.local/bin/no-mistakes version=no-mistakes version v1.84.0 (4822244) 2026-09-26T08:30:42Z
+chrome_startup=failed path=/home/sean_/.local/bin/chromium
+FM_TEST_ENV_RECORD_END

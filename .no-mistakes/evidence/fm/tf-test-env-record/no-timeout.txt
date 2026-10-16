@@ -1,0 +1,11 @@
+tool=bash path=/tmp/nt1031848/bash version=probe-skipped
+tool=node absent
+tool=pi absent
+tool=tasks-axi absent
+tool=timeout absent
+tool=git absent
+tool=herdr absent
+tool=tmux absent
+tool=rsync absent
+tool=no-mistakes absent
+chrome_startup=missing
