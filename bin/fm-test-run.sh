@@ -2368,13 +2368,13 @@ report_quarantine_signature() {
 # hidden. A quarantined script that is not in the current selection is not a
 # skip of this run, so it is not reported here.
 apply_exclude_quarantined() {
-  local s script signature reason owner entry context
+  local s script signature reason owner entry
   local -a kept=()
   QUARANTINED_COUNT=0
   [ "$EXCLUDE_QUARANTINED" -eq 1 ] || return 0
   for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
     for entry in "${QUARANTINE_ENTRIES[@]+"${QUARANTINE_ENTRIES[@]}"}"; do
-      IFS=$'\t' read -r script signature reason owner context <<<"$entry"
+      IFS=$'\t' read -r script signature reason owner _ <<<"$entry"
       [ -n "$script" ] || continue
       if [ "$script" = "$s" ]; then
         signature=${signature:-}
