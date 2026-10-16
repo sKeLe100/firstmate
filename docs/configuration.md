@@ -677,7 +677,9 @@ Role is never inferred from GitHub identity, forge permissions, remotes, reposit
 `bin/fm-role.sh report` prints the resolved role with no network call, and the session-start digest shows it in the HOME ROLE subsection.
 
 `bin/fm-role-lib.sh` owns the fail-closed parser, self-repository detection, and the gate that `bin/fm-brief.sh`, `bin/fm-spawn.sh`, and `bin/fm-promote.sh` apply.
-The publication target is selected from the first configured remote in the order `upstream`, `github`, `origin`; see `bin/fm-role-lib.sh` for URL and local-path normalization.
+The publication target is selected from the first remote in the order `upstream`, `github`, `origin` whose push URL (`git remote get-url --push`) is usable, and the target is that push URL; a remote with an explicitly empty push URL or the `DISABLED` sentinel is skipped.
+When no push URL is configured, the remote's fetch URL is treated as its push URL, following Git's default behavior.
+See `bin/fm-role-lib.sh` for URL and local-path normalization.
 A task's project counts as the firstmate repository when it shares the code root's lineage - the same git common dir, or a root commit of the code root's history, which every fork, the parent, and any clone of either share - computed offline; undeterminable lineage (for example a shallow clone sharing no root commit) and an undeterminable publication target are refused, even under task consent.
 Secondmate homes inherit the primary's resolved role, never its raw file: a primary file that resolves to user for any reason propagates as revocation.
 In a secondmate home the file is honored only while the inheritance receipt `config/.fm-inherit-firstmate-role.generation` proves the exact bytes the primary last published (`bin/fm-config-inherit-lib.sh`); a role file with no matching receipt or a stale grant authorizes nothing.
@@ -743,6 +745,12 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
 
 ## PC02 test offload
+
+Every executing `bin/fm-test-run.sh` invocation prints one `FM_TEST_ENV_RECORD` before starting tests, from the shell that will run them.
+For an offloaded run this means the record comes from the runner on PC02, with PC02's inherited `PATH` and limits.
+The record includes selected tool versions and paths, the inherited `PATH` entries, Bash mode and options, whether the runner's own Bash is a login shell (`runner_login_shell`, which does not describe the invoking SSH shell), soft limits, OS/kernel, process identifiers and session model, TMPDIR filesystem type, and a token-free headless Chrome startup result.
+Missing tools and browser startup failures are recorded as data and do not change the test result; the record never dumps the process environment.
+`bin/fm-test-env-record.sh` owns the exact fields and privacy-safe probes, and `tests/fm-test-run.test.sh` plus `tests/fm-pc02-test-offload.test.sh` pin the local and fake-remote behavior.
 
 The pipeline's canonical Test command can offload with `FM_HOME` unset.
 The supervising home is selected from `FM_HOME`, then the per-machine `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` file, then the primary clone containing the current worktree's common `.git` directory.
@@ -942,6 +950,21 @@ When present, `bin/fm-upstream-sync-item.sh` files or refreshes a single stable-
 The filed task carries a **bounded batch** from `bin/fm-upstream-batch.sh` (at most `FM_UPSTREAM_AUTOSYNC_BATCH_MAX` first-parent commits, default 20), so the sync merges exactly that batch's target with a true merge and leaves the rest for the next periodic dispatch. A plan that cannot be computed is stated in the note rather than silently leaving the sync unbounded.
 
 The merge always needs the captain's word; firstmate never merges an upstream sync on its own. The brief enforces the bounded-batch gate (the worker plans the batch before merging anything). A landing via true merge brings `behind` back down, which the drift check's baseline mechanism uses to silence the armed trigger until the next threshold-sized block of new drift accumulates.
+
+Quarantine dispositions live in `tests/fm-test-quarantine.tsv`; `bin/fm-test-run.sh --help` owns the row format, validation, and diagnostic flags.
+Each disposition names a follow-up owner and records base/head outcomes, host context, failure signature, and the last successful reproduction of that failure.
+Missing historical evidence remains explicitly unrecorded and visible until the owner supplies it.
+Imported upstream failures whose fork base passes or lacks the case remain distinct from failures reproduced on the fork base.
+Installing a dependency, an isolated pass, or matching an old symptom does not justify retirement: the owner must demonstrate the original failing case passing in its relevant context.
+
+Coverage currently differs: canonical no-mistakes Test selects changed subjects, excludes the real-Herdr family, and includes quarantined subjects; manual upstream-sync validation selects all subjects and excludes quarantined subjects, including those outside the changed set.
+CI's portable and Herdr lanes also exclude quarantined subjects.
+For identical initial subject and family selections, adding `--exclude-quarantined` removes exactly the intersection with the ledger; compare the runner's `--list` output with and without that flag to publish the actual paths for a candidate rather than comparing totals.
+The runner reports each removed path and the total in execution mode.
+No selection is a substitute for the other, and quarantine diagnostics do not certify the gate selection.
+Aligning canonical Test with manual sync would change the pinned Test contract and requires a separate explicit decision; this upkeep preserves both selections.
+Use the runner's bounded quarantine diagnostic mode to report changed signatures, newly passing subjects, and capability skips without letting known failures block the diagnostic invocation.
+A match establishes only the recorded output symptom; retained output and owner follow-up are still necessary for failures masked by an earlier assertion.
 
 ## Primary continuity watchdog
 

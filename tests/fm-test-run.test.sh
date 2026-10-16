@@ -72,6 +72,65 @@ test_single_script_selection() {
   pass "single-script selection lists exactly that path"
 }
 
+test_environment_record_is_compact_safe_and_emitted_once() {
+  local out helper_out fakebin tool tmp_root
+  tmp_root=$(fm_test_tmproot fm-test-run-env-record)
+  export FM_TEST_ENV_SECRET_SENTINEL='do-not-print-this-secret'
+  out=$("$RUNNER" tests/fm-classify-corr-token.test.sh 2>&1)
+  case "$out" in
+    *FM_TEST_ENV_RECORD\ v=1*) ;;
+    *) fail "an executing runner invocation omitted its environment record: $out" ;;
+  esac
+  [ "$(printf '%s\n' "$out" | grep -c '^FM_TEST_ENV_RECORD v=1$')" -eq 1 ] \
+    || fail "the runner must emit exactly one environment record: $out"
+  [ "$(printf '%s\n' "$out" | grep -c '^FM_TEST_ENV_RECORD_END$')" -eq 1 ] \
+    || fail "the environment record did not have one end marker: $out"
+  [ "$(printf '%s\n' "$out" | grep -c '^FM_TEST_BEGIN ')" -eq 1 ] \
+    || fail "the fixture test did not execute exactly once: $out"
+  [ "$(printf '%s\n' "$out" | awk '/^FM_TEST_ENV_RECORD v=1$/ {record=NR} /^FM_TEST_BEGIN / {begin=NR} END {print (record > 0 && begin > record) ? "yes" : "no"}')" = yes ] \
+    || fail "the environment record must precede the first test marker: $out"
+  case "$out" in *do-not-print-this-secret*) fail "the environment record leaked a secret sentinel" ;; esac
+  for field in '^shell=bash .*flags=.*argv0=' '^runner_login_shell=(yes|no)$' '^path_entries=' '^shell_options=' '^os=.* kernel=.* machine=' '^process_model=.* subreaper=' '^tmpdir_fs=' '^ulimit=' '^tool=bash (path=.* version=.*|absent)$' '^tool=node (path=.* version=.*|absent)$' '^tool=pi (path=.* version=.*|absent)$' '^tool=tasks-axi (path=.* version=.*|absent)$' '^tool=timeout (path=.* version=.*|absent)$' '^tool=git (path=.* version=.*|absent)$' '^tool=herdr (path=.* version=.*|absent)$' '^tool=tmux (path=.* version=.*|absent)$' '^tool=rsync (path=.* version=.*|absent)$' '^tool=no-mistakes (path=.* version=.*|absent)$' '^chrome_startup=(ok|failed|missing)'; do
+    printf '%s\n' "$out" | grep -Eq "$field" || fail "environment record omitted $field: $out"
+  done
+
+  fakebin=$(fm_fakebin "$tmp_root/env-record-path")
+  for tool in tr cut df awk stat uname ps basename head mktemp rm timeout env; do
+    local found
+    found=$(command -v "$tool")
+    [ -n "$found" ] && ln -sf "$found" "$fakebin/$tool"
+  done
+  ln -sf "$(command -v bash)" "$fakebin/bash"
+  helper_out=$(PATH="$fakebin" /bin/bash "$ROOT/bin/fm-test-env-record.sh" 2>&1)
+  assert_contains "$helper_out" 'tool=node absent' "a missing tool should be reported as absent: $helper_out"
+  assert_contains "$helper_out" 'FM_TEST_ENV_RECORD_END' "a missing tool broke record generation: $helper_out"
+  assert_contains "$helper_out" 'tool=pi absent' "a missing pi should be reported as absent: $helper_out"
+  assert_contains "$helper_out" "path_entries=$fakebin" "the record omitted the PATH entries: $helper_out"
+  printf '#!/bin/sh\nexit 0\n' >"$fakebin/chromium"
+  chmod +x "$fakebin/chromium"
+  rm -f "$fakebin/timeout"
+  helper_out=$(PATH="$fakebin" /bin/bash "$ROOT/bin/fm-test-env-record.sh" 2>&1)
+  printf '#!/bin/sh\necho pi 1\n' >"$fakebin/pi"
+  chmod +x "$fakebin/pi"
+  helper_out=$(PATH="$fakebin" /bin/bash "$ROOT/bin/fm-test-env-record.sh" 2>&1)
+  assert_contains "$helper_out" 'version=probe-skipped' "version probes must be skipped when timeout is missing: $helper_out"
+  assert_contains "$helper_out" 'tool=timeout absent' "a missing timeout should be reported as absent: $helper_out"
+  assert_contains "$helper_out" 'chrome_startup=failed reason=timeout-missing' "a missing timeout must not read as a Chrome fault: $helper_out"
+  helper_out=$(/bin/bash -lc "/bin/bash '$ROOT/bin/fm-test-env-record.sh'; :" 2>&1)
+  assert_contains "$helper_out" 'runner_login_shell=no' "the runner's own non-login bash must be recorded as no: $helper_out"
+  helper_out=$(/bin/bash -l "$ROOT/bin/fm-test-env-record.sh" 2>&1)
+  assert_contains "$helper_out" 'runner_login_shell=yes' "a login runner bash must be recorded as yes: $helper_out"
+  printf '#!/bin/sh\nsleep 30\n' >"$fakebin/node"
+  chmod +x "$fakebin/node"
+  ln -sf "$(command -v timeout)" "$fakebin/timeout"
+  ln -sf "$(command -v sleep)" "$fakebin/sleep"
+  helper_out=$(PATH="$fakebin" /bin/bash "$ROOT/bin/fm-test-env-record.sh" 2>&1)
+  assert_contains "$helper_out" 'tool=node path=' "the hanging tool was not recorded: $helper_out"
+  assert_contains "$helper_out" 'version=timed-out' "a hanging version probe must be bounded and recorded as timed-out: $helper_out"
+  unset FM_TEST_ENV_SECRET_SENTINEL
+  pass "the runner emits one bounded secret-free environment record and records missing tools safely"
+}
+
 test_changed_file_selection_is_conservative() {
   local listed all_count fam_count listed_count
   # A path-mapped pure unit should not expand to --all.
@@ -1013,9 +1072,9 @@ test_exclude_quarantined() {
   quarantine_file="$ROOT/tests/fm-test-quarantine.tsv"
   assert_present "$quarantine_file" "the tracked quarantine list is missing"
 
-  # Every entry must name an existing test script and carry four tab-separated
-  # columns, so a renamed or deleted test cannot leave a stale, silently
-  # ignored entry behind.
+  # Every entry must name an existing test and retain the original four
+  # fields; test_quarantine_diagnostics validates migrated evidence through
+  # the public parser as well.
   while IFS=$'\t' read -r script signature reason owner; do
     [ -n "$script" ] || continue
     assert_present "$ROOT/$script" "quarantine entry names a missing script: $script"
@@ -1065,6 +1124,62 @@ test_exclude_quarantined() {
     "a fully-quarantined selection runs nothing"
 
   pass "exclude-quarantined drops exactly the listed scripts and reports each skip loudly"
+}
+
+test_quarantine_diagnostics() {
+  local tmp repo runner qfile out rc status line
+  tmp=$(fm_test_tmproot fm-quarantine-diagnostics)
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/"
+  runner="$repo/bin/fm-test-run.sh"
+  qfile="$repo/tests/fm-test-quarantine.tsv"
+  # Migrated rows carry reproduction context; old four-column rows still work.
+  printf 'tests/fm-brief.test.sh\trecorded failure\treason\towner\tbase-sha; FAIL\thead-sha; FAIL\tfixture host\t2026-10-13\n' >"$qfile"
+  printf 'tests/fm-pr-merge.test.sh\told symptom\treason\towner\n' >>"$qfile"
+  printf 'echo "not ok - old symptom"; exit 1\n' >"$repo/tests/fm-pr-merge.test.sh"
+  for status in matched changed newly-passing skipped additional; do
+    case "$status" in
+      matched) line='echo "not ok - recorded failure"; exit 1' ;;
+      changed) line='echo "not ok - different failure"; exit 1' ;;
+      newly-passing) line='echo "ok - original case passes"; exit 0' ;;
+      skipped) line='echo "skip: missing capability"; exit 0' ;;
+      additional) line='echo "not ok - recorded failure"; echo "not ok - new defect"; exit 1' ;;
+    esac
+    printf '%s\n' "$line" >"$repo/tests/fm-brief.test.sh"
+    out=$("$runner" --diagnose-quarantined --all --jobs 1 --fail-fast --per-script-timeout-secs 5 2>&1) && rc=0 || rc=$?
+    expect_code 0 "$rc" "diagnostic failures must not block the gate"
+    [ "$status" != additional ] || status=changed
+    assert_contains "$out" "FM_TEST_QUARANTINE_DIAGNOSTIC tests/fm-brief.test.sh status=$status" "wrong signature classification"
+    assert_contains "$out" "FM_TEST_QUARANTINE_DIAGNOSTIC tests/fm-pr-merge.test.sh status=matched" "diagnostics must continue past first failure"
+    assert_contains "$out" "FM_TEST_SUMMARY total=2" "diagnostics must select only quarantines"
+    assert_contains "$out" "FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-pr-merge.test.sh" "legacy context must be visible"
+  done
+  out=$("$runner" --diagnose-quarantined --list --all --per-script-timeout-secs 5 2>/dev/null)
+  [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" -eq 2 ] || fail "diagnostic list must contain only paths"
+  # Ordinary gates retain the real failure, even with a quarantine file present.
+  out=$("$runner" --jobs 1 tests/fm-pr-merge.test.sh 2>&1) && rc=0 || rc=$?
+  expect_code 1 "$rc" "ordinary execution must still fail quarantined scripts"
+  for line in \
+    'tests/fm-brief.test.sh	sig	reason' \
+    'tests/fm-brief.test.sh	sig	reason	owner	base	head	host	bad-date' \
+    'tests/fm-brief.test.sh	sig	reason	owner		head	host	2026-10-13'; do
+    printf '%b\n' "$line" >"$qfile"
+    out=$("$runner" --exclude-quarantined --all --list 2>&1) && rc=0 || rc=$?
+    expect_code 2 "$rc" "malformed quarantine evidence must refuse"
+  done
+  printf 'tests/fm-brief.test.sh\tsig\treason\towner\n' >"$qfile"
+  cat "$qfile" "$qfile" >"$tmp/duplicate.tsv"
+  out=$("$runner" --quarantine-file "$tmp/duplicate.tsv" --exclude-quarantined --all --list 2>&1) && rc=0 || rc=$?
+  expect_code 2 "$rc" "duplicate quarantines must refuse"
+  out=$("$runner" --diagnose-quarantined --all --per-script-timeout-secs 0 2>&1) && rc=0 || rc=$?
+  expect_code 2 "$rc" "diagnostics must require a positive bound"
+  out=$("$runner" --diagnose-quarantined --exclude-quarantined --all --per-script-timeout-secs 5 2>&1) && rc=0 || rc=$?
+  expect_code 2 "$rc" "diagnostics must refuse exclusion"
+  # Validate every migrated tracked record through the public parser.
+  "$RUNNER" --quarantine-file "$ROOT/tests/fm-test-quarantine.tsv" --exclude-quarantined --all --list >"$tmp/list" \
+    || fail "tracked migrated quarantine records are invalid"
+  pass "quarantine diagnostics classify drift without weakening ordinary gates"
 }
 
 test_list_scheduled_proven_isolated_uses_serial_weights() {
@@ -2650,6 +2765,7 @@ SH
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
+test_environment_record_is_compact_safe_and_emitted_once
 test_changed_file_selection_is_conservative
 test_task_marker_refuses_the_primary_checkout
 test_changed_runner_surfaces_select_their_family
@@ -2671,6 +2787,7 @@ test_live_guards_expect_a_capability_skip_class
 test_fail_on_gate_skip_token
 test_exclude_family
 test_exclude_quarantined
+test_quarantine_diagnostics
 test_list_scheduled_proven_isolated_uses_serial_weights
 test_list_scheduled_non_lane_selections_use_serial_weights
 test_portable_shard_union_and_coverage_guard
