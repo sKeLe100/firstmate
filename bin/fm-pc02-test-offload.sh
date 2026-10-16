@@ -79,7 +79,7 @@
 #   - Supervising-home selection and per-machine configuration are owned by
 #     docs/configuration.md's "PC02 test offload" section.
 #   - The remote fm-test-run.sh prints its own environment record before its
-#     first test, so an offloaded run records PC02's login-shell context.
+#     first test, so an offloaded run records PC02's inherited PATH and limits.
 #
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
