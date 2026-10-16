@@ -1,0 +1,5 @@
+115:# Bug fixes
+116-When this task fixes a bug, read and follow `/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M52H2JE0B22B43VSRZMPE9HP/.agents/skills/diagnostic-reasoning/SKILL.md`, which owns the bug-diagnosis reasoning procedure.
+117-Fix the defect at its producer - the code that creates the bad value or state - rather than only guarding the throw site where the symptom surfaces.
+118-If a throw-site guard is still the right fix, justify in your report why the producer cannot be fixed directly.
+119-

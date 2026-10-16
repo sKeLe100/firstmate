@@ -1,0 +1,5 @@
+ok - fm-brief.sh: ship brief tells bug-fix tasks to fix at the producer and justify throw-site guards
+ok - fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible
+ok - fm-brief.sh: relative directory inputs ignore CDPATH, render stable absolute charter paths, or fail loudly
+ok - fm-brief.sh: ship brief carries the retry-loop failsafe rule with its ceilings and key
+ok - fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed
