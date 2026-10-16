@@ -111,6 +111,7 @@ After the profile is resolved, a scout intake whose purpose class is review, inv
 A ship brief defaults to none; an explicitly named slug is inserted with a warning.
 The generic effort fallback and its precedence are owned by `harness-adapters`: explicit captain and standing configured effort win; otherwise use low for well-understood explicit work, xhigh for ambiguous investigation or design, intermediate levels proportionally, and never max without explicit captain preference.
 Do not add model-specific versions of that policy.
+Never switch model or effort inside a live session - the switch breaks the prompt cache and re-pays the whole context; redelegate by relaunching a fresh session with a carryover note instead, and never use the compact-on-another-model trick.
 
 `secondmate-provisioning` owns secondmate harness pins and inherited local material, while `harness-adapters` owns the harness consequences.
 Dispatch only on a backend that `fm-spawn` validates as spawn-capable; pass an explicit per-spawn `--backend` only under that exact task's own authority, never as later-task precedent (selection contract: [`docs/configuration.md`](docs/configuration.md) "Runtime backend").
