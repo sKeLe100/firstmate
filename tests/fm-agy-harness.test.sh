@@ -537,7 +537,14 @@ SH
 set -u
 if [ "${1:-}" = models ]; then
   if [ "${FM_FAKE_AGY_MODELS_FAIL:-0}" = 1 ]; then exit 3; fi
-  if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then cat > /dev/null; sleep 30; exit 0; fi
+  if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then
+    mono() { perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e 'printf "%.6f\n", clock_gettime(CLOCK_MONOTONIC)'; }
+    [ -z "${FM_FAKE_AGY_MODELS_TIMING:-}" ] || mono > "$FM_FAKE_AGY_MODELS_TIMING"
+    trap '[ -z "${FM_FAKE_AGY_MODELS_TIMING:-}" ] || mono >> "$FM_FAKE_AGY_MODELS_TIMING"; exit 143' TERM
+    cat > /dev/null
+    sleep 30
+    exit 0
+  fi
   printf 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n'
   printf 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\n'
   printf 'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n'
@@ -606,6 +613,7 @@ run_agy_spawn() {
     FM_FAKE_AGY_SETTINGS="$home/.gemini/antigravity-cli/settings.json" \
     FM_FAKE_AGY_MODELS_FAIL="${FM_FAKE_AGY_MODELS_FAIL:-0}" \
     FM_FAKE_AGY_MODELS_HANG="${FM_FAKE_AGY_MODELS_HANG:-0}" \
+    FM_FAKE_AGY_MODELS_TIMING="$case_dir/models.timing" \
     FM_FAKE_AGY_IGNORE_TRUST="${FM_FAKE_AGY_IGNORE_TRUST:-0}" \
     FM_FAKE_AGY_ASSUME_TRUSTED="${FM_FAKE_AGY_ASSUME_TRUSTED:-0}" \
     FM_FAKE_AGY_RACE="${FM_FAKE_AGY_RACE:-0}" \
@@ -705,18 +713,21 @@ test_agy_hung_listing_is_cut_off_and_launches() {
 }
 
 test_agy_zero_model_timeout_is_clamped_to_the_default_bound() {
-  local id rec out rc started elapsed
+  local id rec out rc elapsed timing_count
   id="agy-zerobound-z14-$$"
   rec=$(make_agy_spawn_case zerobound "$id")
   read_agy_spawn_record "$rec"
   rc=0
-  started=$(date +%s)
   out=$(FM_FAKE_AGY_MODELS_HANG=1 FM_AGY_MODELS_TIMEOUT=0 \
     run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
     "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
-  elapsed=$(( $(date +%s) - started ))
   expect_code 0 "$rc" "a hung listing with a zero bound must not block the spawn"
-  [ "$elapsed" -lt 25 ] || fail "a zero model bound disabled the deadline (took ${elapsed}s)"
+  timing_count=$(wc -l < "$CASE_DIR/models.timing" | tr -d ' ')
+  [ "$timing_count" = 2 ] || fail "the model probe did not record its monotonic start and termination"
+  elapsed=$(perl -e 'my @t = <>; die "bad monotonic timing record\n" unless @t == 2; printf "%.3f\n", $t[1] - $t[0]' \
+    "$CASE_DIR/models.timing") || fail "could not measure the model probe lifetime"
+  awk -v elapsed="$elapsed" 'BEGIN { exit !(elapsed >= 13 && elapsed < 24) }' \
+    || fail "the zero-bound model probe did not run to its clamped deadline (took ${elapsed}s)"
   assert_contains "$out" "did not answer within 15s" \
     "a zero model bound was not clamped to the documented default"
   [ -s "$CASE_DIR/launch.log" ] || fail "a zero model bound produced no launch command"

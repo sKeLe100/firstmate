@@ -41,6 +41,7 @@ emit() {  # <canonical-file> <status>
 case "${1-}" in
   --version) printf '0.1.61\n'; exit 0 ;;
   poll)
+    printf 'fixture runner log: poll started for %s\n' "$state" >> "$state/runner.log"
     # A real blocking listener: it returns only when the trigger appears, so a
     # live owner in these tests is a live process rather than a timing artifact.
     # Both waits are bounded, so a listener that escapes its test cannot keep
@@ -113,6 +114,21 @@ run_board() {  # <home> <args...>
     "$BOARD" "$@"
 }
 
+dump_board_fixture_diagnostics() {  # <home> <source-id> <captured-build-output>
+  local home=$1 sid=$2 output=$3 path
+  printf '%s\n' '--- Bearings fixture build output ---' "$output"
+  printf '%s\n' '--- Bearings listener claim, registration, and runner records ---'
+  for path in "$home/procevent-claims/$sid.claim" "$home/state/procevent/$sid.source" \
+    "$home/state/procevent/$sid.runner" "$home/lavish-state/runner.log"; do
+    if [ -f "$path" ]; then
+      printf '%s\n' "--- $path ---"
+      cat "$path"
+    else
+      printf '%s\n' "--- missing: $path ---"
+    fi
+  done
+}
+
 run_procevent() {  # <home> <command args...>
   local home=$1
   shift
@@ -121,6 +137,16 @@ run_procevent() {  # <home> <command args...>
     FM_PROCEVENT_CLAIM_ROOT="$home/procevent-claims" \
     LAVISH_AXI_STATE_DIR="$home/lavish-state" \
     "$ROOT/bin/fm-procevent.sh" "$@"
+}
+
+await_board_listener_ready() {  # <home> <source-id>
+  local home=$1 sid=$2 owner i
+  for i in $(seq 1 50); do
+    owner=$(run_procevent "$home" list | awk -v id="$sid" 'NR > 1 && $1 == id { print $3 }')
+    [ "$owner" = live ] && return 0
+    sleep 0.1
+  done
+  return 1
 }
 
 run_decisions() {  # <home> <command args...>
@@ -520,8 +546,16 @@ test_build_reopens_a_session_the_captain_ended() {
   data="$home/payload.json"
   board="$home/.lavish/bearings-board.html"
   write_valid_payload "$data"
-  run_board "$home" build "$data" >/dev/null || fail "the first build failed"
+  out=$(run_board "$home" build "$data" 2>&1) || {
+    sid=$(run_lavish_source_id "$home" "$board")
+    dump_board_fixture_diagnostics "$home" "$sid" "$out"
+    fail "the first build failed"
+  }
   sid=$(run_lavish_source_id "$home" "$board")
+  await_board_listener_ready "$home" "$sid" || {
+    dump_board_fixture_diagnostics "$home" "$sid" "listener did not become ready"
+    fail "the first build did not prove listener readiness"
+  }
   claim="$home/procevent-claims/$sid.claim"
   old_pid=$(sed -n '2p' "$claim")
   old_token=$(sed -n '3p' "$claim")
@@ -698,6 +732,10 @@ test_build_fails_when_reconcile_cannot_establish_a_listener() {
   write_valid_payload "$data"
   run_board "$home" build "$data" >/dev/null || fail "could not establish the listener fixture"
   sid=$(run_lavish_source_id "$home" "$home/.lavish/bearings-board.html")
+  await_board_listener_ready "$home" "$sid" || {
+    dump_board_fixture_diagnostics "$home" "$sid" "listener did not become ready"
+    fail "the fixture listener did not become ready"
+  }
   cat > "$home/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 exit 1
@@ -709,10 +747,17 @@ SH
   set -e
   rm -f "$home/fakebin/ps"
   [ "$rc" -ne 0 ] || fail "a build with an uncertain listener reported success: $out"
+  out=$(dump_board_fixture_diagnostics "$home" "$sid" "$out")
   assert_contains "$out" "source $sid is not listening after reconcile" \
     "the refusal did not name the source: $out"
   assert_contains "$out" "observed owner: uncertain" \
     "the refusal did not name the observed owner: $out"
+  assert_contains "$out" 'fixture runner log: poll started' \
+    "the retained diagnostics omitted the fixture runner log: $out"
+  assert_contains "$out" "--- $home/state/procevent/$sid.source ---" \
+    "the retained diagnostics omitted the source registration: $out"
+  assert_contains "$out" "--- $home/procevent-claims/$sid.claim ---" \
+    "the retained diagnostics omitted the listener claim path: $out"
   pass "build fails when reconcile cannot prove a live listener"
 }
 
