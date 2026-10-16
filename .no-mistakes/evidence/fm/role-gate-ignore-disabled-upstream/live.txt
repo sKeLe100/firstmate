@@ -1,8 +1,5 @@
-== A: upstream push DISABLED, origin fork
+A: upstream push DISABLED, origin fork:
 github.com/skele100/firstmate
-== B: github fetch differs, pushurl fork
-github.com/skele100/firstmate
-== C: all disabled -> empty
-[rc=0]
-== D: upstream pushable -> original
-github.com/kunchenguid/firstmate
+B: github fetch x/y, pushurl pushfork:
+github.com/skele100/pushfork
+C: only disabled upstream (expect empty):
