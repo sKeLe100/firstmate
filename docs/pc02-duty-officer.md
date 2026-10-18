@@ -77,10 +77,11 @@ Per the scoping report, the duty officer is the secondary fallback, not the prim
    tailnet/LAN, run manually per the dispatch path.
 3. **PC02 itself is off, asleep, tied up running another model, or otherwise unreachable:** there is
    no further fallback - this is an inherent hardware limitation. `ssh pc02 true` failing, or a model
-   load taking the observed 5-6 minute cold-start (see `data/learnings.md` on PC02 cold loads looking
-   like hangs - wait it out once before concluding the host is down), are both diagnostic signs of
-   this state, not duty-officer bugs. Only one model is resident on PC02 at a time, so if another
-   task is mid-run on the lane, wait for it to finish or use cloud fallback instead of interrupting it.
+   cold load taking a while (see `data/learnings.md` on PC02 cold loads looking like hangs - wait it
+   out once before concluding the host is down; see `docs/pc02-outage-runbook.md` for current
+   per-model cold-start timing), are both diagnostic signs of this state, not duty-officer bugs. Only
+   one model is resident on PC02 at a time, so if another task is mid-run on the lane, wait for it to
+   finish or use cloud fallback instead of interrupting it.
 4. **Neither cloud nor PC02 works:** there is no offline answer. This is the same conclusion the
    scoping report reached - it is a hardware/connectivity ceiling, not something this deployment can
    close.
