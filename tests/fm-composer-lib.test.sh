@@ -796,8 +796,9 @@ test_matrix_opencode_leftbar_signals() {
   assert_screen "opencode 1.19.0 typed on plain backends" unknown "$CAPS_PLAIN" "$captured_119_pending"
   # A plain-only partial mode word or a non-final dim footer does not carry
   # upstream's strict proof and must never authorize typing.
-  local ambiguous_footer
-  ambiguous_footer=${captured_119_idle/Build/Buil}
+  local ambiguous_footer partial_mode_cell
+  partial_mode_cell=${mode_cell/Build/Buil}
+  ambiguous_footer=${captured_119_idle/"$mode_cell"/"$partial_mode_cell"}
   assert_screen "opencode partial dim footer is unproven" unknown "$CAPS_STYLED" "$ambiguous_footer"
   ambiguous_footer=${captured_119_idle/╹▀/  ┃  extra row$'\n'  ╹▀}
   assert_screen "opencode non-final dim footer is unproven" unknown "$CAPS_STYLED" "$ambiguous_footer"
