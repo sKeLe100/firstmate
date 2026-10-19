@@ -38,8 +38,22 @@ case "$*" in
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
+  list-windows)
+    [ -f "$FM_FAKE_LAUNCH_LOG.window" ] || exit 0
+    case "$*" in
+      *'#{session_name}:#{window_name}'*)
+        printf 'firstmate:%s\n' "$(cat "$FM_FAKE_LAUNCH_LOG.window")" ;;
+      *) cat "$FM_FAKE_LAUNCH_LOG.window" ;;
+    esac
+    exit 0 ;;
+  new-window)
+    prev=
+    for arg in "$@"; do
+      [ "$prev" != -n ] || printf '%s\n' "$arg" > "$FM_FAKE_LAUNCH_LOG.window"
+      prev=$arg
+    done
+    exit 0 ;;
+  has-session|new-session|kill-window) exit 0 ;;
   send-keys)
     prev=
     for arg in "$@"; do
