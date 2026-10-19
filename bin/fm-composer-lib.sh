@@ -433,6 +433,17 @@ FM_DELIVERY_CURSOR_BUSY_REGEX_DEFAULT='ctrl\+c to stop'
 # acknowledgement. Delivery guard only; recorded worker state comes from the
 # agy-regex fold in bin/fm-busy-lib.sh.
 FM_DELIVERY_AGY_BUSY_REGEX_DEFAULT='esc[[:space:]]+to[[:space:]]+cancel'
+# polytoken renders a live elapsed row above its composer separators while a
+# turn runs - ` Running for 11.12s`, with a leading space and an unanchored
+# tail of border furniture (verified live, 0.8.19; the turn-end rows are
+# `Completed in <t>`, `Errored after <t>`, and `Canceled after <t>`, all
+# deliberately distinct from the busy token). Delivery guard only; recorded
+# worker state comes from the polytoken-hook fold in bin/fm-busy-lib.sh, and
+# echoed worker output naming the token can fake only this acknowledgement,
+# never a busy-state verdict.
+# It is deliberately not part of the harness-less union above, so a pane with
+# no recorded harness never reads it as busy.
+FM_DELIVERY_POLYTOKEN_BUSY_REGEX_DEFAULT='^[[:space:]]*Running for [0-9]+([.][0-9]+)?s'
 FM_DELIVERY_KIMI_BUSY_REGEX_DEFAULT='^[[:space:]]*(🌑|🌒|🌓|🌔|🌕|🌖|🌗|🌘)[[:space:]]+·[[:space:]]+'
 
 fm_busy_lines_match() {  # [harness]
@@ -451,6 +462,7 @@ fm_busy_lines_match() {  # [harness]
       omp) regex=$FM_DELIVERY_OMP_BUSY_REGEX_DEFAULT ;;
       grok) regex=$FM_DELIVERY_GROK_BUSY_REGEX_DEFAULT ;;
       agy) regex=$FM_DELIVERY_AGY_BUSY_REGEX_DEFAULT ;;
+      polytoken) regex=$FM_DELIVERY_POLYTOKEN_BUSY_REGEX_DEFAULT ;;
       kimi) regex=$FM_DELIVERY_KIMI_BUSY_REGEX_DEFAULT ;;
       cursor) regex=$FM_DELIVERY_CURSOR_BUSY_REGEX_DEFAULT ;;
       '') regex=$FM_DELIVERY_BUSY_REGEX_DEFAULT ;;
@@ -1414,9 +1426,7 @@ _fm_composer_leftbar_cwd_start() {  # <screen> <first-row> <last-row>
   # loop applies); the furniture run ends on the row above it, and a last row
   # that is not the footer leaves the region without such furniture.
   raw=$(_fm_composer_screen_row "$last" "$plain")
-  rest=$(_fm_composer_row_content "$raw" 0)
-  case "$rest" in '┃'*) rest=${rest#┃} ;; *) rest= ;; esac
-  fm_composer_normalize_trim_var rest
+  rest=$(_fm_composer_leftbar_plain_content "$raw")
   fm_composer_idle_matches "$rest" "$footer_re" sensitive || return 1
   # The region's width: the widest trimmed plain row across first..last. The
   # furniture is right-aligned and the widest rows reach the pane's right
@@ -1484,15 +1494,46 @@ _fm_composer_leftbar_cwd_start() {  # <screen> <first-row> <last-row>
 # _fm_composer_leftbar_cwd_start) is composer furniture too. Wrapped hints
 # and footer rows keep their continuation state. Real content is
 # pending when styling can prove it real, unknown otherwise.
+# _fm_composer_row_is_leftbar_footer: preserve the fork's positively matched
+# wrapped/squeezed footer and continuation proof. The plain row must corroborate
+# that match, so ghost stripping cannot manufacture footer furniture.
+# For a de-emphasised 1.19 footer whose mode cells disappear under ghost
+# stripping, additionally require upstream's full Build/Plan, spaced separator,
+# and last-row proof. A partial or wrapped plain-only match cannot authorize
+# typing; return 2 marks that ambiguity as unknown for classification and
+# refuses extraction. Return 1 means ordinary content, not footer furniture.
+_fm_composer_row_is_leftbar_footer() {  # <stripped> <plain> <footer-re> [last-row=1]
+  if fm_composer_idle_matches "$1" "$3" sensitive; then
+    fm_composer_idle_matches "$2" "$3" sensitive && return 0
+    return 2
+  fi
+  fm_composer_idle_matches "$2" "$3" sensitive || return 1
+  [ "${4:-1}" = 1 ] || return 2
+  fm_composer_idle_matches "$2" '^(Build|Plan)[[:space:]]+·[[:space:]]+' sensitive && return 0
+  return 2
+}
+
+# Normalize the ANSI-stripped content cell identically for classification,
+# extraction, and cwd/branch furniture recognition.
+_fm_composer_leftbar_plain_content() {  # <raw-row> -> plain content on stdout
+  local plain
+  plain=$(_fm_composer_row_content "$1" 0)
+  case "$plain" in
+    '┃'*) plain=${plain#┃} ;;
+  esac
+  fm_composer_normalize_trim_var plain
+  printf '%s' "$plain"
+}
+
 _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
   local screen=$1 styled=$2 first=$3 last=$4
   local row raw content pending_seen=0 footer_re leading_blank=1 placeholder_position=0 cwd_start
-  local footer_active=0 placeholder_active=0
+  local footer_active=0 placeholder_active=0 footer_status=0 unknown_seen=0
   footer_re=${FM_COMPOSER_LEFTBAR_FOOTER_RE:-$FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT}
   cwd_start=$(_fm_composer_leftbar_cwd_start "$screen" "$first" "$last") || cwd_start=-1
   row=$first
   while [ "$row" -le "$last" ]; do
-    if [ "$cwd_start" -ge 0 ] && [ "$row" -ge "$cwd_start" ]; then
+    if [ "$cwd_start" -ge 0 ] && [ "$row" -ge "$cwd_start" ] && [ "$row" -lt "$last" ]; then
       row=$((row + 1)); continue
     fi
     raw=$(_fm_composer_screen_row "$row" "$screen")
@@ -1516,14 +1557,20 @@ _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
     if [ "$footer_active" = 1 ] || [ "$placeholder_active" = 1 ]; then
       row=$((row + 1)); continue
     fi
-    if fm_composer_idle_matches "$content" "$footer_re" sensitive; then
+    if _fm_composer_row_is_leftbar_footer "$content" \
+           "$(_fm_composer_leftbar_plain_content "$raw")" "$footer_re" "$((row == last))"; then
       footer_active=1
       row=$((row + 1)); continue
+    else
+      footer_status=$?
+      [ "$footer_status" != 2 ] || unknown_seen=1
     fi
     pending_seen=1
     row=$((row + 1))
   done
-  if [ "$pending_seen" = 1 ]; then
+  if [ "$unknown_seen" = 1 ]; then
+    printf 'unknown'
+  elif [ "$pending_seen" = 1 ]; then
     if [ "$styled" = 1 ]; then printf 'pending'; else printf 'unknown'; fi
   else
     printf 'empty'
@@ -1833,7 +1880,7 @@ EOF
     # OpenCode's left-bar hint and legacy shell-glyph boxed placeholders have no
     # such styling proof, so their structurally fixed positions remain the two
     # idle-regex exceptions here.
-    if [ "$cwd_start" -ge 0 ] && [ "$row" -ge "$cwd_start" ]; then
+    if [ "$cwd_start" -ge 0 ] && [ "$row" -ge "$cwd_start" ] && [ "$row" -lt "$FM_COMPOSER_SELECTED_LAST" ]; then
       row=$((row + 1))
       continue
     fi
@@ -1852,10 +1899,14 @@ EOF
       continue
     fi
     if [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] \
-       && fm_composer_idle_matches "$content" "$footer_re" sensitive; then
+       && _fm_composer_row_is_leftbar_footer "$content" \
+              "$(_fm_composer_leftbar_plain_content "$raw")" "$footer_re" \
+              "$((row == FM_COMPOSER_SELECTED_LAST))"; then
       footer_active=1
       row=$((row + 1))
       continue
+    else
+      [ "$?" != 2 ] || return 1
     fi
     joined="${joined}${joined:+ }$content"
     row=$((row + 1))
@@ -2173,7 +2224,15 @@ _fm_composer_pi_verdict() {  # <screen> <styled> <has_identity> <identity>
   fi
   agent=${identity%%$'\t'*}
   agent_status=${identity#*$'\t'}
-  if [ "$agent" != pi ] || [ "$FM_COMPOSER_SCAN_PI_PAIR_VALID" != 1 ]; then
+  # polytoken is the second verified owner of the separated shape (verified
+  # live, 0.8.19: a full-width separator pair over one blank or pending
+  # content row with a footer below), so its identity passes the same
+  # conjunction: an idle polytoken proves an empty composer, and a working
+  # polytoken keeps the strict unknown - its composer really is empty
+  # mid-turn (Enter queues, verified live), but the unknown keeps the
+  # busy-queue conversion honest through the submit cores.
+  if { [ "$agent" != pi ] && [ "$agent" != polytoken ]; } \
+    || [ "$FM_COMPOSER_SCAN_PI_PAIR_VALID" != 1 ]; then
     printf 'unknown'
     return 0
   fi
