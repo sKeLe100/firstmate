@@ -1206,6 +1206,42 @@ test_reanchor_keeps_task_leases_live() {
   pass "session-lock: a re-anchor keeps both supervision actors' task leases live"
 }
 
+# A lease that cannot be moved refuses the re-anchor and restores the prior
+# lock, so task exclusivity is never silently lost.
+test_reanchor_refuses_when_a_lease_cannot_move() {
+  local dir front_pid shim rc
+  dir="$TMP_ROOT/reanchor-lease-fail"
+  shim="$dir/shim"
+  mkdir -p "$dir/state" "$shim"
+  printf '#!/bin/bash\nfor a in "$@"; do case "$a" in */.lease-*) exit 1 ;; esac; done\nexec /bin/mv "$@"\n' > "$shim/mv"
+  chmod +x "$shim/mv"
+  "$NAMED_CLAUDE" -c '
+    printf "%s\n" "$$" > "$0/state/front-pid"
+    while [ ! -e "$0/state/stop" ] && [ "$SECONDS" -lt "${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}" ]; do sleep 0.05; done
+  ' "$dir" &
+  BG_FIXTURE_PIDS+=("$!")
+  wait_for_file "$dir/state/front-pid" "the front-end pid"
+  front_pid=$(tr -d '[:space:]' < "$dir/state/front-pid")
+  printf '%s\n' "$front_pid" > "$dir/state/.lock"
+  printf 'S1\n' > "$dir/state/.lock-session"
+  printf 'branch\t%s\t100\n' "$front_pid" > "$dir/state/.lease-t1"
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
+    FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_SHIM="$shim" \
+    "$NAMED_CLAUDE" -c '
+      PATH="$FM_SHIM:$PATH" CLAUDE_CODE_SESSION_ID=S1 CLAUDE_PID=$$ "$FM_LOCK" > "$FM_HOME/state/reanchor.out" 2>&1
+      printf "%s\n" "$?" > "$FM_HOME/state/reanchor.rc"
+    '
+  rc=$(tr -d '[:space:]' < "$dir/state/reanchor.rc")
+  [ "$rc" = 1 ] || fail "a re-anchor that cannot move a lease must exit 1, got $rc: $(cat "$dir/state/reanchor.out")"
+  [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$front_pid" ] \
+    || fail "the refused re-anchor left lock line 1 at $(cat "$dir/state/.lock"), expected $front_pid"
+  [ "$(cat "$dir/state/.lease-t1")" = "$(printf 'branch\t%s\t100' "$front_pid")" ] \
+    || fail "the lease changed despite the refusal: $(cat "$dir/state/.lease-t1")"
+  case "$(cat "$dir/state/reanchor.out")" in *"lock acquired"*) fail "the refused re-anchor reported success" ;; esac
+  : > "$dir/state/stop"
+  pass "session-lock: a re-anchor that cannot move a lease is refused and restored"
+}
+
 autoarm_midturn_healthy() {  # <state-dir>
   FM_STATE_OVERRIDE="$1" bash -c '. "$0"; fm_autoarm_midturn_healthy "$FM_STATE_OVERRIDE" 300' "$ROOT/bin/fm-wake-lib.sh"
 }
@@ -1278,4 +1314,5 @@ test_failed_lock_write_restores_previous_sidecar
 test_failed_lock_write_removes_new_sidecar_when_none_existed
 test_verified_reclaim_keeps_new_sidecar
 test_reanchor_keeps_task_leases_live
+test_reanchor_refuses_when_a_lease_cannot_move
 test_reanchor_keeps_autoarm_midturn_healthy

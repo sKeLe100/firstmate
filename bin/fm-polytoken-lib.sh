@@ -268,6 +268,18 @@ fm_polytoken_require_hooks_free() {  # <worktree>
   fi
 }
 
+# fm_polytoken_require_facet_free: refuse a worktree that already carries the
+# `.polytoken/facets/firstmate-worker.md` path - an existing facet is never
+# firstmate's to overwrite.
+fm_polytoken_require_facet_free() {  # <worktree>
+  local facet
+  facet=$(fm_polytoken_facet_file "$1") || return 1
+  if [ -e "$facet" ] || [ -L "$facet" ]; then
+    echo "error: $facet already exists; an existing polytoken facet is not firstmate's to overwrite, so this task cannot be launched on polytoken into this worktree. Select another harness for this task." >&2
+    return 1
+  fi
+}
+
 # fm_polytoken_require_handler_path: refuse a busy-script path carrying
 # whitespace. The hook handler is a bare program path and its splitting rules
 # are unverified (a `<script> <arg>` handler drops the argument), so a spaced
@@ -449,7 +461,7 @@ fm_polytoken_turn_settled() {  # <port> <credential-token>
   local port=$1 token=$2 sync
   sync=$(fm_polytoken_rest_json GET "$port" "$token" /sync) || return 1
   command -v jq >/dev/null 2>&1 || return 1
-  [ "$(printf '%s' "$sync" | jq -r '.turn' 2>/dev/null)" = null ]
+  printf '%s' "$sync" | jq -e 'type == "object" and has("turn") and .turn == null' >/dev/null 2>&1
 }
 
 # fm_polytoken_interrupt: the verified interrupt verb. POST /turn/cancel

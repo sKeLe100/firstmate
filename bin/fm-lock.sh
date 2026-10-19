@@ -27,7 +27,8 @@
 # state/.claude-autoarm.lock (fm_autoarm_rekey_session in bin/fm-wake-lib.sh).
 # A later /clear re-key in the same process is then still proven by ancestry
 # after the id changes, a held lease stays live, and the mid-turn guard still
-# accepts that rewake. A lease or rewake that cannot be moved, including when
+# accepts that rewake. A lease that cannot be moved refuses the re-anchor,
+# restores the prior lock, and exits 1. A rewake that cannot be moved, including when
 # the auto-arm lock stays busy past LEASE_LOCK_WAIT seconds, is reported as a
 # warning and the re-anchor still completes. When the lease-command
 # lock stays busy past LEASE_LOCK_WAIT seconds, the confirmation only refreshes
@@ -325,7 +326,10 @@ if [ ! -f "$LOCK" ] || [ -L "$LOCK" ] || [ "$written" != "$me" ]; then
   exit 1
 fi
 if [ -n "$REANCHOR" ] && ! fm_lease_rekey_holder "$REANCHOR" "$me"; then
-  echo "warning: a task lease recorded against pid $REANCHOR could not be moved to pid $me, so it reads as stale" >&2
+  fm_lease_rekey_holder "$me" "$REANCHOR" || true
+  cp "$LOCK_LINE_PRE" "$LOCK" 2>/dev/null || true
+  echo "error: a task lease recorded against pid $REANCHOR could not be moved to pid $me; the re-anchor is refused and the prior lock is restored" >&2
+  exit 1
 fi
 if [ -n "$REANCHOR" ] && fm_autoarm_ledger_read "$STATE" && [ "$FM_AUTOARM_SESSION" = "$REANCHOR" ]; then
   if fm_lock_acquire_wait_max "$AUTOARM_LOCK" "$LEASE_LOCK_WAIT"; then

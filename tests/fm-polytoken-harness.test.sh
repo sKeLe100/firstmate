@@ -776,6 +776,21 @@ test_polytoken_turn_settled_reads_the_typed_sync_verdict() {
   pass "fm-polytoken-lib: the typed settle postcondition follows GET /sync"
 }
 
+test_polytoken_turn_settled_refuses_a_missing_turn_payload() {
+  local payload
+  for payload in '{}' '{"state":"idle"}' 'null' '[]' 'not json'; do
+    (
+      fm_polytoken_rest_json() { printf '%s' "$payload"; }
+      fm_polytoken_turn_settled 1 token
+    ) && fail "a /sync payload without a null turn must not read as settled: $payload"
+  done
+  (
+    fm_polytoken_rest_json() { printf '{"turn":null}'; }
+    fm_polytoken_turn_settled 1 token
+  ) || fail "an explicit null turn must read as settled"
+  pass "fm-polytoken-lib: a /sync payload missing the turn key never reads as settled"
+}
+
 # ---------------------------------------------------------------------------
 # The spawn flow through the real fm-spawn.sh with a fake backend
 
@@ -1087,6 +1102,28 @@ test_polytoken_existing_project_hook_layer_refuses() {
   pass "fm-spawn: a project's own polytoken hook layer is refused, not clobbered"
 }
 
+test_polytoken_existing_facet_is_refused_not_overwritten() {
+  local id=ownfacet rec rc out
+  rec=$(make_polytoken_spawn_case ownfacet "$id")
+  read_polytoken_spawn_record "$rec"
+  mkdir -p "$PROJ_DIR/.polytoken/facets"
+  printf 'project-own-facet\n' > "$PROJ_DIR/.polytoken/facets/firstmate-worker.md"
+  git -C "$PROJ_DIR" add .polytoken/facets/firstmate-worker.md
+  git -C "$PROJ_DIR" -c user.email=fixture@firstmate.test -c user.name=fixture \
+    commit -q -m "fixture: project polytoken facet"
+  git -C "$PROJ_DIR" push -q origin main
+  rc=0
+  out=$(run_polytoken_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "a spawn into a worktree with its own facet should refuse"
+  assert_contains "$out" "not firstmate's to overwrite" \
+    "the refusal must name the existing facet"
+  [ "$(cat "$WT_DIR/.polytoken/facets/firstmate-worker.md")" = project-own-facet ] \
+    || fail "the refusal must leave the existing facet untouched"
+  assert_absent "$WT_DIR/.polytoken/hooks.json" "the refusal must not leave generated hooks"
+  assert_absent "$HOME_DIR/state/$id.meta" "the refusal must not leave a task record"
+  pass "fm-spawn: an existing polytoken facet is refused, not overwritten"
+}
+
 test_polytoken_whitespace_state_dir_refuses() {
   local id rec out rc spaced
   id="pt-wsstate-z8-$$"
@@ -1210,12 +1247,14 @@ test_polytoken_model_ref_unreachable_listing_refuses
 test_polytoken_rest_interrupt_settles_the_turn
 test_polytoken_interrupt_close_spares_a_reopened_turn
 test_polytoken_turn_settled_reads_the_typed_sync_verdict
+test_polytoken_turn_settled_refuses_a_missing_turn_payload
 test_polytoken_launch_carries_the_hybrid_contract
 test_polytoken_effort_maps_to_nearest_listed_level
 test_polytoken_missing_axes_refuse_before_pane_creation
 test_polytoken_unlisted_model_refuses_before_pane_creation
 test_polytoken_secondmate_is_refused
 test_polytoken_existing_project_hook_layer_refuses
+test_polytoken_existing_facet_is_refused_not_overwritten
 test_polytoken_whitespace_state_dir_refuses
 test_polytoken_readiness_failure_fails_loudly_and_cleans_up
 test_polytoken_post_launch_failure_drops_its_slot_claim
