@@ -953,7 +953,7 @@ tests/fm-cmux-claude-composer-live-e2e.test.sh 77
 tests/fm-codex-continuity-live-e2e.test.sh 108
 tests/fm-codex-hook-layer-live-e2e.test.sh 108
 tests/fm-codex-usage.test.sh 61912
-tests/fm-commandcode-harness.test.sh 8182
+tests/fm-commandcode-harness.test.sh 13970
 tests/fm-commandcode-signals-live-e2e.test.sh 49
 tests/fm-composer-codex-idle-live-e2e.test.sh 77
 tests/fm-composer-matrix-live-e2e.test.sh 51
