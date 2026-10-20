@@ -461,7 +461,7 @@ fm_polytoken_turn_settled() {  # <port> <credential-token>
   local port=$1 token=$2 sync
   sync=$(fm_polytoken_rest_json GET "$port" "$token" /sync) || return 1
   command -v jq >/dev/null 2>&1 || return 1
-  printf '%s' "$sync" | jq -e 'type == "object" and has("turn") and .turn == null' >/dev/null 2>&1
+  printf '%s' "$sync" | jq -se 'length == 1 and (.[0] | type == "object" and has("turn") and .turn == null)' >/dev/null 2>&1
 }
 
 # fm_polytoken_interrupt: the verified interrupt verb. POST /turn/cancel

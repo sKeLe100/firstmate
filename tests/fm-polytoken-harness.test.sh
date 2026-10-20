@@ -778,7 +778,8 @@ test_polytoken_turn_settled_reads_the_typed_sync_verdict() {
 
 test_polytoken_turn_settled_refuses_a_missing_turn_payload() {
   local payload
-  for payload in '{}' '{"state":"idle"}' 'null' '[]' 'not json'; do
+  for payload in '{}' '{"state":"idle"}' '{"error":"unavailable"}' 'null' '[]' 'not json' \
+    '{"turn":{"id":"busy"}}{"turn":null}' '{}{"turn":null}'; do
     (
       fm_polytoken_rest_json() { printf '%s' "$payload"; }
       fm_polytoken_turn_settled 1 token
@@ -1103,24 +1104,46 @@ test_polytoken_existing_project_hook_layer_refuses() {
 }
 
 test_polytoken_existing_facet_is_refused_not_overwritten() {
-  local id=ownfacet rec rc out
-  rec=$(make_polytoken_spawn_case ownfacet "$id")
+  local shape id rec rc out facet
+  for shape in tracked untracked symlink dangling; do
+    id="ownfacet-$shape"
+    rec=$(make_polytoken_spawn_case "ownfacet-$shape" "$id")
+    read_polytoken_spawn_record "$rec"
+    facet="$WT_DIR/.polytoken/facets/firstmate-worker.md"
+    mkdir -p "$WT_DIR/.polytoken/facets"
+    case "$shape" in
+      tracked)
+        mkdir -p "$PROJ_DIR/.polytoken/facets"
+        printf 'project-own-facet\n' > "$PROJ_DIR/.polytoken/facets/firstmate-worker.md"
+        git -C "$PROJ_DIR" add .polytoken/facets/firstmate-worker.md
+        git -C "$PROJ_DIR" -c user.email=fixture@firstmate.test -c user.name=fixture \
+          commit -q -m "fixture: project polytoken facet"
+        git -C "$PROJ_DIR" push -q origin main
+        ;;
+      untracked) printf 'project-own-facet\n' > "$facet" ;;
+      symlink)
+        printf 'project-own-facet\n' > "$CASE_DIR/elsewhere.md"
+        ln -s "$CASE_DIR/elsewhere.md" "$facet"
+        ;;
+      dangling) ln -s "$CASE_DIR/missing.md" "$facet" ;;
+    esac
+    rc=0
+    out=$(run_polytoken_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+    [ "$rc" -ne 0 ] || fail "a $shape facet should refuse the spawn"
+    [ "$shape" != tracked ] || assert_contains "$out" "not firstmate's to overwrite" "the tracked refusal must name the existing facet"
+    case "$shape" in
+      tracked|untracked) [ "$(cat "$facet")" = project-own-facet ] || fail "the $shape facet must stay untouched" ;;
+      symlink) [ "$(cat "$CASE_DIR/elsewhere.md")" = project-own-facet ] && [ -L "$facet" ] || fail "the symlinked facet must stay untouched" ;;
+      dangling) [ -L "$facet" ] && [ ! -e "$CASE_DIR/missing.md" ] || fail "the dangling facet must stay untouched" ;;
+    esac
+    assert_absent "$WT_DIR/.polytoken/hooks.json" "the $shape refusal must not leave generated hooks"
+    assert_absent "$HOME_DIR/state/$id.meta" "the $shape refusal must not leave a task record"
+  done
+  rec=$(make_polytoken_spawn_case ownfacet-absent ownfacet-absent)
   read_polytoken_spawn_record "$rec"
-  mkdir -p "$PROJ_DIR/.polytoken/facets"
-  printf 'project-own-facet\n' > "$PROJ_DIR/.polytoken/facets/firstmate-worker.md"
-  git -C "$PROJ_DIR" add .polytoken/facets/firstmate-worker.md
-  git -C "$PROJ_DIR" -c user.email=fixture@firstmate.test -c user.name=fixture \
-    commit -q -m "fixture: project polytoken facet"
-  git -C "$PROJ_DIR" push -q origin main
   rc=0
-  out=$(run_polytoken_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
-  [ "$rc" -ne 0 ] || fail "a spawn into a worktree with its own facet should refuse"
-  assert_contains "$out" "not firstmate's to overwrite" \
-    "the refusal must name the existing facet"
-  [ "$(cat "$WT_DIR/.polytoken/facets/firstmate-worker.md")" = project-own-facet ] \
-    || fail "the refusal must leave the existing facet untouched"
-  assert_absent "$WT_DIR/.polytoken/hooks.json" "the refusal must not leave generated hooks"
-  assert_absent "$HOME_DIR/state/$id.meta" "the refusal must not leave a task record"
+  out=$(run_polytoken_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" ownfacet-absent) || rc=$?
+  [ "$rc" -eq 0 ] || fail "an absent facet must not refuse the spawn: $out"
   pass "fm-spawn: an existing polytoken facet is refused, not overwritten"
 }
 

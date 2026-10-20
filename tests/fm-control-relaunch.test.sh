@@ -721,6 +721,47 @@ SH
   pass "fm-control relaunch: a refused relaunch onto polytoken keeps the project's own hook layer and the running agent"
 }
 
+test_refused_relaunch_onto_polytoken_keeps_an_existing_facet() {
+  local shape dir out rc
+  for shape in regular symlink dangling; do
+    dir=$(new_case "polytokenfacet$shape" rl48)
+    add_ship_task "$dir" rl48 claude
+    mkdir -p "$dir/wt/.polytoken/facets"
+    case "$shape" in
+      regular) printf 'project facet\n' > "$dir/wt/.polytoken/facets/firstmate-worker.md" ;;
+      symlink)
+        printf 'project facet\n' > "$dir/elsewhere.md"
+        ln -s "$dir/elsewhere.md" "$dir/wt/.polytoken/facets/firstmate-worker.md"
+        ;;
+      dangling) ln -s "$dir/missing.md" "$dir/wt/.polytoken/facets/firstmate-worker.md" ;;
+    esac
+    printf 'polytoken' > "$dir/fake/becomes"
+    cat > "$dir/fakebin/polytoken" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  'print models') printf '%s\n' 'zai/glm-5.3-flash' 'zai/glm-5.3-flash(low)' ;;
+  *) exit 1 ;;
+esac
+SH
+    chmod +x "$dir/fakebin/polytoken"
+    rc=0
+    out=$(run_control "$dir" rl48 relaunch --harness polytoken \
+      --model zai/glm-5.3-flash --effort low --note "switching runtime") || rc=$?
+    [ "$rc" -ne 0 ] || fail "a relaunch onto polytoken over a $shape facet must refuse"$'\n'"$out"
+    assert_contains "$out" "not firstmate's to overwrite" \
+      "the $shape facet refusal must come from the polytoken arm"$'\n'"$out"
+    [ -L "$dir/wt/.polytoken/facets/firstmate-worker.md" ] || [ "$shape" = regular ] \
+      || fail "the $shape facet must stay in place"
+    [ -e "$dir/wt/.polytoken/facets/firstmate-worker.md" ] || [ "$shape" = dangling ] \
+      || fail "the $shape facet must stay in place"
+    [ ! -e "$dir/wt/.polytoken/hooks.json" ] || fail "the refused relaunch must write no hook layer"
+    [ -z "$(cat "$dir/fake/literal")" ] || fail "a refused relaunch must send nothing"
+    [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused relaunch must not stop the running agent"
+    [ "$(meta_field "$dir" rl48 harness)" = claude ] || fail "a refused relaunch must keep the prior record"
+  done
+  pass "fm-control relaunch: an existing polytoken facet refuses the relaunch before the running agent is stopped"
+}
+
 test_refused_polytoken_profile_leaves_the_running_agent() {
   local dir out rc
   dir=$(new_case polytokenprofile rl47)
@@ -2785,6 +2826,7 @@ test_harness_switch_moves_the_record_and_clears_prior_wiring
 test_codex_relaunch_without_axes_refuses_before_stopping_the_agent
 test_codex_relaunch_with_unreceivable_effort_refuses_before_stopping_the_agent
 test_refused_relaunch_onto_polytoken_keeps_the_project_hook_layer
+test_refused_relaunch_onto_polytoken_keeps_an_existing_facet
 test_refused_polytoken_profile_leaves_the_running_agent
 test_relaunch_from_a_raw_polytoken_launch_keeps_the_project_layers
 test_harness_switch_does_not_carry_the_old_profile_axes
