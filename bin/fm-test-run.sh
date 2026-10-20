@@ -973,7 +973,7 @@ tests/fm-devin-signals-live-e2e.test.sh 49
 tests/fm-dispatch-quota-cap.test.sh 11272
 tests/fm-dispatch-resolve.test.sh 10051
 tests/fm-documentation-audiences.test.sh 1301
-tests/fm-dod-lib.test.sh 2035
+tests/fm-dod-lib.test.sh 3530
 tests/fm-extension-binding.test.sh 11105
 tests/fm-fleet-ledger.test.sh 19980
 tests/fm-fleet-snapshot-view.test.sh 93404
@@ -982,7 +982,7 @@ tests/fm-forge-detect.test.sh 193
 tests/fm-fork-free-helpers.test.sh 746
 tests/fm-gate-refuse.test.sh 9953
 tests/fm-gemini-harness.test.sh 947
-tests/fm-git-strip-ai-trailers.test.sh 2067
+tests/fm-git-strip-ai-trailers.test.sh 3546
 tests/fm-gitignore-config.test.sh 59
 tests/fm-gotmp.test.sh 2415
 tests/fm-grok-continuity-live-e2e.test.sh 46
@@ -1042,7 +1042,7 @@ tests/fm-pi-primary-live-e2e.test.sh 72
 tests/fm-pi-seeded-home-trust-live-e2e.test.sh 2290
 tests/fm-pi-watch-extension.test.sh 56515
 tests/fm-pi-windows-shell-invocation.test.sh 5121
-tests/fm-polytoken-harness.test.sh 21090
+tests/fm-polytoken-harness.test.sh 39004
 tests/fm-polytoken-signals-live-e2e.test.sh 103
 tests/fm-pr-check-security.test.sh 300675
 tests/fm-pr-reviewers.test.sh 157
@@ -1103,12 +1103,12 @@ tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 49
 tests/fm-sessionstart-nudge.test.sh 71802
 tests/fm-shared-captain-inheritance.test.sh 13218
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 67968
-tests/fm-spawn-compact-adviser-disable.test.sh 21654
+tests/fm-spawn-compact-adviser-disable.test.sh 33635
 tests/fm-spawn-dispatch-profile.test.sh 343491
 tests/fm-spawn-host-memory.test.sh 5440
-tests/fm-spawn-orca-worktree.test.sh 2400
+tests/fm-spawn-orca-worktree.test.sh 60771
 tests/fm-spawn-pc02-lane-guard.test.sh 11846
-tests/fm-spawn-pool-base-freshen.test.sh 68652
+tests/fm-spawn-pool-base-freshen.test.sh 120467
 tests/fm-spawn-worktree-settle.test.sh 9309
 tests/fm-startup-memory-budget.test.sh 12413
 tests/fm-startup-network.test.sh 72106
