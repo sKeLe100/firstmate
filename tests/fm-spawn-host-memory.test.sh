@@ -23,13 +23,24 @@ make_case() {  # <name> <task-id>
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
+window_state=${BASH_SOURCE[0]}.window
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
   *pane_current_command*) printf '%s\n' "${FM_FAKE_PANE_CMD:-firstmate}"; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) printf '%s' "${FM_FAKE_WINDOWS:-}"; exit 0 ;;
+  list-windows)
+    [ -z "${FM_FAKE_WINDOWS:-}" ] || printf '%s\n' "$FM_FAKE_WINDOWS"
+    [ ! -f "$window_state" ] || cat "$window_state"
+    exit 0 ;;
+  new-window)
+    previous=
+    for arg in "$@"; do
+      [ "$previous" != -n ] || printf '%s\n' "$arg" > "$window_state"
+      previous=$arg
+    done
+    exit 0 ;;
 esac
 exit 0
 SH

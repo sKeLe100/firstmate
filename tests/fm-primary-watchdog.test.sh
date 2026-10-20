@@ -133,6 +133,9 @@ fi
 # with a stub; `unset -f` cannot bring back the original definition).
 . "$ROOT/bin/fm-primary-watchdog.sh"
 SENT_LOG="$TMPHOME/sent.log"
+# Reapply the present-target double replaced by re-sourcing the backend.
+# shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
+fm_backend_target_exists() { return 0; }
 fm_backend_send_text_submit() { printf '%s\n' "$3" >>"$SENT_LOG"; printf 'empty'; }
 # shellcheck disable=SC2329 # Invoked indirectly by the sourced script under test.
 fm_backend_busy_state() { printf 'idle'; }

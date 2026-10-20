@@ -4,8 +4,9 @@
 # endpoint is not positively dead or missing (PC02 serves one model at a time;
 # data/pc02-followthrough-gap-assessment/report.md). Fake tmux controls the
 # liveness read: FM_FAKE_WINDOWS is what `tmux list-windows` prints, and
-# FM_FAKE_LIST_WINDOWS_ERR forces the inventory read to fail (unreadable ->
-# unknown liveness, which must keep the lane occupied).
+# FM_FAKE_LIST_WINDOWS_ERR forces pre-creation inventory reads to fail
+# (unknown liveness keeps the lane occupied). Creating a window publishes
+# readable inventory for the new target's exact-membership admission.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -25,6 +26,7 @@ make_case() {
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
+window_state=${BASH_SOURCE[0]}.window
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
   *pane_current_command*) printf '%s\n' "${FM_FAKE_PANE_CMD:-firstmate}"; exit 0 ;;
@@ -32,14 +34,22 @@ esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows)
-    if [ -n "${FM_FAKE_LIST_WINDOWS_ERR:-}" ]; then
+    if [ -n "${FM_FAKE_LIST_WINDOWS_ERR:-}" ] && [ ! -f "$window_state" ]; then
       echo "fake inventory failure" >&2
       exit 1
     fi
-    printf '%s' "${FM_FAKE_WINDOWS:-}"
+    [ -z "${FM_FAKE_WINDOWS:-}" ] || printf '%s\n' "$FM_FAKE_WINDOWS"
+    [ ! -f "$window_state" ] || cat "$window_state"
     exit 0
     ;;
-  has-session|new-session|new-window|kill-window|send-keys) exit 0 ;;
+  new-window)
+    previous=
+    for arg in "$@"; do
+      [ "$previous" != -n ] || printf '%s\n' "$arg" > "$window_state"
+      previous=$arg
+    done
+    exit 0 ;;
+  has-session|new-session|kill-window|send-keys) exit 0 ;;
 esac
 exit 0
 SH

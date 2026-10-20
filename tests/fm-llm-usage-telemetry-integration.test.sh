@@ -97,7 +97,15 @@ case "${1:-}" in
     printf 'fakepane\n'; exit 0 ;;
   capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
-  new-window|new-session) printf '%s\n' "$1" >> "$D/tmux-calls"; exit 0 ;;
+  new-window)
+    printf '%s\n' "$1" >> "$D/tmux-calls"
+    previous=
+    for arg in "$@"; do
+      [ "$previous" != -n ] || printf '%s\n' "$arg" > "$D/windows"
+      previous=$arg
+    done
+    exit 0 ;;
+  new-session) printf '%s\n' "$1" >> "$D/tmux-calls"; exit 0 ;;
   has-session|kill-window) exit 0 ;;
 esac
 exit 0
