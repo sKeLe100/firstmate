@@ -781,11 +781,13 @@ test_polytoken_turn_settled_refuses_a_missing_turn_payload() {
   for payload in '{}' '{"state":"idle"}' '{"error":"unavailable"}' 'null' '[]' 'not json' \
     '{"turn":{"id":"busy"}}{"turn":null}' '{}{"turn":null}'; do
     (
+      # shellcheck disable=SC2329 # invoked indirectly through fm_polytoken_turn_settled
       fm_polytoken_rest_json() { printf '%s' "$payload"; }
       fm_polytoken_turn_settled 1 token
     ) && fail "a /sync payload without a null turn must not read as settled: $payload"
   done
   (
+    # shellcheck disable=SC2329 # invoked indirectly through fm_polytoken_turn_settled
     fm_polytoken_rest_json() { printf '{"turn":null}'; }
     fm_polytoken_turn_settled 1 token
   ) || fail "an explicit null turn must read as settled"
