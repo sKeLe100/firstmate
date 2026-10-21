@@ -249,6 +249,9 @@ A local skill exists only in this home, so offloading an entry out of `data/capt
    The only graduation moves are promotion to tracked shared material through a PR, folding a learning into the captain-preference destination selected by AGENTS.md, archiving a stale entry to `data/memory-archive.md`, autonomous offload of an eligible non-pinned conditional entry to an already-existing allowed owner through the reduce flow above, captain-approved offload of a pinned durable conditional entry to a JIT-loaded owner executed through the migration step above, or deletion of an entry that is a duplicate or already preserved through a stronger existing owner.
    A stale unique fact is never deleted, only archived.
    Do not invent another graduation path.
+   Check the active lines in `data/captain.md`'s `## STANDING ORDERS` block for duplicate keys.
+   Supersede by key: replace an older line with the current order in the same edit and archive the older line with provenance `superseded by <key>@<date>`, rather than adding another active line with that key.
+   If the current order cannot be established, report the conflict as an unresolved exception instead of guessing; the pass is not reset-safe until no two active lines share a key.
 
 ## Open-record persistence
 
@@ -260,6 +263,12 @@ Judge for yourself what is important and which record each thing belongs to, and
 One bound holds: this covers the open work you are actually holding in context, not the records at large.
 It is not a reconciliation of durable records against repository or forge reality, cannot become one on input this volatile, and must never be reported as one.
 Where the right correction is a judgment you cannot make, leave the record alone and raise the question instead of guessing.
+
+### Optional next-session carryover
+
+Only when the local presence flag `config/stow-carryover` exists, use the local carryover skill, when present, to overwrite the single next-session file `data/plans/carryover.md`.
+If the flag is absent, behavior is unchanged.
+If the flag exists but the local skill is unavailable or the write fails, report an unresolved exception rather than claiming the carryover was written.
 
 ### Captain-declared next-session priority
 
@@ -295,6 +304,8 @@ Report the outcome in plain captain-facing language with all of these facts:
 - every finding or entry a declared tier should hold but this session could not reach, left carrying its pending-capture marker and named so a session that can reach it captures it;
 - each archived entry's reason, each autonomous offload's live destination and actual relief, and, when a pinned candidate was proposed, the `proposed-offload` section with every candidate's fields;
 - every unresolved exception, including a primary-owned shared-file constraint in a secondmate home, and every concrete captain decision opened for an over-budget result;
+- `standing orders: N keys, 0 conflicts` after checking the active standing-order keys; report the actual conflict count as an unresolved exception when it is nonzero;
+- `carryover written <path>` with the actual path when `config/stow-carryover` exists and the write succeeded, or the unresolved carryover exception when it did not;
 - each open record this pass filed or corrected, and each one it deliberately left alone with the judgment it is waiting on;
 - whether the session is safe to reset, only when all durable findings are captured, no tier-owned finding is waiting on an unreachable declared tier, every open record this session held is filed or explicitly left with its reason, and the post-pass result is within budget with no exception or pending budget decision.
 
