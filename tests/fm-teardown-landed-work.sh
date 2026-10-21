@@ -13,6 +13,24 @@ set -u
 
 fm_git_identity fmtest fmtest@example.invalid
 
+test_teardown_emits_mistakes_ledger_advisory() {
+  local case_dir rc
+  case_dir=$(make_case mistakes-ledger-advisory)
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "completed work"
+  add_fork_with_pushed_branch "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "mistakes-ledger-advisory: teardown should complete"
+  grep -q '^advisory: if this task was a scout or fixed a problem, confirm data/mistakes.md records the finding and its current state$' "$case_dir/stdout" \
+    || fail "successful teardown did not print the non-blocking mistakes-ledger reminder"
+  pass "successful teardown prints the mistakes-ledger advisory"
+}
+
 test_local_only_fork_remote_allows() {
   local case_dir rc
   case_dir=$(make_case fork-allow)

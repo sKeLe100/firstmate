@@ -9,6 +9,7 @@ metadata:
 # Scout outcome and promotion
 
 A completed scout must leave a self-contained report before its scratch worktree can be discarded; read and relay its findings, record the report as the Done artifact, and re-evaluate the queue.
+When the report solves or diagnoses a problem, check `data/mistakes.md` first and update an existing matching entry rather than duplicating it (append only if none exists) before teardown; confirm that entry is present before the scratch worktree is discarded.
 A report may recommend implementation but does not authorize it.
 Before treating the investigation or any visual review as complete, load `captain-hold-lifecycle`; teardown enforces that shared completion gate.
 When a scout's deliverable is a visual artifact the captain will iterate on, keep it alive and follow the crew-hosted Lavish board contract in `docs/configuration.md` rather than arming or polling the board from firstmate.

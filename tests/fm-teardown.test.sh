@@ -36,6 +36,7 @@ fm_git_identity fmtest fmtest@example.invalid
 . "$(dirname "${BASH_SOURCE[0]}")/fm-teardown-source-guards.sh"
 
 test_teardown_preserves_opencode_busy_plugin_on_pool_return
+test_teardown_emits_mistakes_ledger_advisory
 test_missing_startup_source_refuses_before_cleanup
 test_unreadable_startup_source_refuses_before_cleanup
 test_missing_adapter_sibling_refuses_before_cleanup
