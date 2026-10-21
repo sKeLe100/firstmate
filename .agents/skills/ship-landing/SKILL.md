@@ -22,7 +22,7 @@ For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary sin
 Retire a custom check only through `bin/fm-check-unregister.sh <id>` (or `bin/fm-teardown.sh` for a spawned task); never hand-compose an `rm` with `$STATE`/`$ID`.
 
 Tear down a ship task only after landing is confirmed.
-When a finished fix PR addresses a problem in `data/mistakes.md`, update that entry's state to landed before teardown.
+When a finished fix PR addresses a problem in `data/mistakes.md`, check the ledger first and update the existing entry's state to landed rather than adding a duplicate, before teardown.
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
 Never force teardown without explicit discard authority.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
