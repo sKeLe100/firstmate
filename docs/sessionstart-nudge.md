@@ -240,7 +240,7 @@ The wrapper reads `source` from the hook payload.
 Native stdout context injection is supported.
 Claude caps one hook output string at 10,000 characters.
 Above the cap the model receives a preview of the first 2,000 characters plus the path of a saved file, and is not asked to read that file.
-A context re-emit therefore prints a short `RE-EMIT CUE` first, which tells the model to read the saved file.
+A context re-emit therefore prints a short `RE-EMIT CUE` first, which tells the model to read the saved file to the end, paging with offset until `The digest above is complete`.
 
 ### Codex exec
 
