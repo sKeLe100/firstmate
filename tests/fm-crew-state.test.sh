@@ -123,14 +123,17 @@ case "${1:-}" in
   runs)
     printf '%s\n' "${FM_FAKE_RUNS_LIST:-}" ;;
   daemon)
-    # FM_FAKE_DAEMON_DOWN: the explicit down-probe fails, as the real
-    # `no-mistakes daemon status` does when the daemon is not running.
+    # FM_FAKE_DAEMON_DOWN: a missing/refused socket makes the probe fail.
+    # A clean stop instead exits 0 and prints "○ daemon not running".
     # FM_FAKE_DAEMON_TIMEOUT: the probe does not answer at all, which is what
     # the bounded call reports as 124 when `timeout` kills a slow daemon status.
     [ -z "${FM_FAKE_DAEMON_PROBE_LOG:-}" ] || printf 'probe\n' >> "$FM_FAKE_DAEMON_PROBE_LOG"
     [ "${FM_FAKE_DAEMON_TIMEOUT:-0}" = 1 ] && exit 124
-    [ "${FM_FAKE_DAEMON_DOWN:-0}" = 1 ] && exit 1
-    printf '%s\n' 'daemon running (pid 4242)'
+    if [ "${FM_FAKE_DAEMON_DOWN:-0}" = 1 ]; then
+      printf '%s\n' "${FM_FAKE_DAEMON_OUTPUT-connection refused}" >&2
+      exit 1
+    fi
+    printf '%s\n' "${FM_FAKE_DAEMON_OUTPUT-  ● daemon running (pid 4242)}"
     exit 0 ;;
 esac
 exit 0
@@ -360,6 +363,7 @@ reset_fakes() {
   FM_FAKE_CI_LOGS=""
   FM_FAKE_DAEMON_DOWN=0
   FM_FAKE_DAEMON_TIMEOUT=0
+  FM_FAKE_DAEMON_OUTPUT='  ● daemon running (pid 4242)'
   FM_FAKE_DAEMON_PROBE_LOG=
   FM_FAKE_PR_STATE=MERGED
   FM_FAKE_PR_MERGED=true
@@ -382,6 +386,7 @@ reset_fakes() {
   export FM_FAKE_AXI_STATUS FM_FAKE_AXI_STATUS_RUN FM_FAKE_RUNS_LIST FM_FAKE_BUSY FM_FAKE_BUSY_TEXT FM_FAKE_TMUX_MISSING FM_FAKE_TMUX_WINDOW_GONE FM_FAKE_TMUX_UNREADABLE
   export FM_FAKE_HERDR_BUSY FM_FAKE_HERDR_MISSING FM_FAKE_HERDR_READ_FAIL FM_FAKE_HERDR_HUSK FM_FAKE_HERDR_AGENT_STATUS FM_FAKE_HERDR_PROCESS FM_FAKE_HERDR_SHELL_PID FM_FAKE_CI_LOGS
   export FM_FAKE_DAEMON_DOWN FM_FAKE_DAEMON_TIMEOUT FM_FAKE_DAEMON_PROBE_LOG FM_FAKE_AXI_HOME
+  export FM_FAKE_DAEMON_OUTPUT
   export FM_FAKE_AXI_HOME_ERROR FM_FAKE_AXI_STATUS_RUN_ERROR FM_FAKE_AXI_STATUS_ERROR
   export FM_FAKE_PR_STATE FM_FAKE_PR_MERGED FM_FAKE_PR_READ_FAIL FM_FAKE_PR_READ_LOG FM_FAKE_PR_STATE_AXI
   export FM_FAKE_GLAB_STATE FM_FAKE_GLAB_READ_FAIL FM_FAKE_GLAB_READ_LOG
@@ -2082,7 +2087,9 @@ test_cross_branch_attribution_via_runs_list() {
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-f.meta" "window=fm:fm-feat-f" "worktree=$d/wt" "kind=ship"
   # The repo-wide active/most-recent run belongs to a different crew's branch.
-  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)
+current_branch: fm/other-crew
+runs_on_current_branch: 0"
   # Real `no-mistakes runs` shape: plain text, newest-first, no run id, no
   # quoting - "<status> <branch> <short-sha> <date> [<pr-url>]".
   FM_FAKE_RUNS_LIST="$(cat <<EOF
@@ -2551,6 +2558,66 @@ test_no_run_busy_pane() {
   assert_contains "$out" "source: pane" "busy record -> pane source"
   assert_contains "$out" "claude-hook" "the working verdict names its semantic source"
   pass "no run + a busy semantic record reads working, attributed to its source"
+}
+
+# `axi status` answers a no-run worktree with `runs_on_current_branch: 0`;
+# that explicit answer is authoritative even when the bare `axi` home table is
+# capped (10 of 47 rows) and the complete-inventory sqlite reader is
+# unavailable. The no-run answer must let crew-state continue to its ordinary
+# pane/log sources instead of reporting an unreadable runs table.
+test_no_run_overview_zero_branch_falls_through() {
+  reset_fakes
+  local d table status home short out
+  d=$(new_case explicit-no-run)
+  make_repo_on_branch "$d/wt" fm/feat-no-run-overview
+  short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-no-run-overview.meta" "window=fm:fm-feat-no-run-overview" \
+    "worktree=$d/wt" "kind=ship" "harness=claude"
+  table=$(cat <<'EOF'
+count: 10 of 47 total
+runs[10]{id,branch,status,head,pr}:
+  "01OTHER00",fm/other-0,running,0123456,""
+  "01OTHER01",fm/other-1,running,0123456,""
+  "01OTHER02",fm/other-2,running,0123456,""
+  "01OTHER03",fm/other-3,running,0123456,""
+  "01OTHER04",fm/other-4,running,0123456,""
+  "01OTHER05",fm/other-5,running,0123456,""
+  "01OTHER06",fm/other-6,running,0123456,""
+  "01OTHER07",fm/other-7,running,0123456,""
+  "01OTHER08",fm/other-8,running,0123456,""
+  "01OTHER09",fm/other-9,running,0123456,""
+EOF
+  )
+  status=$(cat <<EOF
+current_branch: fm/feat-no-run-overview
+runs_on_current_branch: 0
+$table
+help[2]:
+  axi status
+  no-mistakes init
+EOF
+  )
+  home=$(cat <<EOF
+bin: no-mistakes
+repo: $d/wt
+current_branch: fm/feat-no-run-overview
+daemon: running (pid 4242)
+$table
+EOF
+  )
+  FM_FAKE_AXI_STATUS="$status"
+  FM_FAKE_AXI_HOME="$home"
+  FM_FAKE_RUNS_LIST="  running    fm/feat-no-run-overview $short  2026-09-27 09:00"
+  printf 'working: implementation continues\n' > "$d/state/feat-no-run-overview.status"
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-no-run-overview
+  out=$(run_crew_state "$d" feat-no-run-overview)
+  assert_contains "$out" "state: working" "explicit no-run answer falls through to the current status"
+  assert_contains "$out" "source: status-log" "explicit no-run answer reaches the status-log source"
+  assert_contains "$out" "implementation continues" "the status-log detail survives the no-run fallback"
+  assert_not_contains "$out" "unreadable runs table" "explicit no-run answer avoids the capped-table diagnostic"
+  pass "runs_on_current_branch: 0 makes a capped overview fall through to crew-state sources"
 }
 
 # A launch pinned at the fm-spawn seed (no hook has posted yet) whose pane
@@ -5370,6 +5437,46 @@ EOF
   pass "a coarse failed record with a dead daemon reads unknown"
 }
 
+# Exit 0 alone does not prove a live daemon: only a positive running answer
+# licenses head-free attribution. A timeout remains unanswered rather than down.
+test_daemon_probe_requires_positive_running_answer() {
+  local probe d rebased out expected
+  for probe in running stopped empty unexpected absent refused timeout; do
+    reset_fakes
+    d=$(new_case "probe-answer-$probe")
+    make_repo_on_branch "$d/wt" fm/feat-probeanswer
+    rebased=$(make_rebased_head "$d/wt")
+    make_fakebin "$d" >/dev/null
+    fm_write_meta "$d/state/feat-probeanswer.meta" "window=fm:fm-feat-probeanswer" "worktree=$d/wt" "kind=ship" "harness=claude"
+    printf 'failed: earlier run failed\n' > "$d/state/feat-probeanswer.status"
+    FM_FAKE_RUN_HEAD=$rebased
+    FM_FAKE_AXI_STATUS="$(run_running fm/feat-probeanswer)
+branch_sync:
+  state: synced"
+    expected=failed
+    case "$probe" in
+      running) expected=working ;;
+      stopped) FM_FAKE_DAEMON_OUTPUT='  ○ daemon not running' ;;
+      empty) FM_FAKE_DAEMON_OUTPUT='' ;;
+      unexpected) FM_FAKE_DAEMON_OUTPUT='unknown daemon status' ;;
+      absent|refused)
+        FM_FAKE_DAEMON_DOWN=1
+        FM_FAKE_DAEMON_OUTPUT="socket $probe"
+        ;;
+      timeout) FM_FAKE_DAEMON_TIMEOUT=1; expected=working ;;
+    esac
+    arm_idle_record "$d/state" feat-probeanswer
+    out=$(run_crew_state "$d" feat-probeanswer)
+    assert_contains "$out" "state: $expected" "$probe: daemon answer controls live-run attribution"
+    if [ "$expected" = working ]; then
+      assert_contains "$out" 'source: run-step' "$probe: live run stays bound"
+    else
+      assert_contains "$out" 'source: status-log' "$probe: stale run cannot override the crew log"
+    fi
+    pass "daemon probe classifies $probe"
+  done
+}
+
 # A probe that does not ANSWER proves nothing about the daemon, so it must not
 # suppress a live rebased run: otherwise a slow `daemon status` on a busy fleet
 # drops the crew back to a stale `failed:` log line, and the crew flaps between
@@ -5770,6 +5877,7 @@ test_no_mistakes_prevalidation_done_stays_done
 test_moved_remote_branch_without_named_head_is_blocked
 test_external_review_done_reads_ready
 test_no_run_busy_pane
+test_no_run_overview_zero_branch_falls_through
 test_no_run_launch_prompt_parked_is_not_working
 test_no_run_footer_text_alone_is_not_working
 test_no_run_grok_uses_isolated_fallback
@@ -5872,6 +5980,7 @@ test_selected_route_dead_daemon_names_the_run_once
 test_head_tied_row_reads_the_same_whichever_run_axi_names
 test_coarse_head_tied_row_is_exempt_even_when_the_record_head_diverged
 test_unrecognised_ledger_word_keeps_the_ordinary_supersede_note
+test_daemon_probe_requires_positive_running_answer
 test_unanswered_daemon_probe_does_not_suppress_live_run
 test_coarse_live_row_is_exempt_from_the_dead_daemon_verdict
 test_coarse_live_row_keeps_the_original_supersede_note

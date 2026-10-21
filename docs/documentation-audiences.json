@@ -31,6 +31,7 @@
     "docs/zellij-backend.md",
     "docs/orca-backend.md",
     "docs/cmux-backend.md",
+    "docs/paseo-backend.md",
     "docs/remote-secondmates.md"
   ],
   "requiredOwnerPointers": [
@@ -134,10 +135,6 @@
     },
     {
       "path": ".agents/skills/captain-hold-lifecycle/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/decision-hold-lifecycle/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -483,6 +480,10 @@
     {
       "path": "docs/pc02-qwen38-bartowski-optimization-2026-09-07.md",
       "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/paseo-backend.md",
+      "audience": "operator-current"
     },
     {
       "path": "docs/pi-supervision-branch.md",

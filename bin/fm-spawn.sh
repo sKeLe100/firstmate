@@ -121,14 +121,16 @@
 #   docs/cmux-backend.md),
 #   then tmux.
 #   Spawn-capable backends are the reference tmux adapter, verified herdr
-#   adapter, and experimental zellij, orca, and cmux adapters. Orca owns both
-#   the task worktree and terminal, so ship/scout Orca spawns do not run
-#   treehouse get; cmux is a session provider only, exactly like herdr/zellij,
-#   so it does. Auto-detected herdr stays silent like tmux; auto-detected cmux
-#   prints a loud stderr notice; zellij and orca are never auto-detected.
+#   adapter, and experimental zellij, orca, cmux, and paseo adapters. Orca owns
+#   both the task worktree and terminal, so ship/scout Orca spawns do not run
+#   treehouse get; cmux and paseo are session providers only, exactly like
+#   herdr/zellij, so they do. Auto-detected herdr stays silent like tmux;
+#   auto-detected cmux prints a loud stderr notice; zellij, orca, and paseo are
+#   never auto-detected (paseo's markers leak into every descendant process).
 #   codex-app is not a known backend yet; docs/codex-app-backend.md owns that
 #   blocked backend contract. Default tmux spawns do not write backend= to meta;
-#   absent backend= means tmux. cmux does not support --secondmate spawns yet.
+#   absent backend= means tmux. cmux and paseo do not support --secondmate
+#   spawns yet.
 #   A backend spawn refusal (missing dependency, version gate, unauthenticated
 #   socket, or unsupported secondmate mode) is terminal for that selected backend;
 #   callers must surface it instead of silently retrying another backend.
@@ -433,7 +435,9 @@
 #   <provider>/<id> for a declared provider and also carries --provider, and a
 #   raw Pi command refuses. The pin is recorded as account= (and Pi's
 #   account_provider=) in the task record and on the spawned line. A local
-#   secondmate reads this launching home's file; pins are never inherited.
+#   secondmate first checks config/secondmate-accounts/<id>/<runner>-account
+#   in this launching home, then falls back to its home-wide pin when absent.
+#   Pins are never inherited; remote per-mate overrides refuse locally.
 #   bin/fm-worker-account-lib.sh owns parsing, the check, and the shed list.
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
 #     __BRIEF__    absolute path to data/<task-id>/brief.md
@@ -1273,7 +1277,7 @@ pc02_lane_guard() {  # <task-id> <model>: 0 iff the PC02 lane is free for <task-
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
-  local remote_traceparent remote_recorded_traceparent sm_primary_head sync_out sync_rc
+  local remote_traceparent remote_recorded_traceparent sm_primary_head sync_out sync_rc account_config
   local -a launch_args
   id=${POS[0]:-}
   fm_task_id_creation_valid "$id" || {
@@ -1316,7 +1320,7 @@ spawn_remote_secondmate() {
   elif [ -n "$positional" ]; then
     harness=$positional
   else
-    harness=$("$FM_ROOT/bin/fm-harness.sh" secondmate)
+    harness=$("$FM_ROOT/bin/fm-harness.sh" secondmate "$id")
   fi
   case "$harness" in
   claude | codex | opencode | pi | pi-signed | grok | kimi | cursor) ;;
@@ -1327,15 +1331,26 @@ spawn_remote_secondmate() {
     return 1
     ;;
   esac
+  account_config=$(fm_worker_account_config "$harness" "$CONFIG" "$id") || {
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    return 1
+  }
+  if [ "$account_config" != "$CONFIG" ]; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    echo "error: $account_config/$(fm_worker_account_file "$harness") cannot pin remote secondmate $id from this host; configure config/$(fm_worker_account_file "$harness") in its home $home on $host instead" >&2
+    return 1
+  fi
   model=${MODEL:--}
   effort=${EFFORT:--}
   if [ -z "$HARNESS_ARG" ] && [ -z "$positional" ]; then
     if [ "$MODEL_SET" -eq 0 ]; then
-      model=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model)
+      model=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model "$id")
       [ -n "$model" ] || model=-
     fi
     if [ "$EFFORT_SET" -eq 0 ]; then
-      effort=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)
+      effort=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort "$id")
       [ -n "$effort" ] || effort=-
     fi
   fi
@@ -2209,6 +2224,10 @@ if [ "$RELAUNCH" -eq 0 ]; then
     echo "error: backend=cmux does not support --secondmate spawns yet" >&2
     exit 1
   fi
+  if [ "$BACKEND" = paseo ] && [ "$KIND" = secondmate ]; then
+    echo "error: backend=paseo does not support --secondmate spawns yet" >&2
+    exit 1
+  fi
   if [ "$BACKEND" = orca ]; then
     fm_backend_orca_runtime_check || exit 1
     ORCA_LAUNCH_ENV_ENABLED=$(fm_config_source_present "$CONFIG/launch-env-tmux-session") || exit 1
@@ -2862,7 +2881,7 @@ case "$ARG3" in
   # The launch_template lookup below is the unverified-adapter guard for both
   # kinds: a harness with no template aborts the spawn.
   if [ "$KIND" = secondmate ]; then
-    HARNESS=$("$FM_ROOT/bin/fm-harness.sh" secondmate)
+    HARNESS=$("$FM_ROOT/bin/fm-harness.sh" secondmate "$ID")
     harness_src='config/secondmate-harness (falling back to config/crew-harness)'
   else
     if [ -f "$CONFIG/crew-dispatch.json" ]; then
@@ -2945,7 +2964,7 @@ if [ "$KIND" = secondmate ] && [ "$HARNESS" = rovo ]; then
 fi
 
 # Command Code's idle placeholder reads empty only with a Command Code pane
-# identity, which tmux and Herdr supply and zellij, cmux, and orca do not, so
+# identity, which tmux and Herdr supply and zellij, cmux, orca, and paseo do not, so
 # there the composer would never read empty and steering would stall.
 if [ "$HARNESS" = commandcode ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
   echo "error: commandcode is verified on the tmux and herdr backends only; backend=$BACKEND cannot prove its composer empty. Select backend tmux or herdr." >&2
@@ -3045,11 +3064,11 @@ esac
 # --model/--effort flags still win over the file's tokens.
 if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   if [ "$MODEL_SET" -eq 0 ]; then
-    SM_MODEL=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model)
+    SM_MODEL=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model "$ID")
     [ -z "$SM_MODEL" ] || MODEL=$SM_MODEL
   fi
   if [ "$EFFORT_SET" -eq 0 ]; then
-    SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)
+    SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort "$ID")
     if [ -n "$SM_EFFORT" ]; then
       case "$SM_EFFORT" in
       low | medium | high | xhigh | max | ultra) EFFORT=$SM_EFFORT ;;
@@ -3090,7 +3109,9 @@ fi
 # trust registration below writes the store the worker will actually read.
 RAW_COMMAND=
 [ "$RAW_LAUNCH" = 0 ] || RAW_COMMAND=$ARG3
-WORKER_ACCOUNT=$(fm_worker_account_select "$HARNESS" "$CONFIG" "$MODEL" "${PI_BIN:-$HARNESS}" "$RAW_COMMAND") || exit 1
+WORKER_ACCOUNT_MATE=
+[ "$KIND" != secondmate ] || WORKER_ACCOUNT_MATE=$ID
+WORKER_ACCOUNT=$(fm_worker_account_select "$HARNESS" "$CONFIG" "$MODEL" "${PI_BIN:-$HARNESS}" "$RAW_COMMAND" "$WORKER_ACCOUNT_MATE") || exit 1
 WORKER_ACCOUNT_DECLARED=${WORKER_ACCOUNT%%$'\t'*}
 WORKER_ACCOUNT_ROOT=${WORKER_ACCOUNT#*$'\t'}
 WORKER_ACCOUNT_PROVIDER=${WORKER_ACCOUNT_ROOT#*$'\t'}
@@ -3780,6 +3801,12 @@ else
   PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
+fi
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
+  git -C "$PROJ_ABS" rev-parse --git-dir >/dev/null 2>&1 &&
+  ! git -C "$PROJ_ABS" rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
+  echo "error: spawn refused: project $PROJ_ABS has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C $PROJ_ABS commit --allow-empty -m \"chore: initial commit\"', then spawn again" >&2
+  exit 1
 fi
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
 # declaration, what holds a place, and why this is race-safe). A fresh worker
@@ -4725,6 +4752,18 @@ EOF
     fi
     T="$CMUX_WORKSPACE_ID:$CMUX_SURFACE_ID"
     ;;
+  paseo)
+    fm_backend_paseo_container_ensure || exit 1
+    PASEO_TASK_IDS=$(fm_backend_paseo_create_task "$W" "$PROJ_ABS") || exit 1
+    read -r FM_PASEO_TASK_TERMINAL_ID FM_PASEO_TASK_WORKSPACE_ID <<EOF
+$PASEO_TASK_IDS
+EOF
+    if [ -z "$FM_PASEO_TASK_TERMINAL_ID" ] || [ -z "$FM_PASEO_TASK_WORKSPACE_ID" ]; then
+      echo "error: paseo did not return a terminal/workspace id for $W" >&2
+      exit 1
+    fi
+    T="$FM_PASEO_TASK_TERMINAL_ID:$FM_PASEO_TASK_WORKSPACE_ID"
+    ;;
   orca)
     set +e
     ORCA_WT_RAW=$(fm_backend_orca_worktree_create "$PROJ_ABS" "$W")
@@ -4776,6 +4815,7 @@ spawn_send_text_line() { # <target> <text>
   zellij) fm_backend_zellij_send_text_line "$1" "$2" "$W" ;;
   orca) fm_backend_orca_send_text_line "$1" "$2" ;;
   cmux) fm_backend_cmux_send_text_line "$1" "$2" "$W" ;;
+  paseo) fm_backend_paseo_send_text_line "$1" "$2" "$W" ;;
   esac
 }
 spawn_current_path() { # <target>
@@ -4784,6 +4824,7 @@ spawn_current_path() { # <target>
   herdr) fm_backend_herdr_current_path "$1" ;;
   zellij) fm_backend_zellij_current_path "$1" "$W" ;;
   cmux) fm_backend_cmux_current_path "$1" "$W" ;;
+  paseo) fm_backend_paseo_current_path "$1" "$W" ;;
   esac
 }
 spawn_send_literal() { # <target> <text>
@@ -4793,6 +4834,7 @@ spawn_send_literal() { # <target> <text>
   zellij) fm_backend_zellij_send_literal "$1" "$2" "$W" ;;
   orca) fm_backend_orca_send_literal "$1" "$2" ;;
   cmux) fm_backend_cmux_send_literal "$1" "$2" "$W" ;;
+  paseo) fm_backend_paseo_send_literal "$1" "$2" "$W" ;;
   esac
 }
 spawn_send_key() { # <target> <key>
@@ -4802,6 +4844,7 @@ spawn_send_key() { # <target> <key>
   zellij) fm_backend_zellij_send_key "$1" "$2" "$W" ;;
   orca) fm_backend_orca_send_key "$1" "$2" ;;
   cmux) fm_backend_cmux_send_key "$1" "$2" "$W" ;;
+  paseo) fm_backend_paseo_send_key "$1" "$2" "$W" ;;
   esac
 }
 
@@ -6171,7 +6214,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort account account_provider busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort account account_provider busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -6225,6 +6268,10 @@ preserve_relaunch_meta() {
   if [ "$BACKEND" = cmux ]; then
     echo "cmux_workspace_id=$CMUX_WORKSPACE_ID"
     echo "cmux_surface_id=$CMUX_SURFACE_ID"
+  fi
+  if [ "$BACKEND" = paseo ]; then
+    echo "paseo_terminal_id=$FM_PASEO_TASK_TERMINAL_ID"
+    echo "paseo_workspace_id=$FM_PASEO_TASK_WORKSPACE_ID"
   fi
   if [ "$KIND" = secondmate ]; then
     echo "home=$PROJ_ABS"
