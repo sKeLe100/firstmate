@@ -49,7 +49,8 @@
 #                       detected primary harness.
 #   5. read-once contract - the do-not-re-read contract covering every source
 #                       represented by the two digests below.
-#   6. fleet digest   - any captain-declared next-session priority callout, then
+#   6. fleet digest   - a bounded captain STANDING ORDERS excerpt, then any
+#                       captain-declared next-session priority callout, then
 #                       a compact data/backlog.md identity/metadata listing,
 #                       every state/*.meta, a bounded state/*.status tail,
 #                       the away posture (state/.afk-contract and the legacy
@@ -101,16 +102,14 @@
 # delivered through a harness that truncates an oversized payload from the TAIL,
 # and it has really been truncated in practice - a 70KB digest arrived as lines
 # 1-435 of 578, cutting off eight lines before the live-task inventory. What a
-# truncated tail drops must therefore be the CHEAPEST thing to lose. Curated
-# memory is stable session to session, is already governed by a captain-set
-# budget (config/startup-memory-budget), and is recoverable with one targeted
-# read; live fleet identity - which tasks exist, their windows, worktrees,
-# backends, and endpoint liveness - changes every session and is exactly what
-# recovery depends on. So fleet state goes first and the memory files absorb the
-# truncation. The read-once contract moves ahead of both for the same reason: a
-# contract that only arrives after the payload it governs is the first thing a
-# truncated digest loses, and it carries the truncation caveat that keeps it
-# honest when a stage below it never ran.
+# truncated tail drops must therefore be recoverable. Newly given captain
+# orders are the least stable memory, so a bounded STANDING ORDERS excerpt
+# leads the fleet digest. Live fleet identity - tasks, windows, worktrees,
+# backends, and endpoint liveness - follows before the full memory files.
+# The saved digest must still be read to the end; neither the excerpt nor one
+# file read guarantees that all current orders have been seen. The read-once
+# contract precedes both digests and carries the truncation caveat for any
+# stage below it that never ran.
 # The LOCK/BOOTSTRAP/WAKE-QUEUE safety preamble keeps its order: it establishes
 # mutation authority and this turn's work queue before anything else is read.
 #
@@ -425,6 +424,19 @@ print_file_or_absent() {
   else
     printf 'ABSENT\n'
   fi
+}
+
+# Print only the STANDING ORDERS block, bounded to 40 lines of 600 characters.
+# The full captain file remains in CONTEXT below, including any omitted orders.
+print_standing_orders() {
+  [ -f "$DATA/captain.md" ] || return 0
+  awk '
+    /^## / { if (active) exit; if ($0 == "## STANDING ORDERS") active = 1 }
+    active {
+      if (++lines > 40) { print "[STANDING ORDERS excerpt truncated; read data/captain.md in CONTEXT below]"; exit }
+      print (length($0) > 600 ? substr($0, 1, 588) " [truncated]" : $0)
+    }
+  ' "$DATA/captain.md"
 }
 
 print_backlog_pointer() {
@@ -840,7 +852,8 @@ if [ "$REEMIT" -eq 1 ]; then
   # delivers only a short head inline (Claude: about 2,000 characters), and
   # CONTEXT prints last, so this cue is the part that must survive the spill.
   printf 'RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",\n'
-  printf 'read that whole file now, before acting. Otherwise read data/captain.md, data/captain-shared.md,\n'
+  printf "read it to the end, paging with offset until the line 'The digest above is complete', before acting.\n"
+  printf 'Otherwise read data/captain.md, data/captain-shared.md,\n'
   printf 'and data/learnings.md under %s now if any of them is missing below.\n' "$DATA"
   section "SESSION START (CONTEXT RE-EMIT) - $FM_HOME"
   printf 'This session already took the helm at its own startup and has only lost its\n'
@@ -1066,8 +1079,9 @@ EOF
 
 # --- 6. fleet-state digest ---------------------------------------------
 # Before CONTEXT: see this file's ORDERING note. Live fleet identity is what a
-# truncated tail must never take.
+# truncated tail must never take; current standing orders lead it.
 stage fleet-state
+print_standing_orders
 section "FLEET STATE"
 print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
 
@@ -1244,6 +1258,8 @@ This script never starts supervision itself.
 EOF
 fi
 cat <<'EOF'
+If this digest was saved to a file, read it to the end, paging with offset until
+the line 'The digest above is complete'.
 The digest above is complete for this session start. The READ-ONCE CONTRACT
 section near the top of it governs what may still be read from disk.
 EOF

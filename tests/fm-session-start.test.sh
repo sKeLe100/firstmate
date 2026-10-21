@@ -1095,7 +1095,7 @@ EOF
   rm -f "$fakebin/node"
 
   printf 'window=fm-sess:w1\nkind=ship\n' > "$home/state/task-a.meta"
-  printf 'Captain memory that may be truncated away safely.\n' > "$home/data/captain.md"
+  printf 'Captain memory in the full context section.\n' > "$home/data/captain.md"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$(fm_test_base_path_sans "$BASE_PATH" node)")
 
@@ -1128,8 +1128,10 @@ EOF
   # ahead of the curated memory a truncated tail is allowed to take.
   [ "$inventory_line" -lt "$context_line" ] \
     || fail "the live-task inventory was buried behind the curated memory files"
-  assert_contains "$out" "Captain memory that may be truncated away safely." \
+  assert_contains "$out" "Captain memory in the full context section." \
     "the ordering fixture did not actually print a memory file"
+  assert_not_contains "$(printf '%s\n' "$out" | sed '/^FLEET STATE$/,$d')" "## STANDING ORDERS" \
+    "a captain file without standing orders emitted an excerpt"
 
   missing_line=$(printf '%s\n' "$out" | grep -n 'MISSING: node' | head -1 | cut -d: -f1)
   [ -n "$missing_line" ] || fail "MISSING diagnostic did not appear at all"
@@ -1140,6 +1142,46 @@ EOF
 
 # The contract has to survive tail truncation and stay honest once it precedes
 # the sections it governs, so it carries the truncated-stage escape itself.
+test_standing_orders_excerpt() {
+  local rec root home fakebin out early contract_line orders_line fleet_line
+  rec=$(new_world standing-orders)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  cat > "$home/data/captain.md" <<'EOF'
+## Preferences
+Not an early order.
+## STANDING ORDERS
+- first: Keep current orders visible.
+### Detail
+Still inside standing orders.
+## Other preferences
+Not part of standing orders.
+EOF
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  early=$(printf '%s\n' "$out" | sed '/^FLEET STATE$/,$d')
+  contract_line=$(printf '%s\n' "$early" | grep -n '^READ-ONCE CONTRACT$' | cut -d: -f1)
+  orders_line=$(printf '%s\n' "$early" | grep -n '^## STANDING ORDERS$' | cut -d: -f1)
+  fleet_line=$(printf '%s\n' "$out" | grep -n '^FLEET STATE$' | head -1 | cut -d: -f1)
+  [ -n "$orders_line" ] && [ "$contract_line" -lt "$orders_line" ] && [ "$orders_line" -lt "$fleet_line" ] \
+    || fail "standing orders did not follow the contract before the fleet listing"
+  assert_contains "$early" "Still inside standing orders." "excerpt stopped at a nested heading"
+  assert_not_contains "$early" "Not an early order." "excerpt included the preceding section"
+  assert_not_contains "$early" "Not part of standing orders." "excerpt included the following section"
+
+  awk 'BEGIN { print "## STANDING ORDERS"; for (i = 1; i <= 42; i++) { printf "order-%02d: ", i; for (j = 0; j < 700; j++) printf "x"; print "" } }' > "$home/data/captain.md"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  early=$(printf '%s\n' "$out" | sed '/^FLEET STATE$/,$d')
+  assert_contains "$early" "order-39:" "excerpt dropped an order within its line bound"
+  assert_not_contains "$early" "order-40:" "excerpt exceeded its 40-line bound"
+  assert_contains "$early" "[STANDING ORDERS excerpt truncated;" "excerpt did not disclose omitted lines"
+  printf '%s\n' "$early" | awk '/^order-/ && length($0) > 600 { exit 1 }' \
+    || fail "standing-order line exceeded 600 characters"
+  pass "standing orders lead the fleet listing with section and size bounds"
+}
+
 test_read_once_contract_is_stated_once_before_its_subject() {
   local rec root home fakebin out contract_count
   rec=$(new_world read-once)
@@ -1945,6 +1987,11 @@ FIXTURE
   [ "${#reemit}" -gt 10000 ] || fail "re-emit fixture did not exceed the hook output limit"
   head2k=$(printf '%s' "$reemit" | head -c 2000)
   assert_contains "$head2k" "RE-EMIT CUE" "the re-emit cue is not inside the first 2000 characters"
+  assert_contains "$head2k" "read it to the end, paging with offset until the line 'The digest above is complete'" \
+    "the re-emit cue does not explain how to finish reading the saved file"
+  assert_contains "$normal" "If this digest was saved to a file, read it to the end, paging with offset until" \
+    "the closing reminder does not require reading the saved digest to the end"
+  assert_contains "$normal" "the line 'The digest above is complete'." "the closing reminder omits the completion marker"
   assert_contains "$head2k" "Full output saved to" "the re-emit cue does not point at the saved output"
 
   pass "--reemit puts its read cue in the first 2000 characters and a normal start omits it"
@@ -2585,6 +2632,7 @@ test_trace_context_effective_state_is_frozen_after_lock
 test_session_lock_concurrent_single_winner
 test_output_ordering_diagnostics_lead
 test_read_once_contract_is_stated_once_before_its_subject
+test_standing_orders_excerpt
 test_herdr_backend_diagnostics_follow_real_session_start
 test_session_start_relaunches_missing_pi_secondmate
 test_deferred_relaunch_is_always_reported
