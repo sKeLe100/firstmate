@@ -1023,7 +1023,7 @@ $ASK_USER_BLOCK
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 
-8. Retry-loop failsafe: track your own validation repetition instead of grinding.
+9. Retry-loop failsafe: track your own validation repetition instead of grinding.
    Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
    still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after $ROUND_CEILING review
    rounds without the review step approving, or after roughly 2 hours cycling the same pipeline
