@@ -1,6 +1,6 @@
 # OpenCode
 
-Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue behavior re-verified on 2026-07-20 using 1.18.4, composer furniture re-verified on 2026-09-18 using 1.18.31, and the mode-footer furniture re-verified on 2026-10-14 using 1.19.0.
+Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue behavior re-verified on 2026-07-20 using 1.18.4, composer furniture re-verified on 2026-09-18 using 1.18.31, mode-footer furniture re-verified on 2026-10-14 using 1.19.0, and the worker adapter re-verified on 2026-10-21 using 1.19.3. The 1.19.3 check covered composer/ghost stripping, semantic busy/idle, steer/doorbell, interrupt, exit/relaunch, and effort config; details are in [runtime-backends.md](../../../../../docs/verification/runtime-backends.md#2026-10-21-opencode-1193-worker-adapter).
 
 ## Operating facts
 
