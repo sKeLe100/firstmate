@@ -6,6 +6,14 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## 2026-10-21 OpenCode 1.19.3 worker adapter
+
+Verified on 2026-10-21 on Linux with OpenCode 1.19.3 and `opencode/deepseek-v4.1-flash-free`, using an isolated lab worker. The trivial model turn returned `READY` with exit 0. Composer verification covered the live idle composer and ghost-stripped read: it classified `empty`, and a cursorless read did not become `pending`; the strict blank shell row remained `unknown`. The busy plugin reported `busy` during a turn and `idle` after it settled. The steering doorbell reached the worker, which acted and acknowledged the inbox message by moving it to `handled/`.
+
+`bin/fm-control.sh` delivered an interrupt, after which the live pane rendered `interrupted` and the busy event returned to `idle`; the command reported `cancel=unconfirmed`. That is the adapter's expected result because OpenCode has no adapter-owned cancellation acknowledgement source, as recorded in `bin/fm-control-lib.sh`. Exit stopped the worker, and relaunch started it again. `OPENCODE_CONFIG_CONTENT` accepted the DeepSeek model with `agent.build.variant=high`; this verifies config parsing, while the launch adapter correctly emits effort variants only for the provider families listed in the OpenCode reference.
+
+The live checks were `FM_COMPOSER_MATRIX_LIVE=1 tests/fm-composer-matrix-live-e2e.test.sh` (OpenCode arm), `tests/fm-send-inbox-doorbell-live-e2e.test.sh` (OpenCode arm), and `FM_HARNESS_LIVENESS_DRIFT=1 tests/fm-harness-liveness-drift-live-e2e.test.sh` (OpenCode arm), plus the isolated worker lifecycle through `fm-control.sh` and `fm-busy-lib.sh`. The opt-in guards report versioned output and can refresh their respective evidence after an upgrade.
+
 ## Polytoken worker lifecycle
 
 Verified on 2026-10-14 with Polytoken 0.9.0 on macOS arm64 using the tmux worker path.
