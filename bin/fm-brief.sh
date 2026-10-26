@@ -14,6 +14,14 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
+# `## Firstmate spec` also carries three optional task slots firstmate fills or
+# leaves as `none`, which bin/fm-spawn.sh accepts: `Scope:` (the files, dirs,
+# or URLs the worker may change; reading outside it is allowed for context,
+# while changing outside it is a `needs-decision`), `Known facts:` (what is
+# already established so the worker does not re-derive it), and `Report
+# budget:` (a line cap with the TL;DR first and evidence in an appendix or a
+# sibling file). The report budget defaults to 150 lines for a scout and to no
+# cap for a ship.
 # Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--herdr-lab] [--perspective <slug>]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--herdr-lab] [--perspective <slug>]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
@@ -815,6 +823,26 @@ IFS= read -r -d '' TASK_SECTION <<'EOF' || true
 {FIRSTMATE_SPEC}
 EOF
 TASK_SECTION=${TASK_SECTION%$'\n'}
+
+# Three optional task slots under `## Firstmate spec`: the change boundary,
+# what is already established, and how long the report or final summary may
+# run. They are scaffolded so firstmate fills them rather than omitting them,
+# but any may stay `none`, which bin/fm-spawn.sh accepts. A scout's report is
+# its deliverable, so its report budget defaults to 150 lines; a ship has no
+# default cap. The scope and budget explanations stay in the brief because the
+# worker, not only the filler, must know that changing outside the scope is a
+# needs-decision and where the report evidence belongs.
+if [ "$KIND" = scout ]; then
+  REPORT_BUDGET_DEFAULT='150 lines - put the TL;DR first and keep evidence and command output in an appendix or a sibling file.'
+else
+  REPORT_BUDGET_DEFAULT='none - no line cap; put the TL;DR first and keep evidence and command output in an appendix or a sibling file.'
+fi
+# shellcheck disable=SC2016 # these are literal brief lines; the backticks must reach the worker unexpanded.
+TASK_SLOTS=$(printf '%s\n' \
+  'Scope: none - the files, dirs, or URLs you may read and change. Reading outside it is allowed for context, but changing outside it is a `needs-decision`.' \
+  'Known facts: none - bullets or a report path of what is already established, so you do not re-derive it.' \
+  "Report budget: $REPORT_BUDGET_DEFAULT")
+TASK_SECTION="$TASK_SECTION"$'\n\n'"$TASK_SLOTS"
 
 # One shared string keeps the ship and scout infrastructure rule identical.
 # Rule 2 governs file edits, so it does not prohibit pool administration.
