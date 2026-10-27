@@ -15,7 +15,11 @@
 # The captain-ended state is reached through the same server route the browser's
 # End session button calls, so no browser is needed and nothing here depends on
 # a human. The artifact is a scratch page in a temporary directory, and the
-# session it opens is ended again before the guard returns.
+# session it opens is ended again before the guard returns. The guard runs its
+# own lavish server on a private state directory and a free loopback port, so
+# the operator's long-lived server - whose health answer can outlast the
+# client's probe while it is busy - can neither fail the guard nor collect its
+# scratch sessions; that private server is stopped again on the way out.
 #
 # Standard CI has no lavish-axi, so this reports a capability skip there. The
 # portable counterpart in tests/fm-bearings-board.test.sh pins the build's logic
@@ -28,7 +32,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-fm_live_gate default-on FM_BEARINGS_LAVISH_LIVE lavish-axi jq curl
+fm_live_gate default-on FM_BEARINGS_LAVISH_LIVE lavish-axi jq curl node
 
 pass() { printf 'ok - %s\n' "$1"; }
 note() { printf '# %s\n' "$1"; }
@@ -39,6 +43,7 @@ cleanup() {
   [ -z "$LAB" ] || {
     [ ! -f "$LAB/.lavish/bearings-board.html" ] \
       || lavish-axi end "$LAB/.lavish/bearings-board.html" >/dev/null 2>&1 || true
+    lavish-axi stop >/dev/null 2>&1 || true
     rm -rf "$LAB"
   }
 }
@@ -50,7 +55,11 @@ note "lavish-axi ${VERSION:-version-unknown}"
 
 LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-bearings-lavish-live.XXXXXX") || fail "cannot create the guard lab"
 LAB=$(cd -P -- "$LAB" && pwd -P)
-mkdir -p "$LAB/state" "$LAB/data"
+mkdir -p "$LAB/state" "$LAB/data" "$LAB/lavish-state"
+LAVISH_AXI_STATE_DIR="$LAB/lavish-state"
+LAVISH_AXI_PORT=$(node -e 'const s = require("net").createServer(); s.listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); });') \
+  || fail "cannot pick a free loopback port for the guard's lavish server"
+export LAVISH_AXI_STATE_DIR LAVISH_AXI_PORT
 fm_test_track_procevent_home "$LAB" "$LAB/procevent-claims"
 
 cat > "$LAB/payload.json" <<'JSON'
