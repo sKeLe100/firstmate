@@ -1547,6 +1547,29 @@ test_brief_task_slots_are_scaffolded_and_optional() {
   pass "fm-brief.sh: ship and scout scaffolds carry the optional Scope, Known facts, and Report budget task slots"
 }
 
+# The scaffolded task slots are not a spec: a brief whose `## Firstmate spec`
+# holds only slot lines must stay invalid, as an empty spec was before them.
+test_task_slots_alone_do_not_fill_the_spec() {
+  local home id brief filled
+  home="$TMP_ROOT/slots-only-home"
+  mkdir -p "$home/data"
+  id=brief-slots-only
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "ship scaffold exited non-zero"
+  brief="$home/data/$id/brief.md"
+  filled="$home/data/$id/filled.md"
+  sed -e 's/^{TASK}$/Fix the bug./' -e 's/^{FIRSTMATE_SPEC}$/Change one line./' "$brief" > "$filled"
+  sed -i -e 's/^{TASK}$/Fix the bug./' -e '/^{FIRSTMATE_SPEC}$/d' "$brief"
+  # shellcheck source=/dev/null
+  ( . "$ROOT/bin/fm-dod-lib.sh"; fm_brief_task_content_valid "$filled" ) \
+    || fail "a filled spec with its task slots must be valid"
+  # shellcheck source=/dev/null
+  if ( . "$ROOT/bin/fm-dod-lib.sh"; fm_brief_task_content_valid "$brief" ); then
+    fail "a spec holding only the task slot lines must be refused as empty"
+  fi
+  pass "fm-dod-lib.sh: task slot lines alone do not count as a Firstmate spec"
+}
+
 # Contract: a waiting worker spends no turns. A decision wait ends the turn, an
 # external wait sleeps in one bounded blocking shell command sized per harness,
 # and a waiting worker neither polls its inbox nor polls a pipeline between holds.
@@ -2207,3 +2230,4 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+test_task_slots_alone_do_not_fill_the_spec
