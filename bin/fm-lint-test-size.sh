@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-lint-test-size.sh - refuse an oversized tests/*.test.sh file that isn't
+# fm-lint-test-size.sh - refuse an oversized tests/*.test.sh or tests/*-lib.sh file that isn't
 # grandfathered.
 #
 # A single test script growing past a few thousand lines or a few hundred
@@ -16,8 +16,8 @@
 # bin/fm-lint-workflows.sh's pattern; no new CI job.
 #
 # Usage:
-#   fm-lint-test-size.sh                check tests/*.test.sh under this repo
-#   fm-lint-test-size.sh --root <dir>   check tests/*.test.sh under <dir>
+#   fm-lint-test-size.sh                check tests/*.test.sh and tests/*-lib.sh under this repo
+#   fm-lint-test-size.sh --root <dir>   check tests/*.test.sh and tests/*-lib.sh under <dir>
 #   fm-lint-test-size.sh --help
 set -eu
 
@@ -29,7 +29,7 @@ SELF="$SELF_DIR/fm-lint-test-size.sh"
 ROOT="$(cd "$SELF_DIR/.." && pwd)"
 
 fm_lint_test_size_usage() {
-  sed -n '2,20{s/^# \{0,1\}//;p;}' "$SELF"
+  sed -n '2,21{s/^# \{0,1\}//;p;}' "$SELF"
 }
 
 EXPLICIT_ROOT=
