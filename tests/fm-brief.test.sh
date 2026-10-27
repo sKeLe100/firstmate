@@ -1553,7 +1553,7 @@ test_task_slots_alone_do_not_fill_the_spec() {
   local home id brief filled
   home="$TMP_ROOT/slots-only-home"
   mkdir -p "$home/data"
-  id=brief-slots-only
+  id="brief-slots-only"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 \
     || fail "ship scaffold exited non-zero"
   brief="$home/data/$id/brief.md"
