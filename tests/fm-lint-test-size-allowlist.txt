@@ -24,4 +24,5 @@ fm-secondmate-safety.test.sh
 # Sync Batch 2 grew tests/fm-supervision-host.test.sh from 2969 to 3036 lines; same one-time upstream-sync exemption until split-fm-supervision-host-test lands.
 fm-supervision-host.test.sh
 fm-voice-relay.test.sh
+fm-watch-triage-lib.sh
 fm-x-mode.test.sh

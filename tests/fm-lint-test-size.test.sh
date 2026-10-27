@@ -109,6 +109,22 @@ test_stale_allowlist_entry_below_ceiling_fails() {
   pass "an allowlist entry for a file that no longer exceeds the ceiling fails"
 }
 
+test_oversized_lib_fails_ungrandfathered_and_passes_allowlisted() {
+  local tmp out rc
+  tmp=$(fm_test_tmproot fm-lint-size-lib)
+  mkdir -p "$tmp/tests"
+  fm_lint_test_size_write_file "$tmp/tests/fm-big-lib.sh" 3001 1
+  rc=0
+  out=$("$SIZE" --root "$tmp" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an oversized non-grandfathered *-lib.sh unexpectedly passed"$'\n'"$out"
+  assert_contains "$out" "fm-big-lib.sh" "lib ceiling failure did not name the file"
+  printf 'fm-big-lib.sh\n' > "$tmp/tests/fm-lint-test-size-allowlist.txt"
+  rc=0
+  out=$("$SIZE" --root "$tmp" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "an allowlisted oversized lib must pass, got $rc"$'\n'"$out"
+  pass "an oversized tests/*-lib.sh is checked and honors the allowlist"
+}
+
 test_no_tests_dir_passes() {
   local tmp out rc
   tmp=$(fm_test_tmproot fm-lint-size-notests)
@@ -132,5 +148,6 @@ test_oversized_function_count_fails_ungrandfathered
 test_grandfathered_file_passes
 test_stale_allowlist_entry_for_missing_file_fails
 test_stale_allowlist_entry_below_ceiling_fails
+test_oversized_lib_fails_ungrandfathered_and_passes_allowlisted
 test_no_tests_dir_passes
 test_current_repo_sizes_pass
