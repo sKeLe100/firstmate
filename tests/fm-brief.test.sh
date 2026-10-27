@@ -1497,6 +1497,56 @@ test_pt_tracker_brief_carries_tracker_entry_law() {
   pass "fm-brief.sh: pt-tracker ship brief carries the tracker-entry law; other briefs are unaffected"
 }
 
+# The scaffold offers three optional task slots under `## Firstmate spec` so a
+# worker knows its change boundary, what is already established, and how long
+# its report may run. Each stays optional with `none` as a valid value that
+# fm-spawn must accept, and a scout's report budget defaults to 150 lines.
+test_brief_task_slots_are_scaffolded_and_optional() {
+  local home id brief spec_body
+  home="$TMP_ROOT/task-slots-home"
+  mkdir -p "$home/data"
+
+  for id in brief-slots-ship brief-slots-scout; do
+    if [ "$id" = brief-slots-scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1 \
+        || fail "scout scaffold exited non-zero"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 \
+        || fail "ship scaffold exited non-zero"
+    fi
+    brief="$home/data/$id/brief.md"
+    spec_body=$(awk '$0 == "## Firstmate spec" { emit = 1; next } emit && /^# / { exit } emit { print }' "$brief")
+    assert_contains "$spec_body" "Scope: none - the files, dirs, or URLs you may read and change." \
+      "$id: Firstmate spec lost the optional Scope slot"
+    assert_contains "$spec_body" "Reading outside it is allowed for context, but changing outside it is a \`needs-decision\`." \
+      "$id: the Scope slot must make changing outside scope a needs-decision"
+    assert_contains "$spec_body" "Known facts: none - bullets or a report path of what is already established" \
+      "$id: Firstmate spec lost the optional Known facts slot"
+    assert_contains "$spec_body" "put the TL;DR first" \
+      "$id: the Report budget slot must require a TL;DR first"
+    assert_contains "$spec_body" "appendix or a sibling file" \
+      "$id: the Report budget slot must move evidence out of the main report"
+  done
+
+  assert_grep "Report budget: none - no line cap" \
+    "$home/data/brief-slots-ship/brief.md" \
+    "a ship must default the report budget to no cap"
+  assert_grep "Report budget: 150 lines - put the TL;DR first" \
+    "$home/data/brief-slots-scout/brief.md" \
+    "a scout must default the report budget to 150 lines"
+
+  # The slots are optional, not placeholders fm-spawn refuses: no slot may use
+  # a brace placeholder, so `none` stays a valid value for each.
+  for id in brief-slots-ship brief-slots-scout; do
+    brief="$home/data/$id/brief.md"
+    assert_no_grep "Scope: {" "$brief" "$id: the Scope slot carries a fill placeholder"
+    assert_no_grep "Known facts: {" "$brief" "$id: the Known facts slot carries a fill placeholder"
+    assert_no_grep "Report budget: {" "$brief" "$id: the Report budget slot carries a fill placeholder"
+  done
+
+  pass "fm-brief.sh: ship and scout scaffolds carry the optional Scope, Known facts, and Report budget task slots"
+}
+
 # Contract: a waiting worker spends no turns. A decision wait ends the turn, an
 # external wait sleeps in one bounded blocking shell command sized per harness,
 # and a waiting worker neither polls its inbox nor polls a pipeline between holds.
@@ -1965,6 +2015,7 @@ test_scout_and_secondmate_load_decision_hold_policy
 test_ship_and_scout_teach_correct_key_placement
 test_scout_and_secondmate_scaffold
 test_status_and_report_writes_require_verification
+test_brief_task_slots_are_scaffolded_and_optional
 test_pt_tracker_brief_carries_tracker_entry_law
 
 # The generated brief is fm-brief.sh's public output artifact - the prompt a

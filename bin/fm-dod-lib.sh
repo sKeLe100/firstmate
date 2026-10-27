@@ -265,15 +265,23 @@ fm_ship_rule_one() {  # <no-mistakes|direct-PR|local-only> <task-id> [branch] [<
   esac
 }
 
-# Return 0 when a Task subsection still consists only of its scaffold
-# placeholder. A missing file and legacy briefs carry no such placeholders.
+# Print the first non-blank line of a subsection body, trimmed.
+fm_brief_leading_line() {  # <body>
+  printf '%s\n' "$1" | awk 'NF { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }'
+}
+
+# Return 0 when a Task subsection still starts with its scaffold placeholder:
+# that is the whole subsection for a bare scaffold, and the first line of a
+# scaffold whose optional task slots follow it. A filled subsection that only
+# mentions a placeholder token later is not leftover. A missing file and legacy
+# briefs carry no such placeholders.
 fm_brief_task_placeholders_present() {  # <file>
   local file=$1 intent spec
   [ -f "$file" ] || return 1
   intent=$(fm_brief_task_heading_body "$file" "## Captain's intent")
   spec=$(fm_brief_task_heading_body "$file" "## Firstmate spec")
-  [ "$(printf '%s' "$intent" | tr -d '[:space:]')" = '{TASK}' ] && return 0
-  [ "$(printf '%s' "$spec" | tr -d '[:space:]')" = '{FIRSTMATE_SPEC}' ] && return 0
+  [ "$(fm_brief_leading_line "$intent")" = '{TASK}' ] && return 0
+  [ "$(fm_brief_leading_line "$spec")" = '{FIRSTMATE_SPEC}' ] && return 0
   return 1
 }
 
