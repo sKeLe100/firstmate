@@ -1,0 +1,22 @@
+== t1
+7:## Firstmate spec
+8-{FIRSTMATE_SPEC}
+9-
+10-Scope: none - the files, dirs, or URLs you may read and change. Reading outside it is allowed for context, but changing outside it is a `needs-decision`.
+11-Known facts: none - bullets or a report path of what is already established, so you do not re-derive it.
+12-Report budget: 150 lines - put the TL;DR first and keep evidence and command output in an appendix or a sibling file.
+13-
+14-
+15-# Herdr lifecycle declaration - NOT ENABLED
+== t2
+7:## Firstmate spec
+8-{FIRSTMATE_SPEC}
+9-
+10-Scope: none - the files, dirs, or URLs you may read and change. Reading outside it is allowed for context, but changing outside it is a `needs-decision`.
+11-Known facts: none - bullets or a report path of what is already established, so you do not re-derive it.
+12-Report budget: none - no line cap; put the TL;DR first and keep evidence and command output in an appendix or a sibling file.
+13-
+14-
+15-# Herdr lifecycle declaration - NOT ENABLED
+unfilled: refused (expected)
+filled: accepted
