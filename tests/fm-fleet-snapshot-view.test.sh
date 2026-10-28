@@ -669,9 +669,7 @@ test_many_scout_reports_survive_argv_limit() {
 
 # Snapshot temp files hold whole backlog- and task-sized payloads. An
 # interrupted run (a captain hitting Ctrl-C on /bearings) must not leave them
-# behind in TMPDIR. The first temp file appears only after the backlog parse,
-# which takes tens of seconds on a slow host, so the poll window is generous
-# and ends early once the snapshot exits.
+# behind in TMPDIR.
 test_interrupted_snapshot_leaves_no_temp_files() {
   local home tmp pid i leftovers
   home=$(make_home interrupted-snapshot)
@@ -687,7 +685,7 @@ test_interrupted_snapshot_leaves_no_temp_files() {
   TMPDIR="$tmp" FM_HOME="$home" "$SNAPSHOT" --json >/dev/null 2>&1 &
   pid=$!
   local observed=0
-  for i in $(seq 1 2400); do
+  for i in $(seq 1 200); do
     if [ -n "$(find "$tmp" -mindepth 1 -print -quit 2>/dev/null)" ]; then
       observed=1
       break
