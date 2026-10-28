@@ -302,7 +302,9 @@ fm_test_base_path() {
   # The lock guards the check-build-mark sequence so concurrent callers don't
   # race to build the same cache directory; callers that found the marker
   # above never take it.
-  # shellcheck source=bin/fm-wake-lib.sh
+  # bin/fm-wake-lib.sh is linted as its own canonical root, so tests stop
+  # source analysis at it instead of re-analyzing the library per test root.
+  # shellcheck source=/dev/null
   FM_STATE_OVERRIDE="${TMPDIR:-/tmp}" . "$ROOT/bin/fm-wake-lib.sh"
   fm_lock_acquire_wait "$lock"
 
