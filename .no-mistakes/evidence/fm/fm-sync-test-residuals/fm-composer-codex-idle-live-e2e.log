@@ -1,0 +1,5 @@
+skip: live: codex (codex-cli 0.164.0) has not trusted /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M5ZXTFR5CSSF3DGAMTYBE2CS; its folder-trust dialog hides the idle composer
+
+real	0m1.322s
+user	0m0.137s
+sys	0m0.195s
