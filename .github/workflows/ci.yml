@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2]
+        partition: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v6
       - name: Install pinned ShellCheck
@@ -71,6 +71,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/fm-lint"
           bin/fm-lint.sh --partition "${{ matrix.partition }}of${{ strategy.job-total }}" \
             --telemetry "$RUNNER_TEMP/fm-lint/partition-${{ matrix.partition }}.tsv"
+      # Lint-time budget: warn at 50% and fail at 70% of this job's own
+      # timeout-minutes, read from this file so the cap stays written once.
+      # Runs after findings too, so a slow failing partition still reports.
+      - name: Lint time budget
+        if: ${{ success() || failure() }}
+        run: |
+          set -eu
+          bin/fm-lint-budget.sh \
+            --telemetry "$RUNNER_TEMP/fm-lint/partition-${{ matrix.partition }}.tsv" \
+            --workflow .github/workflows/ci.yml --job lint
       - name: Upload lint telemetry
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,6 +90,27 @@ jobs:
             ${{ runner.temp }}/fm-lint/partition-${{ matrix.partition }}.tsv
             ${{ runner.temp }}/fm-lint/partition-${{ matrix.partition }}.roots.tsv
           if-no-files-found: warn
+
+  # The one required lint check: a matrix job's result is success only when
+  # every partition succeeded, so a failed, cancelled, or skipped partition
+  # fails this check instead of leaving it green or never reporting.
+  lint-aggregate:
+    name: Lint
+    runs-on: ubuntu-latest
+    # Fast tier: the aggregate only reads the partitions' result.
+    timeout-minutes: 5
+    needs: lint
+    if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
+    steps:
+      - name: Require every lint partition to succeed
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+        run: |
+          set -eu
+          if [ "$LINT_RESULT" != success ]; then
+            echo "::error title=Lint::lint partitions finished with result '$LINT_RESULT'"
+            exit 1
+          fi
 
   # Deterministic proof that portable parallel shards + portable serial + Herdr
   # equal the complete tests/*.test.sh inventory with no missing or duplicates,

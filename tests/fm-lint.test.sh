@@ -213,7 +213,7 @@ test_canonical_partitions_preserve_full_lint() {
       || fail "partition $part did not stream an end record per root"
   done
   [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] || fail "lint partitions lose or duplicate canonical roots"
-  for option in 0of2 3of2 1of3; do
+  for option in 0of2 3of2 1of9; do
     rc=0
     "$LINT" --partition "$option" --list-files > "$tmp/refused" 2>&1 || rc=$?
     [ "$rc" = 2 ] || fail "invalid partition $option was not refused"
@@ -225,6 +225,172 @@ test_canonical_partitions_preserve_full_lint() {
   "$LINT" --partition 1of2 bin/fm-lint.sh > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted an explicit subset"
   pass "two canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
+}
+
+test_partition_accepts_only_k_of_n_up_to_eight() {
+  local tmp option rc
+  tmp=$(fm_test_tmproot fm-lint-partition-parse)
+  for option in 1of1 3of4 4of4 8of8; do
+    rc=0
+    "$LINT" --partition "$option" --list-files > "$tmp/out" 2>&1 || rc=$?
+    [ "$rc" = 0 ] || fail "valid partition $option was refused: $(cat "$tmp/out")"
+  done
+  for option in 0of4 5of4 1of9 9of9 1of0 10of10 junk 4 of4 1of 1of4x -1of4; do
+    rc=0
+    "$LINT" --partition "$option" --list-files > "$tmp/out" 2>&1 || rc=$?
+    [ "$rc" = 2 ] || fail "invalid partition $option was not refused (rc=$rc)"
+  done
+  pass "fm-lint.sh accepts --partition KofN for 1 <= K <= N <= 8 and refuses everything else"
+}
+
+# Pin exact membership on a fixture tree: equal-weight roots fill partitions in
+# index order (lowest partition wins a tie), and each later root goes to the
+# least-loaded partition. The 1of2/2of2 answers are the two-way packer's.
+test_partition_packer_is_least_loaded_with_index_tiebreak() {
+  local tmp lint size pad root part expected actual
+  tmp=$(fm_test_tmproot fm-lint-partition-pack)
+  mkdir -p "$tmp/bin/backends" "$tmp/tests"
+  cp "$LINT" "$tmp/bin/fm-lint.sh"
+  lint="$tmp/bin/fm-lint.sh"
+  size=$(($(wc -c < "$lint") + 1000))
+  pad=$(head -c "$size" /dev/zero | tr '\0' '#')
+  for root in bin/a.sh bin/b.sh bin/c.sh tests/d.sh; do
+    printf '%s' "$pad" > "$tmp/$root"
+  done
+  printf '#\n' > "$tmp/bin/backends/z.sh"
+  printf '#\n' > "$tmp/tests/e.sh"
+  while read -r part expected; do
+    actual=$(CI=true "$lint" --partition "$part" --list-files | paste -sd ' ' -)
+    [ "$actual" = "$expected" ] || fail "partition $part selected '$actual', expected '$expected'"
+  done <<'TABLE'
+1of2 bin/a.sh bin/c.sh bin/fm-lint.sh
+2of2 bin/b.sh bin/backends/z.sh tests/d.sh tests/e.sh
+1of4 bin/a.sh bin/fm-lint.sh
+2of4 bin/b.sh bin/backends/z.sh
+3of4 bin/c.sh tests/e.sh
+4of4 tests/d.sh
+TABLE
+  pass "the partition packer assigns largest-first to the least-loaded partition with an index tiebreak"
+}
+
+test_four_partitions_are_complete_disjoint_and_balanced() {
+  local tmp all part selected bytes largest min max
+  tmp=$(fm_test_tmproot fm-lint-partition-four)
+  all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
+  : > "$tmp/union"
+  min=
+  max=0
+  for part in 1of4 2of4 3of4 4of4; do
+    selected=$("$LINT" --partition "$part" --list-files) || fail "partition $part failed"
+    [ -n "$selected" ] || fail "empty lint partition $part"
+    [ "$selected" = "$("$LINT" --partition "$part" --list-files)" ] || fail "partition $part is nondeterministic"
+    printf '%s\n' "$selected" >> "$tmp/union"
+    # shellcheck disable=SC2086 # canonical roots contain no whitespace
+    bytes=$(cat $selected | wc -c | tr -d '[:space:]')
+    [ -z "$min" ] || [ "$bytes" -ge "$min" ] || min=$bytes
+    [ -n "$min" ] || min=$bytes
+    [ "$bytes" -le "$max" ] || max=$bytes
+  done
+  [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] || fail "four lint partitions lose or duplicate canonical roots"
+  # shellcheck disable=SC2086
+  largest=$(for f in $all; do wc -c < "$f"; done | sort -n | tail -1 | tr -d '[:space:]')
+  [ $((max - min)) -le "$largest" ] \
+    || fail "four partitions are unbalanced: spread $((max - min)) bytes exceeds the largest root ($largest)"
+  pass "four canonical lint partitions are complete, disjoint, deterministic, and byte-balanced"
+}
+
+# fm_lint_source_closure <tree> <root>: print every file reachable from <root>
+# through `# shellcheck source=` directives, resolved against <tree> the way
+# fm-lint.sh runs ShellCheck from the repository root. /dev/null is a boundary.
+fm_lint_source_closure() {
+  local tree=$1 queue next target seen
+  queue=$2
+  seen=$'\n'
+  while [ -n "$queue" ]; do
+    next=${queue%%$'\n'*}
+    if [ "$next" = "$queue" ]; then queue=; else queue=${queue#*$'\n'}; fi
+    case "$seen" in *$'\n'"$next"$'\n'*) continue ;; esac
+    seen="$seen$next"$'\n'
+    printf '%s\n' "$next"
+    [ -f "$tree/$next" ] || continue
+    while IFS= read -r target; do
+      [ "$target" != /dev/null ] || continue
+      queue="${queue:+$queue$'\n'}$target"
+    done < <(sed -n 's/^[[:space:]]*# shellcheck source=\([^[:space:]]*\).*/\1/p' "$tree/$next")
+  done
+}
+
+fm_lint_closure_reaches_wake_lib() {  # <tree>
+  fm_lint_source_closure "$1" tests/lib.sh | grep -qx 'bin/fm-wake-lib.sh'
+}
+
+# tests/lib.sh is sourced by nearly every test root, so a source directive
+# whose closure reaches the bin/fm-wake-lib.sh hub makes every test root
+# re-analyze that library (the 2026-09-14 lint-time doubling). The library is
+# linted as its own canonical root instead.
+test_tests_lib_never_follows_the_wake_library() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-lint-lib-closure)
+  mkdir -p "$tmp/direct/tests" "$tmp/direct/bin" "$tmp/transitive/tests" "$tmp/transitive/bin"
+  printf '# shellcheck source=bin/fm-wake-lib.sh\n. bin/fm-wake-lib.sh\n' > "$tmp/direct/tests/lib.sh"
+  printf '# shellcheck source=tests/helper.sh\n. tests/helper.sh\n' > "$tmp/transitive/tests/lib.sh"
+  printf '  # shellcheck source=bin/fm-other-lib.sh\n. bin/fm-other-lib.sh\n' > "$tmp/transitive/tests/helper.sh"
+  printf '# shellcheck source=bin/fm-wake-lib.sh\n. bin/fm-wake-lib.sh\n' > "$tmp/transitive/bin/fm-other-lib.sh"
+  fm_lint_closure_reaches_wake_lib "$tmp/direct" || fail "closure guard missed a direct wake-library directive"
+  fm_lint_closure_reaches_wake_lib "$tmp/transitive" || fail "closure guard missed a transitive wake-library directive"
+  if fm_lint_closure_reaches_wake_lib "$ROOT"; then
+    fail "tests/lib.sh carries a shellcheck source directive whose closure reaches bin/fm-wake-lib.sh; use source=/dev/null so tests stop at that canonical root"
+  fi
+  pass "tests/lib.sh never follows a source directive into bin/fm-wake-lib.sh"
+}
+
+test_lint_budget_warns_at_half_and_fails_at_seventy_percent() {
+  local tmp budget wall expected want_rc want_prefix rc out cap
+  tmp=$(fm_test_tmproot fm-lint-budget)
+  budget="$ROOT/bin/fm-lint-budget.sh"
+  while read -r wall expected; do
+    printf 'partition\t1of4\nwall_seconds\t%s\n' "$wall" > "$tmp/t.tsv"
+    rc=0
+    out=$("$budget" --telemetry "$tmp/t.tsv" --cap-minutes 10 2>&1) || rc=$?
+    case "$expected" in
+      ok) want_rc=0 want_prefix=fm-lint-budget.sh: ;;
+      warn) want_rc=0 want_prefix=::warning ;;
+      fail) want_rc=1 want_prefix=::error ;;
+    esac
+    if [ "$rc" != "$want_rc" ] || [ "${out#"$want_prefix"}" = "$out" ]; then
+      fail "${wall}s of a 10-minute cap must $expected (rc=$rc): $out"
+    fi
+  done <<'TABLE'
+0 ok
+299 ok
+300 warn
+419 warn
+420 fail
+900 fail
+TABLE
+  for bad in '' 'soon'; do
+    printf 'partition\t1of4\n%s' "${bad:+wall_seconds$'\t'$bad$'\n'}" > "$tmp/bad.tsv"
+    rc=0
+    "$budget" --telemetry "$tmp/bad.tsv" --cap-minutes 10 > "$tmp/out" 2>&1 || rc=$?
+    [ "$rc" = 2 ] || fail "a snapshot without whole wall_seconds must be refused (rc=$rc)"
+  done
+  rc=0
+  "$budget" --telemetry "$tmp/missing.tsv" --cap-minutes 10 > "$tmp/out" 2>&1 || rc=$?
+  [ "$rc" = 2 ] || fail "a missing telemetry snapshot must be refused (rc=$rc)"
+  rc=0
+  "$budget" --telemetry "$tmp/t.tsv" --cap-minutes 0 > "$tmp/out" 2>&1 || rc=$?
+  [ "$rc" = 2 ] || fail "a zero cap must be refused (rc=$rc)"
+  rc=0
+  "$budget" --telemetry "$tmp/t.tsv" --cap-minutes 10 --workflow "$ROOT/.github/workflows/ci.yml" --job lint > "$tmp/out" 2>&1 || rc=$?
+  [ "$rc" = 2 ] || fail "two cap sources must be refused (rc=$rc)"
+  if command -v ruby >/dev/null 2>&1; then
+    cap=$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0]).fetch("jobs").fetch("lint").fetch("timeout-minutes")' "$ROOT/.github/workflows/ci.yml")
+    printf 'wall_seconds\t0\n' > "$tmp/t.tsv"
+    out=$("$budget" --telemetry "$tmp/t.tsv" --workflow "$ROOT/.github/workflows/ci.yml" --job lint) \
+      || fail "the budget could not read the lint job cap from ci.yml"
+    assert_contains "$out" "${cap}-minute job cap" "the budget did not use the lint job's own timeout-minutes"
+  fi
+  pass "the lint budget warns at 50 percent and fails at 70 percent of the job cap"
 }
 
 # fm_lint_stub_git <fakebin-dir>: install a git stub for the changed-file mode
@@ -2074,6 +2240,11 @@ SH
 test_help_reports_the_complete_interface
 test_list_files_reports_the_shell_inventory
 test_canonical_partitions_preserve_full_lint
+test_partition_accepts_only_k_of_n_up_to_eight
+test_partition_packer_is_least_loaded_with_index_tiebreak
+test_four_partitions_are_complete_disjoint_and_balanced
+test_tests_lib_never_follows_the_wake_library
+test_lint_budget_warns_at_half_and_fails_at_seventy_percent
 test_fast_mode_disables_extended_analysis
 test_ci_defaults_to_full_analysis
 test_ci_rejects_explicit_fast_mode
