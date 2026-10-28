@@ -319,6 +319,18 @@ await_reply_result() { # <result-path>
   return 1
 }
 
+# Reset a stall counter whenever the fake ssh has made a remote round-trip
+# since the last poll, so a polling bound measures stalled progress rather
+# than total wall time on a host where each inherited file costs a round-trip.
+ssh_progress_reset() { # <stall-counter-var> <last-seen-count-var>
+  local now=''
+  read -r now < "$SSH_COUNT" 2>/dev/null || true
+  if [ -n "$now" ] && [ "$now" != "${!2}" ]; then
+    printf -v "$2" '%s' "$now"
+    printf -v "$1" '%s' 0
+  fi
+}
+
 sha256_file() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi
 }
@@ -980,10 +992,14 @@ FM_FAKE_SSH_MODE=inherit-block remote_env "$ROOT/bin/fm-spawn.sh" ios --secondma
   > "$TMP_ROOT/spawn-concurrent.out" 2>&1 &
 spawn_concurrent=$!
 spawn_inherit_wait=0
-# Earlier inherited files traverse the worker before captain-shared.md, so give
-# a loaded portable runner 30 seconds to reach this deliberately blocked write.
+# shellcheck disable=SC2034 # read by name in ssh_progress_reset
+spawn_ssh_seen=''
+# Earlier inherited files traverse the worker before captain-shared.md, one
+# remote round-trip each, so allow 30 seconds without a new round-trip to reach
+# this deliberately blocked write.
 while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$spawn_concurrent" 2>/dev/null || fail "remote spawn exited before its blocked inheritance write"
+  ssh_progress_reset spawn_inherit_wait spawn_ssh_seen
   spawn_inherit_wait=$((spawn_inherit_wait + 1))
   [ "$spawn_inherit_wait" -le 1500 ] || fail "remote spawn never reached its blocked inheritance write"
   sleep 0.02
@@ -1299,13 +1315,18 @@ FM_STATE_OVERRIDE="$WATCH_STATE" FM_SECONDMATE_LIVENESS_SECS=1 FM_POLL=1 \
   > "$TMP_ROOT/watch-liveness.out" 2> "$TMP_ROOT/watch-liveness.err" &
 watch_pid=$!
 watch_wait=0
+# shellcheck disable=SC2034 # read by name in ssh_progress_reset
+watch_ssh_seen=''
+# The auto-relaunch re-runs the remote spawn and its inheritance round-trips,
+# so the bound is 30 seconds without a new remote round-trip.
 while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 1500 ]; do
   sleep 0.02
+  ssh_progress_reset watch_wait watch_ssh_seen
   watch_wait=$((watch_wait + 1))
 done
 if kill -0 "$watch_pid" 2>/dev/null; then
   kill "$watch_pid" 2>/dev/null || true
-  fail "the watcher did not exit on its auto-relaunch wake within the bound"
+  fail "the watcher did not exit on its auto-relaunch wake within 30 seconds of its last remote round-trip"
 fi
 wait "$watch_pid" \
   || fail "the liveness watcher leg exited non-zero: $(cat "$TMP_ROOT/watch-liveness.err")"
@@ -1568,10 +1589,14 @@ FM_FAKE_SSH_MODE=launch-block remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmat
   > "$TMP_ROOT/spawn-retirement.out" 2>&1 &
 spawn_retirement_pid=$!
 launch_wait=0
+# shellcheck disable=SC2034 # read by name in ssh_progress_reset
+launch_ssh_seen=''
 # The respawn performs readiness and inheritance jobs before launch, so allow
-# the same 30-second loaded-runner bound as the earlier blocked worker path.
+# the same 30 seconds without a new remote round-trip as the earlier blocked
+# worker path.
 while [ ! -f "$TMP_ROOT/launch.entered" ]; do
   kill -0 "$spawn_retirement_pid" 2>/dev/null || fail "remote respawn exited before its blocked launch"
+  ssh_progress_reset launch_wait launch_ssh_seen
   launch_wait=$((launch_wait + 1))
   [ "$launch_wait" -le 1500 ] || fail "remote respawn never reached its blocked launch"
   sleep 0.02

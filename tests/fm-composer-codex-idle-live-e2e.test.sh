@@ -28,8 +28,13 @@
 # matrix") from this guard's output after any codex upgrade.
 #
 # Folder trust: codex is launched with the repo root as cwd, which the
-# operator's machine has normally already trusted; a trust dialog is a real
-# unreadable-composer state and correctly fails the check.
+# operator's machine has normally already trusted. A fresh checkout codex has
+# never trusted (every no-mistakes gate worktree) parks on its "Trust this
+# folder?" dialog, which neither `-c projects."<dir>".trust_level` nor
+# --dangerously-bypass-approvals-and-sandbox suppresses (codex-cli 0.164.0),
+# and accepting it would write codex's own trust store. The idle composer is
+# then unreachable, so a default-on run skips naming the untrusted folder; an
+# explicit FM_COMPOSER_CODEX_IDLE_LIVE=1 or FM_LIVE=1 run still fails.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -103,6 +108,15 @@ while [ "$i" -lt "$budget" ]; do
   if [ "$tmux_verdict" = empty ] && [ "$cursorless_verdict" = empty ]; then
     break
   fi
+  case "$(tmux capture-pane -p -t "$SESSION:$WIN" 2>/dev/null)" in
+    *'Trust this folder?'*)
+      if [ "${FM_COMPOSER_CODEX_IDLE_LIVE:-}" = 1 ] || { [ -z "${FM_COMPOSER_CODEX_IDLE_LIVE:-}" ] && [ "${FM_LIVE:-}" = 1 ]; }; then
+        fail "codex ($VERSION): parked on its folder-trust dialog for $ROOT; trust that folder in codex to run this guard"
+      fi
+      printf 'skip: live: codex (%s) has not trusted %s; its folder-trust dialog hides the idle composer\n' "$VERSION" "$ROOT"
+      exit 0
+      ;;
+  esac
   i=$((i + 1))
   # A fresh codex may park on a vendor update-available modal (observed live
   # on codex 0.146.0), which the strict classifier correctly refuses to call a
