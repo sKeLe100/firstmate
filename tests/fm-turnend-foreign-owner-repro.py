@@ -59,6 +59,9 @@ def make(name):
         "FM_HOME_SUMMARY_INTERVAL": "999999",
         "FM_CHECK_INTERVAL": "999999",
         "FM_CLAUDE_AUTOARM_SYNC_WAIT_MS": "0",
+        # BASE_ENV drops the sandbox bypass tests/lib.sh exports; restore it so
+        # fm-watch-arm.sh still arms when this checkout is a no-mistakes gate.
+        "FM_GATE_REFUSE_BYPASS": "1",
     }
     return root, env
 
