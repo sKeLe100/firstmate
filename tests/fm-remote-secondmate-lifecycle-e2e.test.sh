@@ -992,6 +992,7 @@ FM_FAKE_SSH_MODE=inherit-block remote_env "$ROOT/bin/fm-spawn.sh" ios --secondma
   > "$TMP_ROOT/spawn-concurrent.out" 2>&1 &
 spawn_concurrent=$!
 spawn_inherit_wait=0
+spawn_inherit_total=0
 # shellcheck disable=SC2034 # read by name in ssh_progress_reset
 spawn_ssh_seen=''
 # Earlier inherited files traverse the worker before captain-shared.md, one
@@ -1001,7 +1002,8 @@ while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$spawn_concurrent" 2>/dev/null || fail "remote spawn exited before its blocked inheritance write"
   ssh_progress_reset spawn_inherit_wait spawn_ssh_seen
   spawn_inherit_wait=$((spawn_inherit_wait + 1))
-  [ "$spawn_inherit_wait" -le 1500 ] || fail "remote spawn never reached its blocked inheritance write"
+  spawn_inherit_total=$((spawn_inherit_total + 1))
+  [ "$spawn_inherit_wait" -le 1500 ] && [ "$spawn_inherit_total" -le 6000 ] || fail "remote spawn never reached its blocked inheritance write"
   sleep 0.02
 done
 cat > "$PARENT/data/captain-shared.md" <<'EOF'
@@ -1315,14 +1317,16 @@ FM_STATE_OVERRIDE="$WATCH_STATE" FM_SECONDMATE_LIVENESS_SECS=1 FM_POLL=1 \
   > "$TMP_ROOT/watch-liveness.out" 2> "$TMP_ROOT/watch-liveness.err" &
 watch_pid=$!
 watch_wait=0
+watch_total=0
 # shellcheck disable=SC2034 # read by name in ssh_progress_reset
 watch_ssh_seen=''
 # The auto-relaunch re-runs the remote spawn and its inheritance round-trips,
 # so the bound is 30 seconds without a new remote round-trip.
-while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 1500 ]; do
+while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 1500 ] && [ "$watch_total" -lt 6000 ]; do
   sleep 0.02
   ssh_progress_reset watch_wait watch_ssh_seen
   watch_wait=$((watch_wait + 1))
+  watch_total=$((watch_total + 1))
 done
 if kill -0 "$watch_pid" 2>/dev/null; then
   kill "$watch_pid" 2>/dev/null || true
@@ -1589,6 +1593,7 @@ FM_FAKE_SSH_MODE=launch-block remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmat
   > "$TMP_ROOT/spawn-retirement.out" 2>&1 &
 spawn_retirement_pid=$!
 launch_wait=0
+launch_total=0
 # shellcheck disable=SC2034 # read by name in ssh_progress_reset
 launch_ssh_seen=''
 # The respawn performs readiness and inheritance jobs before launch, so allow
@@ -1598,7 +1603,8 @@ while [ ! -f "$TMP_ROOT/launch.entered" ]; do
   kill -0 "$spawn_retirement_pid" 2>/dev/null || fail "remote respawn exited before its blocked launch"
   ssh_progress_reset launch_wait launch_ssh_seen
   launch_wait=$((launch_wait + 1))
-  [ "$launch_wait" -le 1500 ] || fail "remote respawn never reached its blocked launch"
+  launch_total=$((launch_total + 1))
+  [ "$launch_wait" -le 1500 ] && [ "$launch_total" -le 6000 ] || fail "remote respawn never reached its blocked launch"
   sleep 0.02
 done
 FM_FAKE_SSH_MODE=retire-lost-slot remote_env "$ROOT/bin/fm-teardown.sh" ios \
