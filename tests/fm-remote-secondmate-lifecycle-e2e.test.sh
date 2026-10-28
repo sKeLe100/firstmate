@@ -1109,12 +1109,17 @@ FM_FAKE_SSH_MODE=inherit-block remote_env "$ROOT/bin/fm-config-push.sh" \
   > "$TMP_ROOT/config-concurrent-first.out" 2>&1 &
 config_first=$!
 inherit_wait=0
+inherit_total=0
+# shellcheck disable=SC2034 # read by name in ssh_progress_reset
+inherit_ssh_seen=''
 while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$config_first" 2>/dev/null || fail "first inheritance transaction exited before its blocked write"
+  ssh_progress_reset inherit_wait inherit_ssh_seen
   inherit_wait=$((inherit_wait + 1))
-  # Match the earlier spawn/inheritance wait: a loaded portable runner can
-  # spend several seconds in the remote entrypoint before reaching this write.
-  [ "$inherit_wait" -le 1500 ] || fail "first inheritance transaction never reached its blocked write"
+  inherit_total=$((inherit_total + 1))
+  # Match the earlier spawn/inheritance wait: 30 seconds without a new remote
+  # round-trip, capped at 6000 ticks overall.
+  [ "$inherit_wait" -le 1500 ] && [ "$inherit_total" -le 6000 ] || fail "first inheritance transaction never reached its blocked write"
   sleep 0.02
 done
 cat > "$PARENT/data/captain-shared.md" <<'EOF'
