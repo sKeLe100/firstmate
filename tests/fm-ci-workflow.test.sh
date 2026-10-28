@@ -465,21 +465,56 @@ TABLE
 }
 
 # Each partition checks its own wall time against the lint job's cap, read
-# from that job's timeout-minutes so the cap is written once.
+# from that job's timeout-minutes so the cap is written once. The step's
+# script runs here against fixture telemetry scaled from the workflow's real
+# cap: quiet under 50 percent, a warning from 50, a failure from 70, and the
+# step itself still runs after a failed lint step.
 test_lint_partitions_check_their_time_budget() {
+  local tmp cap_seconds wall rc expected run_after_failure
+  tmp=$(fm_test_tmproot fm-ci-lint-budget)
   # shellcheck disable=SC2016 # the ${{ }} below is Ruby text, not a shell expansion
-  ruby -ryaml -e '
-steps = YAML.load_file(ARGV[0]).fetch("jobs").fetch("lint").fetch("steps")
-lint = steps.index { |s| s["run"].to_s.include?("bin/fm-lint.sh --partition") }
+  cap_seconds=$(ruby -ryaml -e '
+job = YAML.load_file(ARGV[0]).fetch("jobs").fetch("lint")
+steps = job.fetch("steps")
+lint = steps.index { |s| s["run"].to_s.include?("bin/fm-lint.sh") }
 budget = steps.index { |s| s["run"].to_s.include?("bin/fm-lint-budget.sh") }
 raise "no lint step" unless lint
 raise "no budget step after the lint step" unless budget && budget > lint
-run = steps[budget]["run"]
-raise "the budget must read the lint job cap from this workflow" unless run.include?("--workflow .github/workflows/ci.yml --job lint")
-raise "the budget must read this partition telemetry" unless run.include?("partition-${{ matrix.partition }}.tsv")
-raise "the budget must still report after lint findings" unless steps[budget]["if"].to_s.include?("failure()")
-' "$CI_WORKFLOW" || fail "the lint partitions lost their time-budget step"
-  pass "each lint partition checks its wall time against the lint job cap"
+File.write(ARGV[1], steps[budget].fetch("run").gsub("${{ matrix.partition }}", "1"))
+File.write(ARGV[2], steps[budget]["if"].to_s)
+puts job.fetch("timeout-minutes") * 60
+' "$CI_WORKFLOW" "$tmp/budget.sh" "$tmp/budget.if") \
+    || fail "could not read the lint time-budget step"
+  mkdir -p "$tmp/runner/fm-lint"
+  while read -r wall expected; do
+    printf 'wall_seconds\t%s\n' $((cap_seconds * wall / 100)) > "$tmp/runner/fm-lint/partition-1.tsv"
+    rc=0
+    (cd "$ROOT" && RUNNER_TEMP="$tmp/runner" bash "$tmp/budget.sh") > "$tmp/out" 2>&1 || rc=$?
+    case "$expected" in
+      quiet)
+        [ "$rc" -eq 0 ] && ! grep -q '^::' "$tmp/out" \
+          || fail "the budget step must stay quiet at $wall% of the cap (rc=$rc): $(cat "$tmp/out")" ;;
+      warn)
+        [ "$rc" -eq 0 ] && grep -q '^::warning' "$tmp/out" \
+          || fail "the budget step must warn without failing at $wall% of the cap (rc=$rc): $(cat "$tmp/out")" ;;
+      fail)
+        [ "$rc" -ne 0 ] && grep -q '^::error' "$tmp/out" \
+          || fail "the budget step must fail at $wall% of the cap (rc=$rc): $(cat "$tmp/out")" ;;
+    esac
+  done <<'TABLE'
+10 quiet
+49 quiet
+50 warn
+69 warn
+70 fail
+100 fail
+TABLE
+  run_after_failure=$(ruby -ryaml -e "$EXPRESSION_RUBY" -e '
+puts Expression.condition(File.read(ARGV[0]), { "needs.status" => "failure" })
+' "$tmp/budget.if") || fail "could not resolve the budget step condition"
+  [ "$run_after_failure" = true ] \
+    || fail "the budget step must still run after a failed lint step, got $run_after_failure"
+  pass "each lint partition warns at 50% and fails at 70% of the lint job cap, even after lint findings"
 }
 
 test_ci_matrices_match_executable_partitions() {
