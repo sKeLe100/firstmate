@@ -563,6 +563,8 @@ family_for_basename() {
     fm-remote-doctor.test.sh|fm-remote-herdr-guard.test.sh|fm-remote-job.test.sh|fm-remote-job-orphan-reap.test.sh|\
     fm-remote-transport-lanes.test.sh|\
     fm-remote-reply.test.sh|fm-remote-secondmate-lifecycle-e2e.test.sh|\
+    fm-remote-secondmate-lifecycle-inherit-e2e.test.sh|\
+    fm-remote-secondmate-lifecycle-supervision-e2e.test.sh|\
     fm-remote-secondmate-trace-context.test.sh|\
     fm-secondmate-harness.test.sh|fm-secondmate-lifecycle-e2e.test.sh|\
     fm-secondmate-liveness.test.sh|fm-secondmate-reconcile.test.sh|\
@@ -1083,7 +1085,9 @@ tests/fm-remote-job-orphan-reap.test.sh 2985
 tests/fm-remote-job.test.sh 133201
 tests/fm-remote-reply.test.sh 216935
 tests/fm-remote-secondmate-control-launch-settle.test.sh 721
-tests/fm-remote-secondmate-lifecycle-e2e.test.sh 345655
+tests/fm-remote-secondmate-lifecycle-e2e.test.sh 98640
+tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh 107758
+tests/fm-remote-secondmate-lifecycle-supervision-e2e.test.sh 139257
 tests/fm-remote-secondmate-parent-binding.test.sh 76775
 tests/fm-remote-secondmate-relaunch.test.sh 879
 tests/fm-remote-secondmate-trace-context.test.sh 140132
@@ -2138,6 +2142,13 @@ families_for_changed_path() {
       # part of them; a change to it must re-run both.
       printf '%s\n' "__script__:fm-watch-triage.test.sh"
       printf '%s\n' "__script__:fm-watch-triage-waits.test.sh"
+      ;;
+    tests/fm-remote-secondmate-lifecycle-lib.sh)
+      # Shared fixture sourced by the three remote lifecycle test files, which
+      # each run one stretch of the lifecycle; a change to it must re-run all.
+      printf '%s\n' "__script__:fm-remote-secondmate-lifecycle-e2e.test.sh"
+      printf '%s\n' "__script__:fm-remote-secondmate-lifecycle-inherit-e2e.test.sh"
+      printf '%s\n' "__script__:fm-remote-secondmate-lifecycle-supervision-e2e.test.sh"
       ;;
     tests/fm-hold-diagnostics-lib.sh)
       # Shared diagnostics harness sourced by the captain-hold suites and its own
