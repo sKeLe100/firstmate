@@ -3025,10 +3025,13 @@ declare -a WORKER_PIDS=()
 declare -a WORKER_IDX=()
 declare -a WORKER_SCRIPTS=()
 
-# Invoked indirectly by the EXIT trap below.
+# Invoked indirectly by the EXIT trap below. Suites can leave read-only
+# directories under the run root, so restore owner write first, and never let a
+# cleanup failure under set -e replace the suite's aggregate exit status.
 # shellcheck disable=SC2329
 cleanup_run() {
-  rm -rf "$RUN_TMP"
+  chmod -R u+w "$RUN_TMP" 2>/dev/null || true
+  rm -rf "$RUN_TMP" 2>/dev/null || true
 }
 
 trap cleanup_run EXIT

@@ -2762,6 +2762,31 @@ SH
   pass "token-free retry never fires when any failure is outside the load-sensitive/timeout class"
 }
 
+test_cleanup_tolerates_read_only_run_dirs() {
+  local tmp out rc leftover
+  tmp=$(fm_test_tmproot fm-test-run-cleanup)
+  mkdir -p "$tmp/runtmp"
+  # A passing suite that leaves a read-only directory under the runner's own
+  # temp root, the shape left by fixtures with read-only *.git-hooks dirs.
+  cat >"$tmp/leave-readonly.test.sh" <<'SH'
+#!/usr/bin/env bash
+for run in "$TMPDIR"/fm-test-run.*/; do
+  mkdir -p "$run/ro/inner"
+  : >"$run/ro/inner/file"
+  chmod a-w "$run/ro/inner" "$run/ro"
+done
+echo "ok - leaves read-only dir"
+SH
+  chmod +x "$tmp/leave-readonly.test.sh"
+  out=$(TMPDIR="$tmp/runtmp" "$RUNNER" "$tmp/leave-readonly.test.sh" 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "cleanup of a read-only run dir changed exit status to $rc: $out"
+  assert_contains "$out" 'FM_TEST_SUMMARY total=1 failed=0' "fixture suite did not pass: $out"
+  leftover=$(find "$tmp/runtmp" -mindepth 1 -maxdepth 1 -name 'fm-test-run.*' 2>/dev/null)
+  [ -z "$leftover" ] || fail "runner temp root was not removed: $leftover"
+  pass "a read-only dir left under the run root never changes the aggregate exit status"
+}
+
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
@@ -2820,3 +2845,4 @@ test_changed_captain_hold_gets_its_own_scaled_timeout
 test_token_free_retry_recovers_load_sensitive_failure
 test_token_free_retry_covers_exit_124_regardless_of_name
 test_token_free_retry_skips_when_a_failure_is_not_load_plausible
+test_cleanup_tolerates_read_only_run_dirs
