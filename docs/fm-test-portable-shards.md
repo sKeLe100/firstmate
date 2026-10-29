@@ -124,7 +124,7 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
-The single required `Lint` check aggregates the partitions and fails unless every one succeeded, so a cancelled or skipped partition cannot leave lint green.
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#maintaining-required-checks) documents the required `Lint` aggregate and its failure behavior when a partition does not succeed.
 Each partition also runs `bin/fm-lint-budget.sh`, which warns at 50 percent and fails at 70 percent of the lint job's own `timeout-minutes`, so a slowdown surfaces before the cap cancels the job.
 No fast mode, path skips, or paid runner provisioning is part of this layout.
 
