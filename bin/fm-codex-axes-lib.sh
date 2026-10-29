@@ -33,7 +33,7 @@ codex_max_effort_model() {
 }
 
 codex_max_effort_models_json() {
-  local out= m
+  local out='' m
   for m in $CODEX_MAX_EFFORT_MODELS; do
     out="${out:+$out,}\"$m\""
   done
