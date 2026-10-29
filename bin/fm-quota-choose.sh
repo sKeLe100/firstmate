@@ -2,10 +2,22 @@
 # Choose the first quota-eligible candidate from a ranked list.
 #
 # Usage:
-#   fm-quota-choose.sh [--snapshot <path>] [--candidate <harness:model>]...
+#   fm-quota-choose.sh [--snapshot <path>] [--claude-profile-snapshot <path>]
+#                      [--candidate <harness:model>]...
 #
 # Reads one already-captured quota-axi default TOON or JSON snapshot from the
 # provided file, or from stdin when --snapshot is omitted.
+#
+# --claude-profile-snapshot reads one already-captured
+#   CLAUDE_CONFIG_DIR=<profile> quota-axi --provider claude --profile-only --json
+# snapshot of the Claude profile that claude workers launch on (the
+# config/claude-account pin). Default quota-axi reads only the ambient Claude
+# login, so without this a pinned second account is never measured. Its single
+# claude row replaces every claude row of the main snapshot (as the default
+# account row on schema 6), so claude candidates are judged on the pinned
+# profile and every other provider keeps the main snapshot's evidence. A file
+# that is not a valid schema 5 snapshot holding exactly one claude row is
+# refused rather than ignored.
 # bin/fm-quota-axi-lib.sh owns schema compatibility and the shared row join.
 # For each --candidate in order, it maps <harness> to its primary provider
 # family, then applies the matched row's provider-wide scopes and exact model
@@ -68,12 +80,18 @@ usage() {
 
 CANDIDATES=()
 SNAPSHOT_SOURCE=
+CLAUDE_PROFILE_SOURCE=
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --snapshot)
       [ -n "${2-}" ] || die "--snapshot needs a path"
       SNAPSHOT_SOURCE=$2
+      shift 2
+      ;;
+    --claude-profile-snapshot)
+      [ -n "${2-}" ] || die "--claude-profile-snapshot needs a path"
+      CLAUDE_PROFILE_SOURCE=$2
       shift 2
       ;;
     --candidate)
@@ -318,6 +336,21 @@ else
 fi
 
 printf '%s\n' "$QUOTA_JSON" | fm_quota_json_valid || die "invalid quota-axi provider data"
+
+if [ -n "$CLAUDE_PROFILE_SOURCE" ]; then
+  [ -f "$CLAUDE_PROFILE_SOURCE" ] && [ ! -L "$CLAUDE_PROFILE_SOURCE" ] || die "claude profile snapshot is not a regular file: $CLAUDE_PROFILE_SOURCE"
+  fm_quota_json_valid < "$CLAUDE_PROFILE_SOURCE" || die "invalid claude profile snapshot: $CLAUDE_PROFILE_SOURCE"
+  QUOTA_JSON=$(printf '%s\n' "$QUOTA_JSON" | jq -ce --slurpfile profile "$CLAUDE_PROFILE_SOURCE" '
+    $profile[0] as $p | .schemaVersion as $snapshot_schema |
+    if $p.schemaVersion == 5 and ($p.providers | length) == 1 and $p.providers[0].provider == "claude" then
+      ($p.providers[0] | del(.accountKey) |
+        if $snapshot_schema == 6 then . + {accountKey: "default"} else . end) as $row |
+      .providers = ([.providers[] | select(.provider != "claude")] + [$row])
+    else error("claude profile snapshot must hold exactly one claude row")
+    end
+  ' 2>/dev/null) ||
+    die "claude profile snapshot must be a schema 5 snapshot with exactly one claude row: $CLAUDE_PROFILE_SOURCE"
+fi
 
 # provider_for_harness <harness> [<model>]
 # The harness -> primary provider family table is owned by
