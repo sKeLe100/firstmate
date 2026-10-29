@@ -3130,11 +3130,11 @@ effort_flag_for_harness() {
     ;;
     codex)
       # fm-codex-axes-lib.sh owns the base tiers codex receives. max is
-      # threaded only for gpt-5.6-luna, whose installed catalog entry advertises
+      # threaded only for the models it lists, whose catalog entries advertise
       # that reasoning level; any other unsupported effort reaches no flag and is
       # refused by the silent-default guard below.
       if [ "$effort" = max ]; then
-        [ "$model" = gpt-5.6-luna ] || return 0
+        codex_max_effort_model "$model" || return 0
         printf -- '-c %s ' "$(shell_quote 'model_reasoning_effort="max"')"
       elif codex_effort_supported "$effort"; then
         printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")"
