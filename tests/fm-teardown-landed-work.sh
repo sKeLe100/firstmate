@@ -485,6 +485,50 @@ test_dirty_worktree_refuses() {
   grep -q "uncommitted changes" "$case_dir/stderr" || fail "dirty-wt: refusal did not cite uncommitted changes"
   pass "dirty worktree is refused even when its committed work has landed (dirty always wins)"
 }
+
+test_hidden_untracked_work_refuses_before_return() {
+  local case_dir rc head state
+  for state in dirty clean; do
+    case_dir=$(make_case "hidden-untracked-$state")
+    write_meta "$case_dir" no-mistakes ship
+    git -C "$case_dir/wt" config status.showUntrackedFiles no
+    head=$(git -C "$case_dir/wt" rev-parse HEAD)
+    cp "$case_dir/state/task-x1.meta" "$case_dir/meta-before"
+    cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ]; then
+  printf '%s\n' return >> "$FM_STATE_OVERRIDE/returned"
+fi
+exit 0
+SH
+    if [ "$state" = dirty ]; then
+      mkdir "$case_dir/wt/new directory"
+      printf '%s\n' 'unadded work' > "$case_dir/wt/new directory/newfile.txt"
+      [ -z "$(git -C "$case_dir/wt" status --porcelain)" ] \
+        || fail "hidden-untracked: fixture did not hide the unadded file"
+    fi
+
+    rc=0
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    if [ "$state" = dirty ]; then
+      expect_code 1 "$rc" "hidden-untracked: teardown must refuse hidden unadded work"
+      assert_grep 'REFUSED: worktree' "$case_dir/stderr" "hidden-untracked: no refusal"
+      assert_grep 'uncommitted changes' "$case_dir/stderr" "hidden-untracked: no dirty-state diagnostic"
+      assert_grep 'new directory/newfile.txt' "$case_dir/stderr" "hidden-untracked: unadded path not named"
+      assert_absent "$case_dir/state/returned" "hidden-untracked: pool return ran before refusal"
+      assert_refusal_retained_task_state "$case_dir" hidden-untracked "$head"
+      cmp -s "$case_dir/meta-before" "$case_dir/state/task-x1.meta" \
+        || fail "hidden-untracked: refusal changed task metadata"
+      [ "$(cat "$case_dir/wt/new directory/newfile.txt")" = 'unadded work' ] \
+        || fail "hidden-untracked: refusal changed or erased unadded work"
+    else
+      expect_code 0 "$rc" "hidden-untracked: clean control should complete teardown"
+      assert_grep 'return' "$case_dir/state/returned" "hidden-untracked: clean control never reached pool return"
+      assert_absent "$case_dir/state/task-x1.meta" "hidden-untracked: clean control kept task metadata"
+    fi
+  done
+  pass "hidden untracked work is refused before return while a clean control returns"
+}
 test_gh_error_and_content_absent_refuses() {
   local case_dir rc
   case_dir=$(make_case gh-error)
