@@ -285,10 +285,11 @@ MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0
 # Bound applied automatically on the automatic --changed path, derived from
 # measured healthy runtimes with margin rather than picked: the slowest measured
-# script is tests/fm-watch-triage.test.sh at about 1075s under CI load (the hint
-# table below records that loaded figure). 1500s keeps every measured script
-# under the bound with roughly 1.4x headroom over the slowest loaded measurement,
-# and it stays under the 30-minute normal CI tier so a wedged script fails here,
+# script was tests/fm-watch-triage.test.sh at about 1075s under CI load, until it
+# took about 1830s alone on PC01 and was split with
+# tests/fm-watch-triage-waits.test.sh, which the hint table below apportions
+# that loaded figure between. 1500s keeps every measured script under the bound
+# with headroom over the slowest loaded measurement, and it stays under the 30-minute normal CI tier so a wedged script fails here,
 # with its output, before the job cap
 # cancels the lane. It is a guard, not a speed control: a HUNG script becomes a
 # bounded failure instead of an unbounded suite, which is the shape that
@@ -479,8 +480,8 @@ load_scaled_timeout_secs() {
 # stays deliberate.
 is_load_sensitive_script() {
   case "$(basename "$1")" in
-    fm-watch-triage.test.sh | fm-wake-queue.test.sh | fm-watcher-lock.test.sh | \
-      fm-watch-checkpoint.test.sh | fm-inactive-reconcile.test.sh | \
+    fm-watch-triage.test.sh | fm-watch-triage-waits.test.sh | fm-wake-queue.test.sh | \
+      fm-watcher-lock.test.sh | fm-watch-checkpoint.test.sh | fm-inactive-reconcile.test.sh | \
       fm-wake-daemon-lifecycle-e2e.test.sh | fm-task-inbox.test.sh)
       return 0
       ;;
@@ -533,7 +534,7 @@ family_for_basename() {
     fm-mail.test.sh|fm-mail-check.test.sh|\
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
-    fm-watch-triage.test.sh|fm-watch-retry-band.test.sh|fm-task-inbox.test.sh|\
+    fm-watch-triage.test.sh|fm-watch-triage-waits.test.sh|fm-watch-retry-band.test.sh|fm-task-inbox.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh)
       printf '%s\n' watcher-wake-lock
       ;;
@@ -1164,7 +1165,8 @@ tests/fm-watch-checkpoint.test.sh 22937
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 59092
 tests/fm-watch-retry-band.test.sh 7547
-tests/fm-watch-triage.test.sh 1074843
+tests/fm-watch-triage-waits.test.sh 481243
+tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 72022
 tests/fm-worker-account-live-e2e.test.sh 3179
 tests/fm-worker-account.test.sh 37445
@@ -1825,6 +1827,12 @@ families_for_changed_path() {
       # must re-run both suites.
       printf '%s\n' "__script__:fm-crew-state.test.sh"
       printf '%s\n' "__script__:fm-crew-state-ci.test.sh"
+      ;;
+    tests/fm-watch-triage-lib.sh)
+      # Shared cases sourced by both watch-triage test files, which each run
+      # part of them; a change to it must re-run both.
+      printf '%s\n' "__script__:fm-watch-triage.test.sh"
+      printf '%s\n' "__script__:fm-watch-triage-waits.test.sh"
       ;;
     tests/fm-hold-diagnostics-lib.sh)
       # Shared diagnostics harness sourced by the lifecycle test and its own
