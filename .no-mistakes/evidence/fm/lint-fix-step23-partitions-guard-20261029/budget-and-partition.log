@@ -1,0 +1,26 @@
+--- wall=400 (cap 45m=2700s: warn>=1350, fail>=1890)
+fm-lint-budget.sh: lint took 400s, 14% of the 45-minute job cap (warn at 50%, fail at 70%)
+rc=0
+--- wall=1350 (cap 45m=2700s: warn>=1350, fail>=1890)
+::warning title=Lint time budget::lint took 1350s, 50% of the 45-minute job cap (warn at 50%, fail at 70%)
+rc=0
+--- wall=1890 (cap 45m=2700s: warn>=1350, fail>=1890)
+::error title=Lint time budget::lint took 1890s, 70% of the 45-minute job cap (warn at 50%, fail at 70%)
+rc=1
+--- wall=1700 (cap 45m=2700s: warn>=1350, fail>=1890)
+::warning title=Lint time budget::lint took 1700s, 62% of the 45-minute job cap (warn at 50%, fail at 70%)
+rc=0
+--- workflow/job cap
+81:          bin/fm-lint-budget.sh \
+--- missing telemetry
+::error title=Lint time budget::fm-lint-budget.sh: telemetry snapshot not readable: /var/tmp/nm-daemon-tmp/tmp.pMvtesof0W/nope
+rc=2
+--- partitions
+fm-lint.sh: --partition must be KofN with 1 <= K <= N <= 8, got 0of4.
+rc=2
+fm-lint.sh: --partition needs 1 <= K <= N <= 8, got 5of4.
+rc=2
+fm-lint.sh: --partition needs 1 <= K <= N <= 8, got 1of9.
+rc=2
+fm-lint.sh: --partition must be KofN with 1 <= K <= N <= 8, got abc.
+rc=2
