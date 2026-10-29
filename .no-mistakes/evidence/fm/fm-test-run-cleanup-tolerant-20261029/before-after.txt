@@ -1,0 +1,14 @@
+== bin/.old-runner.sh
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=9097
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=43 failed=0
+FM_TEST_SLOWEST rank=1 script=/var/tmp/nm-daemon-tmp/tmp.Qzxy0ue9YJ/ro.test.sh duration_ms=43
+rm: cannot remove '/var/tmp/nm-daemon-tmp/tmp.Qzxy0ue9YJ/rt/fm-test-run.tuYBMg/ro/inner/file': Permission denied
+exit=1
+leftover: fm-test-run.tuYBMg
+== bin/fm-test-run.sh
+FM_TEST_END 2026-10-29T16:21:50Z /var/tmp/nm-daemon-tmp/tmp.Qzxy0ue9YJ/ro.test.sh exit=0 duration_ms=44 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=9084
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=44 failed=0
+FM_TEST_SLOWEST rank=1 script=/var/tmp/nm-daemon-tmp/tmp.Qzxy0ue9YJ/ro.test.sh duration_ms=44
+exit=0
+leftover: fm-test-run.tuYBMg
