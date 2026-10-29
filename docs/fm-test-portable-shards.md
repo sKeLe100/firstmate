@@ -28,6 +28,7 @@ The 2026-10-07 polytoken adapter tests postdate the 2026-09-30 baseline; `tests/
 The 2026-10-20 hint-drift refresh from that run also raised `tests/fm-dod-lib.test.sh`, `tests/fm-git-strip-ai-trailers.test.sh`, `tests/fm-spawn-compact-adviser-disable.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-spawn-pool-base-freshen.test.sh` to their measured durations.
 The 2026-10-20 follow-up from run 39366488689 (portable serial 8 timing artifact) raised `tests/fm-commandcode-harness.test.sh` from 8182 ms to its measured 13970 ms (repeated drift 1.71x).
 The 2026-10-28 hint-drift refresh from run 40623509626 raised `tests/fm-secondmate-liveness.test.sh` from 24564 ms to its measured 41663 ms (repeated drift 1.70x).
+The 2026-10-29 hint-drift refresh from run 40913783081 (quiet re-run) raised `tests/fm-watch-triage-waits.test.sh` from 481243 ms to its measured 777719 ms (repeated drift 1.62x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes

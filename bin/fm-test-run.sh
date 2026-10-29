@@ -1165,7 +1165,7 @@ tests/fm-watch-checkpoint.test.sh 22937
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 59092
 tests/fm-watch-retry-band.test.sh 7547
-tests/fm-watch-triage-waits.test.sh 481243
+tests/fm-watch-triage-waits.test.sh 777719
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 72022
 tests/fm-worker-account-live-e2e.test.sh 3179
