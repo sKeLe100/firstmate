@@ -492,14 +492,17 @@ puts job.fetch("timeout-minutes") * 60
     (cd "$ROOT" && RUNNER_TEMP="$tmp/runner" bash "$tmp/budget.sh") > "$tmp/out" 2>&1 || rc=$?
     case "$expected" in
       quiet)
-        [ "$rc" -eq 0 ] && ! grep -q '^::' "$tmp/out" \
-          || fail "the budget step must stay quiet at $wall% of the cap (rc=$rc): $(cat "$tmp/out")" ;;
+        if [ "$rc" -ne 0 ] || grep -q '^::' "$tmp/out"; then
+          fail "the budget step must stay quiet at $wall% of the cap (rc=$rc): $(cat "$tmp/out")"
+        fi ;;
       warn)
-        [ "$rc" -eq 0 ] && grep -q '^::warning' "$tmp/out" \
-          || fail "the budget step must warn without failing at $wall% of the cap (rc=$rc): $(cat "$tmp/out")" ;;
+        if [ "$rc" -ne 0 ] || ! grep -q '^::warning' "$tmp/out"; then
+          fail "the budget step must warn without failing at $wall% of the cap (rc=$rc): $(cat "$tmp/out")"
+        fi ;;
       fail)
-        [ "$rc" -ne 0 ] && grep -q '^::error' "$tmp/out" \
-          || fail "the budget step must fail at $wall% of the cap (rc=$rc): $(cat "$tmp/out")" ;;
+        if [ "$rc" -eq 0 ] || ! grep -q '^::error' "$tmp/out"; then
+          fail "the budget step must fail at $wall% of the cap (rc=$rc): $(cat "$tmp/out")"
+        fi ;;
     esac
   done <<'TABLE'
 10 quiet
