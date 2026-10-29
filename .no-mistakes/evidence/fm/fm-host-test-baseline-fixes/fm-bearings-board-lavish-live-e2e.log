@@ -1,0 +1,4 @@
+# lavish-axi 0.1.82
+ok - lavish-axi 0.1.82 reports a captain-ended session without reopening it and without failing
+ok - the board build reopens a captain-ended session against real lavish-axi instead of arming a dead one
+exit=0 secs=25

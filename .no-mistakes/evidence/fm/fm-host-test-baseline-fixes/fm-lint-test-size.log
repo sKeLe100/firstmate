@@ -1,0 +1,10 @@
+ok - a test file under both ceilings passes
+ok - a test file over the line ceiling fails when not grandfathered
+ok - a test file over the test_ function ceiling fails when not grandfathered
+ok - an allowlisted oversized file passes
+ok - an allowlist entry naming a file that no longer exists fails
+ok - an allowlist entry for a file that no longer exceeds the ceiling fails
+ok - an oversized tests/*-lib.sh is checked and honors the allowlist
+ok - a missing tests directory passes with nothing to check
+ok - the real repo's tests/*.test.sh sizes pass against the shrinking allowlist
+exit=0 secs=3
