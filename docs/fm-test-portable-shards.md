@@ -31,6 +31,7 @@ The 2026-10-28 hint-drift refresh from run 40623509626 raised `tests/fm-secondma
 The 2026-10-29 hint-drift refresh from run 40913783081 (quiet re-run) raised `tests/fm-watch-triage-waits.test.sh` from 481243 ms to its measured 777719 ms (repeated drift 1.62x), and from PR 212's quiet CI run raised `tests/fm-tangle-guard.test.sh` from 8501 ms to its measured 13692 ms (repeated drift 1.61x).
 The 2026-10-29 hint-drift refresh from run 40992718346 raised `tests/fm-daemon.test.sh` from 33606 ms to its measured 50984 ms (repeated drift 1.52x), and `tests/fm-llm-usage-telemetry-integration.test.sh` from 24413 ms to its measured 36848 ms (repeated drift 1.51x).
 The 2026-10-29 hint-drift refresh from run 40995199128 raised `tests/fm-bootstrap.test.sh` from 50965 ms to its measured 79029 ms (repeated drift 1.55x).
+The 2026-10-30 refresh raised `tests/fm-ci-workflow.test.sh` from 5833 ms to its measured 10072 ms, measured on CI run 40960822708 after this PR added the Lint aggregate and time-budget tests.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes
@@ -124,15 +125,17 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 ## Lint partitions and end-to-end latency
 
-`bin/fm-lint.sh` owns two canonical CI partitions, each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
+`bin/fm-lint.sh` owns the canonical CI partitions (CI runs four), each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#maintaining-required-checks) documents the required `Lint` aggregate and its failure behavior when a partition does not succeed.
+Each partition also runs `bin/fm-lint-budget.sh`, which warns at 50 percent and fails at 70 percent of the lint job's own `timeout-minutes`, so a slowdown surfaces before the cap cancels the job.
 No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current watch-triage floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses fifteen long-lived Linux jobs (ten serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses seventeen long-lived Linux jobs (ten serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
@@ -149,7 +152,7 @@ A lane that reaches its tier bound needs investigation and a distribution or run
 
 | Tier | Jobs | Bound | Rationale |
 |---|---|---|---|
-| Fast | coverage guard, repo invariants, timing aggregate | 5 minutes | Seconds-long local work, so the tripwire only catches a hung runner. |
+| Fast | coverage guard, repo invariants, timing aggregate, Lint aggregate | 5 minutes | Seconds-long local work, so the tripwire only catches a hung runner. |
 | Normal | portable parallel shards | 30 minutes, one value shared by every job in the tier | One shared hang tripwire keeps ordinary test lanes on the same policy instead of allowing per-lane packing estimates or one-off caps to set the bound. |
 | Heavy | Herdr | family-run step 20 minutes under a 75-minute job-level last-resort backstop | Healthy runs finish in about 7-10 minutes, so the step tripwire fails a wedged suite while the `always()` cleanup and timing upload still run, and the job cap only catches a hang outside that step. |
 

@@ -197,7 +197,7 @@ puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes
 # Tier membership is the executable inventory of the timeout policy: a new job
 # must join a tier, and a job-level value outside these tiers is exactly the
 # one-off number the policy removed.
-FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate'
+FAST_TIER_JOBS='lint-aggregate test-coverage invariants tests-timing-aggregate'
 NORMAL_TIER_JOBS='tests-portable-parallel-1 tests-portable-parallel-2'
 HEAVY_TIER_JOBS='tests-herdr'
 # Fork overrides of the normal tier, each pinned by
@@ -424,6 +424,102 @@ TABLE
   pass "the timing aggregate still runs after a failed lane unless the push run is skipped"
 }
 
+# The one required Lint check aggregates every partition: it must still run
+# after a failed or cancelled partition and fail unless all of them succeeded,
+# so a cancelled partition can never leave lint green or unreported.
+test_lint_aggregate_fails_unless_every_partition_succeeded() {
+  local tmp status actual result rc
+  tmp=$(fm_test_tmproot fm-ci-lint-aggregate)
+  # shellcheck disable=SC2016 # the ${{ }} below is Ruby text, not a shell expansion
+  ruby -ryaml -e '
+job = YAML.load_file(ARGV[0]).fetch("jobs").fetch("lint-aggregate")
+raise "the aggregate must be named Lint" unless job.fetch("name") == "Lint"
+raise "the aggregate must need every lint partition" unless Array(job.fetch("needs")) == ["lint"]
+steps = job.fetch("steps")
+raise "the aggregate needs exactly one step" unless steps.length == 1
+step = steps.first
+raise "the aggregate must read needs.lint.result" unless step.fetch("env").fetch("LINT_RESULT").strip == "${{ needs.lint.result }}"
+File.write(ARGV[1], step.fetch("run"))
+' "$CI_WORKFLOW" "$tmp/aggregate.sh" || fail "could not read the Lint aggregate job"
+  for status in failure cancelled; do
+    actual=$(job_runs_under lint-aggregate pull_request '' "$status") \
+      || fail "could not resolve the Lint aggregate condition after $status"
+    [ "$actual" = true ] || fail "the Lint aggregate must still run after a $status partition, got $actual"
+  done
+  [ "$(job_runs_under lint-aggregate push 1 success)" = false ] \
+    || fail "the Lint aggregate must follow the push skip like its partitions"
+  while read -r result expected; do
+    rc=0
+    LINT_RESULT=$result bash "$tmp/aggregate.sh" > "$tmp/out" 2>&1 || rc=$?
+    case "$expected" in
+      pass) [ "$rc" -eq 0 ] || fail "the Lint aggregate failed on partition result $result: $(cat "$tmp/out")" ;;
+      fail) [ "$rc" -ne 0 ] || fail "the Lint aggregate passed on partition result $result" ;;
+    esac
+  done <<'TABLE'
+success pass
+failure fail
+cancelled fail
+skipped fail
+TABLE
+  pass "the Lint aggregate runs after any partition outcome and passes only when every partition succeeded"
+}
+
+# Each partition checks its own wall time against the lint job's cap, read
+# from that job's timeout-minutes so the cap is written once. The step's
+# script runs here against fixture telemetry scaled from the workflow's real
+# cap: quiet under 50 percent, a warning from 50, a failure from 70, and the
+# step itself still runs after a failed lint step.
+test_lint_partitions_check_their_time_budget() {
+  local tmp cap_seconds wall rc expected run_after_failure
+  tmp=$(fm_test_tmproot fm-ci-lint-budget)
+  # shellcheck disable=SC2016 # the ${{ }} below is Ruby text, not a shell expansion
+  cap_seconds=$(ruby -ryaml -e '
+job = YAML.load_file(ARGV[0]).fetch("jobs").fetch("lint")
+steps = job.fetch("steps")
+lint = steps.index { |s| s["run"].to_s.include?("bin/fm-lint.sh") }
+budget = steps.index { |s| s["run"].to_s.include?("bin/fm-lint-budget.sh") }
+raise "no lint step" unless lint
+raise "no budget step after the lint step" unless budget && budget > lint
+File.write(ARGV[1], steps[budget].fetch("run").gsub("${{ matrix.partition }}", "1"))
+File.write(ARGV[2], steps[budget]["if"].to_s)
+puts job.fetch("timeout-minutes") * 60
+' "$CI_WORKFLOW" "$tmp/budget.sh" "$tmp/budget.if") \
+    || fail "could not read the lint time-budget step"
+  mkdir -p "$tmp/runner/fm-lint"
+  while read -r wall expected; do
+    printf 'wall_seconds\t%s\n' $((cap_seconds * wall / 100)) > "$tmp/runner/fm-lint/partition-1.tsv"
+    rc=0
+    (cd "$ROOT" && RUNNER_TEMP="$tmp/runner" bash "$tmp/budget.sh") > "$tmp/out" 2>&1 || rc=$?
+    case "$expected" in
+      quiet)
+        if [ "$rc" -ne 0 ] || grep -q '^::' "$tmp/out"; then
+          fail "the budget step must stay quiet at $wall% of the cap (rc=$rc): $(cat "$tmp/out")"
+        fi ;;
+      warn)
+        if [ "$rc" -ne 0 ] || ! grep -q '^::warning' "$tmp/out"; then
+          fail "the budget step must warn without failing at $wall% of the cap (rc=$rc): $(cat "$tmp/out")"
+        fi ;;
+      fail)
+        if [ "$rc" -eq 0 ] || ! grep -q '^::error' "$tmp/out"; then
+          fail "the budget step must fail at $wall% of the cap (rc=$rc): $(cat "$tmp/out")"
+        fi ;;
+    esac
+  done <<'TABLE'
+10 quiet
+49 quiet
+50 warn
+69 warn
+70 fail
+100 fail
+TABLE
+  run_after_failure=$(ruby -ryaml -e "$EXPRESSION_RUBY" -e '
+puts Expression.condition(File.read(ARGV[0]), { "needs.status" => "failure" })
+' "$tmp/budget.if") || fail "could not resolve the budget step condition"
+  [ "$run_after_failure" = true ] \
+    || fail "the budget step must still run after a failed lint step, got $run_after_failure"
+  pass "each lint partition warns at 50% and fails at 70% of the lint job cap, even after lint findings"
+}
+
 test_ci_matrices_match_executable_partitions() {
   ruby -ryaml -ropen3 - "$CI_WORKFLOW" "$ROOT" <<'RUBY' || fail "CI partition contract"
 jobs = YAML.load_file(ARGV[0]).fetch("jobs")
@@ -460,6 +556,8 @@ test_separate_prs_do_not_cancel_each_other
 test_main_pushes_are_never_cancelled
 test_fork_skip_variables_are_opt_in
 test_timing_aggregate_still_runs_after_a_failed_lane
+test_lint_aggregate_fails_unless_every_partition_succeeded
+test_lint_partitions_check_their_time_budget
 test_every_job_has_a_finite_timeout
 test_every_job_belongs_to_exactly_one_timeout_tier
 test_fork_overrides_keep_their_caps
