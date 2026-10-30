@@ -932,7 +932,7 @@ tests/fm-bearings-board-render.test.sh 15612
 tests/fm-bearings-board.test.sh 40817
 tests/fm-bearings-snapshot.test.sh 186219
 tests/fm-bootstrap-network-parallel.test.sh 30424
-tests/fm-bootstrap.test.sh 50965
+tests/fm-bootstrap.test.sh 79029
 tests/fm-branch-supervision.test.sh 22979
 tests/fm-busy-adapter-wiring.test.sh 82204
 tests/fm-busy-state.test.sh 3185
@@ -968,7 +968,7 @@ tests/fm-crew-state-env-leak.test.sh 4878
 tests/fm-cursor-harness.test.sh 30088
 tests/fm-cursor-primary-live-e2e.test.sh 75
 tests/fm-cursor-primary.test.sh 69845
-tests/fm-daemon.test.sh 33606
+tests/fm-daemon.test.sh 50984
 tests/fm-devin-harness.test.sh 3725
 tests/fm-devin-signals-live-e2e.test.sh 49
 tests/fm-dispatch-quota-cap.test.sh 11272
@@ -1015,7 +1015,7 @@ tests/fm-live-gate.test.sh 7452
 tests/fm-live-lab-up-mate.test.sh 17363
 tests/fm-live-lab.test.sh 79639
 tests/fm-llm-usage-lib.test.sh 920
-tests/fm-llm-usage-telemetry-integration.test.sh 24413
+tests/fm-llm-usage-telemetry-integration.test.sh 36848
 tests/fm-mail-check.test.sh 7524
 tests/fm-mail.test.sh 9684
 tests/fm-muse-harness.test.sh 46548
@@ -1084,7 +1084,7 @@ tests/fm-rovo-signals-live-e2e.test.sh 52
 tests/fm-secondmate-harness.test.sh 188187
 tests/fm-secondmate-busy-contract-live-e2e.test.sh 90000
 tests/fm-secondmate-lifecycle-e2e.test.sh 11268
-tests/fm-secondmate-liveness.test.sh 24564
+tests/fm-secondmate-liveness.test.sh 41663
 tests/fm-secondmate-reconcile.test.sh 100853
 tests/fm-secondmate-restart.test.sh 52591
 tests/fm-secondmate-safety.test.sh 69424
@@ -1120,7 +1120,7 @@ tests/fm-supervision-events.test.sh 673
 tests/fm-supervision-host-attended-live-e2e.test.sh 49
 tests/fm-supervision-host-live-e2e.test.sh 75
 tests/fm-supervision-host.test.sh 789123
-tests/fm-tangle-guard.test.sh 8501
+tests/fm-tangle-guard.test.sh 13692
 tests/fm-task-delivery.test.sh 32789
 tests/fm-task-inbox.test.sh 67453
 tests/fm-tasks-axi.test.sh 4751
@@ -1165,7 +1165,7 @@ tests/fm-watch-checkpoint.test.sh 22937
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 59092
 tests/fm-watch-retry-band.test.sh 7547
-tests/fm-watch-triage-waits.test.sh 481243
+tests/fm-watch-triage-waits.test.sh 777719
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 72022
 tests/fm-worker-account-live-e2e.test.sh 3179
@@ -3025,10 +3025,13 @@ declare -a WORKER_PIDS=()
 declare -a WORKER_IDX=()
 declare -a WORKER_SCRIPTS=()
 
-# Invoked indirectly by the EXIT trap below.
+# Invoked indirectly by the EXIT trap below. Suites can leave read-only
+# directories under the run root, so restore owner write first, and never let a
+# cleanup failure under set -e replace the suite's aggregate exit status.
 # shellcheck disable=SC2329
 cleanup_run() {
-  rm -rf "$RUN_TMP"
+  chmod -R u+w "$RUN_TMP" 2>/dev/null || true
+  rm -rf "$RUN_TMP" 2>/dev/null || true
 }
 
 trap cleanup_run EXIT
