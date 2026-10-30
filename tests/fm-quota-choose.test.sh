@@ -817,6 +817,58 @@ fi
 [ "$err" = "error: invalid quota-axi provider data" ] || fail "duplicate schema 6 key returned: $err"
 ok "schema 6 requires accountKey on every row and uniqueness on provider + accountKey"
 
+# A pinned Claude worker profile is read with
+# CLAUDE_CONFIG_DIR=<profile> quota-axi --provider claude --profile-only --json;
+# its row must decide claude candidates while other providers keep the main
+# snapshot's evidence.
+CLAUDE_PROFILE="$LAB/claude-profile.json"
+cat > "$CLAUDE_PROFILE" <<'JSON'
+{
+  "generatedAt": "2030-01-01T00:00:00Z",
+  "schemaVersion": 5,
+  "providers": [
+    { "provider": "claude", "plan": "pro", "accountKeys": ["default"], "quotaSemantics": { "status": "known", "effectiveAvailability": [
+      { "scope": "all_models", "status": "known", "effectivePercentRemaining": 85, "runway": { "status": "through_reset" } } ] } }
+  ]
+}
+JSON
+out=$(call_choose --snapshot "$SCHEMA6" --candidate claude:claude-opus-5-5 --candidate cursor:default)
+[ "$out" = "cursor default" ] || fail "unmeasured ambient claude row unexpectedly chosen: $out"
+out=$(call_choose --snapshot "$SCHEMA6" --claude-profile-snapshot "$CLAUDE_PROFILE" --candidate claude:claude-opus-5-5 --candidate cursor:default)
+[ "$out" = "claude claude-opus-5-5" ] || fail "schema 6 snapshot ignored the claude profile row: $out"
+out=$(call_choose --snapshot "$SCHEMA5_PAIR" --claude-profile-snapshot "$CLAUDE_PROFILE" --candidate claude:claude-opus-5-5 --candidate cursor:default)
+[ "$out" = "claude claude-opus-5-5" ] || fail "schema 5 snapshot ignored the claude profile row: $out"
+jq '.providers[0].quotaSemantics.effectiveAvailability[0] |= (.effectivePercentRemaining = 0 | .runway.status = "exhausted_now")' \
+  "$CLAUDE_PROFILE" > "$LAB/claude-profile-exhausted.json"
+jq '.providers |= map(if .provider == "claude" then .quotaSemantics = {status: "known", effectiveAvailability: [
+  {scope: "all_models", status: "known", effectivePercentRemaining: 90, runway: {status: "through_reset"}}]} else . end)' \
+  "$SCHEMA6" > "$LAB/schema6-ambient-claude.json"
+out=$(call_choose --snapshot "$LAB/schema6-ambient-claude.json" --claude-profile-snapshot "$LAB/claude-profile-exhausted.json" --candidate claude:claude-opus-5-5 --candidate cursor:default)
+[ "$out" = "cursor default" ] || fail "exhausted claude profile was masked by the ambient claude row: $out"
+out=$(call_choose --snapshot "$SCHEMA6" --claude-profile-snapshot "$CLAUDE_PROFILE" --candidate codex:default --candidate cursor:default)
+[ "$out" = "cursor default" ] || fail "claude profile snapshot changed non-claude evidence: $out"
+ok "a claude profile snapshot decides claude candidates and leaves other providers alone"
+
+jq '.providers[0].provider = "codex"' "$CLAUDE_PROFILE" > "$LAB/claude-profile-wrong.json"
+jq '.providers += [.providers[0] | .provider = "cursor"]' "$CLAUDE_PROFILE" > "$LAB/claude-profile-two.json"
+for bad in "$LAB/claude-profile-wrong.json" "$LAB/claude-profile-two.json"; do
+  if err=$(call_choose --snapshot "$SCHEMA6" --claude-profile-snapshot "$bad" --candidate cursor:default 2>&1); then
+    fail "malformed claude profile snapshot unexpectedly dispatched: $bad"
+  fi
+  [ "$err" = "error: claude profile snapshot must be a schema 5 snapshot with exactly one claude row: $bad" ] ||
+    fail "malformed claude profile snapshot returned: $err"
+done
+printf 'not json\n' > "$LAB/claude-profile-garbage.json"
+if err=$(call_choose --snapshot "$SCHEMA6" --claude-profile-snapshot "$LAB/claude-profile-garbage.json" --candidate cursor:default 2>&1); then
+  fail "garbage claude profile snapshot unexpectedly dispatched"
+fi
+[ "$err" = "error: invalid claude profile snapshot: $LAB/claude-profile-garbage.json" ] || fail "garbage claude profile snapshot returned: $err"
+if err=$(call_choose --snapshot "$SCHEMA6" --claude-profile-snapshot "$LAB/missing.json" --candidate cursor:default 2>&1); then
+  fail "missing claude profile snapshot unexpectedly dispatched"
+fi
+[ "$err" = "error: claude profile snapshot is not a regular file: $LAB/missing.json" ] || fail "missing claude profile snapshot returned: $err"
+ok "a claude profile snapshot that is not exactly one claude row is refused"
+
 cat > "$SCHEMA6_TOON" <<'TOON'
 bin: ~/.local/bin/quota-axi
 description: Report local agent-provider quota windows for routing-aware agents

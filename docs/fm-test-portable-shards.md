@@ -27,6 +27,10 @@ The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains i
 The 2026-10-07 polytoken adapter tests postdate the 2026-09-30 baseline; `tests/fm-polytoken-harness.test.sh` carries 39004 ms from CI run 39357530812's timing artifacts, and the 103 ms live-guard skip for `tests/fm-polytoken-signals-live-e2e.test.sh` remains a provisional local measurement until the next CI refresh.
 The 2026-10-20 hint-drift refresh from that run also raised `tests/fm-dod-lib.test.sh`, `tests/fm-git-strip-ai-trailers.test.sh`, `tests/fm-spawn-compact-adviser-disable.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-spawn-pool-base-freshen.test.sh` to their measured durations.
 The 2026-10-20 follow-up from run 39366488689 (portable serial 8 timing artifact) raised `tests/fm-commandcode-harness.test.sh` from 8182 ms to its measured 13970 ms (repeated drift 1.71x).
+The 2026-10-28 hint-drift refresh from run 40623509626 raised `tests/fm-secondmate-liveness.test.sh` from 24564 ms to its measured 41663 ms (repeated drift 1.70x).
+The 2026-10-29 hint-drift refresh from run 40913783081 (quiet re-run) raised `tests/fm-watch-triage-waits.test.sh` from 481243 ms to its measured 777719 ms (repeated drift 1.62x), and from PR 212's quiet CI run raised `tests/fm-tangle-guard.test.sh` from 8501 ms to its measured 13692 ms (repeated drift 1.61x).
+The 2026-10-29 hint-drift refresh from run 40992718346 raised `tests/fm-daemon.test.sh` from 33606 ms to its measured 50984 ms (repeated drift 1.52x), and `tests/fm-llm-usage-telemetry-integration.test.sh` from 24413 ms to its measured 36848 ms (repeated drift 1.51x).
+The 2026-10-29 hint-drift refresh from run 40995199128 raised `tests/fm-bootstrap.test.sh` from 50965 ms to its measured 79029 ms (repeated drift 1.55x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes
@@ -71,7 +75,7 @@ Refresh the hints whenever a serial member grows materially or the lane gains sc
 `bin/fm-test-run.sh` owns the per-shard packing, so its `--check-coverage` output is the current account of lane size and coverage rather than a copied inventory.
 Its header and `--help` own the modeled-budget check and output fields; read the current estimates from `--check-coverage` instead of retaining copied lane sums here.
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner.
-The longest script, `tests/fm-watch-triage.test.sh`, is the indivisible floor for this layout.
+The longest script, `tests/fm-watch-triage-waits.test.sh`, is the indivisible floor for this layout.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
 The baseline watch-triage samples, taken before it was split with `tests/fm-watch-triage-waits.test.sh`, range from 944375 to 1074843 ms for both parts together, while each observed completed portable job adds at most 30 seconds beyond its summed scripts in these runs.
 Even so, maxima from five runs do not establish a P95 or guarantee future headroom.
