@@ -968,7 +968,7 @@ tests/fm-crew-state-env-leak.test.sh 4878
 tests/fm-cursor-harness.test.sh 30088
 tests/fm-cursor-primary-live-e2e.test.sh 75
 tests/fm-cursor-primary.test.sh 69845
-tests/fm-daemon.test.sh 33606
+tests/fm-daemon.test.sh 50984
 tests/fm-devin-harness.test.sh 3725
 tests/fm-devin-signals-live-e2e.test.sh 49
 tests/fm-dispatch-quota-cap.test.sh 11272
@@ -1015,7 +1015,7 @@ tests/fm-live-gate.test.sh 7452
 tests/fm-live-lab-up-mate.test.sh 17363
 tests/fm-live-lab.test.sh 79639
 tests/fm-llm-usage-lib.test.sh 920
-tests/fm-llm-usage-telemetry-integration.test.sh 24413
+tests/fm-llm-usage-telemetry-integration.test.sh 36848
 tests/fm-mail-check.test.sh 7524
 tests/fm-mail.test.sh 9684
 tests/fm-muse-harness.test.sh 46548
