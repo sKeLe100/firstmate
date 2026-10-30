@@ -20,6 +20,26 @@
 
 CODEX_EFFORT_TIERS="low medium high xhigh"
 
+# Models whose catalog entry advertises max on top of the tiers above.
+CODEX_MAX_EFFORT_MODELS="gpt-5.6-luna gpt-6.1-sol gpt-6-astra gpt-6-luna"
+
+codex_max_effort_model() {
+  local candidate=${1:-} m
+  [ -n "$candidate" ] || return 1
+  for m in $CODEX_MAX_EFFORT_MODELS; do
+    [ "$candidate" != "$m" ] || return 0
+  done
+  return 1
+}
+
+codex_max_effort_models_json() {
+  local out='' m
+  for m in $CODEX_MAX_EFFORT_MODELS; do
+    out="${out:+$out,}\"$m\""
+  done
+  printf '[%s]' "$out"
+}
+
 codex_effort_supported() {
   local candidate=${1:-} tier
   [ -n "$candidate" ] || return 1
