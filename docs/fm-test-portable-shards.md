@@ -73,7 +73,7 @@ Refresh the hints whenever a serial member grows materially or the lane gains sc
 `bin/fm-test-run.sh` owns the per-shard packing, so its `--check-coverage` output is the current account of lane size and coverage rather than a copied inventory.
 Its header and `--help` own the modeled-budget check and output fields; read the current estimates from `--check-coverage` instead of retaining copied lane sums here.
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner.
-The longest script, `tests/fm-watch-triage.test.sh`, is the indivisible floor for this layout.
+The longest script, `tests/fm-watch-triage-waits.test.sh`, is the indivisible floor for this layout.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
 The baseline watch-triage samples, taken before it was split with `tests/fm-watch-triage-waits.test.sh`, range from 944375 to 1074843 ms for both parts together, while each observed completed portable job adds at most 30 seconds beyond its summed scripts in these runs.
 Even so, maxima from five runs do not establish a P95 or guarantee future headroom.
