@@ -270,6 +270,13 @@ fm_brief_leading_line() {  # <body>
   printf '%s\n' "$1" | awk 'NF { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }'
 }
 
+# Print a `## Firstmate spec` body without the optional task slot lines
+# bin/fm-brief.sh scaffolds (`Scope:`, `Known facts:`, `Report budget:`), so a
+# spec holding only those slots reads as empty rather than filled.
+fm_brief_spec_without_slots() {  # <body>
+  printf '%s\n' "$1" | grep -Ev '^[[:space:]]*(Scope|Known facts|Report budget):' || true
+}
+
 # Return 0 when a Task subsection still starts with its scaffold placeholder:
 # that is the whole subsection for a bare scaffold, and the first line of a
 # scaffold whose optional task slots follow it. A filled subsection that only
@@ -281,7 +288,7 @@ fm_brief_task_placeholders_present() {  # <file>
   intent=$(fm_brief_task_heading_body "$file" "## Captain's intent")
   spec=$(fm_brief_task_heading_body "$file" "## Firstmate spec")
   [ "$(fm_brief_leading_line "$intent")" = '{TASK}' ] && return 0
-  [ "$(fm_brief_leading_line "$spec")" = '{FIRSTMATE_SPEC}' ] && return 0
+  [ "$(fm_brief_leading_line "$(fm_brief_spec_without_slots "$spec")")" = '{FIRSTMATE_SPEC}' ] && return 0
   return 1
 }
 
@@ -348,7 +355,7 @@ fm_brief_task_content_valid() {  # <file>
   if [ "$has_intent" -eq 1 ] || [ "$has_spec" -eq 1 ]; then
     [ "$has_intent" -eq 1 ] && [ "$has_spec" -eq 1 ] || return 1
     intent=$(fm_brief_task_heading_body "$file" "## Captain's intent")
-    spec=$(fm_brief_task_heading_body "$file" "## Firstmate spec")
+    spec=$(fm_brief_spec_without_slots "$(fm_brief_task_heading_body "$file" "## Firstmate spec")")
     [ -n "$(printf '%s' "$intent" | tr -d '[:space:]')" ] || return 1
     [ -n "$(printf '%s' "$spec" | tr -d '[:space:]')" ] || return 1
     return 0
