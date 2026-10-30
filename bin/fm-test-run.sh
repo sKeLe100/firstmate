@@ -943,7 +943,7 @@ tests/fm-calm-pi-extension.test.sh 56463
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1345
 tests/fm-captain-window.test.sh 354
 tests/fm-check-unregister.test.sh 469
-tests/fm-ci-workflow.test.sh 5833
+tests/fm-ci-workflow.test.sh 10072
 tests/fm-claim-check.test.sh 360
 tests/fm-classify-corr-token.test.sh 23085
 tests/fm-classify-decision-key.test.sh 4362

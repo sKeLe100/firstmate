@@ -31,6 +31,7 @@ The 2026-10-28 hint-drift refresh from run 40623509626 raised `tests/fm-secondma
 The 2026-10-29 hint-drift refresh from run 40913783081 (quiet re-run) raised `tests/fm-watch-triage-waits.test.sh` from 481243 ms to its measured 777719 ms (repeated drift 1.62x), and from PR 212's quiet CI run raised `tests/fm-tangle-guard.test.sh` from 8501 ms to its measured 13692 ms (repeated drift 1.61x).
 The 2026-10-29 hint-drift refresh from run 40992718346 raised `tests/fm-daemon.test.sh` from 33606 ms to its measured 50984 ms (repeated drift 1.52x), and `tests/fm-llm-usage-telemetry-integration.test.sh` from 24413 ms to its measured 36848 ms (repeated drift 1.51x).
 The 2026-10-29 hint-drift refresh from run 40995199128 raised `tests/fm-bootstrap.test.sh` from 50965 ms to its measured 79029 ms (repeated drift 1.55x).
+The 2026-10-30 refresh raised `tests/fm-ci-workflow.test.sh` from 5833 ms to its measured 10072 ms, measured on CI run 40960822708 after this PR added the Lint aggregate and time-budget tests.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes
