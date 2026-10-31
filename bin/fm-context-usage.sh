@@ -16,12 +16,12 @@
 #     <store>/projects/<home path with every non-alphanumeric character
 #     replaced by ->, home = FM_HOME or the current directory.
 #   <store> is the one the TARGET session writes, resolved in this order:
-#   - FM_CLAUDE_STORE, the account= a spawn recorded for that session: the
-#     literal `ordinary` for the vendor default login ($HOME/.claude) or the
-#     absolute root a config/claude-account pin names (docs/configuration.md
-#     "Worker account pin"). It is what a supervisor or returning-session read
-#     passes when it reads ANOTHER session's usage, whose store need not be this
-#     process's own. Any other value, including a relative path, is refused.
+#   - FM_CLAUDE_STORE names the store of ANOTHER session: the account= a spawn
+#     recorded for it - the absolute root a config/claude-account pin names,
+#     `ordinary` for the vendor default login ($HOME/.claude), or `auto` for a
+#     task that recorded no pin and so inherited the store resolved below
+#     (docs/configuration.md "Worker account pin"). Any other value, including
+#     a relative path, is refused.
 #   - otherwise this process's own ${CLAUDE_CONFIG_DIR:-$HOME/.claude}, which is
 #     the store of the session reading its own usage; when that store holds no
 #     project directory for the home being read, the default $HOME/.claude is
@@ -32,12 +32,13 @@
 #   uses. The active session appends to its transcript continuously, so the
 #   newest file is the current session whenever one is live.
 #
-#   Auto-discovery also refuses to report a confident band from a stale
-#   transcript: when the newest transcript is older than FM_CONTEXT_STALE_SECONDS
-#   (default 900; 0 turns this guard off, which is what a reader of a session
-#   that is idle by definition - the paused-band read, the returning-session
-#   check - passes) it still reports the tokens it found but sets
-#   band=unavailable with reason=stale-transcript, exiting 0. An explicit
+#   Auto-discovery refuses to report a confident band from a stale transcript
+#   when the read is this process's own session (no FM_CLAUDE_STORE): when the
+#   newest transcript is older than FM_CONTEXT_STALE_SECONDS (default 900; 0
+#   turns this guard off) it still reports the tokens it found but sets
+#   band=unavailable with reason=stale-transcript, exiting 0. A read that names
+#   a target store is a read of another session, which is idle by definition, so
+#   it reports the band it finds however old that transcript is. An explicit
 #   transcript argument is trusted as given and never gets this guard.
 #
 # Output is one data-only line; callers act on the reported band rather than
@@ -82,7 +83,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,81p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,82p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -126,21 +127,23 @@ case "$stale_seconds" in
 esac
 
 transcript="${1:-}"
-auto_picked=0
+self_read=0
 if [ -z "$transcript" ]; then
-  auto_picked=1
+  targeted=0
   stores=()
   case "${FM_CLAUDE_STORE:-}" in
     '') ;;
+    auto) targeted=1 ;;
     ordinary)
+      targeted=1
       if [ -n "${HOME:-}" ]; then
         stores=("$HOME/.claude")
       else
         echo "fm-context-usage: FM_CLAUDE_STORE=ordinary needs HOME to locate the default Claude config directory" >&2
         exit 1
       fi ;;
-    /*) stores=("$FM_CLAUDE_STORE") ;;
-    *) echo "fm-context-usage: FM_CLAUDE_STORE must be ordinary or an absolute path: $FM_CLAUDE_STORE" >&2; exit 1 ;;
+    /*) targeted=1; stores=("$FM_CLAUDE_STORE") ;;
+    *) echo "fm-context-usage: FM_CLAUDE_STORE must be auto, ordinary or an absolute path: $FM_CLAUDE_STORE" >&2; exit 1 ;;
   esac
   if [ "${#stores[@]}" -eq 0 ]; then
     case ${CLAUDE_CONFIG_DIR:-} in
@@ -157,6 +160,7 @@ if [ -z "$transcript" ]; then
       stores+=("$HOME/.claude")
     fi
   fi
+  [ "$targeted" -eq 1 ] || self_read=1
   munged="$(printf '%s' "$home_path" | tr -c 'a-zA-Z0-9' '-')"
   proj_dir=
   for store in "${stores[@]}"; do
@@ -187,12 +191,12 @@ fi
 
 window="${FM_CONTEXT_WINDOW:-1000000}"
 
-python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" "$auto_picked" "$stale_seconds" <<'PY'
+python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" "$self_read" "$stale_seconds" <<'PY'
 import json, os, sys, time
 
 path, window = sys.argv[1], int(sys.argv[2])
 warn, restart = int(sys.argv[3]), int(sys.argv[4])
-auto_picked = sys.argv[5] == "1"
+self_read = sys.argv[5] == "1"
 stale_seconds = int(sys.argv[6])
 last = None
 with open(path, encoding="utf-8", errors="replace") as fh:
@@ -219,7 +223,7 @@ total = sum(
     for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 )
 age = max(0, int(time.time() - os.path.getmtime(path)))
-if auto_picked and stale_seconds > 0 and age > stale_seconds:
+if self_read and stale_seconds > 0 and age > stale_seconds:
     band = "unavailable"
 else:
     band = "restart" if total >= restart else "warn" if total >= warn else "ok"

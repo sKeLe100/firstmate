@@ -170,8 +170,8 @@ if CLAUDE_CONFIG_DIR="relative/claude-store" HOME="$tmp/claude_home" FM_HOME="$c
 fi
 grep -q "relative path" "$tmp/err_rel_cfg" || fail "missing loud relative CLAUDE_CONFIG_DIR message"
 
-# 14. A stale auto-picked transcript reports band=unavailable, never a
-#     confident band, and the staleness limit can be overridden.
+# 14. A stale self-read reports band=unavailable, never a confident band, and
+#     the staleness limit can be overridden.
 stale_home="$tmp/stale_home"
 mkdir -p "$stale_home"
 munged="$(printf '%s' "$stale_home" | tr -c 'a-zA-Z0-9' '-')"
@@ -284,5 +284,30 @@ if FM_CLAUDE_STORE=ordinary FM_HOME="$pinned_home" env -u HOME "$bin" 2>"$tmp/er
   fail "expected refusal for FM_CLAUDE_STORE=ordinary without HOME"
 fi
 grep -q "FM_CLAUDE_STORE" "$tmp/err_store_home" || fail "missing loud FM_CLAUDE_STORE=ordinary message"
+
+# 22. A targeted read reports the target's last real band however old its
+#     transcript is: FM_CLAUDE_STORE=auto falls back to $HOME/.claude for a home
+#     whose store has no project directory there, and skips the guard section 17
+#     shows suppressing that same stale transcript on a self-read.
+out="$(FM_CLAUDE_STORE=auto CLAUDE_CONFIG_DIR="$caller_store" HOME="$tmp/claude_home" FM_HOME="$ordinary_home" "$bin")"
+case "$out" in
+  *"band=restart "*"transcript=$ordinary_t"*) ;;
+  *) fail "expected a targeted auto read to report the real band of a stale transcript, got: $out" ;;
+esac
+case "$out" in
+  *"reason="*) fail "a targeted read must not carry a stale reason, got: $out" ;;
+esac
+
+# 23. A named target store does the same for a transcript old enough to be
+#     unavailable to a self-read.
+touch -d '2 hours ago' "$pinned_store/projects/$munged/session.jsonl"
+out="$(FM_CLAUDE_STORE="$pinned_store" CLAUDE_CONFIG_DIR="$caller_store" HOME="$tmp/claude_home" FM_HOME="$pinned_home" "$bin")"
+case "$out" in
+  *"band=ok "*"transcript=$pinned_store/projects/$munged/session.jsonl"*) ;;
+  *) fail "expected a named target store to report the real band of a stale transcript, got: $out" ;;
+esac
+case "$out" in
+  *"reason="*) fail "a targeted read must not carry a stale reason, got: $out" ;;
+esac
 
 echo "PASS fm-context-usage.test.sh"

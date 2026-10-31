@@ -364,8 +364,9 @@ status_is_captain_held() {  # <status-line>
 # is retroactively misclassified, while an exhausted session is caught even when
 # its brief never knew the key. FM_CONTEXT_USAGE_BIN overrides the band reader
 # (tests); an empty or missing worktree reads as no band evidence.
-# The band read and the guard-off value are bin/fm-context-usage.sh's contract
-# (its header owns both); <claude-store> is the target task's recorded account=.
+# The band read is bin/fm-context-usage.sh's contract (its header owns it);
+# <claude-store> is the target task's recorded account=, or nothing when it
+# recorded no pin.
 FM_CLASSIFY_SESSION_LIMIT_KEY=session-limit
 status_pause_context_band() {  # <worktree> [claude-store] -> ok|warn|restart|unknown
   local wt=$1 store=${2:-${FM_CLAUDE_STORE:-}} out reader
@@ -374,7 +375,7 @@ status_pause_context_band() {  # <worktree> [claude-store] -> ok|warn|restart|un
     printf 'unknown'
     return 0
   fi
-  out=$(FM_CLAUDE_STORE="$store" FM_CONTEXT_STALE_SECONDS=0 FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || out=
+  out=$(FM_CLAUDE_STORE="${store:-auto}" FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || out=
   case " $out " in
     *" band=warn "*) printf 'warn' ;;
     *" band=restart "*) printf 'restart' ;;

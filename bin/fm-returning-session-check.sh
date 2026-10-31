@@ -19,9 +19,9 @@
 #   directories are keyed on the absolute home path - a relative or missing
 #   path is a usage error, not missing evidence. It is passed through as
 #   FM_HOME to fm-context-usage.sh, whose header owns transcript discovery,
-#   store resolution, and the staleness guard: this read passes that header's
-#   guard-off value, and the task's recorded account= as FM_CLAUDE_STORE when
-#   the <state-dir> <task-id> pair is given.
+#   store resolution, and the staleness guard: this read always names its
+#   target store (the task's recorded account=, else `auto`), so the guard never
+#   applies to an idle returning session.
 #
 #   <state-dir> and <task-id> are optional and must be given together: the
 #   CALLER's own state directory (never the returning home's own state/,
@@ -115,17 +115,18 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-backend.sh
 . "$script_dir/fm-backend.sh"
 
-# The target session's own store: the account= a pinned spawn recorded for it.
+# The target session's own store: the account= a pinned spawn recorded for it,
+# or `auto` when it recorded no pin, so this read is not mistaken for this
+# process's own (bin/fm-context-usage.sh's header owns both values).
 claude_store="${FM_CLAUDE_STORE:-}"
 if [ -z "$claude_store" ] && [ -n "$state_dir" ] && [ -n "$task_id" ]; then
   claude_store=$(fm_meta_get "$state_dir/$task_id.meta" account)
 fi
+claude_store="${claude_store:-auto}"
 
 usage_output=""
 usage_status=0
-# A returning session is idle by definition, so this read passes the guard-off
-# value bin/fm-context-usage.sh's header owns.
-usage_output="$(FM_CLAUDE_STORE="$claude_store" FM_CONTEXT_STALE_SECONDS=0 FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
+usage_output="$(FM_CLAUDE_STORE="$claude_store" FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
 
 if [ "$usage_status" -ne 0 ]; then
   reason="$(printf '%s' "$usage_output" | tr '\n' ' ' | sed 's/  */ /g')"

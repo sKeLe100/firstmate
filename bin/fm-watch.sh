@@ -1564,7 +1564,7 @@ wedge_seed_first_observation() {  # <window-key> <task>
 # Epoch second the task's pane was last observed to go idle, from durable
 # evidence outside this watcher process; empty when none is available.
 wedge_idle_since() {  # <task>
-  local task=$1 rec wt out age reader
+  local task=$1 rec wt out age reader store
   # fm_busy_record_read validates gen, source trust, and shape; only a verdict
   # of idle lets the raw record's ts field seed the clock.
   rec=$(fm_busy_record_read "$STATE" "$task" 2>/dev/null) || rec=
@@ -1576,7 +1576,8 @@ wedge_idle_since() {  # <task>
   wt=$(task_worktree "$task")
   reader=${FM_CONTEXT_USAGE_BIN:-$SCRIPT_DIR/fm-context-usage.sh}
   [ -n "$wt" ] && [ -d "$wt" ] && [ -x "$reader" ] || return 0
-  out=$(FM_CLAUDE_STORE="$(task_claude_store "$task")" FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || return 0
+  store=$(task_claude_store "$task")
+  out=$(FM_CLAUDE_STORE="${store:-auto}" FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || return 0
   age=${out##* age_seconds=}; age=${age%% *}
   case "$age" in ''|*[!0-9]*) return 0 ;; esac
   printf '%s' $(( $(date +%s) - age ))
