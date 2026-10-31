@@ -3398,26 +3398,41 @@ install_quota_fixture() {  # <fakebin> <accounts-root>
   local fb=$1 root=$2
   cat > "$fb/quota-axi" <<SH
 #!/usr/bin/env bash
+case " \$* " in
+  *" --profile-only "*) ;;
+  *) exit 7 ;;
+esac
 dir=\${CLAUDE_CONFIG_DIR:-ordinary}
 case "\$dir" in
   */cc-one)
     cat <<'JSON'
-{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":37,"pace":{"status":"behind","reservePercentPoints":12.5,"burnMultiple":0.4}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88,"pace":{"status":"on_track","reservePercentPoints":5,"burnMultiple":0.9}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"runway":{"limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-03T00:00:00Z"}}]}}]}
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":37,"pace":{"status":"behind","reservePercentPoints":12.5,"burnMultiple":0.4}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88,"pace":{"status":"on_track","reservePercentPoints":5,"burnMultiple":0.9}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":37,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-03T00:00:00Z"}}]}}]}
 JSON
     ;;
   */cc-two)
     cat <<'JSON'
-{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":4,"pace":{"status":"ahead","reservePercentPoints":-64.7,"burnMultiple":3.06}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":42,"pace":{"status":"ahead","reservePercentPoints":-35.2,"burnMultiple":2.55}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"runway":{"limitingWindowId":"five_hour","projectedExhaustedAt":"2026-10-31T15:17:56.020Z"}}]}}]}
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":4,"pace":{"status":"ahead","reservePercentPoints":-64.7,"burnMultiple":3.06}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":42,"pace":{"status":"ahead","reservePercentPoints":-35.2,"burnMultiple":2.55}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":4,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-10-31T15:17:56.020Z"}}]}}]}
 JSON
     ;;
   */cc-orch)
     cat <<'JSON'
-{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":55,"pace":{"status":"on_track","reservePercentPoints":10,"burnMultiple":0.7}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":70,"pace":{"status":"on_track","reservePercentPoints":8,"burnMultiple":0.8}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"runway":{"limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-02T00:00:00Z"}}]}}]}
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":55,"pace":{"status":"on_track","reservePercentPoints":10,"burnMultiple":0.7}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":70,"pace":{"status":"on_track","reservePercentPoints":8,"burnMultiple":0.8}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":55,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-02T00:00:00Z"}}]}}]}
 JSON
     ;;
   */cc-broken)
     cat <<'JSON'
 {"schemaVersion":5,"providers":[{"provider":"claude","windows":[],"state":{"status":"auth_required","error":"credentials_invalid"},"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+JSON
+    ;;
+  */cc-slow)
+    sleep 5
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":37},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":37,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-03T00:00:00Z"}}]}}]}
+JSON
+    ;;
+  */cc-schema6)
+    cat <<'JSON'
+{"schemaVersion":6,"providers":[{"provider":"claude","accountKey":"work","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":11},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":33}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":11,"runway":{"status":"through_reset"}}]}},{"provider":"claude","accountKey":"default","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":22},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":22,"runway":{"status":"through_reset"}}]}}]}
 JSON
     ;;
   *)
@@ -3426,7 +3441,8 @@ JSON
 esac
 SH
   chmod +x "$fb/quota-axi"
-  mkdir -p "$root/cc-one" "$root/cc-two" "$root/cc-orch" "$root/cc-broken"
+  mkdir -p "$root/cc-one" "$root/cc-two" "$root/cc-orch" "$root/cc-broken" \
+    "$root/cc-slow" "$root/cc-schema6"
 }
 
 run_claude_quota_bearings() {  # <home> <fakebin> <config-dir> <args...>
@@ -3565,8 +3581,131 @@ EOF
   pass "orchestrator-account worker load warns only above the configured threshold"
 }
 
+test_claude_account_rows_share_one_shape_and_budget() {
+  local home fakebin json toon accounts_root started elapsed hdr row
+  home=$(make_home claude-row-shape)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-row-shape-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  printf 'slow:%s\nworker:%s\n' \
+    "$accounts_root/cc-slow" "$accounts_root/cc-one" > "$home/config/claude-accounts"
+
+  started=$SECONDS
+  json=$(FM_BEARINGS_CLAUDE_TIMEOUT=1 \
+    run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one" --json)
+  elapsed=$((SECONDS - started))
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 2
+      and .claude_accounts[0].label == "slow"
+      and .claude_accounts[0].status == "unknown"
+      and (.claude_accounts[0].reason | contains("timed out"))
+      and .claude_accounts[1].label == "worker"
+      and .claude_accounts[1].five_hour_percent_remaining == 37
+      and ((.claude_accounts[0] | keys) == (.claude_accounts[1] | keys))
+  ' >/dev/null || fail "a timed-out account did not share the healthy row's shape: $json"
+  [ "$elapsed" -lt 5 ] || fail "the shared Claude budget did not bound the reads (${elapsed}s)"
+
+  toon=$(FM_BEARINGS_CLAUDE_TIMEOUT=1 \
+    run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one")
+  hdr=$(printf '%s\n' "$toon" | grep -E '^claude_accounts\[2\]\{' || true)
+  [ -n "$hdr" ] || fail "default TOON lost the claude_accounts table: $toon"
+  assert_contains "$hdr" "five_hour_percent_remaining" \
+    "the first unknown row must not drop later account window columns"
+  row=$(printf '%s\n' "$toon" | grep -E '^  worker,' || true)
+  [ -n "$row" ] || fail "default TOON lost the healthy account row: $toon"
+  assert_contains "$row" ",37," "the healthy account's five-hour window must render in default TOON"
+  pass "Claude account reads share one budget and every row keeps the complete window shape"
+}
+
+test_claude_account_row_uses_the_shared_profile_join() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-schema6)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-schema6-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  printf 'pinned:%s\n' "$accounts_root/cc-schema6" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-schema6" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].status == "ok"
+      and .claude_accounts[0].five_hour_percent_remaining == 22
+      and .claude_accounts[0].seven_day_percent_remaining == 88
+      and .orchestrator_account.five_hour_percent_remaining == 22
+  ' >/dev/null || fail "the shared quota join did not select the default profile row: $json"
+  pass "bearings reads the pinned profile and selects its default quota row through the shared join"
+}
+
+test_orchestrator_account_matches_canonical_dir_spelling() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-canonical-dir)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-canonical-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  ln -s "$accounts_root/cc-two" "$accounts_root/cc-two-link"
+  printf 'orchestrator:%s\n' "$accounts_root/cc-two-link" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].dir == ($root + "/cc-two")
+      and .orchestrator_account.label == "orchestrator"
+      and .orchestrator_account.dir == ($root + "/cc-two")
+      and .orchestrator_account.five_hour_percent_remaining == 4
+      and (.warnings | any(.kind == "orchestrator-five-hour-exhaustion"))
+  ' >/dev/null || fail "a symlinked account spelling did not join the orchestrator's own dir: $json"
+  pass "account directories are canonicalized before matching the orchestrator account"
+}
+
+test_unlisted_orchestrator_account_is_measured() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-unlisted-orchestrator)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-unlisted-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  printf 'worker:%s\n' "$accounts_root/cc-one" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 2
+      and ([.claude_accounts[] | select(.label == "orchestrator")][0] as $o
+        | $o.dir == ($root + "/cc-two")
+          and $o.status == "ok"
+          and $o.five_hour_percent_remaining == 4)
+      and .orchestrator_account.label == "orchestrator"
+      and .orchestrator_account.five_hour_percent_remaining == 4
+      and (.warnings | any(.kind == "orchestrator-five-hour-exhaustion"))
+  ' >/dev/null || fail "an unlisted orchestrator account was not measured: $json"
+  pass "an unlisted orchestrator account is appended as a measured orchestrator row"
+}
+
+test_claude_account_reads_are_capped_and_keep_the_orchestrator() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-account-cap)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-cap-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  printf 'one:%s\ntwo:%s\norch:%s\nbroken:%s\nslow:%s\n' \
+    "$accounts_root/cc-one" "$accounts_root/cc-two" "$accounts_root/cc-orch" \
+    "$accounts_root/cc-broken" "$accounts_root/cc-slow" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 4
+      and ([.claude_accounts[] | select(.dir == ($root + "/cc-two"))] | length) == 1
+      and ([.claude_accounts[] | select(.dir == ($root + "/cc-slow"))] | length) == 0
+  ' >/dev/null || fail "account reads were not capped at four with the orchestrator kept: $json"
+  pass "Claude account reads are capped at four while always keeping the orchestrator account"
+}
+
+
 test_claude_accounts_read_every_configured_account
 test_claude_account_quota_reads_degrade_to_unknown_rows
+test_claude_account_rows_share_one_shape_and_budget
+test_claude_account_row_uses_the_shared_profile_join
+test_orchestrator_account_matches_canonical_dir_spelling
+test_unlisted_orchestrator_account_is_measured
+test_claude_account_reads_are_capped_and_keep_the_orchestrator
 test_orchestrator_account_worker_load_warns_only_above_threshold
 test_task_teardown_during_metadata_capture_does_not_abort_snapshot
 test_current_state_uses_captured_status_observation

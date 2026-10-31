@@ -98,6 +98,9 @@ FLEET="$SCRIPT_DIR/fm-fleet-snapshot.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-quota-axi-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 # shellcheck source=bin/fm-landed-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-landed-lib.sh"  # FM_LANDED_JQ_DEFS: the shared landed selector
@@ -171,10 +174,11 @@ Opt-in surfaces: --fields bodies|paths|actions|endpoints, --all-in-flight,
   --all-secondmates, --all-landed, --all-reports, --all-queued, --all-recorded-prs,
   --all-unhealthy, --all-pr-repos, --include-prs (adds candidate_prs).
 Raise FM_BEARINGS_PR_LIMIT to expand per-repository open-PR results.
-claude_accounts reads every account listed in config/claude-accounts
+claude_accounts reads up to four accounts listed in config/claude-accounts
   (`label:dir` lines; an absent file falls back to the current CLAUDE_CONFIG_DIR)
-  with one bounded `quota-axi --json` call each. A slow, failed, or
-  unauthenticated read is an unknown row with its reason, never a snapshot error.
+  in parallel under one shared 20s budget, and always measures the orchestrator's
+  own account. A slow, failed, or unauthenticated read is an unknown row with
+  its reason, never a snapshot error.
 orchestrator_account names the account this home runs on and counts live Claude
   workers on it. warnings[] names that load above
   FM_BEARINGS_ORCHESTRATOR_WORKERS_MAX (default 1, also
@@ -330,12 +334,15 @@ fi
 # pinned to another. quota-axi reads only the ambient CLAUDE_CONFIG_DIR, so a
 # bearings digest built from it alone is blind to the account the fleet actually
 # spends. Read every configured account instead: config/claude-accounts holds
-# `label:dir` lines (the shape data/plans/carryover-gen.sh already uses), and an
-# absent file falls back to the single current CLAUDE_CONFIG_DIR. A failed,
-# slow, or unauthenticated read degrades to an unknown row with its reason; it
-# never fails the snapshot.
+# `label:dir` lines, and an absent file falls back to the single current
+# CLAUDE_CONFIG_DIR. Account directories are canonicalized before matching, and
+# the orchestrator's own directory is always measured even when it is not listed.
+# Reads run in parallel under one shared budget, and a failed, slow, or
+# unauthenticated read degrades to an unknown row with its reason; it never fails
+# the snapshot.
 FM_BEARINGS_CLAUDE_TIMEOUT=${FM_BEARINGS_CLAUDE_TIMEOUT:-20}
 case "$FM_BEARINGS_CLAUDE_TIMEOUT" in ''|*[!0-9]*|0) FM_BEARINGS_CLAUDE_TIMEOUT=20 ;; esac
+FM_BEARINGS_CLAUDE_ACCOUNTS_MAX=4
 
 BEARINGS_HOME=$(printf '%s' "$SNAP" | jq -r '.fm_home // empty')
 [ -n "$BEARINGS_HOME" ] || BEARINGS_HOME=${FM_HOME:-}
@@ -351,9 +358,28 @@ bearings_normalize_dir() {  # <value>
   while [ "${#d}" -gt 1 ] && [ "${d%/}" != "$d" ]; do d=${d%/}; done
   printf '%s' "$d"
 }
+bearings_canonical_dir() {  # <value>
+  local d
+  d=$(bearings_trim "${1-}")
+  case "$d" in
+    ''|ordinary) d="$HOME/.claude" ;;
+  esac
+  case "$d" in
+    '~') d="$HOME" ;;
+    *) [ "${d#\~/}" = "$d" ] || d="$HOME/${d#\~/}" ;;
+  esac
+  case "$d" in
+    /*) ;;
+    *) d="$PWD/$d" ;;
+  esac
+  d=$(bearings_normalize_dir "$d")
+  if [ -d "$d" ]; then
+    d=$(CDPATH='' cd -- "$d" 2>/dev/null && pwd -P) || d=$(bearings_normalize_dir "$d")
+  fi
+  printf '%s' "$d"
+}
 
-ORCHESTRATOR_ACCOUNT_DIR=$(bearings_normalize_dir "${CLAUDE_CONFIG_DIR:-ordinary}")
-[ -n "$ORCHESTRATOR_ACCOUNT_DIR" ] || ORCHESTRATOR_ACCOUNT_DIR=ordinary
+ORCHESTRATOR_ACCOUNT_DIR=$(bearings_canonical_dir "${CLAUDE_CONFIG_DIR:-ordinary}")
 
 ORCHESTRATOR_WORKERS_MAX=${FM_BEARINGS_ORCHESTRATOR_WORKERS_MAX:-}
 if [ -z "$ORCHESTRATOR_WORKERS_MAX" ] && [ -n "$BEARINGS_HOME" ] \
@@ -366,7 +392,9 @@ case "$ORCHESTRATOR_WORKERS_MAX" in ''|*[!0-9]*|0) ORCHESTRATOR_WORKERS_MAX=1 ;;
 
 BEARINGS_ACCOUNTS_FILE=${FM_BEARINGS_CLAUDE_ACCOUNTS:-}
 [ -n "$BEARINGS_ACCOUNTS_FILE" ] || BEARINGS_ACCOUNTS_FILE="$BEARINGS_HOME/config/claude-accounts"
-ACCOUNTS_TSV=''
+ACCOUNT_LABELS=()
+ACCOUNT_DIRS=()
+ACCOUNT_SEEN=$'\n'
 if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -f "$BEARINGS_ACCOUNTS_FILE" ] \
    && [ -r "$BEARINGS_ACCOUNTS_FILE" ]; then
   while IFS= read -r aline || [ -n "$aline" ]; do
@@ -378,102 +406,164 @@ if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -f "$BEARINGS_ACCOUNTS_FILE" ] \
     esac
     [ -n "$adir" ] || continue
     [ -n "$alabel" ] || alabel=$adir
-    adir=$(bearings_normalize_dir "$adir")
-    ACCOUNTS_TSV="$ACCOUNTS_TSV$alabel"$'\t'"$adir"$'\n'
+    adir=$(bearings_canonical_dir "$adir")
+    case "$ACCOUNT_SEEN" in *$'\n'"$adir"$'\n'*) continue ;; esac
+    ACCOUNT_SEEN="$ACCOUNT_SEEN$adir"$'\n'
+    ACCOUNT_LABELS+=("$alabel")
+    ACCOUNT_DIRS+=("$adir")
   done < "$BEARINGS_ACCOUNTS_FILE"
 fi
-if [ -z "$ACCOUNTS_TSV" ]; then
-  ACCOUNTS_TSV="default"$'\t'"$ORCHESTRATOR_ACCOUNT_DIR"$'\n'
+if [ ${#ACCOUNT_DIRS[@]} -eq 0 ]; then
+  ACCOUNT_LABELS=("default")
+  ACCOUNT_DIRS=("$ORCHESTRATOR_ACCOUNT_DIR")
+fi
+ORCHESTRATOR_ROW_LABEL='orchestrator'
+orchestrator_listed=0
+for ((acct_i = 0; acct_i < ${#ACCOUNT_DIRS[@]}; acct_i++)); do
+  if [ "${ACCOUNT_DIRS[$acct_i]}" = "$ORCHESTRATOR_ACCOUNT_DIR" ]; then
+    ORCHESTRATOR_ROW_LABEL=${ACCOUNT_LABELS[$acct_i]}
+    orchestrator_listed=1
+    break
+  fi
+done
+if [ "$orchestrator_listed" -eq 0 ]; then
+  ACCOUNT_LABELS+=("$ORCHESTRATOR_ROW_LABEL")
+  ACCOUNT_DIRS+=("$ORCHESTRATOR_ACCOUNT_DIR")
+fi
+if [ ${#ACCOUNT_DIRS[@]} -gt "$FM_BEARINGS_CLAUDE_ACCOUNTS_MAX" ]; then
+  capped_labels=()
+  capped_dirs=()
+  for ((acct_i = 0; acct_i < ${#ACCOUNT_DIRS[@]}; acct_i++)); do
+    [ "${ACCOUNT_DIRS[$acct_i]}" = "$ORCHESTRATOR_ACCOUNT_DIR" ] && continue
+    [ ${#capped_dirs[@]} -lt $((FM_BEARINGS_CLAUDE_ACCOUNTS_MAX - 1)) ] || break
+    capped_labels+=("${ACCOUNT_LABELS[$acct_i]}")
+    capped_dirs+=("${ACCOUNT_DIRS[$acct_i]}")
+  done
+  capped_labels+=("$ORCHESTRATOR_ROW_LABEL")
+  capped_dirs+=("$ORCHESTRATOR_ACCOUNT_DIR")
+  ACCOUNT_LABELS=("${capped_labels[@]}")
+  ACCOUNT_DIRS=("${capped_dirs[@]}")
 fi
 
 # One account row: quota windows flattened to TOON-friendly scalar columns, with
 # an honest unknown reason instead of a missing row when the read cannot answer.
-bearings_quota_account_row() {  # <label> <dir>
-  local label=$1 dir=$2 out rc
+# Every branch builds the row through these definitions so all rows carry the
+# same complete key set, including the first row the TOON renderer uses for its
+# tabular header.
+# shellcheck disable=SC2016  # jq program text, not shell expansion
+BEARINGS_CLAUDE_ROW_JQ='
+  def bearings_first_window($p; $id):
+    if $p == null then null else ([$p.windows[]? | select(.id == $id)] | first) end;
+  def bearings_projected($p; $id):
+    if $p == null then null
+    else ([$p.quotaSemantics.effectiveAvailability[]? | .runway?
+      | select(.limitingWindowId == $id) | .projectedExhaustedAt] | first)
+    end;
+  def bearings_window_fields($p; $id; $prefix):
+    bearings_first_window($p; $id) as $w
+    | if $w == null then
+        {($prefix+"_percent_remaining"):null,
+         ($prefix+"_resets_at"):null,
+         ($prefix+"_pace_status"):null,
+         ($prefix+"_pace_reserve_percent_points"):null,
+         ($prefix+"_pace_burn_multiple"):null,
+         ($prefix+"_projected_exhausted_at"):null}
+      else
+        {($prefix+"_percent_remaining"):($w.percentRemaining // null),
+         ($prefix+"_resets_at"):($w.resetsAt // null),
+         ($prefix+"_pace_status"):($w.pace.status // null),
+         ($prefix+"_pace_reserve_percent_points"):($w.pace.reservePercentPoints // null),
+         ($prefix+"_pace_burn_multiple"):($w.pace.burnMultiple // null),
+         ($prefix+"_projected_exhausted_at"):(bearings_projected($p; $id) // null)}
+      end;
+  def bearings_claude_row($label; $dir; $status; $reason; $auth; $p):
+    {label:$label,dir:$dir,status:$status,reason:$reason,auth_problem:$auth}
+    + bearings_window_fields($p; "five_hour"; "five_hour")
+    + bearings_window_fields($p; "seven_day"; "seven_day");
+  def bearings_unknown_claude_row($label; $dir; $reason):
+    bearings_claude_row($label; $dir; "unknown"; $reason; null; null);
+'
+
+bearings_quota_unknown_row() {  # <label> <dir> <reason>
+  jq -cn --arg label "$1" --arg dir "$2" --arg reason "$3" \
+    "$BEARINGS_CLAUDE_ROW_JQ"' bearings_unknown_claude_row($label; $dir; $reason)'
+}
+
+bearings_quota_account_row() {  # <label> <dir> <timeout>
+  local label=$1 dir=$2 timeout=$3 out rc
   if ! command -v quota-axi >/dev/null 2>&1; then
-    jq -cn --arg label "$label" --arg dir "$dir" \
-      '{label:$label,dir:$dir,status:"unknown",reason:"quota-axi not found"}'
+    bearings_quota_unknown_row "$label" "$dir" "quota-axi not found"
     return 0
   fi
-  if [ "$dir" = ordinary ]; then
-    out=$(fm_run_timed "$FM_BEARINGS_CLAUDE_TIMEOUT" \
-      env -u CLAUDE_CONFIG_DIR quota-axi --provider claude --json 2>/dev/null </dev/null)
-  else
-    out=$(fm_run_timed "$FM_BEARINGS_CLAUDE_TIMEOUT" \
-      env CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --json 2>/dev/null </dev/null)
-  fi
+  out=$(fm_run_timed "$timeout" \
+    env CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --profile-only --json 2>/dev/null </dev/null)
   rc=$?
   if [ "$rc" -eq 124 ]; then
-    jq -cn --arg label "$label" --arg dir "$dir" --argjson t "$FM_BEARINGS_CLAUDE_TIMEOUT" \
-      '{label:$label,dir:$dir,status:"unknown",reason:("quota-axi timed out after \($t)s")}'
+    bearings_quota_unknown_row "$label" "$dir" "quota-axi timed out after ${timeout}s"
     return 0
   fi
   if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
-    jq -cn --arg label "$label" --arg dir "$dir" --argjson rc "$rc" \
-      '{label:$label,dir:$dir,status:"unknown",reason:("quota-axi exited \($rc)")}'
+    bearings_quota_unknown_row "$label" "$dir" "quota-axi exited $rc"
     return 0
   fi
-  printf '%s' "$out" | jq -c --arg label "$label" --arg dir "$dir" '
-    def first_of($id): ([.windows[]? | select(.id == $id)] | first);
-    def projected($id):
-      ([.quotaSemantics.effectiveAvailability[]? | .runway?
-        | select(.limitingWindowId == $id) | .projectedExhaustedAt] | first);
-    def window_fields($p; $id; $prefix):
-      ($p | first_of($id)) as $w
-      | if $w == null then
-          {($prefix+"_percent_remaining"):null,
-           ($prefix+"_resets_at"):null,
-           ($prefix+"_pace_status"):null,
-           ($prefix+"_pace_reserve_percent_points"):null,
-           ($prefix+"_pace_burn_multiple"):null,
-           ($prefix+"_projected_exhausted_at"):null}
+  if ! printf '%s' "$out" | fm_quota_json_valid; then
+    bearings_quota_unknown_row "$label" "$dir" "quota-axi returned invalid JSON"
+    return 0
+  fi
+  printf '%s' "$out" | jq -c --arg label "$label" --arg dir "$dir" \
+    "$FM_QUOTA_ROW_JQ$BEARINGS_CLAUDE_ROW_JQ"'
+      quota_row(.; "claude"; "") as $p
+      | if $p == null then
+          bearings_unknown_claude_row($label; $dir; "quota-axi reported no claude provider")
         else
-          {($prefix+"_percent_remaining"):($w.percentRemaining // null),
-           ($prefix+"_resets_at"):($w.resetsAt // null),
-           ($prefix+"_pace_status"):($w.pace.status // null),
-           ($prefix+"_pace_reserve_percent_points"):($w.pace.reservePercentPoints // null),
-           ($prefix+"_pace_burn_multiple"):($w.pace.burnMultiple // null),
-           ($prefix+"_projected_exhausted_at"):(($p | projected($id)) // null)}
-        end;
-    ([.providers[]? | select(.provider == "claude")] | first) as $p
-    | if $p == null then
-        {label:$label,dir:$dir,status:"unknown",
-         reason:"quota-axi reported no claude provider",
-         auth_problem:null,
-         five_hour_percent_remaining:null,five_hour_resets_at:null,
-         five_hour_pace_status:null,five_hour_pace_reserve_percent_points:null,
-         five_hour_pace_burn_multiple:null,five_hour_projected_exhausted_at:null,
-         seven_day_percent_remaining:null,seven_day_resets_at:null,
-         seven_day_pace_status:null,seven_day_pace_reserve_percent_points:null,
-         seven_day_pace_burn_multiple:null,seven_day_projected_exhausted_at:null}
-      else
-        ($p.state.status // "") as $state
-        | (if ($state == "fresh" or $state == "ok") then "ok" else "unknown" end) as $status
-        | {label:$label,dir:$dir,status:$status,
-           reason:(if $status == "unknown" then
-                     (($p.state.error // "") as $e
-                      | if $e != "" then $e
-                        elif $state != "" then $state
-                        else "quota unavailable" end)
-                   else null end),
-           auth_problem:(if (($p.state.error // "") != "") then $p.state.error
-                           elif ($state == "auth_required") then $state
-                           else null end)}
-          + window_fields($p; "five_hour"; "five_hour")
-          + window_fields($p; "seven_day"; "seven_day")
-      end
-  ' 2>/dev/null || jq -cn --arg label "$label" --arg dir "$dir" \
-      '{label:$label,dir:$dir,status:"unknown",reason:"quota-axi returned invalid JSON"}'
+          ($p.state.status // "") as $state
+          | (if ($state == "fresh" or $state == "ok") then "ok" else "unknown" end) as $status
+          | bearings_claude_row($label; $dir; $status;
+              (if $status == "unknown" then
+                 (($p.state.error // "") as $e
+                  | if $e != "" then $e
+                    elif $state != "" then $state
+                    else "quota unavailable" end)
+               else null end);
+              (if (($p.state.error // "") != "") then $p.state.error
+               elif ($state == "auth_required") then $state
+               else null end);
+              $p)
+        end
+    ' 2>/dev/null || bearings_quota_unknown_row "$label" "$dir" "quota-axi returned invalid JSON"
 }
 
 CLAUDE_ACCOUNTS_JSON='[]'
-while IFS=$'\t' read -r acct_label acct_dir; do
-  [ -n "$acct_label" ] || continue
-  acct_row=$(bearings_quota_account_row "$acct_label" "$acct_dir")
-  CLAUDE_ACCOUNTS_JSON=$(jq -cn --argjson a "$CLAUDE_ACCOUNTS_JSON" --argjson r "$acct_row" '$a + [$r]')
-done <<EOF
-$ACCOUNTS_TSV
-EOF
+if [ ${#ACCOUNT_DIRS[@]} -gt 0 ]; then
+  ACCOUNT_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-bearings-claude.XXXXXX") \
+    || ACCOUNT_TMP="${TMPDIR:-/tmp}/fm-bearings-claude.$$"
+  mkdir -p "$ACCOUNT_TMP" 2>/dev/null || true
+  ACCOUNT_PIDS=()
+  ACCOUNT_STARTED=$SECONDS
+  for ((acct_i = 0; acct_i < ${#ACCOUNT_DIRS[@]}; acct_i++)); do
+    acct_label=${ACCOUNT_LABELS[$acct_i]}
+    acct_dir=${ACCOUNT_DIRS[$acct_i]}
+    remaining=$((FM_BEARINGS_CLAUDE_TIMEOUT - (SECONDS - ACCOUNT_STARTED)))
+    if [ "$remaining" -le 0 ]; then
+      bearings_quota_unknown_row "$acct_label" "$acct_dir" \
+        "quota-axi timed out after ${FM_BEARINGS_CLAUDE_TIMEOUT}s" > "$ACCOUNT_TMP/$acct_i.json" &
+    else
+      bearings_quota_account_row "$acct_label" "$acct_dir" "$remaining" \
+        > "$ACCOUNT_TMP/$acct_i.json" &
+    fi
+    ACCOUNT_PIDS+=("$!")
+  done
+  for acct_pid in "${ACCOUNT_PIDS[@]}"; do
+    wait "$acct_pid" 2>/dev/null || true
+  done
+  for ((acct_i = 0; acct_i < ${#ACCOUNT_DIRS[@]}; acct_i++)); do
+    acct_row=$(cat "$ACCOUNT_TMP/$acct_i.json" 2>/dev/null) || acct_row=''
+    [ -n "$acct_row" ] || acct_row=$(bearings_quota_unknown_row \
+      "${ACCOUNT_LABELS[$acct_i]}" "${ACCOUNT_DIRS[$acct_i]}" "quota-axi read failed")
+    CLAUDE_ACCOUNTS_JSON=$(jq -cn --argjson a "$CLAUDE_ACCOUNTS_JSON" --argjson r "$acct_row" '$a + [$r]')
+  done
+  rm -rf "$ACCOUNT_TMP"
+fi
 
 # Live Claude workers on the orchestrator's own account: the account record in
 # task meta wins, else the spawn pin, else the ambient account this home runs on.
@@ -493,7 +583,7 @@ while IFS= read -r worker_id; do
   fi
   [ -n "$worker_account" ] || worker_account=$BEARINGS_PIN_ACCOUNT
   [ -n "$worker_account" ] || worker_account=$ORCHESTRATOR_ACCOUNT_DIR
-  worker_account=$(bearings_normalize_dir "$worker_account")
+  worker_account=$(bearings_canonical_dir "$worker_account")
   [ "$worker_account" = "$ORCHESTRATOR_ACCOUNT_DIR" ] \
     && ORCHESTRATOR_LIVE_WORKERS=$((ORCHESTRATOR_LIVE_WORKERS + 1))
 done <<EOF
