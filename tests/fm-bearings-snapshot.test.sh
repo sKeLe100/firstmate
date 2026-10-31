@@ -81,7 +81,14 @@ SH
 echo "curl $*" >> "$NET_LOG"
 exit 1
 SH
-  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/gh" "$fb/gh-axi" "$fb/curl"
+  # Bearings reads every Claude account through quota-axi. The default fake
+  # answers "no providers" so existing cases never touch a real credential
+  # store; the Claude-account cases below replace it with a per-dir fixture.
+  cat > "$fb/quota-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"schemaVersion":5,"providers":[]}'
+SH
+  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/gh" "$fb/gh-axi" "$fb/curl" "$fb/quota-axi"
   printf '%s\n' "$fb"
 }
 
@@ -3387,6 +3394,180 @@ test_a_remote_home_without_any_ledger_is_explicitly_unreadable_without_remote_co
   pass "a missing remote ledger stays explicitly unreadable without remote summary computation"
 }
 
+install_quota_fixture() {  # <fakebin> <accounts-root>
+  local fb=$1 root=$2
+  cat > "$fb/quota-axi" <<SH
+#!/usr/bin/env bash
+dir=\${CLAUDE_CONFIG_DIR:-ordinary}
+case "\$dir" in
+  */cc-one)
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":37,"pace":{"status":"behind","reservePercentPoints":12.5,"burnMultiple":0.4}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88,"pace":{"status":"on_track","reservePercentPoints":5,"burnMultiple":0.9}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"runway":{"limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-03T00:00:00Z"}}]}}]}
+JSON
+    ;;
+  */cc-two)
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":4,"pace":{"status":"ahead","reservePercentPoints":-64.7,"burnMultiple":3.06}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":42,"pace":{"status":"ahead","reservePercentPoints":-35.2,"burnMultiple":2.55}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"runway":{"limitingWindowId":"five_hour","projectedExhaustedAt":"2026-10-31T15:17:56.020Z"}}]}}]}
+JSON
+    ;;
+  */cc-orch)
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":55,"pace":{"status":"on_track","reservePercentPoints":10,"burnMultiple":0.7}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":70,"pace":{"status":"on_track","reservePercentPoints":8,"burnMultiple":0.8}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"runway":{"limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-02T00:00:00Z"}}]}}]}
+JSON
+    ;;
+  */cc-broken)
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[],"state":{"status":"auth_required","error":"credentials_invalid"},"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+JSON
+    ;;
+  *)
+    printf '%s\n' '{"schemaVersion":5,"providers":[]}'
+    ;;
+esac
+SH
+  chmod +x "$fb/quota-axi"
+  mkdir -p "$root/cc-one" "$root/cc-two" "$root/cc-orch" "$root/cc-broken"
+}
+
+run_claude_quota_bearings() {  # <home> <fakebin> <config-dir> <args...>
+  local home=$1 fakebin=$2 config_dir=$3
+  shift 3
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    CLAUDE_CONFIG_DIR="$config_dir" NET_LOG="$home/net.log" "$BEARINGS" "$@"
+}
+
+test_claude_accounts_read_every_configured_account() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-dual-accounts)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'worker:%s\norchestrator:%s\n' \
+    "$accounts_root/cc-one" "$accounts_root/cc-two" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 2
+      and ([.claude_accounts[] | select(.label == "worker")][0] as $w
+        | $w.dir == ($root + "/cc-one")
+          and $w.status == "ok"
+          and $w.five_hour_percent_remaining == 37
+          and $w.five_hour_resets_at == "2026-11-01T00:00:00Z"
+          and $w.five_hour_pace_status == "behind"
+          and $w.five_hour_pace_reserve_percent_points == 12.5
+          and $w.five_hour_pace_burn_multiple == 0.4
+          and $w.five_hour_projected_exhausted_at == "2026-11-03T00:00:00Z"
+          and $w.seven_day_percent_remaining == 88)
+      and ([.claude_accounts[] | select(.label == "orchestrator")][0] as $o
+        | $o.dir == ($root + "/cc-two")
+          and $o.five_hour_percent_remaining == 4
+          and $o.seven_day_percent_remaining == 42
+          and $o.five_hour_projected_exhausted_at == "2026-10-31T15:17:56.020Z")
+      and .orchestrator_account.label == "orchestrator"
+      and .orchestrator_account.dir == ($root + "/cc-two")
+      and .orchestrator_account.five_hour_projected_exhausted_at == "2026-10-31T15:17:56.020Z"
+      and (.warnings | any(.kind == "orchestrator-five-hour-exhaustion"
+        and .account == "orchestrator"
+        and .projected_exhausted_at == "2026-10-31T15:17:56.020Z"
+        and (.message | contains("five-hour window projected to run out at 2026-10-31T15:17:56.020Z"))))
+  ' >/dev/null || fail "both Claude accounts were not read with their own windows: $json"
+  pass "bearings reads Claude quota for every configured account and flags a projected orchestrator exhaustion"
+}
+
+test_claude_account_quota_reads_degrade_to_unknown_rows() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-account-degrade)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-degrade-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'broken:%s\n' "$accounts_root/cc-broken" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-broken" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].label == "broken"
+      and .claude_accounts[0].status == "unknown"
+      and .claude_accounts[0].reason == "credentials_invalid"
+      and .claude_accounts[0].auth_problem == "credentials_invalid"
+      and .claude_accounts[0].five_hour_percent_remaining == null
+      and (.warnings | map(select(.kind == "orchestrator-five-hour-exhaustion")) | length) == 0
+  ' >/dev/null || fail "an invalid account was hidden instead of reported as an unknown row: $json"
+
+  rm -f "$home/config/claude-accounts"
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-orch" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].label == "default"
+      and .claude_accounts[0].dir == ($root + "/cc-orch")
+      and .claude_accounts[0].status == "ok"
+      and .claude_accounts[0].five_hour_percent_remaining == 55
+      and .orchestrator_account.dir == ($root + "/cc-orch")
+      and (.warnings | length) == 0
+  ' >/dev/null || fail "an absent account list did not fall back to the current CLAUDE_CONFIG_DIR: $json"
+  pass "an unauthenticated account is an explicit unknown row and an absent account list falls back to the current config dir"
+}
+
+test_orchestrator_account_worker_load_warns_only_above_threshold() {
+  local home fakebin json accounts_root worktree
+  home=$(make_home claude-orchestrator-load)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-load-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config" "$home/projects/orch"
+  worktree="$home/projects/orch"
+  printf 'orchestrator:%s\n' "$accounts_root/cc-orch" > "$home/config/claude-accounts"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] orch-w1 - Orchestrator worker one (repo: firstmate) (kind: ship)
+- [ ] orch-w2 - Orchestrator worker two (repo: firstmate) (kind: ship)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/orch-w1.meta" \
+    "window=fixture:fm-orch-w1" "worktree=$worktree" "project=firstmate" \
+    "harness=claude" "kind=ship" "mode=no-mistakes" "account=$accounts_root/cc-orch"
+  record_claude_state "$home/state" orch-w1 busy
+  printf 'working: orchestrator worker one\n' > "$home/state/orch-w1.status"
+  fm_write_meta "$home/state/orch-w2.meta" \
+    "window=fixture:fm-orch-w2" "worktree=$worktree" "project=firstmate" \
+    "harness=claude" "kind=ship" "mode=no-mistakes" "account=$accounts_root/cc-orch"
+  record_claude_state "$home/state" orch-w2 idle
+  printf 'paused: orchestrator worker two idle\n' > "$home/state/orch-w2.status"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-orch" --json)
+  printf '%s' "$json" | jq -e '
+    .orchestrator_account.live_workers == 1
+      and .orchestrator_account.threshold == 1
+      and (.warnings | map(select(.kind == "orchestrator-worker-load")) | length) == 0
+  ' >/dev/null || fail "one worker on the orchestrator account warned or counted wrong: $json"
+
+  record_claude_state "$home/state" orch-w2 busy
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-orch" --json)
+  printf '%s' "$json" | jq -e '
+    .orchestrator_account.live_workers == 2
+      and (.warnings | any(.kind == "orchestrator-worker-load"
+        and .account == "orchestrator"
+        and .live_workers == 2
+        and .threshold == 1
+        and (.message | contains("2 live Claude worker(s)"))))
+  ' >/dev/null || fail "two workers on the orchestrator account did not raise the load warning: $json"
+
+  json=$(FM_BEARINGS_ORCHESTRATOR_WORKERS_MAX=2 \
+    run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-orch" --json)
+  printf '%s' "$json" | jq -e '
+    .orchestrator_account.threshold == 2
+      and (.warnings | map(select(.kind == "orchestrator-worker-load")) | length) == 0
+  ' >/dev/null || fail "the orchestrator worker threshold was not configurable: $json"
+  pass "orchestrator-account worker load warns only above the configured threshold"
+}
+
+test_claude_accounts_read_every_configured_account
+test_claude_account_quota_reads_degrade_to_unknown_rows
+test_orchestrator_account_worker_load_warns_only_above_threshold
 test_task_teardown_during_metadata_capture_does_not_abort_snapshot
 test_current_state_uses_captured_status_observation
 test_relaunched_task_does_not_inherit_reused_endpoint_state

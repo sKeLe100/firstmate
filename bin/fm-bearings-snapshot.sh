@@ -145,7 +145,9 @@ Default collection performs bounded concurrent remote-ledger reads for registere
 remote homes under one shared snapshot budget and may refresh the parent-side cache.
 --include-prs additionally performs live GitHub discovery and checks.
 
-Default fields: schema, home, generated, prs, in_flight{id,kind,state,repo,name,doing},
+Default fields: schema, home, generated, prs, claude_accounts{...},
+  orchestrator_account{label,dir,live_workers,threshold,...}, warnings{...},
+  in_flight{id,kind,state,repo,name,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
   decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at},
@@ -169,6 +171,15 @@ Opt-in surfaces: --fields bodies|paths|actions|endpoints, --all-in-flight,
   --all-secondmates, --all-landed, --all-reports, --all-queued, --all-recorded-prs,
   --all-unhealthy, --all-pr-repos, --include-prs (adds candidate_prs).
 Raise FM_BEARINGS_PR_LIMIT to expand per-repository open-PR results.
+claude_accounts reads every account listed in config/claude-accounts
+  (`label:dir` lines; an absent file falls back to the current CLAUDE_CONFIG_DIR)
+  with one bounded `quota-axi --json` call each. A slow, failed, or
+  unauthenticated read is an unknown row with its reason, never a snapshot error.
+orchestrator_account names the account this home runs on and counts live Claude
+  workers on it. warnings[] names that load above
+  FM_BEARINGS_ORCHESTRATOR_WORKERS_MAX (default 1, also
+  config/orchestrator-worker-max) and any five-hour window projected to run out
+  before its reset.
 EOF
 }
 
@@ -314,6 +325,223 @@ if [ -f "$UPSTREAM_REPORT" ]; then
   fi
 fi
 
+# --- Claude account quota read (local quota-axi, bounded) -------------------
+# This home runs on one Claude account (the orchestrator's), while workers can be
+# pinned to another. quota-axi reads only the ambient CLAUDE_CONFIG_DIR, so a
+# bearings digest built from it alone is blind to the account the fleet actually
+# spends. Read every configured account instead: config/claude-accounts holds
+# `label:dir` lines (the shape data/plans/carryover-gen.sh already uses), and an
+# absent file falls back to the single current CLAUDE_CONFIG_DIR. A failed,
+# slow, or unauthenticated read degrades to an unknown row with its reason; it
+# never fails the snapshot.
+FM_BEARINGS_CLAUDE_TIMEOUT=${FM_BEARINGS_CLAUDE_TIMEOUT:-20}
+case "$FM_BEARINGS_CLAUDE_TIMEOUT" in ''|*[!0-9]*|0) FM_BEARINGS_CLAUDE_TIMEOUT=20 ;; esac
+
+BEARINGS_HOME=$(printf '%s' "$SNAP" | jq -r '.fm_home // empty')
+[ -n "$BEARINGS_HOME" ] || BEARINGS_HOME=${FM_HOME:-}
+
+bearings_trim() {  # <value>
+  local v=${1-}
+  v=${v#"${v%%[![:space:]]*}"}
+  v=${v%"${v##*[![:space:]]}"}
+  printf '%s' "$v"
+}
+bearings_normalize_dir() {  # <value>
+  local d=${1-}
+  while [ "${#d}" -gt 1 ] && [ "${d%/}" != "$d" ]; do d=${d%/}; done
+  printf '%s' "$d"
+}
+
+ORCHESTRATOR_ACCOUNT_DIR=$(bearings_normalize_dir "${CLAUDE_CONFIG_DIR:-ordinary}")
+[ -n "$ORCHESTRATOR_ACCOUNT_DIR" ] || ORCHESTRATOR_ACCOUNT_DIR=ordinary
+
+ORCHESTRATOR_WORKERS_MAX=${FM_BEARINGS_ORCHESTRATOR_WORKERS_MAX:-}
+if [ -z "$ORCHESTRATOR_WORKERS_MAX" ] && [ -n "$BEARINGS_HOME" ] \
+   && [ -f "$BEARINGS_HOME/config/orchestrator-worker-max" ] \
+   && [ -r "$BEARINGS_HOME/config/orchestrator-worker-max" ]; then
+  IFS= read -r ORCHESTRATOR_WORKERS_MAX < "$BEARINGS_HOME/config/orchestrator-worker-max" || true
+  ORCHESTRATOR_WORKERS_MAX=$(bearings_trim "$ORCHESTRATOR_WORKERS_MAX")
+fi
+case "$ORCHESTRATOR_WORKERS_MAX" in ''|*[!0-9]*|0) ORCHESTRATOR_WORKERS_MAX=1 ;; esac
+
+BEARINGS_ACCOUNTS_FILE=${FM_BEARINGS_CLAUDE_ACCOUNTS:-}
+[ -n "$BEARINGS_ACCOUNTS_FILE" ] || BEARINGS_ACCOUNTS_FILE="$BEARINGS_HOME/config/claude-accounts"
+ACCOUNTS_TSV=''
+if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -f "$BEARINGS_ACCOUNTS_FILE" ] \
+   && [ -r "$BEARINGS_ACCOUNTS_FILE" ]; then
+  while IFS= read -r aline || [ -n "$aline" ]; do
+    aline=${aline%$'\r'}
+    [ -n "$aline" ] || continue
+    case "$aline" in
+      *:*) alabel=$(bearings_trim "${aline%%:*}"); adir=$(bearings_trim "${aline#*:}") ;;
+      *) continue ;;
+    esac
+    [ -n "$adir" ] || continue
+    [ -n "$alabel" ] || alabel=$adir
+    adir=$(bearings_normalize_dir "$adir")
+    ACCOUNTS_TSV="$ACCOUNTS_TSV$alabel"$'\t'"$adir"$'\n'
+  done < "$BEARINGS_ACCOUNTS_FILE"
+fi
+if [ -z "$ACCOUNTS_TSV" ]; then
+  ACCOUNTS_TSV="default"$'\t'"$ORCHESTRATOR_ACCOUNT_DIR"$'\n'
+fi
+
+# One account row: quota windows flattened to TOON-friendly scalar columns, with
+# an honest unknown reason instead of a missing row when the read cannot answer.
+bearings_quota_account_row() {  # <label> <dir>
+  local label=$1 dir=$2 out rc
+  if ! command -v quota-axi >/dev/null 2>&1; then
+    jq -cn --arg label "$label" --arg dir "$dir" \
+      '{label:$label,dir:$dir,status:"unknown",reason:"quota-axi not found"}'
+    return 0
+  fi
+  if [ "$dir" = ordinary ]; then
+    out=$(fm_run_timed "$FM_BEARINGS_CLAUDE_TIMEOUT" \
+      env -u CLAUDE_CONFIG_DIR quota-axi --provider claude --json 2>/dev/null </dev/null)
+  else
+    out=$(fm_run_timed "$FM_BEARINGS_CLAUDE_TIMEOUT" \
+      env CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --json 2>/dev/null </dev/null)
+  fi
+  rc=$?
+  if [ "$rc" -eq 124 ]; then
+    jq -cn --arg label "$label" --arg dir "$dir" --argjson t "$FM_BEARINGS_CLAUDE_TIMEOUT" \
+      '{label:$label,dir:$dir,status:"unknown",reason:("quota-axi timed out after \($t)s")}'
+    return 0
+  fi
+  if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
+    jq -cn --arg label "$label" --arg dir "$dir" --argjson rc "$rc" \
+      '{label:$label,dir:$dir,status:"unknown",reason:("quota-axi exited \($rc)")}'
+    return 0
+  fi
+  printf '%s' "$out" | jq -c --arg label "$label" --arg dir "$dir" '
+    def first_of($id): ([.windows[]? | select(.id == $id)] | first);
+    def projected($id):
+      ([.quotaSemantics.effectiveAvailability[]? | .runway?
+        | select(.limitingWindowId == $id) | .projectedExhaustedAt] | first);
+    def window_fields($p; $id; $prefix):
+      ($p | first_of($id)) as $w
+      | if $w == null then
+          {($prefix+"_percent_remaining"):null,
+           ($prefix+"_resets_at"):null,
+           ($prefix+"_pace_status"):null,
+           ($prefix+"_pace_reserve_percent_points"):null,
+           ($prefix+"_pace_burn_multiple"):null,
+           ($prefix+"_projected_exhausted_at"):null}
+        else
+          {($prefix+"_percent_remaining"):($w.percentRemaining // null),
+           ($prefix+"_resets_at"):($w.resetsAt // null),
+           ($prefix+"_pace_status"):($w.pace.status // null),
+           ($prefix+"_pace_reserve_percent_points"):($w.pace.reservePercentPoints // null),
+           ($prefix+"_pace_burn_multiple"):($w.pace.burnMultiple // null),
+           ($prefix+"_projected_exhausted_at"):(($p | projected($id)) // null)}
+        end;
+    ([.providers[]? | select(.provider == "claude")] | first) as $p
+    | if $p == null then
+        {label:$label,dir:$dir,status:"unknown",
+         reason:"quota-axi reported no claude provider",
+         auth_problem:null,
+         five_hour_percent_remaining:null,five_hour_resets_at:null,
+         five_hour_pace_status:null,five_hour_pace_reserve_percent_points:null,
+         five_hour_pace_burn_multiple:null,five_hour_projected_exhausted_at:null,
+         seven_day_percent_remaining:null,seven_day_resets_at:null,
+         seven_day_pace_status:null,seven_day_pace_reserve_percent_points:null,
+         seven_day_pace_burn_multiple:null,seven_day_projected_exhausted_at:null}
+      else
+        ($p.state.status // "") as $state
+        | (if ($state == "fresh" or $state == "ok") then "ok" else "unknown" end) as $status
+        | {label:$label,dir:$dir,status:$status,
+           reason:(if $status == "unknown" then
+                     (($p.state.error // "") as $e
+                      | if $e != "" then $e
+                        elif $state != "" then $state
+                        else "quota unavailable" end)
+                   else null end),
+           auth_problem:(if (($p.state.error // "") != "") then $p.state.error
+                           elif ($state == "auth_required") then $state
+                           else null end)}
+          + window_fields($p; "five_hour"; "five_hour")
+          + window_fields($p; "seven_day"; "seven_day")
+      end
+  ' 2>/dev/null || jq -cn --arg label "$label" --arg dir "$dir" \
+      '{label:$label,dir:$dir,status:"unknown",reason:"quota-axi returned invalid JSON"}'
+}
+
+CLAUDE_ACCOUNTS_JSON='[]'
+while IFS=$'\t' read -r acct_label acct_dir; do
+  [ -n "$acct_label" ] || continue
+  acct_row=$(bearings_quota_account_row "$acct_label" "$acct_dir")
+  CLAUDE_ACCOUNTS_JSON=$(jq -cn --argjson a "$CLAUDE_ACCOUNTS_JSON" --argjson r "$acct_row" '$a + [$r]')
+done <<EOF
+$ACCOUNTS_TSV
+EOF
+
+# Live Claude workers on the orchestrator's own account: the account record in
+# task meta wins, else the spawn pin, else the ambient account this home runs on.
+ORCHESTRATOR_LIVE_WORKERS=0
+BEARINGS_PIN_FILE="$BEARINGS_HOME/config/claude-account"
+BEARINGS_PIN_ACCOUNT=''
+if [ -n "$BEARINGS_HOME" ] && [ -f "$BEARINGS_PIN_FILE" ] && [ -r "$BEARINGS_PIN_FILE" ]; then
+  IFS= read -r BEARINGS_PIN_ACCOUNT < "$BEARINGS_PIN_FILE" || true
+  BEARINGS_PIN_ACCOUNT=$(bearings_trim "$BEARINGS_PIN_ACCOUNT")
+fi
+while IFS= read -r worker_id; do
+  [ -n "$worker_id" ] || continue
+  worker_account=''
+  if [ -n "$BEARINGS_HOME" ] && [ -f "$BEARINGS_HOME/state/$worker_id.meta" ]; then
+    worker_account=$(sed -n 's/^account=//p' "$BEARINGS_HOME/state/$worker_id.meta" | head -n 1)
+    worker_account=$(bearings_trim "$worker_account")
+  fi
+  [ -n "$worker_account" ] || worker_account=$BEARINGS_PIN_ACCOUNT
+  [ -n "$worker_account" ] || worker_account=$ORCHESTRATOR_ACCOUNT_DIR
+  worker_account=$(bearings_normalize_dir "$worker_account")
+  [ "$worker_account" = "$ORCHESTRATOR_ACCOUNT_DIR" ] \
+    && ORCHESTRATOR_LIVE_WORKERS=$((ORCHESTRATOR_LIVE_WORKERS + 1))
+done <<EOF
+$(printf '%s' "$SNAP" | jq -r '.tasks[]? | select(.kind != "secondmate" and .harness == "claude" and .current_state.state == "working") | .id')
+EOF
+
+ORCHESTRATOR_ACCOUNT_JSON=$(jq -cn --arg dir "$ORCHESTRATOR_ACCOUNT_DIR" \
+  --argjson accounts "$CLAUDE_ACCOUNTS_JSON" \
+  --argjson workers "$ORCHESTRATOR_LIVE_WORKERS" \
+  --argjson threshold "$ORCHESTRATOR_WORKERS_MAX" '
+  ([$accounts[] | select(.dir == $dir)] | first) as $a
+  | {label:($a.label // null), dir:$dir,
+     live_workers:$workers, threshold:$threshold,
+     five_hour_percent_remaining:($a.five_hour_percent_remaining // null),
+     five_hour_resets_at:($a.five_hour_resets_at // null),
+     five_hour_projected_exhausted_at:($a.five_hour_projected_exhausted_at // null)}
+')
+
+BEARINGS_WARNINGS_JSON=$(jq -cn --argjson orch "$ORCHESTRATOR_ACCOUNT_JSON" '
+  def epoch:
+    sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
+  def acct_name: (.label // .dir);
+  def projected_before_reset:
+    (.five_hour_projected_exhausted_at // null) as $p
+    | (.five_hour_resets_at // null) as $r
+    | if $p != null and $r != null then
+        (try (($p | epoch) < ($r | epoch)) catch false)
+      else false end;
+  [ if $orch.live_workers > $orch.threshold then
+      {kind:"orchestrator-worker-load",
+       account:($orch | acct_name), dir:$orch.dir,
+       live_workers:$orch.live_workers, threshold:$orch.threshold,
+       projected_exhausted_at:($orch.five_hour_projected_exhausted_at // null),
+       resets_at:($orch.five_hour_resets_at // null),
+       message:(("\($orch.live_workers) live Claude worker(s) on the orchestrator account \($orch | acct_name) (threshold \($orch.threshold))")
+         + (if ($orch.five_hour_projected_exhausted_at // null) != null
+            then ("; five-hour window projected to run out at " + $orch.five_hour_projected_exhausted_at)
+            else "" end))}
+    else empty end,
+    if ($orch | projected_before_reset) then
+      {kind:"orchestrator-five-hour-exhaustion",
+       account:($orch | acct_name), dir:$orch.dir,
+       live_workers:$orch.live_workers, threshold:$orch.threshold,
+       projected_exhausted_at:$orch.five_hour_projected_exhausted_at,
+       resets_at:$orch.five_hour_resets_at,
+       message:("orchestrator account \($orch | acct_name) five-hour window projected to run out at \($orch.five_hour_projected_exhausted_at), before its reset at \($orch.five_hour_resets_at)")}
+    else empty end ]')
+
 # --- optional live GitHub PR enrichment -------------------------------------
 PR_STATUS='not_requested (run: /bearings include PRs)'
 CANDIDATE_PRS='[]'
@@ -452,6 +680,9 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --argjson pr_rows_capped "$PR_ROWS_CAPPED" \
   --argjson pr_rows_min_total "$PR_ROWS_MIN_TOTAL" \
   --argjson return_catchup "$RETURN_CATCHUP" \
+  --argjson claude_accounts "$CLAUDE_ACCOUNTS_JSON" \
+  --argjson orchestrator_account "$ORCHESTRATOR_ACCOUNT_JSON" \
+  --argjson warnings "$BEARINGS_WARNINGS_JSON" \
   --argjson candidate_prs "$CANDIDATE_PRS" "$FM_LANDED_JQ_DEFS"'
   def trunc($n): if . == null then null else
     (tostring | gsub("\\s+"; " ") | if (length > $n) then (.[:$n] + "…") else . end) end;
@@ -693,6 +924,9 @@ MODEL=$(printf '%s' "$SNAP" | jq \
       home: $home,
       generated: $now,
       prs: $prs,
+      claude_accounts: $claude_accounts,
+      orchestrator_account: $orchestrator_account,
+      warnings: $warnings,
       contributions:(
         ([$snap.contributions + {owner:"(main)"}]
           + [($snap.secondmate_current.records // [])[] as $m | if $m.contributions == null then null else $m.contributions + {owner:$m.id} end])
