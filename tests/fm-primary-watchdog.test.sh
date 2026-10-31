@@ -524,6 +524,8 @@ rm -f "$TMPHOME/state/.watchdog-dead-streak"
 . "$ROOT/bin/fm-primary-watchdog.sh"
 unset FM_WATCHDOG_TRANSCRIPT
 HOME_SAVED="$HOME"
+CONFIG_DIR_SAVED="${CLAUDE_CONFIG_DIR:-}"
+unset CLAUDE_CONFIG_DIR
 export HOME="$TMPHOME/fakehome"
 PROJ="$HOME/.claude/projects/$(printf '%s' "$FM_HOME" | tr -c 'a-zA-Z0-9' '-')"
 mkdir -p "$PROJ"
@@ -549,6 +551,41 @@ else
   fail "transcript-pin: must re-pin the post-launch transcript (got=$got)"
 fi
 rm -rf "$TMPHOME/fakehome" "$TMPHOME/state/.primary-watchdog.transcript" "$TMPHOME/state/.primary-watchdog.repin-after"
+export HOME="$HOME_SAVED"
+if [ -n "$CONFIG_DIR_SAVED" ]; then export CLAUDE_CONFIG_DIR="$CONFIG_DIR_SAVED"; fi
+
+# --- 21. the transcript pin reads CLAUDE_CONFIG_DIR's store, not $HOME/.claude
+. "$ROOT/bin/fm-primary-watchdog.sh"
+unset FM_WATCHDOG_TRANSCRIPT
+HOME_SAVED="$HOME"
+export HOME="$TMPHOME/fakehome"
+MUNGED="$(printf '%s' "$FM_HOME" | tr -c 'a-zA-Z0-9' '-')"
+mkdir -p "$HOME/.claude/projects/$MUNGED" "$TMPHOME/altclaude/projects/$MUNGED"
+: >"$HOME/.claude/projects/$MUNGED/other-session.jsonl"
+touch -d '@2000100' "$HOME/.claude/projects/$MUNGED/other-session.jsonl"
+rm -f "$TMPHOME/state/.primary-watchdog.transcript" "$TMPHOME/state/.primary-watchdog.repin-after"
+CLAUDE_CONFIG_DIR="$TMPHOME/altclaude" fm_watchdog_pin_primary_transcript
+if [ ! -e "$TMPHOME/state/.primary-watchdog.transcript" ]; then
+  pass "transcript-pin: no pin is taken from the default store when the config dir has no project"
+else
+  fail "transcript-pin: pinned $(cat "$TMPHOME/state/.primary-watchdog.transcript") from a store the session does not write"
+fi
+: >"$TMPHOME/altclaude/projects/$MUNGED/own-session.jsonl"
+touch -d '@2000200' "$TMPHOME/altclaude/projects/$MUNGED/own-session.jsonl"
+CLAUDE_CONFIG_DIR="$TMPHOME/altclaude" fm_watchdog_pin_primary_transcript
+got=$(cat "$TMPHOME/state/.primary-watchdog.transcript" 2>/dev/null) || got="REFUSED"
+if [ "$got" = "$TMPHOME/altclaude/projects/$MUNGED/own-session.jsonl" ]; then
+  pass "transcript-pin: the pin is taken from CLAUDE_CONFIG_DIR's project store"
+else
+  fail "transcript-pin: expected the config-dir store's transcript, got: $got"
+fi
+rm -f "$TMPHOME/state/.primary-watchdog.transcript"
+if CLAUDE_CONFIG_DIR="relative/store" fm_watchdog_pin_primary_transcript; then
+  fail "transcript-pin: a relative CLAUDE_CONFIG_DIR must be refused rather than resolved against the loop's cwd"
+else
+  pass "transcript-pin: a relative CLAUDE_CONFIG_DIR is refused"
+fi
+rm -rf "$TMPHOME/fakehome" "$TMPHOME/altclaude" "$TMPHOME/state/.primary-watchdog.transcript" "$TMPHOME/state/.primary-watchdog.repin-after"
 export HOME="$HOME_SAVED"
 
 # --- 19. a permanently unidentifiable harness is surfaced once --------------

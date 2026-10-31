@@ -2951,6 +2951,17 @@ test_no_run_idle_pane_paused_split() {
   assert_contains "$out" "state: blocked" "bare paused + warn band -> blocked"
   out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=ok run_crew_state "$d" feat-psplit)
   assert_contains "$out" "state: paused" "bare paused + ok band stays self-clearing"
+  # A paused crew's transcript stops at the pause, so by the time a supervisor
+  # looks it is old. Its last real band must survive the staleness guard that
+  # applies to live-session reads: an unavailable reading would quietly
+  # re-classify an exhausted crew as self-clearing.
+  quiet_store="$d/quietclaude"
+  quiet_proj="$quiet_store/projects/$(printf '%s' "$d/wt" | tr -c 'a-zA-Z0-9' '-')"
+  mkdir -p "$quiet_proj" "$d/quiethome"
+  printf '{"type":"assistant","isSidechain":false,"message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":259990}}}\n' > "$quiet_proj/session.jsonl"
+  touch -d '2 hours ago' "$quiet_proj/session.jsonl"
+  out=$(HOME="$d/quiethome" CLAUDE_CONFIG_DIR="$quiet_store" run_crew_state "$d" feat-psplit)
+  assert_contains "$out" "state: blocked" "a paused crew idle past the staleness limit keeps its restart band"
   printf 'paused [key=session-limit]: claude session usage limit, resets 14:00\n' > "$d/state/feat-psplit.status"
   out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=restart run_crew_state "$d" feat-psplit)
   assert_contains "$out" "state: paused" "keyed session-limit pause stays self-clearing even at restart band"

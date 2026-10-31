@@ -364,6 +364,9 @@ status_is_captain_held() {  # <status-line>
 # is retroactively misclassified, while an exhausted session is caught even when
 # its brief never knew the key. FM_CONTEXT_USAGE_BIN overrides the band reader
 # (tests); an empty or missing worktree reads as no band evidence.
+# A paused crew's transcript is old by definition, so this read disables the
+# helper's staleness guard: the last band recorded before the pause is the
+# wanted reading, and band=unavailable would silently un-block an exhausted crew.
 FM_CLASSIFY_SESSION_LIMIT_KEY=session-limit
 status_pause_context_band() {  # <worktree> -> ok|warn|restart|unknown
   local wt=$1 out reader
@@ -372,7 +375,7 @@ status_pause_context_band() {  # <worktree> -> ok|warn|restart|unknown
     printf 'unknown'
     return 0
   fi
-  out=$(FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || out=
+  out=$(FM_CONTEXT_STALE_SECONDS=3153600000 FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || out=
   case " $out " in
     *" band=warn "*) printf 'warn' ;;
     *" band=restart "*) printf 'restart' ;;

@@ -19,7 +19,13 @@
 #   directories are keyed on the absolute home path - a relative or missing
 #   path is a usage error, not missing evidence. It is passed through as
 #   FM_HOME to fm-context-usage.sh, so the same transcript-discovery and
-#   config/context-thresholds resolution apply.
+#   config/context-thresholds resolution apply. The helper's stale-transcript
+#   guard is deliberately turned off for this read (see the call site): this
+#   check exists for sessions that have already been idle, so a transcript's
+#   age says nothing about whether its last recorded band is the right resume
+#   decision, and turning that band into band=unavailable would drop a
+#   restart-band session back to a bare resume - the exact failure this check
+#   was written to prevent.
 #
 #   <state-dir> and <task-id> are optional and must be given together: the
 #   CALLER's own state directory (never the returning home's own state/,
@@ -45,11 +51,12 @@
 #     printed for fm-context-usage.sh's known no-evidence-yet failures - no
 #     Claude transcript directory, no *.jsonl transcript found, transcript
 #     not found, no assistant usage record (a non-claude harness, or no
-#     session has run there yet) - and for a band=unavailable reading, where
-#     the auto-picked transcript is stale and the tokens it carries say
-#     nothing about the session now. Unknown is not evidence of either band,
-#     so callers proceed with an ordinary bare resume rather than forcing a
-#     restart on missing data.
+#     session has run there yet) - and defensively for a band=unavailable
+#     reading, which the helper can only reach if the staleness guard switched
+#     off below is ever reinstated: the auto-picked transcript would be stale
+#     and the tokens it carries say nothing about the session now. Unknown is
+#     not evidence of either band, so callers proceed with an ordinary bare
+#     resume rather than forcing a restart on missing data.
 #   verdict=blocked reason=<text>
 #     printed for every other fm-context-usage.sh failure: a broken
 #     config/context-thresholds, an unreadable file, a missing interpreter, or
@@ -88,7 +95,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,85p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,94p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -115,6 +122,10 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage_output=""
 usage_status=0
+# The staleness guard is deliberately disabled for this read: 3153600000
+# seconds (100 years) is past any transcript age, so the band stays the last one
+# the idle session actually recorded. "Is this session still live?" is the
+# callers' idle/TTL question, not the band read's.
 usage_output="$(FM_CONTEXT_STALE_SECONDS=3153600000 FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
 
 if [ "$usage_status" -ne 0 ]; then
