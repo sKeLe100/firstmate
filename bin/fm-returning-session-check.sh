@@ -115,7 +115,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage_output=""
 usage_status=0
-usage_output="$(FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
+usage_output="$(FM_CONTEXT_STALE_SECONDS=3153600000 FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
 
 if [ "$usage_status" -ne 0 ]; then
   reason="$(printf '%s' "$usage_output" | tr '\n' ' ' | sed 's/  */ /g')"

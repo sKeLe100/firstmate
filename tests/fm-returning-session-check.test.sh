@@ -256,16 +256,16 @@ if "$bin" "$warn_home" "$idle_state" 2>"$tmp/err_two"; then
 fi
 grep -q "usage:" "$tmp/err_two" || fail "missing usage message for two-argument call"
 
-# 17. A stale auto-picked transcript reads unavailable and verdict=unknown,
-#     never a restart-with-carryover from a band the reading cannot support.
+# 17. A returning session idle for hours still reports its real band; the
+#     staleness guard is for live-session readers, not this check.
 stale_home="$tmp/stale_home"
-mk_home "$stale_home" 60000
+mk_home "$stale_home" 260000
 stale_proj="$tmp/claude_home/.claude/projects/$(printf '%s' "$stale_home" | tr -c 'a-zA-Z0-9' '-')"
 touch -d '2 hours ago' "$stale_proj/session.jsonl"
 out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$stale_home")"
 case "$out" in
-  verdict=unknown\ reason=*stale*) ;;
-  *) fail "expected verdict=unknown for a stale auto-picked transcript, got: $out" ;;
+  *"verdict=restart-with-carryover band=restart "*) ;;
+  *) fail "expected restart-with-carryover for an idle returning session, got: $out" ;;
 esac
 
 echo "ok: fm-returning-session-check.test.sh"
