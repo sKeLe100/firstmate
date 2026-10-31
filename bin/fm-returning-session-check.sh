@@ -42,11 +42,13 @@
 #     restart_tokens=<N> idle_seconds=<N|unknown> ttl_seconds=<N|n/a> \
 #     transcript=<path>
 #   verdict=unknown reason=<text>
-#     printed only for fm-context-usage.sh's known no-evidence-yet failures -
-#     no Claude transcript directory, no *.jsonl transcript found, transcript
+#     printed for fm-context-usage.sh's known no-evidence-yet failures - no
+#     Claude transcript directory, no *.jsonl transcript found, transcript
 #     not found, no assistant usage record (a non-claude harness, or no
-#     session has run there yet). Unknown is not evidence of either band, so
-#     callers proceed with an ordinary bare resume rather than forcing a
+#     session has run there yet) - and for a band=unavailable reading, where
+#     the auto-picked transcript is stale and the tokens it carries say
+#     nothing about the session now. Unknown is not evidence of either band,
+#     so callers proceed with an ordinary bare resume rather than forcing a
 #     restart on missing data.
 #   verdict=blocked reason=<text>
 #     printed for every other fm-context-usage.sh failure: a broken
@@ -128,8 +130,9 @@ if [ "$usage_status" -ne 0 ]; then
 fi
 
 # usage_output is one data-only line: context_tokens=<N> window=<W>
-# percent=<P> warn_tokens=<W1> restart_tokens=<W2> band=<ok|warn|restart>
-# transcript=<path> age_seconds=<S>
+# percent=<P> warn_tokens=<W1> restart_tokens=<W2>
+# band=<ok|warn|restart|unavailable> transcript=<path> age_seconds=<S>
+# (auto-discovery adds reason=stale-transcript with band=unavailable).
 band=""
 context_tokens=""
 restart_tokens=""
@@ -147,6 +150,16 @@ if [ -z "$band" ]; then
   echo "verdict=blocked reason=fm-context-usage.sh produced no band field"
   exit 1
 fi
+
+case "$band" in
+  ok|warn|restart) ;;
+  unavailable)
+    echo "verdict=unknown reason=context reading unavailable (stale transcript)"
+    exit 0 ;;
+  *)
+    echo "verdict=blocked reason=fm-context-usage.sh produced an unrecognized band: $band"
+    exit 1 ;;
+esac
 
 idle_seconds="unknown"
 if [ -n "$state_dir" ] && [ -n "$task_id" ]; then

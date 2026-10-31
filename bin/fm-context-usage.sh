@@ -12,16 +12,30 @@
 #
 # Usage: fm-context-usage.sh [transcript.jsonl]
 #   With no argument, picks the most recently modified *.jsonl transcript in
-#   the Claude project directory for this home (~/.claude/projects/<home path
-#   with every non-alphanumeric character replaced by ->, home = FM_HOME or
-#   the current directory). The active session appends to its transcript
-#   continuously, so the newest file is the current session whenever one is
-#   live.
+#   the Claude project directory for this home:
+#     ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<home path with every
+#     non-alphanumeric character replaced by ->, home = FM_HOME or the current
+#     directory.
+#   The session's own Claude config directory must be named: a session launched
+#   with CLAUDE_CONFIG_DIR keeps its transcripts under that store, so the
+#   default $HOME/.claude is only right when the variable is unset. A relative
+#   CLAUDE_CONFIG_DIR is refused rather than resolved against this process's
+#   cwd, because it cannot then name the store the session actually uses. The
+#   active session appends to its transcript continuously, so the newest file
+#   is the current session whenever one is live.
+#
+#   Auto-discovery also refuses to report a confident band from a stale
+#   transcript: when the newest transcript is older than the staleness limit
+#   (default 900 seconds, override with FM_CONTEXT_STALE_SECONDS) it still
+#   reports the tokens it found but sets band=unavailable with
+#   reason=stale-transcript, exiting 0. An explicit transcript argument is
+#   trusted as given and never gets this guard.
 #
 # Output is one data-only line; callers act on the reported band rather than
 # re-deriving thresholds:
 #   context_tokens=<N> window=<W> percent=<P> warn_tokens=<W1> \
-#     restart_tokens=<W2> band=<ok|warn|restart> transcript=<path> age_seconds=<S>
+#     restart_tokens=<W2> band=<ok|warn|restart|unavailable> transcript=<path> \
+#     age_seconds=<S> [reason=stale-transcript]
 # The window defaults to 1000000 and can be overridden with FM_CONTEXT_WINDOW
 # when a harness or model change alters the real window.
 #
@@ -36,6 +50,9 @@
 #             fresh session for a primary), and wake/advise the main session.
 #             Never send /clear through the steer channel - it is mechanically
 #             broken.
+#   unavailable - auto-discovery's newest transcript is stale, so the reading
+#             is not evidence of a current band; report the reading as
+#             unavailable rather than quoting it as the session's context.
 # Thresholds come from config/context-thresholds under the same home used for
 # transcript discovery: optional `warn=<N>` and `restart=<N>` lines, one per
 # line, each a positive base-10 integer, warn <= restart. A malformed file is
@@ -54,7 +71,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,70p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -91,10 +108,34 @@ if [ -e "$thresholds_file" ]; then
   fi
 fi
 
+# Staleness limit for the auto-picked transcript, in seconds.
+stale_seconds="${FM_CONTEXT_STALE_SECONDS:-900}"
+case "$stale_seconds" in
+  ''|*[!0-9]*) echo "fm-context-usage: FM_CONTEXT_STALE_SECONDS must be a positive integer: $stale_seconds" >&2; exit 1 ;;
+esac
+if [ "$stale_seconds" -le 0 ]; then
+  echo "fm-context-usage: FM_CONTEXT_STALE_SECONDS must be a positive integer: $stale_seconds" >&2
+  exit 1
+fi
+
 transcript="${1:-}"
+auto_picked=0
 if [ -z "$transcript" ]; then
+  auto_picked=1
+  case ${CLAUDE_CONFIG_DIR:-} in
+    '' | /*) ;;
+    *) echo "fm-context-usage: CLAUDE_CONFIG_DIR '$CLAUDE_CONFIG_DIR' is a relative path, so the transcript store the session reads cannot be guaranteed to be the one named here; set it to an absolute path" >&2; exit 1 ;;
+  esac
+  if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+    config_dir="$CLAUDE_CONFIG_DIR"
+  elif [ -n "${HOME:-}" ]; then
+    config_dir="$HOME/.claude"
+  else
+    echo "fm-context-usage: neither CLAUDE_CONFIG_DIR nor HOME is set, so the Claude config directory cannot be located" >&2
+    exit 1
+  fi
   munged="$(printf '%s' "$home_path" | tr -c 'a-zA-Z0-9' '-')"
-  proj_dir="$HOME/.claude/projects/$munged"
+  proj_dir="$config_dir/projects/$munged"
   if [ ! -d "$proj_dir" ]; then
     echo "fm-context-usage: no Claude transcript directory at $proj_dir (non-claude harness, or no session yet)" >&2
     exit 1
@@ -113,11 +154,13 @@ fi
 
 window="${FM_CONTEXT_WINDOW:-1000000}"
 
-python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" <<'PY'
+python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" "$auto_picked" "$stale_seconds" <<'PY'
 import json, os, sys, time
 
 path, window = sys.argv[1], int(sys.argv[2])
 warn, restart = int(sys.argv[3]), int(sys.argv[4])
+auto_picked = sys.argv[5] == "1"
+stale_seconds = int(sys.argv[6])
 last = None
 with open(path, encoding="utf-8", errors="replace") as fh:
     for line in fh:
@@ -143,10 +186,14 @@ total = sum(
     for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 )
 age = max(0, int(time.time() - os.path.getmtime(path)))
-band = "restart" if total >= restart else "warn" if total >= warn else "ok"
+if auto_picked and age > stale_seconds:
+    band = "unavailable"
+else:
+    band = "restart" if total >= restart else "warn" if total >= warn else "ok"
+reason = " reason=stale-transcript" if band == "unavailable" else ""
 print(
     "context_tokens=%d window=%d percent=%.1f warn_tokens=%d restart_tokens=%d"
-    " band=%s transcript=%s age_seconds=%d"
+    " band=%s transcript=%s age_seconds=%d%s"
     % (
         total,
         window,
@@ -156,6 +203,7 @@ print(
         band,
         path,
         age,
+        reason,
     )
 )
 PY

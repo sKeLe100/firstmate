@@ -4,7 +4,8 @@
 # transcript files: the reported total must be the last NON-sidechain
 # assistant turn's input + cache_creation + cache_read sum, missing inputs
 # must fail loudly, and auto-discovery must pick the newest transcript in the
-# munged home directory.
+# munged home directory under the session's own CLAUDE_CONFIG_DIR, refusing a
+# stale auto-picked transcript while trusting an explicit one.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -69,14 +70,14 @@ mkdir -p "$proj"
 mk_line assistant false 2 10 10 > "$proj/old.jsonl"
 mk_line assistant false 2 500 500 > "$proj/new.jsonl"
 touch -d '1 hour ago' "$proj/old.jsonl"
-out="$(HOME="$tmp/claude_home" FM_HOME="$fake_home" "$bin")"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" FM_HOME="$fake_home" "$bin")"
 case "$out" in
   *"context_tokens=1002 "*new.jsonl*) ;;
   *) fail "auto-discovery did not pick newest transcript: $out" ;;
 esac
 
 # 6. Absent transcript directory fails loudly under auto-discovery.
-if HOME="$tmp/claude_home" FM_HOME="$tmp/other_home" "$bin" 2>"$tmp/err3"; then
+if CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" FM_HOME="$tmp/other_home" "$bin" 2>"$tmp/err3"; then
   fail "expected failure when transcript directory is absent"
 fi
 grep -q "no Claude transcript directory" "$tmp/err3" || fail "missing loud absent-directory message"
@@ -144,5 +145,70 @@ case " $FM_INHERITABLE_CONFIG " in
   *" context-thresholds "*) ;;
   *) fail "config/context-thresholds must be in FM_INHERITABLE_CONFIG so secondmate homes inherit the thresholds" ;;
 esac
+
+# 12. Auto-discovery reads the session's CLAUDE_CONFIG_DIR, not $HOME/.claude:
+#     a transcript there wins even when the HOME copy is newer.
+cfg_win_home="$tmp/cfg_win_home"
+mkdir -p "$cfg_win_home"
+munged="$(printf '%s' "$cfg_win_home" | tr -c 'a-zA-Z0-9' '-')"
+cfg_store="$tmp/secondary_claude"
+mkdir -p "$cfg_store/projects/$munged" "$tmp/claude_home/.claude/projects/$munged"
+mk_line assistant false 2 400 600 > "$cfg_store/projects/$munged/session.jsonl"
+mk_line assistant false 2 70000 80000 > "$tmp/claude_home/.claude/projects/$munged/session.jsonl"
+touch -d '10 seconds ago' "$cfg_store/projects/$munged/session.jsonl"
+touch "$tmp/claude_home/.claude/projects/$munged/session.jsonl"
+out="$(CLAUDE_CONFIG_DIR="$cfg_store" HOME="$tmp/claude_home" FM_HOME="$cfg_win_home" "$bin")"
+case "$out" in
+  *"context_tokens=1002 "*"transcript=$cfg_store/projects/$munged/session.jsonl"*) ;;
+  *) fail "auto-discovery must read CLAUDE_CONFIG_DIR over \$HOME/.claude, got: $out" ;;
+esac
+
+# 13. A relative CLAUDE_CONFIG_DIR is refused rather than resolved against
+#     this process's cwd.
+if CLAUDE_CONFIG_DIR="relative/claude-store" HOME="$tmp/claude_home" FM_HOME="$cfg_win_home" "$bin" 2>"$tmp/err_rel_cfg"; then
+  fail "expected refusal for a relative CLAUDE_CONFIG_DIR"
+fi
+grep -q "relative path" "$tmp/err_rel_cfg" || fail "missing loud relative CLAUDE_CONFIG_DIR message"
+
+# 14. A stale auto-picked transcript reports band=unavailable, never a
+#     confident band, and the staleness limit can be overridden.
+stale_home="$tmp/stale_home"
+mkdir -p "$stale_home"
+munged="$(printf '%s' "$stale_home" | tr -c 'a-zA-Z0-9' '-')"
+stale_store="$tmp/stale_claude"
+mkdir -p "$stale_store/projects/$munged"
+stale_t="$stale_store/projects/$munged/session.jsonl"
+mk_line assistant false 2 400 600 > "$stale_t"
+touch -d '2 hours ago' "$stale_t"
+out="$(CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home" "$bin")"
+case "$out" in
+  *"context_tokens=1002 "*" band=unavailable "*) ;;
+  *) fail "expected band=unavailable for a stale auto-picked transcript, got: $out" ;;
+esac
+case "$out" in
+  *" reason=stale-transcript"*) ;;
+  *) fail "expected reason=stale-transcript for a stale auto-picked transcript, got: $out" ;;
+esac
+out="$(CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home" FM_CONTEXT_STALE_SECONDS=999999 "$bin")"
+case "$out" in
+  *" band=ok "*) ;;
+  *) fail "expected FM_CONTEXT_STALE_SECONDS to override the staleness limit, got: $out" ;;
+esac
+
+# 15. An explicit transcript argument is trusted as given, even when stale.
+out="$(CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home" "$bin" "$stale_t")"
+case "$out" in
+  *" band=ok "*) ;;
+  *) fail "expected an explicit stale transcript to report its real band, got: $out" ;;
+esac
+case "$out" in
+  *"reason="*) fail "explicit transcript must not carry a stale reason, got: $out" ;;
+esac
+
+# 16. A malformed staleness override is rejected loudly, never defaulted.
+if CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home" FM_CONTEXT_STALE_SECONDS=abc "$bin" 2>"$tmp/err_stale_cfg"; then
+  fail "expected failure on malformed FM_CONTEXT_STALE_SECONDS"
+fi
+grep -q "FM_CONTEXT_STALE_SECONDS" "$tmp/err_stale_cfg" || fail "missing loud malformed staleness message"
 
 echo "PASS fm-context-usage.test.sh"

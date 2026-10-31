@@ -965,7 +965,8 @@ A remote secondmate launch is not gated by it, because this reading says nothing
 
 `config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-26).
 The format is at most one `warn=<N>` line and one `restart=<N>` line, each a positive base-10 integer with `warn <= restart`; an absent file or absent key means the built-in defaults of `warn=150000` and `restart=250000`, and a malformed file is rejected loudly rather than silently replaced by defaults.
-The helper reports the resolved thresholds and a `band=ok|warn|restart` field on its one data-only output line; supervision, [`/stow`](../.agents/skills/stow/SKILL.md), and [`/bearings`](../.agents/skills/bearings/SKILL.md) act on that band rather than re-deriving thresholds.
+The helper reports the resolved thresholds and a `band=ok|warn|restart|unavailable` field on its one data-only output line; supervision, [`/stow`](../.agents/skills/stow/SKILL.md), and [`/bearings`](../.agents/skills/bearings/SKILL.md) act on that band rather than re-deriving thresholds.
+Its no-argument auto-pick reads `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<munged home path>`, refuses a relative `CLAUDE_CONFIG_DIR`, and reports `band=unavailable` with `reason=stale-transcript` when the newest transcript is older than `FM_CONTEXT_STALE_SECONDS` (default 900) instead of quoting a stale session's tokens as the current reading; an explicit transcript argument is trusted as given.
 The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so the primary's thresholds propagate on every convergence.
 
 The bands mean:

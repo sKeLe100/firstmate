@@ -34,7 +34,7 @@ mk_home() {
 # 1. A returning session below the restart band resumes bare.
 warn_home="$tmp/warm_home"
 mk_home "$warn_home" 50000
-out="$(HOME="$tmp/claude_home" "$bin" "$warn_home")"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$warn_home")"
 case "$out" in
   *"verdict=resume band=ok "*) ;;
   *) fail "expected verdict=resume band=ok, got: $out" ;;
@@ -44,7 +44,7 @@ esac
 #    get a carryover-restart verdict, not a bare resume.
 hot_home="$tmp/hot_home"
 mk_home "$hot_home" 260000
-out="$(HOME="$tmp/claude_home" "$bin" "$hot_home")"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$hot_home")"
 case "$out" in
   *"verdict=restart-with-carryover band=restart "*) ;;
   *) fail "expected verdict=restart-with-carryover band=restart, got: $out" ;;
@@ -60,7 +60,7 @@ cfg_home="$tmp/cfg_home"
 mk_home "$cfg_home" 60000
 mkdir -p "$cfg_home/config"
 printf 'warn=10000\nrestart=50000\n' > "$cfg_home/config/context-thresholds"
-out="$(HOME="$tmp/claude_home" "$bin" "$cfg_home")"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$cfg_home")"
 case "$out" in
   *"verdict=restart-with-carryover band=restart "*"restart_tokens=50000 "*) ;;
   *) fail "expected local threshold override to force restart-with-carryover, got: $out" ;;
@@ -69,7 +69,7 @@ esac
 # 4. A home with no transcript yet is unknown, not restart-with-carryover.
 absent_home="$tmp/absent_home"
 mkdir -p "$absent_home"
-out="$(HOME="$tmp/claude_home" "$bin" "$absent_home")"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$absent_home")"
 case "$out" in
   verdict=unknown\ reason=*) ;;
   *) fail "expected verdict=unknown for a transcript-free home, got: $out" ;;
@@ -80,7 +80,7 @@ esac
 empty_proj_home="$tmp/empty_proj_home"
 mkdir -p "$empty_proj_home"
 mkdir -p "$tmp/claude_home/.claude/projects/$(printf '%s' "$empty_proj_home" | tr -c 'a-zA-Z0-9' '-')"
-out="$(HOME="$tmp/claude_home" "$bin" "$empty_proj_home")"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$empty_proj_home")"
 case "$out" in
   verdict=unknown\ reason=*) ;;
   *) fail "expected verdict=unknown for a home with no transcript file, got: $out" ;;
@@ -91,7 +91,7 @@ mkdir -p "$no_usage_home"
 no_usage_proj="$tmp/claude_home/.claude/projects/$(printf '%s' "$no_usage_home" | tr -c 'a-zA-Z0-9' '-')"
 mkdir -p "$no_usage_proj"
 printf '{"type":"user","message":{"content":"hi"}}\n' > "$no_usage_proj/session.jsonl"
-out="$(HOME="$tmp/claude_home" "$bin" "$no_usage_home")"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$no_usage_home")"
 case "$out" in
   verdict=unknown\ reason=*) ;;
   *) fail "expected verdict=unknown for a transcript with no usage record, got: $out" ;;
@@ -103,7 +103,7 @@ bad_home="$tmp/bad_home"
 mk_home "$bad_home" 60000
 mkdir -p "$bad_home/config"
 printf 'warn=not-a-number\n' > "$bad_home/config/context-thresholds"
-if out="$(HOME="$tmp/claude_home" "$bin" "$bad_home")"; then
+if out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$bad_home")"; then
   fail "expected non-zero exit for a malformed thresholds config, got: $out"
 fi
 case "$out" in
@@ -121,7 +121,7 @@ chmod 000 "$unreadable_home/config/context-thresholds"
 if [ -r "$unreadable_home/config/context-thresholds" ]; then
   echo "skip: running as a user that can read mode-000 files, skipping unreadable-config case" >&2
 else
-  if out="$(HOME="$tmp/claude_home" "$bin" "$unreadable_home")"; then
+  if out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$unreadable_home")"; then
     fail "expected non-zero exit for an unreadable thresholds config, got: $out"
   fi
   case "$out" in
@@ -134,7 +134,7 @@ chmod 644 "$unreadable_home/config/context-thresholds"
 # 6. A relative home path is a usage error, not a silent unknown, because
 #    transcript directories are keyed on the absolute path.
 rel_out=""
-if rel_out="$( (cd "$tmp" && HOME="$tmp/claude_home" "$bin" "warm_home") 2>"$tmp/err_rel")"; then
+if rel_out="$( (cd "$tmp" && CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "warm_home") 2>"$tmp/err_rel")"; then
   fail "expected failure for a relative home path, got: $rel_out"
 fi
 grep -q "must be absolute" "$tmp/err_rel" || fail "missing absolute-path error for relative home"
@@ -160,7 +160,7 @@ grep -q "usage:" "$tmp/err2" || fail "missing usage message on extra argument"
 #    state-dir/task-id are omitted, even at warn band.
 warn_band_home="$tmp/warn_band_home"
 mk_home "$warn_band_home" 160000
-out="$(HOME="$tmp/claude_home" "$bin" "$warn_band_home")"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$warn_band_home")"
 case "$out" in
   *"verdict=resume band=warn "*"idle_seconds=unknown "*) ;;
   *) fail "expected verdict=resume band=warn with idle_seconds=unknown, got: $out" ;;
@@ -178,7 +178,7 @@ now=$(date +%s)
 touch -d "@$((now - 4000))" "$idle_state/coldtask.status"
 idle_home="$tmp/idle_home"
 mk_home "$idle_home" 160000
-out="$(HOME="$tmp/claude_home" "$bin" "$idle_home" "$idle_state" coldtask)"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$idle_home" "$idle_state" coldtask)"
 case "$out" in
   *"verdict=restart-with-carryover band=warn "*) ;;
   *) fail "expected verdict=restart-with-carryover band=warn for a cold idle warn-band session, got: $out" ;;
@@ -195,7 +195,7 @@ idle_field="$(printf '%s\n' "$out" | grep -o 'idle_seconds=[0-9]*' | cut -d= -f2
 warm_state="$tmp/warm_state"
 mkdir -p "$warm_state"
 touch -d "@$((now - 100))" "$warm_state/warmtask.status"
-out="$(HOME="$tmp/claude_home" "$bin" "$warn_band_home" "$warm_state" warmtask)"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$warn_band_home" "$warm_state" warmtask)"
 case "$out" in
   *"verdict=resume band=warn "*) ;;
   *) fail "expected verdict=resume band=warn for a warn-band session still within TTL, got: $out" ;;
@@ -205,7 +205,7 @@ esac
 ancient_state="$tmp/ancient_state"
 mkdir -p "$ancient_state"
 touch -d "@$((now - 999999))" "$ancient_state/oldtask.status"
-out="$(HOME="$tmp/claude_home" "$bin" "$warn_home" "$ancient_state" oldtask)"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$warn_home" "$ancient_state" oldtask)"
 case "$out" in
   *"verdict=resume band=ok "*) ;;
   *) fail "expected verdict=resume band=ok regardless of idle time, got: $out" ;;
@@ -216,7 +216,7 @@ esac
 recent_state="$tmp/recent_state"
 mkdir -p "$recent_state"
 touch -d "@$((now - 10))" "$recent_state/hottask.status"
-out="$(HOME="$tmp/claude_home" "$bin" "$hot_home" "$recent_state" hottask)"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$hot_home" "$recent_state" hottask)"
 case "$out" in
   *"verdict=restart-with-carryover band=restart "*) ;;
   *) fail "expected verdict=restart-with-carryover band=restart regardless of idle time, got: $out" ;;
@@ -226,7 +226,7 @@ esac
 #     idle_seconds=unknown, not a crash or a forced restart.
 empty_state="$tmp/empty_state"
 mkdir -p "$empty_state"
-out="$(HOME="$tmp/claude_home" "$bin" "$warn_band_home" "$empty_state" notask)"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$warn_band_home" "$empty_state" notask)"
 case "$out" in
   *"verdict=resume band=warn "*"idle_seconds=unknown "*) ;;
   *) fail "expected idle_seconds=unknown with no activity marker, got: $out" ;;
@@ -243,7 +243,7 @@ printf '500\n' > "$ttl_caller/config/cache-ttl-seconds"
 ttl_state="$ttl_caller/state"
 mkdir -p "$ttl_state"
 touch -d "@$((now - 600))" "$ttl_state/ttltask.status"
-out="$(HOME="$tmp/claude_home" "$bin" "$ttl_cfg_home" "$ttl_state" ttltask)"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$ttl_cfg_home" "$ttl_state" ttltask)"
 case "$out" in
   *"verdict=restart-with-carryover band=warn "*"ttl_seconds=500 "*) ;;
   *) fail "expected local TTL override to force restart-with-carryover, got: $out" ;;
@@ -255,5 +255,17 @@ if "$bin" "$warn_home" "$idle_state" 2>"$tmp/err_two"; then
   fail "expected failure for exactly two arguments"
 fi
 grep -q "usage:" "$tmp/err_two" || fail "missing usage message for two-argument call"
+
+# 17. A stale auto-picked transcript reads unavailable and verdict=unknown,
+#     never a restart-with-carryover from a band the reading cannot support.
+stale_home="$tmp/stale_home"
+mk_home "$stale_home" 60000
+stale_proj="$tmp/claude_home/.claude/projects/$(printf '%s' "$stale_home" | tr -c 'a-zA-Z0-9' '-')"
+touch -d '2 hours ago' "$stale_proj/session.jsonl"
+out="$(CLAUDE_CONFIG_DIR='' HOME="$tmp/claude_home" "$bin" "$stale_home")"
+case "$out" in
+  verdict=unknown\ reason=*stale*) ;;
+  *) fail "expected verdict=unknown for a stale auto-picked transcript, got: $out" ;;
+esac
 
 echo "ok: fm-returning-session-check.test.sh"
