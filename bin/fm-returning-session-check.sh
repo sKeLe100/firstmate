@@ -19,8 +19,13 @@
 #   directories are keyed on the absolute home path - a relative or missing
 #   path is a usage error, not missing evidence. It is passed through as
 #   FM_HOME to fm-context-usage.sh, so the same transcript-discovery and
-#   config/context-thresholds resolution apply. The helper's stale-transcript
-#   guard is deliberately turned off for this read (see the call site): this
+#   config/context-thresholds resolution apply. When the <state-dir> <task-id>
+#   pair is given, the account= a pinned spawn recorded in that task's meta
+#   names the store the returning session itself wrote, and is passed through
+#   as FM_CLAUDE_STORE; without it the helper resolves the store from this
+#   process's own environment and the default $HOME/.claude, so a crew launched
+#   under either account is still found. The helper's stale-transcript guard is
+#   deliberately turned off for this read (see the call site): this
 #   check exists for sessions that have already been idle, so a transcript's
 #   age says nothing about whether its last recorded band is the right resume
 #   decision, and turning that band into band=unavailable would drop a
@@ -95,7 +100,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,94p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,99p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -119,6 +124,16 @@ home_path="$(cd -- "$home_path" && pwd)"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-cache-ttl-lib.sh
 . "$script_dir/fm-cache-ttl-lib.sh"
+# shellcheck source=bin/fm-backend.sh
+. "$script_dir/fm-backend.sh"
+
+# The returning session's own store, not this process's: the account= a pinned
+# spawn recorded names the config directory that session writes transcripts
+# under (`ordinary` for the default login).
+claude_store="${FM_CLAUDE_STORE:-}"
+if [ -z "$claude_store" ] && [ -n "$state_dir" ] && [ -n "$task_id" ]; then
+  claude_store=$(fm_meta_get "$state_dir/$task_id.meta" account)
+fi
 
 usage_output=""
 usage_status=0
@@ -126,7 +141,7 @@ usage_status=0
 # seconds (100 years) is past any transcript age, so the band stays the last one
 # the idle session actually recorded. "Is this session still live?" is the
 # callers' idle/TTL question, not the band read's.
-usage_output="$(FM_CONTEXT_STALE_SECONDS=3153600000 FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
+usage_output="$(FM_CLAUDE_STORE="$claude_store" FM_CONTEXT_STALE_SECONDS=3153600000 FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
 
 if [ "$usage_status" -ne 0 ]; then
   reason="$(printf '%s' "$usage_output" | tr '\n' ' ' | sed 's/  */ /g')"

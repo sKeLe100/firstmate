@@ -211,4 +211,66 @@ if CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home
 fi
 grep -q "FM_CONTEXT_STALE_SECONDS" "$tmp/err_stale_cfg" || fail "missing loud malformed staleness message"
 
+# 17. A cross-session read of a crew launched on the ordinary account (no
+#     CLAUDE_CONFIG_DIR) still finds that crew's transcript when this process
+#     carries another store: the caller's store has no project directory for
+#     that home, so the read falls back to $HOME/.claude instead of reporting no
+#     evidence. The staleness guard stays on for the fallback too.
+ordinary_home="$tmp/ordinary_home"
+mkdir -p "$ordinary_home"
+munged="$(printf '%s' "$ordinary_home" | tr -c 'a-zA-Z0-9' '-')"
+caller_store="$tmp/caller_store"
+mkdir -p "$caller_store/projects" "$tmp/claude_home/.claude/projects/$munged"
+ordinary_t="$tmp/claude_home/.claude/projects/$munged/session.jsonl"
+mk_line assistant false 10 0 259990 > "$ordinary_t"
+out="$(CLAUDE_CONFIG_DIR="$caller_store" HOME="$tmp/claude_home" FM_HOME="$ordinary_home" "$bin")"
+case "$out" in
+  *"band=restart "*"transcript=$ordinary_t"*) ;;
+  *) fail "expected the default store to be read when the caller's store has no project directory, got: $out" ;;
+esac
+touch -d '2 hours ago' "$ordinary_t"
+out="$(CLAUDE_CONFIG_DIR="$caller_store" HOME="$tmp/claude_home" FM_HOME="$ordinary_home" "$bin")"
+case "$out" in
+  *" band=unavailable "*"transcript=$ordinary_t"*"reason=stale-transcript"*) ;;
+  *) fail "expected the staleness guard on a fallback-resolved transcript, got: $out" ;;
+esac
+
+# 18. FM_CLAUDE_STORE names the TARGET session's store, the account= a pinned
+#     spawn recorded: its absolute root wins over both this process's store and
+#     $HOME/.claude, which each hold a directory for the same home.
+pinned_home="$tmp/pinned_home"
+mkdir -p "$pinned_home"
+munged="$(printf '%s' "$pinned_home" | tr -c 'a-zA-Z0-9' '-')"
+pinned_store="$tmp/pinned_store"
+mkdir -p "$pinned_store/projects/$munged" "$caller_store/projects/$munged" "$tmp/claude_home/.claude/projects/$munged"
+mk_line assistant false 10 0 992 > "$pinned_store/projects/$munged/session.jsonl"
+mk_line assistant false 10 0 259990 > "$caller_store/projects/$munged/session.jsonl"
+mk_line assistant false 10 0 259990 > "$tmp/claude_home/.claude/projects/$munged/session.jsonl"
+out="$(FM_CLAUDE_STORE="$pinned_store" CLAUDE_CONFIG_DIR="$caller_store" HOME="$tmp/claude_home" FM_HOME="$pinned_home" "$bin")"
+case "$out" in
+  *"band=ok "*"transcript=$pinned_store/projects/$munged/session.jsonl"*) ;;
+  *) fail "expected FM_CLAUDE_STORE to select the target session's store, got: $out" ;;
+esac
+
+# 19. FM_CLAUDE_STORE=ordinary is the vendor default login, $HOME/.claude, even
+#     while this process carries another store.
+out="$(FM_CLAUDE_STORE=ordinary CLAUDE_CONFIG_DIR="$pinned_store" HOME="$tmp/claude_home" FM_HOME="$pinned_home" "$bin")"
+case "$out" in
+  *"band=restart "*"transcript=$tmp/claude_home/.claude/projects/$munged/session.jsonl"*) ;;
+  *) fail "expected FM_CLAUDE_STORE=ordinary to read \$HOME/.claude, got: $out" ;;
+esac
+
+# 20. A relative or unrecognized FM_CLAUDE_STORE is refused loudly, never
+#     resolved against this process's cwd.
+if FM_CLAUDE_STORE="relative/store" HOME="$tmp/claude_home" FM_HOME="$pinned_home" "$bin" 2>"$tmp/err_store_rel"; then
+  fail "expected refusal for a relative FM_CLAUDE_STORE"
+fi
+grep -q "FM_CLAUDE_STORE" "$tmp/err_store_rel" || fail "missing loud relative FM_CLAUDE_STORE message"
+
+# 21. FM_CLAUDE_STORE=ordinary without HOME cannot name the default login.
+if FM_CLAUDE_STORE=ordinary FM_HOME="$pinned_home" env -u HOME "$bin" 2>"$tmp/err_store_home"; then
+  fail "expected refusal for FM_CLAUDE_STORE=ordinary without HOME"
+fi
+grep -q "FM_CLAUDE_STORE" "$tmp/err_store_home" || fail "missing loud FM_CLAUDE_STORE=ordinary message"
+
 echo "PASS fm-context-usage.test.sh"

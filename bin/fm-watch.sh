@@ -1508,6 +1508,14 @@ task_worktree() {  # <task>
   fm_meta_get "$STATE/$1.meta" worktree
 }
 
+# The account= a pinned spawn recorded for the task: the Claude config directory
+# THAT session writes its transcript under (`ordinary` for the default login),
+# empty when the home pins nothing and the reader resolves the store itself.
+task_claude_store() {  # <task>
+  [ -n "$1" ] && [ -f "$STATE/$1.meta" ] || return 0
+  fm_meta_get "$STATE/$1.meta" account
+}
+
 # Start a fresh quiet spell: seed the timer and drop any carried-over escalation
 # history and backoff pace. The spell starts at `now` unless a first-observation
 # seed (wedge_seed_first_observation) is pending for this window, in which case
@@ -1568,7 +1576,7 @@ wedge_idle_since() {  # <task>
   wt=$(task_worktree "$task")
   reader=${FM_CONTEXT_USAGE_BIN:-$SCRIPT_DIR/fm-context-usage.sh}
   [ -n "$wt" ] && [ -d "$wt" ] && [ -x "$reader" ] || return 0
-  out=$(FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || return 0
+  out=$(FM_CLAUDE_STORE="$(task_claude_store "$task")" FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || return 0
   age=${out##* age_seconds=}; age=${age%% *}
   case "$age" in ''|*[!0-9]*) return 0 ;; esac
   printf '%s' $(( $(date +%s) - age ))
@@ -1863,7 +1871,7 @@ handle_paused_stale() {  # <window> <task> <hash>
 busy_turn_bound_check() {  # <window> <task> <hash> <since-file> <escalation-file> [dialog-name]
   local win=$1 task=$2 h=$3 since_file=$4 escalation_file=$5 dialog=${6-} key statusf declared
   statusf="$STATE/$task.status"
-  if status_is_paused_or_captain_held "$(status_declared_wait_line "$statusf")" "$(task_worktree "$task")"; then
+  if status_is_paused_or_captain_held "$(status_declared_wait_line "$statusf")" "$(task_worktree "$task")" "$(task_claude_store "$task")"; then
     if afk_present; then
       # Away mode is daemon-owned, so this bound hands off the PLAIN wake identity
       # and lets the daemon classify the declaration itself - the undecorated
@@ -1970,7 +1978,7 @@ pause_state_class() {  # <window> <task>
   key=$(window_key "$win")
   last=$(status_declared_wait_line "$STATE/$task.status")
   recheck_file="$STATE/.paused-rechecked-$key"
-  if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")"; then
+  if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" "$(task_claude_store "$task")"; then
     rm -f "$recheck_file"
     crew_absorb_class "$task"
     return
@@ -2144,7 +2152,7 @@ surface_nonterminal_stale() {  # <window> <hash> [dialog-name]
   task=$(window_to_task "$win" "$STATE")
   last=$(status_declared_wait_line "$STATE/$task.status")
   STALE_WAIT_DECLARATION=
-  if status_is_paused "$last" && status_is_paused_or_captain_held "$last" "$(task_worktree "$task")"; then
+  if status_is_paused "$last" && status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" "$(task_claude_store "$task")"; then
     declared=0
     bounded=0
     STALE_WAIT_DECLARATION=$(stale_wait_declaration "$task")
@@ -3838,7 +3846,7 @@ EOF
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
     key=$(window_key "$w")
     last=$(status_declared_wait_line "$STATE/$task.status")
-    if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" && [ -e "$STATE/.paused-$key" ]; then
+    if ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" "$(task_claude_store "$task")" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$key"
     fi
     # An idle secondmate endpoint is healthy by design, so a mate is admitted to
@@ -3848,7 +3856,7 @@ EOF
     # in the backlog while the mate still says `working:` or `done:` is outside
     # this guard: reaching it would require backlog reads for windows this gate
     # deliberately skips, putting that read on the ordinary poll hot path.
-    if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")"; then
+    if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last" "$(task_worktree "$task")" "$(task_claude_store "$task")"; then
       continue
     fi
     watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" || continue
@@ -3989,7 +3997,7 @@ EOF
             esac
           else
             task=$(window_to_task "$w" "$STATE")
-            if [ -e "$pf" ] || status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")" "$(task_worktree "$task")"; then
+            if [ -e "$pf" ] || status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")" "$(task_worktree "$task")" "$(task_claude_store "$task")"; then
               case "$(pause_state_class "$w" "$task")" in
                 paused)  handle_paused_stale "$w" "$task" "$h" ;;
                 working) clear_pause_state "$key"
@@ -4019,7 +4027,7 @@ EOF
         # is cleared - but not in the same poll the declared-pause cadence just
         # recorded it, or the re-surface throttle it depends on would be erased and
         # the pause would re-surface every poll instead of once per long cadence.
-        if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$(window_to_task "$w" "$STATE").status")" "$(task_worktree "$(window_to_task "$w" "$STATE")")"; }; then
+        if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$(window_to_task "$w" "$STATE").status")" "$(task_worktree "$(window_to_task "$w" "$STATE")")" "$(task_claude_store "$(window_to_task "$w" "$STATE")")"; }; then
           clear_pause_tracking "$key"
         fi
       fi
@@ -4035,7 +4043,7 @@ EOF
         clear_write_tracking "$key"
       fi
       task=$(window_to_task "$w" "$STATE")
-      if ! afk_present && status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")" "$(task_worktree "$task")" && [ "$busy_now" -ne 0 ]; then
+      if ! afk_present && status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")" "$(task_worktree "$task")" "$(task_claude_store "$task")" && [ "$busy_now" -ne 0 ]; then
         case "$(pause_state_class "$w" "$task")" in
           paused) handle_paused_stale "$w" "$task" "$h" ;;
           # Inconclusive, but the declared wait itself still stands, so only the

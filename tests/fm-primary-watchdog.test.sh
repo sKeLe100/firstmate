@@ -580,10 +580,15 @@ else
   fail "transcript-pin: expected the config-dir store's transcript, got: $got"
 fi
 rm -f "$TMPHOME/state/.primary-watchdog.transcript"
-if CLAUDE_CONFIG_DIR="relative/store" fm_watchdog_pin_primary_transcript; then
+mkdir -p "$TMPHOME/relative/store/projects/$MUNGED"
+: >"$TMPHOME/relative/store/projects/$MUNGED/cwd-resolved.jsonl"
+touch -d '@2000300' "$TMPHOME/relative/store/projects/$MUNGED/cwd-resolved.jsonl"
+if ( cd "$TMPHOME" && CLAUDE_CONFIG_DIR="relative/store" fm_watchdog_pin_primary_transcript ); then
   fail "transcript-pin: a relative CLAUDE_CONFIG_DIR must be refused rather than resolved against the loop's cwd"
+elif [ -e "$TMPHOME/state/.primary-watchdog.transcript" ]; then
+  fail "transcript-pin: a relative CLAUDE_CONFIG_DIR pinned $(cat "$TMPHOME/state/.primary-watchdog.transcript") through the loop's cwd"
 else
-  pass "transcript-pin: a relative CLAUDE_CONFIG_DIR is refused"
+  pass "transcript-pin: a relative CLAUDE_CONFIG_DIR is refused even when the cwd holds that store"
 fi
 rm -rf "$TMPHOME/fakehome" "$TMPHOME/altclaude" "$TMPHOME/state/.primary-watchdog.transcript" "$TMPHOME/state/.primary-watchdog.repin-after"
 export HOME="$HOME_SAVED"

@@ -154,7 +154,7 @@ handle_push_transition() {  # <backend> <session> <record>
   # external dependency, or the captain a verified hold transferred the work to.
   # Either way the wait is durably recorded, so absorb the immediate escalation
   # and leave the bounded re-surface to the watcher's own pause cadence.
-  if status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")" "$(fm_meta_get "$STATE/$task.meta" worktree)"; then
+  if status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")" "$(fm_meta_get "$STATE/$task.meta" worktree)" "$(fm_meta_get "$STATE/$task.meta" account)"; then
     triage_log "absorbed push $to (declared wait, awaiting external or captain): $window"
     fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
     return

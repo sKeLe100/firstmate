@@ -13,16 +13,24 @@
 # Usage: fm-context-usage.sh [transcript.jsonl]
 #   With no argument, picks the most recently modified *.jsonl transcript in
 #   the Claude project directory for this home:
-#     ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<home path with every
-#     non-alphanumeric character replaced by ->, home = FM_HOME or the current
-#     directory.
-#   The session's own Claude config directory must be named: a session launched
-#   with CLAUDE_CONFIG_DIR keeps its transcripts under that store, so the
-#   default $HOME/.claude is only right when the variable is unset. A relative
-#   CLAUDE_CONFIG_DIR is refused rather than resolved against this process's
-#   cwd, because it cannot then name the store the session actually uses. The
-#   active session appends to its transcript continuously, so the newest file
-#   is the current session whenever one is live.
+#     <store>/projects/<home path with every non-alphanumeric character
+#     replaced by ->, home = FM_HOME or the current directory.
+#   <store> is the one the TARGET session writes, resolved in this order:
+#   - FM_CLAUDE_STORE, the account= a spawn recorded for that session: the
+#     literal `ordinary` for the vendor default login ($HOME/.claude) or the
+#     absolute root a config/claude-account pin names (docs/configuration.md
+#     "Worker account pin"). It is what a supervisor or returning-session read
+#     passes when it reads ANOTHER session's usage, whose store need not be this
+#     process's own. Any other value, including a relative path, is refused.
+#   - otherwise this process's own ${CLAUDE_CONFIG_DIR:-$HOME/.claude}, which is
+#     the store of the session reading its own usage; when that store holds no
+#     project directory for the home being read, the default $HOME/.claude is
+#     tried too, so a crew launched with CLAUDE_CONFIG_DIR unset is still found
+#     by a supervisor running under a different store.
+#   A relative CLAUDE_CONFIG_DIR is refused rather than resolved against this
+#   process's cwd, because it cannot then name the store the session actually
+#   uses. The active session appends to its transcript continuously, so the
+#   newest file is the current session whenever one is live.
 #
 #   Auto-discovery also refuses to report a confident band from a stale
 #   transcript: when the newest transcript is older than the staleness limit
@@ -60,7 +68,9 @@
 # inherited by secondmate homes via FM_INHERITABLE_CONFIG
 # (bin/fm-config-inherit-lib.sh), so the primary's thresholds propagate.
 # For another session's usage (a crewmate or secondmate), run with FM_HOME set
-# to that session's working directory (task worktree or secondmate home).
+# to that session's working directory (task worktree or secondmate home) and,
+# when the target was launched on a config/claude-account pin, FM_CLAUDE_STORE
+# set to the account= recorded for that task.
 #
 # Subagent (sidechain) turns are excluded so a spawned helper's smaller
 # context never masquerades as the primary session's usage.
@@ -71,7 +81,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,70p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,80p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -122,22 +132,48 @@ transcript="${1:-}"
 auto_picked=0
 if [ -z "$transcript" ]; then
   auto_picked=1
-  case ${CLAUDE_CONFIG_DIR:-} in
-    '' | /*) ;;
-    *) echo "fm-context-usage: CLAUDE_CONFIG_DIR '$CLAUDE_CONFIG_DIR' is a relative path, so the transcript store the session reads cannot be guaranteed to be the one named here; set it to an absolute path" >&2; exit 1 ;;
+  stores=()
+  case "${FM_CLAUDE_STORE:-}" in
+    '') ;;
+    ordinary)
+      if [ -n "${HOME:-}" ]; then
+        stores=("$HOME/.claude")
+      else
+        echo "fm-context-usage: FM_CLAUDE_STORE=ordinary needs HOME to locate the default Claude config directory" >&2
+        exit 1
+      fi ;;
+    /*) stores=("$FM_CLAUDE_STORE") ;;
+    *) echo "fm-context-usage: FM_CLAUDE_STORE must be ordinary or an absolute path: $FM_CLAUDE_STORE" >&2; exit 1 ;;
   esac
-  if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
-    config_dir="$CLAUDE_CONFIG_DIR"
-  elif [ -n "${HOME:-}" ]; then
-    config_dir="$HOME/.claude"
-  else
-    echo "fm-context-usage: neither CLAUDE_CONFIG_DIR nor HOME is set, so the Claude config directory cannot be located" >&2
-    exit 1
+  if [ "${#stores[@]}" -eq 0 ]; then
+    case ${CLAUDE_CONFIG_DIR:-} in
+      '') if [ -n "${HOME:-}" ]; then
+            stores=("$HOME/.claude")
+          else
+            echo "fm-context-usage: neither CLAUDE_CONFIG_DIR nor HOME is set, so the Claude config directory cannot be located" >&2
+            exit 1
+          fi ;;
+      /*) stores=("$CLAUDE_CONFIG_DIR") ;;
+      *) echo "fm-context-usage: CLAUDE_CONFIG_DIR '$CLAUDE_CONFIG_DIR' is a relative path, so the transcript store the session reads cannot be guaranteed to be the one named here; set it to an absolute path" >&2; exit 1 ;;
+    esac
+    if [ -n "${HOME:-}" ] && [ "${stores[0]}" != "$HOME/.claude" ]; then
+      stores+=("$HOME/.claude")
+    fi
   fi
   munged="$(printf '%s' "$home_path" | tr -c 'a-zA-Z0-9' '-')"
-  proj_dir="$config_dir/projects/$munged"
-  if [ ! -d "$proj_dir" ]; then
-    echo "fm-context-usage: no Claude transcript directory at $proj_dir (non-claude harness, or no session yet)" >&2
+  proj_dir=
+  for store in "${stores[@]}"; do
+    if [ -d "$store/projects/$munged" ]; then
+      proj_dir="$store/projects/$munged"
+      break
+    fi
+  done
+  if [ -z "$proj_dir" ]; then
+    candidates=
+    for store in "${stores[@]}"; do
+      candidates="${candidates:+$candidates, }$store/projects/$munged"
+    done
+    echo "fm-context-usage: no Claude transcript directory at $candidates (non-claude harness, or no session yet)" >&2
     exit 1
   fi
   transcript="$(find "$proj_dir" -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"

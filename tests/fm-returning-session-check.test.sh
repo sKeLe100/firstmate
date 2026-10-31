@@ -268,4 +268,34 @@ case "$out" in
   *) fail "expected restart-with-carryover for an idle returning session, got: $out" ;;
 esac
 
+# 18. A returning crew launched on a pinned account is read from ITS store -
+#     the account= in the caller's task record - not from the caller's own store,
+#     so a restart-band crew still gets the carryover restart.
+pinned_home="$tmp/pinned_home"
+mkdir -p "$pinned_home"
+pinned_store="$tmp/pinned_store"
+pinned_proj="$pinned_store/projects/$(printf '%s' "$pinned_home" | tr -c 'a-zA-Z0-9' '-')"
+mkdir -p "$pinned_proj"
+mk_line 2 0 259998 > "$pinned_proj/session.jsonl"
+caller_state="$tmp/caller_state"
+mkdir -p "$caller_state"
+printf 'account=%s\n' "$pinned_store" > "$caller_state/pinned.meta"
+other_store="$tmp/other_store"
+mkdir -p "$other_store/projects"
+out="$(CLAUDE_CONFIG_DIR="$other_store" HOME="$tmp/claude_home" "$bin" "$pinned_home" "$caller_state" pinned)"
+case "$out" in
+  *"verdict=restart-with-carryover band=restart "*) ;;
+  *) fail "expected the pinned account's store to be read, got: $out" ;;
+esac
+
+# 19. The ordinary account resolves to $HOME/.claude behind the caller's store.
+ordinary_home="$tmp/ordinary_home"
+mk_home "$ordinary_home" 260000
+printf 'account=ordinary\n' > "$caller_state/ordinary.meta"
+out="$(CLAUDE_CONFIG_DIR="$other_store" HOME="$tmp/claude_home" "$bin" "$ordinary_home" "$caller_state" ordinary)"
+case "$out" in
+  *"verdict=restart-with-carryover band=restart "*) ;;
+  *) fail "expected the ordinary account's \$HOME/.claude store to be read, got: $out" ;;
+esac
+
 echo "ok: fm-returning-session-check.test.sh"
