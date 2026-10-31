@@ -211,6 +211,18 @@ if CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home
 fi
 grep -q "FM_CONTEXT_STALE_SECONDS" "$tmp/err_stale_cfg" || fail "missing loud malformed staleness message"
 
+# 16b. FM_CONTEXT_STALE_SECONDS=0 is the helper's documented guard-off value: a
+#      reader of a session that is idle by definition reports its last real band
+#      instead of band=unavailable.
+out="$(CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home" FM_CONTEXT_STALE_SECONDS=0 "$bin")"
+case "$out" in
+  *"context_tokens=1002 "*" band=ok "*) ;;
+  *) fail "expected FM_CONTEXT_STALE_SECONDS=0 to turn the staleness guard off, got: $out" ;;
+esac
+case "$out" in
+  *"reason="*) fail "a guard that is off must not carry a stale reason, got: $out" ;;
+esac
+
 # 17. A cross-session read of a crew launched on the ordinary account (no
 #     CLAUDE_CONFIG_DIR) still finds that crew's transcript when this process
 #     carries another store: the caller's store has no project directory for

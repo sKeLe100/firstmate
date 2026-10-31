@@ -33,11 +33,12 @@
 #   newest file is the current session whenever one is live.
 #
 #   Auto-discovery also refuses to report a confident band from a stale
-#   transcript: when the newest transcript is older than the staleness limit
-#   (default 900 seconds, override with FM_CONTEXT_STALE_SECONDS) it still
-#   reports the tokens it found but sets band=unavailable with
-#   reason=stale-transcript, exiting 0. An explicit transcript argument is
-#   trusted as given and never gets this guard.
+#   transcript: when the newest transcript is older than FM_CONTEXT_STALE_SECONDS
+#   (default 900; 0 turns this guard off, which is what a reader of a session
+#   that is idle by definition - the paused-band read, the returning-session
+#   check - passes) it still reports the tokens it found but sets
+#   band=unavailable with reason=stale-transcript, exiting 0. An explicit
+#   transcript argument is trusted as given and never gets this guard.
 #
 # Output is one data-only line; callers act on the reported band rather than
 # re-deriving thresholds:
@@ -81,7 +82,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,80p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,81p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -118,15 +119,11 @@ if [ -e "$thresholds_file" ]; then
   fi
 fi
 
-# Staleness limit for the auto-picked transcript, in seconds.
+# Staleness limit for the auto-picked transcript, in seconds; 0 turns it off.
 stale_seconds="${FM_CONTEXT_STALE_SECONDS:-900}"
 case "$stale_seconds" in
-  ''|*[!0-9]*) echo "fm-context-usage: FM_CONTEXT_STALE_SECONDS must be a positive integer: $stale_seconds" >&2; exit 1 ;;
+  ''|*[!0-9]*) echo "fm-context-usage: FM_CONTEXT_STALE_SECONDS must be a non-negative integer: $stale_seconds" >&2; exit 1 ;;
 esac
-if [ "$stale_seconds" -le 0 ]; then
-  echo "fm-context-usage: FM_CONTEXT_STALE_SECONDS must be a positive integer: $stale_seconds" >&2
-  exit 1
-fi
 
 transcript="${1:-}"
 auto_picked=0
@@ -222,7 +219,7 @@ total = sum(
     for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 )
 age = max(0, int(time.time() - os.path.getmtime(path)))
-if auto_picked and age > stale_seconds:
+if auto_picked and stale_seconds > 0 and age > stale_seconds:
     band = "unavailable"
 else:
     band = "restart" if total >= restart else "warn" if total >= warn else "ok"
