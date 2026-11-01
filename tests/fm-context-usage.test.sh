@@ -4,9 +4,10 @@
 # transcript files: the reported total must be the last NON-sidechain
 # assistant turn's input + cache_creation + cache_read sum, missing inputs must
 # fail loudly, a self-read must bind to the calling session's own transcript
-# (or disclose that it fell back to the newest one), auto-discovery must read
-# the session's own CLAUDE_CONFIG_DIR or the named target store, and a stale
-# self-read must be refused while an explicit or targeted read is trusted.
+# through the trusted session-id gate (or disclose that it fell back to the
+# newest one), auto-discovery must read the session's own CLAUDE_CONFIG_DIR or
+# the named target store, and a stale self-read must be refused while an explicit
+# or targeted read is trusted.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -181,8 +182,8 @@ if CLAUDE_CONFIG_DIR="relative/claude-store" HOME="$tmp/claude_home" FM_HOME="$c
 fi
 grep -q "relative path" "$tmp/err_rel_cfg" || fail "missing loud relative CLAUDE_CONFIG_DIR message"
 
-# 14. A stale self-read reports band=unavailable, never a confident band, and
-#     the staleness limit can be overridden.
+# 14. A stale self-read reports band=unavailable, never a confident band; the
+#     900-second self-read limit is fixed.
 stale_home="$tmp/stale_home"
 mkdir -p "$stale_home"
 munged="$(printf '%s' "$stale_home" | tr -c 'a-zA-Z0-9' '-')"
@@ -200,11 +201,6 @@ case "$out" in
   *" reason=stale-transcript"*) ;;
   *) fail "expected reason=stale-transcript for a stale auto-picked transcript, got: $out" ;;
 esac
-out="$(CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home" FM_CONTEXT_STALE_SECONDS=999999 scrubbed "$bin")"
-case "$out" in
-  *" band=ok "*) ;;
-  *) fail "expected FM_CONTEXT_STALE_SECONDS to override the staleness limit, got: $out" ;;
-esac
 
 # 15. An explicit transcript argument is trusted as given, even when stale, and
 #     carries no self-read pick field.
@@ -218,24 +214,6 @@ case "$out" in
 esac
 case "$out" in
   *"pick="*) fail "an explicit transcript must not carry a pick field, got: $out" ;;
-esac
-
-# 16. A malformed staleness override is rejected loudly, never defaulted.
-if CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home" FM_CONTEXT_STALE_SECONDS=abc scrubbed "$bin" 2>"$tmp/err_stale_cfg"; then
-  fail "expected failure on malformed FM_CONTEXT_STALE_SECONDS"
-fi
-grep -q "FM_CONTEXT_STALE_SECONDS" "$tmp/err_stale_cfg" || fail "missing loud malformed staleness message"
-
-# 16b. FM_CONTEXT_STALE_SECONDS=0 is the helper's documented guard-off value: a
-#      reader of a session that is idle by definition reports its last real band
-#      instead of band=unavailable.
-out="$(CLAUDE_CONFIG_DIR="$stale_store" HOME="$tmp/claude_home" FM_HOME="$stale_home" FM_CONTEXT_STALE_SECONDS=0 scrubbed "$bin")"
-case "$out" in
-  *"context_tokens=1002 "*" band=ok "*) ;;
-  *) fail "expected FM_CONTEXT_STALE_SECONDS=0 to turn the staleness guard off, got: $out" ;;
-esac
-case "$out" in
-  *"reason="*) fail "a guard that is off must not carry a stale reason, got: $out" ;;
 esac
 
 # 17. A cross-session read of a crew launched on the ordinary account (no
@@ -328,6 +306,35 @@ case "$out" in
   *"reason="*) fail "a targeted read must not carry a stale reason, got: $out" ;;
 esac
 
+# A deterministic process table for the trusted session-id gate: pid 4242 is a
+# Claude session and every other pid sits directly under it, so
+# bin/fm-session-lock-lib.sh's ancestry walk reaches the harness in one hop from
+# the helper. This is the fixture pattern tests/fm-session-lock-ancestry.test.sh
+# uses, because a real claude ancestor is not available in CI.
+trusted_bin="$tmp/trusted-bin"
+mkdir -p "$trusted_bin"
+cat > "$trusted_bin/ps" <<'SH'
+#!/usr/bin/env bash
+set -u
+field= pid=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) field=$2; shift 2 ;;
+    -p) pid=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$pid:$field" in
+  4242:comm=) printf 'claude\n' ;;
+  4242:args=) printf 'claude --resume\n' ;;
+  4242:ppid=) printf '1\n' ;;
+  *:comm=) printf 'bash\n' ;;
+  *:args=) printf 'bash fm-context-usage.test.sh\n' ;;
+  *:ppid=) printf '4242\n' ;;
+esac
+SH
+chmod +x "$trusted_bin/ps"
+
 # 24. A self-read binds to the calling session's own transcript, not the newest:
 #     another live session in the same home appends to a fresher file, and that
 #     file must not become this session's reading.
@@ -340,36 +347,46 @@ mk_line assistant false 2 400 600 > "$bind_proj/mine.jsonl"
 mk_line assistant false 2 150000 36990 > "$bind_proj/other.jsonl"
 touch -d '2 minutes ago' "$bind_proj/mine.jsonl"
 touch -d '1 minute ago' "$bind_proj/other.jsonl"
-out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" scrubbed CLAUDE_CODE_SESSION_ID=mine "$bin")"
+out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" PATH="$trusted_bin:$PATH" scrubbed CLAUDE_CODE_SESSION_ID=mine CLAUDE_PID=4242 "$bin")"
 case "$out" in
   *"context_tokens=1002 "*"transcript=$bind_proj/mine.jsonl"*" pick=session"*) ;;
   *) fail "a self-read must bind to its own session's transcript, got: $out" ;;
 esac
 
-# 25. An id with no transcript of its own falls back to the newest pick and says
-#     so, rather than failing or presenting that file as the session's reading.
-out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" scrubbed CLAUDE_CODE_SESSION_ID=never-wrote "$bin")"
+# 25. An id inherited from an enclosing Claude pane is not this session's: with
+#     CLAUDE_PID outside the harness ancestry the id is ignored and the newest
+#     transcript is reported as a fallback reading.
+out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" PATH="$trusted_bin:$PATH" scrubbed CLAUDE_CODE_SESSION_ID=mine CLAUDE_PID=9999 "$bin")"
+case "$out" in
+  *"transcript=$bind_proj/other.jsonl"*" pick=newest"*) ;;
+  *) fail "an untrusted inherited session id must be ignored, got: $out" ;;
+esac
+
+# 26. A trusted id with no transcript of its own falls back to the newest pick
+#     and says so, rather than failing or presenting that file as the session's.
+out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" PATH="$trusted_bin:$PATH" scrubbed CLAUDE_CODE_SESSION_ID=never-wrote CLAUDE_PID=4242 "$bin")"
 case "$out" in
   *"transcript=$bind_proj/other.jsonl"*" pick=newest"*) ;;
   *) fail "expected the newest-mtime fallback with pick=newest, got: $out" ;;
 esac
 
-# 26. The staleness guard still applies to a session-bound self-read: a stale
+# 27. The fixed self-read limit still applies to a session-bound read: a stale
 #     own transcript is unavailable, not a confident band.
 bind_stale_store="$tmp/bind_stale_store"
 mkdir -p "$bind_stale_store/projects/$munged"
 bind_stale_t="$bind_stale_store/projects/$munged/mine.jsonl"
 mk_line assistant false 2 400 600 > "$bind_stale_t"
 touch -d '2 hours ago' "$bind_stale_t"
-out="$(CLAUDE_CONFIG_DIR="$bind_stale_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" scrubbed CLAUDE_CODE_SESSION_ID=mine "$bin")"
+out="$(CLAUDE_CONFIG_DIR="$bind_stale_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" PATH="$trusted_bin:$PATH" scrubbed CLAUDE_CODE_SESSION_ID=mine CLAUDE_PID=4242 "$bin")"
 case "$out" in
   *" band=unavailable "*"transcript=$bind_stale_t"*" pick=session"*" reason=stale-transcript"*) ;;
   *) fail "expected a stale session-bound self-read to be unavailable, got: $out" ;;
 esac
 
-# 27. An id shaped like a path is ignored, so it can never name a file outside
-#     the project directory; the newest-mtime fallback still reports a reading.
-out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" scrubbed CLAUDE_CODE_SESSION_ID='../other' "$bin")"
+# 28. A trusted id shaped like a path is refused before it is used as a
+#     filename, so it can never name a file outside the project directory; the
+#     newest-mtime fallback still reports a reading.
+out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" PATH="$trusted_bin:$PATH" scrubbed CLAUDE_CODE_SESSION_ID='../other' CLAUDE_PID=4242 "$bin")"
 case "$out" in
   *"transcript=$bind_proj/other.jsonl"*" pick=newest"*) ;;
   *) fail "expected a path-shaped session id to be ignored, got: $out" ;;

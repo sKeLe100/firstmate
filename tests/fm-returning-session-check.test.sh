@@ -298,4 +298,24 @@ case "$out" in
   *) fail "expected the ordinary account's \$HOME/.claude store to be read, got: $out" ;;
 esac
 
+# 20. The recorded account= wins over an ambient FM_CLAUDE_STORE: an agent that
+#     exports one store must not read it in place of another task's own record.
+ambient_store="$tmp/ambient_store"
+ambient_proj="$ambient_store/projects/$(printf '%s' "$pinned_home" | tr -c 'a-zA-Z0-9' '-')"
+mkdir -p "$ambient_proj"
+mk_line 2 0 40998 > "$ambient_proj/session.jsonl"
+out="$(FM_CLAUDE_STORE="$ambient_store" HOME="$tmp/claude_home" "$bin" "$pinned_home" "$caller_state" pinned)"
+case "$out" in
+  *"verdict=restart-with-carryover band=restart "*) ;;
+  *) fail "the recorded account= must win over an ambient FM_CLAUDE_STORE, got: $out" ;;
+esac
+
+#     With no record for the pair, the ambient store is still honored.
+printf 'account=\n' > "$caller_state/blank.meta"
+out="$(FM_CLAUDE_STORE="$ambient_store" HOME="$tmp/claude_home" "$bin" "$pinned_home" "$caller_state" blank)"
+case "$out" in
+  *"verdict=resume band=ok "*) ;;
+  *) fail "expected the ambient FM_CLAUDE_STORE to be read when no record answers, got: $out" ;;
+esac
+
 echo "ok: fm-returning-session-check.test.sh"

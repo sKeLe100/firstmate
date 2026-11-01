@@ -15,10 +15,10 @@
 #     <store>/projects/<home path with every non-alphanumeric character
 #     replaced by ->, home = FM_HOME or the current directory.
 #   A self-read binds to the calling session's own transcript, the file named by
-#   its CLAUDE_CODE_SESSION_ID, and falls back to the newest *.jsonl with
-#   pick=newest only when it has no usable id or no resolved store holds that
-#   session's transcript. A targeted read (FM_CLAUDE_STORE set) takes the newest
-#   *.jsonl in the named store.
+#   the trusted session id from bin/fm-session-lock-lib.sh, and falls back to the
+#   newest *.jsonl with pick=newest only when it has no trusted id or no resolved
+#   store holds that session's transcript. A targeted read (FM_CLAUDE_STORE set)
+#   takes the newest *.jsonl in the named store.
 #   <store> is the one the TARGET session writes, resolved in this order:
 #   - FM_CLAUDE_STORE names the store of ANOTHER session: the account= a spawn
 #     recorded for it - the absolute root a config/claude-account pin names,
@@ -37,17 +37,20 @@
 #
 #   A self-read (no explicit transcript argument, no FM_CLAUDE_STORE) binds to
 #   the calling session's own transcript rather than to whichever file was
-#   written last: CLAUDE_CODE_SESSION_ID, which Claude Code exports to every hook
-#   and tool shell and which equals the transcript's basename, names
-#   <store>/projects/<munged>/<id>.jsonl when it matches
-#   ^[A-Za-z0-9][A-Za-z0-9._-]*$ (so it can only ever name a file directly under
-#   the project directory) and that file exists in a resolved store; the output
-#   then carries pick=session. A second live session in the same home appends to
-#   its own transcript, so it can no longer take over this reading. Without a
-#   usable id, or when no resolved store holds that session's transcript, the
-#   reading falls back to the most recently modified *.jsonl and reports
-#   pick=newest: a harness that exports no id, and a session that has not written
-#   yet, still get a reading, just not a session-bound one. The home's
+#   written last. The session id is not read from the environment directly: it
+#   comes from bin/fm-session-lock-lib.sh's trusted same-session gate, which
+#   returns one only when CLAUDE_PID is a Claude-shaped member of this process's
+#   contiguous ancestry, so an inherited id from an enclosing Claude pane (a Pi
+#   or codex primary that shell launched) never binds this read to that other
+#   session's transcript. A trusted id naming <store>/projects/<munged>/<id>.jsonl
+#   that matches ^[A-Za-z0-9][A-Za-z0-9._-]*$ (so it can only ever name a file
+#   directly under the project directory) and exists in a resolved store is that
+#   reading, and the output carries pick=session. A second live session in the
+#   same home appends to its own transcript, so it can no longer take over this
+#   reading. Without a trusted id, or when no resolved store holds that session's
+#   transcript, the reading falls back to the most recently modified *.jsonl and
+#   reports pick=newest: a non-Claude or id-less harness, and a session that has
+#   not written yet, still get a reading, just not a session-bound one. The home's
 #   state/.lock-session records whichever session holds the home's lock, not the
 #   caller, and no Herdr query is made, so this needs no sidecar and no
 #   subprocess.
@@ -55,12 +58,11 @@
 #   Auto-discovery refuses to report a confident band from a stale transcript
 #   when the read is this process's own session (no FM_CLAUDE_STORE): when the
 #   transcript it picked - session-bound or the newest-mtime fallback - is older
-#   than FM_CONTEXT_STALE_SECONDS (default 900; 0 turns this guard off) it still
-#   reports the tokens it found but sets band=unavailable with
-#   reason=stale-transcript, exiting 0. A read that names a target store is a
-#   read of another session, which is idle by definition, so it reports the band
-#   it finds however old that transcript is. An explicit transcript argument is
-#   trusted as given and never gets this guard.
+#   than a fixed 900 seconds it still reports the tokens it found but sets
+#   band=unavailable with reason=stale-transcript, exiting 0. A read that names
+#   a target store is a read of another session, which is idle by definition, so
+#   it reports the band it finds however old that transcript is. An explicit
+#   transcript argument is trusted as given and never gets this guard.
 #
 # Output is one data-only line; callers act on the reported band rather than
 # re-deriving thresholds:
@@ -85,9 +87,10 @@
 #             Never send /clear through the steer channel - it is mechanically
 #             broken.
 #   unavailable - the transcript a self-read picked - its own session's, or the
-#             newest-mtime fallback - is stale, so the reading is not evidence
-#             of a current band; report the reading as unavailable rather than
-#             quoting it as the session's context.
+#             newest-mtime fallback - is older than the 900-second self-read
+#             limit, so the reading is not evidence of a current band; report
+#             the reading as unavailable rather than quoting it as the session's
+#             context.
 # Thresholds come from config/context-thresholds under the same home used for
 # transcript discovery: optional `warn=<N>` and `restart=<N>` lines, one per
 # line, each a positive base-10 integer, warn <= restart. A malformed file is
@@ -109,9 +112,13 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,108p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,111p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$script_dir/fm-session-lock-lib.sh"
 
 home_path="${FM_HOME:-$PWD}"
 
@@ -146,11 +153,9 @@ if [ -e "$thresholds_file" ]; then
   fi
 fi
 
-# Staleness limit for the auto-picked transcript, in seconds; 0 turns it off.
-stale_seconds="${FM_CONTEXT_STALE_SECONDS:-900}"
-case "$stale_seconds" in
-  ''|*[!0-9]*) echo "fm-context-usage: FM_CONTEXT_STALE_SECONDS must be a non-negative integer: $stale_seconds" >&2; exit 1 ;;
-esac
+# A self-read whose picked transcript is older than this is not evidence of a
+# current band; targeted and explicit reads skip this guard.
+self_read_stale_seconds=900
 
 transcript="${1:-}"
 self_read=0
@@ -191,11 +196,12 @@ if [ -z "$transcript" ]; then
   munged="$(printf '%s' "$home_path" | tr -c 'a-zA-Z0-9' '-')"
   transcript=
   if [ "$self_read" -eq 1 ]; then
-    case "${CLAUDE_CODE_SESSION_ID:-}" in
+    session_id=$(fm_session_lock_trusted_session_id) || session_id=
+    case "$session_id" in
       ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) ;;
       *) for store in "${stores[@]}"; do
-           if [ -f "$store/projects/$munged/$CLAUDE_CODE_SESSION_ID.jsonl" ]; then
-             transcript="$store/projects/$munged/$CLAUDE_CODE_SESSION_ID.jsonl"
+           if [ -f "$store/projects/$munged/$session_id.jsonl" ]; then
+             transcript="$store/projects/$munged/$session_id.jsonl"
              pick=session
              break
            fi
@@ -236,7 +242,7 @@ fi
 
 window="${FM_CONTEXT_WINDOW:-1000000}"
 
-python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" "$self_read" "$stale_seconds" "$pick" <<'PY'
+python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" "$self_read" "$self_read_stale_seconds" "$pick" <<'PY'
 import json, os, sys, time
 
 path, window = sys.argv[1], int(sys.argv[2])
@@ -269,7 +275,7 @@ total = sum(
     for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 )
 age = max(0, int(time.time() - os.path.getmtime(path)))
-if self_read and stale_seconds > 0 and age > stale_seconds:
+if self_read and age > stale_seconds:
     band = "unavailable"
 else:
     band = "restart" if total >= restart else "warn" if total >= warn else "ok"
