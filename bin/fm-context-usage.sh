@@ -11,10 +11,14 @@
 # which is the same total the /context command displays.
 #
 # Usage: fm-context-usage.sh [transcript.jsonl]
-#   With no argument, picks the most recently modified *.jsonl transcript in
-#   the Claude project directory for this home:
+#   With no argument, reads the Claude project directory for this home:
 #     <store>/projects/<home path with every non-alphanumeric character
 #     replaced by ->, home = FM_HOME or the current directory.
+#   A self-read binds to the calling session's own transcript, the file named by
+#   its CLAUDE_CODE_SESSION_ID, and falls back to the newest *.jsonl with
+#   pick=newest only when it has no usable id or no resolved store holds that
+#   session's transcript. A targeted read (FM_CLAUDE_STORE set) takes the newest
+#   *.jsonl in the named store.
 #   <store> is the one the TARGET session writes, resolved in this order:
 #   - FM_CLAUDE_STORE names the store of ANOTHER session: the account= a spawn
 #     recorded for it - the absolute root a config/claude-account pin names,
@@ -80,9 +84,10 @@
 #             fresh session for a primary), and wake/advise the main session.
 #             Never send /clear through the steer channel - it is mechanically
 #             broken.
-#   unavailable - auto-discovery's newest transcript is stale, so the reading
-#             is not evidence of a current band; report the reading as
-#             unavailable rather than quoting it as the session's context.
+#   unavailable - the transcript a self-read picked - its own session's, or the
+#             newest-mtime fallback - is stale, so the reading is not evidence
+#             of a current band; report the reading as unavailable rather than
+#             quoting it as the session's context.
 # Thresholds come from config/context-thresholds under the same home used for
 # transcript discovery: optional `warn=<N>` and `restart=<N>` lines, one per
 # line, each a positive base-10 integer, warn <= restart. A malformed file is
@@ -90,9 +95,10 @@
 # inherited by secondmate homes via FM_INHERITABLE_CONFIG
 # (bin/fm-config-inherit-lib.sh), so the primary's thresholds propagate.
 # For another session's usage (a crewmate or secondmate), run with FM_HOME set
-# to that session's working directory (task worktree or secondmate home) and,
-# when the target was launched on a config/claude-account pin, FM_CLAUDE_STORE
-# set to the account= recorded for that task.
+# to that session's working directory (task worktree or secondmate home) and
+# FM_CLAUDE_STORE set to the account= recorded for that task, or to `auto` when
+# it recorded no pin: every cross-session read names its store, because a read
+# that names none is this process's own and gets the staleness guard above.
 #
 # Subagent (sidechain) turns are excluded so a spawned helper's smaller
 # context never masquerades as the primary session's usage.
@@ -103,7 +109,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,102p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,108p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
