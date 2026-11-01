@@ -379,7 +379,10 @@ bearings_canonical_dir() {  # <value>
   printf '%s' "$d"
 }
 
-ORCHESTRATOR_ACCOUNT_DIR=$(bearings_canonical_dir "${CLAUDE_CONFIG_DIR:-ordinary}")
+ORCHESTRATOR_ACCOUNT_DECLARED=$(bearings_trim "${CLAUDE_CONFIG_DIR:-}")
+ORCHESTRATOR_ACCOUNT_AMBIENT=0
+case "$ORCHESTRATOR_ACCOUNT_DECLARED" in ''|ordinary) ORCHESTRATOR_ACCOUNT_AMBIENT=1 ;; esac
+ORCHESTRATOR_ACCOUNT_DIR=$(bearings_canonical_dir "$ORCHESTRATOR_ACCOUNT_DECLARED")
 
 ORCHESTRATOR_WORKERS_MAX=${FM_BEARINGS_ORCHESTRATOR_WORKERS_MAX:-}
 if [ -z "$ORCHESTRATOR_WORKERS_MAX" ] && [ -n "$BEARINGS_HOME" ] \
@@ -394,6 +397,7 @@ BEARINGS_ACCOUNTS_FILE=${FM_BEARINGS_CLAUDE_ACCOUNTS:-}
 [ -n "$BEARINGS_ACCOUNTS_FILE" ] || BEARINGS_ACCOUNTS_FILE="$BEARINGS_HOME/config/claude-accounts"
 ACCOUNT_LABELS=()
 ACCOUNT_DIRS=()
+ACCOUNT_AMBIENT=()
 ACCOUNT_SEEN=$'\n'
 if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -f "$BEARINGS_ACCOUNTS_FILE" ] \
    && [ -r "$BEARINGS_ACCOUNTS_FILE" ]; then
@@ -406,16 +410,20 @@ if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -f "$BEARINGS_ACCOUNTS_FILE" ] \
     esac
     [ -n "$adir" ] || continue
     [ -n "$alabel" ] || alabel=$adir
+    acct_ambient=0
+    [ "$adir" = ordinary ] && acct_ambient=1
     adir=$(bearings_canonical_dir "$adir")
     case "$ACCOUNT_SEEN" in *$'\n'"$adir"$'\n'*) continue ;; esac
     ACCOUNT_SEEN="$ACCOUNT_SEEN$adir"$'\n'
     ACCOUNT_LABELS+=("$alabel")
     ACCOUNT_DIRS+=("$adir")
+    ACCOUNT_AMBIENT+=("$acct_ambient")
   done < "$BEARINGS_ACCOUNTS_FILE"
 fi
 if [ ${#ACCOUNT_DIRS[@]} -eq 0 ]; then
   ACCOUNT_LABELS=("default")
   ACCOUNT_DIRS=("$ORCHESTRATOR_ACCOUNT_DIR")
+  ACCOUNT_AMBIENT=("$ORCHESTRATOR_ACCOUNT_AMBIENT")
 fi
 ORCHESTRATOR_ROW_LABEL='orchestrator'
 orchestrator_listed=0
@@ -429,20 +437,25 @@ done
 if [ "$orchestrator_listed" -eq 0 ]; then
   ACCOUNT_LABELS+=("$ORCHESTRATOR_ROW_LABEL")
   ACCOUNT_DIRS+=("$ORCHESTRATOR_ACCOUNT_DIR")
+  ACCOUNT_AMBIENT+=("$ORCHESTRATOR_ACCOUNT_AMBIENT")
 fi
 if [ ${#ACCOUNT_DIRS[@]} -gt "$FM_BEARINGS_CLAUDE_ACCOUNTS_MAX" ]; then
   capped_labels=()
   capped_dirs=()
+  capped_ambient=()
   for ((acct_i = 0; acct_i < ${#ACCOUNT_DIRS[@]}; acct_i++)); do
     [ "${ACCOUNT_DIRS[$acct_i]}" = "$ORCHESTRATOR_ACCOUNT_DIR" ] && continue
     [ ${#capped_dirs[@]} -lt $((FM_BEARINGS_CLAUDE_ACCOUNTS_MAX - 1)) ] || break
     capped_labels+=("${ACCOUNT_LABELS[$acct_i]}")
     capped_dirs+=("${ACCOUNT_DIRS[$acct_i]}")
+    capped_ambient+=("${ACCOUNT_AMBIENT[$acct_i]}")
   done
   capped_labels+=("$ORCHESTRATOR_ROW_LABEL")
   capped_dirs+=("$ORCHESTRATOR_ACCOUNT_DIR")
+  capped_ambient+=("$ORCHESTRATOR_ACCOUNT_AMBIENT")
   ACCOUNT_LABELS=("${capped_labels[@]}")
   ACCOUNT_DIRS=("${capped_dirs[@]}")
+  ACCOUNT_AMBIENT=("${capped_ambient[@]}")
 fi
 
 # One account row: quota windows flattened to TOON-friendly scalar columns, with
@@ -489,14 +502,19 @@ bearings_quota_unknown_row() {  # <label> <dir> <reason>
     "$BEARINGS_CLAUDE_ROW_JQ"' bearings_unknown_claude_row($label; $dir; $reason)'
 }
 
-bearings_quota_account_row() {  # <label> <dir> <timeout>
-  local label=$1 dir=$2 timeout=$3 out rc
+bearings_quota_account_row() {  # <label> <dir> <timeout> <ambient>
+  local label=$1 dir=$2 timeout=$3 ambient=$4 out rc
   if ! command -v quota-axi >/dev/null 2>&1; then
     bearings_quota_unknown_row "$label" "$dir" "quota-axi not found"
     return 0
   fi
-  out=$(fm_run_timed "$timeout" \
-    env CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --profile-only --json 2>/dev/null </dev/null)
+  if [ "$ambient" -eq 1 ]; then
+    out=$(fm_run_timed "$timeout" \
+      env -u CLAUDE_CONFIG_DIR quota-axi --provider claude --json 2>/dev/null </dev/null)
+  else
+    out=$(fm_run_timed "$timeout" \
+      env CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --profile-only --json 2>/dev/null </dev/null)
+  fi
   rc=$?
   if [ "$rc" -eq 124 ]; then
     bearings_quota_unknown_row "$label" "$dir" "quota-axi timed out after ${timeout}s"
@@ -543,12 +561,13 @@ if [ ${#ACCOUNT_DIRS[@]} -gt 0 ]; then
   for ((acct_i = 0; acct_i < ${#ACCOUNT_DIRS[@]}; acct_i++)); do
     acct_label=${ACCOUNT_LABELS[$acct_i]}
     acct_dir=${ACCOUNT_DIRS[$acct_i]}
+    acct_ambient=${ACCOUNT_AMBIENT[$acct_i]}
     remaining=$((FM_BEARINGS_CLAUDE_TIMEOUT - (SECONDS - ACCOUNT_STARTED)))
     if [ "$remaining" -le 0 ]; then
       bearings_quota_unknown_row "$acct_label" "$acct_dir" \
         "quota-axi timed out after ${FM_BEARINGS_CLAUDE_TIMEOUT}s" > "$ACCOUNT_TMP/$acct_i.json" &
     else
-      bearings_quota_account_row "$acct_label" "$acct_dir" "$remaining" \
+      bearings_quota_account_row "$acct_label" "$acct_dir" "$remaining" "$acct_ambient" \
         > "$ACCOUNT_TMP/$acct_i.json" &
     fi
     ACCOUNT_PIDS+=("$!")

@@ -3398,11 +3398,19 @@ install_quota_fixture() {  # <fakebin> <accounts-root>
   local fb=$1 root=$2
   cat > "$fb/quota-axi" <<SH
 #!/usr/bin/env bash
+profile_only=0
 case " \$* " in
-  *" --profile-only "*) ;;
-  *) exit 7 ;;
+  *" --profile-only "*) profile_only=1 ;;
 esac
 dir=\${CLAUDE_CONFIG_DIR:-ordinary}
+if [ "\$dir" = ordinary ]; then
+  [ "\$profile_only" = 0 ] || exit 8
+  cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":66,"pace":{"status":"on_track","reservePercentPoints":9,"burnMultiple":0.8}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":77,"pace":{"status":"on_track","reservePercentPoints":7,"burnMultiple":0.9}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":66,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-10-31T12:00:00Z"}}]}}]}
+JSON
+  exit 0
+fi
+[ "\$profile_only" = 1 ] || exit 7
 case "\$dir" in
   */cc-one)
     cat <<'JSON'
@@ -3699,8 +3707,42 @@ test_claude_account_reads_are_capped_and_keep_the_orchestrator() {
 }
 
 
+test_ordinary_accounts_use_the_ambient_quota_read() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-ordinary-accounts)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-ordinary-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  printf 'ambient:ordinary\norchestrator:%s\n' \
+    "$accounts_root/cc-two" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 2
+      and ([.claude_accounts[] | select(.label == "ambient")][0] as $a
+        | $a.status == "ok"
+          and $a.five_hour_percent_remaining == 66)
+      and ([.claude_accounts[] | select(.label == "orchestrator")][0] as $o
+        | $o.status == "ok"
+          and $o.five_hour_percent_remaining == 4)
+  ' >/dev/null || fail "a literal ordinary account did not use the ambient read: $json"
+
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    NET_LOG="$home/net.log" env -u CLAUDE_CONFIG_DIR "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 2
+      and .orchestrator_account.label == "ambient"
+      and .orchestrator_account.five_hour_percent_remaining == 66
+      and ([.claude_accounts[] | select(.label == "ambient")][0].status == "ok")
+      and (.warnings | any(.kind == "orchestrator-five-hour-exhaustion"))
+  ' >/dev/null || fail "an unset CLAUDE_CONFIG_DIR orchestrator did not use the ambient read: $json"
+  pass "ordinary and unset accounts read ambient quota without profile-only"
+}
+
+
 test_claude_accounts_read_every_configured_account
 test_claude_account_quota_reads_degrade_to_unknown_rows
+test_ordinary_accounts_use_the_ambient_quota_read
 test_claude_account_rows_share_one_shape_and_budget
 test_claude_account_row_uses_the_shared_profile_join
 test_orchestrator_account_matches_canonical_dir_spelling
