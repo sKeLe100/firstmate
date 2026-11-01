@@ -29,23 +29,43 @@
 #     by a supervisor running under a different store.
 #   A relative CLAUDE_CONFIG_DIR is refused rather than resolved against this
 #   process's cwd, because it cannot then name the store the session actually
-#   uses. The active session appends to its transcript continuously, so the
-#   newest file is the current session whenever one is live.
+#   uses.
+#
+#   A self-read (no explicit transcript argument, no FM_CLAUDE_STORE) binds to
+#   the calling session's own transcript rather than to whichever file was
+#   written last: CLAUDE_CODE_SESSION_ID, which Claude Code exports to every hook
+#   and tool shell and which equals the transcript's basename, names
+#   <store>/projects/<munged>/<id>.jsonl when it matches
+#   ^[A-Za-z0-9][A-Za-z0-9._-]*$ (so it can only ever name a file directly under
+#   the project directory) and that file exists in a resolved store; the output
+#   then carries pick=session. A second live session in the same home appends to
+#   its own transcript, so it can no longer take over this reading. Without a
+#   usable id, or when no resolved store holds that session's transcript, the
+#   reading falls back to the most recently modified *.jsonl and reports
+#   pick=newest: a harness that exports no id, and a session that has not written
+#   yet, still get a reading, just not a session-bound one. The home's
+#   state/.lock-session records whichever session holds the home's lock, not the
+#   caller, and no Herdr query is made, so this needs no sidecar and no
+#   subprocess.
 #
 #   Auto-discovery refuses to report a confident band from a stale transcript
 #   when the read is this process's own session (no FM_CLAUDE_STORE): when the
-#   newest transcript is older than FM_CONTEXT_STALE_SECONDS (default 900; 0
-#   turns this guard off) it still reports the tokens it found but sets
-#   band=unavailable with reason=stale-transcript, exiting 0. A read that names
-#   a target store is a read of another session, which is idle by definition, so
-#   it reports the band it finds however old that transcript is. An explicit
-#   transcript argument is trusted as given and never gets this guard.
+#   transcript it picked - session-bound or the newest-mtime fallback - is older
+#   than FM_CONTEXT_STALE_SECONDS (default 900; 0 turns this guard off) it still
+#   reports the tokens it found but sets band=unavailable with
+#   reason=stale-transcript, exiting 0. A read that names a target store is a
+#   read of another session, which is idle by definition, so it reports the band
+#   it finds however old that transcript is. An explicit transcript argument is
+#   trusted as given and never gets this guard.
 #
 # Output is one data-only line; callers act on the reported band rather than
 # re-deriving thresholds:
 #   context_tokens=<N> window=<W> percent=<P> warn_tokens=<W1> \
 #     restart_tokens=<W2> band=<ok|warn|restart|unavailable> transcript=<path> \
-#     age_seconds=<S> [reason=stale-transcript]
+#     age_seconds=<S> [pick=session|newest] [reason=stale-transcript]
+# pick appears only on a self-read, naming whether that reading is bound to the
+# calling session's own transcript (session) or fell back to the newest one
+# (newest); a targeted or explicit read carries no pick field.
 # The window defaults to 1000000 and can be overridden with FM_CONTEXT_WINDOW
 # when a harness or model change alters the real window.
 #
@@ -83,7 +103,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,82p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,102p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -128,6 +148,7 @@ esac
 
 transcript="${1:-}"
 self_read=0
+pick=
 if [ -z "$transcript" ]; then
   targeted=0
   stores=()
@@ -162,25 +183,43 @@ if [ -z "$transcript" ]; then
   fi
   [ "$targeted" -eq 1 ] || self_read=1
   munged="$(printf '%s' "$home_path" | tr -c 'a-zA-Z0-9' '-')"
-  proj_dir=
-  for store in "${stores[@]}"; do
-    if [ -d "$store/projects/$munged" ]; then
-      proj_dir="$store/projects/$munged"
-      break
-    fi
-  done
-  if [ -z "$proj_dir" ]; then
-    candidates=
-    for store in "${stores[@]}"; do
-      candidates="${candidates:+$candidates, }$store/projects/$munged"
-    done
-    echo "fm-context-usage: no Claude transcript directory at $candidates (non-claude harness, or no session yet)" >&2
-    exit 1
+  transcript=
+  if [ "$self_read" -eq 1 ]; then
+    case "${CLAUDE_CODE_SESSION_ID:-}" in
+      ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) ;;
+      *) for store in "${stores[@]}"; do
+           if [ -f "$store/projects/$munged/$CLAUDE_CODE_SESSION_ID.jsonl" ]; then
+             transcript="$store/projects/$munged/$CLAUDE_CODE_SESSION_ID.jsonl"
+             pick=session
+             break
+           fi
+         done ;;
+    esac
   fi
-  transcript="$(find "$proj_dir" -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
   if [ -z "$transcript" ]; then
-    echo "fm-context-usage: no *.jsonl transcript found under $proj_dir" >&2
-    exit 1
+    proj_dir=
+    for store in "${stores[@]}"; do
+      if [ -d "$store/projects/$munged" ]; then
+        proj_dir="$store/projects/$munged"
+        break
+      fi
+    done
+    if [ -z "$proj_dir" ]; then
+      candidates=
+      for store in "${stores[@]}"; do
+        candidates="${candidates:+$candidates, }$store/projects/$munged"
+      done
+      echo "fm-context-usage: no Claude transcript directory at $candidates (non-claude harness, or no session yet)" >&2
+      exit 1
+    fi
+    transcript="$(find "$proj_dir" -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+    if [ -z "$transcript" ]; then
+      echo "fm-context-usage: no *.jsonl transcript found under $proj_dir" >&2
+      exit 1
+    fi
+    if [ "$self_read" -eq 1 ]; then
+      pick=newest
+    fi
   fi
 fi
 
@@ -191,13 +230,14 @@ fi
 
 window="${FM_CONTEXT_WINDOW:-1000000}"
 
-python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" "$self_read" "$stale_seconds" <<'PY'
+python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" "$self_read" "$stale_seconds" "$pick" <<'PY'
 import json, os, sys, time
 
 path, window = sys.argv[1], int(sys.argv[2])
 warn, restart = int(sys.argv[3]), int(sys.argv[4])
 self_read = sys.argv[5] == "1"
 stale_seconds = int(sys.argv[6])
+pick = sys.argv[7]
 last = None
 with open(path, encoding="utf-8", errors="replace") as fh:
     for line in fh:
@@ -228,9 +268,10 @@ if self_read and stale_seconds > 0 and age > stale_seconds:
 else:
     band = "restart" if total >= restart else "warn" if total >= warn else "ok"
 reason = " reason=stale-transcript" if band == "unavailable" else ""
+pick_field = " pick=%s" % pick if pick else ""
 print(
     "context_tokens=%d window=%d percent=%.1f warn_tokens=%d restart_tokens=%d"
-    " band=%s transcript=%s age_seconds=%d%s"
+    " band=%s transcript=%s age_seconds=%d%s%s"
     % (
         total,
         window,
@@ -240,6 +281,7 @@ print(
         band,
         path,
         age,
+        pick_field,
         reason,
     )
 )
