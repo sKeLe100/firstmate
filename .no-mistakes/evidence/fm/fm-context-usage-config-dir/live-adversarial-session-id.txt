@@ -1,0 +1,28 @@
+Live drive: adversarial session-id inputs and a targeted cross-session read, from the same real claude session.
+Planted: $LAB/cfg/projects/other.jsonl (180002 tokens, newest) one level above the project dir,
+         $LAB/cfg/projects/<munged>/inherited.jsonl (186002 tokens, newest in the project dir).
+
+  1) CLAUDE_CODE_SESSION_ID='../other' CLAUDE_PID=$CLAUDE_PID /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY/bin/fm-context-usage.sh
+  2) CLAUDE_CODE_SESSION_ID=inherited CLAUDE_PID=$$ /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY/bin/fm-context-usage.sh
+  3) FM_CLAUDE_STORE=/tmp/fm-lab.aHhSyt/cfg /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY/bin/fm-context-usage.sh
+
+● Bash(CLAUDE_CODE_SESSION_ID='../other' CLAUDE_PID=$CLAUDE_PID /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY/bin/fm-context-usage.sh)
+  ⎿  context_tokens=186002 window=1000000 percent=18.6 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/tmp/fm-lab.aHhSyt/cfg/projects/-tmp-fm-lab-aHhSyt-work/inherited.jsonl age_se
+     conds=0 pick=newest
+  ⎿  Allowed by auto mode
+
+● Bash(CLAUDE_CODE_SESSION_ID=inherited CLAUDE_PID=$$ /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY/bin/fm-context-usage.sh)
+  ⎿  context_tokens=186002 window=1000000 percent=18.6 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/tmp/fm-lab.aHhSyt/cfg/projects/-tmp-fm-lab-aHhSyt-work/inherited.jsonl age_se
+     conds=0 pick=newest
+  ⎿  Allowed by auto mode
+
+● Bash(FM_CLAUDE_STORE=/tmp/fm-lab.aHhSyt/cfg /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY/bin/fm-context-usage.sh)
+  ⎿  context_tokens=186002 window=1000000 percent=18.6 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/tmp/fm-lab.aHhSyt/cfg/projects/-tmp-fm-lab-aHhSyt-work/inherited.jsonl age_se
+     conds=0
+  ⎿  Allowed by auto mode
+
+● === 1) CLAUDE_CODE_SESSION_ID='../other' CLAUDE_PID=$CLAUDE_PID ===
+  context_tokens=186002 window=1000000 percent=18.6 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/tmp/fm-lab.aHhSyt/cfg/projects/-tmp-fm-lab-aHhSyt-work/inherited.jsonl age_seconds=0
+  pick=newest
+
+  === 2) CLAUDE_CODE_SESSION_ID=inherited CLAUDE_PID=$$ ===

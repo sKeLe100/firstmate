@@ -1,0 +1,17 @@
+Live drive: stale-self-read guard from a real interactive claude session (private tmux socket).
+The session's own transcript was backdated 2 hours while the helper waited on a file, so it read
+its OWN session-bound transcript (pick=session) at a real age past the fixed 900-second limit.
+
+  /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY/bin/fm-context-usage.sh
+
+● Bash(while [ ! -e /tmp/fm-lab.aHhSyt/go ]; do :; done; /home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY/bin/fm-context-usage.sh)
+  ⎿  context_tokens=34845 window=1000000 percent=3.5 warn_tokens=150000 restart_tokens=250000 band=unavailable transcript=/tmp/fm-lab.aHhSyt/cfg/projects/-tmp-fm-lab-aHhSyt-work/55651892-12c0-4f0
+     8-aa11-f049c0c41efc.jsonl age_seconds=7200 pick=session reason=stale-transcript
+  ⎿  Allowed by auto mode
+
+● The command ran in the foreground and finished once /tmp/fm-lab.aHhSyt/go existed. Here is the complete stdout:
+
+  context_tokens=34845 window=1000000 percent=3.5 warn_tokens=150000 restart_tokens=250000 band=unavailable
+  transcript=/tmp/fm-lab.aHhSyt/cfg/projects/-tmp-fm-lab-aHhSyt-work/55651892-12c0-4f08-aa11-f049c0c41efc.jsonl age_seconds=7200 pick=session reason=stale-transcript
+
+  This time the script reported band=unavailable with reason=stale-transcript, because it saw the transcript as 7200 seconds old.

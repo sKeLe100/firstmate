@@ -1,0 +1,7 @@
+Test-discrimination check (not product behavior): tests/fm-context-usage.test.sh case 28 must fail when
+the path-safety case filter in bin/fm-context-usage.sh is removed, and pass with it in place.
+
+--- case filter REMOVED:
+FAIL: expected a path-shaped session id to be ignored, got: context_tokens=180002 window=1000000 percent=18.0 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/var/tmp/nm-daemon-tmp/tmp.DB8xpJ6XNR/bind_store/projects/-var-tmp-nm-daemon-tmp-tmp-DB8xpJ6XNR-bind-home/../other.jsonl age_seconds=0 pick=session
+--- case filter RESTORED:
+PASS fm-context-usage.test.sh

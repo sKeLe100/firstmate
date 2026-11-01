@@ -1,0 +1,25 @@
+Live drive: a real 'claude' session (Claude Code 2.1.316, disposable HOME + CLAUDE_CONFIG_DIR store)
+ran the BASE-COMMIT helper and the FIXED helper from INSIDE its own session, cwd=/home/sean_/.no-mistakes/worktrees/4936102b4bcf/01M69N663KHKKDMDGFFPG2WPMY
+Setup: home=$LAB/work, CLAUDE_CONFIG_DIR=$LAB/cfg (the session's own store),
+       $HOME/.claude/projects/<munged home>/other-live.jsonl planted with a 186002-token
+       usage record from another session and the newest mtime.
+
+Here is the full output from both scripts:
+
+```
+MARKER-BASE
+context_tokens=186002 window=1000000 percent=18.6 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/tmp/fm-lab.0w5d0M/home/.claude/projects/-tmp-fm-lab-0w5d0M-work/other-live.jsonl age_seconds=0
+MARKER-FIXED
+context_tokens=14853 window=1000000 percent=1.5 warn_tokens=150000 restart_tokens=250000 band=ok transcript=/tmp/fm-lab.0w5d0M/cfg/projects/-tmp-fm-lab-0w5d0M-work/66c36875-e408-4e49-b650-0366f21734ac.jsonl age_seconds=0 pick=session
+MARKER-END
+```
+
+The two helper output lines, quoted exactly:
+
+> context_tokens=186002 window=1000000 percent=18.6 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/tmp/fm-lab.0w5d0M/home/.claude/projects/-tmp-fm-lab-0w5d0M-work/other-live.jsonl age_seconds=0
+
+> context_tokens=14853 window=1000000 percent=1.5 warn_tokens=150000 restart_tokens=250000 band=ok transcript=/tmp/fm-lab.0w5d0M/cfg/projects/-tmp-fm-lab-0w5d0M-work/66c36875-e408-4e49-b650-0366f21734ac.jsonl age_seconds=0 pick=session
+
+--- CLI-reported usage of the live session's own last API call:
+input_tokens=4 cache_read_input_tokens=23863 cache_creation_input_tokens=11019
+session_id=66c36875-e408-4e49-b650-0366f21734ac

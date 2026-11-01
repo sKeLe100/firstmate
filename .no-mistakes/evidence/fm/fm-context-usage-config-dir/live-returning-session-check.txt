@@ -1,0 +1,31 @@
+Live drive: bin/fm-returning-session-check.sh against a disposable fleet home + two Claude stores.
+Setup: returning home /tmp/fm-lab.J9ifsV/task, pinned store /tmp/fm-lab.J9ifsV/pinned holding a 160010-token (warn) transcript
+       backdated 2 hours, $HOME/.claude holding a 910-token (ok) transcript, crew meta/status
+       backdated 2 hours so idle_seconds > the 3600s cache TTL.
+
+1) crew meta carries account=/tmp/fm-lab.J9ifsV/pinned (a worker pinned to its own store):
+verdict=restart-with-carryover band=warn context_tokens=160010 restart_tokens=250000 idle_seconds=7200 ttl_seconds=3600 transcript=/tmp/fm-lab.J9ifsV/pinned/projects/-tmp-fm-lab-J9ifsV-task/session.jsonl
+   exit=0
+
+2) no account= recorded -> resolves 'auto' -> $HOME/.claude:
+verdict=resume band=ok context_tokens=910 restart_tokens=250000 idle_seconds=7200 ttl_seconds=3600 transcript=/tmp/fm-lab.J9ifsV/home/.claude/projects/-tmp-fm-lab-J9ifsV-task/session.jsonl
+   exit=0
+
+3) the same 2h-old idle transcript read with FM_CLAUDE_STORE (guard must not apply):
+context_tokens=160010 window=1000000 percent=16.0 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/tmp/fm-lab.J9ifsV/pinned/projects/-tmp-fm-lab-J9ifsV-task/session.jsonl age_seconds=7351
+
+4) explicit transcript argument of that stale file (trusted as given, no guard, no pick):
+context_tokens=160010 window=1000000 percent=16.0 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/tmp/fm-lab.J9ifsV/pinned/projects/-tmp-fm-lab-J9ifsV-task/session.jsonl age_seconds=7351
+
+5) --help renders the complete owner header (fm-context-usage.sh tail):
+
+Fails with a clear message on exit 1 when no transcript or usage record
+exists - for example under a non-claude primary harness - rather than
+guessing.
+
+6) --help renders the Exit status contract (fm-returning-session-check.sh tail):
+with any caller's own delivery mechanics.
+
+Exit status: 0 for verdict=resume, verdict=restart-with-carryover, and
+verdict=unknown. Non-zero for verdict=blocked and for a usage error (missing,
+wrong-count, relative, or nonexistent home argument).
