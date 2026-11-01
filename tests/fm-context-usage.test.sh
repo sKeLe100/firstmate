@@ -384,8 +384,11 @@ case "$out" in
 esac
 
 # 28. A trusted id shaped like a path is refused before it is used as a
-#     filename, so it can never name a file outside the project directory; the
-#     newest-mtime fallback still reports a reading.
+#     filename, so it can never name a file outside the project directory: the
+#     record that id would resolve to sits one level up in the store, and only
+#     the filter keeps the read from naming it.
+mkdir -p "$tmp/bind_store/projects"
+mk_line assistant false 2 90000 90000 > "$tmp/bind_store/projects/other.jsonl"
 out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bind_home" PATH="$trusted_bin:$PATH" scrubbed CLAUDE_CODE_SESSION_ID='../other' CLAUDE_PID=4242 "$bin")"
 case "$out" in
   *"transcript=$bind_proj/other.jsonl"*" pick=newest"*) ;;
