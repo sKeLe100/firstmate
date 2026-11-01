@@ -3398,33 +3398,16 @@ install_quota_fixture() {  # <fakebin> <accounts-root>
   local fb=$1 root=$2
   cat > "$fb/quota-axi" <<SH
 #!/usr/bin/env bash
-profile_only=0
-case " \$* " in
-  *" --profile-only "*) profile_only=1 ;;
-esac
 dir=\${CLAUDE_CONFIG_DIR:-ordinary}
-if [ "\$dir" = ordinary ]; then
-  [ "\$profile_only" = 0 ] || exit 8
-  cat <<'JSON'
-{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":66,"pace":{"status":"on_track","reservePercentPoints":9,"burnMultiple":0.8}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":77,"pace":{"status":"on_track","reservePercentPoints":7,"burnMultiple":0.9}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":66,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-10-31T12:00:00Z"}}]}}]}
-JSON
-  exit 0
-fi
-[ "\$profile_only" = 1 ] || exit 7
 case "\$dir" in
   */cc-one)
     cat <<'JSON'
-{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":37,"pace":{"status":"behind","reservePercentPoints":12.5,"burnMultiple":0.4}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88,"pace":{"status":"on_track","reservePercentPoints":5,"burnMultiple":0.9}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":37,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-03T00:00:00Z"}}]}}]}
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":37},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":37,"runway":{"status":"through_reset"}}]}}]}
 JSON
     ;;
   */cc-two)
     cat <<'JSON'
-{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":4,"pace":{"status":"ahead","reservePercentPoints":-64.7,"burnMultiple":3.06}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":42,"pace":{"status":"ahead","reservePercentPoints":-35.2,"burnMultiple":2.55}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":4,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-10-31T15:17:56.020Z"}}]}}]}
-JSON
-    ;;
-  */cc-orch)
-    cat <<'JSON'
-{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":55,"pace":{"status":"on_track","reservePercentPoints":10,"burnMultiple":0.7}},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":70,"pace":{"status":"on_track","reservePercentPoints":8,"burnMultiple":0.8}}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":55,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-02T00:00:00Z"}}]}}]}
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":4},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":42}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":4,"runway":{"status":"through_reset"}}]}}]}
 JSON
     ;;
   */cc-broken)
@@ -3435,12 +3418,12 @@ JSON
   */cc-slow)
     sleep 5
     cat <<'JSON'
-{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":37},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":37,"runway":{"status":"projected_exhaustion","limitingWindowId":"five_hour","projectedExhaustedAt":"2026-11-03T00:00:00Z"}}]}}]}
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":10},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":20}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":10,"runway":{"status":"through_reset"}}]}}]}
 JSON
     ;;
-  */cc-schema6)
+  ordinary)
     cat <<'JSON'
-{"schemaVersion":6,"providers":[{"provider":"claude","accountKey":"work","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":11},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":33}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":11,"runway":{"status":"through_reset"}}]}},{"provider":"claude","accountKey":"default","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":22},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":22,"runway":{"status":"through_reset"}}]}}]}
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":66},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":77}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":66,"runway":{"status":"through_reset"}}]}}]}
 JSON
     ;;
   *)
@@ -3449,8 +3432,7 @@ JSON
 esac
 SH
   chmod +x "$fb/quota-axi"
-  mkdir -p "$root/cc-one" "$root/cc-two" "$root/cc-orch" "$root/cc-broken" \
-    "$root/cc-slow" "$root/cc-schema6"
+  mkdir -p "$root/cc-one" "$root/cc-two" "$root/cc-broken" "$root/cc-slow"
 }
 
 run_claude_quota_bearings() {  # <home> <fakebin> <config-dir> <args...>
@@ -3460,46 +3442,44 @@ run_claude_quota_bearings() {  # <home> <fakebin> <config-dir> <args...>
     CLAUDE_CONFIG_DIR="$config_dir" NET_LOG="$home/net.log" "$BEARINGS" "$@"
 }
 
-test_claude_accounts_read_every_configured_account() {
-  local home fakebin json accounts_root
+test_claude_accounts_display_every_configured_account() {
+  local home fakebin json toon accounts_root
   home=$(make_home claude-dual-accounts)
   fakebin=$(make_fakebin "$home")
   accounts_root="$TMP_ROOT/claude-accounts"
   install_quota_fixture "$fakebin" "$accounts_root"
   mkdir -p "$home/config"
-  printf 'worker:%s\norchestrator:%s\n' \
+  printf 'account-1:%s\naccount-2:%s\n' \
     "$accounts_root/cc-one" "$accounts_root/cc-two" > "$home/config/claude-accounts"
 
   json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
   printf '%s' "$json" | jq -e --arg root "$accounts_root" '
     (.claude_accounts | length) == 2
-      and ([.claude_accounts[] | select(.label == "worker")][0] as $w
-        | $w.dir == ($root + "/cc-one")
-          and $w.status == "ok"
-          and $w.five_hour_percent_remaining == 37
-          and $w.five_hour_resets_at == "2026-11-01T00:00:00Z"
-          and $w.five_hour_pace_status == "behind"
-          and $w.five_hour_pace_reserve_percent_points == 12.5
-          and $w.five_hour_pace_burn_multiple == 0.4
-          and $w.five_hour_projected_exhausted_at == "2026-11-03T00:00:00Z"
-          and $w.seven_day_percent_remaining == 88)
-      and ([.claude_accounts[] | select(.label == "orchestrator")][0] as $o
-        | $o.dir == ($root + "/cc-two")
-          and $o.five_hour_percent_remaining == 4
-          and $o.seven_day_percent_remaining == 42
-          and $o.five_hour_projected_exhausted_at == "2026-10-31T15:17:56.020Z")
-      and .orchestrator_account.label == "orchestrator"
-      and .orchestrator_account.dir == ($root + "/cc-two")
-      and .orchestrator_account.five_hour_projected_exhausted_at == "2026-10-31T15:17:56.020Z"
-      and (.warnings | any(.kind == "orchestrator-five-hour-exhaustion"
-        and .account == "orchestrator"
-        and .projected_exhausted_at == "2026-10-31T15:17:56.020Z"
-        and (.message | contains("five-hour window projected to run out at 2026-10-31T15:17:56.020Z"))))
-  ' >/dev/null || fail "both Claude accounts were not read with their own windows: $json"
-  pass "bearings reads Claude quota for every configured account and flags a projected orchestrator exhaustion"
+      and ([.claude_accounts[] | select(.label == "account-1")][0] as $a
+        | $a.dir == ($root + "/cc-one")
+          and $a.status == "ok"
+          and $a.reason == null
+          and $a.five_hour_percent_remaining == 37
+          and $a.five_hour_resets_at == "2026-11-01T00:00:00Z"
+          and $a.seven_day_percent_remaining == 88
+          and $a.seven_day_resets_at == "2026-11-06T00:00:00Z")
+      and ([.claude_accounts[] | select(.label == "account-2")][0] as $b
+        | $b.dir == ($root + "/cc-two")
+          and $b.five_hour_percent_remaining == 4
+          and $b.seven_day_percent_remaining == 42)
+      and (has("orchestrator_account") | not)
+      and (has("warnings") | not)
+  ' >/dev/null || fail "both Claude accounts were not displayed with their windows: $json"
+
+  toon=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two")
+  printf '%s\n' "$toon" | grep -q '^claude_accounts\[2\]{' \
+    || fail "default TOON lost the claude_accounts table: $toon"
+  printf '%s\n' "$toon" | grep -q '^  account-1,.*,37,.*,88,' \
+    || fail "default TOON dropped account-1's window columns: $toon"
+  pass "bearings displays five-hour and weekly percent remaining for every configured Claude account"
 }
 
-test_claude_account_quota_reads_degrade_to_unknown_rows() {
+test_claude_account_display_degrades_to_unknown_rows() {
   local home fakebin json accounts_root
   home=$(make_home claude-account-degrade)
   fakebin=$(make_fakebin "$home")
@@ -3514,241 +3494,79 @@ test_claude_account_quota_reads_degrade_to_unknown_rows() {
       and .claude_accounts[0].label == "broken"
       and .claude_accounts[0].status == "unknown"
       and .claude_accounts[0].reason == "credentials_invalid"
-      and .claude_accounts[0].auth_problem == "credentials_invalid"
       and .claude_accounts[0].five_hour_percent_remaining == null
-      and (.warnings | map(select(.kind == "orchestrator-five-hour-exhaustion")) | length) == 0
-  ' >/dev/null || fail "an invalid account was hidden instead of reported as an unknown row: $json"
+      and .claude_accounts[0].five_hour_resets_at == null
+  ' >/dev/null || fail "an invalid account was hidden instead of shown as unknown: $json"
 
   rm -f "$home/config/claude-accounts"
-  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-orch" --json)
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
   printf '%s' "$json" | jq -e --arg root "$accounts_root" '
     (.claude_accounts | length) == 1
       and .claude_accounts[0].label == "default"
-      and .claude_accounts[0].dir == ($root + "/cc-orch")
+      and .claude_accounts[0].dir == ($root + "/cc-two")
       and .claude_accounts[0].status == "ok"
-      and .claude_accounts[0].five_hour_percent_remaining == 55
-      and .orchestrator_account.dir == ($root + "/cc-orch")
-      and (.warnings | length) == 0
+      and .claude_accounts[0].five_hour_percent_remaining == 4
   ' >/dev/null || fail "an absent account list did not fall back to the current CLAUDE_CONFIG_DIR: $json"
-  pass "an unauthenticated account is an explicit unknown row and an absent account list falls back to the current config dir"
+
+  printf 'no separator here\n' > "$home/config/claude-accounts"
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].status == "unknown"
+      and (.claude_accounts[0].reason | contains("no usable label:dir lines"))
+  ' >/dev/null || fail "a malformed account list was silently ignored: $json"
+  pass "an unauthenticated account and a malformed account list are explicit unknown rows"
 }
 
-test_orchestrator_account_worker_load_warns_only_above_threshold() {
-  local home fakebin json accounts_root worktree
-  home=$(make_home claude-orchestrator-load)
+test_claude_account_reads_share_one_bounded_budget() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-account-budget)
   fakebin=$(make_fakebin "$home")
-  accounts_root="$TMP_ROOT/claude-load-accounts"
+  accounts_root="$TMP_ROOT/claude-budget-accounts"
   install_quota_fixture "$fakebin" "$accounts_root"
-  mkdir -p "$home/config" "$home/projects/orch"
-  worktree="$home/projects/orch"
-  printf 'orchestrator:%s\n' "$accounts_root/cc-orch" > "$home/config/claude-accounts"
-  cat > "$home/data/backlog.md" <<'EOF'
-## In flight
-- [ ] orch-w1 - Orchestrator worker one (repo: firstmate) (kind: ship)
-- [ ] orch-w2 - Orchestrator worker two (repo: firstmate) (kind: ship)
-
-## Queued
-
-## Done
-EOF
-  fm_write_meta "$home/state/orch-w1.meta" \
-    "window=fixture:fm-orch-w1" "worktree=$worktree" "project=firstmate" \
-    "harness=claude" "kind=ship" "mode=no-mistakes" "account=$accounts_root/cc-orch"
-  record_claude_state "$home/state" orch-w1 busy
-  printf 'working: orchestrator worker one\n' > "$home/state/orch-w1.status"
-  fm_write_meta "$home/state/orch-w2.meta" \
-    "window=fixture:fm-orch-w2" "worktree=$worktree" "project=firstmate" \
-    "harness=claude" "kind=ship" "mode=no-mistakes" "account=$accounts_root/cc-orch"
-  record_claude_state "$home/state" orch-w2 idle
-  printf 'paused: orchestrator worker two idle\n' > "$home/state/orch-w2.status"
-
-  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-orch" --json)
-  printf '%s' "$json" | jq -e '
-    .orchestrator_account.live_workers == 1
-      and .orchestrator_account.threshold == 1
-      and (.warnings | map(select(.kind == "orchestrator-worker-load")) | length) == 0
-  ' >/dev/null || fail "one worker on the orchestrator account warned or counted wrong: $json"
-
-  record_claude_state "$home/state" orch-w2 busy
-  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-orch" --json)
-  printf '%s' "$json" | jq -e '
-    .orchestrator_account.live_workers == 2
-      and (.warnings | any(.kind == "orchestrator-worker-load"
-        and .account == "orchestrator"
-        and .live_workers == 2
-        and .threshold == 1
-        and (.message | contains("2 live Claude worker(s)"))))
-  ' >/dev/null || fail "two workers on the orchestrator account did not raise the load warning: $json"
-
-  json=$(FM_BEARINGS_ORCHESTRATOR_WORKERS_MAX=2 \
-    run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-orch" --json)
-  printf '%s' "$json" | jq -e '
-    .orchestrator_account.threshold == 2
-      and (.warnings | map(select(.kind == "orchestrator-worker-load")) | length) == 0
-  ' >/dev/null || fail "the orchestrator worker threshold was not configurable: $json"
-  pass "orchestrator-account worker load warns only above the configured threshold"
-}
-
-test_claude_account_rows_share_one_shape_and_budget() {
-  local home fakebin json toon accounts_root started elapsed hdr row
-  home=$(make_home claude-row-shape)
-  fakebin=$(make_fakebin "$home")
-  accounts_root="$TMP_ROOT/claude-row-shape-accounts"
-  install_quota_fixture "$fakebin" "$accounts_root"
-  printf 'slow:%s\nworker:%s\n' \
+  mkdir -p "$home/config"
+  printf 'slow:%s\nfast:%s\n' \
     "$accounts_root/cc-slow" "$accounts_root/cc-one" > "$home/config/claude-accounts"
 
-  started=$SECONDS
   json=$(FM_BEARINGS_CLAUDE_TIMEOUT=1 \
     run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one" --json)
-  elapsed=$((SECONDS - started))
-  printf '%s' "$json" | jq -e '
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
     (.claude_accounts | length) == 2
-      and .claude_accounts[0].label == "slow"
-      and .claude_accounts[0].status == "unknown"
-      and (.claude_accounts[0].reason | contains("timed out"))
-      and .claude_accounts[1].label == "worker"
-      and .claude_accounts[1].five_hour_percent_remaining == 37
+      and ([.claude_accounts[] | select(.label == "slow")][0] as $s
+        | $s.status == "unknown" and ($s.reason | contains("timed out")))
+      and ([.claude_accounts[] | select(.label == "fast")][0] as $f
+        | $f.dir == ($root + "/cc-one")
+          and $f.status == "ok"
+          and $f.five_hour_percent_remaining == 37)
       and ((.claude_accounts[0] | keys) == (.claude_accounts[1] | keys))
-  ' >/dev/null || fail "a timed-out account did not share the healthy row's shape: $json"
-  [ "$elapsed" -lt 5 ] || fail "the shared Claude budget did not bound the reads (${elapsed}s)"
-
-  toon=$(FM_BEARINGS_CLAUDE_TIMEOUT=1 \
-    run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one")
-  hdr=$(printf '%s\n' "$toon" | grep -E '^claude_accounts\[2\]\{' || true)
-  [ -n "$hdr" ] || fail "default TOON lost the claude_accounts table: $toon"
-  assert_contains "$hdr" "five_hour_percent_remaining" \
-    "the first unknown row must not drop later account window columns"
-  row=$(printf '%s\n' "$toon" | grep -E '^  worker,' || true)
-  [ -n "$row" ] || fail "default TOON lost the healthy account row: $toon"
-  assert_contains "$row" ",37," "the healthy account's five-hour window must render in default TOON"
-  pass "Claude account reads share one budget and every row keeps the complete window shape"
+  ' >/dev/null || fail "a slow account was not bounded while the healthy account still displayed: $json"
+  pass "Claude account reads share one bounded budget and a timeout degrades only its own row"
 }
 
-test_claude_account_row_uses_the_shared_profile_join() {
+test_ordinary_claude_account_uses_the_ambient_read() {
   local home fakebin json accounts_root
-  home=$(make_home claude-schema6)
-  fakebin=$(make_fakebin "$home")
-  accounts_root="$TMP_ROOT/claude-schema6-accounts"
-  install_quota_fixture "$fakebin" "$accounts_root"
-  printf 'pinned:%s\n' "$accounts_root/cc-schema6" > "$home/config/claude-accounts"
-
-  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-schema6" --json)
-  printf '%s' "$json" | jq -e '
-    (.claude_accounts | length) == 1
-      and .claude_accounts[0].status == "ok"
-      and .claude_accounts[0].five_hour_percent_remaining == 22
-      and .claude_accounts[0].seven_day_percent_remaining == 88
-      and .orchestrator_account.five_hour_percent_remaining == 22
-  ' >/dev/null || fail "the shared quota join did not select the default profile row: $json"
-  pass "bearings reads the pinned profile and selects its default quota row through the shared join"
-}
-
-test_orchestrator_account_matches_canonical_dir_spelling() {
-  local home fakebin json accounts_root
-  home=$(make_home claude-canonical-dir)
-  fakebin=$(make_fakebin "$home")
-  accounts_root="$TMP_ROOT/claude-canonical-accounts"
-  install_quota_fixture "$fakebin" "$accounts_root"
-  ln -s "$accounts_root/cc-two" "$accounts_root/cc-two-link"
-  printf 'orchestrator:%s\n' "$accounts_root/cc-two-link" > "$home/config/claude-accounts"
-
-  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
-  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
-    (.claude_accounts | length) == 1
-      and .claude_accounts[0].dir == ($root + "/cc-two")
-      and .orchestrator_account.label == "orchestrator"
-      and .orchestrator_account.dir == ($root + "/cc-two")
-      and .orchestrator_account.five_hour_percent_remaining == 4
-      and (.warnings | any(.kind == "orchestrator-five-hour-exhaustion"))
-  ' >/dev/null || fail "a symlinked account spelling did not join the orchestrator's own dir: $json"
-  pass "account directories are canonicalized before matching the orchestrator account"
-}
-
-test_unlisted_orchestrator_account_is_measured() {
-  local home fakebin json accounts_root
-  home=$(make_home claude-unlisted-orchestrator)
-  fakebin=$(make_fakebin "$home")
-  accounts_root="$TMP_ROOT/claude-unlisted-accounts"
-  install_quota_fixture "$fakebin" "$accounts_root"
-  printf 'worker:%s\n' "$accounts_root/cc-one" > "$home/config/claude-accounts"
-
-  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
-  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
-    (.claude_accounts | length) == 2
-      and ([.claude_accounts[] | select(.label == "orchestrator")][0] as $o
-        | $o.dir == ($root + "/cc-two")
-          and $o.status == "ok"
-          and $o.five_hour_percent_remaining == 4)
-      and .orchestrator_account.label == "orchestrator"
-      and .orchestrator_account.five_hour_percent_remaining == 4
-      and (.warnings | any(.kind == "orchestrator-five-hour-exhaustion"))
-  ' >/dev/null || fail "an unlisted orchestrator account was not measured: $json"
-  pass "an unlisted orchestrator account is appended as a measured orchestrator row"
-}
-
-test_claude_account_reads_are_capped_and_keep_the_orchestrator() {
-  local home fakebin json accounts_root
-  home=$(make_home claude-account-cap)
-  fakebin=$(make_fakebin "$home")
-  accounts_root="$TMP_ROOT/claude-cap-accounts"
-  install_quota_fixture "$fakebin" "$accounts_root"
-  printf 'one:%s\ntwo:%s\norch:%s\nbroken:%s\nslow:%s\n' \
-    "$accounts_root/cc-one" "$accounts_root/cc-two" "$accounts_root/cc-orch" \
-    "$accounts_root/cc-broken" "$accounts_root/cc-slow" > "$home/config/claude-accounts"
-
-  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
-  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
-    (.claude_accounts | length) == 4
-      and ([.claude_accounts[] | select(.dir == ($root + "/cc-two"))] | length) == 1
-      and ([.claude_accounts[] | select(.dir == ($root + "/cc-slow"))] | length) == 0
-  ' >/dev/null || fail "account reads were not capped at four with the orchestrator kept: $json"
-  pass "Claude account reads are capped at four while always keeping the orchestrator account"
-}
-
-
-test_ordinary_accounts_use_the_ambient_quota_read() {
-  local home fakebin json accounts_root
-  home=$(make_home claude-ordinary-accounts)
+  home=$(make_home claude-ordinary-account)
   fakebin=$(make_fakebin "$home")
   accounts_root="$TMP_ROOT/claude-ordinary-accounts"
   install_quota_fixture "$fakebin" "$accounts_root"
-  printf 'ambient:ordinary\norchestrator:%s\n' \
-    "$accounts_root/cc-two" > "$home/config/claude-accounts"
-
-  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
-  printf '%s' "$json" | jq -e '
-    (.claude_accounts | length) == 2
-      and ([.claude_accounts[] | select(.label == "ambient")][0] as $a
-        | $a.status == "ok"
-          and $a.five_hour_percent_remaining == 66)
-      and ([.claude_accounts[] | select(.label == "orchestrator")][0] as $o
-        | $o.status == "ok"
-          and $o.five_hour_percent_remaining == 4)
-  ' >/dev/null || fail "a literal ordinary account did not use the ambient read: $json"
+  mkdir -p "$home/config"
+  printf 'ambient:ordinary\n' > "$home/config/claude-accounts"
 
   json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
     NET_LOG="$home/net.log" env -u CLAUDE_CONFIG_DIR "$BEARINGS" --json)
   printf '%s' "$json" | jq -e '
-    (.claude_accounts | length) == 2
-      and .orchestrator_account.label == "ambient"
-      and .orchestrator_account.five_hour_percent_remaining == 66
-      and ([.claude_accounts[] | select(.label == "ambient")][0].status == "ok")
-      and (.warnings | any(.kind == "orchestrator-five-hour-exhaustion"))
-  ' >/dev/null || fail "an unset CLAUDE_CONFIG_DIR orchestrator did not use the ambient read: $json"
-  pass "ordinary and unset accounts read ambient quota without profile-only"
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].label == "ambient"
+      and .claude_accounts[0].status == "ok"
+      and .claude_accounts[0].five_hour_percent_remaining == 66
+  ' >/dev/null || fail "a literal ordinary account did not use the ambient read: $json"
+  pass "an ordinary account reads ambient quota with CLAUDE_CONFIG_DIR unset"
 }
 
-
-test_claude_accounts_read_every_configured_account
-test_claude_account_quota_reads_degrade_to_unknown_rows
-test_ordinary_accounts_use_the_ambient_quota_read
-test_claude_account_rows_share_one_shape_and_budget
-test_claude_account_row_uses_the_shared_profile_join
-test_orchestrator_account_matches_canonical_dir_spelling
-test_unlisted_orchestrator_account_is_measured
-test_claude_account_reads_are_capped_and_keep_the_orchestrator
-test_orchestrator_account_worker_load_warns_only_above_threshold
+test_claude_accounts_display_every_configured_account
+test_claude_account_display_degrades_to_unknown_rows
+test_claude_account_reads_share_one_bounded_budget
+test_ordinary_claude_account_uses_the_ambient_read
 test_task_teardown_during_metadata_capture_does_not_abort_snapshot
 test_current_state_uses_captured_status_observation
 test_relaunched_task_does_not_inherit_reused_endpoint_state

@@ -157,7 +157,6 @@ Every `/bearings` chat response renders EXACTLY these four sections, in THIS ord
    When the live `decisions_open` bucket carries a `declared_priority: true` row, LEAD the section with it, named explicitly as the captain's declared priority for this session, before any other Captain's Call item.
    Deferred or aged holds follow the presentation safety rule above instead.
    Include `contributions.captain` rows in this section, deduplicating any row already represented by its live captain hold or merge call.
-   Include every `warnings` row - orchestrator-account worker load above its threshold, or that account's five-hour window projected to run out before reset - naming the account, the worker count against the threshold, and any projected exhaustion time.
    Show the other contribution actors only as counts beside the checked/known coverage, and disclose `captain_omitted`, `unmeasured_homes`, stale verdicts and checks with no verdict when nonzero.
    Empty-state: "Nothing needs your action right now" is allowed only when `contributions.proven_clear` is true and the existing decision set is empty.
    When the section is empty but coverage is incomplete, say that no decision is recorded and give the checked/known count; a missing coverage field is also unverified.
@@ -166,7 +165,7 @@ Every `/bearings` chat response renders EXACTLY these four sections, in THIS ord
 3. **Underway** - live work progressing on its own, one line of current state per direct report.
    Empty-state: "Nothing is underway."
 4. **Charted Next** - queued or gated work waiting on the fleet or a date, deferred or aged captain-hold safety gates, plus action-free fleet-integrity warnings.
-   Render one line per `claude_accounts` entry: the account label with its five-hour and weekly windows both as percent remaining, and an unauthenticated or unavailable account as unknown with its reason.
+   Render one line per `claude_accounts` entry: the account label with its five-hour and weekly windows both as percent remaining and their reset times, or unknown with its reason.
    Empty-state: "Nothing is queued."
 
 Rules that keep the contract unambiguous:
