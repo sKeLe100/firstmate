@@ -21,6 +21,10 @@
 #     that fold recognizes (`blocked` or `needs-decision`), so a later resolving
 #     or captain-held line closes it exactly as it does for every other reader
 #     of the status protocol.
+#   - cumulative `review_rounds: <reviewer>=<n> run=<id>` status evidence from
+#     the generated brief's per-reviewer PR cap protocol. Counts are maxima,
+#     not sums: duplicate reports and new run ids cannot reset or inflate them.
+#     Workers/supervisors carry the PR's counts into a replacement task's status.
 #
 #   A redispatch filed under a NEW task id is intentionally not counted toward
 #   this task's relaunch ceiling; that chain's evidence lives in the telemetry's
@@ -29,11 +33,15 @@
 # Output is one data-only line; callers act on the band, not the raw counts:
 #   relaunches=<N> retry_loop_reported=<0|1> \
 #     relaunch_ceiling=<K> round_ceiling=<R> retry_band=<ok|loop|halt> task=<id>
+#     review_rounds=<reviewer=N,...|none> review_cap_reached=<0|1>
+#   Reviewer counts are sorted by id; the fixed cap is 3. These fields are
+#   independent of retry_band, preserving the existing general retry bands.
+#   Reports without a run id or with malformed counts supply no cap evidence.
 #
 # The round ceiling is the worker's own self-check ceiling: bin/fm-brief.sh
 # renders this same configured value into standing rule 9, and it is reported
-# here so callers read one source for it. This helper does not count rounds
-# itself; the protocol has workers emit one keyed line at the threshold instead.
+# here so callers read one source for it. For the general band the protocol
+# has workers emit one keyed line at the threshold instead.
 #
 # Bands:
 #   ok   - counts below every ceiling; nothing to do.
@@ -56,7 +64,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,55p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,/^set -euo pipefail/{ /^set -euo pipefail/d; p; }' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -131,6 +139,24 @@ case "$(status_key_closing_verb "$status_file" retry-loop)" in
   blocked|needs-decision) retry_loop_reported=1 ;;
 esac
 
+# Read cumulative evidence across all runs/relaunches in this task's history.
+review_signal=$(python3 - "$status_file" <<'PY'
+import os, re, sys
+counts = {}
+if os.path.isfile(sys.argv[1]):
+    with open(sys.argv[1]) as status:
+        for line in status:
+            if not re.search(r"(?:^|\s)run=\S+", line):
+                continue
+            match = re.search(r"\breview_rounds: ([A-Za-z0-9_.-]+)=(0|[1-9][0-9]*)(?=\s|$)", line)
+            if match:
+                reviewer, count = match.groups()
+                counts[reviewer] = max(counts.get(reviewer, 0), int(count))
+print("review_rounds=" + (",".join(f"{r}={counts[r]}" for r in sorted(counts)) or "none"),
+      "review_cap_reached=" + str(int(any(n >= 3 for n in counts.values()))))
+PY
+)
+
 band=ok
 if [ "$retry_loop_reported" -eq 1 ]; then
   band=loop
@@ -139,5 +165,5 @@ if [ "$relaunches" -ge "$relaunch_ceiling" ]; then
   band=halt
 fi
 
-printf 'relaunches=%s retry_loop_reported=%s relaunch_ceiling=%s round_ceiling=%s retry_band=%s task=%s\n' \
-  "$relaunches" "$retry_loop_reported" "$relaunch_ceiling" "$round_ceiling" "$band" "$task"
+printf 'relaunches=%s retry_loop_reported=%s relaunch_ceiling=%s round_ceiling=%s retry_band=%s task=%s %s\n' \
+  "$relaunches" "$retry_loop_reported" "$relaunch_ceiling" "$round_ceiling" "$band" "$task" "$review_signal"
