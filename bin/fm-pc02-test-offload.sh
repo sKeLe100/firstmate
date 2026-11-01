@@ -102,10 +102,14 @@
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
 #                                      (default: 180)
 #   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote test run
-#                                      (default: 3600); exceeding it fails
-#                                      the run (exit 124) rather than falling
-#                                      back, since the remote work already
-#                                      spent is not worth discarding blind
+#                                      (default: 4200); sized so a full
+#                                      --changed selection like PR #215's
+#                                      (183 scripts, measured 3689s wall on
+#                                      PC02 at jobs=4) fits with margin.
+#                                      Exceeding it fails the run (exit 124)
+#                                      rather than falling back, since the
+#                                      remote work already spent is not worth
+#                                      discarding blind
 #   FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
 #                                      the ssh target's home, holding one
 #                                      private mirror (worktree + git store)
@@ -155,7 +159,7 @@ ARGS=("$@")
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
-RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-3600}"
+RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-4200}"
 SCRIPT_TIMEOUT=1500
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
