@@ -66,12 +66,19 @@
 # running, are removed on every exit path, including an interrupt.
 #
 # Remote run conditions (always applied to an offloaded run):
-#   - Serial, per-script bounded: the remote fm-test-run.sh is invoked with
-#     --jobs 1 and --per-script-timeout-secs 1500 appended, overriding any
-#     --jobs or --per-script-timeout-secs the caller passed, including larger
-#     values. The whole run stays capped by FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS
-#     (3600s); because the run is serialized, a large --all or --family run
-#     or --changed selection may exceed that cap and exit 124.
+#   - Same scheduler as PC01, per-script bounded: the remote fm-test-run.sh is
+#     invoked with no forced --jobs, so it applies exactly the policy it uses
+#     locally, sized to the remote host's own cores and load: a plain
+#     --changed or script-list selection uses its proven-concurrent scheduler
+#     (min(4, cpus) workers, load-throttled; only individually proven-isolated
+#     scripts and recorded concurrent family proofs run in parallel, and
+#     unproven scripts stay serial), while --lane, --family, and --all stay
+#     serial unless the caller asked otherwise. An explicit caller --jobs is
+#     preserved as given, including its refusal of unproven scripts.
+#     --per-script-timeout-secs 1500 is appended, overriding any value the
+#     caller passed, including a larger one. The whole run stays capped by
+#     FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS; a run that exceeds that cap exits 124
+#     rather than rerunning locally.
 #   - Host slot: one nonblocking flock on PC02's ~/.fm-pc02-test-slot.lock
 #     covers transfer and execution. Contention or an unclear claim routes
 #     local. The file is never unlinked: a dead owner's kernel lock is
@@ -431,7 +438,9 @@ remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") b
 for a in "${ARGS[@]}"; do
   remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
 done
-remote_suite_cmd="$remote_suite_cmd --jobs 1"
+# No --jobs is forced: fm-test-run.sh's own scheduler sizes concurrency to this
+# host's cores and load and admits only proven-concurrent work, exactly as a
+# local run does. Only the per-script bound is pinned.
 remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 # The watcher reads the ssh stdin: if the transport drops, EOF kills the suite
 # session. The lock (fd 8) is held by the suite itself, so a surviving old

@@ -449,8 +449,8 @@ test_remote_run_passes_through_green_suite_and_json() {
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
 }
 
-test_remote_invocation_is_serial_and_script_bounded() {
-  local dir fakebin fixture out status
+test_remote_invocation_inherits_fm_test_run_scheduler() {
+  local dir fakebin out status
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
   fi
@@ -465,13 +465,23 @@ echo 'ok - serial fixture'
 SH
   chmod +x "$dir/bounded.test.sh"
   cp "$dir/bounded.test.sh" "$dir/second.test.sh"
+  rm -f "$dir/ssh.log"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    "$SCRIPT" "$dir/bounded.test.sh" "$dir/second.test.sh" --jobs 4 --per-script-timeout-secs 0 2>&1)
+    "$SCRIPT" "$dir/bounded.test.sh" "$dir/second.test.sh" --per-script-timeout-secs 0 2>&1)
   status=$?
-  expect_code 0 "$status" "remote scripts must remain serial despite --jobs 4: $out"
+  expect_code 0 "$status" "unproven scripts must stay serial under the inherited scheduler: $out"
   assert_contains "$out" "running tests remotely" "serial test ran locally: $out"
-  pass "remote offloads override requested parallelism with one worker"
+  [ "$(printf '%s\n' "$out" | grep -c '^ok - serial fixture$')" -eq 2 ] \
+    || fail "both fixture scripts should have run: $out"
+  # FM_TEST_HOST_LOAD is printed only by fm-test-run.sh's own auto scheduler,
+  # so its presence proves no --jobs was forced onto the remote invocation;
+  # these unproven fixtures are then kept serial by that scheduler.
+  assert_contains "$out" "FM_TEST_HOST_LOAD" \
+    "the remote run did not use fm-test-run.sh's own scheduler: $out"
+  assert_contains "$out" "jobs=1" \
+    "unproven scripts must be scheduled serially: $out"
+  pass "an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound"
 }
 
 test_active_remote_suite_falls_back_locally() {
@@ -848,7 +858,7 @@ test_unclear_resource_check_falls_back_to_local
 test_pc02_if_idle_flag_forwards_through_fm_test_run
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
-test_remote_invocation_is_serial_and_script_bounded
+test_remote_invocation_inherits_fm_test_run_scheduler
 test_active_remote_suite_falls_back_locally
 test_decoy_host_suite_does_not_affect_remote_probe
 test_term_mid_remote_run_removes_mirror_and_kills_suite
