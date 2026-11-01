@@ -52,8 +52,8 @@
 #   reports pick=newest: a non-Claude or id-less harness, and a session that has
 #   not written yet, still get a reading, just not a session-bound one. The home's
 #   state/.lock-session records whichever session holds the home's lock, not the
-#   caller, and no Herdr query is made, so this needs no sidecar and no
-#   subprocess.
+#   caller; the trusted-id gate walks this process's ancestry with ps through
+#   bin/fm-session-lock-lib.sh, makes no Herdr query, and needs no lock sidecar.
 #
 #   Auto-discovery refuses to report a confident band from a stale transcript
 #   when the read is this process's own session (no FM_CLAUDE_STORE): when the
