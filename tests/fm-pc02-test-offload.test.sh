@@ -349,6 +349,7 @@ if [[ "${FM_FAKE_LDD_MODE:-same}" = wrapper* ]] && [ "$target" = chrome-headless
   exit 1
 fi
 case "${FM_FAKE_LDD_MODE:-same}" in
+  local-hang) exec sleep 60 ;;
   different|wrapper-different) printf 'libm.so.6 => /fake/lib/libm.so.6 (0x0)\n' ;;
   not-found) printf 'libasound.so.2 => not found\n' ;;
   *) printf 'libc.so.6 => /fake/lib/libc.so.6 (0x0)\n' ;;
@@ -386,6 +387,10 @@ case "\$*" in
         ;;
       wrapper-dependency-mismatch)
         HOME="$dir/home" FM_FAKE_LDD_MODE=wrapper-different bash -c "\$*"
+        exit \$?
+        ;;
+      local-browser-dependency-hang)
+        HOME="$dir/home" FM_FAKE_LDD_MODE=same bash -c "\$*"
         exit \$?
         ;;
     esac
@@ -598,6 +603,28 @@ test_environment_version_mismatch_falls_back_with_field() {
   assert_contains "$out" "fake-PC02-git-version" "the fallback diagnostic omitted PC02's value: $out"
   assert_contains "$out" "running on PC01" "a mismatched host was not routed locally: $out"
   pass "a PC02 tool-version mismatch names the surface and runs locally"
+}
+
+test_hung_local_browser_dependency_probe_falls_back() {
+  local dir fakebin out status start elapsed
+  dir="$TMP_ROOT/parity-browser-probe-timeout"
+  fakebin=$(fake_pc02 "$dir")
+  start=$SECONDS
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_FAKE_LDD_MODE=local-hang FM_FAKE_PARITY_MODE=local-browser-dependency-hang \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  elapsed=$((SECONDS - start))
+  expect_code 0 "$status" "a timed-out local browser probe must still run the suite locally: $out"
+  [ "$elapsed" -lt 20 ] || fail "the local browser dependency probe exceeded its bound (${elapsed}s): $out"
+  assert_contains "$out" "PC01 browser dependency probe timed out running ldd" \
+    "the fallback did not clearly identify the timed-out dependency probe: $out"
+  assert_contains "$out" "running on PC01" "a browser-probe timeout did not select the local run: $out"
+  assert_not_contains "$out" "running tests remotely" "a browser-probe timeout ran the remote suite: $out"
+  if grep -F 'fm-pc02-test-slot-' "$dir/ssh.log" >/dev/null 2>&1; then
+    fail "a browser-probe timeout claimed a remote slot: $(cat "$dir/ssh.log")"
+  fi
+  pass "a hanging local browser dependency probe times out and routes locally"
 }
 
 test_selected_cached_browser_version_mismatch_falls_back() {
@@ -1150,6 +1177,7 @@ test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler
 test_environment_parity_match_allows_offload
 test_environment_version_mismatch_falls_back_with_field
+test_hung_local_browser_dependency_probe_falls_back
 test_selected_cached_browser_version_mismatch_falls_back
 test_shared_browser_resolver_prefers_chromium_to_google_chrome
 test_chromium_missing_library_falls_back_with_field

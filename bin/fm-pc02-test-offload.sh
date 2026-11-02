@@ -97,7 +97,8 @@
 #     the browser selected by fm-test-chrome.sh. CPU count, RAM, ulimit -u,
 #     no-mistakes daemon version, /usr/bin/env provider, and shell availability
 #     (including zsh) are intentionally excluded as resources or documented
-#     test differences.
+#     test differences. Local browser dependency and wrapper-resolution probes
+#     have a 10-second deadline per command; timeout routes the run locally.
 #   - Sizing evidence: two simultaneous four-worker offloads of
 #     fm-supervision-host, fm-captain-hold-lifecycle,
 #     fm-remote-secondmate-lifecycle-e2e, and fm-spawn-dispatch-profile passed
@@ -394,14 +395,24 @@ printf 'locale.TZ=%s\n' "${TZ-}"
 normalize_ldd() {
   local path=$1 output status=0 target trace
   [ -n "$path" ] || { printf 'UNRESOLVED:browser-absent\n'; return; }
-  output=$(ldd "$path" 2>&1) || status=$?
+  output=$(timeout --signal=TERM --kill-after=2 10 ldd "$path" 2>&1) || status=$?
+  case "$status" in
+    124|137) printf 'PC01 browser dependency probe timed out running ldd for %s\n' "$path" >&2; return 1 ;;
+  esac
   if printf '%s' "$output" | grep -Eqi 'not a dynamic executable|statically linked|not dynamic'; then
-    trace=$(bash -x "$path" --version 2>&1 </dev/null || true)
+    status=0
+    trace=$(timeout --signal=TERM --kill-after=2 10 bash -x "$path" --version 2>&1 </dev/null) || status=$?
+    case "$status" in
+      124|137) printf 'PC01 browser dependency probe timed out resolving wrapper %s\n' "$path" >&2; return 1 ;;
+    esac
     target=$(printf '%s\n' "$trace" | sed -nE 's/^\+ exec ([^[:space:]]+).*/\1/p' | tail -n 1)
     if [ -n "$target" ] && [ -x "$target" ]; then
       path=$(readlink -f "$target" 2>/dev/null || printf '%s' "$target")
       status=0
-      output=$(ldd "$path" 2>&1) || status=$?
+      output=$(timeout --signal=TERM --kill-after=2 10 ldd "$path" 2>&1) || status=$?
+      case "$status" in
+        124|137) printf 'PC01 browser dependency probe timed out running ldd for resolved executable %s\n' "$path" >&2; return 1 ;;
+      esac
     else
       printf 'UNRESOLVED:wrapper-target (%s)\n' "${target:-unresolved}"
       return
@@ -439,7 +450,8 @@ else
 fi
 printf 'chromium.selected_version=%s\n' "$browser_version"
 printf 'chromium.dependencies='
-normalize_ldd "$browser" | paste -sd, -
+browser_dependencies=$(normalize_ldd "$browser") || exit 1
+printf '%s\n' "$browser_dependencies" | paste -sd, -
 PARITY_PROBE
 )"
 local_parity=$(bash -c "$parity_probe" 2>&1) || run_local "PC01 environment parity probe failed: $local_parity"
