@@ -1,0 +1,88 @@
+format	fm-lint-roots-v1
+meta	shellcheck_version	0.11.0
+meta	platform	Linux x86_64
+meta	image_os	unknown
+meta	image_version	unknown
+meta	mode	full
+meta	partition	1of4
+meta	jobs	1
+meta	bounds_enforced	1
+meta	root_deadline_seconds	1200
+meta	root_kill_grace_seconds	5
+meta	root_memory_limit_kib	12582912
+meta	timing_mechanism	perl
+begin	5	bin/fm-backlog-transition-lib.sh	0	full	1793632643654
+end	5	bin/fm-backlog-transition-lib.sh	0	full	1793632643654	1793632678468	34814	0	ok	439372	1
+begin	7	bin/fm-brief-heading-lib.sh	0	full	1793632678475
+end	7	bin/fm-brief-heading-lib.sh	0	full	1793632678475	1793632679108	633	0	ok	14956	1
+begin	8	bin/fm-busy-lib.sh	0	full	1793632679112
+end	8	bin/fm-busy-lib.sh	0	full	1793632679112	1793632687875	8763	0	ok	76940	1
+begin	9	bin/fm-cd-pretool-check.sh	0	full	1793632687878
+end	9	bin/fm-cd-pretool-check.sh	0	full	1793632687878	1793632689154	1276	0	ok	21964	1
+begin	15	bin/fm-extension.sh	0	full	1793632689158
+end	15	bin/fm-extension.sh	0	full	1793632689158	1793632689678	520	0	ok	13516	1
+begin	18	bin/fm-gate-refuse-lib.sh	0	full	1793632689681
+end	18	bin/fm-gate-refuse-lib.sh	0	full	1793632689681	1793632690801	1120	0	ok	20172	1
+begin	19	bin/fm-gemini-lib.sh	0	full	1793632690810
+end	19	bin/fm-gemini-lib.sh	0	full	1793632690810	1793632691701	891	0	ok	17228	1
+begin	20	bin/fm-git-push-guard.sh	0	full	1793632691703
+end	20	bin/fm-git-push-guard.sh	0	full	1793632691703	1793632712290	20587	0	ok	340044	1
+begin	22	bin/fm-host-mirror.sh	0	full	1793632712294
+end	22	bin/fm-host-mirror.sh	0	full	1793632712294	1793632788407	76113	0	ok	907852	1
+begin	23	bin/fm-install-treehouse.sh	0	full	1793632788410
+end	23	bin/fm-install-treehouse.sh	0	full	1793632788410	1793632789742	1332	0	ok	16844	1
+begin	26	bin/fm-lint-nomistakes-config.sh	0	full	1793632789748
+end	26	bin/fm-lint-nomistakes-config.sh	0	full	1793632789748	1793632791044	1296	0	ok	15948	1
+begin	29	bin/fm-lock.sh	0	full	1793632791051
+end	29	bin/fm-lock.sh	0	full	1793632791051	1793632873512	82461	0	ok	986072	1
+begin	31	bin/fm-parent-channel-lib.sh	0	full	1793632873517
+end	31	bin/fm-parent-channel-lib.sh	0	full	1793632873517	1793632899556	26039	0	ok	334796	1
+begin	32	bin/fm-pipeline-spend.sh	0	full	1793632899561
+end	32	bin/fm-pipeline-spend.sh	0	full	1793632899561	1793632918644	19083	0	ok	334120	1
+begin	33	bin/fm-pr-merge.sh	0	full	1793632918648
+end	33	bin/fm-pr-merge.sh	0	full	1793632918648	1793633303276	384628	0	ok	4533772	1
+begin	34	bin/fm-pr-poll.sh	0	full	1793633303279
+end	34	bin/fm-pr-poll.sh	0	full	1793633303279	1793633305426	2147	0	ok	25808	1
+begin	35	bin/fm-procevent-lavish.sh	0	full	1793633305430
+end	35	bin/fm-procevent-lavish.sh	0	full	1793633305430	1793633409749	104319	0	ok	1333920	1
+begin	36	bin/fm-procevent-when.sh	0	full	1793633409752
+end	36	bin/fm-procevent-when.sh	0	full	1793633409752	1793633498444	88692	0	ok	1359948	1
+begin	41	bin/fm-role.sh	0	full	1793633498448
+end	41	bin/fm-role.sh	0	full	1793633498448	1793633501937	3489	0	ok	62668	1
+begin	43	bin/fm-secondmate-nudge-lib.sh	0	full	1793633501941
+end	43	bin/fm-secondmate-nudge-lib.sh	0	full	1793633501941	1793633503227	1286	0	ok	20940	1
+begin	46	bin/fm-sessionstart-nudge.sh	0	full	1793633503232
+end	46	bin/fm-sessionstart-nudge.sh	0	full	1793633503232	1793633508395	5163	0	ok	73164	1
+begin	51	bin/fm-supervise-daemon.sh	0	full	1793633508400
+end	51	bin/fm-supervise-daemon.sh	0	full	1793633508400	1793633732330	223930	0	ok	2900748	1
+begin	52	bin/fm-supervision-engine-lib.sh	0	full	1793633732333
+end	52	bin/fm-supervision-engine-lib.sh	0	full	1793633732333	1793633735823	3490	0	ok	45516	1
+begin	53	bin/fm-supervision-instructions.sh	0	full	1793633735832
+end	53	bin/fm-supervision-instructions.sh	0	full	1793633735832	1793633739499	3667	0	ok	85004	1
+begin	54	bin/fm-task-inbox-lib.sh	0	full	1793633739500
+end	54	bin/fm-task-inbox-lib.sh	0	full	1793633739500	1793633743382	3882	0	ok	52684	1
+begin	55	bin/fm-trace-context-lib.sh	0	full	1793633743384
+end	55	bin/fm-trace-context-lib.sh	0	full	1793633743384	1793633744521	1137	0	ok	22988	1
+begin	56	bin/fm-turnend-guard.sh	0	full	1793633744522
+end	56	bin/fm-turnend-guard.sh	0	full	1793633744522	1793633811520	66998	0	ok	943316	1
+begin	57	bin/fm-wake-grant.sh	0	full	1793633811525
+end	57	bin/fm-wake-grant.sh	0	full	1793633811525	1793633869461	57936	0	ok	701272	1
+begin	58	bin/fm-wake-lib.sh	0	full	1793633869464
+end	58	bin/fm-wake-lib.sh	0	full	1793633869464	1793633947455	77991	0	ok	719548	1
+begin	59	bin/fm-watch-checkpoint.sh	0	full	1793633947457
+end	59	bin/fm-watch-checkpoint.sh	0	full	1793633947457	1793633951020	3563	0	ok	62556	1
+begin	60	bin/fm-x-followup.sh	0	full	1793633951023
+end	60	bin/fm-x-followup.sh	0	full	1793633951023	1793634040402	89379	0	ok	1276956	1
+begin	64	tests/fm-afk-launch.test.sh	0	full	1793634040404
+end	64	tests/fm-afk-launch.test.sh	0	full	1793634040404	1793634221197	180793	0	ok	1913500	1
+begin	67	tests/fm-backend-cmux.test.sh	0	full	1793634221199
+end	67	tests/fm-backend-cmux.test.sh	0	full	1793634221199	1793634283772	62573	0	ok	664316	1
+begin	71	tests/fm-bearings-board-lavish-live-e2e.test.sh	0	full	1793634283775
+end	71	tests/fm-bearings-board-lavish-live-e2e.test.sh	0	full	1793634283775	1793634290017	6242	0	ok	88424	1
+begin	76	tests/fm-claim-check.test.sh	0	full	1793634290021
+end	76	tests/fm-claim-check.test.sh	0	full	1793634290021	1793634364145	74124	0	ok	1097568	1
+begin	77	tests/fm-claude-stop-autoarm-live-e2e.test.sh	0	full	1793634364147
+end	77	tests/fm-claude-stop-autoarm-live-e2e.test.sh	0	full	1793634364147	1793634369443	5296	0	ok	102248	1
+begin	83	tests/fm-control-relaunch.test.sh	0	full	1793634369448
+end	83	tests/fm-control-relaunch.test.sh	0	full	1793634369448	1793634554596	185148	0	ok	1759176	1
+begin	84	tests/fm-cursor-harness.test.sh	0	full	1793634554602

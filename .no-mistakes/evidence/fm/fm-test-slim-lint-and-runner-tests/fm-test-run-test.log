@@ -1,0 +1,87 @@
+ok - exact suite coverage: --all lists every tests/*.test.sh once
+ok - family selection returns a proper subset of the suite
+ok - single-script selection lists exactly that path
+ok - the runner emits one bounded secret-free environment record and records missing tools safely
+ok - changed-file selection stays conservative (never silent full suite)
+ok - a task marker refuses execution in the primary checkout and leaves worktrees and inspection alone
+ok - runner and its documentation surfaces select their curated family, not just their contract owners
+ok - shell line-ending policy selects runner coverage
+ok - quarantine list change selects runner coverage
+fm-test-run: no tests selected for changes vs HEAD (map is conservative; use --all for the complete suite)
+ok - changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source
+ok - a bin reference selects the referencing scripts, and consumers still select their curated families
+ok - changed defaults to bounded automatic scheduling with serial override
+ok - Windows emulation exempts only synthetic POSIX modes
+ok - a plain script list defaults to bounded automatic concurrency without an automatic timeout
+ok - family proofs run concurrently only within separate family phases
+ok - empty changed selection emits deterministic text and JSON summaries
+ok - timing markers and JSON artifact are valid
+ok - aggregate exit reflects any script failure
+ok - gate-skip accounting is honest and non-failing
+ok - a gate skip records why it skipped
+ok - a script that actually ran records no skip reason
+ok - live guards are recorded as a capability class, not a bare env opt-in
+ok - fail-on-gate-skip converts herdr-not-found into a hard failure
+ok - exclude-family drops the named primary family after selection
+ok - exclude-quarantined drops exactly the listed scripts and reports each skip loudly
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-pair-dedup.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-backend-herdr.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-procevent.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-watch-triage.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-calm-pi-extension.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-queue.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-secondmate-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-transport-lanes.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-composer-codex-idle-live-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-agy-harness.test.sh
+fm-test-run: quarantined skip: tests/fm-agy-harness.test.sh (signature: a zero model bound disabled the deadline, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-backend-herdr.test.sh (signature: coreutils: unknown program 'pi', owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-calm-pi-extension.test.sh (signature: Pi queued-row queued_mixed case did not list the captain's queued follow-up, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-composer-codex-idle-live-e2e.test.sh (signature: idle screen never classified empty, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent-quota.test.sh (signature: provider retire targeted the wrong source, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent.test.sh (signature: the listener under test was not reparented away from its session, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-public-followup.test.sh (signature: a wake whose line could not be written must stay queued, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-remote-secondmate-lifecycle-e2e.test.sh (signature: remote spawn never reached its blocked inheritance write, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-remote-transport-lanes.test.sh (signature: concurrent sequence claims were not unique and monotonic, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-secondmate-harness.test.sh (signature: first config push did not reach pointer delivery, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-session-lock-ancestry.test.sh (signature: the pty-host was not reparented to init after the daemon ended, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-supervision-host.test.sh (signature: a routine outcome a drain could not print must follow on the next drain, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-task-delivery.test.sh (signature: a ref-format-valid metacharacter prefix should promote safely, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-pair-dedup.test.sh (signature: no process-event result, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-queue.test.sh (signature: a foreign queue with no progress did not alert, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-watch-triage.test.sh (signature: exceeded the per-script bound, owner: sync-preexisting-test-failures)
+ok - quarantine diagnostics classify drift without weakening ordinary gates
+ok - proven-isolated scheduling ignores parallel hints
+ok - family, all, changed, and script selections ignore parallel hints
+ok - portable shard union, disjointness, and coverage guard hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - portable serial shard listing is backed by the exhaustive coverage guard
+ok - coverage guard bounds the unmeasured share and serial packing within twenty minutes
+ok - serial packing accepts the exact budget and refuses one millisecond above it
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
+ok - --jobs refuses non-proven / stateful selections
+ok - --jobs admits and schedules a family with a recorded concurrent proof
+ok - an unclassified new test stays serial while the proven residual family runs concurrently
+ok - a changed shared test fixture selects its readers while an unread tests/ path still refuses
+ok - a concurrent run starts the longest-hint script first
+ok - --per-script-timeout-secs turns a hung script into a bounded failure
+ok - the automatic --changed bound gives the slow watcher suite at least 1500s
+ok - a portable-serial lane derives its per-script timeout from the hint table, and an explicit flag still overrides it
+ok - --max-wall-ms fails an over-budget run and refuses a malformed budget
+ok - jobs scheduler runs proven scripts; failure propagates; non-proven refused
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+ok - aggregate-json merges lane timing artifacts
+ok - --check-hint-drift only refuses a hint that drifts on two consecutive runs, and warns on a single-run spike
+ok - --check-hint-drift ignores a ratio-only swing under PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS
+ok - --fail-fast stops after the first failure and is off by default
+ok - --fail-fast stops the --jobs scheduler after the first failure
+ok - --fail-fast stops the unproven serial remainder after a concurrent failure
+ok - FM_TEST_HOST_LOAD reports load/cpus/jobs and throttles automatic concurrency, never an explicit --jobs
+ok - the --changed default per-script timeout scales by max(1, load5/cpus)
+ok - the --changed path bounds fm-watch-triage at its own load-scaled 1500s base
+ok - the --changed path bounds fm-captain-hold-lifecycle at its own load-scaled 1500s base
+ok - token-free retry re-runs a load-sensitive failure once and clears it without a real regression
+ok - the token-free retry admits exit=124 regardless of the load-sensitive name list
+ok - token-free retry never fires when any failure is outside the load-sensitive/timeout class
+ok - a read-only dir left under the run root never changes the aggregate exit status
