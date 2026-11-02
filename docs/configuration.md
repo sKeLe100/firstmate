@@ -762,8 +762,8 @@ For an operational home separate from that primary clone (including a validation
 An invalid or unreadable configuration, or an unavailable home state directory, keeps testing local; a configured home is never skipped in favor of a guessed home.
 `FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
 
-[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic host-slot lock, cleanup, scheduling, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
-The host slot coordinates offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the per-slot locks, cleanup, scheduling, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
+Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock and using `bin/fm-test-run.sh`'s own scheduler; with every slot busy the next run falls back locally and says all slots are busy. Direct test invocations on PC02 must be scheduled separately.
 A remote run is not forced serial: it inherits `bin/fm-test-run.sh`'s own scheduler sized to PC02's cores and load, so a plain `--changed` selection uses its proven-concurrent policy while `--lane`, `--family`, and `--all` stay serial as they do locally.
 A large `--changed` selection can still outrun any bound, and a run that hits it fails with exit 124 rather than rerunning the suite locally or omitting selected tests; `FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS` owns the default whole-run cap.
 

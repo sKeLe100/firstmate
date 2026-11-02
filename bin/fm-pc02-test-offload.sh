@@ -79,9 +79,13 @@
 #     caller passed, including a larger one. The whole run stays capped by
 #     FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS; a run that exceeds that cap exits 124
 #     rather than rerunning locally.
-#   - Host slot: one nonblocking flock on PC02's ~/.fm-pc02-test-slot.lock
-#     covers transfer and execution. Contention or an unclear claim routes
-#     local. The file is never unlinked: a dead owner's kernel lock is
+#   - Host slots: FM_PC02_OFFLOAD_SLOTS (default 2) nonblocking flocks on
+#     PC02's ~/.fm-pc02-test-slot-<n>.lock, one per concurrent suite, cover
+#     transfer and execution. A run takes the first free slot; with all slots
+#     held it logs that every slot is busy and routes local. Each run keeps
+#     fm-test-run.sh's own scheduler, so two default slots on PC02's 16 threads
+#     run at most 4 workers each (8 test processes) while sharing the host's
+#     ~27 GB. The files are never unlinked: a dead owner's kernel lock is
 #     released automatically, so a leftover file or process name is harmless.
 #   - Supervising-home selection and per-machine configuration are owned by
 #     docs/configuration.md's "PC02 test offload" section.
@@ -101,15 +105,20 @@
 #                                      probe's CPU sample alone takes ~1s)
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
 #                                      (default: 180)
+#   FM_PC02_OFFLOAD_SLOTS               number of concurrent PC02 suites
+#                                      (default: 2); each holds its own slot
+#                                      lock. With all slots busy the run
+#                                      routes local and says so.
 #   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote test run
-#                                      (default: 4200); sized so a full
-#                                      --changed selection like PR #215's
-#                                      (183 scripts, measured 3689s wall on
-#                                      PC02 at jobs=4) fits with margin.
-#                                      Exceeding it fails the run (exit 124)
-#                                      rather than falling back, since the
-#                                      remote work already spent is not worth
-#                                      discarding blind
+#                                      (default: 7200); a hang tripwire, not
+#                                      a deadline. Sized so a full --changed
+#                                      selection like PR #215's (183 scripts,
+#                                      measured 4322s wall on PC02 at jobs=4)
+#                                      fits even while sharing the host with
+#                                      the other slot. Exceeding it fails the
+#                                      run (exit 124) rather than falling back,
+#                                      since the remote work already spent is
+#                                      not worth discarding blind
 #   FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
 #                                      the ssh target's home, holding one
 #                                      private mirror (worktree + git store)
@@ -159,7 +168,8 @@ ARGS=("$@")
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
-RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-4200}"
+RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
+SLOTS="${FM_PC02_OFFLOAD_SLOTS:-2}"
 SCRIPT_TIMEOUT=1500
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
@@ -184,6 +194,14 @@ GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
 # would fail differently than PC01, not just thinner, so no-mistakes would
 # judge a different outcome. Require them on PC02 too rather than risk that.
 REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint ruby chromium}"
+
+# A malformed slot count is a configuration error, not an unclear host read:
+# refuse loudly instead of silently running with a different shape.
+case "$SLOTS" in
+  ''|*[!0-9]*) echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be a positive integer, got '$SLOTS'" >&2; exit 2 ;;
+esac
+{ [ "$SLOTS" -ge 1 ] && [ "$SLOTS" -le 16 ]; } \
+  || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be between 1 and 16, got '$SLOTS'" >&2; exit 2; }
 
 release_claim() {
   if [ "$claim_open" -eq 1 ]; then
@@ -336,13 +354,26 @@ esac
 if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
 fi
-# The same SSH shell owns the lock while waiting for transfer, then runs the
-# suite under it. EOF before execution releases it; EOF during execution
-# cannot release it ahead of the bounded suite. No PID-file reclamation race.
+# The same SSH shell owns the slot while waiting for transfer, then runs the
+# suite under it. It takes the first free slot, so up to SLOTS suites share
+# PC02; with every slot held it reports that and exits 75. EOF before
+# execution releases the slot; EOF during execution cannot release it ahead of
+# the bounded suite. No PID-file reclamation race.
+claim_slots=
+slot=1
+while [ "$slot" -le "$SLOTS" ]; do
+  claim_slots="$claim_slots $slot"
+  slot=$((slot + 1))
+done
 # shellcheck disable=SC2016 # HOME and command expand on PC02.
-claim_cmd='exec 8> "$HOME/.fm-pc02-test-slot.lock" || exit 1
-flock -n 8 || exit 75
-printf "claimed\n"
+claim_cmd='held=
+for i in'"$claim_slots"'; do
+  exec 8> "$HOME/.fm-pc02-test-slot-$i.lock" || exit 1
+  if flock -n 8; then held=$i; break; fi
+  exec 8>&-
+done
+if [ -z "$held" ]; then printf "busy '"$SLOTS"'\n"; exit 75; fi
+printf "claimed %s of '"$SLOTS"'\n" "$held"
 IFS= read -r -t '"$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5))"' command || exit 1
 eval "$command"'
 # FIFOs keep this compatible with stock macOS Bash (which has no coproc).
@@ -356,10 +387,22 @@ timeout --kill-after=5 "$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5 + RUN_TIMEOUT + 
 claim_pid=$!
 exec 7<"$claim_tmp/out"
 claim_open=1
-if ! IFS= read -r -t "$PROBE_TIMEOUT" claim_reply <&7 || [ "$claim_reply" != claimed ]; then
+claim_reply=
+if ! IFS= read -r -t "$PROBE_TIMEOUT" claim_reply <&7 || [ -z "$claim_reply" ]; then
   kill "$claim_pid" 2>/dev/null || true
-  run_local "PC02 test slot busy or claim unavailable"
+  run_local "PC02 test slot claim unavailable"
 fi
+case "$claim_reply" in
+  "claimed "*) echo "fm-pc02-test-offload: claimed PC02 slot ${claim_reply#claimed }" >&2 ;;
+  "busy "*)
+    kill "$claim_pid" 2>/dev/null || true
+    run_local "all ${claim_reply#busy } PC02 test slots are busy; running locally"
+    ;;
+  *)
+    kill "$claim_pid" 2>/dev/null || true
+    run_local "PC02 test slot claim unavailable (reply: '$claim_reply')"
+    ;;
+esac
 
 # 3. Mirror the current worktree onto PC02: working-tree files, this
 # worktree's own per-worktree git-dir (HEAD, index, refs, logs), and the
