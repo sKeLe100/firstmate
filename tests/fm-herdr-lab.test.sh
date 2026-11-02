@@ -44,6 +44,26 @@ case "$1 ${2:-}" in
         jq -nc --arg name "$session" '{error:"temporarily unavailable",sessions:[{default:false,name:$name,running:true,socket_path:"/tmp/lab.sock"}]}'
         exit 0
         ;;
+      error-lab-then-empty)
+        jq -nc --arg name "$session" '{error:"temporarily unavailable",sessions:[{default:false,name:$name,running:true,socket_path:"/tmp/lab.sock"}]}'
+        printf '%s\n' '{"sessions":[]}'
+        exit 0
+        ;;
+      two-valid)
+        printf '%s\n%s\n' '{"sessions":[]}' '{"sessions":[]}'
+        exit 0
+        ;;
+      empty)
+        exit 0
+        ;;
+      trailing-garbage)
+        printf '%s\n%s\n' '{"sessions":[]}' 'not-json'
+        exit 0
+        ;;
+      valid-then-error)
+        printf '%s\n%s\n' '{"sessions":[]}' '{"error":"temporarily unavailable","sessions":[]}'
+        exit 0
+        ;;
       null) printf '%s\n' '{"sessions":null}'; exit 0 ;;
     esac
     # FM_FAKE_HERDR_DEFAULT selects the host's default-session fleet state:
@@ -612,29 +632,36 @@ test_multiple_default_sessions_are_refused() {
 }
 
 test_malformed_session_lists_are_refused() {
-  local response name status
-  for response in malformed error error-array error-array-lab null; do
+  local response name status out
+  for response in malformed error error-array error-array-lab error-lab-then-empty two-valid empty trailing-garbage valid-then-error null; do
     name="fm-lab-bad-sessions-$response-$$"
     status=0
-    FM_FAKE_HERDR_LIST_RESPONSE="$response" run_with_fake fm_herdr_lab_prepare "$name" >/dev/null 2>&1 || status=$?
+    out=$(FM_FAKE_HERDR_LIST_RESPONSE="$response" run_with_fake fm_herdr_lab_prepare "$name" 2>&1) || status=$?
     expect_code 1 "$status" "a successful Herdr response with invalid sessions must fail ($response)"
     assert_absent "$TRIPWIRES/$name.fleet-state.json" "invalid sessions response left a tripwire ($response)"
+    assert_not_contains "$out" '{"sessions":[]}' "invalid response leaked an accepted session list ($response): $out"
   done
-  name="fm-lab-bad-sessions-teardown-$$"
-  run_with_fake fm_herdr_lab_provision "$name" || fail "valid baseline tripwire setup failed"
-  status=0
-  FM_FAKE_HERDR_LIST_RESPONSE=null run_with_fake fm_herdr_lab_teardown "$name" >/dev/null 2>&1 || status=$?
-  expect_code 1 "$status" "a null sessions response during teardown must fail the tripwire"
-  assert_present "$TRIPWIRES/$name.fleet-state.json" "failed teardown discarded its tripwire"
-  status=0
-  : > "$FAKE_LOG"
-  FM_FAKE_HERDR_LIST_RESPONSE=error-array-lab run_with_fake fm_herdr_lab_teardown "$name" >/dev/null 2>&1 || status=$?
-  expect_code 1 "$status" "an error-marked array containing the lab session during teardown must fail the tripwire"
-  assert_present "$TRIPWIRES/$name.fleet-state.json" "error-marked teardown discarded its tripwire"
-  if grep -E 'session (stop|delete)' "$FAKE_LOG" >/dev/null; then
-    fail "error-marked teardown response reached stop/delete: $(cat "$FAKE_LOG")"
-  fi
-  pass "fm-herdr-lab: malformed, error, and null session lists cannot become empty snapshots"
+  name="fm-lab-single-session-list-$$"
+  run_with_fake fm_herdr_lab_prepare "$name" || fail "a valid single-document session list was rejected"
+  assert_present "$TRIPWIRES/$name.fleet-state.json" "valid single-document response did not create the tripwire"
+  run_with_fake fm_herdr_lab_teardown "$name" || fail "teardown rejected a valid single-document session list"
+  assert_absent "$TRIPWIRES/$name.fleet-state.json" "valid single-document teardown retained its tripwire"
+
+  for response in null error-array-lab error-lab-then-empty two-valid empty trailing-garbage valid-then-error; do
+    name="fm-lab-bad-teardown-$response-$$"
+    run_with_fake fm_herdr_lab_provision "$name" || fail "valid baseline tripwire setup failed ($response)"
+    status=0
+    : > "$FAKE_LOG"
+    out=$(FM_FAKE_HERDR_LIST_RESPONSE="$response" run_with_fake fm_herdr_lab_teardown "$name" 2>&1) || status=$?
+    expect_code 1 "$status" "invalid Herdr response during teardown must fail ($response): $out"
+    assert_present "$TRIPWIRES/$name.fleet-state.json" "failed teardown discarded its tripwire ($response)"
+    assert_equals "$(cat "$FAKE_STATE/$name")" running "invalid response changed lab state before teardown ($response)"
+    assert_not_contains "$out" '{"sessions":[]}' "invalid teardown response leaked an accepted list ($response): $out"
+    if grep -E 'session (stop|delete)' "$FAKE_LOG" >/dev/null; then
+      fail "invalid teardown response reached stop/delete ($response): $(cat "$FAKE_LOG")"
+    fi
+  done
+  pass "fm-herdr-lab: session-list consumers require exactly one valid JSON document"
 }
 
 test_refuses_unsafe_names

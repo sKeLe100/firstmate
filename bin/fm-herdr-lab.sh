@@ -77,13 +77,18 @@ fm_herdr_lab_raw() { # <session> <herdr arguments...>
 }
 
 fm_herdr_lab_session_list() { # <session>
-  local response
+  local response validated
   response=$(fm_herdr_lab_raw "$1" session list --json) || return 1
-  printf '%s' "$response" | jq -e 'type == "object" and (has("error") | not) and (.sessions | arrays)' >/dev/null 2>&1 || {
+  validated=$(printf '%s' "$response" | jq -e -s '
+    if length == 1 and (.[0] | type == "object" and (has("error") | not) and (.sessions | arrays))
+    then .[0]
+    else error("invalid Herdr sessions response")
+    end
+  ' 2>/dev/null) || {
     fm_herdr_lab_error "cannot read Herdr sessions array"
     return 1
   }
-  printf '%s\n' "$response"
+  printf '%s\n' "$validated"
 }
 
 fm_herdr_lab_fleet_state() { # <session>
