@@ -487,6 +487,38 @@ fm_test_reap_fixture_watchdogs() {
   for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
 }
 
+# fm_test_reap_stale_fixture_watchdogs: start-up sweep for loops a run that was
+# SIGKILLed (no trap ran) left behind. Only a loop whose FM_HOME is inside a
+# fixture root directly under the test tmpdir is considered, and only when that
+# root is gone or its .fm-test-fixture marker names an owner that is dead; a
+# live owner's fixtures and any home outside the tmpdir are never touched.
+fm_test_reap_stale_fixture_watchdogs() {
+  local pid env_home root marker owner_pid owner_identity current_identity base=${FM_TEST_TMPDIR%/}
+  for pid in $(pgrep -f 'fm-primary-watchdog\.sh' 2>/dev/null || true); do
+    [ "$pid" != "$$" ] || continue
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'fm-primary-watchdog\.sh run' || continue
+    env_home=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -n 1)
+    case "$env_home" in "$base"/fm-*) ;; *) continue ;; esac
+    root="$base/$(printf '%s' "${env_home#"$base"/}" | cut -d/ -f1)"
+    marker="$root/.fm-test-fixture"
+    if [ -d "$root" ]; then
+      [ -f "$marker" ] || continue
+      owner_pid=$(sed -n '1p' "$marker" 2>/dev/null) || owner_pid=
+      owner_identity=$(sed -n '2,$p' "$marker" 2>/dev/null) || owner_identity=
+      case "$owner_pid" in
+        '' | *[!0-9]*) ;;
+        *)
+          current_identity=$(fm_test_pid_identity "$owner_pid" 2>/dev/null) || current_identity=
+          if [ -n "$owner_identity" ] && [ "$current_identity" = "$owner_identity" ]; then
+            continue
+          fi
+          ;;
+      esac
+    fi
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+}
+
 # Ceiling on how long a fixture's blocking stub may keep polling. A stub that
 # waits for a trigger file by re-running `sleep` is a high-frequency source of
 # process spawns, and one that outlives its test - because the test was killed
@@ -554,6 +586,7 @@ FM_TEST_ORPHAN_MAX_AGE_SECONDS=${FM_TEST_ORPHAN_MAX_AGE_SECONDS:-3600}
 
 fm_test_reap_orphans() {
   local marker dir mtime now owner_pid owner_identity current_identity
+  fm_test_reap_stale_fixture_watchdogs
   now=$(date +%s)
   for marker in "$FM_TEST_TMPDIR"/fm-*/.fm-test-fixture; do
     [ -e "$marker" ] || continue
