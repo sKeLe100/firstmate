@@ -74,7 +74,7 @@ test_supervising_home_is_passed_to_lane_probe() {
   fakebin=$(fm_fakebin "$TMP_ROOT/supervising-home-tools")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=0\n'
 exit 0
 SH
@@ -98,7 +98,7 @@ test_unreachable_host_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/unreachable")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 echo "ssh: connect to host pc02 port 22: Connection timed out" >&2
 exit 255
 SH
@@ -117,7 +117,7 @@ test_missing_required_tool_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/missing-tool")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'missing:jq\nmissing:shellcheck\nresource:cpu=1 gpu=0\n'
 exit 0
 SH
@@ -137,7 +137,7 @@ test_slow_probe_times_out_and_falls_back() {
   fakebin=$(fm_fakebin "$TMP_ROOT/slow-probe")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 sleep 30
 exit 0
 SH
@@ -157,7 +157,7 @@ test_rsync_failure_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/rsync-fails")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 # Reachable, idle, and tool-ready for the probe, and a no-op for mkdir and
 # any other one-shot remote command; rsync itself is the failure under test.
 printf 'resource:cpu=1 gpu=0\n'
@@ -184,7 +184,7 @@ test_personal_use_switch_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/personal-use")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'personal-use:on\nresource:cpu=1 gpu=0\n'
 exit 0
 SH
@@ -203,7 +203,7 @@ test_llama_swap_loaded_model_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/llama-swap-live")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'llama-swap-running:1\nresource:cpu=1 gpu=0\n'
 exit 0
 SH
@@ -223,7 +223,7 @@ test_idle_llama_swap_does_not_block_offload() {
   fakebin=$(fm_fakebin "$TMP_ROOT/llama-swap-idle")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'llama-swap-running:0\nresource:cpu=1 gpu=0\n'
 exit 0
 SH
@@ -248,7 +248,7 @@ test_unclear_llama_swap_answer_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/llama-swap-unclear")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'llama-swap-running:\nresource:cpu=1 gpu=0\n'
 exit 0
 SH
@@ -268,7 +268,7 @@ test_high_cpu_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/cpu-busy")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'resource:cpu=97.5 gpu=0\n'
 exit 0
 SH
@@ -287,7 +287,7 @@ test_high_gpu_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/gpu-busy")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=42\n'
 exit 0
 SH
@@ -306,7 +306,7 @@ test_unclear_resource_check_falls_back_to_local() {
   fakebin=$(fm_fakebin "$TMP_ROOT/resource-unclear")
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'resource:script-missing\n'
 exit 0
 SH
@@ -352,7 +352,7 @@ cd "$dir/home" || exit 255
 if [ -n "\${FM_FAKE_SSH_DETACH:-}" ]; then
   case "\$*" in
     *'rm -rf'*) exit 255 ;;
-    *fm-pc02-test-slot.lock*)
+    *fm-pc02-test-slot-*)
       mkdir -p "$dir/relay"
       rm -f "$dir/relay/in"; mkfifo "$dir/relay/in"
       cat <&0 > "$dir/relay/in" &
@@ -382,7 +382,13 @@ while [ "\$#" -gt 0 ]; do
   esac
   shift
 done
-exec "$real_rsync" "\${args[@]}"
+"$real_rsync" "\${args[@]}" || exit \$?
+if [ -n "\${FM_FAKE_CAPTURE_RUNNER:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
+  cat > "\${args[\${#args[@]}-1]}/bin/fm-test-run.sh" <<'RUNNER'
+#!/usr/bin/env bash
+echo "auto_jobs=\${FM_TEST_RUN_AUTO_JOBS_MAX:-unset} argv=\$*"
+RUNNER
+fi
 SH
   chmod +x "$fakebin/ssh" "$fakebin/rsync"
   printf '%s\n' "$fakebin"
@@ -419,7 +425,7 @@ SH
   assert_contains "$out" "exit=1" "the remote fm-test-run.sh markers did not come back: $out"
   [ "$elapsed" -lt 25 ] || fail "a straggler holding the channel kept the run open ${elapsed}s: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
-  flock -n "$dir/home/.fm-pc02-test-slot.lock" true || fail "failure retained the host claim"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "failure retained the host claim"
   pass "a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror"
 }
 
@@ -449,29 +455,77 @@ test_remote_run_passes_through_green_suite_and_json() {
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
 }
 
-test_remote_invocation_is_serial_and_script_bounded() {
-  local dir fakebin fixture out status
+test_remote_run_uses_7200_second_default_timeout() {
+  local dir fakebin real_timeout out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/default-run-timeout"
+  fakebin=$(fake_pc02 "$dir")
+  real_timeout=$(command -v timeout)
+  cat > "$fakebin/timeout" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = "--kill-after=10" ]; then
+  printf '%s\\n' "\${2:-}" >> "\$FM_TEST_OFFLOAD_TIMEOUT_CAPTURE"
+fi
+exec "$real_timeout" "\$@"
+SH
+  chmod +x "$fakebin/timeout"
+  printf '#!/usr/bin/env bash\necho "ok - default timeout fixture"\n' > "$dir/green.test.sh"
+  chmod +x "$dir/green.test.sh"
+
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_TEST_OFFLOAD_TIMEOUT_CAPTURE="$dir/timeout.log" \
+    env -u FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS "$SCRIPT" "$dir/green.test.sh" 2>&1)
+  status=$?
+  expect_code 0 "$status" "default-timeout remote fixture failed: $out"
+  assert_contains "$out" "PC02 idle and ready; running tests remotely" "the run never went remote: $out"
+  [ "$(cat "$dir/timeout.log")" = 7200 ] \
+    || fail "remote timeout executable did not receive the independent 7200-second default: $(cat "$dir/timeout.log" 2>/dev/null)"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "default-timeout fixture left a mirror behind"
+  pass "a remote suite passes the 7200-second default to its timeout executable"
+}
+
+test_remote_jobs_and_script_bound() {
+  local dir fakebin out status jobs
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
   fi
   dir="$TMP_ROOT/remote-bounds"
   fakebin=$(fake_pc02 "$dir")
-  cat > "$dir/bounded.test.sh" <<SH
-#!/usr/bin/env bash
-exec 7> "$dir/serial.lock"
-flock -n 7 || { echo 'not ok - concurrent remote tests'; exit 1; }
-sleep 1
-echo 'ok - serial fixture'
-SH
-  chmod +x "$dir/bounded.test.sh"
-  cp "$dir/bounded.test.sh" "$dir/second.test.sh"
+  # Use a private remote runner stand-in to observe argv/environment at the
+  # transfer boundary. The real scheduler's isolation policy has separate tests.
+  export FM_FAKE_CAPTURE_RUNNER=1
+  for jobs in default override split equals; do
+    local -a args=()
+    case "$jobs" in
+      split) args=(--jobs 4) ;;
+      equals) args=(--jobs=3) ;;
+    esac
+    out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+      FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_JOBS="$([ "$jobs" = override ] && echo 6 || echo 8)" \
+      "$SCRIPT" --all "${args[@]+"${args[@]}"}" 2>&1)
+    status=$?
+    expect_code 0 "$status" "remote jobs fixture failed: $out"
+    case "$jobs" in
+      default) assert_contains "$out" 'auto_jobs=8' "missing default: $out" ;;
+      override) assert_contains "$out" 'auto_jobs=6' "missing override: $out" ;;
+      split) assert_contains "$out" 'argv=--all --jobs 4' "split jobs lost: $out" ;;
+      equals) assert_contains "$out" 'argv=--all --jobs=3' "equals jobs lost: $out" ;;
+    esac
+    assert_contains "$out" '--per-script-timeout-secs 3000' "default script cap changed: $out"
+  done
+  unset FM_FAKE_CAPTURE_RUNNER
+  printf '#!/usr/bin/env bash\nsleep 60\n' > "$dir/timeout.test.sh"
+  chmod +x "$dir/timeout.test.sh"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    "$SCRIPT" "$dir/bounded.test.sh" "$dir/second.test.sh" --jobs 4 --per-script-timeout-secs 0 2>&1)
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS=1 \
+    "$SCRIPT" "$dir/timeout.test.sh" --per-script-timeout-secs 0 2>&1)
   status=$?
-  expect_code 0 "$status" "remote scripts must remain serial despite --jobs 4: $out"
-  assert_contains "$out" "running tests remotely" "serial test ran locally: $out"
-  pass "remote offloads override requested parallelism with one worker"
+  [ "$status" -ne 0 ] || fail "remote script cap did not bound an unlimited caller: $out"
+  assert_contains "$out" "per_script_timeout_secs=1" "script timeout override was lost: $out"
+  assert_contains "$out" "exit=124" "script cap did not time out its fixture: $out"
+  pass "remote jobs preserve both caller forms, default to eight, and allow environment overrides with a script cap"
 }
 
 test_active_remote_suite_falls_back_locally() {
@@ -482,11 +536,11 @@ test_active_remote_suite_falls_back_locally() {
   dir="$TMP_ROOT/remote-active"
   fakebin=$(fake_pc02 "$dir")
   # shellcheck disable=SC2016 # Positional parameter belongs to the lock holder.
-  flock "$dir/home/.fm-pc02-test-slot.lock" bash -c 'touch "$1"; sleep 60' bash "$dir/locked" &
+  flock "$dir/home/.fm-pc02-test-slot-1.lock" bash -c 'touch "$1"; sleep 60' bash "$dir/locked" &
   owner=$!
   for _ in $(seq 1 300); do [ -f "$dir/locked" ] && break; sleep 0.1; done
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=1 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   pkill -P "$owner" 2>/dev/null || true
   kill "$owner" 2>/dev/null || true
@@ -555,7 +609,7 @@ SH
     sleep 0.1
   done
   ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "TERM mid-run left the remote suite running"
-  flock -n "$dir/home/.fm-pc02-test-slot.lock" true || fail "TERM retained the host claim"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "TERM retained the host claim"
   pass "TERM during a remote run kills the remote suite and removes its mirror"
 }
 
@@ -584,7 +638,7 @@ SH
     sleep 0.1
   done
   [ -f "$dir/suite-started" ] || { kill "$pid" 2>/dev/null; fail "the remote suite never started: $(cat "$dir/out.log")"; }
-  flock -n "$dir/home/.fm-pc02-test-slot.lock" true && fail "the host slot was not held during the run"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true && fail "the host slot was not held during the run"
   start=$SECONDS
   kill -TERM "$pid"
   wait "$pid"
@@ -597,7 +651,7 @@ SH
     sleep 0.1
   done
   ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "dropping the transport left the remote suite running"
-  flock -n "$dir/home/.fm-pc02-test-slot.lock" true || fail "the slot stayed held after the suite ended"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "the slot stayed held after the suite ended"
   pass "TERM with a transport that ignores stdin EOF still stops the remote suite and frees the slot"
 }
 
@@ -633,7 +687,7 @@ SH
     sleep 0.1
   done
   ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "SIGKILL of the driver left the remote suite running"
-  flock -n "$dir/home/.fm-pc02-test-slot.lock" true || fail "the slot stayed held after the suite ended"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "the slot stayed held after the suite ended"
   pkill -TERM -f "$dir/home" 2>/dev/null || true
   pass "abrupt loss of the driver stops the remote suite and frees the slot"
 }
@@ -651,7 +705,7 @@ test_bare_common_store_needs_machine_file_unless_state_override() {
   cp -R "$ROOT/bin" "$wt/bin"
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=0\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -680,7 +734,7 @@ test_machine_home_config_without_fm_home() {
   printf '%s\n' "$dir/supervisor" > "$config/firstmate/test-offload-home"
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=0\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -724,7 +778,7 @@ test_primary_clone_home_without_environment_or_config() {
   cp "$SCRIPT" "$dir/clone/bin/fm-pc02-test-offload.sh"
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
-case "$*" in *fm-pc02-test-slot.lock*) echo claimed; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-test-slot-*) echo claimed; read -r command; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=0\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -736,11 +790,11 @@ SH
   pass "primary clone discovery resolves the home without environment or machine configuration"
 }
 
-test_concurrent_offloads_have_one_winner() {
+test_concurrent_offloads_admit_two_runs() {
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
   fi
-  local dir fakebin first second a b _ losers
+  local dir fakebin first second third a b c _ losers
   dir="$TMP_ROOT/concurrent"
   fakebin=$(fake_pc02 "$dir")
   cat > "$dir/claimant.test.sh" <<SH
@@ -759,20 +813,31 @@ SH
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$dir/claimant.test.sh" > "$dir/second.log" 2>&1 &
   second=$!
+  for _ in $(seq 1 300); do
+    [ -f "$dir/started" ] && [ "$(wc -l < "$dir/started")" -eq 2 ] && break
+    sleep 0.1
+  done
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "$dir/claimant.test.sh" > "$dir/third.log" 2>&1 &
+  third=$!
   losers=0
   for _ in $(seq 1 300); do
-    if [ -f "$dir/started" ] && grep -q 'test slot busy' "$dir/first.log" "$dir/second.log"; then losers=1; break; fi
+    if [ -f "$dir/started" ] && grep -q 'test slot busy' "$dir/third.log"; then losers=1; break; fi
     sleep 0.1
   done
   touch "$dir/release"
   wait "$first"; a=$?
   wait "$second"; b=$?
+  wait "$third"; c=$?
   expect_code 0 "$a" "first claimant failed: $(cat "$dir/first.log")"
   expect_code 0 "$b" "second claimant failed: $(cat "$dir/second.log")"
-  [ "$losers" = 1 ] || fail "neither claimant fell back while the other held its slot"
-  [ "$(wc -l < "$dir/started" | tr -d ' ')" = 1 ] || fail "both claimants ran remotely"
-  flock -n "$dir/home/.fm-pc02-test-slot.lock" true || fail "winner retained claim"
-  pass "two concurrent offloads admit exactly one remote suite"
+  expect_code 0 "$c" "third claimant failed: $(cat "$dir/third.log")"
+  [ "$losers" = 1 ] || fail "third claimant did not fall back while both slots were held"
+  [ "$(wc -l < "$dir/started" | tr -d ' ')" = 2 ] || fail "expected exactly two remote claimants"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "winner retained claim"
+  flock -n "$dir/home/.fm-pc02-test-slot-2.lock" true || fail "second winner retained claim"
+  [ -f "$dir/home/.fm-pc02-test-slot-1.lock" ] && [ -f "$dir/home/.fm-pc02-test-slot-2.lock" ] || fail "lock files were unlinked"
+  pass "two concurrent remote suites overlap and a third falls back locally"
 }
 
 test_dead_owner_and_timeout_release_claim() {
@@ -783,13 +848,13 @@ test_dead_owner_and_timeout_release_claim() {
   dir="$TMP_ROOT/dead-owner"
   fakebin=$(fake_pc02 "$dir")
   # shellcheck disable=SC2016 # Evaluated by the real lock owner.
-  flock -F "$dir/home/.fm-pc02-test-slot.lock" bash -c 'touch "$1"; exec sleep 60' bash "$dir/held" &
+  flock -F "$dir/home/.fm-pc02-test-slot-1.lock" bash -c 'touch "$1"; exec sleep 60' bash "$dir/held" &
   owner=$!
   for _ in $(seq 1 300); do [ -f "$dir/held" ] && break; sleep 0.1; done
   [ -f "$dir/held" ] || fail "stale-claim fixture did not acquire its lock"
   kill -KILL "$owner"
   wait "$owner" 2>/dev/null || true
-  [ -f "$dir/home/.fm-pc02-test-slot.lock" ] || fail "dead owner did not leave a lock file"
+  [ -f "$dir/home/.fm-pc02-test-slot-1.lock" ] || fail "dead owner did not leave a lock file"
   printf '#!/usr/bin/env bash\nsleep 60\n' > "$dir/timeout.test.sh"
   chmod +x "$dir/timeout.test.sh"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
@@ -797,7 +862,7 @@ test_dead_owner_and_timeout_release_claim() {
   status=$?
   expect_code 124 "$status" "dead owner's slot must be reclaimed and suite timeout preserved: $out"
   assert_contains "$out" 'running tests remotely' "dead lock file blocked the run: $out"
-  flock -n "$dir/home/.fm-pc02-test-slot.lock" true || fail "timeout retained host claim"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "timeout retained host claim"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "timeout left a mirror behind"
   pass "a dead owner's claim is reclaimed and the next run releases it on timeout"
 }
@@ -848,7 +913,8 @@ test_unclear_resource_check_falls_back_to_local
 test_pc02_if_idle_flag_forwards_through_fm_test_run
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
-test_remote_invocation_is_serial_and_script_bounded
+test_remote_run_uses_7200_second_default_timeout
+test_remote_jobs_and_script_bound
 test_active_remote_suite_falls_back_locally
 test_decoy_host_suite_does_not_affect_remote_probe
 test_term_mid_remote_run_removes_mirror_and_kills_suite
@@ -857,7 +923,7 @@ test_sigkill_of_driver_stops_remote_suite_and_frees_slot
 test_bare_common_store_needs_machine_file_unless_state_override
 test_machine_home_config_without_fm_home
 test_primary_clone_home_without_environment_or_config
-test_concurrent_offloads_have_one_winner
+test_concurrent_offloads_admit_two_runs
 test_dead_owner_and_timeout_release_claim
 
 echo "# all fm-pc02-test-offload tests passed"
