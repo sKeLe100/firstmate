@@ -25,8 +25,12 @@
 # delete is available only through teardown.
 # Both paths perform a fresh refuse-default check immediately before each
 # destructive call.
-# Provision records the running default session as a fleet-state tripwire and
-# teardown requires that record to be identical afterward.
+# Provision records the default-session fleet state - the name, default flag,
+# running flag, and socket path of the default session, or an empty list when
+# the host has none - as a fleet-state tripwire, and teardown requires that
+# record to be identical afterward. A host with no running default session is
+# therefore supported and still proven not to have gained or lost one, while
+# more than one default-flagged session is refused as ambiguous.
 # The viewer command attaches or detaches one real foreground Herdr client on
 # an owned lab session over a fixed 40-row by 120-column pty;
 # bin/fm-herdr-lab-viewer.py owns the pty mechanics.
@@ -77,22 +81,25 @@ fm_herdr_lab_session_list() { # <session>
 }
 
 fm_herdr_lab_fleet_state() { # <session>
-  local name=$1 sessions snapshot
+  local name=$1 sessions snapshot count
   sessions=$(fm_herdr_lab_session_list "$name" 2>/dev/null) || {
     fm_herdr_lab_error "cannot read Herdr sessions for the fleet-state tripwire"
     return 1
   }
   snapshot=$(printf '%s' "$sessions" | jq -c '
-    [.sessions[]? | select(.default == true)]
-    | if length == 1 and .[0].name == "default" and .[0].running == true
-      then .[0] | {name, default, running, socket_path}
-      else empty
-      end
+    [.sessions[]? | select(.default == true) | {name, default, running, socket_path}]
+    | sort_by(.name)
   ' 2>/dev/null)
   [ -n "$snapshot" ] || {
-    fm_herdr_lab_error "fleet-state tripwire requires exactly one running default session"
+    fm_herdr_lab_error "cannot project the default-session fleet state for the tripwire"
     return 1
   }
+  count=$(printf '%s' "$snapshot" | jq -r 'length' 2>/dev/null) || count=
+  case "$count" in
+    0|1) ;;
+    '') fm_herdr_lab_error "cannot measure the default-session fleet state for the tripwire"; return 1 ;;
+    *) fm_herdr_lab_error "fleet-state tripwire requires at most one default session (found $count)"; return 1 ;;
+  esac
   printf '%s\n' "$snapshot"
 }
 

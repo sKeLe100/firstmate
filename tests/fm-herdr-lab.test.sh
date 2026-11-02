@@ -36,13 +36,35 @@ lab_state=absent
 
 case "$1 ${2:-}" in
   "session list")
+    # FM_FAKE_HERDR_DEFAULT selects the host's default-session fleet state:
+    # running (the default), stopped, absent, or two-ambiguous.
+    default_mode=$(cat "$FM_FAKE_HERDR_DEFAULT" 2>/dev/null || printf 'running')
+    default_entry=
+    case "$default_mode" in
+      running) default_entry=$(jq -nc --arg socket "$default_socket" '{default:true,name:"default",running:true,socket_path:$socket}') ;;
+      stopped) default_entry=$(jq -nc --arg socket "$default_socket" '{default:true,name:"default",running:false,socket_path:$socket}') ;;
+      absent) default_entry= ;;
+      two-ambiguous) default_entry=$(jq -nc --arg socket "$default_socket" '{default:true,name:"alpha",running:true,socket_path:$socket}'),$(jq -nc --arg socket "$default_socket" '{default:true,name:"default",running:true,socket_path:$socket}') ;;
+      *) echo "fake herdr: unknown default mode $default_mode" >&2; exit 95 ;;
+    esac
     if [ "$lab_state" = absent ] || [ "$lab_state" = deleted ]; then
-      jq -nc --arg socket "$default_socket" '{sessions:[{default:true,name:"default",running:true,socket_path:$socket}]}'
+      lab_entry=
     else
-      running=false
-      [ "$lab_state" = running ] && running=true
-      jq -nc --arg socket "$default_socket" --arg name "$session" --argjson running "$running" \
-        '{sessions:[{default:true,name:"default",running:true,socket_path:$socket},{default:false,name:$name,running:$running,socket_path:("/tmp/" + $name + ".sock")}]}'
+      lab_running=false
+      [ "$lab_state" = running ] && lab_running=true
+      lab_entry=$(jq -nc --arg name "$session" --argjson running "$lab_running" \
+        '{default:false,name:$name,running:$running,socket_path:("/tmp/" + $name + ".sock")}')
+    fi
+    if [ -n "$default_entry" ]; then
+      if [ -n "$lab_entry" ]; then
+        printf '{"sessions":[%s,%s]}\n' "$default_entry" "$lab_entry"
+      else
+        printf '{"sessions":[%s]}\n' "$default_entry"
+      fi
+    elif [ -n "$lab_entry" ]; then
+      printf '{"sessions":[%s]}\n' "$lab_entry"
+    else
+      printf '{"sessions":[]}\n'
     fi
     ;;
   "server --session")
@@ -92,6 +114,7 @@ run_with_fake() {
     FM_FAKE_HERDR_FAST_POLL="${FM_FAKE_HERDR_FAST_POLL:-}" \
     FM_FAKE_HERDR_DELETE_FAIL="${FM_FAKE_HERDR_DELETE_FAIL:-}" \
     FM_FAKE_HERDR_TITLE_FAIL="${FM_FAKE_HERDR_TITLE_FAIL:-}" \
+    FM_FAKE_HERDR_DEFAULT="$FAKE_STATE/default-mode" \
     FM_HERDR_LAB_STATE_DIR="$TRIPWIRES" \
     "$@"
 }
@@ -534,11 +557,58 @@ test_viewer_launcher_refuses_unsafe_arguments() {
   pass "fm-herdr-lab: the viewer launcher refuses unsafe sessions and pidfiles"
 }
 
+# A test host need not be running a default Herdr session for a lab to be safe:
+# the tripwire records an empty default fleet state and teardown requires it to
+# stay empty, so the guarantee is still that the lab neither gained nor lost a
+# default session.
+test_no_running_default_session_is_supported() {
+  local name="fm-lab-no-default-$$"
+  printf '%s\n' absent > "$FAKE_STATE/default-mode"
+  : > "$FAKE_LOG"
+  run_with_fake fm_herdr_lab_provision "$name" || fail "provision without a running default session failed"
+  [ "$(cat "$TRIPWIRES/$name.fleet-state.json")" = '[]' ] \
+    || fail "an absent default session was not recorded as an empty fleet state"
+  run_with_fake fm_herdr_lab_teardown "$name" || fail "teardown without a running default session failed"
+  assert_absent "$TRIPWIRES/$name.fleet-state.json" \
+    "teardown without a default session left its tripwire behind"
+  printf '%s\n' running > "$FAKE_STATE/default-mode"
+  pass "fm-herdr-lab: a host with no running default session gets a real tripwire"
+}
+
+test_default_appearing_mid_run_trips() {
+  local name="fm-lab-default-appears-$$" status=0
+  printf '%s\n' absent > "$FAKE_STATE/default-mode"
+  : > "$FAKE_LOG"
+  run_with_fake fm_herdr_lab_provision "$name" || fail "no-default fixture provision failed"
+  printf '%s\n' running > "$FAKE_STATE/default-mode"
+  run_with_fake fm_herdr_lab_teardown "$name" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "a default session appearing during lab work must fail teardown"
+  assert_present "$TRIPWIRES/$name.fleet-state.json" "failed tripwire should retain evidence"
+  printf '%s\n' absent > "$FAKE_STATE/default-mode"
+  run_with_fake fm_herdr_lab_teardown "$name" || fail "teardown after restoring the absent default state failed"
+  printf '%s\n' running > "$FAKE_STATE/default-mode"
+  pass "fm-herdr-lab: a default session appearing mid-run is a hard failure"
+}
+
+test_multiple_default_sessions_are_refused() {
+  local name="fm-lab-two-defaults-$$" status=0
+  printf '%s\n' two-ambiguous > "$FAKE_STATE/default-mode"
+  : > "$FAKE_LOG"
+  run_with_fake fm_herdr_lab_prepare "$name" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "two default-flagged sessions must be refused as ambiguous"
+  assert_absent "$TRIPWIRES/$name.fleet-state.json" "an ambiguous fleet state left a tripwire"
+  printf '%s\n' running > "$FAKE_STATE/default-mode"
+  pass "fm-herdr-lab: more than one default session is refused"
+}
+
 test_refuses_unsafe_names
 test_provision_run_and_guarded_teardown
 test_run_scopes_session_before_double_dash
 test_missing_tripwire_blocks_destruction
 test_changed_default_trips_after_teardown
+test_no_running_default_session_is_supported
+test_default_appearing_mid_run_trips
+test_multiple_default_sessions_are_refused
 test_stopped_owned_lab_can_reprovision
 test_failed_delete_retains_tripwire
 test_timed_out_provision_cancels_late_launch
