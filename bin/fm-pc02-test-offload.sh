@@ -93,10 +93,11 @@
 #     first test, so an offloaded run records PC02's inherited PATH and limits.
 #   - Before taking a slot, PC01 and PC02 compare versions of git, bash,
 #     python3, jq, node, shellcheck, actionlint, ruby, chromium, herdr, pi, and
-#     tmux, the open-file limit, LC_ALL/LANG/TZ, and ldd results for Chromium
-#     and its headless shell. CPU count, RAM, ulimit -u, no-mistakes daemon
-#     version, /usr/bin/env provider, and shell availability (including zsh)
-#     are intentionally excluded as resources or documented test differences.
+#     tmux, the open-file limit, LC_ALL/LANG/TZ, and normalized ldd results for
+#     the browser selected by fm-test-chrome.sh. CPU count, RAM, ulimit -u,
+#     no-mistakes daemon version, /usr/bin/env provider, and shell availability
+#     (including zsh) are intentionally excluded as resources or documented
+#     test differences.
 #   - Sizing evidence: two simultaneous four-worker offloads of
 #     fm-supervision-host, fm-captain-hold-lifecycle,
 #     fm-remote-secondmate-lifecycle-e2e, and fm-spawn-dispatch-profile passed
@@ -369,7 +370,8 @@ if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
 fi
 # Compare test-relevant surfaces with the same probe on both hosts.
-parity_probe=$(cat <<'PARITY_PROBE'
+parity_probe="$(cat "$SELF_DIR/fm-test-chrome.sh")
+$(cat <<'PARITY_PROBE'
 # fm-pc02-environment-parity-probe
 set -u
 version() {
@@ -389,33 +391,46 @@ printf 'ulimit.open_files=%s\n' "$(ulimit -n 2>&1)"
 printf 'locale.LC_ALL=%s\n' "${LC_ALL-}"
 printf 'locale.LANG=%s\n' "${LANG-}"
 printf 'locale.TZ=%s\n' "${TZ-}"
-ldd_result() {
-  local label=$1 path=$2 output status=0
-  if [ -z "$path" ]; then printf 'chromium.%s=absent\n' "$label"; return; fi
+normalize_ldd() {
+  local path=$1 output status=0 target trace
+  [ -n "$path" ] || { printf 'UNRESOLVED:browser-absent\n'; return; }
   output=$(ldd "$path" 2>&1) || status=$?
+  if printf '%s' "$output" | grep -Eqi 'not a dynamic executable|statically linked|not dynamic'; then
+    trace=$(bash -x "$path" --version 2>&1 </dev/null || true)
+    target=$(printf '%s\n' "$trace" | sed -nE 's/^\+ exec ([^[:space:]]+).*/\1/p' | tail -n 1)
+    if [ -n "$target" ] && [ -x "$target" ]; then
+      path=$(readlink -f "$target" 2>/dev/null || printf '%s' "$target")
+      status=0
+      output=$(ldd "$path" 2>&1) || status=$?
+    else
+      printf 'UNRESOLVED:wrapper-target (%s)\n' "${target:-unresolved}"
+      return
+    fi
+  fi
   if printf '%s\n' "$output" | grep -q 'not found'; then
-    output=$(printf '%s\n' "$output" | grep 'not found' | tr '\r\n\t' '   ' | cut -c1-400)
-    printf 'chromium.%s=not-found:%s\n' "$label" "$output"
+    printf '%s\n' "$output" | awk '
+      /=>[[:space:]]+not found/ {gsub(/^[[:space:]]+/, ""); print "UNRESOLVED:" $1; next}
+      index($0, "=>") {split($0, pair, "=>"); gsub(/^[[:space:]]+|[[:space:]]+$/, "", pair[1]); print pair[1]; next}
+      $1 ~ /^\// {n=split($1, path, "/"); print path[n]; next}
+      $1 ~ /^linux-vdso/ {print $1}
+    ' | sort -u
   elif [ "$status" -ne 0 ]; then
-    printf 'chromium.%s=ldd-error:%s\n' "$label" "$status"
+    printf 'UNRESOLVED:ldd-error-%s\n' "$status"
   else
-    printf 'chromium.%s=ok\n' "$label"
+    printf '%s\n' "$output" | awk '
+      index($0, "=>") {split($0, pair, "=>"); gsub(/^[[:space:]]+|[[:space:]]+$/, "", pair[1]); print pair[1]; next}
+      $1 ~ /^\// {n=split($1, path, "/"); print path[n]; next}
+      $1 ~ /^linux-vdso/ {print $1}
+    ' | sort -u
   fi
 }
-chrome=$(type -P chromium 2>/dev/null || true)
-if [ -n "$chrome" ]; then chrome=$(readlink -f "$chrome" 2>/dev/null || printf '%s' "$chrome"); fi
-ldd_result binary "$chrome"
-headless=$(type -P chrome-headless-shell 2>/dev/null || true)
-if [ -z "$headless" ] && [ -n "$chrome" ] && [ -x "$(dirname "$chrome")/chrome-headless-shell" ]; then
-  headless="$(dirname "$chrome")/chrome-headless-shell"
-fi
-if [ -z "$headless" ] && [ -x /usr/lib/chromium/chrome-headless-shell ]; then
-  headless=/usr/lib/chromium/chrome-headless-shell
-fi
-if [ -n "$headless" ]; then headless=$(readlink -f "$headless" 2>/dev/null || printf '%s' "$headless"); fi
-ldd_result headless_shell "$headless"
+browser=$(find_chrome 2>/dev/null || true)
+if [ -n "$browser" ]; then browser=$(readlink -f "$browser" 2>/dev/null || printf '%s' "$browser"); fi
+printf 'chromium.path=%s\n' "$browser"
+printf 'chromium.dependencies='
+normalize_ldd "$browser" | paste -sd, -
 PARITY_PROBE
-)
+)"
 local_parity=$(bash -c "$parity_probe" 2>&1) || run_local "PC01 environment parity probe failed: $local_parity"
 remote_parity=$(timeout "$PROBE_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
   -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$parity_probe")" 2>&1) || {
@@ -423,18 +438,22 @@ remote_parity=$(timeout "$PROBE_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout=
 }
 parity_mismatches=()
 while IFS='=' read -r key local_value; do
+  [ "$key" != chromium.path ] || continue
   remote_value=$(printf '%s\n' "$remote_parity" | awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}')
   [ "$local_value" = "$remote_value" ] || parity_mismatches+=("$key (PC01='$local_value', PC02='$remote_value')")
-  case "$local_value $remote_value" in *not-found*) parity_mismatches+=("$key unresolved Chromium runtime library") ;; esac
   case "$key:$local_value:$remote_value" in
     tool.*:absent:*|tool.*:unavailable:*|tool.*:timed-out:*|tool.*:*:absent|tool.*:*:unavailable|tool.*:*:timed-out)
       parity_mismatches+=("$key version could not be established")
       ;;
-    chromium.*:ldd-error:*|chromium.*:*:ldd-error:*)
-      parity_mismatches+=("$key runtime dependencies could not be resolved")
-      ;;
   esac
 done <<< "$local_parity"
+local_chrome=$(printf '%s\n' "$local_parity" | sed -n 's/^chromium.path=//p' | head -n 1)
+remote_chrome=$(printf '%s\n' "$remote_parity" | sed -n 's/^chromium.path=//p' | head -n 1)
+local_deps=$(printf '%s\n' "$local_parity" | sed -n 's/^chromium.dependencies=//p' | head -n 1)
+remote_deps=$(printf '%s\n' "$remote_parity" | sed -n 's/^chromium.dependencies=//p' | head -n 1)
+case "$local_deps" in *UNRESOLVED:*) parity_mismatches+=("PC01 Chromium at '$local_chrome' has unresolved dependencies '${local_deps//,/ }'") ;; esac
+case "$remote_deps" in *UNRESOLVED:*) parity_mismatches+=("PC02 Chromium at '$remote_chrome' has unresolved dependencies '${remote_deps//,/ }'") ;; esac
+[ "$local_deps" = "$remote_deps" ] || parity_mismatches+=("chromium.dependencies (PC01='$local_deps', PC02='$remote_deps')")
 if [ "${#parity_mismatches[@]}" -gt 0 ]; then
   run_local "PC02 test environment differs from PC01: ${parity_mismatches[*]}"
 fi

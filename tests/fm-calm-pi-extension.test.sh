@@ -64,42 +64,7 @@ if pi --help 2>&1 | grep -q -- '--tui-mode'; then
   PI_TUI_MODE_ARGS='--tui-mode regular'
 fi
 
-find_chrome() {
-  local candidate headless_shell
-  if [ -n "${FM_CHROME_BIN:-}" ] && [ -x "$FM_CHROME_BIN" ]; then
-    printf '%s\n' "$FM_CHROME_BIN"
-    return 0
-  fi
-  # chrome-headless-shell comes first: it is Chrome's dedicated --dump-dom
-  # binary. A full Chrome for Testing build on a display-less WSL host bakes in
-  # a field-trial config under which --dump-dom never writes a byte before the
-  # render timeout (render_export_dom's --disable-field-trial-config works
-  # around it, but the headless shell has no such dependency). Playwright
-  # installs the headless shell under ~/.cache/ms-playwright without putting it
-  # on PATH, so look there before falling back to a full browser build.
-  for headless_shell in \
-    "$HOME"/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell
-  do
-    if [ -x "$headless_shell" ]; then
-      printf '%s\n' "$headless_shell"
-      return 0
-    fi
-  done
-  for candidate in \
-    chrome-headless-shell \
-    google-chrome \
-    google-chrome-stable \
-    chromium \
-    chromium-browser \
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-  do
-    if command -v "$candidate" >/dev/null 2>&1; then
-      command -v "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
+. "$ROOT/bin/fm-test-chrome.sh"
 
 # Render an exported session in real Chrome and leave the DOM in <out_file>.
 #

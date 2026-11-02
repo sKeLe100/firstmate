@@ -340,6 +340,20 @@ fake_pc02() {
   real_rsync=$(command -v rsync)
   fakebin=$(fm_fakebin "$dir")
   mkdir -p "$dir/home"
+  cat > "$fakebin/ldd" <<'SH'
+#!/usr/bin/env bash
+target=${1##*/}
+if [ "${FM_FAKE_LDD_MODE:-same}" = wrapper ] && [ "$target" = chrome-headless-shell ]; then
+  echo 'not a dynamic executable' >&2
+  exit 1
+fi
+case "${FM_FAKE_LDD_MODE:-same}" in
+  different) printf 'libm.so.6 => /fake/lib/libm.so.6 (0x0)\n' ;;
+  not-found) printf 'libasound.so.2 => not found\n' ;;
+  *) printf 'libc.so.6 => /fake/lib/libc.so.6 (0x0)\n' ;;
+esac
+SH
+  chmod +x "$fakebin/ldd"
   cat > "$fakebin/ssh" <<SH
 #!/usr/bin/env bash
 while [ "\$#" -gt 0 ]; do
@@ -358,8 +372,12 @@ case "\$*" in
         exit 0
         ;;
       chromium-not-found)
-        HOME="$dir/home" bash -c "\$*" 2>&1 | sed 's/^chromium.binary=.*/chromium.binary=not-found:libasound.so.2 => not found/'
-        exit 0
+        HOME="$dir/home" FM_FAKE_LDD_MODE=not-found bash -c "\$*"
+        exit \$?
+        ;;
+      dependency-mismatch)
+        HOME="$dir/home" FM_FAKE_LDD_MODE=different bash -c "\$*"
+        exit \$?
         ;;
     esac
     ;;
@@ -510,16 +528,31 @@ SH
   pass "an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound"
 }
 
+install_cache_chrome() {  # <home> <wrapper>
+  local path="$1/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell"
+  mkdir -p "$(dirname "$path")"
+  if [ "$2" = wrapper ]; then
+    printf '#!/usr/bin/env bash\nexec /bin/true "$@"\n' > "$path"
+  else
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$path"
+  fi
+  chmod +x "$path"
+  printf '%s' "$path"
+}
+
 test_environment_parity_match_allows_offload() {
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
   fi
-  local dir fakebin out status
+  local dir fakebin out status local_home
   dir="$TMP_ROOT/parity-match"
   fakebin=$(fake_pc02 "$dir")
+  local_home="$dir/pc01-home"
+  install_cache_chrome "$local_home" direct >/dev/null
+  install_cache_chrome "$dir/home" direct >/dev/null
   printf '#!/usr/bin/env bash\necho "ok - parity match"\n' > "$dir/parity.test.sh"
   chmod +x "$dir/parity.test.sh"
-  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+  out=$(PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "$dir/parity.test.sh" 2>&1)
   status=$?
   expect_code 0 "$status" "matching PC01/PC02 test surfaces should permit offload: $out"
@@ -552,10 +585,46 @@ test_chromium_missing_library_falls_back_with_field() {
     "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   expect_code 0 "$status" "an unresolved PC02 Chromium library must run locally: $out"
-  assert_contains "$out" "chromium.binary" "the fallback diagnostic did not name Chromium: $out"
-  assert_contains "$out" "libasound.so.2 => not found" "the fallback diagnostic omitted the unresolved library: $out"
+  assert_contains "$out" "PC02 Chromium at" "the fallback diagnostic did not name the host and browser path: $out"
+  assert_contains "$out" "UNRESOLVED:libasound.so.2" "the fallback diagnostic omitted the unresolved soname: $out"
   assert_contains "$out" "running on PC01" "an unresolved Chromium library was not routed locally: $out"
   pass "a PC02 Chromium library failure names the library and runs locally"
+}
+
+test_chromium_dependency_soname_difference_falls_back() {
+  local dir fakebin out status local_home
+  dir="$TMP_ROOT/parity-chromium-different-dependencies"
+  fakebin=$(fake_pc02 "$dir")
+  local_home="$dir/pc01-home"
+  install_cache_chrome "$local_home" direct >/dev/null
+  install_cache_chrome "$dir/home" direct >/dev/null
+  out=$(PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_FAKE_PARITY_MODE=dependency-mismatch FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "different Chromium soname sets must run locally: $out"
+  assert_contains "$out" "chromium.dependencies" "the fallback diagnostic did not identify the dependency set: $out"
+  assert_contains "$out" "libm.so.6" "the fallback diagnostic omitted the differing soname: $out"
+  assert_contains "$out" "running on PC01" "different Chromium dependencies were not routed locally: $out"
+  pass "different resolved Chromium sonames route locally with the named difference"
+}
+
+test_chromium_wrapper_resolution_does_not_false_fallback() {
+  local dir fakebin out status local_home
+  dir="$TMP_ROOT/parity-chromium-wrapper"
+  fakebin=$(fake_pc02 "$dir")
+  local_home="$dir/pc01-home"
+  install_cache_chrome "$local_home" wrapper >/dev/null
+  install_cache_chrome "$dir/home" wrapper >/dev/null
+  printf '#!/usr/bin/env bash\necho "ok - wrapper"\n' > "$dir/wrapper.test.sh"
+  chmod +x "$dir/wrapper.test.sh"
+  out=$(PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_FAKE_LDD_MODE=wrapper FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "$dir/wrapper.test.sh" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a wrapper that resolves to a dynamic browser must permit offload: $out"
+  assert_contains "$out" "running tests remotely" "the wrapper browser caused a false local fallback: $out"
+  pass "a launcher browser resolves to its executable without a false fallback"
 }
 
 # Start a fixture that holds one PC02 slot for the lifetime of the case.
@@ -1015,6 +1084,8 @@ test_remote_invocation_inherits_fm_test_run_scheduler
 test_environment_parity_match_allows_offload
 test_environment_version_mismatch_falls_back_with_field
 test_chromium_missing_library_falls_back_with_field
+test_chromium_dependency_soname_difference_falls_back
+test_chromium_wrapper_resolution_does_not_false_fallback
 test_one_of_two_busy_slots_still_runs_remotely
 test_all_slots_busy_falls_back_locally
 test_single_slot_mode_keeps_the_old_fallback
