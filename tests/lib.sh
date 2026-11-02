@@ -441,6 +441,52 @@ fm_test_reap_watchers() {
   rm -f "$FM_TEST_WATCHER_REGISTRY"
 }
 
+# --- fixture primary-watchdog reaping ---------------------------------------
+#
+# Every bin/fm-watch-arm.sh arm also ensures a home's bin/fm-primary-watchdog.sh
+# loop, which it starts detached under its own session (setsid) so the arm's
+# process-group teardown cannot reach it. A fixture home therefore leaves a
+# loop parented to init unless the suite stops it, and a suite killed by its
+# runner's timeout used to skip that. Matching is by the loop's own FM_HOME
+# (read from /proc/<pid>/environ) being inside a fixture root this run
+# registered, so it never matches the real home's watchdog or a sibling run's.
+
+# fm_test_fixture_watchdog_pids: print the pid of each live watchdog loop whose
+# FM_HOME is under a fixture root registered by this run.
+fm_test_fixture_watchdog_pids() {
+  local root pid env_home roots=()
+  [ -f "$FM_TEST_CLEANUP_REGISTRY" ] || return 0
+  while IFS= read -r root; do
+    [ -n "$root" ] && roots+=("${root%/}")
+  done < "$FM_TEST_CLEANUP_REGISTRY"
+  [ "${#roots[@]}" -gt 0 ] || return 0
+  for pid in $(pgrep -f 'fm-primary-watchdog\.sh' 2>/dev/null || true); do
+    [ "$pid" != "$$" ] || continue
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'fm-primary-watchdog\.sh run' || continue
+    env_home=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -n 1)
+    [ -n "$env_home" ] || continue
+    for root in "${roots[@]}"; do
+      case "$env_home" in "$root"|"$root"/*) printf '%s\n' "$pid"; break ;; esac
+    done
+  done
+}
+
+# fm_test_reap_fixture_watchdogs: stop the loops listed above (TERM, then KILL).
+fm_test_reap_fixture_watchdogs() {
+  local pids pid i
+  pids=$(fm_test_fixture_watchdog_pids)
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do kill -TERM "$pid" 2>/dev/null || true; done
+  i=0
+  while [ "$i" -lt 20 ]; do
+    pids=$(fm_test_fixture_watchdog_pids)
+    [ -n "$pids" ] || return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
+}
+
 # Ceiling on how long a fixture's blocking stub may keep polling. A stub that
 # waits for a trigger file by re-running `sleep` is a high-frequency source of
 # process spawns, and one that outlives its test - because the test was killed
@@ -464,6 +510,7 @@ fm_test_remove_tree() {
 fm_test_cleanup() {
   local d
   fm_test_reap_watchers
+  fm_test_reap_fixture_watchdogs
   fm_test_reap_procevent_homes
   for d in "${FM_TEST_CLEANUP_DIRS[@]:-}"; do
     [ -n "$d" ] && fm_test_remove_tree "$d"
