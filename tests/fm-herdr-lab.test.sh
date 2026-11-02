@@ -39,6 +39,7 @@ case "$1 ${2:-}" in
     case "${FM_FAKE_HERDR_LIST_RESPONSE:-}" in
       malformed) printf '%s\n' '{not-json}'; exit 0 ;;
       error) printf '%s\n' '{"error":"temporarily unavailable"}'; exit 0 ;;
+      error-array) printf '%s\n' '{"error":"temporarily unavailable","sessions":[]}'; exit 0 ;;
       null) printf '%s\n' '{"sessions":null}'; exit 0 ;;
     esac
     # FM_FAKE_HERDR_DEFAULT selects the host's default-session fleet state:
@@ -608,7 +609,7 @@ test_multiple_default_sessions_are_refused() {
 
 test_malformed_session_lists_are_refused() {
   local response name status
-  for response in malformed error null; do
+  for response in malformed error error-array null; do
     name="fm-lab-bad-sessions-$response-$$"
     status=0
     FM_FAKE_HERDR_LIST_RESPONSE="$response" run_with_fake fm_herdr_lab_prepare "$name" >/dev/null 2>&1 || status=$?
@@ -621,6 +622,10 @@ test_malformed_session_lists_are_refused() {
   FM_FAKE_HERDR_LIST_RESPONSE=null run_with_fake fm_herdr_lab_teardown "$name" >/dev/null 2>&1 || status=$?
   expect_code 1 "$status" "a null sessions response during teardown must fail the tripwire"
   assert_present "$TRIPWIRES/$name.fleet-state.json" "failed teardown discarded its tripwire"
+  status=0
+  FM_FAKE_HERDR_LIST_RESPONSE=error-array run_with_fake fm_herdr_lab_teardown "$name" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "an error-marked array response during teardown must fail the tripwire"
+  assert_present "$TRIPWIRES/$name.fleet-state.json" "error-marked teardown discarded its tripwire"
   pass "fm-herdr-lab: malformed, error, and null session lists cannot become empty snapshots"
 }
 

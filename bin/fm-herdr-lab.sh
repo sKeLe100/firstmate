@@ -86,7 +86,7 @@ fm_herdr_lab_fleet_state() { # <session>
     fm_herdr_lab_error "cannot read Herdr sessions for the fleet-state tripwire"
     return 1
   }
-  printf '%s' "$sessions" | jq -e '.sessions | arrays' >/dev/null 2>&1 || {
+  printf '%s' "$sessions" | jq -e 'type == "object" and (has("error") | not) and (.sessions | arrays)' >/dev/null 2>&1 || {
     fm_herdr_lab_error "cannot read Herdr sessions array for the fleet-state tripwire"
     return 1
   }

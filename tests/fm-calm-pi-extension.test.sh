@@ -3938,6 +3938,21 @@ test_find_chrome_playwright_cache() {
   pass "find_chrome discovers chrome-headless-shell from the Playwright cache when it is not on PATH"
 }
 
+test_find_chrome_prefers_chromium_before_google_chrome() {
+  local fake_home fake_bin found
+  fake_home="$TMP_ROOT/find-chrome-order-home"
+  fake_bin="$TMP_ROOT/find-chrome-order-bin"
+  mkdir -p "$fake_home" "$fake_bin"
+  printf '#!/bin/sh\nexit 0\n' >"$fake_bin/chromium"
+  printf '#!/bin/sh\nexit 0\n' >"$fake_bin/google-chrome"
+  chmod +x "$fake_bin/chromium" "$fake_bin/google-chrome"
+  found=$(unset FM_CHROME_BIN; HOME="$fake_home" PATH="$fake_bin" find_chrome) \
+    || fail "find_chrome did not select from PATH when no cache shell exists"
+  [ "$found" = "$fake_bin/chromium" ] \
+    || fail "find_chrome selected $found instead of the required Chromium priority"
+  pass "find_chrome selects Chromium before Google Chrome when both are available"
+}
+
 # The rendered-DOM assertions below depend on a real browser, so the render step
 # itself is the part that fails for reasons that have nothing to do with Calm.
 # This pins that guard with real processes and no browser: one clean render, one
@@ -5000,5 +5015,6 @@ test_queued_operational_escape_e2e
 test_hidden_block_geometry_e2e
 test_working_ship_geometry_and_lifecycle
 test_find_chrome_playwright_cache
+test_find_chrome_prefers_chromium_before_google_chrome
 test_export_dom_render_guard
 test_interactive_terminal_e2e

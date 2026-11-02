@@ -16,9 +16,9 @@ find_chrome() {
   done
   for candidate in \
     chrome-headless-shell \
+    chromium \
     google-chrome \
     google-chrome-stable \
-    chromium \
     chromium-browser \
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
   do

@@ -342,13 +342,14 @@ fake_pc02() {
   mkdir -p "$dir/home"
   cat > "$fakebin/ldd" <<'SH'
 #!/usr/bin/env bash
+if [ -n "${FM_FAKE_LDD_LOG:-}" ]; then printf '%s\n' "$1" >> "$FM_FAKE_LDD_LOG"; fi
 target=${1##*/}
-if [ "${FM_FAKE_LDD_MODE:-same}" = wrapper ] && [ "$target" = chrome-headless-shell ]; then
+if [[ "${FM_FAKE_LDD_MODE:-same}" = wrapper* ]] && [ "$target" = chrome-headless-shell ]; then
   echo 'not a dynamic executable' >&2
   exit 1
 fi
 case "${FM_FAKE_LDD_MODE:-same}" in
-  different) printf 'libm.so.6 => /fake/lib/libm.so.6 (0x0)\n' ;;
+  different|wrapper-different) printf 'libm.so.6 => /fake/lib/libm.so.6 (0x0)\n' ;;
   not-found) printf 'libasound.so.2 => not found\n' ;;
   *) printf 'libc.so.6 => /fake/lib/libc.so.6 (0x0)\n' ;;
 esac
@@ -377,6 +378,10 @@ case "\$*" in
         ;;
       dependency-mismatch)
         HOME="$dir/home" FM_FAKE_LDD_MODE=different bash -c "\$*"
+        exit \$?
+        ;;
+      wrapper-dependency-mismatch)
+        HOME="$dir/home" FM_FAKE_LDD_MODE=wrapper-different bash -c "\$*"
         exit \$?
         ;;
     esac
@@ -540,6 +545,21 @@ install_cache_chrome() {  # <home> <wrapper>
   printf '%s' "$path"
 }
 
+test_shared_browser_resolver_prefers_chromium_to_google_chrome() {
+  local dir found
+  dir="$TMP_ROOT/browser-selection-order"
+  mkdir -p "$dir/home" "$dir/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/chromium"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/google-chrome"
+  chmod +x "$dir/bin/chromium" "$dir/bin/google-chrome"
+  found=$("$BASH" -c 'PATH="$1"; HOME="$2"; . "$3/bin/fm-test-chrome.sh"; find_chrome' \
+    bash "$dir/bin" "$dir/home" "$ROOT") \
+    || fail "the shared browser resolver found no PATH browser"
+  [ "$found" = "$dir/bin/chromium" ] \
+    || fail "the shared resolver selected $found instead of Chromium"
+  pass "the shared suite and parity resolver prefers Chromium over Google Chrome"
+}
+
 test_environment_parity_match_allows_offload() {
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
@@ -610,21 +630,46 @@ test_chromium_dependency_soname_difference_falls_back() {
 }
 
 test_chromium_wrapper_resolution_does_not_false_fallback() {
-  local dir fakebin out status local_home
+  local dir fakebin out status local_home resolved_target
   dir="$TMP_ROOT/parity-chromium-wrapper"
   fakebin=$(fake_pc02 "$dir")
   local_home="$dir/pc01-home"
+  resolved_target=$(readlink -f /bin/true)
   install_cache_chrome "$local_home" wrapper >/dev/null
   install_cache_chrome "$dir/home" wrapper >/dev/null
   printf '#!/usr/bin/env bash\necho "ok - wrapper"\n' > "$dir/wrapper.test.sh"
   chmod +x "$dir/wrapper.test.sh"
   out=$(PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_FAKE_LDD_MODE=wrapper FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    FM_FAKE_LDD_MODE=wrapper FM_FAKE_LDD_LOG="$dir/ldd.log" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$dir/wrapper.test.sh" 2>&1)
   status=$?
   expect_code 0 "$status" "a wrapper that resolves to a dynamic browser must permit offload: $out"
   assert_contains "$out" "running tests remotely" "the wrapper browser caused a false local fallback: $out"
+  [ "$(grep -Fc "$resolved_target" "$dir/ldd.log")" -eq 2 ] \
+    || fail "the fake ldd did not inspect the wrapper's resolved executable on both hosts: $(cat "$dir/ldd.log")"
   pass "a launcher browser resolves to its executable without a false fallback"
+}
+
+test_chromium_wrapper_compares_resolved_sonames() {
+  local dir fakebin out status local_home resolved_target
+  dir="$TMP_ROOT/parity-chromium-wrapper-dependencies"
+  fakebin=$(fake_pc02 "$dir")
+  local_home="$dir/pc01-home"
+  resolved_target=$(readlink -f /bin/true)
+  install_cache_chrome "$local_home" wrapper >/dev/null
+  install_cache_chrome "$dir/home" wrapper >/dev/null
+  out=$(PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_FAKE_LDD_MODE=wrapper FM_FAKE_LDD_LOG="$dir/ldd.log" \
+    FM_FAKE_PARITY_MODE=wrapper-dependency-mismatch FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "different resolved wrapper sonames must run locally: $out"
+  assert_contains "$out" "chromium.dependencies" "the wrapper dependency mismatch was not compared: $out"
+  assert_contains "$out" "libc.so.6" "the wrapper's PC01 soname was omitted: $out"
+  assert_contains "$out" "libm.so.6" "the wrapper's PC02 soname was omitted: $out"
+  [ "$(grep -Fc "$resolved_target" "$dir/ldd.log")" -eq 2 ] \
+    || fail "the fake ldd did not inspect each wrapper's resolved executable: $(cat "$dir/ldd.log")"
+  pass "wrapper parity compares sonames from the resolved executable on both hosts"
 }
 
 # Start a fixture that holds one PC02 slot for the lifetime of the case.
@@ -1083,9 +1128,11 @@ test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler
 test_environment_parity_match_allows_offload
 test_environment_version_mismatch_falls_back_with_field
+test_shared_browser_resolver_prefers_chromium_to_google_chrome
 test_chromium_missing_library_falls_back_with_field
 test_chromium_dependency_soname_difference_falls_back
 test_chromium_wrapper_resolution_does_not_false_fallback
+test_chromium_wrapper_compares_resolved_sonames
 test_one_of_two_busy_slots_still_runs_remotely
 test_all_slots_busy_falls_back_locally
 test_single_slot_mode_keeps_the_old_fallback
