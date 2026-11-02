@@ -18,6 +18,53 @@ export XDG_CONFIG_HOME="$TMP_ROOT/xdg"
 export FM_PC02_OFFLOAD_LLAMASWAP_URL=http://127.0.0.1:9
 export FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1="$TMP_ROOT/no-such-resource-check.ps1"
 
+# A wrapper browser execs this fixture, so the resolved-executable oracle is
+# a plain file name rather than a host-specific /bin/true resolution.
+WRAPPER_TARGET_NAME=chrome-wrapper-target-fixture
+WRAPPER_TARGET="$TMP_ROOT/browser-target/$WRAPPER_TARGET_NAME"
+mkdir -p "${WRAPPER_TARGET%/*}"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$WRAPPER_TARGET"
+chmod +x "$WRAPPER_TARGET"
+
+install_cache_chrome() {  # <home> <wrapper>
+  local path="$1/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell"
+  mkdir -p "$(dirname "$path")"
+  if [ "$2" = wrapper ]; then
+    printf '#!/usr/bin/env bash\nexec %s "$@"\n' "$WRAPPER_TARGET" > "$path"
+  else
+    printf '#!/usr/bin/env bash\necho "Chrome Headless Shell 1228.0"\n' > "$path"
+  fi
+  chmod +x "$path"
+  printf '%s' "$path"
+}
+
+# Every case sees the same deterministic ldd, so browser dependency parity
+# never depends on the runner's real libraries or fixture-script shapes.
+mkdir -p "$TMP_ROOT/fake-ldd-bin"
+cat > "$TMP_ROOT/fake-ldd-bin/ldd" <<'SH'
+#!/usr/bin/env bash
+if [ -n "${FM_FAKE_LDD_LOG:-}" ]; then printf '%s\n' "$1" >> "$FM_FAKE_LDD_LOG"; fi
+target=${1##*/}
+if [[ "${FM_FAKE_LDD_MODE:-same}" = wrapper* ]] && [ "$target" = chrome-headless-shell ]; then
+  echo 'not a dynamic executable' >&2
+  exit 1
+fi
+case "${FM_FAKE_LDD_MODE:-same}" in
+  local-hang) exec sleep 60 ;;
+  different|wrapper-different) printf 'libm.so.6 => /fake/lib/libm.so.6 (0x0)\n' ;;
+  not-found) printf 'libasound.so.2 => not found\n' ;;
+  *) printf 'libc.so.6 => /fake/lib/libc.so.6 (0x0)\n' ;;
+esac
+SH
+chmod +x "$TMP_ROOT/fake-ldd-bin/ldd"
+export PATH="$TMP_ROOT/fake-ldd-bin:$PATH"
+
+# The parity gate compares the browser each side selects, so PC01 runs from a
+# controlled home whose cached browser matches the one fake_pc02 installs;
+# the runner's ambient browser never decides a case.
+export HOME="$TMP_ROOT/pc01-default-home"
+install_cache_chrome "$HOME" direct >/dev/null
+
 # --list-families is real, fast, deterministic, and independent of cwd
 # state, so it doubles as proof that a fallback path actually reached the
 # real fm-test-run.sh with the forwarded arguments intact.
@@ -340,22 +387,7 @@ fake_pc02() {
   real_rsync=$(command -v rsync)
   fakebin=$(fm_fakebin "$dir")
   mkdir -p "$dir/home"
-  cat > "$fakebin/ldd" <<'SH'
-#!/usr/bin/env bash
-if [ -n "${FM_FAKE_LDD_LOG:-}" ]; then printf '%s\n' "$1" >> "$FM_FAKE_LDD_LOG"; fi
-target=${1##*/}
-if [[ "${FM_FAKE_LDD_MODE:-same}" = wrapper* ]] && [ "$target" = chrome-headless-shell ]; then
-  echo 'not a dynamic executable' >&2
-  exit 1
-fi
-case "${FM_FAKE_LDD_MODE:-same}" in
-  local-hang) exec sleep 60 ;;
-  different|wrapper-different) printf 'libm.so.6 => /fake/lib/libm.so.6 (0x0)\n' ;;
-  not-found) printf 'libasound.so.2 => not found\n' ;;
-  *) printf 'libc.so.6 => /fake/lib/libc.so.6 (0x0)\n' ;;
-esac
-SH
-  chmod +x "$fakebin/ldd"
+  install_cache_chrome "$dir/home" direct >/dev/null
   cat > "$fakebin/ssh" <<SH
 #!/usr/bin/env bash
 while [ "\$#" -gt 0 ]; do
@@ -546,18 +578,6 @@ SH
   pass "an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound"
 }
 
-install_cache_chrome() {  # <home> <wrapper>
-  local path="$1/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell"
-  mkdir -p "$(dirname "$path")"
-  if [ "$2" = wrapper ]; then
-    printf '#!/usr/bin/env bash\nexec /bin/true "$@"\n' > "$path"
-  else
-    printf '#!/usr/bin/env bash\necho "Chrome Headless Shell 1228.0"\n' > "$path"
-  fi
-  chmod +x "$path"
-  printf '%s' "$path"
-}
-
 test_shared_browser_resolver_prefers_chromium_to_google_chrome() {
   local dir found
   dir="$TMP_ROOT/browser-selection-order"
@@ -721,11 +741,13 @@ test_chromium_dependency_soname_difference_falls_back() {
 }
 
 test_chromium_wrapper_resolution_does_not_false_fallback() {
-  local dir fakebin out status local_home resolved_target
+  local dir fakebin out status local_home
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
   dir="$TMP_ROOT/parity-chromium-wrapper"
   fakebin=$(fake_pc02 "$dir")
   local_home="$dir/pc01-home"
-  resolved_target=$(readlink -f /bin/true)
   install_cache_chrome "$local_home" wrapper >/dev/null
   install_cache_chrome "$dir/home" wrapper >/dev/null
   printf '#!/usr/bin/env bash\necho "ok - wrapper"\n' > "$dir/wrapper.test.sh"
@@ -736,17 +758,16 @@ test_chromium_wrapper_resolution_does_not_false_fallback() {
   status=$?
   expect_code 0 "$status" "a wrapper that resolves to a dynamic browser must permit offload: $out"
   assert_contains "$out" "running tests remotely" "the wrapper browser caused a false local fallback: $out"
-  [ "$(grep -Fc "$resolved_target" "$dir/ldd.log")" -eq 2 ] \
+  [ "$(grep -Fc "$WRAPPER_TARGET_NAME" "$dir/ldd.log")" -eq 2 ] \
     || fail "the fake ldd did not inspect the wrapper's resolved executable on both hosts: $(cat "$dir/ldd.log")"
   pass "a launcher browser resolves to its executable without a false fallback"
 }
 
 test_chromium_wrapper_compares_resolved_sonames() {
-  local dir fakebin out status local_home resolved_target
+  local dir fakebin out status local_home
   dir="$TMP_ROOT/parity-chromium-wrapper-dependencies"
   fakebin=$(fake_pc02 "$dir")
   local_home="$dir/pc01-home"
-  resolved_target=$(readlink -f /bin/true)
   install_cache_chrome "$local_home" wrapper >/dev/null
   install_cache_chrome "$dir/home" wrapper >/dev/null
   out=$(PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
@@ -758,7 +779,7 @@ test_chromium_wrapper_compares_resolved_sonames() {
   assert_contains "$out" "chromium.dependencies" "the wrapper dependency mismatch was not compared: $out"
   assert_contains "$out" "libc.so.6" "the wrapper's PC01 soname was omitted: $out"
   assert_contains "$out" "libm.so.6" "the wrapper's PC02 soname was omitted: $out"
-  [ "$(grep -Fc "$resolved_target" "$dir/ldd.log")" -eq 2 ] \
+  [ "$(grep -Fc "$WRAPPER_TARGET_NAME" "$dir/ldd.log")" -eq 2 ] \
     || fail "the fake ldd did not inspect each wrapper's resolved executable: $(cat "$dir/ldd.log")"
   pass "wrapper parity compares sonames from the resolved executable on both hosts"
 }

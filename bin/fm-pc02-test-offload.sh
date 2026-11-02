@@ -383,7 +383,8 @@ version() {
   path=$(type -P "$tool" 2>/dev/null || true)
   if [ -z "$path" ]; then printf 'tool.%s=absent\n' "$tool"; return; fi
   value=$(timeout 5 "$path" "$args" 2>&1 </dev/null) || status=$?
-  value=${value%%$'\n'*}
+  # Keep the first line carrying a digit (shellcheck prints a banner first).
+  value=$(printf '%s\n' "$value" | awk 'NR == 1 { first = $0 } /[0-9]/ { print; found = 1; exit } END { if (!found) print first }')
   [ -n "$value" ] || value=unavailable
   [ "$status" -ne 124 ] || value=timed-out
   value=$(printf '%s' "$value" | tr '\r\n\t' '   ' | cut -c1-180)
@@ -484,9 +485,13 @@ while IFS='=' read -r key local_value; do
   else
     [ "$local_value" = "$remote_value" ] || parity_mismatches+=("$key (PC01='$local_value', PC02='$remote_value')")
   fi
-  case "$key:$local_value:$remote_value" in
-    tool.*:absent:*|tool.*:unavailable:*|tool.*:timed-out:*|tool.*:*:absent|tool.*:*:unavailable|tool.*:*:timed-out)
-      parity_mismatches+=("$key version could not be established")
+  case "$key" in
+    tool.*|chromium.selected_version)
+      case "$local_value:$remote_value" in
+        absent:*|unavailable:*|timed-out:*|*:absent|*:unavailable|*:timed-out)
+          parity_mismatches+=("$key version could not be established")
+          ;;
+      esac
       ;;
   esac
 done <<< "$local_parity"

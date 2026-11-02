@@ -605,6 +605,23 @@ test_no_running_default_session_is_supported() {
   pass "fm-herdr-lab: a host with no running default session gets a real tripwire"
 }
 
+# A stopped default session is still a default session: the tripwire must keep
+# it, running:false included, rather than refusing or dropping it.
+test_stopped_default_session_is_recorded() {
+  local name="fm-lab-stopped-default-$$"
+  printf '%s\n' stopped > "$FAKE_STATE/default-mode"
+  : > "$FAKE_LOG"
+  run_with_fake fm_herdr_lab_provision "$name" || fail "provision with a stopped default session failed"
+  jq -e 'length == 1 and .[0].name == "default" and .[0].running == false' \
+    "$TRIPWIRES/$name.fleet-state.json" >/dev/null \
+    || fail "the stopped default session was not recorded with running:false: $(cat "$TRIPWIRES/$name.fleet-state.json")"
+  run_with_fake fm_herdr_lab_teardown "$name" || fail "teardown with an unchanged stopped default session failed"
+  assert_absent "$TRIPWIRES/$name.fleet-state.json" \
+    "teardown with a stopped default session left its tripwire behind"
+  printf '%s\n' running > "$FAKE_STATE/default-mode"
+  pass "fm-herdr-lab: a stopped default session stays a tripwire entry"
+}
+
 test_default_appearing_mid_run_trips() {
   local name="fm-lab-default-appears-$$" status=0
   printf '%s\n' absent > "$FAKE_STATE/default-mode"
@@ -670,6 +687,7 @@ test_run_scopes_session_before_double_dash
 test_missing_tripwire_blocks_destruction
 test_changed_default_trips_after_teardown
 test_no_running_default_session_is_supported
+test_stopped_default_session_is_recorded
 test_default_appearing_mid_run_trips
 test_multiple_default_sessions_are_refused
 test_malformed_session_lists_are_refused
