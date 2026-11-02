@@ -66,26 +66,22 @@
 # running, are removed on every exit path, including an interrupt.
 #
 # Remote run conditions (always applied to an offloaded run):
-#   - Same scheduler as PC01, per-script bounded: the remote fm-test-run.sh is
-#     invoked with no forced --jobs, so it applies exactly the policy it uses
-#     locally, sized to the remote host's own cores and load: a plain
-#     --changed or script-list selection uses its proven-concurrent scheduler
-#     (min(4, cpus) workers, load-throttled; only individually proven-isolated
-#     scripts and recorded concurrent family proofs run in parallel, and
-#     unproven scripts stay serial), while --lane, --family, and --all stay
-#     serial unless the caller asked otherwise. An explicit caller --jobs is
-#     preserved as given, including its refusal of unproven scripts.
-#     --per-script-timeout-secs 1500 is appended, overriding any value the
-#     caller passed, including a larger one. The whole run stays capped by
-#     FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS; a run that exceeds that cap exits 124
-#     rather than rerunning locally.
+#   - Parallel, per-script bounded: caller --jobs is preserved; absent that,
+#     the remote fm-test-run.sh keeps its own automatic scheduler (only
+#     proven-isolated scripts and recorded concurrent family proofs run in
+#     parallel; unproven scripts stay serial) with its worker ceiling raised to
+#     FM_PC02_OFFLOAD_JOBS (default 8) for PC02's 16 threads / 27 GB.
+#     Isolation phases, family caps and serial tails remain enforced; curated
+#     lanes keep their contracts. The per-script cap defaults to 3000s
+#     (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS) and overrides the caller's
+#     per-script timeout. The whole run defaults to 7200s
+#     (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124 rather than
+#     rerunning locally.
 #   - Host slots: FM_PC02_OFFLOAD_SLOTS (default 2) nonblocking flocks on
 #     PC02's ~/.fm-pc02-test-slot-<n>.lock, one per concurrent suite, cover
 #     transfer and execution. A run takes the first free slot; with all slots
-#     held it logs that every slot is busy and routes local. Each run keeps
-#     fm-test-run.sh's own scheduler, so two default slots on PC02's 16 threads
-#     run at most 4 workers each (8 test processes) while sharing the host's
-#     ~27 GB. The files are never unlinked: a dead owner's kernel lock is
+#     held it logs that every slot is busy and routes local, as does an unclear
+#     claim. The files are never unlinked: a dead owner's kernel lock is
 #     released automatically, so a leftover file or process name is harmless.
 #   - Supervising-home selection and per-machine configuration are owned by
 #     docs/configuration.md's "PC02 test offload" section.
@@ -131,12 +127,14 @@
 #                                      (default: 7200); a hang tripwire, not
 #                                      a deadline. PR #215's full --changed
 #                                      selection (183 scripts) measured 4274s
-#                                      test wall / 4305s whole at jobs=4; this
-#                                      single-run measurement does not establish
-#                                      two full selections' runtime. Exceeding it fails the
-#                                      run (exit 124) rather than falling back,
-#                                      since the remote work already spent is
-#                                      not worth discarding blind
+#                                      test wall / 4305s whole at jobs=4.
+#                                      Exceeding it fails the run (exit 124)
+#                                      rather than falling back, since the
+#                                      remote work already spent is not worth
+#                                      discarding blind
+#   FM_PC02_OFFLOAD_JOBS                remote jobs when caller omits --jobs
+#                                      (default: 8)
+#   FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS per-script cap (default: 3000)
 #   FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
 #                                      the ssh target's home, holding one
 #                                      private mirror (worktree + git store)
@@ -187,8 +185,9 @@ HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
+SCRIPT_TIMEOUT="${FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS:-3000}"
+REMOTE_JOBS="${FM_PC02_OFFLOAD_JOBS:-8}"
 SLOTS="${FM_PC02_OFFLOAD_SLOTS:-2}"
-SCRIPT_TIMEOUT=1500
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
@@ -633,13 +632,21 @@ fi
 # that hits this bound fails outright (exit 124) rather than falling back to
 # a second local run, which would silently double the caller's time budget.
 echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
-remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-test-run.sh"
+has_jobs=0
+for a in "${ARGS[@]}"; do
+  case "$a" in --jobs|--jobs=*) has_jobs=1 ;; esac
+done
+remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT")"
+if [ "$has_jobs" -eq 0 ]; then
+  remote_suite_cmd="$remote_suite_cmd env FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
+fi
+remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
 for a in "${ARGS[@]}"; do
   remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
 done
-# No --jobs is forced: fm-test-run.sh's own scheduler sizes concurrency to this
-# host's cores and load and admits only proven-concurrent work, exactly as a
-# local run does. Only the per-script bound is pinned.
+# No --jobs is forced: fm-test-run.sh's own scheduler admits only
+# proven-concurrent work, exactly as a local run does; only its worker ceiling
+# and the per-script bound are pinned.
 remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 # The watcher reads the ssh stdin: if the transport drops, EOF kills the suite
 # session. The lock (fd 8) is held by the suite itself, so a surviving old

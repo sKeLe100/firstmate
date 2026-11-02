@@ -23,7 +23,7 @@ export FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1="$TMP_ROOT/no-such-resource-check.ps1"
 WRAPPER_TARGET_NAME=chrome-wrapper-target-fixture
 WRAPPER_TARGET="$TMP_ROOT/browser-target/$WRAPPER_TARGET_NAME"
 mkdir -p "${WRAPPER_TARGET%/*}"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$WRAPPER_TARGET"
+printf '#!/usr/bin/env bash\necho "Chrome Headless Shell 1228.0"\n' > "$WRAPPER_TARGET"
 chmod +x "$WRAPPER_TARGET"
 
 install_cache_chrome() {  # <home> <wrapper>
@@ -473,7 +473,13 @@ while [ "\$#" -gt 0 ]; do
   esac
   shift
 done
-exec "$real_rsync" "\${args[@]}"
+"$real_rsync" "\${args[@]}" || exit \$?
+if [ -n "\${FM_FAKE_CAPTURE_RUNNER:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
+  cat > "\${args[\${#args[@]}-1]}/bin/fm-test-run.sh" <<'RUNNER'
+#!/usr/bin/env bash
+echo "auto_jobs=\${FM_TEST_RUN_AUTO_JOBS_MAX:-unset} argv=\$*"
+RUNNER
+fi
 SH
   chmod +x "$fakebin/ssh" "$fakebin/rsync"
   printf '%s\n' "$fakebin"
@@ -576,6 +582,79 @@ SH
     fail "the offload forced --jobs onto the remote invocation"
   fi
   pass "an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound"
+}
+
+test_remote_run_uses_7200_second_default_timeout() {
+  local dir fakebin real_timeout out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/default-run-timeout"
+  fakebin=$(fake_pc02 "$dir")
+  real_timeout=$(command -v timeout)
+  cat > "$fakebin/timeout" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = "--kill-after=10" ]; then
+  printf '%s\\n' "\${2:-}" >> "\$FM_TEST_OFFLOAD_TIMEOUT_CAPTURE"
+fi
+exec "$real_timeout" "\$@"
+SH
+  chmod +x "$fakebin/timeout"
+  printf '#!/usr/bin/env bash\necho "ok - default timeout fixture"\n' > "$dir/green.test.sh"
+  chmod +x "$dir/green.test.sh"
+
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_TEST_OFFLOAD_TIMEOUT_CAPTURE="$dir/timeout.log" \
+    env -u FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS "$SCRIPT" "$dir/green.test.sh" 2>&1)
+  status=$?
+  expect_code 0 "$status" "default-timeout remote fixture failed: $out"
+  assert_contains "$out" "PC02 idle and ready; running tests remotely" "the run never went remote: $out"
+  [ "$(cat "$dir/timeout.log")" = 7200 ] \
+    || fail "remote timeout executable did not receive the independent 7200-second default: $(cat "$dir/timeout.log" 2>/dev/null)"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "default-timeout fixture left a mirror behind"
+  pass "a remote suite passes the 7200-second default to its timeout executable"
+}
+
+test_remote_jobs_and_script_bound() {
+  local dir fakebin out status jobs
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-jobs-bounds"
+  fakebin=$(fake_pc02 "$dir")
+  # Use a private remote runner stand-in to observe argv/environment at the
+  # transfer boundary. The real scheduler's isolation policy has separate tests.
+  export FM_FAKE_CAPTURE_RUNNER=1
+  for jobs in default override split equals; do
+    local -a args=()
+    case "$jobs" in
+      split) args=(--jobs 4) ;;
+      equals) args=(--jobs=3) ;;
+    esac
+    out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+      FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_JOBS="$([ "$jobs" = override ] && echo 6 || echo 8)" \
+      "$SCRIPT" --all "${args[@]+"${args[@]}"}" 2>&1)
+    status=$?
+    expect_code 0 "$status" "remote jobs fixture failed: $out"
+    case "$jobs" in
+      default) assert_contains "$out" 'auto_jobs=8' "missing default: $out" ;;
+      override) assert_contains "$out" 'auto_jobs=6' "missing override: $out" ;;
+      split) assert_contains "$out" 'argv=--all --jobs 4' "split jobs lost: $out" ;;
+      equals) assert_contains "$out" 'argv=--all --jobs=3' "equals jobs lost: $out" ;;
+    esac
+    assert_contains "$out" '--per-script-timeout-secs 3000' "default script cap changed: $out"
+  done
+  unset FM_FAKE_CAPTURE_RUNNER
+  printf '#!/usr/bin/env bash\nsleep 60\n' > "$dir/timeout.test.sh"
+  chmod +x "$dir/timeout.test.sh"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS=1 \
+    "$SCRIPT" "$dir/timeout.test.sh" --per-script-timeout-secs 0 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "remote script cap did not bound an unlimited caller: $out"
+  assert_contains "$out" "per_script_timeout_secs=1" "script timeout override was lost: $out"
+  assert_contains "$out" "exit=124" "script cap did not time out its fixture: $out"
+  pass "remote jobs preserve both caller forms, default to eight, and allow environment overrides with a script cap"
 }
 
 test_shared_browser_resolver_prefers_chromium_to_google_chrome() {
@@ -1238,6 +1317,8 @@ test_pc02_if_idle_flag_forwards_through_fm_test_run
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler
+test_remote_run_uses_7200_second_default_timeout
+test_remote_jobs_and_script_bound
 test_environment_parity_match_allows_offload
 test_environment_open_file_capacity
 test_environment_version_mismatch_falls_back_with_field

@@ -20,6 +20,7 @@ assert_present "$RUNNER" "bin/fm-test-run.sh is missing"
 # deterministic regardless of the actual machine's contention; tests that
 # specifically exercise load-aware behavior override this per invocation.
 export FM_TEST_RUN_LOAD5_OVERRIDE=0
+unset FM_TEST_RUN_AUTO_JOBS_MAX
 
 test_list_all_exact_suite_coverage() {
   local listed expected missing extra f
@@ -2499,6 +2500,80 @@ SH
   pass "--fail-fast stops the --jobs scheduler after the first failure"
 }
 
+test_automatic_eight_jobs_preserves_isolation_phases() {
+  local tmp repo script out rc
+  local -a proven=() family=(fm-branch-supervision.test.sh fm-busy-adapter-wiring.test.sh
+    fm-busy-state.test.sh fm-classify-corr-token.test.sh fm-claude-stop-autoarm.test.sh)
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-eight.XXXXXX")
+  repo="$tmp/repo"
+  while IFS= read -r script; do
+    [ "${#proven[@]}" -lt 8 ] || break
+    proven+=("${script##*/}")
+  done < <("$RUNNER" --list --proven-isolated)
+  init_scheduler_fixture_repo "$repo" "${proven[@]}" "${family[@]}" unproven.test.sh
+  mkdir "$repo/started"
+  for script in "${proven[@]}"; do
+    cat > "$repo/tests/$script" <<'SH'
+#!/usr/bin/env bash
+touch "started/$(basename "$0")"
+for ((i=0; i<300; i++)); do
+  [ "$(find started -type f | wc -l)" -eq 8 ] && exit 0
+  sleep 0.05
+done
+echo 'not ok - eight workers did not rendezvous'
+exit 1
+SH
+  done
+  for script in "${family[@]}"; do
+    printf '#!/usr/bin/env bash\nsleep 0.2\necho "ok - family fixture"\n' > "$repo/tests/$script"
+  done
+  out="$tmp/out"
+  (cd "$repo" && FM_TEST_RUN_AUTO_JOBS_MAX=8 FM_TEST_RUN_CPU_COUNT_OVERRIDE=16 \
+    bin/fm-test-run.sh --all) > "$out" 2> "$tmp/err" \
+    || { cat "$out" "$tmp/err"; fail "eight-job automatic fixture failed"; }
+  python3 - "$out" <<'CHECK' || fail "eight-job isolation phases changed"
+import sys
+active = set()
+peak = 0
+completed = 0
+for line in open(sys.argv[1]):
+    parts = line.split()
+    if parts[:1] == ["FM_TEST_BEGIN"]:
+        name = parts[2]
+        if name.endswith("unproven.test.sh"):
+            assert completed == 13, completed
+            assert not active, active
+        if "family=standalone" in parts:
+            assert all(x.startswith("standalone:") for x in active), active
+            assert len(active) < 4, active
+            key = "standalone:" + name
+        else:
+            assert not any(x.startswith("standalone:") for x in active), active
+            key = name
+        active.add(key)
+        peak = max(peak, len(active))
+    elif parts[:1] == ["FM_TEST_END"]:
+        completed += 1
+        name = parts[2]
+        active.discard(name)
+        active.discard("standalone:" + name)
+assert peak == 8, peak
+assert not active, active
+CHECK
+  # Explicit numeric concurrency still refuses a mixed unproven selection.
+  set +e
+  (cd "$repo" && FM_TEST_RUN_AUTO_JOBS_MAX=8 bin/fm-test-run.sh "tests/${proven[0]}" tests/unproven.test.sh --jobs 8) > "$tmp/refused" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "explicit contradictory jobs unexpectedly succeeded"
+  grep -q 'not in the proven-isolated set' "$tmp/refused" || fail "explicit refusal semantics changed"
+  if FM_TEST_RUN_AUTO_JOBS_MAX=9 "$repo/bin/fm-test-run.sh" --all > "$tmp/invalid" 2>&1; then
+    fail "invalid automatic ceiling was accepted"
+  fi
+  rm -rf "$tmp"
+  pass "automatic eight-job phases retain family caps, serial tails and explicit refusals"
+}
+
 # P2 (data/ci-pipeline-review-scout/report.md): the automatic --changed/scripts
 # scheduler throttles concurrency for host contention and reports its inputs.
 test_host_load_marker_and_scheduler_throttle() {
@@ -2884,6 +2959,7 @@ test_check_hint_drift_ignores_sub_floor_swings
 test_fail_fast_stops_after_first_failure
 test_fail_fast_jobs_stops_scheduling
 test_fail_fast_skips_the_unproven_serial_tail
+test_automatic_eight_jobs_preserves_isolation_phases
 test_host_load_marker_and_scheduler_throttle
 test_changed_default_timeout_scales_with_host_load
 test_changed_watch_triage_gets_its_own_scaled_timeout

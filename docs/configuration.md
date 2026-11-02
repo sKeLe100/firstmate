@@ -762,15 +762,18 @@ For an operational home separate from that primary clone (including a validation
 An invalid or unreadable configuration, or an unavailable home state directory, keeps testing local; a configured home is never skipped in favor of a guessed home.
 `FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
 
-[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the per-slot locks, cleanup, scheduling, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
-Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock and using `bin/fm-test-run.sh`'s own scheduler; with every slot busy the next run falls back locally and says all slots are busy. Direct test invocations on PC02 must be scheduled separately.
-A remote run is not forced serial: it inherits `bin/fm-test-run.sh`'s own scheduler sized to PC02's cores and load, so a plain `--changed` selection uses its proven-concurrent policy while `--lane`, `--family`, and `--all` stay serial as they do locally.
-Before it claims a slot, offload compares PC01 and PC02 tool versions (git, bash, python3, jq, node, shellcheck, actionlint, ruby, chromium, Herdr, Pi, tmux), `LC_ALL`/`LANG`/`TZ`, and sorted dependency sonames for the browser selected by the suite's shared [`fm-test-chrome.sh`](../bin/fm-test-chrome.sh) resolver.
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
+Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. Direct test invocations on PC02 must be scheduled separately.
+Offload preserves caller-selected parallelism and otherwise keeps `bin/fm-test-run.sh`'s own automatic scheduler with up to eight workers for PC02's 16 threads and 27 GB, so only proven-concurrent work runs in parallel.
+Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
+Before it claims a slot, offload compares PC01 and PC02 tool versions (git, bash, python3, jq, node, shellcheck, actionlint, ruby, chromium, Herdr, Pi, tmux), `LC_ALL`/`LANG`/`TZ`, and the version and sorted dependency sonames of the browser selected by the suite's shared [`fm-test-chrome.sh`](../bin/fm-test-chrome.sh) resolver.
 PC02's `ulimit -n` must be at least PC01's; a higher or unlimited remote limit is accepted, while a lower, missing or invalid limit routes locally.
 Paths are reported for diagnostics but are not compared.
-A mismatch or unresolved library routes the run locally with the host, browser path, and differing soname.
+A mismatch, an unestablished version, or an unresolved library routes the run locally with the host, browser path, and differing value.
 CPU count, RAM, `ulimit -u`, the shared no-mistakes daemon version, the `/usr/bin/env` provider, and shell availability such as zsh are intentionally excluded as resource differences or documented test differences.
-Two overlapping four-worker runs of `fm-supervision-host`, `fm-captain-hold-lifecycle`, `fm-remote-secondmate-lifecycle-e2e`, and `fm-spawn-dispatch-profile` passed in 2382s total; peak load5 was 25.54 on 16 threads and minimum `MemAvailable` was 24.4 GiB of ~27 GiB. A separate full PR #215 selection of 183 scripts took 4274s test wall / 4305s whole. The 7200s run cap remains a hang bound; the full-selection measurement was single-run and does not establish that two full selections fit within it. A large `--changed` selection can still exceed the cap, in which case the remote run fails with exit 124 rather than rerunning locally or omitting selected tests; `FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS` owns the default whole-run cap.
+The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
+A full PR #215 selection of 183 scripts took 4274s test wall / 4305s whole at four workers; that single-run measurement does not establish that two full selections fit within the cap.
+Exceeding the whole-run cap fails with exit 124 and does not rerun the suite locally or omit selected tests.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 
