@@ -455,6 +455,37 @@ test_remote_run_passes_through_green_suite_and_json() {
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
 }
 
+test_remote_run_uses_7200_second_default_timeout() {
+  local dir fakebin real_timeout out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/default-run-timeout"
+  fakebin=$(fake_pc02 "$dir")
+  real_timeout=$(command -v timeout)
+  cat > "$fakebin/timeout" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = "--kill-after=10" ]; then
+  printf '%s\\n' "\${2:-}" >> "\$FM_TEST_OFFLOAD_TIMEOUT_CAPTURE"
+fi
+exec "$real_timeout" "\$@"
+SH
+  chmod +x "$fakebin/timeout"
+  printf '#!/usr/bin/env bash\necho "ok - default timeout fixture"\n' > "$dir/green.test.sh"
+  chmod +x "$dir/green.test.sh"
+
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_TEST_OFFLOAD_TIMEOUT_CAPTURE="$dir/timeout.log" \
+    env -u FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS "$SCRIPT" "$dir/green.test.sh" 2>&1)
+  status=$?
+  expect_code 0 "$status" "default-timeout remote fixture failed: $out"
+  assert_contains "$out" "PC02 idle and ready; running tests remotely" "the run never went remote: $out"
+  [ "$(cat "$dir/timeout.log")" = 7200 ] \
+    || fail "remote timeout executable did not receive the independent 7200-second default: $(cat "$dir/timeout.log" 2>/dev/null)"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "default-timeout fixture left a mirror behind"
+  pass "a remote suite passes the 7200-second default to its timeout executable"
+}
+
 test_remote_jobs_and_script_bound() {
   local dir fakebin out status jobs
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
@@ -882,6 +913,7 @@ test_unclear_resource_check_falls_back_to_local
 test_pc02_if_idle_flag_forwards_through_fm_test_run
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
+test_remote_run_uses_7200_second_default_timeout
 test_remote_jobs_and_script_bound
 test_active_remote_suite_falls_back_locally
 test_decoy_host_suite_does_not_affect_remote_probe
