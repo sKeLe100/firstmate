@@ -230,6 +230,10 @@ init_changed_fixture_repo() {
   # shellcheck disable=SC2016  # literal fixture text: the reference must reach
   # the file verbatim so the changed-file scan can find it, not expand here.
   printf '. "$ROOT/bin/shared-probe-lib.sh"\n' >"$repo/bin/fm-watch-probe.sh"
+  printf '# fm-watch-probe.sh\n' >>"$repo/tests/fm-daemon.test.sh"
+  # A real repository reader, unlike a fixture's copy of the same path.
+  # shellcheck disable=SC2016
+  printf 'ROOT=$(cd "$(dirname "$0")/.." && pwd)\ncat "$ROOT/.agents/skills/example/SKILL.md"\n' >>"$repo/tests/fm-ask-user-authority.test.sh"
   printf '# .claude/settings.json\n# .pi/extensions/fm-primary-turnend-guard.ts\n' \
     >>"$repo/tests/fm-cd-pretool-check.test.sh"
   printf '# .pi/extensions/fm-primary-pi-watch.ts\n' >>"$repo/tests/fm-pi-watch-extension.test.sh"
@@ -352,7 +356,7 @@ test_changed_runner_surfaces_select_their_family() {
   git -C "$repo" add bin/fm-test-run.sh
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm runner-change
 
-  # The same holds for the surfaces that document that contract.
+  # Documentation selects its contract owners rather than the execution family.
   printf '\n' >>"$repo/docs/fm-test-isolation-proof.md"
   printf '\n' >>"$repo/CONTRIBUTING.md"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD | LC_ALL=C sort)
@@ -361,12 +365,12 @@ test_changed_runner_surfaces_select_their_family() {
     *) fail "documentation surface change did not select audience coverage: $listed" ;;
   esac
   case "$listed" in
-    *tests/fm-brief.test.sh*) ;;
-    *) fail "documentation surface change did not select its curated family: $listed" ;;
+    *tests/fm-brief.test.sh*) fail "documentation change selected an unrelated contract suite: $listed" ;;
+    *) ;;
   esac
 
   rm -rf "$tmp"
-  pass "runner and its documentation surfaces select their curated family, not just their contract owners"
+  pass "runner retains broad execution coverage while documentation selects its owners"
 }
 
 test_shell_line_ending_policy_selects_runner_contract() {
@@ -518,8 +522,7 @@ test_changed_dependency_selection_and_unmapped_failure() {
 # A direct test reference is per-script evidence. Widening it to the referencing
 # test's whole family is what turned a one-line change to a shared helper into
 # every real-Herdr E2E, including scripts with no dependency on it at all.
-# Consumer bin/ scripts must still resolve through the curated map, so recorded
-# family-level coupling is not lost along the way.
+# Consumer bin/ scripts follow their own readers instead of whole families.
 test_changed_bin_reference_selects_per_script_not_per_family() {
   local tmp repo listed
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-changed-scope.XXXXXX")
@@ -536,14 +539,131 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
       fail "a single gated script's reference dragged in its whole family: $listed"
       ;;
   esac
-  # The curated consumer keeps its family-level coupling.
+  # Follow the actual consumer, without selecting its unrelated siblings.
   assert_contains "$listed" "tests/fm-daemon.test.sh" \
-    "a curated consumer of the helper must still select its whole family"
-  assert_contains "$listed" "tests/fm-pi-watch-extension.test.sh" \
-    "a curated consumer of the helper must still select its whole family"
+    "the consumer of the helper must select its own reader"
+  assert_not_contains "$listed" "tests/fm-pi-watch-extension.test.sh" \
+    "a leaf consumer must not select unrelated watcher siblings"
 
   rm -rf "$tmp"
-  pass "a bin reference selects the referencing scripts, and consumers still select their curated families"
+  pass "bin references and consumer references select individual scripts"
+}
+
+# A long consumer chain and a cycle must reach the real reader; comment-only
+# mentions, including inline comments, must not create consumer edges.
+test_changed_reference_closure_and_explanations() {
+  local tmp repo listed explained script
+  tmp=$(fm_test_tmproot fm-selection-closure)
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  for script in one two three four; do : >"$repo/bin/$script.sh"; done
+  printf '. "./two.sh"\n' >"$repo/bin/one.sh"
+  printf '. "./three.sh"\n' >"$repo/bin/two.sh"
+  printf '. "./four.sh"\n' >"$repo/bin/three.sh"
+  printf '. "./one.sh"\n' >"$repo/bin/four.sh"
+  printf '. "./one.sh"\n' >>"$repo/tests/fm-pr-merge.test.sh"
+  printf '# four.sh\n: # four.sh\n' >"$repo/bin/comment-only.sh"
+  printf '. "./comment-only.sh"\n' >>"$repo/tests/fm-backend.test.sh"
+  # Quoted # is data and must not hide a genuine dependency later on the line.
+  printf 'value="#"; . "./four.sh"\n' >"$repo/bin/quoted-hash.sh"
+  printf '. "./quoted-hash.sh"\n' >>"$repo/tests/fm-secondmate-safety.test.sh"
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm chain
+  printf '\n' >>"$repo/bin/four.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-pr-merge.test.sh "consumer closure reaches beyond two levels and terminates cycles"
+  assert_contains "$listed" tests/fm-secondmate-safety.test.sh "a quoted hash keeps the executable dependency"
+  assert_not_contains "$listed" tests/fm-backend.test.sh "comment-only consumers do not select tests"
+  [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 2 ] || fail "leaf change widened beyond its two readers: $listed"
+  explained=$(cd "$repo" && bin/fm-test-run.sh --explain --changed --base HEAD)
+  assert_contains "$explained" 'bin/four.sh <- bin/three.sh <- bin/two.sh <- bin/one.sh <- tests/fm-pr-merge.test.sh' \
+    "explanation retains the complete consumer chain"
+  assert_not_contains "$explained" FM_TEST_BEGIN "explain never executes selected scripts"
+  [ "$(printf '%s\n' "$explained" | cut -f1)" = "$listed" ] || fail "explain and list selections differ"
+  explained=$(cd "$repo" && bin/fm-test-run.sh --explain --changed --base HEAD --exclude-family secondmate)
+  assert_not_contains "$explained" tests/fm-secondmate-safety.test.sh "explain respects exclusions"
+  rm "$repo/bin/four.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-pr-merge.test.sh "removed source still selects its remaining readers"
+  pass "changed reference closure handles cycles, comments, removals, and explanations"
+}
+
+# Use the real inventory in a disposable copy, never execute its scripts here.
+# Bounds catch family fan-out while positive assertions keep relevant coverage.
+test_changed_real_inventory_selection_bounds() {
+  local tmp repo listed count path
+  tmp=$(fm_test_tmproot fm-selection-inventory)
+  repo="$tmp/repo"
+  mkdir -p "$repo"
+  for path in bin tests docs .agents .pi .claude; do
+    [ ! -d "$ROOT/$path" ] || cp -R "$ROOT/$path" "$repo/$path"
+  done
+  path=AGENTS.md
+  cp "$ROOT/$path" "$repo/$path"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+
+  printf '\n' >>"$repo/.agents/skills/bearings/SKILL.md"
+  printf '\n' >>"$repo/docs/configuration.md"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 1 ] && [ "$count" -le 10 ] || fail "docs/skill selection expected 1-10 scripts, got $count: $listed"
+  assert_contains "$listed" tests/fm-documentation-audiences.test.sh "docs/skills retain their structural owner"
+  assert_not_contains "$listed" tests/fm-calm-pi-extension.test.sh "docs do not select browser/Pi integration"
+  assert_not_contains "$listed" tests/fm-test-run.test.sh "docs do not select runner integration"
+  git -C "$repo" checkout -q -- .agents/skills/bearings/SKILL.md docs/configuration.md
+
+  printf '\n' >>"$repo/docs/supervision-protocols/codex.md"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-supervision-instructions.test.sh "snippet retains its dynamic renderer"
+  assert_contains "$listed" tests/fm-session-start.test.sh "snippet retains session-start integration"
+  assert_not_contains "$listed" tests/fm-test-run.test.sh "snippet avoids runner integration"
+  git -C "$repo" checkout -q -- docs/supervision-protocols/codex.md
+
+  printf '\n' >>"$repo/bin/fm-brief.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 1 ] && [ "$count" -le 40 ] || fail "leaf selection expected 1-40 scripts, got $count: $listed"
+  assert_contains "$listed" tests/fm-brief.test.sh "leaf retains its behavior suite"
+  git -C "$repo" checkout -q -- bin/fm-brief.sh
+
+  printf '\n' >>"$repo/bin/fm-watch-checkpoint.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 1 ] && [ "$count" -le 10 ] || fail "watcher leaf selection expected 1-10 scripts, got $count: $listed"
+  assert_contains "$listed" tests/fm-watch-checkpoint.test.sh "watcher change retains checkpoint behavior"
+  assert_contains "$listed" tests/fm-arm-pretool-check.test.sh "watcher change retains its entrypoint guard"
+  git -C "$repo" checkout -q -- bin/fm-watch-checkpoint.sh
+
+  # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.
+  while IFS= read -r path; do printf '\n' >>"$repo/$path"; done <<'PATHS'
+.agents/skills/bearings/SKILL.md
+.agents/skills/stow/SKILL.md
+.agents/skills/stuck-crewmate-recovery/SKILL.md
+AGENTS.md
+bin/fm-classify-lib.sh
+bin/fm-context-usage.sh
+bin/fm-crew-state.sh
+bin/fm-primary-watchdog.sh
+bin/fm-push-transition-lib.sh
+bin/fm-returning-session-check.sh
+bin/fm-supervise-daemon.sh
+bin/fm-watch.sh
+docs/architecture.md
+docs/configuration.md
+tests/fm-context-usage.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-primary-watchdog.test.sh
+tests/fm-returning-session-check.test.sh
+PATHS
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 25 ] && [ "$count" -le 150 ] || fail "recorded feature selection expected 25-150 scripts, got $count: $listed"
+  for path in fm-context-usage fm-crew-state fm-primary-watchdog fm-returning-session-check fm-watch-triage fm-watch-triage-waits; do
+    assert_contains "$listed" "tests/$path.test.sh" "recorded feature retains $path behavior"
+  done
+  pass "real inventory selection stays bounded for docs, skills, a leaf, a watcher, and the recorded feature"
 }
 
 # Exercise begin/end markers from real fixture processes to prove the automatic
@@ -557,6 +677,7 @@ test_changed_uses_bounded_automatic_concurrency() {
   for script in fm-backend-herdr-smoke.test.sh fm-daemon.test.sh fm-pi-watch-extension.test.sh; do
     cat >"$repo/tests/$script" <<'SH'
 #!/usr/bin/env bash
+. "$(dirname "$0")/../bin/shared-probe-lib.sh"
 sleep 1
 echo "ok - concurrency consent fixture"
 SH
@@ -2375,9 +2496,11 @@ test_fail_fast_skips_the_unproven_serial_tail() {
   tail_evidence="$tmp/tail-ran"
   init_changed_fixture_repo "$repo"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
-  printf '#!/usr/bin/env bash\necho "not ok - deliberate failure"\nexit 1\n' \
+  # shellcheck disable=SC2016  # literal executable fixtures
+  printf '#!/usr/bin/env bash\n. "$(dirname "$0")/../bin/shared-probe-lib.sh"\necho "not ok - deliberate failure"\nexit 1\n' \
     >"$repo/tests/fm-daemon.test.sh"
-  printf '#!/usr/bin/env bash\nsleep 0.2\necho "ok - follower"\n' \
+  # shellcheck disable=SC2016  # literal executable fixtures
+  printf '#!/usr/bin/env bash\n. "$(dirname "$0")/../bin/shared-probe-lib.sh"\nsleep 0.2\necho "ok - follower"\n' \
     >"$repo/tests/fm-pi-watch-extension.test.sh"
   # Keeps the shared-probe-lib.sh reference so the changed scan still selects
   # this unproven real-herdr-gated script into the serial tail.
@@ -2595,6 +2718,7 @@ test_host_load_marker_and_scheduler_throttle() {
   for script in fm-backend-herdr-smoke.test.sh fm-daemon.test.sh fm-pi-watch-extension.test.sh; do
     cat >"$repo/tests/$script" <<'SH'
 #!/usr/bin/env bash
+. "$(dirname "$0")/../bin/shared-probe-lib.sh"
 echo "ok - host load fixture"
 SH
     chmod +x "$repo/tests/$script"
@@ -2935,6 +3059,8 @@ test_shell_line_ending_policy_selects_runner_contract
 test_quarantine_list_change_selects_runner_contract
 test_changed_dependency_selection_and_unmapped_failure
 test_changed_bin_reference_selects_per_script_not_per_family
+test_changed_reference_closure_and_explanations
+test_changed_real_inventory_selection_bounds
 test_changed_uses_bounded_automatic_concurrency
 test_windows_posix_mode_emulation_does_not_fail_parallel_runs
 test_script_list_uses_bounded_automatic_concurrency
