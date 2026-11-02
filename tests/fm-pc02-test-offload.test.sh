@@ -75,6 +75,13 @@ test_supervising_home_is_passed_to_lane_probe() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
+case "$*" in
+  *fm-pc02-environment-parity-probe*)
+    cmd=${!#}
+    bash -c "$cmd"
+    exit $?
+    ;;
+esac
 printf 'resource:cpu=1 gpu=0\n'
 exit 0
 SH
@@ -158,6 +165,7 @@ test_rsync_failure_falls_back_to_local() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
 # Reachable, idle, and tool-ready for the probe, and a no-op for mkdir and
 # any other one-shot remote command; rsync itself is the failure under test.
 printf 'resource:cpu=1 gpu=0\n'
@@ -224,6 +232,7 @@ test_idle_llama_swap_does_not_block_offload() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
 printf 'llama-swap-running:0\nresource:cpu=1 gpu=0\n'
 exit 0
 SH
@@ -342,6 +351,20 @@ while [ "\$#" -gt 0 ]; do
 done
 shift
 case "\$*" in
+  *fm-pc02-environment-parity-probe*)
+    case "\${FM_FAKE_PARITY_MODE:-}" in
+      version-mismatch)
+        HOME="$dir/home" bash -c "\$*" 2>&1 | sed 's/^tool.git=.*/tool.git=fake-PC02-git-version/'
+        exit 0
+        ;;
+      chromium-not-found)
+        HOME="$dir/home" bash -c "\$*" 2>&1 | sed 's/^chromium.binary=.*/chromium.binary=not-found:libasound.so.2 => not found/'
+        exit 0
+        ;;
+    esac
+    ;;
+esac
+case "\$*" in
   *personal-use*)
     probe_out=\$(HOME="$dir/home" bash -c "\$*" 2>&1)
     printf '%s\\n' "\${probe_out//resource:script-missing/resource:cpu=1 gpu=0}"
@@ -417,7 +440,7 @@ SH
   expect_code 1 "$status" "a failing remote suite's exit code must come back unchanged: $out"
   assert_contains "$out" "PC02 idle and ready; running tests remotely" "the run never went remote: $out"
   assert_contains "$out" "exit=1" "the remote fm-test-run.sh markers did not come back: $out"
-  [ "$elapsed" -lt 25 ] || fail "a straggler holding the channel kept the run open ${elapsed}s: $out"
+  [ "$elapsed" -lt 35 ] || fail "a straggler holding the channel kept the run open ${elapsed}s: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
   flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "failure retained the host claim"
   pass "a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror"
@@ -481,7 +504,58 @@ SH
     "the remote run did not use fm-test-run.sh's own scheduler: $out"
   assert_contains "$out" "jobs=1" \
     "unproven scripts must be scheduled serially: $out"
+  if grep -F -- '--jobs' "$dir/ssh.log" >/dev/null 2>&1; then
+    fail "the offload forced --jobs onto the remote invocation"
+  fi
   pass "an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound"
+}
+
+test_environment_parity_match_allows_offload() {
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  local dir fakebin out status
+  dir="$TMP_ROOT/parity-match"
+  fakebin=$(fake_pc02 "$dir")
+  printf '#!/usr/bin/env bash\necho "ok - parity match"\n' > "$dir/parity.test.sh"
+  chmod +x "$dir/parity.test.sh"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "$dir/parity.test.sh" 2>&1)
+  status=$?
+  expect_code 0 "$status" "matching PC01/PC02 test surfaces should permit offload: $out"
+  assert_contains "$out" "running tests remotely" "matching parity did not proceed remotely: $out"
+  assert_contains "$out" "claimed PC02 slot 1 of 2" "default slot count was not two: $out"
+  pass "matching PC01 and PC02 parity admits the default two-slot offload"
+}
+
+test_environment_version_mismatch_falls_back_with_field() {
+  local dir fakebin out status
+  dir="$TMP_ROOT/parity-version-mismatch"
+  fakebin=$(fake_pc02 "$dir")
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_FAKE_PARITY_MODE=version-mismatch FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a version mismatch must run locally: $out"
+  assert_contains "$out" "tool.git" "the fallback diagnostic did not name the mismatching tool: $out"
+  assert_contains "$out" "fake-PC02-git-version" "the fallback diagnostic omitted PC02's value: $out"
+  assert_contains "$out" "running on PC01" "a mismatched host was not routed locally: $out"
+  pass "a PC02 tool-version mismatch names the surface and runs locally"
+}
+
+test_chromium_missing_library_falls_back_with_field() {
+  local dir fakebin out status
+  dir="$TMP_ROOT/parity-chromium-missing-library"
+  fakebin=$(fake_pc02 "$dir")
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_FAKE_PARITY_MODE=chromium-not-found FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "an unresolved PC02 Chromium library must run locally: $out"
+  assert_contains "$out" "chromium.binary" "the fallback diagnostic did not name Chromium: $out"
+  assert_contains "$out" "libasound.so.2 => not found" "the fallback diagnostic omitted the unresolved library: $out"
+  assert_contains "$out" "running on PC01" "an unresolved Chromium library was not routed locally: $out"
+  pass "a PC02 Chromium library failure names the library and runs locally"
 }
 
 # Start a fixture that holds one PC02 slot for the lifetime of the case.
@@ -703,6 +777,10 @@ SH
     sleep 0.1
   done
   ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "SIGKILL of the driver left the remote suite running"
+  for _ in $(seq 1 50); do
+    flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true && break
+    sleep 0.1
+  done
   flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "the slot stayed held after the suite ended"
   pkill -TERM -f "$dir/home" 2>/dev/null || true
   pass "abrupt loss of the driver stops the remote suite and frees the slot"
@@ -722,6 +800,7 @@ test_bare_common_store_needs_machine_file_unless_state_override() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
 printf 'resource:cpu=1 gpu=0\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -751,6 +830,7 @@ test_machine_home_config_without_fm_home() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
 printf 'resource:cpu=1 gpu=0\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -795,6 +875,7 @@ test_primary_clone_home_without_environment_or_config() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
+case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
 printf 'resource:cpu=1 gpu=0\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -931,6 +1012,9 @@ test_pc02_if_idle_flag_forwards_through_fm_test_run
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler
+test_environment_parity_match_allows_offload
+test_environment_version_mismatch_falls_back_with_field
+test_chromium_missing_library_falls_back_with_field
 test_one_of_two_busy_slots_still_runs_remotely
 test_all_slots_busy_falls_back_locally
 test_single_slot_mode_keeps_the_old_fallback

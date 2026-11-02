@@ -36,6 +36,11 @@ lab_state=absent
 
 case "$1 ${2:-}" in
   "session list")
+    case "${FM_FAKE_HERDR_LIST_RESPONSE:-}" in
+      malformed) printf '%s\n' '{not-json}'; exit 0 ;;
+      error) printf '%s\n' '{"error":"temporarily unavailable"}'; exit 0 ;;
+      null) printf '%s\n' '{"sessions":null}'; exit 0 ;;
+    esac
     # FM_FAKE_HERDR_DEFAULT selects the host's default-session fleet state:
     # running (the default), stopped, absent, or two-ambiguous.
     default_mode=$(cat "$FM_FAKE_HERDR_DEFAULT" 2>/dev/null || printf 'running')
@@ -601,6 +606,24 @@ test_multiple_default_sessions_are_refused() {
   pass "fm-herdr-lab: more than one default session is refused"
 }
 
+test_malformed_session_lists_are_refused() {
+  local response name status
+  for response in malformed error null; do
+    name="fm-lab-bad-sessions-$response-$$"
+    status=0
+    FM_FAKE_HERDR_LIST_RESPONSE="$response" run_with_fake fm_herdr_lab_prepare "$name" >/dev/null 2>&1 || status=$?
+    expect_code 1 "$status" "a successful Herdr response with invalid sessions must fail ($response)"
+    assert_absent "$TRIPWIRES/$name.fleet-state.json" "invalid sessions response left a tripwire ($response)"
+  done
+  name="fm-lab-bad-sessions-teardown-$$"
+  run_with_fake fm_herdr_lab_provision "$name" || fail "valid baseline tripwire setup failed"
+  status=0
+  FM_FAKE_HERDR_LIST_RESPONSE=null run_with_fake fm_herdr_lab_teardown "$name" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "a null sessions response during teardown must fail the tripwire"
+  assert_present "$TRIPWIRES/$name.fleet-state.json" "failed teardown discarded its tripwire"
+  pass "fm-herdr-lab: malformed, error, and null session lists cannot become empty snapshots"
+}
+
 test_refuses_unsafe_names
 test_provision_run_and_guarded_teardown
 test_run_scopes_session_before_double_dash
@@ -609,6 +632,7 @@ test_changed_default_trips_after_teardown
 test_no_running_default_session_is_supported
 test_default_appearing_mid_run_trips
 test_multiple_default_sessions_are_refused
+test_malformed_session_lists_are_refused
 test_stopped_owned_lab_can_reprovision
 test_failed_delete_retains_tripwire
 test_timed_out_provision_cancels_late_launch

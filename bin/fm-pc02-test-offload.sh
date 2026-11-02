@@ -91,6 +91,20 @@
 #     docs/configuration.md's "PC02 test offload" section.
 #   - The remote fm-test-run.sh prints its own environment record before its
 #     first test, so an offloaded run records PC02's inherited PATH and limits.
+#   - Before taking a slot, PC01 and PC02 compare versions of git, bash,
+#     python3, jq, node, shellcheck, actionlint, ruby, chromium, herdr, pi, and
+#     tmux, the open-file limit, LC_ALL/LANG/TZ, and ldd results for Chromium
+#     and its headless shell. CPU count, RAM, ulimit -u, no-mistakes daemon
+#     version, /usr/bin/env provider, and shell availability (including zsh)
+#     are intentionally excluded as resources or documented test differences.
+#   - Sizing evidence: two simultaneous four-worker offloads of
+#     fm-supervision-host, fm-captain-hold-lifecycle,
+#     fm-remote-secondmate-lifecycle-e2e, and fm-spawn-dispatch-profile passed
+#     in 2382s total on 16 threads; peak load5 was 25.54 and minimum
+#     MemAvailable was 24.4 GiB of ~27 GiB. A separate PR #215 full 183-script
+#     run took 4274s test wall / 4305s whole. The 7200s cap remains a hang
+#     bound; the full-selection figure is a single-run measurement and does
+#     not establish that two full selections fit within that cap.
 #
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
@@ -111,11 +125,11 @@
 #                                      routes local and says so.
 #   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote test run
 #                                      (default: 7200); a hang tripwire, not
-#                                      a deadline. Sized so a full --changed
-#                                      selection like PR #215's (183 scripts,
-#                                      measured 4274s test wall / 4305s whole
-#                                      on PC02 at jobs=4) fits even while
-#                                      sharing the host with the other slot. Exceeding it fails the
+#                                      a deadline. PR #215's full --changed
+#                                      selection (183 scripts) measured 4274s
+#                                      test wall / 4305s whole at jobs=4; this
+#                                      single-run measurement does not establish
+#                                      two full selections' runtime. Exceeding it fails the
 #                                      run (exit 124) rather than falling back,
 #                                      since the remote work already spent is
 #                                      not worth discarding blind
@@ -354,6 +368,77 @@ esac
 if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
 fi
+# Compare test-relevant surfaces with the same probe on both hosts.
+parity_probe=$(cat <<'PARITY_PROBE'
+# fm-pc02-environment-parity-probe
+set -u
+version() {
+  local tool=$1 args=--version path value status=0
+  [ "$tool" != tmux ] || args=-V
+  path=$(type -P "$tool" 2>/dev/null || true)
+  if [ -z "$path" ]; then printf 'tool.%s=absent\n' "$tool"; return; fi
+  value=$(timeout 5 "$path" "$args" 2>&1 </dev/null) || status=$?
+  value=${value%%$'\n'*}
+  [ -n "$value" ] || value=unavailable
+  [ "$status" -ne 124 ] || value=timed-out
+  value=$(printf '%s' "$value" | tr '\r\n\t' '   ' | cut -c1-180)
+  printf 'tool.%s=%s\n' "$tool" "$value"
+}
+for tool in git bash python3 jq node shellcheck actionlint ruby chromium herdr pi tmux; do version "$tool"; done
+printf 'ulimit.open_files=%s\n' "$(ulimit -n 2>&1)"
+printf 'locale.LC_ALL=%s\n' "${LC_ALL-}"
+printf 'locale.LANG=%s\n' "${LANG-}"
+printf 'locale.TZ=%s\n' "${TZ-}"
+ldd_result() {
+  local label=$1 path=$2 output status=0
+  if [ -z "$path" ]; then printf 'chromium.%s=absent\n' "$label"; return; fi
+  output=$(ldd "$path" 2>&1) || status=$?
+  if printf '%s\n' "$output" | grep -q 'not found'; then
+    output=$(printf '%s\n' "$output" | grep 'not found' | tr '\r\n\t' '   ' | cut -c1-400)
+    printf 'chromium.%s=not-found:%s\n' "$label" "$output"
+  elif [ "$status" -ne 0 ]; then
+    printf 'chromium.%s=ldd-error:%s\n' "$label" "$status"
+  else
+    printf 'chromium.%s=ok\n' "$label"
+  fi
+}
+chrome=$(type -P chromium 2>/dev/null || true)
+if [ -n "$chrome" ]; then chrome=$(readlink -f "$chrome" 2>/dev/null || printf '%s' "$chrome"); fi
+ldd_result binary "$chrome"
+headless=$(type -P chrome-headless-shell 2>/dev/null || true)
+if [ -z "$headless" ] && [ -n "$chrome" ] && [ -x "$(dirname "$chrome")/chrome-headless-shell" ]; then
+  headless="$(dirname "$chrome")/chrome-headless-shell"
+fi
+if [ -z "$headless" ] && [ -x /usr/lib/chromium/chrome-headless-shell ]; then
+  headless=/usr/lib/chromium/chrome-headless-shell
+fi
+if [ -n "$headless" ]; then headless=$(readlink -f "$headless" 2>/dev/null || printf '%s' "$headless"); fi
+ldd_result headless_shell "$headless"
+PARITY_PROBE
+)
+local_parity=$(bash -c "$parity_probe" 2>&1) || run_local "PC01 environment parity probe failed: $local_parity"
+remote_parity=$(timeout "$PROBE_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+  -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$parity_probe")" 2>&1) || {
+  run_local "PC02 environment parity probe failed: $remote_parity"
+}
+parity_mismatches=()
+while IFS='=' read -r key local_value; do
+  remote_value=$(printf '%s\n' "$remote_parity" | awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}')
+  [ "$local_value" = "$remote_value" ] || parity_mismatches+=("$key (PC01='$local_value', PC02='$remote_value')")
+  case "$local_value $remote_value" in *not-found*) parity_mismatches+=("$key unresolved Chromium runtime library") ;; esac
+  case "$key:$local_value:$remote_value" in
+    tool.*:absent:*|tool.*:unavailable:*|tool.*:timed-out:*|tool.*:*:absent|tool.*:*:unavailable|tool.*:*:timed-out)
+      parity_mismatches+=("$key version could not be established")
+      ;;
+    chromium.*:ldd-error:*|chromium.*:*:ldd-error:*)
+      parity_mismatches+=("$key runtime dependencies could not be resolved")
+      ;;
+  esac
+done <<< "$local_parity"
+if [ "${#parity_mismatches[@]}" -gt 0 ]; then
+  run_local "PC02 test environment differs from PC01: ${parity_mismatches[*]}"
+fi
+
 # The same SSH shell owns the slot while waiting for transfer, then runs the
 # suite under it. It takes the first free slot, so up to SLOTS suites share
 # PC02; with every slot held it reports that and exits 75. EOF before

@@ -28,7 +28,7 @@
 # Provision records the default-session fleet state - the name, default flag,
 # running flag, and socket path of the default session, or an empty list when
 # the host has none - as a fleet-state tripwire, and teardown requires that
-# record to be identical afterward. A host with no running default session is
+# record to be identical afterward. A host with no default-flagged session is
 # therefore supported and still proven not to have gained or lost one, while
 # more than one default-flagged session is refused as ambiguous.
 # The viewer command attaches or detaches one real foreground Herdr client on
@@ -84,6 +84,10 @@ fm_herdr_lab_fleet_state() { # <session>
   local name=$1 sessions snapshot count
   sessions=$(fm_herdr_lab_session_list "$name" 2>/dev/null) || {
     fm_herdr_lab_error "cannot read Herdr sessions for the fleet-state tripwire"
+    return 1
+  }
+  printf '%s' "$sessions" | jq -e '.sessions | arrays' >/dev/null 2>&1 || {
+    fm_herdr_lab_error "cannot read Herdr sessions array for the fleet-state tripwire"
     return 1
   }
   snapshot=$(printf '%s' "$sessions" | jq -c '
