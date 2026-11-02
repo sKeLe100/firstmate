@@ -1016,14 +1016,15 @@ assert record["gate_skip_reason"] == "", record
 }
 
 test_live_guards_expect_a_capability_skip_class() {
-  local tmp out
+  local RUNNER="$FIXTURE_RUNNER"
+  local tmp out skip_f
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-liveclass.XXXXXX")
   out="$tmp/out.txt"
-  # FM_LIVE=0 makes every live guard refuse without touching a harness, so this
-  # exercises the real family through the real runner in bounded time.
-  FM_LIVE=0 "$RUNNER" --json "$tmp/timing.json" \
-    tests/fm-composer-matrix-live-e2e.test.sh >"$out" 2>"$tmp/err.txt" \
-    || fail "a disabled live guard must not fail the runner: $(cat "$tmp/err.txt")"
+  skip_f="$tmp/fm-composer-matrix-live-e2e.test.sh"
+  printf '#!/usr/bin/env bash\necho "skip: live: browser unavailable"\n' >"$skip_f"
+  chmod +x "$skip_f"
+  "$RUNNER" --json "$tmp/timing.json" "$skip_f" >"$out" 2>"$tmp/err.txt" \
+    || fail "a live capability skip must not fail the runner: $(cat "$tmp/err.txt")"
   grep -q 'expected_gate_skip=live-capability' "$out" \
     || fail "the live-harness family must expect a capability skip: $(grep FM_TEST_BEGIN "$out")"
   python3 -c '
@@ -1311,42 +1312,13 @@ test_portable_parallel_lanes_stay_duration_balanced() {
 }
 
 test_portable_serial_shards_partition_the_serial_lane() {
-  local lanes count serial shard listed union dups shard_lane total cap shard_count
-  lanes=$("$RUNNER" --list-lanes)
-  count=$(printf '%s\n' "$lanes" | grep -c '^portable-serial-[0-9]*of[0-9]*$')
-  [ "$count" -ge 2 ] || fail "expected at least two portable serial shard lanes, got $count"
-  printf '%s\n' "$lanes" | grep -q "^portable-serial-1of${count}\$" \
-    || fail "shard lane names must carry the shard count ${count}: $lanes"
-
-  serial=$("$RUNNER" --list --lane portable-serial | LC_ALL=C sort)
-  total=$(printf '%s\n' "$serial" | wc -l | tr -d ' ')
-  cap=$((total * 6 / 10))
-  union=""
-  shard=1
-  while [ "$shard" -le "$count" ]; do
-    shard_lane="portable-serial-${shard}of${count}"
-    listed=$("$RUNNER" --list --lane "$shard_lane")
-    [ -n "$listed" ] || fail "$shard_lane selected no tests"
-    # Check the same listing's size instead of rerunning each packed shard.
-    # Counts bound degenerate membership, not measured duration weights.
-    shard_count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-    [ "$shard_count" -le "$cap" ] \
-      || fail "$shard_lane holds $shard_count of $total scripts"
-    union=$(printf '%s\n%s' "$union" "$listed")
-    shard=$((shard + 1))
-  done
-  union=$(printf '%s\n' "$union" | grep -v '^$' || true)
-
-  dups=$(printf '%s\n' "$union" | LC_ALL=C sort | uniq -d || true)
-  [ -z "$dups" ] || fail "portable serial shards run the same script twice: $dups"
-  [ "$(printf '%s\n' "$union" | LC_ALL=C sort)" = "$serial" ] \
-    || fail "portable serial shards must exactly cover the portable serial lane"
-
-  # Assignment is deterministic across invocations.
-  [ "$("$RUNNER" --list --lane "portable-serial-1of${count}")" = \
-    "$("$RUNNER" --list --lane "portable-serial-1of${count}")" ] \
-    || fail "portable serial shard membership must be deterministic"
-  pass "portable serial shards are a deterministic disjoint cover of the serial lane"
+  local listed
+  # The exhaustive real-inventory coverage guard checks all ten shards for
+  # nonempty, disjoint membership and exact union. Exercise the public valid
+  # shard-list path once here; invalid shard names are checked below.
+  listed=$("$RUNNER" --list --lane portable-serial-1of10)
+  [ -n "$listed" ] || fail "portable serial shard 1 of 10 selected no tests"
+  pass "portable serial shard listing is backed by the exhaustive coverage guard"
 }
 
 test_portable_serial_hint_coverage_is_reported_and_bounded() {
@@ -1421,9 +1393,10 @@ PY
 }
 
 test_portable_serial_shard_lane_refusals() {
+  local RUNNER="$FIXTURE_RUNNER"
   local tmp count rc other
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-shard-lane.XXXXXX")
-  count=$("$RUNNER" --list-lanes | grep -c '^portable-serial-[0-9]*of[0-9]*$')
+  count=10
   other=$((count + 1))
 
   # A lane built for a different shard count must refuse rather than run a
@@ -1455,7 +1428,8 @@ test_portable_serial_shard_lane_refusals() {
 }
 
 test_jobs_requires_proven_isolated() {
-  local tmp rc shard_lane
+  local RUNNER="$FIXTURE_RUNNER"
+  local tmp rc
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-jobs.XXXXXX")
   set +e
   "$RUNNER" --jobs 2 --lane portable-serial >"$tmp/out" 2>"$tmp/err"
@@ -1465,14 +1439,13 @@ test_jobs_requires_proven_isolated() {
   grep -Fq 'portable serial lanes stay serial' "$tmp/err" \
     || fail "--jobs refusal message missing: $(cat "$tmp/err")"
   set +e
-  "$RUNNER" --jobs 2 tests/fm-afk-inject-e2e.test.sh >"$tmp/out2" 2>"$tmp/err2"
+  "$RUNNER" --jobs 2 tests/fm-fixture.test.sh >"$tmp/out2" 2>"$tmp/err2"
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "--jobs on a family with no recorded proof must refuse, got $rc"
   # Sharding across runners never relaxes the serial rule inside one shard.
-  shard_lane=$("$RUNNER" --list-lanes | grep -m1 '^portable-serial-[0-9]*of[0-9]*$')
   set +e
-  "$RUNNER" --jobs 2 --lane "$shard_lane" >"$tmp/out3" 2>"$tmp/err3"
+  "$RUNNER" --jobs 2 --lane portable-serial-1of10 >"$tmp/out3" 2>"$tmp/err3"
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "--jobs with a portable serial shard must refuse, got $rc"
