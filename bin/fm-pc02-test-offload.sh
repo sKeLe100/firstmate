@@ -113,9 +113,9 @@
 #                                      (default: 7200); a hang tripwire, not
 #                                      a deadline. Sized so a full --changed
 #                                      selection like PR #215's (183 scripts,
-#                                      measured 4322s wall on PC02 at jobs=4)
-#                                      fits even while sharing the host with
-#                                      the other slot. Exceeding it fails the
+#                                      measured 4274s test wall / 4305s whole
+#                                      on PC02 at jobs=4) fits even while
+#                                      sharing the host with the other slot. Exceeding it fails the
 #                                      run (exit 124) rather than falling back,
 #                                      since the remote work already spent is
 #                                      not worth discarding blind
