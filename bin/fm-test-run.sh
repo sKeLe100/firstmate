@@ -2286,7 +2286,12 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-documentation-audiences.test.sh
       scripts_for_document_readers "$path"
       ;;
-    AGENTS.md|CLAUDE.md|CONTRIBUTING.md|docs/*)
+    AGENTS.md)
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      printf '%s\n' __script__:fm-agentsmd-size.test.sh
+      scripts_for_document_readers "$path"
+      ;;
+    CLAUDE.md|CONTRIBUTING.md|docs/*)
       printf '%s\n' __script__:fm-documentation-audiences.test.sh
       scripts_for_document_readers "$path"
       ;;

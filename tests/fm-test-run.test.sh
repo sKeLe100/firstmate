@@ -604,6 +604,12 @@ test_changed_real_inventory_selection_bounds() {
   git -C "$repo" add .
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
 
+  printf '\n' >>"$repo/AGENTS.md"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-documentation-audiences.test.sh "AGENTS changes retain audience coverage"
+  assert_contains "$listed" tests/fm-agentsmd-size.test.sh "AGENTS changes retain the resident-size limit regression"
+  git -C "$repo" checkout -q -- AGENTS.md
+
   printf '\n' >>"$repo/.agents/skills/bearings/SKILL.md"
   printf '\n' >>"$repo/docs/configuration.md"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
