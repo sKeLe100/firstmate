@@ -198,14 +198,16 @@ test_canonical_partitions_preserve_full_lint() {
     PATH="$fakebin:$PATH" FM_TEST_FLAG_LOG="$flags" FM_TEST_MODE_LOG="$mode" \
       "$LINT" --partition "$part" > "$tmp/$part.out" 2>&1 \
       || fail "canonical partition $part failed: $(cat "$tmp/$part.out")"
-    [ "$(LC_ALL=C sort "$log")" = "$(printf '%s\n' "$selected" | LC_ALL=C sort)" ] \
+    [ "$(LC_ALL=C sort "$log")" = "$(printf '%s\n%s\n' "$selected" "$selected" | LC_ALL=C sort)" ] \
       || fail "partition $part executed a different root set than it listed"
-    [ "$(LC_ALL=C sort -u "$flags")" = "$(printf 'exclude=none\nexternal-sources=yes')" ] \
+    [ "$(LC_ALL=C sort -u "$flags")" = "$(printf 'exclude=SC1091,SC2034,SC2153,SC2329\nexclude=none\nexternal-sources=no\nexternal-sources=yes')" ] \
       || fail "partition $part weakened source-aware analysis"
     [ "$(LC_ALL=C sort -u "$mode")" = on ] || fail "partition $part disabled full analysis"
     root_count=$(printf '%s\n' "$selected" | grep -c .)
+    [ "$(grep -c '^fm-lint: no-source audit .* reason=ok rc=0$' "$tmp/$part.out" || true)" -eq "$root_count" ] \
+      || fail "partition $part did not audit each selected root exactly once"
     invocation_count=$(grep -c '^external-sources=' "$flags" || true)
-    [ "$invocation_count" -eq "$root_count" ] \
+    [ "$invocation_count" -eq "$((root_count * 2))" ] \
       || fail "partition $part used $invocation_count ShellCheck calls for $root_count roots"
     [ "$(grep -c '^fm-lint: begin ' "$tmp/$part.out" || true)" -eq "$root_count" ] \
       || fail "partition $part did not stream a begin record per root"
@@ -1049,58 +1051,84 @@ SH
   pass "fm-lint.sh changed mode excludes cross-file codes that explicit paths still report"
 }
 
-# One ShellCheck process per root. Passing the whole canonical set in a
-# single invocation still follows in-set sources and is not the no-x posture.
-fm_lint_nox_one_root() {
-  local index=$1 path=$2 outdir=$3
-  shellcheck --norc --format gcc -- "$path" > "$outdir/$index" || true
-}
-
-test_local_exclusion_list_covers_every_no_external_sources_code() {
+# Keep a small real-ShellCheck proof of the audit's distinct verdict: source
+# following resolves known_value, while the no-source pass must reject SC2154.
+test_partition_no_source_audit_fails_closed() {
   if ! pinned_ready; then
-    pass "SKIP (ShellCheck $REQUIRED not resolved): local exclusion completeness"
+    pass "SKIP (ShellCheck $REQUIRED not resolved): partition no-source audit fixture"
     return
   fi
-  local tmp files_file out unexpected code path found i batch
-  local -a files
-  tmp=$(fm_test_tmproot fm-lint-nox-complete)
-  files_file="$tmp/files"
-  CI=true "$LINT" --list-files > "$files_file"
-  [ -s "$files_file" ] || fail "CI --list-files returned no canonical lint roots"
-  files=()
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    files+=("$path")
-  done < "$files_file"
-  [ "${#files[@]}" -gt 0 ] || fail "CI --list-files returned no readable lint roots"
-  mkdir -p "$tmp/gcc"
-  i=0
-  batch=0
-  for path in "${files[@]}"; do
-    i=$((i + 1))
-    fm_lint_nox_one_root "$i" "$path" "$tmp/gcc" &
-    batch=$((batch + 1))
-    if [ "$batch" -eq 4 ]; then
-      wait
-      batch=0
-    fi
+  local tmp repo fakebin real_shellcheck out rc helper
+  tmp=$(fm_test_tmproot fm-lint-audit)
+  repo="$tmp/repo"
+  fakebin=$(fm_fakebin "$tmp")
+  real_shellcheck=$(command -v shellcheck)
+  mkdir -p "$repo/bin/backends" "$repo/tests"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$repo/bin/backends/noop.sh"
+  cp "$LINT" "$repo/bin/"
+  # Unrelated lint owners and roots are not the subject of this tiny fixture.
+  for helper in fm-lint-workflows.sh fm-lint-test-size.sh fm-lint-nomistakes-config.sh; do
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$repo/bin/$helper"
+    chmod +x "$repo/bin/$helper"
   done
-  wait
-  found=$(find "$tmp/gcc" -type f | wc -l | tr -d '[:space:]')
-  [ "$found" = "${#files[@]}" ] \
-    || fail "completeness sweep linted $found roots, expected ${#files[@]}"
-  out=$(cat "$tmp/gcc"/* 2>/dev/null || true)
-  unexpected=
-  while IFS= read -r code; do
-    [ -n "$code" ] || continue
-    case "$code" in
-      SC1091|SC2034|SC2153|SC2329) ;;
-      *) unexpected="${unexpected}${unexpected:+ }$code" ;;
-    esac
-  done < <(printf '%s\n' "$out" | sed -n 's/.*\[\(SC[0-9][0-9]*\)\].*/\1/p' | LC_ALL=C sort -u)
-  [ -z "$unexpected" ] \
-    || fail "no-external-sources pass emitted codes outside the local exclusion list: $unexpected"
-  pass "local exclusion list covers every no-external-sources ShellCheck code"
+  cat > "$fakebin/shellcheck" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then exec "$REAL_SHELLCHECK" "$@"; fi
+case " ${*} " in
+  *' -- tests/probe.sh ')
+    if [ -n "${AUDIT_CALLS:-}" ]; then
+      printf '%s\n' "$*" >> "$AUDIT_CALLS"
+    fi
+    if [ "${FORCE_MEMORY_FALLBACK:-0}" = 1 ] && [[ " $* " == *' --external-sources '* ]]; then
+      echo 'shellcheck: Heap exhausted;' >&2
+      exit 251
+    fi
+    if [ "${FORCE_AUDIT_ERROR:-0}" = 1 ] && [[ " $* " != *' --external-sources '* ]]; then
+      echo 'audit tool failure' >&2
+      exit 2
+    fi
+    exec "$REAL_SHELLCHECK" "$@"
+    ;;
+  *) exit 0 ;;
+esac
+SH
+  chmod +x "$fakebin/shellcheck"
+  printf '# shellcheck disable=SC2034\nknown_value=ok\n' > "$repo/tests/dep.sh"
+  cat > "$repo/tests/probe.sh" <<'SH'
+#!/usr/bin/env bash
+# shellcheck source=tests/dep.sh
+. tests/dep.sh
+printf ok
+SH
+  out=$(PATH="$fakebin:$PATH" REAL_SHELLCHECK="$real_shellcheck" \
+    "$repo/bin/fm-lint.sh" --partition 1of1 2>&1) \
+    || fail "clean no-source audit fixture failed"$'\n'"$out"
+  assert_contains "$out" 'no-source audit tests/probe.sh reason=ok rc=0' "clean fixture was not audited"
+  out=$(PATH="$fakebin:$PATH" REAL_SHELLCHECK="$real_shellcheck" FORCE_MEMORY_FALLBACK=1 \
+    AUDIT_CALLS="$tmp/calls" "$repo/bin/fm-lint.sh" --partition 1of1 2>&1) \
+    || fail "memory fallback should satisfy the audit"$'\n'"$out"
+  [ "$(wc -l < "$tmp/calls" | tr -d '[:space:]')" -eq 2 ] \
+    || fail "memory fallback repeated the no-source audit: $(cat "$tmp/calls")"
+  assert_contains "$out" 'no-source audit tests/probe.sh reason=memory-fallback rc=0' "fallback was not reused as the audit"
+  # This variable is assigned only by the followed dependency. The explicit
+  # path proves source-aware lint passes before the audit adds its verdict.
+  # shellcheck disable=SC2016 # Write a literal variable reference into the fixture.
+  printf 'printf "%%s\\n" "$known_value"\n' >> "$repo/tests/probe.sh"
+  out=$(PATH="$fakebin:$PATH" REAL_SHELLCHECK="$real_shellcheck" \
+    "$repo/bin/fm-lint.sh" tests/probe.sh 2>&1) \
+    || fail "source-aware fixture should pass"$'\n'"$out"
+  rc=0
+  out=$(PATH="$fakebin:$PATH" REAL_SHELLCHECK="$real_shellcheck" \
+    "$repo/bin/fm-lint.sh" --partition 1of1 2>&1) || rc=$?
+  [ "$rc" -eq 1 ] || fail "unexpected no-source code must fail the partition"$'\n'"$out"
+  assert_contains "$out" 'SC2154' "unexpected no-source finding was lost"
+  assert_contains "$out" 'no-source audit tests/probe.sh reason=findings rc=1' "audit failure was not attributed"
+  rc=0
+  out=$(PATH="$fakebin:$PATH" REAL_SHELLCHECK="$real_shellcheck" FORCE_AUDIT_ERROR=1 \
+    "$repo/bin/fm-lint.sh" --partition 1of1 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || fail "an audit tool error must fail closed"$'\n'"$out"
+  assert_contains "$out" 'audit tool failure' "audit tool error diagnostic was lost"
+  pass "partition audit accepts clean roots and blocks unexpected no-source codes and tool failures"
 }
 
 test_pins_an_explicit_version() {
@@ -2238,6 +2266,7 @@ SH
 }
 
 test_help_reports_the_complete_interface
+test_partition_no_source_audit_fails_closed
 test_list_files_reports_the_shell_inventory
 test_canonical_partitions_preserve_full_lint
 test_partition_accepts_only_k_of_n_up_to_eight
@@ -2291,4 +2320,3 @@ test_merge_base_less_keeps_external_sources
 test_explicit_path_keeps_external_sources
 test_fast_mode_on_a_local_branch_keeps_source_following
 test_changed_mode_hides_cross_file_codes_that_ci_still_sees
-test_local_exclusion_list_covers_every_no_external_sources_code

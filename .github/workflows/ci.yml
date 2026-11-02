@@ -60,6 +60,8 @@ jobs:
       # and GitHub workflow lint). Do not re-spell the checks here; keep CI
       # and the pre-push gate on this script so a self-broken ci.yml still
       # fails locally before merge.
+      # Each root's no-source exclusion audit runs once in its assigned
+      # partition, within the lint worker bounds, and fails this required job.
       - name: Lint canonical partition
         env:
           # Fail closed rather than lint uncapped when a configured per-root

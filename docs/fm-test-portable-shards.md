@@ -32,6 +32,7 @@ The 2026-10-29 hint-drift refresh from run 40913783081 (quiet re-run) raised `te
 The 2026-10-29 hint-drift refresh from run 40992718346 raised `tests/fm-daemon.test.sh` from 33606 ms to its measured 50984 ms (repeated drift 1.52x), and `tests/fm-llm-usage-telemetry-integration.test.sh` from 24413 ms to its measured 36848 ms (repeated drift 1.51x).
 The 2026-10-29 hint-drift refresh from run 40995199128 raised `tests/fm-bootstrap.test.sh` from 50965 ms to its measured 79029 ms (repeated drift 1.55x).
 The 2026-10-30 refresh raised `tests/fm-ci-workflow.test.sh` from 5833 ms to its measured 10072 ms, measured on CI run 40960822708 after this PR added the Lint aggregate and time-budget tests.
+The 2026-11-02 local canonical-runner refresh provisionally raised `tests/fm-lint.test.sh` to 469094 ms and `tests/fm-test-run.test.sh` to 399453 ms; these local samples supersede the prior hints until successful CI artifacts provide replacements.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes
@@ -126,8 +127,9 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 ## Lint partitions and end-to-end latency
 
 `bin/fm-lint.sh` owns the canonical CI partitions (CI runs four), each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
+Each partition also audits its selected roots once without source following, and the four required partitions cover the canonical roots exactly once for that audit; audit failures fail the required lint job.
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
-Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
+Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, source-aware analysis, the no-source audit, and fallback reporting with small real-ShellCheck fixtures.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
 [`CONTRIBUTING.md`](../CONTRIBUTING.md#maintaining-required-checks) documents the required `Lint` aggregate and its failure behavior when a partition does not succeed.
 Each partition also runs `bin/fm-lint-budget.sh`, which warns at 50 percent and fails at 70 percent of the lint job's own `timeout-minutes`, so a slowdown surfaces before the cap cancels the job.

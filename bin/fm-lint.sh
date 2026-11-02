@@ -60,6 +60,13 @@
 # or --fast, and does not accept explicit paths. Each partition also runs
 # workflow lint and backend-purity checks, keeping either invocation
 # independently useful.
+# Each partition also audits its selected roots once without source following,
+# allowing only LOCAL_NOX_EXCLUDE's cross-file codes. Together the required
+# partitions exhaust the canonical inventory exactly once for this audit.
+# Audit invocations run sequentially inside the existing workers, under the
+# same per-root memory limit and remaining wall deadline; audit failures fail
+# lint. A canonical memory fallback already performs the same audit and is
+# reused rather than repeated. Ordinary Test keeps small real-ShellCheck fixtures.
 #
 # With FM_LINT_REQUIRE_BOUNDS=1, which CI sets, every per-root ShellCheck
 # process runs under an enforced envelope: a wall deadline
@@ -89,7 +96,7 @@
 #
 # Per-root evidence is incremental: workers append begin/end records (root,
 # mode, shard, start, end, duration, final exit status, reason, peak RSS when
-# measured, and whether the final attempt followed sources) to a roots log
+# measured, and whether the canonical attempt followed sources) to a roots log
 # as each root completes, so a mid-run kill still leaves the completed record
 # and names the root in flight as begun-but-unfinished. With --telemetry the
 # log is retained at
@@ -97,6 +104,9 @@
 # .tsv suffix); otherwise it lives only in the
 # run's scratch dir. Reason values are ok, findings, memory-fallback,
 # timeout, memory, signal:<sig>, limit-unavailable, or error:<rc>.
+# A partition audit failure prefixes its reason with no-source-audit:; root
+# duration and peak RSS include the audit, while source-following metadata
+# describes the canonical analysis attempt.
 # Memory requires process-level evidence (a GHC exhaustion status or runtime
 # error on stderr), not an echoed source excerpt or an OOM phrase in a
 # filename. In partition mode begin/end
@@ -346,6 +356,33 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
   else
     rss_kib=$(fm_lint_root_rss "$rss_file")
     cat "$root_out" "$root_err" >> "$output_dir/shard.$shard_index.out"
+  fi
+  # Audit only canonical partitions: their disjoint inventories make this one
+  # exhaustive pass in CI, without hidden workers inside the behavior suite.
+  if [ "${FM_LINT_INTERNAL_AUDIT:-0}" = 1 ]; then
+    local audit_rc=0 audit_reason audit_secs
+    audit_secs=$(( (start_ms + FM_LINT_INTERNAL_ROOT_SECS * 1000 - $(fm_lint_now_ms)) / 1000 ))
+    if [ "$final_follow_sources" -eq 0 ]; then
+      # The canonical memory fallback already ran this exact no-source check.
+      audit_rc=$invocation_rc
+      audit_reason=$reason
+    elif [ "${FM_LINT_INTERNAL_BOUNDED:-none}" != none ] && [ "$audit_secs" -lt 1 ]; then
+      audit_rc=124
+      audit_reason=timeout
+    else
+      fm_lint_exec_root "$path" "$fallback_out" "$fallback_err" "$fallback_rss" \
+        "$audit_secs" --norc "--exclude=$LOCAL_NOX_EXCLUDE"
+      audit_rc=$FM_LINT_LAST_RC
+      audit_reason=$(fm_lint_classify_root "$audit_rc" "$fallback_err")
+      rss_kib=$(fm_lint_max_root_rss "$rss_kib" "$(fm_lint_root_rss "$fallback_rss")")
+      cat "$fallback_out" "$fallback_err" >> "$output_dir/shard.$shard_index.out"
+    fi
+    printf 'fm-lint: no-source audit %s reason=%s rc=%s\n' \
+      "$path" "$audit_reason" "$audit_rc" >&2
+    if [ "$invocation_rc" -eq 0 ] && [ "$audit_rc" -ne 0 ]; then
+      invocation_rc=$audit_rc
+      reason="no-source-audit:$audit_reason"
+    fi
   fi
   end_ms=$(fm_lint_now_ms)
   duration_ms=$((end_ms - start_ms))
@@ -1232,6 +1269,7 @@ fm_lint_run_worker() {  # <worker-index>
   worker_env=(
     FM_LINT_INTERNAL=1
     FM_LINT_INTERNAL_FAST="$FAST"
+    FM_LINT_INTERNAL_AUDIT="${PARTITION:+1}"
     FM_LINT_INTERNAL_FOLLOW_SOURCES="$FOLLOW_SOURCES"
     FM_LINT_INTERNAL_EXCLUDE="$EXCLUDE_CODES"
     FM_LINT_INTERNAL_BOUNDED="$BOUND_MECH"
