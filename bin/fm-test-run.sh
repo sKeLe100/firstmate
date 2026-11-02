@@ -1829,14 +1829,14 @@ for path in files:
     text = path.read_text(errors="replace")
     if path.suffix == ".sh" and not path.name.endswith(".test.sh"):
         text = shell_code(text)
-    if str(path) in ("bin/fm-test-run.sh", "bin/fm-test-isolation-proof.sh", "tests/fm-test-run.test.sh"):
+    if str(path) in ("bin/fm-test-run.sh", "tests/fm-test-run.test.sh"):
         # These drivers' candidate lists are metadata, like the --list calls
         # in their contract suites. Keep runtime paths/commands, and account
         # for real nested subject invocations at the calling suite.
         names = re.findall(r"\$\{?ROOT\}?/(?:bin|tests)/([\w.+-]+)", text)
         if str(path).startswith("bin/"):
             names.extend(re.findall(r"\$\{?\w+\}?/(?:[\w.+${}-]+/)*([\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts))\b", text))
-            for line in text.splitlines():
+            for line in text.replace("\\\n", " ").splitlines():
                 if re.search(r"(?:^|[\s;&|])(?:exec|source|bash|sh|env|command|eval|python3?|node|perl|\.)\s|(?:^|[\s;])\w+=", line):
                     names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
         if str(path) == "tests/fm-test-run.test.sh":
