@@ -519,12 +519,9 @@ test_changed_dependency_selection_and_unmapped_failure() {
   pass "changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source"
 }
 
-# A direct test reference is per-script evidence. Widening it to the referencing
-# test's whole family is what turned a one-line change to a shared helper into
-# every real-Herdr E2E, including scripts with no dependency on it at all.
-# Consumer bin/ scripts follow their own readers instead of whole families.
+# References select individual readers across mapped and unmapped sources.
 test_changed_bin_reference_selects_per_script_not_per_family() {
-  local tmp repo listed
+  local tmp repo listed subject reader
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-changed-scope.XXXXXX")
   repo="$tmp/repo"
   init_changed_fixture_repo "$repo"
@@ -539,12 +536,42 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
       fail "a single gated script's reference dragged in its whole family: $listed"
       ;;
   esac
-  # Follow the actual consumer, without selecting its unrelated siblings.
   assert_contains "$listed" "tests/fm-daemon.test.sh" \
     "the consumer of the helper must select its own reader"
   assert_not_contains "$listed" "tests/fm-pi-watch-extension.test.sh" \
     "a leaf consumer must not select unrelated watcher siblings"
 
+  # A known direct owner must not hide executable consumers or shared helpers.
+  for subject in fm-brief fm-watch fm-backend fm-watch-checkpoint; do
+    repo="$tmp/$subject"
+    mkdir -p "$repo/bin" "$repo/tests"
+    cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+    printf 'echo executed\n' >"$repo/bin/$subject.sh"
+    printf 'bash -c %q\n' ":; . \"$repo/bin/$subject.sh\"" >"$repo/bin/fm-test-isolation-proof.sh"
+    printf '. "%s/bin/%s.sh"\n' "$repo" "$subject" >"$repo/tests/consumer-helpers.sh"
+    printf 'bash "%s/bin/%s.sh"\n' "$repo" "$subject" >"$repo/tests/direct.test.sh"
+    printf 'bash "%s/bin/fm-test-isolation-proof.sh"\n' "$repo" >"$repo/tests/via-bin.test.sh"
+    printf '. "%s/tests/consumer-helpers.sh"\n' "$repo" >"$repo/tests/via-helper.test.sh"
+    printf 'bash "%s/tests/via-bin.test.sh"\n' "$repo" >"$repo/tests/via-suite.test.sh"
+    printf 'echo unrelated\n' >"$repo/tests/unrelated.test.sh"
+    git -C "$repo" init -q
+    git -C "$repo" add .
+    git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+    printf '\n' >>"$repo/bin/$subject.sh"
+    listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+    for reader in direct via-bin via-helper via-suite; do
+      assert_contains "$listed" "tests/$reader.test.sh" "$subject retains its $reader reader"
+    done
+    [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 4 ] || fail "$subject must select exactly its four readers: $listed"
+    for reader in via-bin via-helper via-suite; do
+      [ "$(bash "$repo/tests/$reader.test.sh")" = executed ] || fail "$reader did not execute $subject"
+    done
+    git -C "$repo" checkout -q -- "bin/$subject.sh"
+    printf '\n' >>"$repo/tests/via-bin.test.sh"
+    listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+    assert_contains "$listed" tests/via-suite.test.sh "changed suite retains its executable wrapper"
+    [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 2 ] || fail "changed suite must select itself and its wrapper: $listed"
+  done
   rm -rf "$tmp"
   pass "bin references and consumer references select individual scripts"
 }
@@ -591,7 +618,7 @@ test_changed_reference_closure_and_explanations() {
 # Use the real inventory in a disposable copy, never execute its scripts here.
 # Bounds catch family fan-out while positive assertions keep relevant coverage.
 test_changed_real_inventory_selection_bounds() {
-  local tmp repo listed count path
+  local tmp repo listed count path all_count
   tmp=$(fm_test_tmproot fm-selection-inventory)
   repo="$tmp/repo"
   mkdir -p "$repo"
@@ -603,6 +630,7 @@ test_changed_real_inventory_selection_bounds() {
   git -C "$repo" init -q
   git -C "$repo" add .
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+  all_count=$(cd "$repo" && bin/fm-test-run.sh --list --all | wc -l | tr -d ' ')
 
   printf '\n' >>"$repo/AGENTS.md"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
@@ -627,45 +655,34 @@ test_changed_real_inventory_selection_bounds() {
   assert_not_contains "$listed" tests/fm-test-run.test.sh "snippet avoids runner integration"
   git -C "$repo" checkout -q -- docs/supervision-protocols/codex.md
 
-  printf '\n' >>"$repo/bin/fm-brief.sh"
+  printf '\n' >>"$repo/bin/fm-returning-session-check.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
   [ "$count" -ge 1 ] && [ "$count" -le 40 ] || fail "leaf selection expected 1-40 scripts, got $count: $listed"
-  assert_contains "$listed" tests/fm-brief.test.sh "leaf retains its behavior suite"
-  git -C "$repo" checkout -q -- bin/fm-brief.sh
+  assert_contains "$listed" tests/fm-returning-session-check.test.sh "leaf retains its behavior suite"
+  git -C "$repo" checkout -q -- bin/fm-returning-session-check.sh
 
   printf '\n' >>"$repo/bin/fm-watch-checkpoint.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 1 ] && [ "$count" -le 10 ] || fail "watcher leaf selection expected 1-10 scripts, got $count: $listed"
+  [ "$count" -ge 2 ] && [ "$count" -le "$all_count" ] || fail "shared watcher selection expected 2-$all_count scripts, got $count: $listed"
   assert_contains "$listed" tests/fm-watch-checkpoint.test.sh "watcher change retains checkpoint behavior"
   assert_contains "$listed" tests/fm-arm-pretool-check.test.sh "watcher change retains its entrypoint guard"
   git -C "$repo" checkout -q -- bin/fm-watch-checkpoint.sh
 
   # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.
-  while IFS= read -r path; do printf '\n' >>"$repo/$path"; done <<'PATHS'
-.agents/skills/bearings/SKILL.md
-.agents/skills/stow/SKILL.md
-.agents/skills/stuck-crewmate-recovery/SKILL.md
-AGENTS.md
-bin/fm-classify-lib.sh
-bin/fm-context-usage.sh
-bin/fm-crew-state.sh
-bin/fm-primary-watchdog.sh
-bin/fm-push-transition-lib.sh
-bin/fm-returning-session-check.sh
-bin/fm-supervise-daemon.sh
-bin/fm-watch.sh
-docs/architecture.md
-docs/configuration.md
-tests/fm-context-usage.test.sh
-tests/fm-crew-state.test.sh
-tests/fm-primary-watchdog.test.sh
-tests/fm-returning-session-check.test.sh
-PATHS
+  local -a recorded_paths=(
+    .agents/skills/{bearings,stow,stuck-crewmate-recovery}/SKILL.md
+    AGENTS.md
+    bin/fm-{classify-lib,context-usage,crew-state,primary-watchdog}.sh
+    bin/fm-{push-transition-lib,returning-session-check,supervise-daemon,watch}.sh
+    docs/{architecture,configuration}.md
+    tests/fm-{context-usage,crew-state,primary-watchdog,returning-session-check}.test.sh
+  )
+  for path in "${recorded_paths[@]}"; do printf '\n' >>"$repo/$path"; done
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 25 ] && [ "$count" -le 150 ] || fail "recorded feature selection expected 25-150 scripts, got $count: $listed"
+  [ "$count" -ge 25 ] && [ "$count" -le "$all_count" ] || fail "recorded feature selection expected 25-$all_count scripts, got $count: $listed"
   for path in fm-context-usage fm-crew-state fm-primary-watchdog fm-returning-session-check fm-watch-triage fm-watch-triage-waits; do
     assert_contains "$listed" "tests/$path.test.sh" "recorded feature retains $path behavior"
   done

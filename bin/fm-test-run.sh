@@ -1763,31 +1763,19 @@ scripts_for_test_reference() {  # <needle>...
   [ "$found" -eq 1 ]
 }
 
-# Build once per --changed invocation. The reverse reference graph follows
-# executable sources and shared test helpers to a fixed point, including cycles
-# and chains longer than two consumers, stopping at curated integration owners.
-# Basename references retain ambiguous/fixture references conservatively.
-# The runner's own path map is selection metadata, not executable dependencies:
-# only its rooted runtime references participate in this graph.
+# Build once when changed executable/helper paths need reference discovery.
+# Curated mappings add integration coverage; they never terminate this walk.
+# Ambiguous references remain conservative, including quoted/generated commands.
 build_reference_index() {
-  local source entry
-  python3 - "$@" 3< <(
-    for source in bin/*.sh bin/backends/*.sh; do
-      [ -f "$source" ] || continue
-      while IFS= read -r entry; do
-        [ -z "$entry" ] || printf '%s\t%s\n' "$source" "$entry"
-      done < <(REFERENCE_PROBE=1 families_for_changed_path "$source")
-    done
-  ) <<'PYREF'
+  python3 - "$@" <<'PYREF'
 from collections import defaultdict, deque
 from pathlib import Path
 import re
 import shlex
 import sys
-import os
 
 
-def shell_code(text, keep_heredocs=True):
+def shell_code(text):
     # Retain heredoc payload verbatim: it can generate another executable.
     # Strip only comments outside quotes, preserving literal/parameter #.
     quote = None
@@ -1797,8 +1785,7 @@ def shell_code(text, keep_heredocs=True):
     for line in text.splitlines(keepends=True):
         if heredocs:
             delimiter, strip_tabs = heredocs[0]
-            if keep_heredocs or re.search(r"(?<!\\)(?:\$\(|`)", line):
-                result.append(line)
+            result.append(line)
             if (line.lstrip("\t") if strip_tabs else line).rstrip("\r\n") == delimiter:
                 heredocs.popleft()
             continue
@@ -1828,24 +1815,6 @@ def shell_code(text, keep_heredocs=True):
     return "".join(result)
 
 
-def shell_reference_text(text, keep_heredocs=True):
-    # A diagnostic or prompt saying "run bin/foo.sh" does not execute foo.
-    # Keep path/command-valued tokens, including assignments and shell -c
-    # payloads. Incomplete/unknown shell syntax stays conservative.
-    retained = []
-    for line in shell_code(text, keep_heredocs).splitlines():
-        try:
-            tokens = shlex.split(line, comments=False)
-        except ValueError:
-            retained.append(line)
-            continue
-        for token in tokens:
-            value = re.sub(r"^\w+=", "", token)
-            if not re.search(r"\s", value) or re.match(r"^(?:[.$/~]|(?:exec|bash|sh|source)\s)", value):
-                retained.append(token)
-    return "\n".join(retained)
-
-
 files = sorted({p for directory in ("bin", "tests")
                 for p in Path(directory).rglob("*")
                 if p.is_file() and p.suffix in (".sh", ".py", ".pl", ".jq", ".mjs", ".js", ".ts")})
@@ -1859,70 +1828,52 @@ consumers = defaultdict(set)
 for path in files:
     text = path.read_text(errors="replace")
     if path.suffix == ".sh" and not path.name.endswith(".test.sh"):
-        text = shell_reference_text(text, keep_heredocs=str(path) not in (
-            "bin/fm-brief.sh", "bin/fm-branch-prompt.sh", "bin/fm-supervision-instructions.sh"))
-    elif path.suffix in (".ts", ".js", ".mjs"):
-        text = re.sub(r"(?m)^\s*//.*$", "", text)
-    if str(path) in ("bin/fm-test-run.sh", "tests/fm-test-run.test.sh"):
-        # These two files contain synthetic repositories and path inventories.
-        # Their actual repository accesses use ROOT; fixture names do not.
+        text = shell_code(text)
+    if str(path) in ("bin/fm-test-run.sh", "bin/fm-test-isolation-proof.sh", "tests/fm-test-run.test.sh"):
+        # These drivers' candidate lists are metadata, like the --list calls
+        # in their contract suites. Keep runtime paths/commands, and account
+        # for real nested subject invocations at the calling suite.
         names = re.findall(r"\$\{?ROOT\}?/(?:bin|tests)/([\w.+-]+)", text)
-    elif str(path) == "bin/fm-supervision-instructions.sh":
-        # Its bare command strings are instructions, not executed by it.
-        names = re.findall(r"\$\{?SCRIPT_DIR\}?/([\w.+-]+)", text)
+        if str(path).startswith("bin/"):
+            names.extend(re.findall(r"\$\{?\w+\}?/(?:[\w.+${}-]+/)*([\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts))\b", text))
+            for line in text.splitlines():
+                if re.search(r"(?:^|[\s;&|])(?:exec|source|bash|sh|env|command|eval|python3?|node|perl|\.)\s|(?:^|[\s;])\w+=", line):
+                    names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
+        if str(path) == "tests/fm-test-run.test.sh":
+            for line in shell_code(text).replace("\\\n", " ").splitlines():
+                if re.search(r"(?:^|[\s;&|])(?:source|bash|\.)\s", line):
+                    names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
+                if not re.search(r"\$\{?RUNNER\}?", line):
+                    continue
+                try:
+                    tokens = shlex.split(line, comments=False)
+                except ValueError:
+                    tokens = []
+                if any(token in ("--list", "--list-scheduled", "--list-families", "--list-lanes", "--explain", "--check-coverage") for token in tokens):
+                    continue
+                names.extend(re.findall(r"tests/([\w.+-]+\.test\.sh)", line))
     else:
         names = re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", text)
     for name in set(names):
         for dependency in by_name.get(name, ()):
             if dependency == str(path):
                 continue
-            if str(path) == "tests/lib.sh" and dependency in ("bin/fm-watch-arm.sh", "bin/fm-procevent.sh"):
-                # These cleanup entrypoints run only for registered resources.
-                # Link their registration callers, not every lib.sh importer.
-                continue
             consumers[dependency].add(str(path))
-    if str(path) not in ("tests/lib.sh", "bin/fm-test-run.sh", "tests/fm-test-run.test.sh"):
-        for registration, owner in (("fm_test_track_watcher_state", "bin/fm-watch-arm.sh"),
-                                    ("fm_test_track_procevent_home", "bin/fm-procevent.sh")):
-            if re.search(r"\b" + registration + r"\b", text):
-                consumers[owner].add(str(path))
-
-# The curated map owns semantic integration coverage for known subsystems.
-# Stop executable traversal at those boundaries; following arbitrary callers
-# beyond an owned integration family recreates the whole suite via fixture
-# builders and command/prompt renderers. Direct readers still participate.
-boundaries = defaultdict(list)
-owned = set()
-with os.fdopen(3) as mappings:
-    for row in mappings:
-        source, entry = row.rstrip("\n").split("\t", 1)
-        if entry.startswith("__owned__:"):
-            owned.add(source)
-        elif not entry.startswith(("__unmapped__:", "__reference__:")):
-            boundaries[source].append(entry)
-for source in owned:
-    if any(p.startswith("tests/") and p.endswith(".test.sh") for p in consumers[source]):
-        boundaries[source] = []
 
 for dependency in sorted(set(sys.argv[1:])):
     queue = deque([(dependency, dependency)])
     seen = {dependency}
     while queue:
         source, chain = queue.popleft()
-        for entry in boundaries.get(source, ()):
-            print(dependency + "\t" + entry + "\treference: " + chain + " -> map " + entry)
         for consumer in sorted(consumers[source]):
-            if source in boundaries and not (consumer.startswith("tests/") and consumer.endswith(".test.sh")):
-                continue
             if consumer in seen:
                 continue
             seen.add(consumer)
             reason = chain + " <- " + consumer
             if consumer.startswith("tests/") and consumer.endswith(".test.sh"):
                 print(dependency + "\t__script__:" + Path(consumer).name + "\treference: " + reason)
-                # A suite is a terminal reader, not a shared helper.
-            else:
-                queue.append((consumer, reason))
+            # Suites can themselves be executed by another wrapper suite.
+            queue.append((consumer, reason))
 PYREF
 }
 
@@ -1934,16 +1885,6 @@ scripts_for_path_reference() {
   local path=$1
   awk -F '\t' -v path="$path" '$1 == path { print $2 "\t" $3; found=1 } END { exit !found }' \
     <<<"$REFERENCE_INDEX"
-}
-
-# A mapped leaf owns its direct reader scripts. If none is discoverable, retain
-# the consumer walk rather than silently treating the source as untested.
-scripts_for_owned_path_reference() {
-  if [ "${REFERENCE_PROBE:-0}" -eq 1 ]; then
-    printf '__owned__:%s\n' "$1"
-  else
-    scripts_for_path_reference "$1"
-  fi
 }
 
 # Documentation has explicit contract owners and literal repository readers.
@@ -1963,7 +1904,7 @@ PYDOC
 }
 
 # Conservative path → family map. Over-selects rather than under-selects.
-# Never expands to the complete suite.
+# Unknown paths fail closed rather than substituting --all.
 families_for_changed_path() {
   local path=$1 fixture_ref
   case "$path" in
@@ -2060,10 +2001,10 @@ families_for_changed_path() {
       ;;
     bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
     bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
-      scripts_for_owned_path_reference "$path" || printf '%s\n' "__unmapped__:$path"
+      scripts_for_path_reference "$path" || printf '%s\n' "__unmapped__:$path"
       ;;
     bin/fm-afk*)
-      scripts_for_owned_path_reference "$path" \
+      scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     bin/fm-supervision-host.sh|bin/fm-supervision-engine-lib.sh|\
@@ -2247,7 +2188,7 @@ families_for_changed_path() {
     bin/fm-vendor-auth-probe.sh|\
     bin/fm-primary-scope-lib.sh|bin/fm-project-mode.sh|bin/fm-forge-detect.sh|bin/fm-promote.sh|\
     bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/*pretool*)
-      scripts_for_owned_path_reference "$path" || printf '%s\n' "__unmapped__:$path"
+      scripts_for_path_reference "$path" || printf '%s\n' "__unmapped__:$path"
       ;;
     .agents/skills/quota-array-dispatch/SKILL.md)
       printf '%s\n' __script__:fm-quota-array-dispatch-live-e2e.test.sh
@@ -2388,12 +2329,13 @@ select_changed() {
     { git -C "$ROOT" diff --name-only "${base}...HEAD" 2>/dev/null
       git -C "$ROOT" diff --name-only HEAD 2>/dev/null
       git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null; } | LC_ALL=C sort -u)
-  # Explicit test/documentation mappings do not need the executable graph.
+  # Documentation mappings do not need the executable graph.
   REFERENCE_INDEX=
   while IFS= read -r path; do
     [ -n "$path" ] || continue
+    case "$path" in bin/*|tests/*) need_references=1; break ;; esac
     probe=$(REFERENCE_PROBE=1 families_for_changed_path "$path")
-    if printf '%s\n' "$probe" | grep -Eq '^__(owned|reference)__:'; then
+    if printf '%s\n' "$probe" | grep -Eq '^__reference__:'; then
       need_references=1
       break
     fi
@@ -2414,7 +2356,10 @@ select_changed() {
         __unmapped__:*) die "no changed-test mapping for source path: ${target#__unmapped__:}" ;;
         *) selected_targets+=("$target"$'\t'"$reason") ;;
       esac
-    done < <(families_for_changed_path "$path")
+    done < <(
+      families_for_changed_path "$path"
+      case "$path" in bin/*|tests/*) scripts_for_path_reference "$path" || true ;; esac
+    )
   done < <(printf '%s\n' "${changed_paths[@]+"${changed_paths[@]}"}")
 
   # Resolve each family once, not once per path/consumer that selected it.

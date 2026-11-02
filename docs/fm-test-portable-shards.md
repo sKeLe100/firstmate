@@ -7,14 +7,17 @@
 
 The runner's curated path map owns semantic integration coverage; execution families and portable CI partitions remain separate concerns.
 Shared runner, backend, watcher-loop, and classifier changes retain broad integration mappings.
-Leaf sources and shared test helpers select individual readers rather than every sibling in a reader's execution family.
-The consumer walk follows executable references and helper chains without a fixed depth limit, stops cycles, and stops at the curated integration owner for a known subsystem.
-Production-shell comments and prose-only diagnostic tokens do not create executable dependencies; ambiguous references remain conservative.
+Reference evidence selects individual readers, including indirect bin, shared-helper, and wrapper-suite readers, without inheriting each reader's execution family.
+The consumer walk follows references and helper chains without a fixed depth limit, stops cycles, and continues through curated integration owners.
+Curated mappings add coverage; a direct reader or an integration family never proves that other executable readers can be omitted.
+Production-shell comments do not create dependencies.
+Quoted strings and generated command payloads remain conservative references when non-execution cannot be proved.
 Documentation and skills select their structural contract owners and repository readers, with explicit mappings for dynamic skill and reference-directory readers.
 They do not inherit browser, Pi, or runner integrations from the `pure-contract-unit` label.
 
 Maintain the mapping beside a new dynamic dependency that a literal reference cannot reveal, following the existing explicit Pi-extension mappings.
 Keep a broad mapping where a shared implementation genuinely needs integration coverage, and add behavioral selection regressions when narrowing an owner.
+Selection-count targets never justify dropping a test that executes changed code; broad control-path changes can conservatively select the full inventory.
 An existing source without a mapping or a discoverable reader fails closed; deleting a source still selects remaining readers, while an unconsumed retirement selects nothing.
 The runner's header and help own inspection flags, including the per-script explanation of changed paths, mappings, and consumer chains.
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh) checks representative documentation, skill, leaf, watcher, shared-helper, and multi-subsystem selections through the runner's public interface.
