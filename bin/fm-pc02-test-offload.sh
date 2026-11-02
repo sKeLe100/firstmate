@@ -93,12 +93,14 @@
 #     first test, so an offloaded run records PC02's inherited PATH and limits.
 #   - Before taking a slot, PC01 and PC02 compare versions of git, bash,
 #     python3, jq, node, shellcheck, actionlint, ruby, chromium, herdr, pi, and
-#     tmux, the open-file limit, LC_ALL/LANG/TZ, and normalized ldd results for
+#     tmux, LC_ALL/LANG/TZ, and normalized ldd results for
 #     the browser selected by fm-test-chrome.sh. CPU count, RAM, ulimit -u,
 #     no-mistakes daemon version, /usr/bin/env provider, and shell availability
 #     (including zsh) are intentionally excluded as resources or documented
 #     test differences. Local browser dependency and wrapper-resolution probes
 #     have a 10-second deadline per command; timeout routes the run locally.
+#     PC02's open-file limit must be at least PC01's; a higher limit is an
+#     allowed resource difference. Missing or invalid limits route locally.
 #   - Sizing evidence: two simultaneous four-worker offloads of
 #     fm-supervision-host, fm-captain-hold-lifecycle,
 #     fm-remote-secondmate-lifecycle-e2e, and fm-spawn-dispatch-profile passed
@@ -459,11 +461,29 @@ remote_parity=$(timeout "$PROBE_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout=
   -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$parity_probe")" 2>&1) || {
   run_local "PC02 environment parity probe failed: $remote_parity"
 }
+open_file_limit_sufficient() { # <PC01 limit> <PC02 limit>
+  local local_limit=$1 remote_limit=$2
+  case "$local_limit" in
+    unlimited) [ "$remote_limit" = unlimited ]; return ;;
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  case "$remote_limit" in
+    unlimited) return 0 ;;
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$remote_limit" -ge "$local_limit" ] 2>/dev/null
+}
+
 parity_mismatches=()
 while IFS='=' read -r key local_value; do
   [ "$key" != chromium.path ] || continue
   remote_value=$(printf '%s\n' "$remote_parity" | awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}')
-  [ "$local_value" = "$remote_value" ] || parity_mismatches+=("$key (PC01='$local_value', PC02='$remote_value')")
+  if [ "$key" = ulimit.open_files ]; then
+    open_file_limit_sufficient "$local_value" "$remote_value" \
+      || parity_mismatches+=("$key below PC01 or invalid (PC01='$local_value', PC02='$remote_value')")
+  else
+    [ "$local_value" = "$remote_value" ] || parity_mismatches+=("$key (PC01='$local_value', PC02='$remote_value')")
+  fi
   case "$key:$local_value:$remote_value" in
     tool.*:absent:*|tool.*:unavailable:*|tool.*:timed-out:*|tool.*:*:absent|tool.*:*:unavailable|tool.*:*:timed-out)
       parity_mismatches+=("$key version could not be established")

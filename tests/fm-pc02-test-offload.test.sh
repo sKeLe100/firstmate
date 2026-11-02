@@ -369,6 +369,10 @@ shift
 case "\$*" in
   *fm-pc02-environment-parity-probe*)
     case "\${FM_FAKE_PARITY_MODE:-}" in
+      open-file-limit)
+        HOME="$dir/home" bash -c "\$*" 2>&1 | sed "s/^ulimit.open_files=.*/ulimit.open_files=\${FM_FAKE_OPEN_FILES_LIMIT-}/"
+        exit 0
+        ;;
       version-mismatch)
         HOME="$dir/home" bash -c "\$*" 2>&1 | sed 's/^tool.git=.*/tool.git=fake-PC02-git-version/'
         exit 0
@@ -561,6 +565,7 @@ test_shared_browser_resolver_prefers_chromium_to_google_chrome() {
   printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/chromium"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/google-chrome"
   chmod +x "$dir/bin/chromium" "$dir/bin/google-chrome"
+  # shellcheck disable=SC2016 # Positional parameters expand in the child shell.
   found=$("$BASH" -c 'PATH="$1"; HOME="$2"; . "$3/bin/fm-test-chrome.sh"; find_chrome' \
     bash "$dir/bin" "$dir/home" "$ROOT") \
     || fail "the shared browser resolver found no PATH browser"
@@ -588,6 +593,43 @@ test_environment_parity_match_allows_offload() {
   assert_contains "$out" "running tests remotely" "matching parity did not proceed remotely: $out"
   assert_contains "$out" "claimed PC02 slot 1 of 2" "default slot count was not two: $out"
   pass "matching PC01 and PC02 parity admits the default two-slot offload"
+}
+
+test_environment_open_file_capacity() {
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  local remote_limit dir fakebin local_home out status
+  for remote_limit in 512 256 128 unlimited invalid ''; do
+    dir="$TMP_ROOT/parity-open-files-${remote_limit:-missing}"
+    fakebin=$(fake_pc02 "$dir")
+    local_home="$dir/pc01-home"
+    install_cache_chrome "$local_home" direct >/dev/null
+    install_cache_chrome "$dir/home" direct >/dev/null
+    printf '#!/usr/bin/env bash\necho "ok - open-file capacity"\n' > "$dir/capacity.test.sh"
+    chmod +x "$dir/capacity.test.sh"
+    out=$(
+      ulimit -S -n 256 || exit 1
+      PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+        FM_FAKE_PARITY_MODE=open-file-limit FM_FAKE_OPEN_FILES_LIMIT="$remote_limit" \
+        FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "$dir/capacity.test.sh" 2>&1
+    )
+    status=$?
+    expect_code 0 "$status" "open-file capacity case '$remote_limit' failed: $out"
+    case "$remote_limit" in
+      512|256|unlimited)
+        assert_contains "$out" "running tests remotely" "sufficient PC02 limit '$remote_limit' did not offload: $out"
+        assert_not_contains "$out" "running on PC01" "sufficient PC02 limit '$remote_limit' fell back: $out"
+        ;;
+      *)
+        assert_contains "$out" "ulimit.open_files below PC01 or invalid" "insufficient/invalid PC02 limit lacked a diagnostic: $out"
+        assert_contains "$out" "PC01='256', PC02='$remote_limit'" "limit diagnostic omitted the compared values: $out"
+        assert_contains "$out" "running on PC01" "insufficient/invalid PC02 limit did not fall back: $out"
+        assert_not_contains "$out" "running tests remotely" "insufficient/invalid PC02 limit offloaded: $out"
+        ;;
+    esac
+  done
+  pass "PC02 open-file capacity accepts higher/equal limits and refuses lower or invalid limits"
 }
 
 test_environment_version_mismatch_falls_back_with_field() {
@@ -1176,6 +1218,7 @@ test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler
 test_environment_parity_match_allows_offload
+test_environment_open_file_capacity
 test_environment_version_mismatch_falls_back_with_field
 test_hung_local_browser_dependency_probe_falls_back
 test_selected_cached_browser_version_mismatch_falls_back
