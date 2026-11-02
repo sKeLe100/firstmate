@@ -750,7 +750,7 @@ Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](f
 ## PC02 test offload
 
 Every executing `bin/fm-test-run.sh` invocation prints one `FM_TEST_ENV_RECORD` before starting tests, from the shell that will run them.
-For an offloaded run this means the record comes from the runner on PC02, with PC02's inherited `PATH` and limits.
+For an offloaded run this means the record comes from the runner on PC02, with PC02's inherited `PATH` and the limits the suite actually runs with.
 The record includes selected tool versions and paths, the inherited `PATH` entries, Bash mode and options, whether the runner's own Bash is a login shell (`runner_login_shell`, which does not describe the invoking SSH shell), soft limits, OS/kernel, process identifiers and session model, TMPDIR filesystem type, and a token-free headless Chrome startup result.
 Missing tools and browser startup failures are recorded as data and do not change the test result; the record never dumps the process environment.
 `bin/fm-test-env-record.sh` owns the exact fields and privacy-safe probes, and `tests/fm-test-run.test.sh` plus `tests/fm-pc02-test-offload.test.sh` pin the local and fake-remote behavior.
@@ -763,11 +763,13 @@ An invalid or unreadable configuration, or an unavailable home state directory, 
 `FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
 
 [`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
-Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. Direct test invocations on PC02 must be scheduled separately.
+Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. The value must be an integer from 1 to 16; any other value is a configuration error that exits 2 without running tests. Direct test invocations on PC02 must be scheduled separately.
 Offload preserves caller-selected parallelism and otherwise keeps `bin/fm-test-run.sh`'s own automatic scheduler with up to eight workers for PC02's 16 threads and 27 GB, so only proven-concurrent work runs in parallel.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
 Before it claims a slot, offload compares PC01 and PC02 tool versions (git, bash, python3, jq, node, shellcheck, actionlint, ruby, chromium, Herdr, Pi, tmux), `LC_ALL`/`LANG`/`TZ`, and the version and sorted dependency sonames of the browser selected by the suite's shared [`fm-test-chrome.sh`](../bin/fm-test-chrome.sh) resolver.
 PC02's `ulimit -n` must be at least PC01's; a higher or unlimited remote limit is accepted, while a lower, missing or invalid limit routes locally.
+Both the parity probe and the remote suite command first raise PC02's soft open-file limit to its hard limit best effort, so a low soft limit inherited from the SSH login shell neither blocks admission nor constrains the run.
+The parity probe has its own `FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS` bound (default 180) that covers its per-command deadlines; the reachability probe keeps the shorter `FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS`.
 Paths are reported for diagnostics but are not compared.
 A mismatch, an unestablished version, or an unresolved library routes the run locally with the host, browser path, and differing value.
 CPU count, RAM, `ulimit -u`, the shared no-mistakes daemon version, the `/usr/bin/env` provider, and shell availability such as zsh are intentionally excluded as resource differences or documented test differences.

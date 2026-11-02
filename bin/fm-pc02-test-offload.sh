@@ -86,7 +86,8 @@
 #   - Supervising-home selection and per-machine configuration are owned by
 #     docs/configuration.md's "PC02 test offload" section.
 #   - The remote fm-test-run.sh prints its own environment record before its
-#     first test, so an offloaded run records PC02's inherited PATH and limits.
+#     first test, so an offloaded run records PC02's PATH and the limits the
+#     suite actually runs with.
 #   - Before taking a slot, PC01 and PC02 compare versions of git, bash,
 #     python3, jq, node, shellcheck, actionlint, ruby, chromium, herdr, pi, and
 #     tmux, LC_ALL/LANG/TZ, and normalized ldd results for
@@ -97,6 +98,10 @@
 #     have a 10-second deadline per command; timeout routes the run locally.
 #     PC02's open-file limit must be at least PC01's; a higher limit is an
 #     allowed resource difference. Missing or invalid limits route locally.
+#     Both the parity probe and the remote suite command first raise PC02's
+#     soft open-file limit to its hard limit best effort, so a low soft limit
+#     inherited from the login shell neither blocks admission nor limits the
+#     run.
 #   - Sizing evidence: two simultaneous four-worker offloads of
 #     fm-supervision-host, fm-captain-hold-lifecycle,
 #     fm-remote-secondmate-lifecycle-e2e, and fm-spawn-dispatch-profile passed
@@ -117,12 +122,21 @@
 #                                      resource/tool probe and the post-sync
 #                                      HEAD check (default: 15; the resource
 #                                      probe's CPU sample alone takes ~1s)
+#   FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS bound for the PC01/PC02 environment
+#                                      parity probe (default: 180). Its own
+#                                      per-command deadlines allow twelve tool
+#                                      launches at 5s each and three browser
+#                                      probes at 10s each, so it needs a wider
+#                                      budget than the reachability probe.
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
 #                                      (default: 180)
 #   FM_PC02_OFFLOAD_SLOTS               number of concurrent PC02 suites
 #                                      (default: 2); each holds its own slot
 #                                      lock. With all slots busy the run
-#                                      routes local and says so.
+#                                      routes local and says so. Must be an
+#                                      integer from 1 to 16; any other value
+#                                      is a configuration error that exits 2
+#                                      without running tests.
 #   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote test run
 #                                      (default: 7200); a hang tripwire, not
 #                                      a deadline. PR #215's full --changed
@@ -162,7 +176,9 @@
 #                                      (default: 5; idle measures 0)
 #
 # Exit status: the exact exit code fm-test-run.sh produced, wherever it ran,
-# or 124 if the remote run itself exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS.
+# or 124 if the remote run itself exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS,
+# or 2 for a malformed FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16),
+# which runs no tests at all.
 # A readiness check that fails (PC02 personally in use, occupied, unreachable,
 # missing a required tool, or a sync/verification failure) falls back to a
 # local run and never changes the result fm-test-run.sh itself reports.
@@ -183,6 +199,7 @@ ARGS=("$@")
 
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
+PARITY_TIMEOUT="${FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS:-180}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
 SCRIPT_TIMEOUT="${FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS:-3000}"
@@ -399,13 +416,13 @@ normalize_ldd() {
   [ -n "$path" ] || { printf 'UNRESOLVED:browser-absent\n'; return; }
   output=$(timeout --signal=TERM --kill-after=2 10 ldd "$path" 2>&1) || status=$?
   case "$status" in
-    124|137) printf 'PC01 browser dependency probe timed out running ldd for %s\n' "$path" >&2; return 1 ;;
+    124|137) printf 'browser dependency probe timed out running ldd for %s\n' "$path" >&2; return 1 ;;
   esac
   if printf '%s' "$output" | grep -Eqi 'not a dynamic executable|statically linked|not dynamic'; then
     status=0
     trace=$(timeout --signal=TERM --kill-after=2 10 bash -x "$path" --version 2>&1 </dev/null) || status=$?
     case "$status" in
-      124|137) printf 'PC01 browser dependency probe timed out resolving wrapper %s\n' "$path" >&2; return 1 ;;
+      124|137) printf 'browser dependency probe timed out resolving wrapper %s\n' "$path" >&2; return 1 ;;
     esac
     target=$(printf '%s\n' "$trace" | sed -nE 's/^\+ exec ([^[:space:]]+).*/\1/p' | tail -n 1)
     if [ -n "$target" ] && [ -x "$target" ]; then
@@ -413,7 +430,7 @@ normalize_ldd() {
       status=0
       output=$(timeout --signal=TERM --kill-after=2 10 ldd "$path" 2>&1) || status=$?
       case "$status" in
-        124|137) printf 'PC01 browser dependency probe timed out running ldd for resolved executable %s\n' "$path" >&2; return 1 ;;
+        124|137) printf 'browser dependency probe timed out running ldd for resolved executable %s\n' "$path" >&2; return 1 ;;
       esac
     else
       printf 'UNRESOLVED:wrapper-target (%s)\n' "${target:-unresolved}"
@@ -457,8 +474,12 @@ printf '%s\n' "$browser_dependencies" | paste -sd, -
 PARITY_PROBE
 )"
 local_parity=$(bash -c "$parity_probe" 2>&1) || run_local "PC01 environment parity probe failed: $local_parity"
-remote_parity=$(timeout "$PROBE_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
-  -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$parity_probe")" 2>&1) || {
+# shellcheck disable=SC2016 # The raise expands on PC02, not here.
+remote_parity_raise='ulimit -Sn "$(ulimit -Hn)" 2>/dev/null || true'
+remote_parity_cmd="$remote_parity_raise
+$parity_probe"
+remote_parity=$(timeout "$PARITY_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+  -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$remote_parity_cmd")" 2>&1) || {
   run_local "PC02 environment parity probe failed: $remote_parity"
 }
 open_file_limit_sufficient() { # <PC01 limit> <PC02 limit>
@@ -476,7 +497,7 @@ open_file_limit_sufficient() { # <PC01 limit> <PC02 limit>
 
 parity_mismatches=()
 while IFS='=' read -r key local_value; do
-  [ "$key" != chromium.path ] || continue
+  case "$key" in chromium.path|chromium.dependencies) continue ;; esac
   remote_value=$(printf '%s\n' "$remote_parity" | awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}')
   if [ "$key" = ulimit.open_files ]; then
     open_file_limit_sufficient "$local_value" "$remote_value" \
@@ -654,6 +675,7 @@ remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SC
 # Keep job control off: setsid must exec in place so $! is the session ID
 # written to pgid and used to clean up the complete suite session.
 remote_test_cmd="exec 5<&0
+ulimit -Sn \"\$(ulimit -Hn)\" 2>/dev/null || true
 cd $(printf '%q' "$REMOTE_WORKTREE") || exit 1
 $remote_suite_cmd &
 pgid=\$!

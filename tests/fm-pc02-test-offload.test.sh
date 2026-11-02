@@ -398,6 +398,10 @@ while [ "\$#" -gt 0 ]; do
   esac
 done
 shift
+if [ -n "\${FM_FAKE_SSH_NOFILE_HARD:-}" ]; then
+  ulimit -S -n "\${FM_FAKE_SSH_NOFILE_SOFT:-\$FM_FAKE_SSH_NOFILE_HARD}" 2>/dev/null || exit 255
+  ulimit -H -n "\$FM_FAKE_SSH_NOFILE_HARD" 2>/dev/null || exit 255
+fi
 case "\$*" in
   *fm-pc02-environment-parity-probe*)
     case "\${FM_FAKE_PARITY_MODE:-}" in
@@ -731,6 +735,54 @@ test_environment_open_file_capacity() {
   pass "PC02 open-file capacity accepts higher/equal limits and refuses lower or invalid limits"
 }
 
+test_raised_open_file_limit_admits_and_reaches_remote_run() {
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  local dir fakebin local_home out status hard
+  hard=$(ulimit -Hn)
+  case "$hard" in
+    unlimited) ;;
+    ''|*[!0-9]*) pass "skip: cannot read the host hard open-file limit"; return ;;
+    *) [ "$hard" -ge 1024 ] || { pass "skip: host hard open-file limit is below 1024"; return; } ;;
+  esac
+  dir="$TMP_ROOT/remote-open-files-raised"
+  fakebin=$(fake_pc02 "$dir")
+  local_home="$dir/pc01-home"
+  install_cache_chrome "$local_home" direct >/dev/null
+  cat > "$dir/nofile.test.sh" <<'SH'
+#!/usr/bin/env bash
+echo "suite_soft_nofile=$(ulimit -Sn)"
+SH
+  chmod +x "$dir/nofile.test.sh"
+  out=$(
+    ulimit -S -n 1024 || exit 1
+    PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+      FM_FAKE_SSH_NOFILE_SOFT=512 FM_FAKE_SSH_NOFILE_HARD=1024 \
+      FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "$dir/nofile.test.sh" 2>&1
+  )
+  status=$?
+  expect_code 0 "$status" "a low soft open-file limit on PC02 must not block the raised run: $out"
+  assert_contains "$out" "running tests remotely" \
+    "the raised PC02 soft open-file limit did not satisfy the parity rule: $out"
+  assert_contains "$out" "suite_soft_nofile=1024" \
+    "the remote suite did not inherit PC02's hard open-file limit: $out"
+
+  out=$(
+    ulimit -S -n 1024 || exit 1
+    PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+      FM_FAKE_SSH_NOFILE_SOFT=256 FM_FAKE_SSH_NOFILE_HARD=512 \
+      FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "$dir/nofile.test.sh" 2>&1
+  )
+  status=$?
+  expect_code 0 "$status" "a hard limit below PC01's must still run locally: $out"
+  assert_contains "$out" "ulimit.open_files below PC01 or invalid" \
+    "raising PC02's soft limit must not admit a hard limit below PC01's: $out"
+  assert_contains "$out" "running on PC01" \
+    "an insufficient PC02 hard limit did not route the suite locally: $out"
+  pass "offload raises PC02's soft open-file limit to its hard limit without loosening the parity rule"
+}
+
 test_environment_version_mismatch_falls_back_with_field() {
   local dir fakebin out status
   dir="$TMP_ROOT/parity-version-mismatch"
@@ -758,7 +810,7 @@ test_hung_local_browser_dependency_probe_falls_back() {
   elapsed=$((SECONDS - start))
   expect_code 0 "$status" "a timed-out local browser probe must still run the suite locally: $out"
   [ "$elapsed" -lt 20 ] || fail "the local browser dependency probe exceeded its bound (${elapsed}s): $out"
-  assert_contains "$out" "PC01 browser dependency probe timed out running ldd" \
+  assert_contains "$out" "browser dependency probe timed out running ldd" \
     "the fallback did not clearly identify the timed-out dependency probe: $out"
   assert_contains "$out" "running on PC01" "a browser-probe timeout did not select the local run: $out"
   assert_not_contains "$out" "running tests remotely" "a browser-probe timeout ran the remote suite: $out"
@@ -1281,6 +1333,9 @@ test_help_prints_the_whole_documented_contract() {
   assert_contains "$out" "FM_PC02_OFFLOAD_GPU_BUSY_PCT" "--help omitted the GPU busy threshold: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS" "--help omitted the run-timeout override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_SLOTS" "--help omitted the concurrent-slot override: $out"
+  assert_contains "$out" "FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS" "--help omitted the parity-probe timeout override: $out"
+  assert_contains "$out" "integer from 1 to 16" "--help omitted the slot range and integer requirement: $out"
+  assert_contains "$out" "exits 2" "--help omitted the configuration-error exit: $out"
   case "$out" in
     *"set -u"*) fail "--help spilled past the header block into script code: $out" ;;
   esac
@@ -1321,6 +1376,7 @@ test_remote_run_uses_7200_second_default_timeout
 test_remote_jobs_and_script_bound
 test_environment_parity_match_allows_offload
 test_environment_open_file_capacity
+test_raised_open_file_limit_admits_and_reaches_remote_run
 test_environment_version_mismatch_falls_back_with_field
 test_hung_local_browser_dependency_probe_falls_back
 test_selected_cached_browser_version_mismatch_falls_back
