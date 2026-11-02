@@ -1,0 +1,3 @@
+exit=0
+fm-pc02-test-offload: invalid FM_PC02_OFFLOAD_SLOTS (expected a positive integer); running on PC01
+PASS: invalid slot count fell back to the local run with an explicit reason

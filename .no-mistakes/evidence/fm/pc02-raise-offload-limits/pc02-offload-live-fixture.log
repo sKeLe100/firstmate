@@ -1,0 +1,62 @@
+ok - --help prints the whole documented contract
+ok - FM_PC02_OFFLOAD_DISABLE=1 always runs locally without touching ssh or rsync
+ok - a live PC02 LLM lane falls back to a local run without touching ssh
+ok - a missing supervising home refuses the lane probe and falls back locally
+ok - the offload probe scans the supplied supervising home before checking PC02
+ok - an unreachable PC02 falls back to a local run
+ok - PC02 missing a required tool falls back to a local run rather than a thinner remote run
+ok - a stuck or slow probe times out and falls back rather than hanging
+ok - a failed rsync to PC02 falls back to a local run
+ok - the captain's personal-use switch falls back to a local run
+ok - llama-swap holding a loaded model for any live session falls back to a local run
+ok - a healthy llama-swap with no loaded model does not block offloading
+ok - an unparseable llama-swap /running answer defaults to a local run
+ok - a Windows-wide CPU utilization over the threshold falls back to a local run
+ok - a Windows GPU-engine utilization over the threshold falls back to a local run
+ok - an unparseable or missing resource read defaults to a local run rather than an idle guess
+ok - fm-test-run.sh --pc02-if-idle strips the flag and forwards every other argument unchanged
+not ok - a straggler holding the channel kept the run open 31s: fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=744547 ppid=744530
+runner_login_shell=no
+path_entries=/var/tmp/nm-daemon-tmp/fm-pc02-test-offload.oib1zD/remote-straggler/fakebin:~/.codex/packages/standalone/releases/0.164.0-x86_64-unknown-linux-musl/codex-path:~/.local/bin:~/.npm-global/bin:~/bin:~/.codex/tmp/arg0-linux/codex-arg0SltdN1:~/.codex/packages/standalone/releases/0.164.0-x86_64-unknown-linux-musl/codex-path:~/.local/bin:~/.npm-global/bin:~/bin:~/.npm-global/bin:~/.local/bin:~/.local/bin:~/go/bin:~/.cargo/bin:~/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=744547 ppid=744530 pgid=744530 sid=744530 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 59379
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1024
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 59379
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=~/.local/bin/node version=v22.22.3
+tool=pi path=~/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=~/.npm-global/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=~/.local/bin/herdr version=herdr 0.9.5
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/var/tmp/nm-daemon-tmp/fm-pc02-test-offload.oib1zD/remote-straggler/fakebin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=~/.local/bin/no-mistakes version=no-mistakes version v1.106.1 (5732d1e) 2026-10-31T05:16:02Z
+chrome_startup=failed path=~/.local/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_HOST_LOAD load5=30.61 cpus=16 jobs=1 per_script_timeout_secs=3000 watch_triage_timeout_secs=3000 captain_hold_timeout_secs=3000
+FM_TEST_BEGIN 2026-11-02T20:45:30Z /var/tmp/nm-daemon-tmp/fm-pc02-test-offload.oib1zD/remote-straggler/straggler-fail.test.sh family=unclassified expected_gate_skip=none
+not ok - intentional fixture failure
+FM_TEST_END 2026-11-02T20:45:30Z /var/tmp/nm-daemon-tmp/fm-pc02-test-offload.oib1zD/remote-straggler/straggler-fail.test.sh exit=1 duration_ms=196 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=12045
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=196 failed=1
+FM_TEST_SLOWEST rank=1 script=/var/tmp/nm-daemon-tmp/fm-pc02-test-offload.oib1zD/remote-straggler/straggler-fail.test.sh duration_ms=196

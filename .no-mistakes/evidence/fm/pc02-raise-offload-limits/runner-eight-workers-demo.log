@@ -1,0 +1,6 @@
+proven_workers_peak=8 (independent oracle: 8 requested automatic ceiling)
+family_phase_peak={'standalone': 4} (bound: <=4 for the standalone family)
+scripts_completed_before_serial_tail=13
+active_when_serial_tail_started=[]
+serial_tail_last=tests/unproven.test.sh
+total_scripts_completed=14

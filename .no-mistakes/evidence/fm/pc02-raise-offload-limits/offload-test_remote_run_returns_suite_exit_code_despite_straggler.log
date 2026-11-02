@@ -1,0 +1,1 @@
+ok - a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror

@@ -1,0 +1,4 @@
+ok - --help prints the whole documented contract
+ok - a remote suite passes the 7200-second default to its timeout executable
+ok - remote jobs preserve both caller forms, default to eight, and allow environment overrides with a script cap
+ok - two concurrent remote suites overlap and a third falls back locally
