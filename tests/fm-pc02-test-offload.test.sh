@@ -372,6 +372,10 @@ case "\$*" in
         HOME="$dir/home" bash -c "\$*" 2>&1 | sed 's/^tool.git=.*/tool.git=fake-PC02-git-version/'
         exit 0
         ;;
+      browser-version-mismatch)
+        HOME="$dir/home" bash -c "\$*" 2>&1 | sed 's/^chromium.selected_version=.*/chromium.selected_version=Chrome Headless Shell 1229.0/'
+        exit 0
+        ;;
       chromium-not-found)
         HOME="$dir/home" FM_FAKE_LDD_MODE=not-found bash -c "\$*"
         exit \$?
@@ -539,7 +543,7 @@ install_cache_chrome() {  # <home> <wrapper>
   if [ "$2" = wrapper ]; then
     printf '#!/usr/bin/env bash\nexec /bin/true "$@"\n' > "$path"
   else
-    printf '#!/usr/bin/env bash\nexit 0\n' > "$path"
+    printf '#!/usr/bin/env bash\necho "Chrome Headless Shell 1228.0"\n' > "$path"
   fi
   chmod +x "$path"
   printf '%s' "$path"
@@ -594,6 +598,24 @@ test_environment_version_mismatch_falls_back_with_field() {
   assert_contains "$out" "fake-PC02-git-version" "the fallback diagnostic omitted PC02's value: $out"
   assert_contains "$out" "running on PC01" "a mismatched host was not routed locally: $out"
   pass "a PC02 tool-version mismatch names the surface and runs locally"
+}
+
+test_selected_cached_browser_version_mismatch_falls_back() {
+  local dir fakebin out status local_home
+  dir="$TMP_ROOT/parity-browser-version-mismatch"
+  fakebin=$(fake_pc02 "$dir")
+  local_home="$dir/pc01-home"
+  install_cache_chrome "$local_home" direct >/dev/null
+  install_cache_chrome "$dir/home" direct >/dev/null
+  out=$(PATH="$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_FAKE_PARITY_MODE=browser-version-mismatch FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a selected headless-shell version mismatch must run locally: $out"
+  assert_contains "$out" "chromium.selected_version" "the fallback did not name the selected browser version: $out"
+  assert_contains "$out" "Chrome Headless Shell 1229.0" "the fallback omitted PC02's selected browser version: $out"
+  assert_contains "$out" "running on PC01" "different cached browser versions were not routed locally: $out"
+  pass "a cached headless-shell version mismatch names the surface and runs locally"
 }
 
 test_chromium_missing_library_falls_back_with_field() {
@@ -1128,6 +1150,7 @@ test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler
 test_environment_parity_match_allows_offload
 test_environment_version_mismatch_falls_back_with_field
+test_selected_cached_browser_version_mismatch_falls_back
 test_shared_browser_resolver_prefers_chromium_to_google_chrome
 test_chromium_missing_library_falls_back_with_field
 test_chromium_dependency_soname_difference_falls_back

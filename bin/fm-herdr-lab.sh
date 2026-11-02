@@ -77,17 +77,19 @@ fm_herdr_lab_raw() { # <session> <herdr arguments...>
 }
 
 fm_herdr_lab_session_list() { # <session>
-  fm_herdr_lab_raw "$1" session list --json
+  local response
+  response=$(fm_herdr_lab_raw "$1" session list --json) || return 1
+  printf '%s' "$response" | jq -e 'type == "object" and (has("error") | not) and (.sessions | arrays)' >/dev/null 2>&1 || {
+    fm_herdr_lab_error "cannot read Herdr sessions array"
+    return 1
+  }
+  printf '%s\n' "$response"
 }
 
 fm_herdr_lab_fleet_state() { # <session>
   local name=$1 sessions snapshot count
   sessions=$(fm_herdr_lab_session_list "$name" 2>/dev/null) || {
     fm_herdr_lab_error "cannot read Herdr sessions for the fleet-state tripwire"
-    return 1
-  }
-  printf '%s' "$sessions" | jq -e 'type == "object" and (has("error") | not) and (.sessions | arrays)' >/dev/null 2>&1 || {
-    fm_herdr_lab_error "cannot read Herdr sessions array for the fleet-state tripwire"
     return 1
   }
   snapshot=$(printf '%s' "$sessions" | jq -c '

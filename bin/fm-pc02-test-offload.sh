@@ -427,6 +427,17 @@ normalize_ldd() {
 browser=$(find_chrome 2>/dev/null || true)
 if [ -n "$browser" ]; then browser=$(readlink -f "$browser" 2>/dev/null || printf '%s' "$browser"); fi
 printf 'chromium.path=%s\n' "$browser"
+if [ -n "$browser" ]; then
+  browser_version_status=0
+  browser_version=$(timeout 5 "$browser" --version 2>&1 </dev/null) || browser_version_status=$?
+  browser_version=${browser_version%%$'\n'*}
+  [ -n "$browser_version" ] || browser_version=unavailable
+  [ "$browser_version_status" -ne 124 ] || browser_version=timed-out
+  browser_version=$(printf '%s' "$browser_version" | tr '\r\n\t' '   ' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | cut -c1-180)
+else
+  browser_version=absent
+fi
+printf 'chromium.selected_version=%s\n' "$browser_version"
 printf 'chromium.dependencies='
 normalize_ldd "$browser" | paste -sd, -
 PARITY_PROBE
