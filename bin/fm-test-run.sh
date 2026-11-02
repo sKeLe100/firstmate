@@ -102,12 +102,13 @@
 #                   silently pass as a gate skip.
 #   --jobs N        run the selected scripts with up to N concurrent workers.
 #                   Plain --changed and a plain list of script paths use
-#                   min(4, cpus) workers when multiple selected scripts are
-#                   admissible, then throttled down for host contention: 2
+#                   min(FM_TEST_RUN_AUTO_JOBS_MAX, cpus) workers (default cap 4)
+#                   when multiple selected scripts are admissible, then throttled
+#                   down for host contention: 2
 #                   workers when the 5-minute load average exceeds cpus, 1
 #                   when it exceeds 2x cpus (FM_TEST_HOST_LOAD reports the
-#                   inputs and the result). --lane, --family, and --all stay
-#                   serial unless asked for concurrency explicitly; an
+#                   inputs and the result). Curated selections stay serial
+#                   unless asked for concurrency as described below; an
 #                   explicit --jobs N is never throttled.
 #                   N>1 is allowed only when every selected script is proven
 #                   safe to run concurrently: individually in the proven-isolated
@@ -121,6 +122,10 @@
 #                   scripts run serially after all concurrent phases. Default is
 #                   1 (serial) except for plain --changed and a plain list of
 #                   script paths, which use the bounded automatic scheduler.
+#                   FM_TEST_RUN_AUTO_JOBS_MAX (1..8) overrides its ceiling and
+#                   opts --all/--family into that same scheduler; serial lanes
+#                   and explicit --jobs retain their contracts. Proven-isolated
+#                   phases may use eight; family phases keep their proven caps.
 #   --fail-fast     opt-in; stop the run at the first failing script instead of
 #                   continuing through every remaining selected script. Off by
 #                   default so CI keeps seeing the complete result set.
@@ -281,6 +286,8 @@ JOBS=1
 FAIL_FAST=
 JOBS_EXPLICIT=0
 JOBS_MAX=8
+# Automatic scheduling stays at four locally; offload supplies eight.
+AUTO_JOBS_MAX="${FM_TEST_RUN_AUTO_JOBS_MAX:-4}"
 MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0
 # Bound applied automatically on the automatic --changed path, derived from
@@ -2739,6 +2746,10 @@ if [ "${MODE:-}" = "hint-drift" ]; then
   exit $?
 fi
 
+case "$AUTO_JOBS_MAX" in
+  [1-8]) ;;
+  *) die "FM_TEST_RUN_AUTO_JOBS_MAX must be an integer from 1 to $JOBS_MAX" ;;
+esac
 case "$JOBS" in
   ''|*[!0-9]*) die "--jobs must be a positive integer" ;;
 esac
@@ -2915,12 +2926,15 @@ done
 # serial chain of separate runs.
 # The curated selections stay untouched: --lane composes CI shards whose serial
 # lane must stay strictly serial, --family is what the required Herdr lane runs,
-# and --all is a deliberate complete regression.
+# and --all is a deliberate complete regression. An environment-supplied
+# automatic ceiling also opts --all/--family into the same phased scheduler.
 AUTO_CONCURRENCY=0
 AUTO_CHANGED_RETRY_ELIGIBLE=0
 HOST_LOAD5=0
 HOST_CPUS=$(cpu_count)
-if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq 0 ]; then
+if { [ "$MODE" = changed ] || [ "$MODE" = scripts ] ||
+     { [ -n "${FM_TEST_RUN_AUTO_JOBS_MAX:-}" ] && { [ "$MODE" = all ] || [ "$MODE" = family ]; }; }; } &&
+   [ "$JOBS_EXPLICIT" -eq 0 ]; then
   AUTO_CHANGED_RETRY_ELIGIBLE=1
   HOST_LOAD5=$(load5)
   if [ "$MODE" = changed ] && [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
@@ -2934,7 +2948,7 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
   done
   if [ "$auto_admissible" -gt 1 ]; then
     JOBS=$HOST_CPUS
-    [ "$JOBS" -le 4 ] || JOBS=4
+    [ "$JOBS" -le "$AUTO_JOBS_MAX" ] || JOBS=$AUTO_JOBS_MAX
     [ "$JOBS" -ge 1 ] || JOBS=1
     JOBS=$(load_scaled_jobs "$JOBS" "$HOST_LOAD5" "$HOST_CPUS")
     [ "$JOBS" -eq 1 ] || AUTO_CONCURRENCY=1
@@ -3339,7 +3353,12 @@ else
       done
       continue
     fi
-    while [ "$active_workers" -ge "$JOBS" ]; do
+    phase_jobs=$JOBS
+    if ! is_proven_isolated_script "$script"; then
+      family_jobs_max=$(concurrent_safe_family_jobs_max "$(family_for_basename "$(basename "$script")")")
+      [ "$phase_jobs" -le "$family_jobs_max" ] || phase_jobs=$family_jobs_max
+    fi
+    while [ "$active_workers" -ge "$phase_jobs" ]; do
       wait_one_completed_job_worker
     done
     worker_n=$((worker_n + 1))

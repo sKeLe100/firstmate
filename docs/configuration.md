@@ -762,10 +762,12 @@ For an operational home separate from that primary clone (including a validation
 An invalid or unreadable configuration, or an unavailable home state directory, keeps testing local; a configured home is never skipped in favor of a guessed home.
 `FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
 
-[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic host-slot lock, cleanup, serial execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
-The host slot coordinates offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
-A large serial `--changed` selection can exceed the existing 3600-second whole-run cap, just as an `--all` or `--family` selection can.
-The cap remains unchanged: exceeding it fails with exit 124 and does not rerun the suite locally or omit selected tests.
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic host-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
+The host slots coordinate offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
+Offload preserves caller-selected parallelism and otherwise permits up to eight workers through the runner's automatic scheduler, with two concurrent runs admitted by default for PC02's 16 threads and 27 GB.
+Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
+The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
+Exceeding the whole-run cap fails with exit 124 and does not rerun the suite locally or omit selected tests.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 

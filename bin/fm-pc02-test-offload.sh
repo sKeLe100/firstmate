@@ -66,16 +66,18 @@
 # running, are removed on every exit path, including an interrupt.
 #
 # Remote run conditions (always applied to an offloaded run):
-#   - Serial, per-script bounded: the remote fm-test-run.sh is invoked with
-#     --jobs 1 and --per-script-timeout-secs 1500 appended, overriding any
-#     --jobs or --per-script-timeout-secs the caller passed, including larger
-#     values. The whole run stays capped by FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS
-#     (3600s); because the run is serialized, a large --all or --family run
-#     or --changed selection may exceed that cap and exit 124.
-#   - Host slot: one nonblocking flock on PC02's ~/.fm-pc02-test-slot.lock
-#     covers transfer and execution. Contention or an unclear claim routes
-#     local. The file is never unlinked: a dead owner's kernel lock is
-#     released automatically, so a leftover file or process name is harmless.
+#   - Parallel, per-script bounded: caller --jobs is preserved; absent that,
+#     FM_PC02_OFFLOAD_JOBS defaults to 8 for PC02's 16 threads / 27 GB,
+#     via the runner's automatic scheduler. Isolation phases, family caps
+#     and serial tails remain enforced; curated lanes keep their contracts.
+#     The per-script cap defaults to 3000s (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS)
+#     and overrides the caller's per-script timeout. The whole run defaults
+#     to 7200s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124.
+#   - Host slots: nonblocking flocks on PC02's ~/.fm-pc02-test-slot-N.lock
+#     cover transfer and execution, admitting two runs by default
+#     (FM_PC02_OFFLOAD_SLOTS). Contention or an unclear claim routes local.
+#     Lock files are never unlinked: a dead owner's kernel lock is released
+#     automatically, so a leftover file or process name is harmless.
 #   - Supervising-home selection and per-machine configuration are owned by
 #     docs/configuration.md's "PC02 test offload" section.
 #   - The remote fm-test-run.sh prints its own environment record before its
@@ -95,10 +97,14 @@
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
 #                                      (default: 180)
 #   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote test run
-#                                      (default: 3600); exceeding it fails
+#                                      (default: 7200); exceeding it fails
 #                                      the run (exit 124) rather than falling
 #                                      back, since the remote work already
 #                                      spent is not worth discarding blind
+#   FM_PC02_OFFLOAD_JOBS                remote jobs when caller omits --jobs
+#                                      (default: 8)
+#   FM_PC02_OFFLOAD_SLOTS               concurrent remote runs (default: 2)
+#   FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS per-script cap (default: 3000)
 #   FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
 #                                      the ssh target's home, holding one
 #                                      private mirror (worktree + git store)
@@ -148,8 +154,10 @@ ARGS=("$@")
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
-RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-3600}"
-SCRIPT_TIMEOUT=1500
+RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
+SCRIPT_TIMEOUT="${FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS:-3000}"
+REMOTE_JOBS="${FM_PC02_OFFLOAD_JOBS:-8}"
+SLOTS="${FM_PC02_OFFLOAD_SLOTS:-2}"
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
@@ -328,9 +336,17 @@ fi
 # The same SSH shell owns the lock while waiting for transfer, then runs the
 # suite under it. EOF before execution releases it; EOF during execution
 # cannot release it ahead of the bounded suite. No PID-file reclamation race.
-# shellcheck disable=SC2016 # HOME and command expand on PC02.
-claim_cmd='exec 8> "$HOME/.fm-pc02-test-slot.lock" || exit 1
-flock -n 8 || exit 75
+case "$SLOTS" in
+  ''|*[!0-9]*|0*) run_local "invalid FM_PC02_OFFLOAD_SLOTS (expected a positive integer)" ;;
+esac
+# shellcheck disable=SC2016 # HOME and slot expand on PC02.
+claim_cmd='claimed=0
+for ((slot=1; slot<='"$SLOTS"'; slot++)); do
+  exec 8> "$HOME/.fm-pc02-test-slot-$slot.lock" || exit 1
+  if flock -n 8; then claimed=1; break; fi
+  exec 8>&-
+done
+[ "$claimed" -eq 1 ] || exit 75
 printf "claimed\n"
 IFS= read -r -t '"$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5))"' command || exit 1
 eval "$command"'
@@ -427,11 +443,18 @@ fi
 # that hits this bound fails outright (exit 124) rather than falling back to
 # a second local run, which would silently double the caller's time budget.
 echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
-remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-test-run.sh"
+has_jobs=0
+for a in "${ARGS[@]}"; do
+  case "$a" in --jobs|--jobs=*) has_jobs=1 ;; esac
+done
+remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT")"
+if [ "$has_jobs" -eq 0 ]; then
+  remote_suite_cmd="$remote_suite_cmd env FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
+fi
+remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
 for a in "${ARGS[@]}"; do
   remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
 done
-remote_suite_cmd="$remote_suite_cmd --jobs 1"
 remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 # The watcher reads the ssh stdin: if the transport drops, EOF kills the suite
 # session. The lock (fd 8) is held by the suite itself, so a surviving old
