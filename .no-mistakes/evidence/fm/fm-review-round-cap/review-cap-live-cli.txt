@@ -1,0 +1,22 @@
+$ bin/fm-retry-pressure.sh review-task (FM_HOME=<disposable>)
+relaunches=0 retry_loop_reported=0 relaunch_ceiling=3 round_ceiling=4 retry_band=ok task=review-task review_rounds=reviewer_a=3,reviewer_b=2 review_cap_reached=1
+
+$ bin/fm-brief.sh review-cap-demo firstmate --mode no-mistakes (FM_HOME=<disposable>)
+scaffolded: {run-worktree}/.tmp-review-cap-live-2562954/data/review-cap-demo/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+
+Generated brief protocol excerpt:
+8. Retry-loop failsafe: track your own validation repetition instead of grinding.
+   Allow at most 3 assessed review rounds per automated reviewer per PR, counted across workers,
+   restarts, relaunches, and follow-ups; a new no-mistakes run id never resets that PR's count.
+   Before reviewing, recover that PR's cumulative counts from status/history; carry them into this
+   task's status when taking over work. Use a stable reviewer id (letters, digits, dot, underscore,
+   or hyphen). After each assessed round append a status line with
+   `working [at=<epoch>]: review_rounds: <reviewer>=<n> run=<no-mistakes-run-id>`,
+   where n is that reviewer's cumulative count for this PR, not a per-run increment.
+   If round 3 leaves unresolved findings, stop fixing and do not request another review cycle:
+   open or keep the PR and append `needs-decision [at=<epoch>] [key=review-cap]: {PR URL and unresolved findings}`.
+   Use the pipeline's supported gate flow to deliver it; if that flow cannot open a PR without
+   another review, report needs-decision with the unresolved findings and delivery blocker instead.
+   Never bypass a pipeline gate or claim the capped PR is green. Without a run id, fall back to
+   the general retry bands below.
+   Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
