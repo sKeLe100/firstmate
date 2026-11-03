@@ -18,8 +18,7 @@
 # tool result just returned is added as an estimate (characters / 3). PreToolUse
 # uses the transcript figure alone, because the hook input carries no result.
 #
-# Decisions (thresholds from FM_HAIKU_WARN_TOKENS, default 80000, and
-# FM_HAIKU_DENY_TOKENS, default 95000):
+# Decisions (fixed thresholds: warn at 80000 and deny at 95000):
 #   PostToolUse, warn <= context < deny   prints additionalContext with the 80k
 #                                          text (finish only the current step,
 #                                          open no new files, quiet tests, then
@@ -32,7 +31,10 @@
 #   Anything else                          prints nothing (default allow).
 #
 # Output is one JSON object on stdout, or nothing. Exit codes:
-#   0  decision printed, or nothing to say.
+#   0  decision printed, or nothing to say. A reader exit 3 (the subagent file
+#      exists but has no assistant usage row yet) is silent; a reader exit 1
+#      (the subagent transcript is missing) writes one stderr line naming the
+#      path and still exits 0, so it never blocks the tool call.
 #   1  malformed hook input, or the subagent context reader failed unexpectedly.
 #      Stderr names the cause; this is loud, not silently allowed.
 set -euo pipefail
@@ -44,24 +46,11 @@ fi
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-warn_tokens="${FM_HAIKU_WARN_TOKENS:-80000}"
-deny_tokens="${FM_HAIKU_DENY_TOKENS:-95000}"
-for value in "$warn_tokens" "$deny_tokens"; do
-  case "$value" in
-    ''|*[!0-9]*)
-      echo "fm-haiku-alarm-hook: thresholds must be positive integers (warn=$warn_tokens deny=$deny_tokens)" >&2
-      exit 1 ;;
-  esac
-done
-if [ "$warn_tokens" -le 0 ] || [ "$warn_tokens" -gt "$deny_tokens" ]; then
-  echo "fm-haiku-alarm-hook: need 0 < warn <= deny (warn=$warn_tokens deny=$deny_tokens)" >&2
-  exit 1
-fi
-
 py_hook="$(cat <<'PY'
 import json, os, subprocess, sys
 
-here, warn, deny = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+here = sys.argv[1]
+warn, deny = 80000, 95000
 
 try:
     data = json.loads(sys.stdin.read() or "{}")
@@ -88,9 +77,13 @@ reader = subprocess.run(
     capture_output=True,
     text=True,
 )
-if reader.returncode == 1:
+if reader.returncode == 3:
     # No completed subagent turn on disk yet: the context is far below the warn
     # line, so there is nothing to say.
+    sys.exit(0)
+if reader.returncode == 1:
+    detail = (reader.stderr or "").strip() or "context reader failed"
+    sys.stderr.write("fm-haiku-alarm-hook: %s\n" % detail)
     sys.exit(0)
 if reader.returncode != 0:
     sys.stderr.write("fm-haiku-alarm-hook: context reader failed: %s" % reader.stderr)
@@ -148,4 +141,4 @@ print(json.dumps({"hookSpecificOutput": {
 PY
 )"
 
-printf '%s' "$(cat)" | python3 -c "$py_hook" "$here" "$warn_tokens" "$deny_tokens"
+printf '%s' "$(cat)" | python3 -c "$py_hook" "$here"

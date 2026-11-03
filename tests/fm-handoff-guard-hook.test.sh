@@ -5,6 +5,8 @@
 # Covers the section-5 item-3 acceptance cases: an under-budget allow, an
 # over-budget deny naming the biggest file, a missing FILES deny, a directory
 # deny, a non-haiku launch left untouched, and exactly one log row per decision.
+# Also covers FILES formatting variants, malformed ranges, a to-be-created path,
+# and a log failure that must not suppress a deny.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -42,10 +44,15 @@ print(json.dumps({
 PY
 }
 
+# run_guard_log <input-json> <log-path>: sets OUT (stdout) and RC (exit code).
+run_guard_log() {
+  OUT="$(printf '%s' "$1" | FM_HANDOFF_LOG="$2" bash "$hook")"
+  RC=$?
+}
+
 # run_guard <input-json>: sets OUT (stdout) and RC (exit code); logs to $log.
 run_guard() {
-  OUT="$(printf '%s' "$1" | FM_HANDOFF_LOG="$log" bash "$hook")"
-  RC=$?
+  run_guard_log "$1" "$log"
 }
 
 # field <json> <python-expression over d>: extracts one value from hook output.
@@ -123,3 +130,63 @@ print(",".join(json.loads(line)["decision"] for line in open(sys.argv[1])))
 [ "$decisions" = "allow,deny,allow,deny,deny,allow" ] \
   || fail "log decisions out of order or wrong: $decisions"
 pass "exactly one JSONL log row per guarded decision, in order"
+
+# 10. Recognized bullet styles and blank lines inside the block count the file,
+#     so no over-budget launch slips through on a formatting variant. Malformed
+#     ranges and an empty block are their own denials.
+variants_log="$tmp/variants.jsonl"
+assert_variant_denies() {  # <name> <prompt> <expected-reason-substring>
+  local name=$1 prompt=$2 expected=$3 reason
+  run_guard_log "$(mk_input Agent haiku-builder - "$prompt")" "$variants_log"
+  [ -n "$OUT" ] || fail "FILES variant '$name' was allowed without a decision"
+  [ "$(field "$OUT" 'd["hookSpecificOutput"]["permissionDecision"]')" = "deny" ] \
+    || fail "FILES variant '$name' was not denied: $OUT"
+  reason="$(field "$OUT" 'd["hookSpecificOutput"]["permissionDecisionReason"]')"
+  case "$reason" in
+    *"$expected"*) ;;
+    *) fail "FILES variant '$name' deny reason missing '$expected': $reason" ;;
+  esac
+}
+assert_variant_denies "star bullet" $'Slice.\nFILES:\n* big.txt' "file:big.txt"
+assert_variant_denies "plus bullet" $'Slice.\nFILES:\n+ big.txt' "file:big.txt"
+assert_variant_denies "numbered bullet" $'Slice.\nFILES:\n1. big.txt' "file:big.txt"
+assert_variant_denies "blank line before the first entry" $'Slice.\nFILES:\n\n- big.txt' "file:big.txt"
+assert_variant_denies "blank line between entries" $'Slice.\nFILES:\n- small.txt\n\n- big.txt' "file:big.txt"
+assert_variant_denies "incomplete range" $'Slice.\nFILES:\n- big.txt:1-' "incomplete line range"
+assert_variant_denies "range starting at zero" $'Slice.\nFILES:\n- big.txt:0-1500' "invalid line range"
+assert_variant_denies "reversed range" $'Slice.\nFILES:\n- big.txt:5-2' "invalid line range"
+assert_variant_denies "empty FILES block" $'Slice.\nFILES:' "no FILES: block"
+pass "FILES formatting variants are parsed or denied, never silently undercounted"
+
+# 11. An unresolved FILES path is the documented "file to create" case and
+#     counts 0, so a small creation stays under budget and logs that zero.
+create_log="$tmp/create.jsonl"
+run_guard_log "$(mk_input Agent haiku-builder - $'Slice eleven.\nFILES:\n- new-file.txt')" "$create_log"
+[ -z "$OUT" ] || fail "a to-be-created file under budget should be allowed: $OUT"
+if ! python3 - "$create_log" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
+if not rows:
+    sys.exit("no log row for the to-be-created file")
+parts = {part["name"]: part["tokens"] for part in rows[-1]["parts"]}
+if rows[-1]["decision"] != "allow" or parts.get("file:new-file.txt") != 0:
+    sys.exit("expected allow with file:new-file.txt at 0 tokens, got %r" % rows[-1])
+PY
+then
+  fail "a missing FILES path is not treated as a 0-token file to create"
+fi
+pass "an unresolved FILES path counts 0 as a file to create"
+
+# 12. A log path that cannot be created warns on stderr but never suppresses
+#     the decision, so an over-budget launch is still denied.
+printf 'blocker\n' > "$tmp/blocker"
+bad_log="$tmp/blocker/nested/handoff.jsonl"
+RC=0
+OUT="$(printf '%s' "$(mk_input Agent haiku-builder - $'Slice twelve.\nFILES:\n- big.txt')" \
+  | FM_HANDOFF_LOG="$bad_log" bash "$hook" 2>"$tmp/log.err")" || RC=$?
+[ "$RC" -eq 0 ] || fail "an unwritable log turned the decision into exit $RC"
+[ "$(field "$OUT" 'd["hookSpecificOutput"]["permissionDecision"]')" = "deny" ] \
+  || fail "an unwritable log suppressed the deny: $OUT"
+grep -q "could not append to FM_HANDOFF_LOG" "$tmp/log.err" \
+  || fail "an unwritable log did not warn on stderr: $(cat "$tmp/log.err")"
+pass "a log failure warns but still emits the deny"

@@ -17,21 +17,26 @@
 #   work              FM_HANDOFF_WORK_TOKENS, default 20000, the allowance for
 #                     tool output, edits, and quiet test tails
 #
-# FILES block: a line starting with `FILES:`, followed directly by bullet lines
-# `- <path>` or `- <path>:<START>-<END>`. The block ends at the first line that
-# is not a bullet. Relative paths resolve against the hook input's cwd.
+# FILES block: a line starting with `FILES:`, followed by bullet lines
+# `- <path>` or `- <path>:<START>-<END>` (any of -, *, +, or a numbered bullet,
+# with blank lines allowed inside the block). The block ends at the first other
+# non-blank line. A block with no entries counts as no block. Relative paths
+# resolve against the hook input's cwd.
 #
 # Refusals (each a PreToolUse deny with a reason):
-#   - no FILES block;
+#   - no FILES block, or one with no entries;
 #   - a FILES entry that is a directory (or ends with /);
 #   - a FILES entry that is a glob (contains * ? or [);
+#   - a FILES entry with an incomplete or invalid line range (START below 1, or
+#     END before START);
 #   - the estimate is over FM_HANDOFF_BUDGET (default 70000). The reason names the
 #     three biggest parts and suggests the split.
 # Anything else is allowed (no output).
 #
 # Logging: when FM_HANDOFF_LOG is set, every guarded decision appends exactly one
-# JSON line {ts, decision, reason, estimate, budget, agent_type, parts}. The
-# SubagentStop logger that records actual context is a later slice.
+# JSON line {ts, decision, reason, estimate, budget, agent_type, parts}. A log
+# failure warns on stderr and never suppresses the decision. The SubagentStop
+# logger that records actual context is a later slice.
 #
 # Output is one JSON object on stdout for a deny, or nothing. Exit codes:
 #   0  decision made (allow, deny, or not a guarded launch).
@@ -96,12 +101,14 @@ entries = []
 lines = prompt.splitlines()
 files_line = None
 for index, line in enumerate(lines):
-    if line.startswith("FILES:"):
+    if re.match(r"^\s*FILES:", line):
         files_line = index
         break
 if files_line is not None:
     for line in lines[files_line + 1:]:
-        match = re.match(r"^\s*-\s+(\S.*?)\s*$", line)
+        if not line.strip():
+            continue
+        match = re.match(r"^\s*(?:[-*+]|\d+[.)])\s+(\S.*?)\s*$", line)
         if not match:
             break
         entries.append(match.group(1))
@@ -112,11 +119,23 @@ parts = [
     {"name": "start", "tokens": start},
     {"name": "work", "tokens": work},
 ]
-if files_line is None:
+if files_line is None or not entries:
     violations.append("no FILES: block; list the files the subagent will read or edit")
 for entry in entries:
-    match = re.match(r"^(.+?)(?::(\d+)-(\d+))?$", entry)
-    path = match.group(1)
+    path = entry
+    first = last = None
+    range_match = re.match(r"^(.+?):(\d*)-(\d*)$", entry)
+    if range_match:
+        path = range_match.group(1)
+        if not range_match.group(2) or not range_match.group(3):
+            violations.append("FILES entry has an incomplete line range: %s" % entry)
+            parts.append({"name": "file:" + entry, "tokens": 0})
+            continue
+        first, last = int(range_match.group(2)), int(range_match.group(3))
+        if first < 1 or last < first:
+            violations.append("FILES entry has an invalid line range: %s" % entry)
+            parts.append({"name": "file:" + entry, "tokens": 0})
+            continue
     if any(ch in path for ch in "*?["):
         violations.append("FILES entry is a glob, not a file: %s" % path)
         parts.append({"name": "file:" + entry, "tokens": 0})
@@ -130,8 +149,7 @@ for entry in entries:
     if os.path.isfile(full):
         with open(full, "rb") as fh:
             raw = fh.read()
-        if match.group(2):
-            first, last = int(match.group(2)), int(match.group(3))
+        if first is not None:
             chunk = b"".join(raw.splitlines(keepends=True)[first - 1:last])
             size = len(chunk)
         else:
@@ -153,26 +171,32 @@ elif estimate > budget:
 else:
     decision, reason = "allow", "within budget"
 
-if log_path:
-    os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
-    row = {
-        "ts": int(time.time()),
-        "decision": decision,
-        "reason": reason,
-        "estimate": estimate,
-        "budget": budget,
-        "agent_type": subagent_type or model,
-        "parts": parts,
-    }
-    with open(log_path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row) + "\n")
-
 if decision == "deny":
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
         "permissionDecisionReason": reason,
     }}))
+
+if log_path:
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
+        row = {
+            "ts": int(time.time()),
+            "decision": decision,
+            "reason": reason,
+            "estimate": estimate,
+            "budget": budget,
+            "agent_type": subagent_type or model,
+            "parts": parts,
+        }
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError as exc:
+        sys.stderr.write(
+            "fm-handoff-guard-hook: could not append to FM_HANDOFF_LOG %s: %s\n"
+            % (log_path, exc)
+        )
 PY
 )"
 

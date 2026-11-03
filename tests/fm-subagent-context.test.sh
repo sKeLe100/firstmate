@@ -56,16 +56,17 @@ case "$err" in
 esac
 pass "missing subagent file exits 1 with a clear line"
 
-# 4. A subagent file with no usage row yet fails loudly, not with a zero.
+# 4. A subagent file that exists but has no usage row yet exits 3, distinct
+#    from the missing-file exit 1, and still fails loudly with no zero.
 printf '{"type":"user","message":{"content":"brief"}}\n' > "$sub_dir/agent-ag2.jsonl"
 rc=0
 err="$("$reader" "$main" sess-1 ag2 2>&1 >/dev/null)" || rc=$?
-[ "$rc" -eq 1 ] || fail "expected exit 1 for a usage-free subagent file, got $rc"
+[ "$rc" -eq 3 ] || fail "expected exit 3 for a usage-free subagent file, got $rc"
 case "$err" in
   *"no assistant usage row"*) ;;
   *) fail "usage-free error did not name the cause: $err" ;;
 esac
-pass "usage-free subagent file exits 1 instead of reporting zero"
+pass "usage-free subagent file exits 3 instead of reporting zero"
 
 # 5. A session or agent id that is not a plain identifier is refused (exit 2),
 #    so a crafted id cannot walk out of the subagents directory.

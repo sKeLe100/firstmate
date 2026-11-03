@@ -28,11 +28,12 @@
 #
 # Exit codes:
 #   0  printed the line above.
-#   1  the subagent file is missing, or it holds no assistant usage row yet
-#      (a brand-new subagent before its first completed turn). One clear line
-#      goes to stderr.
+#   1  the subagent file is missing. One clear line goes to stderr.
 #   2  bad arguments or a session_id/agent_id that is not a plain identifier
 #      (refused so a crafted id cannot escape the subagents directory).
+#   3  the subagent file exists but holds no assistant usage row yet (a
+#      brand-new subagent before its first completed turn). One clear line goes
+#      to stderr.
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -89,7 +90,7 @@ with open(path, encoding="utf-8", errors="replace") as fh:
 
 if last_usage is None:
     sys.stderr.write("fm-subagent-context: no assistant usage row in %s\n" % path)
-    sys.exit(1)
+    sys.exit(3)
 
 total = sum(
     int(last_usage.get(key) or 0)

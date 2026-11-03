@@ -4,7 +4,8 @@
 # JSON and a synthetic subagent transcript whose last usage row sets the context
 # size. Covers the six section-5 item-2 acceptance cases (79,999 / 80,000 /
 # 94,999 / 95,000 deny / 95,000 checkpoint-write allow / no agent_id no-op), plus
-# the PostToolUse lag estimate and malformed input.
+# the PostToolUse lag estimate, both reader-failure branches, and malformed
+# input.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -28,12 +29,12 @@ set_context() {
   printf '{"type":"assistant","message":{"model":"claude-haiku-5-5","usage":{"input_tokens":%d,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":5}}}\n' "$1" >> "$sub"
 }
 
-# hook_in <event> <tool_name> <tool_input_json> [tool_response_json]
+# hook_in <event> <tool_name> <tool_input_json> [tool_response_json] [agent_id]
 hook_in() {
-  local event=$1 tool=$2 tin=$3 resp=${4:-} extra=""
+  local event=$1 tool=$2 tin=$3 resp=${4:-} agent=${5:-ag1} extra=""
   [ -n "$resp" ] && extra=",\"tool_response\":$resp"
-  printf '{"session_id":"sess-1","transcript_path":"%s","cwd":"%s","hook_event_name":"%s","agent_id":"ag1","agent_type":"haiku-builder","tool_name":"%s","tool_input":%s%s}' \
-    "$main" "$tmp" "$event" "$tool" "$tin" "$extra"
+  printf '{"session_id":"sess-1","transcript_path":"%s","cwd":"%s","hook_event_name":"%s","agent_id":"%s","agent_type":"haiku-builder","tool_name":"%s","tool_input":%s%s}' \
+    "$main" "$tmp" "$event" "$agent" "$tool" "$tin" "$extra"
 }
 
 # run_hook <input-json>: sets OUT (stdout) and RC (exit code).
@@ -134,7 +135,33 @@ run_hook "$(hook_in PreToolUse Bash "$bash_input")"
 [ -z "$OUT" ] || fail "80,000 PreToolUse should print nothing (warning is PostToolUse), got: $OUT"
 pass "80,000 tokens on PreToolUse prints nothing"
 
-# 10. Malformed hook input is loud (exit 1), never silently allowed.
+# 10. A missing subagent transcript (reader exit 1) is a persistent layout
+#     problem: the hook writes one stderr line naming the path and still exits
+#     0, so it reports the gap without blocking the tool call.
+rc=0
+printf '%s' "$(hook_in PreToolUse Bash "$bash_input" '' missing)" \
+  | bash "$hook" >"$tmp/missing.out" 2>"$tmp/missing.err" || rc=$?
+[ "$rc" -eq 0 ] || fail "missing transcript should still exit 0, got $rc"
+[ ! -s "$tmp/missing.out" ] || fail "missing transcript must print no decision"
+[ "$(wc -l < "$tmp/missing.err")" -eq 1 ] \
+  || fail "missing transcript should write exactly one diagnostic line, got: $(cat "$tmp/missing.err")"
+grep -q "no subagent transcript at .*agent-missing.jsonl" "$tmp/missing.err" \
+  || fail "missing transcript diagnostic did not name the path: $(cat "$tmp/missing.err")"
+pass "a missing subagent transcript writes one path-naming line and exits 0"
+
+# 11. A subagent file with no completed turn yet (reader exit 3) is silent: the
+#     context is not yet near the warn line, so there is nothing to report.
+printf '{"type":"user","message":{"content":"brief"}}\n' > "$proj/sess-1/subagents/agent-ag3.jsonl"
+rc=0
+printf '%s' "$(hook_in PreToolUse Bash "$bash_input" '' ag3)" \
+  | bash "$hook" >"$tmp/norow.out" 2>"$tmp/norow.err" || rc=$?
+[ "$rc" -eq 0 ] || fail "no-usage-row reader should exit 0, got $rc"
+[ ! -s "$tmp/norow.out" ] || fail "no-usage-row reader must print no decision"
+[ ! -s "$tmp/norow.err" ] \
+  || fail "no-usage-row reader should be silent, got: $(cat "$tmp/norow.err")"
+pass "a subagent file with no completed turn yet is silent"
+
+# 12. Malformed hook input is loud (exit 1), never silently allowed.
 rc=0
 printf 'not json' | bash "$hook" >/dev/null 2>"$tmp/err" || rc=$?
 [ "$rc" -eq 1 ] || fail "malformed input should exit 1, got $rc"
