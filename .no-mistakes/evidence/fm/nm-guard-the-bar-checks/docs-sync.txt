@@ -1,0 +1,8 @@
+config guard globs : ['tests/*', 'tests/*/*', 'tests/*/*/*', 'bin/*', 'bin/backends/*', '.github/workflows/*', '.no-mistakes.yaml']
+doc named globs    : ['.github/workflows/*', '.no-mistakes.yaml', 'bin/*', 'bin/*.sh', 'bin/backends/*', 'tests/*', 'tests/*.test.sh', 'tests/*/*', 'tests/*/*/*']
+[D1] guard globs named in doc: OK
+[D2] doc globs defined in config: OK
+[D3] pointer entries still described as pointers: OK
+[D4] no glob-recursion claim in doc: OK
+
+RESULT: PASS

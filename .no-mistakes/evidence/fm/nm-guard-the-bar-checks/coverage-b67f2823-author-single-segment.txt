@@ -1,0 +1,62 @@
+config: b67f2823:.no-mistakes.yaml   tree: b67f2823   tracked files: 845
+entries: 7 (4 guard, 3 pointer/other)
+
+guard globs (Go path.Match):
+  tests/*
+  bin/*
+  bin/backends/*
+  .github/workflows/*
+
+[C1 coverage] 638 path(s) under tests/, bin/, .github/workflows/, plus .no-mistakes.yaml
+  MISS .no-mistakes.yaml -> no rule at all
+  MISS tests/assets/board-render-harness.mjs -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/README.md -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/completed.toon -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/failed.toon -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/overview.toon -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/parked.toon -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/replacement.toon -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/same-branch-inventory.json -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/superseded.toon -> no rule at all
+  MISS tests/captures/no-mistakes-v1.70.1/uninitialized.toon -> no rule at all
+  MISS tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-busy-wide-abs-cwd.ansi -> no rule at all
+  MISS tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi -> no rule at all
+  MISS tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-short-cwd.ansi -> no rule at all
+  MISS tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-wide-abs-cwd.ansi -> no rule at all
+  .github/workflows/*      3 file(s)
+  bin/*                    263 file(s)
+  bin/backends/*           8 file(s)
+  tests/*                  349 file(s)
+
+[C2 nested paths] concrete paths from the accepted guard scope
+  MISS tests/captures/no-mistakes-v1.70.1/completed.toon          -> (none)
+  MISS tests/captures/no-mistakes-v1.70.1/same-branch-inventory.json -> (none)
+  MISS tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi -> (none)
+  MISS tests/assets/board-render-harness.mjs                      -> (none)
+  OK   tests/lib.sh                                               -> tests/*
+  OK   bin/backends/herdr.sh                                      -> bin/backends/*
+  OK   bin/backends/tmux.sh                                       -> bin/backends/*
+  OK   .github/workflows/ci.yml                                   -> .github/workflows/*
+  MISS .no-mistakes.yaml                                          -> (none)
+
+[C3 specificity] paths outside the guarded trees must not match a guard rule
+  OK   docs/configuration.md    -> guard rules: none; all rules: none
+  OK   README.md                -> guard rules: none; all rules: none
+  OK   CONTRIBUTING.md          -> guard rules: none; all rules: none
+  OK   VISION.md                -> guard rules: none; all rules: none
+
+[C4 caps] entries 7/32, path+instruction bytes 2390/16384
+
+[C5 intent] every guard rule names each bar-lowering category
+  OK   tests/*
+  OK   bin/*
+  OK   bin/backends/*
+  OK   .github/workflows/*
+
+RESULT: FAIL (6 problem(s))
+  - C1: 15 path(s) resolve to no guard rule
+  - C2: tests/captures/no-mistakes-v1.70.1/completed.toon resolves to no guard rule
+  - C2: tests/captures/no-mistakes-v1.70.1/same-branch-inventory.json resolves to no guard rule
+  - C2: tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi resolves to no guard rule
+  - C2: tests/assets/board-render-harness.mjs resolves to no guard rule
+  - C2: .no-mistakes.yaml resolves to no guard rule

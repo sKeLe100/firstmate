@@ -1,0 +1,65 @@
+config: 8b69452:.no-mistakes.yaml   tree: 8b69452   tracked files: 845
+entries: 3 (0 guard, 3 pointer/other)
+
+guard globs (Go path.Match):
+
+[C1 coverage] 638 path(s) under tests/, bin/, .github/workflows/, plus .no-mistakes.yaml
+  MISS .github/workflows/ci.yml -> no rule at all
+  MISS .github/workflows/no-mistakes-required.yml -> no rule at all
+  MISS .github/workflows/windows-herdr-spike.yml -> no rule at all
+  MISS .no-mistakes.yaml -> no rule at all
+  MISS bin/backends/cmux.sh -> no rule at all
+  MISS bin/backends/herdr-agent-view.py -> no rule at all
+  MISS bin/backends/herdr-eventwait.py -> no rule at all
+  MISS bin/backends/herdr-workspace-move.py -> no rule at all
+  MISS bin/backends/herdr.sh -> no rule at all
+  MISS bin/backends/orca.sh -> no rule at all
+  MISS bin/backends/tmux.sh -> no rule at all
+  MISS bin/backends/zellij.sh -> no rule at all
+  MISS bin/fm-afk-contract.sh -> ['bin/*.sh']
+  MISS bin/fm-afk-launch.sh -> ['bin/*.sh']
+  MISS bin/fm-afk-return.sh -> ['bin/*.sh']
+  MISS bin/fm-afk-start.sh -> ['bin/*.sh']
+  MISS bin/fm-agent-process-lib.sh -> ['bin/*.sh']
+  MISS bin/fm-agentsmd-size.sh -> ['bin/*.sh']
+  MISS bin/fm-agy-trust.sh -> ['bin/*.sh']
+  MISS bin/fm-arm-command-policy.mjs -> no rule at all
+  MISS bin/fm-arm-pretool-check.sh -> ['bin/*.sh']
+  MISS bin/fm-autonomous-pc02-lane.sh -> ['bin/*.sh']
+  MISS bin/fm-autonomous-thresholds.sh -> ['bin/*.sh']
+  MISS bin/fm-backend-hometag-lib.sh -> ['bin/*.sh']
+  MISS bin/fm-backend.sh -> ['bin/*.sh']
+  ... 613 more
+
+[C2 nested paths] concrete paths from the accepted guard scope
+  MISS tests/captures/no-mistakes-v1.70.1/completed.toon          -> (none)
+  MISS tests/captures/no-mistakes-v1.70.1/same-branch-inventory.json -> (none)
+  MISS tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi -> (none)
+  MISS tests/assets/board-render-harness.mjs                      -> (none)
+  MISS tests/lib.sh                                               -> (none)
+  MISS bin/backends/herdr.sh                                      -> (none)
+  MISS bin/backends/tmux.sh                                       -> (none)
+  MISS .github/workflows/ci.yml                                   -> (none)
+  MISS .no-mistakes.yaml                                          -> (none)
+
+[C3 specificity] paths outside the guarded trees must not match a guard rule
+  OK   docs/configuration.md    -> guard rules: none; all rules: none
+  OK   README.md                -> guard rules: none; all rules: none
+  OK   CONTRIBUTING.md          -> guard rules: none; all rules: none
+  OK   VISION.md                -> guard rules: none; all rules: none
+
+[C4 caps] entries 3/32, path+instruction bytes 961/16384
+
+[C5 intent] every guard rule names each bar-lowering category
+
+RESULT: FAIL (10 problem(s))
+  - C1: 638 path(s) resolve to no guard rule
+  - C2: tests/captures/no-mistakes-v1.70.1/completed.toon resolves to no guard rule
+  - C2: tests/captures/no-mistakes-v1.70.1/same-branch-inventory.json resolves to no guard rule
+  - C2: tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi resolves to no guard rule
+  - C2: tests/assets/board-render-harness.mjs resolves to no guard rule
+  - C2: tests/lib.sh resolves to no guard rule
+  - C2: bin/backends/herdr.sh resolves to no guard rule
+  - C2: bin/backends/tmux.sh resolves to no guard rule
+  - C2: .github/workflows/ci.yml resolves to no guard rule
+  - C2: .no-mistakes.yaml resolves to no guard rule

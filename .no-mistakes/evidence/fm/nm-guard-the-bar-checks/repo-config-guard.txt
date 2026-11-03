@@ -1,0 +1,2 @@
+fm-lint-nomistakes-config.sh: {run-worktree}/.no-mistakes.yaml ok
+exit=0
