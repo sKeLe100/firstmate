@@ -292,7 +292,7 @@ local_telemetry=
 if [ -n "$telemetry_path" ]; then
   case "$telemetry_path" in
     /*) local_telemetry=$telemetry_path ;;
-    *) local_telemetry="$PWD/$telemetry_path" ;;
+    *) local_telemetry="$ROOT/$telemetry_path" ;;
   esac
   remote_telemetry_arg=".fm-pc02-telemetry/$(basename "$local_telemetry")"
   remote_telemetry="$REMOTE_WORKTREE/$remote_telemetry_arg"

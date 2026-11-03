@@ -512,7 +512,7 @@ SH
   cat > "$dir/fake-lint.sh" <<'LINT'
 #!/usr/bin/env bash
 echo "lint CI=${CI:-unset} argv=$*"
-telemetry=
+telemetry=${FM_LINT_TELEMETRY:-}
 prev=
 for a in "$@"; do
   [ "$prev" != "--telemetry" ] || telemetry=$a
@@ -1526,6 +1526,41 @@ test_remote_lint_forwards_partition_and_returns_exit_code() {
   pass "a remote lint forwards partition arguments, returns its exit code, and returns both telemetry files"
 }
 
+test_relative_lint_telemetry_is_anchored_at_the_repo_root() {
+  local dir fakebin clone out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/relative-telemetry"
+  fakebin=$(fake_pc02 "$dir")
+  clone="$dir/clone"
+  mkdir -p "$clone"
+  cp -R "$ROOT/bin" "$clone/bin"
+  cp "$SCRIPT" "$clone/bin/fm-pc02-test-offload.sh"
+  git init -q "$clone"
+  git -C "$clone" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -qm initial --allow-empty
+
+  out=$(cd "$clone/bin" && PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_LINT=1 \
+    ./fm-pc02-test-offload.sh --lint --telemetry out.tsv 2>&1)
+  status=$?
+  expect_code 0 "$status" "a remote lint started from a subdirectory must succeed: $out"
+  [ -s "$clone/out.tsv" ] || fail "a relative --telemetry path did not land at the repo root: $out"
+  [ -s "$clone/out.roots.tsv" ] || fail "the telemetry roots sidecar did not land at the repo root: $out"
+  [ ! -e "$clone/bin/out.tsv" ] || fail "a relative --telemetry path was anchored to the invocation cwd: $out"
+
+  out=$(cd "$clone/bin" && PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_LINT=1 FM_LINT_TELEMETRY=env.tsv \
+    ./fm-pc02-test-offload.sh --lint 2>&1)
+  status=$?
+  expect_code 0 "$status" "a remote lint with FM_LINT_TELEMETRY from a subdirectory must succeed: $out"
+  [ -s "$clone/env.tsv" ] || fail "a relative FM_LINT_TELEMETRY path did not land at the repo root: $out"
+  [ -s "$clone/env.roots.tsv" ] || fail "the FM_LINT_TELEMETRY roots sidecar did not land at the repo root: $out"
+  [ ! -e "$clone/bin/env.tsv" ] || fail "a relative FM_LINT_TELEMETRY path was anchored to the invocation cwd: $out"
+  pass "relative lint telemetry from the CLI and the environment lands at the repo root"
+}
+
 test_canonical_lint_without_arguments_forwards_none() {
   local dir fakebin clone source out status
   dir="$TMP_ROOT/lint-no-args"
@@ -1660,6 +1695,7 @@ test_missing_perl_falls_back_to_local
 test_lint_mode_falls_back_locally_with_forwarded_args
 test_canonical_lint_without_arguments_forwards_none
 test_remote_lint_forwards_partition_and_returns_exit_code
+test_relative_lint_telemetry_is_anchored_at_the_repo_root
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler
