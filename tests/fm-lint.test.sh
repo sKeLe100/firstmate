@@ -1008,6 +1008,7 @@ test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
   mkdir -p "$test_root/bin/backends" "$test_root/tests" "$test_root/.github/workflows"
   lint="$test_root/bin/fm-lint.sh"
   cp "$LINT" "$lint"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$lint")/fm-heavy-admission-lib.sh"
   cp "$ROOT/bin/fm-lint-workflows.sh" "$test_root/bin/"
   cp "$ROOT/bin/fm-lint-test-size.sh" "$ROOT/bin/fm-lint-nomistakes-config.sh" "$test_root/bin/"
   cp "$ROOT"/.github/workflows/* "$test_root/.github/workflows/"
@@ -1066,6 +1067,7 @@ test_partition_no_source_audit_fails_closed() {
   mkdir -p "$repo/bin/backends" "$repo/tests"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$repo/bin/backends/noop.sh"
   cp "$LINT" "$repo/bin/"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$repo/bin/fm-heavy-admission-lib.sh"
   # Unrelated lint owners and roots are not the subject of this tiny fixture.
   for helper in fm-lint-workflows.sh fm-lint-test-size.sh fm-lint-nomistakes-config.sh; do
     printf '#!/usr/bin/env bash\nexit 0\n' > "$repo/bin/$helper"
@@ -1391,6 +1393,7 @@ test_rejects_direct_beads_cli_invocations() {
   mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests"
   lint_copy="$tmp/repo/bin/fm-lint.sh"
   cp "$LINT" "$lint_copy"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$lint_copy")/fm-heavy-admission-lib.sh"
   cp "$ROOT/bin/fm-lint-test-size.sh" "$ROOT/bin/fm-lint-nomistakes-config.sh" "$tmp/repo/bin/"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
 #!/usr/bin/env bash
@@ -1444,6 +1447,7 @@ test_rejects_direct_beads_cli_in_explicit_core_path() {
   lint_copy="$tmp/repo/bin/fm-lint.sh"
   target="$tmp/repo/bin/direct-beads.sh"
   cp "$LINT" "$lint_copy"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$lint_copy")/fm-heavy-admission-lib.sh"
   printf '#!/usr/bin/env bash\nbd close fm-example\n' > "$target"
   chmod +x "$lint_copy"
   fm_lint_stub_shellcheck "$fakebin" "$log"
@@ -2038,6 +2042,7 @@ test_require_bounds_refuses_when_enforcement_is_missing() {
   lone_dir="$tmp/lone"
   mkdir -p "$lone_dir"
   cp "$LINT" "$lone_dir/fm-lint.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$lone_dir/fm-lint.sh")/fm-heavy-admission-lib.sh"
   chmod +x "$lone_dir/fm-lint.sh"
   rc=0
   out=$(PATH="$fakebin:$PATH" FM_LINT_REQUIRE_BOUNDS=1 \
@@ -2126,6 +2131,7 @@ test_sidecar_result_exit_reflects_final_status() {
   roots_log="$tmp/lint.roots.tsv"
   mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/.github/workflows"
   cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$tmp/repo/bin/fm-lint.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$tmp/repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/bin/fm-lint-test-size.sh" "$ROOT/bin/fm-lint-nomistakes-config.sh" "$tmp/repo/bin/"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'

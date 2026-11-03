@@ -529,6 +529,17 @@ shell_quote() {
 }
 
 STATUS_FILE=$(shell_quote "$STATE/$ID.status")
+BROWSER_TASK=$(shell_quote "$STATE/$ID")
+BROWSER_REGISTRY=$(shell_quote "$STATE/$ID.browsers")
+IFS= read -r -d '' CREWMATE_BROWSER_INSTRUCTIONS <<EOF || true
+   Close every chrome-devtools-axi bridge or headless Chrome you start before reporting done (use the tool's stop command or terminate your owned browser PID).
+   For chrome-devtools-axi, use a task-unique CHROME_DEVTOOLS_AXI_SESSION for every command, including stop.
+   Never reuse or stop another task's shared browser bridge.
+   Launch each browser command with \`FM_BROWSER_TASK=$BROWSER_TASK\` in its environment so descendants remain attributable.
+   Record the long-lived browser or bridge PID (not a transient CLI PID) and its start timestamp in \`$STATE/$ID.browsers\` for the portable teardown fallback:
+   \`browser_started=\$(TZ=UTC LC_ALL=C ps -p "\$browser_pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*\$//'); printf '%s\\t%s\\n' "\$browser_pid" "\$browser_started" >> $BROWSER_REGISTRY\`.
+   Record only processes you started for this task; bin/fm-teardown.sh owns the fallback format and identity checks.
+EOF
 IFS= read -r -d '' CREWMATE_STATUS_GUARDS <<EOF || true
    If you hit your own Claude session usage limit (as distinct from account-wide quota
    exhaustion or a real wedge), report \`$PAUSED_VERB [key=session-limit]: {harness} session usage limit, resets <ts>\`
@@ -905,8 +916,9 @@ The report is the only thing that survives, so anything worth keeping must be in
 
 # Rules
 1. Never push to any remote and never open a PR.
-2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
+2. Stay inside this worktree; the only files you may write outside it are the report, the status file, and the browser identity registry named below.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+$CREWMATE_BROWSER_INSTRUCTIONS
 4. Report status by appending one line:
    \`$STATUS_APPEND\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
@@ -1016,6 +1028,7 @@ $RULE1
    Leave the worktree clean before reporting done.
    The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or $FM_ROOT/bin/fm-context-usage.sh for actual context numbers.
 3. $FORGE_RULE_LINE
+$CREWMATE_BROWSER_INSTRUCTIONS
 4. Report status by appending one line:
    \`$STATUS_APPEND\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.

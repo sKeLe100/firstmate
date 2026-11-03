@@ -150,6 +150,7 @@ init_changed_fixture_repo() {
   local repo=$1 script
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   for script in \
@@ -249,6 +250,7 @@ init_primary_and_linked_worktree() {
   for tree in "$repo" "$linked"; do
     mkdir -p "$tree/bin" "$tree/tests"
     cp "$RUNNER" "$tree/bin/fm-test-run.sh"
+    cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$tree/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
     cp "$ROOT/tests/git-config-helpers.sh" "$tree/tests/"
     chmod +x "$tree/bin/fm-test-run.sh"
     cat >"$tree/tests/probe.test.sh" <<PROBE
@@ -541,6 +543,7 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
     repo="$tmp/$subject"
     mkdir -p "$repo/bin" "$repo/tests"
     cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+    cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
     printf 'echo executed\n' >"$repo/bin/$subject.sh"
     chmod +x "$repo/bin/$subject.sh"
     printf 'bash -c %q\n' ":; . \"$repo/bin/$subject.sh\"" >"$repo/bin/fm-test-isolation-proof.sh"
@@ -893,6 +896,7 @@ PY
   timeout_script=tests/fm-calm-pi-extension.test.sh
   mkdir -p "$timeout_repo/bin" "$timeout_repo/tests"
   cp "$RUNNER" "$timeout_repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$timeout_repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$timeout_repo/tests/"
   cat >"$timeout_repo/bin/fm-timeout-lib.sh" <<'SH'
 fm_run_timed() {
@@ -1045,6 +1049,7 @@ test_family_proofs_run_in_separate_concurrent_phases() {
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   chmod +x "$repo/bin/fm-test-run.sh"
@@ -1523,6 +1528,7 @@ test_list_scheduled_non_lane_selections_use_serial_weights() {
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   for script in "${scripts[@]}"; do
     printf '#!/usr/bin/env bash\nexit 0\n' >"$repo/$script"
     chmod +x "$repo/$script"
@@ -1670,6 +1676,7 @@ test_portable_serial_packing_budget_boundary() {
 
   for weight in 1200000 1200001; do
     cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+    cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
     python3 - "$repo/bin/fm-test-run.sh" "$weight" <<'PY' \
       || fail "could not seed the fixture's measured timing input"
 from pathlib import Path

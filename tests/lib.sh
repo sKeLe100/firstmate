@@ -463,6 +463,9 @@ fm_test_remove_tree() {
 
 fm_test_cleanup() {
   local d
+  for d in "${FM_TEST_BROWSER_PIDS[@]:-}"; do
+    [ -z "$d" ] || fm_test_browser_stop "$d"
+  done
   fm_test_reap_watchers
   fm_test_reap_procevent_homes
   for d in "${FM_TEST_CLEANUP_DIRS[@]:-}"; do
@@ -1066,3 +1069,41 @@ fm_test_base_path_sans() {
   done
   printf '%s\n' "$dir"
 }
+
+# Browser fixture launch: marker discovers descendants on Linux; the PID/start
+# registry also permits exact teardown on hosts without procfs. The helper sets
+# FM_TEST_BROWSER_PID and registers EXIT cleanup; fm_test_browser_stop ends it early.
+# Launch a foreground browser command here; daemonizing CLIs need their own stop call.
+FM_TEST_BROWSER_PIDS=()
+fm_test_browser_start() {  # <state-dir/task-id> <command> [args...]
+  local task=$1 stamp
+  shift
+  env FM_BROWSER_TASK="$task" "$@" 9>&- &
+  FM_TEST_BROWSER_PID=$!
+  FM_TEST_BROWSER_PIDS+=("$FM_TEST_BROWSER_PID")
+  stamp=$(TZ=UTC LC_ALL=C ps -p "$FM_TEST_BROWSER_PID" -o lstart=) || return 1
+  stamp=$(printf '%s' "$stamp" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  printf '%s\t%s\n' "$FM_TEST_BROWSER_PID" "$stamp" >>"$task.browsers"
+}
+
+fm_test_browser_stop() {  # <pid>
+  local i
+  # jobs proves this PID is still our child, avoiding signalling a reused PID.
+  if jobs -pr | grep -Fxq -- "$1"; then
+    kill -TERM "$1" 2>/dev/null || true
+    sleep 0.1
+    if jobs -pr | grep -Fxq -- "$1"; then
+      kill -KILL "$1" 2>/dev/null || true
+    fi
+  fi
+  wait "$1" 2>/dev/null || true
+  for i in "${!FM_TEST_BROWSER_PIDS[@]}"; do
+    [ "${FM_TEST_BROWSER_PIDS[$i]}" != "$1" ] || unset 'FM_TEST_BROWSER_PIDS[i]'
+  done
+}
+
+# Fixture runners/lint must not compete for the real outer validation's slot.
+# Resource seams keep fixture behavior deterministic on a loaded development host.
+FM_TEST_ADMISSION_DIR=$(fm_test_tmproot fm-test-admission)
+export FM_HEAVY_SLOT="$FM_TEST_ADMISSION_DIR/slot"
+export FM_HEAVY_TEST_LOAD5=0 FM_HEAVY_TEST_MEM_KIB=999999999

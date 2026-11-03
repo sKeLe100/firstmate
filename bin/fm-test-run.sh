@@ -13,6 +13,11 @@
 #   fm-test-run.sh --proven-isolated
 #   fm-test-run.sh tests/<name>.test.sh [more scripts...]
 #
+# Heavy execution selections share host admission with full lint.
+# bin/fm-heavy-admission-lib.sh owns the slot, resource floors, and wait knobs.
+# Explicit script paths (one or more named scripts, used for quick targeted
+# checks) and inspection modes are exempt; full selections take the shared slot.
+#
 # Inspection (no execution):
 #   fm-test-run.sh --list --all
 #   fm-test-run.sh --list --family <name>
@@ -522,7 +527,7 @@ family_for_basename() {
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
     fm-subagent-pretool-check.test.sh|\
     fm-supervision-instructions.test.sh|fm-task-delivery.test.sh|\
-    fm-timeout-lib.test.sh|\
+    fm-heavy-admission.test.sh|fm-timeout-lib.test.sh|\
     fm-tmux-submit-busy.test.sh|fm-trace-context-lib.test.sh|\
     fm-transition-lib.test.sh|\
     fm-host-memory.test.sh|\
@@ -622,7 +627,7 @@ family_for_basename() {
       ;;
     fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-check-security.test.sh|\
     fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
-    fm-review-diff.test.sh|fm-teardown.test.sh|fm-teardown-*.sh|fm-x-mode.test.sh)
+    fm-review-diff.test.sh|fm-teardown.test.sh|fm-teardown-browsers.test.sh|fm-teardown-*.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
       ;;
     fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|\
@@ -1000,6 +1005,7 @@ tests/fm-harness-adapter-instructions-live-e2e.test.sh 72
 tests/fm-harness-adapter-references.test.sh 64
 tests/fm-harness-liveness-drift-live-e2e.test.sh 1309
 tests/fm-harness-precedence.test.sh 4083
+tests/fm-heavy-admission.test.sh 2684
 tests/fm-herdr-attached-viewer-live-e2e.test.sh 19000
 tests/fm-herdr-groups.test.sh 5418
 tests/fm-herdr-pi-stale-registration-live-e2e.test.sh 55
@@ -1132,6 +1138,7 @@ tests/fm-task-delivery.test.sh 32789
 tests/fm-task-inbox.test.sh 67453
 tests/fm-tasks-axi.test.sh 4751
 tests/fm-teardown-backlog-close.sh 5700
+tests/fm-teardown-browsers.test.sh 24607
 tests/fm-teardown-endpoint-safety.test.sh 40851
 tests/fm-teardown-herdr.sh 5100
 tests/fm-teardown-index-lock.sh 5500
@@ -2111,6 +2118,9 @@ families_for_changed_path() {
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       ;;
+    tests/fm-teardown-browsers.test.sh)
+      printf '%s\n' __script__:fm-teardown-browsers.test.sh
+      ;;
     tests/fm-teardown-*.sh)
       # Split teardown test files are sourced by fm-teardown.test.sh; changes
       # to any split must re-run the wrapper that calls all tests in order.
@@ -2319,6 +2329,9 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-procevent.test.sh
       printf '%s\n' __script__:fm-procevent-when.test.sh
       printf '%s\n' __script__:fm-remote-reply.test.sh
+      ;;
+    bin/fm-heavy-admission-lib.sh)
+      printf '%s\n' __script__:fm-heavy-admission.test.sh __script__:fm-test-run.test.sh __script__:fm-lint.test.sh
       ;;
     bin/fm-timeout-lib.sh)
       # The shared hard bound: session start's runtime bound, the fleet/bearings
@@ -3116,6 +3129,18 @@ esac
 # who named no selection mode is told that rather than this.
 if [ -n "${MODE:-}" ] && [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
   refuse_primary_checkout_for_task
+fi
+
+# Inspection modes and explicit script paths do not take the heavy host slot.
+# Admit before the environment probe can launch Chrome, on the execution host.
+if [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
+  case "$MODE" in
+    all|family|changed|lane|proven-isolated)
+      # shellcheck source=bin/fm-heavy-admission-lib.sh
+      . "$ROOT/bin/fm-heavy-admission-lib.sh"
+      fm_heavy_admit "tests:$MODE" || exit $?
+      ;;
+  esac
 fi
 
 # Emit the actual runner shell's bounded environment snapshot once, before

@@ -39,6 +39,7 @@ init_scheduler_fixture_repo() {
   shift
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/"
   for script in "$@"; do
@@ -135,6 +136,7 @@ test_unmapped_new_test_never_inherits_family_concurrency() {
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   # Two members of the proven residual family, plus a test basename the family
@@ -273,6 +275,7 @@ test_per_script_timeout_bounds_a_hang() {
   hang=tests/fm-hang-fixture.test.sh
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$runner"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$runner")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   grandchild_pid="$tmp/grandchild.pid"
@@ -338,6 +341,7 @@ test_portable_serial_lane_derives_per_script_timeout_from_hints() {
   hang=tests/fm-hang-fixture.test.sh
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$runner"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$runner")/fm-heavy-admission-lib.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$runner"
@@ -521,6 +525,7 @@ test_changed_bound_gives_slow_watcher_suites_headroom() {
   script=tests/fm-watch-triage.test.sh
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
 fm_run_timed() {
@@ -559,6 +564,7 @@ test_max_wall_ms_is_a_result_not_advice() {
   fast=tests/fm-budget-fixture.test.sh
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$runner"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$runner")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cat >"$repo/$fast" <<'SH'
 #!/usr/bin/env bash
@@ -624,6 +630,7 @@ test_jobs_parallel_scheduler_and_failure_propagation() {
   d=tests/fm-supervision-instructions.test.sh
   mkdir -p "$repo/bin" "$repo/tests" "$evidence" "$fake_bin"
   cp "$RUNNER" "$runner"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$runner")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cat >"$fake_bin/stat" <<'SH'
 #!/usr/bin/env bash
@@ -1004,6 +1011,7 @@ test_fail_fast_jobs_stops_scheduling() {
   last=${proven[$(( ${#proven[@]} - 1 ))]}
   mkdir -p "$repo/bin" "$repo/tests" "$evidence" "$fake_bin"
   cp "$RUNNER" "$runner"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$runner")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   cat >"$fake_bin/stat" <<'SH'
 #!/usr/bin/env bash
@@ -1208,6 +1216,7 @@ test_changed_default_timeout_scales_with_host_load() {
   repo="$tmp/timeout-repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
@@ -1258,6 +1267,7 @@ assert_changed_script_gets_own_scaled_timeout() {
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
   cat >"$repo/bin/fm-timeout-lib.sh" <<'SH'
@@ -1324,6 +1334,7 @@ test_token_free_retry_recovers_load_sensitive_failure() {
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
@@ -1368,6 +1379,7 @@ test_token_free_retry_covers_exit_124_regardless_of_name() {
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
@@ -1411,6 +1423,7 @@ test_token_free_retry_skips_when_a_failure_is_not_load_plausible() {
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$(dirname "$repo/bin/fm-test-run.sh")/fm-heavy-admission-lib.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   chmod +x "$repo/bin/fm-test-run.sh"
