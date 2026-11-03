@@ -304,9 +304,9 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 # former 900s base; its explicit base now matches the upstream default.
 CHANGED_WATCH_TRIAGE_TIMEOUT_SECS=1500
 WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=
-# Same treatment for tests/fm-captain-hold-lifecycle.test.sh: its portable-serial
-# hint measures 296s alone, but it hit the 900s base under PC01 full-suite
-# contention (load5/cpus stays under 1 here even under real load, so the
+# Same treatment for the captain-hold suites (tests/fm-captain-hold-*.test.sh,
+# split from one file): the single file hit the 900s base under PC01 full-suite
+# contention, and each suite now keeps that same load-scaled 1500s base (the
 # load_scaled_timeout_secs multiplier below never engages on this host).
 CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS=1500
 CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=
@@ -320,7 +320,7 @@ HOST_LOAD_RETRY_POLL_SECS=${FM_TEST_RUN_LOAD_RETRY_POLL_SECS:-10}
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=10
+PORTABLE_SERIAL_SHARDS=11
 
 # Conservative balance hint for a portable-serial script with no measurement.
 # Rounded above the current CI mean, including the capability-skipped scripts.
@@ -511,6 +511,7 @@ family_for_basename() {
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|fm-primary-herdr.test.sh|\
     fm-crew-state.test.sh|fm-crew-state-ci.test.sh|fm-captain-hold-lifecycle.test.sh|\
+    fm-captain-hold-reconcile.test.sh|fm-captain-hold-merge-teardown.test.sh|\
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|\
@@ -716,7 +717,6 @@ list_proven_isolated() {
 tests/fm-arm-pretool-check.test.sh
 tests/fm-backend-herdr.test.sh
 tests/fm-brief.test.sh
-tests/fm-captain-hold-lifecycle.test.sh
 tests/fm-cd-pretool-check.test.sh
 tests/fm-composer-ghost.test.sh
 tests/fm-composer-lib.test.sh
@@ -751,7 +751,6 @@ portable_parallel_weight_hints() {
 tests/fm-arm-pretool-check.test.sh 33778
 tests/fm-backend-herdr.test.sh 36331
 tests/fm-brief.test.sh 10594
-tests/fm-captain-hold-lifecycle.test.sh 343658
 tests/fm-cd-pretool-check.test.sh 16801
 tests/fm-composer-ghost.test.sh 2292
 tests/fm-composer-lib.test.sh 9521
@@ -787,16 +786,15 @@ portable_parallel_lane_weight() {
   ' <(portable_parallel_weight_hints) -
 }
 
-# Portable parallel shard 1: LPT balance of the proven-isolated set over the
-# hints above. Stored order agrees with this lane's --list-scheduled output.
+# Portable parallel shard 1: one half of the proven-isolated set, packed within
+# 5% of shard 2 over the hints above (an LPT split whose two shard swaps kept the
+# lane diff small). Stored order agrees with this lane's --list-scheduled output.
 # tests/fm-pi-primary-types.test.sh runs the production-consumer typecheck here;
 # its own header owns temporary dependency provisioning.
 list_portable_parallel_1() {
   cat <<'EOF'
-tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-pr-merge.test.sh
 tests/fm-test-run.test.sh
-tests/fm-crew-state.test.sh
-tests/fm-backend-herdr.test.sh
 tests/fm-arm-pretool-check.test.sh
 tests/fm-x-mode.test.sh
 tests/fm-herdr-lab.test.sh
@@ -812,6 +810,7 @@ tests/fm-spawn-batch.test.sh
 tests/fm-tmux-submit-busy.test.sh
 tests/fm-send-settle.test.sh
 tests/fm-composer-ghost.test.sh
+tests/fm-ensure-agents-md.test.sh
 tests/fm-transition-lib.test.sh
 EOF
 }
@@ -820,8 +819,8 @@ EOF
 list_portable_parallel_2() {
   cat <<'EOF'
 tests/fm-lint.test.sh
-tests/fm-pr-merge.test.sh
-tests/fm-ensure-agents-md.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-backend-herdr.test.sh
 tests/fm-supervision-instructions.test.sh
 EOF
 }
@@ -948,6 +947,9 @@ tests/fm-calm-claude-mod-plugin.test.sh 77
 tests/fm-calm-claude-mod.test.sh 2527
 tests/fm-calm-pi-extension.test.sh 56463
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1345
+tests/fm-captain-hold-lifecycle.test.sh 243467
+tests/fm-captain-hold-merge-teardown.test.sh 157397
+tests/fm-captain-hold-reconcile.test.sh 175140
 tests/fm-captain-window.test.sh 354
 tests/fm-check-unregister.test.sh 469
 tests/fm-ci-workflow.test.sh 10072
@@ -2129,10 +2131,19 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-watch-triage-waits.test.sh"
       ;;
     tests/fm-hold-diagnostics-lib.sh)
-      # Shared diagnostics harness sourced by the lifecycle test and its own
-      # behavioral test; a change to it must re-run both.
+      # Shared diagnostics harness sourced by the captain-hold suites and its own
+      # behavioral test; a change to it must re-run all of them.
       printf '%s\n' "__script__:fm-hold-diagnostics.test.sh"
       printf '%s\n' "__script__:fm-captain-hold-lifecycle.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-reconcile.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-merge-teardown.test.sh"
+      ;;
+    tests/fm-captain-hold-lib.sh)
+      # Shared harness sourced by every captain-hold suite; a change to it must
+      # re-run each of them.
+      printf '%s\n' "__script__:fm-captain-hold-lifecycle.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-reconcile.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-merge-teardown.test.sh"
       ;;
     tests/*.test.sh)
       # A single test file change selects only that script via basename family
@@ -3540,7 +3551,7 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   : "$id"
   if [ -n "$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-watch-triage.test.sh ]; then
     bound=$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS
-  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-captain-hold-lifecycle.test.sh ]; then
+  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [[ "$(basename "$script")" == fm-captain-hold-*.test.sh ]]; then
     bound=$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS
   fi
   set +e

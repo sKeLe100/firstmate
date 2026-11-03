@@ -427,8 +427,21 @@ NEW_WORKER_PID=$(cat "$STATE_ROOT/worker.pid")
 pass "worker identity binds the canonical configured code root"
 
 CRASHED_WORKER_PID=$NEW_WORKER_PID
-kill -KILL "$CRASHED_WORKER_PID"
-wait "$CRASHED_WORKER_PID" 2>/dev/null || true
+CRASHED_WORKER_PGID=$(fm_remote_job_worker_process_group "$CRASHED_WORKER_PID") \
+  || fail "the crashed-worker fixture could not resolve its worker process group"
+# Kill the whole worker tree, not just the serving child. The restart supervisor
+# would otherwise respawn a worker whose heartbeat can refresh the state forged
+# below, so the fixture would stop being stale. The serving child still dies from
+# SIGKILL, leaving the ownership lock behind for the recovery assertion.
+kill -KILL "$CRASHED_WORKER_PGID" 2>/dev/null || true
+wait "$CRASHED_WORKER_PGID" 2>/dev/null || true
+kill -KILL -- "-$CRASHED_WORKER_PGID" 2>/dev/null || true
+for _ in $(seq 1 200); do
+  kill -0 "$CRASHED_WORKER_PID" 2>/dev/null || break
+  sleep 0.05
+done
+kill -0 "$CRASHED_WORKER_PID" 2>/dev/null \
+  && fail "the crashed-worker fixture left a serving worker alive"
 assert_present "$STATE_ROOT/worker.lock" "an unclean exit did not retain the worker ownership lock"
 sleep 20 &
 OTHER_PID=$!
