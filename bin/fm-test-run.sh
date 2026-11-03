@@ -1873,22 +1873,30 @@ for changed in sys.argv[1:]:
         by_name[Path(changed).name].append(changed)
 consumers = defaultdict(set)
 executable_consumers = defaultdict(set)
+# The runner's own contract suite and the split bodies it sources.
+RUNNER_CONTRACT_SUITE = (
+    "tests/fm-test-run.test.sh",
+    "tests/fm-test-run-selection-lib.sh",
+    "tests/fm-test-run-scheduling-lib.sh",
+)
 for path in files:
     text = path.read_text(errors="replace")
     if path.suffix == ".sh" and not path.name.endswith(".test.sh"):
         text = shell_code(text, keep_heredocs=str(path) not in (
             "bin/fm-brief.sh", "bin/fm-branch-prompt.sh", "bin/fm-supervision-instructions.sh"))
-    if str(path) in ("bin/fm-test-run.sh", "bin/fm-test-isolation-proof.sh", "tests/fm-test-run.test.sh"):
+    if str(path) in ("bin/fm-test-run.sh", "bin/fm-test-isolation-proof.sh") + RUNNER_CONTRACT_SUITE:
         # These drivers' candidate lists are metadata, like the --list calls
         # in their contract suites. Keep runtime paths/commands, and account
-        # for real nested subject invocations at the calling suite.
+        # for real nested subject invocations at the calling suite. The
+        # contract suite's split bodies carry the same metadata, so they take
+        # the same rule rather than becoming literal-reference consumers.
         names = re.findall(r"\$\{?ROOT\}?/(?:bin|tests)/([\w.+-]+)", text)
         if str(path).startswith("bin/"):
             names.extend(re.findall(r"\$\{?\w+\}?/(?:[\w.+${}-]+/)*([\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts))\b", text))
             for line in text.replace("\\\n", " ").splitlines():
                 if re.search(r"(?:^|[\s;&|])(?:exec|source|bash|sh|env|command|eval|python3?|node|perl|\.)\s|(?:^|[\s;])\w+=", line):
                     names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
-        if str(path) == "tests/fm-test-run.test.sh":
+        if str(path) in RUNNER_CONTRACT_SUITE:
             for line in shell_code(text).replace("\\\n", " ").splitlines():
                 if re.search(r"(?:^|[\s;&|])(?:source|bash|\.)\s", line):
                     names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
@@ -2467,6 +2475,12 @@ families_for_changed_path() {
     tests/*-part.sh)
       # Split-test blocks are sourced or run by their wrapper suites. Resolve
       # consumers from their references so adding a new part needs no map edit.
+      scripts_for_path_reference "$path" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
+    tests/fm-test-run-*-lib.sh)
+      # The runner contract suite's split bodies are sourced by its wrapper, so
+      # a change to a body re-runs that wrapper (found through the same walk).
       scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
