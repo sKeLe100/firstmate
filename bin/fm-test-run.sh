@@ -3393,11 +3393,41 @@ declare -a WORKER_PIDS=()
 declare -a WORKER_IDX=()
 declare -a WORKER_SCRIPTS=()
 
+# Fixture homes a suite killed past the TERM grace can leave a detached
+# primary-watchdog loop under. Each worker's TMPDIR is inside this run root, so
+# a run-scoped reap reaches every worker without touching a sibling run's loops.
+# shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
+run_fixture_watchdog_pids() {
+  local pid env_home
+  for pid in $(pgrep -f 'fm-primary-watchdog\.sh' 2>/dev/null || true); do
+    [ "$pid" != "$$" ] || continue
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'fm-primary-watchdog\.sh run' || continue
+    env_home=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -n 1)
+    case "$env_home" in "$RUN_TMP"|"$RUN_TMP"/*) printf '%s\n' "$pid" ;; esac
+  done
+}
+
+# shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
+reap_run_fixture_watchdogs() {
+  local pids pid i=0
+  pids=$(run_fixture_watchdog_pids)
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do kill -TERM "$pid" 2>/dev/null || true; done
+  while [ "$i" -lt 20 ]; do
+    sleep 0.1
+    pids=$(run_fixture_watchdog_pids)
+    [ -n "$pids" ] || return 0
+    i=$((i + 1))
+  done
+  for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
+}
+
 # Invoked indirectly by the EXIT trap below. Suites can leave read-only
 # directories under the run root, so restore owner write first, and never let a
 # cleanup failure under set -e replace the suite's aggregate exit status.
 # shellcheck disable=SC2329
 cleanup_run() {
+  reap_run_fixture_watchdogs
   chmod -R u+w "$RUN_TMP" 2>/dev/null || true
   rm -rf "$RUN_TMP" 2>/dev/null || true
 }
