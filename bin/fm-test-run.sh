@@ -3620,6 +3620,8 @@ run_one_serial() {
   expected=$(expected_gate_skip_for_family "$family")
   out="$RUN_TMP/out.$TOTAL"
   work="$RUN_TMP/s$TOTAL"
+  # Run-scoped TMPDIR like the concurrent worker's, so cleanup_run's watchdog
+  # reap reaches a serial script killed past its TERM grace.
   mkdir -p "$work/tmp"
   chmod 0700 "$work" "$work/tmp" || die "could not chmod 0700 serial root $work"
   begin_iso=$(now_iso)
