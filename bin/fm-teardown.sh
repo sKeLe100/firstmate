@@ -3674,6 +3674,35 @@ BACKLOG_TRANSITION=$TEARDOWN_BACKLOG_TRANSITION
 BACKLOG_TRANSITION_FLAGS=()
 [ "$BACKLOG_TRANSITION" = close ] || BACKLOG_TRANSITION_FLAGS=(--retain)
 BACKLOG_SKIP_REASON=
+# The initial landed/discard-work checks above have passed (or --force skipped
+# them). Fix 1, the browser reap, and Fix 2 (see script header) run here,
+# unconditionally on --force, and before branch deletion or worktree return - a
+# still-parked run, a live task browser, or a leaked process can own live work
+# in this exact worktree. Not for
+# kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
+# dedicated process-event and firstmate-home removal machinery further below,
+# not by task-worktree cleanup.
+if [ "$KIND" != secondmate ]; then
+  if teardown_owns_worktree; then
+    conclude_task_no_mistakes_run "$WT"
+  fi
+  if ! reap_task_browsers; then
+    exit 1
+  fi
+  if teardown_owns_worktree; then
+    reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  else
+    reap_task_worktree_processes tasktmp "$TASK_TMP"
+  fi
+fi
+
+# A worker can write after the first proof, including while its run is concluded
+# or its processes exit. Inspect the stopped copy before dropping its branch or
+# returning it on either backend path.
+if teardown_owns_worktree && [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
+  validate_worktree_teardown_safety || exit 1
+fi
+
 if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
   backlog_done_args || {
     echo "error: the pending backlog $BACKLOG_TRANSITION for $ID is not replayable; refusing destructive teardown" >&2
@@ -3747,27 +3776,6 @@ else
   fi
 fi
 
-# Every landed/discard-work refusal above has now passed (or --force skipped
-# them). Fix 1, the browser reap, and Fix 2 (see script header) run here,
-# unconditionally on --force, and before ANY destructive step below - a
-# still-parked run, a live task browser, or a leaked process can own live work
-# in this exact worktree. Not for
-# kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
-# dedicated process-event and firstmate-home removal machinery further below,
-# not by task-worktree cleanup.
-if [ "$KIND" != secondmate ]; then
-  if teardown_owns_worktree; then
-    conclude_task_no_mistakes_run "$WT"
-  fi
-  if ! reap_task_browsers; then
-    exit 1
-  fi
-  if teardown_owns_worktree; then
-    reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
-  else
-    reap_task_worktree_processes tasktmp "$TASK_TMP"
-  fi
-fi
 if [ "$KIND" = ship ] && teardown_owns_worktree && [ -e "$CONFIG/pipeline-spend" ]; then
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
     "$SCRIPT_DIR/fm-pipeline-spend.sh" record "$ID" >/dev/null \
