@@ -1930,6 +1930,8 @@ def shared_pass_through(node):
     return False
 
 
+# A command consumed from more than one place is shared infrastructure, not a
+# leaf: walking its callers turns a leaf mention into whole-suite fan-out.
 HUB_FANIN = 3
 
 
