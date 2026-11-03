@@ -1930,14 +1930,14 @@ def shared_pass_through(node):
     return False
 
 
-HUB_FANIN = 12
+HUB_FANIN = 2
 
 
 for dependency in sorted(set(sys.argv[1:])):
-    queue = deque([(dependency, dependency, False)])
+    queue = deque([(dependency, dependency)])
     seen = {dependency}
     while queue:
-        source, chain, tests_only = queue.popleft()
+        source, chain = queue.popleft()
         for consumer in sorted(consumers[source]):
             if consumer in seen:
                 continue
@@ -1949,21 +1949,17 @@ for dependency in sorted(set(sys.argv[1:])):
                 # other suite as a wrapper; a comment or fixture mention is not
                 # a reason to fan out through it.
                 if consumer in executable_consumers[source]:
-                    queue.append((consumer, reason, tests_only))
-            elif tests_only:
-                # A shared command selected only for its own tests; following
-                # its other executable consumers would reach the whole suite.
+                    queue.append((consumer, reason))
                 continue
-            elif shared_pass_through(consumer):
+            if shared_pass_through(consumer):
                 # A leaf mention inside a shared library or test harness is a
                 # definition site, not proof that every importer executes it.
                 continue
-            elif len(consumers[consumer]) >= HUB_FANIN:
-                # A widely invoked command is an integration hub: keep its
-                # direct test readers, but do not climb through its wrappers.
-                queue.append((consumer, reason, True))
-            else:
-                queue.append((consumer, reason, False))
+            if len(consumers[consumer]) >= HUB_FANIN:
+                # A command invoked from more than one place is shared; walking
+                # its callers fans a single leaf out into the whole suite.
+                continue
+            queue.append((consumer, reason))
 PYREF
 }
 
