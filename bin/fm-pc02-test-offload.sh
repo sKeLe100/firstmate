@@ -117,8 +117,20 @@
 #     in 2382s total on 16 threads; peak load5 was 25.54 and minimum
 #     MemAvailable was 24.4 GiB of ~27 GiB. A separate PR #215 full 183-script
 #     run took 4274s test wall / 4305s whole. The 7200s cap remains a hang
-#     bound; the full-selection figure is a single-run measurement and does
-#     not establish that two full selections fit within that cap.
+#     bound.
+#   - Two-full-selection measurement (2026-11-03, 316 test scripts, no
+#     --jobs, so the auto scheduler with FM_PC02_OFFLOAD_JOBS=8, two slots
+#     started 5s apart on an otherwise idle 16-thread / 27 GB PC02): both runs
+#     reached 303 of 316 scripts and were stopped by the 7200s cap (exit 124,
+#     wall 7220s each), so two concurrent full selections do NOT fit the cap.
+#     Peak load1 was 21.06 (mean 4.26) and peak memory use 12.5 GB, so the
+#     host was never memory-bound; the wall is dominated by serial unproven
+#     scripts. Each run also failed the same 3 scripts (fm-extension-binding,
+#     fm-procevent-quota, fm-public-followup) plus 2 start-up-contention
+#     failures that passed on the other run; none involve the excluded parity
+#     fields. An explicit --jobs with --all is refused by fm-test-run.sh for
+#     unproven scripts, so the per-slot --jobs cap applies to selections that
+#     are proven concurrent.
 #
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
