@@ -217,16 +217,12 @@
 # default weights) and serial_budget_ms (the 20-minute packing target), refusing
 # a split above that target. Neither figure is an execution timeout or proof of
 # observed headroom: refresh growing files from CI measurements.
-# --changed is conservative: it over-selects related families rather than
-# under-selecting, and never expands to the complete suite unless --all. The one
-# place it is deliberately narrow is a bin/ path with no curated family: a test
-# that names it is selected as that SCRIPT, because the reference is per-script
-# evidence. Consumer bin/ scripts still resolve through the curated map, so
-# recorded family-level coupling still expands to the whole family.
-# tests/lib.sh, tests/fixtures.sh, tests/*-helpers.sh and tests/*-fixture.sh are
-# shared files that map to the suites naming them; a fixture under
-# tests/fixtures/<dir>/ is mapped by that directory instead. Curated family arms
-# above those also name individual tests/ files explicitly.
+# --changed combines curated broad mappings for shared infrastructure with
+# per-script reference closure for leaf sources and test helpers. Production
+# comments do not create consumer edges. Unmapped live sources fail closed.
+# Add explicit per-script mappings for dynamic readers invisible to references;
+# keep execution families and CI partition/concurrency admission independent of
+# changed-path selection. docs/fm-test-portable-shards.md owns contributor rules.
 set -eu
 
 now_ms() {
@@ -1746,36 +1742,291 @@ select_family() {
   [ "$found" -eq 1 ] || die "no tests mapped to family '$want'"
 }
 
-families_for_test_reference() {  # <needle>...
-  local s needle
-  local found=0
+# Literal references select scripts, never the referencing script's family.
+# Test comments remain conservative evidence (fixtures often declare readers
+# there); production-shell comments are removed by the dependency index below.
+scripts_for_test_reference() {  # <needle>...
+  local s needle found=0
   local -a needles=()
   for needle in "$@"; do needles+=(-e "$needle"); done
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     if grep -Fq "${needles[@]}" "$s"; then
-      family_for_basename "$(basename "$s")"
+      printf '__script__:%s\n' "$(basename "$s")"
       found=1
     fi
   done < <(all_repo_tests)
   [ "$found" -eq 1 ]
 }
 
-# Tests that name <needle>, selected as individual scripts rather than widened
-# to each referencing test's whole family. A direct reference is per-script
-# evidence, so it selects per script: one real-Herdr E2E sourcing a shared
-# helper must not drag in every other script of that expensive family.
-scripts_for_test_reference() {
-  local needle=$1 s
-  local found=0
-  while IFS= read -r s; do
-    [ -n "$s" ] || continue
-    if grep -Fq "$needle" "$s"; then
-      printf '__script__:%s\n' "$(basename "$s")"
-      found=1
-    fi
-  done < <(all_repo_tests)
-  [ "$found" -eq 1 ]
+# Build once when changed executable/helper paths need reference discovery.
+# Curated mappings add integration coverage; they never terminate this walk.
+# Ambiguous references remain conservative, including quoted/generated commands.
+build_reference_index() {
+  python3 - "$@" <<'PYREF'
+from collections import defaultdict, deque
+from pathlib import Path
+import re
+import shlex
+import sys
+
+NAME_RE = re.compile(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b")
+
+
+def shell_code(text, keep_heredocs=True):
+    # Retain heredoc payload verbatim: it can generate another executable.
+    # Prompt renderers emit heredoc prose, not commands, so they drop it.
+    # Strip only comments outside quotes, preserving literal/parameter #.
+    quote = None
+    escaped = False
+    heredocs = deque()
+    result = []
+    for line in text.splitlines(keepends=True):
+        if heredocs:
+            delimiter, strip_tabs = heredocs[0]
+            if keep_heredocs or re.search(r"(?<!\\)(?:\$\(|`)", line):
+                result.append(line)
+            if (line.lstrip("\t") if strip_tabs else line).rstrip("\r\n") == delimiter:
+                heredocs.popleft()
+            continue
+        code = []
+        for i, char in enumerate(line):
+            if escaped:
+                code.append(char)
+                escaped = False
+            elif char == "\\" and quote != "'":
+                code.append(char)
+                escaped = True
+            elif char in ("'", '"'):
+                if quote is None:
+                    quote = char
+                elif quote == char:
+                    quote = None
+                code.append(char)
+            elif char == "#" and quote is None and (i == 0 or line[i-1].isspace() or line[i-1] in ";|&()"):
+                code.append("\n")
+                break
+            else:
+                code.append(char)
+        code = "".join(code)
+        result.append(code)
+        for match in re.finditer(r"(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|\"([^\"]+)\"|([A-Za-z_][\w]*))", code):
+            heredocs.append((next(group for group in match.groups()[1:] if group), bool(match[1])))
+    return "".join(result)
+
+
+def shell_executable_names(text):
+    # A filename in ordinary prose is not an executed dependency. Keep names
+    # from command lines (source/./bash/exec/...), command-position scripts,
+    # and assignments whose value is a script path later run; drop prose.
+    names = []
+    declarations = ("local", "declare", "readonly", "export", "typeset")
+    control_words = ("if", "then", "elif", "else", "while", "until", "do", "!", "time")
+    exec_words = (".", "source", "exec", "bash", "sh", "zsh", "dash", "env",
+                  "command", "eval", "python", "python3", "node", "perl",
+                  "ruby", "timeout", "nohup", "setsid", "xargs")
+    for line in text.replace("\\\n", " ").splitlines():
+        stripped = line.strip()
+        if not stripped or not NAME_RE.search(line):
+            continue
+        try:
+            lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            tokens = list(lexer)
+        except ValueError:
+            tokens = []
+        expect_command = True
+        command_payload = False
+        for token in tokens:
+            if token in declarations:
+                expect_command = False
+                continue
+            if re.match(r"^[A-Za-z_]\w*=", token):
+                value = token.split("=", 1)[1]
+                if re.search(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)[\"'}]?$", value):
+                    names.extend(NAME_RE.findall(value))
+                continue
+            if token in control_words or (
+                token and all(char in "();<>|&{}" for char in token)
+            ):
+                expect_command = True
+                continue
+            if expect_command:
+                if token in exec_words:
+                    command_payload = True
+                if NAME_RE.fullmatch(Path(token).name):
+                    names.extend(NAME_RE.findall(token))
+                expect_command = False
+        if command_payload or "`" in line or "$(" in line:
+            names.extend(NAME_RE.findall(line))
+    return names
+
+
+files = sorted({p for directory in ("bin", "tests")
+                for p in Path(directory).rglob("*")
+                if p.is_file() and p.suffix in (".sh", ".py", ".pl", ".jq", ".mjs", ".js", ".ts")})
+by_name = defaultdict(list)
+for path in files:
+    by_name[path.name].append(str(path))
+for changed in sys.argv[1:]:
+    if changed.startswith(("bin/", "tests/")) and changed not in by_name[Path(changed).name]:
+        by_name[Path(changed).name].append(changed)
+consumers = defaultdict(set)
+executable_consumers = defaultdict(set)
+# The runner's own contract suite and the split bodies it sources.
+RUNNER_CONTRACT_SUITE = (
+    "tests/fm-test-run.test.sh",
+    "tests/fm-test-run-selection-lib.sh",
+    "tests/fm-test-run-scheduling-lib.sh",
+)
+for path in files:
+    text = path.read_text(errors="replace")
+    if path.suffix == ".sh" and not path.name.endswith(".test.sh"):
+        text = shell_code(text, keep_heredocs=str(path) not in (
+            "bin/fm-brief.sh", "bin/fm-branch-prompt.sh", "bin/fm-supervision-instructions.sh"))
+    if str(path) in ("bin/fm-test-run.sh", "bin/fm-test-isolation-proof.sh") + RUNNER_CONTRACT_SUITE:
+        # These drivers' candidate lists are metadata, like the --list calls
+        # in their contract suites. Keep runtime paths/commands, and account
+        # for real nested subject invocations at the calling suite. The
+        # contract suite's split bodies carry the same metadata, so they take
+        # the same rule rather than becoming literal-reference consumers.
+        names = re.findall(r"\$\{?ROOT\}?/(?:bin|tests)/([\w.+-]+)", text)
+        if str(path).startswith("bin/"):
+            names.extend(re.findall(r"\$\{?\w+\}?/(?:[\w.+${}-]+/)*([\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts))\b", text))
+            for line in text.replace("\\\n", " ").splitlines():
+                if re.search(r"(?:^|[\s;&|])(?:exec|source|bash|sh|env|command|eval|python3?|node|perl|\.)\s|(?:^|[\s;])\w+=", line):
+                    names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
+        if str(path) in RUNNER_CONTRACT_SUITE:
+            for line in shell_code(text).replace("\\\n", " ").splitlines():
+                if re.search(r"(?:^|[\s;&|])(?:source|bash|\.)\s", line):
+                    names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
+                if not re.search(r"\$\{?RUNNER\}?", line):
+                    continue
+                try:
+                    tokens = shlex.split(line, comments=False)
+                except ValueError:
+                    tokens = []
+                if any(token in ("--list", "--list-scheduled", "--list-families", "--list-lanes", "--check-coverage") for token in tokens):
+                    continue
+                names.extend(re.findall(r"tests/([\w.+-]+\.test\.sh)", line))
+    else:
+        if str(path).startswith("bin/") and path.suffix == ".sh":
+            names = shell_executable_names(text)
+        else:
+            # Test files keep literal references, including a fixture's
+            # comment naming the reader it stands in for.
+            names = NAME_RE.findall(text)
+    executable_names = set(
+        names if str(path).startswith("bin/") and path.suffix == ".sh"
+        else shell_executable_names(
+            text if path.suffix != ".sh" else shell_code(text, keep_heredocs=False)
+        )
+    )
+    for name in set(names):
+        for dependency in by_name.get(name, ()):
+            if dependency == str(path):
+                continue
+            consumers[dependency].add(str(path))
+            if name in executable_names:
+                executable_consumers[dependency].add(str(path))
+
+
+def shared_pass_through(node):
+    # Shared libraries and the universal test harness define helpers that may
+    # name a changed leaf. Following their importers to a fixed point turns any
+    # leaf mention into whole-suite fan-out, so the walk stops at these nodes.
+    # A change to the shared file itself still selects its direct readers.
+    path = Path(node)
+    if path.parent == Path("tests"):
+        name = path.name
+        return name in ("lib.sh", "fixtures.sh") or name.endswith(
+            ("-helpers.sh", "-fixture.sh")
+        )
+    if path.parent == Path("bin"):
+        return path.name.endswith("-lib.sh")
+    return False
+
+
+# A command consumed from more than one place is shared infrastructure, not a
+# leaf: walking its callers turns a leaf mention into whole-suite fan-out.
+HUB_FANIN = 3
+# A thin hub's suites directly drive the path to the leaf. A wider hub's suites
+# each cover one mode, so they are left to the curated map and full CI.
+HUB_THIN_READERS = 3
+
+
+def direct_test_readers(node):
+    return sorted(
+        reader for reader in executable_consumers[node]
+        if reader.startswith("tests/") and reader.endswith(".test.sh")
+    )
+
+
+def walk_reference(dependency, emit_fat_hubs):
+    queue = deque([dependency])
+    queued = {dependency}
+    printed = set()
+    executable_printed = set()
+    fallback = set()
+    while queue:
+        source = queue.popleft()
+        for consumer in sorted(consumers[source]):
+            if consumer.startswith("tests/") and consumer.endswith(".test.sh"):
+                executable = consumer in executable_consumers[source]
+                if source.startswith("tests/") and source.endswith(".test.sh") \
+                        and not executable:
+                    continue
+                if consumer not in printed:
+                    print(dependency + "\t__script__:" + Path(consumer).name)
+                    printed.add(consumer)
+                # A suite is a terminal reader unless it actually executes the
+                # other suite as a wrapper; a comment or fixture mention is not
+                # a reason to fan out through it.
+                if executable:
+                    executable_printed.add(consumer)
+                    if consumer not in queued:
+                        queued.add(consumer)
+                        queue.append(consumer)
+                continue
+            if consumer in queued:
+                continue
+            if shared_pass_through(consumer):
+                # A leaf mention inside a shared library or test harness is a
+                # definition site, not proof that every importer executes it.
+                continue
+            if len(consumers[consumer]) >= HUB_FANIN:
+                # A command invoked from more than one place is shared; walking
+                # its callers fans a single leaf out into the whole suite.
+                readers = direct_test_readers(consumer)
+                if emit_fat_hubs or len(readers) <= HUB_THIN_READERS:
+                    for reader in readers:
+                        if reader not in printed:
+                            print(dependency + "\t__script__:" + Path(reader).name)
+                            printed.add(reader)
+                        executable_printed.add(reader)
+                        if reader not in queued:
+                            queued.add(reader)
+                            queue.append(reader)
+                else:
+                    fallback.update(readers)
+                continue
+            queued.add(consumer)
+            queue.append(consumer)
+    return printed, fallback, executable_printed
+
+
+for dependency in sorted(set(sys.argv[1:])):
+    printed, fallback, executable_printed = walk_reference(dependency, False)
+    if not executable_printed and fallback:
+        walk_reference(dependency, True)
+PYREF
+}
+
+scripts_for_path_reference() {
+  local path=$1
+  awk -F '\t' -v path="$path" '$1 == path { print $2; found=1 } END { exit !found }' \
+    <<<"$REFERENCE_INDEX"
 }
 
 # bin/ scripts other than <needle> itself that name <needle>.
@@ -1787,37 +2038,72 @@ bin_consumers_of() {
   done
 }
 
-# An unmapped bin/ path has no curated family of its own. Its blast radius is
-# the tests that name it, plus the curated families of the bin/ scripts that
-# consume it. Direct test references resolve per script (above) while consumer
-# scripts resolve back through the curated map, so genuine family-level
-# coupling a maintainer recorded is preserved while an incidental single-script
-# reference no longer selects that script's whole family.
-BIN_FALLBACK_DEPTH=0
-families_for_unmapped_bin() {
-  local path=$1 needle consumer out found=0
+# The base runner's broad coverage for a source the reference walk cannot map:
+# its literal direct test readers plus the curated families of the bin scripts
+# that consume it. Used only when the pruned walk would otherwise leave an
+# existing tracked source with no reader at all.
+broad_family_fallback() {
+  local path=$1 needle out consumer
   needle=$(basename "$path")
   if out=$(scripts_for_test_reference "$needle"); then
     printf '%s\n' "$out"
-    found=1
   fi
-  if [ "$BIN_FALLBACK_DEPTH" -lt 2 ]; then
-    BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH + 1))
-    while IFS= read -r consumer; do
-      [ -n "$consumer" ] || continue
-      out=$(families_for_changed_path "$consumer" | grep -v '^__unmapped__:' || true)
-      if [ -n "$out" ]; then
-        printf '%s\n' "$out"
-        found=1
-      fi
-    done < <(bin_consumers_of "$needle")
-    BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH - 1))
+  BIN_FALLBACK_DEPTH=${BIN_FALLBACK_DEPTH:-0}
+  [ "$BIN_FALLBACK_DEPTH" -lt 2 ] || return 0
+  BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH + 1))
+  while IFS= read -r consumer; do
+    [ -n "$consumer" ] || continue
+    [ "$consumer" = "$path" ] && continue
+    out=$(families_for_changed_path "$consumer" | grep -v '^__unmapped__:' || true)
+    [ -n "$out" ] && printf '%s\n' "$out"
+  done < <(bin_consumers_of "$needle")
+  BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH - 1))
+}
+
+# An existing tracked source must never fail closed because the pruned walk has
+# no reader left for it; fall back to the broad mapping with one diagnostic.
+# An untracked new source or a deleted path keeps the previous behavior.
+reference_or_broad_fallback() {
+  local path=$1 out
+  if scripts_for_path_reference "$path"; then
+    return 0
   fi
-  [ "$found" -eq 1 ]
+  [ -f "$path" ] || return 0
+  if git -C "$ROOT" ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+    [ "${BIN_FALLBACK_DEPTH:-0}" -gt 0 ] \
+      || printf 'broad fallback: %s\n' "$path" >&2
+    out=$(broad_family_fallback "$path")
+    if [ -n "$out" ]; then
+      printf '%s\n' "$out"
+    else
+      # A tracked source with no fallback reader still fails closed.
+      printf '%s\n' "__unmapped__:$path"
+    fi
+  else
+    # A new untracked source still fails closed: no reader can be inferred.
+    printf '%s\n' "__unmapped__:$path"
+  fi
+  return 0
+}
+
+# Documentation has explicit contract owners and literal repository readers.
+# Do not treat a fixture's mention of a skill or a copied supervisor contract as
+# evidence for its entire runtime family. Dynamic skill/reference readers are
+# listed by the curated map below.
+scripts_for_document_readers() {
+  python3 - "$1" <<'PYDOC'
+from pathlib import Path
+import re
+import sys
+path = re.escape(sys.argv[1])
+for test in sorted(Path("tests").glob("*.test.sh")):
+    if re.search(r"(?:\$\{?ROOT\}?/|\.\./)" + path + r"(?:[\s\"'`]|$)", test.read_text()):
+        print("__script__:" + test.name)
+PYDOC
 }
 
 # Conservative path → family map. Over-selects rather than under-selects.
-# Never expands to the complete suite.
+# Unknown paths fail closed rather than substituting --all.
 families_for_changed_path() {
   local path=$1 fixture_ref
   case "$path" in
@@ -1902,13 +2188,26 @@ families_for_changed_path() {
       printf '%s\n' real-herdr-gated
       printf '%s\n' pure-contract-unit
       ;;
-    bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
-    bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
+    bin/fm-watch-checkpoint.sh)
+      printf '%s\n' __script__:fm-watch-checkpoint.test.sh
+      printf '%s\n' __script__:fm-arm-pretool-check.test.sh
+      ;;
+    bin/fm-context-usage.sh)
+      printf '%s\n' __script__:fm-watch-triage.test.sh
+      printf '%s\n' __script__:fm-watch-triage-waits.test.sh
+      ;;
+    bin/fm-watch.sh|bin/fm-classify-lib.sh)
+      # Shared loop/classification changes retain broad watcher coverage, plus
+      # readers outside the watcher family (for example crew-state).
       printf '%s\n' watcher-wake-lock
+      reference_or_broad_fallback "$path"
+      ;;
+    bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
+    bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
+      reference_or_broad_fallback "$path"
       ;;
     bin/fm-afk*)
-      printf '%s\n' afk
-      printf '%s\n' real-herdr-gated
+      reference_or_broad_fallback "$path"
       ;;
     bin/fm-supervision-host.sh|bin/fm-supervision-engine-lib.sh|\
     bin/fm-branch-report.sh|bin/fm-branch-dispatch.mjs)
@@ -1967,10 +2266,8 @@ families_for_changed_path() {
     .pi/extensions/fm-branch-supervision.ts|.pi/extensions/lib/fm-async-exec.ts|\
     .pi/extensions/lib/fm-branch-dispatch.ts|.pi/extensions/lib/fm-native-contract.ts)
       # The portable suites that actually load these files, named one by one.
-      # Left unmapped, a Pi extension library resolves through the reference
-      # scan, which widens to each referencing suite's WHOLE family - and
-      # these suites sit in four different families, so that pulls in dozens
-      # of suites with nothing to do with Pi.
+      # Explicit owners also capture dynamically composed extension imports;
+      # their execution-family labels do not widen the portable selection.
       printf '%s\n' __script__:fm-pi-branch-extension.test.sh
       printf '%s\n' __script__:fm-pi-watch-extension.test.sh
       printf '%s\n' __script__:fm-calm-pi-extension.test.sh
@@ -2012,6 +2309,7 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-pi-windows-shell-invocation.test.sh
       printf '%s\n' session-bootstrap
       printf '%s\n' live-harness-optin
+      scripts_for_test_reference "$path" || true
       ;;
     bin/fm-extension.mjs|bin/fm-extension.sh|docs/examples/process-event-extension/*)
       printf '%s\n' __script__:fm-extension-binding.test.sh
@@ -2092,42 +2390,66 @@ families_for_changed_path() {
     bin/fm-vendor-auth-probe.sh|\
     bin/fm-primary-scope-lib.sh|bin/fm-project-mode.sh|bin/fm-forge-detect.sh|bin/fm-promote.sh|\
     bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/*pretool*)
-      printf '%s\n' pure-contract-unit
+      reference_or_broad_fallback "$path"
       ;;
     .agents/skills/quota-array-dispatch/SKILL.md)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' live-harness-optin
+      printf '%s\n' __script__:fm-quota-array-dispatch-live-e2e.test.sh
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      scripts_for_document_readers "$path"
       ;;
     .agents/skills/harness-adapters/SKILL.md|.agents/skills/harness-adapters/references/*)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' live-harness-optin
+      printf '%s\n' __script__:fm-harness-adapter-references.test.sh
+      printf '%s\n' __script__:fm-harness-adapter-instructions-live-e2e.test.sh
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
       ;;
     .agents/skills/*/agents/*.yaml)
-      printf '%s\n' pure-contract-unit
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
       ;;
     .agents/skills/*/SKILL.md|.agents/skills/*/references/*)
-      printf '%s\n' pure-contract-unit
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      scripts_for_document_readers "$path"
+      case "$path" in
+        .agents/skills/perspective-catalog/*)
+          printf '%s\n' __script__:fm-brief.test.sh ;;
+        .agents/skills/stuck-crewmate-recovery/*|.agents/skills/ask-user-authority/*|\
+        .agents/skills/scout-completion/*|.agents/skills/captain-hold-lifecycle/*)
+          printf '%s\n' __script__:fm-branch-supervision.test.sh ;;
+      esac
       ;;
-    .github/workflows/ci.yml|.no-mistakes.yaml)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' real-herdr-gated
+    .no-mistakes.yaml)
+      printf '%s\n' __script__:fm-lint-nomistakes-config.test.sh
+      printf '%s\n' __script__:fm-lint.test.sh
       ;;
-    docs/fm-test-portable-shards.md|docs/fm-test-isolation-proof.md|\
-    docs/fm-test-isolation-proof.json)
-      printf '%s\n' pure-contract-unit
+    .gitattributes)
+      printf '%s\n' __script__:fm-test-run.test.sh
+      ;;
+    docs/supervision-protocols/*)
+      printf '%s\n' __script__:fm-supervision-instructions.test.sh
+      printf '%s\n' __script__:fm-session-start.test.sh
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      scripts_for_document_readers "$path"
       ;;
     AGENTS.md)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' "__script__:fm-agentsmd-size.test.sh"
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      printf '%s\n' __script__:fm-agentsmd-size.test.sh
+      scripts_for_document_readers "$path"
       ;;
-    .github/*|.gitattributes|.tasks.toml|CLAUDE.md|CONTRIBUTING.md|\
-    docs/configuration.md|docs/supervision-protocols/*)
-      printf '%s\n' pure-contract-unit
+    CLAUDE.md|CONTRIBUTING.md|docs/*)
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      scripts_for_document_readers "$path"
+      ;;
+    .tasks.toml)
+      printf '%s\n' __script__:fm-tasks-axi.test.sh
+      scripts_for_document_readers "$path"
+      ;;
+    .github/*)
+      printf '%s\n' __script__:fm-lint-workflows.test.sh
+      scripts_for_document_readers "$path"
       ;;
     tests/git-config-helpers.sh)
-      # The reference scan is not transitive, so match the two helpers that
-      # source this one as well: most suites inherit it only through them.
-      families_for_test_reference git-config-helpers.sh lib.sh herdr-test-safety.sh \
+      # The canonical helpers source this one, even in minimal fixture repos
+      # that replace their contents. Select their readers per script.
+      scripts_for_test_reference git-config-helpers.sh lib.sh herdr-test-safety.sh \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/fixtures/*/*)
@@ -2138,7 +2460,7 @@ families_for_changed_path() {
       fixture_ref=${path#tests/fixtures/}
       fixture_ref=${fixture_ref%%/*}
       if [ -d "tests/fixtures/$fixture_ref" ]; then
-        families_for_test_reference "fixtures/$fixture_ref" \
+        scripts_for_test_reference "fixtures/$fixture_ref" \
           || printf '%s\n' "__unmapped__:$path"
       fi
       ;;
@@ -2148,23 +2470,25 @@ families_for_changed_path() {
       # tests/*-fixture.sh would otherwise swallow a nested
       # tests/fixtures/<dir>/<name>-fixture.sh and scan for its basename
       # instead of the fixture directory its readers actually name.
-      families_for_test_reference "$(basename "$path")" \
+      scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/*-part.sh)
       # Split-test blocks are sourced or run by their wrapper suites. Resolve
       # consumers from their references so adding a new part needs no map edit.
-      scripts_for_test_reference "$(basename "$path")" \
+      scripts_for_path_reference "$path" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
+    tests/fm-test-run-*-lib.sh)
+      # The runner contract suite's split bodies are sourced by its wrapper, so
+      # a change to a body re-runs that wrapper (found through the same walk).
+      scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     bin/*)
-      # A deleted script has no consuming suite left to select, the same rule
-      # the fixture case above applies. Refusing on its absent mapping would
-      # make every retirement branch unable to select its changed tests.
-      if [ -e "$path" ]; then
-        families_for_unmapped_bin "$path" \
-          || printf '%s\n' "__unmapped__:$path"
-      fi
+      # Keep readers of a removed source; an unconsumed retirement is empty.
+      # An existing tracked source falls back to the broad mapping.
+      reference_or_broad_fallback "$path"
       ;;
     tests/fm-lint-test-size-allowlist.txt)
       # bin/fm-lint-test-size.sh's grandfathering data, read by its own
@@ -2179,13 +2503,13 @@ families_for_changed_path() {
       ;;
     tests/*.py)
       # A python repro/driver is selected by the suites that name it.
-      families_for_test_reference "$(basename "$path")" \
+      scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;
-    README.md|VISION.md|LICENSE|assets/*|docs/*|.gitignore)
+    README.md|VISION.md|LICENSE|assets/*|.gitignore)
       ;;
     *-edited)
       # Record-only snapshot of an already-deployed, already-smoke-tested
@@ -2194,74 +2518,92 @@ families_for_changed_path() {
       ;;
     *)
       if [ -e "$path" ]; then
-        families_for_test_reference "$path" \
+        scripts_for_test_reference "$path" \
           || printf '%s\n' "__unmapped__:$path"
       else
         # A retired source path with no remaining test consumer cannot select
         # a runnable suite. Known source paths above retain their mappings,
         # and a still-referenced removal is found by the same reference scan.
-        families_for_test_reference "$path" || true
+        scripts_for_test_reference "$path" || true
       fi
       ;;
   esac
 }
 
 select_changed() {
-  local base=$1 path entry fam script_name s
-  local -a wanted_families=()
-  local -a wanted_scripts=()
-
+  local base=$1 path entry target s resolved_selection need_references=0 missing
+  local -a changed_paths=() selected_targets=()
   if ! git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
     die "changed-file base ref not found: $base (pass --base <ref>)"
+  fi
+  while IFS= read -r path; do changed_paths+=("$path"); done < <(
+    { git -C "$ROOT" diff --name-only "${base}...HEAD" 2>/dev/null
+      git -C "$ROOT" diff --name-only HEAD 2>/dev/null
+      git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null; } | LC_ALL=C sort -u)
+  # Documentation mappings do not need the executable graph.
+  REFERENCE_INDEX=
+  need_references=0
+  for path in "${changed_paths[@]+"${changed_paths[@]}"}"; do
+    case "$path" in bin/*|tests/*) need_references=1; break ;; esac
+  done
+  if [ "$need_references" -eq 1 ]; then
+    REFERENCE_INDEX=$(build_reference_index "${changed_paths[@]+"${changed_paths[@]}"}") \
+      || die "could not build changed-test reference index"
   fi
 
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     while IFS= read -r entry; do
       [ -n "$entry" ] || continue
-      case "$entry" in
-        __script__:*)
-          script_name=${entry#__script__:}
-          wanted_scripts+=("$script_name")
-          ;;
+      target=$entry
+      case "$target" in
         __unmapped__:*)
-          die "no changed-test mapping for source path: ${entry#__unmapped__:}"
+          # An unconsumed retirement selects nothing; an existing source with
+          # no mapping or reader still fails closed.
+          missing=${target#__unmapped__:}
+          [ ! -e "$missing" ] || die "no changed-test mapping for source path: $missing"
           ;;
-        *)
-          wanted_families+=("$entry")
-          ;;
+        *) selected_targets+=("$target") ;;
       esac
-    done < <(families_for_changed_path "$path")
-  done < <(git -C "$ROOT" diff --name-only "${base}...HEAD" 2>/dev/null; \
-           git -C "$ROOT" diff --name-only HEAD 2>/dev/null; \
-           git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null)
+    done < <(
+      families_for_changed_path "$path"
+      case "$path" in bin/*|tests/*) scripts_for_path_reference "$path" || true ;; esac
+    )
+  done < <(printf '%s\n' "${changed_paths[@]+"${changed_paths[@]}"}")
 
-  # Dedup families
-  local f seen_f
-  local -a unique_families=()
-  for f in "${wanted_families[@]+"${wanted_families[@]}"}"; do
-    seen_f=0
-    for u in "${unique_families[@]+"${unique_families[@]}"}"; do
-      [ "$u" = "$f" ] && { seen_f=1; break; }
-    done
-    [ "$seen_f" -eq 0 ] && unique_families+=("$f")
-  done
+  # Resolve each family once, not once per path/consumer that selected it.
+  resolved_selection=$(python3 - 3< <(printf '%s\n' "${selected_targets[@]+"${selected_targets[@]}"}") \
+    4< <(while IFS= read -r s; do
+      printf '%s\t%s\n' "$s" "$(family_for_basename "${s##*/}")"
+    done < <(all_repo_tests)) <<'PYSELECT'
+from collections import defaultdict
+import os
 
-  for f in "${unique_families[@]+"${unique_families[@]}"}"; do
-    while IFS= read -r s; do
-      [ -n "$s" ] || continue
-      if [ "$(family_for_basename "$(basename "$s")")" = "$f" ]; then
-        add_script "$s"
-      fi
-    done < <(all_repo_tests)
-  done
-
-  for script_name in "${wanted_scripts[@]+"${wanted_scripts[@]}"}"; do
-    if [ -f "tests/$script_name" ]; then
-      add_script "tests/$script_name"
-    fi
-  done
-
+families = defaultdict(list)
+scripts = set()
+with os.fdopen(4) as inventory:
+    for row in inventory:
+        script, family = row.rstrip("\n").split("\t")
+        families[family].append(script)
+        scripts.add(script)
+chosen = {}
+with os.fdopen(3) as targets:
+    for target in targets:
+        target = target.strip()
+        if not target:
+            continue
+        selected = ["tests/" + target[len("__script__:"):]] if target.startswith("__script__:") else families[target]
+        for script in selected:
+            if script in scripts:
+                chosen.setdefault(script, None)
+for script in chosen:
+    print(script)
+PYSELECT
+  ) || die "could not resolve changed-test selection"
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    add_script "$s"
+  done <<<"$resolved_selection"
   if [ "${#SCRIPTS[@]}" -eq 0 ]; then
     log "no tests selected for changes vs $base (map is conservative; use --all for the complete suite)"
   fi

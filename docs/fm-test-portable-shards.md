@@ -3,6 +3,30 @@
 `bin/fm-test-run.sh` owns portable lane composition and execution.
 `bin/fm-test-isolation-proof.sh` owns the proven-isolated candidate set.
 
+## Changed-path selection ownership
+
+The runner's curated path map owns semantic integration coverage; execution families and portable CI partitions remain separate concerns.
+Shared runner, backend, watcher-loop, and classifier changes retain broad integration mappings.
+Reference evidence selects individual readers, including indirect bin, shared-helper, and wrapper-suite readers, without inheriting each reader's execution family.
+The consumer walk follows executable references without a fixed depth limit and stops cycles.
+Production-shell comments do not create dependencies, the runner's and isolation proof's candidate lists are selection metadata rather than executable references, and a plain filename mention in prose, a prompt, or generated brief text is not execution.
+Quoted command payloads on an executed command line remain conservative references.
+The walk stops at shared pass-through nodes: `bin/*-lib.sh`, `tests/lib.sh`, `tests/fixtures.sh`, `tests/*-helpers.sh`, and `tests/*-fixture.sh`.
+A leaf named inside such a library is a definition site, so the walk does not climb through every file that sources it; a change to the shared file itself still selects its direct readers and curated family.
+A widely invoked command (three or more direct consumers) is shared infrastructure: the walk stops there, so a leaf named by a shared command does not fan out into every suite that runs that command. At a thin hub (three or fewer direct executable `tests/*.test.sh` readers), the walk also selects and follows those readers, because they drive the path to the changed leaf; a wider hub's suites each cover one mode and are left to the curated map and full CI. A change to the shared command itself still selects its direct readers and curated family.
+Curated mappings add coverage; only the wide-hub boundary above leaves a hub's suites to the curated map and full CI.
+Documentation and skills select their structural contract owners and repository readers, with explicit mappings for dynamic skill and reference-directory readers.
+They do not inherit browser, Pi, or runner integrations from the `pure-contract-unit` label.
+Configuration and workflow files select the suites that read them: `.no-mistakes.yaml` selects its lint config contract and lint suite, `.github/` workflows select the workflow lint suite plus their repository readers, and `.tasks.toml` selects the tasks-axi suite plus repository readers; they do not inherit the `pure-contract-unit` family.
+
+Maintain the mapping beside a new dynamic dependency that a literal reference cannot reveal, following the existing explicit Pi-extension mappings.
+Keep a broad mapping where a shared implementation genuinely needs integration coverage, and add behavioral selection regressions when narrowing an owner.
+Selection-count targets never justify dropping a test that executes changed code; a typical leaf change should select roughly 20-40 scripts. A core file sourced by many commands (backend, classifier, wake library, harness) may exceed 40 and relies on the broad core-change mapping plus required full CI. When pruning leaves an existing source with no executable reader, the walk falls back to the unpruned hub emission instead of failing closed.
+An existing source without a mapping or a discoverable reader fails closed; deleting a source still selects remaining readers, while an unconsumed retirement selects nothing.
+The runner's header and help own inspection flags such as `--list`.
+The runner contract suite - [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh) plus the selection and scheduling bodies it sources - checks representative documentation, skill, leaf, watcher, shared-helper, shared-library, and multi-subsystem selections through the runner's public interface, with bounded counts for the recorded 18-file feature.
+Required CI continues to cover the complete inventory independently of local changed-path selection.
+
 ## Verification inputs
 
 Balance hints come from serial runs of the real lanes on `ubuntu-latest`, except where a dated refresh below records a provisional local canonical-runner sample in its place.
@@ -46,7 +70,7 @@ Read the derived packing estimates with that runner's `--check-coverage`; its he
 The largest individual hint sets a lower bound on the estimated duration of any split, regardless of how evenly the remaining work is assigned.
 The CI cap follows the three-tier timeout policy in [Timeouts](#timeouts) below.
 
-[`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_parallel_lanes_stay_duration_balanced`, requires every parallel member to have a hint and the lane sums to differ by no more than five percent of the larger sum.
+The runner contract suite, in `test_portable_parallel_lanes_stay_duration_balanced`, requires every parallel member to have a hint and the lane sums to differ by no more than five percent of the larger sum.
 Its scheduling regressions also check stored parallel lane order and preserve serial-weight scheduling for other selections.
 These checks do not detect a script outgrowing an existing hint or establish measured job headroom.
 Refresh `portable_parallel_weight_hints` with the slowest completed `duration_ms` per script from several green CI runs' `fm-test-timing-portable-parallel-*` artifacts whenever the parallel set gains scripts or a member grows materially.
@@ -78,7 +102,7 @@ Refresh the hints whenever a serial member grows materially or the lane gains sc
 
 `bin/fm-test-run.sh` owns the per-shard packing, so its `--check-coverage` output is the current account of lane size and coverage rather than a copied inventory.
 Its header and `--help` own the modeled-budget check and output fields; read the current estimates from `--check-coverage` instead of retaining copied lane sums here.
-[`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner.
+The runner contract suite, in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner.
 The longest script, `tests/fm-watch-triage-waits.test.sh`, is the indivisible floor for this layout.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
 The baseline watch-triage samples, taken before it was split with `tests/fm-watch-triage-waits.test.sh`, range from 944375 to 1074843 ms for both parts together, while each observed completed portable job adds at most 30 seconds beyond its summed scripts in these runs.
