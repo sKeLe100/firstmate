@@ -1,0 +1,133 @@
+# per-case traces from the bounded changed-mode run of the three split suites
+## /tmp/fm-captain-hold-diagnostics-1000/runs/run-20261103T200042Z-2790995/cases.tsv
+test_hold_reason_round_trips_awkward_characters	start	2026-11-03T20:00:42Z
+test_hold_reason_round_trips_awkward_characters	end	2026-11-03T20:01:09Z	0
+test_hold_origins_precede_backend_holds	start	2026-11-03T20:01:09Z
+test_hold_origins_precede_backend_holds	end	2026-11-03T20:06:08Z	0
+test_historical_self_inventory_has_workable_repair	start	2026-11-03T20:06:08Z
+test_historical_self_inventory_has_workable_repair	end	2026-11-03T20:07:06Z	0
+test_inventory_compares_backend_identities	start	2026-11-03T20:07:06Z
+test_inventory_compares_backend_identities	end	2026-11-03T20:08:56Z	0
+test_origin_is_never_its_own_inventory_entry	start	2026-11-03T20:08:56Z
+test_origin_is_never_its_own_inventory_entry	end	2026-11-03T20:09:05Z	0
+test_complete_refuses_an_entry_held_for_another_origin	start	2026-11-03T20:09:05Z
+test_complete_refuses_an_entry_held_for_another_origin	end	2026-11-03T20:09:28Z	0
+test_uninventoried_report_decision_refuses_completion	start	2026-11-03T20:09:28Z
+test_uninventoried_report_decision_refuses_completion	end	2026-11-03T20:09:34Z	0
+test_hold_decodes_a_bare_scalar_body_without_the_nonref_default	start	2026-11-03T20:09:34Z
+test_hold_decodes_a_bare_scalar_body_without_the_nonref_default	end	2026-11-03T20:09:54Z	0
+test_retained_body_keeps_its_utf8_bytes	start	2026-11-03T20:09:54Z
+test_retained_body_keeps_its_utf8_bytes	end	2026-11-03T20:10:22Z	0
+test_completion_gate_attests_and_transfers	start	2026-11-03T20:10:22Z
+test_completion_gate_attests_and_transfers	end	2026-11-03T20:10:39Z	0
+test_answer_records_and_closes	start	2026-11-03T20:10:39Z
+test_answer_records_and_closes	end	2026-11-03T20:10:52Z	0
+test_answer_refuses_when_endpoint_is_alive	start	2026-11-03T20:10:52Z
+test_answer_refuses_when_endpoint_is_alive	end	2026-11-03T20:11:01Z	0
+test_since_stamp_survives_awkward_titles	start	2026-11-03T20:11:01Z
+test_since_stamp_survives_awkward_titles	end	2026-11-03T20:11:13Z	0
+test_release_frees_held_work	start	2026-11-03T20:11:13Z
+test_release_frees_held_work	end	2026-11-03T20:11:28Z	0
+test_hold_stamp_precedes_hold_visibility	start	2026-11-03T20:11:28Z
+test_hold_stamp_precedes_hold_visibility	end	2026-11-03T20:11:31Z	0
+test_interrupted_answer_preserves_hold_age	start	2026-11-03T20:11:31Z
+test_interrupted_answer_preserves_hold_age	end	2026-11-03T20:11:36Z	0
+test_deferral_leaves_captains_call_until_due	start	2026-11-03T20:11:36Z
+test_deferral_leaves_captains_call_until_due	end	2026-11-03T20:11:46Z	0
+test_out_of_band_close_is_recordable	start	2026-11-03T20:11:46Z
+test_out_of_band_close_is_recordable	end	2026-11-03T20:12:05Z	0
+test_visual_review_uses_shared_completion_owner	start	2026-11-03T20:12:05Z
+test_visual_review_uses_shared_completion_owner	end	2026-11-03T20:12:15Z	0
+test_none_inventory_and_resolved_prose_do_not_create_holds	start	2026-11-03T20:12:15Z
+test_none_inventory_and_resolved_prose_do_not_create_holds	end	2026-11-03T20:12:16Z	0
+test_terminal_single_owner_status_decision_does_not_block_empty_inventory	start	2026-11-03T20:12:16Z
+test_terminal_single_owner_status_decision_does_not_block_empty_inventory	end	2026-11-03T20:12:25Z	0
+test_verify_resolves_a_hold_migrated_to_beads_notes	start	2026-11-03T20:12:25Z
+test_verify_resolves_a_hold_migrated_to_beads_notes	end	2026-11-03T20:12:25Z	0
+test_verify_resolves_a_hold_migrated_under_the_configured_prefix	start	2026-11-03T20:12:25Z
+test_verify_resolves_a_hold_migrated_under_the_configured_prefix	end	2026-11-03T20:12:25Z	0
+test_marker_noted_row_wins_over_a_prefix_namesake	start	2026-11-03T20:12:25Z
+test_marker_noted_row_wins_over_a_prefix_namesake	end	2026-11-03T20:12:25Z	0
+test_complete_accepts_a_migrated_inventory_on_beads	start	2026-11-03T20:12:25Z
+test_complete_accepts_a_migrated_inventory_on_beads	end	2026-11-03T20:12:25Z	0
+test_verify_names_the_unresolvable_legacy_id_once	start	2026-11-03T20:12:25Z
+test_verify_names_the_unresolvable_legacy_id_once	end	2026-11-03T20:12:25Z	0
+test_verify_resolves_a_pre_collapse_key_through_its_derived_marker	start	2026-11-03T20:12:25Z
+test_verify_resolves_a_pre_collapse_key_through_its_derived_marker	end	2026-11-03T20:12:25Z	0
+test_captain_hold_mutations_address_the_beads_backend	start	2026-11-03T20:12:25Z
+test_captain_hold_mutations_address_the_beads_backend	end	2026-11-03T20:12:27Z	0
+test_hold_creates_a_captain_row_when_beads_requires_due_without_custom_type	start	2026-11-03T20:12:27Z
+test_hold_creates_a_captain_row_when_beads_requires_due_without_custom_type	end	2026-11-03T20:12:27Z	0
+
+## /tmp/fm-captain-hold-diagnostics-1000/runs/run-20261103T200042Z-2791030/cases.tsv
+test_secondmate_hold_stays_in_authoritative_home	start	2026-11-03T20:00:42Z
+test_secondmate_hold_stays_in_authoritative_home	end	2026-11-03T20:00:52Z	0
+test_secondmate_home_publishes_holds_and_answers	start	2026-11-03T20:00:52Z
+test_secondmate_home_publishes_holds_and_answers	end	2026-11-03T20:01:12Z	0
+test_secondmate_reconcile_publishes_before_request_retirement	start	2026-11-03T20:01:12Z
+test_secondmate_reconcile_publishes_before_request_retirement	end	2026-11-03T20:01:23Z	0
+test_bound_channel_answers_close_at_answer_time	start	2026-11-03T20:01:23Z
+test_bound_channel_answers_close_at_answer_time	end	2026-11-03T20:02:58Z	0
+test_reconcile_never_closes_through_the_keyed_answer_intake	start	2026-11-03T20:02:58Z
+test_reconcile_never_closes_through_the_keyed_answer_intake	end	2026-11-03T20:03:10Z	0
+test_normal_answers_retire_pending_reconcile_requests	start	2026-11-03T20:03:10Z
+test_normal_answers_retire_pending_reconcile_requests	end	2026-11-03T20:03:41Z	0
+test_reconcile_closes_with_evidence_or_keeps_the_call_open	start	2026-11-03T20:03:41Z
+test_reconcile_closes_with_evidence_or_keeps_the_call_open	end	2026-11-03T20:04:20Z	0
+test_reconcile_outcomes_retry_partial_failures_once	start	2026-11-03T20:04:20Z
+test_reconcile_outcomes_retry_partial_failures_once	end	2026-11-03T20:05:14Z	0
+test_unbound_source_closes_no_hold	start	2026-11-03T20:05:14Z
+test_unbound_source_closes_no_hold	end	2026-11-03T20:05:22Z	0
+test_legacy_identities_keep_working	start	2026-11-03T20:05:22Z
+test_legacy_identities_keep_working	end	2026-11-03T20:07:03Z	0
+test_board_answer_reaches_the_keyed_answer_intake	start	2026-11-03T20:07:03Z
+test_board_answer_reaches_the_keyed_answer_intake	end	2026-11-03T20:07:25Z	0
+test_chat_channel_feeds_the_same_keyed_answer_intake	start	2026-11-03T20:07:25Z
+test_chat_channel_feeds_the_same_keyed_answer_intake	end	2026-11-03T20:08:42Z	0
+test_origin_slug_validation_precedes_path_construction	start	2026-11-03T20:08:42Z
+test_origin_slug_validation_precedes_path_construction	end	2026-11-03T20:08:43Z	0
+test_status_resolution_over_an_open_hold_is_signalled	start	2026-11-03T20:08:43Z
+test_status_resolution_over_an_open_hold_is_signalled	end	2026-11-03T20:09:03Z	0
+test_legitimate_holds_produce_no_divergence_signal	start	2026-11-03T20:09:03Z
+test_legitimate_holds_produce_no_divergence_signal	end	2026-11-03T20:09:33Z	0
+
+## /tmp/fm-captain-hold-diagnostics-1000/runs/run-20261103T200042Z-2791064/cases.tsv
+test_teardown_never_closes_a_captain_held_task	start	2026-11-03T20:00:42Z
+test_teardown_never_closes_a_captain_held_task	end	2026-11-03T20:01:08Z	0
+test_retained_row_artifacts_survive_captain_answers	start	2026-11-03T20:01:08Z
+test_retained_row_artifacts_survive_captain_answers	end	2026-11-03T20:02:53Z	0
+test_interrupted_cleanup_keeps_the_captain_call_recoverable	start	2026-11-03T20:02:53Z
+test_interrupted_cleanup_keeps_the_captain_call_recoverable	end	2026-11-03T20:03:19Z	0
+test_answer_before_cleanup_replay_preserves_the_retained_report	start	2026-11-03T20:03:19Z
+test_answer_before_cleanup_replay_preserves_the_retained_report	end	2026-11-03T20:03:45Z	0
+test_answer_before_cleanup_replay_notes_a_retained_gerrit_change	start	2026-11-03T20:03:45Z
+test_answer_before_cleanup_replay_notes_a_retained_gerrit_change	end	2026-11-03T20:04:00Z	0
+test_unusable_pending_close_record_names_its_reason	start	2026-11-03T20:04:00Z
+test_unusable_pending_close_record_names_its_reason	end	2026-11-03T20:04:24Z	0
+test_relocated_report_does_not_wedge_an_answer_before_replay	start	2026-11-03T20:04:24Z
+test_relocated_report_does_not_wedge_an_answer_before_replay	end	2026-11-03T20:04:53Z	0
+test_teardown_retains_captain_calls_in_a_relocated_backlog	start	2026-11-03T20:04:53Z
+test_teardown_retains_captain_calls_in_a_relocated_backlog	end	2026-11-03T20:05:21Z	0
+test_teardown_retains_a_gerrit_captain_call_with_its_change_url	start	2026-11-03T20:05:21Z
+test_teardown_retains_a_gerrit_captain_call_with_its_change_url	end	2026-11-03T20:05:48Z	0
+test_merge_approval_releases_before_zero_done_retention	start	2026-11-03T20:05:48Z
+test_merge_approval_releases_before_zero_done_retention	end	2026-11-03T20:06:19Z	0
+test_pr_merge_entrypoint_refuses_a_captain_held_task	start	2026-11-03T20:06:19Z
+test_pr_merge_entrypoint_refuses_a_captain_held_task	end	2026-11-03T20:06:35Z	0
+test_local_merge_entrypoint_refuses_a_captain_held_task	start	2026-11-03T20:06:35Z
+test_local_merge_entrypoint_refuses_a_captain_held_task	end	2026-11-03T20:06:54Z	0
+test_pr_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one	start	2026-11-03T20:06:54Z
+test_pr_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one	end	2026-11-03T20:07:11Z	0
+test_local_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one	start	2026-11-03T20:07:11Z
+test_local_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one	end	2026-11-03T20:07:20Z	0
+test_merge_entrypoints_validate_identity_and_state_before_locking	start	2026-11-03T20:07:20Z
+test_merge_entrypoints_validate_identity_and_state_before_locking	end	2026-11-03T20:07:20Z	0
+test_merge_entrypoints_refuse_a_reused_task_incarnation	start	2026-11-03T20:07:20Z
+test_merge_entrypoints_refuse_a_reused_task_incarnation	end	2026-11-03T20:07:59Z	0
+test_merge_entrypoints_serialize_forced_teardown_before_task_reads	start	2026-11-03T20:07:59Z
+test_merge_entrypoints_serialize_forced_teardown_before_task_reads	end	2026-11-03T20:08:48Z	0
+test_released_merge_passes_the_entrypoint_and_lands	start	2026-11-03T20:08:48Z
+test_released_merge_passes_the_entrypoint_and_lands	end	2026-11-03T20:09:23Z	0
+test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read	start	2026-11-03T20:09:23Z
+test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read	end	2026-11-03T20:09:30Z	0
+
