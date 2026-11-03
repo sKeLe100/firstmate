@@ -1,0 +1,17 @@
+=== before (live fleet) ===
+[{"name":"default","default":true,"running":true},{"name":"firstmate","default":false,"running":false}]
+=== provision (implies prepare) ===
+provision_exit=0
+=== tripwire ===
+[{"name":"default","default":true,"running":true,"socket_path":"~/.config/herdr/herdr.sock"}]
+
+=== lab run: session list ===
+[{"name":"default","default":true,"running":true},{"name":"firstmate","default":false,"running":false},{"name":"fm-lab-parity-1450000-2800","default":false,"running":true}]
+=== live fleet while lab is up ===
+[{"name":"default","default":true,"running":true},{"name":"firstmate","default":false,"running":false},{"name":"fm-lab-parity-1450000-2800","default":false,"running":true}]
+=== teardown ===
+teardown_exit=0
+=== after teardown (live fleet) ===
+[{"name":"default","default":true,"running":true},{"name":"firstmate","default":false,"running":false}]
+=== tripwire gone? ===
+ls: cannot access '/var/tmp/nm-daemon-tmp/fm-herdr-lab-1000/fm-lab-parity-1450000-2800.fleet-state.json': No such file or directory

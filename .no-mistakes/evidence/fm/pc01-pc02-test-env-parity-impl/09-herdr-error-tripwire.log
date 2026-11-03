@@ -1,0 +1,14 @@
+=== prepare with error-empty ===
+fm-herdr-lab: cannot list Herdr sessions before provisioning 'fm-lab-err-probe'
+prepare_exit=1
+tripwire written? 0 file(s)
+=== prepare with error-then-valid ===
+fm-herdr-lab: cannot list Herdr sessions before provisioning 'fm-lab-err-probe'
+prepare_exit=1
+tripwire written? 0 file(s)
+=== teardown with lab-then-valid (error doc first) ===
+fm-herdr-lab: cannot list Herdr sessions before teardown
+teardown_exit=1
+destructive calls issued:
+0
+CALL session list --json --session fm-lab-err-probe

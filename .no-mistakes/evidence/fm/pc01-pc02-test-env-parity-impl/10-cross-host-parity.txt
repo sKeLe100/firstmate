@@ -1,0 +1,41 @@
+host=SeansMiniPC
+git=git version 2.53.0
+bash=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+python3=Python 3.14.4
+jq=jq-1.8.2
+node=v22.22.3
+shellcheck=version: 0.11.0
+actionlint=1.7.12
+ruby=ruby 3.3.8 (2025-04-09 revision b200bad6cd) [x86_64-linux-gnu]
+chromium=Google Chrome for Testing 149.0.7827.55 
+herdr=herdr 0.9.5
+pi=0.85.1
+tmux=tmux 3.6
+nofile=1048576
+LC_ALL=|LANG=C.UTF-8|TZ=
+cpus=16 mem_kb=15212184
+=== PC02 (ssh -o BatchMode=yes pc02 bash -s with the same probe) ===
+host=SeansDesktop
+git=git version 2.53.0
+bash=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+python3=Python 3.14.4
+jq=jq-1.8.2
+node=v22.22.3
+shellcheck=version: 0.11.0
+actionlint=1.7.12
+ruby=ruby 3.3.8 (2025-04-09 revision b200bad6cd) [x86_64-linux-gnu]
+chromium=Google Chrome for Testing 149.0.7827.55 
+herdr=herdr 0.9.5
+pi=0.85.1
+tmux=tmux 3.6
+nofile=1024
+LC_ALL=|LANG=C.UTF-8|TZ=
+cpus=16 mem_kb=28737172
+=== selected browser (fm-test-chrome.sh) on PC01 ===
+path=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell
+sonames=46
+sha256=670ba079b75107746ba41abad131180a31a7c7219aa1bd4061fb471f4535d541
+=== selected browser (real fm-test-chrome.sh) on PC02 ===
+path=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell
+sonames=46
+sha256=670ba079b75107746ba41abad131180a31a7c7219aa1bd4061fb471f4535d541

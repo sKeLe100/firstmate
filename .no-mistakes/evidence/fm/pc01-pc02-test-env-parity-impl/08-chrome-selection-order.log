@@ -1,0 +1,8 @@
+=== all candidates on PATH (no playwright cache) ===
+/tmp/fm-chrome-order.UIAL9p/bin/chrome-headless-shell
+=== after removing chrome-headless-shell ===
+/tmp/fm-chrome-order.UIAL9p/bin/chromium
+=== after removing chromium (google-chrome remains) ===
+/tmp/fm-chrome-order.UIAL9p/bin/google-chrome
+=== FM_CHROME_BIN override wins over PATH ===
+/tmp/fm-chrome-order.UIAL9p/bin/google-chrome-stable
