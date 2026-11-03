@@ -755,24 +755,24 @@ The record includes selected tool versions and paths, the inherited `PATH` entri
 Missing tools and browser startup failures are recorded as data and do not change the test result; the record never dumps the process environment.
 `bin/fm-test-env-record.sh` owns the exact fields and privacy-safe probes, and `tests/fm-test-run.test.sh` plus `tests/fm-pc02-test-offload.test.sh` pin the local and fake-remote behavior.
 
-The pipeline's canonical Test command can offload with `FM_HOME` unset.
+The pipeline's canonical Test and Lint commands can offload with `FM_HOME` unset.
 The supervising home is selected from `FM_HOME`, then the per-machine `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` file, then the primary clone containing the current worktree's common `.git` directory.
-A separate bare common store (such as a no-mistakes gate worktree's) identifies no primary clone, so offload from the gate Test step starts only after `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` exists; the local-fallback diagnostic names that resolved path.
+A separate bare common store (such as a no-mistakes gate worktree's) identifies no primary clone, so offload from the gate Test or Lint step starts only after `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` exists; the local-fallback diagnostic names that resolved path.
 For an operational home separate from that primary clone (including a validation clone with no private state), create that configuration file with one absolute operational-home path followed by a newline.
-An invalid or unreadable configuration, or an unavailable home state directory, keeps testing local; a configured home is never skipped in favor of a guessed home.
+An invalid or unreadable configuration, or an unavailable home state directory, keeps the run local; a configured home is never skipped in favor of a guessed home.
 `FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
 
 [`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
-Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. The value must be an integer from 1 to 16; any other value is a configuration error that exits 2 without running tests.
+Up to `FM_PC02_OFFLOAD_SLOTS` test suites or lint runs (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. The value must be an integer from 1 to 16; any other value is a configuration error that exits 2 without running the selected command.
 The no-mistakes Lint step reaches the same path with `--lint`, which runs the canonical `bin/fm-lint.sh` invocation (including a requested `--partition KofN`) on PC02 under those identical slot and admission rules and falls back to PC01.
 A lint `--telemetry` request (or `FM_LINT_TELEMETRY`) is written inside the PC02 mirror, and both that snapshot and its `.roots.tsv` sidecar are copied back to the caller's paths, so `bin/fm-lint-budget.sh` and artifact uploads read them locally; the script header owns how a relative path resolves.
-The host slots coordinate test and lint offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
+The host slots coordinate test and lint offloads using this protocol; direct test or lint invocations on PC02 must be scheduled separately.
 An explicit caller `--jobs` and the default auto-scheduler ceiling are each reduced to at most `floor(PC02 nproc / slots)` workers per slot, so the slots together stay within PC02's thread count; an explicit `FM_PC02_OFFLOAD_JOBS` override is honored verbatim and may oversubscribe by choice, and an unreadable thread count keeps the run local. The script header owns the cap arithmetic and admission detail.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
 An environment-parity check gates the slot claim; that header owns the compared fields, the open-file rule and remote soft-limit raise, the parity-probe bound, the intentional exclusions, and the local-fallback reasons.
 Measured 2026-11-03: two concurrent full selections on an idle PC02 did not fit the 7200s cap; the script header owns the measurement figures. The `/usr/bin/env` provider, no-mistakes daemon version and shell-availability parity exclusions were reviewed against that run and kept.
 The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
-Exceeding the whole-run cap fails with exit 124 and does not rerun the suite locally or omit selected tests.
+Exceeding the whole-run cap fails with exit 124 and does not rerun the selected command locally or omit selected work.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 

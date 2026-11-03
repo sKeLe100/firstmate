@@ -52,11 +52,11 @@
 # Every readiness check is local or one bounded ssh call; a stuck or slow
 # probe times out and this script falls back to running locally rather than
 # hanging waiting on PC02. Once a check has committed to a remote run it
-# never also runs the suite again locally (the two would double whatever
-# time budget the caller enforces, such as no-mistakes' 30-minute test-agent
-# deadline); the remote execution itself is still bounded
+# never also runs the selected command again locally (the two would double
+# whatever time budget the caller enforces, such as no-mistakes' 30-minute
+# test-agent deadline); the remote execution itself is still bounded
 # (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, enforced by `timeout` on PC02 itself so
-# the remote suite's session is killed there rather than orphaned
+# the remote command's session is killed there rather than orphaned
 # behind a dropped ssh client), and a run that hits this bound is reported
 # as a failure rather than silently doubling the budget with a second local
 # run. An orphaned background process a test leaves running can otherwise
@@ -87,13 +87,14 @@
 #     rerunning locally. Lint mode keeps bin/fm-lint.sh's own worker count and
 #     partition selection untouched; the whole-run bound applies to it too.
 #   - Host slots: FM_PC02_OFFLOAD_SLOTS (default 2) nonblocking flocks on
-#     PC02's ~/.fm-pc02-test-slot-<n>.lock, one per concurrent suite, cover
-#     transfer and execution. A run takes the first free slot; with all slots
-#     held it logs that every slot is busy and routes local, as does an unclear
-#     claim. The files are never unlinked: a dead owner's kernel lock is
-#     released automatically, so a leftover file or process name is harmless.
+#     PC02's ~/.fm-pc02-test-slot-<n>.lock, one per concurrent test suite or
+#     lint run, cover transfer and execution. A run takes the first free slot;
+#     with all slots held it logs that every slot is busy and routes local, as
+#     does an unclear claim. The files are never unlinked: a dead owner's
+#     kernel lock is released automatically, so a leftover file or process
+#     name is harmless.
 #   - Supervising-home selection and per-machine configuration are owned by
-#     docs/configuration.md's "PC02 test offload" section.
+#     docs/configuration.md's "PC02 test and lint offload" section.
 #   - The remote fm-test-run.sh prints its own environment record before its
 #     first test, so an offloaded run records PC02's PATH and the limits the
 #     suite actually runs with.
@@ -112,8 +113,8 @@
 #     FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS. Any expiry routes the run locally.
 #     PC02's open-file limit must be at least PC01's; a higher limit is an
 #     allowed resource difference. Missing or invalid limits route locally.
-#     Both the parity probe and the remote suite command first raise PC02's
-#     soft open-file limit to its hard limit best effort, so a low soft limit
+#     Both the parity probe and the remote command first raise PC02's soft
+#     open-file limit to its hard limit best effort, so a low soft limit
 #     inherited from the login shell neither blocks admission nor limits the
 #     run.
 #   - Sizing evidence: two simultaneous four-worker offloads of
@@ -174,13 +175,14 @@
 #                                      that cuts a slow-but-identical host.
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
 #                                      (default: 180)
-#   FM_PC02_OFFLOAD_SLOTS               number of concurrent PC02 suites
-#                                      (default: 2); each holds its own slot
-#                                      lock. With all slots busy the run
-#                                      routes local and says so. Must be an
-#                                      integer from 1 to 16; any other value
-#                                      is a configuration error that exits 2
-#                                      without running tests.
+#   FM_PC02_OFFLOAD_SLOTS               number of concurrent PC02 test suites
+#                                      or lint runs (default: 2); each holds
+#                                      its own slot lock. With all slots busy
+#                                      the run routes local and says so. Must
+#                                      be an integer from 1 to 16; any other
+#                                      value is a configuration error that
+#                                      exits 2 without running the selected
+#                                      command.
 #   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote run, test
 #                                      or lint (default: 7200); a hang
 #                                      tripwire, not a deadline. PR #215's
@@ -209,8 +211,8 @@
 #                                      have (default: see REQUIRED_TOOLS
 #                                      below); override only to reflect a
 #                                      real, verified change in what the
-#                                      selected suite needs, never to make a
-#                                      tool-short PC02 pass anyway.
+#                                      selected command needs, never to make
+#                                      a tool-short PC02 pass anyway.
 #   FM_PC02_OFFLOAD_PERSONAL_USE_FLAG   the manual switch's flag file path on
 #                                      PC02, relative to its $HOME (default:
 #                                      .fm-pc02-personal-use); present = on
@@ -226,7 +228,7 @@
 # Exit status: the exact exit code fm-test-run.sh or fm-lint.sh produced,
 # wherever it ran, or 124 if the remote run itself exceeded
 # FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
-# FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16), which runs no tests at
+# FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16), which runs nothing at
 # all.
 # A readiness check that fails (PC02 personally in use, occupied, unreachable,
 # missing a required tool, or a sync/verification failure) falls back to a
@@ -871,11 +873,11 @@ else
   # count.
   remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 fi
-# The watcher reads the ssh stdin: if the transport drops, EOF kills the suite
-# session. The lock (fd 8) is held by the suite itself, so a surviving old
-# suite keeps the slot until it actually terminates.
+# The watcher reads the ssh stdin: if the transport drops, EOF kills the
+# command session. The lock (fd 8) is held by the run itself, so a surviving
+# old run keeps the slot until it actually terminates.
 # Keep job control off: setsid must exec in place so $! is the session ID
-# written to pgid and used to clean up the complete suite session.
+# written to pgid and used to clean up the complete command session.
 remote_test_cmd="exec 5<&0
 ulimit -Sn \"\$(ulimit -Hn)\" 2>/dev/null || true
 cd $(printf '%q' "$REMOTE_WORKTREE") || exit 1
