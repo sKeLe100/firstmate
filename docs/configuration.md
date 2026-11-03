@@ -771,7 +771,7 @@ PC02's `ulimit -n` must be at least PC01's; a higher or unlimited remote limit i
 Both the parity probe and the remote suite command first raise PC02's soft open-file limit to its hard limit best effort, so a low soft limit inherited from the SSH login shell neither blocks admission nor constrains the run.
 The parity probe has its own `FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS` bound (default 180) that covers its per-command deadlines; the reachability probe keeps the shorter `FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS`.
 Paths are reported for diagnostics but are not compared.
-A mismatch, an unestablished version, or an unresolved library routes the run locally with the host, browser path, and differing value.
+A mismatch, an unestablished version, or an unresolved library routes the run locally, naming the differing field, both hosts' values, and the browser path for an unresolved library.
 CPU count, RAM, `ulimit -u`, the shared no-mistakes daemon version, the `/usr/bin/env` provider, and shell availability such as zsh are intentionally excluded as resource differences or documented test differences.
 The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
 A full PR #215 selection of 183 scripts took 4274s test wall / 4305s whole at four workers; that single-run measurement does not establish that two full selections fit within the cap.

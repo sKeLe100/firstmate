@@ -24,7 +24,10 @@
 # Session stop is available only through guarded stop or teardown, and session
 # delete is available only through teardown.
 # Both paths perform a fresh refuse-default check immediately before each
-# destructive call.
+# destructive call, and every session-list read they and the tripwire share is
+# validated first as exactly one JSON document carrying a sessions array and no
+# error marker, so an unreadable, error, or multi-document response can never
+# pass as an empty or unchanged fleet state.
 # Provision records the default-session fleet state - the name, default flag,
 # running flag, and socket path of the default session, or an empty list when
 # the host has none - as a fleet-state tripwire, and teardown requires that

@@ -90,12 +90,15 @@
 #     suite actually runs with.
 #   - Before taking a slot, PC01 and PC02 compare versions of git, bash,
 #     python3, jq, node, shellcheck, actionlint, ruby, chromium, herdr, pi, and
-#     tmux, LC_ALL/LANG/TZ, and normalized ldd results for
-#     the browser selected by fm-test-chrome.sh. CPU count, RAM, ulimit -u,
+#     tmux, LC_ALL/LANG/TZ, and the version and sorted dependency sonames of
+#     the browser fm-test-chrome.sh picks on that host. A differing value, a
+#     version a host cannot establish, and an unresolved browser library all
+#     route the run locally with both hosts' values. CPU count, RAM, ulimit -u,
 #     no-mistakes daemon version, /usr/bin/env provider, and shell availability
 #     (including zsh) are intentionally excluded as resources or documented
-#     test differences. Local browser dependency and wrapper-resolution probes
-#     have a 10-second deadline per command; timeout routes the run locally.
+#     test differences. Browser dependency and wrapper-resolution probes have a
+#     10-second deadline per command on either host and the selected browser's
+#     own version probe 5; a timeout routes the run locally.
 #     PC02's open-file limit must be at least PC01's; a higher limit is an
 #     allowed resource difference. Missing or invalid limits route locally.
 #     Both the parity probe and the remote suite command first raise PC02's
