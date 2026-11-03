@@ -1832,17 +1832,17 @@ def shell_executable_names(text):
         except ValueError:
             tokens = []
         index = 0
-        value = ""
+        while index < len(tokens) and tokens[index] in (
+            "local", "declare", "readonly", "export", "typeset"
+        ):
+            index += 1
         while index < len(tokens) and re.match(r"^[A-Za-z_]\w*=", tokens[index]):
             value = tokens[index].split("=", 1)[1]
+            if re.search(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)[\"'}]?$", value):
+                names.extend(NAME_RE.findall(value))
             index += 1
         first = tokens[index] if index < len(tokens) else ""
         direct = bool(first) and bool(NAME_RE.fullmatch(Path(first).name))
-        assignment_ref = bool(value) and bool(
-            re.search(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)[\"'}]?$", value)
-        )
-        if assignment_ref:
-            names.extend(NAME_RE.findall(value))
         if direct or EXEC_WORD_RE.search(line):
             names.extend(NAME_RE.findall(line))
     return names
@@ -1928,30 +1928,37 @@ def shared_pass_through(node):
 # A command consumed from more than one place is shared infrastructure, not a
 # leaf: walking its callers turns a leaf mention into whole-suite fan-out.
 HUB_FANIN = 3
+# A thin hub's suites directly drive the path to the leaf. A wider hub's suites
+# each cover one mode, so they are left to the curated map and full CI.
+HUB_THIN_READERS = 3
 
 
-def print_direct_test_readers(dependency, boundary):
-    for reader in sorted(executable_consumers[boundary]):
-        if reader.startswith("tests/") and reader.endswith(".test.sh"):
-            print(dependency + "\t__script__:" + Path(reader).name)
+def direct_test_readers(node):
+    return sorted(
+        reader for reader in executable_consumers[node]
+        if reader.startswith("tests/") and reader.endswith(".test.sh")
+    )
 
 
 for dependency in sorted(set(sys.argv[1:])):
     queue = deque([dependency])
-    seen = {dependency}
+    queued = {dependency}
+    printed = set()
     while queue:
         source = queue.popleft()
         for consumer in sorted(consumers[source]):
-            if consumer in seen:
-                continue
-            seen.add(consumer)
             if consumer.startswith("tests/") and consumer.endswith(".test.sh"):
-                print(dependency + "\t__script__:" + Path(consumer).name)
+                if consumer not in printed:
+                    print(dependency + "\t__script__:" + Path(consumer).name)
+                    printed.add(consumer)
                 # A suite is a terminal reader unless it actually executes the
                 # other suite as a wrapper; a comment or fixture mention is not
                 # a reason to fan out through it.
-                if consumer in executable_consumers[source]:
+                if consumer in executable_consumers[source] and consumer not in queued:
+                    queued.add(consumer)
                     queue.append(consumer)
+                continue
+            if consumer in queued:
                 continue
             if shared_pass_through(consumer):
                 # A leaf mention inside a shared library or test harness is a
@@ -1960,9 +1967,17 @@ for dependency in sorted(set(sys.argv[1:])):
             if len(consumers[consumer]) >= HUB_FANIN:
                 # A command invoked from more than one place is shared; walking
                 # its callers fans a single leaf out into the whole suite.
-                # Still keep the boundary's direct executable test readers.
-                print_direct_test_readers(dependency, consumer)
+                readers = direct_test_readers(consumer)
+                if len(readers) <= HUB_THIN_READERS:
+                    for reader in readers:
+                        if reader not in printed:
+                            print(dependency + "\t__script__:" + Path(reader).name)
+                            printed.add(reader)
+                        if reader not in queued:
+                            queued.add(reader)
+                            queue.append(reader)
                 continue
+            queued.add(consumer)
             queue.append(consumer)
 PYREF
 }
@@ -2078,6 +2093,10 @@ families_for_changed_path() {
     bin/fm-watch-checkpoint.sh)
       printf '%s\n' __script__:fm-watch-checkpoint.test.sh
       printf '%s\n' __script__:fm-arm-pretool-check.test.sh
+      ;;
+    bin/fm-context-usage.sh)
+      printf '%s\n' __script__:fm-watch-triage.test.sh
+      printf '%s\n' __script__:fm-watch-triage-waits.test.sh
       ;;
     bin/fm-watch.sh|bin/fm-classify-lib.sh)
       # Shared loop/classification changes retain broad watcher coverage, plus
@@ -2300,9 +2319,13 @@ families_for_changed_path() {
           printf '%s\n' __script__:fm-branch-supervision.test.sh ;;
       esac
       ;;
-    .github/workflows/ci.yml|.no-mistakes.yaml)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' real-herdr-gated
+    .github/workflows/ci.yml)
+      printf '%s\n' __script__:fm-lint-workflows.test.sh
+      scripts_for_document_readers "$path"
+      ;;
+    .no-mistakes.yaml)
+      printf '%s\n' __script__:fm-lint-nomistakes-config.test.sh
+      printf '%s\n' __script__:fm-lint.test.sh
       ;;
     .gitattributes)
       printf '%s\n' __script__:fm-test-run.test.sh
@@ -2322,7 +2345,11 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-documentation-audiences.test.sh
       scripts_for_document_readers "$path"
       ;;
-    .github/*|.tasks.toml)
+    .tasks.toml)
+      printf '%s\n' __script__:fm-tasks-axi.test.sh
+      scripts_for_document_readers "$path"
+      ;;
+    .github/*)
       printf '%s\n' pure-contract-unit
       ;;
     tests/git-config-helpers.sh)

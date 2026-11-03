@@ -553,17 +553,19 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
     printf 'bash "%s/bin/fm-test-isolation-proof.sh"\n' "$repo" >"$repo/tests/via-bin.test.sh"
     printf '. "%s/tests/consumer-chain.sh"\n' "$repo" >"$repo/tests/via-helper.test.sh"
     printf 'bash "%s/tests/via-bin.test.sh"\n' "$repo" >"$repo/tests/via-suite.test.sh"
+    printf 'run() {\n  local lib="%s/bin/%s.sh"\n  . "$lib"\n}\nrun\n' "$repo" "$subject" >"$repo/bin/declared-consumer.sh"
+    printf 'bash "%s/bin/declared-consumer.sh"\n' "$repo" >"$repo/tests/via-local.test.sh"
     printf 'echo unrelated\n' >"$repo/tests/unrelated.test.sh"
     git -C "$repo" init -q
     git -C "$repo" add .
     git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
     printf '\n' >>"$repo/bin/$subject.sh"
     listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
-    for reader in direct via-bin via-helper via-suite; do
+    for reader in direct via-bin via-helper via-suite via-local; do
       assert_contains "$listed" "tests/$reader.test.sh" "$subject retains its $reader reader"
     done
-    [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 4 ] || fail "$subject must select exactly its four readers: $listed"
-    for reader in via-bin via-helper via-suite; do
+    [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 5 ] || fail "$subject must select exactly its five readers: $listed"
+    for reader in via-bin via-helper via-suite via-local; do
       [ "$(bash "$repo/tests/$reader.test.sh")" = executed ] || fail "$reader did not execute $subject"
     done
     git -C "$repo" checkout -q -- "bin/$subject.sh"
@@ -594,6 +596,10 @@ test_changed_reference_closure() {
   # Quoted # is data and must not hide a genuine dependency later on the line.
   printf 'value="#"; . "./four.sh"\n' >"$repo/bin/quoted-hash.sh"
   printf '. "./quoted-hash.sh"\n' >>"$repo/tests/fm-secondmate-safety.test.sh"
+  printf 'echo leaf-ran\n' >"$repo/bin/comment-leaf.sh"
+  printf '. "%s/bin/comment-leaf.sh"\n' "$repo" >"$repo/bin/comment-consumer.sh"
+  printf '# comment-leaf.sh\n. "$(dirname "$0")/../bin/comment-consumer.sh"\n' >"$repo/tests/fm-comment-reader.test.sh"
+  printf 'bash "$(dirname "$0")/fm-comment-reader.test.sh"\n' >"$repo/tests/fm-comment-wrapper.test.sh"
   git -C "$repo" add .
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm chain
   printf '\n' >>"$repo/bin/four.sh"
@@ -605,25 +611,33 @@ test_changed_reference_closure() {
   rm "$repo/bin/four.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   assert_contains "$listed" tests/fm-pr-merge.test.sh "removed source still selects its remaining readers"
-  pass "changed reference closure handles cycles, comments, and removals"
+  git -C "$repo" add -A
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm remove-four
+  printf '\n' >>"$repo/bin/comment-leaf.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-comment-reader.test.sh "an executable edge requeues a suite first seen through a comment"
+  assert_contains "$listed" tests/fm-comment-wrapper.test.sh "a wrapper of that suite is selected"
+  [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 2 ] || fail "comment edge widened beyond its reader and wrapper: $listed"
+  [ "$(bash "$repo/tests/fm-comment-wrapper.test.sh")" = leaf-ran ] || fail "the selected wrapper did not execute the changed leaf"
+  pass "changed reference closure handles cycles, comments, wrappers, and removals"
 }
 
 # Use the real inventory in a disposable copy, never execute its scripts here.
 # Bounds catch family fan-out while positive assertions keep relevant coverage.
 test_changed_real_inventory_selection_bounds() {
-  local tmp repo listed count path all_count limit
+  local tmp repo listed count path limit
   tmp=$(fm_test_tmproot fm-selection-inventory)
   repo="$tmp/repo"
   mkdir -p "$repo"
-  for path in bin tests docs .agents .pi .claude; do
+  for path in bin tests docs .agents .pi .claude .github; do
     [ ! -d "$ROOT/$path" ] || cp -R "$ROOT/$path" "$repo/$path"
   done
-  path=AGENTS.md
-  cp "$ROOT/$path" "$repo/$path"
+  for path in AGENTS.md .no-mistakes.yaml .tasks.toml; do
+    cp "$ROOT/$path" "$repo/$path"
+  done
   git -C "$repo" init -q
   git -C "$repo" add .
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
-  all_count=$(cd "$repo" && bin/fm-test-run.sh --list --all | wc -l | tr -d ' ')
 
   printf '\n' >>"$repo/AGENTS.md"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
@@ -640,6 +654,25 @@ test_changed_real_inventory_selection_bounds() {
   assert_not_contains "$listed" tests/fm-calm-pi-extension.test.sh "docs do not select browser/Pi integration"
   assert_not_contains "$listed" tests/fm-test-run.test.sh "docs do not select runner integration"
   git -C "$repo" checkout -q -- .agents/skills/bearings/SKILL.md docs/configuration.md
+
+  printf '\n' >>"$repo/.no-mistakes.yaml"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-lint-nomistakes-config.test.sh "no-mistakes config retains its contract owner"
+  assert_contains "$listed" tests/fm-lint.test.sh "no-mistakes config retains the lint suite"
+  assert_not_contains "$listed" tests/fm-calm-pi-extension.test.sh "no-mistakes config avoids browser/Pi integration"
+  git -C "$repo" checkout -q -- .no-mistakes.yaml
+
+  printf '\n' >>"$repo/.github/workflows/ci.yml"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-lint-workflows.test.sh "CI workflow retains its lint owner"
+  assert_not_contains "$listed" tests/fm-calm-pi-extension.test.sh "CI workflow avoids browser/Pi integration"
+  git -C "$repo" checkout -q -- .github/workflows/ci.yml
+
+  printf '\n' >>"$repo/.tasks.toml"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-tasks-axi.test.sh "tasks config retains its tasks-axi owner"
+  assert_not_contains "$listed" tests/fm-calm-pi-extension.test.sh "tasks config avoids browser/Pi integration"
+  git -C "$repo" checkout -q -- .tasks.toml
 
   printf '\n' >>"$repo/docs/supervision-protocols/codex.md"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
@@ -663,18 +696,22 @@ test_changed_real_inventory_selection_bounds() {
   [ "$count" -ge 1 ] && [ "$count" -le 40 ] \
     || fail "context-usage leaf expected 1-40 scripts (target 20-40 for a typical leaf), got $count: $listed"
   assert_contains "$listed" tests/fm-context-usage.test.sh "context-usage leaf retains its behavior suite"
+  assert_contains "$listed" tests/fm-watch-triage.test.sh "context-usage leaf retains its watch-triage reader"
+  assert_contains "$listed" tests/fm-watch-triage-waits.test.sh "context-usage leaf retains its waits reader"
   git -C "$repo" checkout -q -- bin/fm-context-usage.sh
 
   # Shared harnesses stop the walk, so a leaf stays bounded even when it is
   # reached through a command hub that a local test directly executes.
   for path in fm-watch-arm fm-procevent; do
-    limit=60
-    [ "$path" = fm-procevent ] && limit=70
+    limit=40
     printf '\n' >>"$repo/bin/$path.sh"
     listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
     count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
     [ "$count" -ge 1 ] && [ "$count" -le "$limit" ] \
       || fail "$path leaf expected 1-$limit scripts, got $count: $listed"
+    if [ "$path" = fm-procevent ]; then
+      assert_not_contains "$listed" tests/fm-grok-harness.test.sh "fm-procevent leaf avoids unrelated harness suites"
+    fi
     git -C "$repo" checkout -q -- "bin/$path.sh"
   done
 
@@ -700,8 +737,8 @@ test_changed_real_inventory_selection_bounds() {
   printf '\n' >>"$repo/bin/fm-wake-lib.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 50 ] && [ "$count" -lt "$all_count" ] \
-    || fail "shared watcher library should widen well past a leaf but stay below --all: got $count of $all_count"
+  [ "$count" -ge 50 ] \
+    || fail "shared watcher library should widen well past a leaf: got $count"
   git -C "$repo" checkout -q -- bin/fm-wake-lib.sh
 
   # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.
@@ -716,8 +753,8 @@ test_changed_real_inventory_selection_bounds() {
   for path in "${recorded_paths[@]}"; do printf '\n' >>"$repo/$path"; done
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 25 ] && [ "$count" -le 157 ] \
-    || fail "recorded feature expected 25-157 scripts, below the original 196 and 306: got $count: $listed"
+  [ "$count" -ge 25 ] && [ "$count" -le 110 ] \
+    || fail "recorded feature expected 25-110 scripts, below the original 196 and 306: got $count: $listed"
   for path in fm-context-usage fm-crew-state fm-primary-watchdog fm-returning-session-check fm-watch-triage fm-watch-triage-waits; do
     assert_contains "$listed" "tests/$path.test.sh" "recorded feature retains $path behavior"
   done
