@@ -138,7 +138,7 @@ case "$*" in
     exit $?
     ;;
 esac
-printf 'resource:cpu=1 gpu=0\n'
+printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 exit 0
 SH
   cat > "$fakebin/rsync" <<'SH'
@@ -224,7 +224,7 @@ case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command;
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
 # Reachable, idle, and tool-ready for the probe, and a no-op for mkdir and
 # any other one-shot remote command; rsync itself is the failure under test.
-printf 'resource:cpu=1 gpu=0\n'
+printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 exit 0
 SH
   chmod +x "$fakebin/ssh"
@@ -289,7 +289,7 @@ test_idle_llama_swap_does_not_block_offload() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-printf 'llama-swap-running:0\nresource:cpu=1 gpu=0\n'
+printf 'llama-swap-running:0\nresource:cpu=1 gpu=0\nthreads:8\n'
 exit 0
 SH
   chmod +x "$fakebin/ssh"
@@ -625,20 +625,29 @@ SH
 }
 
 test_remote_jobs_and_script_bound() {
-  local dir fakebin out status jobs
+  local dir fakebin out status jobs threads cap
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
   fi
   dir="$TMP_ROOT/remote-jobs-bounds"
   fakebin=$(fake_pc02 "$dir")
+  # The fake host answers the probe locally, so its thread count is this
+  # runner's nproc; the wrapper derives the per-slot cap from that, never a
+  # hard-coded 16.
+  threads=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+  cap=$((threads / 2))
+  [ "$cap" -ge 1 ] || cap=1
   # Use a private remote runner stand-in to observe argv/environment at the
   # transfer boundary. The real scheduler's isolation policy has separate tests.
   export FM_FAKE_CAPTURE_RUNNER=1
-  for jobs in default override split equals; do
+  for jobs in default override split equals cap-split cap-equals below; do
     local -a args=()
     case "$jobs" in
       split) args=(--jobs 4) ;;
       equals) args=(--jobs=3) ;;
+      cap-split) args=(--jobs 9999) ;;
+      cap-equals) args=(--jobs=9999) ;;
+      below) args=(--jobs 1) ;;
     esac
     out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
       FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_JOBS="$([ "$jobs" = override ] && echo 6 || echo 8)" \
@@ -650,9 +659,28 @@ test_remote_jobs_and_script_bound() {
       override) assert_contains "$out" 'auto_jobs=6' "missing override: $out" ;;
       split) assert_contains "$out" 'argv=--all --jobs 4' "split jobs lost: $out" ;;
       equals) assert_contains "$out" 'argv=--all --jobs=3' "equals jobs lost: $out" ;;
+      cap-split)
+        assert_contains "$out" "argv=--all --jobs $cap" "an explicit split --jobs was not capped: $out"
+        assert_contains "$out" "capping --jobs 9999 to $cap" "the cap was not explained: $out"
+        ;;
+      cap-equals)
+        assert_contains "$out" "argv=--all --jobs=$cap" "an explicit equals --jobs was not capped: $out"
+        ;;
+      below)
+        assert_contains "$out" 'argv=--all --jobs 1' "a below-cap caller value was not preserved: $out"
+        assert_not_contains "$out" 'capping --jobs' "a below-cap caller value was capped: $out"
+        ;;
     esac
     assert_contains "$out" '--per-script-timeout-secs 3000' "default script cap changed: $out"
   done
+  # One slot may use the whole machine: the cap is the remote thread count.
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=1 \
+    "$SCRIPT" --all --jobs 9999 2>&1)
+  status=$?
+  expect_code 0 "$status" "single-slot jobs fixture failed: $out"
+  assert_contains "$out" "argv=--all --jobs $threads" \
+    "one slot did not get the whole host's thread count: $out"
   unset FM_FAKE_CAPTURE_RUNNER
   printf '#!/usr/bin/env bash\nsleep 60\n' > "$dir/timeout.test.sh"
   chmod +x "$dir/timeout.test.sh"
@@ -1227,7 +1255,7 @@ test_bare_common_store_needs_machine_file_unless_state_override() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-printf 'resource:cpu=1 gpu=0\n'
+printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
   chmod +x "$fakebin/ssh" "$fakebin/rsync"
@@ -1257,7 +1285,7 @@ test_machine_home_config_without_fm_home() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-printf 'resource:cpu=1 gpu=0\n'
+printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
   chmod +x "$fakebin/ssh" "$fakebin/rsync"
@@ -1302,7 +1330,7 @@ test_primary_clone_home_without_environment_or_config() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-printf 'resource:cpu=1 gpu=0\n'
+printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
   chmod +x "$fakebin/ssh" "$fakebin/rsync"

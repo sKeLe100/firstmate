@@ -66,11 +66,15 @@
 # running, are removed on every exit path, including an interrupt.
 #
 # Remote run conditions (always applied to an offloaded run):
-#   - Parallel, per-script bounded: caller --jobs is preserved; absent that,
-#     the remote fm-test-run.sh keeps its own automatic scheduler (only
-#     proven-isolated scripts and recorded concurrent family proofs run in
-#     parallel; unproven scripts stay serial) with its worker ceiling raised to
-#     FM_PC02_OFFLOAD_JOBS (default 8) for PC02's 16 threads / 27 GB.
+#   - Parallel, per-script bounded: an explicit caller --jobs is capped to
+#     floor(threads / slots) workers per slot, where threads comes from PC02's
+#     own nproc (getconf _NPROCESSORS_ONLN fallback), so concurrent slots
+#     together cannot exceed PC02's thread count; a caller asking for less
+#     keeps its value. Absent --jobs, the remote fm-test-run.sh keeps its own
+#     automatic scheduler (only proven-isolated scripts and recorded
+#     concurrent family proofs run in parallel; unproven scripts stay serial)
+#     with its worker ceiling raised to FM_PC02_OFFLOAD_JOBS (default 8) for
+#     PC02's 16 threads / 27 GB.
 #     Isolation phases, family caps and serial tails remain enforced; curated
 #     lanes keep their contracts. The per-script cap defaults to 3000s
 #     (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS) and overrides the caller's
@@ -153,8 +157,10 @@
 #                                      rather than falling back, since the
 #                                      remote work already spent is not worth
 #                                      discarding blind
-#   FM_PC02_OFFLOAD_JOBS                remote jobs when caller omits --jobs
-#                                      (default: 8)
+#   FM_PC02_OFFLOAD_JOBS                remote auto-scheduler worker ceiling
+#                                      when caller omits --jobs (default: 8);
+#                                      an explicit --jobs is capped to
+#                                      floor(PC02 nproc / SLOTS) instead
 #   FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS per-script cap (default: 3000)
 #   FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
 #                                      the ssh target's home, holding one
@@ -326,6 +332,7 @@ fi
 probe_cmd=$(cat <<PROBE
 [ -f "\$HOME/$PERSONAL_USE_FLAG" ] && echo "personal-use:on"
 for t in $REQUIRED_TOOLS; do command -v "\$t" >/dev/null 2>&1 || echo "missing:\$t"; done
+echo "threads:\$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)"
 if ls_running=\$(curl -sf --connect-timeout 3 --max-time 5 $(printf '%q' "$LLAMASWAP_URL/running") 2>/dev/null); then
   echo "llama-swap-running:\$(printf '%s' "\$ls_running" | jq -r '.running | length' 2>/dev/null)"
 fi
@@ -350,12 +357,14 @@ personal_use=0
 missing_tools=
 llama_swap_running=0
 resource_line=
+remote_threads=
 while IFS= read -r probe_line; do
   case "$probe_line" in
     personal-use:on) personal_use=1 ;;
     missing:*) missing_tools="$missing_tools ${probe_line#missing:}" ;;
     llama-swap-running:*) llama_swap_running="${probe_line#llama-swap-running:}" ;;
     resource:*) resource_line="${probe_line#resource:}" ;;
+    threads:*) remote_threads="${probe_line#threads:}" ;;
   esac
 done <<PROBE_OUT
 $probe_out
@@ -395,6 +404,21 @@ esac
 if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
 fi
+
+# Cap explicit caller --jobs per slot so the sum across concurrently held
+# slots cannot oversubscribe PC02: each slot may use at most
+# floor(threads / slots) workers. The thread count comes from the remote
+# host's own nproc (getconf fallback), never a hard-coded figure, so a
+# different PC02 or a changed CPU count adjusts the cap automatically. A
+# caller asking for less than the cap keeps its value. An unreadable count is
+# an unclear host read and routes local, like every other unclear probe.
+case "$remote_threads" in
+  ''|*[!0-9]*) run_local "PC02 thread count unavailable (got '$remote_threads'); cannot bound concurrent slot workers" ;;
+esac
+[ "$remote_threads" -ge 1 ] || run_local "PC02 reported zero threads; cannot bound concurrent slot workers"
+jobs_cap=$((remote_threads / SLOTS))
+[ "$jobs_cap" -ge 1 ] || jobs_cap=1
+
 # Compare test-relevant surfaces with the same probe on both hosts.
 parity_probe="$(cat "$SELF_DIR/fm-test-chrome.sh")
 $(cat <<'PARITY_PROBE'
@@ -665,17 +689,65 @@ has_jobs=0
 for a in "${ARGS[@]}"; do
   case "$a" in --jobs|--jobs=*) has_jobs=1 ;; esac
 done
+# Rewrite only an explicit caller --jobs, and only downward to the per-slot
+# cap; every other argument passes through byte-for-byte. Both caller forms
+# (--jobs N and --jobs=N) keep their shape. A non-numeric value is left for
+# fm-test-run.sh to reject as it always did.
+remote_args=()
+if [ "$has_jobs" -eq 0 ]; then
+  remote_args=("${ARGS[@]}")
+else
+  jobs_i=0
+  while [ "$jobs_i" -lt "${#ARGS[@]}" ]; do
+    a=${ARGS[$jobs_i]}
+    case "$a" in
+      --jobs)
+        v=${ARGS[$((jobs_i + 1))]:-}
+        case "$v" in
+          ''|*[!0-9]*) ;;
+          *)
+            if [ "$v" -gt "$jobs_cap" ]; then
+              echo "fm-pc02-test-offload: capping --jobs $v to $jobs_cap (${remote_threads} PC02 threads across ${SLOTS} slot(s))" >&2
+              v=$jobs_cap
+            fi
+            ;;
+        esac
+        remote_args+=("--jobs" "$v")
+        jobs_i=$((jobs_i + 2))
+        continue
+        ;;
+      --jobs=*)
+        v=${a#--jobs=}
+        case "$v" in
+          ''|*[!0-9]*) ;;
+          *)
+            if [ "$v" -gt "$jobs_cap" ]; then
+              echo "fm-pc02-test-offload: capping --jobs $v to $jobs_cap (${remote_threads} PC02 threads across ${SLOTS} slot(s))" >&2
+              v=$jobs_cap
+            fi
+            ;;
+        esac
+        remote_args+=("--jobs=$v")
+        jobs_i=$((jobs_i + 1))
+        continue
+        ;;
+    esac
+    remote_args+=("$a")
+    jobs_i=$((jobs_i + 1))
+  done
+fi
 remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT")"
 if [ "$has_jobs" -eq 0 ]; then
   remote_suite_cmd="$remote_suite_cmd env FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
 fi
 remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
-for a in "${ARGS[@]}"; do
+for a in "${remote_args[@]}"; do
   remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
 done
 # No --jobs is forced: fm-test-run.sh's own scheduler admits only
 # proven-concurrent work, exactly as a local run does; only its worker ceiling
-# and the per-script bound are pinned.
+# and the per-script bound are pinned. An explicit caller --jobs is capped
+# above so two concurrent slots together stay within PC02's thread count.
 remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 # The watcher reads the ssh stdin: if the transport drops, EOF kills the suite
 # session. The lock (fd 8) is held by the suite itself, so a surviving old
