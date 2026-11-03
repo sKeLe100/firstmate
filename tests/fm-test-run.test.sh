@@ -611,7 +611,7 @@ test_changed_reference_closure() {
 # Use the real inventory in a disposable copy, never execute its scripts here.
 # Bounds catch family fan-out while positive assertions keep relevant coverage.
 test_changed_real_inventory_selection_bounds() {
-  local tmp repo listed count path all_count
+  local tmp repo listed count path all_count limit
   tmp=$(fm_test_tmproot fm-selection-inventory)
   repo="$tmp/repo"
   mkdir -p "$repo"
@@ -665,6 +665,19 @@ test_changed_real_inventory_selection_bounds() {
   assert_contains "$listed" tests/fm-context-usage.test.sh "context-usage leaf retains its behavior suite"
   git -C "$repo" checkout -q -- bin/fm-context-usage.sh
 
+  # Shared harnesses stop the walk, so a leaf stays bounded even when it is
+  # reached through a command hub that a local test directly executes.
+  for path in fm-watch-arm fm-procevent; do
+    limit=60
+    [ "$path" = fm-procevent ] && limit=70
+    printf '\n' >>"$repo/bin/$path.sh"
+    listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+    count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+    [ "$count" -ge 1 ] && [ "$count" -le "$limit" ] \
+      || fail "$path leaf expected 1-$limit scripts, got $count: $listed"
+    git -C "$repo" checkout -q -- "bin/$path.sh"
+  done
+
   # A hub's direct executable reader still runs the changed leaf, so the hub
   # boundary must select it even though the walk does not fan out further.
   printf '\n' >>"$repo/bin/fm-autonomous-pc02-lane.sh"
@@ -703,8 +716,8 @@ test_changed_real_inventory_selection_bounds() {
   for path in "${recorded_paths[@]}"; do printf '\n' >>"$repo/$path"; done
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 25 ] && [ "$count" -le 170 ] \
-    || fail "recorded feature expected 25-170 scripts, below the original 196 and 306: got $count: $listed"
+  [ "$count" -ge 25 ] && [ "$count" -le 157 ] \
+    || fail "recorded feature expected 25-157 scripts, below the original 196 and 306: got $count: $listed"
   for path in fm-context-usage fm-crew-state fm-primary-watchdog fm-returning-session-check fm-watch-triage fm-watch-triage-waits; do
     assert_contains "$listed" "tests/$path.test.sh" "recorded feature retains $path behavior"
   done

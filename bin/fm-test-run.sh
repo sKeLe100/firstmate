@@ -1825,7 +1825,7 @@ def shell_executable_names(text):
     names = []
     for line in text.replace("\\\n", " ").splitlines():
         stripped = line.strip()
-        if not stripped:
+        if not stripped or not NAME_RE.search(line):
             continue
         try:
             tokens = shlex.split(line, comments=False)
@@ -1956,8 +1956,6 @@ for dependency in sorted(set(sys.argv[1:])):
             if shared_pass_through(consumer):
                 # A leaf mention inside a shared library or test harness is a
                 # definition site, not proof that every importer executes it.
-                # Still keep the boundary's direct executable test readers.
-                print_direct_test_readers(dependency, consumer)
                 continue
             if len(consumers[consumer]) >= HUB_FANIN:
                 # A command invoked from more than one place is shared; walking
@@ -1970,10 +1968,6 @@ PYREF
 }
 
 scripts_for_path_reference() {
-  if [ "${REFERENCE_PROBE:-0}" -eq 1 ]; then
-    printf '__reference__:%s\n' "$1"
-    return 0
-  fi
   local path=$1
   awk -F '\t' -v path="$path" '$1 == path { print $2; found=1 } END { exit !found }' \
     <<<"$REFERENCE_INDEX"
@@ -2412,7 +2406,7 @@ families_for_changed_path() {
 }
 
 select_changed() {
-  local base=$1 path entry target s resolved_selection probe need_references=0 missing
+  local base=$1 path entry target s resolved_selection need_references=0 missing
   local -a changed_paths=() selected_targets=()
   if ! git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
     die "changed-file base ref not found: $base (pass --base <ref>)"
@@ -2426,11 +2420,6 @@ select_changed() {
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     case "$path" in bin/*|tests/*) need_references=1; break ;; esac
-    probe=$(REFERENCE_PROBE=1 families_for_changed_path "$path")
-    if printf '%s\n' "$probe" | grep -Eq '^__reference__:'; then
-      need_references=1
-      break
-    fi
   done < <(printf '%s\n' "${changed_paths[@]+"${changed_paths[@]}"}")
   if [ "$need_references" -eq 1 ]; then
     REFERENCE_INDEX=$(build_reference_index "${changed_paths[@]+"${changed_paths[@]}"}") \
