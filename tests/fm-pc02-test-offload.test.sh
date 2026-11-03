@@ -528,6 +528,11 @@ if [ -n "\${FM_FAKE_CAPTURE_RUNNER:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" 
 echo "auto_jobs=\${FM_TEST_RUN_AUTO_JOBS_MAX:-unset} argv=\$*"
 RUNNER
 fi
+if [ -n "\${FM_FAKE_CAPTURE_LINT:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
+  printf '%s\\n' '#!/usr/bin/env bash' 'echo "lint argv=\$*"' "exit \${FM_FAKE_LINT_EXIT:-0}" \
+    > "\${args[\${#args[@]}-1]}/bin/fm-lint.sh"
+  chmod +x "\${args[\${#args[@]}-1]}/bin/fm-lint.sh"
+fi
 SH
   chmod +x "$fakebin/ssh" "$fakebin/rsync"
   printf '%s\n' "$fakebin"
@@ -1464,12 +1469,47 @@ test_dead_owner_and_timeout_release_claim() {
   pass "a dead owner's claim is reclaimed and the next run releases it on timeout"
 }
 
+test_lint_mode_falls_back_locally_with_forwarded_args() {
+  local out direct status
+  out=$(PATH="/nonexistent-so-ssh-and-rsync-are-absent:$PATH" FM_PC02_OFFLOAD_DISABLE=1 \
+    "$SCRIPT" --lint --list-files 2>&1)
+  status=$?
+  direct=$("$ROOT/bin/fm-lint.sh" --list-files 2>&1)
+  expect_code 0 "$status" "a disabled lint offload must still run the real lint locally: $out"
+  assert_contains "$out" "offload disabled" "disabled lint offload did not explain why it stayed local: $out"
+  assert_contains "$out" "running lint on PC01" "disabled lint offload did not name its local command: $out"
+  [ "$(printf '%s\n' "$out" | tail -n +2)" = "$direct" ] \
+    || fail "--lint did not forward its arguments unchanged to fm-lint.sh: $out"
+  pass "--lint falls back to the real local lint with its arguments intact"
+}
+
+test_remote_lint_forwards_partition_and_returns_exit_code() {
+  local dir fakebin out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-lint"
+  fakebin=$(fake_pc02 "$dir")
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_LINT=1 FM_FAKE_LINT_EXIT=7 \
+    "$SCRIPT" --lint --partition 2of4 --telemetry "$dir/lint.tsv" 2>&1)
+  status=$?
+  expect_code 7 "$status" "a remote lint's exit code must come back unchanged: $out"
+  assert_contains "$out" "PC02 idle and ready; running lint remotely" "the lint run never went remote: $out"
+  assert_contains "$out" "lint argv=--partition 2of4 --telemetry $dir/lint.tsv" \
+    "the remote lint did not receive its partition and telemetry arguments unchanged: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind after lint: $out"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "lint retained the host claim"
+  pass "a remote lint forwards partition arguments, returns its exit code, and removes its mirror"
+}
+
 test_help_prints_the_whole_documented_contract() {
   local out status
   out=$("$SCRIPT" --help 2>&1)
   status=$?
   expect_code 0 "$status" "--help must exit 0: $out"
   assert_contains "$out" "fm-pc02-test-offload.sh <fm-test-run.sh args...>" "--help omitted the usage line: $out"
+  assert_contains "$out" "fm-pc02-test-offload.sh --lint [fm-lint.sh args...]" "--help omitted the lint usage line: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_DISABLE=1" "--help omitted the disable override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_PERSONAL_USE_FLAG" "--help omitted the personal-use switch override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_CPU_BUSY_PCT" "--help omitted the CPU busy threshold: $out"
@@ -1513,6 +1553,8 @@ test_high_gpu_falls_back_to_local
 test_unclear_resource_check_falls_back_to_local
 test_unreadable_thread_count_falls_back_to_local
 test_pc02_if_idle_flag_forwards_through_fm_test_run
+test_lint_mode_falls_back_locally_with_forwarded_args
+test_remote_lint_forwards_partition_and_returns_exit_code
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler

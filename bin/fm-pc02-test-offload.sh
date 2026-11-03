@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# fm-pc02-test-offload.sh - single owner of routing a heavy fm-test-run.sh
-# invocation to PC02 when PC02 is idle from LLM duty AND not the captain's
-# personal machine right now, falling back to running it on PC01 whenever
-# PC02 is busy, personally in use, unreachable, unready, or the transfer
-# fails.
+# fm-pc02-test-offload.sh - single owner of routing a heavy fm-test-run.sh or
+# fm-lint.sh invocation to PC02 when PC02 is idle from LLM duty AND not the
+# captain's personal machine right now, falling back to running it on PC01
+# whenever PC02 is busy, personally in use, unreachable, unready, or the
+# transfer fails.
 #
 # Why: on PC01 the no-mistakes test step (bin/fm-test-run.sh --changed
 # --exclude-family real-herdr-gated) repeatedly hits the 30-minute test-agent
-# deadline under host load. PC02 has stronger hardware and, when its
-# llama-swap serving stack is not holding a model for a live task and the
-# captain is not using it personally (gaming, etc.), sits idle.
+# deadline under host load, and the canonical lint step's exhaustive
+# ShellCheck audit is equally load-sensitive. PC02 has stronger hardware and,
+# when its llama-swap serving stack is not holding a model for a live task and
+# the captain is not using it personally (gaming, etc.), sits idle.
 # fm-test-run.sh's --pc02-if-idle flag execs into this script instead of
-# running the suite itself (see fm-test-run.sh's header); this script decides
-# local vs remote and, for remote, owns the transfer and execution mechanics.
+# running the suite itself (see fm-test-run.sh's header); the no-mistakes lint
+# step calls it with --lint. This script decides local vs remote and, for
+# remote, owns the transfer and execution mechanics for both work kinds.
 #
 # Reused rather than reinvented:
 #   - "is PC02 serving an LLM for firstmate" is
@@ -65,7 +67,7 @@
 # is returned. The per-run PC02 mirror, and any of its processes still
 # running, are removed on every exit path, including an interrupt.
 #
-# Remote run conditions (always applied to an offloaded run):
+# Remote run conditions (always applied to an offloaded run, test or lint):
 #   - Parallel, per-script bounded: an explicit caller --jobs is capped to
 #     floor(threads / slots) workers per slot, where threads comes from PC02's
 #     own nproc (getconf _NPROCESSORS_ONLN fallback), so concurrent slots
@@ -82,7 +84,8 @@
 #     (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS) and overrides the caller's
 #     per-script timeout. The whole run defaults to 7200s
 #     (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124 rather than
-#     rerunning locally.
+#     rerunning locally. Lint mode keeps bin/fm-lint.sh's own worker count and
+#     partition selection untouched; the whole-run bound applies to it too.
 #   - Host slots: FM_PC02_OFFLOAD_SLOTS (default 2) nonblocking flocks on
 #     PC02's ~/.fm-pc02-test-slot-<n>.lock, one per concurrent suite, cover
 #     transfer and execution. A run takes the first free slot; with all slots
@@ -136,6 +139,15 @@
 #
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
+#   fm-pc02-test-offload.sh --lint [fm-lint.sh args...]
+#
+# --lint selects the canonical lint instead of the test suite: the remote
+# mirror runs bin/fm-lint.sh with the forwarded arguments unchanged, so a
+# partition request such as --partition 2of4 means exactly what it means in
+# CI. A local fallback runs the same lint invocation on PC01. Every admission
+# rule below (lane occupancy, personal-use switch, resources, tools, host
+# slots) is shared by both modes; the script never forces a single worker or
+# reserves a host-wide slot.
 #
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
@@ -162,12 +174,13 @@
 #                                      integer from 1 to 16; any other value
 #                                      is a configuration error that exits 2
 #                                      without running tests.
-#   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote test run
-#                                      (default: 7200); a hang tripwire, not
-#                                      a deadline. PR #215's full --changed
-#                                      selection (183 scripts) measured 4274s
-#                                      test wall / 4305s whole at jobs=4.
-#                                      Exceeding it fails the run (exit 124)
+#   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote run, test
+#                                      or lint (default: 7200); a hang
+#                                      tripwire, not a deadline. PR #215's
+#                                      full --changed selection (183 scripts)
+#                                      measured 4274s test wall / 4305s whole
+#                                      at jobs=4. Exceeding it fails the run
+#                                      (exit 124)
 #                                      rather than falling back, since the
 #                                      remote work already spent is not worth
 #                                      discarding blind
@@ -203,13 +216,14 @@
 #                                      at/above which PC02 reads busy
 #                                      (default: 5; idle measures 0)
 #
-# Exit status: the exact exit code fm-test-run.sh produced, wherever it ran,
-# or 124 if the remote run itself exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS,
-# or 2 for a malformed FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16),
-# which runs no tests at all.
+# Exit status: the exact exit code fm-test-run.sh or fm-lint.sh produced,
+# wherever it ran, or 124 if the remote run itself exceeded
+# FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
+# FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16), which runs no tests at
+# all.
 # A readiness check that fails (PC02 personally in use, occupied, unreachable,
 # missing a required tool, or a sync/verification failure) falls back to a
-# local run and never changes the result fm-test-run.sh itself reports.
+# local run and never changes the result the selected command itself reports.
 set -u
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -223,6 +237,11 @@ fi
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SELF_DIR/fm-primary-scope-lib.sh"
 
+MODE="test"
+if [ "${1:-}" = "--lint" ]; then
+  MODE=lint
+  shift
+fi
 ARGS=("$@")
 
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
@@ -303,9 +322,16 @@ trap 'on_signal 143' TERM
 trap 'on_signal 129' HUP
 
 run_local() {  # <reason>
-  echo "fm-pc02-test-offload: $1; running on PC01" >&2
+  if [ "$MODE" = lint ]; then
+    echo "fm-pc02-test-offload: $1; running lint on PC01" >&2
+  else
+    echo "fm-pc02-test-offload: $1; running on PC01" >&2
+  fi
   remove_remote_run
   release_claim
+  if [ "$MODE" = lint ]; then
+    exec "$SELF_DIR/fm-lint.sh" "${ARGS[@]}"
+  fi
   exec "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}"
 }
 
@@ -693,82 +719,93 @@ if [ "$head_rc" -ne 0 ] || [ "$remote_head" != "$local_head" ]; then
   run_local "PC02 mirror HEAD verification failed (local=$local_head remote=$remote_head rc=$head_rc)"
 fi
 
-# 4. Run the exact same fm-test-run.sh invocation on PC02, streaming its
-# output live; its exit code becomes this script's exit code unchanged.
+# 4. Run the exact same command invocation on PC02, streaming its output
+# live; its exit code becomes this script's exit code unchanged. Lint mode
+# reuses this whole transfer/lock/streaming path and swaps only the command,
+# so partition selection stays exactly what the caller asked for.
 # Bounded by RUN_TIMEOUT on PC02 itself: an orphaned background process a
 # test leaves running there can hold the ssh channel open long after
 # fm-test-run.sh itself exits (see header), so this is not merely defensive.
 # The remote `timeout` bounds the run; the wrapper kills its session when
-# fm-test-run.sh returns, including nested per-script timeout groups, so a
+# the command returns, including nested per-script timeout groups, so a
 # straggler cannot pin the channel;
 # the local one is only a backstop for a wedged ssh connection. A run
 # that hits this bound fails outright (exit 124) rather than falling back to
 # a second local run, which would silently double the caller's time budget.
-echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
-has_jobs=0
-for a in "${ARGS[@]}"; do
-  case "$a" in --jobs|--jobs=*) has_jobs=1 ;; esac
-done
-# Rewrite only an explicit caller --jobs, and only downward to the per-slot
-# cap; every other argument passes through byte-for-byte. Both caller forms
-# (--jobs N and --jobs=N) keep their shape. A non-numeric value is left for
-# fm-test-run.sh to reject as it always did.
-remote_args=()
-if [ "$has_jobs" -eq 0 ]; then
-  remote_args=("${ARGS[@]}")
-else
-  jobs_i=0
-  while [ "$jobs_i" -lt "${#ARGS[@]}" ]; do
-    a=${ARGS[$jobs_i]}
-    case "$a" in
-      --jobs)
-        v=${ARGS[$((jobs_i + 1))]:-}
-        case "$v" in
-          ''|*[!0-9]*) ;;
-          *)
-            if [ "$v" -gt "$jobs_cap" ]; then
-              echo "fm-pc02-test-offload: capping --jobs $v to $jobs_cap (${remote_threads} PC02 threads across ${SLOTS} slot(s))" >&2
-              v=$jobs_cap
-            fi
-            ;;
-        esac
-        remote_args+=("--jobs" "$v")
-        jobs_i=$((jobs_i + 2))
-        continue
-        ;;
-      --jobs=*)
-        v=${a#--jobs=}
-        case "$v" in
-          ''|*[!0-9]*) ;;
-          *)
-            if [ "$v" -gt "$jobs_cap" ]; then
-              echo "fm-pc02-test-offload: capping --jobs $v to $jobs_cap (${remote_threads} PC02 threads across ${SLOTS} slot(s))" >&2
-              v=$jobs_cap
-            fi
-            ;;
-        esac
-        remote_args+=("--jobs=$v")
-        jobs_i=$((jobs_i + 1))
-        continue
-        ;;
-    esac
-    remote_args+=("$a")
-    jobs_i=$((jobs_i + 1))
+if [ "$MODE" = lint ]; then
+  echo "fm-pc02-test-offload: PC02 idle and ready; running lint remotely on $HOST" >&2
+  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-lint.sh"
+  for a in "${ARGS[@]}"; do
+    remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
   done
+else
+  echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
+  has_jobs=0
+  for a in "${ARGS[@]}"; do
+    case "$a" in --jobs|--jobs=*) has_jobs=1 ;; esac
+  done
+  # Rewrite only an explicit caller --jobs, and only downward to the per-slot
+  # cap; every other argument passes through byte-for-byte. Both caller forms
+  # (--jobs N and --jobs=N) keep their shape. A non-numeric value is left for
+  # fm-test-run.sh to reject as it always did.
+  remote_args=()
+  if [ "$has_jobs" -eq 0 ]; then
+    remote_args=("${ARGS[@]}")
+  else
+    jobs_i=0
+    while [ "$jobs_i" -lt "${#ARGS[@]}" ]; do
+      a=${ARGS[$jobs_i]}
+      case "$a" in
+        --jobs)
+          v=${ARGS[$((jobs_i + 1))]:-}
+          case "$v" in
+            ''|*[!0-9]*) ;;
+            *)
+              if [ "$v" -gt "$jobs_cap" ]; then
+                echo "fm-pc02-test-offload: capping --jobs $v to $jobs_cap (${remote_threads} PC02 threads across ${SLOTS} slot(s))" >&2
+                v=$jobs_cap
+              fi
+              ;;
+          esac
+          remote_args+=("--jobs" "$v")
+          jobs_i=$((jobs_i + 2))
+          continue
+          ;;
+        --jobs=*)
+          v=${a#--jobs=}
+          case "$v" in
+            ''|*[!0-9]*) ;;
+            *)
+              if [ "$v" -gt "$jobs_cap" ]; then
+                echo "fm-pc02-test-offload: capping --jobs $v to $jobs_cap (${remote_threads} PC02 threads across ${SLOTS} slot(s))" >&2
+                v=$jobs_cap
+              fi
+              ;;
+          esac
+          remote_args+=("--jobs=$v")
+          jobs_i=$((jobs_i + 1))
+          continue
+          ;;
+      esac
+      remote_args+=("$a")
+      jobs_i=$((jobs_i + 1))
+    done
+  fi
+  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT")"
+  if [ "$has_jobs" -eq 0 ]; then
+    remote_suite_cmd="$remote_suite_cmd env FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
+  fi
+  remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
+  for a in "${remote_args[@]}"; do
+    remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
+  done
+  # No --jobs is forced: fm-test-run.sh's own scheduler admits only
+  # proven-concurrent work, exactly as a local run does; only its worker
+  # ceiling and the per-script bound are pinned. An explicit caller --jobs is
+  # capped above so two concurrent slots together stay within PC02's thread
+  # count.
+  remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 fi
-remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT")"
-if [ "$has_jobs" -eq 0 ]; then
-  remote_suite_cmd="$remote_suite_cmd env FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
-fi
-remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
-for a in "${remote_args[@]}"; do
-  remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
-done
-# No --jobs is forced: fm-test-run.sh's own scheduler admits only
-# proven-concurrent work, exactly as a local run does; only its worker ceiling
-# and the per-script bound are pinned. An explicit caller --jobs is capped
-# above so two concurrent slots together stay within PC02's thread count.
-remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 # The watcher reads the ssh stdin: if the transport drops, EOF kills the suite
 # session. The lock (fd 8) is held by the suite itself, so a surviving old
 # suite keeps the slot until it actually terminates.
@@ -797,20 +834,23 @@ rc=$?
 claim_pid=
 wait "$stream_pid" || true
 if [ "$rc" -eq 124 ]; then
-  echo "fm-pc02-test-offload: remote run on PC02 exceeded ${RUN_TIMEOUT}s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry" >&2
+  echo "fm-pc02-test-offload: remote $MODE run on PC02 exceeded ${RUN_TIMEOUT}s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry" >&2
 fi
 
-# A --json artifact lands on PC02's mirror; pull it back so callers reading
-# the local path (no-mistakes evidence, hint-drift checks) still see it.
+# A test-mode --json artifact lands on PC02's mirror; pull it back so callers
+# reading the local path (no-mistakes evidence, hint-drift checks) still see
+# it. Lint has no equivalent artifact.
 json_path=
 prev=
-for a in "${ARGS[@]}"; do
-  [ "$prev" != "--json" ] || json_path="$a"
-  case "$a" in
-    --json=*) json_path="${a#--json=}" ;;
-  esac
-  prev="$a"
-done
+if [ "$MODE" = test ]; then
+  for a in "${ARGS[@]}"; do
+    [ "$prev" != "--json" ] || json_path="$a"
+    case "$a" in
+      --json=*) json_path="${a#--json=}" ;;
+    esac
+    prev="$a"
+  done
+fi
 if [ -n "$json_path" ]; then
   case "$json_path" in
     /*) remote_json="$json_path"; local_json="$json_path" ;;
