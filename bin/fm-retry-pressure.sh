@@ -39,9 +39,9 @@
 #   Reports without a run id or with malformed counts supply no cap evidence.
 #
 # The round ceiling is the worker's own self-check ceiling: bin/fm-brief.sh
-# renders this same configured value into standing rule 9, and it is reported
-# here so callers read one source for it. For the general band the protocol
-# has workers emit one keyed line at the threshold instead.
+# renders this same configured value into the standing retry-loop rule, and it
+# is reported here so callers read one source for it. For the general band the
+# protocol has workers emit one keyed line at the threshold instead.
 #
 # Bands:
 #   ok   - counts below every ceiling; nothing to do.
