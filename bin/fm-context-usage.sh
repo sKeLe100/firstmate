@@ -36,12 +36,17 @@
 #             fresh session for a primary), and wake/advise the main session.
 #             Never send /clear through the steer channel - it is mechanically
 #             broken.
-# Thresholds come from config/context-thresholds under the same home used for
-# transcript discovery: optional `warn=<N>` and `restart=<N>` lines, one per
-# line, each a positive base-10 integer, warn <= restart. A malformed file is
-# rejected loudly rather than silently replaced by defaults. The file is
-# inherited by secondmate homes via FM_INHERITABLE_CONFIG
-# (bin/fm-config-inherit-lib.sh), so the primary's thresholds propagate.
+# Thresholds come from one optional config file under the same home used for
+# transcript discovery, chosen by that home's role. A primary home - the main
+# home or a secondmate home (bin/fm-primary-scope-lib.sh) - reads
+# config/context-thresholds. Any other home, such as a crewmate or scout task
+# worktree, reads config/worker-context-thresholds, so the orchestrator's bands
+# never reach a worker. Either file holds optional `warn=<N>` and `restart=<N>`
+# lines, one per line, each a positive base-10 integer, warn <= restart. A
+# malformed file is rejected loudly rather than silently replaced by defaults.
+# config/context-thresholds is inherited by secondmate homes via
+# FM_INHERITABLE_CONFIG (bin/fm-config-inherit-lib.sh), so the primary's
+# thresholds propagate; the worker file is never inherited.
 # For another session's usage (a crewmate or secondmate), run with FM_HOME set
 # to that session's working directory (task worktree or secondmate home).
 #
@@ -54,16 +59,24 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,58p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+
 home_path="${FM_HOME:-$PWD}"
 
-# Threshold resolution: defaults, then a strict optional config/context-thresholds.
+# Threshold resolution: defaults, then a strict optional role-selected config file.
 warn_tokens=150000
 restart_tokens=250000
-thresholds_file="$home_path/config/context-thresholds"
+thresholds_name=worker-context-thresholds
+if fm_primary_root_matches "$home_path"; then
+  thresholds_name=context-thresholds
+fi
+thresholds_file="$home_path/config/$thresholds_name"
 if [ -e "$thresholds_file" ]; then
   if [ ! -f "$thresholds_file" ]; then
     echo "fm-context-usage: $thresholds_file is not a regular file" >&2

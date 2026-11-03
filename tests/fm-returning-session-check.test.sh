@@ -14,6 +14,14 @@ trap 'rm -rf "$tmp"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+mk_primary_root() {
+  # A primary root (bin/fm-primary-scope-lib.sh fm_primary_root_matches) is a
+  # plain checkout with AGENTS.md and bin/; only it reads config/context-thresholds.
+  mkdir -p "$1/bin"
+  : > "$1/AGENTS.md"
+  git init -q "$1"
+}
+
 mk_line() {
   # mk_line <input> <cache_create> <cache_read>
   printf '{"type":"assistant","isSidechain":false,"message":{"usage":{"input_tokens":%d,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":10,"server_tool_use":{"web_search_requests":0}}}}\n' \
@@ -58,6 +66,7 @@ esac
 #    fm-context-usage.sh's own resolution.
 cfg_home="$tmp/cfg_home"
 mk_home "$cfg_home" 60000
+mk_primary_root "$cfg_home"
 mkdir -p "$cfg_home/config"
 printf 'warn=10000\nrestart=50000\n' > "$cfg_home/config/context-thresholds"
 out="$(HOME="$tmp/claude_home" "$bin" "$cfg_home")"
@@ -101,6 +110,7 @@ esac
 #    exit, never an unknown that reads as safe to bare-resume.
 bad_home="$tmp/bad_home"
 mk_home "$bad_home" 60000
+mk_primary_root "$bad_home"
 mkdir -p "$bad_home/config"
 printf 'warn=not-a-number\n' > "$bad_home/config/context-thresholds"
 if out="$(HOME="$tmp/claude_home" "$bin" "$bad_home")"; then
@@ -115,6 +125,7 @@ esac
 #     but cannot be read - must fail safe as blocked, not open as unknown.
 unreadable_home="$tmp/unreadable_home"
 mk_home "$unreadable_home" 60000
+mk_primary_root "$unreadable_home"
 mkdir -p "$unreadable_home/config"
 printf 'warn=10000\nrestart=50000\n' > "$unreadable_home/config/context-thresholds"
 chmod 000 "$unreadable_home/config/context-thresholds"
