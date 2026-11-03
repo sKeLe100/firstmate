@@ -1,0 +1,6 @@
+### unreachable PC02 host: --lint --list-files
+ssh: Could not resolve hostname fm-no-such-pc02.invalid: Name or service not known
+fm-pc02-test-offload: PC02 unreachable (ssh probe exit 255); running lint on PC01
+bin/fm-pc02-test-offload.sh
+tests/fm-pc02-test-offload.test.sh
+exit=0

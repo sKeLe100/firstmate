@@ -1,0 +1,5 @@
+### disabled offload: --lint --list-files
+fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running lint on PC01
+bin/fm-pc02-test-offload.sh
+tests/fm-pc02-test-offload.test.sh
+exit=0

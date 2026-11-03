@@ -1,0 +1,4 @@
+fm-pc02-test-offload: PC02 missing required tool(s): zzz-absent-probe-tool; running lint on PC01
+bin/fm-pc02-test-offload.sh
+tests/fm-pc02-test-offload.test.sh
+rc5=0

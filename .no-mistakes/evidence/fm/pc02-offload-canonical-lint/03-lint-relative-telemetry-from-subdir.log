@@ -1,0 +1,232 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running lint remotely on pc02
+fm-pc02-test-offload: remote lint command: setsid timeout --kill-after=10 7200 env CI=true FM_LINT_TELEMETRY=.fm-pc02-telemetry/rel-cli.tsv bin/fm-lint.sh --partition 2of8 --telemetry .fm-pc02-telemetry/rel-cli.tsv
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-composer-lib.sh (shard 0, full mode)
+fm-lint: begin bin/fm-autonomous-thresholds.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-autonomous-thresholds.sh reason=ok rc=0
+fm-lint: end bin/fm-autonomous-thresholds.sh reason=ok rc=0 duration_ms=66 rss_kib=unavailable
+fm-lint: begin bin/fm-cache-ttl-lib.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-cache-ttl-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-cache-ttl-lib.sh reason=ok rc=0 duration_ms=98 rss_kib=unavailable
+fm-lint: begin bin/fm-gate-refuse-lib.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-gate-refuse-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-gate-refuse-lib.sh reason=ok rc=0 duration_ms=126 rss_kib=unavailable
+fm-lint: begin bin/fm-home-seed.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-composer-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-composer-lib.sh reason=ok rc=0 duration_ms=2597 rss_kib=unavailable
+fm-lint: begin bin/fm-contributions.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-home-seed.sh reason=ok rc=0
+fm-lint: end bin/fm-home-seed.sh reason=ok rc=0 duration_ms=9405 rss_kib=unavailable
+fm-lint: begin bin/fm-home-summary-refresh.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-contributions.sh reason=ok rc=0
+fm-lint: end bin/fm-contributions.sh reason=ok rc=0 duration_ms=10861 rss_kib=unavailable
+fm-lint: begin bin/fm-env-lib.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-env-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-env-lib.sh reason=ok rc=0 duration_ms=46 rss_kib=unavailable
+fm-lint: begin bin/fm-ff-lib.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-ff-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-ff-lib.sh reason=ok rc=0 duration_ms=1171 rss_kib=unavailable
+fm-lint: begin bin/fm-fleet-ledger.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-home-summary-refresh.sh reason=ok rc=0
+fm-lint: end bin/fm-home-summary-refresh.sh reason=ok rc=0 duration_ms=6845 rss_kib=unavailable
+fm-lint: begin bin/fm-nomistakes-gate-check.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-nomistakes-gate-check.sh reason=ok rc=0
+fm-lint: end bin/fm-nomistakes-gate-check.sh reason=ok rc=0 duration_ms=122 rss_kib=unavailable
+fm-lint: begin bin/fm-orphan-pane-sweep.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-orphan-pane-sweep.sh reason=ok rc=0
+fm-lint: end bin/fm-orphan-pane-sweep.sh reason=ok rc=0 duration_ms=878 rss_kib=unavailable
+fm-lint: begin bin/fm-path-lib.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-path-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-path-lib.sh reason=ok rc=0 duration_ms=45 rss_kib=unavailable
+fm-lint: begin bin/fm-pc02-fair-order.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-pc02-fair-order.sh reason=ok rc=0
+fm-lint: end bin/fm-pc02-fair-order.sh reason=ok rc=0 duration_ms=97 rss_kib=unavailable
+fm-lint: begin bin/fm-pr-lib.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-pr-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-pr-lib.sh reason=ok rc=0 duration_ms=2888 rss_kib=unavailable
+fm-lint: begin bin/fm-remote-herdr-guard.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-remote-herdr-guard.sh reason=ok rc=0
+fm-lint: end bin/fm-remote-herdr-guard.sh reason=ok rc=0 duration_ms=200 rss_kib=unavailable
+fm-lint: begin bin/fm-remote-inherit-push.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-remote-inherit-push.sh reason=ok rc=0
+fm-lint: end bin/fm-remote-inherit-push.sh reason=ok rc=0 duration_ms=2553 rss_kib=unavailable
+fm-lint: begin bin/fm-secondmate-liveness-lib.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-fleet-ledger.sh reason=ok rc=0
+fm-lint: end bin/fm-fleet-ledger.sh reason=ok rc=0 duration_ms=9666 rss_kib=unavailable
+fm-lint: begin bin/fm-fleet-sync.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-fleet-sync.sh reason=ok rc=0
+fm-lint: end bin/fm-fleet-sync.sh reason=ok rc=0 duration_ms=662 rss_kib=unavailable
+fm-lint: begin bin/fm-forge-detect.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-forge-detect.sh reason=ok rc=0
+fm-lint: end bin/fm-forge-detect.sh reason=ok rc=0 duration_ms=49 rss_kib=unavailable
+fm-lint: begin bin/fm-herdr-ci-cleanup.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-herdr-ci-cleanup.sh reason=ok rc=0
+fm-lint: end bin/fm-herdr-ci-cleanup.sh reason=ok rc=0 duration_ms=100 rss_kib=unavailable
+fm-lint: begin bin/fm-hold-reason-lib.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-hold-reason-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-hold-reason-lib.sh reason=ok rc=0 duration_ms=29 rss_kib=unavailable
+fm-lint: begin bin/fm-pc02-personal-use.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-pc02-personal-use.sh reason=ok rc=0
+fm-lint: end bin/fm-pc02-personal-use.sh reason=ok rc=0 duration_ms=69 rss_kib=unavailable
+fm-lint: begin bin/fm-procevent-lib.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-procevent-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-procevent-lib.sh reason=ok rc=0 duration_ms=2018 rss_kib=unavailable
+fm-lint: begin bin/fm-procevent-quota.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-secondmate-liveness-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-secondmate-liveness-lib.sh reason=ok rc=0 duration_ms=8019 rss_kib=unavailable
+fm-lint: begin bin/fm-secondmate-reconcile.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-procevent-quota.sh reason=ok rc=0
+fm-lint: end bin/fm-procevent-quota.sh reason=ok rc=0 duration_ms=10858 rss_kib=unavailable
+fm-lint: begin bin/fm-remote-job-lib.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-secondmate-reconcile.sh reason=ok rc=0
+fm-lint: end bin/fm-secondmate-reconcile.sh reason=ok rc=0 duration_ms=7771 rss_kib=unavailable
+fm-lint: begin bin/fm-secondmate-restart.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-remote-job-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-remote-job-lib.sh reason=ok rc=0 duration_ms=2569 rss_kib=unavailable
+fm-lint: begin bin/fm-returning-session-check.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-returning-session-check.sh reason=ok rc=0
+fm-lint: end bin/fm-returning-session-check.sh reason=ok rc=0 duration_ms=158 rss_kib=unavailable
+fm-lint: begin bin/fm-secondmate-nudge-lib.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-secondmate-nudge-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-secondmate-nudge-lib.sh reason=ok rc=0 duration_ms=127 rss_kib=unavailable
+fm-lint: begin bin/fm-supervision-instructions.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-supervision-instructions.sh reason=ok rc=0
+fm-lint: end bin/fm-supervision-instructions.sh reason=ok rc=0 duration_ms=517 rss_kib=unavailable
+fm-lint: begin tests/fm-afk-inject-herdr-e2e.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-afk-inject-herdr-e2e.test.sh reason=ok rc=0
+fm-lint: end tests/fm-afk-inject-herdr-e2e.test.sh reason=ok rc=0 duration_ms=445 rss_kib=unavailable
+fm-lint: begin tests/fm-agy-harness.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-agy-harness.test.sh reason=ok rc=0
+fm-lint: end tests/fm-agy-harness.test.sh reason=ok rc=0 duration_ms=1693 rss_kib=unavailable
+fm-lint: begin tests/fm-backend-herdr.test.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-secondmate-restart.sh reason=ok rc=0
+fm-lint: end bin/fm-secondmate-restart.sh reason=ok rc=0 duration_ms=20898 rss_kib=unavailable
+fm-lint: begin bin/fm-timing-lib.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-timing-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-timing-lib.sh reason=ok rc=0 duration_ms=104 rss_kib=unavailable
+fm-lint: begin tests/fm-backend-herdr-focus-flash-e2e.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-backend-herdr-focus-flash-e2e.test.sh reason=ok rc=0
+fm-lint: end tests/fm-backend-herdr-focus-flash-e2e.test.sh reason=ok rc=0 duration_ms=509 rss_kib=unavailable
+fm-lint: begin tests/fm-backend-tmux-smoke.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-backend-tmux-smoke.test.sh reason=ok rc=0
+fm-lint: end tests/fm-backend-tmux-smoke.test.sh reason=ok rc=0 duration_ms=372 rss_kib=unavailable
+fm-lint: begin tests/fm-backend-zellij.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-backend-zellij.test.sh reason=ok rc=0
+fm-lint: end tests/fm-backend-zellij.test.sh reason=ok rc=0 duration_ms=7240 rss_kib=unavailable
+fm-lint: begin tests/fm-backlog-atomicity.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-backlog-atomicity.test.sh reason=ok rc=0
+fm-lint: end tests/fm-backlog-atomicity.test.sh reason=ok rc=0 duration_ms=13343 rss_kib=unavailable
+fm-lint: begin tests/fm-branch-supervision.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-branch-supervision.test.sh reason=ok rc=0
+fm-lint: end tests/fm-branch-supervision.test.sh reason=ok rc=0 duration_ms=3111 rss_kib=unavailable
+fm-lint: begin tests/fm-brief.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-backend-herdr.test.sh reason=ok rc=0
+fm-lint: end tests/fm-backend-herdr.test.sh reason=ok rc=0 duration_ms=49843 rss_kib=unavailable
+fm-lint: begin tests/fm-backlog-read-bound.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-backlog-read-bound.test.sh reason=ok rc=0
+fm-lint: end tests/fm-backlog-read-bound.test.sh reason=ok rc=0 duration_ms=851 rss_kib=unavailable
+fm-lint: begin tests/fm-classify-corr-token.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-brief.test.sh reason=ok rc=0
+fm-lint: end tests/fm-brief.test.sh reason=ok rc=0 duration_ms=11763 rss_kib=unavailable
+fm-lint: begin tests/fm-classify-decision-key.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-classify-corr-token.test.sh reason=ok rc=0
+fm-lint: end tests/fm-classify-corr-token.test.sh reason=ok rc=0 duration_ms=4929 rss_kib=unavailable
+fm-lint: begin tests/fm-grok-harness.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-grok-harness.test.sh reason=ok rc=0
+fm-lint: end tests/fm-grok-harness.test.sh reason=ok rc=0 duration_ms=782 rss_kib=unavailable
+fm-lint: begin tests/fm-herdr-version-floor-live-e2e.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-classify-decision-key.test.sh reason=ok rc=0
+fm-lint: end tests/fm-classify-decision-key.test.sh reason=ok rc=0 duration_ms=4040 rss_kib=unavailable
+fm-lint: begin tests/fm-daemon.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-herdr-version-floor-live-e2e.test.sh reason=ok rc=0
+fm-lint: end tests/fm-herdr-version-floor-live-e2e.test.sh reason=ok rc=0 duration_ms=651 rss_kib=unavailable
+fm-lint: begin tests/fm-host-mirror.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-host-mirror.test.sh reason=ok rc=0
+fm-lint: end tests/fm-host-mirror.test.sh reason=ok rc=0 duration_ms=933 rss_kib=unavailable
+fm-lint: begin tests/fm-project-origin.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-project-origin.test.sh reason=ok rc=0
+fm-lint: end tests/fm-project-origin.test.sh reason=ok rc=0 duration_ms=706 rss_kib=unavailable
+fm-lint: begin tests/fm-remote-herdr-guard.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-remote-herdr-guard.test.sh reason=ok rc=0
+fm-lint: end tests/fm-remote-herdr-guard.test.sh reason=ok rc=0 duration_ms=974 rss_kib=unavailable
+fm-lint: begin tests/fm-remote-job.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-remote-job.test.sh reason=ok rc=0
+fm-lint: end tests/fm-remote-job.test.sh reason=ok rc=0 duration_ms=12730 rss_kib=unavailable
+fm-lint: begin tests/fm-remote-secondmate-parent-binding.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-remote-secondmate-parent-binding.test.sh reason=ok rc=0
+fm-lint: end tests/fm-remote-secondmate-parent-binding.test.sh reason=ok rc=0 duration_ms=963 rss_kib=unavailable
+fm-lint: begin tests/fm-review-diff.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-review-diff.test.sh reason=ok rc=0
+fm-lint: end tests/fm-review-diff.test.sh reason=ok rc=0 duration_ms=788 rss_kib=unavailable
+fm-lint: begin tests/fm-send-settle.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-send-settle.test.sh reason=ok rc=0
+fm-lint: end tests/fm-send-settle.test.sh reason=ok rc=0 duration_ms=611 rss_kib=unavailable
+fm-lint: begin tests/fm-send-strict.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-send-strict.test.sh reason=ok rc=0
+fm-lint: end tests/fm-send-strict.test.sh reason=ok rc=0 duration_ms=765 rss_kib=unavailable
+fm-lint: begin tests/fm-startup-growth-check.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-startup-growth-check.test.sh reason=ok rc=0
+fm-lint: end tests/fm-startup-growth-check.test.sh reason=ok rc=0 duration_ms=3481 rss_kib=unavailable
+fm-lint: begin tests/fm-supervision-host-live-e2e.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-supervision-host-live-e2e.test.sh reason=ok rc=0
+fm-lint: end tests/fm-supervision-host-live-e2e.test.sh reason=ok rc=0 duration_ms=748 rss_kib=unavailable
+fm-lint: begin tests/fm-test-fixture-cleanup.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-test-fixture-cleanup.test.sh reason=ok rc=0
+fm-lint: end tests/fm-test-fixture-cleanup.test.sh reason=ok rc=0 duration_ms=674 rss_kib=unavailable
+fm-lint: begin tests/fm-upstream-batch.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-upstream-batch.test.sh reason=ok rc=0
+fm-lint: end tests/fm-upstream-batch.test.sh reason=ok rc=0 duration_ms=814 rss_kib=unavailable
+fm-lint: begin tests/fm-upstream-behind-check.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-upstream-behind-check.test.sh reason=ok rc=0
+fm-lint: end tests/fm-upstream-behind-check.test.sh reason=ok rc=0 duration_ms=3577 rss_kib=unavailable
+fm-lint: no-source audit tests/fm-daemon.test.sh reason=ok rc=0
+fm-lint: end tests/fm-daemon.test.sh reason=ok rc=0 duration_ms=35360 rss_kib=unavailable
+fm-lint: begin tests/fm-dispatch-quota-cap.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-dispatch-quota-cap.test.sh reason=ok rc=0
+fm-lint: end tests/fm-dispatch-quota-cap.test.sh reason=ok rc=0 duration_ms=609 rss_kib=unavailable
+fm-lint: begin tests/fm-harness-liveness-drift-live-e2e.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-harness-liveness-drift-live-e2e.test.sh reason=ok rc=0
+fm-lint: end tests/fm-harness-liveness-drift-live-e2e.test.sh reason=ok rc=0 duration_ms=712 rss_kib=unavailable
+fm-lint: begin tests/fm-hold-diagnostics-lib.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-hold-diagnostics-lib.sh reason=ok rc=0
+fm-lint: end tests/fm-hold-diagnostics-lib.sh reason=ok rc=0 duration_ms=133 rss_kib=unavailable
+fm-lint: begin tests/fm-inbox.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-inbox.test.sh reason=ok rc=0
+fm-lint: end tests/fm-inbox.test.sh reason=ok rc=0 duration_ms=1463 rss_kib=unavailable
+fm-lint: begin tests/fm-lint-workflows.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-lint-workflows.test.sh reason=ok rc=0
+fm-lint: end tests/fm-lint-workflows.test.sh reason=ok rc=0 duration_ms=956 rss_kib=unavailable
+fm-lint: begin tests/fm-no-mistakes-required-live-lookup.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-no-mistakes-required-live-lookup.test.sh reason=ok rc=0
+fm-lint: end tests/fm-no-mistakes-required-live-lookup.test.sh reason=ok rc=0 duration_ms=534 rss_kib=unavailable
+fm-lint: begin tests/fm-omp-harness.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-omp-harness.test.sh reason=ok rc=0
+fm-lint: end tests/fm-omp-harness.test.sh reason=ok rc=0 duration_ms=5381 rss_kib=unavailable
+fm-lint: begin tests/fm-pr-check-security-part.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-pr-check-security-part.sh reason=ok rc=0
+fm-lint: end tests/fm-pr-check-security-part.sh reason=ok rc=0 duration_ms=749 rss_kib=unavailable
+fm-lint: begin tests/fm-precompact-checkpoint.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-precompact-checkpoint.test.sh reason=ok rc=0
+fm-lint: end tests/fm-precompact-checkpoint.test.sh reason=ok rc=0 duration_ms=510 rss_kib=unavailable
+fm-lint: begin tests/fm-routing-ledger-metrics.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-routing-ledger-metrics.test.sh reason=ok rc=0
+fm-lint: end tests/fm-routing-ledger-metrics.test.sh reason=ok rc=0 duration_ms=617 rss_kib=unavailable
+fm-lint: begin tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh reason=ok rc=0
+fm-lint: end tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh reason=ok rc=0 duration_ms=693 rss_kib=unavailable
+fm-lint: begin tests/fm-teardown-landed-work.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-teardown-landed-work.sh reason=ok rc=0
+fm-lint: end tests/fm-teardown-landed-work.sh reason=ok rc=0 duration_ms=2172 rss_kib=unavailable
+fm-lint: begin tests/fm-vendor-auth-probe.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-vendor-auth-probe.test.sh reason=ok rc=0
+fm-lint: end tests/fm-vendor-auth-probe.test.sh reason=ok rc=0 duration_ms=806 rss_kib=unavailable
+fm-lint: begin tests/fm-wake-drain-open-decisions-cursor.test.sh (shard 1, full mode)
+fm-lint: no-source audit tests/fm-wake-drain-open-decisions-cursor.test.sh reason=ok rc=0
+fm-lint: end tests/fm-wake-drain-open-decisions-cursor.test.sh reason=ok rc=0 duration_ms=1412 rss_kib=unavailable
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (17 allowlisted)
+fm-lint-nomistakes-config.sh: ~/.fm-pc02-test-offload/run-2244486803-1932631/worktree/.no-mistakes.yaml ok
+rc=0 elapsed=175s

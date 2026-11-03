@@ -1,0 +1,22 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running lint remotely on pc02
+fm-pc02-test-offload: remote lint command: setsid timeout --kill-after=10 7200 env CI=true bin/fm-lint.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (17 allowlisted)
+fm-lint-nomistakes-config.sh: ~/.fm-pc02-test-offload/run-2244486803-301897/worktree/.no-mistakes.yaml ok
+Pi production-consumer typechecks: npm 11.6.1
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+
+added 124 packages in 9s
+{"node":"v22.22.3","platform":"linux","arch":"x64","packages":{"@earendil-works/pi-ai":{"version":"1.1.0","resolved":"https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-1.1.0.tgz","integrity":"sha512-1T7LAkc/5Bvc0v6w4vAGVdCrli0o/E0pEmYKTnixu95vSFArBjvbhS/G4ZwI0RUePgf0Imcu0VyqlM4EcXxqfw=="},"@earendil-works/pi-coding-agent":{"version":"1.1.0","resolved":"https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.1.0.tgz","integrity":"sha512-SeEi/4hdcHNgA9UWlefZl7ZZpm3dzi2OoxNjDHsBJ9o298LNOtbL4DGKgitlEj6uCTccvtw6f2hlCkTPVJ2RXg=="},"@earendil-works/pi-tui":{"version":"1.1.0","resolved":"https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-1.1.0.tgz","integrity":"sha512-v7wkS0y2ErZvZkSfemqd9RrBZJ5x6p8Ujsv7NdJj01IXJyFM0kNL6rMdcKcvTe7EVTd6ugvDB9VPZSoaBF9QxQ=="},"@types/node":{"version":"22.19.19","resolved":"https://registry.npmjs.org/@types/node/-/node-22.19.19.tgz","integrity":"sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew=="},"typebox":{"version":"1.3.27","resolved":"https://registry.npmjs.org/typebox/-/typebox-1.3.27.tgz","integrity":"sha512-zu+jc1pcy4UiNThxikUr36f0Rybk9PEeCg/NE6adeWr/SKsdNO4EzZHYRDlv2YCVAfj3Odq3dESSo/jNyoBXzA=="},"typescript":{"version":"5.9.3","resolved":"https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz","integrity":"sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="}}}
+Version 5.9.3
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.1.0
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+
+added 123 packages in 10s
+{"node":"v22.22.3","platform":"linux","arch":"x64","packages":{"@earendil-works/pi-ai":{"version":"1.2.0","resolved":"https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-1.2.0.tgz","integrity":"sha512-U5/1zXqfV1on7/9sbez03tT4Ru49Lvfb4+zXSDK3DBKF5cRk6KxvAOTOY3HJ4jimlZth+rs7vbJqN6iBQAoNuQ=="},"@earendil-works/pi-coding-agent":{"version":"1.2.0","resolved":"https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.2.0.tgz","integrity":"sha512-h/4WaVWv1VlCaY8x8qEN5U+7jbF/e7+Ck6moPeEOFn5juMTWwNAXjwgYM7gRgbBYh8Zppwt6qWvJDzNTf4GNEQ=="},"@earendil-works/pi-tui":{"version":"1.2.0","resolved":"https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-1.2.0.tgz","integrity":"sha512-OdJCiYklkL3TqmdmGKUflHoLy9zw18GBYO0DPASZvGlP4RkDXAZzLLDt7cidJ6wUR7DBrKb13rrekDsXgMF60g=="},"@types/node":{"version":"22.19.19","resolved":"https://registry.npmjs.org/@types/node/-/node-22.19.19.tgz","integrity":"sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew=="},"typebox":{"version":"1.3.27","resolved":"https://registry.npmjs.org/typebox/-/typebox-1.3.27.tgz","integrity":"sha512-zu+jc1pcy4UiNThxikUr36f0Rybk9PEeCg/NE6adeWr/SKsdNO4EzZHYRDlv2YCVAfj3Odq3dESSo/jNyoBXzA=="},"typescript":{"version":"5.9.3","resolved":"https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz","integrity":"sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="}}}
+Version 5.9.3
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.2.0

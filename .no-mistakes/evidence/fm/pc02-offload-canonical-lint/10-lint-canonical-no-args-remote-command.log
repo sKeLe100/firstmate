@@ -1,0 +1,7 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running lint remotely on pc02
+fm-pc02-test-offload: remote lint command: setsid timeout --kill-after=10 1 env CI=true bin/fm-lint.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-pc02-test-offload: remote lint run on PC02 exceeded 1s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry
+rc10=124

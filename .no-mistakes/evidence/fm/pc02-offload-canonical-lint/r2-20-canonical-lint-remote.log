@@ -1,0 +1,9 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running lint remotely on pc02
+fm-pc02-test-offload: remote lint command: setsid timeout --kill-after=10 7200 env CI=true bin/fm-lint.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (17 allowlisted)
+fm-lint-nomistakes-config.sh: ~/.fm-pc02-test-offload/run-2244486803-3597518/worktree/.no-mistakes.yaml ok

@@ -1,0 +1,18 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+pure-contract-unit
+watcher-wake-lock
+real-herdr-gated
+secondmate
+session-bootstrap
+live-harness-optin
+backend-dispatch
+pr-forge
+afk
+snapshot-bearings
+cmux
+zellij
+orca
+standalone
+unclassified
+rc9=0
