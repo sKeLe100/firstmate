@@ -766,13 +766,7 @@ An invalid or unreadable configuration, or an unavailable home state directory, 
 Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. The value must be an integer from 1 to 16; any other value is a configuration error that exits 2 without running tests. Direct test invocations on PC02 must be scheduled separately.
 Offload preserves caller-selected parallelism and otherwise keeps `bin/fm-test-run.sh`'s own automatic scheduler with up to eight workers for PC02's 16 threads and 27 GB, so only proven-concurrent work runs in parallel.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
-Before it claims a slot, offload compares PC01 and PC02 tool versions (git, bash, python3, jq, node, shellcheck, actionlint, ruby, chromium, Herdr, Pi, tmux), `LC_ALL`/`LANG`/`TZ`, and the version and sorted dependency sonames of the browser selected by the suite's shared [`fm-test-chrome.sh`](../bin/fm-test-chrome.sh) resolver.
-PC02's `ulimit -n` must be at least PC01's; a higher or unlimited remote limit is accepted, while a lower, missing or invalid limit routes locally.
-Both the parity probe and the remote suite command first raise PC02's soft open-file limit to its hard limit best effort, so a low soft limit inherited from the SSH login shell neither blocks admission nor constrains the run.
-The parity probe has its own `FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS` bound (default 180) that covers its per-command deadlines; the reachability probe keeps the shorter `FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS`.
-Paths are reported for diagnostics but are not compared.
-A mismatch, an unestablished version, or an unresolved library routes the run locally, naming the differing field, both hosts' values, and the browser path for an unresolved library.
-CPU count, RAM, `ulimit -u`, the shared no-mistakes daemon version, the `/usr/bin/env` provider, and shell availability such as zsh are intentionally excluded as resource differences or documented test differences.
+An environment-parity check gates the slot claim; that header owns the compared fields, the open-file rule and remote soft-limit raise, the parity-probe bound, the intentional exclusions, and the local-fallback reasons.
 The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
 A full PR #215 selection of 183 scripts took 4274s test wall / 4305s whole at four workers; that single-run measurement does not establish that two full selections fit within the cap.
 Exceeding the whole-run cap fails with exit 124 and does not rerun the suite locally or omit selected tests.
