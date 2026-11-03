@@ -24,7 +24,7 @@ unset FM_TEST_RUN_AUTO_JOBS_MAX
 
 test_list_all_exact_suite_coverage() {
   local listed expected missing extra f
-  listed=$("$RUNNER" --list --all | LC_ALL=C sort)
+  listed=$(printf '%s\n' "$ALL_SUITE_LIST" | LC_ALL=C sort)
   expected=$(
     for f in "$ROOT"/tests/*.test.sh; do
       [ -f "$f" ] || continue
@@ -45,7 +45,7 @@ test_list_all_exact_suite_coverage() {
 
 test_family_selection() {
   local listed line
-  listed=$("$RUNNER" --list --family pure-contract-unit)
+  listed=$PURE_CONTRACT_LIST
   [ -n "$listed" ] || fail "--family pure-contract-unit selected nothing"
   printf '%s\n' "$listed" | grep -Fq 'tests/fm-test-run.test.sh' \
     || fail "pure-contract-unit must include fm-test-run.test.sh"
@@ -58,7 +58,7 @@ test_family_selection() {
   done <<<"$listed"
   # Family mode must not equal the complete suite for a narrow family.
   local all_count fam_count
-  all_count=$("$RUNNER" --list --all | wc -l | tr -d ' ')
+  all_count=$(printf '%s\n' "$ALL_SUITE_LIST" | wc -l | tr -d ' ')
   fam_count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
   [ "$fam_count" -lt "$all_count" ] \
     || fail "pure-contract-unit must be a proper subset of --all"
@@ -74,7 +74,7 @@ test_single_script_selection() {
 }
 
 test_environment_record_is_compact_safe_and_emitted_once() {
-  local out helper_out fakebin tool tmp_root
+  local out helper_out fakebin tool tmp_root login_home
   tmp_root=$(fm_test_tmproot fm-test-run-env-record)
   export FM_TEST_ENV_SECRET_SENTINEL='do-not-print-this-secret'
   # Keep one small real-subject integration for the metadata assertions.
@@ -121,9 +121,16 @@ test_environment_record_is_compact_safe_and_emitted_once() {
   assert_contains "$helper_out" 'version=probe-skipped' "version probes must be skipped when timeout is missing: $helper_out"
   assert_contains "$helper_out" 'tool=timeout absent' "a missing timeout should be reported as absent: $helper_out"
   assert_contains "$helper_out" 'chrome_startup=failed reason=timeout-missing' "a missing timeout must not read as a Chrome fault: $helper_out"
-  helper_out=$(/bin/bash -lc "/bin/bash '$ROOT/bin/fm-test-env-record.sh'; :" 2>&1)
+  # Run the login-shell probes with a hermetic HOME and PATH: the record's own
+  # tool and Chrome startup fields are asserted above, and a real login profile
+  # would otherwise reintroduce the slow real-browser probe into both calls.
+  login_home="$tmp_root/env-record-home"
+  mkdir -p "$login_home"
+  helper_out=$(HOME="$login_home" PATH="$fakebin:/usr/bin:/bin" \
+    /bin/bash -lc "/bin/bash '$ROOT/bin/fm-test-env-record.sh'; :" 2>&1)
   assert_contains "$helper_out" 'runner_login_shell=no' "the runner's own non-login bash must be recorded as no: $helper_out"
-  helper_out=$(/bin/bash -l "$ROOT/bin/fm-test-env-record.sh" 2>&1)
+  helper_out=$(HOME="$login_home" PATH="$fakebin:/usr/bin:/bin" \
+    /bin/bash -l "$ROOT/bin/fm-test-env-record.sh" 2>&1)
   assert_contains "$helper_out" 'runner_login_shell=yes' "a login runner bash must be recorded as yes: $helper_out"
   printf '#!/bin/sh\nsleep 30\n' >"$fakebin/node"
   chmod +x "$fakebin/node"
@@ -139,8 +146,8 @@ test_environment_record_is_compact_safe_and_emitted_once() {
 test_changed_file_selection_is_conservative() {
   local listed all_count fam_count listed_count
   # A path-mapped pure unit should not expand to --all.
-  listed=$("$RUNNER" --list --family pure-contract-unit)
-  all_count=$("$RUNNER" --list --all | wc -l | tr -d ' ')
+  listed=$PURE_CONTRACT_LIST
+  all_count=$(printf '%s\n' "$ALL_SUITE_LIST" | wc -l | tr -d ' ')
   fam_count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
   [ "$fam_count" -lt "$all_count" ] || fail "changed-informed pure family still full suite"
   # Directly exercise --changed: empty or partial selection is ok; must not
@@ -1073,7 +1080,7 @@ test_exclude_family() {
   printf '%s\n' "$listed" | grep -Fq 'tests/fm-lint.test.sh' \
     || fail "exclude-family must retain pure-contract-unit scripts"
   # Explicit family mode still works; exclude of a different family is a no-op.
-  listed=$("$RUNNER" --list --family real-herdr-gated)
+  listed=$HERDR_FAMILY_LIST
   printf '%s\n' "$listed" | grep -Fq 'tests/fm-backend-herdr-smoke.test.sh' \
     || fail "family real-herdr-gated must list smoke test"
   pass "exclude-family drops the named primary family after selection"
@@ -1126,9 +1133,12 @@ test_exclude_quarantined() {
   fi
 
   # A run reports every quarantined skip loudly and runs nothing quarantined.
-  out=$("$RUNNER" --quarantine-file "$qfile" --exclude-quarantined \
-    tests/fm-transition-lib.test.sh 2>/dev/null)
-  assert_contains "$out" "FM_TEST_QUARANTINED tests/fm-transition-lib.test.sh" \
+  # The fixture runner keeps this off the real suite and skips the real
+  # environment record, neither of which the assertion depends on.
+  printf 'tests/fm-fixture.test.sh\tsig-x\treason-x\towner-x\n' > "$tmp/fixture-q.tsv"
+  out=$("$FIXTURE_RUNNER" --quarantine-file "$tmp/fixture-q.tsv" --exclude-quarantined \
+    tests/fm-fixture.test.sh 2>/dev/null)
+  assert_contains "$out" "FM_TEST_QUARANTINED tests/fm-fixture.test.sh" \
     "run mode must print the quarantined marker"
   assert_contains "$out" "FM_TEST_QUARANTINE_SUMMARY quarantined=1" \
     "run mode must print the quarantine summary"
@@ -1257,7 +1267,7 @@ test_portable_shard_union_and_coverage_guard() {
   s2=$("$RUNNER" --list --lane portable-parallel-2)
   proven=$("$RUNNER" --list --proven-isolated)
   serial=$("$RUNNER" --list --lane portable-serial)
-  herdr=$("$RUNNER" --list --family real-herdr-gated)
+  herdr=$HERDR_FAMILY_LIST
   [ -n "$s1" ] && [ -n "$s2" ] || fail "portable parallel shards must be non-empty"
   # Shards disjoint.
   overlap=$(comm -12 <(printf '%s\n' "$s1" | LC_ALL=C sort) <(printf '%s\n' "$s2" | LC_ALL=C sort) || true)
@@ -1273,7 +1283,7 @@ test_portable_shard_union_and_coverage_guard() {
     || fail "herdr family must include smoke"
   out=$COVERAGE_REPORT
   assert_contains "$out" "FM_TEST_COVERAGE ok" "coverage guard success marker"
-  all_count=$("$RUNNER" --list --all | wc -l | tr -d ' ')
+  all_count=$(printf '%s\n' "$ALL_SUITE_LIST" | wc -l | tr -d ' ')
   union_count=$(printf '%s\n' "$s1" "$s2" "$serial" "$herdr" | LC_ALL=C sort -u | wc -l | tr -d ' ')
   [ "$union_count" = "$all_count" ] \
     || fail "union of lanes ($union_count) must equal --all ($all_count)"
@@ -2907,6 +2917,12 @@ FIXTURE_RUNNER="$FIXTURE_ROOT/bin/fm-test-run.sh"
 # guard result. No case mutates the repository inventory, so run it once.
 COVERAGE_REPORT=$("$RUNNER" --check-coverage) \
   || fail "real inventory coverage guard failed: $COVERAGE_REPORT"
+# The real inventory does not change while this script runs, so snapshot the
+# listings several cases assert against once instead of rescanning the whole
+# tests/ inventory per case.
+ALL_SUITE_LIST=$("$RUNNER" --list --all)
+PURE_CONTRACT_LIST=$("$RUNNER" --list --family pure-contract-unit)
+HERDR_FAMILY_LIST=$("$RUNNER" --list --family real-herdr-gated)
 
 test_list_all_exact_suite_coverage
 test_family_selection
