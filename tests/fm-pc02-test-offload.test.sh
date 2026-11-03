@@ -837,13 +837,13 @@ test_term_ignoring_parity_probes_are_killed_and_route_locally() {
 #!/usr/bin/env bash
 if [ "\${HOME:-}" = "$dir/home" ]; then echo 'herdr fixture 0.0.0'; exit 0; fi
 trap '' TERM INT
-exec sleep 40
+exec sleep 120
 SH
   chmod +x "$hangbin/herdr"
   cat > "$browser" <<'SH'
 #!/usr/bin/env bash
 trap '' TERM INT
-exec sleep 40
+exec sleep 120
 SH
   chmod +x "$browser"
   start=$SECONDS
@@ -852,7 +852,7 @@ SH
   status=$?
   elapsed=$((SECONDS - start))
   expect_code 0 "$status" "a TERM-ignoring parity probe must still route the run locally: $out"
-  [ "$elapsed" -lt 60 ] \
+  [ "$elapsed" -lt 50 ] \
     || fail "TERM-ignoring version probes outlived their 15-second deadline (${elapsed}s): $out"
   assert_contains "$out" "tool.herdr version could not be established" \
     "a stalled tool version probe was not recorded as unestablished: $out"
@@ -1035,7 +1035,11 @@ test_malformed_slot_count_is_a_configuration_error() {
       *) assert_contains "$out" "must be between 1 and 16" \
         "the refusal did not state the accepted range: $out" ;;
     esac
+    assert_contains "$out" "FM_PC02_OFFLOAD_SLOTS" \
+      "the refusal did not name the rejected setting: $out"
     assert_contains "$out" "got '$value'" "the refusal omitted the rejected slot count: $out"
+    assert_not_contains "$out" "running tests remotely" \
+      "FM_PC02_OFFLOAD_SLOTS=$value still ran the suite remotely: $out"
     assert_not_contains "$out" "$LOCAL_PROOF_OUT" \
       "FM_PC02_OFFLOAD_SLOTS=$value still ran the suite: $out"
   done
