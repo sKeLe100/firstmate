@@ -547,6 +547,7 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
     mkdir -p "$repo/bin" "$repo/tests"
     cp "$RUNNER" "$repo/bin/fm-test-run.sh"
     printf 'echo executed\n' >"$repo/bin/$subject.sh"
+    chmod +x "$repo/bin/$subject.sh"
     printf 'bash -c %q\n' ":; . \"$repo/bin/$subject.sh\"" >"$repo/bin/fm-test-isolation-proof.sh"
     printf '. "%s/bin/%s.sh"\n' "$repo" "$subject" >"$repo/tests/consumer-chain.sh"
     printf 'bash "%s/bin/%s.sh"\n' "$repo" "$subject" >"$repo/tests/direct.test.sh"
@@ -555,17 +556,21 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
     printf 'bash "%s/tests/via-bin.test.sh"\n' "$repo" >"$repo/tests/via-suite.test.sh"
     printf 'run() {\n  local lib="%s/bin/%s.sh"\n  . "$lib"\n}\nrun\n' "$repo" "$subject" >"$repo/bin/declared-consumer.sh"
     printf 'bash "%s/bin/declared-consumer.sh"\n' "$repo" >"$repo/tests/via-local.test.sh"
+    printf 'if "%s/bin/%s.sh"; then :; fi\n' "$repo" "$subject" >"$repo/bin/control-consumer.sh"
+    printf 'bash "%s/bin/control-consumer.sh"\n' "$repo" >"$repo/tests/via-control.test.sh"
+    printf 'out=$("%s/bin/%s.sh")\nprintf "%%s\\n" "$out"\n' "$repo" "$subject" >"$repo/bin/subst-consumer.sh"
+    printf 'bash "%s/bin/subst-consumer.sh"\n' "$repo" >"$repo/tests/via-subst.test.sh"
     printf 'echo unrelated\n' >"$repo/tests/unrelated.test.sh"
     git -C "$repo" init -q
     git -C "$repo" add .
     git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
     printf '\n' >>"$repo/bin/$subject.sh"
     listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
-    for reader in direct via-bin via-helper via-suite via-local; do
+    for reader in direct via-bin via-helper via-suite via-local via-control via-subst; do
       assert_contains "$listed" "tests/$reader.test.sh" "$subject retains its $reader reader"
     done
-    [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 5 ] || fail "$subject must select exactly its five readers: $listed"
-    for reader in via-bin via-helper via-suite via-local; do
+    [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 7 ] || fail "$subject must select exactly its seven readers: $listed"
+    for reader in via-bin via-helper via-suite via-local via-control via-subst; do
       [ "$(bash "$repo/tests/$reader.test.sh")" = executed ] || fail "$reader did not execute $subject"
     done
     git -C "$repo" checkout -q -- "bin/$subject.sh"
@@ -741,8 +746,8 @@ test_changed_real_inventory_selection_bounds() {
     || fail "shared watcher library should widen well past a leaf: got $count"
   git -C "$repo" checkout -q -- bin/fm-wake-lib.sh
 
-  # An existing core source whose readers are all behind wide hubs still
-  # selects those hubs' direct executable suites instead of failing closed.
+  # An existing core source whose executable readers are all behind wide hubs
+  # still selects those suites, even when a comment-only test was printed.
   while read -r path reader; do
     printf '\n' >>"$repo/bin/$path"
     if ! listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD); then
@@ -754,6 +759,7 @@ test_changed_real_inventory_selection_bounds() {
 fm-merge-authority-lib.sh fm-pr-merge.test.sh
 fm-landed-lib.sh fm-bearings-snapshot.test.sh
 fm-exclude-tools-lib.sh fm-control-relaunch.test.sh
+fm-project-capacity-lib.sh fm-control-relaunch.test.sh
 EOF
 
   # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.

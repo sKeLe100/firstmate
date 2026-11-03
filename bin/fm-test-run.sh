@@ -1823,27 +1823,39 @@ def shell_executable_names(text):
     # from command lines (source/./bash/exec/...), command-position scripts,
     # and assignments whose value is a script path later run; drop prose.
     names = []
+    declarations = ("local", "declare", "readonly", "export", "typeset")
+    control_words = ("if", "then", "elif", "else", "while", "until", "do", "!", "time")
     for line in text.replace("\\\n", " ").splitlines():
         stripped = line.strip()
         if not stripped or not NAME_RE.search(line):
             continue
         try:
-            tokens = shlex.split(line, comments=False)
+            lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            tokens = list(lexer)
         except ValueError:
             tokens = []
-        index = 0
-        while index < len(tokens) and tokens[index] in (
-            "local", "declare", "readonly", "export", "typeset"
-        ):
-            index += 1
-        while index < len(tokens) and re.match(r"^[A-Za-z_]\w*=", tokens[index]):
-            value = tokens[index].split("=", 1)[1]
-            if re.search(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)[\"'}]?$", value):
-                names.extend(NAME_RE.findall(value))
-            index += 1
-        first = tokens[index] if index < len(tokens) else ""
-        direct = bool(first) and bool(NAME_RE.fullmatch(Path(first).name))
-        if direct or EXEC_WORD_RE.search(line):
+        expect_command = True
+        for token in tokens:
+            if token in declarations:
+                expect_command = False
+                continue
+            if re.match(r"^[A-Za-z_]\w*=", token):
+                value = token.split("=", 1)[1]
+                if re.search(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)[\"'}]?$", value):
+                    names.extend(NAME_RE.findall(value))
+                continue
+            if token in control_words or (
+                token and all(char in "();<>|&{}" for char in token)
+            ):
+                expect_command = True
+                continue
+            if expect_command:
+                if NAME_RE.fullmatch(Path(token).name):
+                    names.extend(NAME_RE.findall(token))
+                expect_command = False
+        if EXEC_WORD_RE.search(line) or "`" in line:
             names.extend(NAME_RE.findall(line))
     return names
 
@@ -1944,6 +1956,7 @@ def walk_reference(dependency, emit_fat_hubs):
     queue = deque([dependency])
     queued = {dependency}
     printed = set()
+    executable_printed = set()
     fallback = set()
     while queue:
         source = queue.popleft()
@@ -1955,9 +1968,11 @@ def walk_reference(dependency, emit_fat_hubs):
                 # A suite is a terminal reader unless it actually executes the
                 # other suite as a wrapper; a comment or fixture mention is not
                 # a reason to fan out through it.
-                if consumer in executable_consumers[source] and consumer not in queued:
-                    queued.add(consumer)
-                    queue.append(consumer)
+                if consumer in executable_consumers[source]:
+                    executable_printed.add(consumer)
+                    if consumer not in queued:
+                        queued.add(consumer)
+                        queue.append(consumer)
                 continue
             if consumer in queued:
                 continue
@@ -1982,12 +1997,12 @@ def walk_reference(dependency, emit_fat_hubs):
                 continue
             queued.add(consumer)
             queue.append(consumer)
-    return printed, fallback
+    return printed, fallback, executable_printed
 
 
 for dependency in sorted(set(sys.argv[1:])):
-    printed, fallback = walk_reference(dependency, False)
-    if not printed and fallback:
+    printed, fallback, executable_printed = walk_reference(dependency, False)
+    if not executable_printed and fallback:
         walk_reference(dependency, True)
 PYREF
 }
