@@ -1,0 +1,16 @@
+2026-11-03T17:51:54Z
+# live primary-watchdog loops on PC01 after all validation runs
+133690 bash ~/firstmate/bin/fm-primary-watchdog.sh run
+504523 /bin/bash -c cd {run-worktree} && EV=~/.no-mistakes/evidence/01M6GHFNMFRP3JYFD3DWMSQD31 && { date -u +%FT%TZ; echo '# live primary-watchdog loops on PC01 after all validation runs'; pgrep -af 'fm-primary-watchdog.sh run'; echo '# fixture watchdog loops (FM_HOME under a fixture root) => expect none'; for p in $(pgrep -f 'fm-primary-watchdog.sh run' 2>/dev/null); do h=$(tr '\0' '\n' < /proc/$p/environ 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -1); echo "pid=$p FM_HOME=$h"; done; echo '# leftover fixture roots under the daemon tmp for this run => expect none'; ls -d /var/tmp/nm-daemon-tmp/fm-supervision-host.* 2>/dev/null; echo '# worktree status'; git -C "$PWD" status --porcelain; echo '# base-repro lab'; ls -d /tmp/fm-base-repro.* 2>/dev/null; } > "$EV/r3-final-process-state.log" 2>&1; cat "$EV/r3-final-process-state.log"
+# fixture watchdog loops (FM_HOME under a fixture root) => expect none
+pid=133690 FM_HOME=
+pid=504523 FM_HOME=
+/bin/bash: line 1: /proc/504534/environ: No such file or directory
+pid=504534 FM_HOME=
+# leftover fixture roots under the daemon tmp for this run => expect none
+/var/tmp/nm-daemon-tmp/fm-supervision-host.9cQuRK
+/var/tmp/nm-daemon-tmp/fm-supervision-host.VORTFa
+/var/tmp/nm-daemon-tmp/fm-supervision-host.mvSxTR
+# worktree status
+# base-repro lab
+/tmp/fm-base-repro.ui4JPC

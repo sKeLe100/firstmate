@@ -1,0 +1,10 @@
+# final process/worktree state 2026-11-03T21:48:18Z
+# live primary-watchdog loops whose FM_HOME is under a test fixture prefix (expect none)
+/bin/bash: line 1: /proc/3175188/environ: No such file or directory
+none
+# operator loop check
+133690 bash ~/firstmate/bin/fm-primary-watchdog.sh run
+3171305 /bin/bash -c cd {run-worktree} && sleep 2; EV=~/.no-mistakes/evidence/01M6GHFNMFRP3JYFD3DWMSQD31 && { echo "# final process/worktree state $(date -u +%FT%TZ)"; echo '# live primary-watchdog loops whose FM_HOME is under a test fixture prefix (expect none)'; n=0; for p in $(pgrep -f 'fm-primary-watchdog.sh run' 2>/dev/null); do h=$(tr '\0' '\n' < /proc/$p/environ 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -1); case "$h" in /tmp/fm-*|/var/tmp/nm-daemon-tmp/fm-*) echo "pid=$p FM_HOME=$h"; n=$((n+1));; esac; done; [ "$n" -eq 0 ] && echo none; echo "# operator loop check"; pgrep -af '~/firstmate/bin/fm-primary-watchdog.sh run' || echo missing; echo '# our temp dirs remaining (expect none)'; ls -d /tmp/fm-r4-* /tmp/fm-base-check* /tmp/fm-branch-check-tmp 2>/dev/null || echo none; echo '# worktree status (expect empty)'; git status --porcelain; } > "$EV/r4-final-process-state.log" 2>&1; cat "$EV/r4-final-process-state.log"
+# our temp dirs remaining (expect none)
+none
+# worktree status (expect empty)

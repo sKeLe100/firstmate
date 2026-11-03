@@ -1,0 +1,5 @@
+suite pid=3205928 real fixture watchdog loops: 3206771 
+  pid=3206771 cmd=bash /var/tmp/nm-daemon-tmp/fm-suite-lab.uKjQad/tmp/fm-supervision-host.ovTZoF/hook-successor-closed-before-return/bin/fm-primary-watchdog.sh run  HOME=/var/tmp/nm-daemon-tmp/fm-suite-lab.uKjQad/tmp/fm-supervision-host.ovTZoF/hook-successor-closed-before-return
+orphaned after SIGKILL: 3206771 
+SWEEP_DONE
+ok - a real fixture watchdog orphaned by a SIGKILLed supervision-host suite was reaped by the next run's start-up sweep

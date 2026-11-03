@@ -1,0 +1,12 @@
+2026-11-03T21:20:15Z
+# after supervision suite partial run: live primary-watchdog loops
+pid=133690 FM_HOME=
+pid=498992 FM_HOME=
+pid=499527 FM_HOME=
+pid=499592 FM_HOME=
+pid=499594 FM_HOME=
+pid=503284 FM_HOME=
+/bin/bash: line 1: /proc/503320/environ: No such file or directory
+pid=503320 FM_HOME=
+# our fixture roots (created after 16:10) under /var/tmp/nm-daemon-tmp
+/var/tmp/nm-daemon-tmp/fm-supervision-host.I7RnJD 2026-11-03 16:19

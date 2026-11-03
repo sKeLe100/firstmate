@@ -1,0 +1,4 @@
+ok - register-extension and reconcile of an unhandled extension result take their locks in one order
+
+all extension-binding tests passed
+wall=7.56s

@@ -1,0 +1,8 @@
+FM_TEST_BEGIN 2026-11-03T21:39:54Z tests/fm-r4-killed.test.sh family=unclassified expected_gate_skip=none
+not ok - tests/fm-r4-killed.test.sh exceeded the per-script bound of 3s and was terminated
+FM_TEST_END 2026-11-03T21:39:59Z tests/fm-r4-killed.test.sh exit=124 duration_ms=4203 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=4463
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=4203 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-r4-killed.test.sh duration_ms=4203
+Command exited with non-zero status 1
+wall=4.61s

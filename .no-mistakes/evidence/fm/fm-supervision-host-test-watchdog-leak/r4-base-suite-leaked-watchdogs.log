@@ -1,0 +1,1 @@
+# Base supervision suite run: no live fm-primary-watchdog.sh run loop had FM_HOME under /tmp/fm-r4-base-suite-tmp (the suite failed earlier at test 26 on a load-sensitive hook wait, before the home set that leaks in task-copy runs).

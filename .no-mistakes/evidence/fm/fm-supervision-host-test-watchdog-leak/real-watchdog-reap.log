@@ -1,0 +1,5 @@
+[fm-primary-watchdog] could not pin the primary's transcript; context bands will be unreadable until the next arm
+primary-watchdog: started pid=3186188
+real loop pid=3186188 cmd=bash {run-worktree}/bin/fm-primary-watchdog.sh run 
+matched-by-lib=3186188
+ok - real primary-watchdog loop armed under a fixture FM_HOME was reaped

@@ -1,0 +1,8 @@
+fixture_root=/tmp/fm-r4-real-loop/fm-r4-real.dh4DYy
+expected_loop_pid=3115594
+detected_pids=3115594
+loop_alive_before_reap=yes
+bash {run-worktree}/bin/fm-primary-watchdog.sh run 
+detected_pids_after_reap=none
+loop_alive_after_reap=no
+operator_loop_alive=yes

@@ -1,0 +1,2 @@
+kind=fixed runner_rc=1 fixture_root=/tmp/fm-r4-repro-fixed/tmp/fm-test-run.Sn6aIh/s0/tmp/fm-r4-killed.m241FY
+leaked_loops=none

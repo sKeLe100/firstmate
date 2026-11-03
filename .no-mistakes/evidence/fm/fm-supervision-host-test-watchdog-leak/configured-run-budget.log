@@ -1,0 +1,27 @@
+# Repair-turn re-run of the configured test command (2026-11-03T15:11Z)
+# command: FM_TEST_RUN_AUTO_JOBS_MAX=8 bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle
+# PC02 offload: claimed slot 2 of 2, ran remotely.
+# progress before the 60m test-agent budget boundary: 26 scripts finished,
+# 0 "not ok" / 0 failures. The 26 are ordinary unchanged suites (fm-test-run,
+# fm-lint, fm-watch-arm, fm-wake-queue, ...), all exit=0.
+# Selection size: 301 scripts. The runner's own hint table sums to 176.3 min of
+# serial work (plus 25.5 min of parallel-family hints), and PC02's documented
+# full-selection measurement is 4274s test wall for 183 scripts at jobs=4
+# (bin/fm-pc02-test-offload.sh header). A 301-script selection therefore cannot
+# finish inside this step's 60m budget; the prior exit 143 was that budget cut,
+# not a test failure.
+# Stopped cleanly with SIGTERM (remote mirror removed, no local run root, no
+# fixture watchdog survived). Operator loop pid 133690 (FM_HOME=~/firstmate)
+# was spared.
+#
+# Targeted verification this turn:
+#   bash tests/fm-test-lib-watchdog-reap.test.sh                          -> exit 0 (3/3 ok)
+#   bin/fm-test-run.sh tests/fm-test-run.test.sh tests/fm-test-lib-watchdog-reap.test.sh
+#                                                                        -> exit 0 (total=2 failed=0)
+#   timeout --kill-after=30 -s TERM 480 bash tests/fm-supervision-host.test.sh
+#                                                                        -> 46 ok / 0 not ok / 0 FAIL,
+#                                                                           then the deliberate 480s TERM;
+#                                                                           fixture TERM cleanup left no
+#                                                                           primary-watchdog loop; only the
+#                                                                           pre-existing operator loop remains.
+# Worktree left clean; transient fixture root fm-supervision-host.F8KfEo removed.

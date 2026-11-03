@@ -1,0 +1,15 @@
+runner exit=1
+watchdog loops observed during the run under the run root:
+3216389 /var/tmp/nm-daemon-tmp/fm-runner-lab.Pvk2vE/tmp/fm-test-run.o6JG65/s0/tmp/fm-supervision-host.1Yf76D/hook-successor-closed-before-return
+3225082 /var/tmp/nm-daemon-tmp/fm-runner-lab.Pvk2vE/tmp/fm-test-run.o6JG65/s0/tmp/fm-supervision-host.1Yf76D/hook-successor-closed-before-outcome
+3234882 /var/tmp/nm-daemon-tmp/fm-runner-lab.Pvk2vE/tmp/fm-test-run.o6JG65/s0/tmp/fm-supervision-host.1Yf76D/hook-successor-restore-fails-pending
+runner tail:
+FM_TEST_BEGIN 2026-11-03T13:47:20Z tests/fm-supervision-host.test.sh family=afk expected_gate_skip=none
+ok - host+hook: a successor closed before exit_to_main does not suppress the branch-outcome rewake
+ok - host+hook: a successor that closes during a held engine turn does not suppress the branch-outcome rewake
+not ok - tests/fm-supervision-host.test.sh exceeded the per-script bound of 20s and was terminated
+FM_TEST_END 2026-11-03T13:47:41Z tests/fm-supervision-host.test.sh exit=124 duration_ms=20650 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=21482
+FM_TEST_SUMMARY_FAMILY family=afk count=1 duration_ms=20650 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-supervision-host.test.sh duration_ms=20650
+ok - the real supervision-host suite run under the runner's per-script timeout left no real fixture watchdog and no run root

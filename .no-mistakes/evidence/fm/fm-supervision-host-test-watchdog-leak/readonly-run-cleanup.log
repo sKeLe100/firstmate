@@ -1,0 +1,9 @@
+FM_TEST_HOST_LOAD load5=22.51 cpus=16 jobs=1 per_script_timeout_secs=0 watch_triage_timeout_secs=0 captain_hold_timeout_secs=0
+FM_TEST_BEGIN 2026-11-03T13:46:37Z /var/tmp/nm-daemon-tmp/fm-readonly.2A8b88/repo/tests/leave-readonly.test.sh family=unclassified expected_gate_skip=none
+ok - leaves read-only dir
+FM_TEST_END 2026-11-03T13:46:37Z /var/tmp/nm-daemon-tmp/fm-readonly.2A8b88/repo/tests/leave-readonly.test.sh exit=0 duration_ms=32 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=139
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=32 failed=0
+FM_TEST_SLOWEST rank=1 script=/var/tmp/nm-daemon-tmp/fm-readonly.2A8b88/repo/tests/leave-readonly.test.sh duration_ms=32
+exit=0
+ok - read-only dir under the run root did not change exit status and the run root was removed

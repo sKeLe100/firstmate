@@ -1,0 +1,2 @@
+kind=base runner_rc=1 fixture_root=/tmp/fm-r4-repro-base/tmp/fm-r4-killed.iDchJe
+leaked_loops=2413360 
