@@ -746,7 +746,8 @@ EOF
 # Per-script serial CI duration hints, one "<path> <ms>" per line, used to
 # pack only the two portable parallel lanes. Measurement provenance and the
 # refresh procedure are owned by docs/fm-test-portable-shards.md.
-# Lint and runner hints use local canonical-runner measurements (2026-11-02).
+# Lint and runner hints use local canonical-runner measurements taken
+# 2026-11-02, with the runner remeasured 2026-11-03.
 # These provisional samples should be refreshed from green CI artifacts.
 portable_parallel_weight_hints() {
   cat <<'EOF'
@@ -770,7 +771,7 @@ tests/fm-send-settle.test.sh 2310
 tests/fm-send-strict.test.sh 4804
 tests/fm-spawn-batch.test.sh 2987
 tests/fm-supervision-instructions.test.sh 809
-tests/fm-test-run.test.sh 399453
+tests/fm-test-run.test.sh 141444
 tests/fm-tmux-submit-busy.test.sh 2600
 tests/fm-transition-lib.test.sh 101
 tests/fm-x-mode.test.sh 29896
@@ -795,16 +796,24 @@ portable_parallel_lane_weight() {
 # its own header owns temporary dependency provisioning.
 list_portable_parallel_1() {
   cat <<'EOF'
-tests/fm-test-run.test.sh
 tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-test-run.test.sh
 tests/fm-crew-state.test.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-arm-pretool-check.test.sh
 tests/fm-x-mode.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-cd-pretool-check.test.sh
 tests/fm-brief.test.sh
 tests/fm-composer-lib.test.sh
+tests/fm-grok-harness.test.sh
 tests/fm-send-popup-settle.test.sh
 tests/fm-pi-primary-types.test.sh
+tests/fm-send-strict.test.sh
+tests/fm-review-diff.test.sh
 tests/fm-spawn-batch.test.sh
 tests/fm-tmux-submit-busy.test.sh
+tests/fm-send-settle.test.sh
 tests/fm-composer-ghost.test.sh
 tests/fm-transition-lib.test.sh
 EOF
@@ -815,14 +824,6 @@ list_portable_parallel_2() {
   cat <<'EOF'
 tests/fm-lint.test.sh
 tests/fm-pr-merge.test.sh
-tests/fm-backend-herdr.test.sh
-tests/fm-arm-pretool-check.test.sh
-tests/fm-herdr-lab.test.sh
-tests/fm-cd-pretool-check.test.sh
-tests/fm-grok-harness.test.sh
-tests/fm-send-strict.test.sh
-tests/fm-review-diff.test.sh
-tests/fm-send-settle.test.sh
 tests/fm-ensure-agents-md.test.sh
 tests/fm-supervision-instructions.test.sh
 EOF
@@ -906,13 +907,13 @@ list_portable_serial() {
   done < <(all_repo_tests)
 }
 
-# Measured portable-serial script durations in milliseconds, from the CI timing
-# artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
-# slowest successful sample in the referenced complete/partial CI runs, with
-# the version-specific host and native-Windows exceptions documented there.
-# These are balance hints only: the shard
-# partition stays complete and disjoint whatever they say, so a stale hint costs
-# balance rather than coverage. That doc owns the refresh procedure.
+# Measured portable-serial script durations in milliseconds.
+# docs/fm-test-portable-shards.md owns their measurement provenance - the CI
+# timing artifacts, the provisional local canonical-runner samples, and the
+# version-specific host and native-Windows exceptions - plus the refresh
+# procedure.
+# These are balance hints only: the shard partition stays complete and disjoint
+# whatever they say, so a stale hint costs balance rather than coverage.
 portable_serial_weight_hints() {
   cat <<'EOF'
 tests/fm-afk-contract.test.sh 11101
@@ -1195,15 +1196,6 @@ portable_serial_unhinted() {
   rm -rf "$tmp"
 }
 
-# Sum serial weights for paths on stdin, including the unmeasured default.
-portable_serial_lane_weight() {
-  awk -v fallback="$PORTABLE_SERIAL_DEFAULT_WEIGHT_MS" '
-    NR == FNR { if (NF) { hint[$1] = $2 }; next }
-    NF { total += ($1 in hint) ? hint[$1] : fallback }
-    END { printf "%d\n", total + 0 }
-  ' <(portable_serial_weight_hints) -
-}
-
 portable_parallel_weight_for() {
   local want=$1 ms
   ms=$(portable_parallel_weight_hints | awk -v want="$want" '$1 == want { print $2; exit }')
@@ -1389,24 +1381,30 @@ run_coverage_guard() {
   fi
 
   # Serial (whole lane and each CI shard) + Herdr lane listings without
-  # disturbing a caller's selection.
+  # disturbing a caller's selection. Computing the assignments once and slicing
+  # them per shard avoids re-deriving the whole lane PORTABLE_SERIAL_SHARDS
+  # times, which made this guard the dominant cost of every coverage check.
   saved_scripts=("${SCRIPTS[@]+"${SCRIPTS[@]}"}")
-  SCRIPTS=()
-  select_lane portable-serial
-  printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" | LC_ALL=C sort -u >"$tmp/serial"
+  portable_serial_assignments >"$tmp/serial_assignments"
+  portable_serial_weight_hints >"$tmp/serial_hints"
+  awk -F'\t' 'NF { print $2 }' "$tmp/serial_assignments" | LC_ALL=C sort -u >"$tmp/serial"
   : >"$tmp/serial_shards_raw"
   shard=1
   while [ "$shard" -le "$PORTABLE_SERIAL_SHARDS" ]; do
-    SCRIPTS=()
-    select_lane "portable-serial-${shard}of${PORTABLE_SERIAL_SHARDS}"
-    if [ "${#SCRIPTS[@]}" -eq 0 ]; then
+    awk -F'\t' -v want="$shard" '$1 == want { print $2 }' \
+      "$tmp/serial_assignments" >"$tmp/shard_scripts"
+    if [ ! -s "$tmp/shard_scripts" ]; then
       log "coverage guard: portable serial shard $shard of $PORTABLE_SERIAL_SHARDS is empty"
       SCRIPTS=("${saved_scripts[@]+"${saved_scripts[@]}"}")
       rm -rf "$tmp"
       return 1
     fi
-    printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" >>"$tmp/serial_shards_raw"
-    serial_ms=$(printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" | portable_serial_lane_weight)
+    cat "$tmp/shard_scripts" >>"$tmp/serial_shards_raw"
+    serial_ms=$(awk -v fallback="$PORTABLE_SERIAL_DEFAULT_WEIGHT_MS" '
+      NR == FNR { if (NF) { hint[$1] = $2 }; next }
+      NF { total += ($1 in hint) ? hint[$1] : fallback }
+      END { printf "%d\n", total + 0 }
+    ' "$tmp/serial_hints" "$tmp/shard_scripts")
     [ "$serial_ms" -le "$serial_max_ms" ] || serial_max_ms=$serial_ms
     shard=$((shard + 1))
   done

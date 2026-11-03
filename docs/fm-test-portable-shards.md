@@ -5,7 +5,7 @@
 
 ## Verification inputs
 
-Balance hints come from serial runs of the real lanes on `ubuntu-latest`.
+Balance hints come from serial runs of the real lanes on `ubuntu-latest`, except where a dated refresh below records a provisional local canonical-runner sample in its place.
 The concurrent isolation proof in [fm-test-isolation-proof.md](fm-test-isolation-proof.md) establishes concurrency safety, not serial CI duration.
 Local timings are not interchangeable with CI timings: platform and machine load can affect each script differently and change their relative weights.
 
@@ -33,6 +33,7 @@ The 2026-10-29 hint-drift refresh from run 40992718346 raised `tests/fm-daemon.t
 The 2026-10-29 hint-drift refresh from run 40995199128 raised `tests/fm-bootstrap.test.sh` from 50965 ms to its measured 79029 ms (repeated drift 1.55x).
 The 2026-10-30 refresh raised `tests/fm-ci-workflow.test.sh` from 5833 ms to its measured 10072 ms, measured on CI run 40960822708 after this PR added the Lint aggregate and time-budget tests.
 The 2026-11-02 local canonical-runner refresh provisionally raised `tests/fm-lint.test.sh` to 469094 ms and `tests/fm-test-run.test.sh` to 399453 ms; these local samples supersede the prior hints until successful CI artifacts provide replacements.
+The 2026-11-03 follow-up remeasured `tests/fm-test-run.test.sh` at 141444 ms after its nested real subjects moved to fixtures, and the two parallel lanes were rebalanced for that lighter hint; the hint itself stays provisional until a green CI artifact replaces it.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes
