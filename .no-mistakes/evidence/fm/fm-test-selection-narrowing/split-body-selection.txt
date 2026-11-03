@@ -1,0 +1,12 @@
+### disposable repo: /tmp/fmsplit (rsync of the run worktree, fresh git init, base commit 1609e69)
+
+## scenario: change a split body -> wrapper suite selected (new tests/fm-test-run-*-lib.sh arm)
+ M tests/fm-test-run-selection-lib.sh
+tests/fm-test-run.test.sh
+tests/fm-test-fixtures.test.sh
+rc=0
+
+## scenario: change a split body that only scheduling cases touch
+tests/fm-test-run.test.sh
+tests/fm-test-fixtures.test.sh
+rc=0

@@ -1,0 +1,14 @@
+### Proof both sourced bodies execute inside the wrapper run (PC02 log, wrapper region lines 1-133)
+ok assertion lines in wrapper region: 62
+attributed to tests/fm-test-run-selection-lib.sh: 35 (file defines 35 test_ cases)
+attributed to tests/fm-test-run-scheduling-lib.sh: 25 (file defines 27 test_ cases)
+parameterized scheduling cases (message text built at runtime):
+  - the --changed path bounds fm-watch-triage at its own load-scaled 1500s base
+  - the --changed path bounds fm-captain-hold-lifecycle at its own load-scaled 1500s base
+
+### Every test body is byte-identical to the pre-split file (sorted line diff of the 62 case bodies)
+diff lines: 0 (see tests/fm-test-run.test.sh history 3304 -> 111 + two bodies)
+### the two parameterized messages are emitted by the loop at
+### tests/fm-test-run-scheduling-lib.sh:1303 (pass "the --changed path bounds $stem ..."),
+### in test_changed_watch_triage_gets_its_own_scaled_timeout and
+### test_changed_captain_hold_gets_its_own_scaled_timeout -> scheduling body total 25+2 = 27 of 27 cases.

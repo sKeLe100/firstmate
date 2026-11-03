@@ -1,0 +1,196 @@
+# ABORTED first attempt: the offload logged 'all 2 PC02 test slots are busy; running locally; running on PC01'
+# (a transient slot holder from another concurrent run). The run was killed immediately and the same
+# targeted command was re-issued a minute later; see pc02-targeted-run-rc.txt for the authoritative run.
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=3022383 ppid=3022381
+runner_login_shell=no
+path_entries=~/.local/bin:~/.local/gnu-coreutils/bin:~/.npm-global/bin:~/.local/bin:~/.npm-global/bin:~/.local/bin:~/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=3022383 ppid=3022381 pgid=3022381 sid=3022381 subreaper=not-exposed-by-procfs
+tmpdir_fs=tmpfs
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 112211
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 112211
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=~/.local/bin/node version=v22.22.3
+tool=pi path=~/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=~/.local/bin/tasks-axi version=0.2.6
+tool=timeout path=~/.local/gnu-coreutils/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=~/.local/bin/herdr version=herdr 0.9.5
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=~/.local/bin/no-mistakes version=no-mistakes version v1.46.0 (20892e6) 2026-08-06T06:41:38Z
+chrome_startup=failed path=~/.local/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_HOST_LOAD load5=4.81 cpus=16 jobs=8 per_script_timeout_secs=3000 watch_triage_timeout_secs=3000 captain_hold_timeout_secs=3000
+FM_TEST_BEGIN 2026-11-03T14:51:52Z tests/fm-lint.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-03T14:51:52Z tests/fm-test-run.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - exact suite coverage: --all lists every tests/*.test.sh once
+ok - family selection returns a proper subset of the suite
+ok - single-script selection lists exactly that path
+ok - the runner emits one bounded secret-free environment record and records missing tools safely
+ok - changed-file selection stays conservative (never silent full suite)
+ok - a task marker refuses execution in the primary checkout and leaves worktrees and inspection alone
+ok - runner retains broad execution coverage while documentation selects its owners
+ok - shell line-ending policy selects runner coverage
+ok - quarantine list change selects runner coverage
+fm-test-run: no tests selected for changes vs HEAD (map is conservative; use --all for the complete suite)
+ok - changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source
+ok - bin references and consumer references select individual scripts
+ok - changed reference closure handles cycles, comments, prose, wrappers, hubs, and removals
+ok - real inventory selection stays bounded for docs, skills, leaves, a watcher, a shared lib, and the recorded feature
+ok - changed defaults to bounded automatic scheduling with serial override
+ok - Windows emulation exempts only synthetic POSIX modes
+ok - a plain script list defaults to bounded automatic concurrency without an automatic timeout
+ok - family proofs run concurrently only within separate family phases
+ok - empty changed selection emits deterministic text and JSON summaries
+ok - timing markers and JSON artifact are valid
+ok - aggregate exit reflects any script failure
+ok - gate-skip accounting is honest and non-failing
+ok - a gate skip records why it skipped
+ok - a script that actually ran records no skip reason
+ok - live guards are recorded as a capability class, not a bare env opt-in
+ok - fail-on-gate-skip converts herdr-not-found into a hard failure
+ok - exclude-family drops the named primary family after selection
+ok - exclude-quarantined drops exactly the listed scripts and reports each skip loudly
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-pair-dedup.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-backend-herdr.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-procevent.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-watch-triage.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-calm-pi-extension.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-queue.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-secondmate-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-transport-lanes.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-composer-codex-idle-live-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-agy-harness.test.sh
+fm-test-run: quarantined skip: tests/fm-agy-harness.test.sh (signature: a zero model bound disabled the deadline, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-backend-herdr.test.sh (signature: coreutils: unknown program 'pi', owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-calm-pi-extension.test.sh (signature: Pi queued-row queued_mixed case did not list the captain's queued follow-up, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-composer-codex-idle-live-e2e.test.sh (signature: idle screen never classified empty, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent-quota.test.sh (signature: provider retire targeted the wrong source, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent.test.sh (signature: the listener under test was not reparented away from its session, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-public-followup.test.sh (signature: a wake whose line could not be written must stay queued, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-remote-secondmate-lifecycle-e2e.test.sh (signature: remote spawn never reached its blocked inheritance write, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-remote-transport-lanes.test.sh (signature: concurrent sequence claims were not unique and monotonic, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-secondmate-harness.test.sh (signature: first config push did not reach pointer delivery, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-session-lock-ancestry.test.sh (signature: the pty-host was not reparented to init after the daemon ended, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-supervision-host.test.sh (signature: a routine outcome a drain could not print must follow on the next drain, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-task-delivery.test.sh (signature: a ref-format-valid metacharacter prefix should promote safely, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-pair-dedup.test.sh (signature: no process-event result, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-queue.test.sh (signature: a foreign queue with no progress did not alert, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-watch-triage.test.sh (signature: exceeded the per-script bound, owner: sync-preexisting-test-failures)
+ok - quarantine diagnostics classify drift without weakening ordinary gates
+ok - proven-isolated scheduling ignores parallel hints
+ok - family, all, changed, and script selections ignore parallel hints
+ok - portable shard union, disjointness, and coverage guard hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - portable serial shard listing is backed by the exhaustive coverage guard
+ok - coverage guard bounds the unmeasured share and serial packing within twenty minutes
+ok - serial packing accepts the exact budget and refuses one millisecond above it
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
+ok - --jobs refuses non-proven / stateful selections
+ok - --jobs admits and schedules a family with a recorded concurrent proof
+ok - an unclassified new test stays serial while the proven residual family runs concurrently
+ok - a changed shared test fixture selects its readers while an unread tests/ path still refuses
+ok - a concurrent run starts the longest-hint script first
+ok - --per-script-timeout-secs turns a hung script into a bounded failure
+ok - the automatic --changed bound gives the slow watcher suite at least 1500s
+ok - a portable-serial lane derives its per-script timeout from the hint table, and an explicit flag still overrides it
+ok - --max-wall-ms fails an over-budget run and refuses a malformed budget
+ok - jobs scheduler runs proven scripts; failure propagates; non-proven refused
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+ok - aggregate-json merges lane timing artifacts
+ok - --check-hint-drift only refuses a hint that drifts on two consecutive runs, and warns on a single-run spike
+ok - --check-hint-drift ignores a ratio-only swing under PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS
+ok - --fail-fast stops after the first failure and is off by default
+ok - --fail-fast stops the --jobs scheduler after the first failure
+ok - --fail-fast stops the unproven serial remainder after a concurrent failure
+ok - automatic eight-job phases retain family caps, serial tails and explicit refusals
+ok - FM_TEST_HOST_LOAD reports load/cpus/jobs and throttles automatic concurrency, never an explicit --jobs
+ok - the --changed default per-script timeout scales by max(1, load5/cpus)
+ok - the --changed path bounds fm-watch-triage at its own load-scaled 1500s base
+ok - the --changed path bounds fm-captain-hold-lifecycle at its own load-scaled 1500s base
+ok - token-free retry re-runs a load-sensitive failure once and clears it without a real regression
+ok - the token-free retry admits exit=124 regardless of the load-sensitive name list
+ok - token-free retry never fires when any failure is outside the load-sensitive/timeout class
+ok - a read-only dir left under the run root never changes the aggregate exit status
+FM_TEST_END 2026-11-03T14:53:57Z tests/fm-test-run.test.sh exit=0 duration_ms=125180 gate_skip=false
+ok - fm-lint.sh --help reports the complete executable interface
+ok - partition audit accepts clean roots and blocks unexpected no-source codes and tool failures
+ok - fm-lint.sh --list-files reports the complete shell inventory
+ok - two canonical lint partitions preserve complete source-aware coverage and reject weakened modes
+ok - fm-lint.sh accepts --partition KofN for 1 <= K <= N <= 8 and refuses everything else
+ok - the partition packer assigns largest-first to the least-loaded partition with an index tiebreak
+ok - four canonical lint partitions are complete, disjoint, deterministic, and byte-balanced
+ok - tests/lib.sh never follows a source directive into bin/fm-wake-lib.sh
+ok - the lint budget warns at 50 percent and fails at 70 percent of the job cap
+ok - fm-lint.sh --fast disables ShellCheck extended analysis
+ok - fm-lint.sh keeps full ShellCheck analysis by default in CI
+ok - fm-lint.sh rejects explicit --fast mode in CI
+ok - fm-lint.sh --fast catches an ordinary shell lint defect
+ok - fm-lint.sh pins an explicit ShellCheck version (0.11.0)
+ok - ShellCheck installer retries a transient download failure
+ok - ShellCheck installer selects the official archive, URL, and checksum per OS/arch
+ok - ShellCheck installer rejects a wrong checksum
+ok - ShellCheck installer falls back to shasum -a 256 when sha256sum is absent
+ok - ShellCheck installer prefers sha256sum when both hashers are present
+ok - ShellCheck installer rejects an unsupported OS or architecture
+ok - missing ShellCheck fails closed
+ok - fm-lint.sh refuses to lint under a non-pinned ShellCheck version
+ok - fm-lint.sh catches a real lint defect the old no-op gate passed
+ok - fm-lint.sh rejects direct Beads CLI invocations in firstmate core
+ok - fm-lint.sh enforces backend purity for explicit core paths
+ok - fm-lint.sh ignores ambient ShellCheck options
+ok - fm-lint.sh passes a clean fixture
+ok - jobs=1 and jobs=2 preserve deterministic diagnostics, failures, cleanup bounds, and quiet telemetry
+ok - jobs=1 and jobs=2 stop complete worker trees with and without telemetry
+ok - a root pinned at the wall deadline fails by name, reaps its tree, and leaves the sentinel alive
+ok - a root refused by its enforced memory limit fails by name with a memory reason
+ok - memory failures retry without source following, exclude cross-file codes, and preserve a real fallback finding
+ok - a memory fallback runs only within the time left in its root's original deadline
+ok - explicit memory evidence outranks findings and signal reasons (modes: 0 1)
+ok - OOM words in a source excerpt or a root path never classify a root as memory
+ok - FM_LINT_REQUIRE_BOUNDS refuses missing enforcement and proceeds when enforceable
+ok - the pinned ShellCheck both respects and survives under the memory envelope
+ok - the roots sidecar and telemetry record the run's final exit status
+ok - the retained sidecar records each root's lifecycle with a mode, reason, and duration
+ok - seeded dispatcher, adapter, production-owner, and test-local diagnostics preserve parity
+ok - fm-lint.sh changed mode lints only the changed canonical file
+ok - fm-lint.sh forces a full lint in CI even when the local diff would be empty
+ok - fm-lint.sh forces a full lint when HEAD is on main
+ok - fm-lint.sh explicit paths bypass changed-file mode selection
+ok - fm-lint.sh exits 0 with a note when the local branch has no changed lint targets
+ok - fm-lint.sh guards .no-mistakes.yaml commands.test against a divergent invocation
+ok - fm-lint.sh --list-files reports the would-be changed set in changed mode
+ok - fm-lint.sh changed mode drops source following and excludes cross-file codes
+ok - fm-lint.sh changed mode invokes ShellCheck once per root
+ok - fm-lint.sh CI keeps source following without the local exclusion list
+ok - fm-lint.sh on main keeps source following without the local exclusion list
+ok - fm-lint.sh without a merge-base keeps source following without the local exclusion list
+ok - fm-lint.sh explicit paths keep source following
+ok - fm-lint.sh --fast on a local branch keeps source following
+ok - fm-lint.sh changed mode excludes cross-file codes that explicit paths still report
+FM_TEST_END 2026-11-03T14:53:59Z tests/fm-lint.test.sh exit=0 duration_ms=127066 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=135641
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=252246 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-lint.test.sh duration_ms=127066
+FM_TEST_SLOWEST rank=2 script=tests/fm-test-run.test.sh duration_ms=125180

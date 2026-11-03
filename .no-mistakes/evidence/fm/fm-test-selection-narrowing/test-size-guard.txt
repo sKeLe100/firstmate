@@ -1,0 +1,13 @@
+### guard on the split tree (tests/fm-test-run.test.sh + its two bodies)
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (17 allowlisted)
+rc=0
+
+### adversarial: a 3001-line tests/fm-oversized-lib.sh with no allowlist entry
+3001 tests/fm-oversized-lib.sh
+fm-lint-test-size.sh: /tmp/fmsplit/tests/fm-oversized-lib.sh exceeds the size ceiling (lines=3001 ceiling=3000 test_functions=0 ceiling=100) and is not grandfathered in /tmp/fmsplit/tests/fm-lint-test-size-allowlist.txt.
+rc=1
+
+### adversarial: a 101-test_ tests/fm-manyfuncs-lib.sh under the line ceiling
+102 tests/fm-manyfuncs-lib.sh
+fm-lint-test-size.sh: /tmp/fmsplit/tests/fm-manyfuncs-lib.sh exceeds the size ceiling (lines=102 ceiling=3000 test_functions=101 ceiling=100) and is not grandfathered in /tmp/fmsplit/tests/fm-lint-test-size-allowlist.txt.
+rc=1
