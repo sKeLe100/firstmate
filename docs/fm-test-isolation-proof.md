@@ -22,10 +22,12 @@ This record owns concurrent isolation evidence for the portable parallel candida
 
 ## Candidate set
 
+`tests/fm-captain-hold-lifecycle.test.sh` left this set on 2026-11-03 when it was split into three suites that have no isolation proof yet, so they run serially in CI.
+The 2026-08-20 run above predates that split and still includes it.
+
 - `tests/fm-arm-pretool-check.test.sh`
 - `tests/fm-backend-herdr.test.sh`
 - `tests/fm-brief.test.sh`
-- `tests/fm-captain-hold-lifecycle.test.sh`
 - `tests/fm-cd-pretool-check.test.sh`
 - `tests/fm-composer-ghost.test.sh`
 - `tests/fm-composer-lib.test.sh`

@@ -489,7 +489,7 @@ It then finishes any still-recorded dependency-edge cleanup without rewriting th
 
 ## Verification record
 
-The focused end-to-end regression suite is `tests/fm-captain-hold-lifecycle.test.sh`, using only synthetic identities and decision text.
+The focused end-to-end regression suites are `tests/fm-captain-hold-lifecycle.test.sh`, `tests/fm-captain-hold-reconcile.test.sh`, and `tests/fm-captain-hold-merge-teardown.test.sh`, sharing `tests/fm-captain-hold-lib.sh`, and use only synthetic identities and decision text.
 It proves the behaviors below.
 The suite does not test the accepted merge-to-cleanup re-hold window or asynchronous queued-forge landing because those events occur after the locally serialized merge command has returned.
 
@@ -640,7 +640,7 @@ Projection regressions live in two suites:
 The exact commands and their summarized outputs are recorded in the shipping PR's evidence.
 To refresh this record, run:
 
-- The four suites above: `tests/fm-captain-hold-lifecycle.test.sh`, `tests/fm-classify-decision-key.test.sh`, `tests/fm-fleet-snapshot-view.test.sh`, and `tests/fm-bearings-snapshot.test.sh`.
+- The six suites above: `tests/fm-captain-hold-lifecycle.test.sh`, `tests/fm-captain-hold-reconcile.test.sh`, `tests/fm-captain-hold-merge-teardown.test.sh`, `tests/fm-classify-decision-key.test.sh`, `tests/fm-fleet-snapshot-view.test.sh`, and `tests/fm-bearings-snapshot.test.sh`.
 - `tests/fm-send-resolve-key.test.sh`, `tests/fm-bearings-board.test.sh`, and `tests/fm-procevent.test.sh`.
 - `bin/fm-lint.sh`.
 
