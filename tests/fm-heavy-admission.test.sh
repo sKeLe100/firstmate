@@ -13,14 +13,15 @@ admit >"$TMP_ROOT/free" 2>&1 || fail 'free host refused'
 assert_grep 'admitted fixture' "$TMP_ROOT/free" 'free slot admission'
 pass 'free host admitted and lock released on exit'
 
-# Hold the very same inode from a different process, with a named owner.
-perl -e 'open(my $f, ">>", $ARGV[0]) or die $!; flock($f,2) or die $!;
-  truncate($f, 0) or die $!; seek($f, 0, 0) or die $!;
-  print $f "pid=$$ task=other-heavy-run\n"; $f->flush();
-  open(my $ready, ">", $ARGV[1]) or die $!; close $ready; sleep 600' \
-  "$FM_HEAVY_SLOT" "$TMP_ROOT/ready" &
+# Hold the very same inode from a different admission, with a named owner.
+FM_TASK_ID=other-heavy-run bash -c '
+  . "$1"
+  fm_heavy_admit other-heavy-run || exit $?
+  : >"$2"
+  sleep 600
+' bash "$LIB" "$TMP_ROOT/ready" >"$TMP_ROOT/holder" 2>&1 &
 holder=$!
-trap 'kill "$holder" "${leaked:-}" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fm_test_cleanup' EXIT
+trap 'kill "$holder" "${leaked:-}" "${reused:-}" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fm_test_cleanup' EXIT
 for ((i=0;i<100;i++)); do [ ! -f "$TMP_ROOT/ready" ] || break; sleep 0.1; done
 [ -f "$TMP_ROOT/ready" ] || fail 'holder not ready'
 rc=0; admit >"$TMP_ROOT/busy" 2>&1 || rc=$?
@@ -28,6 +29,19 @@ expect_code 75 "$rc" 'busy host refused'
 assert_grep 'other-heavy-run' "$TMP_ROOT/busy" 'busy refusal names owner'
 assert_no_grep 'reclaimed stale slot' "$TMP_ROOT/busy" 'a live owner is never reclaimed'
 pass 'busy host refuses without overlapping holder'
+
+# PC02 offload suites are governed by the offload slot locks, not this host slot.
+( FM_PC02_OFFLOAD_REMOTE=1 admit >"$TMP_ROOT/remote-1" 2>&1 ) & remote_1=$!
+( FM_PC02_OFFLOAD_REMOTE=1 admit >"$TMP_ROOT/remote-2" 2>&1 ) & remote_2=$!
+rc_1=0; wait "$remote_1" || rc_1=$?
+rc_2=0; wait "$remote_2" || rc_2=$?
+expect_code 0 "$rc_1" 'first PC02 offload admission'
+expect_code 0 "$rc_2" 'second PC02 offload admission'
+assert_grep 'admitted fixture on PC02 offload' "$TMP_ROOT/remote-1" 'first PC02 offload admitted'
+assert_grep 'admitted fixture on PC02 offload' "$TMP_ROOT/remote-2" 'second PC02 offload admitted'
+assert_no_grep 'slot-busy' "$TMP_ROOT/remote-1" 'first PC02 offload did not take the host slot'
+assert_no_grep 'slot-busy' "$TMP_ROOT/remote-2" 'second PC02 offload did not take the host slot'
+pass 'two PC02 offload slots both admit while a local heavy run holds the host slot'
 
 # A minimal executable fixture proves targeted execution rather than running an
 # unrelated real suite inside this contract test.
@@ -55,33 +69,40 @@ pass 'heavy tests and full lint use the same slot'
 kill "$holder"; wait "$holder" 2>/dev/null || true
 
 # A killed run can leave a descendant holding fd 9 after the recorded owner is
-# gone, so the flock never frees. The stale record must be reclaimed instead of
-# blocking this run for its whole bounded wait.
-bash -c 'exit 0' & dead_owner=$!
-wait "$dead_owner" 2>/dev/null || true
+# gone, so the flock never frees. A reused pid must not pass as the owner: its
+# live start identity differs from the record, so the stale record is reclaimed
+# instead of blocking this run for its whole bounded wait.
+sleep 600 & reused=$!
 perl -e 'open(my $f, ">>", $ARGV[0]) or die $!; flock($f,2) or die $!;
   truncate($f, 0) or die $!; seek($f, 0, 0) or die $!;
-  print $f "pid=$ARGV[1] task=leaked-owner run=tests:changed\n"; $f->flush();
+  print $f "pid=$ARGV[1] start=starttime=0 task=leaked-owner run=tests:changed\n"; $f->flush();
   open(my $ready, ">", $ARGV[2]) or die $!; close $ready; sleep 600' \
-  "$FM_HEAVY_SLOT" "$dead_owner" "$TMP_ROOT/leaked-ready" &
+  "$FM_HEAVY_SLOT" "$reused" "$TMP_ROOT/leaked-ready" &
 leaked=$!
 for ((i=0;i<100;i++)); do [ ! -f "$TMP_ROOT/leaked-ready" ] || break; sleep 0.1; done
 [ -f "$TMP_ROOT/leaked-ready" ] || fail 'leaked holder not ready'
-if kill -0 "$dead_owner" 2>/dev/null; then fail 'dead owner fixture is still running'; fi
+kill -0 "$reused" 2>/dev/null || fail 'reused pid fixture is not running'
 rc=0; FM_HEAVY_WAIT_SECS=10 admit >"$TMP_ROOT/stale" 2>&1 || rc=$?
 kill "$leaked" 2>/dev/null || true; wait "$leaked" 2>/dev/null || true
 leaked=
-expect_code 0 "$rc" 'dead recorded owner is reclaimed'
-assert_grep "reclaimed stale slot holder=pid=$dead_owner" "$TMP_ROOT/stale" 'reclaim names the stale pid'
+expect_code 0 "$rc" 'stale start identity is reclaimed'
+assert_grep "reclaimed stale slot holder=pid=$reused" "$TMP_ROOT/stale" 'reclaim names the stale pid'
 [ "$(grep -c 'reclaimed stale slot' "$TMP_ROOT/stale" || true)" -eq 1 ] || fail 'stale reclaim logged more than once'
 assert_grep 'admitted fixture' "$TMP_ROOT/stale" 'reclaim admits without the bounded wait'
-pass 'dead recorded owner is reclaimed as stale'
+kill "$reused" 2>/dev/null || true; wait "$reused" 2>/dev/null || true
+reused=
+pass 'a reused pid with a stale start identity is reclaimed'
 
 rc=0; FM_HEAVY_TEST_LOAD5=8 admit >"$TMP_ROOT/load" 2>&1 || rc=$?
 expect_code 75 "$rc" 'load threshold is strict'
 assert_grep 'load5=8' "$TMP_ROOT/load" 'load refusal explains threshold'
+assert_grep 'need <8' "$TMP_ROOT/load" 'load refusal names the floor'
+assert_no_grep 'MemAvailable_KiB=' "$TMP_ROOT/load" 'load refusal names only the floor that was hit'
 rc=0; FM_HEAVY_TEST_MEM_KIB=3145727 admit >"$TMP_ROOT/memory" 2>&1 || rc=$?
 expect_code 75 "$rc" 'low available memory refused'
+assert_grep 'MemAvailable_KiB=3145727' "$TMP_ROOT/memory" 'memory refusal names the measured value'
+assert_grep 'need >=3145728' "$TMP_ROOT/memory" 'memory refusal names the floor'
+assert_no_grep 'load5=' "$TMP_ROOT/memory" 'memory refusal names only the floor that was hit'
 FM_HEAVY_TEST_MEM_KIB=3145728 admit >"$TMP_ROOT/boundary" 2>&1 || fail 'memory floor should be inclusive'
 pass 'load and available-memory thresholds enforced'
 
@@ -115,7 +136,7 @@ rc=0
 # shellcheck disable=SC2016
 FM_HEAVY_SLOT="$TMP_ROOT/write-failure-slot" bash -c '
   printf() {
-    [ "${1:-}" != "pid=%s task=%s run=%s\\n" ] || return 1
+    [ "${1:-}" != "pid=%s start=%s task=%s run=%s\\n" ] || return 1
     builtin printf "$@"
   }
   . "$1"

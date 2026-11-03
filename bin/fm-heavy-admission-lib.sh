@@ -7,14 +7,16 @@
 # Production always uses $HOME/.fm-heavy-run-slot.lock. FM_HEAVY_SLOT may
 # override it only with FM_TEST_SEAM=1; contents name the last holder while locked.
 # Wait at most FM_HEAVY_WAIT_SECS (300), polling every FM_HEAVY_POLL_SECS (5).
-# A slot whose recorded holder pid is gone while the flock is still held means a
+# A slot whose recorded holder is gone while the flock is still held means a
 # killed run's descendant inherited fd 9: after a 1s grace the live waiter takes
 # over the record, logs "reclaimed stale slot holder=pid=<pid>", and admits
 # instead of waiting out the bounded backoff on a leak nobody will release.
+# The record names the holder's process start identity, so a reused pid is stale.
 # Admission requires load5 < FM_HEAVY_MAX_LOAD5 (8), and available memory >=
 # FM_HEAVY_MIN_MEM_KIB (3145728). Unknown metrics fail closed within that wait.
 # Linux uses MemAvailable; macOS uses free + inactive + speculative vm_stat pages.
 # FM_TEST_SEAM=1 enables FM_HEAVY_TEST_LOAD5 and FM_HEAVY_TEST_MEM_KIB.
+# FM_PC02_OFFLOAD_REMOTE=1 marks a suite already governed by a PC02 offload slot.
 
 fm_heavy_metrics() {
   FM_HEAVY_LOAD=unknown
@@ -35,20 +37,61 @@ fm_heavy_metrics() {
   fi
 }
 
-# Print the pid recorded as the slot holder; fail when it is absent or invalid.
-fm_heavy_slot_pid() {
-  local record pid
+# Print a process start identity that changes when its pid is reused.
+fm_heavy_proc_identity() {
+  local pid=$1 stat_line starttime value
+  local -a stat_fields
+  if [ -r "/proc/$pid/stat" ]; then
+    stat_line=$(cat "/proc/$pid/stat" 2>/dev/null) || return 1
+    read -r -a stat_fields <<< "${stat_line##*)}"
+    [ "${#stat_fields[@]}" -ge 20 ] || return 1
+    starttime=${stat_fields[19]}
+    case "$starttime" in ''|*[!0-9]*) return 1 ;; esac
+    printf 'starttime=%s\n' "$starttime"
+    return 0
+  fi
+  value=$(TZ=UTC LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null) || return 1
+  value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$value" ] || return 1
+  case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  printf 'lstart=%s\n' "$(printf '%s' "$value" | tr ' ' '_')"
+}
+
+# Print the recorded holder fields; fail when either field is absent or invalid.
+fm_heavy_slot_record() {
+  local record pid start rest
   record=$(head -n 1 "$1" 2>/dev/null) || return 1
-  record=${record%% *}
-  case "$record" in pid=*) ;; *) return 1 ;; esac
-  pid=${record#pid=}
+  read -r pid start rest <<< "$record"
+  case "$pid" in pid=*) ;; *) return 1 ;; esac
+  pid=${pid#pid=}
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$start" in start=*) ;; *) return 1 ;; esac
+  start=${start#start=}
+  case "$start" in ''|*[[:space:]]*) return 1 ;; esac
+  printf 'pid=%s start=%s\n' "$pid" "$start"
+}
+
+# Print the pid recorded as the live slot holder; fail when the record is absent,
+# invalid, or names a process whose start identity no longer matches.
+fm_heavy_slot_pid() {
+  local record pid start current
+  record=$(fm_heavy_slot_record "$1") || return 1
+  read -r pid start <<< "$record"
+  pid=${pid#pid=}
+  start=${start#start=}
+  current=$(fm_heavy_proc_identity "$pid") || return 1
+  [ "$current" = "$start" ] || return 1
   printf '%s\n' "$pid"
 }
 
 # Record this shell as the slot holder, preserving the slot's inode.
 fm_heavy_write_holder() {
-  printf 'pid=%s task=%s run=%s\n' "$$" "${FM_TASK_ID:-local}" "$2" >"$1" 2>/dev/null && return 0
+  local identity
+  identity=$(fm_heavy_proc_identity "$$") || {
+    echo 'heavy admission: could not read this process start identity' >&2
+    return 1
+  }
+  printf 'pid=%s start=%s task=%s run=%s\n' "$$" "$identity" "${FM_TASK_ID:-local}" "$2" >"$1" 2>/dev/null && return 0
   echo "heavy admission: could not record holder in slot file: $1" >&2
   return 1
 }
@@ -57,14 +100,21 @@ fm_heavy_write_holder() {
 # Returns 0 and prints the stale pid after taking over the record, 2 when the
 # record cannot be written, and 1 when the slot belongs to a live owner.
 fm_heavy_reclaim() {
-  local slot=$1 stale
-  stale=$(fm_heavy_slot_pid "$slot") || return 1
+  local slot=$1 record stale start current
+  record=$(fm_heavy_slot_record "$slot") || return 1
+  read -r stale start <<< "$record"
+  stale=${stale#pid=}
+  start=${start#start=}
   [ "$stale" != "$$" ] || return 1
-  if kill -0 "$stale" 2>/dev/null; then return 1; fi
+  if current=$(fm_heavy_proc_identity "$stale" 2>/dev/null) && [ "$current" = "$start" ]; then
+    return 1
+  fi
   # Grace lets a concurrent reclaimer win and lets a dying owner finish.
   sleep 1
-  [ "$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)" = "$stale" ] || return 1
-  if kill -0 "$stale" 2>/dev/null; then return 1; fi
+  [ "$(fm_heavy_slot_record "$slot" 2>/dev/null || true)" = "$record" ] || return 1
+  if current=$(fm_heavy_proc_identity "$stale" 2>/dev/null) && [ "$current" = "$start" ]; then
+    return 1
+  fi
   fm_heavy_write_holder "$slot" "$2" || return 2
   # Read back after the grace so only the last reclaimer proceeds.
   sleep 1
@@ -75,6 +125,10 @@ fm_heavy_reclaim() {
 
 fm_heavy_admit() {
   local label=$1 slot
+  if [ "${FM_PC02_OFFLOAD_REMOTE:-}" = 1 ]; then
+    echo "heavy admission: admitted $label on PC02 offload; offload slots govern concurrency" >&2
+    return 0
+  fi
   if [ "${FM_TEST_SEAM:-}" = 1 ]; then
     slot=${FM_HEAVY_SLOT:-$HOME/.fm-heavy-run-slot.lock}
   else
@@ -100,8 +154,14 @@ fm_heavy_admit() {
     if [ "$locked" -eq 0 ]; then
       if perl -e 'open(my $f, ">&=9") or die $!; exit(flock($f, 2|4) ? 0 : 75)' 9>&9; then
         locked=1
+        reclaimed=
         # Truncate only after owning the lock, preserving its inode.
         if ! fm_heavy_write_holder "$slot" "$label"; then
+          exec 9>&-
+          return 2
+        fi
+        if [ "$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)" != "$$" ]; then
+          echo "heavy admission: slot holder record is not this process after locking" >&2
           exec 9>&-
           return 2
         fi
@@ -119,15 +179,29 @@ fm_heavy_admit() {
         reclaimed=
       fi
     fi
+    if [ "$locked" -eq 0 ] && [ -n "$reclaimed" ] \
+      && [ "$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)" != "$$" ]; then
+      reclaimed=
+    fi
     reason="slot-busy"
     if [ "$locked" -eq 1 ] || [ -n "$reclaimed" ]; then
       fm_heavy_metrics
-      if awk -v l="$FM_HEAVY_LOAD" -v m="$FM_HEAVY_MEM" -v max="$max_load" -v min="$min_mem" \
-        'BEGIN {exit !(l ~ /^[0-9]+([.][0-9]+)?$/ && m ~ /^[0-9]+$/ && l < max && m >= min)}'; then
+      reason=$(awk -v l="$FM_HEAVY_LOAD" -v m="$FM_HEAVY_MEM" -v max="$max_load" -v min="$min_mem" '
+        BEGIN {
+          detail = ""
+          if (l !~ /^[0-9]+([.][0-9]+)?$/ || l + 0 >= max + 0) {
+            detail = "load5=" l " (need <" max ")"
+          }
+          if (m !~ /^[0-9]+$/ || m + 0 < min + 0) {
+            detail = detail (detail == "" ? "" : "; ") "MemAvailable_KiB=" m " (need >=" min ")"
+          }
+          print detail
+        }')
+      if [ -z "$reason" ]; then
         echo "heavy admission: admitted $label pid=$$ load5=$FM_HEAVY_LOAD MemAvailable_KiB=$FM_HEAVY_MEM" >&2
         return 0
       fi
-      reason="resources load5=$FM_HEAVY_LOAD (need <$max_load) MemAvailable_KiB=$FM_HEAVY_MEM (need >=$min_mem)"
+      reason="resources $reason"
     fi
     holder=$(cat "$slot" 2>/dev/null) || holder=unknown
     now=$(date +%s)

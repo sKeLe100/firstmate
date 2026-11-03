@@ -89,6 +89,8 @@
 #     held it logs that every slot is busy and routes local, as does an unclear
 #     claim. The files are never unlinked: a dead owner's kernel lock is
 #     released automatically, so a leftover file or process name is harmless.
+#     The remote suite carries FM_PC02_OFFLOAD_REMOTE=1, so it is governed by
+#     these slot locks rather than PC01's one-heavy-run admission.
 #   - Supervising-home selection and per-machine configuration are owned by
 #     docs/configuration.md's "PC02 test offload" section.
 #   - The remote fm-test-run.sh prints its own environment record before its
@@ -757,8 +759,9 @@ else
   done
 fi
 remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT")"
+remote_suite_cmd="$remote_suite_cmd env FM_PC02_OFFLOAD_REMOTE=1"
 if [ "$has_jobs" -eq 0 ]; then
-  remote_suite_cmd="$remote_suite_cmd env FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
+  remote_suite_cmd="$remote_suite_cmd FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
 fi
 remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
 for a in "${remote_args[@]}"; do
