@@ -86,24 +86,45 @@ review:
         all safety boundaries and hard rules verbatim.
     # Guard the bar: unlike the pointers above, these entries state the rule
     # itself because no skill owns it. The glob engine is Go path.Match, where
-    # a bare `*` stays within one path segment and only a trailing `/**`
-    # recurses, so each tree uses `/**` to reach every nested file. The schema
-    # takes one glob per entry, so each tree repeats this text.
-    - path: 'tests/**'
+    # `*` stays within one path segment and does not recurse, so each tree gets
+    # one entry per depth. The schema takes one glob per entry, so each depth
+    # repeats this text.
+    - path: 'tests/*'
       instructions: |
         Flag each diff that lowers the bar, citing its concrete line: a deleted,
         skipped, or quarantined test; a removed or weakened assertion; a new lint
         or shellcheck suppression; a stub or short-circuit that makes a check
         pass; a raised timeout, retry count, or tolerance; a narrowed test
         selection. Accept it only when the PR description states why.
-    - path: 'bin/**'
+    - path: 'tests/*/*'
       instructions: |
         Flag each diff that lowers the bar, citing its concrete line: a deleted,
         skipped, or quarantined test; a removed or weakened assertion; a new lint
         or shellcheck suppression; a stub or short-circuit that makes a check
         pass; a raised timeout, retry count, or tolerance; a narrowed test
         selection. Accept it only when the PR description states why.
-    - path: '.github/workflows/**'
+    - path: 'tests/*/*/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'bin/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'bin/backends/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: '.github/workflows/*'
       instructions: |
         Flag each diff that lowers the bar, citing its concrete line: a deleted,
         skipped, or quarantined test; a removed or weakened assertion; a new lint
