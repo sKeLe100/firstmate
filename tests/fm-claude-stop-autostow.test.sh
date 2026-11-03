@@ -224,4 +224,55 @@ wakes=$(cat "$race_dir/a.rc" "$race_dir/b.rc" | grep -c '^2$' || true)
 [ "$wakes" -eq 1 ] || fail "two parallel firings must yield exactly one stow wake, got $wakes"
 [ "$(stow_markers "$race_home")" -eq 1 ] || fail "two parallel firings must leave exactly one marker"
 
+# 12. A long-poll home (FM_POLL=300, so this hook's derived grace is 360s) whose
+#     live watcher's beacon is 320s old reads healthy to the derived grace and
+#     stale to the turn-end guard's flat 300s. The pre-arm coverage check must
+#     read the guard's own grace, so the stow waits for the arm and the guard
+#     sees the auto-arm's fresh rewake instead of blocking the same stop again.
+poll_home=$(make_home "$TMP_ROOT/long-poll")
+: > "$poll_home/state/task-1.meta"
+cat > "$poll_home/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+echo "$$" >> "$FM_HOME/state/arm-ran"
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+printf 'signal: fixture wake\n'
+exit 0
+SH
+chmod +x "$poll_home/bin/fm-watch-arm.sh"
+sleep 600 &
+poll_watch_pid=$!
+poll_watch_path="$(cd "$poll_home/bin" && pwd)/fm-watch.sh"
+poll_identity=$(fm_test_pid_identity "$poll_watch_pid")
+[ -n "$poll_identity" ] || fail "could not read the long-poll fixture watcher's identity"
+mkdir -p "$poll_home/state/.watch.lock"
+printf '%s\n' "$poll_watch_pid" > "$poll_home/state/.watch.lock/pid"
+printf '%s\n' "$poll_home" > "$poll_home/state/.watch.lock/fm-home"
+printf '%s\n' "$poll_watch_path" > "$poll_home/state/.watch.lock/watcher-path"
+printf '%s\n' "$poll_identity" > "$poll_home/state/.watch.lock/pid-identity"
+fm_touch_epoch "$(( $(date +%s) - 320 ))" "$poll_home/state/.last-watcher-beat"
+printf 'pending:downtime:fixture-generation\n' > "$poll_home/state/.watcher-down"
+FM_POLL=300 run_stop "$poll_home" sess-poll "$t"
+[ "$RC" -eq 2 ] || fail "the aged-beacon stop must take the arm path and rewake, got $RC (stderr: $ERR)"
+[ -s "$poll_home/state/arm-ran" ] || fail "a beacon stale to the guard's grace must not satisfy the pre-arm coverage check"
+case "$ERR" in
+  *"firstmate watcher wake"*) ;;
+  *) fail "the one continuation must be the auto-arm's own rewake, got: $ERR" ;;
+esac
+case "$ERR" in
+  *"firstmate auto-stow"*) fail "the aged-beacon stop must not emit the auto-stow wake, got: $ERR" ;;
+esac
+[ "$(stow_markers "$poll_home")" -eq 0 ] || fail "the aged-beacon stop must not create an auto-stow marker"
+guard_rc=0
+cp "$ROOT/bin/fm-turnend-guard.sh" "$poll_home/bin/fm-turnend-guard.sh"
+chmod +x "$poll_home/bin/fm-turnend-guard.sh"
+guard_out=$(printf '{"stop_hook_active":false,"session_id":"sess-poll"}\n' \
+  | CLAUDECODE=1 FM_HOME="$poll_home" "$poll_home/bin/fm-turnend-guard.sh" --claude 2>&1) || guard_rc=$?
+[ "$guard_rc" -eq 0 ] || fail "the guard must allow the stop the auto-arm's one rewake covers, got $guard_rc: $guard_out"
+case "$guard_out" in
+  *"TURN WOULD END BLIND"*) fail "the guard must not block a stop whose rewake the auto-arm already committed: $guard_out" ;;
+esac
+[ ! -e "$poll_home/state/.turnend-claude-blocks" ] || fail "the guard must not charge the block budget for a stop the auto-arm covers"
+kill "$poll_watch_pid" 2>/dev/null || true
+wait "$poll_watch_pid" 2>/dev/null || true
+
 pass "fm-claude-stop-autostow.test.sh"

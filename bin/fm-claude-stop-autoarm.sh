@@ -176,6 +176,9 @@ esac
 # poll cadence"). fm_poll_derived_grace (bin/fm-wake-lib.sh) is the single
 # owner of that max(300, poll+60) derivation.
 GRACE=${FM_GUARD_GRACE:-$(fm_poll_derived_grace)}
+# The turn-end guard reads the flat ${FM_GUARD_GRACE:-300} (bin/fm-turnend-guard.sh),
+# and the pre-arm coverage check must agree with that reading.
+GUARD_GRACE=${FM_GUARD_GRACE:-300}
 
 # Consume the Stop payload once. The decisions below are state-based; the
 # payload is read so a slow writer can never wedge on a full pipe, and its host
@@ -273,7 +276,7 @@ if ! need_supervision; then
 fi
 # A live watcher already covers supervision through the stow turn, so the wake
 # may precede arming. With no live watcher the arm below runs first.
-if fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$GRACE" "$FM_HOME"; then
+if fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$GUARD_GRACE" "$FM_HOME"; then
   autostow_exit
 fi
 
