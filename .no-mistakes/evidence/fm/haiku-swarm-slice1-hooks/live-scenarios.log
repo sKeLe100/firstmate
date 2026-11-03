@@ -1,0 +1,272 @@
+
+==============================================================================
+SCENARIO 1: subagent context reader reports the last assistant usage sum
+==============================================================================
+fixture agent-haiku1.jsonl assistant totals: 10000, 50000, 60000+10000+20000
+------------------------------------------------------------------------------
+bin/fm-subagent-context.sh <main> sess-live haiku1
+exit=0
+stdout: context_tokens=90000 agent=haiku1 model=claude-haiku-4-5
+stderr: <empty>
+
+==============================================================================
+SCENARIO 2: missing subagent transcript exits 1 with one clear line
+==============================================================================
+------------------------------------------------------------------------------
+bin/fm-subagent-context.sh <main> sess-live absent
+exit=1
+stdout: <empty>
+stderr: fm-subagent-context: no subagent transcript at /var/tmp/nm-daemon-tmp/fm-haiku-live._vk3wyfj/proj/sess-live/subagents/agent-absent.jsonl
+
+==============================================================================
+SCENARIO 3: crafted agent id cannot escape the subagents directory
+==============================================================================
+------------------------------------------------------------------------------
+bin/fm-subagent-context.sh <main> sess-live ../evil
+exit=2
+stdout: <empty>
+stderr: fm-subagent-context: session_id and agent_id must be plain identifiers: '../evil'
+
+==============================================================================
+SCENARIO 4: alarm threshold matrix (79,999 / 80,000 / 94,999 / 95,000 / checkpoint / no agent id)
+==============================================================================
+------------------------------------------------------------------------------
+79,999 PostToolUse Read
+exit=0
+stdout: <empty>
+stderr: <empty>
+------------------------------------------------------------------------------
+80,000 PostToolUse Read
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "Context ~80k of a 100k price line. Finish only the current AC step. Open no new files. Run tests quietly (tail only). Next reply: report DONE/NEXT/FILES-TOUCHED."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+94,999 PostToolUse Read
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "Context ~94k of a 100k price line. Finish only the current AC step. Open no new files. Run tests quietly (tail only). Next reply: report DONE/NEXT/FILES-TOUCHED."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+95,000 PreToolUse Bash
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "95k: stop now, reply with checkpoint (done, next step, files touched, AC status). Write it to /var/tmp/nm-daemon-tmp/fm-haiku-live._vk3wyfj/checkpoint.md. Only a Write or Edit to that path is still allowed."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+95,000 PreToolUse Write to FM_CHECKPOINT_PATH
+exit=0
+stdout: <empty>
+stderr: <empty>
+------------------------------------------------------------------------------
+95,000 PreToolUse Edit to checkpoint.md.bak (near miss)
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "95k: stop now, reply with checkpoint (done, next step, files touched, AC status). Write it to /var/tmp/nm-daemon-tmp/fm-haiku-live._vk3wyfj/checkpoint.md. Only a Write or Edit to that path is still allowed."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+95,000 PreToolUse with no agent_id
+exit=0
+stdout: <empty>
+stderr: <empty>
+
+==============================================================================
+SCENARIO 5: alarm PostToolUse adds the just-returned result estimate
+==============================================================================
+------------------------------------------------------------------------------
+79,999 + 6,000-char tool_response
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "Context ~81k of a 100k price line. Finish only the current AC step. Open no new files. Run tests quietly (tail only). Next reply: report DONE/NEXT/FILES-TOUCHED."}}
+stderr: <empty>
+
+==============================================================================
+SCENARIO 6: alarm on a missing transcript is a loud one-line diagnostic, not silence
+==============================================================================
+------------------------------------------------------------------------------
+PreToolUse for a subagent with no transcript file
+exit=0
+stdout: <empty>
+stderr: fm-haiku-alarm-hook: fm-subagent-context: no subagent transcript at /var/tmp/nm-daemon-tmp/fm-haiku-live._vk3wyfj/proj/sess-live/subagents/agent-never-written.jsonl
+
+==============================================================================
+SCENARIO 7: guard allows an under-budget haiku-builder launch
+==============================================================================
+------------------------------------------------------------------------------
+haiku-builder prompt with FILES small.txt
+exit=0
+stdout: <empty>
+stderr: <empty>
+
+==============================================================================
+SCENARIO 8: guard denies an over-budget launch and names the three biggest contributors
+==============================================================================
+------------------------------------------------------------------------------
+haiku-builder prompt with FILES big.txt (default 70,000 budget)
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~123342 tokens is over the 70000 budget; biggest parts: file:big.txt ~67333, start ~36000, work ~20000. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: <empty>
+
+==============================================================================
+SCENARIO 9: FM_HANDOFF_BUDGET moves the same launch across the line
+==============================================================================
+------------------------------------------------------------------------------
+same big.txt launch with FM_HANDOFF_BUDGET=200000
+exit=0
+stdout: <empty>
+stderr: <empty>
+------------------------------------------------------------------------------
+same small.txt launch with FM_HANDOFF_BUDGET=100
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~56012 tokens is over the 100 budget; biggest parts: start ~36000, work ~20000, prompt ~10. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: <empty>
+
+==============================================================================
+SCENARIO 10: guard denies missing FILES, directories, globs, and malformed ranges
+==============================================================================
+------------------------------------------------------------------------------
+deny case: no FILES block
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "no FILES: block; list the files the subagent will read or edit"}}
+stderr: <empty>
+------------------------------------------------------------------------------
+deny case: empty FILES block
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "no FILES: block; list the files the subagent will read or edit"}}
+stderr: <empty>
+------------------------------------------------------------------------------
+deny case: directory with slash
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "FILES entry is a directory, not a file: subdir/"}}
+stderr: <empty>
+------------------------------------------------------------------------------
+deny case: directory without slash
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "FILES entry is a directory, not a file: subdir"}}
+stderr: <empty>
+------------------------------------------------------------------------------
+deny case: glob entry
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "FILES entry is a glob, not a file: *.txt"}}
+stderr: <empty>
+------------------------------------------------------------------------------
+deny case: incomplete range
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "FILES entry has an incomplete line range: big.txt:1-"}}
+stderr: <empty>
+------------------------------------------------------------------------------
+deny case: reversed range
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "FILES entry has an invalid line range: big.txt:5-2"}}
+stderr: <empty>
+
+==============================================================================
+SCENARIO 11: FILES formatting variants are still counted, never silently dropped
+==============================================================================
+------------------------------------------------------------------------------
+variant: star bullet
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~123341 tokens is over the 70000 budget; biggest parts: file:big.txt ~67333, start ~36000, work ~20000. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+variant: plus bullet
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~123341 tokens is over the 70000 budget; biggest parts: file:big.txt ~67333, start ~36000, work ~20000. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+variant: numbered bullet
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~123341 tokens is over the 70000 budget; biggest parts: file:big.txt ~67333, start ~36000, work ~20000. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+variant: blank line before entry
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~123341 tokens is over the 70000 budget; biggest parts: file:big.txt ~67333, start ~36000, work ~20000. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+variant: blank line between entries
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~123347 tokens is over the 70000 budget; biggest parts: file:big.txt ~67333, start ~36000, work ~20000. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: <empty>
+variant deny rows: 5
+
+==============================================================================
+SCENARIO 12: non-haiku and non-Agent calls pass untouched and log nothing
+==============================================================================
+------------------------------------------------------------------------------
+Agent general-purpose/sonnet with no FILES
+exit=0
+stdout: <empty>
+stderr: <empty>
+------------------------------------------------------------------------------
+Bash tool call
+exit=0
+stdout: <empty>
+stderr: <empty>
+------------------------------------------------------------------------------
+Agent model=haiku with no subagent_type (guarded, allowed)
+exit=0
+stdout: <empty>
+stderr: <empty>
+log rows after two untouched calls and one guarded call: 1 (allow)
+
+==============================================================================
+SCENARIO 13: unreadable FILES entries and a failing log never fail open
+==============================================================================
+------------------------------------------------------------------------------
+whole-file secret.txt is stat-sized; big.txt still forces the deny
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~123512 tokens is over the 70000 budget; biggest parts: file:big.txt ~67333, start ~36000, work ~20000. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: <empty>
+------------------------------------------------------------------------------
+unreadable range secret.txt:1-1 is denied, not crashed
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "FILES entry cannot be read: secret.txt:1-1 ([Errno 13] Permission denied: '/var/tmp/nm-daemon-tmp/fm-haiku-live._vk3wyfj/work/secret.txt')"}}
+stderr: <empty>
+------------------------------------------------------------------------------
+over-budget launch whose FM_HANDOFF_LOG cannot be created
+exit=0
+stdout: {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "handoff estimate ~123341 tokens is over the 70000 budget; biggest parts: file:big.txt ~67333, start ~36000, work ~20000. Split the chunk into smaller slices with fewer or smaller FILES entries."}}
+stderr: fm-handoff-guard-hook: could not append to FM_HANDOFF_LOG /var/tmp/nm-daemon-tmp/fm-haiku-live._vk3wyfj/blocker/nested/handoff.jsonl: [Errno 20] Not a directory: '/var/tmp/nm-daemon-tmp/fm-haiku-live._vk3wyfj/blocker/nested'
+
+==============================================================================
+SCENARIO 14: one JSONL row per guarded decision, in order
+==============================================================================
+log rows: 3; decisions=allow,deny,deny
+row keys: ['agent_type', 'budget', 'decision', 'estimate', 'parts', 'reason', 'ts']
+
+==============================================================================
+SCENARIO 15: example haiku-builder definition parses and wires the alarm hook
+==============================================================================
+parsed frontmatter: {
+  "description": "Builds one bounded slice (a named FILES list and one command-checked acceptance criterion) handed over by a coordinator.",
+  "effort": "xhigh",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "bash bin/fm-haiku-alarm-hook.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "bash bin/fm-haiku-alarm-hook.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ]
+  },
+  "model": "haiku",
+  "name": "haiku-builder",
+  "tools": "Read, Edit, Write, Bash, Grep, Glob"
+}
+PostToolUse hook commands: ['bash bin/fm-haiku-alarm-hook.sh']
+PreToolUse hook commands: ['bash bin/fm-haiku-alarm-hook.sh']
+body final-reply contract: DONE / NEXT / FILES-TOUCHED / AC-STATUS present
+small-context discipline: present
+
+ALL LIVE SCENARIOS PASSED
