@@ -625,7 +625,7 @@ test_changed_reference_closure() {
 # Use the real inventory in a disposable copy, never execute its scripts here.
 # Bounds catch family fan-out while positive assertions keep relevant coverage.
 test_changed_real_inventory_selection_bounds() {
-  local tmp repo listed count path limit
+  local tmp repo listed count path reader limit
   tmp=$(fm_test_tmproot fm-selection-inventory)
   repo="$tmp/repo"
   mkdir -p "$repo"
@@ -740,6 +740,21 @@ test_changed_real_inventory_selection_bounds() {
   [ "$count" -ge 50 ] \
     || fail "shared watcher library should widen well past a leaf: got $count"
   git -C "$repo" checkout -q -- bin/fm-wake-lib.sh
+
+  # An existing core source whose readers are all behind wide hubs still
+  # selects those hubs' direct executable suites instead of failing closed.
+  while read -r path reader; do
+    printf '\n' >>"$repo/bin/$path"
+    if ! listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD); then
+      fail "shared library $path selection failed: $listed"
+    fi
+    assert_contains "$listed" "tests/$reader" "shared library $path selects its hub reader"
+    git -C "$repo" checkout -q -- "bin/$path"
+  done <<'EOF'
+fm-merge-authority-lib.sh fm-pr-merge.test.sh
+fm-landed-lib.sh fm-bearings-snapshot.test.sh
+fm-exclude-tools-lib.sh fm-control-relaunch.test.sh
+EOF
 
   # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.
   local -a recorded_paths=(

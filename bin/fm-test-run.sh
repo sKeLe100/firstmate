@@ -1940,10 +1940,11 @@ def direct_test_readers(node):
     )
 
 
-for dependency in sorted(set(sys.argv[1:])):
+def walk_reference(dependency, emit_fat_hubs):
     queue = deque([dependency])
     queued = {dependency}
     printed = set()
+    fallback = set()
     while queue:
         source = queue.popleft()
         for consumer in sorted(consumers[source]):
@@ -1968,7 +1969,7 @@ for dependency in sorted(set(sys.argv[1:])):
                 # A command invoked from more than one place is shared; walking
                 # its callers fans a single leaf out into the whole suite.
                 readers = direct_test_readers(consumer)
-                if len(readers) <= HUB_THIN_READERS:
+                if emit_fat_hubs or len(readers) <= HUB_THIN_READERS:
                     for reader in readers:
                         if reader not in printed:
                             print(dependency + "\t__script__:" + Path(reader).name)
@@ -1976,9 +1977,18 @@ for dependency in sorted(set(sys.argv[1:])):
                         if reader not in queued:
                             queued.add(reader)
                             queue.append(reader)
+                else:
+                    fallback.update(readers)
                 continue
             queued.add(consumer)
             queue.append(consumer)
+    return printed, fallback
+
+
+for dependency in sorted(set(sys.argv[1:])):
+    printed, fallback = walk_reference(dependency, False)
+    if not printed and fallback:
+        walk_reference(dependency, True)
 PYREF
 }
 
