@@ -405,6 +405,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/examples/claude-agents/haiku-builder.md",
+      "audience": "operator-example"
+    },
+    {
       "path": "docs/examples/crew-dispatch.json",
       "audience": "operator-example"
     },

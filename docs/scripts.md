@@ -58,6 +58,9 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
 | `fm-arm-command-policy.mjs` | Semantic owner of the watcher-arm PreToolUse policy (docs/arm-pretool-check.md)   |
 | `fm-subagent-pretool-check.sh` | Primary-home delegation-shape PreToolUse guard (docs/subagent-guard.md) |
+| `fm-subagent-context.sh` | Report one subagent's context size, agent id, and model from its own transcript |
+| `fm-haiku-alarm-hook.sh` | Warn a haiku-builder from 80k context and deny its tool calls from 95k except a checkpoint write |
+| `fm-handoff-guard-hook.sh` | Deny an over-budget or malformed-FILES haiku-targeted Agent launch and log each guarded decision |
 | `fm-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
 | `fm-home-seed.sh`        | Transactionally provision a local secondmate home and maintain `data/secondmates.md` |
 | `fm-remote-home-seed.sh` | Register and provision a whole secondmate home on an SSH-reachable host              |
