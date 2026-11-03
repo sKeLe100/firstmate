@@ -746,7 +746,8 @@ EOF
 # Per-script serial CI duration hints, one "<path> <ms>" per line, used to
 # pack only the two portable parallel lanes. Measurement provenance and the
 # refresh procedure are owned by docs/fm-test-portable-shards.md.
-# Lint and runner hints use local canonical-runner measurements (2026-11-02).
+# Lint and runner hints use local canonical-runner measurements taken
+# 2026-11-02, with the runner remeasured 2026-11-03.
 # These provisional samples should be refreshed from green CI artifacts.
 portable_parallel_weight_hints() {
   cat <<'EOF'
@@ -906,13 +907,13 @@ list_portable_serial() {
   done < <(all_repo_tests)
 }
 
-# Measured portable-serial script durations in milliseconds, from the CI timing
-# artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
-# slowest successful sample in the referenced complete/partial CI runs, with
-# the version-specific host and native-Windows exceptions documented there.
-# These are balance hints only: the shard
-# partition stays complete and disjoint whatever they say, so a stale hint costs
-# balance rather than coverage. That doc owns the refresh procedure.
+# Measured portable-serial script durations in milliseconds.
+# docs/fm-test-portable-shards.md owns their measurement provenance - the CI
+# timing artifacts, the provisional local canonical-runner samples, and the
+# version-specific host and native-Windows exceptions - plus the refresh
+# procedure.
+# These are balance hints only: the shard partition stays complete and disjoint
+# whatever they say, so a stale hint costs balance rather than coverage.
 portable_serial_weight_hints() {
   cat <<'EOF'
 tests/fm-afk-contract.test.sh 11101
