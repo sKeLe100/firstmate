@@ -32,6 +32,36 @@ SH
   chmod +x "$1/fakebin/crew-state"
 }
 
+# A stub crew-state that records how many reads overlap, so a test can assert the
+# drain never exceeds its configured batch bound. Prints the same canned verdicts
+# as write_crew_state_stub.
+write_counting_crew_state_stub() {  # <case-dir>
+  cat > "$1/fakebin/crew-state" <<'SH'
+#!/usr/bin/env bash
+set -u
+d=$FM_STUB_CONCURRENCY_DIR
+while ! mkdir "$d/lock" 2>/dev/null; do :; done
+n=$(cat "$d/live")
+n=$((n + 1))
+printf '%s\n' "$n" > "$d/live"
+peak=$(cat "$d/peak")
+[ "$n" -le "$peak" ] || printf '%s\n' "$n" > "$d/peak"
+rmdir "$d/lock"
+sleep 0.5
+while ! mkdir "$d/lock" 2>/dev/null; do :; done
+n=$(cat "$d/live")
+printf '%s\n' $((n - 1)) > "$d/live"
+rmdir "$d/lock"
+f="$FM_STUB_CANNED/${1:-}"
+if [ -f "$f" ]; then
+  cat "$f"
+else
+  printf 'state: unknown · source: none · no canned verdict\n'
+fi
+SH
+  chmod +x "$1/fakebin/crew-state"
+}
+
 # A task with a recorded kind, its status log, and its canned crew-state verdict.
 add_task() {  # <case-dir> <task> <kind> <canned-verdict> <status-line>...
   local dir=$1 task=$2 kind=$3 verdict=$4 line
@@ -258,22 +288,29 @@ test_live_run_overrides_a_stale_declared_go_wait() {
   pass "the authoritative state wins: a live run does not read as a stalled go-wait"
 }
 
-test_all_batched_reads_are_still_judged() {
-  local dir out i count
+test_reads_are_bounded_to_the_configured_concurrency() {
+  local dir out i peak count
   dir=$(make_case gate-batched)
-  write_crew_state_stub "$dir"
+  write_counting_crew_state_stub "$dir"
+  mkdir -p "$dir/concurrency"
+  printf '0\n' > "$dir/concurrency/live"
+  printf '0\n' > "$dir/concurrency/peak"
   for i in 1 2 3 4 5; do
     add_task "$dir" "gate-batch-$i" ship \
       'state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 2h00m0s · run: 01RUN' \
       "working [at=$((NOW - 4000))]: validating"
   done
 
-  out=$(run_drain_case "$dir" 0.50 FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=2)
+  out=$(run_drain_case "$dir" 0.50 FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=2 \
+    FM_STUB_CONCURRENCY_DIR="$dir/concurrency")
+  peak=$(cat "$dir/concurrency/peak")
 
+  [ "$peak" -le 2 ] \
+    || fail "the drain ran $peak crew-state reads at once with a concurrency bound of 2: $(cat "$out")"
   count=$(grep -c ' has waited 2h00m on the crewmate with no needs-decision open' "$out")
   [ "$count" -eq 5 ] \
     || fail "only $count of 5 ships were judged when the crew-state reads ran in batches: $(cat "$out")"
-  pass "batching the per-ship reads still judges every ship in the fleet"
+  pass "per-ship reads stay within the configured concurrency bound and still judge every ship"
 }
 
 test_scouts_are_not_judged() {
@@ -359,7 +396,7 @@ test_fresh_go_wait_is_not_flagged
 test_go_wait_without_a_time_is_not_flagged
 test_captain_wait_is_not_flagged
 test_live_run_overrides_a_stale_declared_go_wait
-test_all_batched_reads_are_still_judged
+test_reads_are_bounded_to_the_configured_concurrency
 test_scouts_are_not_judged
 test_unparseable_read_never_fails_the_drain
 test_census_names_the_busy_task_above_load_eight
