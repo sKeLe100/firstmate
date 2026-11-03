@@ -34,6 +34,7 @@ The 2026-10-29 hint-drift refresh from run 40995199128 raised `tests/fm-bootstra
 The 2026-10-30 refresh raised `tests/fm-ci-workflow.test.sh` from 5833 ms to its measured 10072 ms, measured on CI run 40960822708 after this PR added the Lint aggregate and time-budget tests.
 The 2026-11-02 local canonical-runner refresh provisionally raised `tests/fm-lint.test.sh` to 469094 ms and `tests/fm-test-run.test.sh` to 399453 ms; these local samples supersede the prior hints until successful CI artifacts provide replacements.
 The 2026-11-03 follow-up remeasured `tests/fm-test-run.test.sh` at 141444 ms after its nested real subjects moved to fixtures, and the two parallel lanes were rebalanced for that lighter hint; the hint itself stays provisional until a green CI artifact replaces it.
+The 2026-11-03 hint-drift refresh from run 41653979363 raised `tests/fm-teardown.test.sh` from 202132 ms to its measured 317102 ms (repeated drift 1.57x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes

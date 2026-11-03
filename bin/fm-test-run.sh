@@ -1146,7 +1146,7 @@ tests/fm-teardown-parked-run.sh 7700
 tests/fm-teardown-pr-check.sh 4800
 tests/fm-teardown-process-reap.sh 11300
 tests/fm-teardown-secondmate.sh 8200
-tests/fm-teardown.test.sh 202132
+tests/fm-teardown.test.sh 317102
 tests/fm-test-fixture-cleanup.test.sh 1446
 tests/fm-test-fixtures.test.sh 6739
 tests/fm-test-isolation-proof.test.sh 2866
