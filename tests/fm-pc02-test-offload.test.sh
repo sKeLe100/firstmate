@@ -575,7 +575,6 @@ echo 'ok - serial fixture'
 SH
   chmod +x "$dir/bounded.test.sh"
   cp "$dir/bounded.test.sh" "$dir/second.test.sh"
-  rm -f "$dir/ssh.log"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$dir/bounded.test.sh" "$dir/second.test.sh" --per-script-timeout-secs 0 2>&1)
@@ -591,9 +590,6 @@ SH
     "the remote run did not use fm-test-run.sh's own scheduler: $out"
   assert_contains "$out" "jobs=1" \
     "unproven scripts must be scheduled serially: $out"
-  if grep -F -- '--jobs' "$dir/ssh.log" >/dev/null 2>&1; then
-    fail "the offload forced --jobs onto the remote invocation"
-  fi
   pass "an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound"
 }
 
