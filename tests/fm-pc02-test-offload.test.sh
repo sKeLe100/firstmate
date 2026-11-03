@@ -12,6 +12,9 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SCRIPT="$ROOT/bin/fm-pc02-test-offload.sh"
+# The nested fm-test-run.sh records its environment before the fixture runs;
+# its bounded tool and browser probes can exceed 30s on a loaded host.
+REMOTE_SUITE_START_TRIES=1800  # 0.1s per try, up to 180s
 TMP_ROOT=$(fm_test_tmproot fm-pc02-test-offload)
 mkdir -p "$TMP_ROOT/empty-state"
 export XDG_CONFIG_HOME="$TMP_ROOT/xdg"
@@ -1205,7 +1208,7 @@ SH
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
   pid=$!
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 "$REMOTE_SUITE_START_TRIES"); do
     [ -f "$dir/suite-started" ] && break
     sleep 0.1
   done
@@ -1244,7 +1247,7 @@ SH
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
   pid=$!
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 "$REMOTE_SUITE_START_TRIES"); do
     [ -f "$dir/suite-started" ] && break
     sleep 0.1
   done
@@ -1286,7 +1289,7 @@ SH
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
   pid=$!
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 "$REMOTE_SUITE_START_TRIES"); do
     [ -f "$dir/suite-started" ] && break
     sleep 0.1
   done
