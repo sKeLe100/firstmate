@@ -1,0 +1,48 @@
+fm-pc02-test-offload: PC02 test environment differs from PC01: tool.node (PC01='v22.22.1', PC02='v22.22.3') tool.shellcheck (PC01='absent', PC02='version: 0.11.0') tool.shellcheck version could not be established tool.actionlint (PC01='absent', PC02='1.7.12') tool.actionlint version could not be established tool.chromium (PC01='absent', PC02='Google Chrome for Testing 149.0.7827.55 ') tool.chromium version could not be established tool.herdr (PC01='absent', PC02='herdr 0.9.5') tool.herdr version could not be established tool.pi (PC01='absent', PC02='0.85.1') tool.pi version could not be established; running on PC01
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=3239282 ppid=3239272
+runner_login_shell=no
+path_entries=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=3239282 ppid=3239272 pgid=3239272 sid=3239272 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 88019
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 88019
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/usr/bin/node version=v22.22.1
+tool=pi absent
+tool=tasks-axi absent
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes absent
+chrome_startup=missing
+FM_TEST_ENV_RECORD_END
+FM_TEST_HOST_LOAD load5=18.52 cpus=16 jobs=1 per_script_timeout_secs=0 watch_triage_timeout_secs=0 captain_hold_timeout_secs=0
+FM_TEST_BEGIN 2026-11-03T15:05:03Z tests/fm-agentsmd-size.test.sh family=unclassified expected_gate_skip=none
+ok - passes when AGENTS.md (55209 bytes) is under the 100KB ceiling
+ok - fails (1) with diagnostic when AGENTS.md (108171 bytes) exceeds 100KB
+ok - fails when AGENTS.md is missing
+ok - output includes both actual size (55209) and ceiling (102400)
+FM_TEST_END 2026-11-03T15:05:04Z tests/fm-agentsmd-size.test.sh exit=0 duration_ms=586 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=2397
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=586 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-agentsmd-size.test.sh duration_ms=586

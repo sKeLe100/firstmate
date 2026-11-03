@@ -1,0 +1,2 @@
+fm-test-compute: source visibility unavailable; falling back to local admission
+fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running on PC01

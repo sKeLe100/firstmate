@@ -1,0 +1,6 @@
+api /repos/fm-lab/firstmate --jq [.private,.default_branch] | @tsv --full
+api /repos/fm-lab/firstmate/actions/workflows/test-compute.yml --jq .state --full
+api POST /repos/fm-lab/firstmate/actions/workflows/test-compute.yml/dispatches --input /var/tmp/nm-daemon-tmp/fm-test-compute.SRsjWq/dispatch.json --full
+api /repos/fm-lab/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100 --jq .workflow_runs[] | select(.display_title == "fm-test-compute-690e9e892b5a417a949753bb903e224b") | [.id,.status,.conclusion] | @tsv --full
+api /repos/fm-lab/firstmate/actions/runs/123 --jq [.status,.conclusion] | @tsv --full
+run download 123 -R fm-lab/firstmate --dir /var/tmp/nm-daemon-tmp/fm-test-compute.SRsjWq/results

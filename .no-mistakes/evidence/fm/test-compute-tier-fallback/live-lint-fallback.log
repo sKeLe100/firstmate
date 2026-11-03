@@ -1,0 +1,60 @@
+fm-test-compute: hosted routing disabled; falling back to local admission
+fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running on PC01
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-lint.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-lint.sh reason=ok rc=0
+fm-lint: end bin/fm-lint.sh reason=ok rc=0 duration_ms=7289 rss_kib=unavailable
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 4 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (0 allowlisted)
+fm-lint-nomistakes-config.sh: /var/tmp/nm-daemon-tmp/fm-live.Xdlsmp/lintrepo/.no-mistakes.yaml ok
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-pc02-test-offload.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-pc02-test-offload.sh reason=ok rc=0
+fm-lint: end bin/fm-pc02-test-offload.sh reason=ok rc=0 duration_ms=2383 rss_kib=unavailable
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 4 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (0 allowlisted)
+fm-lint-nomistakes-config.sh: /var/tmp/nm-daemon-tmp/fm-live.Xdlsmp/lintrepo/.no-mistakes.yaml ok
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-test-compute.sh (shard 0, full mode)
+fm-lint: begin bin/fm-primary-scope-lib.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-primary-scope-lib.sh reason=ok rc=0
+fm-lint: end bin/fm-primary-scope-lib.sh reason=ok rc=0 duration_ms=283 rss_kib=unavailable
+fm-lint: no-source audit bin/fm-test-compute.sh reason=ok rc=0
+fm-lint: end bin/fm-test-compute.sh reason=ok rc=0 duration_ms=1365 rss_kib=unavailable
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 4 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (0 allowlisted)
+fm-lint-nomistakes-config.sh: /var/tmp/nm-daemon-tmp/fm-live.Xdlsmp/lintrepo/.no-mistakes.yaml ok
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-lint-nomistakes-config.sh (shard 1, full mode)
+fm-lint: begin bin/fm-timeout-lib.sh (shard 0, full mode)
+fm-lint: no-source audit bin/fm-lint-nomistakes-config.sh reason=ok rc=0
+fm-lint: end bin/fm-lint-nomistakes-config.sh reason=ok rc=0 duration_ms=286 rss_kib=unavailable
+fm-lint: begin bin/fm-lint-test-size.sh (shard 1, full mode)
+fm-lint: no-source audit bin/fm-timeout-lib.sh reason=ok rc=0
+fm-lint: no-source audit bin/fm-lint-test-size.sh reason=ok rc=0
+fm-lint: end bin/fm-timeout-lib.sh reason=ok rc=0 duration_ms=725 rss_kib=unavailable
+fm-lint: end bin/fm-lint-test-size.sh reason=ok rc=0 duration_ms=439 rss_kib=unavailable
+fm-lint: begin bin/sample.sh (shard 0, full mode)
+fm-lint: begin bin/fm-lint-workflows.sh (shard 1, full mode)
+fm-lint: no-source audit bin/sample.sh reason=ok rc=0
+fm-lint: end bin/sample.sh reason=ok rc=0 duration_ms=39 rss_kib=unavailable
+fm-lint: begin bin/backends/sample-backend.sh (shard 0, full mode)
+fm-lint: no-source audit bin/backends/sample-backend.sh reason=ok rc=0
+fm-lint: end bin/backends/sample-backend.sh reason=ok rc=0 duration_ms=40 rss_kib=unavailable
+fm-lint: begin tests/fm-sample.test.sh (shard 0, full mode)
+fm-lint: no-source audit tests/fm-sample.test.sh reason=ok rc=0
+fm-lint: end tests/fm-sample.test.sh reason=ok rc=0 duration_ms=44 rss_kib=unavailable
+fm-lint: no-source audit bin/fm-lint-workflows.sh reason=ok rc=0
+fm-lint: end bin/fm-lint-workflows.sh reason=ok rc=0 duration_ms=253 rss_kib=unavailable
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 4 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (0 allowlisted)
+fm-lint-nomistakes-config.sh: /var/tmp/nm-daemon-tmp/fm-live.Xdlsmp/lintrepo/.no-mistakes.yaml ok
+EXIT=0

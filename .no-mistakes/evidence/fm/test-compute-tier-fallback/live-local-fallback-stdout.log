@@ -1,0 +1,83 @@
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=3421046 ppid=3421045
+runner_login_shell=no
+path_entries=/tmp/fm-lab-compute.IFUSHn/tools:~/.pi/agent/bin:~/.local/bin:~/.npm-global/bin:~/bin:~/.npm-global/bin:~/.local/bin:~/.local/bin:~/go/bin:~/.cargo/bin:~/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=3421046 ppid=3421045 pgid=3421045 sid=3421040 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 88019
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 88019
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=~/.local/bin/node version=v22.22.3
+tool=pi path=~/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=~/.npm-global/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=~/.local/bin/herdr version=herdr 0.9.5
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=~/.local/bin/no-mistakes version=no-mistakes version v1.106.1 (5732d1e) 2026-10-31T05:16:02Z
+chrome_startup=failed path=~/.local/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_HOST_LOAD load5=11.62 cpus=16 jobs=1 per_script_timeout_secs=1500 watch_triage_timeout_secs=1500 captain_hold_timeout_secs=1500
+FM_TEST_BEGIN 2026-11-03T13:51:42Z tests/fm-test-compute.test.sh family=unclassified expected_gate_skip=none
+ok - trusted gate configuration routes lint and preserves the pinned Test baseline
+ok - GitHub result receipts cover only the non-empty Test partitions
+ok - lane listing failure falls back before dispatch
+ok - a selection with no hosted-capable partitions runs locally
+ok - non-hosted scripts stay on local admission while the hosted subset keeps its tier order
+ok - a hosted failure is never masked by the local-only subset
+ok - a local-only script failure fails the whole routed run
+ok - GitLab carries only hosted-capable scripts and local admission completes the selection
+ok - Lint mode runs every canonical lint partition on hosted compute
+ok - failure cannot become a green fallback
+ok - missing cannot become a green fallback
+ok - wrong-head cannot become a green fallback
+ok - wrong-scripts cannot become a green fallback
+ok - dispatch-ambiguous cannot become a green fallback
+ok - definitive GitHub admission rejection tries the next tier
+ok - GitHub unavailable and unauthenticated GitLab reach existing PC02 admission
+ok - unavailable hosted lint reaches the existing PC02/PC01 fallback
+ok - queue timeout requires confirmed cancellation before fallback
+ok - GitLab queue timeout requires confirmed cancellation before fallback
+ok - a confirmed GitLab execution timeout falls through after cancellation
+ok - GitLab completion with missing receipts falls through to local admission
+ok - a GitLab test failure with complete receipts still fails
+ok - github-race-failed cannot treat GitHub completion as cancellation
+ok - github-race-success cannot treat GitHub completion as cancellation
+ok - gitlab-success executes only after GitHub unavailability and authentication
+ok - gitlab-bootstrap executes only after GitHub unavailability and authentication
+ok - structured GitLab variable permission refusal falls back without duplicate dispatch
+ok - GitLab jobs rejected before start for exhausted compute fall back automatically
+ok - gitlab-race-success cannot treat GitLab completion as cancellation
+ok - gitlab-race-failed cannot treat GitLab completion as cancellation
+ok - private repositories cannot enter a public source relay
+ok - unpushed git bundle restores the exact committed head
+ok - worker captures actual test exit and exact script evidence
+ok - lint worker invokes the canonical partition interface
+ok - inspection never contacts hosted services
+ok - non-baseline test selections stay on local admission
+ok - uncommitted content always uses the existing local mirror path
+ok - unknown commands are rejected before dependencies
+ok - PC02 lint fallback consumes its mode and executes every canonical partition
+# all test-compute tests passed
+FM_TEST_END 2026-11-03T13:52:09Z tests/fm-test-compute.test.sh exit=0 duration_ms=26758 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=35613
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=26758 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-test-compute.test.sh duration_ms=26758

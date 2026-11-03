@@ -1,0 +1,19 @@
+{
+  "ref": "main",
+  "request_id": "690e9e892b5a417a949753bb903e224b",
+  "dispatched_partitions": [
+    "portable-serial-7of10"
+  ],
+  "payload": {
+    "version": 1,
+    "sha": "baf2e9fcd9f2edc761e051acaf52b7d704484541",
+    "base": "38b43048bfce11e22e7c51ebb38738e055dfab50",
+    "repo": "fm-lab/firstmate",
+    "kind": "test",
+    "partitions": {
+      "portable-serial-7of10": [
+        "tests/fm-test-compute.test.sh"
+      ]
+    }
+  }
+}
