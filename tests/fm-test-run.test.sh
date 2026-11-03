@@ -647,13 +647,35 @@ test_changed_reference_closure() {
   assert_not_contains "$listed" tests/fm-prose-wrapper.test.sh "prose naming a reader is not an executable wrapper edge"
   [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 2 ] || fail "comment edge widened beyond its reader and wrapper: $listed"
   [ "$(bash "$repo/tests/fm-comment-wrapper.test.sh")" = leaf-ran ] || fail "the selected wrapper did not execute the changed leaf"
-  pass "changed reference closure handles cycles, comments, prose, wrappers, and removals"
+
+  : >"$repo/bin/fanout-leaf.sh"
+  # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
+  printf '. "$(dirname "$0")/../bin/fanout-leaf.sh"\n' >"$repo/bin/thin-hub.sh"
+  # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
+  printf '. "$(dirname "$0")/../bin/fanout-leaf.sh"\n' >"$repo/bin/fat-hub.sh"
+  for i in 1 2 3; do
+    # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
+    printf 'bash "$(dirname "$0")/../bin/thin-hub.sh"\n' >"$repo/tests/fm-thin-hub-$i.test.sh"
+  done
+  for i in 1 2 3 4; do
+    # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
+    printf 'bash "$(dirname "$0")/../bin/fat-hub.sh"\n' >"$repo/tests/fm-fat-hub-$i.test.sh"
+  done
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm hub-fallback
+  printf '\n' >>"$repo/bin/fanout-leaf.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" tests/fm-thin-hub-1.test.sh "a thin hub emits its executable reader"
+  assert_not_contains "$listed" tests/fm-fat-hub-1.test.sh "an emitted hub reader suppresses the fat-hub fallback"
+  [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 3 ] || fail "hub fallback widened past the emitted readers: $listed"
+  git -C "$repo" checkout -q -- bin/fanout-leaf.sh
+  pass "changed reference closure handles cycles, comments, prose, wrappers, hubs, and removals"
 }
 
 # Use the real inventory in a disposable copy, never execute its scripts here.
 # Bounds catch family fan-out while positive assertions keep relevant coverage.
 test_changed_real_inventory_selection_bounds() {
-  local tmp repo listed count path reader limit
+  local tmp repo listed count path reader limit shared_lib_cases
   tmp=$(fm_test_tmproot fm-selection-inventory)
   repo="$tmp/repo"
   mkdir -p "$repo"
@@ -695,6 +717,26 @@ test_changed_real_inventory_selection_bounds() {
   assert_contains "$listed" tests/fm-lint-workflows.test.sh "CI workflow retains its lint owner"
   assert_not_contains "$listed" tests/fm-calm-pi-extension.test.sh "CI workflow avoids browser/Pi integration"
   git -C "$repo" checkout -q -- .github/workflows/ci.yml
+
+  printf '\n' >>"$repo/.github/workflows/no-mistakes-required.yml"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 1 ] && [ "$count" -le 10 ] \
+    || fail "required workflow selection expected 1-10 scripts, got $count: $listed"
+  assert_contains "$listed" tests/fm-lint-workflows.test.sh "required workflow retains its lint owner"
+  assert_contains "$listed" tests/fm-no-mistakes-required-live-lookup.test.sh \
+    "required workflow retains its live lookup reader"
+  git -C "$repo" checkout -q -- .github/workflows/no-mistakes-required.yml
+
+  printf '\n' >>"$repo/.github/workflows/windows-herdr-spike.yml"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 1 ] && [ "$count" -le 10 ] \
+    || fail "workflow without a reader expected 1-10 scripts, got $count: $listed"
+  assert_contains "$listed" tests/fm-lint-workflows.test.sh "workflow without a reader retains its lint owner"
+  assert_not_contains "$listed" tests/fm-test-run.test.sh \
+    "workflow without a reader avoids the pure-contract-unit family"
+  git -C "$repo" checkout -q -- .github/workflows/windows-herdr-spike.yml
 
   printf '\n' >>"$repo/.tasks.toml"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
@@ -771,20 +813,21 @@ test_changed_real_inventory_selection_bounds() {
 
   # An existing core source whose executable readers are all behind wide hubs
   # still selects those suites, even when a comment-only test was printed.
-  while read -r path reader; do
-    printf '\n' >>"$repo/bin/$path"
-    if ! listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD); then
-      fail "shared library $path selection failed: $listed"
-    fi
-    assert_contains "$listed" "tests/$reader" "shared library $path selects its hub reader"
-    git -C "$repo" checkout -q -- "bin/$path"
-  done <<'EOF'
-fm-merge-authority-lib.sh fm-pr-merge.test.sh
+  shared_lib_cases='fm-merge-authority-lib.sh fm-pr-merge.test.sh
 fm-landed-lib.sh fm-bearings-snapshot.test.sh
 fm-exclude-tools-lib.sh fm-control-relaunch.test.sh
 fm-project-capacity-lib.sh fm-control-relaunch.test.sh
-fm-public-followup-collect.sh fm-public-followup.test.sh
-EOF
+fm-public-followup-collect.sh fm-public-followup.test.sh'
+  while read -r path reader; do
+    printf '\n' >>"$repo/bin/$path"
+  done <<<"$shared_lib_cases"
+  if ! listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD); then
+    fail "shared library selection failed: $listed"
+  fi
+  while read -r path reader; do
+    assert_contains "$listed" "tests/$reader" "shared library $path selects its hub reader"
+    git -C "$repo" checkout -q -- "bin/$path"
+  done <<<"$shared_lib_cases"
 
   # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.
   local -a recorded_paths=(

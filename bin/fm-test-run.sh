@@ -1995,6 +1995,7 @@ def walk_reference(dependency, emit_fat_hubs):
                         if reader not in printed:
                             print(dependency + "\t__script__:" + Path(reader).name)
                             printed.add(reader)
+                        executable_printed.add(reader)
                         if reader not in queued:
                             queued.add(reader)
                             queue.append(reader)
@@ -2087,7 +2088,7 @@ import re
 import sys
 path = re.escape(sys.argv[1])
 for test in sorted(Path("tests").glob("*.test.sh")):
-    if re.search(r"\$\{?ROOT\}?/" + path + r"(?:[\s\"'`]|$)", test.read_text()):
+    if re.search(r"(?:\$\{?ROOT\}?/|\.\./)" + path + r"(?:[\s\"'`]|$)", test.read_text()):
         print("__script__:" + test.name)
 PYDOC
 }
@@ -2406,10 +2407,6 @@ families_for_changed_path() {
           printf '%s\n' __script__:fm-branch-supervision.test.sh ;;
       esac
       ;;
-    .github/workflows/ci.yml)
-      printf '%s\n' __script__:fm-lint-workflows.test.sh
-      scripts_for_document_readers "$path"
-      ;;
     .no-mistakes.yaml)
       printf '%s\n' __script__:fm-lint-nomistakes-config.test.sh
       printf '%s\n' __script__:fm-lint.test.sh
@@ -2437,7 +2434,8 @@ families_for_changed_path() {
       scripts_for_document_readers "$path"
       ;;
     .github/*)
-      printf '%s\n' pure-contract-unit
+      printf '%s\n' __script__:fm-lint-workflows.test.sh
+      scripts_for_document_readers "$path"
       ;;
     tests/git-config-helpers.sh)
       # The canonical helpers source this one, even in minimal fixture repos
