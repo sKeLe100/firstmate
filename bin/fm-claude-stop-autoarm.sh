@@ -227,16 +227,9 @@ fi
 [ -e "$STATE/.afk" ] && exit 0
 
 # --- auto-stow at the restart band ----------------------------------------------
-# A primary session whose own transcript reaches the restart context band is
-# woken once per session to run /stow, so its checkpoint lands before automatic
-# compaction can drop detail. The wake is this hook's exit 2 - an async rewake,
-# never a blocked turn - and autostow_exit offers it only where supervision is
-# covered: an idle home, or a live watcher. Once per session is a noclobber
-# marker keyed by the payload session_id, so a parallel Stop firing that loses
-# the create stays silent. Any uncertainty - no payload or jq, a session that
-# does not own the lock, a missing transcript, a helper failure, or a home
-# without its opt-in - is silent. config/auto-stow-off disables it for any home,
-# and config/auto-stow opts a secondmate home in; the main home is on by default.
+# autostow_fire runs the mechanical gates below and writes the once-per-session
+# marker; the policy, its coverage gates, and its thresholds are owned by
+# docs/configuration.md "Session context thresholds".
 autostow_fire() {
   local sid transcript out band marker tokens limit
   [ -n "$PAYLOAD" ] || return 1
@@ -264,8 +257,7 @@ autostow_fire() {
 }
 
 # Exit 2 with the auto-stow wake when it is due; otherwise return, so the caller's
-# exit 0 stands. Callers reach this only where supervision is covered (idle, or a
-# live watcher), so the wake never runs uncovered.
+# exit 0 stands. Only the coverage-checked call sites below invoke it.
 autostow_exit() {
   autostow_fire && exit 2
   return 0

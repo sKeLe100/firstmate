@@ -142,6 +142,7 @@ off_home=$(make_home "$TMP_ROOT/off")
 : > "$off_home/config/auto-stow-off"
 run_stop "$off_home" sess-off "$t"
 expect_silent "config/auto-stow-off"
+[ "$(stow_markers "$off_home")" -eq 0 ] || fail "config/auto-stow-off must not create a marker"
 
 # 7. A secondmate home is opt-in: silent without config/auto-stow, and it wakes
 #    once that opt-in exists.
@@ -191,7 +192,7 @@ chmod +x "$live_home/bin/fm-watch-arm.sh"
 sleep 600 &
 watch_pid=$!
 watch_path="$(cd "$live_home/bin" && pwd)/fm-watch.sh"
-watch_identity=$(bash -c '. "$1" && fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$watch_pid")
+watch_identity=$(fm_test_pid_identity "$watch_pid")
 [ -n "$watch_identity" ] || fail "could not read the fixture watcher's identity"
 mkdir -p "$live_home/state/.watch.lock"
 printf '%s\n' "$watch_pid" > "$live_home/state/.watch.lock/pid"
