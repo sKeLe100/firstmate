@@ -825,6 +825,43 @@ test_hung_local_browser_dependency_probe_falls_back() {
   pass "a hanging local browser dependency probe times out and routes locally"
 }
 
+test_term_ignoring_parity_probes_are_killed_and_route_locally() {
+  local dir fakebin hangbin local_home out status start elapsed browser
+  dir="$TMP_ROOT/parity-probe-kill"
+  fakebin=$(fake_pc02 "$dir")
+  local_home="$dir/pc01-home"
+  browser=$(install_cache_chrome "$local_home" direct)
+  hangbin="$dir/hangbin"
+  mkdir -p "$hangbin"
+  cat > "$hangbin/herdr" <<SH
+#!/usr/bin/env bash
+if [ "\${HOME:-}" = "$dir/home" ]; then echo 'herdr fixture 0.0.0'; exit 0; fi
+trap '' TERM INT
+exec sleep 40
+SH
+  chmod +x "$hangbin/herdr"
+  cat > "$browser" <<'SH'
+#!/usr/bin/env bash
+trap '' TERM INT
+exec sleep 40
+SH
+  chmod +x "$browser"
+  start=$SECONDS
+  out=$(PATH="$hangbin:$fakebin:$PATH" HOME="$local_home" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  elapsed=$((SECONDS - start))
+  expect_code 0 "$status" "a TERM-ignoring parity probe must still route the run locally: $out"
+  [ "$elapsed" -lt 60 ] \
+    || fail "TERM-ignoring version probes outlived their 15-second deadline (${elapsed}s): $out"
+  assert_contains "$out" "tool.herdr version could not be established" \
+    "a stalled tool version probe was not recorded as unestablished: $out"
+  assert_contains "$out" "chromium.selected_version version could not be established" \
+    "a stalled browser version probe was not recorded as unestablished: $out"
+  assert_contains "$out" "running on PC01" "stalled version probes did not route the run locally: $out"
+  pass "TERM-ignoring tool and browser version probes are killed at their deadline"
+}
+
 test_selected_cached_browser_version_mismatch_falls_back() {
   local dir fakebin out status local_home
   dir="$TMP_ROOT/parity-browser-version-mismatch"
@@ -981,6 +1018,29 @@ test_all_slots_busy_falls_back_locally() {
     "the all-slots-busy fallback was not logged clearly: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "a fully occupied host received a new remote run"
   pass "both busy PC02 slots route the next suite to PC01 with a clear log"
+}
+
+test_malformed_slot_count_is_a_configuration_error() {
+  local dir fakebin out status value
+  dir="$TMP_ROOT/slots-invalid"
+  fakebin=$(fake_pc02 "$dir")
+  for value in 0 abc 17; do
+    out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+      FM_PC02_OFFLOAD_SLOTS="$value" "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    status=$?
+    expect_code 2 "$status" "FM_PC02_OFFLOAD_SLOTS=$value must be a configuration error: $out"
+    case "$value" in
+      abc) assert_contains "$out" "must be a positive integer" \
+        "the refusal did not ask for an integer: $out" ;;
+      *) assert_contains "$out" "must be between 1 and 16" \
+        "the refusal did not state the accepted range: $out" ;;
+    esac
+    assert_contains "$out" "got '$value'" "the refusal omitted the rejected slot count: $out"
+    assert_not_contains "$out" "$LOCAL_PROOF_OUT" \
+      "FM_PC02_OFFLOAD_SLOTS=$value still ran the suite: $out"
+  done
+  [ ! -e "$dir/ssh.log" ] || fail "a malformed slot count still reached PC02: $(cat "$dir/ssh.log")"
+  pass "a malformed FM_PC02_OFFLOAD_SLOTS exits 2 and runs no tests"
 }
 
 test_single_slot_mode_keeps_the_old_fallback() {
@@ -1384,6 +1444,7 @@ test_environment_open_file_capacity
 test_raised_open_file_limit_admits_and_reaches_remote_run
 test_environment_version_mismatch_falls_back_with_field
 test_hung_local_browser_dependency_probe_falls_back
+test_term_ignoring_parity_probes_are_killed_and_route_locally
 test_selected_cached_browser_version_mismatch_falls_back
 test_shared_browser_resolver_prefers_chromium_to_google_chrome
 test_chromium_missing_library_falls_back_with_field
@@ -1392,6 +1453,7 @@ test_chromium_wrapper_resolution_does_not_false_fallback
 test_chromium_wrapper_compares_resolved_sonames
 test_one_of_two_busy_slots_still_runs_remotely
 test_all_slots_busy_falls_back_locally
+test_malformed_slot_count_is_a_configuration_error
 test_single_slot_mode_keeps_the_old_fallback
 test_decoy_host_suite_does_not_affect_remote_probe
 test_term_mid_remote_run_removes_mirror_and_kills_suite

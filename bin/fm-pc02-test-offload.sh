@@ -96,9 +96,11 @@
 #     route the run locally with both hosts' values. CPU count, RAM, ulimit -u,
 #     no-mistakes daemon version, /usr/bin/env provider, and shell availability
 #     (including zsh) are intentionally excluded as resources or documented
-#     test differences. Browser dependency and wrapper-resolution probes have a
-#     10-second deadline per command on either host and the selected browser's
-#     own version probe 5; a timeout routes the run locally.
+#     test differences. Every parity step is hard-bounded on either host: tool
+#     and selected-browser version probes get 15 seconds, browser dependency
+#     and wrapper-resolution probes 10, each killed outright if it ignores the
+#     first signal, and the whole probe runs under
+#     FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS. Any expiry routes the run locally.
 #     PC02's open-file limit must be at least PC01's; a higher limit is an
 #     allowed resource difference. Missing or invalid limits route locally.
 #     Both the parity probe and the remote suite command first raise PC02's
@@ -126,11 +128,13 @@
 #                                      HEAD check (default: 15; the resource
 #                                      probe's CPU sample alone takes ~1s)
 #   FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS bound for the PC01/PC02 environment
-#                                      parity probe (default: 180). Its own
-#                                      per-command deadlines allow twelve tool
-#                                      launches at 5s each and three browser
-#                                      probes at 10s each, so it needs a wider
-#                                      budget than the reachability probe.
+#                                      parity probe on either host (default:
+#                                      300). Its per-command deadlines (twelve
+#                                      tool and one selected-browser version at
+#                                      15s, three dependency probes at 10s) sum
+#                                      to under 260s worst case, so this is a
+#                                      hang tripwire rather than a deadline
+#                                      that cuts a slow-but-identical host.
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
 #                                      (default: 180)
 #   FM_PC02_OFFLOAD_SLOTS               number of concurrent PC02 suites
@@ -202,7 +206,7 @@ ARGS=("$@")
 
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
-PARITY_TIMEOUT="${FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS:-180}"
+PARITY_TIMEOUT="${FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS:-300}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
 SCRIPT_TIMEOUT="${FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS:-3000}"
@@ -235,7 +239,7 @@ REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shell
 # A malformed slot count is a configuration error, not an unclear host read:
 # refuse loudly instead of silently running with a different shape.
 case "$SLOTS" in
-  ''|*[!0-9]*) echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be a positive integer, got '$SLOTS'" >&2; exit 2 ;;
+  *[!0-9]*) echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be a positive integer, got '$SLOTS'" >&2; exit 2 ;;
 esac
 { [ "$SLOTS" -ge 1 ] && [ "$SLOTS" -le 16 ]; } \
   || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be between 1 and 16, got '$SLOTS'" >&2; exit 2; }
@@ -401,11 +405,11 @@ version() {
   [ "$tool" != tmux ] || args=-V
   path=$(type -P "$tool" 2>/dev/null || true)
   if [ -z "$path" ]; then printf 'tool.%s=absent\n' "$tool"; return; fi
-  value=$(timeout 5 "$path" "$args" 2>&1 </dev/null) || status=$?
+  value=$(timeout --signal=TERM --kill-after=2 15 "$path" "$args" 2>&1 </dev/null) || status=$?
   # Keep the first line carrying a digit (shellcheck prints a banner first).
   value=$(printf '%s\n' "$value" | awk 'NR == 1 { first = $0 } /[0-9]/ { print; found = 1; exit } END { if (!found) print first }')
   [ -n "$value" ] || value=unavailable
-  [ "$status" -ne 124 ] || value=timed-out
+  case "$status" in 124|137) value=timed-out ;; esac
   value=$(printf '%s' "$value" | tr '\r\n\t' '   ' | cut -c1-180)
   printf 'tool.%s=%s\n' "$tool" "$value"
 }
@@ -462,10 +466,10 @@ if [ -n "$browser" ]; then browser=$(readlink -f "$browser" 2>/dev/null || print
 printf 'chromium.path=%s\n' "$browser"
 if [ -n "$browser" ]; then
   browser_version_status=0
-  browser_version=$(timeout 5 "$browser" --version 2>&1 </dev/null) || browser_version_status=$?
+  browser_version=$(timeout --signal=TERM --kill-after=2 15 "$browser" --version 2>&1 </dev/null) || browser_version_status=$?
   browser_version=${browser_version%%$'\n'*}
   [ -n "$browser_version" ] || browser_version=unavailable
-  [ "$browser_version_status" -ne 124 ] || browser_version=timed-out
+  case "$browser_version_status" in 124|137) browser_version=timed-out ;; esac
   browser_version=$(printf '%s' "$browser_version" | tr '\r\n\t' '   ' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | cut -c1-180)
 else
   browser_version=absent
@@ -476,12 +480,13 @@ browser_dependencies=$(normalize_ldd "$browser") || exit 1
 printf '%s\n' "$browser_dependencies" | paste -sd, -
 PARITY_PROBE
 )"
-local_parity=$(bash -c "$parity_probe" 2>&1) || run_local "PC01 environment parity probe failed: $local_parity"
+local_parity=$(timeout --signal=TERM --kill-after=5 "$PARITY_TIMEOUT" bash -c "$parity_probe" 2>&1) \
+  || run_local "PC01 environment parity probe failed: $local_parity"
 # shellcheck disable=SC2016 # The raise expands on PC02, not here.
 remote_parity_raise='ulimit -Sn "$(ulimit -Hn)" 2>/dev/null || true'
 remote_parity_cmd="$remote_parity_raise
 $parity_probe"
-remote_parity=$(timeout "$PARITY_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+remote_parity=$(timeout --signal=TERM --kill-after=5 "$PARITY_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
   -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$remote_parity_cmd")" 2>&1) || {
   run_local "PC02 environment parity probe failed: $remote_parity"
 }
