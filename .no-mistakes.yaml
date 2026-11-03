@@ -56,11 +56,11 @@ test:
 test_agent_timeout: "60m"
 
 # Maintainability rules the Review step applies to the surfaces where this repo
-# has repeatedly paid for getting them wrong. Kept as pointers for the same
-# reason `document.instructions` is: the coding guideline owns the policy, and a
-# second prose copy here would become a competing owner. Schema caps both the
-# entry count and the total bytes added to the review prompt, so keep each
-# entry short.
+# has repeatedly paid for getting them wrong. Those entries stay pointers for
+# the same reason `document.instructions` is: the coding guideline owns the
+# policy, and a second prose copy here would become a competing owner. Schema
+# caps both the entry count and the total bytes added to the review prompt, so
+# keep each entry short.
 review:
   path_instructions:
     - path: 'bin/*.sh'
