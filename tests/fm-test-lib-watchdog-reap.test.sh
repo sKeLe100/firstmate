@@ -75,20 +75,25 @@ sleep 0.5
 printf 'ok - TERM mid-run leaves no fixture watchdog\n'
 
 # --- runner exit: a suite KILLed past the TERM grace ------------------------
-# An explicit --jobs run gives each script its own worker TMPDIR under the
-# runner's run root. A suite that ignores TERM is KILLed there, so its traps
-# never run and its detached watchdog survives. The runner's own exit cleanup
-# must reap every loop whose FM_HOME is under its run root, and must leave a
-# loop outside that root (the live child's fixture) alone.
+# A --jobs run gives each script its own worker TMPDIR under the runner's run
+# root, and a serial run gives each script its own TMPDIR there too. A suite
+# that ignores TERM is KILLed there, so its traps never run and its detached
+# watchdog survives. The runner's own exit cleanup must reap every loop whose
+# FM_HOME is under its run root, and must leave a loop outside that root (the
+# live child's fixture) alone. The runner's TMPDIR is a symlink so a textual
+# prefix comparison would miss the canonical fixture home.
 killed_repo="$outside/killed-repo"
-killed_root_file="$outside/killed-root"
+killed_root_file="$outside/killed-root-concurrent"
+killed_serial_root_file="$outside/killed-root-serial"
+runner_real="$outside/runner-real"
 runner_tmp="$outside/runner-tmp"
-mkdir -p "$killed_repo/bin" "$killed_repo/tests" "$runner_tmp"
+mkdir -p "$killed_repo/bin" "$killed_repo/tests" "$runner_real"
+ln -s "$runner_real" "$runner_tmp"
 cp "$ROOT/bin/fm-test-run.sh" "$killed_repo/bin/fm-test-run.sh"
 cp "$ROOT/bin/fm-timeout-lib.sh" "$killed_repo/bin/fm-timeout-lib.sh"
 cp "$ROOT/tests/git-config-helpers.sh" "$killed_repo/tests/git-config-helpers.sh"
-killed_suite="$killed_repo/tests/fm-cd-pretool-check.test.sh"
-cat > "$killed_suite" <<EOF
+make_killed_suite() {  # <path> <root-file>
+  cat > "$1" <<EOF
 #!/usr/bin/env bash
 . "$ROOT/tests/lib.sh"
 r=\$(fm_test_tmproot fm-wdreap-killed)
@@ -96,11 +101,15 @@ mkdir -p "\$r/home" "\$r/bin"
 printf '#!/usr/bin/env bash\nsleep 60\n' > "\$r/bin/fm-primary-watchdog.sh"
 chmod +x "\$r/bin/fm-primary-watchdog.sh"
 FM_HOME="\$r/home" setsid "\$r/bin/fm-primary-watchdog.sh" run </dev/null >/dev/null 2>&1 &
-printf '%s\n' "\$r" > "$killed_root_file"
+printf '%s\n' "\$r" > "$2"
 trap '' TERM
 while :; do sleep 1; done
 EOF
-chmod +x "$killed_repo/bin/fm-test-run.sh" "$killed_suite"
+  chmod +x "$1"
+}
+make_killed_suite "$killed_repo/tests/fm-cd-pretool-check.test.sh" "$killed_root_file"
+make_killed_suite "$killed_repo/tests/fm-pr-merge.test.sh" "$killed_serial_root_file"
+chmod +x "$killed_repo/bin/fm-test-run.sh"
 
 start_child
 LIVE_ROOT=$CHILD_ROOT; LIVE_CHILD=$CHILD
@@ -112,7 +121,16 @@ KILLED_ROOT=$(cat "$killed_root_file" 2>/dev/null || true)
 [ -n "$KILLED_ROOT" ] || fail "the KILLed suite never started its watchdog"
 wait_for_no_loops "$KILLED_ROOT" || fail "runner cleanup did not reap the KILLed run's watchdog"
 [ -n "$(child_loops "$LIVE_ROOT")" ] || fail "runner cleanup reaped a watchdog outside its run root"
+
+rm -f "$killed_serial_root_file"
+FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR="$runner_tmp" \
+  bash -c 'cd "$1" && shift && bin/fm-test-run.sh "$@"' _ "$killed_repo" \
+  --jobs 1 --per-script-timeout-secs 3 tests/fm-pr-merge.test.sh >/dev/null 2>&1 || true
+KILLED_SERIAL_ROOT=$(cat "$killed_serial_root_file" 2>/dev/null || true)
+[ -n "$KILLED_SERIAL_ROOT" ] || fail "the serial suite never started its watchdog"
+wait_for_no_loops "$KILLED_SERIAL_ROOT" || fail "runner cleanup did not reap the serial run's KILLed watchdog"
+[ -n "$(child_loops "$LIVE_ROOT")" ] || fail "serial runner cleanup reaped a watchdog outside its run root"
 fm_test_reap_orphans
 [ -n "$(child_loops "$LIVE_ROOT")" ] || fail "start-up sweep reaped a live owner's watchdog"
 kill -TERM "$LIVE_CHILD"; wait "$LIVE_CHILD" 2>/dev/null
-printf 'ok - runner cleanup reaps a KILLed run'"'"'s watchdog and spares a live owner'"'"'s\n'
+printf 'ok - runner cleanup reaps KILLed concurrent and serial runs and spares a live owner'"'"'s\n'

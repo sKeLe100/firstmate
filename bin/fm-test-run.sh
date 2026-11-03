@@ -3385,7 +3385,8 @@ if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
   . "$ROOT/bin/fm-timeout-lib.sh"
 fi
 
-RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX")
+RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX") || die "could not create run temp dir"
+RUN_TMP=$(cd -P -- "$RUN_TMP" && pwd -P) || die "could not resolve run temp dir"
 RECORDS="$RUN_TMP/records.tsv"
 FAMILIES_TSV="$RUN_TMP/families.tsv"
 : >"$RECORDS"
@@ -3394,8 +3395,8 @@ declare -a WORKER_IDX=()
 declare -a WORKER_SCRIPTS=()
 
 # Fixture homes a suite killed past the TERM grace can leave a detached
-# primary-watchdog loop under. Each worker's TMPDIR is inside this run root, so
-# a run-scoped reap reaches every worker without touching a sibling run's loops.
+# primary-watchdog loop under. Each script's TMPDIR is inside this run root, so
+# a run-scoped reap reaches every script without touching a sibling run's loops.
 # shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
 run_fixture_watchdog_pids() {
   local pid env_home
@@ -3613,11 +3614,14 @@ run_script_bounded() {  # <script> <out> <stream> <id>
 
 run_one_serial() {
   local script=$1
-  local base family expected out begin_iso begin_ms end_ms end_iso duration rc
+  local base family expected out begin_iso begin_ms end_ms end_iso duration rc work
   base=$(basename "$script")
   family=$(family_for_basename "$base")
   expected=$(expected_gate_skip_for_family "$family")
   out="$RUN_TMP/out.$TOTAL"
+  work="$RUN_TMP/s$TOTAL"
+  mkdir -p "$work/tmp"
+  chmod 0700 "$work" "$work/tmp" || die "could not chmod 0700 serial root $work"
   begin_iso=$(now_iso)
   begin_ms=$(now_ms)
 
@@ -3626,7 +3630,11 @@ run_one_serial() {
 
   set +e
   # Stream live output while retaining a copy for gate-skip detection.
-  run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  (
+    export TMPDIR="$work/tmp"
+    export TMP="$work/tmp"
+    run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  )
   rc=$?
   set -e
   : "${rc:=1}"
