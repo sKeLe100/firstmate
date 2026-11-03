@@ -142,15 +142,18 @@
 #   fm-pc02-test-offload.sh --lint [fm-lint.sh args...]
 #
 # --lint selects the canonical lint instead of the test suite: the remote
-# mirror runs bin/fm-lint.sh with the forwarded arguments unchanged, so a
-# partition request such as --partition 2of4 means exactly what it means in
-# CI. The remote lint always runs the full canonical inventory (fm-lint.sh's
-# CI selection) with the exhaustive source-aware analysis, never the
-# changed-file subset a branch worktree would pick; a local fallback runs
-# bin/fm-lint.sh in that checkout's own context, exactly as before this
-# offload existed. Every admission rule below (lane occupancy, personal-use
-# switch, resources, tools, host slots) is shared by both modes; the script
-# never forces a single worker or reserves a host-wide slot.
+# mirror runs bin/fm-lint.sh with the forwarded arguments, so a partition
+# request such as --partition 2of4 means exactly what it means in CI. A
+# --telemetry path is the one exception: it is translated into the PC02
+# mirror's own path, and both the snapshot and its .roots.tsv sidecar are
+# pulled back to the caller's path afterwards. The remote lint always runs the
+# full canonical inventory (fm-lint.sh's CI selection) with the exhaustive
+# source-aware analysis, never the changed-file subset a branch worktree would
+# pick; a local fallback runs bin/fm-lint.sh in that checkout's own context,
+# exactly as before this offload existed. Every admission rule below (lane
+# occupancy, personal-use switch, resources, tools, host slots) is shared by
+# both modes; the script never forces a single worker or reserves a host-wide
+# slot.
 #
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
@@ -269,15 +272,43 @@ RESOURCE_CHECK_PS1="${FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1:-/mnt/c/pc02-llm-server
 CPU_BUSY_PCT="${FM_PC02_OFFLOAD_CPU_BUSY_PCT:-50}"
 GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
 
+# A lint --telemetry artifact belongs to the caller's own path, and fm-lint.sh
+# writes <telemetry> plus <telemetry%.tsv>.roots.tsv. Translate it into the
+# PC02 mirror so a PC01-only path is neither written on PC02 nor left there
+# after cleanup, then pull both files back to the caller's paths.
+telemetry_path=
+if [ "$MODE" = lint ]; then
+  telemetry_path=${FM_LINT_TELEMETRY:-}
+  prev_arg=
+  for a in ${ARGS[@]+"${ARGS[@]}"}; do
+    [ "$prev_arg" != "--telemetry" ] || telemetry_path=$a
+    case "$a" in --telemetry=*) telemetry_path="${a#--telemetry=}" ;; esac
+    prev_arg=$a
+  done
+fi
+remote_telemetry=
+remote_telemetry_arg=
+local_telemetry=
+if [ -n "$telemetry_path" ]; then
+  case "$telemetry_path" in
+    /*) local_telemetry=$telemetry_path ;;
+    *) local_telemetry="$PWD/$telemetry_path" ;;
+  esac
+  remote_telemetry_arg=".fm-pc02-telemetry/$(basename "$local_telemetry")"
+  remote_telemetry="$REMOTE_WORKTREE/$remote_telemetry_arg"
+fi
+
 # Tools whose absence hard-fails a real test rather than gracefully
 # gate-skipping it - actionlint and shellcheck are pinned versions
-# bin/fm-lint.sh refuses to run without, ruby is required outright by
-# tests/fm-ci-workflow.test.sh (`command -v ruby || fail ...`), and chromium
-# is required outright by tests/fm-calm-pi-extension.test.sh's rendered-export
-# guard, none of them optional capabilities. A host missing any of these
-# would fail differently than PC01, not just thinner, so no-mistakes would
-# judge a different outcome. Require them on PC02 too rather than risk that.
-REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint ruby chromium}"
+# bin/fm-lint.sh refuses to run without, perl is required outright by that
+# same script for its bounded worker cleanup (it exits 127 without it), ruby
+# is required outright by tests/fm-ci-workflow.test.sh (`command -v ruby ||
+# fail ...`), and chromium is required outright by
+# tests/fm-calm-pi-extension.test.sh's rendered-export guard, none of them
+# optional capabilities. A host missing any of these would fail differently
+# than PC01, not just thinner, so no-mistakes would judge a different outcome.
+# Require them on PC02 too rather than risk that.
+REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint perl ruby chromium}"
 
 # A malformed slot count is a configuration error, not an unclear host read:
 # refuse loudly instead of silently running with a different shape.
@@ -333,9 +364,9 @@ run_local() {  # <reason>
   remove_remote_run
   release_claim
   if [ "$MODE" = lint ]; then
-    exec "$SELF_DIR/fm-lint.sh" "${ARGS[@]}"
+    exec "$SELF_DIR/fm-lint.sh" ${ARGS[@]+"${ARGS[@]}"}
   fi
-  exec "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}"
+  exec "$SELF_DIR/fm-test-run.sh" ${ARGS[@]+"${ARGS[@]}"}
 }
 
 [ "${FM_PC02_OFFLOAD_DISABLE:-}" != "1" ] || run_local "offload disabled (FM_PC02_OFFLOAD_DISABLE=1)"
@@ -699,6 +730,18 @@ if [ "$sync_rc" -ne 0 ]; then
   run_local "rsync to PC02 failed or timed out (exit $sync_rc)"
 fi
 
+# The worktree rsync above mirrors the caller's tree, so a telemetry directory
+# only exists on PC02 once it is created here, after that transfer.
+if [ -n "$remote_telemetry" ]; then
+  telemetry_dir_cmd="mkdir -p $(printf '%q' "$(dirname "$remote_telemetry")")"
+  telemetry_dir_out=$(timeout "$PROBE_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "$telemetry_dir_cmd")" 2>&1)
+  telemetry_dir_rc=$?
+  if [ "$telemetry_dir_rc" -ne 0 ]; then
+    echo "$telemetry_dir_out" >&2
+    run_local "could not create the PC02 mirror's lint telemetry directory (exit $telemetry_dir_rc)"
+  fi
+fi
+
 # The mirrored per-worktree git-dir still has its original commondir/gitdir
 # pointers excluded above (a stale one would point back at a PC01-only
 # path); point commondir at the sibling common-store mirror instead.
@@ -740,15 +783,27 @@ if [ "$MODE" = lint ]; then
   # CI=true is fm-lint.sh's own switch for its full canonical inventory with
   # source-aware analysis; without it the mirrored branch would take the
   # changed-file subset, which is not the audit this offload exists to move.
-  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") env CI=true bin/fm-lint.sh"
-  for a in "${ARGS[@]}"; do
+  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") env CI=true"
+  [ -z "$remote_telemetry" ] || remote_suite_cmd="$remote_suite_cmd FM_LINT_TELEMETRY=$(printf '%q' "$remote_telemetry_arg")"
+  remote_suite_cmd="$remote_suite_cmd bin/fm-lint.sh"
+  telemetry_next=0
+  for a in ${ARGS[@]+"${ARGS[@]}"}; do
+    if [ -n "$remote_telemetry" ] && [ "$telemetry_next" -eq 1 ]; then
+      a=$remote_telemetry_arg
+      telemetry_next=0
+    else
+      case "$a" in
+        --telemetry) [ -z "$remote_telemetry" ] || telemetry_next=1 ;;
+        --telemetry=*) [ -z "$remote_telemetry" ] || a="--telemetry=$remote_telemetry_arg" ;;
+      esac
+    fi
     remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
   done
   echo "fm-pc02-test-offload: remote lint command: $remote_suite_cmd" >&2
 else
   echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
   has_jobs=0
-  for a in "${ARGS[@]}"; do
+  for a in ${ARGS[@]+"${ARGS[@]}"}; do
     case "$a" in --jobs|--jobs=*) has_jobs=1 ;; esac
   done
   # Rewrite only an explicit caller --jobs, and only downward to the per-slot
@@ -757,7 +812,9 @@ else
   # fm-test-run.sh to reject as it always did.
   remote_args=()
   if [ "$has_jobs" -eq 0 ]; then
-    remote_args=("${ARGS[@]}")
+    if [ "${#ARGS[@]}" -gt 0 ]; then
+      remote_args=("${ARGS[@]}")
+    fi
   else
     jobs_i=0
     while [ "$jobs_i" -lt "${#ARGS[@]}" ]; do
@@ -803,7 +860,7 @@ else
     remote_suite_cmd="$remote_suite_cmd env FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
   fi
   remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
-  for a in "${remote_args[@]}"; do
+  for a in ${remote_args[@]+"${remote_args[@]}"}; do
     remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
   done
   # No --jobs is forced: fm-test-run.sh's own scheduler admits only
@@ -844,13 +901,13 @@ if [ "$rc" -eq 124 ]; then
   echo "fm-pc02-test-offload: remote $MODE run on PC02 exceeded ${RUN_TIMEOUT}s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry" >&2
 fi
 
-# A test-mode --json artifact lands on PC02's mirror; pull it back so callers
-# reading the local path (no-mistakes evidence, hint-drift checks) still see
-# it. Lint has no equivalent artifact.
+# A test-mode --json artifact and a lint-mode --telemetry artifact land on
+# PC02's mirror; pull them back so callers reading the local paths (no-mistakes
+# evidence, hint-drift checks, fm-lint-budget.sh) still see them.
 json_path=
 prev=
 if [ "$MODE" = test ]; then
-  for a in "${ARGS[@]}"; do
+  for a in ${ARGS[@]+"${ARGS[@]}"}; do
     [ "$prev" != "--json" ] || json_path="$a"
     case "$a" in
       --json=*) json_path="${a#--json=}" ;;
@@ -866,6 +923,13 @@ if [ -n "$json_path" ]; then
   mkdir -p "$(dirname "$local_json")" 2>/dev/null || true
   timeout "$SYNC_TIMEOUT" rsync -az -e ssh "$HOST:$remote_json" "$local_json" >/dev/null 2>&1 \
     || echo "fm-pc02-test-offload: could not retrieve --json artifact from PC02 ($json_path)" >&2
+fi
+if [ -n "$local_telemetry" ]; then
+  mkdir -p "$(dirname "$local_telemetry")" 2>/dev/null || true
+  timeout "$SYNC_TIMEOUT" rsync -az -e ssh "$HOST:$remote_telemetry" "$local_telemetry" >/dev/null 2>&1 \
+    || echo "fm-pc02-test-offload: could not retrieve lint --telemetry artifact from PC02 ($telemetry_path)" >&2
+  timeout "$SYNC_TIMEOUT" rsync -az -e ssh "$HOST:${remote_telemetry%.tsv}.roots.tsv" "${local_telemetry%.tsv}.roots.tsv" >/dev/null 2>&1 \
+    || echo "fm-pc02-test-offload: could not retrieve lint --telemetry roots sidecar from PC02 (${telemetry_path%.tsv}.roots.tsv)" >&2
 fi
 
 exit "$rc"
