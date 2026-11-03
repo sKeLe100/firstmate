@@ -2,10 +2,10 @@
 # Parity guard for firstmate's shell-lint definition.
 #
 # bin/fm-lint.sh is the single owner invoked by CI
-# (.github/workflows/ci.yml) and by the pre-push gate (.no-mistakes.yaml
-# commands.lint). CI and the local gate deliberately select different roots;
-# bin/fm-lint.sh owns their analysis modes, memory fallback, configuration,
-# and tool versions.
+# (.github/workflows/ci.yml) and, through bin/fm-pc02-test-offload.sh --lint,
+# by the pre-push gate (.no-mistakes.yaml commands.lint). CI and that gate's
+# local fallback deliberately select different roots; bin/fm-lint.sh owns
+# their analysis modes, memory fallback, configuration, and tool versions.
 # Regression origin: with no commands.lint configured, the local no-mistakes
 # lint step never ran the deterministic shell lint, so PRs passed local
 # validation yet failed CI on info/warning findings such as SC2015, SC1007, and

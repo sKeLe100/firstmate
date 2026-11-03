@@ -12,6 +12,9 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SCRIPT="$ROOT/bin/fm-pc02-test-offload.sh"
+# The nested fm-test-run.sh records its environment before the fixture runs;
+# its bounded tool and browser probes can exceed 30s on a loaded host.
+REMOTE_SUITE_START_TRIES=1800  # 0.1s per try, up to 180s
 TMP_ROOT=$(fm_test_tmproot fm-pc02-test-offload)
 mkdir -p "$TMP_ROOT/empty-state"
 export XDG_CONFIG_HOME="$TMP_ROOT/xdg"
@@ -509,6 +512,23 @@ printf '%s\n' "\$*" >> "$dir/ssh.log"
 case "\$*" in *'rm -rf'*) chmod -R u+w "$dir/home/.fm-pc02-test-offload" 2>/dev/null || true ;; esac
 HOME="$dir/home" exec bash -c "\$*"
 SH
+  cat > "$dir/fake-lint.sh" <<'LINT'
+#!/usr/bin/env bash
+echo "lint CI=${CI:-unset} argv=$*"
+telemetry=${FM_LINT_TELEMETRY:-}
+prev=
+for a in "$@"; do
+  [ "$prev" != "--telemetry" ] || telemetry=$a
+  case "$a" in --telemetry=*) telemetry=${a#--telemetry=} ;; esac
+  prev=$a
+done
+if [ -n "$telemetry" ]; then
+  printf 'format\tfm-lint-telemetry-v1\n' > "$telemetry" || exit 3
+  printf 'root\tbin/fm-lint.sh\n' > "${telemetry%.tsv}.roots.tsv" || exit 3
+fi
+exit "${FM_FAKE_LINT_EXIT:-0}"
+LINT
+  chmod +x "$dir/fake-lint.sh"
   cat > "$fakebin/rsync" <<SH
 #!/usr/bin/env bash
 args=(--exclude=/state --exclude=/data --exclude=/config --exclude=/projects)
@@ -527,6 +547,10 @@ if [ -n "\${FM_FAKE_CAPTURE_RUNNER:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" 
 #!/usr/bin/env bash
 echo "auto_jobs=\${FM_TEST_RUN_AUTO_JOBS_MAX:-unset} argv=\$*"
 RUNNER
+fi
+if [ -n "\${FM_FAKE_CAPTURE_LINT:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
+  cp "$dir/fake-lint.sh" "\${args[\${#args[@]}-1]}/bin/fm-lint.sh"
+  chmod +x "\${args[\${#args[@]}-1]}/bin/fm-lint.sh"
 fi
 SH
   chmod +x "$fakebin/ssh" "$fakebin/rsync"
@@ -1184,7 +1208,7 @@ SH
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
   pid=$!
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 "$REMOTE_SUITE_START_TRIES"); do
     [ -f "$dir/suite-started" ] && break
     sleep 0.1
   done
@@ -1223,7 +1247,7 @@ SH
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
   pid=$!
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 "$REMOTE_SUITE_START_TRIES"); do
     [ -f "$dir/suite-started" ] && break
     sleep 0.1
   done
@@ -1265,7 +1289,7 @@ SH
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
   pid=$!
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 "$REMOTE_SUITE_START_TRIES"); do
     [ -f "$dir/suite-started" ] && break
     sleep 0.1
   done
@@ -1464,12 +1488,169 @@ test_dead_owner_and_timeout_release_claim() {
   pass "a dead owner's claim is reclaimed and the next run releases it on timeout"
 }
 
+test_lint_mode_falls_back_locally_with_forwarded_args() {
+  local out direct status
+  out=$(PATH="/nonexistent-so-ssh-and-rsync-are-absent:$PATH" FM_PC02_OFFLOAD_DISABLE=1 \
+    "$SCRIPT" --lint --list-files 2>&1)
+  status=$?
+  direct=$("$ROOT/bin/fm-lint.sh" --list-files 2>&1)
+  expect_code 0 "$status" "a disabled lint offload must still run the real lint locally: $out"
+  assert_contains "$out" "offload disabled" "disabled lint offload did not explain why it stayed local: $out"
+  assert_contains "$out" "running lint on PC01" "disabled lint offload did not name its local command: $out"
+  [ "$(printf '%s\n' "$out" | tail -n +2)" = "$direct" ] \
+    || fail "--lint did not forward its arguments unchanged to fm-lint.sh: $out"
+  pass "--lint falls back to the real local lint with its arguments intact"
+}
+
+test_remote_lint_forwards_partition_and_returns_exit_code() {
+  local dir fakebin out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-lint"
+  fakebin=$(fake_pc02 "$dir")
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_LINT=1 FM_FAKE_LINT_EXIT=7 \
+    "$SCRIPT" --lint --partition 2of4 --telemetry "$dir/lint.tsv" 2>&1)
+  status=$?
+  expect_code 7 "$status" "a remote lint's exit code must come back unchanged: $out"
+  assert_contains "$out" "PC02 idle and ready; running lint remotely" "the lint run never went remote: $out"
+  assert_contains "$out" "lint CI=true argv=--partition 2of4 --telemetry .fm-pc02-telemetry/lint.tsv" \
+    "the remote lint did not force the full canonical selection with a PC02-side telemetry path: $out"
+  case "$out" in
+    *"--telemetry $dir/lint.tsv"*) fail "the PC01 telemetry path reached PC02 unchanged: $out" ;;
+  esac
+  [ "$(cat "$dir/lint.tsv" 2>/dev/null)" = "$(printf 'format\tfm-lint-telemetry-v1')" ] \
+    || fail "the remote lint's telemetry snapshot did not arrive at the caller's path: $out"
+  [ "$(cat "$dir/lint.roots.tsv" 2>/dev/null)" = "$(printf 'root\tbin/fm-lint.sh')" ] \
+    || fail "the remote lint's roots sidecar did not arrive at the caller's path: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind after lint: $out"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "lint retained the host claim"
+  pass "a remote lint forwards partition arguments, returns its exit code, and returns both telemetry files"
+}
+
+test_relative_lint_telemetry_is_anchored_at_the_repo_root() {
+  local dir fakebin clone out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/relative-telemetry"
+  fakebin=$(fake_pc02 "$dir")
+  clone="$dir/clone"
+  mkdir -p "$clone"
+  cp -R "$ROOT/bin" "$clone/bin"
+  cp "$SCRIPT" "$clone/bin/fm-pc02-test-offload.sh"
+  git init -q "$clone"
+  git -C "$clone" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -qm initial --allow-empty
+
+  out=$(cd "$clone/bin" && PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_LINT=1 \
+    ./fm-pc02-test-offload.sh --lint --telemetry out.tsv 2>&1)
+  status=$?
+  expect_code 0 "$status" "a remote lint started from a subdirectory must succeed: $out"
+  [ -s "$clone/out.tsv" ] || fail "a relative --telemetry path did not land at the repo root: $out"
+  [ -s "$clone/out.roots.tsv" ] || fail "the telemetry roots sidecar did not land at the repo root: $out"
+  [ ! -e "$clone/bin/out.tsv" ] || fail "a relative --telemetry path was anchored to the invocation cwd: $out"
+
+  out=$(cd "$clone/bin" && PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_LINT=1 FM_LINT_TELEMETRY=env.tsv \
+    ./fm-pc02-test-offload.sh --lint 2>&1)
+  status=$?
+  expect_code 0 "$status" "a remote lint with FM_LINT_TELEMETRY from a subdirectory must succeed: $out"
+  [ -s "$clone/env.tsv" ] || fail "a relative FM_LINT_TELEMETRY path did not land at the repo root: $out"
+  [ -s "$clone/env.roots.tsv" ] || fail "the FM_LINT_TELEMETRY roots sidecar did not land at the repo root: $out"
+  [ ! -e "$clone/bin/env.tsv" ] || fail "a relative FM_LINT_TELEMETRY path was anchored to the invocation cwd: $out"
+  pass "relative lint telemetry from the CLI and the environment lands at the repo root"
+}
+
+test_canonical_lint_without_arguments_forwards_none() {
+  local dir fakebin clone source out status
+  dir="$TMP_ROOT/lint-no-args"
+  clone="$dir/clone"
+  mkdir -p "$clone/bin"
+  for source in "$ROOT"/bin/*.sh; do
+    ln -s "$source" "$clone/bin/$(basename "$source")"
+  done
+  rm "$clone/bin/fm-pc02-test-offload.sh" "$clone/bin/fm-lint.sh"
+  cp "$SCRIPT" "$clone/bin/fm-pc02-test-offload.sh"
+  cat > "$clone/bin/fm-lint.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'local-lint argc=%s argv=%s\n' "$#" "$*"
+exit 9
+SH
+  chmod +x "$clone/bin/fm-lint.sh"
+  out=$(FM_PC02_OFFLOAD_DISABLE=1 "$clone/bin/fm-pc02-test-offload.sh" --lint 2>&1)
+  status=$?
+  expect_code 9 "$status" "a canonical --lint fallback must return fm-lint's own exit code: $out"
+  assert_contains "$out" "local-lint argc=0 argv=" \
+    "the canonical --lint fallback did not invoke fm-lint with zero arguments: $out"
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "a canonical no-argument --lint offload forwards no arguments locally (remote fixture skipped)"; return
+  fi
+  fakebin=$(fake_pc02 "$dir")
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_LINT=1 "$SCRIPT" --lint 2>&1)
+  status=$?
+  expect_code 0 "$status" "the canonical no-argument --lint offload must run remotely: $out"
+  assert_contains "$out" "PC02 idle and ready; running lint remotely" "canonical --lint never went remote: $out"
+  [ "$(printf '%s\n' "$out" | grep -c '^lint CI=true argv=$')" = 1 ] \
+    || fail "the remote canonical lint did not receive exactly zero forwarded arguments: $out"
+  pass "a canonical no-argument --lint offload runs remotely with no forwarded arguments"
+}
+
+test_missing_perl_falls_back_to_local() {
+  local dir fakebin tools tool out status
+  if ! command -v rsync >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync"; return
+  fi
+  dir="$TMP_ROOT/missing-perl"
+  fakebin=$(fm_fakebin "$dir")
+  tools="$dir/pc02-tools"
+  mkdir -p "$tools"
+  for tool in git python3 jq node shellcheck actionlint ruby chromium; do
+    printf '#!/bin/sh\nexit 0\n' > "$tools/$tool"
+    chmod +x "$tools/$tool"
+  done
+  ln -s "$(command -v bash)" "$tools/bash"
+  cat > "$fakebin/ssh" <<SH
+#!/usr/bin/env bash
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    -o) shift 2 ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+shift
+case "\$*" in
+  *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;;
+  *fm-pc02-environment-parity-probe*) cmd=\${!#}; bash -c "\$cmd"; exit \$? ;;
+esac
+probe_out=\$(PATH="$tools" "\$BASH" -c "\$*" 2>&1)
+printf '%s\\n' "\${probe_out//resource:script-missing/resource:cpu=1 gpu=0}"
+exit 0
+SH
+  chmod +x "$fakebin/ssh"
+
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a PC02 without perl must still run the real suite locally: $out"
+  case "$out" in
+    *"PC02 missing required tool(s):"*perl*) : ;;
+    *) fail "a PC02 missing perl, which the canonical lint hard-requires, was admitted: $out" ;;
+  esac
+  pass "PC02 missing perl falls back to a local run instead of failing the remote lint"
+}
+
 test_help_prints_the_whole_documented_contract() {
   local out status
   out=$("$SCRIPT" --help 2>&1)
   status=$?
   expect_code 0 "$status" "--help must exit 0: $out"
   assert_contains "$out" "fm-pc02-test-offload.sh <fm-test-run.sh args...>" "--help omitted the usage line: $out"
+  assert_contains "$out" "fm-pc02-test-offload.sh --lint [fm-lint.sh args...]" "--help omitted the lint usage line: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_DISABLE=1" "--help omitted the disable override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_PERSONAL_USE_FLAG" "--help omitted the personal-use switch override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_CPU_BUSY_PCT" "--help omitted the CPU busy threshold: $out"
@@ -1513,6 +1694,11 @@ test_high_gpu_falls_back_to_local
 test_unclear_resource_check_falls_back_to_local
 test_unreadable_thread_count_falls_back_to_local
 test_pc02_if_idle_flag_forwards_through_fm_test_run
+test_missing_perl_falls_back_to_local
+test_lint_mode_falls_back_locally_with_forwarded_args
+test_canonical_lint_without_arguments_forwards_none
+test_remote_lint_forwards_partition_and_returns_exit_code
+test_relative_lint_telemetry_is_anchored_at_the_repo_root
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
 test_remote_invocation_inherits_fm_test_run_scheduler

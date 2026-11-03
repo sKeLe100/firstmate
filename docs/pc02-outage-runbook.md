@@ -147,21 +147,23 @@ ssh pc02 "systemctl --user start llama-swap"
 ssh pc02 "journalctl --user -u llama-swap --no-pager -n 50"
 ```
 
-## PC02 as a test host
+## PC02 as a test and lint host
 
 Besides serving models, PC02's stronger hardware can run this repo's own
-heavy `bin/fm-test-run.sh` suites (including the no-mistakes test step) when
-PC02 is not needed for anything else. `bin/fm-test-run.sh --pc02-if-idle`
-(see its own header) execs into `bin/fm-pc02-test-offload.sh`, which is the
-single owner of every readiness check and the sync/execution mechanics; read
-its header and `--help` for the exact contract rather than duplicating it
-here.
+heavy `bin/fm-test-run.sh` suites and canonical `bin/fm-lint.sh` lint
+(including the no-mistakes test and lint steps) when PC02 is not needed for
+anything else. The test command reaches `bin/fm-pc02-test-offload.sh`
+through `bin/fm-test-run.sh --pc02-if-idle` (see its own header), and the
+no-mistakes lint command passes `--lint` to the same script; that script is
+the single owner of every readiness check and the sync/execution mechanics
+for both, so read its header and `--help` for the exact contract rather than
+duplicating it here.
 
 **The captain's personal-use switch**: a Desktop shortcut on PC02 named
 "PC02 Personal Use Toggle" flips a flag with no terminal - one double-click
-turns it on (test offloading stays on PC01 only) or off (PC02 may pick up
-idle test runs again), with a brief popup confirming the new state. The same
-switch is reachable from PC01 with `bin/fm-pc02-personal-use.sh
+turns it on (offloading stays on PC01 only) or off (PC02 may pick up
+idle offloaded runs again), with a brief popup confirming the new state. The
+same switch is reachable from PC01 with `bin/fm-pc02-personal-use.sh
 on|off|status`. Besides that manual switch, every offload attempt also
 checks automatically whether PC02's llama-swap has any model loaded for a
 live session (its `/running` endpoint; a healthy llama-swap with nothing
