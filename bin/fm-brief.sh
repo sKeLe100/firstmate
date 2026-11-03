@@ -163,7 +163,8 @@
 # dir honoring FM_CONFIG_OVERRIDE), defaulting to 4 when the file or key is
 # absent or malformed, so briefs and bin/fm-retry-pressure.sh report one ceiling
 # (docs/configuration.md "Retry-loop thresholds"). The rule's 2-no-op and ~2h
-# ceilings are fixed.
+# ceilings are fixed. Run-identified automated reviews additionally use the
+# cumulative per-reviewer PR cap specified in the generated retry-loop rule.
 # Ship briefs whose repo argument names pt-tracker (matched on the normalized
 # basename, so owner/repo, path, and .git spellings all count) also carry the
 # pt-tracker tracker-entry law: the ROADMAP execution prompt and a CURRENT.md
@@ -1042,6 +1043,19 @@ $ASK_USER_BLOCK
 $SHARED_INFRA_RULE
 
 8. Retry-loop failsafe: track your own validation repetition instead of grinding.
+   Allow at most 3 assessed review rounds per automated reviewer per PR, counted across workers,
+   restarts, relaunches, and follow-ups; a new no-mistakes run id never resets that PR's count.
+   Before reviewing, recover that PR's cumulative counts from status/history; carry them into this
+   task's status when taking over work. Use a stable reviewer id (letters, digits, dot, underscore,
+   or hyphen). After each assessed round append a status line with
+   \`working [at=<epoch>]: review_rounds: <reviewer>=<n> run=<no-mistakes-run-id>\`,
+   where n is that reviewer's cumulative count for this PR, not a per-run increment.
+   If round 3 leaves unresolved findings, stop fixing and do not request another review cycle:
+   open or keep the PR and append \`needs-decision [at=<epoch>] [key=review-cap]: {PR URL and unresolved findings}\`.
+   Use the pipeline's supported gate flow to deliver it; if that flow cannot open a PR without
+   another review, report needs-decision with the unresolved findings and delivery blocker instead.
+   Never bypass a pipeline gate or claim the capped PR is green. Without a run id, fall back to
+   the general retry bands below.
    Record HEAD before every accepted no-mistakes fix action; if HEAD is unmoved and the worktree
    still clean afterward, that fix was a no-op. After 2 consecutive fix no-ops, after $ROUND_CEILING review
    rounds without the review step approving, or after roughly 2 hours cycling the same pipeline

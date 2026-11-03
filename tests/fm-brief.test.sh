@@ -2091,6 +2091,19 @@ test_ship_brief_carries_retry_loop_failsafe() {
 
   assert_grep "Retry-loop failsafe" "$brief" \
     "ship brief lost the retry-loop failsafe rule"
+  assert_grep "at most 3 assessed review rounds per automated reviewer per PR" "$brief" \
+    "ship brief lost the per-reviewer PR cap"
+  assert_grep "restarts, relaunches, and follow-ups" "$brief" \
+    "review cap must survive replacement workers and follow-ups"
+  assert_grep 'review_rounds: <reviewer>=<n> run=<no-mistakes-run-id>' "$brief" \
+    "review cap must report cumulative counts with a run id"
+  assert_grep "not a per-run increment" "$brief" "review counts must be cumulative"
+  assert_grep "stop fixing and do not request another review cycle" "$brief" \
+    "review cap must stop the fix/review loop"
+  assert_grep 'needs-decision [at=<epoch>] [key=review-cap]: {PR URL and unresolved findings}' "$brief" \
+    "review cap must deliver unresolved findings for a decision"
+  assert_grep "Without a run id, fall back" "$brief" \
+    "legacy reports must retain the general retry fallback"
   assert_grep "2 consecutive fix no-ops" "$brief" \
     "retry-loop rule lost its fix no-op ceiling"
   assert_grep "after 4 review" "$brief" \
@@ -2193,6 +2206,8 @@ test_ship_brief_round_ceiling_follows_configured_thresholds() {
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "after 6 review" "$brief" \
     "retry-loop rule must use the configured rounds ceiling"
+  assert_grep "at most 3 assessed review rounds per automated reviewer per PR" "$brief" \
+    "configured general threshold must not raise the per-reviewer cap"
   assert_grep "2 consecutive fix no-ops" "$brief" \
     "configured rounds must not disturb the fixed no-op ceiling"
 

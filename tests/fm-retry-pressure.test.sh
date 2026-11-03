@@ -33,6 +33,8 @@ test_fresh_home_reads_ok() {
   out=$(emit "$home" some-task) || fail "helper failed on a fresh home"
   [ "$(field "$out" retry_band)" = "ok" ] || fail "fresh home is not ok: $out"
   [ "$(field "$out" relaunches)" = "0" ] || fail "fresh home relaunches not 0: $out"
+  [ "$(field "$out" review_rounds)" = "none" ] || fail "fresh home has review evidence: $out"
+  [ "$(field "$out" review_cap_reached)" = "0" ] || fail "fresh home reached review cap: $out"
   pass "fm-retry-pressure.sh: zero evidence reads ok with zero counts"
 }
 test_fresh_home_reads_ok
@@ -185,6 +187,59 @@ test_config_override_is_honored_for_thresholds() {
   pass "fm-retry-pressure.sh: FM_CONFIG_OVERRIDE resolves the thresholds file like the config writer"
 }
 test_config_override_is_honored_for_thresholds
+
+test_review_counts_survive_runs_and_duplicate_reports() {
+  local home out t=reviews
+  home=$(mk_home reviews)
+  cat > "$home/state/$t.status" <<'EOF'
+working [at=1]: review_rounds: beta=1 run=nm-old
+working [at=2]: review_rounds: alpha=2 run=nm-old
+working [at=3]: review_rounds: alpha=2 run=nm-old
+done [at=4]: implementation ready
+working [at=5]: review_rounds: alpha=1 run=nm-new
+EOF
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" review_rounds)" = "alpha=2,beta=1" ] || fail "counts reset or duplicated: $out"
+  [ "$(field "$out" review_cap_reached)" = "0" ] || fail "distinct reviewers were summed: $out"
+  printf 'working: review_rounds: alpha=3 run=nm-new\nresolved [key=review-cap]: delivered\n' >> "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" review_rounds)" = "alpha=3,beta=1" ] || fail "cumulative count missing: $out"
+  [ "$(field "$out" review_cap_reached)" = "1" ] || fail "cap not flagged at 3: $out"
+  [ "$(field "$out" retry_band)" = "ok" ] || fail "review cap changed general band: $out"
+  printf 'working: review_rounds: beta=4 run=nm-followup\n' >> "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" review_cap_reached)" = "1" ] || fail "count above cap not flagged: $out"
+  pass "fm-retry-pressure.sh: cumulative per-reviewer counts survive runs, duplicates, and resolved reports"
+}
+test_review_counts_survive_runs_and_duplicate_reports
+
+test_review_reports_require_valid_count_and_run_id() {
+  local home out t=legacy-reviews
+  home=$(mk_home legacy-reviews)
+  cat > "$home/state/$t.status" <<'EOF'
+working: review_rounds: alpha=3
+working: review_rounds: alpha=3 run=
+working: review_rounds: alpha=-3 run=nm-one
+working: review_rounds: alpha=3oops run=nm-one
+working: review_rounds: alpha=03 run=nm-one
+working: review_rounds: alpha=3.5 run=nm-one
+EOF
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" review_rounds)" = "none" ] || fail "invalid report counted: $out"
+  [ "$(field "$out" review_cap_reached)" = "0" ] || fail "legacy evidence flagged cap: $out"
+  printf 'blocked [key=retry-loop]: legacy round ceiling reached\n' >> "$home/state/$t.status"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" retry_band)" = "loop" ] || fail "legacy fallback band lost: $out"
+  mkdir -p "$home/alt-state"
+  printf 'working: review_rounds: reviewer-1.v2=3 run=nm-carried\n' > "$home/alt-state/$t.status"
+  out=$(FM_STATE_OVERRIDE="$home/alt-state" emit "$home" "$t")
+  [ "$(field "$out" review_rounds)" = "reviewer-1.v2=3" ] || fail "override/carried counts lost: $out"
+  [ "$(field "$out" review_cap_reached)" = "1" ] || fail "carried cap lost: $out"
+  out=$(FM_STATE_OVERRIDE="$home/alt-state" emit "$home" unrelated-task)
+  [ "$(field "$out" review_rounds)" = "none" ] || fail "other task's counts leaked: $out"
+  pass "fm-retry-pressure.sh: missing run ids and malformed counts retain general bands; carried counts honor task and state override"
+}
+test_review_reports_require_valid_count_and_run_id
 
 test_retry_thresholds_is_inheritable_config() {
   # shellcheck source=/dev/null
