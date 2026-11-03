@@ -17,6 +17,7 @@ case "$*" in
     printf '%s\n' portable-parallel-1 portable-parallel-2 portable-parallel-9 portable-serial portable-serial-1of2 portable-serial-2of2 real-herdr-gated
     ;;
   '--changed --exclude-family real-herdr-gated --list')
+    [ "${SELECTION_RC:-0}" = 0 ] || exit "$SELECTION_RC"
     if [ "${ONLY_NON_HOSTED:-0}" = 1 ]; then
       printf '%s\n' tests/fm-devin-harness.test.sh tests/fm-calm-pi-extension.test.sh tests/fm-captain-hold-lifecycle.test.sh
     else
@@ -76,6 +77,7 @@ def receipt(k):
     scripts=['tests/other.test.sh'] if scenario=='wrong-scripts' else p['partitions'][k]
     return dict(version=1,sha='f'*40 if scenario=='wrong-head' else p['sha'],partition=k,scripts=scripts,exit=1 if scenario=='failure' and k=='portable-parallel-1' else 0)
 if args[:2]==['run','download']:
+    if scenario=='download-failure': sys.exit(1)
     out=pathlib.Path(args[args.index('--dir')+1]); keys=dispatched(); p=payload()
     for k in keys:
         if scenario=='missing' and k=='portable-parallel-1': continue
@@ -84,20 +86,28 @@ if args[:2]==['run','download']:
 assert args[0]=='api'
 a=args[1:]; method=a.pop(0) if a[0] in ('POST','GET') else 'GET'; path=a[0]
 if path.endswith('/cancel'):
+    if scenario in ('cancel-failure','github-timeout-cancel-failure'): sys.exit(1)
     (w/'cancelled').touch(); sys.exit(0)
 if path.endswith('/dispatches'):
     if scenario=='dispatch-ambiguous': sys.exit(1)
     if scenario=='quota': print('error: HTTP 403 billing unavailable'); sys.exit(1)
     (w/'request').write_text(pathlib.Path(a[a.index('--input')+1]).read_text()); sys.exit(0)
 if '/workflows/test-compute.yml/runs?' in path:
+    if scenario=='discovery-failure': sys.exit(1)
+    if scenario=='invalid-run-id': print('not-an-id\tqueued\t'); sys.exit(0)
+    if scenario=='undiscovered': sys.exit(0)
     print('123\tqueued\t'); sys.exit(0)
 if path.endswith('/actions/runs/123'):
+    if scenario=='observation-failure': sys.exit(1)
     if scenario.startswith('github-race-'):
         state='completed' if (w/'cancelled').exists() else 'queued'
         conclusion=scenario.removeprefix('github-race-') if state=='completed' else ''
         print(state+'\t'+conclusion); sys.exit(0)
-    if scenario=='queued' and any('.status' in arg for arg in args):
-        print('completed\tcancelled' if (w/'cancelled').exists() else 'queued\t')
+    if scenario in ('github-timeout','github-timeout-cancel-failure') and any('.status' in arg for arg in args):
+        print('completed\tcancelled' if (w/'cancelled').exists() else 'running\t')
+        sys.exit(0)
+    if scenario in ('queued','cancel-failure') and any('.status' in arg for arg in args):
+        print('queued\t' if scenario=='cancel-failure' or not (w/'cancelled').exists() else 'completed\tcancelled')
         sys.exit(0)
     if scenario=='queued' and not (w/'cancelled').exists(): print('queued\t')
     else: print('completed\t'+('failure' if scenario=='failure' else 'success'))
@@ -199,6 +209,17 @@ pass 'lane listing failure falls back before dispatch'
 
 rm -f "$TMP_ROOT/data/"*
 set +e
+output=$(SELECTION_RC=1 SCENARIO=success "$router" test --changed --exclude-family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'test selection cannot be listed; falling back to local admission' 'selection listing failure did not name its fallback reason'
+assert_contains "$output" 'local: <--changed> <--exclude-family> <real-herdr-gated>' 'selection listing failure did not reach local admission'
+[ ! -e "$TMP_ROOT/data/calls" ] || fail 'selection listing failure contacted hosted services'
+pass 'selection listing failure falls back before dispatch'
+
+rm -f "$TMP_ROOT/data/"*
+set +e
 output=$(ONLY_NON_HOSTED=1 SCENARIO=success "$router" test --changed --exclude-family real-herdr-gated 2>&1)
 result=$?
 set -e
@@ -283,6 +304,20 @@ for scenario in failure missing wrong-head wrong-scripts dispatch-ambiguous; do
   [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail "$scenario fell through to GitLab"
   pass "$scenario cannot become a green fallback"
 done
+run_route missing
+expect_code 1 "$result" "$output"
+assert_contains "$output" 'missing hosted partition receipts:' 'missing GitHub receipts did not name the missing partitions'
+run_route dispatch-ambiguous
+expect_code 1 "$result" "$output"
+assert_contains "$output" 'GitHub dispatch outcome is ambiguous; failing closed' 'ambiguous GitHub dispatch did not name its fail-closed reason'
+for scenario in download-failure discovery-failure observation-failure invalid-run-id undiscovered cancel-failure; do
+  run_route "$scenario"
+  expect_code 1 "$result" "$scenario must fail closed: $output"
+  [[ "$output" != *'local:'* ]] || fail "$scenario fell back locally"
+  assert_contains "$output" 'failing closed' "$scenario did not name its fail-closed reason"
+  [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail "$scenario fell through to GitLab"
+  pass "$scenario names its fail-closed reason"
+done
 run_route quota
 expect_code 0 "$result" "$output"
 assert_contains "$output" 'local:' 'definitive quota rejection should fall back'
@@ -300,6 +335,24 @@ expect_code 0 "$result" "$output"
 [ -e "$TMP_ROOT/data/cancelled" ] || fail 'queue fallback did not cancel owned GitHub run'
 assert_contains "$output" 'local:' 'cancelled queue should fall back'
 pass 'queue timeout requires confirmed cancellation before fallback'
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$(FM_TEST_COMPUTE_RUN_SECS=1 SCENARIO=github-timeout "$router" test --changed --exclude-family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 1 "$result" "$output"
+assert_contains "$output" 'GitHub run 123 exceeded 1s; failing closed' 'GitHub execution timeout did not name its fail-closed reason'
+[[ "$output" != *'local:'* ]] || fail 'GitHub execution timeout fell back locally'
+pass 'a GitHub execution timeout fails closed with a diagnostic'
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$(FM_TEST_COMPUTE_RUN_SECS=1 SCENARIO=github-timeout-cancel-failure "$router" test --changed --exclude-family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 1 "$result" "$output"
+assert_contains "$output" 'GitHub run 123 exceeded 1s and cancellation was not confirmed; failing closed' 'unconfirmed GitHub cancellation did not name its fail-closed reason'
+[[ "$output" != *'local:'* ]] || fail 'unconfirmed GitHub cancellation fell back locally'
+pass 'an unconfirmed GitHub cancellation after timeout fails closed with a diagnostic'
 run_route gitlab-queued
 expect_code 0 "$result" "$output"
 [ -e "$TMP_ROOT/data/cancelled" ] || fail 'GitLab queue fallback did not cancel the owned pipeline'
@@ -420,14 +473,52 @@ pass 'unknown commands are rejected before dependencies'
 lint_fixture="$TMP_ROOT/local-lint-repo"
 mkdir -p "$lint_fixture/bin"
 cp "$ROOT/bin/fm-pc02-test-offload.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$lint_fixture/bin/"
+cat > "$lint_fixture/bin/fm-lint.sh" <<'LINT'
+#!/usr/bin/env bash
+printf 'changed-file-lint argv=%s\n' "$*"
+exit "${LINT_RC:-0}"
+LINT
 cat > "$lint_fixture/bin/fm-test-compute.sh" <<'LINTWORKER'
 #!/usr/bin/env bash
-printf 'lint-worker: %s\n' "$*"
+printf 'canonical-lint %s\n' "$*"
+exit 0
 LINTWORKER
 chmod +x "$lint_fixture/bin/"*.sh
-output=$(FM_PC02_OFFLOAD_DISABLE=1 "$lint_fixture/bin/fm-pc02-test-offload.sh" --lint-partitions 2>&1)
-assert_contains "$output" 'lint-worker: local-lint' 'PC02 fallback did not consume lint mode'
+set +e
+output=$(FM_PC02_OFFLOAD_DISABLE=1 LINT_RC=9 "$lint_fixture/bin/fm-pc02-test-offload.sh" --lint-partitions 2>&1)
+status=$?
+set -e
+expect_code 9 "$status" "PC01 lint fallback must return the changed-file lint status: $output"
+assert_contains "$output" 'changed-file-lint argv=' 'PC01 lint fallback did not run bin/fm-lint.sh'
+[[ "$output" != *'argv=--partition'* ]] || fail 'PC01 lint fallback passed canonical partition arguments'
+[[ "$output" != *'canonical-lint'* ]] || fail 'PC01 lint fallback ran the canonical local-lint mode'
 output=$("$router" local-lint)
 for n in 1 2 3 4; do assert_contains "$output" "<${n}of4>" 'local canonical lint omitted a partition'; done
-pass 'PC02 lint fallback consumes its mode and executes every canonical partition'
+pass 'PC01 lint fallback runs changed-file lint while local-lint keeps canonical partitions'
+
+origin_original=$(git -C "$fixture" remote get-url origin)
+git -C "$fixture" remote set-url origin https://github.com/example/other.git
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$("$router" test --changed --exclude-family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'source is outside public Firstmate scope' 'outside-repository source did not name its local fallback reason'
+[ ! -e "$TMP_ROOT/data/calls" ] || fail 'outside-repository source contacted hosted services'
+pass 'repositories outside public Firstmate fall back locally before any hosted call'
+git -C "$fixture" remote set-url origin "$origin_original"
+
+rm -f "$TMP_ROOT/data/"*
+python3 -c 'import os,sys; sys.stdout.buffer.write(os.urandom(100000))' > "$fixture/tests/incompressible.bin"
+git -C "$fixture" add tests/incompressible.bin
+git -C "$fixture" -c user.name=Test -c user.email=test@example.invalid commit -qm 'add incompressible payload'
+set +e
+output=$("$router" test --changed --exclude-family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'snapshot exceeds dispatch input limit' 'oversized snapshot did not name its local fallback reason'
+[ ! -e "$TMP_ROOT/data/calls" ] || fail 'oversized snapshot contacted hosted services'
+pass 'oversized snapshots fall back locally before any hosted call'
 echo '# all test-compute tests passed' 

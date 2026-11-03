@@ -157,8 +157,8 @@ test runs to `bin/fm-test-compute.sh`, which tries hosted compute first and
 then the existing PC02/PC01 admission path in
 `bin/fm-pc02-test-offload.sh`; set `FM_TEST_COMPUTE_DISABLE=1` when a
 PC02-only/offline route is intended. The no-mistakes lint command reaches the
-same PC02/PC01 admission through `bin/fm-test-compute.sh lint`, which runs the
-canonical partitions locally when hosted tiers are unavailable.
+same PC02/PC01 admission through `bin/fm-test-compute.sh lint`; PC02 runs the
+canonical partitions, and PC01's last-resort lint runs the changed-file subset.
 `bin/fm-pc02-test-offload.sh` owns every readiness check and the
 sync/execution mechanics for both; read its header and `--help` for the exact
 contract rather than duplicating it here.

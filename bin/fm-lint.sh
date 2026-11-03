@@ -4,8 +4,8 @@
 # Runs its file set with ShellCheck's default severity, extended analysis,
 # ambient configuration disabled, and one exact ShellCheck version. CI selects
 # canonical partitions, and the no-mistakes Lint step reaches this owner
-# through bin/fm-test-compute.sh lint with the same four partitions, so both
-# use this owner without duplicating lint configuration.
+# through bin/fm-test-compute.sh lint on hosted compute or PC02, while PC01's
+# last-resort lint runs this owner's changed-file selection.
 # The explicit --fast mode is local-only and disables ShellCheck's extended
 # dataflow analysis while preserving ordinary shell lint checks and source
 # following. CI, main, and merge-base-less runs attempt --norc

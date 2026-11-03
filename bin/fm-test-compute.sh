@@ -16,8 +16,9 @@
 # no tests are omitted. The hosted subset is partitioned by the lanes reported
 # by fm-test-run.sh --list-lanes, only non-empty partitions are dispatched, and
 # an exact partition check gates dispatch. `test` dispatches portable test
-# partitions only; `lint` runs the four canonical lint partitions alone and
-# after hosted unavailability runs them locally.
+# partitions only; `lint` runs the four canonical lint partitions alone on
+# hosted compute or PC02, while PC01's last-resort lint is the changed-file
+# subset.
 #
 # GitHub Actions standard ubuntu-latest is tried first, then GitLab.com on a
 # dedicated project, only after `glab auth status` succeeds, then PC02/PC01.
@@ -67,8 +68,10 @@
 #   FM_TEST_COMPUTE_API_SECS    per API request bound (default 30)
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
-# Exit: 0 proven success; 1 failed/ambiguous hosted evidence; 2 usage error;
-# fallback returns the existing test runner's status unchanged.
+# Exit: 0 proven success; 1 failed GitHub evidence or a failed hosted receipt;
+# 2 usage error. Unavailable hosted tiers fall through to PC02/PC01 admission:
+# Test and remote lint return the executed command's status, while PC01's
+# last-resort lint returns bin/fm-lint.sh's changed-file status.
 set -u
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SELF_DIR/.." && pwd)
@@ -174,9 +177,6 @@ esac
 repo=${repo%.git}
 [[ "$repo" =~ ^[A-Za-z0-9_.-]+/firstmate$ ]] || local_run 'source is outside public Firstmate scope'
 api() { timeout "$API" gh-axi api "$@" --full; }
-metadata=$(api "/repos/$repo" --jq '[.private,.default_branch] | @tsv') || local_run 'source visibility unavailable'
-IFS=$'\t' read -r private default_branch <<< "$metadata"
-[ "$private" = false ] && [[ "$default_branch" =~ ^[A-Za-z0-9_./-]+$ ]] || local_run 'private or unverified source: hosted relay forbidden'
 base=$(git rev-parse --verify origin/main 2>/dev/null) || local_run 'origin/main unavailable'
 sha=$(git rev-parse HEAD) || exit 1
 git merge-base --is-ancestor "$base" "$sha" || local_run 'origin/main is not an ancestor of HEAD'
@@ -224,7 +224,7 @@ else
   : > "$work/source.bundle"
 fi
 if [ "$mode" = test ]; then
-  "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}" --list > "$work/selected" || exit 1
+  "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}" --list > "$work/selected" || local_run 'test selection cannot be listed'
   python3 - "$work" "${NOT_HOSTED_SCRIPTS[@]}" <<'PY' || local_run 'selection cannot be split without loss'
 import pathlib, sys
 w=pathlib.Path(sys.argv[1]); non_hosted=set(sys.argv[2:])
@@ -271,6 +271,9 @@ then local_run 'selection cannot be distributed without loss'; fi
 if [ "$mode" = test ] && ! python3 -c 'import json,sys; raise SystemExit(not json.load(open(sys.argv[1]))["partitions"])' "$work/payload.json"; then
   local_run 'test selection has no hosted-capable partitions'
 fi
+metadata=$(api "/repos/$repo" --jq '[.private,.default_branch] | @tsv') || local_run 'source visibility unavailable'
+IFS=$'\t' read -r private default_branch <<< "$metadata"
+[ "$private" = false ] && [[ "$default_branch" =~ ^[A-Za-z0-9_./-]+$ ]] || local_run 'private or unverified source: hosted relay forbidden'
 request_id=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
 python3 - "$work" "$default_branch" "$request_id" <<'PY'
 import json,pathlib,sys
@@ -296,6 +299,7 @@ if missing:
         jobs=json.load(open(sys.argv[3]))
         if not found and any(j.get('failure_reason')=='ci_quota_exceeded' and not j.get('started_at') for j in jobs):
             print('GitLab free compute quota unavailable before execution',file=sys.stderr); sys.exit(75)
+    print('missing hosted partition receipts: '+' '.join(sorted(missing)),file=sys.stderr)
     sys.exit(76)
 print('receipts: verified\nhead: '+sys.argv[2])
 PY
@@ -308,38 +312,52 @@ try_github() {
   if ! api POST "/repos/$repo/actions/workflows/test-compute.yml/dispatches" --input "$work/dispatch.json" > "$work/dispatch.out" 2>&1; then
     # A definitive HTTP rejection did not accept work; transport ambiguity did.
     if grep -Eq 'HTTP (401|402|403|404|422|429)|^code: (FORBIDDEN|NOT_FOUND|UNAUTHORIZED|UNPROCESSABLE_ENTITY|RATE_LIMITED)$' "$work/dispatch.out"; then return 75; fi
+    echo 'fm-test-compute: GitHub dispatch outcome is ambiguous; failing closed' >&2
     return 1
   fi
   local start now state conclusion row
   start=$(date +%s)
   while :; do
-    row=$(api "/repos/$repo/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100" --jq ".workflow_runs[] | select(.display_title == \"fm-test-compute-$request_id\") | [.id,.status,.conclusion] | @tsv") || return 1
+    row=$(api "/repos/$repo/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100" --jq ".workflow_runs[] | select(.display_title == \"fm-test-compute-$request_id\") | [.id,.status,.conclusion] | @tsv") || { echo 'fm-test-compute: GitHub run discovery request failed; failing closed' >&2; return 1; }
     if [ -n "$row" ]; then
       IFS=$'\t' read -r run_id state conclusion <<< "$row"
-      [[ "$run_id" =~ ^[0-9]+$ ]] || return 1
+      [[ "$run_id" =~ ^[0-9]+$ ]] || { echo 'fm-test-compute: GitHub returned an invalid run id; failing closed' >&2; return 1; }
       echo "fm-test-compute: https://github.com/$repo/actions/runs/$run_id ($state)" >&2
       break
     fi
     now=$(date +%s)
     # Accepted but undiscovered dispatch cannot safely be duplicated.
-    [ "$((now-start))" -lt "$QUEUE" ] || return 1
+    if [ "$((now-start))" -ge "$QUEUE" ]; then
+      echo "fm-test-compute: GitHub dispatch was accepted but no run appeared within ${QUEUE}s; failing closed" >&2
+      return 1
+    fi
     sleep "$POLL"
   done
   start=$(date +%s)
   while :; do
-    row=$(api "/repos/$repo/actions/runs/$run_id" --jq '[.status,.conclusion] | @tsv') || return 1
+    row=$(api "/repos/$repo/actions/runs/$run_id" --jq '[.status,.conclusion] | @tsv') || { echo "fm-test-compute: GitHub run observation failed for run $run_id; failing closed" >&2; return 1; }
     IFS=$'\t' read -r state conclusion <<< "$row"
     [ "$state" != completed ] || break
     now=$(date +%s)
     case "$state" in queued|waiting|requested|pending)
-      if [ "$((now-start))" -ge "$QUEUE" ]; then cancel || return 1; finished=1; return 75; fi ;;
+      if [ "$((now-start))" -ge "$QUEUE" ]; then
+        cancel || { echo "fm-test-compute: GitHub run $run_id cancellation was not confirmed; failing closed" >&2; return 1; }
+        finished=1; return 75
+      fi ;;
     esac
-    [ "$((now-start))" -lt "$RUN" ] || { cancel || true; return 1; }
+    if [ "$((now-start))" -ge "$RUN" ]; then
+      if cancel; then
+        echo "fm-test-compute: GitHub run $run_id exceeded ${RUN}s; failing closed" >&2
+      else
+        echo "fm-test-compute: GitHub run $run_id exceeded ${RUN}s and cancellation was not confirmed; failing closed" >&2
+      fi
+      return 1
+    fi
     sleep "$POLL"
   done
   finished=1
   case "$conclusion" in startup_failure|action_required) return 75 ;; esac
-  timeout "$API" gh-axi run download "$run_id" -R "$repo" --dir "$work/results" > /dev/null || return 1
+  timeout "$API" gh-axi run download "$run_id" -R "$repo" --dir "$work/results" > /dev/null || { echo "fm-test-compute: GitHub evidence download failed for run $run_id; failing closed" >&2; return 1; }
   verify_results || return 1
   [ "$conclusion" = success ]
 }

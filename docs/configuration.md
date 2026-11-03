@@ -733,7 +733,7 @@ The flag is a home-local supervision-noise preference and is not inherited by se
 
 ## Gate defaults (.no-mistakes.yaml)
 
-The tracked [`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo: true` and routes the canonical [shell/workflow lint](../bin/fm-lint.sh) through hosted compute with PC02/PC01 fallback, followed by the [Pi production-consumer typecheck](../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
+The tracked [`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo: true` and routes the canonical [shell/workflow lint](../bin/fm-lint.sh) through hosted compute, then PC02, with PC01's changed-file lint as the last resort, followed by the [Pi production-consumer typecheck](../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
 Storing evidence in the repo publishes each run's test artifacts to the orphan `no-mistakes/evidence` branch and links them from the PR body, instead of keeping them on local disk under the no-mistakes home.
 
 That branch shares no history with code branches, so evidence never enters a pushed feature branch or the default branch; the worktree's `.no-mistakes/` stays local and CI rejects tracked entries under that path.
@@ -766,7 +766,7 @@ Their assertions stay in the unchanged selection, so local admission still runs 
 A failure in that local subset fails the routed run even when the hosted subset succeeded.
 Their limits are pre-existing host dependencies rather than router behavior, and `tests/fm-test-compute.test.sh` pins that exclusion and the local completion path.
 The configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to run all four canonical lint partitions through the same hosted-first tier order; Test dispatches only portable test partitions.
-When hosted tiers are unavailable, canonical lint uses the existing PC02/PC01 admission path.
+When hosted tiers are unavailable, canonical lint still uses PC02 admission; only PC01's last-resort lint runs `bin/fm-lint.sh` with its changed-file selection.
 The Pi typecheck remains a separate blocking command after routed lint succeeds.
 Required PR CI and its existing check contexts remain unchanged.
 
@@ -824,7 +824,7 @@ An invalid or unreadable configuration, or an unavailable home state directory, 
 
 [`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
 Up to `FM_PC02_OFFLOAD_SLOTS` test suites or lint runs (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. The value must be an integer from 1 to 16; any other value is a configuration error that exits 2 without running the selected command.
-The no-mistakes Lint step reaches the same path through `bin/fm-test-compute.sh lint`; when hosted tiers are unavailable it runs all four canonical partitions serially via `bin/fm-pc02-test-offload.sh --lint-partitions` on PC02 under those identical slot and admission rules and falls back to PC01.
+The no-mistakes Lint step reaches the same path through `bin/fm-test-compute.sh lint`; when hosted tiers are unavailable it runs all four canonical partitions serially via `bin/fm-pc02-test-offload.sh --lint-partitions` on PC02 under those identical slot and admission rules, and PC01's last-resort lint runs `bin/fm-lint.sh` with its changed-file selection.
 The host slots coordinate test and lint offloads using this protocol; direct test or lint invocations on PC02 must be scheduled separately.
 An explicit caller `--jobs` and the default auto-scheduler ceiling are each reduced to at most `floor(PC02 nproc / slots)` workers per slot, so the slots together stay within PC02's thread count; an explicit `FM_PC02_OFFLOAD_JOBS` override is honored verbatim and may oversubscribe by choice, and an unreadable thread count keeps the run local. The script header owns the cap arithmetic and admission detail.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.

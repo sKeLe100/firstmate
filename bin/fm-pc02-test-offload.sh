@@ -141,8 +141,10 @@
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
 #   fm-pc02-test-offload.sh --lint-partitions
-# The lint mode runs all four canonical partitions serially under the same
+# The lint mode routes all four canonical partitions to PC02 under the same
 # admission lock and whole-run timeout, with no test-runner-only arguments.
+# When PC02 cannot be used, PC01's last-resort lint runs bin/fm-lint.sh with
+# that checkout's changed-file selection instead of the canonical partitions.
 #
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
@@ -212,9 +214,10 @@
 #                                      at/above which PC02 reads busy
 #                                      (default: 5; idle measures 0)
 #
-# Exit status: the exact exit code fm-test-run.sh or fm-lint.sh produced,
-# wherever it ran, or 124 if the remote run itself exceeded
-# FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
+# Exit status: the status of the command that actually ran: fm-test-run.sh for
+# tests, the aggregate of all four canonical lint partitions on PC02, and
+# bin/fm-lint.sh's changed-file lint on PC01; or 124 if the remote run itself
+# exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
 # FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16), which runs nothing at
 # all.
 # A readiness check that fails (PC02 personally in use, occupied, unreachable,
@@ -322,7 +325,7 @@ run_local() {  # <reason>
   echo "fm-pc02-test-offload: $1; running on PC01" >&2
   remove_remote_run
   release_claim
-  if [ "$LINT_PARTITIONS" = 1 ]; then exec "$SELF_DIR/fm-test-compute.sh" local-lint; fi
+  if [ "$LINT_PARTITIONS" = 1 ]; then exec "$SELF_DIR/fm-lint.sh"; fi
   exec "$SELF_DIR/fm-test-run.sh" ${ARGS[@]+"${ARGS[@]}"}
 }
 

@@ -629,6 +629,31 @@ test_remote_lint_runs_local_lint_and_propagates_exit() {
   pass "remote lint mode invokes local-lint and returns its exit code"
 }
 
+test_lint_local_fallback_runs_changed_file_lint() {
+  local dir out status
+  dir="$TMP_ROOT/lint-local-fallback"
+  mkdir -p "$dir/bin"
+  cp "$ROOT/bin/fm-pc02-test-offload.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/"
+  cat > "$dir/bin/fm-lint.sh" <<'LINT'
+#!/usr/bin/env bash
+printf 'changed-file-lint argv=%s\n' "$*"
+exit "${LINT_RC:-0}"
+LINT
+  cat > "$dir/bin/fm-test-compute.sh" <<'COMPUTE'
+#!/usr/bin/env bash
+printf 'canonical-lint %s\n' "$*"
+exit 0
+COMPUTE
+  chmod +x "$dir/bin/"*.sh
+  out=$(FM_PC02_OFFLOAD_DISABLE=1 LINT_RC=9 "$dir/bin/fm-pc02-test-offload.sh" --lint-partitions 2>&1)
+  status=$?
+  expect_code 9 "$status" "PC01 lint fallback must return bin/fm-lint.sh's status: $out"
+  assert_contains "$out" "changed-file-lint argv=" "PC01 lint fallback did not run bin/fm-lint.sh without arguments: $out"
+  [[ "$out" != *'argv=--partition'* ]] || fail "PC01 lint fallback passed canonical partition arguments: $out"
+  [[ "$out" != *'canonical-lint'* ]] || fail "PC01 lint fallback ran the canonical local-lint mode: $out"
+  pass "PC01 lint fallback runs the changed-file lint instead of canonical partitions"
+}
+
 test_remote_invocation_inherits_fm_test_run_scheduler() {
   local dir fakebin out status
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
@@ -1551,6 +1576,8 @@ test_help_prints_the_whole_documented_contract() {
   expect_code 0 "$status" "--help must exit 0: $out"
   assert_contains "$out" "fm-pc02-test-offload.sh <fm-test-run.sh args...>" "--help omitted the usage line: $out"
   assert_contains "$out" "fm-pc02-test-offload.sh --lint-partitions" "--help omitted the lint usage line: $out"
+  assert_contains "$out" "changed-file selection" "--help omitted the PC01 changed-file lint fallback: $out"
+  assert_contains "$out" "bin/fm-lint.sh's changed-file lint on PC01" "--help omitted the PC01 changed-file lint exit contract: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_DISABLE=1" "--help omitted the disable override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_PERSONAL_USE_FLAG" "--help omitted the personal-use switch override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_CPU_BUSY_PCT" "--help omitted the CPU busy threshold: $out"
@@ -1598,6 +1625,7 @@ test_missing_perl_falls_back_to_local
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
 test_remote_lint_runs_local_lint_and_propagates_exit
+test_lint_local_fallback_runs_changed_file_lint
 test_remote_invocation_inherits_fm_test_run_scheduler
 test_remote_run_uses_7200_second_default_timeout
 test_remote_jobs_and_script_bound
