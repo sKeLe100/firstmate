@@ -1563,6 +1563,9 @@ SH
 
 test_missing_perl_falls_back_to_local() {
   local dir fakebin tools tool out status
+  if ! command -v rsync >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync"; return
+  fi
   dir="$TMP_ROOT/missing-perl"
   fakebin=$(fm_fakebin "$dir")
   tools="$dir/pc02-tools"
