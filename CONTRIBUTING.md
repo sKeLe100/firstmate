@@ -71,7 +71,7 @@ Coordinate any workflow rollback with its required-check names so a retired chec
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
   `bin/fm-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, pinned shellcheck version, pinned actionlint workflow lint, the backend-purity check rejecting direct Beads CLI calls in core `bin/` scripts, the `tests/*.test.sh` size guard, and the `.no-mistakes.yaml` per-branch test-command guard).
-  CI uses its full canonical partitions; the no-mistakes pre-push gate reaches the same owner through `bin/fm-pc02-test-offload.sh --lint`, whose header owns the remote and local-fallback selection modes.
+  CI and the no-mistakes pre-push gate both run the full canonical partitions.
   `docs/fm-test-portable-shards.md` owns partition verification and performance evidence.
   Its header and `--help` output own the exact local lint modes, file-set selection, and analysis flags.
   A malformed `.github/workflows/*.yml`, including a self-broken `ci.yml`, fails that local lint path before merge because a broken workflow cannot report its own breakage.

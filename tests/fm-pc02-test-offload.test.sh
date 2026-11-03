@@ -623,7 +623,7 @@ test_remote_lint_runs_local_lint_and_propagates_exit() {
     FM_FAKE_CAPTURE_COMPUTE_EXIT=7 "$SCRIPT" --lint-partitions 2>&1)
   status=$?
   expect_code 7 "$status" "remote lint must return its own exit code unchanged: $out"
-  assert_contains "$out" "PC02 idle and ready; running tests remotely" "the lint run never went remote: $out"
+  assert_contains "$out" "PC02 idle and ready; running lint remotely" "the lint run never went remote: $out"
   assert_contains "$out" "compute_argv=local-lint" "remote lint did not invoke the local-lint mode: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "remote lint left a mirror behind: $out"
   pass "remote lint mode invokes local-lint and returns its exit code"

@@ -3,19 +3,18 @@
 #
 # Runs its file set with ShellCheck's default severity, extended analysis,
 # ambient configuration disabled, and one exact ShellCheck version. CI selects
-# canonical partitions; the no-mistakes pre-push gate reaches this owner
-# through bin/fm-pc02-test-offload.sh --lint, whose header owns whether the
-# remote CI selection or this checkout's context-selected default applies, so
-# both use this owner without duplicating lint configuration.
+# canonical partitions, and the no-mistakes Lint step reaches this owner
+# through bin/fm-test-compute.sh lint with the same four partitions, so both
+# use this owner without duplicating lint configuration.
 # The explicit --fast mode is local-only and disables ShellCheck's extended
 # dataflow analysis while preserving ordinary shell lint checks and source
 # following. CI, main, and merge-base-less runs attempt --norc
 # --external-sources with full dataflow for each canonical root. An ordinary
-# local branch (changed-file mode, including the no-mistakes lint step's local
-# fallback) drops --external-sources, keeps dataflow, and excludes SC1091,
-# SC2034, SC2153, and SC2329, the codes that need library context. CI checks
-# those codes on source-following attempts (see the memory fallback below).
-# Explicit paths attempt --external-sources with the selected dataflow mode.
+# local branch in changed-file mode drops --external-sources, keeps dataflow,
+# and excludes SC1091, SC2034, SC2153, and SC2329, the codes that need library
+# context. CI checks those codes on source-following attempts (see the memory
+# fallback below). Explicit paths attempt --external-sources with the selected
+# dataflow mode.
 # Tests stop source analysis at imported production modules because CI analyzes
 # every production shell separately as a canonical, source-aware root.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a

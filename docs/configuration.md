@@ -764,9 +764,10 @@ The plan derives the dispatchable partitions from `bin/fm-test-run.sh --list-lan
 Three scripts are deliberately not hosted-capable and run through the existing PC02/PC01 admission path after the hosted subset succeeds: `tests/fm-devin-harness.test.sh` (jq/config-writer), `tests/fm-calm-pi-extension.test.sh` (ANSI yellow), and `tests/fm-captain-hold-lifecycle.test.sh` (request retirement).
 Their assertions stay in the unchanged selection, so local admission still runs them and coverage does not narrow; only their execution tier changes.
 A failure in that local subset fails the routed run even when the hosted subset succeeded.
-Those limits reproduce on clean `origin/main` in GitLab pipeline [3019354283](https://gitlab.com/sean.morden1993/firstmate-ci/-/pipelines/3019354283).
-GitLab free-tier compute minutes were exhausted during that validation; the router then used the local tier as designed.
-The configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to run all four canonical lint partitions through the same hosted-first tier order; Test dispatches only portable test partitions. When hosted tiers are unavailable, canonical lint uses the existing PC02/PC01 admission path. The Pi typecheck remains a separate blocking command after routed lint succeeds.
+Their limits are pre-existing host dependencies rather than router behavior, and `tests/fm-test-compute.test.sh` pins that exclusion and the local completion path.
+The configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to run all four canonical lint partitions through the same hosted-first tier order; Test dispatches only portable test partitions.
+When hosted tiers are unavailable, canonical lint uses the existing PC02/PC01 admission path.
+The Pi typecheck remains a separate blocking command after routed lint succeeds.
 Required PR CI and its existing check contexts remain unchanged.
 
 A failing test or lint receipt fails the caller and never triggers a second run on another tier.
@@ -823,8 +824,7 @@ An invalid or unreadable configuration, or an unavailable home state directory, 
 
 [`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
 Up to `FM_PC02_OFFLOAD_SLOTS` test suites or lint runs (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. The value must be an integer from 1 to 16; any other value is a configuration error that exits 2 without running the selected command.
-The no-mistakes Lint step reaches the same path with `--lint`, which runs the canonical `bin/fm-lint.sh` invocation (including a requested `--partition KofN`) on PC02 under those identical slot and admission rules and falls back to PC01.
-A lint `--telemetry` request (or `FM_LINT_TELEMETRY`) is written inside the PC02 mirror, and both that snapshot and its `.roots.tsv` sidecar are copied back to the caller's paths, so `bin/fm-lint-budget.sh` and artifact uploads read them locally; the script header owns how a relative path resolves.
+The no-mistakes Lint step reaches the same path through `bin/fm-test-compute.sh lint`; when hosted tiers are unavailable it runs all four canonical partitions serially via `bin/fm-pc02-test-offload.sh --lint-partitions` on PC02 under those identical slot and admission rules and falls back to PC01.
 The host slots coordinate test and lint offloads using this protocol; direct test or lint invocations on PC02 must be scheduled separately.
 An explicit caller `--jobs` and the default auto-scheduler ceiling are each reduced to at most `floor(PC02 nproc / slots)` workers per slot, so the slots together stay within PC02's thread count; an explicit `FM_PC02_OFFLOAD_JOBS` override is honored verbatim and may oversubscribe by choice, and an unreadable thread count keeps the run local. The script header owns the cap arithmetic and admission detail.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
