@@ -753,16 +753,19 @@ cap_outcome_line() {  # <line> <max-bytes>
 # Print the STALLED WAITS section: one line per ship that has waited past
 # FM_STALLED_WAIT_SECS on firstmate with nothing on OPEN DECISIONS, judged by
 # fm-classify-lib.sh's stalled_wait_line from bin/fm-crew-state.sh's line for each
-# ship. Every ship's read starts together and each is bounded by its own timeout
-# (FM_STALLED_WAITS_TIMEOUT, default 20 seconds), the same fan-out the fleet
-# snapshot's prefetch uses, so the section costs one read window rather than one
-# per ship. A failed or timed-out read prints nothing for that ship and never
+# ship. Reads start in batches of FM_SNAPSHOT_LOCAL_READ_CONCURRENCY (default 8),
+# the same bound the fleet snapshot's prefetch applies, so a large fleet never
+# points an unbounded number of no-mistakes clients at the daemon at once. Each
+# read is bounded by its own timeout (FM_STALLED_WAITS_TIMEOUT, default 20
+# seconds). A failed or timed-out read prints nothing for that ship and never
 # changes the drain's exit status. Also prints the process census line when this
 # host's load5 is above 8. FM_LOADAVG_FILE lets tests stand in for /proc/loadavg.
 print_stalled_waits_section() {
   local now tmp f id ids='' out='' verdict line bound=${FM_STALLED_WAITS_TIMEOUT:-20}
+  local limit=${FM_SNAPSHOT_LOCAL_READ_CONCURRENCY:-8} active=0
   local -a pids=()
   case "$bound" in ''|*[!0-9]*|0) bound=20 ;; esac
+  case "$limit" in ''|*[!0-9]*|0) limit=8 ;; esac
   now=$(date +%s)
   tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/fm-stalled-waits.XXXXXX") || return 0
   for f in "$STATE"/*.status; do
@@ -772,6 +775,12 @@ print_stalled_waits_section() {
     ids="$ids $id"
     ( fm_run_timed "$bound" env FM_STATE_OVERRIDE="$STATE" "$FM_CREW_STATE_BIN" "$id" > "$tmp/$id" 2>/dev/null ) &
     pids+=("$!")
+    active=$((active + 1))
+    if [ "$active" -ge "$limit" ]; then
+      wait "${pids[@]}"
+      pids=()
+      active=0
+    fi
   done
   [ "${#pids[@]}" -eq 0 ] || wait "${pids[@]}"
   for id in $ids; do
@@ -795,7 +804,9 @@ print_stalled_waits_section() {
 # Print one PROCESS CENSUS line when the host's load5 is above 8: the top CPU
 # consumers sampled from ps, grouped by the task worktree each process runs in
 # (from every task's recorded worktree=), with unmatched processes counted as
-# other. Prints nothing when load is at or below 8 or the load cannot be read.
+# other. Prints nothing when load is at or below 8 or the load cannot be read,
+# and one unavailability line where /proc is absent, since process worktrees
+# cannot be resolved without it.
 print_process_census() {
   local load5 map groups f line
   if [ -n "${FM_LOADAVG_FILE:-}" ]; then
@@ -807,6 +818,10 @@ print_process_census() {
   fi
   case "$load5" in ''|*[!0-9.]*) return 0 ;; esac
   awk -v l="$load5" 'BEGIN { exit !(l + 0 > 8) }' || return 0
+  if [ ! -d /proc ]; then
+    printf 'PROCESS CENSUS (load5 %s above 8 on this host): census unavailable on this platform\n' "$load5"
+    return 0
+  fi
   map=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-census-map.XXXXXX") || return 0
   for f in "$STATE"/*.meta; do
     [ -f "$f" ] || continue

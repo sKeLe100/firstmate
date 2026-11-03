@@ -2576,13 +2576,14 @@ crew_is_paused() {  # <id>
 # The one spelling of the verdict component that says a parked gate's answer is
 # owed by a HUMAN. bin/fm-crew-state.sh mints it (nm_gate_awaits_human_decision
 # owns the derivation: the findings table's `action` column, read by position);
-# crew_gate_awaits_human_decision below is its only consumer.
+# crew_gate_awaits_human_decision and stalled_wait_line below are its consumers.
 FM_GATE_HUMAN_DECISION='ask-user: authority decision'
 
 # The one spelling of the verdict component that says how long a parked gate has
 # waited on the crewmate: `gate awaiting agent for <duration>`, minted by
 # bin/fm-crew-state.sh from the pipeline's `awaiting_agent: parked <duration>`
-# line. stalled_wait_line below is its only consumer.
+# line. stalled_wait_line below is its only consumer, and it pairs that age with
+# FM_GATE_HUMAN_DECISION above to name the gate's real clearing owner.
 FM_GATE_AWAITING_AGENT_PREFIX='gate awaiting agent for '
 
 # 0 if crew <id>'s authoritative current state is a no-mistakes gate whose answer
@@ -2631,8 +2632,9 @@ crew_gate_awaits_human_decision() {  # <id> -> <run-id> on stdout
 #
 # A ship can wait on firstmate for hours while nothing reaches OPEN DECISIONS.
 # Two shapes qualify, and stalled_wait_line below is the one owner of that rule:
-#   - its no-mistakes gate has been parked on the crewmate for at least
-#     FM_STALLED_WAIT_SECS, with no needs-decision open on the ship; and
+#   - its no-mistakes gate has been parked for at least FM_STALLED_WAIT_SECS
+#     with no needs-decision open on the ship, on the crewmate or, when the
+#     gate carries FM_GATE_HUMAN_DECISION, on firstmate's ask-user decision; and
 #   - its authoritative state is paused, and its current declared wait is a
 #     paused: line that names a go or decision from firstmate
 #     (status_pause_awaits_firstmate) and has waited that long by its own
@@ -2642,11 +2644,18 @@ crew_gate_awaits_human_decision() {  # <id> -> <run-id> on stdout
 FM_STALLED_WAIT_SECS=3600
 
 # Whole seconds for a Go-style duration, as no-mistakes prints a parked gate's
-# age (`25m57s`, `1h2m0s`, `40.5s`), or nothing when the text is not one.
+# age (`25m57s`, `1h2m0s`, `2d14h`, `40.5s`), or nothing when the text is not
+# one. Every component is read base 10: the pipeline zero-pads them (`1h08m0s`),
+# and shell arithmetic would otherwise read a leading 0 as octal.
 _fm_go_duration_seconds() {  # <duration> -> whole seconds on stdout
-  local d=$1 re='^(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)(\.[0-9]+)?s)?$'
+  local d=$1 re='^(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)(\.[0-9]+)?s)?$'
+  local days hours mins secs
   [ -n "$d" ] && [[ $d =~ $re ]] || return 1
-  printf '%s\n' $(( ${BASH_REMATCH[2]:-0} * 3600 + ${BASH_REMATCH[4]:-0} * 60 + ${BASH_REMATCH[6]:-0} ))
+  days=${BASH_REMATCH[2]:-0}
+  hours=${BASH_REMATCH[4]:-0}
+  mins=${BASH_REMATCH[6]:-0}
+  secs=${BASH_REMATCH[8]:-0}
+  printf '%s\n' $(( 10#$days * 86400 + 10#$hours * 3600 + 10#$mins * 60 + 10#$secs ))
 }
 
 # A stall age as a compact human span: 4d03h, 1h05m, or 12m.
@@ -2704,7 +2713,7 @@ _fm_status_has_open_needs_decision() {  # <status-file>
 # run-step gate and a paused state are read, and the crew's own state line
 # decides which shape applies, so a stale declared wait cannot outvote a live run.
 stalled_wait_line() {  # <id> <state-line> <status-file> <now>
-  local id=$1 line=$2 f=$3 now=$4 state src rest part gate='' awaiting='' secs pause stall_epoch
+  local id=$1 line=$2 f=$3 now=$4 state src rest part gate='' awaiting='' human='' secs pause stall_epoch
   case "$line" in state:*) ;; *) return 0 ;; esac
   state=${line#state: }; state=${state%% *}
   src=${line#*source: }; src=${src%% *}
@@ -2715,13 +2724,19 @@ stalled_wait_line() {  # <id> <state-line> <status-file> <now>
     case "$part" in
       "parked at "?*) gate=$part ;;
       "$FM_GATE_AWAITING_AGENT_PREFIX"?*) awaiting=${part#"$FM_GATE_AWAITING_AGENT_PREFIX"} ;;
+      "$FM_GATE_HUMAN_DECISION") human=1 ;;
     esac
   done
   if [ "$state" = parked ] && [ "$src" = run-step ] && [ -n "$awaiting" ]; then
     secs=$(_fm_go_duration_seconds "$awaiting") || secs=
     if [ -n "$secs" ] && [ "$secs" -ge "$FM_STALLED_WAIT_SECS" ] && ! _fm_status_has_open_needs_decision "$f"; then
-      printf '%s: %s has waited %s on the crewmate with no needs-decision open\n' \
-        "$id" "${gate:-gate parked}" "$(_fm_stall_age_text "$secs")"
+      if [ -n "$human" ]; then
+        printf '%s: %s has waited %s on firstmate (%s) with no needs-decision open\n' \
+          "$id" "${gate:-gate parked}" "$(_fm_stall_age_text "$secs")" "$FM_GATE_HUMAN_DECISION"
+      else
+        printf '%s: %s has waited %s on the crewmate with no needs-decision open\n' \
+          "$id" "${gate:-gate parked}" "$(_fm_stall_age_text "$secs")"
+      fi
       return 0
     fi
   fi

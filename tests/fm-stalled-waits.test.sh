@@ -46,15 +46,17 @@ add_task() {  # <case-dir> <task> <kind> <canned-verdict> <status-line>...
 }
 
 # Run the real drain over the case, with the stub standing in for crew-state and
-# a fake /proc/loadavg whose load5 is the second argument. Prints the output path.
-run_drain_case() {  # <case-dir> <load5>
+# a fake /proc/loadavg whose load5 is the second argument. Any further arguments
+# are extra VAR=value overrides for the drain. Prints the output path.
+run_drain_case() {  # <case-dir> <load5> [VAR=value...]
   local dir=$1 load=$2 out="$1/drain.out"
+  shift 2
   printf '0.10 %s 0.10 1/100 1234\n' "$load" > "$dir/loadavg"
   FM_STUB_CANNED="$dir/canned" \
     FM_CREW_STATE_BIN="$dir/fakebin/crew-state" \
     FM_LOADAVG_FILE="$dir/loadavg" \
     FM_STATE_OVERRIDE="$dir/state" \
-    "$DRAIN" > "$out" 2>"$dir/drain.err" || fail "drain failed: $(cat "$dir/drain.err")"
+    env "$@" "$DRAIN" > "$out" 2>"$dir/drain.err" || fail "drain failed: $(cat "$dir/drain.err")"
   printf '%s' "$out"
 }
 
@@ -72,6 +74,59 @@ test_gate_awaiting_agent_past_an_hour_is_flagged() {
   grep -F 'gate-stall: parked at test: 1 finding(s) has waited 1h05m on the crewmate with no needs-decision open' "$out" >/dev/null \
     || fail "the stalled gate line did not name the task, gate, age, and missing decision: $(cat "$out")"
   pass "a no-mistakes gate awaiting the crewmate past an hour with no needs-decision open is flagged with its age"
+}
+
+test_gate_awaiting_agent_for_days_is_flagged() {
+  local dir out
+  dir=$(make_case gate-days)
+  write_crew_state_stub "$dir"
+  add_task "$dir" gate-days ship \
+    'state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 2d14h · run: 01RUN' \
+    "working [at=$((NOW - 4000))]: validating"
+
+  out=$(run_drain_case "$dir" 0.50)
+
+  grep -F 'gate-days: parked at test: 1 finding(s) has waited 2d14h on the crewmate with no needs-decision open' "$out" >/dev/null \
+    || fail "a gate parked 2d14h printed no stalled-wait line with its day-span age: $(cat "$out")"
+  pass "a multi-day gate duration as the pipeline prints it (2d14h) is aged and flagged"
+}
+
+test_zero_padded_gate_duration_is_flagged() {
+  local dir out
+  dir=$(make_case gate-padded)
+  write_crew_state_stub "$dir"
+  add_task "$dir" gate-padded-mins ship \
+    'state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 1h08m0s · run: 01RUN' \
+    "working [at=$((NOW - 4000))]: validating"
+  add_task "$dir" gate-padded-hours ship \
+    'state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 08h09m3s · run: 01RUN' \
+    "working [at=$((NOW - 4000))]: validating"
+
+  out=$(run_drain_case "$dir" 0.50)
+
+  grep -F 'gate-padded-mins: parked at test: 1 finding(s) has waited 1h08m on the crewmate with no needs-decision open' "$out" >/dev/null \
+    || fail "a gate parked 1h08m0s was not aged as 1h08m: $(cat "$out")"
+  grep -F 'gate-padded-hours: parked at test: 1 finding(s) has waited 8h09m on the crewmate with no needs-decision open' "$out" >/dev/null \
+    || fail "a gate parked 08h09m3s was not aged as 8h09m: $(cat "$out")"
+  pass "zero-padded pipeline durations (1h08m0s, 08h09m3s) are read as decimal, not octal"
+}
+
+test_human_owed_gate_names_firstmate_not_the_crewmate() {
+  local dir out
+  dir=$(make_case gate-ask-user)
+  write_crew_state_stub "$dir"
+  add_task "$dir" gate-ask-user ship \
+    'state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 2d14h · ask-user: authority decision · run: 01RUN' \
+    "working [at=$((NOW - 4000))]: validating"
+
+  out=$(run_drain_case "$dir" 0.50)
+
+  grep -F 'gate-ask-user: parked at test: 1 finding(s) has waited 2d14h on firstmate (ask-user: authority decision) with no needs-decision open' "$out" >/dev/null \
+    || fail "an ask-user gate with no needs-decision open did not name firstmate's ask-user decision: $(cat "$out")"
+  if grep -F 'gate-ask-user:' "$out" | grep -F 'on the crewmate' >/dev/null; then
+    fail "an ask-user gate was reported as waiting on the crewmate, not on firstmate: $(cat "$out")"
+  fi
+  pass "a human-owed gate with no needs-decision open is flagged against firstmate's ask-user decision"
 }
 
 test_fresh_gate_is_not_flagged() {
@@ -203,6 +258,24 @@ test_live_run_overrides_a_stale_declared_go_wait() {
   pass "the authoritative state wins: a live run does not read as a stalled go-wait"
 }
 
+test_all_batched_reads_are_still_judged() {
+  local dir out i count
+  dir=$(make_case gate-batched)
+  write_crew_state_stub "$dir"
+  for i in 1 2 3 4 5; do
+    add_task "$dir" "gate-batch-$i" ship \
+      'state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 2h00m0s · run: 01RUN' \
+      "working [at=$((NOW - 4000))]: validating"
+  done
+
+  out=$(run_drain_case "$dir" 0.50 FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=2)
+
+  count=$(grep -c ' has waited 2h00m on the crewmate with no needs-decision open' "$out")
+  [ "$count" -eq 5 ] \
+    || fail "only $count of 5 ships were judged when the crew-state reads ran in batches: $(cat "$out")"
+  pass "batching the per-ship reads still judges every ship in the fleet"
+}
+
 test_scouts_are_not_judged() {
   local dir out
   dir=$(make_case scout-gate)
@@ -236,6 +309,10 @@ test_unparseable_read_never_fails_the_drain() {
 
 test_census_names_the_busy_task_above_load_eight() {
   local dir out wt pid
+  if [ ! -d /proc ]; then
+    pass "process census resolves worktrees through /proc; skipped on $(uname -s)"
+    return 0
+  fi
   dir=$(make_case census-busy)
   write_crew_state_stub "$dir"
   add_task "$dir" census-busy ship 'state: working · source: pane · busy' "working [at=$NOW]: busy"
@@ -271,14 +348,18 @@ test_census_stays_quiet_at_or_below_load_eight() {
 }
 
 test_gate_awaiting_agent_past_an_hour_is_flagged
+test_gate_awaiting_agent_for_days_is_flagged
+test_zero_padded_gate_duration_is_flagged
 test_fresh_gate_is_not_flagged
 test_gate_with_an_open_needs_decision_is_not_flagged
+test_human_owed_gate_names_firstmate_not_the_crewmate
 test_declared_go_wait_past_an_hour_is_flagged
 test_external_pause_is_not_flagged
 test_fresh_go_wait_is_not_flagged
 test_go_wait_without_a_time_is_not_flagged
 test_captain_wait_is_not_flagged
 test_live_run_overrides_a_stale_declared_go_wait
+test_all_batched_reads_are_still_judged
 test_scouts_are_not_judged
 test_unparseable_read_never_fails_the_drain
 test_census_names_the_busy_task_above_load_eight
