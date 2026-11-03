@@ -3,7 +3,8 @@
 # Exercises the reader only through its executable interface with synthetic
 # subagent transcripts: the reported total is the LAST assistant usage row's
 # input + cache_creation + cache_read sum (sidechain rows included), and a
-# missing file, a usage-free file, and a crafted identifier each fail loudly.
+# missing, unreadable, or usage-free file, and a crafted identifier each fail
+# loudly.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -56,7 +57,29 @@ case "$err" in
 esac
 pass "missing subagent file exits 1 with a clear line"
 
-# 4. A subagent file that exists but has no usage row yet exits 3, distinct
+# 4. An existing but unreadable subagent file also exits 1 with a clear line
+#    instead of an unhandled read error.
+if [ "$(id -u)" = 0 ]; then
+  printf '# skip - unreadable transcript fixture requires a non-root user\n'
+else
+  unreadable="$sub_dir/agent-ag4.jsonl"
+  printf '{"type":"assistant","message":{"model":"claude-haiku-5-5","usage":{"input_tokens":50000}}}\n' > "$unreadable"
+  chmod 000 "$unreadable"
+  rc=0
+  err="$("$reader" "$main" sess-1 ag4 2>&1 >/dev/null)" || rc=$?
+  [ "$rc" -eq 1 ] || fail "expected exit 1 for an unreadable subagent file, got $rc"
+  case "$err" in
+    *"cannot read subagent transcript"*) ;;
+    *) fail "unreadable-file error did not name the cause: $err" ;;
+  esac
+  case "$err" in
+    *Traceback*) fail "unreadable-file error printed a traceback: $err" ;;
+  esac
+  chmod 600 "$unreadable"
+  pass "unreadable subagent file exits 1 with a clear line"
+fi
+
+# 5. A subagent file that exists but has no usage row yet exits 3, distinct
 #    from the missing-file exit 1, and still fails loudly with no zero.
 printf '{"type":"user","message":{"content":"brief"}}\n' > "$sub_dir/agent-ag2.jsonl"
 rc=0
@@ -68,7 +91,7 @@ case "$err" in
 esac
 pass "usage-free subagent file exits 3 instead of reporting zero"
 
-# 5. A session or agent id that is not a plain identifier is refused (exit 2),
+# 6. A session or agent id that is not a plain identifier is refused (exit 2),
 #    so a crafted id cannot walk out of the subagents directory.
 rc=0
 "$reader" "$main" sess-1 '../ag1' >/dev/null 2>&1 || rc=$?

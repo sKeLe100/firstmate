@@ -190,3 +190,41 @@ OUT="$(printf '%s' "$(mk_input Agent haiku-builder - $'Slice twelve.\nFILES:\n- 
 grep -q "could not append to FM_HANDOFF_LOG" "$tmp/log.err" \
   || fail "an unwritable log did not warn on stderr: $(cat "$tmp/log.err")"
 pass "a log failure warns but still emits the deny"
+
+# 13. A FILES entry that exists but cannot be read must not abort before the
+#     decision: an unreadable whole-file entry is sized, and an unreadable range
+#     entry is denied, each with exactly one log row.
+if [ "$(id -u)" = 0 ]; then
+  printf '# skip - unreadable FILES fixture requires a non-root user\n'
+else
+  secret="$work/secret.txt"
+  python3 -c 'print("s" * 500)' > "$secret"
+  chmod 000 "$secret"
+  unreadable_log="$tmp/unreadable.jsonl"
+  RC=0
+  OUT="$(printf '%s' "$(mk_input Agent haiku-builder - $'Slice thirteen.\nFILES:\n- big.txt\n- secret.txt')" \
+    | FM_HANDOFF_LOG="$unreadable_log" bash "$hook" 2>"$tmp/unreadable.err")" || RC=$?
+  [ "$RC" -eq 0 ] || fail "an unreadable whole-file entry aborted with exit $RC: $(cat "$tmp/unreadable.err")"
+  [ "$(field "$OUT" 'd["hookSpecificOutput"]["permissionDecision"]')" = "deny" ] \
+    || fail "an unreadable whole-file entry suppressed the over-budget deny: $OUT"
+  rows="$(wc -l < "$unreadable_log")"
+  [ "$rows" -eq 1 ] || fail "an unreadable whole-file entry logged $rows rows, expected 1"
+  pass "an unreadable whole-file entry is sized without aborting the deny"
+
+  range_log="$tmp/unreadable-range.jsonl"
+  RC=0
+  OUT="$(printf '%s' "$(mk_input Agent haiku-builder - $'Slice thirteen.\nFILES:\n- secret.txt:1-1')" \
+    | FM_HANDOFF_LOG="$range_log" bash "$hook" 2>"$tmp/unreadable-range.err")" || RC=$?
+  [ "$RC" -eq 0 ] || fail "an unreadable range entry aborted with exit $RC: $(cat "$tmp/unreadable-range.err")"
+  [ "$(field "$OUT" 'd["hookSpecificOutput"]["permissionDecision"]')" = "deny" ] \
+    || fail "an unreadable range entry was allowed: $OUT"
+  reason="$(field "$OUT" 'd["hookSpecificOutput"]["permissionDecisionReason"]')"
+  case "$reason" in
+    *"cannot be read"*"secret.txt:1-1"*) ;;
+    *) fail "an unreadable range entry did not name the entry: $reason" ;;
+  esac
+  rows="$(wc -l < "$range_log")"
+  [ "$rows" -eq 1 ] || fail "an unreadable range entry logged $rows rows, expected 1"
+  chmod 600 "$secret"
+  pass "an unreadable range entry is denied with its reason and one log row"
+fi

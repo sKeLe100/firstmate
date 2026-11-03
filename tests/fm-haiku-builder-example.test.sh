@@ -13,18 +13,28 @@ doc="$ROOT/docs/examples/claude-agents/haiku-builder.md"
 [ -f "$doc" ] || fail "missing example agent definition: $doc"
 
 if ! python3 - "$doc" "$ROOT" <<'PY'
-import os, re, sys
-try:
-    import yaml
-except ImportError:
-    sys.exit("PyYAML is required to parse the agent frontmatter")
+import json, os, re, subprocess, sys
 
 doc, root = sys.argv[1], sys.argv[2]
 text = open(doc, encoding="utf-8").read()
 match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
 if not match:
     sys.exit("no frontmatter block at the top of the agent definition")
-front = yaml.safe_load(match.group(1))
+try:
+    parsed = subprocess.run(
+        ["ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load(STDIN.read))"],
+        input=match.group(1),
+        capture_output=True,
+        text=True,
+    )
+except OSError as exc:
+    sys.exit("could not run ruby to parse the agent frontmatter: %s" % exc)
+if parsed.returncode != 0:
+    sys.exit("frontmatter is not valid YAML: %s" % parsed.stderr.strip())
+try:
+    front = json.loads(parsed.stdout)
+except ValueError as exc:
+    sys.exit("frontmatter did not parse to a mapping: %s" % exc)
 if not isinstance(front, dict):
     sys.exit("frontmatter does not parse to a mapping")
 

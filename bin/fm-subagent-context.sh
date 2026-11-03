@@ -28,7 +28,8 @@
 #
 # Exit codes:
 #   0  printed the line above.
-#   1  the subagent file is missing. One clear line goes to stderr.
+#   1  the subagent file is missing or unreadable. One clear line goes to
+#      stderr.
 #   2  bad arguments or a session_id/agent_id that is not a plain identifier
 #      (refused so a crafted id cannot escape the subagents directory).
 #   3  the subagent file exists but holds no assistant usage row yet (a
@@ -70,23 +71,27 @@ import json, sys
 path, agent_id = sys.argv[1], sys.argv[2]
 last_usage = None
 last_model = ""
-with open(path, encoding="utf-8", errors="replace") as fh:
-    for line in fh:
-        line = line.strip()
-        if not line or '"usage"' not in line:
-            continue
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            # A partially written last line while the subagent is still running.
-            continue
-        if entry.get("type") != "assistant":
-            continue
-        message = entry.get("message") or {}
-        usage = message.get("usage")
-        if isinstance(usage, dict):
-            last_usage = usage
-            last_model = message.get("model") or ""
+try:
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or '"usage"' not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                # A partially written last line while the subagent is still running.
+                continue
+            if entry.get("type") != "assistant":
+                continue
+            message = entry.get("message") or {}
+            usage = message.get("usage")
+            if isinstance(usage, dict):
+                last_usage = usage
+                last_model = message.get("model") or ""
+except OSError as exc:
+    sys.stderr.write("fm-subagent-context: cannot read subagent transcript at %s: %s\n" % (path, exc))
+    sys.exit(1)
 
 if last_usage is None:
     sys.stderr.write("fm-subagent-context: no assistant usage row in %s\n" % path)

@@ -31,12 +31,14 @@
 #   Anything else                          prints nothing (default allow).
 #
 # Output is one JSON object on stdout, or nothing. Exit codes:
-#   0  decision printed, or nothing to say. A reader exit 3 (the subagent file
-#      exists but has no assistant usage row yet) is silent; a reader exit 1
-#      (the subagent transcript is missing) writes one stderr line naming the
-#      path and still exits 0, so it never blocks the tool call.
-#   1  malformed hook input, or the subagent context reader failed unexpectedly.
-#      Stderr names the cause; this is loud, not silently allowed.
+#   0  decision printed, or nothing to say. The hook stays silent when the
+#      reader reports no completed turn yet, and writes one stderr line naming
+#      a missing or unreadable transcript (still exiting 0) when the reader
+#      reports that; the reader owns the exit-code mapping
+#      (bin/fm-subagent-context.sh).
+#   1  malformed hook input, or the subagent context reader could not run or
+#      failed unexpectedly. Stderr names the cause; this is loud, not silently
+#      allowed.
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -72,11 +74,19 @@ if not session_id or not transcript:
     sys.stderr.write("fm-haiku-alarm-hook: subagent hook input lacks session_id or transcript_path\n")
     sys.exit(1)
 
-reader = subprocess.run(
-    [os.path.join(here, "fm-subagent-context.sh"), transcript, session_id, agent_id],
-    capture_output=True,
-    text=True,
-)
+reader_path = os.path.join(here, "fm-subagent-context.sh")
+try:
+    reader = subprocess.run(
+        [reader_path, transcript, session_id, agent_id],
+        capture_output=True,
+        text=True,
+    )
+except OSError as exc:
+    sys.stderr.write(
+        "fm-haiku-alarm-hook: could not run context reader %s: %s\n"
+        % (reader_path, exc)
+    )
+    sys.exit(1)
 if reader.returncode == 3:
     # No completed subagent turn on disk yet: the context is far below the warn
     # line, so there is nothing to say.
@@ -104,10 +114,6 @@ WARN_TEXT = (
     "Open no new files. Run tests quietly (tail only). "
     "Next reply: report DONE/NEXT/FILES-TOUCHED."
 ) % (total // 1000)
-DENY_TEXT = (
-    "95k: stop now, reply with checkpoint (done, next step, files touched, AC status). "
-    "Only a Write or Edit to your checkpoint path is still allowed."
-)
 
 if event == "PostToolUse":
     if warn <= total < deny:
@@ -133,6 +139,15 @@ if (
 ):
     sys.exit(0)
 
+checkpoint_label = (
+    os.path.abspath(checkpoint)
+    if checkpoint
+    else "the checkpoint path the coordinator supplied"
+)
+DENY_TEXT = (
+    "95k: stop now, reply with checkpoint (done, next step, files touched, AC status). "
+    "Write it to %s. Only a Write or Edit to that path is still allowed."
+) % checkpoint_label
 print(json.dumps({"hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",

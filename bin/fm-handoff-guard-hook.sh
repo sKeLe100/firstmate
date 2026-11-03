@@ -29,6 +29,7 @@
 #   - a FILES entry that is a glob (contains * ? or [);
 #   - a FILES entry with an incomplete or invalid line range (START below 1, or
 #     END before START);
+#   - a FILES entry whose size or lines cannot be read;
 #   - the estimate is over FM_HANDOFF_BUDGET (default 70000). The reason names the
 #     three biggest parts and suggests the split.
 # Anything else is allowed (no output).
@@ -145,15 +146,23 @@ for entry in entries:
         parts.append({"name": "file:" + entry, "tokens": 0})
         continue
     full = path if os.path.isabs(path) else os.path.join(cwd, path)
-    size = 0
-    if os.path.isfile(full):
-        with open(full, "rb") as fh:
-            raw = fh.read()
-        if first is not None:
-            chunk = b"".join(raw.splitlines(keepends=True)[first - 1:last])
-            size = len(chunk)
+    try:
+        if not os.path.isfile(full):
+            size = 0
+        elif first is None:
+            size = os.path.getsize(full)
         else:
-            size = len(raw)
+            size = 0
+            with open(full, "rb") as fh:
+                for number, line in enumerate(fh, 1):
+                    if number > last:
+                        break
+                    if number >= first:
+                        size += len(line)
+    except OSError as exc:
+        violations.append("FILES entry cannot be read: %s (%s)" % (entry, exc))
+        parts.append({"name": "file:" + entry, "tokens": 0})
+        continue
     parts.append({"name": "file:" + entry, "tokens": tokens_for_chars(size)})
 
 estimate = sum(part["tokens"] for part in parts)

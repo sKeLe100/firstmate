@@ -4,8 +4,8 @@
 # JSON and a synthetic subagent transcript whose last usage row sets the context
 # size. Covers the six section-5 item-2 acceptance cases (79,999 / 80,000 /
 # 94,999 / 95,000 deny / 95,000 checkpoint-write allow / no agent_id no-op), plus
-# the PostToolUse lag estimate, both reader-failure branches, and malformed
-# input.
+# the PostToolUse lag estimate, both reader-failure branches, a missing reader,
+# and malformed input.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -90,10 +90,10 @@ run_hook "$(hook_in PreToolUse Bash "$bash_input")"
   || fail "95,000 PreToolUse did not deny: $OUT"
 reason="$(field "$OUT" 'd["hookSpecificOutput"]["permissionDecisionReason"]')"
 case "$reason" in
-  "95k: stop now, reply with checkpoint"*) ;;
-  *) fail "95,000 deny reason is wrong: $reason" ;;
+  "95k: stop now, reply with checkpoint"*"$checkpoint"*) ;;
+  *) fail "95,000 deny reason is wrong or does not name the checkpoint: $reason" ;;
 esac
-pass "95,000 tokens denies a non-checkpoint tool call with the 95k reason"
+pass "95,000 tokens denies a non-checkpoint tool call with the 95k reason and checkpoint path"
 
 # 5. 95,000 tokens: a Write to the checkpoint path is still allowed.
 run_hook "$(hook_in PreToolUse Write "$write_checkpoint")"
@@ -161,7 +161,24 @@ printf '%s' "$(hook_in PreToolUse Bash "$bash_input" '' ag3)" \
   || fail "no-usage-row reader should be silent, got: $(cat "$tmp/norow.err")"
 pass "a subagent file with no completed turn yet is silent"
 
-# 12. Malformed hook input is loud (exit 1), never silently allowed.
+# 12. A missing context reader is a named, non-traceback failure (exit 1), so
+#     a relocated bin/ directory is visible rather than an unhandled Python
+#     traceback.
+orphan="$tmp/orphan"
+mkdir -p "$orphan"
+cp "$hook" "$orphan/fm-haiku-alarm-hook.sh"
+rc=0
+printf '%s' "$(hook_in PreToolUse Bash "$bash_input")" \
+  | bash "$orphan/fm-haiku-alarm-hook.sh" >"$tmp/orphan.out" 2>"$tmp/orphan.err" || rc=$?
+[ "$rc" -eq 1 ] || fail "a missing context reader should exit 1, got $rc"
+[ ! -s "$tmp/orphan.out" ] || fail "a missing context reader must print no decision"
+grep -q "could not run context reader .*fm-subagent-context.sh" "$tmp/orphan.err" \
+  || fail "a missing context reader did not name the path: $(cat "$tmp/orphan.err")"
+! grep -q "Traceback" "$tmp/orphan.err" \
+  || fail "a missing context reader printed a traceback: $(cat "$tmp/orphan.err")"
+pass "a missing context reader exits 1 with a named diagnostic"
+
+# 13. Malformed hook input is loud (exit 1), never silently allowed.
 rc=0
 printf 'not json' | bash "$hook" >/dev/null 2>"$tmp/err" || rc=$?
 [ "$rc" -eq 1 ] || fail "malformed input should exit 1, got $rc"
