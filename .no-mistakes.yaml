@@ -26,17 +26,13 @@ document:
 # default handling, which does not invoke the repository's canonical lint gate.
 # `bin/fm-lint.sh` owns the context-sensitive ShellCheck modes and GitHub
 # workflow lint via pinned actionlint in `bin/fm-lint-workflows.sh`.
-# The command routes through `bin/fm-pc02-test-offload.sh --lint` so the
-# exhaustive canonical lint runs on PC02 when it is idle and falls back to
-# PC01 under the same admission rules as the test offload (that script's
-# header owns them).
 # Invocation wiring is asserted by `tests/fm-lint.test.sh` and
 # `tests/fm-lint-workflows.test.sh`.
 #
 # commands.test is pinned to the canonical --changed invocation;
 # bin/fm-lint.sh guards against it drifting to a per-branch workaround.
 commands:
-  lint: 'bin/fm-pc02-test-offload.sh --lint && bash tests/fm-pi-primary-types.test.sh'
+  lint: 'bin/fm-test-compute.sh lint && bash tests/fm-pi-primary-types.test.sh'
   test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle'
 
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.

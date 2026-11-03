@@ -1,0 +1,68 @@
+name: Hosted Test compute
+run-name: fm-test-compute-${{ inputs.request_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot:
+        description: Bounded public-source bundle and exact partition plan
+        required: true
+        type: string
+      request_id:
+        description: Unique caller correlation
+        required: true
+        type: string
+      kind:
+        description: test includes all canonical lint partitions
+        required: true
+        type: choice
+        options: [test, lint]
+permissions:
+  contents: read
+jobs:
+  partition:
+    name: Compute ${{ matrix.partition }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: ${{ fromJSON(inputs.kind == 'lint' && '["lint-1","lint-2","lint-3","lint-4"]' || '["lint-1","lint-2","lint-3","lint-4","portable-parallel-1","portable-parallel-2","portable-serial-1of10","portable-serial-2of10","portable-serial-3of10","portable-serial-4of10","portable-serial-5of10","portable-serial-6of10","portable-serial-7of10","portable-serial-8of10","portable-serial-9of10","portable-serial-10of10"]') }}
+    env:
+      FM_TEST_COMPUTE_DISABLE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore exact committed snapshot
+        env:
+          SNAPSHOT: ${{ inputs.snapshot }}
+        run: |
+          set -eu
+          umask 077
+          printf '%s' "$SNAPSHOT" > "$RUNNER_TEMP/snapshot.json"
+          bin/fm-test-compute.sh restore "$RUNNER_TEMP/snapshot.json"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install existing CI prerequisites
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y tmux jq ruby
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          npm install -g tasks-axi @earendil-works/pi-coding-agent@1.2.0
+      - name: Execute canonical partition and record receipt
+        env:
+          PARTITION: ${{ matrix.partition }}
+        run: bin/fm-test-compute.sh worker "$PARTITION" "$RUNNER_TEMP/result" "$RUNNER_TEMP/snapshot.json"
+      - name: Upload evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compute-${{ matrix.partition }}
+          path: ${{ runner.temp }}/result/
+          if-no-files-found: warn
+          retention-days: 1

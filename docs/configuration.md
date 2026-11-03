@@ -733,11 +733,11 @@ The flag is a home-local supervision-noise preference and is not inherited by se
 
 ## Gate defaults (.no-mistakes.yaml)
 
-The tracked [`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo: true` and runs the canonical [shell/workflow lint](../bin/fm-lint.sh) followed by the [Pi production-consumer typecheck](../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
+The tracked [`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo: true` and routes the canonical [shell/workflow lint](../bin/fm-lint.sh) through hosted compute with PC02/PC01 fallback, followed by the [Pi production-consumer typecheck](../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
 Storing evidence in the repo publishes each run's test artifacts to the orphan `no-mistakes/evidence` branch and links them from the PR body, instead of keeping them on local disk under the no-mistakes home.
 
 That branch shares no history with code branches, so evidence never enters a pushed feature branch or the default branch; the worktree's `.no-mistakes/` stays local and CI rejects tracked entries under that path.
-The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md#no-mistakes-test-configuration) owns why `commands.test` stays absent and targeted validation belongs to the evidence path.
+The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md#no-mistakes-test-configuration) owns the pinned `commands.test` baseline and the intent-targeted evidence path.
 
 `commands.test` executes code, so no-mistakes honors it only from the default-branch copy of `.no-mistakes.yaml`; a pushed branch cannot change what the gate runs.
 `bin/fm-lint.sh` guards this canonical `commands.test` value on every no-mistakes lint run and fails loudly if the tracked file drifts from it, so a per-branch workaround can no longer land silently as standing policy; the check's exact mechanics are owned by that script's own header comment.
@@ -746,6 +746,63 @@ It also sets `review.path_instructions` for `bin/*.sh`, `tests/*.test.sh`, and `
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
+
+## Hosted Test compute
+
+[`bin/fm-test-compute.sh`](../bin/fm-test-compute.sh) routes the pinned no-mistakes Test baseline through standard GitHub-hosted Ubuntu runners, then GitLab.com shared runners, then the existing PC02/PC01 admission path.
+The existing `--pc02-if-idle` entry point enables this automatically; no gate configuration change is required.
+Its header owns supported invocations, payload limits, polling bounds, receipt validation, cancellation, and exit semantics.
+Other selections, inspection, dirty worktrees, oversized snapshots, private repositories, and repositories outside public Firstmate keep their existing offload behavior.
+PC03 is not an admitted heavy-test destination; light-work routing and other repositories remain follow-up work.
+
+The hosted workflow must first land on the source repository's default branch.
+Until it is available, the router automatically tries the next tier.
+The caller needs `gh-axi`, an authenticated GitHub identity with Actions write access, and network access to the source repository.
+The router transfers an exact committed snapshot as a bounded Git bundle in the workflow input, without publishing a GitHub branch or changing pipeline branch custody.
+A bundle requiring an unavailable base cannot produce a successful receipt.
+The plan intersects the hosted subset of the unchanged baseline selection with the runner's existing portable lane partitions and proves exact hosted coverage before dispatch.
+Three scripts are deliberately not hosted-capable and run through the existing PC02/PC01 admission path after the hosted subset succeeds: `tests/fm-devin-harness.test.sh` (jq/config-writer), `tests/fm-calm-pi-extension.test.sh` (ANSI yellow), and `tests/fm-captain-hold-lifecycle.test.sh` (request retirement).
+Their assertions stay in the unchanged selection, so local admission still runs them and coverage does not narrow; only their execution tier changes.
+A failure in that local subset fails the routed run even when the hosted subset succeeded.
+Those limits reproduce on clean `origin/main` in GitLab pipeline [3019354283](https://gitlab.com/sean.morden1993/firstmate-ci/-/pipelines/3019354283).
+GitLab free-tier compute minutes were exhausted during that validation; the router then used the local tier as designed.
+Every Test dispatch also runs all four canonical lint partitions; the configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to run those partitions through the same hosted-first tier order. When hosted tiers are unavailable, canonical lint uses the existing PC02/PC01 admission path. The Pi typecheck remains a separate blocking command after routed lint succeeds.
+Required PR CI and its existing check contexts remain unchanged.
+
+A failing test or lint receipt fails the caller and never triggers a second run on another tier.
+Unknown results, lost accepted dispatches, missing receipts, and execution-time monitoring failures fail closed.
+A queued run can fall back only after its cancellation is confirmed; an interrupt requests cancellation of only the invocation's own run.
+This distinction prevents a transport error from silently accepting a different result or launching duplicate expensive suites.
+Hosted logs and timing evidence return through partition artifacts, with one-day retention.
+The Test caller streams the downloaded logs into its ordinary output for no-mistakes evidence capture.
+
+### GitLab admission
+
+GitLab is tried only after `glab auth status --hostname gitlab.com` succeeds.
+It uses the existing dedicated `sean.morden1993/firstmate-ci` project, overridable with `FM_TEST_COMPUTE_GITLAB_PROJECT`; it never creates an account or a project.
+The `firstmate-compute` branch holds the public [relay template](../.github/workflows/test-compute.gitlab.template), and API-triggered pipelines clone only public Firstmate source and restore the same bounded snapshot.
+An empty dedicated repository is initialized on that branch; existing branches are preserved.
+This template is stored outside GitHub's workflow filename extensions because it is GitLab CI configuration.
+The relay must have GitLab shared runners enabled, identity verification completed where required, and free compute minutes available.
+Set the dedicated relay's `ci_pipeline_variables_minimum_override_role` to `maintainer` so its authenticated maintainer can submit the snapshot variables.
+An unready queued relay is cancelled before local fallback.
+Authentication remains owned by `glab`; the router neither reads token configuration nor writes tokens to payloads, logs, or files.
+No private source is sent to the relay.
+For an existing nonempty relay, install the template as `.gitlab-ci.yml` on its `firstmate-compute` branch before using it; the router never overwrites existing configuration.
+
+### Minute accounting
+
+Standard GitHub-hosted runners in public repositories have free, unlimited execution minutes; this route requests no larger paid runners.
+GitHub Free private repositories share 2,000 included minutes per account per month, with job minutes summed across partitions rather than measured as one workflow's wall time.
+For example, sixteen Linux jobs taking ten minutes each consume approximately 160 minutes before per-job rounding, not ten minutes.
+Reruns and fallback attempts also consume minutes already spent; moving to another tier does not refund them.
+GitLab Free normally includes 400 compute minutes per top-level namespace per month, with usage equal to each job's duration multiplied by its runner cost factor.
+The relay requests the standard small Linux runner, whose factor is 1.
+These are separate allowances and do not pool across providers.
+This delivery consumes no GitHub private-repository minutes because private GitHub source is deliberately rejected.
+The GitLab relay consumes its own namespace allowance even when the source is public.
+Private-source admission, billing-budget enforcement, usage ledgers, and support for other projects require a separate scoped rollout.
+See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions) and [GitLab compute minutes](https://docs.gitlab.com/ci/pipelines/compute_minutes/) for current accounting and allowance rules.
 
 ## PC02 test and lint offload
 
