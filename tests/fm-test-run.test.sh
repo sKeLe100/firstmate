@@ -675,7 +675,7 @@ test_changed_reference_closure() {
 # Use the real inventory in a disposable copy, never execute its scripts here.
 # Bounds catch family fan-out while positive assertions keep relevant coverage.
 test_changed_real_inventory_selection_bounds() {
-  local tmp repo listed count path reader limit shared_lib_cases
+  local tmp repo listed count path reader id limit shared_lib_cases batch batch_paths
   tmp=$(fm_test_tmproot fm-selection-inventory)
   repo="$tmp/repo"
   mkdir -p "$repo"
@@ -812,22 +812,31 @@ test_changed_real_inventory_selection_bounds() {
   git -C "$repo" checkout -q -- bin/fm-wake-lib.sh
 
   # An existing core source whose executable readers are all behind wide hubs
-  # still selects those suites, even when a comment-only test was printed.
-  shared_lib_cases='fm-merge-authority-lib.sh fm-pr-merge.test.sh
-fm-landed-lib.sh fm-bearings-snapshot.test.sh
-fm-exclude-tools-lib.sh fm-control-relaunch.test.sh
-fm-project-capacity-lib.sh fm-control-relaunch.test.sh
-fm-public-followup-collect.sh fm-public-followup.test.sh'
-  while read -r path reader; do
-    printf '\n' >>"$repo/bin/$path"
-  done <<<"$shared_lib_cases"
-  if ! listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD); then
-    fail "shared library selection failed: $listed"
-  fi
-  while read -r path reader; do
-    assert_contains "$listed" "tests/$reader" "shared library $path selects its hub reader"
-    git -C "$repo" checkout -q -- "bin/$path"
-  done <<<"$shared_lib_cases"
+  # still selects those suites, even when a comment-only test was printed. Rows
+  # are resolved in batches, and a batch only changes paths whose asserted reader
+  # no other changed path in that batch emits, so a selected line cannot satisfy
+  # another path's row.
+  shared_lib_cases='1 fm-merge-authority-lib.sh fm-pr-merge.test.sh
+1 fm-exclude-tools-lib.sh fm-control-relaunch.test.sh
+1 fm-public-followup-collect.sh fm-public-followup.test.sh
+2 fm-landed-lib.sh fm-bearings-snapshot.test.sh
+2 fm-project-capacity-lib.sh fm-control-relaunch.test.sh'
+  for batch in 1 2; do
+    batch_paths=
+    while read -r id path reader; do
+      [ "$id" = "$batch" ] || continue
+      printf '\n' >>"$repo/bin/$path"
+      batch_paths="$batch_paths $path"
+    done <<<"$shared_lib_cases"
+    if ! listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD 2>"$tmp/shared-lib-$batch.err"); then
+      fail "shared library selection failed for$batch_paths: $(cat "$tmp/shared-lib-$batch.err" 2>/dev/null)"
+    fi
+    while read -r id path reader; do
+      [ "$id" = "$batch" ] || continue
+      assert_contains "$listed" "tests/$reader" "shared library $path selects its hub reader"
+      git -C "$repo" checkout -q -- "bin/$path"
+    done <<<"$shared_lib_cases"
+  done
 
   # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.
   local -a recorded_paths=(
