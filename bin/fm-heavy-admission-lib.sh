@@ -136,7 +136,7 @@ fm_heavy_admit() {
   fi
   local max_wait=${FM_HEAVY_WAIT_SECS:-300} poll=${FM_HEAVY_POLL_SECS:-5}
   local max_load=${FM_HEAVY_MAX_LOAD5:-8} min_mem=${FM_HEAVY_MIN_MEM_KIB:-3145728}
-  local started now remaining delay locked=0 reason holder reclaimed='' rc
+  local started now remaining delay locked=0 reason holder previous reclaimed='' rc
   for now in "$max_wait" "$poll" "$max_load" "$min_mem"; do
     case "$now" in ''|*[!0-9]*) echo 'heavy admission: limits must be whole nonnegative numbers' >&2; return 2 ;; esac
   done
@@ -155,12 +155,19 @@ fm_heavy_admit() {
       if perl -e 'open(my $f, ">&=9") or die $!; exit(flock($f, 2|4) ? 0 : 75)' 9>&9; then
         locked=1
         reclaimed=
-        # Truncate only after owning the lock, preserving its inode.
-        if ! fm_heavy_write_holder "$slot" "$label"; then
+        previous=$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)
+        if [ -n "$previous" ] && [ "$previous" != "$$" ]; then
+          echo "heavy admission: slot holder pid=$previous is still live; waiting" >&2
+          locked=0
+          exec 9>&-
+          if ! exec 9>>"$slot"; then
+            echo "heavy admission: could not reopen slot file for locking: $slot" >&2
+            return 2
+          fi
+        elif ! fm_heavy_write_holder "$slot" "$label"; then
           exec 9>&-
           return 2
-        fi
-        if [ "$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)" != "$$" ]; then
+        elif [ "$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)" != "$$" ]; then
           echo "heavy admission: slot holder record is not this process after locking" >&2
           exec 9>&-
           return 2

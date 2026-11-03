@@ -21,7 +21,7 @@ FM_TASK_ID=other-heavy-run bash -c '
   sleep 600
 ' bash "$LIB" "$TMP_ROOT/ready" >"$TMP_ROOT/holder" 2>&1 &
 holder=$!
-trap 'kill "$holder" "${leaked:-}" "${reused:-}" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fm_test_cleanup' EXIT
+trap 'kill "$holder" "${leaked:-}" "${reused:-}" "${reclaiming:-}" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fm_test_cleanup' EXIT
 for ((i=0;i<100;i++)); do [ ! -f "$TMP_ROOT/ready" ] || break; sleep 0.1; done
 [ -f "$TMP_ROOT/ready" ] || fail 'holder not ready'
 rc=0; admit >"$TMP_ROOT/busy" 2>&1 || rc=$?
@@ -92,6 +92,41 @@ assert_grep 'admitted fixture' "$TMP_ROOT/stale" 'reclaim admits without the bou
 kill "$reused" 2>/dev/null || true; wait "$reused" 2>/dev/null || true
 reused=
 pass 'a reused pid with a stale start identity is reclaimed'
+
+# A reclaim-admitted run holds no flock. A later run that gets the flock must
+# still see that live record and wait instead of overwriting it and overlapping.
+sleep 600 & reused=$!
+perl -e 'open(my $f, ">>", $ARGV[0]) or die $!; flock($f,2) or die $!;
+  truncate($f, 0) or die $!; seek($f, 0, 0) or die $!;
+  print $f "pid=$ARGV[1] start=starttime=0 task=leaked-owner run=tests:changed\n"; $f->flush();
+  open(my $ready, ">", $ARGV[2]) or die $!; close $ready; sleep 600' \
+  "$FM_HEAVY_SLOT" "$reused" "$TMP_ROOT/leaked-ready-2" &
+leaked=$!
+for ((i=0;i<100;i++)); do [ ! -f "$TMP_ROOT/leaked-ready-2" ] || break; sleep 0.1; done
+[ -f "$TMP_ROOT/leaked-ready-2" ] || fail 'second leaked holder not ready'
+FM_TASK_ID=reclaim-owner bash -c '
+  . "$1"
+  fm_heavy_admit reclaim || exit $?
+  : >"$2"
+  sleep 600
+' bash "$LIB" "$TMP_ROOT/reclaim-ready" >"$TMP_ROOT/reclaim" 2>&1 &
+reclaiming=$!
+for ((i=0;i<100;i++)); do [ ! -f "$TMP_ROOT/reclaim-ready" ] || break; sleep 0.1; done
+[ -f "$TMP_ROOT/reclaim-ready" ] || fail 'reclaiming holder not ready'
+assert_grep 'reclaimed stale slot' "$TMP_ROOT/reclaim" 'reclaiming holder took the stale slot'
+kill "$leaked" 2>/dev/null || true; wait "$leaked" 2>/dev/null || true
+leaked=
+rc=0; FM_HEAVY_WAIT_SECS=1 FM_HEAVY_POLL_SECS=1 admit >"$TMP_ROOT/overlap" 2>&1 || rc=$?
+expect_code 75 "$rc" 'a later flock winner must wait for a live reclaim holder'
+assert_grep "slot holder pid=$reclaiming is still live" "$TMP_ROOT/overlap" 'later run names the live reclaim holder'
+assert_no_grep 'admitted fixture' "$TMP_ROOT/overlap" 'later run did not overlap a live reclaim holder'
+kill "$reclaiming" 2>/dev/null || true; wait "$reclaiming" 2>/dev/null || true
+reclaiming=
+admit >"$TMP_ROOT/after-reclaim" 2>&1 || fail 'slot did not free after the reclaim holder exited'
+assert_grep 'admitted fixture' "$TMP_ROOT/after-reclaim" 'slot freed after the reclaim holder exited'
+kill "$reused" 2>/dev/null || true; wait "$reused" 2>/dev/null || true
+reused=
+pass 'a live reclaim holder blocks a later flock winner until it exits'
 
 rc=0; FM_HEAVY_TEST_LOAD5=8 admit >"$TMP_ROOT/load" 2>&1 || rc=$?
 expect_code 75 "$rc" 'load threshold is strict'

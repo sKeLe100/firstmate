@@ -2264,6 +2264,7 @@ test_browser_cleanup_instructions_are_portable_and_shell_safe() {
     brief="$home/data/$id/brief.md"
     assert_grep 'Close every chrome-devtools-axi bridge or headless Chrome' "$brief" 'worker must close owned browser'
     assert_grep 'CHROME_DEVTOOLS_AXI_SESSION' "$brief" 'worker must use an isolated browser session'
+    assert_grep 'browser identity registry named below' "$brief" "$kind brief must authorize its registry write"
     # shellcheck disable=SC2016 # Backticks match literal generated brief markup.
     command=$(sed -n 's/^   `\(browser_started=.*\)`\.$/\1/p' "$brief")
     [ -n "$command" ] || fail 'portable registry command missing from brief'

@@ -1024,7 +1024,7 @@ If the top-level path is the primary checkout or not the worktree you were launc
 # Rules
 $RULE1
 2. Keep project edits inside this worktree; keep proof and scratch output outside it, under \`$DATA/$ID/\` or a temporary directory.
-   Outside the worktree, write only that task material and the status and steering-inbox records authorized below.
+   Outside the worktree, write only that task material, the status and steering-inbox records, and the browser identity registry named below.
    Leave the worktree clean before reporting done.
    The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or $FM_ROOT/bin/fm-context-usage.sh for actual context numbers.
 3. $FORGE_RULE_LINE

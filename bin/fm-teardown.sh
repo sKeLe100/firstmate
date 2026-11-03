@@ -291,6 +291,14 @@
 #     A run already terminal
 #     (an outcome is set) or not parked at a gate is left untouched. Idempotent:
 #     an already-aborted run reads back terminal and is skipped on retry.
+#   Browser reap - reap task-owned browsers. A browser a worker launched can
+#     outlive its task and keep consuming the host for hours (observed
+#     2026-11-02: two headless browsers, one running 3 hours), and removing the
+#     task records first would lose the retry context needed to finish the job.
+#     reap_task_browsers finds only processes attributable to this task through
+#     the inherited FM_BROWSER_TASK marker or the task's state/<id>.browsers
+#     PID/start registry, sends TERM then KILL across three passes, and refuses
+#     teardown with the task records retained when any owned browser survives.
 #   Fix 2 - reap leaked descendant processes. A backgrounded/disowned process
 #     started under the worktree (or its per-task tasktmp) does not receive the
 #     SIGHUP/SIGTERM that closing the backend pane sends to its own foreground
@@ -3737,9 +3745,10 @@ else
 fi
 
 # Every landed/discard-work refusal above has now passed (or --force skipped
-# them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
-# --force, and before ANY destructive step below - a still-parked run or a
-# leaked process can own live work in this exact worktree. Not for
+# them). Fix 1, the browser reap, and Fix 2 (see script header) run here,
+# unconditionally on --force, and before ANY destructive step below - a
+# still-parked run, a live task browser, or a leaked process can own live work
+# in this exact worktree. Not for
 # kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
 # dedicated process-event and firstmate-home removal machinery further below,
 # not by task-worktree cleanup.
