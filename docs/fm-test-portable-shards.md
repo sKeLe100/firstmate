@@ -24,7 +24,7 @@ Keep a broad mapping where a shared implementation genuinely needs integration c
 Selection-count targets never justify dropping a test that executes changed code; a typical leaf change should select roughly 20-40 scripts. A core file sourced by many commands (backend, classifier, wake library, harness) may exceed 40 and relies on the broad core-change mapping plus required full CI. When pruning leaves an existing source with no executable reader, the walk falls back to the unpruned hub emission instead of failing closed.
 An existing source without a mapping or a discoverable reader fails closed; deleting a source still selects remaining readers, while an unconsumed retirement selects nothing.
 The runner's header and help own inspection flags such as `--list`.
-[`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh) checks representative documentation, skill, leaf, watcher, shared-helper, shared-library, and multi-subsystem selections through the runner's public interface, with bounded counts for the recorded 18-file feature.
+The runner contract suite - [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh) plus the selection and scheduling bodies it sources - checks representative documentation, skill, leaf, watcher, shared-helper, shared-library, and multi-subsystem selections through the runner's public interface, with bounded counts for the recorded 18-file feature.
 Required CI continues to cover the complete inventory independently of local changed-path selection.
 
 ## Verification inputs
@@ -69,7 +69,7 @@ Read the derived packing estimates with that runner's `--check-coverage`; its he
 The largest individual hint sets a lower bound on the estimated duration of any split, regardless of how evenly the remaining work is assigned.
 The CI cap follows the three-tier timeout policy in [Timeouts](#timeouts) below.
 
-[`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_parallel_lanes_stay_duration_balanced`, requires every parallel member to have a hint and the lane sums to differ by no more than five percent of the larger sum.
+The runner contract suite, in `test_portable_parallel_lanes_stay_duration_balanced`, requires every parallel member to have a hint and the lane sums to differ by no more than five percent of the larger sum.
 Its scheduling regressions also check stored parallel lane order and preserve serial-weight scheduling for other selections.
 These checks do not detect a script outgrowing an existing hint or establish measured job headroom.
 Refresh `portable_parallel_weight_hints` with the slowest completed `duration_ms` per script from several green CI runs' `fm-test-timing-portable-parallel-*` artifacts whenever the parallel set gains scripts or a member grows materially.
@@ -101,7 +101,7 @@ Refresh the hints whenever a serial member grows materially or the lane gains sc
 
 `bin/fm-test-run.sh` owns the per-shard packing, so its `--check-coverage` output is the current account of lane size and coverage rather than a copied inventory.
 Its header and `--help` own the modeled-budget check and output fields; read the current estimates from `--check-coverage` instead of retaining copied lane sums here.
-[`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner.
+The runner contract suite, in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner.
 The longest script, `tests/fm-watch-triage-waits.test.sh`, is the indivisible floor for this layout.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
 The baseline watch-triage samples, taken before it was split with `tests/fm-watch-triage-waits.test.sh`, range from 944375 to 1074843 ms for both parts together, while each observed completed portable job adds at most 30 seconds beyond its summed scripts in these runs.
