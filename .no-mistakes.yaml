@@ -56,11 +56,11 @@ test:
 test_agent_timeout: "60m"
 
 # Maintainability rules the Review step applies to the surfaces where this repo
-# has repeatedly paid for getting them wrong. Kept as pointers for the same
-# reason `document.instructions` is: the coding guideline owns the policy, and a
-# second prose copy here would become a competing owner. Schema caps both the
-# entry count and the total bytes added to the review prompt, so keep each
-# entry short.
+# has repeatedly paid for getting them wrong. Those entries stay pointers for
+# the same reason `document.instructions` is: the coding guideline owns the
+# policy, and a second prose copy here would become a competing owner. Schema
+# caps both the entry count and the total bytes added to the review prompt, so
+# keep each entry short.
 review:
   path_instructions:
     - path: 'bin/*.sh'
@@ -84,3 +84,58 @@ review:
         bin/fm-agentsmd-size.sh (do not re-spell the value here); trim
         resident lookup tables duplicated in docs/configuration.md; preserve
         all safety boundaries and hard rules verbatim.
+    # Guard the bar: unlike the pointers above, these entries state the rule
+    # itself because no skill owns it. The glob engine is Go path.Match, where
+    # `*` stays within one path segment and does not recurse, so each tree gets
+    # one entry per depth. The schema takes one glob per entry, so each depth
+    # repeats this text.
+    - path: 'tests/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'tests/*/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'tests/*/*/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'bin/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'bin/backends/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: '.github/workflows/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: '.no-mistakes.yaml'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection, including weakening these bar-lowering guard rules
+        themselves. Accept it only when the PR description states why.
