@@ -286,7 +286,8 @@ JOBS=1
 FAIL_FAST=
 JOBS_EXPLICIT=0
 JOBS_MAX=8
-# Automatic scheduling stays at four locally; offload supplies eight.
+# Automatic scheduling stays at four locally; offload supplies its per-slot
+# cap (up to eight).
 AUTO_JOBS_MAX="${FM_TEST_RUN_AUTO_JOBS_MAX:-4}"
 MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0

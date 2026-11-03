@@ -767,9 +767,8 @@ Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding 
 An explicit caller `--jobs` and the default auto-scheduler ceiling are each reduced to at most `floor(PC02 nproc / slots)` workers per slot, so the slots together stay within PC02's thread count; an explicit `FM_PC02_OFFLOAD_JOBS` override is honored verbatim and may oversubscribe by choice, and an unreadable thread count keeps the run local. The script header owns the cap arithmetic and admission detail.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
 An environment-parity check gates the slot claim; that header owns the compared fields, the open-file rule and remote soft-limit raise, the parity-probe bound, the intentional exclusions, and the local-fallback reasons.
-Measured 2026-11-03: two concurrent full selections on an idle PC02 did not fit the 7200s cap; the script header owns the measurement figures. The environment, daemon-version and shell-availability parity exclusions were reviewed against that run and kept.
+Measured 2026-11-03: two concurrent full selections on an idle PC02 did not fit the 7200s cap; the script header owns the measurement figures. The `/usr/bin/env` provider, no-mistakes daemon version and shell-availability parity exclusions were reviewed against that run and kept.
 The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
-A full PR #215 selection of 183 scripts took 4274s test wall / 4305s whole at four workers; that single-run measurement does not establish that two full selections fit within the cap.
 Exceeding the whole-run cap fails with exit 124 and does not rerun the suite locally or omit selected tests.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
