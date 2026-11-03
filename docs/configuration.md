@@ -752,7 +752,7 @@ Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](f
 [`bin/fm-test-compute.sh`](../bin/fm-test-compute.sh) routes the pinned no-mistakes Test baseline through standard GitHub-hosted Ubuntu runners, then GitLab.com shared runners, then the existing PC02/PC01 admission path.
 The existing `--pc02-if-idle` entry point enables this automatically; no gate configuration change is required.
 Its header owns supported invocations, payload limits, polling bounds, receipt validation, cancellation, and exit semantics.
-Other selections, inspection, dirty worktrees, oversized snapshots, private repositories, and repositories outside public Firstmate keep their existing offload behavior.
+Other selections, inspection, dirty worktrees, oversized snapshots, private repositories, and repositories outside public Firstmate keep their existing offload behavior; extending hosted routing to the complete-suite/post-merge regression is tracked as test-compute-full-suite-hosted.
 PC03 is not an admitted heavy-test destination; light-work routing and other repositories remain follow-up work.
 
 The hosted workflow must first land on the source repository's default branch.
@@ -760,13 +760,13 @@ Until it is available, the router automatically tries the next tier.
 The caller needs `gh-axi`, an authenticated GitHub identity with Actions write access, and network access to the source repository.
 The router transfers an exact committed snapshot as a bounded Git bundle in the workflow input, without publishing a GitHub branch or changing pipeline branch custody.
 A bundle requiring an unavailable base cannot produce a successful receipt.
-The plan intersects the hosted subset of the unchanged baseline selection with the runner's existing portable lane partitions and proves exact hosted coverage before dispatch.
+The plan derives the dispatchable partitions from `bin/fm-test-run.sh --list-lanes`, intersects them with the hosted subset of the unchanged baseline selection, dispatches only non-empty partitions, and proves exact hosted coverage before dispatch.
 Three scripts are deliberately not hosted-capable and run through the existing PC02/PC01 admission path after the hosted subset succeeds: `tests/fm-devin-harness.test.sh` (jq/config-writer), `tests/fm-calm-pi-extension.test.sh` (ANSI yellow), and `tests/fm-captain-hold-lifecycle.test.sh` (request retirement).
 Their assertions stay in the unchanged selection, so local admission still runs them and coverage does not narrow; only their execution tier changes.
 A failure in that local subset fails the routed run even when the hosted subset succeeded.
 Those limits reproduce on clean `origin/main` in GitLab pipeline [3019354283](https://gitlab.com/sean.morden1993/firstmate-ci/-/pipelines/3019354283).
 GitLab free-tier compute minutes were exhausted during that validation; the router then used the local tier as designed.
-Every Test dispatch also runs all four canonical lint partitions; the configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to run those partitions through the same hosted-first tier order. When hosted tiers are unavailable, canonical lint uses the existing PC02/PC01 admission path. The Pi typecheck remains a separate blocking command after routed lint succeeds.
+The configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to run all four canonical lint partitions through the same hosted-first tier order; Test dispatches only portable test partitions. When hosted tiers are unavailable, canonical lint uses the existing PC02/PC01 admission path. The Pi typecheck remains a separate blocking command after routed lint succeeds.
 Required PR CI and its existing check contexts remain unchanged.
 
 A failing test or lint receipt fails the caller and never triggers a second run on another tier.
@@ -794,7 +794,7 @@ For an existing nonempty relay, install the template as `.gitlab-ci.yml` on its 
 
 Standard GitHub-hosted runners in public repositories have free, unlimited execution minutes; this route requests no larger paid runners.
 GitHub Free private repositories share 2,000 included minutes per account per month, with job minutes summed across partitions rather than measured as one workflow's wall time.
-For example, sixteen Linux jobs taking ten minutes each consume approximately 160 minutes before per-job rounding, not ten minutes.
+For example, twelve Linux Test partition jobs taking ten minutes each consume approximately 120 minutes before per-job rounding, not ten minutes; the separate lint mode adds four partition jobs.
 Reruns and fallback attempts also consume minutes already spent; moving to another tier does not refund them.
 GitLab Free normally includes 400 compute minutes per top-level namespace per month, with usage equal to each job's duration multiplied by its runner cost factor.
 The relay requests the standard small Linux runner, whose factor is 1.

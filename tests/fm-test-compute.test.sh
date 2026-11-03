@@ -12,12 +12,27 @@ cp "$ROOT/.github/workflows/test-compute.gitlab.template" "$fixture/.github/work
 cat > "$fixture/bin/fm-test-run.sh" <<'RUN'
 #!/usr/bin/env bash
 case "$*" in
-  '--changed --exclude-family real-herdr-gated --list'|'--list --lane portable-parallel-1')
+  '--list-lanes')
+    [ "${LANES_RC:-0}" = 0 ] || exit "$LANES_RC"
+    printf '%s\n' portable-parallel-1 portable-parallel-2 portable-parallel-9 portable-serial portable-serial-1of2 portable-serial-2of2 real-herdr-gated
+    ;;
+  '--changed --exclude-family real-herdr-gated --list')
+    if [ "${ONLY_NON_HOSTED:-0}" = 1 ]; then
+      printf '%s\n' tests/fm-devin-harness.test.sh tests/fm-calm-pi-extension.test.sh tests/fm-captain-hold-lifecycle.test.sh
+    else
+      printf '%s\n' tests/sample.test.sh tests/derived.test.sh
+      if [ "${NON_HOSTED:-0}" = 1 ]; then
+        printf '%s\n' tests/fm-devin-harness.test.sh tests/fm-calm-pi-extension.test.sh tests/fm-captain-hold-lifecycle.test.sh
+      fi
+    fi
+    ;;
+  '--list --lane portable-parallel-1')
     echo tests/sample.test.sh
     if [ "${NON_HOSTED:-0}" = 1 ]; then
       printf '%s\n' tests/fm-devin-harness.test.sh tests/fm-calm-pi-extension.test.sh tests/fm-captain-hold-lifecycle.test.sh
     fi
     ;;
+  '--list --lane portable-parallel-9') echo tests/derived.test.sh ;;
   '--list --lane '*) : ;;
   *) printf 'ran:'; printf ' <%s>' "$@"; echo; exit "${SUITE_RC:-0}" ;;
 esac
@@ -51,11 +66,13 @@ args=sys.argv[1:]; w=pathlib.Path(os.environ['TEST_COMPUTE_DATA']); scenario=os.
 with open(w/'calls','a') as f: f.write('github '+ ' '.join(args[:3])+'\n')
 def payload(): return json.loads(json.load(open(w/'request'))['inputs']['snapshot'])
 def receipt(k):
-    p=payload(); return dict(version=1,sha='f'*40 if scenario=='wrong-head' else p['sha'],partition=k,scripts=p['partitions'][k],exit=1 if scenario=='failure' and k=='lint-1' else 0)
+    p=payload()
+    scripts=['tests/other.test.sh'] if scenario=='wrong-scripts' else p['partitions'][k]
+    return dict(version=1,sha='f'*40 if scenario=='wrong-head' else p['sha'],partition=k,scripts=scripts,exit=1 if scenario=='failure' and k=='portable-parallel-1' else 0)
 if args[:2]==['run','download']:
     out=pathlib.Path(args[args.index('--dir')+1]); p=payload()
     for k in p['partitions']:
-        if scenario=='missing' and k=='lint-2': continue
+        if scenario=='missing' and k=='portable-parallel-1': continue
         d=out/k; d.mkdir(parents=True); (d/'result.json').write_text(json.dumps(receipt(k))); (d/'run.log').write_text('evidence '+k+'\n')
     sys.exit(0)
 assert args[0]=='api'
@@ -80,7 +97,7 @@ if path.endswith('/actions/runs/123'):
     else: print('completed\t'+('failure' if scenario=='failure' else 'success'))
     sys.exit(0)
 if path.endswith('/workflows/test-compute.yml'):
-    if scenario in ('github-unavailable','gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-race-success','gitlab-race-failed'): sys.exit(1)
+    if scenario in ('github-unavailable','gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-queued','gitlab-race-success','gitlab-race-failed'): sys.exit(1)
     print('active'); sys.exit(0)
 if path=='/repos/example/firstmate': print(('true' if scenario=='private' else 'false')+'\tmain'); sys.exit(0)
 sys.exit(1)
@@ -90,10 +107,11 @@ cat > "$TMP_ROOT/tools/glab" <<'MOCK'
 import json,os,pathlib,sys,zipfile,io
 args=sys.argv[1:]; w=pathlib.Path(os.environ['TEST_COMPUTE_DATA']); scenario=os.environ.get('SCENARIO','success')
 with open(w/'calls','a') as f: f.write('gitlab '+' '.join(args[:4])+'\n')
-if args[:2]==['auth','status']: sys.exit(0 if scenario in ('gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-race-success','gitlab-race-failed') else 1)
+if args[:2]==['auth','status']: sys.exit(0 if scenario in ('gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-queued','gitlab-race-success','gitlab-race-failed') else 1)
 assert args[0]=='api'
 path=next(x for x in args if x.startswith('projects/'))
 if path.endswith('/repository/commits'):
+    pathlib.Path(w/'bootstrap.json').write_text(pathlib.Path(args[args.index('--input')+1]).read_text())
     (w/'bootstrapped').touch(); print('{}'); sys.exit(0)
 if path.endswith('/pipeline'):
     if scenario=='gitlab-forbidden': print(json.dumps(dict(message=dict(base=['Insufficient permissions to set pipeline variables'])))); print('glab: map[message:map[base:[Insufficient permissions to set pipeline variables]]]',file=sys.stderr); sys.exit(1)
@@ -103,20 +121,21 @@ if path.endswith('/pipelines/456/cancel'):
     (w/'cancelled').touch(); print('{}'); sys.exit(0)
 if path.endswith('/pipelines/456'):
     if scenario=='gitlab-quota': status='failed'
+    elif scenario=='gitlab-queued': status='canceled' if (w/'cancelled').exists() else 'pending'
     elif scenario.startswith('gitlab-race-'):
         status=scenario.removeprefix('gitlab-race-') if (w/'cancelled').exists() else 'pending'
     else: status='success'
     print(json.dumps(dict(status=status))); sys.exit(0)
 if path.endswith('/pipelines/456/jobs?per_page=100'):
-    p=json.load(open(w/'gitlab-payload'))
-    if scenario=='gitlab-quota': print(json.dumps([dict(id=n,name=f'compute: [{k}]',failure_reason='ci_quota_exceeded',started_at=None) for n,k in enumerate(p['partitions'],1)]))
-    else: print(json.dumps([dict(id=n,artifacts_file={'filename':'x.zip'}) for n,_ in enumerate(p['partitions'],1)]))
+    if scenario=='gitlab-quota': print(json.dumps([dict(id=1,name='compute',failure_reason='ci_quota_exceeded',started_at=None)]))
+    else: print(json.dumps([dict(id=1,artifacts_file={'filename':'x.zip'})]))
     sys.exit(0)
 if path.endswith('/artifacts'):
-    p=json.load(open(w/'gitlab-payload')); n=int(path.split('/')[-2]); k=list(p['partitions'])[n-1]
-    result=dict(version=1,sha=p['sha'],partition=k,scripts=p['partitions'][k],exit=0)
-    b=io.BytesIO()
-    with zipfile.ZipFile(b,'w') as z: z.writestr('result/result.json',json.dumps(result)); z.writestr('result/run.log','GitLab evidence\n')
+    p=json.load(open(w/'gitlab-payload')); b=io.BytesIO()
+    with zipfile.ZipFile(b,'w') as z:
+        for k in p['partitions']:
+            result=dict(version=1,sha=p['sha'],partition=k,scripts=p['partitions'][k],exit=0)
+            z.writestr(f'result/{k}/result.json',json.dumps(result)); z.writestr(f'result/{k}/run.log','GitLab evidence\n')
     sys.stdout.buffer.write(b.getvalue()); sys.exit(0)
 print(json.dumps(dict(empty_repo=scenario=='gitlab-bootstrap',default_branch='main')))
 MOCK
@@ -150,7 +169,33 @@ expect_code 0 "$result" "$output"
 assert_contains "$output" 'result: success' 'receipts must prove success'
 assert_contains "$output" "$sha" 'receipt must identify exact head'
 [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail 'GitLab ran after GitHub success'
-pass 'GitHub result receipts cover every test and canonical lint partition'
+python3 - "$TMP_ROOT/data/request" <<'PY'
+import json,sys
+payload=json.loads(json.load(open(sys.argv[1]))['inputs']['snapshot'])
+assert payload['partitions']=={'portable-parallel-1':['tests/sample.test.sh'],'portable-parallel-9':['tests/derived.test.sh']}, payload['partitions']
+assert not any(k.startswith('lint-') for k in payload['partitions']), 'Test dispatched lint partitions'
+PY
+pass 'GitHub result receipts cover only the non-empty Test partitions'
+
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$(LANES_RC=1 SCENARIO=success "$router" test --changed --exclude-family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'local:' 'lane listing failure should fall back'
+[ ! -e "$TMP_ROOT/data/request" ] || fail 'lane listing failure dispatched hosted work'
+pass 'lane listing failure falls back before dispatch'
+
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$(ONLY_NON_HOSTED=1 SCENARIO=success "$router" test --changed --exclude-family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'local: <--changed> <--exclude-family> <real-herdr-gated>' 'a selection with no hosted partitions should run locally'
+[ ! -e "$TMP_ROOT/data/request" ] || fail 'empty hosted subset dispatched hosted work'
+pass 'a selection with no hosted-capable partitions runs locally'
 
 rm -f "$TMP_ROOT/data/"*
 set +e
@@ -216,11 +261,12 @@ python3 - "$TMP_ROOT/data/request" <<'PY'
 import json,sys
 request=json.load(open(sys.argv[1]))
 payload=json.loads(request['inputs']['snapshot'])
-assert payload['kind']=='lint' and all(not scripts for scripts in payload['partitions'].values())
+assert payload['kind']=='lint' and set(payload['partitions'])=={f'lint-{n}' for n in range(1,5)}
+assert all(not scripts for scripts in payload['partitions'].values())
 PY
 pass 'Lint mode runs every canonical lint partition on hosted compute'
 
-for scenario in failure missing wrong-head dispatch-ambiguous; do
+for scenario in failure missing wrong-head wrong-scripts dispatch-ambiguous; do
   run_route "$scenario"
   expect_code 1 "$result" "$scenario must fail closed: $output"
   [[ "$output" != *'local:'* ]] || fail "$scenario fell back locally"
@@ -244,6 +290,11 @@ expect_code 0 "$result" "$output"
 [ -e "$TMP_ROOT/data/cancelled" ] || fail 'queue fallback did not cancel owned GitHub run'
 assert_contains "$output" 'local:' 'cancelled queue should fall back'
 pass 'queue timeout requires confirmed cancellation before fallback'
+run_route gitlab-queued
+expect_code 0 "$result" "$output"
+[ -e "$TMP_ROOT/data/cancelled" ] || fail 'GitLab queue fallback did not cancel the owned pipeline'
+assert_contains "$output" 'local:' 'cancelled GitLab queue should fall back'
+pass 'GitLab queue timeout requires confirmed cancellation before fallback'
 for scenario in github-race-failed github-race-success; do
   run_route "$scenario"
   expect_code 1 "$result" "$scenario must fail closed after a terminal completion race: $output"
@@ -256,7 +307,15 @@ for scenario in gitlab-success gitlab-bootstrap; do
   expect_code 0 "$result" "$output"
   assert_contains "$output" 'GitLab evidence' 'GitLab evidence must return to Test'
   [[ "$output" != *'local:'* ]] || fail 'successful GitLab run fell back'
-  if [ "$scenario" = gitlab-bootstrap ]; then [ -e "$TMP_ROOT/data/bootstrapped" ] || fail 'empty dedicated project was not bootstrapped'; fi
+  if [ "$scenario" = gitlab-bootstrap ]; then
+    [ -e "$TMP_ROOT/data/bootstrapped" ] || fail 'empty dedicated project was not bootstrapped'
+    python3 - "$TMP_ROOT/data/bootstrap.json" "$ROOT/.github/workflows/test-compute.gitlab.template" <<'PY'
+import json,pathlib,sys
+bootstrap=json.load(open(sys.argv[1])); actions=bootstrap['actions']
+assert len(actions)==1 and actions[0]['file_path']=='.gitlab-ci.yml'
+assert actions[0]['content']==pathlib.Path(sys.argv[2]).read_text()
+PY
+  fi
   pass "$scenario executes only after GitHub unavailability and authentication"
 done
 run_route gitlab-forbidden

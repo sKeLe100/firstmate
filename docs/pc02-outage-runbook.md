@@ -152,12 +152,16 @@ ssh pc02 "journalctl --user -u llama-swap --no-pager -n 50"
 Besides serving models, PC02's stronger hardware can run this repo's own
 heavy `bin/fm-test-run.sh` suites and canonical `bin/fm-lint.sh` lint
 (including the no-mistakes test and lint steps) when PC02 is not needed for
-anything else. The test command reaches `bin/fm-pc02-test-offload.sh`
-through `bin/fm-test-run.sh --pc02-if-idle` (see its own header), and the
-no-mistakes lint command passes `--lint` to the same script; that script is
-the single owner of every readiness check and the sync/execution mechanics
-for both, so read its header and `--help` for the exact contract rather than
-duplicating it here.
+anything else. `bin/fm-test-run.sh --pc02-if-idle` (see its own header) hands
+test runs to `bin/fm-test-compute.sh`, which tries hosted compute first and
+then the existing PC02/PC01 admission path in
+`bin/fm-pc02-test-offload.sh`; set `FM_TEST_COMPUTE_DISABLE=1` when a
+PC02-only/offline route is intended. The no-mistakes lint command reaches the
+same PC02/PC01 admission through `bin/fm-test-compute.sh lint`, which runs the
+canonical partitions locally when hosted tiers are unavailable.
+`bin/fm-pc02-test-offload.sh` owns every readiness check and the
+sync/execution mechanics for both; read its header and `--help` for the exact
+contract rather than duplicating it here.
 
 **The captain's personal-use switch**: a Desktop shortcut on PC02 named
 "PC02 Personal Use Toggle" flips a flag with no terminal - one double-click

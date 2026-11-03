@@ -13,10 +13,11 @@
 # Only that exact baseline is distributed; other arguments (including --json,
 # inspection and custom selection) retain the existing PC02/local behavior.
 # The baseline selection is split into hosted-capable and local-only scripts;
-# no tests are omitted. The hosted subset is intersected with the existing
-# two parallel and ten serial CI lanes; an exact partition check gates dispatch.
-# Test runs include all four canonical lint partitions. `lint` runs those four
-# partitions alone; after hosted unavailability it runs canonical partitions locally.
+# no tests are omitted. The hosted subset is partitioned by the lanes reported
+# by fm-test-run.sh --list-lanes, only non-empty partitions are dispatched, and
+# an exact partition check gates dispatch. `test` dispatches portable test
+# partitions only; `lint` runs the four canonical lint partitions alone and
+# after hosted unavailability runs them locally.
 #
 # GitHub Actions standard ubuntu-latest is tried first, then GitLab.com on a
 # dedicated project, only after `glab auth status` succeeds, then PC02/PC01.
@@ -51,8 +52,8 @@
 # rerun.
 # Read/receipt ambiguity after execution fails closed. Queued admission can
 # time out and fall back only after the owned run is confirmed cancelled.
-# GitLab jobs rejected for ci_quota_exceeded before starting can fall back
-# after every available receipt has been checked for actual test failures.
+# GitLab work rejected for ci_quota_exceeded before starting can fall back
+# only when no partition receipt exists.
 # Every API call is bounded. Interrupts cancel only this invocation's run.
 # stdout forwards suite evidence; routing diagnostics go to stderr.
 #
@@ -235,29 +236,47 @@ else
   : > "$work/selected"
   : > "$work/local-only"
 fi
-# Reuse the canonical lanes, proving exact coverage before any dispatch.
-for lane in portable-parallel-1 portable-parallel-2 portable-serial-{1..10}of10; do
-  "$SELF_DIR/fm-test-run.sh" --list --lane "$lane" > "$work/$lane" || exit 1
-done
+# Derive the dispatchable lane set from the runner that owns lane composition.
+if [ "$mode" = test ]; then
+  "$SELF_DIR/fm-test-run.sh" --list-lanes > "$work/lane-names" || local_run 'lane listing unavailable'
+  python3 - "$work/lane-names" "$work/dispatch-lanes" <<'PY' || local_run 'lane listing is not dispatchable'
+import pathlib,re,sys
+lanes=pathlib.Path(sys.argv[1]).read_text().splitlines()
+dispatch=[l for l in lanes if re.fullmatch(r'portable-(?:parallel|serial)-[0-9]+(?:of[0-9]+)?', l)]
+if not dispatch: raise SystemExit(1)
+pathlib.Path(sys.argv[2]).write_text(''.join(l+'\n' for l in dispatch))
+PY
+  mkdir -p "$work/lanes"
+  while IFS= read -r lane; do
+    "$SELF_DIR/fm-test-run.sh" --list --lane "$lane" > "$work/lanes/$lane" || local_run "lane $lane cannot be listed"
+  done < "$work/dispatch-lanes"
+fi
 if ! python3 - "$work" "$sha" "$base" "$repo" "$mode" <<'PY'
 import base64, collections, json, pathlib, sys
 w=pathlib.Path(sys.argv[1]); sha,base,repo,mode=sys.argv[2:]
 selected=(w/'selected').read_text().splitlines()
-parts={f'lint-{n}':[] for n in range(1,5)}
 if mode=='test':
-    for f in sorted(w.glob('portable-*')):
-        parts[f.name]=[s for s in f.read_text().splitlines() if s in selected]
-    assert collections.Counter(s for k,v in parts.items() for s in v)==collections.Counter(selected), 'selected tests do not exactly partition into portable lanes'
+    parts={}
+    for f in sorted((w/'lanes').iterdir()):
+        scripts=[s for s in f.read_text().splitlines() if s in selected]
+        if scripts: parts[f.name]=scripts
+    assert collections.Counter(s for v in parts.values() for s in v)==collections.Counter(selected), 'selected tests do not exactly partition into portable lanes'
+else:
+    parts={f'lint-{n}':[] for n in range(1,5)}
 p=dict(version=1,sha=sha,base=base,repo=repo,kind=mode,partitions=parts,bundle=base64.b64encode((w/'source.bundle').read_bytes()).decode())
 (w/'payload.json').write_text(json.dumps(p,separators=(',',':')))
 PY
 then local_run 'selection cannot be distributed without loss'; fi
 [ "$(wc -c < "$work/payload.json")" -lt 60000 ] || local_run 'snapshot exceeds dispatch input limit'
+if [ "$mode" = test ] && ! python3 -c 'import json,sys; raise SystemExit(not json.load(open(sys.argv[1]))["partitions"])' "$work/payload.json"; then
+  local_run 'test selection has no hosted-capable partitions'
+fi
 request_id=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
-python3 - "$work" "$default_branch" "$request_id" "$mode" <<'PY'
+python3 - "$work" "$default_branch" "$request_id" <<'PY'
 import json,pathlib,sys
-w=pathlib.Path(sys.argv[1]); ref,rid,kind=sys.argv[2:]
-(w/'dispatch.json').write_text(json.dumps(dict(ref=ref,inputs=dict(snapshot=(w/'payload.json').read_text(),request_id=rid,kind=kind))))
+w=pathlib.Path(sys.argv[1]); ref,rid=sys.argv[2:]
+p=json.load(open(w/'payload.json'))
+(w/'dispatch.json').write_text(json.dumps(dict(ref=ref,inputs=dict(snapshot=(w/'payload.json').read_text(),request_id=rid,partitions=json.dumps(list(p['partitions']))))))
 PY
 # 75 means tier unavailable before test execution; all ambiguous failures fail closed.
 verify_results() {
@@ -274,10 +293,9 @@ for f in (w/'results').rglob('result.json'):
 missing=set(p['partitions'])-set(found)
 if missing and sys.argv[3]:
     jobs=json.load(open(sys.argv[3]))
-    quota={j['name'][10:-1] for j in jobs if j.get('failure_reason')=='ci_quota_exceeded' and not j.get('started_at') and j.get('name','').startswith('compute: [')}
-    if missing<=quota:
+    if not found and any(j.get('failure_reason')=='ci_quota_exceeded' and not j.get('started_at') for j in jobs):
         print('GitLab free compute quota unavailable before execution',file=sys.stderr); sys.exit(75)
-assert not missing, 'missing partition receipts' 
+assert not missing, 'missing partition receipts'
 print('receipts: verified\nhead: '+sys.argv[2])
 PY
 }
@@ -397,8 +415,10 @@ import pathlib,sys,zipfile
 w=pathlib.Path(sys.argv[1]); out=w/'results'/sys.argv[2]; out.mkdir()
 with zipfile.ZipFile(w/(sys.argv[2]+'.zip')) as z:
     for name in z.namelist():
-        if pathlib.PurePosixPath(name).name in ('result.json','run.log'):
-            (out/pathlib.PurePosixPath(name).name).write_bytes(z.read(name))
+        rel=pathlib.PurePosixPath(name)
+        if rel.is_absolute() or '..' in rel.parts or rel.name not in ('result.json','run.log'): continue
+        target=out.joinpath(*rel.parts); target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_bytes(z.read(name))
 PY
   done < "$work/jobs"
   local result_rc
@@ -423,7 +443,8 @@ fi
 # Complete the selection on the existing local admission path only after the
 # hosted subset succeeded; a local-only failure is still the routed result.
 if [ "$rc" = 0 ] && [ -s "$work/local-only" ]; then
-  mapfile -t local_scripts < "$work/local-only"
+  local_scripts=()
+  while IFS= read -r script; do local_scripts+=("$script"); done < "$work/local-only"
   "$SELF_DIR/fm-pc02-test-offload.sh" "${local_scripts[@]}"
   rc=$?
 fi

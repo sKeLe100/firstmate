@@ -8,9 +8,6 @@ compute:
   image: node:22-bookworm
   tags: [saas-linux-small-amd64]
   timeout: 3h
-  parallel:
-    matrix:
-      - PARTITION: [lint-1, lint-2, lint-3, lint-4, portable-parallel-1, portable-parallel-2, portable-serial-1of10, portable-serial-2of10, portable-serial-3of10, portable-serial-4of10, portable-serial-5of10, portable-serial-6of10, portable-serial-7of10, portable-serial-8of10, portable-serial-9of10, portable-serial-10of10]
   variables:
     GIT_STRATEGY: none
     FM_TEST_COMPUTE_DISABLE: '1'
@@ -20,8 +17,6 @@ compute:
       set -eu
       umask 077
       printf '%s' "$FM_COMPUTE_SNAPSHOT" > "$CI_PROJECT_DIR/snapshot.json"
-      # Check admission with Node (present in the image) before installing tools.
-      if ! node -e 'const p=JSON.parse(require("fs").readFileSync("snapshot.json")); process.exit(Object.hasOwn(p.partitions,process.env.PARTITION) ? 0 : 1)'; then exit 0; fi
       apt-get update -qq
       apt-get install -y git python3 jq tmux ruby chromium
       git clone "https://github.com/$FM_COMPUTE_REPO.git" source
@@ -44,7 +39,12 @@ compute:
       bin/fm-install-shellcheck.sh /usr/local/bin
       bin/fm-install-actionlint.sh /usr/local/bin
       npm install -g tasks-axi @earendil-works/pi-coding-agent@1.2.0
-      bin/fm-test-compute.sh worker "$PARTITION" "$CI_PROJECT_DIR/result" "$CI_PROJECT_DIR/snapshot.json"
+      node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1])); for (const k of Object.keys(p.partitions)) console.log(k)' "$CI_PROJECT_DIR/snapshot.json" > "$CI_PROJECT_DIR/partitions"
+      rc=0
+      while IFS= read -r PARTITION; do
+        bin/fm-test-compute.sh worker "$PARTITION" "$CI_PROJECT_DIR/result/$PARTITION" "$CI_PROJECT_DIR/snapshot.json" || rc=1
+      done < "$CI_PROJECT_DIR/partitions"
+      exit "$rc"
   artifacts:
     when: always
     expire_in: 1 day

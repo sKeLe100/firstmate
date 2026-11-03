@@ -11,11 +11,10 @@ on:
         description: Unique caller correlation
         required: true
         type: string
-      kind:
-        description: test includes all canonical lint partitions
+      partitions:
+        description: Exact partition keys to execute
         required: true
-        type: choice
-        options: [test, lint]
+        type: string
 permissions:
   contents: read
 jobs:
@@ -26,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: ${{ fromJSON(inputs.kind == 'lint' && '["lint-1","lint-2","lint-3","lint-4"]' || '["lint-1","lint-2","lint-3","lint-4","portable-parallel-1","portable-parallel-2","portable-serial-1of10","portable-serial-2of10","portable-serial-3of10","portable-serial-4of10","portable-serial-5of10","portable-serial-6of10","portable-serial-7of10","portable-serial-8of10","portable-serial-9of10","portable-serial-10of10"]') }}
+        partition: ${{ fromJSON(inputs.partitions) }}
     env:
       FM_TEST_COMPUTE_DISABLE: '1'
     steps:
