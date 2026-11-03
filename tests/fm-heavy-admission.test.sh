@@ -128,6 +128,49 @@ kill "$reused" 2>/dev/null || true; wait "$reused" 2>/dev/null || true
 reused=
 pass 'a live reclaim holder blocks a later flock winner until it exits'
 
+# The reclaim write and the flock winner's write take one record lock, so a
+# reclaim already in progress finishes before a new winner inspects the record.
+sleep 600 & reused=$!
+perl -e 'open(my $f, ">>", $ARGV[0]) or die $!; flock($f,2) or die $!;
+  truncate($f, 0) or die $!; seek($f, 0, 0) or die $!;
+  print $f "pid=$ARGV[1] start=starttime=0 task=leaked-owner run=tests:changed\n"; $f->flush();
+  open(my $ready, ">", $ARGV[2]) or die $!; close $ready; sleep 600' \
+  "$FM_HEAVY_SLOT" "$reused" "$TMP_ROOT/leaked-ready-3" &
+leaked=$!
+for ((i=0;i<100;i++)); do [ ! -f "$TMP_ROOT/leaked-ready-3" ] || break; sleep 0.1; done
+[ -f "$TMP_ROOT/leaked-ready-3" ] || fail 'third leaked holder not ready'
+FM_TASK_ID=record-lock-owner bash -c '
+  . "$1"
+  fm_heavy_admit record-lock || exit $?
+  : >"$2"
+  sleep 600
+' bash "$LIB" "$TMP_ROOT/record-lock-ready" >"$TMP_ROOT/record-lock-owner" 2>&1 &
+reclaiming=$!
+record_lock="$FM_HEAVY_SLOT.record.lock"
+record_lock_held=0
+for ((i=0;i<100;i++)); do
+  rc=0
+  perl -e 'open(my $f, ">>", $ARGV[0]) or exit 2; exit(flock($f, 2|4) ? 0 : 75)' "$record_lock" || rc=$?
+  if [ "$rc" -eq 75 ]; then record_lock_held=1; break; fi
+  [ "$rc" -eq 0 ] || fail "record lock probe failed unexpectedly: $rc"
+  sleep 0.1
+done
+[ "$record_lock_held" -eq 1 ] || fail 'reclaiming holder did not take the record lock'
+kill "$leaked" 2>/dev/null || true; wait "$leaked" 2>/dev/null || true
+leaked=
+rc=0; FM_HEAVY_WAIT_SECS=1 FM_HEAVY_POLL_SECS=1 admit >"$TMP_ROOT/record-lock-winner" 2>&1 || rc=$?
+expect_code 75 "$rc" 'flock winner waits for the reclaim record write'
+assert_grep "slot holder pid=$reclaiming is still live" "$TMP_ROOT/record-lock-winner" 'flock winner names the reclaim holder'
+assert_no_grep 'admitted fixture' "$TMP_ROOT/record-lock-winner" 'flock winner did not admit over the reclaim record write'
+assert_grep 'admitted record-lock' "$TMP_ROOT/record-lock-owner" 'reclaim holder admitted and kept the slot'
+kill "$reclaiming" 2>/dev/null || true; wait "$reclaiming" 2>/dev/null || true
+reclaiming=
+admit >"$TMP_ROOT/record-lock-after" 2>&1 || fail 'slot did not free after the record-lock holder exited'
+assert_grep 'admitted fixture' "$TMP_ROOT/record-lock-after" 'slot freed after the record-lock holder exited'
+kill "$reused" 2>/dev/null || true; wait "$reused" 2>/dev/null || true
+reused=
+pass 'reclaim and flock holder-record writes are serialized'
+
 rc=0; FM_HEAVY_TEST_LOAD5=8 admit >"$TMP_ROOT/load" 2>&1 || rc=$?
 expect_code 75 "$rc" 'load threshold is strict'
 assert_grep 'load5=8' "$TMP_ROOT/load" 'load refusal explains threshold'

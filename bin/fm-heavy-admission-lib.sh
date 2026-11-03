@@ -84,6 +84,24 @@ fm_heavy_slot_pid() {
   printf '%s\n' "$pid"
 }
 
+# Serialize holder-record read-modify-write sections across flock and reclaim.
+fm_heavy_record_lock() {
+  local lock=$1.record.lock
+  if ! exec 8>>"$lock"; then
+    echo "heavy admission: could not open holder record lock: $lock" >&2
+    return 2
+  fi
+  if ! perl -e 'open(my $f, ">&=8") or die $!; exit(flock($f, 2) ? 0 : 75)' 8>&8; then
+    echo "heavy admission: could not lock holder record: $lock" >&2
+    exec 8>&-
+    return 2
+  fi
+}
+
+fm_heavy_record_unlock() {
+  exec 8>&-
+}
+
 # Record this shell as the slot holder, preserving the slot's inode.
 fm_heavy_write_holder() {
   local identity
@@ -100,25 +118,35 @@ fm_heavy_write_holder() {
 # Returns 0 and prints the stale pid after taking over the record, 2 when the
 # record cannot be written, and 1 when the slot belongs to a live owner.
 fm_heavy_reclaim() {
-  local slot=$1 record stale start current
-  record=$(fm_heavy_slot_record "$slot") || return 1
+  local slot=$1 record stale start current result=1
+  fm_heavy_record_lock "$slot" || return $?
+  record=$(fm_heavy_slot_record "$slot") || { fm_heavy_record_unlock; return 1; }
   read -r stale start <<< "$record"
   stale=${stale#pid=}
   start=${start#start=}
-  [ "$stale" != "$$" ] || return 1
-  if current=$(fm_heavy_proc_identity "$stale" 2>/dev/null) && [ "$current" = "$start" ]; then
-    return 1
+  if [ "$stale" != "$$" ]; then
+    if current=$(fm_heavy_proc_identity "$stale" 2>/dev/null) && [ "$current" = "$start" ]; then
+      :
+    else
+      # Grace lets a concurrent reclaimer win and lets a dying owner finish.
+      sleep 1
+      if [ "$(fm_heavy_slot_record "$slot" 2>/dev/null || true)" = "$record" ]; then
+        if current=$(fm_heavy_proc_identity "$stale" 2>/dev/null) && [ "$current" = "$start" ]; then
+          :
+        elif fm_heavy_write_holder "$slot" "$2"; then
+          # Read back after the grace so only the last reclaimer proceeds.
+          sleep 1
+          if [ "$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)" = "$$" ]; then
+            result=0
+          fi
+        else
+          result=2
+        fi
+      fi
+    fi
   fi
-  # Grace lets a concurrent reclaimer win and lets a dying owner finish.
-  sleep 1
-  [ "$(fm_heavy_slot_record "$slot" 2>/dev/null || true)" = "$record" ] || return 1
-  if current=$(fm_heavy_proc_identity "$stale" 2>/dev/null) && [ "$current" = "$start" ]; then
-    return 1
-  fi
-  fm_heavy_write_holder "$slot" "$2" || return 2
-  # Read back after the grace so only the last reclaimer proceeds.
-  sleep 1
-  [ "$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)" = "$$" ] || return 1
+  fm_heavy_record_unlock
+  [ "$result" -eq 0 ] || return "$result"
   echo "heavy admission: reclaimed stale slot holder=pid=$stale" >&2
   printf '%s\n' "$stale"
 }
@@ -155,9 +183,14 @@ fm_heavy_admit() {
       if perl -e 'open(my $f, ">&=9") or die $!; exit(flock($f, 2|4) ? 0 : 75)' 9>&9; then
         locked=1
         reclaimed=
+        if ! fm_heavy_record_lock "$slot"; then
+          exec 9>&-
+          return 2
+        fi
         previous=$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)
         if [ -n "$previous" ] && [ "$previous" != "$$" ]; then
           echo "heavy admission: slot holder pid=$previous is still live; waiting" >&2
+          fm_heavy_record_unlock
           locked=0
           exec 9>&-
           if ! exec 9>>"$slot"; then
@@ -165,12 +198,16 @@ fm_heavy_admit() {
             return 2
           fi
         elif ! fm_heavy_write_holder "$slot" "$label"; then
+          fm_heavy_record_unlock
           exec 9>&-
           return 2
         elif [ "$(fm_heavy_slot_pid "$slot" 2>/dev/null || true)" != "$$" ]; then
+          fm_heavy_record_unlock
           echo "heavy admission: slot holder record is not this process after locking" >&2
           exec 9>&-
           return 2
+        else
+          fm_heavy_record_unlock
         fi
       fi
     fi
