@@ -73,8 +73,10 @@
 #     keeps its value. Absent --jobs, the remote fm-test-run.sh keeps its own
 #     automatic scheduler (only proven-isolated scripts and recorded
 #     concurrent family proofs run in parallel; unproven scripts stay serial)
-#     with its worker ceiling raised to FM_PC02_OFFLOAD_JOBS (default 8) for
-#     PC02's 16 threads / 27 GB.
+#     with its worker ceiling set to min(FM_PC02_OFFLOAD_JOBS (default 8),
+#     the per-slot bound), so the auto path keeps the invariant; an explicitly
+#     set FM_PC02_OFFLOAD_JOBS is an operator override honoured verbatim and
+#     may oversubscribe by choice.
 #     Isolation phases, family caps and serial tails remain enforced; curated
 #     lanes keep their contracts. The per-script cap defaults to 3000s
 #     (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS) and overrides the caller's
@@ -170,9 +172,10 @@
 #                                      remote work already spent is not worth
 #                                      discarding blind
 #   FM_PC02_OFFLOAD_JOBS                remote auto-scheduler worker ceiling
-#                                      when caller omits --jobs (default: 8);
-#                                      an explicit --jobs is capped to
-#                                      floor(PC02 nproc / SLOTS) instead
+#                                      (default: 8); when unset it is capped
+#                                      to floor(PC02 nproc / SLOTS) like an
+#                                      explicit --jobs, while a set value is
+#                                      an operator override honoured verbatim
 #   FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS per-script cap (default: 3000)
 #   FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
 #                                      the ssh target's home, holding one
@@ -417,19 +420,24 @@ if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
 fi
 
-# Cap explicit caller --jobs per slot so the sum across concurrently held
-# slots cannot oversubscribe PC02: each slot may use at most
-# floor(threads / slots) workers. The thread count comes from the remote
-# host's own nproc (getconf fallback), never a hard-coded figure, so a
-# different PC02 or a changed CPU count adjusts the cap automatically. A
-# caller asking for less than the cap keeps its value. An unreadable count is
-# an unclear host read and routes local, like every other unclear probe.
+# Cap explicit caller --jobs and the default auto-scheduler ceiling per slot
+# so the sum across concurrently held slots cannot oversubscribe PC02: each
+# slot may use at most floor(threads / slots) workers. The thread count comes
+# from the remote host's own nproc (getconf fallback), never a hard-coded
+# figure, so a different PC02 or a changed CPU count adjusts the cap
+# automatically. A caller asking for less than the cap keeps its value, and
+# an explicitly set FM_PC02_OFFLOAD_JOBS stays an operator override honoured
+# verbatim. An unreadable count is an unclear host read and routes local, like
+# every other unclear probe.
 case "$remote_threads" in
   ''|*[!0-9]*) run_local "PC02 thread count unavailable (got '$remote_threads'); cannot bound concurrent slot workers" ;;
 esac
 [ "$remote_threads" -ge 1 ] || run_local "PC02 reported zero threads; cannot bound concurrent slot workers"
 jobs_cap=$((remote_threads / SLOTS))
 [ "$jobs_cap" -ge 1 ] || jobs_cap=1
+if [ -z "${FM_PC02_OFFLOAD_JOBS:-}" ] && [ "$REMOTE_JOBS" -gt "$jobs_cap" ]; then
+  REMOTE_JOBS=$jobs_cap
+fi
 
 # Compare test-relevant surfaces with the same probe on both hosts.
 parity_probe="$(cat "$SELF_DIR/fm-test-chrome.sh")
