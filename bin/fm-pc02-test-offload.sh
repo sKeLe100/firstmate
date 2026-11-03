@@ -114,7 +114,8 @@
 #     inherited from the login shell neither blocks admission nor limits the
 #     run.
 #   - Sizing evidence: two simultaneous four-worker offloads of
-#     fm-supervision-host, fm-captain-hold-lifecycle,
+#     fm-supervision-host, fm-captain-hold-lifecycle (one file then; now
+#     tests/fm-captain-hold-*.test.sh),
 #     fm-remote-secondmate-lifecycle-e2e, and fm-spawn-dispatch-profile passed
 #     in 2382s total on 16 threads; peak load5 was 25.54 and minimum
 #     MemAvailable was 24.4 GiB of ~27 GiB. A separate PR #215 full 183-script

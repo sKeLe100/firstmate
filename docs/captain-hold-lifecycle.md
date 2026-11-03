@@ -490,8 +490,8 @@ It then finishes any still-recorded dependency-edge cleanup without rewriting th
 ## Verification record
 
 The focused end-to-end regression suites are `tests/fm-captain-hold-lifecycle.test.sh`, `tests/fm-captain-hold-reconcile.test.sh`, and `tests/fm-captain-hold-merge-teardown.test.sh`, sharing `tests/fm-captain-hold-lib.sh`, and use only synthetic identities and decision text.
-It proves the behaviors below.
-The suite does not test the accepted merge-to-cleanup re-hold window or asynchronous queued-forge landing because those events occur after the locally serialized merge command has returned.
+They prove the behaviors below.
+They do not test the accepted merge-to-cleanup re-hold window or asynchronous queued-forge landing because those events occur after the locally serialized merge command has returned.
 
 ### Cleanup of a captain-held row
 
@@ -543,7 +543,7 @@ The suite does not test the accepted merge-to-cleanup re-hold window or asynchro
 
 ### Task-body read-back cases
 
-Two of the suite's cases pin how a task body is read back rather than any decision behavior, because both paths that read one are otherwise silent when they get it wrong.
+Two cases in `tests/fm-captain-hold-lifecycle.test.sh` pin how a task body is read back rather than any decision behavior, because both paths that read one are otherwise silent when they get it wrong.
 
 The first case covers holding a task that carries a body, and cleanup's retention of a captain-held row.
 Both work where the installed JSON::PP defaults `allow_nonref` off and therefore rejects the JSON-encoded bare string a shown scalar field arrives as.
@@ -559,7 +559,7 @@ That latin-1 byte loss also reproduces natively on the fleet host carrying the o
 
 ### Markdown-to-beads migration family
 
-The markdown-to-beads migration family runs the same suite's beads fixture (bd-driven scratch graph, self-skipping on markdown-only tasks-axi installs).
+The markdown-to-beads migration family runs `tests/fm-captain-hold-lifecycle.test.sh`'s beads fixture (bd-driven scratch graph, self-skipping on markdown-only tasks-axi installs).
 It proves:
 
 - `verify` and `complete` resolve an attested legacy id through a migrated row's marker note.
@@ -574,7 +574,7 @@ It uses a stubbed tasks-axi that fails any markdown file override, and proves th
 
 ### Reconcile coverage
 
-The reconcile path is pinned in the same suite:
+The reconcile path is pinned in `tests/fm-captain-hold-reconcile.test.sh`:
 
 - A reconcile answer arriving through the keyed-answer intake is refused, in the default close mode and in the `release` mode a captain-gated work card declares.
   It leaves both tasks held with no resolution record or request.
