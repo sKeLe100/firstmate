@@ -1770,10 +1770,6 @@ import shlex
 import sys
 
 NAME_RE = re.compile(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b")
-EXEC_WORD_RE = re.compile(
-    r"(?:^|[\s;&|(])(?:\.|source|exec|bash|sh|zsh|dash|env|command|eval|"
-    r"python3?|node|perl|ruby|timeout|nohup|setsid|xargs)\s"
-)
 
 
 def shell_code(text, keep_heredocs=True):
@@ -1825,6 +1821,9 @@ def shell_executable_names(text):
     names = []
     declarations = ("local", "declare", "readonly", "export", "typeset")
     control_words = ("if", "then", "elif", "else", "while", "until", "do", "!", "time")
+    exec_words = (".", "source", "exec", "bash", "sh", "zsh", "dash", "env",
+                  "command", "eval", "python", "python3", "node", "perl",
+                  "ruby", "timeout", "nohup", "setsid", "xargs")
     for line in text.replace("\\\n", " ").splitlines():
         stripped = line.strip()
         if not stripped or not NAME_RE.search(line):
@@ -1837,6 +1836,7 @@ def shell_executable_names(text):
         except ValueError:
             tokens = []
         expect_command = True
+        command_payload = False
         for token in tokens:
             if token in declarations:
                 expect_command = False
@@ -1852,10 +1852,12 @@ def shell_executable_names(text):
                 expect_command = True
                 continue
             if expect_command:
+                if token in exec_words:
+                    command_payload = True
                 if NAME_RE.fullmatch(Path(token).name):
                     names.extend(NAME_RE.findall(token))
                 expect_command = False
-        if EXEC_WORD_RE.search(line) or "`" in line or "$(" in line:
+        if command_payload or "`" in line or "$(" in line:
             names.extend(NAME_RE.findall(line))
     return names
 
@@ -1962,13 +1964,17 @@ def walk_reference(dependency, emit_fat_hubs):
         source = queue.popleft()
         for consumer in sorted(consumers[source]):
             if consumer.startswith("tests/") and consumer.endswith(".test.sh"):
+                executable = consumer in executable_consumers[source]
+                if source.startswith("tests/") and source.endswith(".test.sh") \
+                        and not executable:
+                    continue
                 if consumer not in printed:
                     print(dependency + "\t__script__:" + Path(consumer).name)
                     printed.add(consumer)
                 # A suite is a terminal reader unless it actually executes the
                 # other suite as a wrapper; a comment or fixture mention is not
                 # a reason to fan out through it.
-                if consumer in executable_consumers[source]:
+                if executable:
                     executable_printed.add(consumer)
                     if consumer not in queued:
                         queued.add(consumer)
@@ -2048,14 +2054,21 @@ broad_family_fallback() {
 # no reader left for it; fall back to the broad mapping with one diagnostic.
 # An untracked new source or a deleted path keeps the previous behavior.
 reference_or_broad_fallback() {
-  local path=$1
+  local path=$1 out
   if scripts_for_path_reference "$path"; then
     return 0
   fi
   [ -f "$path" ] || return 0
   if git -C "$ROOT" ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
-    printf 'broad fallback: %s\n' "$path" >&2
-    broad_family_fallback "$path"
+    [ "${BIN_FALLBACK_DEPTH:-0}" -gt 0 ] \
+      || printf 'broad fallback: %s\n' "$path" >&2
+    out=$(broad_family_fallback "$path")
+    if [ -n "$out" ]; then
+      printf '%s\n' "$out"
+    else
+      # A tracked source with no fallback reader still fails closed.
+      printf '%s\n' "__unmapped__:$path"
+    fi
   else
     # A new untracked source still fails closed: no reader can be inferred.
     printf '%s\n' "__unmapped__:$path"

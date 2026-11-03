@@ -515,6 +515,20 @@ test_changed_dependency_selection_and_unmapped_failure() {
   rm -f "$repo/src/unmapped.ts"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   [ -z "$listed" ] || fail "a retired unmapped source without consumers selected tests: $listed"
+
+  : >"$repo/bin/no-reader-source.sh"
+  git -C "$repo" add bin/no-reader-source.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm no-reader-source
+  printf '\n' >>"$repo/bin/no-reader-source.sh"
+  set +e
+  (cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) >"$tmp/out" 2>"$tmp/err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "a tracked source with no reader must fail with exit 2, got $rc"
+  grep -Fq 'no changed-test mapping for source path: bin/no-reader-source.sh' "$tmp/err" \
+    || fail "a tracked source with no reader failure is not actionable: $(cat "$tmp/err")"
+  [ "$(grep -c '^broad fallback: bin/no-reader-source.sh$' "$tmp/err")" -eq 1 ] \
+    || fail "the broad fallback diagnostic must appear once per changed path: $(cat "$tmp/err")"
   rm -rf "$tmp"
   pass "changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source"
 }
@@ -609,6 +623,9 @@ test_changed_reference_closure() {
   printf '# comment-leaf.sh\n. "$(dirname "$0")/../bin/comment-consumer.sh"\n' >"$repo/tests/fm-comment-reader.test.sh"
   # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
   printf 'bash "$(dirname "$0")/fm-comment-reader.test.sh"\n' >"$repo/tests/fm-comment-wrapper.test.sh"
+  printf 'echo "ok - prose: source tests/fm-comment-reader.test.sh"\n' >"$repo/tests/fm-prose-reader.test.sh"
+  # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
+  printf 'bash "$(dirname "$0")/fm-prose-reader.test.sh"\n' >"$repo/tests/fm-prose-wrapper.test.sh"
   git -C "$repo" add .
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm chain
   printf '\n' >>"$repo/bin/four.sh"
@@ -626,9 +643,11 @@ test_changed_reference_closure() {
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   assert_contains "$listed" tests/fm-comment-reader.test.sh "an executable edge requeues a suite first seen through a comment"
   assert_contains "$listed" tests/fm-comment-wrapper.test.sh "a wrapper of that suite is selected"
+  assert_not_contains "$listed" tests/fm-prose-reader.test.sh "prose naming a reader is not a suite reader"
+  assert_not_contains "$listed" tests/fm-prose-wrapper.test.sh "prose naming a reader is not an executable wrapper edge"
   [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 2 ] || fail "comment edge widened beyond its reader and wrapper: $listed"
   [ "$(bash "$repo/tests/fm-comment-wrapper.test.sh")" = leaf-ran ] || fail "the selected wrapper did not execute the changed leaf"
-  pass "changed reference closure handles cycles, comments, wrappers, and removals"
+  pass "changed reference closure handles cycles, comments, prose, wrappers, and removals"
 }
 
 # Use the real inventory in a disposable copy, never execute its scripts here.
