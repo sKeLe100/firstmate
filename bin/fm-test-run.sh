@@ -3632,6 +3632,7 @@ run_one_serial() {
 
   set +e
   # Stream live output while retaining a copy for gate-skip detection.
+  # shellcheck disable=SC2030 # TMPDIR/TMP scoped deliberately to this script subshell.
   (
     export TMPDIR="$work/tmp"
     export TMP="$work/tmp"
@@ -3762,6 +3763,7 @@ else
     expected=$(expected_gate_skip_for_family "$family")
     printf 'FM_TEST_BEGIN %s %s family=%s expected_gate_skip=%s\n' \
       "$(now_iso)" "$script" "$family" "$expected"
+    # shellcheck disable=SC2031 # TMPDIR/TMP scoped deliberately to this worker subshell.
     (
       trap - EXIT HUP INT TERM
       set +e
