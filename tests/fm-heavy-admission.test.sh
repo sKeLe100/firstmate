@@ -3,6 +3,9 @@
 set -eu
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# An offloaded runner carries its own PC02 admission exemption; the local
+# scenarios below must not inherit it. Explicit remote cases set it themselves.
+unset FM_PC02_OFFLOAD_REMOTE
 TMP_ROOT=$(fm_test_tmproot fm-heavy-admission)
 LIB="$ROOT/bin/fm-heavy-admission-lib.sh"
 export FM_HEAVY_SLOT="$TMP_ROOT/slot" FM_HEAVY_WAIT_SECS=0

@@ -164,7 +164,7 @@ fm_heavy_admit() {
   fi
   local max_wait=${FM_HEAVY_WAIT_SECS:-300} poll=${FM_HEAVY_POLL_SECS:-5}
   local max_load=${FM_HEAVY_MAX_LOAD5:-8} min_mem=${FM_HEAVY_MIN_MEM_KIB:-3145728}
-  local started now remaining delay locked=0 reason holder previous reclaimed='' rc
+  local started='' now remaining delay locked=0 reason holder previous reclaimed='' rc
   for now in "$max_wait" "$poll" "$max_load" "$min_mem"; do
     case "$now" in ''|*[!0-9]*) echo 'heavy admission: limits must be whole nonnegative numbers' >&2; return 2 ;; esac
   done
@@ -177,7 +177,6 @@ fm_heavy_admit() {
     echo "heavy admission: could not open slot file for locking: $slot" >&2
     return 2
   fi
-  started=$(date +%s)
   while :; do
     if [ "$locked" -eq 0 ]; then
       if perl -e 'open(my $f, ">&=9") or die $!; exit(flock($f, 2|4) ? 0 : 75)' 9>&9; then
@@ -248,7 +247,14 @@ fm_heavy_admit() {
       reason="resources $reason"
     fi
     holder=$(cat "$slot" 2>/dev/null) || holder=unknown
-    now=$(date +%s)
+    # Start the bounded wait at the first failed admission attempt so a
+    # whole-second clock boundary can never skip the first poll interval.
+    if [ -z "$started" ]; then
+      started=$(date +%s)
+      now=$started
+    else
+      now=$(date +%s)
+    fi
     remaining=$((max_wait - now + started))
     if [ "$remaining" -le 0 ]; then
       echo "heavy admission: refused $label after ${max_wait}s: $reason; holder=$holder" >&2
