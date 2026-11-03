@@ -78,12 +78,10 @@
 #     changes.
 #   - Auto-stow: a primary session whose own transcript reaches the restart
 #     context band gets one rewake per session telling it to run /stow, so the
-#     checkpoint lands before automatic compaction can drop detail. It is offered
-#     only while the home is idle or a live watcher already covers supervision,
-#     so the stow turn never runs uncovered and never displaces a supervision
-#     wake; it stays off in AFK. autostow_fire below owns its gates and
-#     once-per-session marker; the policy and thresholds are owned by
-#     docs/configuration.md "Session context thresholds".
+#     checkpoint lands before automatic compaction can drop detail.
+#     autostow_fire below owns its gates and once-per-session marker; the policy,
+#     its coverage gates, and its thresholds are owned by docs/configuration.md
+#     "Session context thresholds".
 #   - Translation: while supervision is still needed and AFK remains inactive,
 #     an actionable arm close (signal:/stale:/check:/heartbeat) prints one
 #     rewake banner to stderr and exits 2, which wakes Claude even while idle
@@ -128,9 +126,13 @@ usage() {
 Usage: fm-claude-stop-autoarm.sh
 
 Claude Stop hook registered in .claude/settings.json; not for manual use.
-It reads the Stop payload on stdin and, in a primary home that needs
-supervision, arms the watcher or supervision host for this session.
-Exit 0 is silent; exit 2 carries a rewake banner on stderr.
+It reads the Stop payload on stdin. In a primary home that needs supervision
+it arms the watcher or supervision host for this session. While supervision
+is already covered - an idle home that needs none, or a live watcher that
+already holds it - it instead emits at most one restart-band auto-stow wake
+per session, telling the session to run /stow.
+Exit 0 is silent; exit 2 carries the rewake banner or the auto-stow wake on
+stderr.
 EOF
 }
 

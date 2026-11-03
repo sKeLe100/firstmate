@@ -129,8 +129,7 @@ config/supervision-branch-model
 config/supervision-branch-effort  Pi supervision-branch model and effort pins; NOT inherited; see "Pi supervision branch model and effort (config/supervision-branch-model, config/supervision-branch-effort)"
 config/startup-memory-budget  per-home startup memory budget (default 7500 tokens); inherited; see "Startup memory budget (config/startup-memory-budget)"
 config/stow-pass-horizon  optional presence flag opting into /stow pass-count decay horizon; NOT inherited; see "Stow pass horizon (config/stow-pass-horizon)"
-config/context-thresholds  session-context warn/restart token-band thresholds for a primary home; inherited; see "Session context thresholds (config/context-thresholds)"
-config/worker-context-thresholds  session-context warn/restart thresholds for a non-primary home such as a task worktree; NOT inherited; see "Session context thresholds (config/context-thresholds)"
+config/context-thresholds  session-context warn/restart token-band thresholds; inherited; see "Session context thresholds (config/context-thresholds)"
 config/auto-stow  presence flag opting a secondmate home into the restart-band auto-stow wake; NOT inherited; see "Session context thresholds (config/context-thresholds)"
 config/auto-stow-off  presence flag disabling the restart-band auto-stow wake for any home; NOT inherited; see "Session context thresholds (config/context-thresholds)"
 config/codex-context-thresholds  Codex-side session-context thresholds (separate defaults); NOT inherited; see "Codex context thresholds (config/codex-context-thresholds)"
@@ -897,12 +896,9 @@ A remote secondmate launch is not gated by it, because this reading says nothing
 ## Session context thresholds (config/context-thresholds)
 
 `config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-26).
-The helper picks the file by the home's role: a primary home, meaning the main home or a secondmate home (a plain checkout or a marked secondmate home, never a linked task worktree), reads `config/context-thresholds`.
-Any other home, such as a crewmate or scout task worktree, reads `config/worker-context-thresholds` instead, so the orchestrator's bands never reach a worker.
-The format of both files is at most one `warn=<N>` line and one `restart=<N>` line, each a positive base-10 integer with `warn <= restart`; an absent file or absent key means the built-in defaults of `warn=150000` and `restart=250000`, and a malformed file is rejected loudly rather than silently replaced by defaults.
+The format is at most one `warn=<N>` line and one `restart=<N>` line, each a positive base-10 integer with `warn <= restart`; an absent file or absent key means the built-in defaults of `warn=150000` and `restart=250000`, and a malformed file is rejected loudly rather than silently replaced by defaults.
 The helper reports the resolved thresholds and a `band=ok|warn|restart` field on its one data-only output line; supervision, [`/stow`](../.agents/skills/stow/SKILL.md), and [`/bearings`](../.agents/skills/bearings/SKILL.md) act on that band rather than re-deriving thresholds.
-`config/context-thresholds` is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so the primary's thresholds propagate on every convergence.
-`config/worker-context-thresholds` is not inherited, so each home that needs a worker band sets its own.
+The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so the primary's thresholds propagate on every convergence.
 
 The bands mean:
 

@@ -14,14 +14,6 @@ trap 'rm -rf "$tmp"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-mk_primary_root() {
-  # A primary root (bin/fm-primary-scope-lib.sh fm_primary_root_matches) is a
-  # plain checkout with AGENTS.md and bin/; only it reads config/context-thresholds.
-  mkdir -p "$1/bin" "$1/config"
-  : > "$1/AGENTS.md"
-  git init -q "$1"
-}
-
 mk_line() {
   # mk_line <type> <sidechain:true|false> <input> <cache_create> <cache_read>
   printf '{"type":"%s","isSidechain":%s,"message":{"usage":{"input_tokens":%d,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":10,"server_tool_use":{"web_search_requests":0}}}}\n' \
@@ -110,10 +102,10 @@ case "$out" in
   *) fail "expected band=restart at 260002 tokens, got: $out" ;;
 esac
 
-# 9. config/context-thresholds under a primary FM_HOME overrides the defaults,
-#    including with an explicit transcript argument.
+# 9. config/context-thresholds under FM_HOME overrides the defaults, including
+#    with an explicit transcript argument.
 cfg_home="$tmp/cfg_home"
-mk_primary_root "$cfg_home"
+mkdir -p "$cfg_home/config"
 printf 'warn=50000\nrestart=65000\n' > "$cfg_home/config/context-thresholds"
 out="$(FM_HOME="$cfg_home" "$bin" "$t")"
 case "$out" in
@@ -152,45 +144,5 @@ case " $FM_INHERITABLE_CONFIG " in
   *" context-thresholds "*) ;;
   *) fail "config/context-thresholds must be in FM_INHERITABLE_CONFIG so secondmate homes inherit the thresholds" ;;
 esac
-
-# 12. Role split: a primary root reads only config/context-thresholds, and a
-#     worker home (a linked task worktree, which is not a primary root) reads
-#     only config/worker-context-thresholds, never the orchestrator's file. Both
-#     checkouts share AGENTS.md and bin/, so only the linked-worktree distinction
-#     decides the role.
-role_src="$tmp/role_src"
-mk_primary_root "$role_src"
-: > "$role_src/bin/.keep"
-git -C "$role_src" add -A
-git -C "$role_src" -c user.name=fmtest -c user.email=fmtest@example.invalid commit -q -m init
-git -C "$role_src" worktree add -q "$tmp/role_worker" -b role-split-test
-worker="$tmp/role_worker"
-mkdir -p "$worker/config"
-role_t="$tmp/role.jsonl"
-mk_line assistant false 2 40000 30000 > "$role_t"
-printf 'warn=50000\nrestart=65000\n' > "$role_src/config/context-thresholds"
-printf 'warn=1\nrestart=2\n' > "$role_src/config/worker-context-thresholds"
-out="$(FM_HOME="$role_src" "$bin" "$role_t")"
-case "$out" in
-  *"warn_tokens=50000 restart_tokens=65000 band=restart "*) ;;
-  *) fail "primary must read config/context-thresholds and ignore the worker file, got: $out" ;;
-esac
-printf 'warn=50000\nrestart=65000\n' > "$worker/config/context-thresholds"
-out="$(FM_HOME="$worker" "$bin" "$role_t")"
-case "$out" in
-  *"warn_tokens=150000 restart_tokens=250000 band=ok "*) ;;
-  *) fail "worker must ignore the orchestrator's config/context-thresholds, got: $out" ;;
-esac
-printf 'warn=50000\nrestart=65000\n' > "$worker/config/worker-context-thresholds"
-out="$(FM_HOME="$worker" "$bin" "$role_t")"
-case "$out" in
-  *"warn_tokens=50000 restart_tokens=65000 band=restart "*) ;;
-  *) fail "worker must read config/worker-context-thresholds, got: $out" ;;
-esac
-printf 'warn=abc\n' > "$worker/config/worker-context-thresholds"
-if FM_HOME="$worker" "$bin" "$role_t" 2>"$tmp/err7"; then
-  fail "expected failure on a malformed worker thresholds file"
-fi
-grep -q "worker-context-thresholds" "$tmp/err7" || fail "malformed worker file must be named in the loud error"
 
 echo "PASS fm-context-usage.test.sh"
