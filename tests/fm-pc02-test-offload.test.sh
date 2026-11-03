@@ -58,6 +58,15 @@ esac
 SH
 chmod +x "$TMP_ROOT/fake-ldd-bin/ldd"
 export PATH="$TMP_ROOT/fake-ldd-bin:$PATH"
+# The parity probe refuses a tool whose version neither host can establish, so
+# give every probed tool this runner lacks (CI has no herdr, for example) the
+# same stub version on both fake hosts; installed tools keep their real
+# version, which both fake hosts also share.
+for tool in git bash python3 jq node shellcheck actionlint ruby chromium herdr pi tmux; do
+  command -v "$tool" >/dev/null 2>&1 && continue
+  printf '#!/usr/bin/env bash\necho "%s fixture 0.0.0"\n' "$tool" > "$TMP_ROOT/fake-ldd-bin/$tool"
+  chmod +x "$TMP_ROOT/fake-ldd-bin/$tool"
+done
 
 # The parity gate compares the browser each side selects, so PC01 runs from a
 # controlled home whose cached browser matches the one fake_pc02 installs;
