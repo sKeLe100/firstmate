@@ -747,7 +747,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test 
 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
 
-## PC02 test offload
+## PC02 test and lint offload
 
 Every executing `bin/fm-test-run.sh` invocation prints one `FM_TEST_ENV_RECORD` before starting tests, from the shell that will run them.
 For an offloaded run this means the record comes from the runner on PC02, with PC02's inherited `PATH` and the limits the suite actually runs with.
@@ -765,7 +765,7 @@ An invalid or unreadable configuration, or an unavailable home state directory, 
 [`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
 Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. The value must be an integer from 1 to 16; any other value is a configuration error that exits 2 without running tests.
 The no-mistakes Lint step reaches the same path with `--lint`, which runs the canonical `bin/fm-lint.sh` invocation (including a requested `--partition KofN`) on PC02 under those identical slot and admission rules and falls back to PC01.
-A lint `--telemetry` request (or `FM_LINT_TELEMETRY`) is written inside the PC02 mirror, and both that snapshot and its `.roots.tsv` sidecar are copied back to the caller's paths, so `bin/fm-lint-budget.sh` and artifact uploads read them locally.
+A lint `--telemetry` request (or `FM_LINT_TELEMETRY`) is written inside the PC02 mirror, and both that snapshot and its `.roots.tsv` sidecar are copied back to the caller's paths, so `bin/fm-lint-budget.sh` and artifact uploads read them locally; the script header owns how a relative path resolves.
 The host slots coordinate test and lint offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
 An explicit caller `--jobs` and the default auto-scheduler ceiling are each reduced to at most `floor(PC02 nproc / slots)` workers per slot, so the slots together stay within PC02's thread count; an explicit `FM_PC02_OFFLOAD_JOBS` override is honored verbatim and may oversubscribe by choice, and an unreadable thread count keeps the run local. The script header owns the cap arithmetic and admission detail.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.

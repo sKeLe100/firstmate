@@ -146,14 +146,15 @@
 # request such as --partition 2of4 means exactly what it means in CI. A
 # --telemetry path is the one exception: it is translated into the PC02
 # mirror's own path, and both the snapshot and its .roots.tsv sidecar are
-# pulled back to the caller's path afterwards. The remote lint always runs the
-# full canonical inventory (fm-lint.sh's CI selection) with the exhaustive
-# source-aware analysis, never the changed-file subset a branch worktree would
-# pick; a local fallback runs bin/fm-lint.sh in that checkout's own context,
-# exactly as before this offload existed. Every admission rule below (lane
-# occupancy, personal-use switch, resources, tools, host slots) is shared by
-# both modes; the script never forces a single worker or reserves a host-wide
-# slot.
+# pulled back to the caller's path afterwards, with a relative path resolved
+# against the repo root exactly as bin/fm-lint.sh resolves it. The remote lint
+# always runs the full canonical inventory (fm-lint.sh's CI selection) with
+# the exhaustive source-aware analysis, never the changed-file subset a branch
+# worktree would pick; a local fallback runs bin/fm-lint.sh in that checkout's
+# own context, exactly as before this offload existed. Every admission rule
+# below (lane occupancy, personal-use switch, resources, tools, host slots) is
+# shared by both modes; the script never forces a single worker or reserves a
+# host-wide slot.
 #
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
