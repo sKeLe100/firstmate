@@ -49,11 +49,11 @@
 #
 # Result receipts bind every hosted partition to HEAD and the exact selected
 # scripts. A test/lint failure is terminal, never grounds for a greener local
-# rerun.
-# Read/receipt ambiguity after execution fails closed. Queued admission can
-# time out and fall back only after the owned run is confirmed cancelled.
-# GitLab work rejected for ci_quota_exceeded before starting can fall back
-# only when no partition receipt exists.
+# rerun. GitHub read/receipt ambiguity fails closed. Queued admission can time
+# out and fall back only after the owned run is confirmed cancelled. GitLab
+# work rejected for ci_quota_exceeded before starting, a confirmed GitLab
+# execution timeout, or GitLab completion with missing receipts falls through
+# to local admission; a GitLab receipt showing a failed test still fails.
 # Every API call is bounded. Interrupts cancel only this invocation's run.
 # stdout forwards suite evidence; routing diagnostics go to stderr.
 #
@@ -291,11 +291,12 @@ for f in (w/'results').rglob('result.json'):
     found[k]=r
     if r['exit']!=0: print(f'Hosted partition failed: {k}',file=sys.stderr); sys.exit(1)
 missing=set(p['partitions'])-set(found)
-if missing and sys.argv[3]:
-    jobs=json.load(open(sys.argv[3]))
-    if not found and any(j.get('failure_reason')=='ci_quota_exceeded' and not j.get('started_at') for j in jobs):
-        print('GitLab free compute quota unavailable before execution',file=sys.stderr); sys.exit(75)
-assert not missing, 'missing partition receipts'
+if missing:
+    if sys.argv[3]:
+        jobs=json.load(open(sys.argv[3]))
+        if not found and any(j.get('failure_reason')=='ci_quota_exceeded' and not j.get('started_at') for j in jobs):
+            print('GitLab free compute quota unavailable before execution',file=sys.stderr); sys.exit(75)
+    sys.exit(76)
 print('receipts: verified\nhead: '+sys.argv[2])
 PY
 }
@@ -396,7 +397,14 @@ PY_REJECTION
     case "$state" in pending|created|manual|scheduled|waiting_for_resource)
       if [ "$((now-start))" -ge "$QUEUE" ]; then cancel || return 1; finished=1; return 75; fi ;;
     esac
-    [ "$((now-start))" -lt "$RUN" ] || { cancel || true; return 1; }
+    if [ "$((now-start))" -ge "$RUN" ]; then
+      if cancel; then
+        finished=1
+        echo "fm-test-compute: GitLab run exceeded ${RUN}s; falling back to local admission" >&2
+        return 75
+      fi
+      return 1
+    fi
     sleep "$POLL"
   done
   finished=1
@@ -424,6 +432,10 @@ PY
   local result_rc
   verify_results "$work/jobs.json"
   result_rc=$?
+  if [ "$result_rc" = 76 ]; then
+    echo 'fm-test-compute: GitLab returned incomplete receipts; falling back to local admission' >&2
+    return 75
+  fi
   [ "$result_rc" = 0 ] || return "$result_rc"
   [ "$state" = success ]
 }

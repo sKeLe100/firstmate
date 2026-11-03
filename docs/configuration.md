@@ -770,7 +770,8 @@ The configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to ru
 Required PR CI and its existing check contexts remain unchanged.
 
 A failing test or lint receipt fails the caller and never triggers a second run on another tier.
-Unknown results, lost accepted dispatches, missing receipts, and execution-time monitoring failures fail closed.
+GitHub unknown results, lost accepted dispatches, missing receipts, and execution-time monitoring failures fail closed.
+GitLab completion with missing receipts or a confirmed GitLab execution timeout falls through to PC02/PC01 admission instead, so its single serial job cannot turn a large plan into a blocked gate; a GitLab receipt showing a failed test still fails.
 A queued run can fall back only after its cancellation is confirmed; an interrupt requests cancellation of only the invocation's own run.
 This distinction prevents a transport error from silently accepting a different result or launching duplicate expensive suites.
 Hosted logs and timing evidence return through partition artifacts, with one-day retention.
@@ -781,6 +782,7 @@ The Test caller streams the downloaded logs into its ordinary output for no-mist
 GitLab is tried only after `glab auth status --hostname gitlab.com` succeeds.
 It uses the existing dedicated `sean.morden1993/firstmate-ci` project, overridable with `FM_TEST_COMPUTE_GITLAB_PROJECT`; it never creates an account or a project.
 The `firstmate-compute` branch holds the public [relay template](../.github/workflows/test-compute.gitlab.template), and API-triggered pipelines clone only public Firstmate source and restore the same bounded snapshot.
+The relay runs one serial job over the dispatched partition plan, so its wall clock is the sum of the selected partitions; incomplete receipts or a confirmed execution timeout fall through to local admission as described above.
 An empty dedicated repository is initialized on that branch; existing branches are preserved.
 This template is stored outside GitHub's workflow filename extensions because it is GitLab CI configuration.
 The relay must have GitLab shared runners enabled, identity verification completed where required, and free compute minutes available.

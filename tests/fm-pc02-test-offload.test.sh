@@ -531,6 +531,13 @@ if [ -n "\${FM_FAKE_CAPTURE_RUNNER:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" 
 echo "auto_jobs=\${FM_TEST_RUN_AUTO_JOBS_MAX:-unset} argv=\$*"
 RUNNER
 fi
+if [ -n "\${FM_FAKE_CAPTURE_COMPUTE:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
+  cat > "\${args[\${#args[@]}-1]}/bin/fm-test-compute.sh" <<'COMPUTE'
+#!/usr/bin/env bash
+echo "compute_argv=\$*"
+exit "\${FM_FAKE_CAPTURE_COMPUTE_EXIT:-0}"
+COMPUTE
+fi
 SH
   chmod +x "$fakebin/ssh" "$fakebin/rsync"
   printf '%s\n' "$fakebin"
@@ -602,6 +609,24 @@ test_remote_run_passes_through_green_suite_and_json() {
     || fail "the fake PC02 path should emit one environment record: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
+}
+
+test_remote_lint_runs_local_lint_and_propagates_exit() {
+  local dir fakebin out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-lint"
+  fakebin=$(fake_pc02 "$dir")
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_COMPUTE=1 \
+    FM_FAKE_CAPTURE_COMPUTE_EXIT=7 "$SCRIPT" --lint-partitions 2>&1)
+  status=$?
+  expect_code 7 "$status" "remote lint must return its own exit code unchanged: $out"
+  assert_contains "$out" "PC02 idle and ready; running tests remotely" "the lint run never went remote: $out"
+  assert_contains "$out" "compute_argv=local-lint" "remote lint did not invoke the local-lint mode: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "remote lint left a mirror behind: $out"
+  pass "remote lint mode invokes local-lint and returns its exit code"
 }
 
 test_remote_invocation_inherits_fm_test_run_scheduler() {
@@ -1572,6 +1597,7 @@ test_pc02_if_idle_flag_forwards_through_fm_test_run
 test_missing_perl_falls_back_to_local
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_passes_through_green_suite_and_json
+test_remote_lint_runs_local_lint_and_propagates_exit
 test_remote_invocation_inherits_fm_test_run_scheduler
 test_remote_run_uses_7200_second_default_timeout
 test_remote_jobs_and_script_bound

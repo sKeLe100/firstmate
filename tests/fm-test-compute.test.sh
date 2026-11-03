@@ -64,14 +64,20 @@ cat > "$TMP_ROOT/tools/gh-axi" <<'MOCK'
 import json,os,pathlib,sys
 args=sys.argv[1:]; w=pathlib.Path(os.environ['TEST_COMPUTE_DATA']); scenario=os.environ.get('SCENARIO','success')
 with open(w/'calls','a') as f: f.write('github '+ ' '.join(args[:3])+'\n')
-def payload(): return json.loads(json.load(open(w/'request'))['inputs']['snapshot'])
+def request(): return json.load(open(w/'request'))
+def payload(): return json.loads(request()['inputs']['snapshot'])
+def dispatched():
+    p=payload(); keys=json.loads(request()['inputs']['partitions'])
+    if not isinstance(keys,list) or keys!=list(p['partitions']):
+        print('dispatch partitions do not match plan',file=sys.stderr); sys.exit(1)
+    return keys
 def receipt(k):
     p=payload()
     scripts=['tests/other.test.sh'] if scenario=='wrong-scripts' else p['partitions'][k]
     return dict(version=1,sha='f'*40 if scenario=='wrong-head' else p['sha'],partition=k,scripts=scripts,exit=1 if scenario=='failure' and k=='portable-parallel-1' else 0)
 if args[:2]==['run','download']:
-    out=pathlib.Path(args[args.index('--dir')+1]); p=payload()
-    for k in p['partitions']:
+    out=pathlib.Path(args[args.index('--dir')+1]); keys=dispatched(); p=payload()
+    for k in keys:
         if scenario=='missing' and k=='portable-parallel-1': continue
         d=out/k; d.mkdir(parents=True); (d/'result.json').write_text(json.dumps(receipt(k))); (d/'run.log').write_text('evidence '+k+'\n')
     sys.exit(0)
@@ -97,7 +103,7 @@ if path.endswith('/actions/runs/123'):
     else: print('completed\t'+('failure' if scenario=='failure' else 'success'))
     sys.exit(0)
 if path.endswith('/workflows/test-compute.yml'):
-    if scenario in ('github-unavailable','gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-queued','gitlab-race-success','gitlab-race-failed'): sys.exit(1)
+    if scenario in ('github-unavailable','gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-queued','gitlab-timeout','gitlab-incomplete','gitlab-failure','gitlab-race-success','gitlab-race-failed'): sys.exit(1)
     print('active'); sys.exit(0)
 if path=='/repos/example/firstmate': print(('true' if scenario=='private' else 'false')+'\tmain'); sys.exit(0)
 sys.exit(1)
@@ -107,7 +113,7 @@ cat > "$TMP_ROOT/tools/glab" <<'MOCK'
 import json,os,pathlib,sys,zipfile,io
 args=sys.argv[1:]; w=pathlib.Path(os.environ['TEST_COMPUTE_DATA']); scenario=os.environ.get('SCENARIO','success')
 with open(w/'calls','a') as f: f.write('gitlab '+' '.join(args[:4])+'\n')
-if args[:2]==['auth','status']: sys.exit(0 if scenario in ('gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-queued','gitlab-race-success','gitlab-race-failed') else 1)
+if args[:2]==['auth','status']: sys.exit(0 if scenario in ('gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-queued','gitlab-timeout','gitlab-incomplete','gitlab-failure','gitlab-race-success','gitlab-race-failed') else 1)
 assert args[0]=='api'
 path=next(x for x in args if x.startswith('projects/'))
 if path.endswith('/repository/commits'):
@@ -122,6 +128,8 @@ if path.endswith('/pipelines/456/cancel'):
 if path.endswith('/pipelines/456'):
     if scenario=='gitlab-quota': status='failed'
     elif scenario=='gitlab-queued': status='canceled' if (w/'cancelled').exists() else 'pending'
+    elif scenario=='gitlab-timeout': status='canceled' if (w/'cancelled').exists() else 'running'
+    elif scenario in ('gitlab-incomplete','gitlab-failure'): status='failed'
     elif scenario.startswith('gitlab-race-'):
         status=scenario.removeprefix('gitlab-race-') if (w/'cancelled').exists() else 'pending'
     else: status='success'
@@ -134,7 +142,9 @@ if path.endswith('/artifacts'):
     p=json.load(open(w/'gitlab-payload')); b=io.BytesIO()
     with zipfile.ZipFile(b,'w') as z:
         for k in p['partitions']:
-            result=dict(version=1,sha=p['sha'],partition=k,scripts=p['partitions'][k],exit=0)
+            if scenario=='gitlab-incomplete' and k=='portable-parallel-1': continue
+            rc=1 if scenario=='gitlab-failure' and k=='portable-parallel-1' else 0
+            result=dict(version=1,sha=p['sha'],partition=k,scripts=p['partitions'][k],exit=rc)
             z.writestr(f'result/{k}/result.json',json.dumps(result)); z.writestr(f'result/{k}/run.log','GitLab evidence\n')
     sys.stdout.buffer.write(b.getvalue()); sys.exit(0)
 print(json.dumps(dict(empty_repo=scenario=='gitlab-bootstrap',default_branch='main')))
@@ -295,6 +305,29 @@ expect_code 0 "$result" "$output"
 [ -e "$TMP_ROOT/data/cancelled" ] || fail 'GitLab queue fallback did not cancel the owned pipeline'
 assert_contains "$output" 'local:' 'cancelled GitLab queue should fall back'
 pass 'GitLab queue timeout requires confirmed cancellation before fallback'
+
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$(FM_TEST_COMPUTE_RUN_SECS=1 SCENARIO=gitlab-timeout "$router" test --changed --exclude-family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+[ -e "$TMP_ROOT/data/cancelled" ] || fail 'GitLab execution timeout fallback did not cancel the owned pipeline'
+assert_contains "$output" 'GitLab run exceeded 1s; falling back to local admission' 'GitLab execution timeout did not name its fallback reason'
+assert_contains "$output" 'local:' 'confirmed GitLab execution timeout should fall back'
+pass 'a confirmed GitLab execution timeout falls through after cancellation'
+
+run_route gitlab-incomplete
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'GitLab returned incomplete receipts; falling back to local admission' 'incomplete GitLab receipts did not name their fallback reason'
+assert_contains "$output" 'local:' 'incomplete GitLab receipts should fall back'
+pass 'GitLab completion with missing receipts falls through to local admission'
+
+run_route gitlab-failure
+expect_code 1 "$result" "$output"
+[[ "$output" != *'local:'* ]] || fail 'a GitLab test failure with complete receipts fell back locally'
+assert_contains "$output" 'Hosted partition failed: portable-parallel-1' 'GitLab test failure evidence was not preserved'
+pass 'a GitLab test failure with complete receipts still fails'
 for scenario in github-race-failed github-race-success; do
   run_route "$scenario"
   expect_code 1 "$result" "$scenario must fail closed after a terminal completion race: $output"
@@ -363,6 +396,15 @@ output=$("$router" test --list --all)
 assert_contains "$output" 'local: <--list> <--all>' 'inspection argument semantics drifted'
 [ ! -e "$TMP_ROOT/data/calls" ] || fail 'inspection contacted hosted services'
 pass 'inspection never contacts hosted services'
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$("$router" test --all 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'local: <--all>' 'non-baseline test selection left local admission'
+[ ! -e "$TMP_ROOT/data/calls" ] || fail 'non-baseline test selection contacted hosted services'
+pass 'non-baseline test selections stay on local admission'
 printf dirty > "$fixture/untracked"
 run_route success
 assert_contains "$output" 'local:' 'dirty worktree was sent remotely'
