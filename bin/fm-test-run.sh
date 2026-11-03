@@ -1930,7 +1930,7 @@ def shared_pass_through(node):
     return False
 
 
-HUB_FANIN = 2
+HUB_FANIN = 3
 
 
 for dependency in sorted(set(sys.argv[1:])):
