@@ -1,0 +1,12 @@
+### offload disabled: --lint --list-files
+exit=0
+### direct oracle: bin/fm-lint.sh --list-files
+exit=0
+### stderr
+fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running lint on PC01
+### stdout
+bin/fm-lint.sh
+bin/fm-pc02-test-offload.sh
+tests/fm-lint.test.sh
+tests/fm-pc02-test-offload.test.sh
+### diff

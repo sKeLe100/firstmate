@@ -1,0 +1,8 @@
+fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running lint on PC01
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: local changed-file mode; ShellCheck source following disabled
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (17 allowlisted)
+fm-lint-nomistakes-config.sh: {run-worktree}/.no-mistakes.yaml ok
+rc=0

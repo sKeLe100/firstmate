@@ -1,0 +1,6 @@
+fm-pc02-test-offload: PC02 host CPU busy (67.3% >= 50%); running lint on PC01
+bin/fm-lint.sh
+bin/fm-pc02-test-offload.sh
+tests/fm-lint.test.sh
+tests/fm-pc02-test-offload.test.sh
+rc=0

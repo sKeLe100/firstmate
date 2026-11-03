@@ -1,0 +1,169 @@
+format	fm-lint-roots-v1
+meta	shellcheck_version	0.11.0
+meta	platform	Linux x86_64
+meta	image_os	unknown
+meta	image_version	unknown
+meta	mode	full
+meta	partition	8of8
+meta	jobs	2
+meta	bounds_enforced	0
+meta	root_deadline_seconds	unbounded
+meta	root_kill_grace_seconds	unbounded
+meta	root_memory_limit_kib	unbounded
+meta	timing_mechanism	none
+begin	3	bin/fm-brief.sh	0	full	1793729678848
+begin	1	bin/fm-backlog-routing.sh	1	full	1793729678848
+end	1	bin/fm-backlog-routing.sh	1	full	1793729678848	1793729679598	750	0	ok	unavailable	1
+begin	2	bin/fm-bearings-snapshot.sh	1	full	1793729679599
+end	2	bin/fm-bearings-snapshot.sh	1	full	1793729679599	1793729680346	747	0	ok	unavailable	1
+begin	4	bin/fm-check-unregister.sh	1	full	1793729680347
+end	4	bin/fm-check-unregister.sh	1	full	1793729680347	1793729682286	1939	0	ok	unavailable	1
+begin	8	bin/fm-crew-dispatch-lib.sh	1	full	1793729682287
+end	8	bin/fm-crew-dispatch-lib.sh	1	full	1793729682287	1793729682663	376	0	ok	unavailable	1
+begin	9	bin/fm-doc-audience-check.sh	1	full	1793729682664
+end	9	bin/fm-doc-audience-check.sh	1	full	1793729682664	1793729682709	45	0	ok	unavailable	1
+begin	10	bin/fm-git-strip-ai-trailers.sh	1	full	1793729682710
+end	10	bin/fm-git-strip-ai-trailers.sh	1	full	1793729682710	1793729683034	324	0	ok	unavailable	1
+begin	11	bin/fm-herdr-lab.sh	1	full	1793729683035
+end	11	bin/fm-herdr-lab.sh	1	full	1793729683035	1793729683896	861	0	ok	unavailable	1
+begin	12	bin/fm-herdr-session-cleanup.sh	1	full	1793729683897
+end	3	bin/fm-brief.sh	0	full	1793729678848	1793729693353	14505	0	ok	unavailable	1
+begin	5	bin/fm-claim-check.sh	0	full	1793729693354
+end	5	bin/fm-claim-check.sh	0	full	1793729693354	1793729693423	69	0	ok	unavailable	1
+begin	6	bin/fm-config-push.sh	0	full	1793729693424
+end	12	bin/fm-herdr-session-cleanup.sh	1	full	1793729683897	1793729694892	10995	0	ok	unavailable	1
+begin	14	bin/fm-inbox.sh	1	full	1793729694893
+end	6	bin/fm-config-push.sh	0	full	1793729693424	1793729705667	12243	0	ok	unavailable	1
+begin	7	bin/fm-contributions.sh	0	full	1793729705668
+end	14	bin/fm-inbox.sh	1	full	1793729694893	1793729705797	10904	0	ok	unavailable	1
+begin	15	bin/fm-install-herdr.sh	1	full	1793729705798
+end	15	bin/fm-install-herdr.sh	1	full	1793729705798	1793729705888	90	0	ok	unavailable	1
+begin	17	bin/fm-marker-lib.sh	1	full	1793729705889
+end	17	bin/fm-marker-lib.sh	1	full	1793729705889	1793729706190	301	0	ok	unavailable	1
+begin	20	bin/fm-pr-reviewers.sh	1	full	1793729706191
+end	20	bin/fm-pr-reviewers.sh	1	full	1793729706191	1793729707888	1697	0	ok	unavailable	1
+begin	26	bin/fm-remote-readiness-lib.sh	1	full	1793729707889
+end	26	bin/fm-remote-readiness-lib.sh	1	full	1793729707889	1793729707984	95	0	ok	unavailable	1
+begin	27	bin/fm-review-check.sh	1	full	1793729707985
+end	7	bin/fm-contributions.sh	0	full	1793729705668	1793729717495	11827	0	ok	unavailable	1
+begin	13	bin/fm-host-memory.sh	0	full	1793729717496
+end	13	bin/fm-host-memory.sh	0	full	1793729717496	1793729717568	72	0	ok	unavailable	1
+begin	16	bin/fm-landed-lib.sh	0	full	1793729717569
+end	16	bin/fm-landed-lib.sh	0	full	1793729717569	1793729717597	28	0	ok	unavailable	1
+begin	18	bin/fm-nomistakes-gate-check.sh	0	full	1793729717598
+end	18	bin/fm-nomistakes-gate-check.sh	0	full	1793729717598	1793729717729	131	0	ok	unavailable	1
+begin	19	bin/fm-opencode-session-sweep.sh	0	full	1793729717730
+end	19	bin/fm-opencode-session-sweep.sh	0	full	1793729717730	1793729717790	60	0	ok	unavailable	1
+begin	21	bin/fm-project-capacity-lib.sh	0	full	1793729717791
+end	21	bin/fm-project-capacity-lib.sh	0	full	1793729717791	1793729718011	220	0	ok	unavailable	1
+begin	22	bin/fm-public-followup-collect.sh	0	full	1793729718012
+end	27	bin/fm-review-check.sh	1	full	1793729707985	1793729728573	20588	0	ok	unavailable	1
+begin	29	bin/fm-roundtable-coverage.sh	1	full	1793729728574
+end	29	bin/fm-roundtable-coverage.sh	1	full	1793729728574	1793729728679	105	0	ok	unavailable	1
+begin	31	bin/fm-session-lock-lib.sh	1	full	1793729728680
+end	31	bin/fm-session-lock-lib.sh	1	full	1793729728680	1793729729352	672	0	ok	unavailable	1
+begin	33	bin/fm-watch-checkpoint.sh	1	full	1793729729353
+end	33	bin/fm-watch-checkpoint.sh	1	full	1793729729353	1793729729937	584	0	ok	unavailable	1
+begin	36	bin/backends/cmux.sh	1	full	1793729729939
+end	36	bin/backends/cmux.sh	1	full	1793729729939	1793729732365	2426	0	ok	unavailable	1
+begin	43	tests/fm-claim-check.test.sh	1	full	1793729732365
+end	22	bin/fm-public-followup-collect.sh	0	full	1793729718012	1793729732969	14957	0	ok	unavailable	1
+begin	23	bin/fm-public-followup-emit.sh	0	full	1793729732970
+end	43	tests/fm-claim-check.test.sh	1	full	1793729732365	1793729741924	9559	0	ok	unavailable	1
+begin	44	tests/fm-contributions.test.sh	1	full	1793729741925
+end	44	tests/fm-contributions.test.sh	1	full	1793729741925	1793729745768	3843	0	ok	unavailable	1
+begin	46	tests/fm-gate-refuse.test.sh	1	full	1793729745769
+end	46	tests/fm-gate-refuse.test.sh	1	full	1793729745769	1793729747393	1624	0	ok	unavailable	1
+begin	47	tests/fm-gotmp.test.sh	1	full	1793729747394
+end	47	tests/fm-gotmp.test.sh	1	full	1793729747394	1793729747645	251	0	ok	unavailable	1
+begin	48	tests/fm-kimi-harness.test.sh	1	full	1793729747646
+end	23	bin/fm-public-followup-emit.sh	0	full	1793729732970	1793729748912	15942	0	ok	unavailable	1
+begin	24	bin/fm-public-followup-lib.sh	0	full	1793729748913
+end	48	tests/fm-kimi-harness.test.sh	1	full	1793729747646	1793729750269	2623	0	ok	unavailable	1
+begin	49	tests/fm-lint-test-size.test.sh	1	full	1793729750270
+end	49	tests/fm-lint-test-size.test.sh	1	full	1793729750270	1793729751011	741	0	ok	unavailable	1
+begin	52	tests/fm-pi-branch-live-e2e.test.sh	1	full	1793729751012
+end	52	tests/fm-pi-branch-live-e2e.test.sh	1	full	1793729751012	1793729751959	947	0	ok	unavailable	1
+begin	53	tests/fm-pi-watch-extension.test.sh	1	full	1793729751960
+end	53	tests/fm-pi-watch-extension.test.sh	1	full	1793729751960	1793729755958	3998	0	ok	unavailable	1
+begin	55	tests/fm-procevent-when.test.sh	1	full	1793729755959
+end	55	tests/fm-procevent-when.test.sh	1	full	1793729755959	1793729759607	3648	0	ok	unavailable	1
+begin	57	tests/fm-retry-pressure.test.sh	1	full	1793729759608
+end	57	tests/fm-retry-pressure.test.sh	1	full	1793729759608	1793729760537	929	0	ok	unavailable	1
+begin	58	tests/fm-secondmate-restart.test.sh	1	full	1793729760538
+end	58	tests/fm-secondmate-restart.test.sh	1	full	1793729760538	1793729762221	1683	0	ok	unavailable	1
+begin	59	tests/fm-spawn-compact-adviser-disable-remote.test.sh	1	full	1793729762222
+end	59	tests/fm-spawn-compact-adviser-disable-remote.test.sh	1	full	1793729762222	1793729762887	665	0	ok	unavailable	1
+begin	60	tests/fm-spawn-host-memory.test.sh	1	full	1793729762888
+end	24	bin/fm-public-followup-lib.sh	0	full	1793729748913	1793729763217	14304	0	ok	unavailable	1
+begin	25	bin/fm-remote-doctor.sh	0	full	1793729763218
+end	60	tests/fm-spawn-host-memory.test.sh	1	full	1793729762888	1793729763576	688	0	ok	unavailable	1
+begin	61	tests/fm-spawn-pc02-lane-guard.test.sh	1	full	1793729763577
+end	61	tests/fm-spawn-pc02-lane-guard.test.sh	1	full	1793729763577	1793729764345	768	0	ok	unavailable	1
+begin	62	tests/fm-startup-memory-budget.test.sh	1	full	1793729764346
+end	62	tests/fm-startup-memory-budget.test.sh	1	full	1793729764346	1793729765307	961	0	ok	unavailable	1
+begin	66	tests/fm-teardown-pipeline-spend.sh	1	full	1793729765308
+end	66	tests/fm-teardown-pipeline-spend.sh	1	full	1793729765308	1793729766640	1332	0	ok	unavailable	1
+begin	68	tests/fm-teardown-source-guards.sh	1	full	1793729766641
+end	68	tests/fm-teardown-source-guards.sh	1	full	1793729766641	1793729766878	237	0	ok	unavailable	1
+begin	70	tests/fm-tmux-agent-liveness.test.sh	1	full	1793729766879
+end	25	bin/fm-remote-doctor.sh	0	full	1793729763218	1793729767825	4607	0	ok	unavailable	1
+begin	28	bin/fm-review-diff.sh	0	full	1793729767826
+end	28	bin/fm-review-diff.sh	0	full	1793729767826	1793729768083	257	0	ok	unavailable	1
+begin	30	bin/fm-routing-ledger-metrics.sh	0	full	1793729768084
+end	30	bin/fm-routing-ledger-metrics.sh	0	full	1793729768084	1793729768147	63	0	ok	unavailable	1
+begin	32	bin/fm-supervisor-target-lib.sh	0	full	1793729768148
+end	32	bin/fm-supervisor-target-lib.sh	0	full	1793729768148	1793729768230	82	0	ok	unavailable	1
+begin	34	bin/fm-x-poll.sh	0	full	1793729768231
+end	70	tests/fm-tmux-agent-liveness.test.sh	1	full	1793729766879	1793729771136	4257	0	ok	unavailable	1
+begin	71	tests/fm-tool-update-check.test.sh	1	full	1793729771137
+end	71	tests/fm-tool-update-check.test.sh	1	full	1793729771137	1793729773650	2513	0	ok	unavailable	1
+begin	76	tests/fm-x-mode.test.sh	1	full	1793729773651
+end	76	tests/fm-x-mode.test.sh	1	full	1793729773651	1793729782089	8438	0	ok	unavailable	1
+end	34	bin/fm-x-poll.sh	0	full	1793729768231	1793729783644	15413	0	ok	unavailable	1
+begin	35	bin/fm-x-reply.sh	0	full	1793729783645
+end	35	bin/fm-x-reply.sh	0	full	1793729783645	1793729789146	5501	0	ok	unavailable	1
+begin	37	tests/fm-afk-pi-herdr-return-e2e.test.sh	0	full	1793729789147
+end	37	tests/fm-afk-pi-herdr-return-e2e.test.sh	0	full	1793729789147	1793729790146	999	0	ok	unavailable	1
+begin	38	tests/fm-backend-herdr-smoke.test.sh	0	full	1793729790147
+end	38	tests/fm-backend-herdr-smoke.test.sh	0	full	1793729790147	1793729790642	495	0	ok	unavailable	1
+begin	39	tests/fm-backend-tmux-smoke.test.sh	0	full	1793729790643
+end	39	tests/fm-backend-tmux-smoke.test.sh	0	full	1793729790643	1793729790970	327	0	ok	unavailable	1
+begin	40	tests/fm-busy-adapter-wiring.test.sh	0	full	1793729790971
+end	40	tests/fm-busy-adapter-wiring.test.sh	0	full	1793729790971	1793729793303	2332	0	ok	unavailable	1
+begin	41	tests/fm-calm-pi-extension.test.sh	0	full	1793729793304
+end	41	tests/fm-calm-pi-extension.test.sh	0	full	1793729793304	1793729798250	4946	0	ok	unavailable	1
+begin	42	tests/fm-ci-workflow.test.sh	0	full	1793729798251
+end	42	tests/fm-ci-workflow.test.sh	0	full	1793729798251	1793729799299	1048	0	ok	unavailable	1
+begin	45	tests/fm-control-relaunch.test.sh	0	full	1793729799300
+end	45	tests/fm-control-relaunch.test.sh	0	full	1793729799300	1793729821354	22054	0	ok	unavailable	1
+begin	50	tests/fm-no-mistakes-required.test.sh	0	full	1793729821355
+end	50	tests/fm-no-mistakes-required.test.sh	0	full	1793729821355	1793729821992	637	0	ok	unavailable	1
+begin	51	tests/fm-pending-reply.test.sh	0	full	1793729821993
+end	51	tests/fm-pending-reply.test.sh	0	full	1793729821993	1793729919862	97869	0	ok	unavailable	1
+begin	54	tests/fm-polytoken-signals-live-e2e.test.sh	0	full	1793729919863
+end	54	tests/fm-polytoken-signals-live-e2e.test.sh	0	full	1793729919863	1793729925477	5614	0	ok	unavailable	1
+begin	56	tests/fm-remote-delta-read.test.sh	0	full	1793729925478
+end	56	tests/fm-remote-delta-read.test.sh	0	full	1793729925478	1793729926480	1002	0	ok	unavailable	1
+begin	63	tests/fm-startup-network.test.sh	0	full	1793729926481
+end	63	tests/fm-startup-network.test.sh	0	full	1793729926481	1793729928814	2333	0	ok	unavailable	1
+begin	64	tests/fm-task-inbox.test.sh	0	full	1793729928815
+end	64	tests/fm-task-inbox.test.sh	0	full	1793729928815	1793729932235	3420	0	ok	unavailable	1
+begin	65	tests/fm-teardown-index-lock.sh	0	full	1793729932235
+end	65	tests/fm-teardown-index-lock.sh	0	full	1793729932235	1793729933563	1328	0	ok	unavailable	1
+begin	67	tests/fm-teardown-pr-check.sh	0	full	1793729933564
+end	67	tests/fm-teardown-pr-check.sh	0	full	1793729933564	1793729935037	1473	0	ok	unavailable	1
+begin	69	tests/fm-test-sandbox-cache-race.test.sh	0	full	1793729935038
+end	69	tests/fm-test-sandbox-cache-race.test.sh	0	full	1793729935038	1793729935693	655	0	ok	unavailable	1
+begin	72	tests/fm-trace-context-spawn.test.sh	0	full	1793729935694
+end	72	tests/fm-trace-context-spawn.test.sh	0	full	1793729935694	1793729937261	1567	0	ok	unavailable	1
+begin	73	tests/fm-turnend-foreign-owner-arm-fix.test.sh	0	full	1793729937262
+end	73	tests/fm-turnend-foreign-owner-arm-fix.test.sh	0	full	1793729937262	1793729937289	27	0	ok	unavailable	1
+begin	74	tests/fm-watch-arm.test.sh	0	full	1793729937290
+end	74	tests/fm-watch-arm.test.sh	0	full	1793729937290	1793729941699	4409	0	ok	unavailable	1
+begin	75	tests/fm-watch-recovery-loop.test.sh	0	full	1793729941700
+end	75	tests/fm-watch-recovery-loop.test.sh	0	full	1793729941700	1793729943105	1405	0	ok	unavailable	1
+meta	roots_begun	76
+meta	roots_completed	76
+meta	roots_unfinished	0
+meta	result_exit	0

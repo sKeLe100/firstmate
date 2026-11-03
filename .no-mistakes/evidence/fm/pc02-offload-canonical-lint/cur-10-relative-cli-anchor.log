@@ -1,0 +1,20 @@
+repo_root={run-worktree}
+cli_telemetry_exists=yes
+cli_roots_exists=yes
+cwd_bin_telemetry_exists=no
+cwd_bin_roots_exists=no
+--- telemetry head
+format	fm-lint-telemetry-v1
+git_head	5cbbb4df518d0d3db2d1a71c53edd7edf13eaba0
+content_cksum	2733182643-3520
+shellcheck_version	0.11.0
+analysis_mode	full
+partition	7of8
+jobs	2
+root_bounds_enforced	0
+root_deadline_seconds	unbounded
+--- roots meta
+format	fm-lint-roots-v1
+meta	shellcheck_version	0.11.0
+meta	platform	Linux x86_64
+meta	image_os	unknown

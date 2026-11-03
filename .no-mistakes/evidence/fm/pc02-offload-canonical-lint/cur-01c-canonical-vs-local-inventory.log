@@ -1,0 +1,8 @@
+remote_offloaded_list_files_count=600
+local_direct_list_files_count=4
+remote_first=bin/fm-afk-contract.sh
+local_files:
+bin/fm-lint.sh
+bin/fm-pc02-test-offload.sh
+tests/fm-lint.test.sh
+tests/fm-pc02-test-offload.test.sh

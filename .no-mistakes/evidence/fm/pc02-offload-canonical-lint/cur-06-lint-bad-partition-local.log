@@ -1,0 +1,3 @@
+fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running lint on PC01
+fm-lint.sh: --partition needs 1 <= K <= N <= 8, got 9of4.
+rc=2

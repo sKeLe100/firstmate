@@ -1,0 +1,23 @@
+### PC02 CPU busy: lint routes local
+fm-pc02-test-offload: PC02 host CPU busy (67.3% >= 50%); running lint on PC01
+bin/fm-lint.sh
+bin/fm-pc02-test-offload.sh
+tests/fm-lint.test.sh
+tests/fm-pc02-test-offload.test.sh
+rc=0
+
+### PC02 missing a required tool: lint routes local
+fm-pc02-test-offload: PC02 missing required tool(s): definitely-absent-probe-tool; running lint on PC01
+bin/fm-lint.sh
+bin/fm-pc02-test-offload.sh
+tests/fm-lint.test.sh
+tests/fm-pc02-test-offload.test.sh
+rc=0
+
+### all PC02 slots busy: lint routes local
+fm-pc02-test-offload: all 1 PC02 test slots are busy; running locally; running lint on PC01
+bin/fm-lint.sh
+bin/fm-pc02-test-offload.sh
+tests/fm-lint.test.sh
+tests/fm-pc02-test-offload.test.sh
+rc=0
