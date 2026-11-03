@@ -578,8 +578,8 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
 
 # A long consumer chain and a cycle must reach the real reader; comment-only
 # mentions, including inline comments, must not create consumer edges.
-test_changed_reference_closure_and_explanations() {
-  local tmp repo listed explained script
+test_changed_reference_closure() {
+  local tmp repo listed script
   tmp=$(fm_test_tmproot fm-selection-closure)
   repo="$tmp/repo"
   init_changed_fixture_repo "$repo"
@@ -602,17 +602,10 @@ test_changed_reference_closure_and_explanations() {
   assert_contains "$listed" tests/fm-secondmate-safety.test.sh "a quoted hash keeps the executable dependency"
   assert_not_contains "$listed" tests/fm-backend.test.sh "comment-only consumers do not select tests"
   [ "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" -eq 2 ] || fail "leaf change widened beyond its two readers: $listed"
-  explained=$(cd "$repo" && bin/fm-test-run.sh --explain --changed --base HEAD)
-  assert_contains "$explained" 'bin/four.sh <- bin/three.sh <- bin/two.sh <- bin/one.sh <- tests/fm-pr-merge.test.sh' \
-    "explanation retains the complete consumer chain"
-  assert_not_contains "$explained" FM_TEST_BEGIN "explain never executes selected scripts"
-  [ "$(printf '%s\n' "$explained" | cut -f1)" = "$listed" ] || fail "explain and list selections differ"
-  explained=$(cd "$repo" && bin/fm-test-run.sh --explain --changed --base HEAD --exclude-family secondmate)
-  assert_not_contains "$explained" tests/fm-secondmate-safety.test.sh "explain respects exclusions"
   rm "$repo/bin/four.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   assert_contains "$listed" tests/fm-pr-merge.test.sh "removed source still selects its remaining readers"
-  pass "changed reference closure handles cycles, comments, removals, and explanations"
+  pass "changed reference closure handles cycles, comments, and removals"
 }
 
 # Use the real inventory in a disposable copy, never execute its scripts here.
@@ -672,6 +665,15 @@ test_changed_real_inventory_selection_bounds() {
   assert_contains "$listed" tests/fm-context-usage.test.sh "context-usage leaf retains its behavior suite"
   git -C "$repo" checkout -q -- bin/fm-context-usage.sh
 
+  # A hub's direct executable reader still runs the changed leaf, so the hub
+  # boundary must select it even though the walk does not fan out further.
+  printf '\n' >>"$repo/bin/fm-autonomous-pc02-lane.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 1 ] && [ "$count" -le 40 ] || fail "hub leaf selection expected 1-40 scripts, got $count: $listed"
+  assert_contains "$listed" tests/fm-pc02-test-offload.test.sh "hub change retains its direct executable reader"
+  git -C "$repo" checkout -q -- bin/fm-autonomous-pc02-lane.sh
+
   printf '\n' >>"$repo/bin/fm-watch-checkpoint.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
@@ -701,8 +703,8 @@ test_changed_real_inventory_selection_bounds() {
   for path in "${recorded_paths[@]}"; do printf '\n' >>"$repo/$path"; done
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 25 ] && [ "$count" -le 160 ] \
-    || fail "recorded feature expected 25-160 scripts, far below the original 196 and 306: got $count: $listed"
+  [ "$count" -ge 25 ] && [ "$count" -le 170 ] \
+    || fail "recorded feature expected 25-170 scripts, below the original 196 and 306: got $count: $listed"
   for path in fm-context-usage fm-crew-state fm-primary-watchdog fm-returning-session-check fm-watch-triage fm-watch-triage-waits; do
     assert_contains "$listed" "tests/$path.test.sh" "recorded feature retains $path behavior"
   done
@@ -3102,7 +3104,7 @@ test_shell_line_ending_policy_selects_runner_contract
 test_quarantine_list_change_selects_runner_contract
 test_changed_dependency_selection_and_unmapped_failure
 test_changed_bin_reference_selects_per_script_not_per_family
-test_changed_reference_closure_and_explanations
+test_changed_reference_closure
 test_changed_real_inventory_selection_bounds
 test_changed_uses_bounded_automatic_concurrency
 test_windows_posix_mode_emulation_does_not_fail_parallel_runs

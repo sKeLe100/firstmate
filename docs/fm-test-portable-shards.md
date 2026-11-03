@@ -11,9 +11,10 @@ Reference evidence selects individual readers, including indirect bin, shared-he
 The consumer walk follows executable references without a fixed depth limit and stops cycles.
 Production-shell comments do not create dependencies, the runner's and isolation proof's candidate lists are selection metadata rather than executable references, and a plain filename mention in prose, a prompt, or generated brief text is not execution.
 Quoted command payloads on an executed command line remain conservative references.
-The walk stops at shared pass-through nodes: `bin/*-lib.sh`, `tests/lib.sh`, `tests/fixtures.sh`, `tests/*-helpers.sh`, and `tests/*-fixture.sh`.
+The walk stops at shared pass-through nodes (`bin/*-lib.sh`, `tests/lib.sh`, `tests/fixtures.sh`, `tests/*-helpers.sh`, and `tests/*-fixture.sh`) and at widely invoked commands with three or more direct consumers.
+At either boundary it still selects the boundary's direct executable `tests/*.test.sh` readers before stopping, so a suite that runs the shared command is not omitted.
 A leaf named inside such a library is a definition site, so the walk does not climb through every file that sources it; a change to the shared file itself still selects its direct readers and curated family.
-A widely invoked command (three or more direct consumers) is shared infrastructure: the walk stops there, so a leaf named by a shared command does not fan out into every suite that runs that command. A change to the shared command itself still selects its direct readers and curated family.
+A leaf named by a shared command does not fan out into every suite that runs that command.
 Curated mappings add coverage; a direct reader or an integration family never proves that other executable readers can be omitted.
 Documentation and skills select their structural contract owners and repository readers, with explicit mappings for dynamic skill and reference-directory readers.
 They do not inherit browser, Pi, or runner integrations from the `pure-contract-unit` label.
@@ -22,7 +23,7 @@ Maintain the mapping beside a new dynamic dependency that a literal reference ca
 Keep a broad mapping where a shared implementation genuinely needs integration coverage, and add behavioral selection regressions when narrowing an owner.
 Selection-count targets never justify dropping a test that executes changed code; a typical leaf change should select roughly 20-40 scripts, while a broad control-path change may conservatively select more.
 An existing source without a mapping or a discoverable reader fails closed; deleting a source still selects remaining readers, while an unconsumed retirement selects nothing.
-The runner's header and help own inspection flags, including the per-script explanation of changed paths, mappings, and consumer chains.
+The runner's header and help own inspection flags such as `--list`.
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh) checks representative documentation, skill, leaf, watcher, shared-helper, shared-library, and multi-subsystem selections through the runner's public interface, with bounded counts for the recorded 18-file feature.
 Required CI continues to cover the complete inventory independently of local changed-path selection.
 

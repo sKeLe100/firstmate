@@ -55,8 +55,6 @@
 #                   exit, duration, whether it gate-skipped, and the reason it
 #                   gave (empty when it ran), so a lane can say which harness or
 #                   tool this host could not exercise.
-#   --explain       print selected paths and selection reasons, without execution
-#                   (tab-separated; --changed includes consumer chains).
 #   --list          print selected script paths (one per line) and exit 0
 #   --list-scheduled
 #                   print selected paths longest-hint-first and exit 0.
@@ -222,7 +220,6 @@
 # --changed combines curated broad mappings for shared infrastructure with
 # per-script reference closure for leaf sources and test helpers. Production
 # comments do not create consumer edges. Unmapped live sources fail closed.
-# --explain shows the changed path and mapping or reference chain for each test.
 # Add explicit per-script mappings for dynamic readers invisible to references;
 # keep execution families and CI partition/concurrency admission independent of
 # changed-path selection. docs/fm-test-portable-shards.md owns contributor rules.
@@ -262,8 +259,6 @@ set -- "${FM_TEST_RUN_FILTERED_ARGS[@]}"
 
 MODE=
 LIST_ONLY=0
-EXPLAIN=0
-SELECTION_REASONS=()
 LIST_SCHEDULED=0
 LIST_FAMILIES=0
 LIST_CONCURRENT_SAFE_FAMILIES=0
@@ -1889,7 +1884,7 @@ for path in files:
                     tokens = shlex.split(line, comments=False)
                 except ValueError:
                     tokens = []
-                if any(token in ("--list", "--list-scheduled", "--list-families", "--list-lanes", "--explain", "--check-coverage") for token in tokens):
+                if any(token in ("--list", "--list-scheduled", "--list-families", "--list-lanes", "--check-coverage") for token in tokens):
                     continue
                 names.extend(re.findall(r"tests/([\w.+-]+\.test\.sh)", line))
     else:
@@ -1935,33 +1930,42 @@ def shared_pass_through(node):
 HUB_FANIN = 3
 
 
+def print_direct_test_readers(dependency, boundary):
+    for reader in sorted(executable_consumers[boundary]):
+        if reader.startswith("tests/") and reader.endswith(".test.sh"):
+            print(dependency + "\t__script__:" + Path(reader).name)
+
+
 for dependency in sorted(set(sys.argv[1:])):
-    queue = deque([(dependency, dependency)])
+    queue = deque([dependency])
     seen = {dependency}
     while queue:
-        source, chain = queue.popleft()
+        source = queue.popleft()
         for consumer in sorted(consumers[source]):
             if consumer in seen:
                 continue
             seen.add(consumer)
-            reason = chain + " <- " + consumer
             if consumer.startswith("tests/") and consumer.endswith(".test.sh"):
-                print(dependency + "\t__script__:" + Path(consumer).name + "\treference: " + reason)
+                print(dependency + "\t__script__:" + Path(consumer).name)
                 # A suite is a terminal reader unless it actually executes the
                 # other suite as a wrapper; a comment or fixture mention is not
                 # a reason to fan out through it.
                 if consumer in executable_consumers[source]:
-                    queue.append((consumer, reason))
+                    queue.append(consumer)
                 continue
             if shared_pass_through(consumer):
                 # A leaf mention inside a shared library or test harness is a
                 # definition site, not proof that every importer executes it.
+                # Still keep the boundary's direct executable test readers.
+                print_direct_test_readers(dependency, consumer)
                 continue
             if len(consumers[consumer]) >= HUB_FANIN:
                 # A command invoked from more than one place is shared; walking
                 # its callers fans a single leaf out into the whole suite.
+                # Still keep the boundary's direct executable test readers.
+                print_direct_test_readers(dependency, consumer)
                 continue
-            queue.append((consumer, reason))
+            queue.append(consumer)
 PYREF
 }
 
@@ -1971,7 +1975,7 @@ scripts_for_path_reference() {
     return 0
   fi
   local path=$1
-  awk -F '\t' -v path="$path" '$1 == path { print $2 "\t" $3; found=1 } END { exit !found }' \
+  awk -F '\t' -v path="$path" '$1 == path { print $2; found=1 } END { exit !found }' \
     <<<"$REFERENCE_INDEX"
 }
 
@@ -2408,7 +2412,7 @@ families_for_changed_path() {
 }
 
 select_changed() {
-  local base=$1 path entry target reason s resolved_selection probe need_references=0 missing
+  local base=$1 path entry target s resolved_selection probe need_references=0 missing
   local -a changed_paths=() selected_targets=()
   if ! git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
     die "changed-file base ref not found: $base (pass --base <ref>)"
@@ -2437,9 +2441,7 @@ select_changed() {
     [ -n "$path" ] || continue
     while IFS= read -r entry; do
       [ -n "$entry" ] || continue
-      target=${entry%%$'\t'*}
-      reason="changed $path -> map $target"
-      if [ "$target" != "$entry" ]; then reason="changed $path -> ${entry#*$'\t'}"; fi
+      target=$entry
       case "$target" in
         __unmapped__:*)
           # An unconsumed retirement selects nothing; an existing source with
@@ -2447,7 +2449,7 @@ select_changed() {
           missing=${target#__unmapped__:}
           [ ! -e "$missing" ] || die "no changed-test mapping for source path: $missing"
           ;;
-        *) selected_targets+=("$target"$'\t'"$reason") ;;
+        *) selected_targets+=("$target") ;;
       esac
     done < <(
       families_for_changed_path "$path"
@@ -2456,7 +2458,6 @@ select_changed() {
   done < <(printf '%s\n' "${changed_paths[@]+"${changed_paths[@]}"}")
 
   # Resolve each family once, not once per path/consumer that selected it.
-  # Keep every distinct reason while deduplicating the final script inventory.
   resolved_selection=$(python3 - 3< <(printf '%s\n' "${selected_targets[@]+"${selected_targets[@]}"}") \
     4< <(while IFS= read -r s; do
       printf '%s\t%s\n' "$s" "$(family_for_basename "${s##*/}")"
@@ -2471,24 +2472,23 @@ with os.fdopen(4) as inventory:
         script, family = row.rstrip("\n").split("\t")
         families[family].append(script)
         scripts.add(script)
-reasons = {}
+chosen = {}
 with os.fdopen(3) as targets:
-    for row in targets:
-        if not row.strip():
+    for target in targets:
+        target = target.strip()
+        if not target:
             continue
-        target, reason = row.rstrip("\n").split("\t", 1)
         selected = ["tests/" + target[len("__script__:"):]] if target.startswith("__script__:") else families[target]
         for script in selected:
             if script in scripts:
-                reasons.setdefault(script, {})[reason] = None
-for script, entries in reasons.items():
-    print(script + "\t" + "; ".join(entries))
+                chosen.setdefault(script, None)
+for script in chosen:
+    print(script)
 PYSELECT
   ) || die "could not resolve changed-test selection"
-  while IFS=$'\t' read -r s reason; do
+  while IFS= read -r s; do
     [ -n "$s" ] || continue
     add_script "$s"
-    SELECTION_REASONS+=("$s"$'\t'"$reason")
   done <<<"$resolved_selection"
   if [ "${#SCRIPTS[@]}" -eq 0 ]; then
     log "no tests selected for changes vs $base (map is conservative; use --all for the complete suite)"
@@ -2816,11 +2816,6 @@ while [ "$#" -gt 0 ]; do
       FAIL_FAST=1
       shift
       ;;
-    --explain)
-      EXPLAIN=1
-      LIST_ONLY=1
-      shift
-      ;;
     --list)
       LIST_ONLY=1
       shift
@@ -3087,18 +3082,6 @@ if [ "$EXCLUDE_QUARANTINED" -eq 1 ]; then
 fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
-fi
-if [ "$EXPLAIN" -eq 1 ]; then
-  for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
-    printf '%s\t' "$s"
-    if [ "$MODE" = changed ]; then
-      printf '%s\n' "${SELECTION_REASONS[@]+"${SELECTION_REASONS[@]}"}" \
-        | awk -F '\t' -v script="$s" '$1 == script && !seen[$2]++ { if (n++) printf "; "; printf "%s", $2 } END { print "" }'
-    else
-      printf 'selection: %s\n' "$SELECTION_DESC"
-    fi
-  done
-  exit 0
 fi
 if [ "$LIST_ONLY" -eq 1 ] || [ "$LIST_SCHEDULED" -eq 1 ]; then
   if [ "$LIST_SCHEDULED" -eq 1 ]; then
