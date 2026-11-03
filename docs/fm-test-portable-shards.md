@@ -58,7 +58,8 @@ The 2026-10-29 hint-drift refresh from run 40995199128 raised `tests/fm-bootstra
 The 2026-10-30 refresh raised `tests/fm-ci-workflow.test.sh` from 5833 ms to its measured 10072 ms, measured on CI run 40960822708 after this PR added the Lint aggregate and time-budget tests.
 The 2026-11-02 local canonical-runner refresh provisionally raised `tests/fm-lint.test.sh` to 469094 ms and `tests/fm-test-run.test.sh` to 399453 ms; these local samples supersede the prior hints until successful CI artifacts provide replacements.
 The 2026-11-03 follow-up remeasured `tests/fm-test-run.test.sh` at 141444 ms after its nested real subjects moved to fixtures, and the two parallel lanes were rebalanced for that lighter hint; the hint itself stays provisional until a green CI artifact replaces it.
-The 2026-11-03 split of `tests/fm-captain-hold-lifecycle.test.sh` into three suites turned that file's 343658 ms parallel-lane hint into serial hints apportioned by measured case-time share (158600, 92900, and 92200 ms for the lifecycle, reconcile, and merge-teardown suites), so those three hints are derived rather than measured until CI artifacts replace them.
+The 2026-11-03 split of `tests/fm-captain-hold-lifecycle.test.sh` into three suites turned that file's 343658 ms parallel-lane hint into serial hints apportioned by measured case-time share (158600, 92900, and 92200 ms for the lifecycle, reconcile, and merge-teardown suites).
+The 2026-11-03 hint-drift refresh from run 41726179368 raised those three split-suite hints to their measured durations after two consecutive runs: `tests/fm-captain-hold-lifecycle.test.sh` from 158600 ms to 243467 ms (1.54x), `tests/fm-captain-hold-reconcile.test.sh` from 92900 ms to 175140 ms (1.89x), and `tests/fm-captain-hold-merge-teardown.test.sh` from 92200 ms to 157397 ms (1.71x). That refresh moved the portable serial remainder to eleven shards so the packed maximum stays under the 1200000 ms target.
 The 2026-11-03 hint-drift refresh from run 41653979363 raised `tests/fm-teardown.test.sh` from 202132 ms to its measured 317102 ms (repeated drift 1.57x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
@@ -164,7 +165,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current watch-triage floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses seventeen long-lived Linux jobs (ten serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses eighteen long-lived Linux jobs (eleven serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
@@ -190,7 +191,7 @@ This fork keeps two measured normal-tier overrides, each still a hang tripwire r
 | Job | Bound | Rationale |
 |---|---|---|
 | lint partitions | 45 minutes | This fork's merged script set measured 20-22 minutes on main and overran a 25-minute cap on the 2026-09-14 upstream sync. |
-| portable serial 1-10 | job 40 minutes; per-script bound derived by `bin/fm-test-run.sh` | A merged lane previously measured 26.5 minutes. The per-script bound remains a second tripwire derived at `PORTABLE_SERIAL_TIMEOUT_MULTIPLIER` (2x) the slowest hint, so a wedged script fails with captured output before the job cap. Pass `--per-script-timeout-secs` explicitly to override it for one invocation. |
+| portable serial 1-11 | job 40 minutes; per-script bound derived by `bin/fm-test-run.sh` | A merged lane previously measured 26.5 minutes. The per-script bound remains a second tripwire derived at `PORTABLE_SERIAL_TIMEOUT_MULTIPLIER` (2x) the slowest hint, so a wedged script fails with captured output before the job cap. Pass `--per-script-timeout-secs` explicitly to override it for one invocation. |
 
 The fork also removed the macOS stock Bash job (the workflow's own comment owns that ruling), so it belongs to no tier.
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) holds the executable values and names each job's tier or fork override beside its `timeout-minutes`; `bin/fm-test-run.sh` owns the portable-serial per-script bound, derived from the hint table so it cannot lose margin independently of a hint refresh.

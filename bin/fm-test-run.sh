@@ -320,7 +320,7 @@ HOST_LOAD_RETRY_POLL_SECS=${FM_TEST_RUN_LOAD_RETRY_POLL_SECS:-10}
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=10
+PORTABLE_SERIAL_SHARDS=11
 
 # Conservative balance hint for a portable-serial script with no measurement.
 # Rounded above the current CI mean, including the capability-skipped scripts.
@@ -947,9 +947,9 @@ tests/fm-calm-claude-mod-plugin.test.sh 77
 tests/fm-calm-claude-mod.test.sh 2527
 tests/fm-calm-pi-extension.test.sh 56463
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1345
-tests/fm-captain-hold-lifecycle.test.sh 158600
-tests/fm-captain-hold-merge-teardown.test.sh 92200
-tests/fm-captain-hold-reconcile.test.sh 92900
+tests/fm-captain-hold-lifecycle.test.sh 243467
+tests/fm-captain-hold-merge-teardown.test.sh 157397
+tests/fm-captain-hold-reconcile.test.sh 175140
 tests/fm-captain-window.test.sh 354
 tests/fm-check-unregister.test.sh 469
 tests/fm-ci-workflow.test.sh 10072

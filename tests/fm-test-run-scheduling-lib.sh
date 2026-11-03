@@ -21,7 +21,7 @@ test_jobs_requires_proven_isolated() {
   [ "$rc" -eq 2 ] || fail "--jobs on a family with no recorded proof must refuse, got $rc"
   # Sharding across runners never relaxes the serial rule inside one shard.
   set +e
-  "$RUNNER" --jobs 2 --lane portable-serial-1of10 >"$tmp/out3" 2>"$tmp/err3"
+  "$RUNNER" --jobs 2 --lane portable-serial-1of11 >"$tmp/out3" 2>"$tmp/err3"
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "--jobs with a portable serial shard must refuse, got $rc"
