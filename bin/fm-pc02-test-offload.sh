@@ -144,10 +144,13 @@
 # --lint selects the canonical lint instead of the test suite: the remote
 # mirror runs bin/fm-lint.sh with the forwarded arguments unchanged, so a
 # partition request such as --partition 2of4 means exactly what it means in
-# CI. A local fallback runs the same lint invocation on PC01. Every admission
-# rule below (lane occupancy, personal-use switch, resources, tools, host
-# slots) is shared by both modes; the script never forces a single worker or
-# reserves a host-wide slot.
+# CI. The remote lint always runs the full canonical inventory (fm-lint.sh's
+# CI selection) with the exhaustive source-aware analysis, never the
+# changed-file subset a branch worktree would pick; a local fallback runs
+# bin/fm-lint.sh in that checkout's own context, exactly as before this
+# offload existed. Every admission rule below (lane occupancy, personal-use
+# switch, resources, tools, host slots) is shared by both modes; the script
+# never forces a single worker or reserves a host-wide slot.
 #
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
@@ -734,10 +737,14 @@ fi
 # a second local run, which would silently double the caller's time budget.
 if [ "$MODE" = lint ]; then
   echo "fm-pc02-test-offload: PC02 idle and ready; running lint remotely on $HOST" >&2
-  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-lint.sh"
+  # CI=true is fm-lint.sh's own switch for its full canonical inventory with
+  # source-aware analysis; without it the mirrored branch would take the
+  # changed-file subset, which is not the audit this offload exists to move.
+  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") env CI=true bin/fm-lint.sh"
   for a in "${ARGS[@]}"; do
     remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
   done
+  echo "fm-pc02-test-offload: remote lint command: $remote_suite_cmd" >&2
 else
   echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
   has_jobs=0

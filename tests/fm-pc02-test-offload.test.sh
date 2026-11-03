@@ -529,7 +529,7 @@ echo "auto_jobs=\${FM_TEST_RUN_AUTO_JOBS_MAX:-unset} argv=\$*"
 RUNNER
 fi
 if [ -n "\${FM_FAKE_CAPTURE_LINT:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
-  printf '%s\\n' '#!/usr/bin/env bash' 'echo "lint argv=\$*"' "exit \${FM_FAKE_LINT_EXIT:-0}" \
+  printf '%s\\n' '#!/usr/bin/env bash' 'echo "lint CI=\${CI:-unset} argv=\$*"' "exit \${FM_FAKE_LINT_EXIT:-0}" \
     > "\${args[\${#args[@]}-1]}/bin/fm-lint.sh"
   chmod +x "\${args[\${#args[@]}-1]}/bin/fm-lint.sh"
 fi
@@ -1496,8 +1496,8 @@ test_remote_lint_forwards_partition_and_returns_exit_code() {
   status=$?
   expect_code 7 "$status" "a remote lint's exit code must come back unchanged: $out"
   assert_contains "$out" "PC02 idle and ready; running lint remotely" "the lint run never went remote: $out"
-  assert_contains "$out" "lint argv=--partition 2of4 --telemetry $dir/lint.tsv" \
-    "the remote lint did not receive its partition and telemetry arguments unchanged: $out"
+  assert_contains "$out" "lint CI=true argv=--partition 2of4 --telemetry $dir/lint.tsv" \
+    "the remote lint did not force the full canonical selection with its partition and telemetry arguments unchanged: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind after lint: $out"
   flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "lint retained the host claim"
   pass "a remote lint forwards partition arguments, returns its exit code, and removes its mirror"
