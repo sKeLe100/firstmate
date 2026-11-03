@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Suite body for tests/fm-test-run.test.sh: scheduler lanes, concurrency and
 # timing budgets, fail-fast, and load-sensitive retry. Sourced by the wrapper
 # after the selection body, so the later fm_run_timed definition still wins as

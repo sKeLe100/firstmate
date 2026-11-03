@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Suite body for tests/fm-test-run.test.sh: selection, changed-path mapping,
 # reference closure, and the real-inventory bounds. Sourced by the wrapper,
 # which owns the prelude and the case invocation list. Function definitions
