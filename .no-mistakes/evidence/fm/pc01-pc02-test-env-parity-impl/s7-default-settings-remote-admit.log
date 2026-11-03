@@ -1,0 +1,54 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=2719177 ppid=2719175
+runner_login_shell=no
+path_entries=~/.local/bin:~/.local/gnu-coreutils/bin:~/.npm-global/bin:~/.local/bin:~/.npm-global/bin:~/.local/bin:~/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=2719177 ppid=2719175 pgid=2719175 sid=2719175 subreaper=not-exposed-by-procfs
+tmpdir_fs=tmpfs
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 112211
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 112211
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=~/.local/bin/node version=v22.22.3
+tool=pi path=~/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=~/.local/bin/tasks-axi version=0.2.6
+tool=timeout path=~/.local/gnu-coreutils/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=~/.local/bin/herdr version=herdr 0.9.5
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=~/.local/bin/no-mistakes version=no-mistakes version v1.46.0 (20892e6) 2026-08-06T06:41:38Z
+chrome_startup=failed path=~/.local/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_HOST_LOAD load5=1.09 cpus=16 jobs=1 per_script_timeout_secs=3000 watch_triage_timeout_secs=3000 captain_hold_timeout_secs=3000
+FM_TEST_BEGIN 2026-11-03T05:29:21Z tests/fm-remote-herdr-guard.test.sh family=secondmate expected_gate_skip=none
+ok - holder processes expose their environment to the owner library
+ok - an empty session is started inside the launch agent
+ok - launchd and worker markers require gui-domain launchctl proof
+ok - background, inherited-XPC, SSH-born, SSH-descended, and unprovable owners are taken over
+ok - a running session with no provable owner is taken over rather than trusted
+ok - a host without lsof cannot prove an Aqua birth, so the session is taken over
+ok - a foreign server that never releases the socket yields exit 1 so launchd retries
+ok - the guard starts as soon as the foreign server releases the socket
+ok - argument errors are refused before any herdr call
+FM_TEST_END 2026-11-03T05:29:24Z tests/fm-remote-herdr-guard.test.sh exit=0 duration_ms=3139 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=11666
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=3139 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-remote-herdr-guard.test.sh duration_ms=3139

@@ -1,0 +1,119 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=2370986 ppid=2370984
+runner_login_shell=no
+path_entries=~/.local/bin:~/.local/gnu-coreutils/bin:~/.npm-global/bin:~/.local/bin:~/.npm-global/bin:~/.local/bin:~/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=2370986 ppid=2370984 pgid=2370984 sid=2370984 subreaper=not-exposed-by-procfs
+tmpdir_fs=tmpfs
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 112211
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 112211
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=~/.local/bin/node version=v22.22.3
+tool=pi path=~/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=~/.local/bin/tasks-axi version=0.2.6
+tool=timeout path=~/.local/gnu-coreutils/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=~/.local/bin/herdr version=herdr 0.9.5
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=~/.local/bin/no-mistakes version=no-mistakes version v1.46.0 (20892e6) 2026-08-06T06:41:38Z
+chrome_startup=failed path=~/.local/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_HOST_LOAD load5=5.07 cpus=16 jobs=1 per_script_timeout_secs=3000 watch_triage_timeout_secs=3000 captain_hold_timeout_secs=3000
+FM_TEST_BEGIN 2026-11-03T05:17:37Z tests/fm-pc02-test-offload.test.sh family=unclassified expected_gate_skip=none
+ok - --help prints the whole documented contract
+ok - FM_PC02_OFFLOAD_DISABLE=1 always runs locally without touching ssh or rsync
+ok - a live PC02 LLM lane falls back to a local run without touching ssh
+ok - a missing supervising home refuses the lane probe and falls back locally
+ok - the offload probe scans the supplied supervising home before checking PC02
+ok - an unreachable PC02 falls back to a local run
+ok - PC02 missing a required tool falls back to a local run rather than a thinner remote run
+ok - a stuck or slow probe times out and falls back rather than hanging
+ok - a failed rsync to PC02 falls back to a local run
+ok - the captain's personal-use switch falls back to a local run
+ok - llama-swap holding a loaded model for any live session falls back to a local run
+ok - a healthy llama-swap with no loaded model does not block offloading
+ok - an unparseable llama-swap /running answer defaults to a local run
+ok - a Windows-wide CPU utilization over the threshold falls back to a local run
+ok - a Windows GPU-engine utilization over the threshold falls back to a local run
+ok - an unparseable or missing resource read defaults to a local run rather than an idle guess
+ok - fm-test-run.sh --pc02-if-idle strips the flag and forwards every other argument unchanged
+ok - a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror
+ok - a green remote run exits 0, returns its --json artifact, and removes its mirror
+ok - an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound
+ok - a remote suite passes the 7200-second default to its timeout executable
+ok - remote jobs preserve both caller forms, default to eight, and allow environment overrides with a script cap
+ok - matching PC01 and PC02 parity admits the default two-slot offload
+ok - PC02 open-file capacity accepts higher/equal limits and refuses lower or invalid limits
+ok - offload raises PC02's soft open-file limit to its hard limit without loosening the parity rule
+ok - a PC02 tool-version mismatch names the surface and runs locally
+ok - a hanging local browser dependency probe times out and routes locally
+ok - TERM-ignoring tool and browser version probes are killed at their deadline
+ok - a cached headless-shell version mismatch names the surface and runs locally
+ok - the shared suite and parity resolver prefers Chromium over Google Chrome
+ok - a PC02 Chromium library failure names the library and runs locally
+ok - different resolved Chromium sonames route locally with the named difference
+ok - a launcher browser resolves to its executable without a false fallback
+ok - wrapper parity compares sonames from the resolved executable on both hosts
+ok - one busy of two PC02 slots still runs the next suite remotely
+ok - both busy PC02 slots route the next suite to PC01 with a clear log
+ok - a malformed FM_PC02_OFFLOAD_SLOTS exits 2 and runs no tests
+ok - FM_PC02_OFFLOAD_SLOTS=1 keeps the original single-slot fallback
+ok - a process merely mentioning fm-test-run.sh does not block a free host slot
+ok - TERM during a remote run kills the remote suite and removes its mirror
+ok - TERM with a transport that ignores stdin EOF still stops the remote suite and frees the slot
+ok - abrupt loss of the driver stops the remote suite and frees the slot
+ok - a gate-style bare common store needs the machine file, while FM_STATE_OVERRIDE bypasses discovery
+ok - machine configuration resolves an unset FM_HOME and fails closed when unreadable
+ok - primary clone discovery resolves the home without environment or machine configuration
+ok - two concurrent offloads take both PC02 slots and a third falls back locally
+ok - a dead owner's claim is reclaimed and the next run releases it on timeout
+# all fm-pc02-test-offload tests passed
+FM_TEST_END 2026-11-03T05:24:15Z tests/fm-pc02-test-offload.test.sh exit=0 duration_ms=397678 gate_skip=false
+FM_TEST_BEGIN 2026-11-03T05:24:15Z tests/fm-calm-pi-extension.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - Pi calm resolves its persistent home independently of Pi's launch directory
+ok - Pi calm compatibility evidence never rejects a Pi version for being newer than 0.82.0, and still fails closed on a missing or malformed version
+ok - a missing collapsed-thinking presentation API degrades only that Calm adapter with a clear skip reason, while the rest of Calm still registers
+ok - missing Pi presentation class exports reach the independent adapter degradation path
+ok - Calm hides queued Firstmate rows only on a session that can keep them, keeps hidden ones out of the editor on Escape, delivers them once in order, and leaves unsupported sessions and Calm off stock
+ok - Calm registers none of its 7 built-in tool wrappers at load while config/calm is off, and all 7 synchronously at load while config/calm is on
+ok - Calm's first same-session /calm activation claims every uncontested built-in, leaves a foreign bash tool fully intact and callable, warns prominently and logs the contested name, and only rows constructed before that activation - the documented bound - fail to retroactively collapse
+ok - Pi calm centralizes transcript visibility, preserves execution/export data, keeps Pi's stock working row visible while no run is active, and persists its choice across session starts
+ok - Pi calm on collapses mid-turn assistant working notes to zero height while Calm off keeps them, leaves streaming, truncated-final, and genuine final replies untouched, never mutates the messages, ignores every /calm argument, and restores a legacy persisted max as ordinary Calm on
+ok - Pi operational follow-up E2E processes exact user-role notifications once while Calm hides current and adjacent rows, Calm off and absent render them, and restart preserves semantics
+ok - Pi 0.85.1 with Calm on hides and retains queued Firstmate input through Escape, delivers it once, and leaves Calm off stock
+ok - Pi Calm native /skill:ahoy geometry keeps every collapsed thinking and tool block at zero height while preserving expansion, history, restart, and Calm-off rendering
+ok - Pi Calm working ship keeps its centered two-row asymmetric Unicode boat inside a deterministic long-wave trough, paints all water standard blue and the whole boat standard yellow with balanced resets, keeps ANSI-stripped width exact, reverses cleanly at both edges and every width, clamps visible and hidden resizes, falls back deterministically when narrow, freezes and resumes across settle/start without hidden-time jumps or duplicate timers, resets only on a fresh session, and leaves Calm-off visibility untouched
+ok - SKIP: no standalone Pi Calm extension is installed, so dual-install coverage used the pinned shared-slot contract; set FM_STANDALONE_CALM_SHIP to check one
+ok - find_chrome discovers chrome-headless-shell from the Playwright cache when it is not on PATH
+ok - find_chrome selects Chromium before Google Chrome when both are available
+ok - the rendered-export-DOM guard renders in one pass, retries a bounded number of Chrome start-up failures, and reports the Chrome binary, Chrome version, Pi version, exit status, and Chrome diagnostic when every attempt fails
+ok - Pi calm native E2E replaces the stock working row with a moving, resize-clamped working ship that freezes and resumes across two working periods in one Pi session, clears on abort, keeps captain turns visible, hides exact operational user rows without changing persistence, restores stock rendering Calm-off, survives restart, and preserves export plus Ctrl+O behavior
+FM_TEST_END 2026-11-03T05:25:02Z tests/fm-calm-pi-extension.test.sh exit=0 duration_ms=47453 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=453703
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=47453 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=397678 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-pc02-test-offload.test.sh duration_ms=397678
+FM_TEST_SLOWEST rank=2 script=tests/fm-calm-pi-extension.test.sh duration_ms=47453
+
+real	8m3.786s
+user	0m8.785s
+sys	0m3.722s

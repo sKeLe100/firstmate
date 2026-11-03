@@ -1,0 +1,1 @@
+fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be between 1 and 16, got '0'

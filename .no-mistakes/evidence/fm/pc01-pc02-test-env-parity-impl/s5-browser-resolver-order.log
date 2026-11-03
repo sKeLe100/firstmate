@@ -1,0 +1,6 @@
+FM_CHROME_BIN set and executable   -> /tmp/fm-ev-4936/resolver.ylYR9L/explicit-browser
+cached headless shell vs PATH chromium -> /tmp/fm-ev-4936/resolver.ylYR9L/a-home/.cache/ms-playwright/chromium_headless_shell-999/chrome-headless-shell-linux64/chrome-headless-shell
+no cache, PATH chromium present    -> /tmp/fm-ev-4936/resolver.ylYR9L/a-bin/chromium
+only google-chrome on PATH         -> /tmp/fm-ev-4936/resolver.ylYR9L/c-bin/google-chrome
+nothing available (rc=1)           -> <empty>
+FM_CHROME_BIN not executable       -> /tmp/fm-ev-4936/resolver.ylYR9L/a-home/.cache/ms-playwright/chromium_headless_shell-999/chrome-headless-shell-linux64/chrome-headless-shell
