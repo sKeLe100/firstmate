@@ -1,0 +1,18 @@
+# Scenario evidence index
+
+runtime:
+  runner-suite.log, runner-suite-timing.txt  -> bin/fm-test-run.sh tests/fm-test-run.test.sh  rc=0  153s wall / 143338 ms script
+  FM_TEST_SUMMARY total=1 failed=0 / 60 'ok -' lines / 0 'not ok'
+
+coverage guard refactor:
+  coverage-guard.txt (target, 12190 ms, serial_max_ms=1152179)
+  coverage-guard-base-vs-target.txt (base ecada277, 69742 ms, serial_max_ms=1152179)
+  serial-shard-partition.txt (10 public shard lanes == portable-serial lane, 276 scripts, 0 dups)
+
+real integration + ancestry:
+  real-integration-and-hermetic-probe.txt (real runner over tests/fm-transition-lib.test.sh emits one env record;
+    hermetic login probes runner_login_shell no/yes in ~0.5 s each)
+  ancestry-and-inventory.txt (fm-session-lock-ancestry.test.sh in exactly one required lane; --list --all == filesystem)
+
+quarantine fixture path still real contract:
+  quarantine-drive.txt (real runner emits FM_TEST_QUARANTINED + SUMMARY quarantined=1)

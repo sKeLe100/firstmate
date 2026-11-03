@@ -1,0 +1,13 @@
+# ancestry suite lane membership (real inventory)
+--all: 1
+--proven-isolated: 0
+portable-parallel-1: 0
+portable-parallel-2: 0
+portable-serial: 1
+real-herdr-gated: 0
+
+# total occurrences across the required lanes:
+1
+
+# --list --all vs filesystem oracle:
+IDENTICAL

@@ -1,0 +1,3 @@
+base_guard rc=0 ms=69742
+FM_TEST_COVERAGE ok total=316 parallel=24 parallel_max_ms=895210 parallel_imbalance_ms=64 parallel_unhinted=0 serial=276 serial_shards=10 serial_unhinted=23 serial_max_ms=1152179 serial_budget_ms=1200000 herdr=16
+target_guard rc=0 ms=12190 (from ./coverage-guard.txt)

@@ -1,0 +1,4 @@
+# 10 public shard lanes vs the whole serial lane (refactored guard slices the same assignments)
+shard_union_lines=276 serial_lane_lines=276
+duplicates=0
+PARTITION_IDENTICAL
