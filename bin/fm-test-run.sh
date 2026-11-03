@@ -1774,9 +1774,16 @@ import re
 import shlex
 import sys
 
+NAME_RE = re.compile(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b")
+EXEC_WORD_RE = re.compile(
+    r"(?:^|[\s;&|(])(?:\.|source|exec|bash|sh|zsh|dash|env|command|eval|"
+    r"python3?|node|perl|ruby|timeout|nohup|setsid|xargs)\s"
+)
 
-def shell_code(text):
+
+def shell_code(text, keep_heredocs=True):
     # Retain heredoc payload verbatim: it can generate another executable.
+    # Prompt renderers emit heredoc prose, not commands, so they drop it.
     # Strip only comments outside quotes, preserving literal/parameter #.
     quote = None
     escaped = False
@@ -1785,7 +1792,8 @@ def shell_code(text):
     for line in text.splitlines(keepends=True):
         if heredocs:
             delimiter, strip_tabs = heredocs[0]
-            result.append(line)
+            if keep_heredocs or re.search(r"(?<!\\)(?:\$\(|`)", line):
+                result.append(line)
             if (line.lstrip("\t") if strip_tabs else line).rstrip("\r\n") == delimiter:
                 heredocs.popleft()
             continue
@@ -1815,6 +1823,36 @@ def shell_code(text):
     return "".join(result)
 
 
+def shell_executable_names(text):
+    # A filename in ordinary prose is not an executed dependency. Keep names
+    # from command lines (source/./bash/exec/...), command-position scripts,
+    # and assignments whose value is a script path later run; drop prose.
+    names = []
+    for line in text.replace("\\\n", " ").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            tokens = shlex.split(line, comments=False)
+        except ValueError:
+            tokens = []
+        index = 0
+        value = ""
+        while index < len(tokens) and re.match(r"^[A-Za-z_]\w*=", tokens[index]):
+            value = tokens[index].split("=", 1)[1]
+            index += 1
+        first = tokens[index] if index < len(tokens) else ""
+        direct = bool(first) and bool(NAME_RE.fullmatch(Path(first).name))
+        assignment_ref = bool(value) and bool(
+            re.search(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)[\"'}]?$", value)
+        )
+        if assignment_ref:
+            names.extend(NAME_RE.findall(value))
+        if direct or EXEC_WORD_RE.search(line):
+            names.extend(NAME_RE.findall(line))
+    return names
+
+
 files = sorted({p for directory in ("bin", "tests")
                 for p in Path(directory).rglob("*")
                 if p.is_file() and p.suffix in (".sh", ".py", ".pl", ".jq", ".mjs", ".js", ".ts")})
@@ -1825,11 +1863,13 @@ for changed in sys.argv[1:]:
     if changed.startswith(("bin/", "tests/")) and changed not in by_name[Path(changed).name]:
         by_name[Path(changed).name].append(changed)
 consumers = defaultdict(set)
+executable_consumers = defaultdict(set)
 for path in files:
     text = path.read_text(errors="replace")
     if path.suffix == ".sh" and not path.name.endswith(".test.sh"):
-        text = shell_code(text)
-    if str(path) in ("bin/fm-test-run.sh", "tests/fm-test-run.test.sh"):
+        text = shell_code(text, keep_heredocs=str(path) not in (
+            "bin/fm-brief.sh", "bin/fm-branch-prompt.sh", "bin/fm-supervision-instructions.sh"))
+    if str(path) in ("bin/fm-test-run.sh", "bin/fm-test-isolation-proof.sh", "tests/fm-test-run.test.sh"):
         # These drivers' candidate lists are metadata, like the --list calls
         # in their contract suites. Keep runtime paths/commands, and account
         # for real nested subject invocations at the calling suite.
@@ -1853,18 +1893,51 @@ for path in files:
                     continue
                 names.extend(re.findall(r"tests/([\w.+-]+\.test\.sh)", line))
     else:
-        names = re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", text)
+        if str(path).startswith("bin/") and path.suffix == ".sh":
+            names = shell_executable_names(text)
+        else:
+            # Test files keep literal references, including a fixture's
+            # comment naming the reader it stands in for.
+            names = NAME_RE.findall(text)
+    executable_names = set(
+        names if str(path).startswith("bin/") and path.suffix == ".sh"
+        else shell_executable_names(
+            text if path.suffix != ".sh" else shell_code(text, keep_heredocs=True)
+        )
+    )
     for name in set(names):
         for dependency in by_name.get(name, ()):
             if dependency == str(path):
                 continue
             consumers[dependency].add(str(path))
+            if name in executable_names:
+                executable_consumers[dependency].add(str(path))
+
+
+def shared_pass_through(node):
+    # Shared libraries and the universal test harness define helpers that may
+    # name a changed leaf. Following their importers to a fixed point turns any
+    # leaf mention into whole-suite fan-out, so the walk stops at these nodes.
+    # A change to the shared file itself still selects its direct readers.
+    path = Path(node)
+    if path.parent == Path("tests"):
+        name = path.name
+        return name in ("lib.sh", "fixtures.sh") or name.endswith(
+            ("-helpers.sh", "-fixture.sh")
+        )
+    if path.parent == Path("bin"):
+        return path.name.endswith("-lib.sh")
+    return False
+
+
+HUB_FANIN = 12
+
 
 for dependency in sorted(set(sys.argv[1:])):
-    queue = deque([(dependency, dependency)])
+    queue = deque([(dependency, dependency, False)])
     seen = {dependency}
     while queue:
-        source, chain = queue.popleft()
+        source, chain, tests_only = queue.popleft()
         for consumer in sorted(consumers[source]):
             if consumer in seen:
                 continue
@@ -1872,8 +1945,25 @@ for dependency in sorted(set(sys.argv[1:])):
             reason = chain + " <- " + consumer
             if consumer.startswith("tests/") and consumer.endswith(".test.sh"):
                 print(dependency + "\t__script__:" + Path(consumer).name + "\treference: " + reason)
-            # Suites can themselves be executed by another wrapper suite.
-            queue.append((consumer, reason))
+                # A suite is a terminal reader unless it actually executes the
+                # other suite as a wrapper; a comment or fixture mention is not
+                # a reason to fan out through it.
+                if consumer in executable_consumers[source]:
+                    queue.append((consumer, reason, tests_only))
+            elif tests_only:
+                # A shared command selected only for its own tests; following
+                # its other executable consumers would reach the whole suite.
+                continue
+            elif shared_pass_through(consumer):
+                # A leaf mention inside a shared library or test harness is a
+                # definition site, not proof that every importer executes it.
+                continue
+            elif len(consumers[consumer]) >= HUB_FANIN:
+                # A widely invoked command is an integration hub: keep its
+                # direct test readers, but do not climb through its wrappers.
+                queue.append((consumer, reason, True))
+            else:
+                queue.append((consumer, reason, False))
 PYREF
 }
 
@@ -2320,7 +2410,7 @@ families_for_changed_path() {
 }
 
 select_changed() {
-  local base=$1 path entry target reason s resolved_selection probe need_references=0
+  local base=$1 path entry target reason s resolved_selection probe need_references=0 missing
   local -a changed_paths=() selected_targets=()
   if ! git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
     die "changed-file base ref not found: $base (pass --base <ref>)"
@@ -2353,7 +2443,12 @@ select_changed() {
       reason="changed $path -> map $target"
       if [ "$target" != "$entry" ]; then reason="changed $path -> ${entry#*$'\t'}"; fi
       case "$target" in
-        __unmapped__:*) die "no changed-test mapping for source path: ${target#__unmapped__:}" ;;
+        __unmapped__:*)
+          # An unconsumed retirement selects nothing; an existing source with
+          # no mapping or reader still fails closed.
+          missing=${target#__unmapped__:}
+          [ ! -e "$missing" ] || die "no changed-test mapping for source path: $missing"
+          ;;
         *) selected_targets+=("$target"$'\t'"$reason") ;;
       esac
     done < <(

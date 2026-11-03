@@ -548,10 +548,10 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
     cp "$RUNNER" "$repo/bin/fm-test-run.sh"
     printf 'echo executed\n' >"$repo/bin/$subject.sh"
     printf 'bash -c %q\n' ":; . \"$repo/bin/$subject.sh\"" >"$repo/bin/fm-test-isolation-proof.sh"
-    printf '. "%s/bin/%s.sh"\n' "$repo" "$subject" >"$repo/tests/consumer-helpers.sh"
+    printf '. "%s/bin/%s.sh"\n' "$repo" "$subject" >"$repo/tests/consumer-chain.sh"
     printf 'bash "%s/bin/%s.sh"\n' "$repo" "$subject" >"$repo/tests/direct.test.sh"
     printf 'bash "%s/bin/fm-test-isolation-proof.sh"\n' "$repo" >"$repo/tests/via-bin.test.sh"
-    printf '. "%s/tests/consumer-helpers.sh"\n' "$repo" >"$repo/tests/via-helper.test.sh"
+    printf '. "%s/tests/consumer-chain.sh"\n' "$repo" >"$repo/tests/via-helper.test.sh"
     printf 'bash "%s/tests/via-bin.test.sh"\n' "$repo" >"$repo/tests/via-suite.test.sh"
     printf 'echo unrelated\n' >"$repo/tests/unrelated.test.sh"
     git -C "$repo" init -q
@@ -662,13 +662,32 @@ test_changed_real_inventory_selection_bounds() {
   assert_contains "$listed" tests/fm-returning-session-check.test.sh "leaf retains its behavior suite"
   git -C "$repo" checkout -q -- bin/fm-returning-session-check.sh
 
+  # The recorded leaf that drove the intent: a shared wrapper must not fan out
+  # into every suite that reaches it through shared libs or hub consumers.
+  printf '\n' >>"$repo/bin/fm-context-usage.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 1 ] && [ "$count" -le 40 ] \
+    || fail "context-usage leaf expected 1-40 scripts (target 20-40 for a typical leaf), got $count: $listed"
+  assert_contains "$listed" tests/fm-context-usage.test.sh "context-usage leaf retains its behavior suite"
+  git -C "$repo" checkout -q -- bin/fm-context-usage.sh
+
   printf '\n' >>"$repo/bin/fm-watch-checkpoint.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 2 ] && [ "$count" -le "$all_count" ] || fail "shared watcher selection expected 2-$all_count scripts, got $count: $listed"
+  [ "$count" -ge 2 ] && [ "$count" -le 60 ] || fail "watcher checkpoint selection expected 2-60 scripts, got $count: $listed"
   assert_contains "$listed" tests/fm-watch-checkpoint.test.sh "watcher change retains checkpoint behavior"
   assert_contains "$listed" tests/fm-arm-pretool-check.test.sh "watcher change retains its entrypoint guard"
   git -C "$repo" checkout -q -- bin/fm-watch-checkpoint.sh
+
+  # A shared library is still expected to widen: its direct readers are the
+  # suites that source it, so narrowing must not suppress that coverage.
+  printf '\n' >>"$repo/bin/fm-wake-lib.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
+  [ "$count" -ge 50 ] && [ "$count" -lt "$all_count" ] \
+    || fail "shared watcher library should widen well past a leaf but stay below --all: got $count of $all_count"
+  git -C "$repo" checkout -q -- bin/fm-wake-lib.sh
 
   # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.
   local -a recorded_paths=(
@@ -682,11 +701,12 @@ test_changed_real_inventory_selection_bounds() {
   for path in "${recorded_paths[@]}"; do printf '\n' >>"$repo/$path"; done
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 25 ] && [ "$count" -le "$all_count" ] || fail "recorded feature selection expected 25-$all_count scripts, got $count: $listed"
+  [ "$count" -ge 25 ] && [ "$count" -le 160 ] \
+    || fail "recorded feature expected 25-160 scripts, far below the original 196 and 306: got $count: $listed"
   for path in fm-context-usage fm-crew-state fm-primary-watchdog fm-returning-session-check fm-watch-triage fm-watch-triage-waits; do
     assert_contains "$listed" "tests/$path.test.sh" "recorded feature retains $path behavior"
   done
-  pass "real inventory selection stays bounded for docs, skills, a leaf, a watcher, and the recorded feature"
+  pass "real inventory selection stays bounded for docs, skills, leaves, a watcher, a shared lib, and the recorded feature"
 }
 
 # Exercise begin/end markers from real fixture processes to prove the automatic
