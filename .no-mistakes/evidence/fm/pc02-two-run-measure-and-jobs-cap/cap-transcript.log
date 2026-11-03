@@ -1,0 +1,27 @@
+### 10 threads / 2 slots, --jobs 4 (below cap 5): preserved
+auto_jobs=unset argv=--all --jobs 4 --per-script-timeout-secs 3000
+
+### 10 threads / 2 slots, --jobs 9999: capped
+fm-pc02-test-offload: capping --jobs 9999 to 5 (10 PC02 threads across 2 slot(s))
+auto_jobs=unset argv=--all --jobs 5 --per-script-timeout-secs 3000
+
+### 10 threads / 2 slots, --jobs=6 (one above cap): capped
+fm-pc02-test-offload: capping --jobs 6 to 5 (10 PC02 threads across 2 slot(s))
+auto_jobs=unset argv=--all --jobs=5 --per-script-timeout-secs 3000
+
+### 16 threads / 3 slots, no --jobs, override unset: auto ceiling capped to 5
+auto_jobs=5 argv=--all --per-script-timeout-secs 3000
+
+### 16 threads / 1 slot, --jobs 9999: whole host admitted
+fm-pc02-test-offload: capping --jobs 9999 to 16 (16 PC02 threads across 1 slot(s))
+auto_jobs=unset argv=--all --jobs 16 --per-script-timeout-secs 3000
+
+### 10 threads / 2 slots, explicit FM_PC02_OFFLOAD_JOBS=12: override honoured verbatim
+auto_jobs=12 argv=--all --per-script-timeout-secs 3000
+
+### unreadable thread count (empty): routes local with diagnostic
+fm-pc02-test-offload: PC02 thread count unavailable (got ''); cannot bound concurrent slot workers; running on PC01
+
+### zero thread count: routes local with diagnostic
+fm-pc02-test-offload: PC02 reported zero threads; cannot bound concurrent slot workers; running on PC01
+

@@ -1,0 +1,39 @@
+67-Remote run conditions (always applied to an offloaded run):
+68-  - Parallel, per-script bounded: an explicit caller --jobs is capped to
+69:    floor(threads / slots) workers per slot, where threads comes from PC02's
+70-    own nproc (getconf _NPROCESSORS_ONLN fallback), so concurrent slots
+71-    together cannot exceed PC02's thread count; a caller asking for less
+72-    keeps its value. Absent --jobs, the remote fm-test-run.sh keeps its own
+73-    automatic scheduler (only proven-isolated scripts and recorded
+74-    concurrent family proofs run in parallel; unproven scripts stay serial)
+75:    with its worker ceiling set to min(FM_PC02_OFFLOAD_JOBS (default 8),
+76:    the per-slot bound), so the auto path keeps the invariant; an explicitly
+77:    set FM_PC02_OFFLOAD_JOBS is an operator override honoured verbatim and
+78-    may oversubscribe by choice.
+79-    Isolation phases, family caps and serial tails remain enforced; curated
+80-    lanes keep their contracts. The per-script cap defaults to 3000s
+81-    (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS) and overrides the caller's
+--
+121-    bound.
+122-  - Two-full-selection measurement (2026-11-03, 316 test scripts, no
+123:    --jobs, so the auto scheduler with FM_PC02_OFFLOAD_JOBS=8, two slots
+124-    started 5s apart on an otherwise idle 16-thread / 27 GB PC02): both runs
+125-    reached 303 of 316 scripts and were stopped by the 7200s cap (exit 124,
+126-    wall 7220s each), so two concurrent full selections do NOT fit the cap.
+127-    Peak load1 was 21.06 (mean 4.26) and peak memory use 12.5 GB, so the
+--
+131-    failures that passed on the other run; none involve the excluded parity
+132-    fields. An explicit --jobs with --all is refused by fm-test-run.sh for
+133:    unproven scripts, so the per-slot --jobs cap applies to selections that
+134-    are proven concurrent.
+135-
+136-Usage:
+137-  fm-pc02-test-offload.sh <fm-test-run.sh args...>
+--
+171-                                     remote work already spent is not worth
+172-                                     discarding blind
+173:  FM_PC02_OFFLOAD_JOBS                remote auto-scheduler worker ceiling
+174-                                     (default: 8); when unset it is capped
+175-                                     to floor(PC02 nproc / SLOTS) like an
+176-                                     explicit --jobs, while a set value is
+177-                                     an operator override honoured verbatim

@@ -1,0 +1,9 @@
+not ok - split jobs lost: fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+fm-pc02-test-offload: capping --jobs 4 to 2 (4 PC02 threads across 2 slot(s))
+auto_jobs=unset argv=--all --jobs 2 --per-script-timeout-secs 3000 (missing: 'argv=--all --jobs 4')
+--- output ---
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+fm-pc02-test-offload: capping --jobs 4 to 2 (4 PC02 threads across 2 slot(s))
+auto_jobs=unset argv=--all --jobs 2 --per-script-timeout-secs 3000

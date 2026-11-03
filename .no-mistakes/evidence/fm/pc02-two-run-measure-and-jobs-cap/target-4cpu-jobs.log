@@ -1,0 +1,3 @@
+ok - remote jobs preserve both caller forms, default to eight, and allow environment overrides with a script cap
+ok - exact-cap, above-cap, non-numeric passthrough, and explicit override each behave per the cap contract
+# targeted jobs tests passed
