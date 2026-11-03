@@ -67,21 +67,54 @@
 #
 # Remote run conditions (always applied to an offloaded run):
 #   - Parallel, per-script bounded: caller --jobs is preserved; absent that,
-#     FM_PC02_OFFLOAD_JOBS defaults to 8 for PC02's 16 threads / 27 GB,
-#     via the runner's automatic scheduler. Isolation phases, family caps
-#     and serial tails remain enforced; curated lanes keep their contracts.
-#     The per-script cap defaults to 3000s (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS)
-#     and overrides the caller's per-script timeout. The whole run defaults
-#     to 7200s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124.
-#   - Host slots: nonblocking flocks on PC02's ~/.fm-pc02-test-slot-N.lock
-#     cover transfer and execution, admitting two runs by default
-#     (FM_PC02_OFFLOAD_SLOTS). Contention or an unclear claim routes local.
-#     Lock files are never unlinked: a dead owner's kernel lock is released
-#     automatically, so a leftover file or process name is harmless.
+#     the remote fm-test-run.sh keeps its own automatic scheduler (only
+#     proven-isolated scripts and recorded concurrent family proofs run in
+#     parallel; unproven scripts stay serial) with its worker ceiling raised to
+#     FM_PC02_OFFLOAD_JOBS (default 8) for PC02's 16 threads / 27 GB.
+#     Isolation phases, family caps and serial tails remain enforced; curated
+#     lanes keep their contracts. The per-script cap defaults to 3000s
+#     (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS) and overrides the caller's
+#     per-script timeout. The whole run defaults to 7200s
+#     (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124 rather than
+#     rerunning locally.
+#   - Host slots: FM_PC02_OFFLOAD_SLOTS (default 2) nonblocking flocks on
+#     PC02's ~/.fm-pc02-test-slot-<n>.lock, one per concurrent suite, cover
+#     transfer and execution. A run takes the first free slot; with all slots
+#     held it logs that every slot is busy and routes local, as does an unclear
+#     claim. The files are never unlinked: a dead owner's kernel lock is
+#     released automatically, so a leftover file or process name is harmless.
 #   - Supervising-home selection and per-machine configuration are owned by
 #     docs/configuration.md's "PC02 test offload" section.
 #   - The remote fm-test-run.sh prints its own environment record before its
-#     first test, so an offloaded run records PC02's inherited PATH and limits.
+#     first test, so an offloaded run records PC02's PATH and the limits the
+#     suite actually runs with.
+#   - Before taking a slot, PC01 and PC02 compare versions of git, bash,
+#     python3, jq, node, shellcheck, actionlint, ruby, chromium, herdr, pi, and
+#     tmux, LC_ALL/LANG/TZ, and the version and sorted dependency sonames of
+#     the browser fm-test-chrome.sh picks on that host. A differing value, a
+#     version a host cannot establish, and an unresolved browser library all
+#     route the run locally with both hosts' values. CPU count, RAM, ulimit -u,
+#     no-mistakes daemon version, /usr/bin/env provider, and shell availability
+#     (including zsh) are intentionally excluded as resources or documented
+#     test differences. Every parity step is hard-bounded on either host: tool
+#     and selected-browser version probes get 15 seconds, browser dependency
+#     and wrapper-resolution probes 10, each killed outright if it ignores the
+#     first signal, and the whole probe runs under
+#     FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS. Any expiry routes the run locally.
+#     PC02's open-file limit must be at least PC01's; a higher limit is an
+#     allowed resource difference. Missing or invalid limits route locally.
+#     Both the parity probe and the remote suite command first raise PC02's
+#     soft open-file limit to its hard limit best effort, so a low soft limit
+#     inherited from the login shell neither blocks admission nor limits the
+#     run.
+#   - Sizing evidence: two simultaneous four-worker offloads of
+#     fm-supervision-host, fm-captain-hold-lifecycle,
+#     fm-remote-secondmate-lifecycle-e2e, and fm-spawn-dispatch-profile passed
+#     in 2382s total on 16 threads; peak load5 was 25.54 and minimum
+#     MemAvailable was 24.4 GiB of ~27 GiB. A separate PR #215 full 183-script
+#     run took 4274s test wall / 4305s whole. The 7200s cap remains a hang
+#     bound; the full-selection figure is a single-run measurement and does
+#     not establish that two full selections fit within that cap.
 #
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
@@ -94,16 +127,34 @@
 #                                      resource/tool probe and the post-sync
 #                                      HEAD check (default: 15; the resource
 #                                      probe's CPU sample alone takes ~1s)
+#   FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS bound for the PC01/PC02 environment
+#                                      parity probe on either host (default:
+#                                      300). Its per-command deadlines (twelve
+#                                      tool and one selected-browser version at
+#                                      15s, three dependency probes at 10s) sum
+#                                      to under 260s worst case, so this is a
+#                                      hang tripwire rather than a deadline
+#                                      that cuts a slow-but-identical host.
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
 #                                      (default: 180)
+#   FM_PC02_OFFLOAD_SLOTS               number of concurrent PC02 suites
+#                                      (default: 2); each holds its own slot
+#                                      lock. With all slots busy the run
+#                                      routes local and says so. Must be an
+#                                      integer from 1 to 16; any other value
+#                                      is a configuration error that exits 2
+#                                      without running tests.
 #   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote test run
-#                                      (default: 7200); exceeding it fails
-#                                      the run (exit 124) rather than falling
-#                                      back, since the remote work already
-#                                      spent is not worth discarding blind
+#                                      (default: 7200); a hang tripwire, not
+#                                      a deadline. PR #215's full --changed
+#                                      selection (183 scripts) measured 4274s
+#                                      test wall / 4305s whole at jobs=4.
+#                                      Exceeding it fails the run (exit 124)
+#                                      rather than falling back, since the
+#                                      remote work already spent is not worth
+#                                      discarding blind
 #   FM_PC02_OFFLOAD_JOBS                remote jobs when caller omits --jobs
 #                                      (default: 8)
-#   FM_PC02_OFFLOAD_SLOTS               concurrent remote runs (default: 2)
 #   FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS per-script cap (default: 3000)
 #   FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
 #                                      the ssh target's home, holding one
@@ -132,7 +183,9 @@
 #                                      (default: 5; idle measures 0)
 #
 # Exit status: the exact exit code fm-test-run.sh produced, wherever it ran,
-# or 124 if the remote run itself exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS.
+# or 124 if the remote run itself exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS,
+# or 2 for a malformed FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16),
+# which runs no tests at all.
 # A readiness check that fails (PC02 personally in use, occupied, unreachable,
 # missing a required tool, or a sync/verification failure) falls back to a
 # local run and never changes the result fm-test-run.sh itself reports.
@@ -153,6 +206,7 @@ ARGS=("$@")
 
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
+PARITY_TIMEOUT="${FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS:-300}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
 SCRIPT_TIMEOUT="${FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS:-3000}"
@@ -181,6 +235,14 @@ GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
 # would fail differently than PC01, not just thinner, so no-mistakes would
 # judge a different outcome. Require them on PC02 too rather than risk that.
 REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint ruby chromium}"
+
+# A malformed slot count is a configuration error, not an unclear host read:
+# refuse loudly instead of silently running with a different shape.
+case "$SLOTS" in
+  *[!0-9]*) echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be a positive integer, got '$SLOTS'" >&2; exit 2 ;;
+esac
+{ [ "$SLOTS" -ge 1 ] && [ "$SLOTS" -le 16 ]; } \
+  || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be between 1 and 16, got '$SLOTS'" >&2; exit 2; }
 
 release_claim() {
   if [ "$claim_open" -eq 1 ]; then
@@ -333,21 +395,165 @@ esac
 if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
 fi
-# The same SSH shell owns the lock while waiting for transfer, then runs the
-# suite under it. EOF before execution releases it; EOF during execution
-# cannot release it ahead of the bounded suite. No PID-file reclamation race.
-case "$SLOTS" in
-  ''|*[!0-9]*|0*) run_local "invalid FM_PC02_OFFLOAD_SLOTS (expected a positive integer)" ;;
-esac
-# shellcheck disable=SC2016 # HOME and slot expand on PC02.
-claim_cmd='claimed=0
-for ((slot=1; slot<='"$SLOTS"'; slot++)); do
-  exec 8> "$HOME/.fm-pc02-test-slot-$slot.lock" || exit 1
-  if flock -n 8; then claimed=1; break; fi
+# Compare test-relevant surfaces with the same probe on both hosts.
+parity_probe="$(cat "$SELF_DIR/fm-test-chrome.sh")
+$(cat <<'PARITY_PROBE'
+# fm-pc02-environment-parity-probe
+set -u
+version() {
+  local tool=$1 args=--version path value status=0
+  [ "$tool" != tmux ] || args=-V
+  path=$(type -P "$tool" 2>/dev/null || true)
+  if [ -z "$path" ]; then printf 'tool.%s=absent\n' "$tool"; return; fi
+  value=$(timeout --signal=TERM --kill-after=2 15 "$path" "$args" 2>&1 </dev/null) || status=$?
+  # Keep the first line carrying a digit (shellcheck prints a banner first).
+  value=$(printf '%s\n' "$value" | awk 'NR == 1 { first = $0 } /[0-9]/ { print; found = 1; exit } END { if (!found) print first }')
+  [ -n "$value" ] || value=unavailable
+  case "$status" in 124|137) value=timed-out ;; esac
+  value=$(printf '%s' "$value" | tr '\r\n\t' '   ' | cut -c1-180)
+  printf 'tool.%s=%s\n' "$tool" "$value"
+}
+for tool in git bash python3 jq node shellcheck actionlint ruby chromium herdr pi tmux; do version "$tool"; done
+printf 'ulimit.open_files=%s\n' "$(ulimit -n 2>&1)"
+printf 'locale.LC_ALL=%s\n' "${LC_ALL-}"
+printf 'locale.LANG=%s\n' "${LANG-}"
+printf 'locale.TZ=%s\n' "${TZ-}"
+normalize_ldd() {
+  local path=$1 output status=0 target trace
+  [ -n "$path" ] || { printf 'UNRESOLVED:browser-absent\n'; return; }
+  output=$(timeout --signal=TERM --kill-after=2 10 ldd "$path" 2>&1) || status=$?
+  case "$status" in
+    124|137) printf 'browser dependency probe timed out running ldd for %s\n' "$path" >&2; return 1 ;;
+  esac
+  if printf '%s' "$output" | grep -Eqi 'not a dynamic executable|statically linked|not dynamic'; then
+    status=0
+    trace=$(timeout --signal=TERM --kill-after=2 10 bash -x "$path" --version 2>&1 </dev/null) || status=$?
+    case "$status" in
+      124|137) printf 'browser dependency probe timed out resolving wrapper %s\n' "$path" >&2; return 1 ;;
+    esac
+    target=$(printf '%s\n' "$trace" | sed -nE 's/^\+ exec ([^[:space:]]+).*/\1/p' | tail -n 1)
+    if [ -n "$target" ] && [ -x "$target" ]; then
+      path=$(readlink -f "$target" 2>/dev/null || printf '%s' "$target")
+      status=0
+      output=$(timeout --signal=TERM --kill-after=2 10 ldd "$path" 2>&1) || status=$?
+      case "$status" in
+        124|137) printf 'browser dependency probe timed out running ldd for resolved executable %s\n' "$path" >&2; return 1 ;;
+      esac
+    else
+      printf 'UNRESOLVED:wrapper-target (%s)\n' "${target:-unresolved}"
+      return
+    fi
+  fi
+  if printf '%s\n' "$output" | grep -q 'not found'; then
+    printf '%s\n' "$output" | awk '
+      /=>[[:space:]]+not found/ {gsub(/^[[:space:]]+/, ""); print "UNRESOLVED:" $1; next}
+      index($0, "=>") {split($0, pair, "=>"); gsub(/^[[:space:]]+|[[:space:]]+$/, "", pair[1]); print pair[1]; next}
+      $1 ~ /^\// {n=split($1, path, "/"); print path[n]; next}
+      $1 ~ /^linux-vdso/ {print $1}
+    ' | sort -u
+  elif [ "$status" -ne 0 ]; then
+    printf 'UNRESOLVED:ldd-error-%s\n' "$status"
+  else
+    printf '%s\n' "$output" | awk '
+      index($0, "=>") {split($0, pair, "=>"); gsub(/^[[:space:]]+|[[:space:]]+$/, "", pair[1]); print pair[1]; next}
+      $1 ~ /^\// {n=split($1, path, "/"); print path[n]; next}
+      $1 ~ /^linux-vdso/ {print $1}
+    ' | sort -u
+  fi
+}
+browser=$(find_chrome 2>/dev/null || true)
+if [ -n "$browser" ]; then browser=$(readlink -f "$browser" 2>/dev/null || printf '%s' "$browser"); fi
+printf 'chromium.path=%s\n' "$browser"
+if [ -n "$browser" ]; then
+  browser_version_status=0
+  browser_version=$(timeout --signal=TERM --kill-after=2 15 "$browser" --version 2>&1 </dev/null) || browser_version_status=$?
+  browser_version=${browser_version%%$'\n'*}
+  [ -n "$browser_version" ] || browser_version=unavailable
+  case "$browser_version_status" in 124|137) browser_version=timed-out ;; esac
+  browser_version=$(printf '%s' "$browser_version" | tr '\r\n\t' '   ' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | cut -c1-180)
+else
+  browser_version=absent
+fi
+printf 'chromium.selected_version=%s\n' "$browser_version"
+printf 'chromium.dependencies='
+browser_dependencies=$(normalize_ldd "$browser") || exit 1
+printf '%s\n' "$browser_dependencies" | paste -sd, -
+PARITY_PROBE
+)"
+local_parity=$(timeout --signal=TERM --kill-after=5 "$PARITY_TIMEOUT" bash -c "$parity_probe" 2>&1) \
+  || run_local "PC01 environment parity probe failed: $local_parity"
+# shellcheck disable=SC2016 # The raise expands on PC02, not here.
+remote_parity_raise='ulimit -Sn "$(ulimit -Hn)" 2>/dev/null || true'
+remote_parity_cmd="$remote_parity_raise
+$parity_probe"
+remote_parity=$(timeout --signal=TERM --kill-after=5 "$PARITY_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+  -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$remote_parity_cmd")" 2>&1) || {
+  run_local "PC02 environment parity probe failed: $remote_parity"
+}
+open_file_limit_sufficient() { # <PC01 limit> <PC02 limit>
+  local local_limit=$1 remote_limit=$2
+  case "$local_limit" in
+    unlimited) [ "$remote_limit" = unlimited ]; return ;;
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  case "$remote_limit" in
+    unlimited) return 0 ;;
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$remote_limit" -ge "$local_limit" ] 2>/dev/null
+}
+
+parity_mismatches=()
+while IFS='=' read -r key local_value; do
+  case "$key" in chromium.path|chromium.dependencies) continue ;; esac
+  remote_value=$(printf '%s\n' "$remote_parity" | awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}')
+  if [ "$key" = ulimit.open_files ]; then
+    open_file_limit_sufficient "$local_value" "$remote_value" \
+      || parity_mismatches+=("$key below PC01 or invalid (PC01='$local_value', PC02='$remote_value')")
+  else
+    [ "$local_value" = "$remote_value" ] || parity_mismatches+=("$key (PC01='$local_value', PC02='$remote_value')")
+  fi
+  case "$key" in
+    tool.*|chromium.selected_version)
+      case "$local_value:$remote_value" in
+        absent:*|unavailable:*|timed-out:*|*:absent|*:unavailable|*:timed-out)
+          parity_mismatches+=("$key version could not be established")
+          ;;
+      esac
+      ;;
+  esac
+done <<< "$local_parity"
+local_chrome=$(printf '%s\n' "$local_parity" | sed -n 's/^chromium.path=//p' | head -n 1)
+remote_chrome=$(printf '%s\n' "$remote_parity" | sed -n 's/^chromium.path=//p' | head -n 1)
+local_deps=$(printf '%s\n' "$local_parity" | sed -n 's/^chromium.dependencies=//p' | head -n 1)
+remote_deps=$(printf '%s\n' "$remote_parity" | sed -n 's/^chromium.dependencies=//p' | head -n 1)
+case "$local_deps" in *UNRESOLVED:*) parity_mismatches+=("PC01 Chromium at '$local_chrome' has unresolved dependencies '${local_deps//,/ }'") ;; esac
+case "$remote_deps" in *UNRESOLVED:*) parity_mismatches+=("PC02 Chromium at '$remote_chrome' has unresolved dependencies '${remote_deps//,/ }'") ;; esac
+[ "$local_deps" = "$remote_deps" ] || parity_mismatches+=("chromium.dependencies (PC01='$local_deps', PC02='$remote_deps')")
+if [ "${#parity_mismatches[@]}" -gt 0 ]; then
+  run_local "PC02 test environment differs from PC01: ${parity_mismatches[*]}"
+fi
+
+# The same SSH shell owns the slot while waiting for transfer, then runs the
+# suite under it. It takes the first free slot, so up to SLOTS suites share
+# PC02; with every slot held it reports that and exits 75. EOF before
+# execution releases the slot; EOF during execution cannot release it ahead of
+# the bounded suite. No PID-file reclamation race.
+claim_slots=
+slot=1
+while [ "$slot" -le "$SLOTS" ]; do
+  claim_slots="$claim_slots $slot"
+  slot=$((slot + 1))
+done
+# shellcheck disable=SC2016 # HOME and command expand on PC02.
+claim_cmd='held=
+for i in'"$claim_slots"'; do
+  exec 8> "$HOME/.fm-pc02-test-slot-$i.lock" || exit 1
+  if flock -n 8; then held=$i; break; fi
   exec 8>&-
 done
-[ "$claimed" -eq 1 ] || exit 75
-printf "claimed\n"
+if [ -z "$held" ]; then printf "busy '"$SLOTS"'\n"; exit 75; fi
+printf "claimed %s of '"$SLOTS"'\n" "$held"
 IFS= read -r -t '"$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5))"' command || exit 1
 eval "$command"'
 # FIFOs keep this compatible with stock macOS Bash (which has no coproc).
@@ -361,10 +567,22 @@ timeout --kill-after=5 "$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5 + RUN_TIMEOUT + 
 claim_pid=$!
 exec 7<"$claim_tmp/out"
 claim_open=1
-if ! IFS= read -r -t "$PROBE_TIMEOUT" claim_reply <&7 || [ "$claim_reply" != claimed ]; then
+claim_reply=
+if ! IFS= read -r -t "$PROBE_TIMEOUT" claim_reply <&7 || [ -z "$claim_reply" ]; then
   kill "$claim_pid" 2>/dev/null || true
-  run_local "PC02 test slot busy or claim unavailable"
+  run_local "PC02 test slot claim unavailable"
 fi
+case "$claim_reply" in
+  "claimed "*) echo "fm-pc02-test-offload: claimed PC02 slot ${claim_reply#claimed }" >&2 ;;
+  "busy "*)
+    kill "$claim_pid" 2>/dev/null || true
+    run_local "all ${claim_reply#busy } PC02 test slots are busy; running locally"
+    ;;
+  *)
+    kill "$claim_pid" 2>/dev/null || true
+    run_local "PC02 test slot claim unavailable (reply: '$claim_reply')"
+    ;;
+esac
 
 # 3. Mirror the current worktree onto PC02: working-tree files, this
 # worktree's own per-worktree git-dir (HEAD, index, refs, logs), and the
@@ -455,6 +673,9 @@ remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
 for a in "${ARGS[@]}"; do
   remote_suite_cmd="$remote_suite_cmd $(printf '%q' "$a")"
 done
+# No --jobs is forced: fm-test-run.sh's own scheduler admits only
+# proven-concurrent work, exactly as a local run does; only its worker ceiling
+# and the per-script bound are pinned.
 remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 # The watcher reads the ssh stdin: if the transport drops, EOF kills the suite
 # session. The lock (fd 8) is held by the suite itself, so a surviving old
@@ -462,6 +683,7 @@ remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SC
 # Keep job control off: setsid must exec in place so $! is the session ID
 # written to pgid and used to clean up the complete suite session.
 remote_test_cmd="exec 5<&0
+ulimit -Sn \"\$(ulimit -Hn)\" 2>/dev/null || true
 cd $(printf '%q' "$REMOTE_WORKTREE") || exit 1
 $remote_suite_cmd &
 pgid=\$!

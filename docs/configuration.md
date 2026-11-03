@@ -750,7 +750,7 @@ Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](f
 ## PC02 test offload
 
 Every executing `bin/fm-test-run.sh` invocation prints one `FM_TEST_ENV_RECORD` before starting tests, from the shell that will run them.
-For an offloaded run this means the record comes from the runner on PC02, with PC02's inherited `PATH` and limits.
+For an offloaded run this means the record comes from the runner on PC02, with PC02's inherited `PATH` and the limits the suite actually runs with.
 The record includes selected tool versions and paths, the inherited `PATH` entries, Bash mode and options, whether the runner's own Bash is a login shell (`runner_login_shell`, which does not describe the invoking SSH shell), soft limits, OS/kernel, process identifiers and session model, TMPDIR filesystem type, and a token-free headless Chrome startup result.
 Missing tools and browser startup failures are recorded as data and do not change the test result; the record never dumps the process environment.
 `bin/fm-test-env-record.sh` owns the exact fields and privacy-safe probes, and `tests/fm-test-run.test.sh` plus `tests/fm-pc02-test-offload.test.sh` pin the local and fake-remote behavior.
@@ -762,11 +762,13 @@ For an operational home separate from that primary clone (including a validation
 An invalid or unreadable configuration, or an unavailable home state directory, keeps testing local; a configured home is never skipped in favor of a guessed home.
 `FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
 
-[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic host-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
-The host slots coordinate offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
-Offload preserves caller-selected parallelism and otherwise permits up to eight workers through the runner's automatic scheduler, with two concurrent runs admitted by default for PC02's 16 threads and 27 GB.
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
+Up to `FM_PC02_OFFLOAD_SLOTS` suites (default 2) run concurrently, each holding one slot lock; with every slot busy the next run falls back locally and says all slots are busy. The value must be an integer from 1 to 16; any other value is a configuration error that exits 2 without running tests. Direct test invocations on PC02 must be scheduled separately.
+Offload preserves caller-selected parallelism and otherwise keeps `bin/fm-test-run.sh`'s own automatic scheduler with up to eight workers for PC02's 16 threads and 27 GB, so only proven-concurrent work runs in parallel.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
+An environment-parity check gates the slot claim; that header owns the compared fields, the open-file rule and remote soft-limit raise, the parity-probe bound, the intentional exclusions, and the local-fallback reasons.
 The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
+A full PR #215 selection of 183 scripts took 4274s test wall / 4305s whole at four workers; that single-run measurement does not establish that two full selections fit within the cap.
 Exceeding the whole-run cap fails with exit 124 and does not rerun the suite locally or omit selected tests.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)

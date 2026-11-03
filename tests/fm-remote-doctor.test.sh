@@ -39,15 +39,23 @@ BASE_PATH="$TOOLS:$(fm_test_base_path)"
 
 # Real socket-owner holders for the Darwin birth check: jq blocked on a fifo
 # this test keeps open, with exactly the marker environment each birth needs.
+# The holder is double-forked so it reparents to init instead of keeping this
+# test process's ancestry: when the suite runs over SSH (the PC02 offload
+# transport), an attached holder would inherit sshd ancestors and be misread
+# as SSH-born, which is a property of where the suite runs rather than of the
+# marker environment the case sets.
 JQ=$(command -v jq)
 HOLDER_FD=5
 hold() { # <marker-env...> -> HOLDER_PID
-  local fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo"
+  local fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo" pidfile="$TMP_ROOT/holder-$HOLDER_FD.pid" i=0
+  rm -f "$fifo" "$pidfile"
   mkfifo "$fifo"
-  env -i "$@" "$JQ" . "$fifo" &
-  HOLDER_PID=$!
+  eval "exec ${HOLDER_FD}<>\"\$fifo\""
+  ( env -i "$@" "$JQ" . "$fifo" & printf '%s\n' "$!" > "$pidfile" )
+  while [ ! -s "$pidfile" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$pidfile" ] || { echo "holder did not report its pid" >&2; exit 1; }
+  HOLDER_PID=$(cat "$pidfile")
   HOLDER_PIDS+=("$HOLDER_PID")
-  eval "exec ${HOLDER_FD}>\"\$fifo\""
   HOLDER_FD=$((HOLDER_FD + 1))
 }
 hold XPC_SERVICE_NAME=dev.firstmate.herdr.fm-remote
