@@ -1,0 +1,120 @@
+unexpected request: api /repos/example/firstmate --jq [.private,.default_branch] | @tsv --full
+fm-test-compute: source visibility unavailable; falling back to local admission
+fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running on PC01
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=1189266 ppid=1189265
+runner_login_shell=no
+path_entries=/tmp/fm-live-api.0jqj38/bin:~/.pi/agent/bin:~/.local/bin:~/.npm-global/bin:~/bin:~/.npm-global/bin:~/.local/bin:~/.local/bin:~/go/bin:~/.cargo/bin:~/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=1189266 ppid=1189265 pgid=1189265 sid=1189145 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 88019
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 88019
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=~/.local/bin/node version=v22.22.3
+tool=pi path=~/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=~/.npm-global/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=~/.local/bin/herdr version=herdr 0.9.5
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=~/.local/bin/no-mistakes version=no-mistakes version v1.106.1 (5732d1e) 2026-10-31T05:16:02Z
+chrome_startup=failed path=~/.local/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_HOST_LOAD load5=2.70 cpus=16 jobs=4 per_script_timeout_secs=1500 watch_triage_timeout_secs=1500 captain_hold_timeout_secs=1500
+FM_TEST_BEGIN 2026-11-03T22:38:22Z tests/fm-lint.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-lint.sh --help reports the complete executable interface
+ok - partition audit accepts clean roots and blocks unexpected no-source codes and tool failures
+ok - fm-lint.sh --list-files reports the complete shell inventory
+ok - two canonical lint partitions preserve complete source-aware coverage and reject weakened modes
+ok - fm-lint.sh accepts --partition KofN for 1 <= K <= N <= 8 and refuses everything else
+ok - the partition packer assigns largest-first to the least-loaded partition with an index tiebreak
+ok - four canonical lint partitions are complete, disjoint, deterministic, and byte-balanced
+ok - tests/lib.sh never follows a source directive into bin/fm-wake-lib.sh
+ok - the lint budget warns at 50 percent and fails at 70 percent of the job cap
+ok - fm-lint.sh --fast disables ShellCheck extended analysis
+ok - fm-lint.sh keeps full ShellCheck analysis by default in CI
+ok - fm-lint.sh rejects explicit --fast mode in CI
+ok - fm-lint.sh --fast catches an ordinary shell lint defect
+ok - fm-lint.sh pins an explicit ShellCheck version (0.11.0)
+ok - ShellCheck installer retries a transient download failure
+ok - ShellCheck installer selects the official archive, URL, and checksum per OS/arch
+ok - ShellCheck installer rejects a wrong checksum
+ok - ShellCheck installer falls back to shasum -a 256 when sha256sum is absent
+ok - ShellCheck installer prefers sha256sum when both hashers are present
+ok - ShellCheck installer rejects an unsupported OS or architecture
+ok - missing ShellCheck fails closed
+ok - fm-lint.sh refuses to lint under a non-pinned ShellCheck version
+ok - fm-lint.sh catches a real lint defect the old no-op gate passed
+ok - fm-lint.sh rejects direct Beads CLI invocations in firstmate core
+ok - fm-lint.sh enforces backend purity for explicit core paths
+ok - fm-lint.sh ignores ambient ShellCheck options
+ok - fm-lint.sh passes a clean fixture
+ok - jobs=1 and jobs=2 preserve deterministic diagnostics, failures, cleanup bounds, and quiet telemetry
+ok - jobs=1 and jobs=2 stop complete worker trees with and without telemetry
+ok - a root pinned at the wall deadline fails by name, reaps its tree, and leaves the sentinel alive
+ok - a root refused by its enforced memory limit fails by name with a memory reason
+ok - memory failures retry without source following, exclude cross-file codes, and preserve a real fallback finding
+ok - a memory fallback runs only within the time left in its root's original deadline
+ok - explicit memory evidence outranks findings and signal reasons (modes: 0 1)
+ok - OOM words in a source excerpt or a root path never classify a root as memory
+ok - FM_LINT_REQUIRE_BOUNDS refuses missing enforcement and proceeds when enforceable
+ok - the pinned ShellCheck both respects and survives under the memory envelope
+ok - the roots sidecar and telemetry record the run's final exit status
+ok - the retained sidecar records each root's lifecycle with a mode, reason, and duration
+ok - seeded dispatcher, adapter, production-owner, and test-local diagnostics preserve parity
+ok - fm-lint.sh changed mode lints only the changed canonical file
+ok - fm-lint.sh forces a full lint in CI even when the local diff would be empty
+ok - fm-lint.sh forces a full lint when HEAD is on main
+ok - fm-lint.sh explicit paths bypass changed-file mode selection
+ok - fm-lint.sh exits 0 with a note when the local branch has no changed lint targets
+ok - fm-lint.sh guards .no-mistakes.yaml commands.test against a divergent invocation
+ok - fm-lint.sh --list-files reports the would-be changed set in changed mode
+ok - fm-lint.sh changed mode drops source following and excludes cross-file codes
+ok - fm-lint.sh changed mode invokes ShellCheck once per root
+ok - fm-lint.sh CI keeps source following without the local exclusion list
+ok - fm-lint.sh on main keeps source following without the local exclusion list
+ok - fm-lint.sh without a merge-base keeps source following without the local exclusion list
+ok - fm-lint.sh explicit paths keep source following
+ok - fm-lint.sh --fast on a local branch keeps source following
+ok - fm-lint.sh changed mode excludes cross-file codes that explicit paths still report
+FM_TEST_END 2026-11-03T22:41:00Z tests/fm-lint.test.sh exit=0 duration_ms=158128 gate_skip=false
+FM_TEST_BEGIN 2026-11-03T22:41:00Z tests/fm-lint-workflows.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-lint-workflows.sh pins an explicit actionlint version (1.7.12)
+ok - current .github/workflows YAML files parse
+ok - column-0 heredoc workflow fails validation with a clear error
+ok - valid fixture workflow passes
+ok - empty workflows directory fails closed
+ok - explicit malformed workflow path fails validation
+ok - non-mapping workflow YAML root fails
+ok - missing actionlint fails closed
+ok - fm-lint-workflows.sh refuses to lint under a non-pinned actionlint version
+ok - actionlint installer retries a transient download failure
+ok - actionlint installer selects the official archive, URL, and checksum per OS/arch
+ok - actionlint installer rejects a wrong checksum
+ok - actionlint installer falls back to shasum -a 256 when sha256sum is absent
+ok - actionlint installer prefers sha256sum when both hashers are present
+ok - actionlint installer rejects an unsupported OS or architecture
+ok - fm-lint.sh default path catches a self-broken ci.yml
+FM_TEST_END 2026-11-03T22:41:01Z tests/fm-lint-workflows.test.sh exit=0 duration_ms=1404 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=173249
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=159532 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-lint.test.sh duration_ms=158128
+FM_TEST_SLOWEST rank=2 script=tests/fm-lint-workflows.test.sh duration_ms=1404

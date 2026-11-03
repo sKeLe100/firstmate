@@ -1,6 +1,7 @@
 ok - trusted gate configuration routes lint and preserves the pinned Test baseline
 ok - GitHub result receipts cover only the non-empty Test partitions
 ok - lane listing failure falls back before dispatch
+ok - selection listing failure falls back before dispatch
 ok - a selection with no hosted-capable partitions runs locally
 ok - non-hosted scripts stay on local admission while the hosted subset keeps its tier order
 ok - a hosted failure is never masked by the local-only subset
@@ -12,10 +13,18 @@ ok - missing cannot become a green fallback
 ok - wrong-head cannot become a green fallback
 ok - wrong-scripts cannot become a green fallback
 ok - dispatch-ambiguous cannot become a green fallback
+ok - download-failure names its fail-closed reason
+ok - discovery-failure names its fail-closed reason
+ok - observation-failure names its fail-closed reason
+ok - invalid-run-id names its fail-closed reason
+ok - undiscovered names its fail-closed reason
+ok - cancel-failure names its fail-closed reason
 ok - definitive GitHub admission rejection tries the next tier
 ok - GitHub unavailable and unauthenticated GitLab reach existing PC02 admission
 ok - unavailable hosted lint reaches the existing PC02/PC01 fallback
 ok - queue timeout requires confirmed cancellation before fallback
+ok - a GitHub execution timeout fails closed with a diagnostic
+ok - an unconfirmed GitHub cancellation after timeout fails closed with a diagnostic
 ok - GitLab queue timeout requires confirmed cancellation before fallback
 ok - a confirmed GitLab execution timeout falls through after cancellation
 ok - GitLab completion with missing receipts falls through to local admission
@@ -36,5 +45,7 @@ ok - inspection never contacts hosted services
 ok - non-baseline test selections stay on local admission
 ok - uncommitted content always uses the existing local mirror path
 ok - unknown commands are rejected before dependencies
-ok - PC02 lint fallback consumes its mode and executes every canonical partition
+ok - PC01 lint fallback runs changed-file lint while local-lint keeps canonical partitions
+ok - repositories outside public Firstmate fall back locally before any hosted call
+ok - oversized snapshots fall back locally before any hosted call
 # all test-compute tests passed
