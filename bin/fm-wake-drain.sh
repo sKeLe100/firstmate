@@ -3,9 +3,11 @@
 # optionally acknowledge handled records,
 # annotate every unread line for validated signal status keys, surface unread
 # informational status lines, latest captain-facing statuses not covered by a
-# newer branch outcome, OPEN DECISIONS, captain-call record divergence, and on
-# a supervision-host home the supervision session's new and unprocessed
-# outcomes (BRANCH OUTCOMES), then assert liveness.
+# newer branch outcome, OPEN DECISIONS, captain-call record divergence, STALLED
+# WAITS (ships parked on the crewmate or paused on a firstmate go past an hour,
+# with a PROCESS CENSUS line when load5 is above 8; FM_LOADAVG_FILE stands in for
+# /proc/loadavg in tests), and on a supervision-host home the supervision
+# session's new and unprocessed outcomes (BRANCH OUTCOMES), then assert liveness.
 #
 # Keep sequence-bound row consumption independent from generation-bound episode
 # retirement; docs/watcher-continuity.md owns the recovery contract.
@@ -748,6 +750,91 @@ cap_outcome_line() {  # <line> <max-bytes>
   OUTCOME_LINE_BYTES=${#OUTCOME_LINE}
 }
 
+# Print the STALLED WAITS section: one line per ship that has waited past
+# FM_STALLED_WAIT_SECS on firstmate with nothing on OPEN DECISIONS, judged by
+# fm-classify-lib.sh's stalled_wait_line from bin/fm-crew-state.sh's line for each
+# ship. Every ship's read starts together and each is bounded by its own timeout
+# (FM_STALLED_WAITS_TIMEOUT, default 20 seconds), the same fan-out the fleet
+# snapshot's prefetch uses, so the section costs one read window rather than one
+# per ship. A failed or timed-out read prints nothing for that ship and never
+# changes the drain's exit status. Also prints the process census line when this
+# host's load5 is above 8. FM_LOADAVG_FILE lets tests stand in for /proc/loadavg.
+print_stalled_waits_section() {
+  local now tmp f id ids='' out='' verdict line bound=${FM_STALLED_WAITS_TIMEOUT:-20}
+  local -a pids=()
+  case "$bound" in ''|*[!0-9]*|0) bound=20 ;; esac
+  now=$(date +%s)
+  tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/fm-stalled-waits.XXXXXX") || return 0
+  for f in "$STATE"/*.status; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    id=${f##*/}; id=${id%.status}
+    [ "$(_fm_status_kind "$f")" = ship ] || continue
+    ids="$ids $id"
+    ( fm_run_timed "$bound" env FM_STATE_OVERRIDE="$STATE" "$FM_CREW_STATE_BIN" "$id" > "$tmp/$id" 2>/dev/null ) &
+    pids+=("$!")
+  done
+  [ "${#pids[@]}" -eq 0 ] || wait "${pids[@]}"
+  for id in $ids; do
+    line=$(head -n 1 "$tmp/$id" 2>/dev/null) || line=''
+    verdict=$(stalled_wait_line "$id" "$line" "$STATE/$id.status" "$now") || verdict=''
+    [ -n "$verdict" ] || continue
+    fm_cap_line_var "$verdict" 219
+    out="$out$FM_LINE_CAP_LINE
+"
+  done
+  rm -rf -- "$tmp"
+  if [ -n "$out" ]; then
+    printf 'STALLED WAITS (waiting on firstmate past %s with nothing on OPEN DECISIONS):\n' \
+      "$(_fm_stall_age_text "$FM_STALLED_WAIT_SECS")" || return 0
+    printf '%s' "$out" || return 0
+  fi
+  print_process_census || true
+  return 0
+}
+
+# Print one PROCESS CENSUS line when the host's load5 is above 8: the top CPU
+# consumers sampled from ps, grouped by the task worktree each process runs in
+# (from every task's recorded worktree=), with unmatched processes counted as
+# other. Prints nothing when load is at or below 8 or the load cannot be read.
+print_process_census() {
+  local load5 map groups f line
+  if [ -n "${FM_LOADAVG_FILE:-}" ]; then
+    load5=$(awk '{print $2}' "$FM_LOADAVG_FILE" 2>/dev/null) || return 0
+  elif [ -r /proc/loadavg ]; then
+    load5=$(awk '{print $2}' /proc/loadavg 2>/dev/null) || return 0
+  else
+    load5=$(sysctl -n vm.loadavg 2>/dev/null | awk '{gsub(/[{}]/, ""); print $2}') || return 0
+  fi
+  case "$load5" in ''|*[!0-9.]*) return 0 ;; esac
+  awk -v l="$load5" 'BEGIN { exit !(l + 0 > 8) }' || return 0
+  map=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-census-map.XXXXXX") || return 0
+  for f in "$STATE"/*.meta; do
+    [ -f "$f" ] || continue
+    line=$(grep '^worktree=' "$f" 2>/dev/null | tail -n 1 | cut -d= -f2-) || line=''
+    [ -n "$line" ] || continue
+    printf '%s\t%s\n' "${line%/}" "$(basename "$f" .meta)"
+  done > "$map"
+  groups=$(ps -eo pid=,pcpu= 2>/dev/null | sort -k2,2 -rn | head -n 60 | while read -r pid pcpu; do
+      cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
+      printf '%s\t%s\n' "$pcpu" "$cwd"
+    done | awk -F '\t' -v mapf="$map" '
+      BEGIN {
+        n = 0
+        while ((getline row < mapf) > 0) { split(row, a, "\t"); wt[n] = a[1]; tid[n] = a[2]; n++ }
+      }
+      {
+        g = "other"; best = 0
+        for (i = 0; i < n; i++)
+          if (($2 == wt[i] || index($2, wt[i] "/") == 1) && length(wt[i]) > best) { best = length(wt[i]); g = tid[i] }
+        cpu[g] += $1; cnt[g]++
+      }
+      END { for (g in cpu) printf "%s\t%.1f\t%d\n", g, cpu[g], cnt[g] }' \
+    | sort -t "$(printf '\t')" -k2,2 -rn | head -n 5 \
+    | awk -F '\t' '{ printf "%s%s %s%% (%s proc%s)", sep, $1, $2, $3, ($3 == 1 ? "" : "s"); sep = "; " }')
+  rm -f -- "$map"
+  printf 'PROCESS CENSUS (load5 %s above 8 on this host; top CPU by task worktree): %s\n' "$load5" "${groups:-no processes sampled}"
+}
+
 print_status_sections() {
   local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
@@ -758,7 +845,8 @@ print_status_sections() {
     print_unread_status_section "$snapshot" \
       && print_status_outcome_backstop_section "$snapshot" \
       && print_open_decisions_section "$snapshot" \
-      && print_record_divergence_section
+      && print_record_divergence_section \
+      && print_stalled_waits_section
   } > "$prepared"; then
     rm -f -- "$prepared"
     return 1

@@ -1177,6 +1177,33 @@ test_gate_block_parked_not_superseded() {
   pass "gate block parked run is not flagged superseded"
 }
 
+test_parked_gate_mints_its_awaiting_age_component() {
+  reset_fakes
+  local d; d=$(new_case parked-awaiting-age)
+  make_repo_on_branch "$d/wt" fm/feat-aa
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-aa.meta" "window=fm:fm-feat-aa" "worktree=$d/wt" "kind=ship"
+  printf 'needs-decision: review gate\n' > "$d/state/feat-aa.status"
+  FM_FAKE_AXI_STATUS="$(run_parked fm/feat-aa)"
+  local out; out=$(run_crew_state "$d" feat-aa)
+  assert_contains "$out" "state: parked" "an awaiting_agent gate still reports parked"
+  assert_contains "$out" " · gate awaiting agent for 2m10s" \
+    "the pipeline's parked duration for an awaiting_agent gate is minted as its own component"
+
+  reset_fakes
+  d=$(new_case scalar-gate-no-awaiting-age)
+  make_repo_on_branch "$d/wt" fm/feat-cs2
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cs2.meta" "window=fm:fm-feat-cs2" "worktree=$d/wt" "kind=ship"
+  printf 'needs-decision: review gate\n' > "$d/state/feat-cs2.status"
+  FM_FAKE_AXI_STATUS="$(run_parked_scalar_gate_running fm/feat-cs2)"
+  out=$(run_crew_state "$d" feat-cs2)
+  assert_contains "$out" "parked at review" "a scalar gate still names its gate"
+  assert_not_contains "$out" "gate awaiting agent for" \
+    "a gate whose awaiting_agent line carries no parked duration mints no awaiting-age component"
+  pass "a parked gate reports how long it has waited on the crewmate as one component, and only when the pipeline says so"
+}
+
 test_ci_ready_done_log_beats_monitoring_run() {
   reset_fakes
   local d; d=$(new_case ci-ready)
@@ -5719,6 +5746,7 @@ test_genuine_parked_not_superseded
 test_parked_human_decision_comes_from_the_action_column
 test_scalar_gate_parked_not_superseded
 test_gate_block_parked_not_superseded
+test_parked_gate_mints_its_awaiting_age_component
 test_ci_ready_done_log_beats_monitoring_run
 test_ci_monitoring_checks_green_surfaces_done
 test_top_level_ci_checks_green_surfaces_done
