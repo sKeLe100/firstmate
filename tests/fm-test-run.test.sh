@@ -554,10 +554,12 @@ test_changed_bin_reference_selects_per_script_not_per_family() {
     printf 'bash "%s/bin/fm-test-isolation-proof.sh"\n' "$repo" >"$repo/tests/via-bin.test.sh"
     printf '. "%s/tests/consumer-chain.sh"\n' "$repo" >"$repo/tests/via-helper.test.sh"
     printf 'bash "%s/tests/via-bin.test.sh"\n' "$repo" >"$repo/tests/via-suite.test.sh"
+    # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
     printf 'run() {\n  local lib="%s/bin/%s.sh"\n  . "$lib"\n}\nrun\n' "$repo" "$subject" >"$repo/bin/declared-consumer.sh"
     printf 'bash "%s/bin/declared-consumer.sh"\n' "$repo" >"$repo/tests/via-local.test.sh"
     printf 'if "%s/bin/%s.sh"; then :; fi\n' "$repo" "$subject" >"$repo/bin/control-consumer.sh"
     printf 'bash "%s/bin/control-consumer.sh"\n' "$repo" >"$repo/tests/via-control.test.sh"
+    # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
     printf 'out=$("%s/bin/%s.sh")\nprintf "%%s\\n" "$out"\n' "$repo" "$subject" >"$repo/bin/subst-consumer.sh"
     printf 'bash "%s/bin/subst-consumer.sh"\n' "$repo" >"$repo/tests/via-subst.test.sh"
     printf 'echo unrelated\n' >"$repo/tests/unrelated.test.sh"
@@ -603,7 +605,9 @@ test_changed_reference_closure() {
   printf '. "./quoted-hash.sh"\n' >>"$repo/tests/fm-secondmate-safety.test.sh"
   printf 'echo leaf-ran\n' >"$repo/bin/comment-leaf.sh"
   printf '. "%s/bin/comment-leaf.sh"\n' "$repo" >"$repo/bin/comment-consumer.sh"
+  # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
   printf '# comment-leaf.sh\n. "$(dirname "$0")/../bin/comment-consumer.sh"\n' >"$repo/tests/fm-comment-reader.test.sh"
+  # shellcheck disable=SC2016  # literal fixture text: $ must not expand here.
   printf 'bash "$(dirname "$0")/fm-comment-reader.test.sh"\n' >"$repo/tests/fm-comment-wrapper.test.sh"
   git -C "$repo" add .
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm chain
@@ -760,6 +764,7 @@ fm-merge-authority-lib.sh fm-pr-merge.test.sh
 fm-landed-lib.sh fm-bearings-snapshot.test.sh
 fm-exclude-tools-lib.sh fm-control-relaunch.test.sh
 fm-project-capacity-lib.sh fm-control-relaunch.test.sh
+fm-public-followup-collect.sh fm-public-followup.test.sh
 EOF
 
   # Recorded 18-file delta for https://github.com/sKeLe100/firstmate/pull/215.

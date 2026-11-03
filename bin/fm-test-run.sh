@@ -1855,7 +1855,7 @@ def shell_executable_names(text):
                 if NAME_RE.fullmatch(Path(token).name):
                     names.extend(NAME_RE.findall(token))
                 expect_command = False
-        if EXEC_WORD_RE.search(line) or "`" in line:
+        if EXEC_WORD_RE.search(line) or "`" in line or "$(" in line:
             names.extend(NAME_RE.findall(line))
     return names
 
@@ -1909,7 +1909,7 @@ for path in files:
     executable_names = set(
         names if str(path).startswith("bin/") and path.suffix == ".sh"
         else shell_executable_names(
-            text if path.suffix != ".sh" else shell_code(text, keep_heredocs=True)
+            text if path.suffix != ".sh" else shell_code(text, keep_heredocs=False)
         )
     )
     for name in set(names):
@@ -2011,6 +2011,56 @@ scripts_for_path_reference() {
   local path=$1
   awk -F '\t' -v path="$path" '$1 == path { print $2; found=1 } END { exit !found }' \
     <<<"$REFERENCE_INDEX"
+}
+
+# bin/ scripts other than <needle> itself that name <needle>.
+bin_consumers_of() {
+  local needle=$1 b
+  for b in bin/*.sh bin/backends/*.sh; do
+    [ -f "$b" ] || continue
+    [ "$(basename "$b")" = "$needle" ] || ! grep -Fq "$needle" "$b" || printf '%s\n' "$b"
+  done
+}
+
+# The base runner's broad coverage for a source the reference walk cannot map:
+# its literal direct test readers plus the curated families of the bin scripts
+# that consume it. Used only when the pruned walk would otherwise leave an
+# existing tracked source with no reader at all.
+broad_family_fallback() {
+  local path=$1 needle out consumer
+  needle=$(basename "$path")
+  if out=$(scripts_for_test_reference "$needle"); then
+    printf '%s\n' "$out"
+  fi
+  BIN_FALLBACK_DEPTH=${BIN_FALLBACK_DEPTH:-0}
+  [ "$BIN_FALLBACK_DEPTH" -lt 2 ] || return 0
+  BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH + 1))
+  while IFS= read -r consumer; do
+    [ -n "$consumer" ] || continue
+    [ "$consumer" = "$path" ] && continue
+    out=$(families_for_changed_path "$consumer" | grep -v '^__unmapped__:' || true)
+    [ -n "$out" ] && printf '%s\n' "$out"
+  done < <(bin_consumers_of "$needle")
+  BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH - 1))
+}
+
+# An existing tracked source must never fail closed because the pruned walk has
+# no reader left for it; fall back to the broad mapping with one diagnostic.
+# An untracked new source or a deleted path keeps the previous behavior.
+reference_or_broad_fallback() {
+  local path=$1
+  if scripts_for_path_reference "$path"; then
+    return 0
+  fi
+  [ -f "$path" ] || return 0
+  if git -C "$ROOT" ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+    printf 'broad fallback: %s\n' "$path" >&2
+    broad_family_fallback "$path"
+  else
+    # A new untracked source still fails closed: no reader can be inferred.
+    printf '%s\n' "__unmapped__:$path"
+  fi
+  return 0
 }
 
 # Documentation has explicit contract owners and literal repository readers.
@@ -2127,15 +2177,14 @@ families_for_changed_path() {
       # Shared loop/classification changes retain broad watcher coverage, plus
       # readers outside the watcher family (for example crew-state).
       printf '%s\n' watcher-wake-lock
-      scripts_for_path_reference "$path" || true
+      reference_or_broad_fallback "$path"
       ;;
     bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
     bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
-      scripts_for_path_reference "$path" || printf '%s\n' "__unmapped__:$path"
+      reference_or_broad_fallback "$path"
       ;;
     bin/fm-afk*)
-      scripts_for_path_reference "$path" \
-        || printf '%s\n' "__unmapped__:$path"
+      reference_or_broad_fallback "$path"
       ;;
     bin/fm-supervision-host.sh|bin/fm-supervision-engine-lib.sh|\
     bin/fm-branch-report.sh|bin/fm-branch-dispatch.mjs)
@@ -2318,7 +2367,7 @@ families_for_changed_path() {
     bin/fm-vendor-auth-probe.sh|\
     bin/fm-primary-scope-lib.sh|bin/fm-project-mode.sh|bin/fm-forge-detect.sh|bin/fm-promote.sh|\
     bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/*pretool*)
-      scripts_for_path_reference "$path" || printf '%s\n' "__unmapped__:$path"
+      reference_or_broad_fallback "$path"
       ;;
     .agents/skills/quota-array-dispatch/SKILL.md)
       printf '%s\n' __script__:fm-quota-array-dispatch-live-e2e.test.sh
@@ -2412,10 +2461,8 @@ families_for_changed_path() {
       ;;
     bin/*)
       # Keep readers of a removed source; an unconsumed retirement is empty.
-      # An existing source with no known reader remains a mapping error.
-      scripts_for_path_reference "$path" || {
-        [ ! -e "$path" ] || printf '%s\n' "__unmapped__:$path"
-      }
+      # An existing tracked source falls back to the broad mapping.
+      reference_or_broad_fallback "$path"
       ;;
     tests/fm-lint-test-size-allowlist.txt)
       # bin/fm-lint-test-size.sh's grandfathering data, read by its own
@@ -2469,10 +2516,10 @@ select_changed() {
       git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null; } | LC_ALL=C sort -u)
   # Documentation mappings do not need the executable graph.
   REFERENCE_INDEX=
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
+  need_references=0
+  for path in "${changed_paths[@]+"${changed_paths[@]}"}"; do
     case "$path" in bin/*|tests/*) need_references=1; break ;; esac
-  done < <(printf '%s\n' "${changed_paths[@]+"${changed_paths[@]}"}")
+  done
   if [ "$need_references" -eq 1 ]; then
     REFERENCE_INDEX=$(build_reference_index "${changed_paths[@]+"${changed_paths[@]}"}") \
       || die "could not build changed-test reference index"
