@@ -151,7 +151,10 @@ test_orphan_sweep_reaps_read_only_package_tree() {
   mkdir -p "$package_dir"
   printf '%s\n%s\n' "$$" reused-process-identity > "$stale_dir/.fm-test-fixture"
   printf 'installed package\n' > "$package_dir/entrypoint.py"
-  chmod -R a-w "$stale_dir/packages"
+  # Use realistic read-only permissions (444 for files, 555 for dirs) rather
+  # than the extreme a-w mask that strips even owner write on the marker file.
+  find "$stale_dir/packages" -type f -exec chmod 444 {} +
+  find "$stale_dir/packages" -type d -exec chmod 555 {} +
   touch -t 202001010000 "$stale_dir/.fm-test-fixture"
 
   bash -c '
