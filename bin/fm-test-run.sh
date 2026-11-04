@@ -149,11 +149,10 @@
 #                   interrupt a running script; per-script hangs are
 #                   bounded by --per-script-timeout-secs. Pathological output
 #                   sinks that block finalization are explicitly out of scope.
-#   --pc02-if-idle  route this run to PC02 when it is idle from LLM duty,
-#                   reachable, and tool-ready, falling back to running here
-#                   otherwise; bin/fm-pc02-test-offload.sh (its own header)
-#                   is the single owner of the readiness checks and remote
-#                   mechanics, and its exit code is returned unchanged.
+#   --pc02-if-idle  try hosted compute first, then the existing PC02/PC01
+#                   admission and fallback path. bin/fm-test-compute.sh owns
+#                   hosted routing; bin/fm-pc02-test-offload.sh owns local
+#                   admission. Inspection flags never contact hosted services.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -239,7 +238,7 @@ RUN_STARTED_MS=$(now_ms)
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
-# --pc02-if-idle routes this run through bin/fm-pc02-test-offload.sh instead
+# --pc02-if-idle routes this run through bin/fm-test-compute.sh instead
 # of running here; strip it out before the option parser below (which has no
 # case arm for it) ever sees it.
 PC02_IF_IDLE=0
@@ -253,7 +252,7 @@ for fm_test_run_arg in "$@"; do
 done
 unset fm_test_run_arg
 if [ "$PC02_IF_IDLE" -eq 1 ]; then
-  exec "$ROOT/bin/fm-pc02-test-offload.sh" "${FM_TEST_RUN_FILTERED_ARGS[@]}"
+  exec "$ROOT/bin/fm-test-compute.sh" test "${FM_TEST_RUN_FILTERED_ARGS[@]}"
 fi
 set -- "${FM_TEST_RUN_FILTERED_ARGS[@]}"
 
@@ -2426,6 +2425,9 @@ families_for_changed_path() {
         .agents/skills/scout-completion/*|.agents/skills/captain-hold-lifecycle/*)
           printf '%s\n' __script__:fm-branch-supervision.test.sh ;;
       esac
+      ;;
+    .github/workflows/test-compute.yml|.github/workflows/test-compute.gitlab.template)
+      printf '%s\n' "__script__:fm-test-compute.test.sh"
       ;;
     .no-mistakes.yaml)
       printf '%s\n' __script__:fm-lint-nomistakes-config.test.sh
