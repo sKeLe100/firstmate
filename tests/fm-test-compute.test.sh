@@ -7,7 +7,7 @@ set -eu
 TMP_ROOT=$(fm_test_tmproot fm-test-compute)
 fixture="$TMP_ROOT/repo"
 mkdir -p "$fixture/bin" "$fixture/tests" "$fixture/.github/workflows" "$TMP_ROOT/tools" "$TMP_ROOT/data"
-cp "$ROOT/bin/fm-test-compute.sh" "$fixture/bin/"
+cp "$ROOT/bin/fm-test-compute.sh" "$ROOT/bin/fm-pc02-personal-use.sh" "$fixture/bin/"
 cp "$ROOT/.github/workflows/test-compute.gitlab.template" "$fixture/.github/workflows/"
 cat > "$fixture/bin/fm-test-run.sh" <<'RUN'
 #!/usr/bin/env bash
@@ -63,9 +63,12 @@ sha=$(git -C "$fixture" rev-parse HEAD)
 export TEST_COMPUTE_DATA="$TMP_ROOT/data"
 cat > "$TMP_ROOT/tools/gh-axi" <<'MOCK'
 #!/usr/bin/env python3
-import json,os,pathlib,sys
+import json,os,pathlib,subprocess,sys
 args=sys.argv[1:]; w=pathlib.Path(os.environ['TEST_COMPUTE_DATA']); scenario=os.environ.get('SCENARIO','success')
 with open(w/'calls','a') as f: f.write('github '+ ' '.join(args[:3])+'\n')
+def jq(value):
+    print(subprocess.run(['jq','-r',a[a.index('--jq')+1]],input=json.dumps(value),text=True,capture_output=True,check=True).stdout,end='')
+    sys.exit(0)
 def request(): return json.load(open(w/'request'))
 def payload(): return json.loads(request()['inputs']['snapshot'])
 def dispatched():
@@ -88,19 +91,43 @@ assert args[0]=='api'
 a=args[1:]; method=a.pop(0) if a[0] in ('POST','GET') else 'GET'; path=a[0]
 if path.endswith('/cancel'):
     if scenario in ('cancel-failure','github-timeout-cancel-failure'): sys.exit(1)
-    (w/'cancelled').touch(); sys.exit(0)
+    (w/('cancelled-124' if '/runs/124/' in path else 'cancelled')).touch(); sys.exit(0)
+if '/actions/runners?' in path:
+    if 'RUNNERS' not in os.environ: sys.exit(1)
+    rows=[r.split(':') for r in os.environ['RUNNERS'].split()]
+    jq(dict(runners=[dict(status=state,busy=busy=='busy',labels=[dict(name='self-hosted'),dict(name=label)]) for label,state,busy in rows]))
+if '/actions/runs?status=queued' in path:
+    if 'QUEUED_RUNS' not in os.environ: sys.exit(1)
+    jq(dict(total_count=int(os.environ['QUEUED_RUNS'])))
+if '/jobs?' in path:
+    if scenario=='jobs-failure': sys.exit(1)
+    if scenario=='admitted-queued':
+        if (w/'jobs-read').exists(): sys.exit(1)
+        (w/'jobs-read').touch()
+    # A queued job carries started_at though it never ran; only a runner admits it.
+    queued=dict(status='queued',runner_name='',started_at='2026-11-04T17:00:22Z')
+    jq(dict(jobs=[queued,dict(status='in_progress',runner_name='GitHub Actions 1')] if scenario=='admitted-queued' else [queued,queued]))
 if path.endswith('/dispatches'):
     if scenario=='dispatch-ambiguous': sys.exit(1)
     if scenario=='dispatch-ambiguous-found':
         (w/'request').write_text(pathlib.Path(a[a.index('--input')+1]).read_text()); sys.exit(1)
     if scenario=='quota': print('error: HTTP 403 billing unavailable'); sys.exit(1)
-    (w/'request').write_text(pathlib.Path(a[a.index('--input')+1]).read_text()); sys.exit(0)
+    body=pathlib.Path(a[a.index('--input')+1]).read_text(); (w/'request').write_text(body)
+    with open(w/'requests','a') as f: f.write(body+'\n')
+    sys.exit(0)
 if '/workflows/test-compute.yml/runs?' in path:
     if scenario=='discovery-failure': sys.exit(1)
     if scenario=='invalid-run-id': print('not-an-id\tqueued\t'); sys.exit(0)
     if scenario in ('undiscovered','dispatch-ambiguous'): sys.exit(0)
-    print('123\tqueued\t'); sys.exit(0)
+    print(('124' if 'runner' in request()['inputs'] else '123')+'\tqueued\t'); sys.exit(0)
+if path.endswith('/actions/runs/124'):
+    if scenario=='self-hosted-queued': print('completed\tcancelled' if (w/'cancelled-124').exists() else 'queued\t')
+    else: print('completed\tsuccess')
+    sys.exit(0)
 if path.endswith('/actions/runs/123'):
+    if scenario=='admitted-queued':
+        reads=w/'reads'; n=int(reads.read_text()) if reads.exists() else 0; reads.write_text(str(n+1))
+        print('queued\t' if n<3 else 'completed\tsuccess'); sys.exit(0)
     if scenario=='observation-failure': sys.exit(1)
     if scenario.startswith('github-race-'):
         state='completed' if (w/'cancelled').exists() else 'queued'
@@ -109,7 +136,7 @@ if path.endswith('/actions/runs/123'):
     if scenario in ('github-timeout','github-timeout-cancel-failure') and any('.status' in arg for arg in args):
         print('completed\tcancelled' if (w/'cancelled').exists() else 'running\t')
         sys.exit(0)
-    if scenario in ('queued','cancel-failure','gitlab-queue-status-failure') and any('.status' in arg for arg in args):
+    if scenario in ('queued','cancel-failure','gitlab-queue-status-failure','self-hosted-queued','jobs-failure') and any('.status' in arg for arg in args):
         print('queued\t' if scenario=='cancel-failure' or not (w/'cancelled').exists() else 'completed\tcancelled')
         sys.exit(0)
     if scenario=='github-canceled-green': print('completed\tcancelled'); sys.exit(0)
@@ -174,6 +201,11 @@ if path.endswith('/artifacts'):
     sys.stdout.buffer.write(b.getvalue()); sys.exit(0)
 print(json.dumps(dict(empty_repo=scenario in ('gitlab-bootstrap','gitlab-bootstrap-failure'),default_branch='main')))
 MOCK
+cat > "$TMP_ROOT/tools/ssh" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "${PC02_SWITCH:-off}"
+exit "${PC02_SSH_RC:-0}"
+MOCK
 chmod +x "$TMP_ROOT/tools/"*
 export PATH="$TMP_ROOT/tools:$PATH" FM_TEST_COMPUTE_QUEUE_SECS=1 FM_TEST_COMPUTE_POLL_SECS=1 FM_TEST_COMPUTE_API_SECS=3
 export FM_TEST_COMPUTE_DISABLE=0 CI=true GITHUB_ACTIONS=false GITLAB_CI=false
@@ -199,6 +231,16 @@ run_route() {
   result=$?
   set -e
 }
+# Asserts the runner of each GitHub dispatch, in order, and a fresh request id each.
+assert_dispatches() {
+  python3 - "$TMP_ROOT/data/requests" "$@" <<'PY' || fail "dispatches were not: $*"
+import json,sys
+rows=[json.loads(line)['inputs'] for line in open(sys.argv[1])]
+got=[row.get('runner','hosted') for row in rows]
+assert got==sys.argv[2:], got
+assert len({row['request_id'] for row in rows})==len(rows), 'a dispatch reused a request id'
+PY
+}
 run_route success
 expect_code 0 "$result" "$output"
 assert_contains "$output" 'result: success' 'receipts must prove success'
@@ -210,6 +252,7 @@ payload=json.loads(json.load(open(sys.argv[1]))['inputs']['snapshot'])
 assert payload['partitions']=={'portable-parallel-1':['tests/sample.test.sh'],'portable-parallel-9':['tests/derived.test.sh']}, payload['partitions']
 assert not any(k.startswith('lint-') for k in payload['partitions']), 'Test dispatched lint partitions'
 PY
+assert_dispatches hosted
 pass 'GitHub result receipts cover only the non-empty Test partitions'
 
 rm -f "$TMP_ROOT/data/"*
@@ -369,6 +412,95 @@ expect_code 0 "$result" "$output"
 [ -e "$TMP_ROOT/data/cancelled" ] || fail 'queue fallback did not cancel owned GitHub run'
 assert_contains "$output" 'local:' 'cancelled queue should fall back'
 pass 'queue timeout requires confirmed cancellation before fallback'
+
+RUNNERS='fm-parallel:online:idle fm-pc02:online:idle' QUEUED_RUNS=2 run_route success
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'routing to idle self-hosted label fm-pc02' 'queued runs did not route to the preferred label'
+assert_contains "$output" 'result: success' 'the self-hosted run must prove success with receipts'
+assert_dispatches fm-pc02
+[ ! -e "$TMP_ROOT/data/cancelled" ] || fail 'routing before dispatch cancelled a hosted run'
+pass 'existing queued runs route the only dispatch to fm-pc02'
+for pc02 in fm-pc02:online:busy fm-pc02:offline:idle; do
+  RUNNERS="$pc02 fm-parallel:online:idle" QUEUED_RUNS=1 run_route success
+  expect_code 0 "$result" "$output"
+  assert_dispatches hosted
+  pass "$pc02 keeps the hosted dispatch and an idle fm-parallel runner is never chosen, so PC01 stays behind heavy admission"
+done
+RUNNERS='fm-pc02:online:idle' QUEUED_RUNS=2 PC02_SWITCH=on run_route success
+expect_code 0 "$result" "$output"
+assert_dispatches hosted
+pass 'the PC02 personal-use switch keeps queued-run routing off PC02'
+RUNNERS='fm-pc02:online:idle' QUEUED_RUNS=2 PC02_SSH_RC=255 run_route success
+expect_code 0 "$result" "$output"
+assert_dispatches hosted
+pass 'an unreadable PC02 personal-use switch counts as in use'
+RUNNERS='fm-pc02:online:idle' QUEUED_RUNS=0 run_route success
+assert_dispatches hosted
+pass 'an empty repository queue keeps the hosted dispatch'
+
+for kind in test lint; do
+  RUNNERS='fm-pc02:online:idle' run_route queued "$kind"
+  expect_code 0 "$result" "$output"
+  [ -e "$TMP_ROOT/data/cancelled" ] || fail 'saturated hosted run was not cancelled'
+  assert_dispatches hosted fm-pc02
+  python3 - "$TMP_ROOT/data/calls" <<'PY' || fail 'self-hosted dispatch did not follow the confirmed cancellation'
+import sys
+calls=open(sys.argv[1]).read().splitlines()
+order=[i for i,c in enumerate(calls) if c.endswith('/dispatches') or c.endswith('/cancel')]
+assert [calls[i].rsplit('/',1)[1] for i in order]==['dispatches','cancel','dispatches'], calls
+PY
+  assert_contains "$output" 'hosted runners saturated; routing to idle self-hosted label fm-pc02' 'reroute did not name its reason'
+  assert_contains "$output" 'result: success' 'the rerouted run must prove success with receipts'
+  [[ "$output" != *'local:'* ]] || fail 'a rerouted run also ran locally'
+  [[ "$(cat "$TMP_ROOT/data/calls")" != *'gitlab '* ]] || fail 'a rerouted run also reached GitLab'
+  pass "a fully queued hosted $kind run reroutes after confirmed cancellation with a fresh request id"
+done
+
+RUNNERS='fm-pc02:online:busy fm-parallel:online:busy' run_route queued
+expect_code 0 "$result" "$output"
+assert_dispatches hosted
+assert_contains "$output" 'GitHub unavailable; trying GitLab' 'busy self-hosted runners skipped the GitLab tier'
+assert_contains "$output" 'local:' 'busy self-hosted runners did not reach local admission'
+pass 'busy self-hosted runners keep the existing fallback order'
+
+RUNNERS='fm-pc02:online:idle fm-parallel:online:idle' PC02_SWITCH=on run_route queued
+expect_code 0 "$result" "$output"
+assert_dispatches hosted
+assert_contains "$output" 'GitHub unavailable; trying GitLab' 'personal use skipped the GitLab tier'
+assert_contains "$output" 'local:' 'personal use did not reach local admission'
+pass 'the PC02 personal-use switch sends a saturated run down the existing fallback order'
+
+RUNNERS='fm-pc02:online:idle' run_route self-hosted-queued
+expect_code 0 "$result" "$output"
+assert_dispatches hosted fm-pc02
+[ -e "$TMP_ROOT/data/cancelled-124" ] || fail 'a self-hosted run that could not start was not cancelled'
+assert_contains "$output" 'local:' 'a self-hosted run that could not start did not fall back'
+pass 'a self-hosted run that never gets a runner falls through once'
+
+RUNNERS='fm-pc02:online:idle' run_route cancel-failure
+expect_code 77 "$result" "$output"
+assert_dispatches hosted
+[[ "$output" != *'local:'* ]] || fail 'an unconfirmed cancellation fell back locally'
+pass 'an unconfirmed cancellation stays indeterminate and never reroutes'
+
+RUNNERS='fm-pc02:online:idle' run_route jobs-failure
+expect_code 77 "$result" "$output"
+assert_contains "$output" 'GitHub job observation failed for run 123; failing closed' 'a job observation fault did not name its reason'
+assert_dispatches hosted
+pass 'a job observation fault at the queue bound stays indeterminate'
+
+RUNNERS='fm-pc02:online:idle' run_route admitted-queued
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'result: success' 'an admitted run did not finish on its own receipts'
+assert_contains "$(cat "$TMP_ROOT/data/calls")" '/jobs?per_page=100' 'the queue bound did not consult job state'
+assert_dispatches hosted
+[ ! -e "$TMP_ROOT/data/cancelled" ] || fail 'a run with an admitted job was cancelled for queueing'
+pass 'a run whose status reads queued while a job holds a runner is monitored, not cancelled, and admission is read once'
+
+RUNNERS='fm-pc02:online:idle' run_route dispatch-ambiguous
+expect_code 0 "$result" "$output"
+[ "$(grep -c '/dispatches$' "$TMP_ROOT/data/calls")" = 1 ] || fail 'a non-saturation fallback dispatched to self-hosted'
+pass 'only a saturation signal reroutes to self-hosted'
 run_route gitlab-queue-status-failure lint
 expect_code 77 "$result" "$output"
 [ -e "$TMP_ROOT/data/cancelled" ] || fail 'queue timeout did not cancel the owned GitHub run'
