@@ -27,7 +27,7 @@ run_probe() {
 }
 
 reset_logs() {
-  rm -f "$LOG_FILE"
+  : > "$LOG_FILE"
 }
 
 # --- help and usage refusals -------------------------------------------------
@@ -63,6 +63,11 @@ expect_usage_refusal() {  # <label> [args...]
 
 expect_usage_refusal "an unknown option" --bogus
 expect_usage_refusal "a missing model"
+expect_usage_refusal "an empty model" ""
+expect_usage_refusal "a whitespace-only model" "   "
+expect_usage_refusal "an empty provider" "/glm-5.3-flash-free"
+expect_usage_refusal "an empty model component" "opencode/"
+expect_usage_refusal "a whitespace-only provider" "   /glm-5.3-flash-free"
 expect_usage_refusal "too many arguments" glm-5.3-flash-free 5 extra
 expect_usage_refusal "a zero timeout" glm-5.3-flash-free 0
 expect_usage_refusal "a non-numeric timeout" glm-5.3-flash-free soon
@@ -97,10 +102,13 @@ SH
 chmod +x "$FAKE_BIN/opencode"
 
 reset_logs
-out=$(run_probe glm-5.3-flash-free 2>/dev/null)
+err_file="$TMP_ROOT/non-exact-stderr"
+out=$(run_probe glm-5.3-flash-free 2>"$err_file")
 rc=$?
 [ "$out" != "ok" ] || fail "non-exact reply: 'NOT OK' must not count as ok"
 assert_contains "$out" "unknown" "non-exact reply: output should start with 'unknown'"
+assert_contains "$(cat "$err_file")" "NOT OK" "non-exact reply: should forward non-OK stdout to stderr"
+assert_contains "$(cat "$err_file")" "200 OK" "non-exact reply: should still forward vendor stderr"
 [ "$rc" -eq 1 ] || fail "non-exact reply: expected exit 1, got $rc"
 pass "fm-free-model-probe: an OK substring in either stream is not an ok reply"
 
@@ -297,9 +305,13 @@ exec sleep 300
 SH
 chmod +x "$FAKE_BIN/opencode"
 
-out=$(PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" FM_OPENCODE_LOG="$TMP_ROOT/nonexistent-$(date +%s).log" "$SCRIPT" glm-5.3-flash-free 5)
+missing_log="$TMP_ROOT/nonexistent-$(date +%s).log"
+err_file="$TMP_ROOT/absent-log-stderr"
+out=$(PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" FM_OPENCODE_LOG="$missing_log" "$SCRIPT" glm-5.3-flash-free 5 2>"$err_file")
 rc=$?
 assert_contains "$out" "unknown" "no log file: output should start with 'unknown'"
+assert_contains "$(cat "$err_file")" "cannot read OpenCode log" "no log file: should name the unreadable log"
+assert_contains "$(cat "$err_file")" "$missing_log" "no log file: should name the unreadable log path"
 [ "$rc" -eq 1 ] || fail "no log file: expected exit 1, got $rc"
 pass "fm-free-model-probe: absent log file treats timeout as unknown"
 
@@ -322,6 +334,8 @@ rc=$?
 [ "$rc" -eq 1 ] || fail "no HOME: expected exit 1, got $rc"
 assert_contains "$(cat "$out_file")" "unknown" "no HOME: should still print a verdict"
 assert_not_contains "$(cat "$err_file")" "unbound variable" "no HOME: should not abort on an unset HOME"
+assert_contains "$(cat "$err_file")" "cannot read OpenCode log" "no HOME: should name the unreadable log"
+assert_contains "$(cat "$err_file")" "/.local/share/opencode/log/opencode.log" "no HOME: should name the unreadable log path"
 pass "fm-free-model-probe: an unset HOME still produces a verdict"
 
 echo "# fm-free-model-probe.test.sh: all assertions passed"

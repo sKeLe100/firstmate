@@ -65,6 +65,32 @@ fi
 
 MODEL_ID=$1
 TIMEOUT_SEC=${2:-60}
+
+case "$MODEL_ID" in
+  *[![:space:]]*) ;;
+  *)
+    printf 'fm-free-model-probe: model id must not be empty\n' >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+MODEL_PROVIDER=
+MODEL_BARE=$MODEL_ID
+case "$MODEL_ID" in
+  */*)
+    MODEL_PROVIDER=${MODEL_ID%%/*}
+    MODEL_BARE=${MODEL_ID#*/}
+    if [ -z "$MODEL_PROVIDER" ] || [ -z "$MODEL_BARE" ] \
+      || [ -z "${MODEL_PROVIDER//[[:space:]]/}" ] \
+      || [ -z "${MODEL_BARE//[[:space:]]/}" ]; then
+      printf 'fm-free-model-probe: model id has an empty provider or model component\n' >&2
+      usage >&2
+      exit 2
+    fi
+    ;;
+esac
+
 case "$TIMEOUT_SEC" in
   '' | 0* | *[!0-9]*)
     printf 'fm-free-model-probe: timeout must be a positive integer\n' >&2
@@ -114,16 +140,6 @@ log_timestamp_epoch() {  # <log-line>
 }
 
 CAPED_REASON=""
-case "$MODEL_ID" in
-  */*)
-    MODEL_PROVIDER=${MODEL_ID%%/*}
-    MODEL_BARE=${MODEL_ID#*/}
-    ;;
-  *)
-    MODEL_PROVIDER=
-    MODEL_BARE=$MODEL_ID
-    ;;
-esac
 if [ -r "$OPENCODE_LOG" ]; then
   LOG_MATCH=$(awk -v full="$MODEL_ID" -v provider="$MODEL_PROVIDER" -v bare="$MODEL_BARE" '
     {
@@ -151,8 +167,13 @@ if [ -r "$OPENCODE_LOG" ]; then
       exit 3
     fi
   fi
+else
+  printf 'fm-free-model-probe: cannot read OpenCode log: %s\n' "$OPENCODE_LOG" >&2
 fi
 
+if [ -n "$OUTPUT" ]; then
+  printf '%s\n' "$OUTPUT" >&2
+fi
 cat "$PROBE_STDERR_FILE" >&2 2>/dev/null || true
 
 if fm_timed_out "$PROBE_EXIT_CODE"; then
