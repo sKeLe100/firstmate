@@ -1,0 +1,13 @@
+== ok
+ok
+exit 0
+== capped (hangs; log entry written after start)
+capped
+exit 3
+== timeout, no log entry
+fm-free-model-probe: cannot read OpenCode log: /var/tmp/nm-daemon-tmp/tmp.d6QgSxZAQ6/log
+unknown probe timed out after 2s
+exit 1
+== other model's cap
+unknown probe timed out after 3s
+exit 1
