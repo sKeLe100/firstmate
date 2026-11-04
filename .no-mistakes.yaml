@@ -24,7 +24,7 @@ document:
 
 # Pin lint to the same owner CI invokes instead of leaving it to no-mistakes'
 # default handling, which does not invoke the repository's canonical lint gate.
-# `bin/fm-test-compute.sh lint` routes the four canonical partitions through
+# `bin/fm-test-compute.sh lint` routes every canonical lint partition through
 # hosted compute and PC02; PC01's last-resort lint is the changed-file subset.
 # `bin/fm-lint.sh` owns the ShellCheck modes and GitHub workflow lint via
 # pinned actionlint in

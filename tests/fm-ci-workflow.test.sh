@@ -539,6 +539,9 @@ raise "lint failures must not cancel another partition" unless lint.fetch("fail-
 matrix = lint.fetch("matrix")
 raise "unexpected lint dimensions" unless matrix.keys == ["partition"]
 parts = matrix.fetch("partition")
+canonical_count, count_status = Open3.capture2(File.join(root, "bin/fm-lint.sh"), "--partition-count")
+raise "cannot read the canonical lint partition count" unless count_status.success?
+raise "lint matrix must list the canonical partition count" unless parts.length == Integer(canonical_count.strip)
 roots = parts.flat_map do |p|
   output, result = Open3.capture2(File.join(root, "bin/fm-lint.sh"), "--partition", "#{p}of#{parts.length}", "--list-files")
   raise "unsupported lint partition" unless result.success?
