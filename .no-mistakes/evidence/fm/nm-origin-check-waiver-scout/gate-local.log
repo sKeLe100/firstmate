@@ -1,0 +1,517 @@
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=1500909 ppid=1500896
+runner_login_shell=no
+path_entries=~/.pi/agent/bin:~/.local/bin:~/.npm-global/bin:~/bin:~/.npm-global/bin:~/.local/bin:~/.local/bin:~/go/bin:~/.cargo/bin:~/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.33.2-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=1500909 ppid=1500896 pgid=1500896 sid=1500896 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 88019
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 88019
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=~/.local/bin/node version=v22.22.3
+tool=pi path=~/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=~/.npm-global/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=~/.local/bin/herdr version=herdr 0.9.5
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=~/.local/bin/no-mistakes version=no-mistakes version v1.106.1 (5732d1e) 2026-10-31T05:16:02Z
+chrome_startup=failed path=~/.local/bin/chromium
+FM_TEST_ENV_RECORD_END
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-pair-dedup.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-backend-herdr.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-procevent.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-watch-triage.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-calm-pi-extension.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-queue.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-secondmate-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-transport-lanes.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-composer-codex-idle-live-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-agy-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-extension-binding.test.sh
+FM_TEST_QUARANTINED tests/fm-extension-binding.test.sh signature=an isolated extension conformance section failed reason=The aggregate coordinator runs real sections against a fixed 34-second wall deadline (tests/fm-extension-binding.test.sh:447). It was one of three recurring failures in the 2026-11-03 PC02 316-script eight-worker measurement recorded in bin/fm-pc02-test-offload.sh, where the wall is dominated by unproven serial scripts; the same overrun still fails an explicit --jobs 1 hosted partition, so retry admission was removed. Follow-up: make the coordinator deadline load-scaled or split the aggregate, then retire this row after the original overrun passes under load. owner=local-gate-test-timeouts
+fm-test-run: quarantined skip: tests/fm-extension-binding.test.sh (signature: an isolated extension conformance section failed, owner: local-gate-test-timeouts)
+FM_TEST_QUARANTINE_SUMMARY quarantined=1
+FM_TEST_HOST_LOAD load5=12.80 cpus=16 jobs=4 per_script_timeout_secs=1500 watch_triage_timeout_secs=1500 captain_hold_timeout_secs=1500
+FM_TEST_BEGIN 2026-11-04T03:01:21Z tests/fm-arm-pretool-check.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-04T03:01:21Z tests/fm-cd-pretool-check.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-04T03:01:21Z tests/fm-lint.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-04T03:01:21Z tests/fm-test-run.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - cd-guard acceptance matrix: 63 cases x 5 harness entry forms, block/allow all correct
+ok - cd-guard: fires in a secondmate home (its own primary session is a primary)
+ok - cd-guard: inert in a crewmate/scout task worktree (linked git worktree)
+ok - cd-guard: inert in a non-firstmate repo (no AGENTS.md)
+ok - cd-guard: inert when not inside a git repo
+ok - cd-guard: reproduces the cwd leak and denies the exact command that causes it
+ok - cd-guard: fails open on empty stdin
+ok - cd-guard: fails open on unparseable stdin JSON
+ok - cd-guard: fails open (never blocks) when node is missing
+ok - cd-guard: fails open on the stdin path when jq is missing
+ok - cd-guard: prefilter fast-allows (skips node) when no cd/pushd/popd substring is present
+ok - cd-guard: fm-cd-command-policy.mjs CLI honors the deny/allow output contract
+ok - bin/fm-cd-pretool-check.sh is clean under bin/fm-lint.sh
+FM_TEST_END 2026-11-04T03:02:19Z tests/fm-cd-pretool-check.test.sh exit=0 duration_ms=58571 gate_skip=false
+ok - matrix A01: allow through all five entry forms
+ok - matrix A02: allow through all five entry forms
+ok - matrix A03: allow through all five entry forms
+ok - matrix A04: allow through all five entry forms
+ok - matrix A05: allow through all five entry forms
+ok - matrix A06: allow through all five entry forms
+ok - matrix A07: allow through all five entry forms
+ok - matrix A08: allow through all five entry forms
+ok - matrix A09: allow through all five entry forms
+ok - matrix A10: allow through all five entry forms
+ok - matrix A11: allow through all five entry forms
+ok - matrix A12: allow through all five entry forms
+ok - matrix A13: allow through all five entry forms
+ok - matrix A14: allow through all five entry forms
+ok - matrix A15: allow through all five entry forms
+ok - matrix A16: allow through all five entry forms
+ok - matrix A17: allow through all five entry forms
+ok - matrix R01: allow through all five entry forms
+ok - matrix R02: allow through all five entry forms
+ok - matrix R03: allow through all five entry forms
+ok - matrix R04: allow through all five entry forms
+ok - matrix R05: allow through all five entry forms
+ok - matrix R06: allow through all five entry forms
+ok - matrix R07: allow through all five entry forms
+ok - matrix R08: allow through all five entry forms
+ok - matrix R09: allow through all five entry forms
+ok - matrix R10: allow through all five entry forms
+ok - matrix R11: allow through all five entry forms
+ok - matrix R12: allow through all five entry forms
+ok - matrix R13: allow through all five entry forms
+ok - matrix R14: allow through all five entry forms
+ok - matrix R15: allow through all five entry forms
+ok - matrix R16: allow through all five entry forms
+ok - matrix R17: allow through all five entry forms
+ok - matrix R18: allow through all five entry forms
+ok - matrix R19: allow through all five entry forms
+ok - matrix R20: allow through all five entry forms
+ok - matrix R21: allow through all five entry forms
+ok - matrix D01: deny through all five entry forms
+ok - matrix D02: deny through all five entry forms
+ok - matrix D03: deny through all five entry forms
+ok - matrix D04: deny through all five entry forms
+ok - matrix D05: deny through all five entry forms
+ok - matrix D06: deny through all five entry forms
+ok - matrix D07: deny through all five entry forms
+ok - matrix D08: deny through all five entry forms
+ok - matrix D09: deny through all five entry forms
+ok - matrix D10: deny through all five entry forms
+ok - matrix D11: deny through all five entry forms
+ok - matrix D12: deny through all five entry forms
+ok - matrix D13: deny through all five entry forms
+ok - matrix D14: deny through all five entry forms
+ok - matrix D15: deny through all five entry forms
+ok - matrix D16: deny through all five entry forms
+ok - matrix D17: deny through all five entry forms
+ok - matrix D18: deny through all five entry forms
+ok - matrix D19: deny through all five entry forms
+ok - matrix D20: deny through all five entry forms
+ok - matrix D21: deny through all five entry forms
+ok - matrix D22: deny through all five entry forms
+ok - matrix D23: deny through all five entry forms
+ok - matrix D24: deny through all five entry forms
+ok - matrix D25: deny through all five entry forms
+ok - matrix D26: deny through all five entry forms
+ok - matrix D27: deny through all five entry forms
+ok - matrix D28: deny through all five entry forms
+ok - matrix D29: deny through all five entry forms
+ok - matrix D30: deny through all five entry forms
+ok - matrix D31: deny through all five entry forms
+ok - matrix D32: deny through all five entry forms
+ok - matrix D33: deny through all five entry forms
+ok - matrix D34: deny through all five entry forms
+ok - matrix D35: deny through all five entry forms
+ok - matrix D36: deny through all five entry forms
+ok - matrix D37: deny through all five entry forms
+ok - matrix D38: deny through all five entry forms
+ok - matrix D39: deny through all five entry forms
+ok - matrix D40: deny through all five entry forms
+ok - matrix D41: deny through all five entry forms
+ok - matrix D42: deny through all five entry forms
+ok - matrix D43: deny through all five entry forms
+ok - matrix D44: deny through all five entry forms
+ok - matrix D45: deny through all five entry forms
+ok - matrix D46: deny through all five entry forms
+ok - matrix D47: deny through all five entry forms
+ok - matrix D48: deny through all five entry forms
+ok - matrix D49: deny through all five entry forms
+ok - matrix D50: deny through all five entry forms
+ok - matrix D51: deny through all five entry forms
+ok - matrix D52: deny through all five entry forms
+ok - matrix D53: deny through all five entry forms
+ok - matrix D54: deny through all five entry forms
+ok - matrix D55: deny through all five entry forms
+ok - matrix D56: deny through all five entry forms
+ok - matrix D57: deny through all five entry forms
+ok - matrix D58: deny through all five entry forms
+ok - matrix D59: deny through all five entry forms
+ok - matrix D60: deny through all five entry forms
+ok - matrix D61: deny through all five entry forms
+ok - matrix D62: deny through all five entry forms
+ok - matrix D63: deny through all five entry forms
+ok - matrix D64: deny through all five entry forms
+ok - matrix D65: deny through all five entry forms
+ok - matrix E01: allow through all five entry forms
+ok - matrix E02: allow through all five entry forms
+ok - matrix E03: allow through all five entry forms
+ok - matrix E04: allow through all five entry forms
+ok - matrix E05: deny through all five entry forms
+ok - matrix E06: deny through all five entry forms
+ok - matrix E07: deny through all five entry forms
+ok - matrix E08: deny through all five entry forms
+ok - matrix E09: deny through all five entry forms
+ok - matrix E10: deny through all five entry forms
+ok - matrix E11: deny through all five entry forms
+ok - matrix E12: allow through all five entry forms
+ok - matrix E13: allow through all five entry forms
+ok - matrix E14: allow through all five entry forms
+ok - matrix E15: allow through all five entry forms
+ok - matrix E16: allow through all five entry forms
+ok - matrix E17: allow through all five entry forms
+ok - direct policy direct-data-pkill: allow
+ok - direct policy direct-broad-pkill: deny	broad-watcher-kill
+ok - direct policy direct-loop-broad-pkill: deny	broad-watcher-kill
+ok - direct policy direct-loop-broad-kill-pgrep: deny	broad-watcher-kill
+ok - direct policy direct-loop-no-kill-allowed: allow
+ok - direct policy direct-pipeline: deny	watcher-pipeline
+ok - direct policy direct-leading-redirection: deny	watcher-redirection
+ok - direct policy direct-unclassifiable: deny	unclassifiable-protected-command
+ok - direct policy direct-unsupported: deny	unclassifiable-protected-command
+ok - direct policy direct-constructed-payload: deny	watcher-nested
+ok - direct policy direct-parameter-export: allow
+ok - direct policy direct-expanded-arm-blessed: allow
+ok - direct policy direct-expanded-arm-background: deny	watcher-background
+ok - direct policy direct-expanded-arm-pipeline: deny	watcher-pipeline
+ok - direct policy direct-watch-not-blessed: deny	watcher-direct
+ok - direct policy direct-watch-expanded: deny	watcher-direct
+ok - direct policy direct-watch-safe-shape: deny	watcher-direct
+ok - direct policy direct-heredoc-data: allow
+ok - direct policy direct-heredoc-watcher: deny	watcher-redirection
+ok - --command=<val> equals-form parses correctly
+ok - --background is accepted for interface parity and is never itself a deny signal
+ok - unknown CLI flag is rejected
+ok - stdin grok schema (toolInput.command): denied with Grok-shaped stdout JSON
+ok - stdin claude/codex schema (tool_input.command): blessed shape allowed
+ok - stdin claude/codex schema (tool_input.command): backgrounded shape denied
+ok - stdin: unrelated command is a fast allow
+ok - transport prefilter is a strict superset: non-fm-watch fast-allows, every fm-watch and quoting-decoder-marker command reaches the classifier
+ok - fail-open: empty stdin
+ok - fail-open: unparseable JSON on stdin
+ok - fail-open: missing jq on stdin path
+ok - fail-open: missing classifier runtime
+ok - --claude: stdout empty, stderr carries hookSpecificOutput deny JSON
+ok - default mode: stdout carries Grok-shaped decision JSON on deny
+ok - allow is silent on both stdout and stderr in default and --claude mode
+ok - bin/fm-arm-pretool-check.sh is clean under bin/fm-lint.sh
+FM_TEST_END 2026-11-04T03:03:41Z tests/fm-arm-pretool-check.test.sh exit=0 duration_ms=140351 gate_skip=false
+ok - exact suite coverage: --all lists every tests/*.test.sh once
+ok - family selection returns a proper subset of the suite
+ok - single-script selection lists exactly that path
+ok - the runner emits one bounded secret-free environment record and records missing tools safely
+ok - changed-file selection stays conservative (never silent full suite)
+ok - a task marker refuses execution in the primary checkout and leaves worktrees and inspection alone
+ok - runner retains broad execution coverage while documentation selects its owners
+ok - shell line-ending policy selects runner coverage
+ok - quarantine list change selects runner coverage
+fm-test-run: no tests selected for changes vs HEAD (map is conservative; use --all for the complete suite)
+ok - changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source
+ok - bin references and consumer references select individual scripts
+ok - changed reference closure handles cycles, comments, prose, wrappers, hubs, and removals
+ok - real inventory selection stays bounded for docs, skills, leaves, a watcher, a shared lib, and the recorded feature
+ok - changed defaults to bounded automatic scheduling with serial override
+ok - Windows emulation exempts only synthetic POSIX modes
+ok - a plain script list defaults to bounded automatic concurrency without an automatic timeout
+ok - family proofs run concurrently only within separate family phases
+ok - empty changed selection emits deterministic text and JSON summaries
+ok - timing markers and JSON artifact are valid
+ok - aggregate exit reflects any script failure
+ok - gate-skip accounting is honest and non-failing
+ok - a gate skip records why it skipped
+ok - a script that actually ran records no skip reason
+ok - live guards are recorded as a capability class, not a bare env opt-in
+ok - fail-on-gate-skip converts herdr-not-found into a hard failure
+ok - exclude-family drops the named primary family after selection
+ok - exclude-quarantined drops exactly the listed scripts and reports each skip loudly
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-pair-dedup.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-backend-herdr.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-procevent.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-watch-triage.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-calm-pi-extension.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-queue.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-secondmate-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-transport-lanes.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-composer-codex-idle-live-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-agy-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-extension-binding.test.sh
+fm-test-run: quarantined skip: tests/fm-agy-harness.test.sh (signature: a zero model bound disabled the deadline, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-backend-herdr.test.sh (signature: coreutils: unknown program 'pi', owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-calm-pi-extension.test.sh (signature: Pi queued-row queued_mixed case did not list the captain's queued follow-up, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-composer-codex-idle-live-e2e.test.sh (signature: idle screen never classified empty, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-extension-binding.test.sh (signature: an isolated extension conformance section failed, owner: local-gate-test-timeouts)
+fm-test-run: quarantined skip: tests/fm-procevent-quota.test.sh (signature: provider retire targeted the wrong source, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-procevent.test.sh (signature: the listener under test was not reparented away from its session, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-public-followup.test.sh (signature: a wake whose line could not be written must stay queued, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-remote-secondmate-lifecycle-e2e.test.sh (signature: remote spawn never reached its blocked inheritance write, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-remote-transport-lanes.test.sh (signature: concurrent sequence claims were not unique and monotonic, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-secondmate-harness.test.sh (signature: first config push did not reach pointer delivery, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-session-lock-ancestry.test.sh (signature: the pty-host was not reparented to init after the daemon ended, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-supervision-host.test.sh (signature: a routine outcome a drain could not print must follow on the next drain, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-task-delivery.test.sh (signature: a ref-format-valid metacharacter prefix should promote safely, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-pair-dedup.test.sh (signature: no process-event result, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-wake-queue.test.sh (signature: a foreign queue with no progress did not alert, owner: sync-preexisting-test-failures)
+fm-test-run: quarantined skip: tests/fm-watch-triage.test.sh (signature: exceeded the per-script bound, owner: sync-preexisting-test-failures)
+ok - quarantine diagnostics classify drift without weakening ordinary gates
+ok - proven-isolated scheduling ignores parallel hints
+ok - family, all, changed, and script selections ignore parallel hints
+ok - portable shard union, disjointness, and coverage guard hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - portable serial shard listing is backed by the exhaustive coverage guard
+ok - coverage guard bounds the unmeasured share and serial packing within twenty minutes
+ok - serial packing accepts the exact budget and refuses one millisecond above it
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
+ok - --jobs refuses non-proven / stateful selections
+ok - --jobs admits and schedules a family with a recorded concurrent proof
+ok - an unclassified new test stays serial while the proven residual family runs concurrently
+ok - a changed shared test fixture selects its readers while an unread tests/ path still refuses
+ok - a concurrent run starts the longest-hint script first
+ok - --per-script-timeout-secs turns a hung script into a bounded failure
+ok - the automatic --changed bound gives the slow watcher suite at least 1500s
+ok - a portable-serial lane derives its per-script timeout from the hint table, and an explicit flag still overrides it
+ok - --max-wall-ms fails an over-budget run and refuses a malformed budget
+ok - jobs scheduler runs proven scripts; failure propagates; non-proven refused
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+ok - aggregate-json merges lane timing artifacts
+ok - --check-hint-drift only refuses a hint that drifts on two consecutive runs, and warns on a single-run spike
+ok - --check-hint-drift ignores a ratio-only swing under PORTABLE_SERIAL_HINT_DRIFT_FLOOR_MS
+ok - --fail-fast stops after the first failure and is off by default
+ok - --fail-fast stops the --jobs scheduler after the first failure
+ok - --fail-fast stops the unproven serial remainder after a concurrent failure
+ok - automatic eight-job phases retain family caps, serial tails and explicit refusals
+ok - FM_TEST_HOST_LOAD reports load/cpus/jobs and throttles automatic concurrency, never an explicit --jobs
+ok - the --changed default per-script timeout scales by max(1, load5/cpus)
+ok - the --changed path bounds fm-watch-triage at its own load-scaled 1500s base
+ok - the --changed path bounds fm-captain-hold-lifecycle at its own load-scaled 1500s base
+ok - token-free retry re-runs a load-sensitive failure once and clears it without a real regression
+ok - the token-free retry admits exit=124 regardless of the load-sensitive name list
+ok - token-free retry never fires when any failure is outside the load-sensitive/timeout class
+ok - a read-only dir left under the run root never changes the aggregate exit status
+FM_TEST_END 2026-11-04T03:07:25Z tests/fm-test-run.test.sh exit=0 duration_ms=364085 gate_skip=false
+ok - fm-lint.sh --help reports the complete executable interface
+ok - partition audit accepts clean roots and blocks unexpected no-source codes and tool failures
+ok - fm-lint.sh --list-files reports the complete shell inventory
+ok - two canonical lint partitions preserve complete source-aware coverage and reject weakened modes
+ok - fm-lint.sh accepts --partition KofN for 1 <= K <= N <= 8 and refuses everything else
+ok - the partition packer assigns largest-first to the least-loaded partition with an index tiebreak
+ok - four canonical lint partitions are complete, disjoint, deterministic, and byte-balanced
+ok - tests/lib.sh never follows a source directive into bin/fm-wake-lib.sh
+ok - the lint budget warns at 50 percent and fails at 70 percent of the job cap
+ok - fm-lint.sh --fast disables ShellCheck extended analysis
+ok - fm-lint.sh keeps full ShellCheck analysis by default in CI
+ok - fm-lint.sh rejects explicit --fast mode in CI
+ok - fm-lint.sh --fast catches an ordinary shell lint defect
+ok - fm-lint.sh pins an explicit ShellCheck version (0.11.0)
+ok - ShellCheck installer retries a transient download failure
+ok - ShellCheck installer selects the official archive, URL, and checksum per OS/arch
+ok - ShellCheck installer rejects a wrong checksum
+ok - ShellCheck installer falls back to shasum -a 256 when sha256sum is absent
+ok - ShellCheck installer prefers sha256sum when both hashers are present
+ok - ShellCheck installer rejects an unsupported OS or architecture
+ok - missing ShellCheck fails closed
+ok - fm-lint.sh refuses to lint under a non-pinned ShellCheck version
+ok - fm-lint.sh catches a real lint defect the old no-op gate passed
+ok - fm-lint.sh rejects direct Beads CLI invocations in firstmate core
+ok - fm-lint.sh enforces backend purity for explicit core paths
+ok - fm-lint.sh ignores ambient ShellCheck options
+ok - fm-lint.sh passes a clean fixture
+ok - jobs=1 and jobs=2 preserve deterministic diagnostics, failures, cleanup bounds, and quiet telemetry
+ok - jobs=1 and jobs=2 stop complete worker trees with and without telemetry
+ok - a root pinned at the wall deadline fails by name, reaps its tree, and leaves the sentinel alive
+ok - a root refused by its enforced memory limit fails by name with a memory reason
+ok - memory failures retry without source following, exclude cross-file codes, and preserve a real fallback finding
+ok - a memory fallback runs only within the time left in its root's original deadline
+ok - explicit memory evidence outranks findings and signal reasons (modes: 0 1)
+ok - OOM words in a source excerpt or a root path never classify a root as memory
+ok - FM_LINT_REQUIRE_BOUNDS refuses missing enforcement and proceeds when enforceable
+ok - the pinned ShellCheck both respects and survives under the memory envelope
+ok - the roots sidecar and telemetry record the run's final exit status
+ok - the retained sidecar records each root's lifecycle with a mode, reason, and duration
+ok - seeded dispatcher, adapter, production-owner, and test-local diagnostics preserve parity
+ok - fm-lint.sh changed mode lints only the changed canonical file
+ok - fm-lint.sh forces a full lint in CI even when the local diff would be empty
+ok - fm-lint.sh forces a full lint when HEAD is on main
+ok - fm-lint.sh explicit paths bypass changed-file mode selection
+ok - fm-lint.sh exits 0 with a note when the local branch has no changed lint targets
+ok - fm-lint.sh guards .no-mistakes.yaml commands.test against a divergent invocation
+ok - fm-lint.sh --list-files reports the would-be changed set in changed mode
+ok - fm-lint.sh changed mode drops source following and excludes cross-file codes
+ok - fm-lint.sh changed mode invokes ShellCheck once per root
+ok - fm-lint.sh CI keeps source following without the local exclusion list
+ok - fm-lint.sh on main keeps source following without the local exclusion list
+ok - fm-lint.sh without a merge-base keeps source following without the local exclusion list
+ok - fm-lint.sh explicit paths keep source following
+ok - fm-lint.sh --fast on a local branch keeps source following
+ok - fm-lint.sh changed mode excludes cross-file codes that explicit paths still report
+FM_TEST_END 2026-11-04T03:09:29Z tests/fm-lint.test.sh exit=0 duration_ms=487922 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T03:09:29Z tests/fm-dod-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-04T03:09:29Z tests/fm-documentation-audiences.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-04T03:09:29Z tests/fm-lint-workflows.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-lint-workflows.sh pins an explicit actionlint version (1.7.12)
+ok - current .github/workflows YAML files parse
+ok - column-0 heredoc workflow fails validation with a clear error
+ok - valid fixture workflow passes
+ok - empty workflows directory fails closed
+ok - explicit malformed workflow path fails validation
+ok - non-mapping workflow YAML root fails
+ok - missing actionlint fails closed
+ok - fm-lint-workflows.sh refuses to lint under a non-pinned actionlint version
+ok - actionlint installer retries a transient download failure
+ok - actionlint installer selects the official archive, URL, and checksum per OS/arch
+ok - actionlint installer rejects a wrong checksum
+ok - actionlint installer falls back to shasum -a 256 when sha256sum is absent
+ok - actionlint installer prefers sha256sum when both hashers are present
+ok - actionlint installer rejects an unsupported OS or architecture
+ok - fm-lint.sh default path catches a self-broken ci.yml
+FM_TEST_END 2026-11-04T03:09:33Z tests/fm-lint-workflows.test.sh exit=0 duration_ms=3659 gate_skip=false
+ok - documentation inventory classifies every maintained prose surface exactly once
+ok - classification, setup routing, and maintained-prose scope fail safely
+ok - required documentation owner pointers cannot silently disappear
+ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+FM_TEST_END 2026-11-04T03:09:36Z tests/fm-documentation-audiences.test.sh exit=0 duration_ms=6465 gate_skip=false
+ok - scout done: is not gated
+ok - unpushed ship done: is refused
+ok - no-mistakes pre-validation done: is not gated
+ok - named head on a remote-tracking ref is accepted
+ok - a moved remote branch that lacks the named head is refused
+ok - a 40-hex token in the note is not the named head
+ok - a recorded merged PR satisfies the gate after prune
+ok - the merged-PR short-circuit applies only to the recorded PR the done line names
+ok - a forge-recorded head for the named PR is accepted without a local object
+ok - a direct-PR recorded head does not cover a later unpushed commit
+ok - CI-ready notes require checks green and an actual PR reference
+ok - no-mistakes CI-ready done: with extra text is gated
+ok - keyed and spaced ship done: lines are gated
+ok - local-only linked named branch is reachable from the project clone
+ok - local-only detached HEAD only in the disposable copy is refused
+ok - standalone local-only done: requires the named head in the project clone
+ok - non-done lines are not gated
+ok - fenced and indented Captain lines are not authorized intent
+ok - PR-based DoD draft check uses gh-axi
+ok - promotion keeps a scout's recorded base branch and refuses local-only for it
+ok - forge=external composes with direct-PR only and refuses a base branch
+ok - external rule one forbids origin and task-prefixed pushes and names only the backup copy
+ok - external DoD renders the contract, the review grammar, and the adapter, and refuses without one
+ok - external review done: accepted on a canonical URL alone without a backup; PR, non-https, query, fragment, forge, and pattern mismatches refused
+ok - external review done with a backup: refused until HEAD is under refs/remotes/backup/backup/, then accepted
+ok - worker role names the skill and its fallback skill file
+all fm-dod-lib tests passed
+FM_TEST_END 2026-11-04T03:09:51Z tests/fm-dod-lib.test.sh exit=0 duration_ms=22101 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T03:09:51Z tests/fm-remote-job-orphan-reap.test.sh family=secondmate expected_gate_skip=none
+ok - the Linux start path puts the whole worker tree in its own process group
+ok - removing the state root and killing the recorded worker pid leaves the tree running, orphaned
+ok - a worker whose code root still exists is never reaped
+ok - a worker stops its whole tree once its code root is pruned
+ok - a dry run reports the abandoned worker and signals nothing
+ok - the reaper stops an abandoned worker's whole tree
+ok - the reaper is idempotent
+FM_TEST_END 2026-11-04T03:10:01Z tests/fm-remote-job-orphan-reap.test.sh exit=0 duration_ms=9886 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T03:10:01Z tests/fm-test-fixtures.test.sh family=standalone expected_gate_skip=none
+ok - runner and shared helpers isolate host Git config and preserve explicit config and outside commits
+ok - shared helpers and runner keep fixture Git off an inherited repository location
+ok - agent stand-in: a multicall sleep is refused, and the compiled stand-in survives a harness name
+ok - fm_touch_epoch preserves both epochs in the repeated DST hour
+ok - fake no-mistakes --version is the shared constant and overridable
+ok - init/doctor no-mistakes stub touches markers and refuses other verbs
+ok - fake gh authenticates and fake gh-axi reports the shared version
+ok - spawn fakebin answers pane path, logs -l payloads, and installs extra tools
+ok - send stubs log typed text and fake ssh records argv with a controllable exit
+ok - spawn-home layout writes harness pin, beat, and brief
+FM_TEST_END 2026-11-04T03:10:31Z tests/fm-test-fixtures.test.sh exit=0 duration_ms=29554 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T03:10:31Z tests/fm-lint-nomistakes-config.test.sh family=unclassified expected_gate_skip=none
+ok - a missing .no-mistakes.yaml passes with nothing to check
+ok - the canonical --changed commands.test passes
+ok - commands.test naming an explicit tests/ path fails
+ok - a comment scoping the config to 'this branch' fails
+ok - a differently-cased 'this branch' comment still fails
+ok - an unrelated comment does not trip the guard
+ok - an explicit file argument is checked directly
+ok - the real repo's .no-mistakes.yaml passes the regression-pattern guard
+FM_TEST_END 2026-11-04T03:10:32Z tests/fm-lint-nomistakes-config.test.sh exit=0 duration_ms=1323 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T03:10:33Z tests/fm-pc02-test-offload-live-e2e.test.sh family=unclassified expected_gate_skip=none
+skip: live: opt-in; set FM_PC02_OFFLOAD_LIVE_E2E=1 to run
+fm-test-run: gate skip: tests/fm-pc02-test-offload-live-e2e.test.sh: live: opt-in; set FM_PC02_OFFLOAD_LIVE_E2E=1 to run
+FM_TEST_END 2026-11-04T03:10:34Z tests/fm-pc02-test-offload-live-e2e.test.sh exit=0 duration_ms=956 gate_skip=true
+FM_TEST_BEGIN 2026-11-04T03:10:34Z tests/fm-pc02-test-offload.test.sh family=unclassified expected_gate_skip=none
+ok - --help prints the whole documented contract
+ok - FM_PC02_OFFLOAD_DISABLE=1 always runs locally without touching ssh or rsync
+ok - a live PC02 LLM lane falls back to a local run without touching ssh
+ok - a missing supervising home refuses the lane probe and falls back locally
+ok - the offload probe scans the supplied supervising home before checking PC02
+ok - an unreachable PC02 falls back to a local run
+ok - PC02 missing a required tool falls back to a local run rather than a thinner remote run
+ok - a stuck or slow probe times out and falls back rather than hanging
+ok - a failed rsync to PC02 falls back to a local run
+ok - the captain's personal-use switch falls back to a local run
+ok - llama-swap holding a loaded model for any live session falls back to a local run
+ok - a healthy llama-swap with no loaded model does not block offloading
+ok - an unparseable llama-swap /running answer defaults to a local run
+ok - a Windows-wide CPU utilization over the threshold falls back to a local run
+ok - a Windows GPU-engine utilization over the threshold falls back to a local run
+ok - an unparseable or missing resource read defaults to a local run rather than an idle guess
+ok - an absent, empty, or zero PC02 thread count routes the run local with a diagnostic
+ok - fm-test-run.sh --pc02-if-idle strips the flag and forwards every other argument unchanged
+ok - PC02 missing perl falls back to a local run instead of failing the remote command
+ok - a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror
+ok - a green remote run exits 0, returns its --json artifact, and removes its mirror
+ok - remote lint mode invokes local-lint and returns its exit code
+ok - PC01 lint fallback runs the changed-file lint instead of canonical partitions
+ok - an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound
+ok - a remote suite passes the 7200-second default to its timeout executable
+ok - remote jobs preserve both caller forms, default to eight, and allow environment overrides with a script cap
+ok - matching PC01 and PC02 parity admits the default two-slot offload
+ok - PC02 open-file capacity accepts higher/equal limits and refuses lower or invalid limits
+ok - offload raises PC02's soft open-file limit to its hard limit without loosening the parity rule
+ok - a PC02 tool-version mismatch names the surface and runs locally
+ok - a hanging local browser dependency probe times out and routes locally
+ok - TERM-ignoring tool and browser version probes are killed at their deadline
+ok - a cached headless-shell version mismatch names the surface and runs locally
+ok - the shared suite and parity resolver prefers Chromium over Google Chrome
+ok - a PC02 Chromium library failure names the library and runs locally
+ok - different resolved Chromium sonames route locally with the named difference
+ok - a launcher browser resolves to its executable without a false fallback
+ok - wrapper parity compares sonames from the resolved executable on both hosts
+ok - one busy of two PC02 slots still runs the next suite remotely
+ok - both busy PC02 slots route the next suite to PC01 with a clear log
+ok - a malformed FM_PC02_OFFLOAD_SLOTS exits 2 and runs no tests
+ok - FM_PC02_OFFLOAD_SLOTS=1 keeps the original single-slot fallback
+ok - a process merely mentioning fm-test-run.sh does not block a free host slot
+ok - TERM during a remote run kills the remote suite and removes its mirror
+ok - TERM with a transport that ignores stdin EOF still stops the remote suite and frees the slot
+ok - abrupt loss of the driver stops the remote suite and frees the slot
+ok - a gate-style bare common store needs the machine file, while FM_STATE_OVERRIDE bypasses discovery
+ok - machine configuration resolves an unset FM_HOME and fails closed when unreadable
+ok - primary clone discovery resolves the home without environment or machine configuration
+ok - two concurrent offloads take both PC02 slots and a third falls back locally
+ok - a dead owner's claim is reclaimed and the next run releases it on timeout
+# all fm-pc02-test-offload tests passed

@@ -1,0 +1,8 @@
+ok - a missing .no-mistakes.yaml passes with nothing to check
+ok - the canonical --changed commands.test passes
+ok - commands.test naming an explicit tests/ path fails
+ok - a comment scoping the config to 'this branch' fails
+ok - a differently-cased 'this branch' comment still fails
+ok - an unrelated comment does not trip the guard
+ok - an explicit file argument is checked directly
+ok - the real repo's .no-mistakes.yaml passes the regression-pattern guard

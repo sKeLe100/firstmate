@@ -1,0 +1,42 @@
+$ bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --list
+tests/fm-documentation-audiences.test.sh
+tests/fm-dod-lib.test.sh
+tests/fm-lint-nomistakes-config.test.sh
+tests/fm-lint.test.sh
+tests/fm-pc02-test-offload-live-e2e.test.sh
+tests/fm-pc02-test-offload.test.sh
+tests/fm-test-compute.test.sh
+tests/fm-arm-pretool-check.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-ci-workflow.test.sh
+tests/fm-extension-binding.test.sh
+tests/fm-lint-workflows.test.sh
+tests/fm-remote-job-orphan-reap.test.sh
+tests/fm-test-run.test.sh
+tests/fm-test-fixtures.test.sh
+count=15
+
+$ bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --list   (stderr)
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-extension-binding.test.sh
+fm-test-run: quarantined skip: tests/fm-extension-binding.test.sh (signature: an isolated extension conformance section failed, owner: local-gate-test-timeouts)
+
+$ ... --exclude-quarantined --list   (stdout)
+tests/fm-documentation-audiences.test.sh
+tests/fm-dod-lib.test.sh
+tests/fm-lint-nomistakes-config.test.sh
+tests/fm-lint.test.sh
+tests/fm-pc02-test-offload-live-e2e.test.sh
+tests/fm-pc02-test-offload.test.sh
+tests/fm-test-compute.test.sh
+tests/fm-arm-pretool-check.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-ci-workflow.test.sh
+tests/fm-lint-workflows.test.sh
+tests/fm-remote-job-orphan-reap.test.sh
+tests/fm-test-run.test.sh
+tests/fm-test-fixtures.test.sh
+count=14
+
+$ diff of selected paths (without filter vs with filter)
+11d10
+< tests/fm-extension-binding.test.sh

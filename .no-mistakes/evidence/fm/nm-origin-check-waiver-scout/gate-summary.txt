@@ -1,0 +1,40 @@
+change: f488a5b0bbc6489265b64fb233e2dfe25af71266 (base 66e2936970bbe866bd21fa5facfd1bce42a2a06a)
+date: 2026-11-04T03:30:22Z
+
+== clean gate run: pinned command with hosted routing disabled ==
+fm-test-compute: hosted routing disabled; falling back to local admission
+fm-pc02-test-offload: claimed PC02 slot 1 of 2
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_QUARANTINED tests/fm-extension-binding.test.sh signature=an isolated extension conformance section failed ... owner=local-gate-test-timeouts
+FM_TEST_QUARANTINE_SUMMARY quarantined=1
+FM_TEST_SUMMARY total=14 failed=0 skipped_gate=1 duration_ms=666834
+EXIT=0 WALL_SECS=694
+
+== per-script results (clean run) ==
+FM_TEST_END 2026-11-04T02:48:21Z tests/fm-cd-pretool-check.test.sh exit=0 duration_ms=15921 gate_skip=false
+FM_TEST_END 2026-11-04T02:48:38Z tests/fm-arm-pretool-check.test.sh exit=0 duration_ms=32974 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:14Z tests/fm-test-run.test.sh exit=0 duration_ms=129370 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:21Z tests/fm-lint.test.sh exit=0 duration_ms=136381 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:22Z tests/fm-lint-workflows.test.sh exit=0 duration_ms=1100 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:23Z tests/fm-documentation-audiences.test.sh exit=0 duration_ms=1501 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:24Z tests/fm-dod-lib.test.sh exit=0 duration_ms=3173 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:27Z tests/fm-remote-job-orphan-reap.test.sh exit=0 duration_ms=3102 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:34Z tests/fm-test-fixtures.test.sh exit=0 duration_ms=6439 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:34Z tests/fm-lint-nomistakes-config.test.sh exit=0 duration_ms=367 gate_skip=false
+FM_TEST_END 2026-11-04T02:50:34Z tests/fm-pc02-test-offload-live-e2e.test.sh exit=0 duration_ms=106 gate_skip=true
+FM_TEST_END 2026-11-04T02:57:55Z tests/fm-pc02-test-offload.test.sh exit=0 duration_ms=440375 gate_skip=false
+FM_TEST_END 2026-11-04T02:58:48Z tests/fm-test-compute.test.sh exit=0 duration_ms=53566 gate_skip=false
+FM_TEST_END 2026-11-04T02:58:58Z tests/fm-ci-workflow.test.sh exit=0 duration_ms=9340 gate_skip=false
+
+== selection with/without --exclude-quarantined ==
+count=15
+count=14
+< tests/fm-extension-binding.test.sh
+
+== quarantine diagnostic ==
+FM_TEST_QUARANTINE_DIAGNOSTIC tests/fm-extension-binding.test.sh status=newly-passing exit=0 signature=an isolated extension conformance section failed
+EXIT=0
+
+== PC01 local measurement (environment forced local; see gate-command.log) ==
+FM_TEST_SUMMARY total=14 failed=1 skipped_gate=1 duration_ms=759380
+EXIT=1 WALL_SECS=760
