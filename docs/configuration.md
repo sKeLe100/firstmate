@@ -767,7 +767,7 @@ Three scripts are deliberately not hosted-capable and run through the existing P
 Their assertions stay in the unchanged selection, so local admission still runs them and coverage does not narrow; only their execution tier changes.
 A failure in that local subset fails the routed run even when the hosted subset succeeded.
 Their limits are pre-existing host dependencies rather than router behavior, and `tests/fm-test-compute.test.sh` pins that exclusion and the local completion path.
-The configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to run all four canonical lint partitions through the same hosted-first tier order; Test dispatches only portable test partitions.
+The configured no-mistakes Lint step invokes `bin/fm-test-compute.sh lint` to run every canonical lint partition through the same hosted-first tier order; Test dispatches only portable test partitions.
 When hosted tiers are unavailable, canonical lint still uses PC02 admission; only PC01's last-resort lint runs `bin/fm-lint.sh` with its changed-file selection.
 The Pi typecheck remains a separate blocking command after routed lint succeeds.
 Required PR CI and its existing check contexts remain unchanged.
@@ -800,7 +800,7 @@ For an existing nonempty relay, install the template as `.gitlab-ci.yml` on its 
 
 Standard GitHub-hosted runners in public repositories have free, unlimited execution minutes; this route requests no larger paid runners.
 GitHub Free private repositories share 2,000 included minutes per account per month, with job minutes summed across partitions rather than measured as one workflow's wall time.
-For example, twelve Linux Test partition jobs taking ten minutes each consume approximately 120 minutes before per-job rounding, not ten minutes; the separate lint mode adds four partition jobs.
+For example, twelve Linux Test partition jobs taking ten minutes each consume approximately 120 minutes before per-job rounding, not ten minutes; the separate lint mode adds one job per canonical lint partition.
 Reruns and fallback attempts also consume minutes already spent; moving to another tier does not refund them.
 GitLab Free normally includes 400 compute minutes per top-level namespace per month, with usage equal to each job's duration multiplied by its runner cost factor.
 The relay requests the standard small Linux runner, whose factor is 1.
@@ -827,7 +827,7 @@ An invalid or unreadable configuration, or an unavailable home state directory, 
 
 [`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
 The script header and `--help` own the per-machine PC02 slot count (`FM_PC02_OFFLOAD_SLOTS`, or one integer in `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots`), its default and validation, and the `FM_PC02_OFFLOAD_SLOT_WAIT_SECS` and interval wait contract.
-The no-mistakes Lint step reaches the same path through `bin/fm-test-compute.sh lint`; when hosted tiers are unavailable it runs all four canonical partitions serially via `bin/fm-pc02-test-offload.sh --lint-partitions` on PC02 under those identical slot and admission rules, and PC01's last-resort lint runs `bin/fm-lint.sh` with its changed-file selection.
+The no-mistakes Lint step reaches the same path through `bin/fm-test-compute.sh lint`; when hosted tiers are unavailable it runs every canonical lint partition serially via `bin/fm-pc02-test-offload.sh --lint-partitions` on PC02 under those identical slot and admission rules, and PC01's last-resort lint runs `bin/fm-lint.sh` with its changed-file selection.
 The host slots coordinate test and lint offloads using this protocol; direct test or lint invocations on PC02 must be scheduled separately.
 An explicit caller `--jobs` and the default auto-scheduler ceiling are each reduced to at most `floor(PC02 nproc / slots)` workers per slot, so the slots together stay within PC02's thread count; an explicit `FM_PC02_OFFLOAD_JOBS` override is honored verbatim and may oversubscribe by choice, and an unreadable thread count keeps the run local. The script header owns the cap arithmetic and admission detail.
 Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
