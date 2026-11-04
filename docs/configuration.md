@@ -836,6 +836,12 @@ Measured 2026-11-03: two concurrent full selections on an idle PC02 did not fit 
 The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
 Exceeding the whole-run cap fails with exit 124 and does not rerun the selected command locally or omit selected work.
 
+Before a slot is claimed, the offload reads PC02 `MemAvailable`, `/tmp` free space and home-disk free space fresh and checks them against local floors.
+A low reading routes the run local naming the resource, the observed value and the floor; an unreadable reading also routes local rather than treating PC02 as free, and the pre-claim gate never removes another run's root.
+An offloaded run places its runner `TMPDIR` inside the per-run PC02 mirror, so its own mirror cleanup reaps the run's temp root on the normal, interrupt and timeout paths, restoring owner write first.
+[`bin/fm-pc02-hygiene.sh`](../bin/fm-pc02-hygiene.sh) exposes those readings plus the stale-root and old-process inventory as a cheap read-only report for firstmate's heartbeat host check: `MemAvailable`, `/tmp` and disk use, the count and size of stale test roots with the first 50 counted paths named (`stale_test_root=`), and test processes older than the idle bound. The capacity readings are the pre-claim floors; the stale-root and old-process counts gate only this report, not the offload's slot claim. It never kills a process or removes a test root, and exits 1 with a named `pressure=` list when a bound is crossed; [docs/pc02-outage-runbook.md](pc02-outage-runbook.md) owns the manual reclamation sequence.
+[`bin/fm-pc02-hygiene-lib.sh`](../bin/fm-pc02-hygiene-lib.sh) owns the readings, floor and stale-root rules, and the offload's header lists every override; `tests/fm-pc02-test-offload.test.sh` and `tests/fm-pc02-hygiene.test.sh` pin them without contacting PC02.
+
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 
 Domain-local preferences for one captain's fleet live locally in each home's `data/captain.md`; it is gitignored and printed in the session-start context digest after `data/projects.md` and optional `data/secondmates.md`.
