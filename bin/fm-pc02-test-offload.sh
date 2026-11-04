@@ -305,9 +305,11 @@
 # Exit status: the status of the command that actually ran: fm-test-run.sh for
 # tests, the aggregate of all four canonical lint partitions on PC02, and
 # bin/fm-lint.sh's changed-file lint on PC01; or 124 if the remote run itself
-# exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
-# FM_PC02_OFFLOAD_SLOTS, pc02-offload-slots file, or wait setting, or a
-# capacity bound, which runs nothing at all.
+# exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS; or 2 for a malformed
+# FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16), a malformed
+# pc02-offload-slots file or wait setting, a malformed
+# FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS, or a malformed capacity floor setting,
+# which runs nothing at all.
 # A readiness check that cannot clear by waiting (PC02 personally in use,
 # unreachable, missing a required tool, or a sync/verification failure) falls
 # back to a local run at once. A load gate (a live LLM lane, busy CPU or GPU,

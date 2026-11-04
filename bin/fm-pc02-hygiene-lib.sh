@@ -3,8 +3,8 @@
 # bin/fm-pc02-test-offload.sh reads before claiming a slot, and of the read-only
 # stale-test-root inventory bin/fm-pc02-hygiene.sh reports.
 #
-# Why one owner: both callers need the same MemAvailable//tmp/disk readings, and
-# the report needs the same definition of a stale root (an offload run root, an
+# Why one owner: both callers need the same MemAvailable, /tmp and disk readings,
+# and the report needs the same definition of a stale root (an offload run root,
 # fm-test-run.* root, or a test-fixture root older than the bound with no live
 # process reference) and of an owned root. A second copy would drift the moment
 # one side changed a rule.
