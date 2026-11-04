@@ -1,0 +1,14 @@
+=== live bounded fan-out over 6 ships (real drain, real crew-state) ===
+configured FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=2
+peak concurrent no-mistakes clients: 2
+total no-mistakes calls: 18
+drain rc=0 elapsed=10s
+stalled gate lines printed: 6 of 6
+
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+fanout-1: parked at test: 1 finding(s) has waited 3h00m on the crewmate with no needs-decision open
+fanout-2: parked at test: 1 finding(s) has waited 3h00m on the crewmate with no needs-decision open
+fanout-3: parked at test: 1 finding(s) has waited 3h00m on the crewmate with no needs-decision open
+fanout-4: parked at test: 1 finding(s) has waited 3h00m on the crewmate with no needs-decision open
+fanout-5: parked at test: 1 finding(s) has waited 3h00m on the crewmate with no needs-decision open
+fanout-6: parked at test: 1 finding(s) has waited 3h00m on the crewmate with no needs-decision open

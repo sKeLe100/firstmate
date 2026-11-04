@@ -1,0 +1,41 @@
+=== disposable lab: /tmp/fm-stalled-live.uDRZYl ===
+=== real fm-crew-state.sh per task ===
+### gate-crewmate
+state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 7h30m · run: 01GATECREWMATE
+### gate-human
+state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 2d14h · ask-user: authority decision · run: 01GATEHUMAN
+### gate-padded
+state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 1h08m0s · run: 01GATEPADDED
+### gate-fresh
+state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 10m0s · run: 01GATEFRESH
+### gate-decided
+state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 2h00m0s · run: 01GATEDECIDED
+### pause-go
+state: paused · source: status-log · ready for test slot; waiting for firstmate go before no-mistakes
+### pause-captain
+state: paused · source: status-log · waiting for the captain decision on the API shape
+### pause-quota
+state: paused · source: status-log · held for Claude quota; resumes on firstmate steer
+### pause-fresh
+state: paused · source: status-log · ready for test slot; waiting for firstmate go
+### scout-gate
+state: working · source: status-log · scouting
+
+=== real fm-wake-drain.sh rc=0 ===
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+gate-decided needs-decision: ask-user findings=test-1 file=/tmp/nm-findings.txt
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+gate-crewmate: parked at test: 1 finding(s) has waited 7h30m on the crewmate with no needs-decision open
+gate-human: parked at test: 1 finding(s) has waited 2d14h on firstmate (ask-user: authority decision) with no needs-decision open
+gate-padded: parked at test: 1 finding(s) has waited 1h08m on the crewmate with no needs-decision open
+pause-go: paused 2h01m waiting on firstmate: ready for test slot; waiting for firstmate go before no-mistakes
+
+=== stderr (supervision guard only) ===
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  10 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e {run-worktree}/.pi/extensions/fm-primary-turnend-guard.ts -e {run-worktree}/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

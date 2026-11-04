@@ -1,0 +1,3 @@
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+feat-gate [key=nm-01RUN-test] needs-decision: ask-user findings=test-1 file=/tmp/nm-01RUN-findings.txt
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'

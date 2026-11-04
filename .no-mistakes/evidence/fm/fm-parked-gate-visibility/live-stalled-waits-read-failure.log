@@ -1,0 +1,9 @@
+=== real crew-state per task ===
+### good-gate (healthy no-mistakes read)
+state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 4h00m · run: 01GOODgood-gate
+### broken-gate (no-mistakes daemon read fails)
+state: working · source: status-log · validating
+
+=== real drain rc=0 elapsed=3s (one read fails, one is healthy) ===
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+good-gate: parked at test: 1 finding(s) has waited 4h00m on the crewmate with no needs-decision open

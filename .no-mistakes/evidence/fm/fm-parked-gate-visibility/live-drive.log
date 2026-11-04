@@ -1,0 +1,85 @@
+
+=== CASE: gate owed by the crewmate, parked 1h08m0s, no needs-decision (lab /var/tmp/nm-daemon-tmp/fm-lab.vecIw6)
+crew-state: state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 1h08m0s
+PASS  the real crew-state read mints the 1h08m0s age component
+drain exit: 0
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+feat-gate: parked at test: 1 finding(s) has waited 1h08m on the crewmate with no needs-decision open
+PASS  the drain printed the STALLED WAITS section
+PASS  the gate is reported with its age, its findings, and the crewmate as owner
+PASS  no process census line at ordinary load
+
+=== CASE: human-owed gate, parked 2d14h, no needs-decision (lab /var/tmp/nm-daemon-tmp/fm-lab.7EQBr5)
+crew-state: state: parked · source: run-step · parked at test: 1 finding(s) · gate awaiting agent for 2d14h · ask-user: authority decision
+PASS  the real capture's ask-user finding mints the human-decision component
+drain exit: 0
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+feat-gate: parked at test: 1 finding(s) has waited 2d14h on firstmate (ask-user: authority decision) with no needs-decision open
+PASS  the multi-day (2d14h) human-owed gate is aged and names firstmate's ask-user decision
+PASS  the human-owed gate is not mislabelled as waiting on the crewmate
+
+=== CASE: gate parked 2d14h WITH an open needs-decision (lab /var/tmp/nm-daemon-tmp/fm-lab.TZSfWr)
+drain exit: 0
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+feat-gate [key=nm-01RUN-test] needs-decision: ask-user findings=test-1 file=/tmp/nm-01RUN-findings.txt
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+PASS  no STALLED WAITS section while the gate's decision is open
+PASS  the open needs-decision is presented by OPEN DECISIONS instead
+
+=== CASE: declared go-wait idle 2h15m (lab /var/tmp/nm-daemon-tmp/fm-lab.lZzBVc)
+crew-state: state: paused · source: status-log · ready for test slot; waiting for firstmate go before no-mistakes
+PASS  the real crew-state reads the ship as paused from its status log
+drain exit: 0
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+go-wait: paused 2h15m waiting on firstmate: ready for test slot; waiting for firstmate go before no-mistakes
+PASS  the idle go-wait is flagged with its age and what it waits on
+
+=== CASE: guards: fresh gate 10m, fresh go-wait 5m, quota pause 2h15m, captain wait 2h15m (lab /var/tmp/nm-daemon-tmp/fm-lab.rrRciJ)
+crew-state fresh-go: state: paused · source: status-log · waiting for firstmate go before no-mistakes
+crew-state quota-held: state: paused · source: status-log · held for Claude quota; resumes on firstmate steer
+crew-state captain-wait: state: paused · source: status-log · waiting for the captain decision on the API shape
+drain exit: 0
+PASS  no ship is flagged: under an hour, external quota, and captain-held waits stay out
+PASS  fresh-gate is not flagged
+PASS  fresh-go is not flagged
+PASS  quota-held is not flagged
+PASS  captain-wait is not flagged
+
+=== CASE: 10 parked gates at a read-concurrency bound of 3 (lab /var/tmp/nm-daemon-tmp/fm-lab.ufOD01)
+drain exit: 0 in 8s
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+gate-1: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-10: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-2: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-3: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-4: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-5: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-6: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-7: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-8: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+gate-9: parked at test: 1 finding(s) has waited 2h00m on the crewmate with no needs-decision open
+peak concurrent no-mistakes reads: 3
+PASS  the per-ship reads never exceeded the configured bound of 3 (peak 3)
+PASS  all 10 parked gates were still judged under the bound
+
+=== CASE: session-start digest carries both incident shapes (lab /var/tmp/nm-daemon-tmp/fm-lab.rFl6yS)
+session-start exit: 0
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+feat-gate: parked at test: 1 finding(s) has waited 2d14h on firstmate (ask-user: authority decision) with no needs-decision open
+go-wait: paused 2h15m waiting on firstmate: ready for test slot; waiting for firstmate go before no-mistakes
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+PI_WATCH_EXTENSION: not loaded - approve Pi project trust once per clone, then restart plain pi so {run-worktree}/.pi/extensions/fm-primary-turnend-guard.ts and {run-worktree}/.pi/extensions/fm-primary-pi-watch.ts auto-load for turn-end guard and background wake coverage; use -e {run-worktree}/.pi/extensions/fm-primary-turnend-guard.ts -e {run-worktree}/.pi/extensions/fm-primary-pi-watch.ts only if project hooks are not trusted
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: pi
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Ordinary wake: the Pi extension already owns watcher continuity; do not arm another cycle.
+
+PASS  the session-start digest carries the human-owed parked gate
+PASS  the session-start digest carries the idle declared go-wait
+PASS  session-start exited with no process left behind
+
+RESULT: all live drives passed

@@ -1,0 +1,8 @@
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+gate-decided needs-decision: ask-user findings=test-1 file=/tmp/nm-findings.txt
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+gate-crewmate: parked at test: 1 finding(s) has waited 7h30m on the crewmate with no needs-decision open
+gate-human: parked at test: 1 finding(s) has waited 2d14h on firstmate (ask-user: authority decision) with no needs-decision open
+gate-padded: parked at test: 1 finding(s) has waited 1h08m on the crewmate with no needs-decision open
+pause-go: paused 2h01m waiting on firstmate: ready for test slot; waiting for firstmate go before no-mistakes

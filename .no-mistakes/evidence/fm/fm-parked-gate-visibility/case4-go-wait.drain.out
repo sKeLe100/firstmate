@@ -1,0 +1,2 @@
+STALLED WAITS (waiting on firstmate past 1h00m with nothing on OPEN DECISIONS):
+go-wait: paused 2h15m waiting on firstmate: ready for test slot; waiting for firstmate go before no-mistakes
