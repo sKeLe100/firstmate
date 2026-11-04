@@ -1034,7 +1034,7 @@ CI's portable and Herdr lanes also exclude quarantined subjects.
 For identical initial subject and family selections, adding `--exclude-quarantined` removes exactly the intersection with the ledger; compare the runner's `--list` output with and without that flag to publish the actual paths for a candidate rather than comparing totals.
 The runner reports each removed path and the total in execution mode.
 No selection is a substitute for the other, and quarantine diagnostics do not certify the gate selection.
-Aligning canonical Test with manual sync would change the pinned Test contract and requires a separate explicit decision; this upkeep preserves both selections.
+Changing canonical Test from its changed-subject selection to manual sync's all-subject selection would change the pinned Test contract and requires a separate explicit decision; the shared quarantine exclusion does not make their coverage equal.
 Use the runner's bounded quarantine diagnostic mode to report changed signatures, newly passing subjects, and capability skips without letting known failures block the diagnostic invocation.
 A match establishes only the recorded output symptom; retained output and owner follow-up are still necessary for failures masked by an earlier assertion.
 

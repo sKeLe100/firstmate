@@ -6,8 +6,8 @@
 # transfer fails.
 #
 # Why: on PC01 the no-mistakes test step (bin/fm-test-run.sh --changed
-# --exclude-family real-herdr-gated) repeatedly hits the 30-minute test-agent
-# deadline under host load, and the canonical lint step's exhaustive
+# --exclude-family real-herdr-gated --exclude-quarantined) can outrun the
+# test-agent deadline under host load, and the canonical lint step's exhaustive
 # ShellCheck audit is equally load-sensitive. PC02 has stronger hardware and,
 # when its llama-swap serving stack is not holding a model for a live task and
 # the captain is not using it personally (gaming, etc.), sits idle.
@@ -53,8 +53,8 @@
 # probe times out and this script falls back to running locally rather than
 # hanging waiting on PC02. Once a check has committed to a remote run it
 # never also runs the selected command again locally (the two would double
-# whatever time budget the caller enforces, such as no-mistakes' 30-minute
-# test-agent deadline); the remote execution itself is still bounded
+# whatever time budget the caller enforces, such as the no-mistakes test-agent
+# deadline); the remote execution itself is still bounded
 # (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, enforced by `timeout` on PC02 itself so
 # the remote command's session is killed there rather than orphaned
 # behind a dropped ssh client), and a run that hits this bound is reported
