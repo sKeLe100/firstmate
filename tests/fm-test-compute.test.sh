@@ -324,7 +324,7 @@ assert_contains "$output" 'local:' 'definitive quota rejection should fall back'
 pass 'definitive GitHub admission rejection tries the next tier'
 run_route github-unavailable
 expect_code 0 "$result" "$output"
-assert_contains "$output" 'local: <--changed> <--exclude-family> <real-herdr-gated>' 'baseline arguments must survive fallback'
+assert_contains "$output" 'local: <--changed> <--exclude-family> <real-herdr-gated> <--exclude-quarantined>' 'baseline arguments must survive fallback'
 pass 'GitHub unavailable and unauthenticated GitLab reach existing PC02 admission'
 run_route github-unavailable lint
 expect_code 0 "$result" "$output"

@@ -37,11 +37,11 @@ document:
 # --exclude-quarantined applies the tracked tests/fm-test-quarantine.tsv to the
 # local gate exactly as every CI lane does, so a known-failing quarantined
 # script cannot force a Test override and a per-PR check waiver. It removes only
-# the ledger intersection; it does not by itself bound the changed selection's
-# wall clock. The PC02 full-selection measurement in bin/fm-pc02-test-offload.sh
-# used two concurrent slots, so it does not prove the eight-worker single-run
-# fit, and PC01's fallback ceiling is lower. Measure the actual gate run and
-# narrow with the existing family filters if it exceeds test_agent_timeout.
+# the ledger intersection. The filtered selection for the reviewed change is
+# 14 scripts; one run on the PC01 fallback took 2041s (34 min) and passed, under
+# the 60-minute test_agent_timeout. PC02 was busy then, so this measurement
+# covers the lower-concurrency PC01 fallback. Re-measure each change and narrow
+# with the existing family filters if a selection exceeds the timeout.
 commands:
   lint: 'bin/fm-test-compute.sh lint && bash tests/fm-pi-primary-types.test.sh'
   test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle'
