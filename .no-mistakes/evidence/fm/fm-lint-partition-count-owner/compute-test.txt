@@ -1,0 +1,25 @@
+ok - github-race-failed cannot treat GitHub completion as cancellation
+ok - github-race-success cannot treat GitHub completion as cancellation
+ok - a completed GitHub run that is not a success is indeterminate, not a test verdict
+ok - gitlab-success executes only after GitHub unavailability and authentication
+ok - gitlab-bootstrap executes only after GitHub unavailability and authentication
+ok - structured GitLab variable permission refusal falls back without duplicate dispatch
+ok - GitLab jobs rejected before start for exhausted compute fall back automatically
+ok - gitlab-race-success cannot treat GitLab completion as cancellation
+ok - gitlab-race-failed cannot treat GitLab completion as cancellation
+ok - private repositories cannot enter a public source relay
+ok - unpushed git bundle restores the exact committed head
+ok - worker captures actual test exit and exact script evidence
+ok - lint worker invokes the canonical partition interface
+ok - inspection never contacts hosted services
+ok - non-baseline test selections stay on local admission
+ok - uncommitted content always uses the existing local mirror path
+ok - unknown commands are rejected before dependencies
+ok - PC01 lint fallback runs changed-file lint while local-lint keeps canonical partitions
+ok - a changed canonical lint count reaches every hosted lint partition
+ok - a changed canonical lint count reaches every local lint partition
+ok - a changed canonical lint count bounds the lint workers it accepts
+ok - an unusable canonical lint count fails closed on every lint path
+ok - repositories outside public Firstmate fall back locally before any hosted call
+ok - oversized snapshots fall back locally before any hosted call
+# all test-compute tests passed

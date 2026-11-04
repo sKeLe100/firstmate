@@ -1,0 +1,6 @@
+real count: 4
+partition 1of4 files:
+153
+partition 4of4 files:
+154
+9of9 exit=2 (ceiling owned by fm-lint)

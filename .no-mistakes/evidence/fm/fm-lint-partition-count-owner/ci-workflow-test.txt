@@ -1,0 +1,8 @@
+ok - the Lint aggregate runs after any partition outcome and passes only when every partition succeeded
+ok - each lint partition warns at 50% and fails at 70% of the lint job cap, even after lint findings
+ok - every ci.yml job carries a finite timeout
+ok - every ci.yml job belongs to one of the three timeout tiers or a named fork override
+ok - the fork's measured normal-tier overrides keep their caps
+ok - fast tier jobs share one 5 minute tripwire
+ok - normal tier jobs share one 30 minute budget
+ok - Herdr keeps a 20 minute step tripwire under a 75 minute job backstop

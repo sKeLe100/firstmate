@@ -1,0 +1,5 @@
+$ bin/fm-lint.sh --partition-count
+4
+rc=0
+$ bin/fm-lint.sh --partition 1of4 --list-files | wc -l
+153
