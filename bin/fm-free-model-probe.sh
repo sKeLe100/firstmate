@@ -10,12 +10,13 @@
 # logfmt log for a "Free usage limit reached" entry written for that modelID
 # since the probe started.
 #
-# Prints exactly one line to stdout:
+# Prints exactly one line to stdout for a probe result:
 #   ok              the reply was exactly "OK" (exit 0)
 #   capped <retry>  a log entry for <model-id> since the probe start contained
 #                   "Free usage limit reached" (<retry> is the retry time from
 #                   the log message, or "unknown retry" if not parseable) (exit 3)
 #   unknown <why>   the probe timed out or produced other output (exit 1)
+# A usage error prints no stdout line and exits 2.
 #
 # OpenCode writes logfmt lines to ~/.local/share/opencode/log/opencode.log
 # (override with FM_OPENCODE_LOG).
@@ -35,12 +36,17 @@ directory with an optional timeout (default 60 seconds), then checks OpenCode's
 log file for a "Free usage limit reached" entry written for that modelID since
 the probe started.
 
-Prints exactly one line to stdout:
+Prints exactly one line to stdout for a probe result:
   ok              the reply was exactly "OK" (exit 0)
   capped <retry>  a log entry for <model-id> since the probe start contained
                   "Free usage limit reached" (<retry> is the retry time from
                   the log message, or "unknown retry" if not parseable) (exit 3)
   unknown <why>   the probe timed out or produced other output (exit 1)
+
+A usage error prints no stdout line and exits 2.
+
+OpenCode writes logfmt lines to ~/.local/share/opencode/log/opencode.log
+(override with FM_OPENCODE_LOG).
 EOF
 }
 
@@ -71,7 +77,7 @@ esac
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
-OPENCODE_LOG="${FM_OPENCODE_LOG:-$HOME/.local/share/opencode/log/opencode.log}"
+OPENCODE_LOG="${FM_OPENCODE_LOG:-${HOME:-}/.local/share/opencode/log/opencode.log}"
 
 PROBE_START_EPOCH=$(date +%s)
 
@@ -146,6 +152,8 @@ if [ -r "$OPENCODE_LOG" ]; then
     fi
   fi
 fi
+
+cat "$PROBE_STDERR_FILE" >&2 2>/dev/null || true
 
 if fm_timed_out "$PROBE_EXIT_CODE"; then
   echo "unknown probe timed out after ${TIMEOUT_SEC}s"

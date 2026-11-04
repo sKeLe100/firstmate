@@ -44,6 +44,8 @@ out=$(PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" "$SCR
 rc=$?
 [ "$rc" -eq 0 ] || fail "--help: expected exit 0, got $rc"
 assert_contains "$out" "Usage: fm-free-model-probe.sh" "--help: should print usage"
+assert_contains "$out" "FM_OPENCODE_LOG" "--help: should name the log override"
+assert_contains "$out" "exits 2" "--help: should document the usage exit"
 [ ! -e "$PROBE_MARKER" ] || fail "--help: help handling launched a probe"
 pass "fm-free-model-probe: --help prints usage without probing"
 
@@ -95,7 +97,7 @@ SH
 chmod +x "$FAKE_BIN/opencode"
 
 reset_logs
-out=$(run_probe glm-5.3-flash-free)
+out=$(run_probe glm-5.3-flash-free 2>/dev/null)
 rc=$?
 [ "$out" != "ok" ] || fail "non-exact reply: 'NOT OK' must not count as ok"
 assert_contains "$out" "unknown" "non-exact reply: output should start with 'unknown'"
@@ -261,10 +263,12 @@ SH
 chmod +x "$FAKE_BIN/opencode"
 
 reset_logs
-out=$(run_probe glm-5.3-flash-free)
+err_file="$TMP_ROOT/non-timeout-stderr"
+out=$(run_probe glm-5.3-flash-free 2>"$err_file")
 rc=$?
 assert_contains "$out" "unknown" "non-timeout failure: output should start with 'unknown'"
 assert_contains "$out" "exit code 42" "non-timeout failure: should mention the exit code"
+assert_contains "$(cat "$err_file")" "some error output" "non-timeout failure: should pass vendor stderr through"
 [ "$rc" -eq 1 ] || fail "non-timeout failure: expected exit 1, got $rc"
 pass "fm-free-model-probe: non-timeout failure returns 'unknown probe exit code' with exit 1"
 
@@ -298,5 +302,26 @@ rc=$?
 assert_contains "$out" "unknown" "no log file: output should start with 'unknown'"
 [ "$rc" -eq 1 ] || fail "no log file: expected exit 1, got $rc"
 pass "fm-free-model-probe: absent log file treats timeout as unknown"
+
+# --- HOME unset without an override ------------------------------------------
+
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+exec sleep 300
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+out_file="$TMP_ROOT/no-home-stdout"
+err_file="$TMP_ROOT/no-home-stderr"
+(
+  unset HOME FM_OPENCODE_LOG
+  PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" \
+    "$SCRIPT" glm-5.3-flash-free 1 >"$out_file" 2>"$err_file"
+)
+rc=$?
+[ "$rc" -eq 1 ] || fail "no HOME: expected exit 1, got $rc"
+assert_contains "$(cat "$out_file")" "unknown" "no HOME: should still print a verdict"
+assert_not_contains "$(cat "$err_file")" "unbound variable" "no HOME: should not abort on an unset HOME"
+pass "fm-free-model-probe: an unset HOME still produces a verdict"
 
 echo "# fm-free-model-probe.test.sh: all assertions passed"
