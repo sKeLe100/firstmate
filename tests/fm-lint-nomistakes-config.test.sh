@@ -22,7 +22,7 @@ fm_nm_write_canonical() {  # <path>
   cat > "$1" <<'YAML'
 commands:
   lint: 'bin/fm-lint.sh'
-  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated'
+  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined'
 
 test:
   evidence:
