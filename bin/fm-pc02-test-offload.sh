@@ -66,8 +66,12 @@
 # PC02 - observed empirically running this repo's own full --changed suite
 # through this script, not a hypothetical - so as soon as fm-test-run.sh
 # exits there, the rest of its session is killed and its own exit code
-# is returned. The per-run PC02 mirror, and any of its processes still
-# running, are removed on every exit path, including an interrupt.
+# is returned. The per-run PC02 mirror - including the runner's own TMPDIR,
+# which is placed inside that mirror - and any of its processes still running
+# are removed on every exit path, including an interrupt and the run timeout;
+# read-only directories test fixtures leave behind are made owner-writable
+# first. This is why an offloaded suite cannot leak /tmp/fm-test-run.* into
+# PC02's tmpfs.
 #
 # Remote run conditions (always applied to an offloaded run, test or lint):
 #   - Parallel, per-script bounded: an explicit caller --jobs is capped to
@@ -88,6 +92,17 @@
 #     (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124 rather than
 #     rerunning locally. Lint mode keeps bin/fm-lint.sh's own worker count and
 #     partition selection untouched; the whole-run bound applies to it too.
+#   - Pre-claim hygiene: before any slot is claimed, the run sweeps PC02 test
+#     roots older than FM_PC02_OFFLOAD_STALE_AGE_SECS that no live process
+#     references (an offload run root's own pgid marker is the owner rule for
+#     its root), then reads MemAvailable, the TMP_ROOT (/tmp) free space and
+#     the PC02 home-disk free space. A root removal restores owner write
+#     first, so the read-only *.git-hooks directories test fixtures leave
+#     behind cannot block it. A reading under its floor routes the run local
+#     and names the resource, the observed value and the floor; an unreadable
+#     reading is treated as unclear and routes local too, never as free.
+#     bin/fm-pc02-hygiene-lib.sh owns the stale/owner rules, and
+#     bin/fm-pc02-hygiene.sh exposes the same readings as a read-only report.
 #   - Host slots: the slot count comes from FM_PC02_OFFLOAD_SLOTS, then the
 #     per-machine ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
 #     file (one integer from 1 to 16; a trailing newline is optional), then
@@ -277,18 +292,33 @@
 #   FM_PC02_OFFLOAD_GPU_BUSY_PCT        summed Windows GPU-engine utilization%%
 #                                      at/above which PC02 reads busy
 #                                      (default: 5; idle measures 0)
+#   FM_PC02_OFFLOAD_SWEEP_TIMEOUT_SECS  bound for the pre-claim sweep and
+#                                      capacity reading (default: 120)
+#   FM_PC02_OFFLOAD_STALE_AGE_SECS      age at which an unreferenced PC02 run
+#                                      or fm-test-run.* root may be swept
+#                                      (default: 21600, six hours)
+#   FM_PC02_OFFLOAD_TMP_ROOT            PC02 tmp directory (default: /tmp)
+#   FM_PC02_OFFLOAD_MEMINFO             PC02 meminfo path (default:
+#                                      /proc/meminfo)
+#   FM_PC02_OFFLOAD_MEM_MIN_FREE_MB     PC02 MemAvailable floor in MiB
+#                                      (default: 4096; 0 disables)
+#   FM_PC02_OFFLOAD_TMP_MIN_FREE_MB     PC02 TMP_ROOT free-space floor in MiB
+#                                      (default: 2048; 0 disables)
+#   FM_PC02_OFFLOAD_DISK_MIN_FREE_MB    PC02 home-disk free-space floor in MiB
+#                                      (default: 5120; 0 disables)
 #
 # Exit status: the status of the command that actually ran: fm-test-run.sh for
 # tests, the aggregate of all four canonical lint partitions on PC02, and
 # bin/fm-lint.sh's changed-file lint on PC01; or 124 if the remote run itself
 # exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
-# FM_PC02_OFFLOAD_SLOTS, pc02-offload-slots file, or wait setting, which
-# runs nothing at all.
+# FM_PC02_OFFLOAD_SLOTS, pc02-offload-slots file, or wait setting, or a
+# hygiene bound, which runs nothing at all.
 # A readiness check that cannot clear by waiting (PC02 personally in use,
 # unreachable, missing a required tool, or a sync/verification failure) falls
 # back to a local run at once. A load gate (a live LLM lane, busy CPU or GPU,
-# or an unclear load read) waits under the bound first. Either way the local
-# fallback never changes the result the selected command itself reports.
+# or an unclear load read) waits under the bound first. A capacity floor or an
+# unreadable hygiene reading also falls back to a local run. Either way the
+# local fallback never changes the result the selected command itself reports.
 set -u
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -301,6 +331,8 @@ fi
 
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SELF_DIR/fm-primary-scope-lib.sh"
+# shellcheck source=bin/fm-pc02-hygiene-lib.sh
+. "$SELF_DIR/fm-pc02-hygiene-lib.sh"
 
 ARGS=("$@")
 LINT_PARTITIONS=0
@@ -333,6 +365,7 @@ REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
 REMOTE_COMMON="$REMOTE_RUN/common.git"
+REMOTE_TMP="$REMOTE_RUN/tmp"
 REMOTE_RUN_CREATED=0
 claim_pid=
 claim_open=0
@@ -342,6 +375,13 @@ PERSONAL_USE_FLAG="${FM_PC02_OFFLOAD_PERSONAL_USE_FLAG:-.fm-pc02-personal-use}"
 RESOURCE_CHECK_PS1="${FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1:-/mnt/c/pc02-llm-server/bin/fm-pc02-resource-check.ps1}"
 CPU_BUSY_PCT="${FM_PC02_OFFLOAD_CPU_BUSY_PCT:-50}"
 GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
+SWEEP_TIMEOUT="${FM_PC02_OFFLOAD_SWEEP_TIMEOUT_SECS:-120}"
+TMP_ROOT="${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}"
+MEMINFO_PATH="${FM_PC02_OFFLOAD_MEMINFO:-/proc/meminfo}"
+STALE_AGE_SECS="${FM_PC02_OFFLOAD_STALE_AGE_SECS:-$FM_PC02_DEFAULT_STALE_AGE_SECS}"
+MEM_MIN_FREE_MB="${FM_PC02_OFFLOAD_MEM_MIN_FREE_MB:-$FM_PC02_DEFAULT_MEM_MIN_FREE_MB}"
+TMP_MIN_FREE_MB="${FM_PC02_OFFLOAD_TMP_MIN_FREE_MB:-$FM_PC02_DEFAULT_TMP_MIN_FREE_MB}"
+DISK_MIN_FREE_MB="${FM_PC02_OFFLOAD_DISK_MIN_FREE_MB:-$FM_PC02_DEFAULT_DISK_MIN_FREE_MB}"
 
 # Tools whose absence hard-fails a real test rather than gracefully
 # gate-skipping it - actionlint and shellcheck are pinned versions
@@ -396,6 +436,24 @@ esac
   || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_GATE_RECHECK_SECS must be a positive integer, got '$GATE_RECHECK'" >&2; exit 2; }
 [ "$CALLER_WALL_BUDGET" -eq 0 ] || SLOT_WAIT=0
 
+# A malformed hygiene bound is the same kind of configuration error: refuse
+# rather than silently sweeping with a different rule or skipping a floor.
+for setting in \
+  "FM_PC02_OFFLOAD_SWEEP_TIMEOUT_SECS:$SWEEP_TIMEOUT" \
+  "FM_PC02_OFFLOAD_STALE_AGE_SECS:$STALE_AGE_SECS" \
+  "FM_PC02_OFFLOAD_MEM_MIN_FREE_MB:$MEM_MIN_FREE_MB" \
+  "FM_PC02_OFFLOAD_TMP_MIN_FREE_MB:$TMP_MIN_FREE_MB" \
+  "FM_PC02_OFFLOAD_DISK_MIN_FREE_MB:$DISK_MIN_FREE_MB"; do
+  name=${setting%%:*}
+  value=${setting#*:}
+  case "$value" in
+    '' | *[!0-9]*)
+      echo "fm-pc02-test-offload: $name must be a non-negative integer, got '$value'" >&2
+      exit 2
+      ;;
+  esac
+done
+
 release_claim() {
   if [ "$claim_open" -eq 1 ]; then
     exec 6>&- 7<&-
@@ -419,8 +477,9 @@ remove_remote_run() {
   REMOTE_RUN_CREATED=0
   local run_q cleanup_cmd
   run_q=$(printf '%q' "$REMOTE_RUN")
-  cleanup_cmd="[ -f $run_q/pgid ] && pkill -KILL -s \"\$(cat $run_q/pgid)\" 2>/dev/null; rm -rf $run_q"
-  timeout "$PROBE_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "$cleanup_cmd")" >/dev/null 2>&1 \
+  cleanup_cmd="[ -f $run_q/pgid ] && pkill -KILL -s \"\$(cat $run_q/pgid)\" 2>/dev/null; chmod -R u+w $run_q 2>/dev/null || true; rm -rf $run_q"
+  timeout "$SWEEP_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+    -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$cleanup_cmd")" >/dev/null 2>&1 \
     || echo "fm-pc02-test-offload: could not remove PC02 mirror $REMOTE_RUN" >&2
 }
 
@@ -620,6 +679,61 @@ jobs_cap=$((remote_threads / SLOTS))
 if [ -z "${FM_PC02_OFFLOAD_JOBS:-}" ] && [ "$REMOTE_JOBS" -gt "$jobs_cap" ]; then
   REMOTE_JOBS=$jobs_cap
 fi
+
+# 2b. Pre-claim hygiene: sweep stale PC02 test roots no live process owns, then
+# read the capacity floors. The sweep runs before the slot claim so a run never
+# holds a slot while deleting a previous leak, and the readings are taken after
+# it so the reclaimed space counts. bin/fm-pc02-hygiene-lib.sh owns the stale
+# and owner-marker rules; this script owns only the sweep/refuse decision.
+preclaim_script=$(fm_pc02_hygiene_remote_script yes "$TMP_ROOT" "$REMOTE_BASE" \
+  "$STALE_AGE_SECS" 0 "$MEMINFO_PATH")
+preclaim_out=$(timeout "$SWEEP_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+  -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$preclaim_script")" 2>&1)
+preclaim_rc=$?
+if [ "$preclaim_rc" -ne 0 ]; then
+  echo "$preclaim_out" >&2
+  run_local "PC02 pre-claim hygiene sweep failed (ssh exit $preclaim_rc)"
+fi
+capacity=$(printf '%s\n' "$preclaim_out" | awk '$1 == "capacity" { sub(/^capacity /, ""); print; found = 1; exit } END { exit !found }') || {
+  echo "$preclaim_out" >&2
+  run_local "PC02 pre-claim capacity reading unavailable"
+}
+mem_available_kb=''
+tmp_free_kb=''
+disk_free_kb=''
+swept_roots=''
+for field in $capacity; do
+  key=${field%%=*}
+  value=${field#*=}
+  case "$key" in
+    mem_available_kb) mem_available_kb=$value ;;
+    tmp_free_kb) tmp_free_kb=$value ;;
+    disk_free_kb) disk_free_kb=$value ;;
+    swept_roots) swept_roots=$value ;;
+  esac
+done
+require_kb() {  # <label> <value>
+  case "$2" in
+    '' | *[!0-9]*) run_local "PC02 pre-claim capacity unclear (missing $1 reading)" ;;
+  esac
+}
+require_kb MemAvailable "$mem_available_kb"
+require_kb "/tmp free" "$tmp_free_kb"
+require_kb "disk free" "$disk_free_kb"
+mem_available_mib=$((mem_available_kb / 1024))
+tmp_free_mib=$((tmp_free_kb / 1024))
+disk_free_mib=$((disk_free_kb / 1024))
+[ "$MEM_MIN_FREE_MB" -eq 0 ] || [ "$mem_available_mib" -ge "$MEM_MIN_FREE_MB" ] \
+  || run_local "PC02 MemAvailable ${mem_available_mib} MiB is below the ${MEM_MIN_FREE_MB} MiB floor"
+[ "$TMP_MIN_FREE_MB" -eq 0 ] || [ "$tmp_free_mib" -ge "$TMP_MIN_FREE_MB" ] \
+  || run_local "PC02 $TMP_ROOT free ${tmp_free_mib} MiB is below the ${TMP_MIN_FREE_MB} MiB floor"
+[ "$DISK_MIN_FREE_MB" -eq 0 ] || [ "$disk_free_mib" -ge "$DISK_MIN_FREE_MB" ] \
+  || run_local "PC02 disk free ${disk_free_mib} MiB is below the ${DISK_MIN_FREE_MB} MiB floor"
+case "$swept_roots" in
+  '' | *[!0-9]*) ;;
+  0) ;;
+  *) echo "fm-pc02-test-offload: reaped $swept_roots stale PC02 test root(s) before claiming a slot" >&2 ;;
+esac
 
 # Compare test-relevant surfaces with the same probe on both hosts.
 parity_probe="$(cat "$SELF_DIR/fm-test-chrome.sh")
@@ -860,7 +974,7 @@ esac
 git_dir=$(fm_resolve_git_path "$ROOT" --git-dir) || run_local "could not resolve this worktree's git-dir"
 git_common_dir=$(fm_resolve_git_path "$ROOT" --git-common-dir) || run_local "could not resolve this worktree's git-common-dir"
 
-mkdir_cmd="mkdir -p $(printf '%q' "$REMOTE_WORKTREE") $(printf '%q' "$REMOTE_COMMON")"
+mkdir_cmd="mkdir -p $(printf '%q' "$REMOTE_WORKTREE") $(printf '%q' "$REMOTE_COMMON") $(printf '%q' "$REMOTE_TMP")"
 REMOTE_RUN_CREATED=1
 mkdir_out=$(timeout "$PROBE_TIMEOUT" ssh "$HOST" "bash -lc $(printf '%q' "$mkdir_cmd")" 2>&1)
 mkdir_rc=$?
@@ -1007,10 +1121,19 @@ fi
 # written to pgid and used to clean up the complete command session.
 remote_test_cmd="exec 5<&0
 ulimit -Sn \"\$(ulimit -Hn)\" 2>/dev/null || true
-cd $(printf '%q' "$REMOTE_WORKTREE") || exit 1
+# Keep every run-scoped temp root inside this run's mirror, so the mirror
+# cleanup below is the one owner of reaping it even when the suite is killed
+# outright and its own EXIT trap never gets to run. REMOTE_RUN is relative to
+# PC02's $HOME, so resolve it to an absolute path, create the temp root, and
+# only then change into the worktree; a failed resolution must stop the run
+# rather than silently leave TMPDIR empty.
+run_dir=\$(cd $(printf '%q' "$REMOTE_RUN") && pwd) || exit 1
+mkdir -p \"\$run_dir/tmp\" || exit 1
+export TMPDIR=\"\$run_dir/tmp\"
+cd \"\$run_dir/worktree\" || exit 1
 $remote_suite_cmd &
 pgid=\$!
-echo \"\$pgid\" > ../pgid
+echo \"\$pgid\" > \"\$run_dir/pgid\"
 (exec 8>&-; while read -r _; do :; done; pkill -KILL -s \"\$pgid\" 2>/dev/null) <&5 &
 watcher=\$!
 wait \"\$pgid\"
