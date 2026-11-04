@@ -90,14 +90,16 @@ case "${1:-}" in
 esac
 cd "$ROOT" || exit 1
 # bin/fm-lint.sh owns the canonical lint partition count; read it, never restate it.
-# Anything but a single digit 1..8 is a failure, never a silent zero-partition run.
+# An empty, non-numeric, or zero count is a failure, never a silent zero-partition run;
+# bin/fm-lint.sh owns the partition ceiling.
 lint_partition_count() {
   local count
   count=$("$SELF_DIR/fm-lint.sh" --partition-count) || return 1
   case "$count" in
-    [1-8]) printf '%s\n' "$count" ;;
-    *) return 1 ;;
+    ''|*[!0-9]*) return 1 ;;
   esac
+  [ "$count" -gt 0 ] || return 1
+  printf '%s\n' "$count"
 }
 
 if [ "$mode" = local-lint ]; then

@@ -498,7 +498,7 @@ for n in 1 2 3 4; do assert_contains "$output" "<${n}of4>" 'local canonical lint
 pass 'PC01 lint fallback runs changed-file lint while local-lint keeps canonical partitions'
 # The canonical count is owned by bin/fm-lint.sh; the stub answers it from LINT_PARTITION_COUNT.
 set +e
-output=$(LINT_PARTITION_COUNT=6 SCENARIO=success "$router" lint 2>&1)
+output=$(LINT_PARTITION_COUNT=9 SCENARIO=success "$router" lint 2>&1)
 result=$?
 set -e
 expect_code 0 "$result" "$output"
@@ -508,40 +508,42 @@ python3 - "$TMP_ROOT/data/request" <<'PY'
 import json,sys
 request=json.load(open(sys.argv[1]))
 payload=json.loads(request['inputs']['snapshot'])
-assert payload['kind']=='lint' and set(payload['partitions'])=={f'lint-{n}' for n in range(1,7)}, payload['partitions']
+assert payload['kind']=='lint' and set(payload['partitions'])=={f'lint-{n}' for n in range(1,10)}, payload['partitions']
 PY
 pass 'a changed canonical lint count reaches every hosted lint partition'
 set +e
-output=$(LINT_PARTITION_COUNT=6 "$router" local-lint 2>&1)
+output=$(LINT_PARTITION_COUNT=9 "$router" local-lint 2>&1)
 result=$?
 set -e
 expect_code 0 "$result" "$output"
-for n in 1 2 3 4 5 6; do assert_contains "$output" "<${n}of6>" 'changed-count local lint omitted a partition'; done
+for n in 1 2 3 4 5 6 7 8 9; do assert_contains "$output" "<${n}of9>" 'changed-count local lint omitted a partition'; done
 [[ "$output" != *'of4'* ]] || fail 'local lint still restates the four-partition count'
 pass 'a changed canonical lint count reaches every local lint partition'
-LINT_PARTITION_COUNT=6 "$router" worker lint-6 "$TMP_ROOT/lint-six" "$TMP_ROOT/payload.json" > "$TMP_ROOT/lint-six.log" 2>&1 || fail 'changed-count lint worker did not run its last partition'
-assert_contains "$(cat "$TMP_ROOT/lint-six.log")" '<6of6>' 'changed-count lint worker did not run its last partition'
-if LINT_PARTITION_COUNT=6 "$router" worker lint-7 "$TMP_ROOT/lint-seven" "$TMP_ROOT/payload.json" > "$TMP_ROOT/lint-seven.log" 2>&1; then
+LINT_PARTITION_COUNT=9 "$router" worker lint-9 "$TMP_ROOT/lint-nine" "$TMP_ROOT/payload.json" > "$TMP_ROOT/lint-nine.log" 2>&1 || fail 'changed-count lint worker did not run its last partition'
+assert_contains "$(cat "$TMP_ROOT/lint-nine.log")" '<9of9>' 'changed-count lint worker did not run its last partition'
+if LINT_PARTITION_COUNT=9 "$router" worker lint-10 "$TMP_ROOT/lint-ten" "$TMP_ROOT/payload.json" > "$TMP_ROOT/lint-ten.log" 2>&1; then
   fail 'lint worker accepted a partition beyond the canonical count'
 fi
-[[ "$(cat "$TMP_ROOT/lint-seven.log")" != *'<7of6>'* ]] || fail 'lint worker ran a partition beyond the canonical count'
+[[ "$(cat "$TMP_ROOT/lint-ten.log")" != *'<10of9>'* ]] || fail 'lint worker ran a partition beyond the canonical count'
 pass 'a changed canonical lint count bounds the lint workers it accepts'
-set +e
-output=$(LINT_PARTITION_COUNT=x "$router" local-lint 2>&1)
-result=$?
-set -e
-expect_code 1 "$result" "$output"
-[[ "$output" != *'lint:'* ]] || fail 'an unreadable canonical count still ran lint partitions'
-assert_contains "$output" 'canonical lint partition count unavailable' 'unreadable canonical count did not name its failure'
-rm -f "$TMP_ROOT/data/"*
-set +e
-output=$(LINT_PARTITION_COUNT=x SCENARIO=success "$router" lint 2>&1)
-result=$?
-set -e
-expect_code 1 "$result" "$output"
-[[ "$output" != *'local:'* ]] || fail 'an unreadable canonical count fell back to a local lint'
-[ ! -e "$TMP_ROOT/data/request" ] || fail 'an unreadable canonical count dispatched hosted lint'
-pass 'an unreadable canonical lint count fails closed on every lint path'
+for bad in 0 x; do
+  set +e
+  output=$(LINT_PARTITION_COUNT=$bad "$router" local-lint 2>&1)
+  result=$?
+  set -e
+  expect_code 1 "$result" "$output"
+  [[ "$output" != *'lint:'* ]] || fail "an unusable canonical count ($bad) still ran lint partitions"
+  assert_contains "$output" 'canonical lint partition count unavailable' "unusable canonical count ($bad) did not name its failure"
+  rm -f "$TMP_ROOT/data/"*
+  set +e
+  output=$(LINT_PARTITION_COUNT=$bad SCENARIO=success "$router" lint 2>&1)
+  result=$?
+  set -e
+  expect_code 1 "$result" "$output"
+  [[ "$output" != *'local:'* ]] || fail "an unusable canonical count ($bad) fell back to a local lint"
+  [ ! -e "$TMP_ROOT/data/request" ] || fail "an unusable canonical count ($bad) dispatched hosted lint"
+done
+pass 'an unusable canonical lint count fails closed on every lint path'
 
 origin_original=$(git -C "$fixture" remote get-url origin)
 git -C "$fixture" remote set-url origin https://github.com/example/other.git
