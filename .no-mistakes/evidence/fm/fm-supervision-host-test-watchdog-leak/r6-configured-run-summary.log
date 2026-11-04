@@ -1,0 +1,41 @@
+== configured run selection and offload ==
+running tests: bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle
+
+fm-pc02-test-offload: claimed PC02 slot 2 of 2
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_ENV_RECORD v=1
+
+== suites that failed in the last configured run ==
+not ok - lock-order terminal source stayed registered
+not ok - an isolated extension conformance section failed
+FM_TEST_END 2026-11-04T04:13:08Z tests/fm-extension-binding.test.sh exit=1 duration_ms=3686 gate_skip=false
+not ok - a wake whose line could not be written must stay queued
+FM_TEST_END 2026-11-04T04:16:36Z tests/fm-public-followup.test.sh exit=1 duration_ms=391209 gate_skip=false
+
+== configured run aggregate summary ==
+FM_TEST_SUMMARY total=249 failed=2 skipped_gate=31 duration_ms=5165023
+FM_TEST_SUMMARY_FAMILY family=afk count=4 duration_ms=618600 failed=0
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=16 duration_ms=757806 failed=0
+FM_TEST_SUMMARY_FAMILY family=cmux count=1 duration_ms=3702 failed=0
+FM_TEST_SUMMARY_FAMILY family=live-harness-optin count=39 duration_ms=79804 failed=0
+FM_TEST_SUMMARY_FAMILY family=orca count=1 duration_ms=24545 failed=0
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=8 duration_ms=629756 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=51 duration_ms=1723936 failed=0
+FM_TEST_SUMMARY_FAMILY family=secondmate count=19 duration_ms=1732750 failed=0
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=9 duration_ms=903096 failed=0
+FM_TEST_SUMMARY_FAMILY family=snapshot-bearings count=5 duration_ms=497693 failed=0
+FM_TEST_SUMMARY_FAMILY family=standalone count=21 duration_ms=1095412 failed=2
+FM_TEST_SUMMARY_FAMILY family=unclassified count=60 duration_ms=1116031 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=14 duration_ms=439225 failed=0
+FM_TEST_SUMMARY_FAMILY family=zellij count=1 duration_ms=9720 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-remote-secondmate-lifecycle-e2e.test.sh duration_ms=641287
+
+== captain ruling (from run driver instructions, round 5) ==
+Known failures covered by captain ruling: fm-public-followup, fm-extension-binding, fm-procevent-quota, fm-fleet-snapshot-view (fails on main too).
+
+== changed/relevant suites in the same configured run ==
+FM_TEST_END 2026-11-04T03:39:17Z tests/fm-test-run.test.sh exit=0 duration_ms=132609 gate_skip=false
+FM_TEST_END 2026-11-04T03:44:20Z tests/fm-watch-arm.test.sh exit=0 duration_ms=130137 gate_skip=false
+FM_TEST_END 2026-11-04T04:13:30Z tests/fm-test-fixture-cleanup.test.sh exit=0 duration_ms=2589 gate_skip=false
+FM_TEST_END 2026-11-04T04:24:24Z tests/fm-test-lib-watchdog-reap.test.sh exit=0 duration_ms=13451 gate_skip=false
+FM_TEST_END 2026-11-04T04:33:33Z tests/fm-supervision-host.test.sh exit=0 duration_ms=548904 gate_skip=false

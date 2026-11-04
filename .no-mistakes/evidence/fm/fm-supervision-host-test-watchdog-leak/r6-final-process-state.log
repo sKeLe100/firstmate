@@ -1,0 +1,16 @@
+== final validation process state ==
+date: 2026-11-04T00:21:51-05:00
+
+-- live "fm-primary-watchdog.sh run" loops (the unset-home one is the operator fleet loop) --
+pid=133690 ppid=445 home=<unset> cmd=bash ~/firstmate/bin/fm-primary-watchdog.sh run 
+
+-- fixture watchdog loops (FM_HOME under a temp fixture prefix) --
+none
+
+-- stale fm-wdreap child suites --
+none
+
+-- validation-created temp roots --
+none
+
+-- worktree status --

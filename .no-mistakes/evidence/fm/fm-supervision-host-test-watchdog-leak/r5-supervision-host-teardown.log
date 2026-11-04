@@ -1,0 +1,12 @@
+observed fixture watchdog while suite ran: 767772 /tmp/fm-val-sup2/tmp/fm-supervision-host.4K3UuH/hook-successor-closed-before-return
+/tmp/fm-val-sup2.sh: line 11: /proc/992407/environ: No such file or directory
+/tmp/fm-val-sup2.sh: line 11: /proc/992440/environ: No such file or directory
+/tmp/fm-val-sup2.sh: line 11: /proc/992452/environ: No such file or directory
+/tmp/fm-val-sup2.sh: line 11: /proc/992459/environ: No such file or directory
+/tmp/fm-val-sup2.sh: line 11: /proc/992588/environ: No such file or directory
+/tmp/fm-val-sup2.sh: line 11: /proc/992592/environ: No such file or directory
+suite_exit=124
+observed_fixture_watchdog_pids= 767772
+fixture_watchdogs_after_suite=none
+fixture_roots_after_suite=0
+ok - supervision-host fixture watchdog was armed during the suite and none survived teardown

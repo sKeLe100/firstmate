@@ -1,0 +1,5 @@
+ok - fixture watchdogs are reaped by FM_HOME scope only
+ok - TERM mid-run leaves no fixture watchdog
+ok - next runner-launched run reaps a hard-killed run's watchdog and fixture root
+ok - runner cleanup reaps KILLed concurrent and serial runs and spares a live owner's
+EXIT=0

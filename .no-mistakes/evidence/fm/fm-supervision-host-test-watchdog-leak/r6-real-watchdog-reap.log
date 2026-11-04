@@ -1,0 +1,12 @@
+fixture_root=/tmp/fm-r6-real.uBSk0v/fm-real-loop.ro2W9q
+fixture_loop_pid=3830629 outside_loop_pid=3830631
+fixture_alive_before=yes
+outside_alive_before=yes
+detected_by_reaper=3830629 
+fixture_alive_after=no
+outside_alive_after=yes
+operator_loop_alive=yes
+ok - real fixture loop reaped
+ok - real loop outside every fixture root was not matched
+ok - operator fleet loop untouched
+EXIT=0

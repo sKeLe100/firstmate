@@ -1,0 +1,7 @@
+== validation-owned watchdog loops (FM_HOME under /tmp/fm-val*) ==
+none
+== operator fleet loop (not touched) ==
+ 133690 bash ~/firstmate/bin/fm-primary-watchdog.sh run
+== validation temp dirs ==
+none
+== worktree status ==

@@ -1,0 +1,12 @@
+/tmp/fm-val-real-check.sh: line 32: /proc//environ: No such file or directory
+fixture_root=/tmp/fm-val-real/tmp/fm-real-loop.Q1DC8V
+fixture_loop_pid=3768767 outside_loop_pid=3768768
+fixture_cmdline=bash {run-worktree}/bin/fm-primary-watchdog.sh run 
+fixture_alive_before=yes
+outside_alive_before=yes
+detected_by_reaper=[3768767 ]
+ok - real fixture loop detected
+ok - real loop outside every fixture root was not matched
+fixture_alive_after=no
+outside_alive_after=yes
+operator_loop_alive=yes
