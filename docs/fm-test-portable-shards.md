@@ -64,6 +64,7 @@ The 2026-11-03 hint-drift refresh from run 41653979363 raised `tests/fm-teardown
 The 2026-11-04 hint-drift refresh from run 41788821296 raised `tests/fm-pr-state.test.sh` from 525 ms to its measured 862 ms (repeated drift 1.64x), and the same run's single-run warnings raised `tests/fm-operational-input.test.sh` to 3698 ms, `tests/fm-spawn-pc02-lane-guard.test.sh` to 17964 ms, `tests/fm-test-fixtures.test.sh` to 10194 ms, and `tests/fm-watch-retry-band.test.sh` to 13391 ms.
 The 2026-11-04 hint-drift refresh from run 41821494108 raised `tests/fm-config-inherit-lane-caps.test.sh` from 417 ms to its measured 708 ms (repeated drift 1.70x) and `tests/fm-live-gate.test.sh` from 7452 ms to its measured 12207 ms (repeated drift 1.64x) after two consecutive runs, and `tests/fm-forge-detect.test.sh` from 193 ms to its measured 540 ms (single-run drift warning 2.80x).
 The 2026-11-04 hint-drift refresh from run 41885594800 raised `tests/fm-heavy-admission.test.sh` from 2684 ms to its measured 10318 ms (repeated drift 3.84x).
+The 2026-11-04 refresh from run 41889370230 raised `tests/fm-test-fixture-cleanup.test.sh` from 1446 ms to its measured 2182 ms (repeated drift 1.51x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints
