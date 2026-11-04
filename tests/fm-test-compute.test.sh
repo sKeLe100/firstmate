@@ -111,6 +111,7 @@ if path.endswith('/actions/runs/123'):
     if scenario in ('queued','cancel-failure','gitlab-queue-status-failure') and any('.status' in arg for arg in args):
         print('queued\t' if scenario=='cancel-failure' or not (w/'cancelled').exists() else 'completed\tcancelled')
         sys.exit(0)
+    if scenario=='github-canceled-green': print('completed\tcancelled'); sys.exit(0)
     if scenario=='queued' and not (w/'cancelled').exists(): print('queued\t')
     else: print('completed\t'+('failure' if scenario=='failure' else 'success'))
     sys.exit(0)
@@ -440,6 +441,13 @@ for scenario in github-race-failed github-race-success; do
   [[ "$(cat "$TMP_ROOT/data/calls")" != *'gitlab '* ]] || fail "$scenario reached GitLab after GitHub completed"
   pass "$scenario cannot treat GitHub completion as cancellation"
 done
+run_route github-canceled-green
+expect_code 77 "$result" "$output"
+[[ "$output" != *'local:'* ]] || fail 'a completed GitHub run with verified receipts fell back locally'
+assert_contains "$output" 'receipts: verified' 'the completed run must verify its green receipts before the conclusion check'
+assert_contains "$output" 'GitHub run 123 finished cancelled with verified receipts' 'a non-success GitHub conclusion did not name its fail-closed reason'
+[[ "$(cat "$TMP_ROOT/data/calls")" != *'gitlab '* ]] || fail 'a completed non-success GitHub run reached GitLab'
+pass 'a completed GitHub run that is not a success is indeterminate, not a test verdict'
 for scenario in gitlab-success gitlab-bootstrap; do
   run_route "$scenario"
   expect_code 0 "$result" "$output"

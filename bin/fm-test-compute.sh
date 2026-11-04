@@ -51,15 +51,15 @@
 #
 # Result receipts bind every hosted partition to HEAD and the exact selected
 # scripts. A test/lint failure is terminal, never grounds for a greener local
-# rerun. Hosted faults fail closed with exit 77 so a gate can tell
-# infrastructure from a test or lint verdict. Unavailable tiers fall through to
-# local admission instead: GitHub workflow state, startup failure, or dispatch
-# rejection; a GitHub ambiguous POST whose run never appears within the queue
-# bound (treated as not started, so it may race a later tier); GitLab
-# authentication, project reads, dispatch rejection, quota rejection, or
-# missing receipts; and a cancellation confirmed after a queue timeout or a
-# GitLab execution timeout. An accepted GitHub dispatch that stays
-# undiscovered fails closed rather than being duplicated.
+# rerun. Indeterminate infrastructure and monitoring faults fail closed with
+# exit 77 so a gate can tell infrastructure from a test or lint verdict.
+# Unavailable tiers fall through to local admission instead: GitHub workflow
+# state, startup failure, or dispatch rejection; a GitHub ambiguous POST whose
+# run never appears within the queue bound (treated as not started, so it may
+# race a later tier); GitLab authentication, project reads, dispatch rejection,
+# quota rejection, or missing receipts; and a cancellation confirmed after a
+# queue timeout or a GitLab execution timeout. An accepted GitHub dispatch
+# that stays undiscovered fails closed rather than being duplicated.
 # Every API call is bounded. Interrupts cancel only this invocation's run.
 # stdout forwards suite evidence; routing diagnostics go to stderr.
 #
@@ -74,9 +74,10 @@
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
 # Exit: 0 proven success; 1 failed hosted evidence or a failed hosted receipt;
-# 2 usage error; 77 hosted outcome indeterminate (an infrastructure fault, an
-# incomplete receipt set, or a dispatched run that may still be executing,
-# never a test or lint verdict).
+# 2 usage error; 77 indeterminate hosted outcome that is never a test or lint
+# verdict (GitHub discovery, monitoring, receipt, and undiscovered-dispatch
+# faults; GitLab bootstrap, pipeline-response, monitoring, and artifact
+# faults; or a dispatched run that may still be executing).
 # Unavailable hosted tiers fall through to PC02/PC01 admission:
 # Test and remote lint return the executed command's status, while PC01's
 # last-resort lint returns bin/fm-lint.sh's changed-file status.
@@ -379,7 +380,7 @@ try_github() {
   timeout "$API" gh-axi run download "$run_id" -R "$repo" --dir "$work/results" > /dev/null || { indeterminate "GitHub evidence download failed for run $run_id"; return; }
   verify_results
   case $? in 0) ;; 1) return 1 ;; *) return 77 ;; esac
-  [ "$conclusion" = success ]
+  [ "$conclusion" = success ] || { indeterminate "GitHub run $run_id finished $conclusion with verified receipts"; return; }
 }
 try_gitlab() {
   tier=gitlab; run_id=; finished=0
