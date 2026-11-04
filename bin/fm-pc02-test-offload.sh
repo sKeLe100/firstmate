@@ -35,7 +35,7 @@
 # Personal-use routing (captain-authorized 2026-09-24, "There will need to be
 # a check or switch in place for when PC02 is being used for personal use or
 # not"), evaluated fresh at every run, each layer logged as one line and any
-# hit routing to PC01 at once, except that the automatic checks in layer 2 wait
+# hit routing to PC01 at once, except that the automatic checks below wait
 # under the bound first (see the readiness loop below):
 #   1. Manual switch: a flag file in PC02's own home directory
 #      (bin/fm-pc02-personal-use.sh owns the PC01-side on/off/status toggle;
