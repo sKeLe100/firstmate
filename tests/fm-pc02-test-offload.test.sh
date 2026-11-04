@@ -1310,6 +1310,80 @@ test_single_slot_mode_keeps_the_old_fallback() {
   pass "FM_PC02_OFFLOAD_SLOTS=1 with a zero wait keeps the immediate single-slot fallback"
 }
 
+test_default_wait_bound_is_ten_minutes() {
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: slot-wait default case needs rsync and flock"; return
+  fi
+  local dir fakebin out pid first second _
+  dir="$TMP_ROOT/default-wait-bound"
+  fakebin=$(fake_pc02 "$dir")
+  hold_slot "$dir" 1 "$dir/slot-1-held"
+  first=$HOLD_SLOT_PID
+  hold_slot "$dir" 2 "$dir/slot-2-held"
+  second=$HOLD_SLOT_PID
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" > "$dir/out.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 600); do
+    grep -q "waiting up to 600s for a free slot" "$dir/out.log" 2>/dev/null && break
+    sleep 0.1
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  release_slot "$first" "$second"
+  out=$(cat "$dir/out.log")
+  assert_contains "$out" "all 2 PC02 test slots are busy; waiting up to 600s for a free slot" \
+    "the default wait bound is not the expected ten minutes: $out"
+  pass "an occupied PC02 waits at most the 600s default bound"
+}
+
+test_caller_wall_budget_skips_the_pc02_wait() {
+  local home fakebin out status
+  home="$TMP_ROOT/wall-budget"
+  mkdir -p "$home/state"
+  printf 'model=pc02-llamaswap/qwen3.8-27b-dispatch\nbackend=tmux\ntarget=faketask:0\n' > "$home/state/faketask.meta"
+  fakebin=$(fm_fakebin "$TMP_ROOT/wall-budget-ssh")
+  cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf 'resource:cpu=1 gpu=0\nthreads:8\n'
+exit 0
+SH
+  chmod +x "$fakebin/ssh"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$home/state" \
+    "$SCRIPT" --max-wall-ms 600000 "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 0 "$status" "a caller wall budget must still run the real suite locally: $out"
+  assert_contains "$out" "and still so after the 0s wait bound" \
+    "a caller wall budget did not clamp the wait to zero: $out"
+  assert_not_contains "$out" "waiting up to" "a caller wall budget still waited on PC02: $out"
+  [ "$(printf '%s\n' "$out" | grep -v '^fm-pc02-test-offload: ')" = "$LOCAL_PROOF_OUT" ] \
+    || fail "the caller's --max-wall-ms did not reach the local run unchanged: $out"
+  pass "a caller wall budget clamps the load-gate wait to zero"
+
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: slot-wait budget case needs rsync and flock"; return
+  fi
+  local dir first second
+  dir="$TMP_ROOT/wall-budget-slots"
+  fakebin=$(fake_pc02 "$dir")
+  hold_slot "$dir" 1 "$dir/slot-1-held"
+  first=$HOLD_SLOT_PID
+  hold_slot "$dir" 2 "$dir/slot-2-held"
+  second=$HOLD_SLOT_PID
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" --max-wall-ms 600000 "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  release_slot "$first" "$second"
+  expect_code 0 "$status" "a fully busy PC02 with a caller wall budget must run locally at once: $out"
+  assert_contains "$out" "all 2 PC02 test slots are busy; running locally" \
+    "the budgeted slot wait did not fall back at once: $out"
+  assert_not_contains "$out" "waiting up to" "a caller wall budget still waited for a free slot: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "a budgeted busy-slot run still reached PC02"
+  pass "a caller wall budget also clamps the slot wait to zero"
+}
+
 test_decoy_host_suite_does_not_affect_remote_probe() {
   local dir fakebin decoy_pid out status
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
@@ -1873,6 +1947,8 @@ test_all_slots_busy_falls_back_locally
 test_slot_file_and_env_precedence
 test_malformed_slot_count_is_a_configuration_error
 test_single_slot_mode_keeps_the_old_fallback
+test_default_wait_bound_is_ten_minutes
+test_caller_wall_budget_skips_the_pc02_wait
 test_decoy_host_suite_does_not_affect_remote_probe
 test_term_mid_remote_run_removes_mirror_and_kills_suite
 test_term_with_transport_ignoring_eof_stops_suite_and_frees_slot

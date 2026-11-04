@@ -172,9 +172,10 @@ on|off|status`. Besides that manual switch, every offload attempt also
 checks automatically whether PC02's llama-swap has any model loaded for a
 live session (its `/running` endpoint; a healthy llama-swap with nothing
 loaded does not block offloading), and whether Windows-wide CPU or GPU utilization looks busy (a game
-or other heavy foreground use); any of those routes the run to PC01 instead,
-and an unreachable or unclear check does the same rather than guessing PC02
-is free. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut
+or other heavy foreground use); a busy PC02 from any of those checks is waited
+on up to the offload's wait bound before the run routes to PC01, an unclear
+check is waited on the same way rather than guessing PC02 is free, and an
+unreachable PC02 routes the run to PC01 at once. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut
 or its resource-check script ever need to be redeployed (safe to re-run).
 
 **Warning**: `wsl --shutdown` (see "WSL is not running" above) drops all

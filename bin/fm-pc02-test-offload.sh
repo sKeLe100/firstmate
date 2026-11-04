@@ -90,23 +90,26 @@
 #     partition selection untouched; the whole-run bound applies to it too.
 #   - Host slots: the slot count comes from FM_PC02_OFFLOAD_SLOTS, then the
 #     per-machine ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
-#     file (one integer from 1 to 16 followed by a newline), then the default
-#     2. Both sources are read fresh on every run, so a changed count applies
-#     to the next Test or Lint step without restarting the no-mistakes daemon.
-#     Nonblocking flocks on PC02's ~/.fm-pc02-test-slot-<n>.lock, one per
-#     concurrent test suite or lint run, cover transfer and execution. A run
-#     takes the first free slot. With every slot held it keeps polling while
-#     printing that it is waiting. The slot wait and any load-gate wait draw on
-#     one FM_PC02_OFFLOAD_SLOT_WAIT_SECS bound (default 1800, about 30 minutes),
-#     after which the run routes local; FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0
-#     restores the immediate local fallback. An unclear claim routes local at
-#     once. PC02 being unreachable, personally in use, missing a tool, or out
-#     of environment parity still routes local before any wait begins. The
-#     files are never unlinked:
-#     a dead owner's kernel lock is released automatically, so a leftover file
-#     or process name is harmless.
-#   - Supervising-home selection and per-machine configuration are owned by
-#     docs/configuration.md's "PC02 test and lint offload" section.
+#     file (one integer from 1 to 16; a trailing newline is optional), then
+#     the default 2. Both sources are read fresh on every run, so a changed
+#     count applies to the next Test or Lint step without restarting the
+#     no-mistakes daemon. Nonblocking flocks on PC02's
+#     ~/.fm-pc02-test-slot-<n>.lock, one per concurrent test suite or lint
+#     run, cover transfer and execution. A run takes the first free slot.
+#     With every slot held it keeps polling while printing that it is
+#     waiting. The slot wait and any load-gate wait draw on one
+#     FM_PC02_OFFLOAD_SLOT_WAIT_SECS bound (default 600, ten minutes), after
+#     which the run routes local; FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 restores
+#     the immediate local fallback, and a forwarded --max-wall-ms budget also
+#     zeroes the wait because that wall clock belongs to the run itself. An
+#     unclear claim routes local at once. PC02 being unreachable, personally
+#     in use, missing a tool, or out of environment parity still routes local
+#     before any wait begins. The files are never unlinked: a dead owner's
+#     kernel lock is released automatically, so a leftover file or process
+#     name is harmless.
+#   - Supervising-home selection is owned by docs/configuration.md's "PC02
+#     test and lint offload" section; the per-machine slot settings above are
+#     owned here.
 #   - The remote fm-test-run.sh prints its own environment record before its
 #     first test, so an offloaded run records PC02's PATH and the limits the
 #     suite actually runs with.
@@ -197,30 +200,33 @@
 #                                      is a configuration error that exits 2
 #                                      without running the selected command.
 #   (the per-machine slot file)         ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
-#                                      holds one integer from 1 to 16
-#                                      followed by a newline, read fresh at
-#                                      every run so a change applies without
-#                                      restarting the no-mistakes daemon. An
-#                                      unreadable or malformed file is a
-#                                      configuration error that exits 2
-#                                      without running the selected command.
+#                                      holds one integer from 1 to 16; a
+#                                      trailing newline is optional. It is
+#                                      read fresh at every run so a change
+#                                      applies without restarting the
+#                                      no-mistakes daemon. An unreadable or
+#                                      malformed file is a configuration
+#                                      error that exits 2 without running the
+#                                      selected command.
 #   FM_PC02_OFFLOAD_SLOT_WAIT_SECS      bound, in seconds, on the total wait
 #                                      for PC02 to clear (a live LLM lane, a
 #                                      busy CPU or GPU, an unclear load read,
 #                                      or every slot held) before routing
-#                                      local (default: 1800, about 30
-#                                      minutes). 0 restores the immediate
-#                                      local fallback. Each wait is printed
-#                                      once with its reason; the slot host is
+#                                      local (default: 600, ten minutes). 0
+#                                      restores the immediate local fallback,
+#                                      and a forwarded --max-wall-ms budget
+#                                      also zeroes the wait: the caller gave
+#                                      that wall clock to the run, so the
+#                                      expected local run time is the whole
+#                                      budget and none of it is spent
+#                                      waiting. Each wait is printed once
+#                                      with its reason; the slot host is
 #                                      polled every
 #                                      FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS.
 #   FM_PC02_OFFLOAD_GATE_RECHECK_SECS   seconds between load-gate re-checks
 #                                      (default: 30). Must be a positive
 #                                      integer; any other value is a
 #                                      configuration error that exits 2.
-#                                      Must be a non-negative integer; any
-#                                      other value is a configuration error
-#                                      that exits 2.
 #   FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS
 #                                      seconds between slot retries while
 #                                      waiting (default: 5). Must be a
@@ -298,6 +304,16 @@ if [ "$#" = 1 ] && [ "$1" = --lint-partitions ]; then
   LINT_PARTITIONS=1
 fi
 
+# A caller that declares a wall clock with --max-wall-ms gives that budget to
+# the run itself, so the expected local run time is the whole declared budget
+# and no part of it may be spent waiting on PC02.
+CALLER_WALL_BUDGET=0
+for ((budget_i = 0; budget_i < ${#ARGS[@]}; budget_i++)); do
+  case "${ARGS[budget_i]}" in
+    --max-wall-ms|--max-wall-ms=*) CALLER_WALL_BUDGET=1 ;;
+  esac
+done
+
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 PARITY_TIMEOUT="${FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS:-300}"
@@ -306,7 +322,7 @@ RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
 SCRIPT_TIMEOUT="${FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS:-3000}"
 REMOTE_JOBS="${FM_PC02_OFFLOAD_JOBS:-8}"
 SLOTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots"
-SLOT_WAIT="${FM_PC02_OFFLOAD_SLOT_WAIT_SECS:-1800}"
+SLOT_WAIT="${FM_PC02_OFFLOAD_SLOT_WAIT_SECS:-600}"
 SLOT_WAIT_INTERVAL="${FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS:-5}"
 GATE_RECHECK="${FM_PC02_OFFLOAD_GATE_RECHECK_SECS:-30}"
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
@@ -347,7 +363,7 @@ if [ -n "${FM_PC02_OFFLOAD_SLOTS:-}" ]; then
 elif [ -e "$SLOTS_FILE" ] || [ -L "$SLOTS_FILE" ]; then
   SLOTS=
   if ! { IFS= read -r SLOTS < "$SLOTS_FILE" || [ -n "$SLOTS" ]; }; then
-    echo "fm-pc02-test-offload: cannot read the PC02 offload slot setting $SLOTS_FILE (put one integer from 1 to 16 followed by a newline)" >&2
+    echo "fm-pc02-test-offload: cannot read the PC02 offload slot setting $SLOTS_FILE (put one integer from 1 to 16)" >&2
     exit 2
   fi
   SLOTS_ORIGIN=$SLOTS_FILE
@@ -374,6 +390,7 @@ case "$GATE_RECHECK" in
 esac
 [ "$GATE_RECHECK" -ge 1 ] \
   || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_GATE_RECHECK_SECS must be a positive integer, got '$GATE_RECHECK'" >&2; exit 2; }
+[ "$CALLER_WALL_BUDGET" -eq 0 ] || SLOT_WAIT=0
 
 release_claim() {
   if [ "$claim_open" -eq 1 ]; then
@@ -528,7 +545,7 @@ esac
 
 # Layer 2 (automatic): Windows-wide CPU/GPU utilization. An unparseable
 # resource read is "unclear" and waits like a busy host; a missing resource
-# check script is PC01-side configuration that waiting cannot fix.
+# check script on PC02 is configuration that waiting cannot fix.
 case "$resource_line" in
   cpu=*gpu=*)
     cpu_val=${resource_line#cpu=}
@@ -544,7 +561,7 @@ case "$resource_line" in
     fi
     ;;
   script-missing)
-    run_local "PC02 resource check unclear (the resource-check script is missing on PC01; waiting cannot fix it)"
+    run_local "PC02 resource check unclear (the resource-check script is missing at $RESOURCE_CHECK_PS1; waiting cannot fix it)"
     ;;
   *)
     [ -n "$gate" ] || gate="PC02 resource check unclear (got '$resource_line'); treating as busy"
