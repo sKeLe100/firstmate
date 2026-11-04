@@ -1,0 +1,2 @@
+rm: cannot remove '/var/tmp/nm-daemon-tmp/fm-test-cleanup-read-only.B4Iorl/packages/extension/entrypoint.py': Permission denied
+not ok - the orphan reaper left a stale fixture containing a read-only package tree

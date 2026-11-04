@@ -1,0 +1,1 @@
+ok - a remote run keeps its TMPDIR inside its mirror, and cleanup removes read-only content there
