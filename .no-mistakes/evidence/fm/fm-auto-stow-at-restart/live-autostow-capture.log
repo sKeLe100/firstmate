@@ -1,0 +1,24 @@
+=================== wake capture + boundary drive 2026-11-04T03:27:22Z
+lab home: /var/tmp/nm-daemon-tmp/fm-lab.0rwE2Z
+
+=== S1 real Claude session at the restart band
+claude rc=0
+  assistant: The context band is `restart`, but I couldn't run `/stow` because no `stow` skill exists in this session. Nothing was checkpointed.
+  assistant: 
+  assistant: `bin/fm-context-usage.sh` reports 27,996 tokens, which is 2.8% of the 1M window. The thresholds are set very low (`warn_tokens=500`, `restart_tokens=1000`), so the band tripped far earlier than real context pressure would.
+  assistant: 
+  assistant: I recommend `/clear` when you're ready. I won't run it myself. You may also want to check the thresholds in `bin/fm-context-usage.sh`.
+transcript: ~/.claude/projects/-var-tmp-nm-daemon-tmp-fm-lab-0rwE2Z/e967c543-5426-49a7-8e26-85de1ae4315a.jsonl
+markers:
+  .auto-stow-e967c543-5426-49a7-8e26-85de1ae4315a
+auto-stow feedback records in the real session transcript:
+  {"parentUuid":"03ef5100-9c39-4f48-be2e-ca10e695bd40","isSidechain":false,"promptId":"f0fff06a-5bdf-40c9-803c-2a6c75f53c7c","type":"user","message":{"role":"user","content":"Stop hook feedback:\n[[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-claude-stop-autoarm.sh]: firstmate auto-stow - this primary session reached the restart context band (context_tokens=27782, restart_tokens=1000).\nRun the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.\n"},"isMeta":true,"uuid":"f9effcf5-633e-4fb8-82d6-9ce5cf14b1ac","timestamp":"2026-11-04T03:27:32.422Z","userType":"external","entrypoint":"sdk-cli","cwd":"/var/tmp/nm-daemon-tmp/fm-lab.0rwE2Z","sessionId":"e967c543-5426-49a7-8e26-85de1ae4315a","version":"2.1.318","gitBranch":"master"}
+  {"parentUuid":"f9effcf5-633e-4fb8-82d6-9ce5cf14b1ac","isSidechain":false,"type":"system","subtype":"stop_hook_summary","hookCount":4,"hookInfos":[{"command":"nohup ~/firstmate/data/plans/carryover-refresh.sh >/dev/null 2>&1 &","durationMs":6},{"command":"[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-turnend-guard.sh --claude","durationMs":81},{"command":"[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-claude-stop-autoarm.sh"},{"command":"[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-host-mirror.sh hook claude","durationMs":12}],"hookErrors":["[[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-claude-stop-autoarm.sh]: firstmate auto-stow - this primary session reached the restart context band (context_tokens=27782, restart_tokens=1000).\nRun the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.\n"],"hookAdditionalContext":[],"preventedContinuation":false,"stopReason":"","hasOutput":true,"level":"suggestion","timestamp":"2026-11-04T03:27:32.426Z","uuid":"98878fdc-cbc7-4607-a01b-751514ef81dd","toolUseID":"ba54842f-17e6-45b0-91de-31ea59d4d15f","userType":"external","entrypoint":"sdk-cli","cwd":"/var/tmp/nm-daemon-tmp/fm-lab.0rwE2Z","sessionId":"e967c543-5426-49a7-8e26-85de1ae4315a","version":"2.1.318","gitBranch":"master"}
+
+=== Synthetic boundary drive through the same real Stop hook
+helper 374999: context_tokens=374999 window=1000000 percent=37.5 warn_tokens=250000 restart_tokens=375000 band=warn transcript=/var/tmp/nm-daemon-tmp/fm-lab.0rwE2Z/below.jsonl age_seconds=0
+helper 375000: context_tokens=375000 window=1000000 percent=37.5 warn_tokens=250000 restart_tokens=375000 band=restart transcript=/var/tmp/nm-daemon-tmp/fm-lab.0rwE2Z/at.jsonl age_seconds=0
+=== S7-below-restart (session sess-below-374999): hook rc=0 marker=no
+=== S8-at-restart (session sess-at-375000): hook rc=0 marker=no
+=== done 2026-11-04T03:27:44Z
+lab removed: /var/tmp/nm-daemon-tmp/fm-lab.0rwE2Z

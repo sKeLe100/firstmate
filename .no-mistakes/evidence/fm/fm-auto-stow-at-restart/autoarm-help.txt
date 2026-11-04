@@ -1,0 +1,10 @@
+Usage: fm-claude-stop-autoarm.sh
+
+Claude Stop hook registered in .claude/settings.json; not for manual use.
+It reads the Stop payload on stdin. In a primary home that needs supervision
+it arms the watcher or supervision host for this session. While supervision
+is already covered - an idle home that needs none, or a live watcher that
+already holds it - it instead emits at most one restart-band auto-stow wake
+per session, telling the session to run /stow.
+Exit 0 is silent; exit 2 carries the rewake banner or the auto-stow wake on
+stderr.

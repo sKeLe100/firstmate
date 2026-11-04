@@ -1,0 +1,9 @@
+### isolated re-run: test_attended_latch_keeps_closes_on_main_and_records_recovery_off_main
+ok - host: attended, two engine errors latch the session, main keeps every close unchanged in the cooldown, a failed probe doubles it up to its cap, and a routine probe's recovery stays in the ledger, off main
+ok - tmp latch check
+FM_TEST_END 2026-11-03T21:34:07Z tests/.tmp-latch-check.test.sh exit=0 duration_ms=78945 gate_skip=false
+
+### isolated re-run: test_undelivered_dialog_is_fed_again_on_the_next_turn
+ok - host: dialog a turn never completed with its report (a park boundary, a stopped turn, no report) reaches the next turn
+ok - tmp dialog check
+FM_TEST_END 2026-11-03T21:55:29Z tests/.tmp-dialog-check.test.sh exit=0 duration_ms=111013 gate_skip=false

@@ -1,0 +1,97 @@
+=================== live auto-stow re-drive 2026-11-04T03:25:44Z
+run worktree: {run-worktree}
+lab home:     /var/tmp/nm-daemon-tmp/fm-lab.jR3SZc
+claude:       2.1.318 (Claude Code)
+stop hook:    /var/tmp/nm-daemon-tmp/fm-lab.jR3SZc/bin/fm-claude-stop-autoarm.sh -> {run-worktree}/bin/fm-claude-stop-autoarm.sh
+
+=== thresholds for real-session restart checks: warn=500 restart=1000 
+
+=== S1-restart-first
+claude rc=0
+assistant output (tail):
+  The context script reports band `restart`, but I couldn't run `/stow` because there is no `stow` skill here. It isn't in the skill list or under `.claude/`. Nothing was checkpointed.
+  
+  The script's thresholds look misconfigured. It reads `restart_tokens=1000` and `warn_tokens=500` against a 1,000,000-token window, and the session is at about 28k tokens (2.8%). That would explain the early `restart` band, so the thresholds may be placeholders.
+  
+  I recommend `/clear` if you want a fresh context, but you don't need one for context reasons. I haven't run it and won't.
+transcript: ~/.claude/projects/-var-tmp-nm-daemon-tmp-fm-lab-jR3SZc/709c2a40-0eeb-4762-a9ca-abaf7de48443.jsonl
+wake entries: 0
+markers:
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+context read: context_tokens=28637 window=1000000 percent=2.9 warn_tokens=500 restart_tokens=1000 band=restart transcript=~/.claude/projects/-var-tmp-nm-daemon-tmp-fm-lab-jR3SZc/709c2a40-0eeb-4762-a9ca-abaf7de48443.jsonl age_seconds=0
+
+=== S2-same-session-resume
+claude rc=0
+assistant output (tail):
+  SECOND
+transcript: ~/.claude/projects/-var-tmp-nm-daemon-tmp-fm-lab-jR3SZc/709c2a40-0eeb-4762-a9ca-abaf7de48443.jsonl
+wake entries now: 0
+markers:
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+
+=== S3-fresh-session
+claude rc=0
+assistant output (tail):
+  I couldn't run `/stow` because no skill by that name exists in this session. Nothing was checkpointed.
+  
+  The hook says context is at the restart band (27,813 tokens against a restart threshold of 1,000). That threshold looks like a test value. I recommend you run `/clear` when convenient. I won't run it myself.
+transcript: ~/.claude/projects/-var-tmp-nm-daemon-tmp-fm-lab-jR3SZc/2d34d111-af73-4e45-b60e-b8267bf0c144.jsonl
+wake entries now: 0
+markers:
+  .auto-stow-2d34d111-af73-4e45-b60e-b8267bf0c144
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+
+=== thresholds for warn-band check: warn=1000 restart=40000 
+
+=== S4-warn-band
+claude rc=0
+assistant output (tail):
+  WARNRUN
+transcript: ~/.claude/projects/-var-tmp-nm-daemon-tmp-fm-lab-jR3SZc/042b0fad-1b95-440c-b905-86462377b3ca.jsonl
+wake entries now: 0
+markers:
+  .auto-stow-2d34d111-af73-4e45-b60e-b8267bf0c144
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+context read: context_tokens=27827 window=1000000 percent=2.8 warn_tokens=1000 restart_tokens=40000 band=warn transcript=~/.claude/projects/-var-tmp-nm-daemon-tmp-fm-lab-jR3SZc/042b0fad-1b95-440c-b905-86462377b3ca.jsonl age_seconds=0
+
+=== config/auto-stow-off present
+
+=== S5-off-switch
+claude rc=0
+assistant output (tail):
+  OFFRUN
+wake entries now: 0
+markers:
+  .auto-stow-2d34d111-af73-4e45-b60e-b8267bf0c144
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+
+=== state/.afk present
+
+=== S6-afk
+claude rc=0
+assistant output (tail):
+  AFKRUN
+wake entries now: 0
+markers:
+  .auto-stow-2d34d111-af73-4e45-b60e-b8267bf0c144
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+
+=== captain thresholds 250k warn / 375k restart, exact boundaries through the real Stop hook
+helper at 374999: context_tokens=374999 window=1000000 percent=37.5 warn_tokens=250000 restart_tokens=375000 band=warn transcript=/var/tmp/nm-daemon-tmp/fm-lab.jR3SZc/below.jsonl age_seconds=0
+helper at 375000: context_tokens=375000 window=1000000 percent=37.5 warn_tokens=250000 restart_tokens=375000 band=restart transcript=/var/tmp/nm-daemon-tmp/fm-lab.jR3SZc/at.jsonl age_seconds=0
+=== S7-below-restart (session sess-below-374999)
+hook rc=0
+markers:
+  .auto-stow-2d34d111-af73-4e45-b60e-b8267bf0c144
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+=== S8-at-restart (session sess-at-375000)
+hook rc=0
+markers:
+  .auto-stow-2d34d111-af73-4e45-b60e-b8267bf0c144
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+
+=== all auto-stow markers left in the lab state:
+  .auto-stow-2d34d111-af73-4e45-b60e-b8267bf0c144
+  .auto-stow-709c2a40-0eeb-4762-a9ca-abaf7de48443
+=== done 2026-11-04T03:27:02Z
+lab removed: /var/tmp/nm-daemon-tmp/fm-lab.jR3SZc

@@ -1,0 +1,52 @@
+=== auto-stow live drive: real Stop hook, synthetic payloads, isolated fixture homes ===
+captain thresholds in each home: warn=250000 restart=375000 (50% / 75% of 1000000 window)
+
+S1 band read: context_tokens=300000 window=1000000 percent=30.0 warn_tokens=250000 restart_tokens=375000 band=warn transcript=/var/tmp/nm-daemon-tmp/fm-autostow-live.Q26ec3/t300.jsonl age_seconds=0
+S1 stop rc=0 stderr=[] markers=0
+PASS  S1 :: 300k (warn, below 75%) produces no auto-stow wake and no marker
+
+S2 band read: context_tokens=380000 window=1000000 percent=38.0 warn_tokens=250000 restart_tokens=375000 band=restart transcript=/var/tmp/nm-daemon-tmp/fm-autostow-live.Q26ec3/t380.jsonl age_seconds=0
+S2 stop rc=2 markers=1
+S2 stderr:
+    firstmate auto-stow - this primary session reached the restart context band (context_tokens=380000, restart_tokens=375000).
+    Run the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.
+PASS  S2 :: 380k (76%, restart band) emits exit 2 auto-stow wake telling /stow and never /clear
+
+S3 same-session repeat rc=0 stderr=[] markers=1
+PASS  S3a :: same session's next Stop stays silent
+S3 new-session stop rc=2 markers=2
+PASS  S3b :: a fresh session id after /clear gets exactly one new wake
+
+S4 rc=2 arm-ran=[3776722 3776740 ] markers=0
+S4 stderr:
+    firstmate watcher auto-arm FAILED - the Stop-owned automatic supervision mechanism is broken after 2 bounded attempts, and no live watcher with a fresh beacon was verified.
+    watcher: FAILED - no live watcher with a fresh beacon
+    Do not launch a manual background arm from this notice; investigate the automatic Stop hook and watcher startup before ending blind.
+PASS  S4 :: restart band with no live watcher arms first and never runs the stow turn uncovered
+
+S5 rc=2 arm-ran=[] markers=1
+PASS  S5 :: covered restart-band stop emits the stow wake without re-arming the live watcher
+
+S6 rc=0 stderr=[] markers=0
+PASS  S6 :: AFK home stays silent at the restart band and writes no marker
+
+S7 off switch rc=0 stderr=[] markers=0
+PASS  S7a :: config/auto-stow-off silences a restart-band home
+S7 secondmate no opt-in rc=0 stderr=[] markers=0
+PASS  S7b :: a secondmate home stays silent without config/auto-stow
+S7 secondmate opt-in rc=2 markers=1
+PASS  S7c :: an opted-in secondmate home wakes once
+
+S8 parallel rcs=2 0  markers=1
+PASS  S8 :: two parallel Stop firings yield exactly one wake and one marker
+
+S9 stop rc=2 arm-ran=[3779191 3779208 ] markers=0
+S9 stderr:
+    firstmate watcher wake - one supervision event needs a handling turn now.
+    signal: fixture wake
+    Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This Stop hook owns watcher continuity: when the handling turn ends, the next needed cycle arms automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake.
+S9 guard rc=0 out=[] blocks_file=absent
+PASS  S9a :: aged-beacon long-poll stop takes the arm path and emits only the auto-arm rewake
+PASS  S9b :: the turn-end guard then allows the same stop without a second continuation
+
+=== report end ===

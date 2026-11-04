@@ -1,0 +1,12 @@
+=================== boundary drive 2026-11-04T03:28:20Z lab=/var/tmp/nm-daemon-tmp/fm-lab.lz6EPa
+helper 374999: context_tokens=374999 window=1000000 percent=37.5 warn_tokens=250000 restart_tokens=375000 band=warn transcript=/var/tmp/nm-daemon-tmp/fm-lab.lz6EPa/below.jsonl age_seconds=0
+helper 375000: context_tokens=375000 window=1000000 percent=37.5 warn_tokens=250000 restart_tokens=375000 band=restart transcript=/var/tmp/nm-daemon-tmp/fm-lab.lz6EPa/at.jsonl age_seconds=0
+=== below-restart (session sess-below-374999): hook rc=0 marker=no
+=== at-restart (session sess-at-375000): hook rc=2 marker=yes
+  stderr: firstmate auto-stow - this primary session reached the restart context band (context_tokens=375000, restart_tokens=375000).
+  stderr: Run the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.
+=== same-session-again (session sess-at-375000): hook rc=0 marker=yes
+=== markers:
+  .auto-stow-sess-at-375000
+=== done 2026-11-04T03:28:22Z
+lab removed: /var/tmp/nm-daemon-tmp/fm-lab.lz6EPa

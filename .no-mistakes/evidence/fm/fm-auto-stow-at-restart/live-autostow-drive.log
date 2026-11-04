@@ -1,0 +1,75 @@
+=================== live auto-stow drive 2026-11-03T21:38:41Z
+run worktree: {run-worktree}
+lab home:     /tmp/fm-lab.Ljznvd (removed at end of this turn)
+stop hook:    /tmp/fm-lab.Ljznvd/home/bin/fm-claude-stop-autoarm.sh (symlink to the run worktree's bin)
+
+=== S1: restart-band turn in a real Claude session raises one auto-stow wake
+config/context-thresholds: warn=500 restart=1000 (fixture values so a first turn is already at the restart band)
+prompt: 'Reply with exactly: FIRST'
+Context is in the `restart` band: `bin/fm-context-usage.sh` reports 25,412 tokens against a 1,000-token restart threshold. I haven't run `/stow`. Plan mode is on, and stow writes durable records. `/stow` also isn't in this session's skill list.
+
+To checkpoint, exit plan mode and I'll run `/stow` once. After that, I recommend you run `/clear`. I won't run it myself.
+rc=0
+assistant final text: rc=0
+markers after turn 1: 1 -> .auto-stow-9c71a1a3-927d-45a3-a2ab-47ff763c1580
+wake text delivered to the real session (from 9c71a1a3-927d-45a3-a2ab-47ff763c1580.jsonl):
+  [user 2026-11-03T21:38:53.573Z]
+    Stop hook feedback:
+    [/tmp/fm-lab.Ljznvd/home/bin/fm-claude-stop-autoarm.sh]: firstmate auto-stow - this primary session reached the restart context band (context_tokens=25243, restart_tokens=1000).
+    Run the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.
+
+=== S2: the same session's next stop stays silent (once per session)
+prompt: 'Reply with exactly: SECOND' via claude -c (same session, no /clear)
+SECOND
+rc=0
+newest transcript after turn 2: 9c71a1a3-927d-45a3-a2ab-47ff763c1580.jsonl
+markers after turn 2: 1
+auto-stow wake entries in the session transcript: before turn 2=2 after=2
+
+=== S3: a fresh session (what the captain's /clear starts) gets its own single wake
+I couldn't run `/stow`. It isn't in my skill list, and there's no project `.claude/skills` directory (only `settings.json`). Plan mode is also active, so I can't write any checkpoint records.
+
+The session has nothing durable to checkpoint: the only turn was "Reply with exactly: THIRD". If you want a stow anyway, point me to the skill or exit plan mode.
+
+I'd recommend `/clear` when you're ready. I won't run it myself.
+rc=0
+markers after turn 3: 2 -> .auto-stow-069483ee-7900-4f2b-b86e-b2b78e447db8
+.auto-stow-9c71a1a3-927d-45a3-a2ab-47ff763c1580
+wake text delivered to the new session:
+  [user 2026-11-03T21:39:30.235Z]
+    Stop hook feedback:
+    [/tmp/fm-lab.Ljznvd/home/bin/fm-claude-stop-autoarm.sh]: firstmate auto-stow - this primary session reached the restart context band (context_tokens=25243, restart_tokens=1000).
+    Run the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.
+
+=== S4: warn band (below restart) never wakes and leaves no marker
+config/context-thresholds: warn=1000 restart=40000 (a ~25k first turn lands in warn, not restart)
+WARNRUN
+rc=0
+markers before=2 after=2
+
+=== S5: AFK owns triage; the primary is never rewoken
+AFKRUN
+rc=0
+markers before=2 after=2
+
+=== S6: config/auto-stow-off disables the wake for the home
+OFFRUN
+rc=0
+markers before=2 after=2
+
+=== S7: captain thresholds 250k warn / 375k restart, read by the real helpers
+band at  249999 tokens: context_tokens=249999 warn_tokens=250000 restart_tokens=375000 band=ok 
+band at  250000 tokens: context_tokens=250000 warn_tokens=250000 restart_tokens=375000 band=warn 
+band at  374999 tokens: context_tokens=374999 warn_tokens=250000 restart_tokens=375000 band=warn 
+band at  375000 tokens: context_tokens=375000 warn_tokens=250000 restart_tokens=375000 band=restart 
+stop hook at 375000 tokens: rc=2 marker=yes
+  firstmate auto-stow - this primary session reached the restart context band (context_tokens=375000, restart_tokens=375000).
+  Run the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.
+stop hook at 374999 tokens: rc=0 marker=no
+
+=== all auto-stow markers left in the lab state:
+  .auto-stow-069483ee-7900-4f2b-b86e-b2b78e447db8
+  .auto-stow-9c71a1a3-927d-45a3-a2ab-47ff763c1580
+  .auto-stow-captain-375000
+=== lab teardown
+removing /tmp/fm-lab.Ljznvd

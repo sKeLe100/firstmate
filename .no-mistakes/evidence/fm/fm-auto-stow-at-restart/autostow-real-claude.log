@@ -1,0 +1,39 @@
+=================== real Claude primary, lab=/var/tmp/nm-daemon-tmp/fm-lab.FDnXOD, 2026-11-04T05:03:47Z
+launched tmux session primary (socket /var/tmp/nm-daemon-tmp/fm-lab.FDnXOD/tmux, server fm-lab)
+claude session exited=2026-11-04T05:04:07Z
+--- claude stdout/stderr ---
+  Stow is done, and nothing from this session needed saving. I recommend you `/clear` now. I won't run it myself.
+  
+  - **Memory budget:** The limit is 7500 tokens. Usage was 0 before and 0 after, since all three memory files are absent.
+  - **Context:** 44,523 tokens, 4.5% of the 1M window, band `restart`.
+  - **Memory files:** `data/captain.md`, `data/captain-shared.md` and `data/learnings.md` are all unchanged, and none were created.
+  - **Findings and open records:** None to file. The session contained only the "FIRST" reply, and no backlog exists.
+  - **Secondmates:** There are none registered, so the cascade had nothing to do. I ran `bin/fm-stow-cascade.sh --complete` to stamp the completion marker.
+  - **Standing orders:** 0 keys, 0 conflicts.
+  - **Exceptions:** None.
+  - **Reset-safe:** Yes. Nothing this session knew has been lost.
+transcript: ~/.claude/projects/-var-tmp-nm-daemon-tmp-fm-lab-FDnXOD/d5147447-eecc-40c5-8ad1-4b647f0c22b2.jsonl
+--- auto-stow markers in the lab home ---
+  .auto-stow-d5147447-eecc-40c5-8ad1-4b647f0c22b2
+--- Stop hook feedback records in the real transcript ---
+  {"type":"user","subtype":null,"isMeta":true,"content":"Stop hook feedback:\n[[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-claude-stop-autoarm.sh]: firstmate auto-stow - this primary session reached the restart context band (context_tokens=29850, restart_tokens=1000).\nRun the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.\n"}
+  {"type":"system","subtype":"stop_hook_summary","isMeta":null,"content":null}
+--- transcript line count / assistant text tail ---
+69
+  assistant: FIRST
+  assistant: Stow is done, and nothing from this session needed saving. I recommend you `/clear` now. I won't run it myself.
+  assistant: 
+  assistant: - **Memory budget:** The limit is 7500 tokens. Usage was 0 before and 0 after, since all three memory files are absent.
+  assistant: - **Context:** 44,523 tokens, 4.5% of the 1M window, band `restart`.
+  assistant: - **Memory files:** `data/captain.md`, `data/captain-shared.md` and `data/learnings.md` are all unchanged, and none were created.
+  assistant: - **Findings and open records:** None to file. The session contained only the "FIRST" reply, and no backlog exists.
+  assistant: - **Secondmates:** There are none registered, so the cascade had nothing to do. I ran `bin/fm-stow-cascade.sh --complete` to stamp the completion marker.
+  assistant: - **Standing orders:** 0 keys, 0 conflicts.
+  assistant: - **Exceptions:** None.
+  assistant: - **Reset-safe:** Yes. Nothing this session knew has been lost.
+--- Bash tool calls (looking for /clear or /stow) ---
+  tool: Skill stow
+  tool: Bash bin/fm-startup-memory-budget.sh report; bin/fm-context-usage.sh; bin/fm-stow-cascade.sh
+  tool: Bash bin/fm-stow-cascade.sh --complete
+=== done 2026-11-04T05:04:07Z
+lab removed: /var/tmp/nm-daemon-tmp/fm-lab.FDnXOD
