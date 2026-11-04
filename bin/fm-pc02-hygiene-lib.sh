@@ -30,6 +30,11 @@
 #            tmp_total_kb=.. tmp_used_kb=.. tmp_free_kb=..
 #            disk_total_kb=.. disk_used_kb=.. disk_free_kb=..
 #            [stale_roots=.. stale_kb=.. old_test_procs=..]
+# followed, for the remote script only, by at most
+# FM_PC02_DEFAULT_STALE_PATHS_SHOWN "stale_path <root>" lines naming the counted
+# roots, and one "stale_paths_omitted <n>" line when more were counted than
+# shown. The bound keeps an incident-scale host from producing unbounded
+# output for one ssh call.
 #
 # Any field that could not be read is left empty; callers must treat an empty
 # required field as an unclear host read rather than zero.
@@ -72,6 +77,9 @@ FM_PC02_DEFAULT_DISK_MIN_FREE_MB=5120
 FM_PC02_DEFAULT_STALE_AGE_SECS=21600
 # shellcheck disable=SC2034
 FM_PC02_DEFAULT_IDLE_AGE_SECS=10800
+# Counted roots whose paths one probe names before it reports the rest as an
+# omitted count instead.
+FM_PC02_DEFAULT_STALE_PATHS_SHOWN=50
 
 _fm_pc02_hygiene_capacity_readings() {  # <tmp_root> <meminfo>
   local q_tmp q_meminfo
@@ -103,7 +111,7 @@ REMOTE
 
 fm_pc02_hygiene_remote_script() {  # <tmp_root> <remote_base> <stale_age> <idle_age> <meminfo>
   local tmp_root=$1 remote_base=$2 stale_age=$3 idle_age=$4 meminfo=$5
-  local q_tmp q_base q_meminfo
+  local q_tmp q_base q_meminfo shown_cap=$FM_PC02_DEFAULT_STALE_PATHS_SHOWN
   q_tmp=$(printf '%q' "$tmp_root")
   q_base=$(printf '%q' "$remote_base")
   q_meminfo=$(printf '%q' "$meminfo")
@@ -247,5 +255,14 @@ printf 'capacity mem_total_kb=%s mem_available_kb=%s tmp_total_kb=%s tmp_used_kb
   "\$mem_total" "\$mem_available" "\$tmp_total" "\$tmp_used" "\$tmp_free" \\
   "\$disk_total" "\$disk_used" "\$disk_free" "\$stale_roots" "\$stale_kb" \\
   "\$old_test_procs"
+
+shown=0
+for d in \${stale_list[@]+"\${stale_list[@]}"}; do
+  [ "\$shown" -lt $shown_cap ] || break
+  printf 'stale_path %s\n' "\$d"
+  shown=\$((shown + 1))
+done
+[ -z "\$stale_roots" ] || [ "\$stale_roots" -le "\$shown" ] \\
+  || printf 'stale_paths_omitted %s\n' "\$((stale_roots - shown))"
 REMOTE
 }

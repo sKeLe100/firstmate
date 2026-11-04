@@ -75,6 +75,9 @@ test_report_is_data_only_and_ok_when_within_bounds() {
   assert_contains "$out" "old_test_procs=0" "a clean host reported old test processes: $out"
   assert_contains "$out" "pressure=-" "a clean host reported a pressure field: $out"
   assert_contains "$out" "status=ok" "a clean host did not report ok: $out"
+  case "$out" in
+    *stale_test_root=*) fail "a clean host named stale root paths: $out" ;;
+  esac
   pass "the hygiene report prints memory, /tmp, disk, stale roots and old processes as data"
 }
 
@@ -170,6 +173,11 @@ test_fixture_roots_count_only_with_their_marker() {
     "the report miscounted the marked, live-marked, recycled and marker-less fm-* roots: $out"
   assert_contains "$out" "stale_test_mib=2" "the report did not size the stale 2 MiB fixture root: $out"
   assert_contains "$out" "pressure=stale_test_roots" "the report named the wrong crossed bound: $out"
+  assert_contains "$out" "stale_test_root=$leaked" "the report did not name the counted fixture root: $out"
+  assert_contains "$out" "stale_test_root=$recycled" "the report did not name the counted recycled-PID root: $out"
+  case "$out" in
+    *stale_test_roots_omitted*) fail "a fully listed root set reported an omitted count: $out" ;;
+  esac
   [ -d "$leaked" ] || fail "the read-only report removed a stale fixture root"
   [ -d "$live" ] || fail "the read-only report removed a live-owned fixture root"
   [ -d "$recycled" ] || fail "the read-only report removed a fixture root"
@@ -260,6 +268,10 @@ test_incident_scale_catalog_finishes_inside_the_report_bound() {
   status=$?
   expect_code 0 "$status" "the report must read an incident-scale catalog inside its own ssh bound: $out"
   assert_contains "$out" "stale_test_roots=8731" "the report did not count every stale fixture root: $out"
+  [ "$(printf '%s\n' "$out" | grep -c '^stale_test_root=')" -eq 50 ] \
+    || fail "the report did not bound its root path list to the first 50: $out"
+  assert_contains "$out" "stale_test_roots_omitted=8681" \
+    "the report did not account for the roots it left unnamed: $out"
   pass "an incident-scale stale-root catalog still reads as data inside the report bound"
 }
 

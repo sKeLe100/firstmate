@@ -22,6 +22,8 @@
 #   tmp_total_mib=<n> tmp_used_mib=<n> tmp_free_mib=<n> tmp_used_pct=<n>
 #   disk_total_mib=<n> disk_used_mib=<n> disk_free_mib=<n> disk_used_pct=<n>
 #   stale_test_roots=<n> stale_test_mib=<n>
+#   stale_test_root=<path>          (one per counted root, at most 50)
+#   stale_test_roots_omitted=<n>    (only when more than 50 were counted)
 #   stale_age_secs=<n>
 #   old_test_procs=<n>
 #   idle_age_secs=<n>
@@ -31,7 +33,8 @@
 # pressure names every crossed bound: mem_available, tmp_free, disk_free,
 # stale_test_roots, old_test_procs. A field that could not be read makes the
 # reading unknown (exit 2) rather than zero, because a missing capacity number
-# is not evidence of free space.
+# is not evidence of free space. The counted root paths are the exact set a
+# manual reclaim may consider; the report never deletes or kills anything.
 #
 # Exit codes: 0 = report taken with no pressure, 1 = report taken with at
 # least one bound crossed, 2 = the reading could not be taken (unreachable
@@ -139,6 +142,8 @@ disk_free=''
 stale_roots=''
 stale_kb=''
 old_procs=''
+stale_omitted=''
+stale_paths=()
 for field in $capacity; do
   key=${field%%=*}
   value=${field#*=}
@@ -156,6 +161,12 @@ for field in $capacity; do
     old_test_procs) old_procs=$value ;;
   esac
 done
+while IFS= read -r line; do
+  case "$line" in
+    'stale_path '*) stale_paths+=("${line#stale_path }") ;;
+    'stale_paths_omitted '*) stale_omitted=${line#stale_paths_omitted } ;;
+  esac
+done <<<"$out"
 
 for field in "$mem_total" "$mem_available" "$tmp_total" "$tmp_used" "$tmp_free" \
   "$disk_total" "$disk_used" "$disk_free" "$stale_roots" "$stale_kb" "$old_procs"; do
@@ -166,6 +177,13 @@ for field in "$mem_total" "$mem_available" "$tmp_total" "$tmp_used" "$tmp_free" 
       ;;
   esac
 done
+case "$stale_omitted" in
+  '') ;;
+  *[!0-9]*)
+    echo "fm-pc02-hygiene.sh: PC02 probe returned an unreadable omitted-root count (capacity='$capacity')" >&2
+    exit 2
+    ;;
+esac
 
 mib() { printf '%s' "$(( $1 / 1024 ))"; }
 pct() {  # used total
@@ -201,6 +219,10 @@ printf 'tmp_total_mib=%s tmp_used_mib=%s tmp_free_mib=%s tmp_used_pct=%s\n' \
 printf 'disk_total_mib=%s disk_used_mib=%s disk_free_mib=%s disk_used_pct=%s\n' \
   "$disk_total_mib" "$disk_used_mib" "$disk_free_mib" "$disk_used_pct"
 printf 'stale_test_roots=%s stale_test_mib=%s\n' "$stale_roots" "$stale_test_mib"
+for p in ${stale_paths[@]+"${stale_paths[@]}"}; do
+  printf 'stale_test_root=%s\n' "$p"
+done
+[ -z "$stale_omitted" ] || printf 'stale_test_roots_omitted=%s\n' "$stale_omitted"
 printf 'stale_age_secs=%s\n' "$STALE_AGE"
 printf 'old_test_procs=%s\n' "$old_procs"
 printf 'idle_age_secs=%s\n' "$IDLE_AGE"
