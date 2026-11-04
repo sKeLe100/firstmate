@@ -17,10 +17,10 @@ SCRIPT="$ROOT/bin/fm-pc02-test-offload.sh"
 REMOTE_SUITE_START_TRIES=1800  # 0.1s per try, up to 180s
 TMP_ROOT=$(fm_test_tmproot fm-pc02-test-offload)
 mkdir -p "$TMP_ROOT/empty-state"
-# The offload's pre-claim sweep and capacity floors are exercised by their own
-# cases below; every other case disables the floors and points the PC02 tmp
-# root at this sandbox so a fake host can never read or sweep the real /tmp
-# that concurrent test lanes may be using.
+# The offload's pre-claim capacity floors are exercised by their own cases
+# below; every other case disables the floors and points the PC02 tmp root at
+# this sandbox so a fake host can never read the real /tmp that concurrent test
+# lanes may be using.
 export FM_PC02_OFFLOAD_TMP_ROOT="$TMP_ROOT/pc02-tmp"
 mkdir -p "$FM_PC02_OFFLOAD_TMP_ROOT"
 export FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=0
@@ -276,7 +276,7 @@ case "$*" in
     exit $?
     ;;
 esac
-case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000 stale_roots=0 stale_kb=0 old_test_procs=0 swept_roots=0'; exit 0 ;; esac
+case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000'; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 exit 0
 SH
@@ -361,7 +361,7 @@ test_rsync_failure_falls_back_to_local() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000 stale_roots=0 stale_kb=0 old_test_procs=0 swept_roots=0'; exit 0 ;; esac
+case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000'; exit 0 ;; esac
 # Reachable, idle, and tool-ready for the probe, and a no-op for mkdir and
 # any other one-shot remote command; rsync itself is the failure under test.
 printf 'resource:cpu=1 gpu=0\nthreads:8\n'
@@ -429,7 +429,7 @@ test_idle_llama_swap_does_not_block_offload() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000 stale_roots=0 stale_kb=0 old_test_procs=0 swept_roots=0'; exit 0 ;; esac
+case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000'; exit 0 ;; esac
 printf 'llama-swap-running:0\nresource:cpu=1 gpu=0\nthreads:8\n'
 exit 0
 SH
@@ -631,11 +631,7 @@ esac
 cd "$dir/home" || exit 255
 if [ -n "\${FM_FAKE_SSH_DETACH:-}" ]; then
   case "\$*" in
-    *'rm -rf'*)
-      # Only the mirror-cleanup call is meant to fail here; the pre-claim
-      # hygiene probe also carries removal text but must still run.
-      case "\$*" in *fm-pc02-hygiene-probe*) : ;; *) exit 255 ;; esac
-      ;;
+    *'rm -rf'*) exit 255 ;;
     *fm-pc02-test-slot-*.lock*)
       mkdir -p "$dir/relay"
       rm -f "$dir/relay/in"; mkfifo "$dir/relay/in"
@@ -1583,7 +1579,7 @@ test_bare_common_store_needs_machine_file_unless_state_override() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000 stale_roots=0 stale_kb=0 old_test_procs=0 swept_roots=0'; exit 0 ;; esac
+case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000'; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -1614,7 +1610,7 @@ test_machine_home_config_without_fm_home() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000 stale_roots=0 stale_kb=0 old_test_procs=0 swept_roots=0'; exit 0 ;; esac
+case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000'; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -1660,7 +1656,7 @@ test_primary_clone_home_without_environment_or_config() {
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
 case "$*" in *fm-pc02-environment-parity-probe*) cmd=${!#}; bash -c "$cmd"; exit $? ;; esac
-case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000 stale_roots=0 stale_kb=0 old_test_procs=0 swept_roots=0'; exit 0 ;; esac
+case "$*" in *fm-pc02-hygiene-probe*) echo 'capacity mem_total_kb=1000000 mem_available_kb=900000 tmp_total_kb=1000000 tmp_used_kb=1000 tmp_free_kb=999000 disk_total_kb=1000000 disk_used_kb=1000 disk_free_kb=999000'; exit 0 ;; esac
 printf 'resource:cpu=1 gpu=0\nthreads:8\n'
 SH
   printf '#!/usr/bin/env bash\nexit 11\n' > "$fakebin/rsync"
@@ -1930,70 +1926,68 @@ test_preclaim_capacity_floors_route_local_naming_the_resource() {
   pass "MemAvailable, /tmp free and disk free floors each route local and name the resource"
 }
 
-test_preclaim_sweeps_stale_roots_and_keeps_live_owned_ones() {
-  local dir fakebin home base tmp out status ref_pid group_pid dead_pid _
+test_preclaim_capacity_never_removes_another_runs_roots() {
+  local dir fakebin home base tmp out status
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
   fi
-  dir="$TMP_ROOT/preclaim-sweep"
+  dir="$TMP_ROOT/preclaim-untouched"
   fakebin=$(fake_pc02 "$dir")
   home="$dir/home"
   base="$home/.fm-pc02-test-offload"
   tmp="$FM_PC02_OFFLOAD_TMP_ROOT"
-  mkdir -p "$base/run-stale/locked" "$base/run-fresh" "$base/run-referenced" \
-    "$base/run-group-owned" "$tmp/fm-test-run.stale/locked"
-  printf 'x\n' > "$base/run-stale/locked/file"
-  printf 'x\n' > "$tmp/fm-test-run.stale/locked/file"
-  chmod 500 "$base/run-stale/locked" "$tmp/fm-test-run.stale/locked"
-  printf 'x\n' > "$base/run-fresh/file"
-  printf 'x\n' > "$base/run-referenced/file"
-  touch -d '3 hours ago' "$base/run-stale" "$tmp/fm-test-run.stale" "$base/run-referenced" \
-    "$base/run-group-owned"
-  # A fixture root carries the marker its owning shell wrote; a root without
-  # that marker is a real firstmate temp root and must never be touched.
-  mkdir -p "$tmp/fm-fixture-leaked/read-only" "$tmp/fm-fixture-live" \
-    "$tmp/fm-fixture-recycled" "$tmp/fm-spawn-task.leaked"
-  printf 'x\n' > "$tmp/fm-fixture-leaked/read-only/file"
-  chmod 500 "$tmp/fm-fixture-leaked/read-only"
-  printf 'x\n' > "$tmp/fm-spawn-task.leaked/file"
-  ( exit 0 ) &
-  dead_pid=$!
-  wait "$dead_pid" 2>/dev/null || true
-  printf '%s\n%s\n' "$dead_pid" 'linux-starttime=0 cmdline-hex=00' > "$tmp/fm-fixture-leaked/.fm-test-fixture"
-  printf '%s\n%s\n' "$$" "$FM_TEST_OWNER_IDENTITY" > "$tmp/fm-fixture-live/.fm-test-fixture"
-  printf '%s\n%s\n' "$$" 'linux-starttime=0 cmdline-hex=00' > "$tmp/fm-fixture-recycled/.fm-test-fixture"
-  touch -d '3 hours ago' "$tmp/fm-fixture-leaked/.fm-test-fixture" \
-    "$tmp/fm-fixture-live/.fm-test-fixture" "$tmp/fm-fixture-recycled/.fm-test-fixture" \
-    "$tmp/fm-spawn-task.leaked"
-  # A live process whose cwd is inside the root keeps it, exactly like a run
-  # that outlived its driver.
-  ( cd "$base/run-referenced" && exec sleep 60 ) &
-  ref_pid=$!
-  # A live process group named by the root's own pgid owner marker keeps it
-  # even when no cwd reference remains.
-  # shellcheck disable=SC2016 # Expanded by the remote-side shell fixture.
-  setsid bash -c 'printf "%s\n" "$$" > "$1"; exec sleep 60' bash "$base/run-group-owned/pgid" &
-  group_pid=$!
-  for _ in $(seq 1 100); do [ -s "$base/run-group-owned/pgid" ] && break; sleep 0.1; done
-
+  mkdir -p "$base/run-other" "$tmp/fm-test-run.other" "$tmp/fm-fixture-other/read-only"
+  printf 'keep\n' > "$base/run-other/file"
+  printf 'keep\n' > "$tmp/fm-test-run.other/file"
+  printf 'keep\n' > "$tmp/fm-fixture-other/read-only/file"
+  chmod 500 "$tmp/fm-fixture-other/read-only"
+  printf '%s\n%s\n' "999999" 'linux-starttime=0 cmdline-hex=00' > "$tmp/fm-fixture-other/.fm-test-fixture"
+  touch -d '3 hours ago' "$base/run-other" "$tmp/fm-test-run.other" \
+    "$tmp/fm-fixture-other/.fm-test-fixture"
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_STALE_AGE_SECS=3600 \
-    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
-  kill "$ref_pid" "$group_pid" 2>/dev/null || true
-  wait "$ref_pid" "$group_pid" 2>/dev/null || true
-  expect_code 0 "$status" "the pre-claim sweep must not change the suite result: $out"
-  assert_contains "$out" "reaped 4 stale PC02 test root(s)" "the sweep did not report every stale root: $out"
-  [ ! -e "$base/run-stale" ] || fail "a stale unreferenced offload root survived the sweep"
-  [ ! -e "$tmp/fm-test-run.stale" ] || fail "a stale unreferenced test root survived the sweep, read-only dirs included"
-  [ ! -e "$tmp/fm-fixture-leaked" ] || fail "a stale fixture root whose owner marker is dead survived the sweep"
-  [ ! -e "$tmp/fm-fixture-recycled" ] || fail "a fixture root whose marker names a recycled PID survived the sweep"
-  [ -d "$tmp/fm-spawn-task.leaked" ] || fail "the sweep removed a marker-less fm-* root a real task owns"
-  [ -d "$tmp/fm-fixture-live" ] || fail "the sweep removed a fixture root whose marker owner is still alive"
-  [ -d "$base/run-fresh" ] || fail "the sweep removed a fresh root"
-  [ -d "$base/run-referenced" ] || fail "the sweep removed a root a live process still references"
-  [ -d "$base/run-group-owned" ] || fail "the sweep ignored the live pgid owner marker"
-  pass "the pre-claim sweep removes only stale unowned roots, reading the fixture marker identity"
+  expect_code 0 "$status" "the capacity gate must not change the suite result: $out"
+  assert_contains "$out" "running tests remotely" "the run never went remote: $out"
+  [ "$(cat "$base/run-other/file" 2>/dev/null)" = keep ] \
+    || fail "the pre-claim gate removed another run's offload root"
+  [ "$(cat "$tmp/fm-test-run.other/file" 2>/dev/null)" = keep ] \
+    || fail "the pre-claim gate removed another run's fm-test-run.* root"
+  [ "$(cat "$tmp/fm-fixture-other/read-only/file" 2>/dev/null)" = keep ] \
+    || fail "the pre-claim gate removed a marker-bearing fixture root"
+  pass "the pre-claim capacity gate reads the host and never removes another run's root"
+}
+
+test_remote_run_keeps_its_tmpdir_in_the_mirror_and_cleans_read_only_content() {
+  local dir fakebin fixture out status used
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/run-tmpdir"
+  fakebin=$(fake_pc02 "$dir")
+  fixture="$dir/records-tmpdir.test.sh"
+  cat > "$fixture" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$TMPDIR" > "$dir/tmpdir-used"
+mkdir -p "\$TMPDIR/ro"
+chmod 500 "\$TMPDIR/ro"
+printf 'x\n' > "\$TMPDIR/ro/file"
+printf 'ok - recorded TMPDIR\n'
+SH
+  chmod +x "$fixture"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "$fixture" 2>&1)
+  status=$?
+  expect_code 0 "$status" "the recording fixture must run green remotely: $out"
+  assert_contains "$out" "running tests remotely" "the run never went remote: $out"
+  used=$(cat "$dir/tmpdir-used" 2>/dev/null || true)
+  case "$used" in
+    */.fm-pc02-test-offload/run-*/tmp) : ;;
+    *) fail "the remote run did not place TMPDIR inside its own mirror: '$used' ($out)" ;;
+  esac
+  [ ! -e "$used" ] || fail "ownership cleanup left the run's read-only TMPDIR content at $used"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "the run left its mirror behind"
+  pass "a remote run keeps its TMPDIR inside its mirror, and cleanup removes read-only content there"
 }
 
 test_remote_timeout_reaps_mirror_and_run_tmp_root() {
@@ -2018,24 +2012,28 @@ SH
     "$SCRIPT" "$fixture" 2>&1)
   status=$?
   expect_code 124 "$status" "the run timeout must still fail with 124: $out"
-  used=$(cat "$dir/tmpdir-used" 2>/dev/null || true)
-  case "$used" in
-    */.fm-pc02-test-offload/run-*/tmp) : ;;
-    *) fail "the remote run did not place TMPDIR inside its own mirror: '$used' ($out)" ;;
-  esac
-  [ ! -e "$used" ] || fail "the run's TMPDIR survived the timeout at $used"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the timeout left a mirror behind"
-  pass "a timed-out offload reaps its mirror and its run-scoped TMPDIR"
+  used=$(cat "$dir/tmpdir-used" 2>/dev/null || true)
+  if [ -n "$used" ]; then
+    case "$used" in
+      */.fm-pc02-test-offload/run-*/tmp) : ;;
+      *) fail "the remote run did not place TMPDIR inside its own mirror: '$used' ($out)" ;;
+    esac
+    [ ! -e "$used" ] || fail "the run's TMPDIR survived the timeout at $used"
+  fi
+  pass "a timed-out offload exits 124 and reaps its mirror and run-scoped TMPDIR"
 }
 
 test_malformed_hygiene_bound_is_a_configuration_error() {
-  local out status
-  out=$(FM_PC02_OFFLOAD_STALE_AGE_SECS=abc "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
-  status=$?
-  expect_code 2 "$status" "a malformed hygiene bound must exit 2: $out"
-  assert_contains "$out" "FM_PC02_OFFLOAD_STALE_AGE_SECS must be a non-negative integer" \
-    "the malformed hygiene bound did not name its setting: $out"
-  pass "a malformed hygiene bound exits 2 without running the selected command"
+  local out status setting
+  for setting in FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS FM_PC02_OFFLOAD_MEM_MIN_FREE_MB; do
+    out=$(env "$setting=abc" "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    status=$?
+    expect_code 2 "$status" "a malformed $setting must exit 2: $out"
+    assert_contains "$out" "$setting must be a non-negative integer" \
+      "the malformed $setting was not named: $out"
+  done
+  pass "a malformed capacity bound exits 2 without running the selected command"
 }
 
 test_help_prints_the_whole_documented_contract() {
@@ -2077,7 +2075,8 @@ test_pc02_if_idle_flag_forwards_through_fm_test_run() {
 
 test_help_prints_the_whole_documented_contract
 test_preclaim_capacity_floors_route_local_naming_the_resource
-test_preclaim_sweeps_stale_roots_and_keeps_live_owned_ones
+test_preclaim_capacity_never_removes_another_runs_roots
+test_remote_run_keeps_its_tmpdir_in_the_mirror_and_cleans_read_only_content
 test_remote_timeout_reaps_mirror_and_run_tmp_root
 test_malformed_hygiene_bound_is_a_configuration_error
 test_disable_env_var_skips_every_pc02_check

@@ -206,10 +206,10 @@ so a candidate dispatched past this check is refused there anyway, except for a 
 
 When a PC02-routed candidate is in play, run `bin/fm-pc02-hygiene.sh`, which
 reports PC02's `MemAvailable`, `/tmp` and disk use, the count and size of stale
-test roots, and old test processes on one read-only line set. It never kills or
-deletes; a `status=pressure` line names the crossed bound. Stale roots clear
-through the offload's next pre-claim sweep, so do not kill processes to make
-room.
+test roots, and old test processes on one read-only line set. It never kills a
+process or deletes a test root; a `status=pressure` line names the crossed
+bound. Treat a crossed bound as a reason to route heavy work elsewhere and
+investigate the leaked root, not as a reason to kill processes to make room.
 
 ### Step 4 - Check the captain's attention window
 

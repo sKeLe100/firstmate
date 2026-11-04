@@ -11,8 +11,6 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SCRIPT="$ROOT/bin/fm-pc02-hygiene.sh"
-# shellcheck source=bin/fm-pc02-hygiene-lib.sh
-. "$ROOT/bin/fm-pc02-hygiene-lib.sh"
 # The probe reads Linux-only fields (GNU stat -c and ps etimes) and the report
 # bounds its ssh call with GNU timeout; the fake host below runs that probe
 # locally, so the field cases only prove anything where those tools exist.
@@ -179,10 +177,10 @@ test_fixture_roots_count_only_with_their_marker() {
   pass "the hygiene report counts fixture roots only under a matching live owner identity"
 }
 
-# fm_pc02_hygiene_remote_script is the documented executable contract both
-# callers send over ssh, and sweep=yes is the offload's pre-claim mode.
-test_unverified_reference_scan_refuses_to_sweep() {
-  local out status tmp stale probe
+# The reference scratch directory lives on the reported host's $HOME, so a home
+# that cannot hold it must leave the inventory unknown rather than zero.
+test_unverifiable_reference_scan_is_unknown_not_ok() {
+  local out status tmp stale
   if ! probe_host_supported; then
     pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
   fi
@@ -190,22 +188,55 @@ test_unverified_reference_scan_refuses_to_sweep() {
   stale="$tmp/home/.fm-pc02-test-offload/run-stale"
   mkdir -p "$stale" "$tmp/tmp"
   touch -d '3 hours ago' "$stale"
-  probe=$(fm_pc02_hygiene_remote_script yes "$tmp/tmp" .fm-pc02-test-offload 3600 999999 \
-    "$TMP_ROOT/meminfo")
   chmod 500 "$tmp/home"
-  out=$(HOME="$tmp/home" bash -c "$probe" 2>&1)
+  out=$(FM_HYGIENE_FAKE_HOME="$tmp/home" FM_PC02_OFFLOAD_TMP_ROOT="$tmp/tmp" \
+    FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=1024 \
+    FM_PC02_OFFLOAD_TMP_MIN_FREE_MB=1024 \
+    FM_PC02_OFFLOAD_DISK_MIN_FREE_MB=1024 \
+    FM_PC02_HYGIENE_STALE_AGE_SECS=3600 \
+    FM_PC02_HYGIENE_IDLE_AGE_SECS=999999999 "$SCRIPT" 2>&1)
   status=$?
   chmod 700 "$tmp/home"
-  expect_code 0 "$status" "the probe must report, not fail, when its scan cannot run: $out"
-  assert_contains "$out" "stale_roots= stale_kb=" \
-    "an unverifiable reference scan must leave the stale readings unknown: $out"
-  [ -d "$stale" ] || fail "the probe swept a root without a completed reference scan"
-  out=$(HOME="$tmp/home" bash -c "$probe" 2>&1)
+  expect_code 2 "$status" "an unverifiable reference scan must be unknown, not ok: $out"
+  assert_contains "$out" "unreadable field" \
+    "the unverifiable reference scan was not named as unknown: $out"
+  [ -d "$stale" ] || fail "the read-only report removed a root it could not check"
+  pass "an unverifiable reference scan reads as unknown instead of as a clean host"
+}
+
+# A live runner typically holds its fixture only through an environment value
+# or a --flag=value argument, so both must count as a live reference.
+test_env_and_flag_references_keep_roots_live() {
+  local out status tmp env_ref flag_ref stale env_pid flag_pid
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
+  tmp="$TMP_ROOT/reference-kinds"
+  env_ref="$tmp/tmp/fm-test-run.env-ref"
+  flag_ref="$tmp/tmp/fm-test-run.flag-ref"
+  stale="$tmp/tmp/fm-test-run.stale"
+  mkdir -p "$env_ref/state" "$flag_ref/sub" "$stale"
+  touch -d '3 hours ago' "$env_ref" "$flag_ref" "$stale"
+  env FM_STATE_OVERRIDE="$env_ref/state" bash -c 'exec sleep 60' &
+  env_pid=$!
+  # shellcheck disable=SC2016 # Expanded by the child shell fixture.
+  bash -c 'exec -a "fixture --state=$1/sub" sleep 60' bash "$flag_ref" &
+  flag_pid=$!
+  out=$(FM_PC02_OFFLOAD_TMP_ROOT="$tmp/tmp" \
+    FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=1024 \
+    FM_PC02_OFFLOAD_TMP_MIN_FREE_MB=1024 \
+    FM_PC02_OFFLOAD_DISK_MIN_FREE_MB=1024 \
+    FM_PC02_HYGIENE_STALE_AGE_SECS=3600 \
+    FM_PC02_HYGIENE_IDLE_AGE_SECS=999999999 "$SCRIPT" 2>&1)
   status=$?
-  expect_code 0 "$status" "the probe must report on the writable-home control: $out"
-  assert_contains "$out" "swept_roots=1" "the control scan did not reap the stale root: $out"
-  [ ! -e "$stale" ] || fail "the control scan left the stale root behind"
-  pass "an unverifiable reference scan is unknown and sweeps nothing, while a completed one sweeps"
+  kill "$env_pid" "$flag_pid" 2>/dev/null || true
+  wait "$env_pid" "$flag_pid" 2>/dev/null || true
+  expect_code 1 "$status" "the unreferenced root must read as pressure: $out"
+  assert_contains "$out" "stale_test_roots=1" \
+    "an environment or --flag= reference did not keep its root live: $out"
+  [ -d "$env_ref" ] || fail "the read-only report removed an environment-referenced root"
+  [ -d "$flag_ref" ] || fail "the read-only report removed a flag-referenced root"
+  pass "environment and --flag=value references both keep a stale-looking root live"
 }
 
 test_incident_scale_catalog_finishes_inside_the_report_bound() {
@@ -291,7 +322,8 @@ test_help_prints_the_read_only_contract() {
 test_report_is_data_only_and_ok_when_within_bounds
 test_report_names_each_crossed_bound_and_never_deletes
 test_fixture_roots_count_only_with_their_marker
-test_unverified_reference_scan_refuses_to_sweep
+test_unverifiable_reference_scan_is_unknown_not_ok
+test_env_and_flag_references_keep_roots_live
 test_incident_scale_catalog_finishes_inside_the_report_bound
 test_unreadable_capacity_is_unknown_not_free
 test_unreadable_process_and_size_reads_are_unknown_not_zero

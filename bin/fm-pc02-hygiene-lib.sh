@@ -1,28 +1,35 @@
 #!/usr/bin/env bash
-# fm-pc02-hygiene-lib.sh - single owner of the PC02 stale-test-root and
-# host-capacity probe that bin/fm-pc02-test-offload.sh runs before claiming a
-# slot and bin/fm-pc02-hygiene.sh reports read-only.
+# fm-pc02-hygiene-lib.sh - single owner of the PC02 host-capacity probe that
+# bin/fm-pc02-test-offload.sh reads before claiming a slot, and of the read-only
+# stale-test-root inventory bin/fm-pc02-hygiene.sh reports.
 #
-# Why one owner: both callers need the same definition of a stale root (an
-# offload run root, an fm-test-run.* root, or a test-fixture root older than the
-# bound with no live process reference), the same owner marker rules, and the
-# same MemAvailable//tmp/disk readings. A second copy would drift the moment one
-# side changed a rule.
+# Why one owner: both callers need the same MemAvailable//tmp/disk readings, and
+# the report needs the same definition of a stale root (an offload run root, an
+# fm-test-run.* root, or a test-fixture root older than the bound with no live
+# process reference) and of an owned root. A second copy would drift the moment
+# one side changed a rule.
 #
 # The probe is a plain bash script sent over ssh, so it needs nothing from the
-# mirrored worktree: the offload runs it before it creates one.
+# mirrored worktree: the offload runs it before it creates one. It only ever
+# reads another run's state: it never kills a process and never removes a root;
+# its only write is its own scratch directory under $HOME. Each offload run
+# removes its own mirror and run-scoped TMPDIR on exit; nothing here touches
+# another run's root.
 #
 # Usage (sourced):
-#   fm_pc02_hygiene_remote_script <sweep:yes|no> <tmp_root> <remote_base>
-#       <stale_age_secs> <idle_age_secs> <meminfo>
+#   fm_pc02_hygiene_capacity_script <tmp_root> <meminfo>
+#   fm_pc02_hygiene_remote_script <tmp_root> <remote_base> <stale_age_secs>
+#       <idle_age_secs> <meminfo>
 #
-# The generated script starts with a "# fm-pc02-hygiene-probe" sentinel so a
-# harness fake can identify it, and prints exactly one line starting with
-# "capacity":
+# Both generated scripts start with a "# fm-pc02-hygiene-probe" sentinel so a
+# harness fake can identify them, and each prints exactly one line starting
+# with "capacity". The capacity script prints the host readings the offload
+# gates on; the remote script adds the read-only stale-root and old-process
+# inventory the report formats:
 #   capacity mem_total_kb=.. mem_available_kb=..
 #            tmp_total_kb=.. tmp_used_kb=.. tmp_free_kb=..
 #            disk_total_kb=.. disk_used_kb=.. disk_free_kb=..
-#            stale_roots=.. stale_kb=.. old_test_procs=.. swept_roots=..
+#            [stale_roots=.. stale_kb=.. old_test_procs=..]
 #
 # Any field that could not be read is left empty; callers must treat an empty
 # required field as an unclear host read rather than zero.
@@ -37,27 +44,22 @@
 #     live process whose recorded start time and command line still match that
 #     process, so a recycled PID cannot make a dead owner look alive. Any root,
 #     offload, test-run or fixture, is also owned while a live process
-#     references it by cwd, by a command-line argument, by an environment
-#     value, or by an open file descriptor.
-#   - With sweep=yes the script removes every stale root no owner holds,
-#     restoring owner write first (test fixtures leave read-only *.git-hooks
-#     directories behind), and reports how many it removed. With sweep=no it
-#     only measures, so the hygiene report can never kill or delete anything.
+#     references it by cwd, by a command-line argument (including a
+#     --flag=value argument), by an environment value (KEY=value), or by an
+#     open file descriptor.
 #   - The reference scan is one pass over /proc and its scratch directory lives
-#     on $HOME, not on the tmpfs being reclaimed. If that scan cannot run or
-#     reads nothing, no root is counted or swept and stale_roots/stale_kb stay
-#     empty: an unverified host is never treated as reference-free.
+#     on $HOME, not on the tmpfs being reported. If that scan cannot run or
+#     reads nothing, no root is counted and stale_roots/stale_kb stay empty: an
+#     unverified host is never treated as reference-free.
 #   - old_test_procs counts processes whose elapsed time exceeds
 #     idle_age_secs and whose command line names one of the test surfaces:
 #     fm-test-run, fm-lint, fm-test- helpers, fm-live-lab, or a tmux lab whose
 #     command line also carries the fm- prefix.
 #   - stale_kb and disk/tmp sizes are KiB from du -sk and df -Pk, field numbers
 #     2, 3 and 4 (total, used, free), matching every supported Linux target.
-#   - Candidate discovery, the reference lookup and du/removal are batched into
-#     a bounded number of subprocesses, so a host holding thousands of leaked
+#   - Candidate discovery, the reference lookup and du are batched into a
+#     bounded number of subprocesses, so a host holding thousands of leaked
 #     roots still finishes inside the callers' ssh bounds.
-#   - Capacity is read after the sweep, so space a sweep reclaims counts toward
-#     the floors the offload then checks.
 
 # Shared defaults, so the offload's floors and the hygiene report cannot drift.
 # shellcheck disable=SC2034 # Consumed by the sourcing callers, not here.
@@ -71,8 +73,36 @@ FM_PC02_DEFAULT_STALE_AGE_SECS=21600
 # shellcheck disable=SC2034
 FM_PC02_DEFAULT_IDLE_AGE_SECS=10800
 
-fm_pc02_hygiene_remote_script() {
-  local sweep=$1 tmp_root=$2 remote_base=$3 stale_age=$4 idle_age=$5 meminfo=$6
+_fm_pc02_hygiene_capacity_readings() {  # <tmp_root> <meminfo>
+  local q_tmp q_meminfo
+  q_tmp=$(printf '%q' "$1")
+  q_meminfo=$(printf '%q' "$2")
+  cat <<REMOTE
+mem_total=\$(awk '\$1 == "MemTotal:" { print \$2; exit }' $q_meminfo 2>/dev/null)
+mem_available=\$(awk '\$1 == "MemAvailable:" { print \$2; exit }' $q_meminfo 2>/dev/null)
+tmp_total= tmp_used= tmp_free=
+read -r tmp_total tmp_used tmp_free <<EOF_DF || true
+\$(df -Pk -- $q_tmp 2>/dev/null | awk 'NR == 2 { print \$2, \$3, \$4 }')
+EOF_DF
+disk_total= disk_used= disk_free=
+read -r disk_total disk_used disk_free <<EOF_DF2 || true
+\$(df -Pk -- "\$HOME" 2>/dev/null | awk 'NR == 2 { print \$2, \$3, \$4 }')
+EOF_DF2
+REMOTE
+}
+
+fm_pc02_hygiene_capacity_script() {  # <tmp_root> <meminfo>
+  printf '# fm-pc02-hygiene-probe\ntmp_root=%q\nmeminfo=%q\n' "$1" "$2"
+  _fm_pc02_hygiene_capacity_readings "$1" "$2"
+  cat <<'REMOTE'
+printf 'capacity mem_total_kb=%s mem_available_kb=%s tmp_total_kb=%s tmp_used_kb=%s tmp_free_kb=%s disk_total_kb=%s disk_used_kb=%s disk_free_kb=%s\n' \
+  "$mem_total" "$mem_available" "$tmp_total" "$tmp_used" "$tmp_free" \
+  "$disk_total" "$disk_used" "$disk_free"
+REMOTE
+}
+
+fm_pc02_hygiene_remote_script() {  # <tmp_root> <remote_base> <stale_age> <idle_age> <meminfo>
+  local tmp_root=$1 remote_base=$2 stale_age=$3 idle_age=$4 meminfo=$5
   local q_tmp q_base q_meminfo
   q_tmp=$(printf '%q' "$tmp_root")
   q_base=$(printf '%q' "$remote_base")
@@ -84,7 +114,6 @@ remote_base=$q_base
 stale_age=$stale_age
 idle_age=$idle_age
 meminfo=$q_meminfo
-sweep=$sweep
 now=\$(date +%s 2>/dev/null || echo 0)
 
 scratch=
@@ -127,11 +156,19 @@ build_scan() {
   [ -s "\$scratch/refs" ] || return 1
   printf '%s\n' "\${roots[@]}" >"\$scratch/roots"
   awk '
+    function owned_root(s) {
+      if (s in root) { print s; return 1 }
+      while (sub(/\\/[^\\/]*\$/, "", s)) if (s in root) { print s; return 1 }
+      return 0
+    }
     NR == FNR { root[\$0] = 1; next }
     {
-      s = \$0
-      if (s in root) { print s; next }
-      while (sub(/\\/[^\\/]*\$/, "", s)) if (s in root) { print s; break }
+      rest = \$0
+      if (owned_root(rest)) next
+      while ((eq = index(rest, "=")) > 0) {
+        rest = substr(rest, eq + 1)
+        if (owned_root(rest)) next
+      }
     }' "\$scratch/roots" "\$scratch/refs" >"\$scratch/owned" || return 1
 }
 live_group() {
@@ -164,8 +201,7 @@ marker_owner_alive() {
 
 stale_roots=0
 stale_kb=0
-swept_roots=0
-clear=()
+stale_list=()
 if [ \${#roots[@]} -gt 0 ]; then
   if build_scan; then
     declare -A owned=()
@@ -176,21 +212,14 @@ if [ \${#roots[@]} -gt 0 ]; then
       live_group "\$d" && continue
       marker_owner_alive "\$d/.fm-test-fixture" && continue
       [ -z "\${owned[\$d]:-}" ] || continue
-      clear+=("\$d")
+      stale_list+=("\$d")
     done
-    stale_roots=\${#clear[@]}
-    if [ \${#clear[@]} -gt 0 ]; then
-      if du_out=\$(du -sk -- "\${clear[@]}" 2>/dev/null); then
+    stale_roots=\${#stale_list[@]}
+    if [ \${#stale_list[@]} -gt 0 ]; then
+      if du_out=\$(du -sk -- "\${stale_list[@]}" 2>/dev/null); then
         stale_kb=\$(printf '%s\n' "\$du_out" | awk '{ size += \$1 } END { print size + 0 }')
       else
         stale_kb=
-      fi
-      if [ "\$sweep" = yes ]; then
-        chmod -R u+w -- "\${clear[@]}" 2>/dev/null || true
-        rm -rf -- "\${clear[@]}" 2>/dev/null || true
-        for d in "\${clear[@]}"; do
-          [ -e "\$d" ] || [ -L "\$d" ] || swept_roots=\$((swept_roots + 1))
-        done
       fi
     fi
   else
@@ -198,18 +227,9 @@ if [ \${#roots[@]} -gt 0 ]; then
     stale_kb=
   fi
 fi
-
-mem_total=\$(awk '\$1 == "MemTotal:" { print \$2; exit }' "\$meminfo" 2>/dev/null)
-mem_available=\$(awk '\$1 == "MemAvailable:" { print \$2; exit }' "\$meminfo" 2>/dev/null)
-tmp_total= tmp_used= tmp_free=
-read -r tmp_total tmp_used tmp_free <<EOF_DF || true
-\$(df -Pk -- "\$tmp_root" 2>/dev/null | awk 'NR == 2 { print \$2, \$3, \$4 }')
-EOF_DF
-disk_total= disk_used= disk_free=
-read -r disk_total disk_used disk_free <<EOF_DF2 || true
-\$(df -Pk -- "\$HOME" 2>/dev/null | awk 'NR == 2 { print \$2, \$3, \$4 }')
-EOF_DF2
-
+REMOTE
+  _fm_pc02_hygiene_capacity_readings "$tmp_root" "$meminfo"
+  cat <<REMOTE
 old_test_procs=
 if ps -eo pid=,etimes=,args= >/dev/null 2>&1; then
   old_test_procs=\$(ps -eo pid=,etimes=,args= 2>/dev/null | awk -v age="\$idle_age" -v self="\$\$" '
@@ -223,9 +243,9 @@ if ps -eo pid=,etimes=,args= >/dev/null 2>&1; then
   case "\$old_test_procs" in ''|*[!0-9]*) old_test_procs= ;; esac
 fi
 
-printf 'capacity mem_total_kb=%s mem_available_kb=%s tmp_total_kb=%s tmp_used_kb=%s tmp_free_kb=%s disk_total_kb=%s disk_used_kb=%s disk_free_kb=%s stale_roots=%s stale_kb=%s old_test_procs=%s swept_roots=%s\n' \
-  "\$mem_total" "\$mem_available" "\$tmp_total" "\$tmp_used" "\$tmp_free" \
-  "\$disk_total" "\$disk_used" "\$disk_free" "\$stale_roots" "\$stale_kb" \
-  "\$old_test_procs" "\$swept_roots"
+printf 'capacity mem_total_kb=%s mem_available_kb=%s tmp_total_kb=%s tmp_used_kb=%s tmp_free_kb=%s disk_total_kb=%s disk_used_kb=%s disk_free_kb=%s stale_roots=%s stale_kb=%s old_test_procs=%s\n' \\
+  "\$mem_total" "\$mem_available" "\$tmp_total" "\$tmp_used" "\$tmp_free" \\
+  "\$disk_total" "\$disk_used" "\$disk_free" "\$stale_roots" "\$stale_kb" \\
+  "\$old_test_procs"
 REMOTE
 }

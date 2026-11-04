@@ -92,24 +92,14 @@
 #     (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124 rather than
 #     rerunning locally. Lint mode keeps bin/fm-lint.sh's own worker count and
 #     partition selection untouched; the whole-run bound applies to it too.
-#   - Pre-claim hygiene: before any slot is claimed, the run sweeps PC02 test
-#     roots no live process owns, then reads MemAvailable, the TMP_ROOT (/tmp)
-#     free space and the PC02 home-disk free space. A reading under its floor
-#     routes the run local and names the resource, the observed value and the
-#     floor; an unreadable reading is treated as unclear and routes local too,
-#     never as free. bin/fm-pc02-hygiene-lib.sh owns the stale-root, owner,
-#     sweep and capacity rules, and bin/fm-pc02-hygiene.sh exposes the same
-#     readings as a read-only report.
-#     roots older than FM_PC02_OFFLOAD_STALE_AGE_SECS that no live process
-#     references (an offload run root's own pgid marker is the owner rule for
-#     its root), then reads MemAvailable, the TMP_ROOT (/tmp) free space and
-#     the PC02 home-disk free space. A root removal restores owner write
-#     first, so the read-only *.git-hooks directories test fixtures leave
-#     behind cannot block it. A reading under its floor routes the run local
-#     and names the resource, the observed value and the floor; an unreadable
-#     reading is treated as unclear and routes local too, never as free.
-#     bin/fm-pc02-hygiene-lib.sh owns the stale/owner rules, and
-#     bin/fm-pc02-hygiene.sh exposes the same readings as a read-only report.
+#   - Pre-claim capacity: before any slot is claimed, the run reads PC02's
+#     MemAvailable, TMP_ROOT (/tmp) free space and home-disk free space fresh.
+#     A reading under its floor routes the run local and names the resource, the
+#     observed value and the floor; an unreadable reading is treated as unclear
+#     and routes local too, never as free. The gate only reads: this run never
+#     removes another run's root. bin/fm-pc02-hygiene-lib.sh owns the readings,
+#     the floors and the read-only stale-root inventory that
+#     bin/fm-pc02-hygiene.sh reports.
 #   - Host slots: the slot count comes from FM_PC02_OFFLOAD_SLOTS, then the
 #     per-machine ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
 #     file (one integer from 1 to 16; a trailing newline is optional), then
@@ -299,11 +289,9 @@
 #   FM_PC02_OFFLOAD_GPU_BUSY_PCT        summed Windows GPU-engine utilization%%
 #                                      at/above which PC02 reads busy
 #                                      (default: 5; idle measures 0)
-#   FM_PC02_OFFLOAD_SWEEP_TIMEOUT_SECS  bound for the pre-claim sweep and
-#                                      capacity reading (default: 120)
-#   FM_PC02_OFFLOAD_STALE_AGE_SECS      age at which an unreferenced PC02 run,
-#                                      fm-test-run.* or fixture-marker root may
-#                                      be swept (default: 21600, six hours)
+#   FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS
+#                                      bound for removing this run's PC02
+#                                      mirror (default: 120)
 #   FM_PC02_OFFLOAD_TMP_ROOT            PC02 tmp directory (default: /tmp)
 #   FM_PC02_OFFLOAD_MEMINFO             PC02 meminfo path (default:
 #                                      /proc/meminfo)
@@ -319,13 +307,13 @@
 # bin/fm-lint.sh's changed-file lint on PC01; or 124 if the remote run itself
 # exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
 # FM_PC02_OFFLOAD_SLOTS, pc02-offload-slots file, or wait setting, or a
-# hygiene bound, which runs nothing at all.
+# capacity bound, which runs nothing at all.
 # A readiness check that cannot clear by waiting (PC02 personally in use,
 # unreachable, missing a required tool, or a sync/verification failure) falls
 # back to a local run at once. A load gate (a live LLM lane, busy CPU or GPU,
-# or an unclear load read) waits under the bound first. A capacity floor or an
-# unreadable hygiene reading also falls back to a local run. Either way the
-# local fallback never changes the result the selected command itself reports.
+# or an unclear load read) waits under the bound first. A capacity floor also
+# falls back to a local run. Either way the local fallback never changes the
+# result the selected command itself reports.
 set -u
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -382,10 +370,9 @@ PERSONAL_USE_FLAG="${FM_PC02_OFFLOAD_PERSONAL_USE_FLAG:-.fm-pc02-personal-use}"
 RESOURCE_CHECK_PS1="${FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1:-/mnt/c/pc02-llm-server/bin/fm-pc02-resource-check.ps1}"
 CPU_BUSY_PCT="${FM_PC02_OFFLOAD_CPU_BUSY_PCT:-50}"
 GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
-SWEEP_TIMEOUT="${FM_PC02_OFFLOAD_SWEEP_TIMEOUT_SECS:-120}"
+CLEANUP_TIMEOUT="${FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS:-120}"
 TMP_ROOT="${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}"
 MEMINFO_PATH="${FM_PC02_OFFLOAD_MEMINFO:-/proc/meminfo}"
-STALE_AGE_SECS="${FM_PC02_OFFLOAD_STALE_AGE_SECS:-$FM_PC02_DEFAULT_STALE_AGE_SECS}"
 MEM_MIN_FREE_MB="${FM_PC02_OFFLOAD_MEM_MIN_FREE_MB:-$FM_PC02_DEFAULT_MEM_MIN_FREE_MB}"
 TMP_MIN_FREE_MB="${FM_PC02_OFFLOAD_TMP_MIN_FREE_MB:-$FM_PC02_DEFAULT_TMP_MIN_FREE_MB}"
 DISK_MIN_FREE_MB="${FM_PC02_OFFLOAD_DISK_MIN_FREE_MB:-$FM_PC02_DEFAULT_DISK_MIN_FREE_MB}"
@@ -444,10 +431,9 @@ esac
 [ "$CALLER_WALL_BUDGET" -eq 0 ] || SLOT_WAIT=0
 
 # A malformed hygiene bound is the same kind of configuration error: refuse
-# rather than silently sweeping with a different rule or skipping a floor.
+# rather than silently skipping a floor.
 for setting in \
-  "FM_PC02_OFFLOAD_SWEEP_TIMEOUT_SECS:$SWEEP_TIMEOUT" \
-  "FM_PC02_OFFLOAD_STALE_AGE_SECS:$STALE_AGE_SECS" \
+  "FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS:$CLEANUP_TIMEOUT" \
   "FM_PC02_OFFLOAD_MEM_MIN_FREE_MB:$MEM_MIN_FREE_MB" \
   "FM_PC02_OFFLOAD_TMP_MIN_FREE_MB:$TMP_MIN_FREE_MB" \
   "FM_PC02_OFFLOAD_DISK_MIN_FREE_MB:$DISK_MIN_FREE_MB"; do
@@ -485,7 +471,7 @@ remove_remote_run() {
   local run_q cleanup_cmd
   run_q=$(printf '%q' "$REMOTE_RUN")
   cleanup_cmd="[ -f $run_q/pgid ] && pkill -KILL -s \"\$(cat $run_q/pgid)\" 2>/dev/null; chmod -R u+w $run_q 2>/dev/null || true; rm -rf $run_q"
-  timeout "$SWEEP_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+  timeout "$CLEANUP_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
     -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$cleanup_cmd")" >/dev/null 2>&1 \
     || echo "fm-pc02-test-offload: could not remove PC02 mirror $REMOTE_RUN" >&2
 }
@@ -687,28 +673,25 @@ if [ -z "${FM_PC02_OFFLOAD_JOBS:-}" ] && [ "$REMOTE_JOBS" -gt "$jobs_cap" ]; the
   REMOTE_JOBS=$jobs_cap
 fi
 
-# 2b. Pre-claim hygiene: sweep stale PC02 test roots no live process owns, then
-# read the capacity floors. The sweep runs before the slot claim so a run never
-# holds a slot while deleting a previous leak, and the readings are taken after
-# it so the reclaimed space counts. bin/fm-pc02-hygiene-lib.sh owns the stale
-# and owner-marker rules; this script owns only the sweep/refuse decision.
-preclaim_script=$(fm_pc02_hygiene_remote_script yes "$TMP_ROOT" "$REMOTE_BASE" \
-  "$STALE_AGE_SECS" 0 "$MEMINFO_PATH")
-preclaim_out=$(timeout "$SWEEP_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
-  -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$preclaim_script")" 2>&1)
-preclaim_rc=$?
-if [ "$preclaim_rc" -ne 0 ]; then
-  echo "$preclaim_out" >&2
-  run_local "PC02 pre-claim hygiene sweep failed (ssh exit $preclaim_rc)"
+# 2b. Pre-claim capacity: read PC02's MemAvailable, TMP_ROOT free space and
+# home-disk free space fresh, then check the floors. This gate only reads; a
+# run never removes another run's root, and bin/fm-pc02-hygiene-lib.sh owns the
+# readings and the floor rules.
+capacity_script=$(fm_pc02_hygiene_capacity_script "$TMP_ROOT" "$MEMINFO_PATH")
+capacity_out=$(timeout "$PROBE_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
+  -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$capacity_script")" 2>&1)
+capacity_rc=$?
+if [ "$capacity_rc" -ne 0 ]; then
+  echo "$capacity_out" >&2
+  run_local "PC02 pre-claim capacity read failed (ssh exit $capacity_rc)"
 fi
-capacity=$(printf '%s\n' "$preclaim_out" | awk '$1 == "capacity" { sub(/^capacity /, ""); print; found = 1; exit } END { exit !found }') || {
-  echo "$preclaim_out" >&2
+capacity=$(printf '%s\n' "$capacity_out" | awk '$1 == "capacity" { sub(/^capacity /, ""); print; found = 1; exit } END { exit !found }') || {
+  echo "$capacity_out" >&2
   run_local "PC02 pre-claim capacity reading unavailable"
 }
 mem_available_kb=''
 tmp_free_kb=''
 disk_free_kb=''
-swept_roots=''
 for field in $capacity; do
   key=${field%%=*}
   value=${field#*=}
@@ -716,7 +699,6 @@ for field in $capacity; do
     mem_available_kb) mem_available_kb=$value ;;
     tmp_free_kb) tmp_free_kb=$value ;;
     disk_free_kb) disk_free_kb=$value ;;
-    swept_roots) swept_roots=$value ;;
   esac
 done
 require_kb() {  # <label> <value>
@@ -736,11 +718,6 @@ disk_free_mib=$((disk_free_kb / 1024))
   || run_local "PC02 $TMP_ROOT free ${tmp_free_mib} MiB is below the ${TMP_MIN_FREE_MB} MiB floor"
 [ "$DISK_MIN_FREE_MB" -eq 0 ] || [ "$disk_free_mib" -ge "$DISK_MIN_FREE_MB" ] \
   || run_local "PC02 disk free ${disk_free_mib} MiB is below the ${DISK_MIN_FREE_MB} MiB floor"
-case "$swept_roots" in
-  '' | *[!0-9]*) ;;
-  0) ;;
-  *) echo "fm-pc02-test-offload: reaped $swept_roots stale PC02 test root(s) before claiming a slot" >&2 ;;
-esac
 
 # Compare test-relevant surfaces with the same probe on both hosts.
 parity_probe="$(cat "$SELF_DIR/fm-test-chrome.sh")

@@ -11,9 +11,10 @@
 # Usage:
 #   fm-pc02-hygiene.sh
 #
-# One bounded ssh call to PC02 runs bin/fm-pc02-hygiene-lib.sh's shared probe
-# with sweeping disabled, so this script never kills a process and never
-# removes a file. The offload's pre-claim pass is the one owner of sweeping.
+# One bounded ssh call to PC02 runs bin/fm-pc02-hygiene-lib.sh's inventory
+# probe, which never kills a process and never removes a test root; its only
+# write is the probe's own scratch directory on PC02's home disk. Nothing else
+# on PC02 deletes a root it does not own.
 #
 # Output (stdout, one key=value per line):
 #   host=<ssh target>
@@ -112,7 +113,7 @@ command -v ssh >/dev/null 2>&1 || {
   exit 2
 }
 
-remote_script=$(fm_pc02_hygiene_remote_script no "$TMP_ROOT" "$REMOTE_BASE" \
+remote_script=$(fm_pc02_hygiene_remote_script "$TMP_ROOT" "$REMOTE_BASE" \
   "$STALE_AGE" "$IDLE_AGE" "$MEMINFO")
 out=$(timeout "$TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$TIMEOUT" \
   -o ConnectionAttempts=1 "$HOST" "bash -lc $(printf '%q' "$remote_script")" 2>&1)
