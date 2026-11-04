@@ -1038,7 +1038,7 @@ tests/fm-omp-harness.test.sh 63796
 tests/fm-omp-primary-live-e2e.test.sh 74
 tests/fm-on.test.sh 18589
 tests/fm-opencode-primary-live-e2e.test.sh 47
-tests/fm-operational-input.test.sh 2404
+tests/fm-operational-input.test.sh 3698
 tests/fm-orphan-pane-sweep.test.sh 830
 tests/fm-pc02-churn-e2e.test.sh 21689
 tests/fm-pc02-fair-order.test.sh 44123
@@ -1057,7 +1057,7 @@ tests/fm-polytoken-signals-live-e2e.test.sh 103
 tests/fm-pr-check-security.test.sh 300675
 tests/fm-pr-reviewers.test.sh 157
 tests/fm-pr-state-live-e2e.test.sh 47
-tests/fm-pr-state.test.sh 525
+tests/fm-pr-state.test.sh 862
 tests/fm-primary-herdr.test.sh 4000
 tests/fm-primary-scope-lib.test.sh 340
 tests/fm-primary-watchdog.test.sh 31045
@@ -1117,7 +1117,7 @@ tests/fm-spawn-compact-adviser-disable.test.sh 33635
 tests/fm-spawn-dispatch-profile.test.sh 343491
 tests/fm-spawn-host-memory.test.sh 5440
 tests/fm-spawn-orca-worktree.test.sh 60771
-tests/fm-spawn-pc02-lane-guard.test.sh 11846
+tests/fm-spawn-pc02-lane-guard.test.sh 17964
 tests/fm-spawn-pool-base-freshen.test.sh 120467
 tests/fm-spawn-worktree-settle.test.sh 9309
 tests/fm-startup-memory-budget.test.sh 12413
@@ -1146,7 +1146,7 @@ tests/fm-teardown-process-reap.sh 11300
 tests/fm-teardown-secondmate.sh 8200
 tests/fm-teardown.test.sh 317102
 tests/fm-test-fixture-cleanup.test.sh 1446
-tests/fm-test-fixtures.test.sh 6739
+tests/fm-test-fixtures.test.sh 10194
 tests/fm-test-isolation-proof.test.sh 2866
 tests/fm-test-sandbox-cache-race.test.sh 6604
 tests/fm-timeout-lib.test.sh 10750
@@ -1173,7 +1173,7 @@ tests/fm-watch-arm.test.sh 113076
 tests/fm-watch-checkpoint.test.sh 22937
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 59092
-tests/fm-watch-retry-band.test.sh 7547
+tests/fm-watch-retry-band.test.sh 13391
 tests/fm-watch-triage-waits.test.sh 777719
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 72022
