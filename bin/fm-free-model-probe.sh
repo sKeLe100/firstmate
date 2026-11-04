@@ -3,6 +3,8 @@
 #
 # Usage: fm-free-model-probe.sh <opencode-model-id> [timeout-secs]
 #
+# <opencode-model-id> may be bare or provider-qualified as <provider>/<model-id>.
+#
 # Runs `opencode run -m <model-id> "Reply with exactly: OK"` from a temporary
 # directory with an optional timeout (default 60 seconds), then checks OpenCode's
 # logfmt log for a "Free usage limit reached" entry written for that modelID
@@ -25,6 +27,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat <<'EOF'
 Usage: fm-free-model-probe.sh <opencode-model-id> [timeout-secs]
+
+<opencode-model-id> may be bare or provider-qualified as <provider>/<model-id>.
 
 Runs `opencode run -m <model-id> "Reply with exactly: OK"` from a temporary
 directory with an optional timeout (default 60 seconds), then checks OpenCode's
@@ -71,7 +75,10 @@ OPENCODE_LOG="${FM_OPENCODE_LOG:-$HOME/.local/share/opencode/log/opencode.log}"
 
 PROBE_START_EPOCH=$(date +%s)
 
-PROBE_TMPDIR=$(mktemp -d)
+PROBE_TMPDIR=$(mktemp -d) || {
+  printf 'fm-free-model-probe: cannot create a temp dir\n' >&2
+  exit 1
+}
 trap 'rm -rf "$PROBE_TMPDIR"' EXIT
 
 PROBE_STDOUT_FILE="$PROBE_TMPDIR/stdout.txt"
@@ -101,13 +108,28 @@ log_timestamp_epoch() {  # <log-line>
 }
 
 CAPED_REASON=""
+case "$MODEL_ID" in
+  */*)
+    MODEL_PROVIDER=${MODEL_ID%%/*}
+    MODEL_BARE=${MODEL_ID#*/}
+    ;;
+  *)
+    MODEL_PROVIDER=
+    MODEL_BARE=$MODEL_ID
+    ;;
+esac
 if [ -r "$OPENCODE_LOG" ]; then
-  LOG_MATCH=$(awk -v model="$MODEL_ID" '
+  LOG_MATCH=$(awk -v full="$MODEL_ID" -v provider="$MODEL_PROVIDER" -v bare="$MODEL_BARE" '
     {
-      if (index($0, "Free usage limit reached")) {
-        for (i = 1; i <= NF; i++)
-          if ($i == "modelID=" model) { print; next }
+      if (!index($0, "Free usage limit reached")) next
+      model_match = 0
+      provider_match = 0
+      for (i = 1; i <= NF; i++) {
+        if ($i == "modelID=" full) { print; next }
+        if ($i == "modelID=" bare) model_match = 1
+        if (provider != "" && $i == "providerID=" provider) provider_match = 1
       }
+      if (provider != "" && model_match && provider_match) print
     }
   ' "$OPENCODE_LOG" 2>/dev/null | tail -n 1)
   if [ -n "$LOG_MATCH" ]; then

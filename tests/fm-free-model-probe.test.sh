@@ -35,7 +35,7 @@ reset_logs() {
 cat > "$FAKE_BIN/opencode" <<'SH'
 #!/usr/bin/env bash
 : > "$PROBE_MARKER"
-exec sleep 300
+exec sleep 10
 SH
 chmod +x "$FAKE_BIN/opencode"
 
@@ -162,6 +162,39 @@ assert_contains "$out" "capped" "capped no-retry: output should start with 'capp
 [ "$rc" -eq 3 ] || fail "capped no-retry: expected exit 3, got $rc"
 assert_contains "$out" "unknown retry" "capped no-retry: should include 'unknown retry' when no retry time"
 pass "fm-free-model-probe: capped case returns 'capped unknown retry' with exit 3 when no retry time in log"
+
+# --- provider-qualified model id ---------------------------------------------
+
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+printf 'timestamp=%s level=ERROR run=probe message="stream error" providerID=opencode modelID=glm-5.3-flash-free session.id=ses_probe small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached."\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$FM_OPENCODE_LOG"
+exec sleep 300
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+reset_logs
+out=$(run_probe opencode/glm-5.3-flash-free)
+rc=$?
+assert_contains "$out" "capped" "provider-qualified: output should start with 'capped'"
+[ "$rc" -eq 3 ] || fail "provider-qualified: expected exit 3, got $rc"
+pass "fm-free-model-probe: a provider-qualified model id matches its providerID and modelID log pair"
+
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+printf 'timestamp=%s level=ERROR run=probe message="stream error" providerID=other-provider modelID=glm-5.3-flash-free session.id=ses_probe small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached."\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$FM_OPENCODE_LOG"
+exec sleep 300
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+reset_logs
+out=$(run_probe opencode/glm-5.3-flash-free)
+rc=$?
+assert_contains "$out" "unknown" "provider mismatch: output should start with 'unknown'"
+assert_contains "$out" "timed out" "provider mismatch: should report the timeout"
+[ "$rc" -eq 1 ] || fail "provider mismatch: expected exit 1, got $rc"
+pass "fm-free-model-probe: a qualified model id does not match another provider's same bare model"
 
 # --- stale capped entry ------------------------------------------------------
 
