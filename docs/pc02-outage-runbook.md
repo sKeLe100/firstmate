@@ -180,60 +180,96 @@ or its resource-check script ever need to be redeployed (safe to re-run).
 
 ### Reclaiming leaked test roots
 
-When `bin/fm-pc02-hygiene.sh` reports stale test roots, reclaim them on PC02 itself (for example inside `ssh pc02`); the report is strictly read-only and the offload reaps only its own mirror, so this manual sequence is what clears a leaked root.
-`bin/fm-pc02-hygiene-lib.sh`'s header owns the exact definition of a counted root; the report prints the paths it counted as `stale_test_root=` lines (at most 50, then a `stale_test_roots_omitted=` count), so use those paths as the authoritative list when it has them.
+`bin/fm-pc02-hygiene.sh` is an ssh wrapper, so run it where the checkout lives
+(normally PC01). It is strictly read-only and prints the PC02 paths it counted,
+one per `stale_test_root=` line - at most 50 per run, then a
+`stale_test_roots_omitted=` count - so the printed list is the whole set a
+manual pass may consider. Every removal command runs on PC02 itself, for
+example inside `ssh pc02`: those are PC02 paths, and running `rm` with them from
+PC01 would delete same-named PC01 directories instead.
 
-The report counts exactly three classes of test root, and only these may be removed:
+`bin/fm-pc02-hygiene-lib.sh`'s header owns the exact definition of a counted
+root. It counts exactly three classes, and only these may be removed:
 
-- offload mirrors `$HOME/<FM_PC02_OFFLOAD_REMOTE_BASE>/run-*` left behind by a wrapper whose exit trap never ran;
+- offload mirrors `$HOME/<FM_PC02_OFFLOAD_REMOTE_BASE>/run-*` left behind by a
+  wrapper whose exit trap never ran;
 - `$TMP_ROOT`/`fm-test-run.*` roots left by a direct test run;
-- `$TMP_ROOT`/`fm-*` directories that carry a `.fm-test-fixture` marker (written by `tests/lib.sh`).
+- `$TMP_ROOT`/`fm-*` directories carrying a `.fm-test-fixture` marker
+  (`tests/lib.sh` writes it). Never widen the match to a bare `fm-*`: real task
+  temp roots live there too.
 
-Never widen the match to a bare `fm-*`: real task temp roots live there too, so only a directory carrying that marker may be removed.
-For every class, remove only a root that is older than the report's stale bound (`FM_PC02_HYGIENE_STALE_AGE_SECS`, default 21600 seconds / six hours), that no live process references, and always `chmod -R u+w` before `rm -rf` because test fixtures can leave read-only `*.git-hooks` directories that make `rm -rf` fail.
+Every path the report printed already passed its stale-age bound and its live
+reference scan (cwd, environment value, `--flag=value`, open file descriptor)
+plus the owner-marker rules, so never add a root the report did not print: a
+root it excluded is still owned, sometimes only through an environment value or
+an open fd that a name search cannot see. The loop below re-checks on PC02 that
+a path is one of the three counted classes, its stale-age bound, and its owner
+markers (`run-*/pgid`, plus the fixture marker's recorded pid/start-time/cmdline
+identity), then restores owner write with `chmod -R u+w` (test fixtures leave
+read-only `*.git-hooks` directories that block `rm -rf`) and removes the root.
 
-Use the paths the report printed when it had room for them, re-checking liveness just before removal:
+On PC01, hand the report's counted paths to PC02:
 
 ```bash
-bin/fm-pc02-hygiene.sh | sed -n 's/^stale_test_root=//p' | while IFS= read -r dir; do
-  base=${dir##*/}
-  pgrep -f -- "$base" >/dev/null && continue
-  chmod -R u+w -- "$dir" 2>/dev/null || true
-  rm -rf -- "$dir"
-done
+bin/fm-pc02-hygiene.sh | sed -n 's/^stale_test_root=//p' | ssh pc02 'cat > "$HOME/.pc02-stale-paths"'
 ```
 
-When the report printed `stale_test_roots_omitted=`, cover the rest by class, applying the same age, liveness and `chmod` rules:
+On PC02 (inside `ssh pc02`), re-check and remove only those paths:
 
 ```bash
 age=${FM_PC02_HYGIENE_STALE_AGE_SECS:-21600}
-age_min=$((age / 60))
-remote_base=${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}
 tmp_root=${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}
-before=$(df -Pk "$tmp_root" | awk 'NR == 2 { print $3 }')
+remote_base=${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}
+now=$(date +%s)
+group_alive() {  # <root>: the mirrored run's pgid still names a live group
+  local pg
+  [ -r "$1/pgid" ] || return 1
+  read -r pg < "$1/pgid" || return 1
+  case "$pg" in "" | *[!0-9]*) return 1 ;; esac
+  kill -0 -- "-$pg" 2>/dev/null
+}
+marker_owner_alive() {  # <root>: the marker's recorded owner is still that process
+  local pid id start hex
+  [ -r "$1/.fm-test-fixture" ] || return 1
+  { read -r pid; read -r id; } < "$1/.fm-test-fixture" || return 1
+  case "$pid" in "" | *[!0-9]*) return 1 ;; esac
+  [ -n "$id" ] && [ -r "/proc/$pid/stat" ] || return 1
+  start=$(awk '{ sub(/^.*\) /, ""); print $20 }' "/proc/$pid/stat" 2>/dev/null)
+  set -- ${id#*=}
+  [ "$1" = "$start" ] || return 1
+  hex=$(od -An -v -tx1 "/proc/$pid/cmdline" 2>/dev/null | tr -d '[:space:]')
+  [ "${id##*cmdline-hex=}" = "$hex" ]
+}
 removed=0
-while IFS= read -r path; do
-  [ -n "$path" ] || continue
-  case "$path" in
-    */.fm-test-fixture) dir=${path%/.fm-test-fixture} ;;
-    *) dir=$path ;;
+while IFS= read -r dir; do
+  [ -n "$dir" ] || continue
+  case "$dir" in
+    "$HOME/$remote_base"/run-*) ;;
+    "$tmp_root"/fm-test-run.*) ;;
+    "$tmp_root"/fm-*) [ -f "$dir/.fm-test-fixture" ] || continue ;;
+    *) continue ;;
   esac
   [ -d "$dir" ] && [ ! -L "$dir" ] || continue
-  base=${dir##*/}
-  pgrep -f -- "$base" >/dev/null && continue
+  group_alive "$dir" && continue
+  marker_owner_alive "$dir" && continue
+  if [ -f "$dir/.fm-test-fixture" ]; then
+    mtime=$(stat -c %Y -- "$dir/.fm-test-fixture" 2>/dev/null) || continue
+  else
+    mtime=$(stat -c %Y -- "$dir" 2>/dev/null) || continue
+  fi
+  case "$mtime" in "" | *[!0-9]*) continue ;; esac
+  [ $((now - mtime)) -ge "$age" ] || continue
   chmod -R u+w -- "$dir" 2>/dev/null || true
   rm -rf -- "$dir" && removed=$((removed + 1))
-done < <(
-  find "$HOME/$remote_base" -mindepth 1 -maxdepth 1 -type d -name 'run-*' -mmin +"$age_min" 2>/dev/null
-  find "$tmp_root" -mindepth 1 -maxdepth 1 -type d -name 'fm-test-run.*' -mmin +"$age_min" 2>/dev/null
-  find "$tmp_root" -mindepth 2 -maxdepth 2 -type f -name '.fm-test-fixture' \
-    -path "$tmp_root/fm-*/.fm-test-fixture" -mmin +"$age_min" 2>/dev/null
-)
-after=$(df -Pk "$tmp_root" | awk 'NR == 2 { print $3 }')
-printf 'removed=%s tmp_used_kb=%s->%s\n' "$removed" "$before" "$after"
+done < "$HOME/.pc02-stale-paths"
+printf 'removed=%s\n' "$removed"
 ```
 
-Re-run `bin/fm-pc02-hygiene.sh` afterwards: `stale_test_roots` should drop to 0, and its `tmp_used_mib`/`disk_used_mib` lines show the reclaimed space.
+Then re-run `bin/fm-pc02-hygiene.sh` on PC01 and repeat while it still prints
+`stale_test_root=` lines; `stale_test_roots` should reach 0, and its
+`tmp_used_mib`/`disk_used_mib` lines show the reclaimed space. If a path the
+loop just removed reappears in the next report, stop: something still owns it
+and the report is the authority on that.
 
 **Warning**: `wsl --shutdown` (see "WSL is not running" above) drops all
 remote access to PC02, including this offload path, until someone reaches

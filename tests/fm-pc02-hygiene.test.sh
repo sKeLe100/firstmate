@@ -82,7 +82,7 @@ test_report_is_data_only_and_ok_when_within_bounds() {
 }
 
 test_report_names_each_crossed_bound_and_never_deletes() {
-  local out status root psbin
+  local out status root psbin pressure
   if ! probe_host_supported; then
     pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
   fi
@@ -112,27 +112,9 @@ SH
   assert_contains "$out" "old_test_procs=1" \
     "only the old test-surface process past the idle bound should count: $out"
   assert_contains "$out" "status=pressure" "the report did not name pressure: $out"
-  assert_contains "$out" "pressure=" "the report omitted its pressure field: $out"
-  case "$out" in
-    *mem_available*) : ;;
-    *) fail "the pressure list omitted MemAvailable: $out" ;;
-  esac
-  case "$out" in
-    *tmp_free*) : ;;
-    *) fail "the pressure list omitted /tmp free: $out" ;;
-  esac
-  case "$out" in
-    *disk_free*) : ;;
-    *) fail "the pressure list omitted disk free: $out" ;;
-  esac
-  case "$out" in
-    *stale_test_roots*) : ;;
-    *) fail "the pressure list omitted stale test roots: $out" ;;
-  esac
-  case "$out" in
-    *old_test_procs*) : ;;
-    *) fail "the pressure list omitted old test processes: $out" ;;
-  esac
+  pressure=$(printf '%s\n' "$out" | sed -n 's/^pressure=//p')
+  [ "$pressure" = "mem_available,tmp_free,disk_free,stale_test_roots,old_test_procs" ] \
+    || fail "the pressure list did not name every crossed bound in order: '$pressure'"$'\n'"$out"
   [ -d "$root" ] || fail "the read-only report deleted a stale root; it must never remove anything"
   pass "the hygiene report names every crossed bound and never deletes or kills"
 }
