@@ -23,6 +23,16 @@
 #
 # GitHub Actions standard ubuntu-latest is tried first, then GitLab.com on a
 # dedicated project, only after `glab auth status` succeeds, then PC02/PC01.
+# When GitHub-hosted runners are saturated, the same workflow is dispatched to
+# an idle fm-pc02 self-hosted runner instead, unless PC02's personal-use switch
+# is on or unreadable. The broader fm-parallel label is never used: it reaches
+# PC01 runners outside heavy admission and PC02 regardless of that switch.
+# Saturation means the repository already has queued runs at dispatch time, or
+# no job of our run got a runner within the queue bound. A run with any admitted
+# job is never cancelled for queueing, even while its run-level status reads
+# queued, and a rerouted run starts only after the hosted run's cancellation is
+# confirmed, so a suite never runs twice. A self-hosted run that cannot get a
+# runner, or no idle runner, continues down the tier order above.
 # This first delivery accepts only public firstmate repositories on github.com;
 # private repositories and other projects use the existing local path, never a
 # public relay or mirror. No paid runner label or quota purchase is requested.
@@ -85,6 +95,7 @@
 # PC01's last-resort lint returns bin/fm-lint.sh's changed-file status. An
 # unreadable count is the exception: local-lint, lint dispatch, and lint workers
 # fail closed instead of running only some of the canonical partitions.
+# Exit 77 means no verdict: never approve or override a Test or Lint gate over it.
 set -u
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SELF_DIR/.." && pwd)
@@ -312,13 +323,43 @@ fi
 metadata=$(api "/repos/$repo" --jq '[.private,.default_branch] | @tsv') || local_run 'source visibility unavailable'
 IFS=$'\t' read -r private default_branch <<< "$metadata"
 [ "$private" = false ] && [[ "$default_branch" =~ ^[A-Za-z0-9_./-]+$ ]] || local_run 'private or unverified source: hosted relay forbidden'
-request_id=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
-python3 - "$work" "$default_branch" "$request_id" <<'PY'
+runner_label=; saturated=0
+# Each dispatch gets a fresh request id so discovery never finds a cancelled run.
+# The runner input is sent only when routing to self-hosted, so a hosted dispatch
+# is unchanged and a workflow without that input refuses it as tier-unavailable.
+prepare_dispatch() {
+  request_id=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
+  python3 - "$work" "$default_branch" "$request_id" "$runner_label" <<'PY'
 import json,pathlib,sys
-w=pathlib.Path(sys.argv[1]); ref,rid=sys.argv[2:]
+w=pathlib.Path(sys.argv[1]); ref,rid,label=sys.argv[2:]
 p=json.load(open(w/'payload.json'))
-(w/'dispatch.json').write_text(json.dumps(dict(ref=ref,inputs=dict(snapshot=(w/'payload.json').read_text(),request_id=rid,partitions=json.dumps(list(p['partitions']))))))
+inputs=dict(snapshot=(w/'payload.json').read_text(),request_id=rid,partitions=json.dumps(list(p['partitions'])))
+if label: inputs['runner']=label
+(w/'dispatch.json').write_text(json.dumps(dict(ref=ref,inputs=inputs)))
 PY
+}
+repo_has_queued_runs() {
+  local count
+  count=$(api "/repos/$repo/actions/runs?status=queued&per_page=1" --jq '.total_count' 2>/dev/null) || return 1
+  [[ "$count" =~ ^[0-9]+$ ]] && [ "$count" -gt 0 ]
+}
+idle_runner_label() {
+  local labels switch
+  labels=$(api "/repos/$repo/actions/runners?per_page=100" --jq '.runners[] | select(.status == "online" and (.busy | not)) | .labels[].name' 2>/dev/null) || return 1
+  grep -Fxq fm-pc02 <<< "$labels" || return 1
+  switch=$(timeout "$API" "$SELF_DIR/fm-pc02-personal-use.sh" status 2>/dev/null) || return 1
+  [ "$switch" = off ] || return 1
+  echo fm-pc02
+}
+# Run-level status can read queued while jobs hold runners, and a job's
+# started_at is set even if it never ran, so only job status and runner decide.
+# Returns 0 when any job is admitted, 1 when none is, 2 when unobservable.
+run_admitted() {
+  local count
+  count=$(api "/repos/$repo/actions/runs/$run_id/jobs?per_page=100" --jq '[.jobs[] | select(.status == "in_progress" or .status == "completed" or ((.runner_name // "") != ""))] | length') || return 2
+  [[ "$count" =~ ^[0-9]+$ ]] || return 2
+  [ "$count" -gt 0 ]
+}
 # 75 means the tier could not produce a verdict and falls back; remaining
 # hosted faults fail closed with 77 so a gate can tell infrastructure from a
 # test or lint verdict.
@@ -359,7 +400,7 @@ try_github() {
     ambiguous=1
     echo 'fm-test-compute: GitHub dispatch outcome is ambiguous; looking for the run' >&2
   fi
-  local start now state conclusion row
+  local start now state conclusion row admitted=0
   start=$(date +%s)
   while :; do
     row=$(api "/repos/$repo/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100" --jq ".workflow_runs[] | select(.display_title == \"fm-test-compute-$request_id\") | [.id,.status,.conclusion] | @tsv") || { indeterminate 'GitHub run discovery request failed'; return; }
@@ -386,9 +427,15 @@ try_github() {
     [ "$state" != completed ] || break
     now=$(date +%s)
     case "$state" in queued|waiting|requested|pending)
-      if [ "$((now-start))" -ge "$QUEUE" ]; then
-        cancel || { indeterminate "GitHub run $run_id cancellation was not confirmed"; return; }
-        finished=1; return 75
+      if [ "$admitted" = 0 ] && [ "$((now-start))" -ge "$QUEUE" ]; then
+        run_admitted
+        case $? in
+          0) admitted=1 ;;
+          1)
+            cancel || { indeterminate "GitHub run $run_id cancellation was not confirmed"; return; }
+            finished=1; saturated=1; return 75 ;;
+          *) indeterminate "GitHub job observation failed for run $run_id"; return ;;
+        esac
       fi ;;
     esac
     if [ "$((now-start))" -ge "$RUN" ]; then
@@ -504,8 +551,20 @@ PY
   [ "$result_rc" = 0 ] || return "$result_rc"
   [ "$state" = success ] || { indeterminate "GitLab pipeline $run_id finished $state without a failing receipt"; return; }
 }
+if repo_has_queued_runs && runner_label=$(idle_runner_label); then
+  echo "fm-test-compute: repository has queued runs; routing to idle self-hosted label $runner_label" >&2
+fi
+prepare_dispatch
 try_github
 rc=$?
+# Only a confirmed saturation cancel reroutes; other 75s keep the tier order.
+if [ "$rc" = 75 ] && [ "$saturated" = 1 ] && [ -z "$runner_label" ] && runner_label=$(idle_runner_label); then
+  run_id=; finished=0
+  echo "fm-test-compute: hosted runners saturated; routing to idle self-hosted label $runner_label" >&2
+  prepare_dispatch
+  try_github
+  rc=$?
+fi
 if [ "$rc" = 75 ]; then
   run_id=; finished=1
   echo 'fm-test-compute: GitHub unavailable; trying GitLab' >&2

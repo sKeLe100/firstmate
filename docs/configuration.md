@@ -752,6 +752,8 @@ Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](f
 ## Hosted Test compute
 
 [`bin/fm-test-compute.sh`](../bin/fm-test-compute.sh) routes the pinned no-mistakes Test baseline through standard GitHub-hosted Ubuntu runners, then GitLab.com shared runners, then the existing PC02/PC01 admission path.
+When GitHub-hosted runners are saturated, the router dispatches the same workflow to an idle `fm-pc02` self-hosted runner instead, unless PC02's personal-use switch is on or unreadable.
+The broader `fm-parallel` label is not used, because it reaches PC01 runners outside heavy admission and PC02 regardless of that switch; PC01 stays behind the existing local admission path.
 The existing `--pc02-if-idle` entry point enables this automatically; no gate configuration change is required.
 Its header owns supported invocations, payload limits, polling bounds, receipt validation, cancellation, and exit semantics.
 Other selections, inspection, dirty worktrees, oversized snapshots, private repositories, and repositories outside public Firstmate keep their existing offload behavior; extending hosted routing to the complete-suite/post-merge regression is tracked as test-compute-full-suite-hosted.
@@ -775,7 +777,7 @@ Required PR CI and its existing check contexts remain unchanged.
 A failing test or lint receipt fails the caller and never triggers a second run on another tier.
 Unavailable tiers, a confirmed cancellation after a queue timeout, a confirmed GitLab execution timeout, and GitLab completion without receipts fall through to PC02/PC01 admission instead, so a single serial GitLab job cannot turn a large plan into a blocked gate; an ambiguous GitHub POST whose run never appears within the queue bound is treated as not started and falls through the same way, so it may race that later tier.
 Every other indeterminate hosted outcome fails closed with exit 77 instead of reporting a test or lint verdict, so neither an accepted GitHub dispatch that stays undiscovered nor an ambiguous GitLab pipeline dispatch is retried on another tier; a receipt that contradicts the dispatched head or scripts still exits 1, and a GitLab receipt showing a failed test still fails.
-A queued run can fall back only after its cancellation is confirmed; an interrupt requests cancellation of only the invocation's own run.
+A queued run can fall back only after its cancellation is confirmed, and only a run with no admitted job counts as queued, so a partly admitted run stays on its tier; an interrupt requests cancellation of only the invocation's own run.
 These rules prevent a transport error from silently accepting a different result; the script's header owns the exact exit codes and the complete set of fall-through and indeterminate conditions.
 Hosted logs and timing evidence return through partition artifacts, with one-day retention.
 The Test caller streams the downloaded logs into its ordinary output for no-mistakes evidence capture.
