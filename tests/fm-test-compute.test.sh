@@ -108,14 +108,14 @@ if path.endswith('/actions/runs/123'):
     if scenario in ('github-timeout','github-timeout-cancel-failure') and any('.status' in arg for arg in args):
         print('completed\tcancelled' if (w/'cancelled').exists() else 'running\t')
         sys.exit(0)
-    if scenario in ('queued','cancel-failure') and any('.status' in arg for arg in args):
+    if scenario in ('queued','cancel-failure','gitlab-queue-status-failure') and any('.status' in arg for arg in args):
         print('queued\t' if scenario=='cancel-failure' or not (w/'cancelled').exists() else 'completed\tcancelled')
         sys.exit(0)
     if scenario=='queued' and not (w/'cancelled').exists(): print('queued\t')
     else: print('completed\t'+('failure' if scenario=='failure' else 'success'))
     sys.exit(0)
 if path.endswith('/workflows/test-compute.yml'):
-    if scenario in ('github-unavailable','gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-queued','gitlab-timeout','gitlab-incomplete','gitlab-failure','gitlab-race-success','gitlab-race-failed'): sys.exit(1)
+    if scenario=='github-unavailable' or (scenario.startswith('gitlab-') and scenario!='gitlab-queue-status-failure'): sys.exit(1)
     print('active'); sys.exit(0)
 if path=='/repos/example/firstmate': print(('true' if scenario=='private' else 'false')+'\tmain'); sys.exit(0)
 sys.exit(1)
@@ -125,32 +125,41 @@ cat > "$TMP_ROOT/tools/glab" <<'MOCK'
 import json,os,pathlib,sys,zipfile,io
 args=sys.argv[1:]; w=pathlib.Path(os.environ['TEST_COMPUTE_DATA']); scenario=os.environ.get('SCENARIO','success')
 with open(w/'calls','a') as f: f.write('gitlab '+' '.join(args[:4])+'\n')
-if args[:2]==['auth','status']: sys.exit(0 if scenario in ('gitlab-success','gitlab-bootstrap','gitlab-quota','gitlab-forbidden','gitlab-queued','gitlab-timeout','gitlab-incomplete','gitlab-failure','gitlab-race-success','gitlab-race-failed') else 1)
+if args[:2]==['auth','status']: sys.exit(0 if scenario.startswith('gitlab-') else 1)
 assert args[0]=='api'
 path=next(x for x in args if x.startswith('projects/'))
 if path.endswith('/repository/commits'):
+    if scenario=='gitlab-bootstrap-failure': sys.exit(1)
     pathlib.Path(w/'bootstrap.json').write_text(pathlib.Path(args[args.index('--input')+1]).read_text())
     (w/'bootstrapped').touch(); print('{}'); sys.exit(0)
 if path.endswith('/pipeline'):
     if scenario=='gitlab-forbidden': print(json.dumps(dict(message=dict(base=['Insufficient permissions to set pipeline variables'])))); print('glab: map[message:map[base:[Insufficient permissions to set pipeline variables]]]',file=sys.stderr); sys.exit(1)
+    if scenario=='gitlab-pipeline-ambiguous': sys.exit(1)
     q=json.load(open(args[args.index('--input')+1])); p=json.loads(q['variables'][0]['value'])
-    (w/'gitlab-payload').write_text(json.dumps(p)); print('{"id":456}'); sys.exit(0)
+    (w/'gitlab-payload').write_text(json.dumps(p))
+    print('{"id":"not-an-id"}' if scenario=='gitlab-invalid-id' else '{"id":456}'); sys.exit(0)
 if path.endswith('/pipelines/456/cancel'):
+    if scenario=='gitlab-queue-cancel-failure': sys.exit(1)
     (w/'cancelled').touch(); print('{}'); sys.exit(0)
 if path.endswith('/pipelines/456'):
+    if scenario in ('gitlab-status-failure','gitlab-queue-status-failure'): sys.exit(1)
     if scenario=='gitlab-quota': status='failed'
-    elif scenario=='gitlab-queued': status='canceled' if (w/'cancelled').exists() else 'pending'
+    elif scenario in ('gitlab-queued','gitlab-queue-cancel-failure'): status='canceled' if (w/'cancelled').exists() else 'pending'
     elif scenario=='gitlab-timeout': status='canceled' if (w/'cancelled').exists() else 'running'
+    elif scenario=='gitlab-canceled-green': status='canceled'
     elif scenario in ('gitlab-incomplete','gitlab-failure'): status='failed'
     elif scenario.startswith('gitlab-race-'):
         status=scenario.removeprefix('gitlab-race-') if (w/'cancelled').exists() else 'pending'
     else: status='success'
     print(json.dumps(dict(status=status))); sys.exit(0)
 if path.endswith('/pipelines/456/jobs?per_page=100'):
+    if scenario=='gitlab-jobs-failure': sys.exit(1)
     if scenario=='gitlab-quota': print(json.dumps([dict(id=1,name='compute',failure_reason='ci_quota_exceeded',started_at=None)]))
     else: print(json.dumps([dict(id=1,artifacts_file={'filename':'x.zip'})]))
     sys.exit(0)
 if path.endswith('/artifacts'):
+    if scenario=='gitlab-artifact-failure': sys.exit(1)
+    if scenario=='gitlab-bad-artifact': sys.stdout.buffer.write(b'not a zip'); sys.exit(0)
     p=json.load(open(w/'gitlab-payload')); b=io.BytesIO()
     with zipfile.ZipFile(b,'w') as z:
         for k in p['partitions']:
@@ -159,7 +168,7 @@ if path.endswith('/artifacts'):
             result=dict(version=1,sha=p['sha'],partition=k,scripts=p['partitions'][k],exit=rc)
             z.writestr(f'result/{k}/result.json',json.dumps(result)); z.writestr(f'result/{k}/run.log','GitLab evidence\n')
     sys.stdout.buffer.write(b.getvalue()); sys.exit(0)
-print(json.dumps(dict(empty_repo=scenario=='gitlab-bootstrap',default_branch='main')))
+print(json.dumps(dict(empty_repo=scenario in ('gitlab-bootstrap','gitlab-bootstrap-failure'),default_branch='main')))
 MOCK
 chmod +x "$TMP_ROOT/tools/"*
 export PATH="$TMP_ROOT/tools:$PATH" FM_TEST_COMPUTE_QUEUE_SECS=1 FM_TEST_COMPUTE_POLL_SECS=1 FM_TEST_COMPUTE_API_SECS=3
@@ -318,16 +327,22 @@ for scenario in download-failure discovery-failure observation-failure invalid-r
   [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail "$scenario fell through to GitLab"
   pass "$scenario names its fail-closed reason"
 done
-for scenario in dispatch-ambiguous undiscovered; do
-  for kind in test lint; do
-    run_route "$scenario" "$kind"
-    expect_code 0 "$result" "$scenario $kind: a run that never appeared must fall back: $output"
-    assert_contains "$output" 'treating as not started' "$scenario $kind did not name why it fell back"
-    assert_contains "$output" 'local:' "$scenario $kind did not reach local admission"
-    [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail "$scenario $kind: GitLab tier was skipped incorrectly"
-  done
+for kind in test lint; do
+  run_route undiscovered "$kind"
+  expect_code 77 "$result" "an accepted but undiscovered $kind dispatch must be indeterminate: $output"
+  [[ "$output" != *'local:'* ]] || fail 'an accepted but undiscovered dispatch fell back locally'
+  assert_contains "$output" 'GitHub dispatch was accepted but no run appeared' 'an accepted but undiscovered dispatch did not name its fail-closed reason'
+  [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail 'an accepted but undiscovered dispatch reached GitLab'
+  pass "an accepted but undiscovered $kind dispatch fails closed instead of duplicating"
 done
-pass 'an ambiguous or undiscovered dispatch with no run after the bound falls back'
+for kind in test lint; do
+  run_route dispatch-ambiguous "$kind"
+  expect_code 0 "$result" "dispatch-ambiguous $kind: a run that never appeared must fall back: $output"
+  assert_contains "$output" 'treating as not started' "dispatch-ambiguous $kind did not name why it fell back"
+  assert_contains "$output" 'local:' "dispatch-ambiguous $kind did not reach local admission"
+  [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail "dispatch-ambiguous $kind: GitLab tier was skipped incorrectly"
+  pass "an ambiguous $kind dispatch with no run after the bound falls back"
+done
 run_route dispatch-ambiguous-found
 expect_code 0 "$result" "$output"
 [[ "$output" != *'local:'* ]] || fail 'an ambiguous dispatch whose run appeared fell back locally'
@@ -350,10 +365,12 @@ expect_code 0 "$result" "$output"
 [ -e "$TMP_ROOT/data/cancelled" ] || fail 'queue fallback did not cancel owned GitHub run'
 assert_contains "$output" 'local:' 'cancelled queue should fall back'
 pass 'queue timeout requires confirmed cancellation before fallback'
-run_route queued lint
-expect_code 0 "$result" "$output"
-assert_contains "$output" 'local: <--lint-partitions>' 'a confirmed-cancelled hosted lint queue timeout must fall back, never fail lint'
-pass 'a hosted lint queue timeout falls back instead of failing lint'
+run_route gitlab-queue-status-failure lint
+expect_code 77 "$result" "$output"
+[ -e "$TMP_ROOT/data/cancelled" ] || fail 'queue timeout did not cancel the owned GitHub run'
+assert_contains "$output" 'GitLab pipeline 456 status unavailable; failing closed' 'a GitLab status failure did not name its fail-closed reason'
+[[ "$output" != *'local:'* ]] || fail 'a GitLab status failure fell back locally and could report a lint verdict'
+pass 'a hosted lint queue timeout followed by a GitLab monitoring fault is indeterminate, not a lint failure'
 rm -f "$TMP_ROOT/data/"*
 set +e
 output=$(FM_TEST_COMPUTE_RUN_SECS=1 SCENARIO=github-timeout "$router" test --changed --exclude-family real-herdr-gated 2>&1)
@@ -400,6 +417,13 @@ expect_code 1 "$result" "$output"
 [[ "$output" != *'local:'* ]] || fail 'a GitLab test failure with complete receipts fell back locally'
 assert_contains "$output" 'Hosted partition failed: portable-parallel-1' 'GitLab test failure evidence was not preserved'
 pass 'a GitLab test failure with complete receipts still fails'
+for scenario in gitlab-pipeline-ambiguous gitlab-invalid-id gitlab-status-failure gitlab-jobs-failure gitlab-artifact-failure gitlab-bad-artifact gitlab-bootstrap-failure gitlab-canceled-green gitlab-queue-cancel-failure; do
+  run_route "$scenario"
+  expect_code 77 "$result" "$scenario must be indeterminate, not a test or lint verdict: $output"
+  [[ "$output" != *'local:'* ]] || fail "$scenario fell back locally"
+  assert_contains "$output" 'failing closed' "$scenario did not name its fail-closed reason"
+  pass "$scenario fails closed with a diagnostic"
+done
 for scenario in github-race-failed github-race-success; do
   run_route "$scenario"
   expect_code 77 "$result" "$scenario must fail closed after a terminal completion race: $output"
@@ -433,7 +457,7 @@ assert_contains "$output" 'local:' 'GitLab quota exhaustion did not fall back'
 pass 'GitLab jobs rejected before start for exhausted compute fall back automatically'
 for scenario in gitlab-race-success gitlab-race-failed; do
   run_route "$scenario"
-  expect_code 1 "$result" "$scenario must fail closed after a terminal completion race: $output"
+  expect_code 77 "$result" "$scenario must be indeterminate after a terminal completion race: $output"
   [[ "$output" != *'local:'* ]] || fail "$scenario fell back after the GitLab pipeline completed"
   pass "$scenario cannot treat GitLab completion as cancellation"
 done

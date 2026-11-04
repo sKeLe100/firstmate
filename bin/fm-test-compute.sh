@@ -51,13 +51,16 @@
 #
 # Result receipts bind every hosted partition to HEAD and the exact selected
 # scripts. A test/lint failure is terminal, never grounds for a greener local
-# rerun. GitHub read/receipt ambiguity fails closed with exit 77. Queued
-# admission can time out and fall back only after the owned run is confirmed
-# cancelled. A dispatch whose run never appears within the queue bound, even
-# after an ambiguous POST, was not started and falls back. GitLab
-# work rejected for ci_quota_exceeded before starting, a confirmed GitLab
-# execution timeout, or GitLab completion with missing receipts falls through
-# to local admission; a GitLab receipt showing a failed test still fails.
+# rerun. GitHub and GitLab read, receipt, and monitoring faults fail closed
+# with exit 77. Queued admission can time out and fall back only after the
+# owned run is confirmed cancelled. An ambiguous dispatch whose run never
+# appears within the queue bound is treated as not started and falls back; an
+# accepted dispatch that stays undiscovered fails closed rather than being
+# duplicated.
+# GitLab work rejected for ci_quota_exceeded before starting, a confirmed
+# GitLab execution timeout, or GitLab completion with missing receipts falls
+# through to local admission; a GitLab receipt showing a failed test still
+# fails.
 # Every API call is bounded. Interrupts cancel only this invocation's run.
 # stdout forwards suite evidence; routing diagnostics go to stderr.
 #
@@ -71,9 +74,10 @@
 #   FM_TEST_COMPUTE_API_SECS    per API request bound (default 30)
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
-# Exit: 0 proven success; 1 failed GitHub evidence or a failed hosted receipt;
-# 2 usage error; 77 hosted outcome indeterminate (infrastructure fault while a
-# run may be executing, never a test or lint verdict). Unavailable hosted tiers fall through to PC02/PC01 admission:
+# Exit: 0 proven success; 1 failed hosted evidence or a failed hosted receipt;
+# 2 usage error; 77 hosted outcome indeterminate (an infrastructure fault, or
+# a dispatched run that may still be executing, never a test or lint verdict).
+# Unavailable hosted tiers fall through to PC02/PC01 admission:
 # Test and remote lint return the executed command's status, while PC01's
 # last-resort lint returns bin/fm-lint.sh's changed-file status.
 set -u
@@ -288,8 +292,8 @@ w=pathlib.Path(sys.argv[1]); ref,rid=sys.argv[2:]
 p=json.load(open(w/'payload.json'))
 (w/'dispatch.json').write_text(json.dumps(dict(ref=ref,inputs=dict(snapshot=(w/'payload.json').read_text(),request_id=rid,partitions=json.dumps(list(p['partitions']))))))
 PY
-# 75 means tier unavailable before test execution; all ambiguous failures fail
-# closed with 77 so a gate can tell infrastructure from a test or lint verdict.
+# 75 means tier unavailable before test execution; hosted faults fail closed
+# with 77 so a gate can tell infrastructure from a test or lint verdict.
 indeterminate() { echo "fm-test-compute: $1; failing closed" >&2; return 77; }
 verify_results() {
   python3 - "$work" "$sha" "${1:-}" <<'PY'
@@ -337,10 +341,11 @@ try_github() {
       break
     fi
     now=$(date +%s)
-    # No run is listed after the bound, so none started: the tier is unavailable.
+    # An accepted dispatch may still start, so only an ambiguous POST falls
+    # back; an accepted but undiscovered run stays fail-closed, never duplicated.
     if [ "$((now-start))" -ge "$QUEUE" ]; then
-      if [ "$ambiguous" = 1 ]; then echo "fm-test-compute: GitHub dispatch outcome stayed ambiguous and no run appeared within ${QUEUE}s; treating as not started" >&2
-      else echo "fm-test-compute: GitHub dispatch was accepted but no run appeared within ${QUEUE}s; treating as not started" >&2; fi
+      [ "$ambiguous" = 1 ] || { indeterminate "GitHub dispatch was accepted but no run appeared within ${QUEUE}s"; return; }
+      echo "fm-test-compute: GitHub dispatch outcome stayed ambiguous and no run appeared within ${QUEUE}s; treating as not started" >&2
       return 75
     fi
     sleep "$POLL"
@@ -390,7 +395,7 @@ import json,pathlib,sys
 root,w=map(pathlib.Path,sys.argv[1:])
 (w/'bootstrap.json').write_text(json.dumps(dict(branch='firstmate-compute',commit_message='ci: bootstrap public Firstmate compute relay',actions=[dict(action='create',file_path='.gitlab-ci.yml',content=(root/'.github/workflows/test-compute.gitlab.template').read_text())])))
 PY
-    timeout "$API" glab api --hostname gitlab.com --method POST "projects/$project/repository/commits" --input "$work/bootstrap.json" > /dev/null || return 1
+    timeout "$API" glab api --hostname gitlab.com --method POST "projects/$project/repository/commits" --input "$work/bootstrap.json" > /dev/null || { indeterminate 'GitLab bootstrap commit failed'; return; }
     ref=firstmate-compute
   else
     ref=firstmate-compute
@@ -415,18 +420,18 @@ except (ValueError,AttributeError):
     sys.exit(1)
 PY_REJECTION
     then return 75; fi
-    return 1
+    indeterminate 'GitLab pipeline dispatch outcome is ambiguous'; return
   fi
-  run_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$work/pipeline.json") || return 1
-  [[ "$run_id" =~ ^[0-9]+$ ]] || return 1
+  run_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$work/pipeline.json") || { indeterminate 'GitLab returned an invalid pipeline response'; return; }
+  [[ "$run_id" =~ ^[0-9]+$ ]] || { indeterminate 'GitLab returned an invalid pipeline id'; return; }
   echo "fm-test-compute: GitLab pipeline $run_id in ${project//%2F/\/}" >&2
   start=$(date +%s)
   while :; do
-    state=$(timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])') || return 1
+    state=$(timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])') || { indeterminate "GitLab pipeline $run_id status unavailable"; return; }
     case "$state" in success|failed|canceled|skipped) break ;; esac
     now=$(date +%s)
     case "$state" in pending|created|manual|scheduled|waiting_for_resource)
-      if [ "$((now-start))" -ge "$QUEUE" ]; then cancel || return 1; finished=1; return 75; fi ;;
+      if [ "$((now-start))" -ge "$QUEUE" ]; then cancel || { indeterminate "GitLab pipeline $run_id cancellation was not confirmed"; return; }; finished=1; return 75; fi ;;
     esac
     if [ "$((now-start))" -ge "$RUN" ]; then
       if cancel; then
@@ -434,12 +439,12 @@ PY_REJECTION
         echo "fm-test-compute: GitLab run exceeded ${RUN}s; falling back to local admission" >&2
         return 75
       fi
-      return 1
+      indeterminate "GitLab run exceeded ${RUN}s and cancellation was not confirmed"; return
     fi
     sleep "$POLL"
   done
   finished=1
-  timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id/jobs?per_page=100" > "$work/jobs.json" || return 1
+  timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id/jobs?per_page=100" > "$work/jobs.json" || { indeterminate "GitLab job listing failed for pipeline $run_id"; return; }
   python3 - "$work/jobs.json" <<'PY' > "$work/jobs"
 import json,sys
 for j in json.load(open(sys.argv[1])):
@@ -447,9 +452,9 @@ for j in json.load(open(sys.argv[1])):
 PY
   mkdir -p "$work/results"
   while IFS= read -r job_id; do
-    [[ "$job_id" =~ ^[0-9]+$ ]] || return 1
-    timeout "$API" glab api --hostname gitlab.com "projects/$project/jobs/$job_id/artifacts" > "$work/$job_id.zip" || return 1
-    python3 - "$work" "$job_id" <<'PY' || return 1
+    [[ "$job_id" =~ ^[0-9]+$ ]] || { indeterminate 'GitLab returned an invalid job id'; return; }
+    timeout "$API" glab api --hostname gitlab.com "projects/$project/jobs/$job_id/artifacts" > "$work/$job_id.zip" || { indeterminate "GitLab artifact download failed for job $job_id"; return; }
+    python3 - "$work" "$job_id" <<'PY' || { indeterminate "GitLab artifact extraction failed for job $job_id"; return; }
 import pathlib,sys,zipfile
 w=pathlib.Path(sys.argv[1]); out=w/'results'/sys.argv[2]; out.mkdir()
 with zipfile.ZipFile(w/(sys.argv[2]+'.zip')) as z:
@@ -468,7 +473,7 @@ PY
     return 75
   fi
   [ "$result_rc" = 0 ] || return "$result_rc"
-  [ "$state" = success ]
+  [ "$state" = success ] || { indeterminate "GitLab pipeline $run_id finished $state without a failing receipt"; return; }
 }
 try_github
 rc=$?
