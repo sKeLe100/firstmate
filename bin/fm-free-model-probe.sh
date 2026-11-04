@@ -5,7 +5,7 @@
 #
 # Runs `opencode run -m <model-id> "Reply with exactly: OK"` from a temporary
 # directory with an optional timeout (default 60 seconds), then checks OpenCode's
-# log directory for a "Free usage limit reached" entry written for that modelID
+# logfmt log for a "Free usage limit reached" entry written for that modelID
 # since the probe started.
 #
 # Prints exactly one line to stdout:
@@ -15,8 +15,8 @@
 #                   the log message, or "unknown retry" if not parseable) (exit 3)
 #   unknown <why>   the probe timed out or produced other output (exit 1)
 #
-# OpenCode logs live in ~/.local/share/opencode/log/ (override with
-# OPENCODE_LOG_DIR); the newest file in that directory is the current log.
+# OpenCode writes logfmt lines to ~/.local/share/opencode/log/opencode.log
+# (override with FM_OPENCODE_LOG).
 
 set -u
 
@@ -28,8 +28,8 @@ Usage: fm-free-model-probe.sh <opencode-model-id> [timeout-secs]
 
 Runs `opencode run -m <model-id> "Reply with exactly: OK"` from a temporary
 directory with an optional timeout (default 60 seconds), then checks OpenCode's
-log directory for a "Free usage limit reached" entry written for that modelID
-since the probe started.
+log file for a "Free usage limit reached" entry written for that modelID since
+the probe started.
 
 Prints exactly one line to stdout:
   ok              the reply was exactly "OK" (exit 0)
@@ -67,7 +67,7 @@ esac
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
-OPENCODE_LOG_DIR="${OPENCODE_LOG_DIR:-$HOME/.local/share/opencode/log}"
+OPENCODE_LOG="${FM_OPENCODE_LOG:-$HOME/.local/share/opencode/log/opencode.log}"
 
 PROBE_START_EPOCH=$(date +%s)
 
@@ -91,7 +91,7 @@ fi
 
 log_timestamp_epoch() {  # <log-line>
   local ts
-  ts=$(printf '%s\n' "$1" | sed -n 's/.*"timestamp":"\([^"]*\)".*/\1/p')
+  ts=$(printf '%s\n' "$1" | sed -n 's/^timestamp=\([^ ]*\).*/\1/p')
   [ -n "$ts" ] || return 1
   case "$ts" in
     *.*Z) ts="${ts%%.*}Z" ;;
@@ -101,29 +101,26 @@ log_timestamp_epoch() {  # <log-line>
 }
 
 CAPED_REASON=""
-if [ -d "$OPENCODE_LOG_DIR" ]; then
-  CURRENT_LOG=
-  for candidate in "$OPENCODE_LOG_DIR"/*; do
-    [ -f "$candidate" ] || continue
-    if [ -z "$CURRENT_LOG" ] || [ "$candidate" -nt "$CURRENT_LOG" ]; then
-      CURRENT_LOG=$candidate
-    fi
-  done
-  if [ -n "$CURRENT_LOG" ]; then
-    LOG_MATCH=$(grep -F "\"modelID\":\"${MODEL_ID}\"" "$CURRENT_LOG" 2>/dev/null \
-      | grep -F "Free usage limit reached" | tail -n 1)
-    if [ -n "$LOG_MATCH" ]; then
-      LOG_EPOCH=$(log_timestamp_epoch "$LOG_MATCH") || LOG_EPOCH=
-      if [ -n "$LOG_EPOCH" ] && [ "$LOG_EPOCH" -ge "$PROBE_START_EPOCH" ]; then
-        RETRY_TIME=$(printf '%s\n' "$LOG_MATCH" | grep -oE 'retry after [0-9]+' | head -n 1 | grep -oE '[0-9]+' || true)
-        if [ -n "$RETRY_TIME" ]; then
-          CAPED_REASON="retry after ${RETRY_TIME}s"
-        else
-          CAPED_REASON="unknown retry"
-        fi
-        echo "capped $CAPED_REASON"
-        exit 3
+if [ -r "$OPENCODE_LOG" ]; then
+  LOG_MATCH=$(awk -v model="$MODEL_ID" '
+    {
+      if (index($0, "Free usage limit reached")) {
+        for (i = 1; i <= NF; i++)
+          if ($i == "modelID=" model) { print; next }
+      }
+    }
+  ' "$OPENCODE_LOG" 2>/dev/null | tail -n 1)
+  if [ -n "$LOG_MATCH" ]; then
+    LOG_EPOCH=$(log_timestamp_epoch "$LOG_MATCH") || LOG_EPOCH=
+    if [ -n "$LOG_EPOCH" ] && [ "$LOG_EPOCH" -ge "$PROBE_START_EPOCH" ]; then
+      RETRY_TIME=$(printf '%s\n' "$LOG_MATCH" | grep -oE 'retry after [0-9]+' | head -n 1 | grep -oE '[0-9]+' || true)
+      if [ -n "$RETRY_TIME" ]; then
+        CAPED_REASON="retry after ${RETRY_TIME}s"
+      else
+        CAPED_REASON="unknown retry"
       fi
+      echo "capped $CAPED_REASON"
+      exit 3
     fi
   fi
 fi

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/fm-free-model-probe.test.sh - unit tests for bin/fm-free-model-probe.sh.
 #
-# Uses a fake `opencode` on PATH and a temp log directory (overridable via
-# OPENCODE_LOG_DIR) to cover the ok, capped, stale-entry, timeout, and failure
+# Uses a fake `opencode` on PATH and a temp log file (overridable via
+# FM_OPENCODE_LOG) to cover the ok, capped, stale-entry, timeout, and failure
 # paths.
 set -u
 
@@ -12,12 +12,14 @@ set -u
 SCRIPT="$ROOT/bin/fm-free-model-probe.sh"
 TMP_ROOT=$(fm_test_tmproot fm-free-model-probe-tests)
 FAKE_BIN="$TMP_ROOT/fakebin"
-LOG_DIR="$TMP_ROOT/opencode-logs"
+LOG_FILE="$TMP_ROOT/opencode.log"
 HOME_DIR="$TMP_ROOT/home"
-mkdir -p "$FAKE_BIN" "$LOG_DIR" "$HOME_DIR"
+PROBE_MARKER="$TMP_ROOT/probe-ran"
+mkdir -p "$FAKE_BIN" "$HOME_DIR"
 
 export HOME="$HOME_DIR"
-export OPENCODE_LOG_DIR="$LOG_DIR"
+export FM_OPENCODE_LOG="$LOG_FILE"
+export PROBE_MARKER
 
 run_probe() {
   PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" \
@@ -25,16 +27,43 @@ run_probe() {
 }
 
 reset_logs() {
-  rm -f "$LOG_DIR"/*
+  rm -f "$LOG_FILE"
 }
 
-# --- help --------------------------------------------------------------------
+# --- help and usage refusals -------------------------------------------------
 
-out=$("$SCRIPT" --help)
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+: > "$PROBE_MARKER"
+exec sleep 300
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+rm -f "$PROBE_MARKER"
+out=$(PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" "$SCRIPT" --help)
 rc=$?
 [ "$rc" -eq 0 ] || fail "--help: expected exit 0, got $rc"
 assert_contains "$out" "Usage: fm-free-model-probe.sh" "--help: should print usage"
+[ ! -e "$PROBE_MARKER" ] || fail "--help: help handling launched a probe"
 pass "fm-free-model-probe: --help prints usage without probing"
+
+expect_usage_refusal() {  # <label> [args...]
+  local label=$1
+  shift
+  rm -f "$PROBE_MARKER"
+  PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" \
+    "$SCRIPT" "$@" >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 2 ] || fail "$label: expected exit 2, got $rc"
+  [ ! -e "$PROBE_MARKER" ] || fail "$label: a probe ran"
+  pass "fm-free-model-probe: $label refuses with exit 2 without probing"
+}
+
+expect_usage_refusal "an unknown option" --bogus
+expect_usage_refusal "a missing model"
+expect_usage_refusal "too many arguments" glm-5.3-flash-free 5 extra
+expect_usage_refusal "a zero timeout" glm-5.3-flash-free 0
+expect_usage_refusal "a non-numeric timeout" glm-5.3-flash-free soon
 
 # --- ok case -----------------------------------------------------------------
 
@@ -98,11 +127,12 @@ pass "fm-free-model-probe: runs opencode from a temporary directory"
 
 # --- capped case (log entry present) ------------------------------------------
 
-# Fake opencode that logs a cap during the probe, then retries silently.
+# Fake opencode that logs a real opencode logfmt cap line during the probe,
+# then retries silently.
 cat > "$FAKE_BIN/opencode" <<'SH'
 #!/usr/bin/env bash
-printf '{"timestamp":"%s","level":"ERROR","providerID":"opencode","modelID":"glm-5.3-flash-free","error":"AI_APICallError: Free usage limit reached. Please retry after 30s."}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OPENCODE_LOG_DIR/probe.log"
+printf 'timestamp=%s level=ERROR run=probe message="stream error" providerID=opencode modelID=glm-5.3-flash-free session.id=ses_probe small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached. Please retry after 30s."\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$FM_OPENCODE_LOG"
 exec sleep 300
 SH
 chmod +x "$FAKE_BIN/opencode"
@@ -119,8 +149,8 @@ pass "fm-free-model-probe: capped case returns 'capped <retry>' with exit 3 when
 
 cat > "$FAKE_BIN/opencode" <<'SH'
 #!/usr/bin/env bash
-printf '{"timestamp":"%s","level":"ERROR","providerID":"opencode","modelID":"glm-5.3-flash-free","error":"AI_APICallError: Free usage limit reached."}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OPENCODE_LOG_DIR/probe.log"
+printf 'timestamp=%s level=ERROR run=probe message="stream error" providerID=opencode modelID=glm-5.3-flash-free session.id=ses_probe small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached."\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$FM_OPENCODE_LOG"
 exec sleep 300
 SH
 chmod +x "$FAKE_BIN/opencode"
@@ -143,8 +173,8 @@ SH
 chmod +x "$FAKE_BIN/opencode"
 
 reset_logs
-cat > "$LOG_DIR/stale.log" <<'LOG'
-{"timestamp":"1970-01-01T00:00:00Z","level":"ERROR","providerID":"opencode","modelID":"glm-5.3-flash-free","error":"AI_APICallError: Free usage limit reached. Please retry after 30s."}
+cat > "$FM_OPENCODE_LOG" <<'LOG'
+timestamp=1970-01-01T00:00:00Z level=ERROR run=old message="stream error" providerID=opencode modelID=glm-5.3-flash-free session.id=ses_old small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached. Please retry after 30s."
 LOG
 
 out=$(run_probe glm-5.3-flash-free)
@@ -158,8 +188,8 @@ pass "fm-free-model-probe: a capped entry from before the probe does not classif
 
 cat > "$FAKE_BIN/opencode" <<'SH'
 #!/usr/bin/env bash
-printf '{"timestamp":"%s","level":"ERROR","providerID":"opencode","modelID":"other-model","error":"AI_APICallError: Free usage limit reached."}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OPENCODE_LOG_DIR/probe.log"
+printf 'timestamp=%s level=ERROR run=probe message="stream error" providerID=opencode modelID=other-model session.id=ses_probe small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached."\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$FM_OPENCODE_LOG"
 exec sleep 300
 SH
 chmod +x "$FAKE_BIN/opencode"
@@ -222,7 +252,7 @@ assert_not_contains "$out" "timed out" "signal exit: a status above 124 is not a
 [ "$rc" -eq 1 ] || fail "signal exit: expected exit 1, got $rc"
 pass "fm-free-model-probe: a signal-range exit status is reported as that status, not a timeout"
 
-# --- log dir absent case ------------------------------------------------------
+# --- log file absent case -----------------------------------------------------
 
 cat > "$FAKE_BIN/opencode" <<'SH'
 #!/usr/bin/env bash
@@ -230,11 +260,10 @@ exec sleep 300
 SH
 chmod +x "$FAKE_BIN/opencode"
 
-# Set to a path that definitely does not exist.
-out=$(PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" OPENCODE_LOG_DIR="/tmp/nonexistent-log-dir-$(date +%s)" "$SCRIPT" glm-5.3-flash-free 5)
+out=$(PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" FM_OPENCODE_LOG="$TMP_ROOT/nonexistent-$(date +%s).log" "$SCRIPT" glm-5.3-flash-free 5)
 rc=$?
-assert_contains "$out" "unknown" "no log dir: output should start with 'unknown'"
-[ "$rc" -eq 1 ] || fail "no log dir: expected exit 1, got $rc"
-pass "fm-free-model-probe: absent log dir treats timeout as unknown"
+assert_contains "$out" "unknown" "no log file: output should start with 'unknown'"
+[ "$rc" -eq 1 ] || fail "no log file: expected exit 1, got $rc"
+pass "fm-free-model-probe: absent log file treats timeout as unknown"
 
 echo "# fm-free-model-probe.test.sh: all assertions passed"
