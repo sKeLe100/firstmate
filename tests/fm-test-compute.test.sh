@@ -472,7 +472,7 @@ assert_contains "$output" 'unknown command' 'usage error must explain input'
 pass 'unknown commands are rejected before dependencies'
 lint_fixture="$TMP_ROOT/local-lint-repo"
 mkdir -p "$lint_fixture/bin"
-cp "$ROOT/bin/fm-pc02-test-offload.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$lint_fixture/bin/"
+cp "$ROOT/bin/fm-pc02-test-offload.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$ROOT/bin/fm-pc02-hygiene-lib.sh" "$lint_fixture/bin/"
 cat > "$lint_fixture/bin/fm-lint.sh" <<'LINT'
 #!/usr/bin/env bash
 printf 'changed-file-lint argv=%s\n' "$*"

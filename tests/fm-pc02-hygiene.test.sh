@@ -3,13 +3,20 @@
 # storage/memory/stray-test report firstmate's heartbeat host check calls.
 # A fake ssh runs the shared probe locally against controlled files, so the
 # report shape, pressure naming and read-only guarantee are proven without
-# contacting PC02.
+# contacting PC02. The probe reads Linux-only fields, so the cases that depend
+# on them skip where those tools are absent.
 set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SCRIPT="$ROOT/bin/fm-pc02-hygiene.sh"
+# The probe reads Linux-only fields (GNU stat -c and ps etimes) and the report
+# bounds its ssh call with GNU timeout; the fake host below runs that probe
+# locally, so the field cases only prove anything where those tools exist.
+probe_host_supported() {
+  [ "$(uname -s)" = Linux ] && command -v timeout >/dev/null 2>&1
+}
 TMP_ROOT=$(fm_test_tmproot fm-pc02-hygiene)
 mkdir -p "$TMP_ROOT/empty-state" "$TMP_ROOT/pc02-tmp" "$TMP_ROOT/home"
 export FM_PC02_OFFLOAD_TMP_ROOT="$TMP_ROOT/pc02-tmp"
@@ -50,6 +57,9 @@ export PATH="$fakebin:$PATH"
 
 test_report_is_data_only_and_ok_when_within_bounds() {
   local out status
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
   out=$(FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=1024 \
     FM_PC02_OFFLOAD_TMP_MIN_FREE_MB=1024 \
     FM_PC02_OFFLOAD_DISK_MIN_FREE_MB=1024 \
@@ -70,6 +80,9 @@ test_report_is_data_only_and_ok_when_within_bounds() {
 
 test_report_names_each_crossed_bound_and_never_deletes() {
   local out status root
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
   root="$FM_PC02_OFFLOAD_TMP_ROOT/fm-test-run.stale"
   mkdir -p "$root/read-only"
   printf 'x\n' > "$root/read-only/file"
@@ -115,13 +128,78 @@ test_report_names_each_crossed_bound_and_never_deletes() {
   pass "the hygiene report names every crossed bound and never deletes or kills"
 }
 
+test_fixture_roots_count_only_with_their_marker() {
+  local out status tmp leaked live spawn dead_pid
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
+  tmp="$TMP_ROOT/fixture-roots"
+  leaked="$tmp/fm-fixture-leaked"
+  live="$tmp/fm-fixture-live"
+  spawn="$tmp/fm-spawn-task.real"
+  mkdir -p "$leaked/read-only" "$live" "$spawn"
+  head -c 2097152 /dev/zero > "$leaked/read-only/blob"
+  chmod 500 "$leaked/read-only"
+  printf 'x\n' > "$spawn/file"
+  ( exit 0 ) &
+  dead_pid=$!
+  wait "$dead_pid" 2>/dev/null || true
+  printf '%s\n%s\n' "$dead_pid" 'linux-starttime=0 cmdline-hex=00' > "$leaked/.fm-test-fixture"
+  printf '%s\n%s\n' "$$" 'linux-starttime=0 cmdline-hex=00' > "$live/.fm-test-fixture"
+  touch -d '3 hours ago' "$leaked/.fm-test-fixture" "$live/.fm-test-fixture" "$spawn"
+  out=$(FM_PC02_OFFLOAD_TMP_ROOT="$tmp" \
+    FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=1024 \
+    FM_PC02_OFFLOAD_TMP_MIN_FREE_MB=1024 \
+    FM_PC02_OFFLOAD_DISK_MIN_FREE_MB=1024 \
+    FM_PC02_HYGIENE_STALE_AGE_SECS=3600 \
+    FM_PC02_HYGIENE_IDLE_AGE_SECS=999999999 \
+    FM_PC02_HYGIENE_STALE_ROOTS_MAX=0 \
+    FM_PC02_HYGIENE_OLD_PROCS_MAX=0 "$SCRIPT" 2>&1)
+  status=$?
+  expect_code 1 "$status" "a stale fixture root must read as pressure: $out"
+  assert_contains "$out" "stale_test_roots=1" \
+    "the report miscounted the marked, live-marked and marker-less fm-* roots: $out"
+  assert_contains "$out" "stale_test_mib=2" "the report did not size the stale 2 MiB fixture root: $out"
+  assert_contains "$out" "pressure=stale_test_roots" "the report named the wrong crossed bound: $out"
+  [ -d "$leaked" ] || fail "the read-only report removed a stale fixture root"
+  [ -d "$live" ] || fail "the read-only report removed a live-owned fixture root"
+  [ -d "$spawn" ] || fail "the read-only report removed a marker-less fm-* root"
+  pass "the hygiene report counts fixture roots only with a dead owner marker"
+}
+
 test_unreadable_capacity_is_unknown_not_free() {
   local out status
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
   out=$(FM_PC02_OFFLOAD_MEMINFO="$TMP_ROOT/no-such-meminfo" "$SCRIPT" 2>&1)
   status=$?
   expect_code 2 "$status" "an unreadable capacity reading must exit 2: $out"
   assert_contains "$out" "unreadable field" "an unreadable capacity reading was not named: $out"
   pass "an unreadable capacity reading is unknown rather than evidence of free space"
+}
+
+test_unreadable_process_and_size_reads_are_unknown_not_zero() {
+  local out status tmp stub
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
+  tmp="$TMP_ROOT/unreadable-reads"
+  mkdir -p "$tmp/failing-ps" "$tmp/failing-du" "$tmp/tmp/fm-test-run.stale"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$tmp/failing-ps/ps"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$tmp/failing-du/du"
+  chmod +x "$tmp/failing-ps/ps" "$tmp/failing-du/du"
+  touch -d '3 hours ago' "$tmp/tmp/fm-test-run.stale"
+  for stub in failing-ps failing-du; do
+    out=$(PATH="$tmp/$stub:$PATH" \
+      FM_PC02_OFFLOAD_TMP_ROOT="$tmp/tmp" \
+      FM_PC02_HYGIENE_STALE_AGE_SECS=3600 \
+      FM_PC02_HYGIENE_IDLE_AGE_SECS=999999999 "$SCRIPT" 2>&1)
+    status=$?
+    expect_code 2 "$status" "a failed $stub read must be unknown rather than zero: $out"
+    assert_contains "$out" "unreadable field" "the failed $stub read was not named as unknown: $out"
+  done
+  pass "a failed process or size read makes the report unknown, never a silent zero"
 }
 
 test_malformed_local_setting_is_refused() {
@@ -147,7 +225,9 @@ test_help_prints_the_read_only_contract() {
 
 test_report_is_data_only_and_ok_when_within_bounds
 test_report_names_each_crossed_bound_and_never_deletes
+test_fixture_roots_count_only_with_their_marker
 test_unreadable_capacity_is_unknown_not_free
+test_unreadable_process_and_size_reads_are_unknown_not_zero
 test_malformed_local_setting_is_refused
 test_help_prints_the_read_only_contract
 

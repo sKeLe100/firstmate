@@ -836,11 +836,11 @@ Measured 2026-11-03: two concurrent full selections on an idle PC02 did not fit 
 The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
 Exceeding the whole-run cap fails with exit 124 and does not rerun the selected command locally or omit selected work.
 
-Before a slot is claimed, the offload sweeps PC02 run and `fm-test-run.*` roots older than the stale bound that no live process references, then checks PC02 `MemAvailable`, `/tmp` free space and home-disk free space against local floors.
-A swept root has owner write restored first, so the read-only hook directories test fixtures leave behind cannot block removal, and a low or unreadable reading routes the run local naming the resource, the observed value and the floor.
+Before a slot is claimed, the offload sweeps PC02 offload run, `fm-test-run.*` and test-fixture-marker roots older than the stale bound that no live process owns, then checks PC02 `MemAvailable`, `/tmp` free space and home-disk free space against local floors.
+Reclaimed space counts, because the readings are taken after the sweep, and a low or unreadable reading routes the run local naming the resource, the observed value and the floor.
 An offloaded run also places its runner `TMPDIR` inside the per-run PC02 mirror, so the mirror cleanup reaps the run's own temp root on the normal, interrupt and timeout paths.
 [`bin/fm-pc02-hygiene.sh`](../bin/fm-pc02-hygiene.sh) exposes the same readings as a cheap read-only report for firstmate's heartbeat host check: `MemAvailable`, `/tmp` and disk use, the count and size of stale test roots, and test processes older than the idle bound. It never kills a process or removes a file, and exits 1 with a named `pressure=` list when a bound is crossed.
-The offload's header owns the exact sweep, owner-marker and floor rules plus every override; `tests/fm-pc02-test-offload.test.sh` and `tests/fm-pc02-hygiene.test.sh` pin them without contacting PC02.
+[`bin/fm-pc02-hygiene-lib.sh`](../bin/fm-pc02-hygiene-lib.sh) owns the sweep, owner-marker and floor rules, and the offload's header lists every override; `tests/fm-pc02-test-offload.test.sh` and `tests/fm-pc02-hygiene.test.sh` pin them without contacting PC02.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 

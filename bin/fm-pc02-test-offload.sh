@@ -93,6 +93,13 @@
 #     rerunning locally. Lint mode keeps bin/fm-lint.sh's own worker count and
 #     partition selection untouched; the whole-run bound applies to it too.
 #   - Pre-claim hygiene: before any slot is claimed, the run sweeps PC02 test
+#     roots no live process owns, then reads MemAvailable, the TMP_ROOT (/tmp)
+#     free space and the PC02 home-disk free space. A reading under its floor
+#     routes the run local and names the resource, the observed value and the
+#     floor; an unreadable reading is treated as unclear and routes local too,
+#     never as free. bin/fm-pc02-hygiene-lib.sh owns the stale-root, owner,
+#     sweep and capacity rules, and bin/fm-pc02-hygiene.sh exposes the same
+#     readings as a read-only report.
 #     roots older than FM_PC02_OFFLOAD_STALE_AGE_SECS that no live process
 #     references (an offload run root's own pgid marker is the owner rule for
 #     its root), then reads MemAvailable, the TMP_ROOT (/tmp) free space and
@@ -294,9 +301,9 @@
 #                                      (default: 5; idle measures 0)
 #   FM_PC02_OFFLOAD_SWEEP_TIMEOUT_SECS  bound for the pre-claim sweep and
 #                                      capacity reading (default: 120)
-#   FM_PC02_OFFLOAD_STALE_AGE_SECS      age at which an unreferenced PC02 run
-#                                      or fm-test-run.* root may be swept
-#                                      (default: 21600, six hours)
+#   FM_PC02_OFFLOAD_STALE_AGE_SECS      age at which an unreferenced PC02 run,
+#                                      fm-test-run.* or fixture-marker root may
+#                                      be swept (default: 21600, six hours)
 #   FM_PC02_OFFLOAD_TMP_ROOT            PC02 tmp directory (default: /tmp)
 #   FM_PC02_OFFLOAD_MEMINFO             PC02 meminfo path (default:
 #                                      /proc/meminfo)
