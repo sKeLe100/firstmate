@@ -154,6 +154,8 @@ if path.endswith('/pipelines/456'):
     print(json.dumps(dict(status=status))); sys.exit(0)
 if path.endswith('/pipelines/456/jobs?per_page=100'):
     if scenario=='gitlab-jobs-failure': sys.exit(1)
+    if scenario=='gitlab-malformed-jobs': print('not json'); sys.exit(0)
+    if scenario=='gitlab-bad-jobs': print('{"id":1}'); sys.exit(0)
     if scenario=='gitlab-quota': print(json.dumps([dict(id=1,name='compute',failure_reason='ci_quota_exceeded',started_at=None)]))
     else: print(json.dumps([dict(id=1,artifacts_file={'filename':'x.zip'})]))
     sys.exit(0)
@@ -422,6 +424,13 @@ for scenario in gitlab-pipeline-ambiguous gitlab-invalid-id gitlab-status-failur
   expect_code 77 "$result" "$scenario must be indeterminate, not a test or lint verdict: $output"
   [[ "$output" != *'local:'* ]] || fail "$scenario fell back locally"
   assert_contains "$output" 'failing closed' "$scenario did not name its fail-closed reason"
+  pass "$scenario fails closed with a diagnostic"
+done
+for scenario in gitlab-malformed-jobs gitlab-bad-jobs; do
+  run_route "$scenario"
+  expect_code 77 "$result" "$scenario must be indeterminate, not a test or lint verdict: $output"
+  [[ "$output" != *'local:'* ]] || fail "$scenario fell back locally"
+  assert_contains "$output" 'GitLab returned an invalid job listing' "$scenario did not name its fail-closed reason"
   pass "$scenario fails closed with a diagnostic"
 done
 for scenario in github-race-failed github-race-success; do

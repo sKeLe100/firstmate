@@ -51,16 +51,15 @@
 #
 # Result receipts bind every hosted partition to HEAD and the exact selected
 # scripts. A test/lint failure is terminal, never grounds for a greener local
-# rerun. GitHub and GitLab read, receipt, and monitoring faults fail closed
-# with exit 77. Queued admission can time out and fall back only after the
-# owned run is confirmed cancelled. An ambiguous dispatch whose run never
-# appears within the queue bound is treated as not started and falls back; an
-# accepted dispatch that stays undiscovered fails closed rather than being
-# duplicated.
-# GitLab work rejected for ci_quota_exceeded before starting, a confirmed
-# GitLab execution timeout, or GitLab completion with missing receipts falls
-# through to local admission; a GitLab receipt showing a failed test still
-# fails.
+# rerun. Hosted faults fail closed with exit 77 so a gate can tell
+# infrastructure from a test or lint verdict. Unavailable tiers fall through to
+# local admission instead: GitHub workflow state, startup failure, or dispatch
+# rejection; a GitHub ambiguous POST whose run never appears within the queue
+# bound (treated as not started, so it may race a later tier); GitLab
+# authentication, project reads, dispatch rejection, quota rejection, or
+# missing receipts; and a cancellation confirmed after a queue timeout or a
+# GitLab execution timeout. An accepted GitHub dispatch that stays
+# undiscovered fails closed rather than being duplicated.
 # Every API call is bounded. Interrupts cancel only this invocation's run.
 # stdout forwards suite evidence; routing diagnostics go to stderr.
 #
@@ -292,8 +291,9 @@ w=pathlib.Path(sys.argv[1]); ref,rid=sys.argv[2:]
 p=json.load(open(w/'payload.json'))
 (w/'dispatch.json').write_text(json.dumps(dict(ref=ref,inputs=dict(snapshot=(w/'payload.json').read_text(),request_id=rid,partitions=json.dumps(list(p['partitions']))))))
 PY
-# 75 means tier unavailable before test execution; hosted faults fail closed
-# with 77 so a gate can tell infrastructure from a test or lint verdict.
+# 75 means the tier could not produce a verdict and falls back; remaining
+# hosted faults fail closed with 77 so a gate can tell infrastructure from a
+# test or lint verdict.
 indeterminate() { echo "fm-test-compute: $1; failing closed" >&2; return 77; }
 verify_results() {
   python3 - "$work" "$sha" "${1:-}" <<'PY'
@@ -321,7 +321,8 @@ try_github() {
   tier=github
   api "/repos/$repo/actions/workflows/test-compute.yml" --jq '.state' > "$work/workflow-state" 2>/dev/null || return 75
   [ "$(cat "$work/workflow-state")" = active ] || return 75
-  # A timed-out POST may have been accepted. Do not duplicate it on another tier.
+  # A dispatch confirmed accepted (ambiguous=0) is never duplicated. A
+  # transport-ambiguous POST may race the next tier when no run is listed.
   local ambiguous=0
   if ! api POST "/repos/$repo/actions/workflows/test-compute.yml/dispatches" --input "$work/dispatch.json" > "$work/dispatch.out" 2>&1; then
     # A definitive HTTP rejection did not accept work; transport ambiguity may have.
@@ -445,7 +446,7 @@ PY_REJECTION
   done
   finished=1
   timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id/jobs?per_page=100" > "$work/jobs.json" || { indeterminate "GitLab job listing failed for pipeline $run_id"; return; }
-  python3 - "$work/jobs.json" <<'PY' > "$work/jobs"
+  python3 - "$work/jobs.json" <<'PY' > "$work/jobs" || { indeterminate "GitLab returned an invalid job listing for pipeline $run_id"; return; }
 import json,sys
 for j in json.load(open(sys.argv[1])):
     if j.get('artifacts_file'): print(j['id'])
