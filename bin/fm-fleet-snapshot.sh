@@ -1525,6 +1525,13 @@ snapshot_cleanup() {
   cleanup_json_files
 }
 trap snapshot_cleanup EXIT
+# Turn an interrupt into a normal exit so the EXIT trap runs only after the
+# command it interrupted has completed. A SIGTERM that lands inside a
+# VAR=$(mktemp -d ...) would otherwise run the trap before the assignment, and
+# the directory just created would be left behind with no variable naming it.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 bounded_parent_activities_json() {  # <status-file>
   local f=$1 out rc reason script

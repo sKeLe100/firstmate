@@ -177,6 +177,9 @@ stop_home_processes() {  # <home>
   done
   pid=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
   [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
+  # The always-on primary watchdog every watcher arm starts detached (setsid).
+  pid=$(cat "$home/state/.primary-watchdog.pid" 2>/dev/null || true)
+  [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
   while IFS= read -r pid; do
     if [ -e "$home/session.stop" ]; then
       wait "$pid" 2>/dev/null || true
@@ -189,13 +192,28 @@ stop_home_processes() {  # <home>
   done < <(cat "$home/orphan-pid" 2>/dev/null)
 }
 suite_cleanup() {
-  local home
+  local home leaked leak_rc=0
   while IFS= read -r home; do
     [ -n "$home" ] && stop_home_processes "$home"
   done < <(cat "$HOMES_FILE" 2>/dev/null)
+  # Leak assertion: the explicit teardown above must have stopped every
+  # primary-watchdog loop whose FM_HOME is inside this run's fixture roots.
+  # (fm_test_cleanup below reaps any straggler as the backstop.)
+  sleep 0.3
+  leaked=$(fm_test_fixture_watchdog_pids | tr '\n' ' ')
+  if [ -n "$leaked" ]; then
+    printf 'FAIL: fixture primary-watchdog loops outlived the suite teardown: %s\n' "$leaked" >&2
+    leak_rc=1
+  fi
   fm_test_cleanup
+  return "$leak_rc"
 }
-trap suite_cleanup EXIT
+suite_exit() {
+  local rc=$?
+  suite_cleanup || rc=$?
+  exit "$rc"
+}
+trap suite_exit EXIT
 
 make_home() {  # <name> <attended|away|quiet> [config line]
   local home="$TMP_ROOT/$1"
