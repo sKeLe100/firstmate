@@ -16,7 +16,7 @@ case "$*" in
     [ "${LANES_RC:-0}" = 0 ] || exit "$LANES_RC"
     printf '%s\n' portable-parallel-1 portable-parallel-2 portable-parallel-9 portable-serial portable-serial-1of2 portable-serial-2of2 real-herdr-gated
     ;;
-  '--changed --exclude-family real-herdr-gated --list')
+  '--changed --exclude-family real-herdr-gated --list'|'--changed --exclude-family real-herdr-gated --exclude-quarantined --list')
     [ "${SELECTION_RC:-0}" = 0 ] || exit "$SELECTION_RC"
     if [ "${ONLY_NON_HOSTED:-0}" = 1 ]; then
       printf '%s\n' tests/fm-devin-harness.test.sh tests/fm-calm-pi-extension.test.sh tests/fm-captain-hold-lifecycle.test.sh
@@ -167,7 +167,7 @@ config = YAML.load_file(ARGV.fetch(0))
 abort 'configured lint must route canonical partitions before the Pi typecheck' unless
   config.dig('commands', 'lint') == 'bin/fm-test-compute.sh lint && bash tests/fm-pi-primary-types.test.sh'
 abort 'pinned Test baseline changed' unless
-  config.dig('commands', 'test') == 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle'
+  config.dig('commands', 'test') == 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle'
 YAML
 pass 'trusted gate configuration routes lint and preserves the pinned Test baseline'
 router="$fixture/bin/fm-test-compute.sh"
@@ -179,7 +179,7 @@ run_route() {
   if [ "$route_kind" = lint ]; then
     output=$(SCENARIO="$scenario" "$router" lint 2>&1)
   else
-    output=$(SCENARIO="$scenario" "$router" test --changed --exclude-family real-herdr-gated 2>&1)
+    output=$(SCENARIO="$scenario" "$router" test --changed --exclude-family real-herdr-gated --exclude-quarantined 2>&1)
   fi
   result=$?
   set -e

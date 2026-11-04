@@ -1360,6 +1360,49 @@ SH
   pass "token-free retry re-runs a load-sensitive failure once and clears it without a real regression"
 }
 
+# The declared load-sensitive set also covers fm-extension-binding: its
+# aggregate coordinator runs real sections against a fixed 34-second deadline
+# and overran it under host load while passing alone.
+test_token_free_retry_recovers_extension_binding_load_flake() {
+  local tmp repo flag
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-retry-extension-binding.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$repo/bin/fm-timeout-lib.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+  flag="$tmp/attempt"
+  cat >"$repo/tests/fm-extension-binding.test.sh" <<SH
+#!/usr/bin/env bash
+n=\$(cat "$flag" 2>/dev/null || echo 0)
+n=\$((n + 1))
+echo "\$n" >"$flag"
+if [ "\$n" -lt 2 ]; then
+  echo "not ok - simulated load flake attempt \$n"
+  exit 1
+fi
+echo "ok - passed on retry attempt \$n"
+SH
+  chmod +x "$repo/tests/fm-extension-binding.test.sh"
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+
+  (cd "$repo" && FM_TEST_RUN_LOAD_RETRY_WAIT_MAX_SECS=5 FM_TEST_RUN_LOAD_RETRY_POLL_SECS=1 \
+    bin/fm-test-run.sh --changed --base HEAD~1) >"$tmp/out" 2>"$tmp/err" \
+    || { cat "$tmp/out" "$tmp/err"; rm -rf "$tmp"; fail "extension-binding load flake should retry and exit 0"; }
+  grep -Fq 'token-free retry:' "$tmp/err" \
+    || { cat "$tmp/err"; rm -rf "$tmp"; fail "extension-binding retry did not log its wait/re-run"; }
+  grep -Fq 'FM_TEST_SUMMARY total=1 failed=0' "$tmp/out" \
+    || { cat "$tmp/out"; rm -rf "$tmp"; fail "extension-binding retry must report a clean summary"; }
+
+  rm -rf "$tmp"
+  pass "token-free retry re-runs the fm-extension-binding load flake once and clears it"
+}
+
 # The retry also admits a plain exit=124 timeout regardless of script name,
 # since a hang under host contention is the other half of the declared class.
 test_token_free_retry_covers_exit_124_regardless_of_name() {

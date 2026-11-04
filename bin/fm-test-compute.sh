@@ -2,7 +2,7 @@
 # fm-test-compute.sh - hosted Test/lint routing, then existing PC02/PC01 fallback.
 #
 # Usage:
-#   fm-test-compute.sh test --changed --exclude-family real-herdr-gated
+#   fm-test-compute.sh test --changed --exclude-family real-herdr-gated [--exclude-quarantined]
 #   fm-test-compute.sh lint
 #   fm-test-compute.sh local-lint                   (PC02/local worker only)
 #   fm-test-compute.sh restore <payload-file>       (hosted worker only)
@@ -10,7 +10,8 @@
 #   fm-test-compute.sh --help
 #
 # The pinned no-mistakes Test command enters through --pc02-if-idle.
-# Only that exact baseline is distributed; other arguments (including --json,
+# Only that exact baseline, with or without the canonical --exclude-quarantined
+# selection filter, is distributed; other arguments (including --json,
 # inspection and custom selection) retain the existing PC02/local behavior.
 # The baseline selection is split into hosted-capable and local-only scripts;
 # no tests are omitted. The hosted subset is partitioned by the lanes reported
@@ -162,8 +163,11 @@ local_run() {
   exec "$SELF_DIR/fm-pc02-test-offload.sh" --lint-partitions
 }
 # Preserve all semantics for unsupported commands; inspection never contacts APIs.
-if [ "$mode" = test ] && { [ "$#" != 3 ] || [ "$1" != --changed ] || [ "$2" != --exclude-family ] || [ "$3" != real-herdr-gated ]; }; then
-  exec "$SELF_DIR/fm-pc02-test-offload.sh" "${ARGS[@]}"
+if [ "$mode" = test ]; then
+  case " $* " in
+    " --changed --exclude-family real-herdr-gated " | " --changed --exclude-family real-herdr-gated --exclude-quarantined ") ;;
+    *) exec "$SELF_DIR/fm-pc02-test-offload.sh" "${ARGS[@]}" ;;
+  esac
 fi
 [ "${FM_TEST_COMPUTE_DISABLE:-}" != 1 ] && [ "${GITHUB_ACTIONS:-}" != true ] && [ "${GITLAB_CI:-}" != true ] || local_run 'hosted routing disabled'
 for tool in python3 git timeout gh-axi; do command -v "$tool" >/dev/null || local_run "$tool unavailable"; done

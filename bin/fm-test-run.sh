@@ -480,12 +480,15 @@ load_scaled_timeout_secs() {
 # watcher/wake state, so they fail under host contention rather than genuine
 # regression (data/ci-pipeline-review-scout/report.md P2/P4). Kept as a small
 # declared set rather than inferred, so admission to the token-free retry
-# stays deliberate.
+# stays deliberate. fm-extension-binding's aggregate coordinator runs real
+# sections against a fixed 34-second wall deadline and measured ~35s under
+# load while passing in 10-14s alone (data/sync-batch7-senior-triage/report.md).
 is_load_sensitive_script() {
   case "$(basename "$1")" in
     fm-watch-triage.test.sh | fm-watch-triage-waits.test.sh | fm-wake-queue.test.sh | \
       fm-watcher-lock.test.sh | fm-watch-checkpoint.test.sh | fm-inactive-reconcile.test.sh | \
-      fm-wake-daemon-lifecycle-e2e.test.sh | fm-task-inbox.test.sh)
+      fm-wake-daemon-lifecycle-e2e.test.sh | fm-task-inbox.test.sh | \
+      fm-extension-binding.test.sh)
       return 0
       ;;
     *) return 1 ;;

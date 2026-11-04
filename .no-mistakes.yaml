@@ -34,9 +34,15 @@ document:
 #
 # commands.test is pinned to the canonical --changed invocation;
 # bin/fm-lint.sh guards against it drifting to a per-branch workaround.
+# --exclude-quarantined applies the tracked tests/fm-test-quarantine.tsv to the
+# local gate exactly as every CI lane does, so a known-failing quarantined
+# script cannot force a Test override and a per-PR check waiver.
+# On a shared-helper change this cuts the measured selection from 250 scripts /
+# ~167 min serial to 237 / ~128 min serial; with the PC02 offload's eight-worker
+# ceiling the estimated wall clock sits near or under the 60-minute test_agent_timeout.
 commands:
   lint: 'bin/fm-test-compute.sh lint && bash tests/fm-pi-primary-types.test.sh'
-  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle'
+  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle'
 
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.
