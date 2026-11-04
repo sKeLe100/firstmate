@@ -777,6 +777,7 @@ A queued run can fall back only after its cancellation is confirmed; an interrup
 This distinction prevents a transport error from silently accepting a different result or launching duplicate expensive suites.
 Hosted logs and timing evidence return through partition artifacts, with one-day retention.
 The Test caller streams the downloaded logs into its ordinary output for no-mistakes evidence capture.
+The GitHub hosted round trip was verified end to end on 2026-11-04 UTC: one portable partition dispatched through the Test caller executed on a hosted runner and its matching receipts returned to the caller ([run 41759393085](https://github.com/sKeLe100/firstmate/actions/runs/41759393085)).
 
 ### GitLab admission
 
