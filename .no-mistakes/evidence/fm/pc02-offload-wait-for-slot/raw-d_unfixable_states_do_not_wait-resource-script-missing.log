@@ -1,0 +1,16 @@
+fm-pc02-test-offload: PC02 resource check unclear (the resource-check script is missing at /var/tmp/nm-daemon-tmp/fm-pc02-scenarios.RG3O8I/no-such-resource-check.ps1; waiting cannot fix it); running on PC01
+pure-contract-unit
+watcher-wake-lock
+real-herdr-gated
+secondmate
+session-bootstrap
+live-harness-optin
+backend-dispatch
+pr-forge
+afk
+snapshot-bearings
+cmux
+zellij
+orca
+standalone
+unclassified

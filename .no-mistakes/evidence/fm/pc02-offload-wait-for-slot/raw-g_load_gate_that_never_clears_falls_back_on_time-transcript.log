@@ -1,0 +1,17 @@
+fm-pc02-test-offload: PC02 lane check reported 'occupied: faketask'; waiting up to 3s for it to clear
+fm-pc02-test-offload: PC02 lane check reported 'occupied: faketask' and still so after the 3s wait bound; running on PC01
+pure-contract-unit
+watcher-wake-lock
+real-herdr-gated
+secondmate
+session-bootstrap
+live-harness-optin
+backend-dispatch
+pr-forge
+afk
+snapshot-bearings
+cmux
+zellij
+orca
+standalone
+unclassified

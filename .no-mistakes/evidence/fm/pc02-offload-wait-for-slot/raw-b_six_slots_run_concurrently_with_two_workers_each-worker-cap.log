@@ -1,0 +1,3 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 6
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+auto_jobs=2 argv=--all --per-script-timeout-secs 3000

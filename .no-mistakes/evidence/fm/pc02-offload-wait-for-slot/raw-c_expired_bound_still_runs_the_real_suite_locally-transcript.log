@@ -1,0 +1,17 @@
+fm-pc02-test-offload: all 6 PC02 test slots are busy; waiting up to 4s for a free slot
+fm-pc02-test-offload: all 6 PC02 test slots stayed busy through the 4s wait bound; running locally; running on PC01
+pure-contract-unit
+watcher-wake-lock
+real-herdr-gated
+secondmate
+session-bootstrap
+live-harness-optin
+backend-dispatch
+pr-forge
+afk
+snapshot-bearings
+cmux
+zellij
+orca
+standalone
+unclassified

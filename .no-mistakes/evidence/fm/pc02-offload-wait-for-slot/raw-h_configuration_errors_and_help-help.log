@@ -1,0 +1,290 @@
+fm-pc02-test-offload.sh - single owner of routing a heavy fm-test-run.sh or
+fm-lint.sh invocation to PC02 when PC02 is idle from LLM duty AND not the
+captain's personal machine right now. A busy PC02 (a live LLM lane, host CPU
+or GPU load, or every test slot held) is waited on under one bound, and the
+run falls back to running it on PC01 when PC02 is personally in use,
+unreachable, unready, the transfer fails, or the bound expires.
+
+Why: on PC01 the no-mistakes test step (bin/fm-test-run.sh --changed
+--exclude-family real-herdr-gated --exclude-quarantined) can outrun the
+test-agent deadline under host load, and the canonical lint step's exhaustive
+ShellCheck audit is equally load-sensitive. PC02 has stronger hardware and,
+when its llama-swap serving stack is not holding a model for a live task and
+the captain is not using it personally (gaming, etc.), sits idle.
+fm-test-run.sh's --pc02-if-idle flag tries hosted compute first, then
+reaches this script through fm-test-compute.sh; this script decides
+local vs remote and, for remote, owns the transfer and execution mechanics
+for tests and canonical lint.
+
+Reused rather than reinvented:
+  - "is PC02 serving an LLM for firstmate" is
+    bin/fm-autonomous-pc02-lane.sh's existing local, bounded scan of
+    state/*.meta for a live pc02-llamaswap/* task - the same occupancy
+    signal bin/fm-spawn.sh's pc02_lane_guard already treats as
+    authoritative.
+  - ssh access ("ssh pc02" lands in PC02's WSL) is the path documented in
+    docs/pc02-outage-runbook.md, which also owns llama-swap's tailnet
+    address (FM_PC02_OFFLOAD_LLAMASWAP_URL's default) used by the
+    llama-swap occupancy check below.
+  - git-dir/git-common-dir resolution is fm-primary-scope-lib.sh's
+    fm_resolve_git_path, needed because this script's own worktree is
+    typically a linked git worktree (bin/fm-spawn.sh's isolated task
+    worktree), whose ".git" is a pointer file rather than the real store.
+
+Personal-use routing (captain-authorized 2026-09-24, "There will need to be
+a check or switch in place for when PC02 is being used for personal use or
+not"), evaluated fresh at every run, each layer logged as one line and any
+hit routing to PC01 at once, except that the automatic checks in layer 2 wait
+under the bound first (see the readiness loop below):
+  1. Manual switch: a flag file in PC02's own home directory
+     (bin/fm-pc02-personal-use.sh owns the PC01-side on/off/status toggle;
+     docs/pc02-outage-runbook.md documents the captain's no-terminal
+     Windows desktop toggle that writes the same file).
+  2. Automatic: PC02's own llama-swap /running endpoint listing any loaded
+     model (any live LLM session, not just one firstmate dispatched; an
+     idle llama-swap with nothing loaded does not count, and one that is
+     not answering at all is serving nothing), Windows-side CPU and
+     GPU utilization (a game or other heavy foreground use shows up here
+     without needing per-process foreground-window detection), each
+     against a configurable busy threshold.
+  3. An unclear read (a llama-swap or resource answer that does not parse)
+     counts as busy and waits under the bound - never read as an idle host.
+
+Every readiness check is local or one bounded ssh call; a stuck or slow
+probe times out and this script falls back to running locally rather than
+hanging waiting on PC02. Once a check has committed to a remote run it
+never also runs the selected command again locally (the two would double
+whatever time budget the caller enforces, such as the no-mistakes test-agent
+deadline); the remote execution itself is still bounded
+(FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, enforced by `timeout` on PC02 itself so
+the remote command's session is killed there rather than orphaned
+behind a dropped ssh client), and a run that hits this bound is reported
+as a failure rather than silently doubling the budget with a second local
+run. An orphaned background process a test leaves running can otherwise
+hold the ssh channel open long after fm-test-run.sh itself has finished on
+PC02 - observed empirically running this repo's own full --changed suite
+through this script, not a hypothetical - so as soon as fm-test-run.sh
+exits there, the rest of its session is killed and its own exit code
+is returned. The per-run PC02 mirror, and any of its processes still
+running, are removed on every exit path, including an interrupt.
+
+Remote run conditions (always applied to an offloaded run, test or lint):
+  - Parallel, per-script bounded: an explicit caller --jobs is capped to
+    floor(threads / slots) workers per slot, where threads comes from PC02's
+    own nproc (getconf _NPROCESSORS_ONLN fallback), so concurrent slots
+    together cannot exceed PC02's thread count; a caller asking for less
+    keeps its value. Absent --jobs, the remote fm-test-run.sh keeps its own
+    automatic scheduler (only proven-isolated scripts and recorded
+    concurrent family proofs run in parallel; unproven scripts stay serial)
+    with its worker ceiling set to min(FM_PC02_OFFLOAD_JOBS (default 8),
+    the per-slot bound), so the auto path keeps the invariant; an explicitly
+    set FM_PC02_OFFLOAD_JOBS is an operator override honoured verbatim and
+    may oversubscribe by choice.
+    Isolation phases, family caps and serial tails remain enforced; curated
+    lanes keep their contracts. The per-script cap defaults to 3000s
+    (FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS) and overrides the caller's
+    per-script timeout. The whole run defaults to 7200s
+    (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124 rather than
+    rerunning locally. Lint mode keeps bin/fm-lint.sh's own worker count and
+    partition selection untouched; the whole-run bound applies to it too.
+  - Host slots: the slot count comes from FM_PC02_OFFLOAD_SLOTS, then the
+    per-machine ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
+    file (one integer from 1 to 16; a trailing newline is optional), then
+    the default 2. Both sources are read fresh on every run, so a changed
+    count applies to the next Test or Lint step without restarting the
+    no-mistakes daemon. Nonblocking flocks on PC02's
+    ~/.fm-pc02-test-slot-<n>.lock, one per concurrent test suite or lint
+    run, cover transfer and execution. A run takes the first free slot.
+    With every slot held it keeps polling while printing that it is
+    waiting. The slot wait and any load-gate wait draw on one
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS bound (default 600, ten minutes), after
+    which the run routes local; FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 restores
+    the immediate local fallback, and a forwarded --max-wall-ms budget also
+    zeroes the wait because that wall clock belongs to the run itself. An
+    unclear claim routes local at once. PC02 being unreachable, personally
+    in use, or missing a tool still routes local before any wait begins; an
+    environment-parity mismatch routes local as soon as it is compared,
+    after any gate wait. The files are never unlinked: a dead owner's
+    kernel lock is released automatically, so a leftover file or process
+    name is harmless.
+  - Supervising-home selection is owned by docs/configuration.md's "PC02
+    test and lint offload" section; the per-machine slot settings above are
+    owned here.
+  - The remote fm-test-run.sh prints its own environment record before its
+    first test, so an offloaded run records PC02's PATH and the limits the
+    suite actually runs with.
+  - Before taking a slot, PC01 and PC02 compare versions of git, bash,
+    python3, jq, node, shellcheck, actionlint, ruby, chromium, herdr, pi, and
+    tmux, LC_ALL/LANG/TZ, and the version and sorted dependency sonames of
+    the browser fm-test-chrome.sh picks on that host. A differing value, a
+    version a host cannot establish, and an unresolved browser library all
+    route the run locally with both hosts' values. CPU count, RAM, ulimit -u,
+    no-mistakes daemon version, /usr/bin/env provider, and shell availability
+    (including zsh) are intentionally excluded as resources or documented
+    test differences. Every parity step is hard-bounded on either host: tool
+    and selected-browser version probes get 15 seconds, browser dependency
+    and wrapper-resolution probes 10, each killed outright if it ignores the
+    first signal, and the whole probe runs under
+    FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS. Any expiry routes the run locally.
+    PC02's open-file limit must be at least PC01's; a higher limit is an
+    allowed resource difference. Missing or invalid limits route locally.
+    Both the parity probe and the remote command first raise PC02's soft
+    open-file limit to its hard limit best effort, so a low soft limit
+    inherited from the login shell neither blocks admission nor limits the
+    run.
+  - Sizing evidence: two simultaneous four-worker offloads of
+    fm-supervision-host, fm-captain-hold-lifecycle (one file then; now
+    tests/fm-captain-hold-*.test.sh),
+    fm-remote-secondmate-lifecycle-e2e, and fm-spawn-dispatch-profile passed
+    in 2382s total on 16 threads; peak load5 was 25.54 and minimum
+    MemAvailable was 24.4 GiB of ~27 GiB. A separate PR #215 full 183-script
+    run took 4274s test wall / 4305s whole. The 7200s cap remains a hang
+    bound.
+  - Slot-count sizing after the "6 slots now" decision (2026-11-03): with 6
+    slots the per-slot auto ceiling is floor(16 / 6) = 2 workers, so six
+    concurrent offloads reach 12 workers on a 16-thread / 27 GB host. That
+    is within the thread budget, but it is deliberately lighter per run than
+    the measured two-run shape below instead of a measured six-run result;
+    raise the whole-run cap only with fresh evidence, and lower the slots
+    file if PC02's memory or the shared admission shows pressure. At that
+    per-slot ceiling a full --all selection can exceed the 7200s run cap and
+    fail with exit 124, so full-suite runs belong on the hosted tier
+    (backlog item test-compute-full-suite-hosted).
+  - Two-full-selection measurement (2026-11-03, 316 test scripts, no
+    --jobs, so the auto scheduler with FM_PC02_OFFLOAD_JOBS=8, two slots
+    started 5s apart on an otherwise idle 16-thread / 27 GB PC02): both runs
+    reached 303 of 316 scripts and were stopped by the 7200s cap (exit 124,
+    wall 7220s each), so two concurrent full selections do NOT fit the cap.
+    Peak load1 was 21.06 (mean 4.26) and peak memory use 12.5 GB, so the
+    host was never memory-bound; the wall is dominated by serial unproven
+    scripts. Each run also failed the same 3 scripts (fm-extension-binding,
+    fm-procevent-quota, fm-public-followup) plus 2 start-up-contention
+    failures that passed on the other run; none involve the excluded parity
+    fields. An explicit --jobs with --all is refused by fm-test-run.sh for
+    unproven scripts, so the per-slot --jobs cap applies to selections that
+    are proven concurrent.
+
+Usage:
+  fm-pc02-test-offload.sh <fm-test-run.sh args...>
+  fm-pc02-test-offload.sh --lint-partitions
+The lint mode routes all four canonical partitions to PC02 under the same
+admission lock and whole-run timeout, with no test-runner-only arguments.
+When PC02 cannot be used, PC01's last-resort lint runs bin/fm-lint.sh with
+that checkout's changed-file selection instead of the canonical partitions.
+
+Env overrides:
+  FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
+                                     PC02 check
+  FM_PC02_OFFLOAD_HOST                ssh target (default: pc02)
+  FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS  bound for the reachability/personal-use/
+                                     resource/tool probe and the post-sync
+                                     HEAD check (default: 15; the resource
+                                     probe's CPU sample alone takes ~1s)
+  FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS bound for the PC01/PC02 environment
+                                     parity probe on either host (default:
+                                     300). Its per-command deadlines (twelve
+                                     tool and one selected-browser version at
+                                     15s, three dependency probes at 10s) sum
+                                     to under 260s worst case, so this is a
+                                     hang tripwire rather than a deadline
+                                     that cuts a slow-but-identical host.
+  FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
+                                     (default: 180)
+  FM_PC02_OFFLOAD_SLOTS               number of concurrent PC02 test suites
+                                     or lint runs; overrides the
+                                     pc02-offload-slots machine file. With
+                                     all slots busy the run waits for a
+                                     free slot (see
+                                     FM_PC02_OFFLOAD_SLOT_WAIT_SECS) and
+                                     routes local only if none frees.
+                                     Default: the machine file's value, or
+                                     2 when neither is set. Must be an
+                                     integer from 1 to 16; any other value
+                                     is a configuration error that exits 2
+                                     without running the selected command.
+  (the per-machine slot file)         ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
+                                     holds one integer from 1 to 16; a
+                                     trailing newline is optional. It is
+                                     read fresh at every run so a change
+                                     applies without restarting the
+                                     no-mistakes daemon. An unreadable or
+                                     malformed file is a configuration
+                                     error that exits 2 without running the
+                                     selected command.
+  FM_PC02_OFFLOAD_SLOT_WAIT_SECS      bound, in seconds, on the total wait
+                                     for PC02 to clear (a live LLM lane, a
+                                     busy CPU or GPU, an unclear load read,
+                                     or every slot held) before routing
+                                     local (default: 600, ten minutes). 0
+                                     restores the immediate local fallback,
+                                     and a forwarded --max-wall-ms budget
+                                     also zeroes the wait: the caller gave
+                                     that wall clock to the run, so the
+                                     expected local run time is the whole
+                                     budget and none of it is spent
+                                     waiting. Each wait is printed once
+                                     with its reason; the slot host is
+                                     polled every
+                                     FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS.
+  FM_PC02_OFFLOAD_GATE_RECHECK_SECS   seconds between load-gate re-checks
+                                     (default: 30). Must be a positive
+                                     integer; any other value is a
+                                     configuration error that exits 2.
+  FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS
+                                     seconds between slot retries while
+                                     waiting (default: 5). Must be a
+                                     positive integer; any other value is a
+                                     configuration error that exits 2.
+  FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote run, test
+                                     or lint (default: 7200); a hang
+                                     tripwire, not a deadline. PR #215's
+                                     full --changed selection (183 scripts)
+                                     measured 4274s test wall / 4305s whole
+                                     at jobs=4. Exceeding it fails the run
+                                     (exit 124)
+                                     rather than falling back, since the
+                                     remote work already spent is not worth
+                                     discarding blind
+  FM_PC02_OFFLOAD_JOBS                remote auto-scheduler worker ceiling
+                                     (default: 8); when unset it is capped
+                                     to floor(PC02 nproc / SLOTS) like an
+                                     explicit --jobs, while a set value is
+                                     an operator override honoured verbatim
+  FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS per-script cap (default: 3000)
+  FM_PC02_OFFLOAD_REMOTE_BASE         remote base directory, relative to
+                                     the ssh target's home, holding one
+                                     private mirror (worktree + git store)
+                                     per offload run, removed when the run
+                                     ends so concurrent runs never share one
+                                     (default: .fm-pc02-test-offload)
+  FM_PC02_OFFLOAD_LLAMASWAP_URL       llama-swap base URL as PC02 reaches it
+                                     (default: http://100.67.55.77:8080)
+  FM_PC02_OFFLOAD_REQUIRED_TOOLS      space-separated tool list PC02 must
+                                     have (default: see REQUIRED_TOOLS
+                                     below); override only to reflect a
+                                     real, verified change in what the
+                                     selected command needs, never to make
+                                     a tool-short PC02 pass anyway.
+  FM_PC02_OFFLOAD_PERSONAL_USE_FLAG   the manual switch's flag file path on
+                                     PC02, relative to its $HOME (default:
+                                     .fm-pc02-personal-use); present = on
+  FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1  the Windows-side resource-check
+                                     script's path as WSL sees it (default:
+                                     /mnt/c/pc02-llm-server/bin/fm-pc02-resource-check.ps1)
+  FM_PC02_OFFLOAD_CPU_BUSY_PCT        Windows-wide CPU%% at/above which PC02
+                                     reads busy (default: 50)
+  FM_PC02_OFFLOAD_GPU_BUSY_PCT        summed Windows GPU-engine utilization%%
+                                     at/above which PC02 reads busy
+                                     (default: 5; idle measures 0)
+
+Exit status: the status of the command that actually ran: fm-test-run.sh for
+tests, the aggregate of all four canonical lint partitions on PC02, and
+bin/fm-lint.sh's changed-file lint on PC01; or 124 if the remote run itself
+exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
+FM_PC02_OFFLOAD_SLOTS, pc02-offload-slots file, or wait setting, which
+runs nothing at all.
+A readiness check that cannot clear by waiting (PC02 personally in use,
+unreachable, missing a required tool, or a sync/verification failure) falls
+back to a local run at once. A load gate (a live LLM lane, busy CPU or GPU,
+or an unclear load read) waits under the bound first. Either way the local
+fallback never changes the result the selected command itself reports.

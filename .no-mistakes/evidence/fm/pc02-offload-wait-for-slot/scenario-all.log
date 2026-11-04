@@ -1,0 +1,131 @@
+== scenario a_busy_pc02_waited_on_then_runs_on_pc02
+  PASS: with all six slots held the run waits instead of falling back at once
+  PASS: freed one slot (slot 3) while the run was waiting
+  PASS: the six-slot host is reported busy and the wait is bounded
+  PASS: the waiter took the freed slot and names the six-slot host
+  PASS: the waited run executed on PC02
+  PASS: PC02 really ran the selected suite
+  PASS: the run never fell back to PC01 while a slot could free
+  PASS: the remote mirror was cleaned up (0)
+SCENARIO a_busy_pc02_waited_on_then_runs_on_pc02: PASS
+== scenario b_six_slots_run_concurrently_with_two_workers_each
+  PASS: six concurrent offloads each reached PC02 (6)
+  PASS: all six slot locks were held at once, so six runs really fit (6)
+  PASS: the seventh run against six busy slots still ran the real suite locally
+  PASS: the seventh run names all six busy slots
+  PASS: a --all run under the six-slot setting completed
+  PASS: each of the six slots is capped at floor(16/6)=2 workers
+SCENARIO b_six_slots_run_concurrently_with_two_workers_each: PASS
+== scenario c_expired_bound_still_runs_the_real_suite_locally
+  PASS: an exhausted slot wait still exits 0 through the real local suite
+  PASS: the run announced the bounded wait
+  PASS: the fallback names the wait it actually spent
+  PASS: the fallback ran the real local suite with the forwarded arguments unchanged (pure-contract-unit
+watcher-wake-lock
+real-herdr-gated
+secondmate
+session-bootstrap
+live-harness-optin
+backend-dispatch
+pr-forge
+afk
+snapshot-bearings
+cmux
+zellij
+orca
+standalone
+unclassified)
+  PASS: the run waited out its bound (9s)
+  PASS: a fully busy PC02 received no new remote run (0)
+SCENARIO c_expired_bound_still_runs_the_real_suite_locally: PASS
+== scenario d_unfixable_states_do_not_wait
+  PASS: [personal-use:on] still ran the real suite locally
+  PASS: [personal-use:on] routed local without waiting under a 600s bound
+  PASS: [personal-use:on] did not wait for PC02 to clear
+  PASS: [personal-use:on] returned at once (0s)
+  PASS: the personal-use switch is the reason
+  PASS: [missing:jq] still ran the real suite locally
+  PASS: [missing:jq] routed local without waiting under a 600s bound
+  PASS: [missing:jq] did not wait for PC02 to clear
+  PASS: [missing:jq] returned at once (0s)
+  PASS: the missing tool is the reason
+  PASS: [resource:script-missing] still ran the real suite locally
+  PASS: [resource:script-missing] routed local without waiting under a 600s bound
+  PASS: [resource:script-missing] did not wait for PC02 to clear
+  PASS: [resource:script-missing] returned at once (0s)
+  PASS: the missing resource-check script names the path that is missing
+  PASS: [unreachable] still ran the real suite locally
+  PASS: [unreachable] routed local without waiting under a 600s bound
+  PASS: [unreachable] did not wait for PC02 to clear
+  PASS: [unreachable] returned at once (0s)
+  PASS: the unreachable host is the reason
+SCENARIO d_unfixable_states_do_not_wait: PASS
+== scenario e_caller_wall_budget_skips_the_wait_on_the_pinned_entry_path
+  PASS: the budgeted pinned-entry run completed through the real local suite
+  PASS: a declared wall budget turns the busy-slot wait into the immediate PC01 fallback
+  PASS: the declared wall budget was not spent waiting on PC02
+  PASS: the forwarded selection still produced its real output
+  PASS: the budgeted run returned in 5s
+SCENARIO e_caller_wall_budget_skips_the_wait_on_the_pinned_entry_path: PASS
+== scenario f_load_gate_waits_then_uses_pc02
+  PASS: a run that waited for the lane to clear still completed
+  PASS: the live lane is waited on under the bound instead of an immediate PC01 fallback
+  PASS: the cleared gate was announced
+  PASS: the run took PC02 once the lane freed
+  PASS: the waiting run did not fall back to PC01
+  PASS: nothing reached PC02 until after the lane cleared (wait@1 < free@2 < remote@4)
+  PASS: the remote mirror was cleaned up (0)
+SCENARIO f_load_gate_waits_then_uses_pc02: PASS
+== scenario g_load_gate_that_never_clears_falls_back_on_time
+  PASS: a lane that never clears still exits 0 through the real local suite
+  PASS: the expired gate logged its reason and the PC01 fallback
+  PASS: the expired gate ran the real local suite with the forwarded arguments unchanged (pure-contract-unit
+watcher-wake-lock
+real-herdr-gated
+secondmate
+session-bootstrap
+live-harness-optin
+backend-dispatch
+pr-forge
+afk
+snapshot-bearings
+cmux
+zellij
+orca
+standalone
+unclassified)
+  PASS: the gate wait lasted 7s, at least its 3s bound
+  PASS: a lane that never cleared never reached PC02 (0)
+SCENARIO g_load_gate_that_never_clears_falls_back_on_time: PASS
+== scenario h_configuration_errors_and_help
+  PASS: FM_PC02_OFFLOAD_SLOT_WAIT_SECS=abc is a configuration error (2)
+  PASS: the refusal names FM_PC02_OFFLOAD_SLOT_WAIT_SECS
+  PASS: the refusal names the rejected value
+  PASS: FM_PC02_OFFLOAD_SLOT_WAIT_SECS=abc ran no suite
+  PASS: FM_PC02_OFFLOAD_SLOT_WAIT_SECS=-1 is a configuration error (2)
+  PASS: the refusal names FM_PC02_OFFLOAD_SLOT_WAIT_SECS
+  PASS: the refusal names the rejected value
+  PASS: FM_PC02_OFFLOAD_SLOT_WAIT_SECS=-1 ran no suite
+  PASS: FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=abc is a configuration error (2)
+  PASS: the refusal names FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS
+  PASS: the refusal names the rejected value
+  PASS: FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=abc ran no suite
+  PASS: FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=-1 is a configuration error (2)
+  PASS: the refusal names FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS
+  PASS: the refusal names the rejected value
+  PASS: FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=-1 ran no suite
+  PASS: a zero slot-wait interval is a configuration error (2)
+  PASS: the zero interval is rejected with its value
+  PASS: a gate-recheck value of '0' is a configuration error (2)
+  PASS: the gate-recheck refusal names the rejected value '0'
+  PASS: a gate-recheck value of 'abc' is a configuration error (2)
+  PASS: the gate-recheck refusal names the rejected value 'abc'
+  PASS: --help exits 0 (0)
+  PASS: --help documents the shared wait bound
+  PASS: --help documents the slot poll interval
+  PASS: --help documents the gate re-check interval
+  PASS: --help makes no non-negative range claim that the code rejects (0)
+  PASS: --help documents the gate re-check value as positive
+  PASS: --help does not contradict the gate re-check's positive range
+  PASS: --help documents the slot poll interval as positive
+SCENARIO h_configuration_errors_and_help: PASS
