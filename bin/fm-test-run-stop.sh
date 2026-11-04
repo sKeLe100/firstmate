@@ -6,50 +6,71 @@
 # classifier, so each stuck run needed the operator to run the kill by hand. On
 # 2026-11-04 a PC01 Test step ran about two hours with one fake-ssh fixture hung
 # about 25 minutes, and an earlier PC02 run did the same. This is the owned,
-# verifiable stop path: it finds the process groups of one task's test run from
+# verifiable stop path: it finds the process tree of one task's test run from
 # that task's own records and stops nothing else.
+#
+# Two abort paths, with different purposes:
+#   - This script ends only a stuck or runaway test process tree, so the step
+#     reports failure and can be rerun. The run itself stays alive.
+#   - Ending the whole run stays `no-mistakes axi abort`.
 #
 # Usage:
 #   bin/fm-test-run-stop.sh <task-id> [--dry-run] [--host pc01|pc02]
 #
 # With no --host both hosts are checked. --dry-run lists what would stop and
-# changes nothing.
+# changes nothing. --help prints this header block.
 #
 # Resolution, from records and never from a name pattern alone:
-#   - state/<task-id>.meta gives the task's branch and worktree. The branch's
-#     run is chosen by fm_nm_select_run in bin/fm-nm-run-lib.sh, which owns run
-#     attribution; an ambiguous choice refuses.
+#   - state/<task-id>.meta gives the task's branch and worktree.
+#   - fm_nm_select_run in bin/fm-nm-run-lib.sh owns run attribution and yields
+#     the branch's run ids; each id's status is read with
+#     `no-mistakes axi status --run <id>`. Exactly one run may be running or
+#     pending. No active run, or more than one, refuses with exit 2 and stops
+#     nothing.
 #   - The run directory is the single $NM_HOME/worktrees/*/<run-id> match.
 #   - An anchor is a process that runs bin/fm-test-run.sh,
 #     bin/fm-test-compute.sh or bin/fm-pc02-test-offload.sh as a program
-#     argument, with its working directory inside the run directory. Those are
-#     the names the test chain runs or execs, and a hung run may sit in any.
-#   - A target is a process group that holds an anchor or a descendant of one.
-#     A group is refused, and left alone, when it holds the no-mistakes daemon,
-#     or when it has a member that is neither a descendant of an anchor nor a
-#     shell wrapper of one, unless the group's own leader is such a process, in
-#     which case same-group orphans belong to the run too.
+#     argument, with its working directory inside the run directory. The run
+#     root is the topmost shell above an anchor whose command line names one of
+#     those scripts; the run tree is that root, every descendant of it, and
+#     every member of a process group a run member leads.
+#   - Nothing above the run root is signalled: the no-mistakes daemon, the LLM
+#     test agent running the step, and this script's own caller sit outside the
+#     run tree by construction.
 #
-# Action: TERM each target group; after the grace period, KILL any group that
-# still has a live member with the identity (pid and start time) seen in the
-# snapshot; then verify. A zombie counts as stopped. The script removes no
-# files: the offload client's own exit trap removes its PC02 mirror once its
-# group has stopped.
+# Action: TERM every member of the run tree; after the grace period, KILL any
+# process still alive with the identity (pid and start time) seen in the
+# snapshot; then verify. A process group is signalled as a group only when
+# every live member of it is in the run tree. A group that also holds a
+# process outside the run is never signalled as a group: its run members are
+# signalled by pid instead, and the outsider survives untouched. A zombie
+# counts as stopped. The script removes no files: the offload client's own exit
+# trap removes its PC02 mirror once its group has stopped.
 #
-# PC02: the same walk runs there over one bounded ssh call, scoped to the
-# offload run roots that hash to this run directory (run-<cksum>-*). A root is
-# walked only when its pgid file names the group that the anchor leads. PC01 is
-# stopped first, so the offload client's exit trap usually removes the PC02
-# mirror before PC02 is walked.
+# PC02: the same walk runs there over one bounded ssh call, over the offload
+# run roots named by the prefix
+# `bin/fm-pc02-test-offload.sh --remote-run-prefix <run-dir>` prints, which the
+# offload owns. A root is walked only when its pgid file names the group the
+# run's anchor is in. A PC02 claim is recorded when a PC01-side offload client
+# of the run directory is alive when the stop starts; it is captured before the
+# PC01 pass can kill that client.
 #
-# Output (stdout): one line per group stopped, one `dry-run` line per group
-# under --dry-run, or `none`. Refusals and diagnostics go to stderr.
-#   pc01 group=<pgid> stopped=<n> signal=TERM|KILL
-#   dry-run pc02 group=<pgid> would-stop=<n>
+# Output (stdout), in this order:
+#   pc01 group=<pgid> stopped=<n> signal=TERM|KILL mode=group|pid
+#   pc02 group=<pgid> stopped=<n> signal=TERM|KILL mode=group|pid
+#   dry-run pc01|pc02 group=<pgid> would-stop=<n> mode=group|pid
+#   pc02 unknown                 a PC02 claim or a failed PC02 check leaves
+#                                PC02 unconfirmed; PC01 lines may still be there
+#   none                         nothing was stopped and no PC02 claim exists
+#   run <run-id> status=<word>   the run's own status after the stop lines,
+#                                reading `no-mistakes axi status --run <id>`;
+#                                never printed under --dry-run
+# Refusals and diagnostics go to stderr.
 #
-# Exit: 0 every checked host is clean; 1 a group survived, was refused, or a
-# PC02 check did not finish; 2 usage error or refusal before any stop (no
-# /proc, unknown task, ambiguous run choice, ambiguous run directory).
+# Exit: 0 every checked host is clean; 1 a run member survived, a group was
+# refused, or a PC02 check did not confirm PC02; 2 usage error or a refusal
+# before any stop (no /proc, unknown task, no active run, ambiguous active
+# runs, missing or ambiguous run directory).
 #
 # Env overrides:
 #   FM_HOME                             firstmate home (default: this code root)
@@ -87,8 +108,12 @@ die() {
 }
 
 usage() {  # [exit-code]
-  printf 'usage: bin/fm-test-run-stop.sh <task-id> [--dry-run] [--host pc01|pc02]\n'
-  exit "${1:-0}"
+  if [ "${1:-0}" = 0 ]; then
+    awk 'NR > 1 { if ($0 !~ /^#/) exit; print }' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+  fi
+  printf 'usage: bin/fm-test-run-stop.sh <task-id> [--dry-run] [--host pc01|pc02]\n' >&2
+  exit "$1"
 }
 
 # --- Process-table engine -------------------------------------------------
@@ -97,11 +122,11 @@ usage() {  # [exit-code]
 #   PT_PPID PT_PGID PT_START PT_STATE   from /proc/<pid>/stat
 #   PT_WRAP   a shell (sh/bash/dash/zsh) whose command line names a test-run script
 #   PT_ANCH   a process with a test-run script as a standalone program argument
-#   PT_DAEMON a command line naming the no-mistakes daemon
+#   PT_OFFL   a process whose program argument is bin/fm-pc02-test-offload.sh
 ts_snapshot() {
   local d pid line rest joined tok a0
   local -a f av
-  declare -gA PT_PPID=() PT_PGID=() PT_START=() PT_STATE=() PT_WRAP=() PT_ANCH=() PT_DAEMON=()
+  declare -gA PT_PPID=() PT_PGID=() PT_START=() PT_STATE=() PT_WRAP=() PT_ANCH=() PT_OFFL=()
   for d in /proc/[0-9]*; do
     pid=${d#/proc/}
     IFS= read -r line < "$d/stat" 2>/dev/null || continue
@@ -124,14 +149,16 @@ ts_snapshot() {
         esac
         ;;
     esac
-    case "$joined" in
-      *"no-mistakes daemon"*) PT_DAEMON[$pid]=1 ;;
-    esac
     for tok in ${av[@]+"${av[@]}"}; do
       case "$tok" in
         *" "*) continue ;;
-        bin/fm-test-run.sh|*/bin/fm-test-run.sh|bin/fm-test-compute.sh|*/bin/fm-test-compute.sh|bin/fm-pc02-test-offload.sh|*/bin/fm-pc02-test-offload.sh)
+        bin/fm-test-run.sh|*/bin/fm-test-run.sh|bin/fm-test-compute.sh|*/bin/fm-test-compute.sh)
           PT_ANCH[$pid]=1
+          break
+          ;;
+        bin/fm-pc02-test-offload.sh|*/bin/fm-pc02-test-offload.sh)
+          PT_ANCH[$pid]=1
+          PT_OFFL[$pid]=1
           break
           ;;
       esac
@@ -169,15 +196,14 @@ ts_group_alive() {
 }
 
 # Stop or report the test run in RUN_DIR. Inputs: RUN_DIR, REQUIRE_PGID (empty,
-# or the pgid anchors must lead), HOST_LABEL, GRACE, DRY_RUN. Result lines go to
-# stdout, refusals to stderr. Returns 0 clean, 1 refused or a group survived,
-# 2 when RUN_DIR cannot be resolved.
+# or the pgid anchors must belong to), HOST_LABEL, GRACE, DRY_RUN. Result lines
+# go to stdout, refusals to stderr. Returns 0 clean, 1 refused or a member
+# survived, 2 when RUN_DIR cannot be resolved.
 ts_engine() {
-  local rd a c p g m ccwd ident bad sig
-  local -i i n tries limit alive_any hops rc=0
-  local ok leader_ok
+  local rd a c p g m mode ident
+  local -i i n mixed tries limit alive_any hops rc=0
   local -a q=() targets=()
-  local -A anchor=() desc=() anc=() kids=() members=() cand=() tident=() tcount=() tsig=()
+  local -A anchor=() kids=() RUN=() roots=() members=() cand=() tident=() tcount=() tgroup=() tsig=()
 
   rd=$(readlink -f -- "$RUN_DIR" 2>/dev/null) && [ -n "$rd" ] || return 2
   ts_snapshot
@@ -187,42 +213,42 @@ ts_engine() {
     if [ -n "${REQUIRE_PGID:-}" ] && [ "${PT_PGID[$a]}" != "$REQUIRE_PGID" ]; then
       continue
     fi
-    ccwd=$(readlink -f -- "/proc/$a/cwd" 2>/dev/null) || continue
-    ts_under "$ccwd" "$rd" || continue
+    c=$(readlink -f -- "/proc/$a/cwd" 2>/dev/null) || continue
+    ts_under "$c" "$rd" || continue
     anchor[$a]=1
   done
   [ "${#anchor[@]}" -gt 0 ] || return 0
 
   for p in "${!PT_PPID[@]}"; do
-    c=${PT_PPID[$p]}
-    kids[$c]+="$p "
-  done
-
-  q=("${!anchor[@]}")
-  for ((i = 0; i < ${#q[@]}; i++)); do
-    p=${q[i]}
-    [ -z "${desc[$p]:-}" ] || continue
-    desc[$p]=1
-    for c in ${kids[$p]:-}; do
-      q+=("$c")
-    done
+    kids[${PT_PPID[$p]}]+="$p "
+    members[${PT_PGID[$p]}]+="$p "
   done
 
   for a in "${!anchor[@]}"; do
+    roots[$a]=1
     p=${PT_PPID[$a]:-0}
     hops=0
     while [ "$p" -gt 1 ] && [ -n "${PT_PPID[$p]:-}" ] && [ "$hops" -lt 64 ]; do
-      anc[$p]=1
+      [ -z "${PT_WRAP[$p]:-}" ] || roots[$p]=1
       p=${PT_PPID[$p]}
       hops=$((hops + 1))
     done
   done
 
-  for p in "${!PT_PGID[@]}"; do
-    g=${PT_PGID[$p]}
-    members[$g]+="$p "
+  q=("${!roots[@]}")
+  for ((i = 0; i < ${#q[@]}; i++)); do
+    p=${q[i]}
+    [ -z "${RUN[$p]:-}" ] || continue
+    RUN[$p]=1
+    for c in ${kids[$p]:-}; do
+      q+=("$c")
+    done
+    for c in ${members[$p]:-}; do
+      q+=("$c")
+    done
   done
-  for p in "${!desc[@]}"; do
+
+  for p in "${!RUN[@]}"; do
     cand[${PT_PGID[$p]}]=1
   done
 
@@ -235,61 +261,46 @@ ts_engine() {
       rc=1
       continue
     fi
-    # A group led by an anchor's own wrapper or anchor is the run's group, so
-    # its same-group orphans belong to the run too.
-    leader_ok=0
-    if { [ -n "${desc[$g]:-}" ] || { [ -n "${anc[$g]:-}" ] && [ -n "${PT_WRAP[$g]:-}" ]; }; } \
-      && [ -z "${PT_DAEMON[$g]:-}" ]; then
-      leader_ok=1
-    fi
-    ok=1
-    bad=""
     ident=""
     n=0
+    mixed=0
     for m in ${members[$g]:-}; do
-      if [ -n "${PT_DAEMON[$m]:-}" ]; then
-        ok=0
-        bad="$m (no-mistakes daemon)"
-        break
-      fi
       case "${PT_STATE[$m]:-}" in
         Z) continue ;;
       esac
-      if [ -n "${desc[$m]:-}" ] || { [ -n "${anc[$m]:-}" ] && [ -n "${PT_WRAP[$m]:-}" ]; }; then
-        :
-      elif [ "$leader_ok" -eq 1 ]; then
-        :
-      else
-        ok=0
-        bad=$m
-        break
+      if [ -z "${RUN[$m]:-}" ]; then
+        mixed=1
+        continue
       fi
       ident+="$m:${PT_START[$m]} "
       n=$((n + 1))
     done
-    if [ "$ok" -eq 1 ]; then
-      if [ "$n" -gt 0 ]; then
-        targets+=("$g")
-        tident[$g]=$ident
-        tcount[$g]=$n
-      fi
-    else
-      printf 'fm-test-run-stop: refused %s group %s: member %s is outside the test run\n' "$HOST_LABEL" "$g" "$bad" >&2
-      rc=1
-    fi
+    [ "$n" -gt 0 ] || continue
+    targets+=("$g")
+    tident[$g]=$ident
+    tcount[$g]=$n
+    tgroup[$g]=$((1 - mixed))
   done
 
   [ "${#targets[@]}" -gt 0 ] || return "$rc"
 
   if [ "${DRY_RUN:-0}" -eq 1 ]; then
     for g in "${targets[@]}"; do
-      printf 'dry-run %s group=%s would-stop=%s\n' "$HOST_LABEL" "$g" "${tcount[$g]}"
+      mode=group
+      [ "${tgroup[$g]}" -eq 1 ] || mode=pid
+      printf 'dry-run %s group=%s would-stop=%s mode=%s\n' "$HOST_LABEL" "$g" "${tcount[$g]}" "$mode"
     done
     return "$rc"
   fi
 
   for g in "${targets[@]}"; do
-    kill -TERM -- "-$g" 2>/dev/null || true
+    if [ "${tgroup[$g]}" -eq 1 ]; then
+      kill -TERM -- "-$g" 2>/dev/null || true
+    else
+      for m in ${tident[$g]}; do
+        kill -TERM "${m%%:*}" 2>/dev/null || true
+      done
+    fi
   done
   tries=0
   limit=$((GRACE * 5))
@@ -308,12 +319,16 @@ ts_engine() {
   done
 
   for g in "${targets[@]}"; do
-    sig=TERM
-    if ts_group_alive "${tident[$g]}"; then
-      sig=KILL
+    tsig[$g]=TERM
+    ts_group_alive "${tident[$g]}" || continue
+    tsig[$g]=KILL
+    if [ "${tgroup[$g]}" -eq 1 ]; then
       kill -KILL -- "-$g" 2>/dev/null || true
+    else
+      for m in ${tident[$g]}; do
+        kill -KILL "${m%%:*}" 2>/dev/null || true
+      done
     fi
-    tsig[$g]=$sig
   done
 
   for g in "${targets[@]}"; do
@@ -322,25 +337,47 @@ ts_engine() {
       sleep 0.2
       tries=$((tries + 1))
     done
+    mode=group
+    [ "${tgroup[$g]}" -eq 1 ] || mode=pid
     if ts_group_alive "${tident[$g]}"; then
       printf 'fm-test-run-stop: %s group %s still has live processes after KILL\n' "$HOST_LABEL" "$g" >&2
       rc=1
     else
-      printf '%s group=%s stopped=%s signal=%s\n' "$HOST_LABEL" "$g" "${tcount[$g]}" "${tsig[$g]}"
+      printf '%s group=%s stopped=%s signal=%s mode=%s\n' \
+        "$HOST_LABEL" "$g" "${tcount[$g]}" "${tsig[$g]}" "$mode"
     fi
   done
   return "$rc"
 }
 
-# PC02 entry point, run as `bash -s` over ssh. Walks each offload run root that
-# hashes to this run directory and whose pgid file names the run's group.
+# PC01-side PC02 claim: 0 when a live offload client of run directory $1 exists.
+ts_pc02_claim() {  # <run-dir>
+  local rd a c
+  rd=$(readlink -f -- "$1" 2>/dev/null) || return 1
+  ts_snapshot
+  for a in "${!PT_OFFL[@]}"; do
+    c=$(readlink -f -- "/proc/$a/cwd" 2>/dev/null) || continue
+    ts_under "$c" "$rd" && return 0
+  done
+  return 1
+}
+
+# PC02 entry point, run as `bash -s` over ssh. Walks each offload run root the
+# offload's own prefix names and whose pgid file names the run's group.
 # shellcheck disable=SC2329 # Invoked on PC02 from the text `declare -f` sends over ssh.
-ts_remote_main() {  # <cksum> <remote-base> <grace> <dry-run>
-  local ck=$1 base=$2 d g rc=0
-  GRACE=$3
-  DRY_RUN=$4
+ts_remote_main() {  # <remote-prefix> <grace> <dry-run>
+  local prefix=$1 d g rc=0
+  local -a hits=()
+  GRACE=$2
+  DRY_RUN=$3
   HOST_LABEL=pc02
-  for d in "$HOME/$base/run-$ck-"*; do
+  shopt -s nullglob
+  case "$prefix" in
+    /*) hits=("$prefix"*) ;;
+    *) hits=("$HOME/$prefix"*) ;;
+  esac
+  shopt -u nullglob
+  for d in ${hits[@]+"${hits[@]}"}; do
     [ -d "$d/worktree" ] && [ ! -L "$d/worktree" ] || continue
     IFS= read -r g < "$d/pgid" 2>/dev/null || continue
     case "$g" in
@@ -353,13 +390,20 @@ ts_remote_main() {  # <cksum> <remote-base> <grace> <dry-run>
   return "$rc"
 }
 
+# Status word of run $2 as worktree $1's no-mistakes records it.
+fm_nm_run_status() {  # <worktree> <run-id>
+  local out
+  out=$(fm_nm_run "$1" "$NM_TIMEOUT" axi status --run "$2")
+  fm_nm_strip_quotes "$(fm_nm_field "$out" status)"
+}
+
 # --- Entry point ------------------------------------------------------------
 
 main() {
-  local task="" dry=0 arg r rc=0 probe_failed=0 out_all="" out
-  local do_pc01=0 do_pc02=0 grace ssh_timeout meta branch wt overview sel run_id nm_root local_dir=""
-  local ck host base
-  local -a want=() matches=()
+  local task="" dry=0 arg r rc=0 grace ssh_timeout meta branch wt overview sel ids id st
+  local do_pc01=0 do_pc02=0 run_id="" nm_root local_dir="" prefix="" claim=0
+  local pc01_out="" pc02_out="" pc02_unknown=0
+  local -a want=() matches=() active=()
 
   while [ "$#" -gt 0 ]; do
     arg=$1
@@ -379,7 +423,7 @@ main() {
           *) die "--host must be pc01 or pc02" ;;
         esac
         ;;
-      -h|--help) usage ;;
+      -h|--help) usage 0 ;;
       -*) die "unknown option: $arg" ;;
       *)
         [ -z "$task" ] || die "one task id only"
@@ -430,19 +474,21 @@ main() {
   [ -n "$overview" ] || die "no-mistakes status unavailable from $wt; nothing stopped"
   sel=$(fm_nm_select_run "$branch" "$overview" "$wt" "$NM_TIMEOUT")
   case "$sel" in
-    absent)
-      printf 'none\n'
-      exit 0
-      ;;
-    selected\|*)
-      IFS='|' read -r _ run_id _ _ <<< "$sel"
-      ;;
-    *)
-      die "no-mistakes run for $task is not unambiguous ($sel); nothing stopped"
-      ;;
+    absent) ids="" ;;
+    selected\|*) IFS='|' read -r _ _ _ ids <<< "$sel" ;;
+    *) die "no-mistakes run for $task is not unambiguous ($sel); nothing stopped" ;;
   esac
-  case "$run_id" in
-    ''|*[!A-Za-z0-9_-]*) die "unreadable run id for $task; nothing stopped" ;;
+  for id in ${ids//,/ }; do
+    [ -n "$id" ] || continue
+    st=$(fm_nm_run_status "$wt" "$id")
+    case "$st" in
+      running|pending) active+=("$id") ;;
+    esac
+  done
+  case "${#active[@]}" in
+    1) run_id=${active[0]} ;;
+    0) die "no active no-mistakes run for $task; nothing stopped" ;;
+    *) die "$task has ${#active[@]} active no-mistakes runs (${active[*]}); nothing stopped" ;;
   esac
 
   nm_root=$(dirname "$(fm_nm_state_db "$wt")")
@@ -450,61 +496,63 @@ main() {
   matches=("$nm_root"/worktrees/*/"$run_id")
   shopt -u nullglob
   case "${#matches[@]}" in
-    0) ;;
-    1)
-      [ -d "${matches[0]}" ] && local_dir=${matches[0]}
-      ;;
+    0) die "run $run_id has no local run directory; nothing stopped" ;;
+    1) ;;
     *) die "run $run_id has ${#matches[@]} run directories; nothing stopped" ;;
   esac
+  local_dir=${matches[0]}
+  [ -d "$local_dir" ] || die "run directory $local_dir is not a directory; nothing stopped"
+
+  if [ "$do_pc02" -eq 1 ] && ts_pc02_claim "$local_dir"; then
+    claim=1
+  fi
 
   if [ "$do_pc01" -eq 1 ]; then
-    if [ -n "$local_dir" ]; then
-      RUN_DIR=$local_dir
-      REQUIRE_PGID=
-      HOST_LABEL=pc01
-      DRY_RUN=$dry
-      out=$(ts_engine)
-      r=$?
-      [ -z "$out" ] || out_all+="$out"$'\n'
-      if [ "$r" -ne 0 ]; then
-        rc=1
-        [ "$r" -eq 2 ] && printf 'fm-test-run-stop: pc01 run directory cannot be resolved\n' >&2
-      fi
-    fi
+    RUN_DIR=$local_dir
+    REQUIRE_PGID=
+    HOST_LABEL=pc01
+    DRY_RUN=$dry
+    pc01_out=$(ts_engine)
+    r=$?
+    [ "$r" -eq 2 ] && die "run directory $local_dir cannot be resolved; nothing stopped"
+    [ "$r" -eq 0 ] || rc=1
   fi
 
   if [ "$do_pc02" -eq 1 ]; then
-    if [ -z "$local_dir" ]; then
-      printf 'fm-test-run-stop: PC02 not checked: the local run directory for %s is gone, so its mirror cannot be matched\n' "$run_id" >&2
-      probe_failed=1
+    prefix=$(bash "$SCRIPT_DIR/fm-pc02-test-offload.sh" --remote-run-prefix "$local_dir" 2>/dev/null) || prefix=""
+    if [ -z "$prefix" ]; then
+      printf 'fm-test-run-stop: PC02 run-root prefix unavailable from bin/fm-pc02-test-offload.sh; PC02 state is not confirmed\n' >&2
       rc=1
+      pc02_unknown=1
     else
-      ck=$(printf '%s' "$(cd "$local_dir" && pwd)" | cksum | cut -d' ' -f1)
-      host=${FM_PC02_OFFLOAD_HOST:-pc02}
-      base=${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}
-      case "$base" in
-        ''|/*|*..*|*[!A-Za-z0-9._/-]*) die "FM_PC02_OFFLOAD_REMOTE_BASE must be a plain relative path" ;;
-      esac
-      out=$(
+      pc02_out=$(
         {
           declare -f "${TS_FUNCS[@]}"
-          printf 'ts_remote_main %q %q %q %q\n' "$ck" "$base" "$GRACE" "$dry"
-        } | timeout "$ssh_timeout" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" bash -s
+          printf 'ts_remote_main %q %q %q\n' "$prefix" "$GRACE" "$dry"
+        } | timeout "$ssh_timeout" ssh -o BatchMode=yes -o ConnectTimeout=10 \
+              "${FM_PC02_OFFLOAD_HOST:-pc02}" bash -s
       )
       r=$?
-      [ -z "$out" ] || out_all+="$out"$'\n'
       if [ "$r" -ne 0 ]; then
         printf 'fm-test-run-stop: PC02 check exited %s; PC02 state is not confirmed\n' "$r" >&2
-        probe_failed=1
         rc=1
+        [ -n "$pc02_out" ] || pc02_unknown=1
+      elif [ -z "$pc02_out" ] && [ "$claim" -eq 1 ]; then
+        rc=1
+        pc02_unknown=1
       fi
     fi
   fi
 
-  if [ -n "$out_all" ]; then
-    printf '%s' "$out_all"
-  elif [ "$probe_failed" -eq 0 ]; then
+  [ -z "$pc01_out" ] || printf '%s\n' "$pc01_out"
+  [ -z "$pc02_out" ] || printf '%s\n' "$pc02_out"
+  [ "$pc02_unknown" -eq 0 ] || printf 'pc02 unknown\n'
+  if [ -z "$pc01_out" ] && [ -z "$pc02_out" ] && [ "$pc02_unknown" -eq 0 ]; then
     printf 'none\n'
+  fi
+  if [ "$dry" -eq 0 ]; then
+    st=$(fm_nm_run_status "$wt" "$run_id")
+    printf 'run %s status=%s\n' "$run_id" "${st:-unknown}"
   fi
   exit "$rc"
 }

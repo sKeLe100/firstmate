@@ -182,10 +182,16 @@
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
 #   fm-pc02-test-offload.sh --lint-partitions
+#   fm-pc02-test-offload.sh --remote-run-prefix <local-run-root>
 # The lint mode routes every canonical lint partition to PC02 under the same
 # admission lock and whole-run timeout, with no test-runner-only arguments.
 # When PC02 cannot be used, PC01's last-resort lint runs bin/fm-lint.sh with
 # that checkout's changed-file selection instead of the canonical partitions.
+# The prefix mode prints the PC02 run-root prefix this script would create for
+# <local-run-root> and exits without contacting PC02 or running anything. It
+# is the one owner of the run-root naming contract: this script's own
+# REMOTE_RUN is built from it, and bin/fm-test-run-stop.sh reads it to find the
+# mirror of a run, so the two can never disagree about the name.
 #
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
@@ -328,6 +334,19 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   exit 0
 fi
 
+# Prefix PC02 run roots for one local run root: "<base>/run-<cksum>-".
+remote_run_prefix() {  # <local-run-root>
+  printf '%s/run-%s-\n' \
+    "${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}" \
+    "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+}
+
+if [ "${1:-}" = "--remote-run-prefix" ]; then
+  [ -n "${2:-}" ] || { printf 'fm-pc02-test-offload: --remote-run-prefix needs a local run root\n' >&2; exit 2; }
+  remote_run_prefix "$2"
+  exit 0
+fi
+
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SELF_DIR/fm-primary-scope-lib.sh"
 # shellcheck source=bin/fm-pc02-hygiene-lib.sh
@@ -360,8 +379,7 @@ SLOTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots"
 SLOT_WAIT="${FM_PC02_OFFLOAD_SLOT_WAIT_SECS:-600}"
 SLOT_WAIT_INTERVAL="${FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS:-5}"
 GATE_RECHECK="${FM_PC02_OFFLOAD_GATE_RECHECK_SECS:-30}"
-REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
-REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
+REMOTE_RUN="$(remote_run_prefix "$ROOT")"$$
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
 REMOTE_COMMON="$REMOTE_RUN/common.git"
 REMOTE_TMP="$REMOTE_RUN/tmp"

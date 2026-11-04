@@ -61,6 +61,9 @@ This is the inverse of the dead-endpoint case above: the worker is alive and the
 A drive call blocks until the next gate or outcome, far longer than a harness lets one command run, and the daemon accepts a response immediately and runs the round in the background.
 So a crewmate's timed-out, killed, or errored drive call leaves it waiting on a read it never got, and the "the daemon is gone" conclusion it draws from that is a guess, not evidence.
 
+A stuck or runaway local test run of a supervised task is stopped with `bin/fm-test-run-stop.sh <task-id>`; never use a raw process kill or a manual kill command.
+That stop ends only the stuck test process tree so the Test step reports failure and can be rerun, and leaves the run itself alive; ending the whole run stays `no-mistakes axi abort`.
+
 Read the two authoritative sources yourself before believing the claim:
 
 1. `no-mistakes daemon status` for the socket.

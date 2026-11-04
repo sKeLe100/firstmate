@@ -21,6 +21,9 @@ Custody recovery settles branch ownership, not content: the worker must replace 
 Apart from that single supported abort, do not hand-edit, commit, restart, or start a second validation run while the obsolete run still owns the branch.
 Once ownership is settled, validate exactly once against that final head so no obsolete or intermediate head is ever treated as authoritative.
 
+A stuck or runaway local test run of a supervised task is stopped with `bin/fm-test-run-stop.sh <task-id>`; never use a raw process kill or a manual kill command.
+That stop ends only the stuck test process tree so the Test step reports failure and can be rerun, and leaves the run itself alive; ending the whole run stays `no-mistakes axi abort`.
+
 An ask-user finding returns as `needs-decision`; firstmate loads `ask-user-authority` and either decides or escalates per that skill.
 Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.
 Require the matching `resolved` event, forbid `--yes`, and require the worker to process every synchronous return until completion or a genuinely new escalation.
