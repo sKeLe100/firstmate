@@ -2,7 +2,8 @@
 # tests/fm-free-model-probe.test.sh - unit tests for bin/fm-free-model-probe.sh.
 #
 # Uses a fake `opencode` on PATH and a temp log directory (overridable via
-# FM_FREE_PROBE_LOG_DIR) to cover the ok, capped, and timeout-unknown paths.
+# OPENCODE_LOG_DIR) to cover the ok, capped, stale-entry, timeout, and failure
+# paths.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -11,26 +12,38 @@ set -u
 SCRIPT="$ROOT/bin/fm-free-model-probe.sh"
 TMP_ROOT=$(fm_test_tmproot fm-free-model-probe-tests)
 FAKE_BIN="$TMP_ROOT/fakebin"
-mkdir -p "$FAKE_BIN"
+LOG_DIR="$TMP_ROOT/opencode-logs"
+HOME_DIR="$TMP_ROOT/home"
+mkdir -p "$FAKE_BIN" "$LOG_DIR" "$HOME_DIR"
 
-# Override log dir so the script writes/reads from our temp tree.
-export FM_FREE_PROBE_LOG_DIR="$TMP_ROOT/opencode-logs"
-mkdir -p "$FM_FREE_PROBE_LOG_DIR"
-
-# Also export via the script's own var name so it resolves.
-export OPENCODE_LOG_DIR="$FM_FREE_PROBE_LOG_DIR"
+export HOME="$HOME_DIR"
+export OPENCODE_LOG_DIR="$LOG_DIR"
 
 run_probe() {
-  # Run with the fake opencode on PATH and our log dir. Default timeout 5s for fast tests.
-  PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" OPENCODE_LOG_DIR="$FM_FREE_PROBE_LOG_DIR" "$SCRIPT" "${1:-glm-5.3-flash-free}" "${2:-5}"
+  PATH="$FAKE_BIN:${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" \
+    "$SCRIPT" "${1:-glm-5.3-flash-free}" "${2:-5}"
 }
 
-# --- ok case ------------------------------------------------------------------
+reset_logs() {
+  rm -f "$LOG_DIR"/*
+}
 
-# Fake opencode that exits 0 and prints OK.
+# --- help --------------------------------------------------------------------
+
+out=$("$SCRIPT" --help)
+rc=$?
+[ "$rc" -eq 0 ] || fail "--help: expected exit 0, got $rc"
+assert_contains "$out" "Usage: fm-free-model-probe.sh" "--help: should print usage"
+pass "fm-free-model-probe: --help prints usage without probing"
+
+# --- ok case -----------------------------------------------------------------
+
+# Fake opencode that prints the reply on stdout and an OK-bearing diagnostic on
+# stderr, so only the exact stdout reply decides ok.
 cat > "$FAKE_BIN/opencode" <<'SH'
 #!/usr/bin/env bash
 printf 'OK\n'
+printf 'HTTP/1.1 200 OK\n' >&2
 exit 0
 SH
 chmod +x "$FAKE_BIN/opencode"
@@ -41,20 +54,60 @@ rc=$?
 [ "$rc" -eq 0 ] || fail "ok case: expected exit 0, got $rc"
 pass "fm-free-model-probe: ok case returns 'ok' with exit 0"
 
-# --- capped case (log entry present) ------------------------------------------
+# --- non-exact reply ---------------------------------------------------------
 
-# Fake opencode that times out (simulating silent retry before cap).
+# A substring match on stdout or an OK in stderr must not count as ok.
 cat > "$FAKE_BIN/opencode" <<'SH'
 #!/usr/bin/env bash
+printf 'NOT OK\n'
+printf '200 OK\n' >&2
+exit 0
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+reset_logs
+out=$(run_probe glm-5.3-flash-free)
+rc=$?
+[ "$out" != "ok" ] || fail "non-exact reply: 'NOT OK' must not count as ok"
+assert_contains "$out" "unknown" "non-exact reply: output should start with 'unknown'"
+[ "$rc" -eq 1 ] || fail "non-exact reply: expected exit 1, got $rc"
+pass "fm-free-model-probe: an OK substring in either stream is not an ok reply"
+
+# --- probe cwd ---------------------------------------------------------------
+
+CWD_FILE="$TMP_ROOT/probe-cwd"
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+pwd > "$PROBE_CWD_FILE"
+printf 'OK\n'
+exit 0
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+reset_logs
+export PROBE_CWD_FILE="$CWD_FILE"
+out=$(run_probe glm-5.3-flash-free)
+rc=$?
+unset PROBE_CWD_FILE
+[ "$out" = "ok" ] || fail "probe cwd: expected 'ok', got '$out'"
+[ "$rc" -eq 0 ] || fail "probe cwd: expected exit 0, got $rc"
+probe_cwd=$(cat "$CWD_FILE")
+[ "$probe_cwd" != "$PWD" ] || fail "probe cwd: opencode ran in the caller's directory"
+[ "$probe_cwd" != "$ROOT" ] || fail "probe cwd: opencode ran in the repo root"
+pass "fm-free-model-probe: runs opencode from a temporary directory"
+
+# --- capped case (log entry present) ------------------------------------------
+
+# Fake opencode that logs a cap during the probe, then retries silently.
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+printf '{"timestamp":"%s","level":"ERROR","providerID":"opencode","modelID":"glm-5.3-flash-free","error":"AI_APICallError: Free usage limit reached. Please retry after 30s."}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OPENCODE_LOG_DIR/probe.log"
 exec sleep 300
 SH
 chmod +x "$FAKE_BIN/opencode"
 
-# Write a log entry for the model with "Free usage limit reached".
-cat > "$FM_FREE_PROBE_LOG_DIR/$(date +%Y%m%d).log" <<'LOG'
-{"timestamp":"2026-11-04T10:00:00Z","level":"ERROR","providerID":"opencode","modelID":"glm-5.3-flash-free","error":"AI_APICallError: Free usage limit reached. Please retry after 30s."}
-LOG
-
+reset_logs
 out=$(run_probe glm-5.3-flash-free)
 rc=$?
 assert_contains "$out" "capped" "capped case: output should start with 'capped'"
@@ -64,10 +117,15 @@ pass "fm-free-model-probe: capped case returns 'capped <retry>' with exit 3 when
 
 # --- capped case (log entry present, no retry time) ----------------------------
 
-cat > "$FM_FREE_PROBE_LOG_DIR/$(date +%Y%m%d).log" <<'LOG'
-{"timestamp":"2026-11-04T10:00:00Z","level":"ERROR","providerID":"opencode","modelID":"glm-5.3-flash-free","error":"AI_APICallError: Free usage limit reached."}
-LOG
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+printf '{"timestamp":"%s","level":"ERROR","providerID":"opencode","modelID":"glm-5.3-flash-free","error":"AI_APICallError: Free usage limit reached."}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OPENCODE_LOG_DIR/probe.log"
+exec sleep 300
+SH
+chmod +x "$FAKE_BIN/opencode"
 
+reset_logs
 out=$(run_probe glm-5.3-flash-free)
 rc=$?
 assert_contains "$out" "capped" "capped no-retry: output should start with 'capped'"
@@ -75,13 +133,54 @@ assert_contains "$out" "capped" "capped no-retry: output should start with 'capp
 assert_contains "$out" "unknown retry" "capped no-retry: should include 'unknown retry' when no retry time"
 pass "fm-free-model-probe: capped case returns 'capped unknown retry' with exit 3 when no retry time in log"
 
-# --- timeout-unknown case (no matching log entry) -----------------------------
+# --- stale capped entry ------------------------------------------------------
 
-# Write a log for a different model, so the capped check finds nothing.
-cat > "$FM_FREE_PROBE_LOG_DIR/$(date +%Y%m%d).log" <<'LOG'
-{"timestamp":"2026-11-04T10:00:00Z","level":"ERROR","providerID":"opencode","modelID":"other-model","error":"AI_APICallError: Free usage limit reached."}
+# A cap entry written before the probe started must not classify this probe.
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+exec sleep 300
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+reset_logs
+cat > "$LOG_DIR/stale.log" <<'LOG'
+{"timestamp":"1970-01-01T00:00:00Z","level":"ERROR","providerID":"opencode","modelID":"glm-5.3-flash-free","error":"AI_APICallError: Free usage limit reached. Please retry after 30s."}
 LOG
 
+out=$(run_probe glm-5.3-flash-free)
+rc=$?
+assert_contains "$out" "unknown" "stale cap: output should start with 'unknown'"
+assert_contains "$out" "timed out" "stale cap: should report the timeout"
+[ "$rc" -eq 1 ] || fail "stale cap: expected exit 1, got $rc"
+pass "fm-free-model-probe: a capped entry from before the probe does not classify it as capped"
+
+# --- fresh capped entry for another model ------------------------------------
+
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+printf '{"timestamp":"%s","level":"ERROR","providerID":"opencode","modelID":"other-model","error":"AI_APICallError: Free usage limit reached."}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OPENCODE_LOG_DIR/probe.log"
+exec sleep 300
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+reset_logs
+out=$(run_probe glm-5.3-flash-free)
+rc=$?
+assert_contains "$out" "unknown" "other model: output should start with 'unknown'"
+assert_contains "$out" "timed out" "other model: should report the timeout"
+[ "$rc" -eq 1 ] || fail "other model: expected exit 1, got $rc"
+pass "fm-free-model-probe: a fresh cap for another model does not classify this probe as capped"
+
+# --- timeout-unknown case (no matching log entry) -----------------------------
+
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+exec sleep 300
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+reset_logs
 out=$(run_probe glm-5.3-flash-free)
 rc=$?
 assert_contains "$out" "unknown" "timeout case: output should start with 'unknown'"
@@ -98,15 +197,30 @@ exit 42
 SH
 chmod +x "$FAKE_BIN/opencode"
 
-# Remove log dir contents so capped check finds nothing.
-rm -f "$FM_FREE_PROBE_LOG_DIR"/*
-
+reset_logs
 out=$(run_probe glm-5.3-flash-free)
 rc=$?
 assert_contains "$out" "unknown" "non-timeout failure: output should start with 'unknown'"
 assert_contains "$out" "exit code 42" "non-timeout failure: should mention the exit code"
 [ "$rc" -eq 1 ] || fail "non-timeout failure: expected exit 1, got $rc"
 pass "fm-free-model-probe: non-timeout failure returns 'unknown probe exit code' with exit 1"
+
+# --- unknown case (signal-range exit status) ---------------------------------
+
+# Exit 130 is a signal death, not the bound firing, so it must name the status.
+cat > "$FAKE_BIN/opencode" <<'SH'
+#!/usr/bin/env bash
+exit 130
+SH
+chmod +x "$FAKE_BIN/opencode"
+
+reset_logs
+out=$(run_probe glm-5.3-flash-free)
+rc=$?
+assert_contains "$out" "exit code 130" "signal exit: should report the exit code"
+assert_not_contains "$out" "timed out" "signal exit: a status above 124 is not a timeout"
+[ "$rc" -eq 1 ] || fail "signal exit: expected exit 1, got $rc"
+pass "fm-free-model-probe: a signal-range exit status is reported as that status, not a timeout"
 
 # --- log dir absent case ------------------------------------------------------
 

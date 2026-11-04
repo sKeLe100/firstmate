@@ -9,86 +9,134 @@
 # since the probe started.
 #
 # Prints exactly one line to stdout:
-#   ok              the reply contained "OK" (exit 0)
+#   ok              the reply was exactly "OK" (exit 0)
 #   capped <retry>  a log entry for <model-id> since the probe start contained
 #                   "Free usage limit reached" (<retry> is the retry time from
 #                   the log message, or "unknown retry" if not parseable) (exit 3)
 #   unknown <why>   the probe timed out or produced other output (exit 1)
 #
-# OpenCode logs live in ~/.local/share/opencode/log/; the newest file in that
-# directory is the current log.
+# OpenCode logs live in ~/.local/share/opencode/log/ (override with
+# OPENCODE_LOG_DIR); the newest file in that directory is the current log.
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
-MODEL_ID=${1:?usage: fm-free-model-probe.sh <opencode-model-id> [timeout-secs]}
+usage() {
+  cat <<'EOF'
+Usage: fm-free-model-probe.sh <opencode-model-id> [timeout-secs]
+
+Runs `opencode run -m <model-id> "Reply with exactly: OK"` from a temporary
+directory with an optional timeout (default 60 seconds), then checks OpenCode's
+log directory for a "Free usage limit reached" entry written for that modelID
+since the probe started.
+
+Prints exactly one line to stdout:
+  ok              the reply was exactly "OK" (exit 0)
+  capped <retry>  a log entry for <model-id> since the probe start contained
+                  "Free usage limit reached" (<retry> is the retry time from
+                  the log message, or "unknown retry" if not parseable) (exit 3)
+  unknown <why>   the probe timed out or produced other output (exit 1)
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h | --help) usage; exit 0 ;;
+    -*) printf 'fm-free-model-probe: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  usage >&2
+  exit 2
+fi
+
+MODEL_ID=$1
 TIMEOUT_SEC=${2:-60}
+case "$TIMEOUT_SEC" in
+  '' | 0* | *[!0-9]*)
+    printf 'fm-free-model-probe: timeout must be a positive integer\n' >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 OPENCODE_LOG_DIR="${OPENCODE_LOG_DIR:-$HOME/.local/share/opencode/log}"
 
-# Determine the cutoff epoch: log entries written after this time are "since probe start".
 PROBE_START_EPOCH=$(date +%s)
 
-# Create a temporary work dir for the probe command.
 PROBE_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$PROBE_TMPDIR"' EXIT
 
-# Run the probe with a timeout. Capture stdout, stderr, and exit code.
-PROBE_OUTPUT_FILE="$PROBE_TMPDIR/output.txt"
-PROBE_EXIT_FILE="$PROBE_TMPDIR/exit.txt"
-timeout "$TIMEOUT_SEC" bash -c '
-  opencode run -m "$1" "Reply with exactly: OK" >"$2" 2>&1
-  echo $? >"$3"
-' _ "$MODEL_ID" "$PROBE_OUTPUT_FILE" "$PROBE_EXIT_FILE" &
-PROBE_PID=$!
+PROBE_STDOUT_FILE="$PROBE_TMPDIR/stdout.txt"
+PROBE_STDERR_FILE="$PROBE_TMPDIR/stderr.txt"
+(
+  cd "$PROBE_TMPDIR" || exit 1
+  fm_run_timed "$TIMEOUT_SEC" opencode run -m "$MODEL_ID" "Reply with exactly: OK"
+) >"$PROBE_STDOUT_FILE" 2>"$PROBE_STDERR_FILE"
+PROBE_EXIT_CODE=$?
 
-# Wait for the timeout or the probe to finish.
-wait "$PROBE_PID" 2>/dev/null || true
-PROBE_EXIT_CODE=124
-if [ -f "$PROBE_EXIT_FILE" ]; then
-  PROBE_EXIT_CODE=$(cat "$PROBE_EXIT_FILE" 2>/dev/null || echo 124)
-fi
+OUTPUT=$(cat "$PROBE_STDOUT_FILE" 2>/dev/null || true)
 
-OUTPUT=$(cat "$PROBE_OUTPUT_FILE" 2>/dev/null || true)
-
-# Check if the reply contains "OK".
-if echo "$OUTPUT" | grep -q "OK"; then
+if [ "$OUTPUT" = "OK" ]; then
   echo "ok"
   exit 0
 fi
 
-# Check OpenCode logs for "Free usage limit reached" for this modelID.
-# The newest log file is the current one.
+log_timestamp_epoch() {  # <log-line>
+  local ts
+  ts=$(printf '%s\n' "$1" | sed -n 's/.*"timestamp":"\([^"]*\)".*/\1/p')
+  [ -n "$ts" ] || return 1
+  case "$ts" in
+    *.*Z) ts="${ts%%.*}Z" ;;
+  esac
+  date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null \
+    || date -u -d "$ts" +%s 2>/dev/null
+}
+
 CAPED_REASON=""
 if [ -d "$OPENCODE_LOG_DIR" ]; then
-  # Find the newest log file.
-  CURRENT_LOG=$(ls -t "$OPENCODE_LOG_DIR"/* 2>/dev/null | head -1)
-  if [ -n "$CURRENT_LOG" ] && [ -f "$CURRENT_LOG" ]; then
-    # Look for log entries for this modelID that contain "Free usage limit reached".
-    # Log format is JSON: ... "modelID":"glm-5.3-flash-free" ... "error":"AI_APICallError: Free usage limit reached. ..."
-    LOG_MATCH=$(grep "\"modelID\":\"${MODEL_ID}\"" "$CURRENT_LOG" 2>/dev/null | grep "Free usage limit reached" | tail -1)
+  CURRENT_LOG=
+  for candidate in "$OPENCODE_LOG_DIR"/*; do
+    [ -f "$candidate" ] || continue
+    if [ -z "$CURRENT_LOG" ] || [ "$candidate" -nt "$CURRENT_LOG" ]; then
+      CURRENT_LOG=$candidate
+    fi
+  done
+  if [ -n "$CURRENT_LOG" ]; then
+    LOG_MATCH=$(grep -F "\"modelID\":\"${MODEL_ID}\"" "$CURRENT_LOG" 2>/dev/null \
+      | grep -F "Free usage limit reached" | tail -n 1)
     if [ -n "$LOG_MATCH" ]; then
-      # Extract the retry time if present (format: "retry after Xs" or similar).
-      RETRY_TIME=$(echo "$LOG_MATCH" | grep -oP 'retry after \K[0-9]+' || true)
-      if [ -n "$RETRY_TIME" ]; then
-        CAPED_REASON="retry after ${RETRY_TIME}s"
-      else
-        CAPED_REASON="unknown retry"
+      LOG_EPOCH=$(log_timestamp_epoch "$LOG_MATCH") || LOG_EPOCH=
+      if [ -n "$LOG_EPOCH" ] && [ "$LOG_EPOCH" -ge "$PROBE_START_EPOCH" ]; then
+        RETRY_TIME=$(printf '%s\n' "$LOG_MATCH" | grep -oE 'retry after [0-9]+' | head -n 1 | grep -oE '[0-9]+' || true)
+        if [ -n "$RETRY_TIME" ]; then
+          CAPED_REASON="retry after ${RETRY_TIME}s"
+        else
+          CAPED_REASON="unknown retry"
+        fi
+        echo "capped $CAPED_REASON"
+        exit 3
       fi
-      echo "capped $CAPED_REASON"
-      exit 3
     fi
   fi
 fi
 
-# Check if we timed out.
-if [ "${PROBE_EXIT_CODE:-124}" -ge 124 ]; then
+if fm_timed_out "$PROBE_EXIT_CODE"; then
   echo "unknown probe timed out after ${TIMEOUT_SEC}s"
   exit 1
 fi
 
-# Other failure.
-echo "unknown probe exit code ${PROBE_EXIT_CODE:-unknown}"
+if [ "$PROBE_EXIT_CODE" -eq 0 ]; then
+  echo "unknown probe output"
+  exit 1
+fi
+
+echo "unknown probe exit code ${PROBE_EXIT_CODE}"
 exit 1
