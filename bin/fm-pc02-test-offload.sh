@@ -86,13 +86,22 @@
 #     (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124 rather than
 #     rerunning locally. Lint mode keeps bin/fm-lint.sh's own worker count and
 #     partition selection untouched; the whole-run bound applies to it too.
-#   - Host slots: FM_PC02_OFFLOAD_SLOTS (default 2) nonblocking flocks on
-#     PC02's ~/.fm-pc02-test-slot-<n>.lock, one per concurrent test suite or
-#     lint run, cover transfer and execution. A run takes the first free slot;
-#     with all slots held it logs that every slot is busy and routes local, as
-#     does an unclear claim. The files are never unlinked: a dead owner's
-#     kernel lock is released automatically, so a leftover file or process
-#     name is harmless.
+#   - Host slots: the slot count comes from FM_PC02_OFFLOAD_SLOTS, then the
+#     per-machine ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
+#     file (one integer from 1 to 16 followed by a newline), then the default
+#     2. Both sources are read fresh on every run, so a changed count applies
+#     to the next Test or Lint step without restarting the no-mistakes daemon.
+#     Nonblocking flocks on PC02's ~/.fm-pc02-test-slot-<n>.lock, one per
+#     concurrent test suite or lint run, cover transfer and execution. A run
+#     takes the first free slot. With every slot held it keeps polling while
+#     printing that it is waiting, for up to FM_PC02_OFFLOAD_SLOT_WAIT_SECS
+#     (default 1800, about 30 minutes), and only then routes
+#     local; FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 restores the immediate
+#     local fallback. An unclear claim routes local at once. PC02 being
+#     unreachable, personally in use, or out of environment parity still
+#     routes local before any slot wait begins. The files are never unlinked:
+#     a dead owner's kernel lock is released automatically, so a leftover file
+#     or process name is harmless.
 #   - Supervising-home selection and per-machine configuration are owned by
 #     docs/configuration.md's "PC02 test and lint offload" section.
 #   - The remote fm-test-run.sh prints its own environment record before its
@@ -125,6 +134,13 @@
 #     MemAvailable was 24.4 GiB of ~27 GiB. A separate PR #215 full 183-script
 #     run took 4274s test wall / 4305s whole. The 7200s cap remains a hang
 #     bound.
+#   - Slot-count sizing after the "6 slots now" decision (2026-11-03): with 6
+#     slots the per-slot auto ceiling is floor(16 / 6) = 2 workers, so six
+#     concurrent offloads reach 12 workers on a 16-thread / 27 GB host. That
+#     is within the thread budget, but it is deliberately lighter per run than
+#     the measured two-run shape below instead of a measured six-run result;
+#     raise the whole-run cap only with fresh evidence, and lower the slots
+#     file if PC02's memory or the shared admission shows pressure.
 #   - Two-full-selection measurement (2026-11-03, 316 test scripts, no
 #     --jobs, so the auto scheduler with FM_PC02_OFFLOAD_JOBS=8, two slots
 #     started 5s apart on an otherwise idle 16-thread / 27 GB PC02): both runs
@@ -166,13 +182,40 @@
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
 #                                      (default: 180)
 #   FM_PC02_OFFLOAD_SLOTS               number of concurrent PC02 test suites
-#                                      or lint runs (default: 2); each holds
-#                                      its own slot lock. With all slots busy
-#                                      the run routes local and says so. Must
-#                                      be an integer from 1 to 16; any other
-#                                      value is a configuration error that
-#                                      exits 2 without running the selected
-#                                      command.
+#                                      or lint runs; overrides the
+#                                      pc02-offload-slots machine file. With
+#                                      all slots busy the run waits for a
+#                                      free slot (see
+#                                      FM_PC02_OFFLOAD_SLOT_WAIT_SECS) and
+#                                      routes local only if none frees.
+#                                      Default: the machine file's value, or
+#                                      2 when neither is set. Must be an
+#                                      integer from 1 to 16; any other value
+#                                      is a configuration error that exits 2
+#                                      without running the selected command.
+#   (the per-machine slot file)         ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
+#                                      holds one integer from 1 to 16
+#                                      followed by a newline, read fresh at
+#                                      every run so a change applies without
+#                                      restarting the no-mistakes daemon. An
+#                                      unreadable or malformed file is a
+#                                      configuration error that exits 2
+#                                      without running the selected command.
+#   FM_PC02_OFFLOAD_SLOT_WAIT_SECS      bound, in seconds, on waiting for a
+#                                      busy slot to free before routing local
+#                                      (default: 1800, about 30 minutes). 0
+#                                      restores the immediate
+#                                      local fallback. The wait is printed
+#                                      once and the host is polled every
+#                                      FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS.
+#                                      Must be a non-negative integer; any
+#                                      other value is a configuration error
+#                                      that exits 2.
+#   FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS
+#                                      seconds between slot retries while
+#                                      waiting (default: 5). Must be a
+#                                      positive integer; any other value is a
+#                                      configuration error that exits 2.
 #   FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS    bound for the actual remote run, test
 #                                      or lint (default: 7200); a hang
 #                                      tripwire, not a deadline. PR #215's
@@ -219,8 +262,8 @@
 # tests, the aggregate of all four canonical lint partitions on PC02, and
 # bin/fm-lint.sh's changed-file lint on PC01; or 124 if the remote run itself
 # exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS, or 2 for a malformed
-# FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16), which runs nothing at
-# all.
+# FM_PC02_OFFLOAD_SLOTS, pc02-offload-slots file, or slot-wait setting, which
+# runs nothing at all.
 # A readiness check that fails (PC02 personally in use, occupied, unreachable,
 # missing a required tool, or a sync/verification failure) falls back to a
 # local run and never changes the result the selected command itself reports.
@@ -250,7 +293,9 @@ SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
 SCRIPT_TIMEOUT="${FM_PC02_OFFLOAD_SCRIPT_TIMEOUT_SECS:-3000}"
 REMOTE_JOBS="${FM_PC02_OFFLOAD_JOBS:-8}"
-SLOTS="${FM_PC02_OFFLOAD_SLOTS:-2}"
+SLOTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots"
+SLOT_WAIT="${FM_PC02_OFFLOAD_SLOT_WAIT_SECS:-1800}"
+SLOT_WAIT_INTERVAL="${FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS:-5}"
 REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
 REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
@@ -277,13 +322,40 @@ GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
 # Require them on PC02 too rather than risk that.
 REQUIRED_TOOLS="${FM_PC02_OFFLOAD_REQUIRED_TOOLS:-git bash python3 jq node shellcheck actionlint perl ruby chromium}"
 
-# A malformed slot count is a configuration error, not an unclear host read:
-# refuse loudly instead of silently running with a different shape.
+# Resolve the concurrent-slot count. The environment wins over the machine
+# file, which wins over the default; both are read on every run so a changed
+# count reaches the next Test or Lint step without restarting the shared
+# no-mistakes daemon. A malformed source is a configuration error, not an
+# unclear host read: refuse loudly instead of silently running a different
+# shape.
+if [ -n "${FM_PC02_OFFLOAD_SLOTS:-}" ]; then
+  SLOTS=$FM_PC02_OFFLOAD_SLOTS
+  SLOTS_ORIGIN=FM_PC02_OFFLOAD_SLOTS
+elif [ -e "$SLOTS_FILE" ] || [ -L "$SLOTS_FILE" ]; then
+  SLOTS=
+  if ! { IFS= read -r SLOTS < "$SLOTS_FILE" || [ -n "$SLOTS" ]; }; then
+    echo "fm-pc02-test-offload: cannot read the PC02 offload slot setting $SLOTS_FILE (put one integer from 1 to 16 followed by a newline)" >&2
+    exit 2
+  fi
+  SLOTS_ORIGIN=$SLOTS_FILE
+else
+  SLOTS=2
+  SLOTS_ORIGIN="the PC02 offload slot setting"
+fi
+
 case "$SLOTS" in
-  *[!0-9]*) echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be a positive integer, got '$SLOTS'" >&2; exit 2 ;;
+  ''|*[!0-9]*) echo "fm-pc02-test-offload: $SLOTS_ORIGIN must be a positive integer, got '$SLOTS'" >&2; exit 2 ;;
 esac
 { [ "$SLOTS" -ge 1 ] && [ "$SLOTS" -le 16 ]; } \
-  || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOTS must be between 1 and 16, got '$SLOTS'" >&2; exit 2; }
+  || { echo "fm-pc02-test-offload: $SLOTS_ORIGIN must be between 1 and 16, got '$SLOTS'" >&2; exit 2; }
+case "$SLOT_WAIT" in
+  ''|*[!0-9]*) echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOT_WAIT_SECS must be a non-negative integer, got '$SLOT_WAIT'" >&2; exit 2 ;;
+esac
+case "$SLOT_WAIT_INTERVAL" in
+  ''|*[!0-9]*) echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS must be a positive integer, got '$SLOT_WAIT_INTERVAL'" >&2; exit 2 ;;
+esac
+[ "$SLOT_WAIT_INTERVAL" -ge 1 ] \
+  || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS must be a positive integer, got '$SLOT_WAIT_INTERVAL'" >&2; exit 2; }
 
 release_claim() {
   if [ "$claim_open" -eq 1 ]; then
@@ -601,7 +673,9 @@ fi
 
 # The same SSH shell owns the slot while waiting for transfer, then runs the
 # suite under it. It takes the first free slot, so up to SLOTS suites share
-# PC02; with every slot held it reports that and exits 75. EOF before
+# PC02. When every slot is held it keeps retrying on the remote host until
+# SLOT_WAIT seconds have passed, sending one progress line for the local side
+# to print, then reports that every slot stayed busy and exits 75. EOF before
 # execution releases the slot; EOF during execution cannot release it ahead of
 # the bounded suite. No PID-file reclamation race.
 claim_slots=
@@ -612,12 +686,21 @@ while [ "$slot" -le "$SLOTS" ]; do
 done
 # shellcheck disable=SC2016 # HOME and command expand on PC02.
 claim_cmd='held=
-for i in'"$claim_slots"'; do
-  exec 8> "$HOME/.fm-pc02-test-slot-$i.lock" || exit 1
-  if flock -n 8; then held=$i; break; fi
-  exec 8>&-
+deadline=$(( $(date +%s) + '"$SLOT_WAIT"' ))
+wait_notice=0
+while [ -z "$held" ]; do
+  for i in'"$claim_slots"'; do
+    exec 8> "$HOME/.fm-pc02-test-slot-$i.lock" || exit 1
+    if flock -n 8; then held=$i; break 2; fi
+    exec 8>&-
+  done
+  now=$(date +%s)
+  if [ "$now" -ge "$deadline" ]; then printf "busy '"$SLOTS"'\n"; exit 75; fi
+  pause=$((deadline - now))
+  [ "$pause" -gt '"$SLOT_WAIT_INTERVAL"' ] && pause='"$SLOT_WAIT_INTERVAL"'
+  if [ "$wait_notice" -eq 0 ]; then printf "waiting %s\n" "$pause"; wait_notice=1; fi
+  sleep "$pause"
 done
-if [ -z "$held" ]; then printf "busy '"$SLOTS"'\n"; exit 75; fi
 printf "claimed %s of '"$SLOTS"'\n" "$held"
 IFS= read -r -t '"$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5))"' command || exit 1
 eval "$command"'
@@ -625,7 +708,7 @@ eval "$command"'
 claim_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-pc02-claim.XXXXXX") || run_local "cannot prepare claim channel"
 mkfifo "$claim_tmp/in" "$claim_tmp/out" || run_local "cannot prepare claim pipes"
 exec 6<>"$claim_tmp/in"
-timeout --kill-after=5 "$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5 + RUN_TIMEOUT + 30))" \
+timeout --kill-after=5 "$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5 + SLOT_WAIT + RUN_TIMEOUT + 30))" \
   ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
   "$HOST" "bash -lc $(printf '%q' "$claim_cmd")" \
   6>&- <"$claim_tmp/in" >"$claim_tmp/out" &
@@ -633,15 +716,39 @@ claim_pid=$!
 exec 7<"$claim_tmp/out"
 claim_open=1
 claim_reply=
-if ! IFS= read -r -t "$PROBE_TIMEOUT" claim_reply <&7 || [ -z "$claim_reply" ]; then
-  kill "$claim_pid" 2>/dev/null || true
-  run_local "PC02 test slot claim unavailable"
-fi
+claim_waiting=0
+claim_line_timeout=$PROBE_TIMEOUT
+while :; do
+  claim_line=
+  if ! IFS= read -r -t "$claim_line_timeout" claim_line <&7 || [ -z "$claim_line" ]; then
+    kill "$claim_pid" 2>/dev/null || true
+    run_local "PC02 test slot claim unavailable"
+  fi
+  case "$claim_line" in
+    "waiting "*)
+      # The remote host keeps polling its slot locks; print the wait once so
+      # a busy host is visible without flooding the caller's log.
+      if [ "$claim_waiting" -eq 0 ]; then
+        echo "fm-pc02-test-offload: all ${SLOTS} PC02 test slots are busy; waiting up to ${SLOT_WAIT}s for a free slot" >&2
+        claim_waiting=1
+      fi
+      claim_line_timeout=$((SLOT_WAIT + PROBE_TIMEOUT))
+      ;;
+    *)
+      claim_reply=$claim_line
+      break
+      ;;
+  esac
+done
 case "$claim_reply" in
   "claimed "*) echo "fm-pc02-test-offload: claimed PC02 slot ${claim_reply#claimed }" >&2 ;;
   "busy "*)
     kill "$claim_pid" 2>/dev/null || true
-    run_local "all ${claim_reply#busy } PC02 test slots are busy; running locally"
+    if [ "$SLOT_WAIT" -le 0 ]; then
+      run_local "all ${claim_reply#busy } PC02 test slots are busy; running locally"
+    else
+      run_local "all ${claim_reply#busy } PC02 test slots stayed busy for ${SLOT_WAIT}s; running locally"
+    fi
     ;;
   *)
     kill "$claim_pid" 2>/dev/null || true

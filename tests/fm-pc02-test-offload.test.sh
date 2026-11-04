@@ -1144,14 +1144,20 @@ test_all_slots_busy_falls_back_locally() {
   hold_slot "$dir" 2 "$dir/slot-2-held"
   second=$HOLD_SLOT_PID
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOT_WAIT_SECS=2 \
+    FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   release_slot "$first" "$second"
-  expect_code 0 "$status" "a fully occupied PC02 must run locally: $out"
-  assert_contains "$out" "all 2 PC02 test slots are busy; running locally" \
-    "the all-slots-busy fallback was not logged clearly: $out"
+  expect_code 0 "$status" "a fully occupied PC02 must run locally after its bounded wait: $out"
+  assert_contains "$out" "all 2 PC02 test slots are busy; waiting up to 2s for a free slot" \
+    "the bounded slot wait was not announced: $out"
+  assert_contains "$out" "all 2 PC02 test slots stayed busy for 2s; running locally" \
+    "the timeout fallback was not logged clearly: $out"
+  [ "$(printf '%s\n' "$out" | grep -v '^fm-pc02-test-offload: ')" = "$LOCAL_PROOF_OUT" ] \
+    || fail "the timeout fallback did not run the real local suite: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "a fully occupied host received a new remote run"
-  pass "both busy PC02 slots route the next suite to PC01 with a clear log"
+  pass "busy PC02 slots are waited on up to the bound, then the suite runs locally"
 }
 
 test_malformed_slot_count_is_a_configuration_error() {
@@ -1192,13 +1198,16 @@ test_single_slot_mode_keeps_the_old_fallback() {
   first=$HOLD_SLOT_PID
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_SLOTS=1 FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 \
     "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   release_slot "$first"
-  expect_code 0 "$status" "FM_PC02_OFFLOAD_SLOTS=1 must keep the single-slot fallback: $out"
-  assert_contains "$out" "all 1 PC02 test slots are busy" "the single-slot fallback did not name its limit: $out"
+  expect_code 0 "$status" "FM_PC02_OFFLOAD_SLOTS=1 with wait 0 must keep the single-slot fallback: $out"
+  assert_contains "$out" "all 1 PC02 test slots are busy; running locally" \
+    "the single-slot fallback did not name its limit: $out"
+  assert_not_contains "$out" "waiting up to" "a zero wait still announced a wait: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the single busy slot received a new remote run"
-  pass "FM_PC02_OFFLOAD_SLOTS=1 keeps the original single-slot fallback"
+  pass "FM_PC02_OFFLOAD_SLOTS=1 with a zero wait keeps the immediate single-slot fallback"
 }
 
 test_decoy_host_suite_does_not_affect_remote_probe() {
@@ -1481,7 +1490,7 @@ SH
   flock -n "$dir/home/.fm-pc02-test-slot-2.lock" true && fail "slot 2 was free while two claimants ran"
   # Both slots held: a third suite must fall back locally and say so.
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   c=$?
   expect_code 0 "$c" "a third suite against two busy slots must run locally: $out"
   assert_contains "$out" "all 2 PC02 test slots are busy; running locally" \
@@ -1495,6 +1504,116 @@ SH
   flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "winner retained slot 1"
   flock -n "$dir/home/.fm-pc02-test-slot-2.lock" true || fail "winner retained slot 2"
   pass "two concurrent offloads take both PC02 slots and a third falls back locally"
+}
+
+test_busy_slots_wait_for_a_free_slot() {
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  local dir fakebin out status first second pid _
+  dir="$TMP_ROOT/remote-busy-wait"
+  fakebin=$(fake_pc02 "$dir")
+  printf '#!/usr/bin/env bash\necho "ok - waited slot"\n' > "$dir/green.test.sh"
+  chmod +x "$dir/green.test.sh"
+  hold_slot "$dir" 1 "$dir/slot-1-held"
+  first=$HOLD_SLOT_PID
+  hold_slot "$dir" 2 "$dir/slot-2-held"
+  second=$HOLD_SLOT_PID
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=60 FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
+    "$SCRIPT" "$dir/green.test.sh" > "$dir/out.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 600); do
+    grep -q "waiting up to 60s" "$dir/out.log" 2>/dev/null && break
+    sleep 0.1
+  done
+  if ! grep -q "waiting up to 60s" "$dir/out.log" 2>/dev/null; then
+    release_slot "$first" "$second"
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "a busy PC02 never announced its slot wait: $(cat "$dir/out.log")"
+  fi
+  release_slot "$first"
+  for _ in $(seq 1 300); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+  fi
+  wait "$pid"
+  status=$?
+  release_slot "$second"
+  out=$(cat "$dir/out.log")
+  expect_code 0 "$status" "waiting for a slot did not run the suite remotely: $out"
+  assert_contains "$out" "claimed PC02 slot" "the waiter never took the freed slot: $out"
+  assert_contains "$out" "running tests remotely" "the waiter did not run remotely after the slot freed: $out"
+  assert_not_contains "$out" "running locally" "the waiter fell back locally instead of taking the freed slot: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "the waited run left its mirror behind"
+  pass "a fully busy PC02 is waited on and the run takes the first slot that frees"
+}
+
+test_slot_file_and_env_precedence() {
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  local dir fakebin config slots_file out status
+  dir="$TMP_ROOT/slot-file"
+  fakebin=$(fake_pc02 "$dir" 16)
+  config="$dir/config"
+  mkdir -p "$config/firstmate"
+  slots_file="$config/firstmate/pc02-offload-slots"
+  export FM_FAKE_CAPTURE_RUNNER=1
+  printf '4\n' > "$slots_file"
+  out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash env -u FM_PC02_OFFLOAD_SLOTS "$SCRIPT" --all 2>&1)
+  status=$?
+  expect_code 0 "$status" "a machine slot file of 4 must run: $out"
+  assert_contains "$out" 'auto_jobs=4' \
+    "the machine slot file did not drive the per-slot worker cap (16/4=4): $out"
+  # The same file is read again for the next run: no daemon restart needed.
+  printf '2\n' > "$slots_file"
+  out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash env -u FM_PC02_OFFLOAD_SLOTS "$SCRIPT" --all 2>&1)
+  status=$?
+  expect_code 0 "$status" "the changed machine slot file must apply to the next run: $out"
+  assert_contains "$out" 'auto_jobs=8' \
+    "the slot file was not re-read for the next run (16/2=8): $out"
+  # A value written without its trailing newline (printf 6 > file) is still read.
+  printf '6' > "$slots_file"
+  out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash env -u FM_PC02_OFFLOAD_SLOTS "$SCRIPT" --all 2>&1)
+  status=$?
+  expect_code 0 "$status" "a slot file without a trailing newline must still apply: $out"
+  assert_contains "$out" 'auto_jobs=2' \
+    "a slot file without a trailing newline was not read (16/6=2): $out"
+  # The environment wins over the file.
+  out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=4 "$SCRIPT" --all 2>&1)
+  status=$?
+  expect_code 0 "$status" "an environment slot override must run: $out"
+  assert_contains "$out" 'auto_jobs=4' \
+    "the environment did not override the machine slot file: $out"
+  unset FM_FAKE_CAPTURE_RUNNER
+
+  local bad badfake badconfig value
+  bad="$TMP_ROOT/slot-file-invalid"
+  badfake=$(fake_pc02 "$bad" 16)
+  badconfig="$bad/config"
+  mkdir -p "$badconfig/firstmate"
+  for value in abc 17 ''; do
+    printf '%s\n' "$value" > "$badconfig/firstmate/pc02-offload-slots"
+    out=$(PATH="$badfake:$PATH" XDG_CONFIG_HOME="$badconfig" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+      FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash env -u FM_PC02_OFFLOAD_SLOTS "$SCRIPT" --all 2>&1)
+    status=$?
+    expect_code 2 "$status" "a malformed machine slot file '$value' must be a configuration error: $out"
+    assert_contains "$out" "$badconfig/firstmate/pc02-offload-slots" \
+      "the refusal did not name the machine slot file: $out"
+    assert_contains "$out" "got '$value'" "the refusal omitted the rejected value: $out"
+  done
+  [ ! -e "$bad/ssh.log" ] || fail "a malformed machine slot file still reached PC02: $(cat "$bad/ssh.log")"
+  pass "the machine slot file is read every run, the environment overrides it, and malformed values exit 2"
 }
 
 test_dead_owner_and_timeout_release_claim() {
@@ -1584,6 +1703,8 @@ test_help_prints_the_whole_documented_contract() {
   assert_contains "$out" "FM_PC02_OFFLOAD_GPU_BUSY_PCT" "--help omitted the GPU busy threshold: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS" "--help omitted the run-timeout override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_SLOTS" "--help omitted the concurrent-slot override: $out"
+  assert_contains "$out" "FM_PC02_OFFLOAD_SLOT_WAIT_SECS" "--help omitted the slot-wait override: $out"
+  assert_contains "$out" "pc02-offload-slots" "--help omitted the per-machine slot file: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS" "--help omitted the parity-probe timeout override: $out"
   assert_contains "$out" "integer from 1 to 16" "--help omitted the slot range and integer requirement: $out"
   assert_contains "$out" "exits 2" "--help omitted the configuration-error exit: $out"
@@ -1642,7 +1763,9 @@ test_chromium_dependency_soname_difference_falls_back
 test_chromium_wrapper_resolution_does_not_false_fallback
 test_chromium_wrapper_compares_resolved_sonames
 test_one_of_two_busy_slots_still_runs_remotely
+test_busy_slots_wait_for_a_free_slot
 test_all_slots_busy_falls_back_locally
+test_slot_file_and_env_precedence
 test_malformed_slot_count_is_a_configuration_error
 test_single_slot_mode_keeps_the_old_fallback
 test_decoy_host_suite_does_not_affect_remote_probe
