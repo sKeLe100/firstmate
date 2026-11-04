@@ -11,6 +11,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SCRIPT="$ROOT/bin/fm-pc02-hygiene.sh"
+# shellcheck source=bin/fm-pc02-hygiene-lib.sh
+. "$ROOT/bin/fm-pc02-hygiene-lib.sh"
 # The probe reads Linux-only fields (GNU stat -c and ps etimes) and the report
 # bounds its ssh call with GNU timeout; the fake host below runs that probe
 # locally, so the field cases only prove anything where those tools exist.
@@ -79,7 +81,7 @@ test_report_is_data_only_and_ok_when_within_bounds() {
 }
 
 test_report_names_each_crossed_bound_and_never_deletes() {
-  local out status root
+  local out status root psbin
   if ! probe_host_supported; then
     pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
   fi
@@ -88,20 +90,26 @@ test_report_names_each_crossed_bound_and_never_deletes() {
   printf 'x\n' > "$root/read-only/file"
   chmod 500 "$root/read-only"
   touch -d '3 hours ago' "$root"
-  bash -c 'exec -a fm-test-run-old sleep 30' &
-  local proc=$!
-  out=$(FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=999999999 \
+  psbin="$TMP_ROOT/fake-ps"
+  mkdir -p "$psbin"
+  cat > "$psbin/ps" <<'SH'
+#!/usr/bin/env bash
+printf '  21 9999 fm-test-run.sh --all\n  22    0 fm-test-run.sh --changed\n  23 9999 bash -lc echo unrelated\n'
+SH
+  chmod +x "$psbin/ps"
+  out=$(PATH="$psbin:$PATH" \
+    FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=999999999 \
     FM_PC02_OFFLOAD_TMP_MIN_FREE_MB=999999999 \
     FM_PC02_OFFLOAD_DISK_MIN_FREE_MB=999999999 \
     FM_PC02_HYGIENE_STALE_AGE_SECS=3600 \
-    FM_PC02_HYGIENE_IDLE_AGE_SECS=0 \
+    FM_PC02_HYGIENE_IDLE_AGE_SECS=3600 \
     FM_PC02_HYGIENE_STALE_ROOTS_MAX=0 \
     FM_PC02_HYGIENE_OLD_PROCS_MAX=0 "$SCRIPT" 2>&1)
   status=$?
-  kill "$proc" 2>/dev/null || true
-  wait "$proc" 2>/dev/null || true
   expect_code 1 "$status" "a bound-crossing report must exit 1: $out"
   assert_contains "$out" "stale_test_roots=1" "the stale test root was not counted: $out"
+  assert_contains "$out" "old_test_procs=1" \
+    "only the old test-surface process past the idle bound should count: $out"
   assert_contains "$out" "status=pressure" "the report did not name pressure: $out"
   assert_contains "$out" "pressure=" "the report omitted its pressure field: $out"
   case "$out" in
@@ -129,15 +137,16 @@ test_report_names_each_crossed_bound_and_never_deletes() {
 }
 
 test_fixture_roots_count_only_with_their_marker() {
-  local out status tmp leaked live spawn dead_pid
+  local out status tmp leaked live recycled spawn dead_pid
   if ! probe_host_supported; then
     pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
   fi
   tmp="$TMP_ROOT/fixture-roots"
   leaked="$tmp/fm-fixture-leaked"
   live="$tmp/fm-fixture-live"
+  recycled="$tmp/fm-fixture-recycled"
   spawn="$tmp/fm-spawn-task.real"
-  mkdir -p "$leaked/read-only" "$live" "$spawn"
+  mkdir -p "$leaked/read-only" "$live" "$recycled" "$spawn"
   head -c 2097152 /dev/zero > "$leaked/read-only/blob"
   chmod 500 "$leaked/read-only"
   printf 'x\n' > "$spawn/file"
@@ -145,8 +154,10 @@ test_fixture_roots_count_only_with_their_marker() {
   dead_pid=$!
   wait "$dead_pid" 2>/dev/null || true
   printf '%s\n%s\n' "$dead_pid" 'linux-starttime=0 cmdline-hex=00' > "$leaked/.fm-test-fixture"
-  printf '%s\n%s\n' "$$" 'linux-starttime=0 cmdline-hex=00' > "$live/.fm-test-fixture"
-  touch -d '3 hours ago' "$leaked/.fm-test-fixture" "$live/.fm-test-fixture" "$spawn"
+  printf '%s\n%s\n' "$$" "$FM_TEST_OWNER_IDENTITY" > "$live/.fm-test-fixture"
+  printf '%s\n%s\n' "$$" 'linux-starttime=0 cmdline-hex=00' > "$recycled/.fm-test-fixture"
+  touch -d '3 hours ago' "$leaked/.fm-test-fixture" "$live/.fm-test-fixture" \
+    "$recycled/.fm-test-fixture" "$spawn"
   out=$(FM_PC02_OFFLOAD_TMP_ROOT="$tmp" \
     FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=1024 \
     FM_PC02_OFFLOAD_TMP_MIN_FREE_MB=1024 \
@@ -157,14 +168,68 @@ test_fixture_roots_count_only_with_their_marker() {
     FM_PC02_HYGIENE_OLD_PROCS_MAX=0 "$SCRIPT" 2>&1)
   status=$?
   expect_code 1 "$status" "a stale fixture root must read as pressure: $out"
-  assert_contains "$out" "stale_test_roots=1" \
-    "the report miscounted the marked, live-marked and marker-less fm-* roots: $out"
+  assert_contains "$out" "stale_test_roots=2" \
+    "the report miscounted the marked, live-marked, recycled and marker-less fm-* roots: $out"
   assert_contains "$out" "stale_test_mib=2" "the report did not size the stale 2 MiB fixture root: $out"
   assert_contains "$out" "pressure=stale_test_roots" "the report named the wrong crossed bound: $out"
   [ -d "$leaked" ] || fail "the read-only report removed a stale fixture root"
   [ -d "$live" ] || fail "the read-only report removed a live-owned fixture root"
+  [ -d "$recycled" ] || fail "the read-only report removed a fixture root"
   [ -d "$spawn" ] || fail "the read-only report removed a marker-less fm-* root"
-  pass "the hygiene report counts fixture roots only with a dead owner marker"
+  pass "the hygiene report counts fixture roots only under a matching live owner identity"
+}
+
+# fm_pc02_hygiene_remote_script is the documented executable contract both
+# callers send over ssh, and sweep=yes is the offload's pre-claim mode.
+test_unverified_reference_scan_refuses_to_sweep() {
+  local out status tmp stale probe
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
+  tmp="$TMP_ROOT/no-scan"
+  stale="$tmp/home/.fm-pc02-test-offload/run-stale"
+  mkdir -p "$stale" "$tmp/tmp"
+  touch -d '3 hours ago' "$stale"
+  probe=$(fm_pc02_hygiene_remote_script yes "$tmp/tmp" .fm-pc02-test-offload 3600 999999 \
+    "$TMP_ROOT/meminfo")
+  chmod 500 "$tmp/home"
+  out=$(HOME="$tmp/home" bash -c "$probe" 2>&1)
+  status=$?
+  chmod 700 "$tmp/home"
+  expect_code 0 "$status" "the probe must report, not fail, when its scan cannot run: $out"
+  assert_contains "$out" "stale_roots= stale_kb=" \
+    "an unverifiable reference scan must leave the stale readings unknown: $out"
+  [ -d "$stale" ] || fail "the probe swept a root without a completed reference scan"
+  out=$(HOME="$tmp/home" bash -c "$probe" 2>&1)
+  status=$?
+  expect_code 0 "$status" "the probe must report on the writable-home control: $out"
+  assert_contains "$out" "swept_roots=1" "the control scan did not reap the stale root: $out"
+  [ ! -e "$stale" ] || fail "the control scan left the stale root behind"
+  pass "an unverifiable reference scan is unknown and sweeps nothing, while a completed one sweeps"
+}
+
+test_incident_scale_catalog_finishes_inside_the_report_bound() {
+  local out status tmp
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
+  tmp="$TMP_ROOT/incident-scale"
+  mkdir -p "$tmp"
+  mkdir "$tmp"/fm-leak.{1..8731} || fail "could not build the incident-scale catalog"
+  touch "$tmp"/fm-leak.{1..8731}/.fm-test-fixture
+  touch -d '3 hours ago' "$tmp"/fm-leak.{1..8731}/.fm-test-fixture
+  out=$(FM_PC02_OFFLOAD_TMP_ROOT="$tmp" \
+    FM_PC02_OFFLOAD_MEM_MIN_FREE_MB=1024 \
+    FM_PC02_OFFLOAD_TMP_MIN_FREE_MB=1024 \
+    FM_PC02_OFFLOAD_DISK_MIN_FREE_MB=1024 \
+    FM_PC02_HYGIENE_STALE_AGE_SECS=3600 \
+    FM_PC02_HYGIENE_IDLE_AGE_SECS=999999999 \
+    FM_PC02_HYGIENE_STALE_ROOTS_MAX=999999 \
+    FM_PC02_HYGIENE_OLD_PROCS_MAX=0 "$SCRIPT" 2>&1)
+  status=$?
+  expect_code 0 "$status" "the report must read an incident-scale catalog inside its own ssh bound: $out"
+  assert_contains "$out" "stale_test_roots=8731" "the report did not count every stale fixture root: $out"
+  pass "an incident-scale stale-root catalog still reads as data inside the report bound"
 }
 
 test_unreadable_capacity_is_unknown_not_free() {
@@ -226,6 +291,8 @@ test_help_prints_the_read_only_contract() {
 test_report_is_data_only_and_ok_when_within_bounds
 test_report_names_each_crossed_bound_and_never_deletes
 test_fixture_roots_count_only_with_their_marker
+test_unverified_reference_scan_refuses_to_sweep
+test_incident_scale_catalog_finishes_inside_the_report_bound
 test_unreadable_capacity_is_unknown_not_free
 test_unreadable_process_and_size_reads_are_unknown_not_zero
 test_malformed_local_setting_is_refused

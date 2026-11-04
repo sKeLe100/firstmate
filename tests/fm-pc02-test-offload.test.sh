@@ -649,15 +649,6 @@ if [ -n "\${FM_FAKE_SSH_DETACH:-}" ]; then
 fi
 exec 9>&1
 printf '%s\n' "\$*" >> "$dir/ssh.log"
-# The source worktree may contain normal read-only hook directories.
-# Restore fixture permissions on cleanup, including signal/failed-run paths.
-# The pre-claim hygiene probe must restore owner write itself, so it never
-# gets this fixture-wide fallback.
-case "\$*" in
-  *'rm -rf'*)
-    case "\$*" in *fm-pc02-hygiene-probe*) : ;; *) chmod -R u+w "$dir/home/.fm-pc02-test-offload" 2>/dev/null || true ;; esac
-    ;;
-esac
 HOME="$dir/home" exec bash -c "\$*"
 SH
   cat > "$fakebin/rsync" <<SH
@@ -1961,7 +1952,7 @@ test_preclaim_sweeps_stale_roots_and_keeps_live_owned_ones() {
   # A fixture root carries the marker its owning shell wrote; a root without
   # that marker is a real firstmate temp root and must never be touched.
   mkdir -p "$tmp/fm-fixture-leaked/read-only" "$tmp/fm-fixture-live" \
-    "$tmp/fm-spawn-task.leaked"
+    "$tmp/fm-fixture-recycled" "$tmp/fm-spawn-task.leaked"
   printf 'x\n' > "$tmp/fm-fixture-leaked/read-only/file"
   chmod 500 "$tmp/fm-fixture-leaked/read-only"
   printf 'x\n' > "$tmp/fm-spawn-task.leaked/file"
@@ -1969,9 +1960,11 @@ test_preclaim_sweeps_stale_roots_and_keeps_live_owned_ones() {
   dead_pid=$!
   wait "$dead_pid" 2>/dev/null || true
   printf '%s\n%s\n' "$dead_pid" 'linux-starttime=0 cmdline-hex=00' > "$tmp/fm-fixture-leaked/.fm-test-fixture"
-  printf '%s\n%s\n' "$$" 'linux-starttime=0 cmdline-hex=00' > "$tmp/fm-fixture-live/.fm-test-fixture"
+  printf '%s\n%s\n' "$$" "$FM_TEST_OWNER_IDENTITY" > "$tmp/fm-fixture-live/.fm-test-fixture"
+  printf '%s\n%s\n' "$$" 'linux-starttime=0 cmdline-hex=00' > "$tmp/fm-fixture-recycled/.fm-test-fixture"
   touch -d '3 hours ago' "$tmp/fm-fixture-leaked/.fm-test-fixture" \
-    "$tmp/fm-fixture-live/.fm-test-fixture" "$tmp/fm-spawn-task.leaked"
+    "$tmp/fm-fixture-live/.fm-test-fixture" "$tmp/fm-fixture-recycled/.fm-test-fixture" \
+    "$tmp/fm-spawn-task.leaked"
   # A live process whose cwd is inside the root keeps it, exactly like a run
   # that outlived its driver.
   ( cd "$base/run-referenced" && exec sleep 60 ) &
@@ -1990,16 +1983,17 @@ test_preclaim_sweeps_stale_roots_and_keeps_live_owned_ones() {
   kill "$ref_pid" "$group_pid" 2>/dev/null || true
   wait "$ref_pid" "$group_pid" 2>/dev/null || true
   expect_code 0 "$status" "the pre-claim sweep must not change the suite result: $out"
-  assert_contains "$out" "reaped 3 stale PC02 test root(s)" "the sweep did not report every stale root: $out"
+  assert_contains "$out" "reaped 4 stale PC02 test root(s)" "the sweep did not report every stale root: $out"
   [ ! -e "$base/run-stale" ] || fail "a stale unreferenced offload root survived the sweep"
   [ ! -e "$tmp/fm-test-run.stale" ] || fail "a stale unreferenced test root survived the sweep, read-only dirs included"
   [ ! -e "$tmp/fm-fixture-leaked" ] || fail "a stale fixture root whose owner marker is dead survived the sweep"
+  [ ! -e "$tmp/fm-fixture-recycled" ] || fail "a fixture root whose marker names a recycled PID survived the sweep"
   [ -d "$tmp/fm-spawn-task.leaked" ] || fail "the sweep removed a marker-less fm-* root a real task owns"
   [ -d "$tmp/fm-fixture-live" ] || fail "the sweep removed a fixture root whose marker owner is still alive"
   [ -d "$base/run-fresh" ] || fail "the sweep removed a fresh root"
   [ -d "$base/run-referenced" ] || fail "the sweep removed a root a live process still references"
   [ -d "$base/run-group-owned" ] || fail "the sweep ignored the live pgid owner marker"
-  pass "the pre-claim sweep removes only stale unowned roots, reading the fixture marker"
+  pass "the pre-claim sweep removes only stale unowned roots, reading the fixture marker identity"
 }
 
 test_remote_timeout_reaps_mirror_and_run_tmp_root() {

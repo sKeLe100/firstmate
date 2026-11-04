@@ -34,19 +34,28 @@
 #     for a fixture root - is at least stale_age_secs old.
 #   - An offload run root is owned while its "pgid" file names a live process
 #     group; a fixture root is owned while its .fm-test-fixture marker names a
-#     live process. Any root, offload, test-run or fixture, is also owned while
-#     a live process references it by cwd, by a command-line argument, by an
-#     environment value, or by an open file descriptor.
+#     live process whose recorded start time and command line still match that
+#     process, so a recycled PID cannot make a dead owner look alive. Any root,
+#     offload, test-run or fixture, is also owned while a live process
+#     references it by cwd, by a command-line argument, by an environment
+#     value, or by an open file descriptor.
 #   - With sweep=yes the script removes every stale root no owner holds,
 #     restoring owner write first (test fixtures leave read-only *.git-hooks
 #     directories behind), and reports how many it removed. With sweep=no it
 #     only measures, so the hygiene report can never kill or delete anything.
+#   - The reference scan is one pass over /proc and its scratch directory lives
+#     on $HOME, not on the tmpfs being reclaimed. If that scan cannot run or
+#     reads nothing, no root is counted or swept and stale_roots/stale_kb stay
+#     empty: an unverified host is never treated as reference-free.
 #   - old_test_procs counts processes whose elapsed time exceeds
 #     idle_age_secs and whose command line names one of the test surfaces:
 #     fm-test-run, fm-lint, fm-test- helpers, fm-live-lab, or a tmux lab whose
 #     command line also carries the fm- prefix.
 #   - stale_kb and disk/tmp sizes are KiB from du -sk and df -Pk, field numbers
 #     2, 3 and 4 (total, used, free), matching every supported Linux target.
+#   - Candidate discovery, the reference lookup and du/removal are batched into
+#     a bounded number of subprocesses, so a host holding thousands of leaked
+#     roots still finishes inside the callers' ssh bounds.
 #   - Capacity is read after the sweep, so space a sweep reclaims counts toward
 #     the floors the offload then checks.
 
@@ -78,81 +87,117 @@ meminfo=$q_meminfo
 sweep=$sweep
 now=\$(date +%s 2>/dev/null || echo 0)
 
+scratch=
+rm_scratch() {
+  [ -z "\$scratch" ] || rm -rf -- "\$scratch" 2>/dev/null || true
+}
+trap rm_scratch EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
 roots=()
+declare -A seen=()
 add_stale_root() {
-  local existing m
-  for existing in \${roots[@]+"\${roots[@]}"}; do
-    [ "\$existing" = "\$1" ] && return 0
-  done
-  m=\$(stat -c %Y -- "\$2" 2>/dev/null) || return 0
-  case "\$m" in ''|*[!0-9]*) return 0 ;; esac
-  [ \$((now - m)) -ge "\$stale_age" ] || return 0
+  case "\$2" in ''|*[!0-9]*) return 0 ;; esac
+  [ \$((now - \$2)) -ge "\$stale_age" ] || return 0
+  [ -z "\${seen[\$1]:-}" ] || return 0
+  seen[\$1]=1
   roots+=("\$1")
 }
-for d in "\$HOME/\$remote_base"/run-* "\$tmp_root"/fm-test-run.*; do
+while read -r m p; do
+  d=\${p%/.fm-test-fixture}
+  [ -f "\$p" ] || continue
   [ -d "\$d" ] && [ ! -L "\$d" ] || continue
-  add_stale_root "\$d" "\$d"
-done
-for d in "\$tmp_root"/fm-*; do
+  add_stale_root "\$d" "\$m"
+done < <(stat -c '%Y %n' -- "\$tmp_root"/fm-*/.fm-test-fixture 2>/dev/null)
+while read -r m d; do
   [ -d "\$d" ] && [ ! -L "\$d" ] || continue
-  [ -f "\$d/.fm-test-fixture" ] || continue
-  add_stale_root "\$d" "\$d/.fm-test-fixture"
-done
+  add_stale_root "\$d" "\$m"
+done < <(stat -c '%Y %n' -- "\$HOME/\$remote_base"/run-* "\$tmp_root"/fm-test-run.* 2>/dev/null)
 
-refs=
-build_refs() {
-  refs=\$(mktemp "\${TMPDIR:-\$tmp_root}/fm-pc02-hygiene-refs.XXXXXX" 2>/dev/null) || return 1
-  for p in /proc/[0-9]*; do
-    [ -r "\$p/cmdline" ] || continue
-    tr '\0' '\n' 2>/dev/null < "\$p/cmdline" >>"\$refs"
-    tr '\0' '\n' 2>/dev/null < "\$p/environ" >>"\$refs"
-    readlink "\$p/cwd" >>"\$refs" 2>/dev/null || true
-    for f in "\$p"/fd/*; do
-      readlink "\$f" >>"\$refs" 2>/dev/null || true
-    done
-  done
-}
-referenced() {
-  [ -n "\$refs" ] || return 1
-  grep -qxF -- "\$1" "\$refs" 2>/dev/null && return 0
-  grep -qF -- "\$1/" "\$refs" 2>/dev/null
+build_scan() {
+  scratch=\$(mktemp -d "\$HOME/.fm-pc02-hygiene.XXXXXX" 2>/dev/null) || return 1
+  {
+    find /proc/[0-9]*/fd -maxdepth 1 -type l -printf '%l\n' 2>/dev/null
+    find /proc/[0-9]* -maxdepth 1 -name cwd -printf '%l\n' 2>/dev/null
+    cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\0' '\n'
+    cat /proc/[0-9]*/environ 2>/dev/null | tr '\0' '\n'
+  } >"\$scratch/refs"
+  [ -s "\$scratch/refs" ] || return 1
+  printf '%s\n' "\${roots[@]}" >"\$scratch/roots"
+  awk '
+    NR == FNR { root[\$0] = 1; next }
+    {
+      s = \$0
+      if (s in root) { print s; next }
+      while (sub(/\\/[^\\/]*\$/, "", s)) if (s in root) { print s; break }
+    }' "\$scratch/roots" "\$scratch/refs" >"\$scratch/owned" || return 1
 }
 live_group() {
-  [ -f "\$1/pgid" ] || return 1
   local g
-  g=\$(cat "\$1/pgid" 2>/dev/null) || return 1
+  [ -f "\$1/pgid" ] || return 1
+  read -r g <"\$1/pgid" 2>/dev/null || return 1
   case "\$g" in ''|*[!0-9]*) return 1 ;; esac
   kill -0 -- "-\$g" 2>/dev/null
 }
-live_marker() {
-  [ -f "\$1/.fm-test-fixture" ] || return 1
-  local o
-  o=\$(sed -n '1p' "\$1/.fm-test-fixture" 2>/dev/null) || return 1
-  case "\$o" in ''|*[!0-9]*) return 1 ;; esac
-  kill -0 -- "\$o" 2>/dev/null
+marker_owner_alive() {
+  local pid identity stored_start starttime statline hex
+  local -a fields=()
+  [ -f "\$1" ] || return 1
+  { read -r pid; read -r identity; } <"\$1" 2>/dev/null || return 1
+  case "\$pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -n "\$identity" ] || return 1
+  [ -r "/proc/\$pid/stat" ] || return 1
+  read -r statline <"/proc/\$pid/stat" 2>/dev/null || return 1
+  read -r -a fields <<<"\${statline##*)}"
+  [ "\${#fields[@]}" -ge 20 ] || return 1
+  starttime=\${fields[19]}
+  case "\$starttime" in ''|*[!0-9]*) return 1 ;; esac
+  stored_start=\${identity#*=}
+  stored_start=\${stored_start%% *}
+  [ "\$stored_start" = "\$starttime" ] || return 1
+  hex=\$(od -An -v -tx1 "/proc/\$pid/cmdline" 2>/dev/null | tr -d '[:space:]') || return 1
+  [ -n "\$hex" ] || return 1
+  [ "\${identity##*cmdline-hex=}" = "\$hex" ]
 }
 
 stale_roots=0
 stale_kb=0
 swept_roots=0
-for d in \${roots[@]+"\${roots[@]}"}; do
-  live_group "\$d" && continue
-  live_marker "\$d" && continue
-  [ -n "\$refs" ] || build_refs
-  [ -n "\$refs" ] || continue
-  referenced "\$d" && continue
-  stale_roots=\$((stale_roots + 1))
-  kb=\$(du -sk -- "\$d" 2>/dev/null | awk '{ print \$1; exit }')
-  case "\$kb" in
-    ''|*[!0-9]*) stale_kb= ;;
-    *) [ -z "\$stale_kb" ] || stale_kb=\$((stale_kb + kb)) ;;
-  esac
-  if [ "\$sweep" = yes ]; then
-    chmod -R u+w -- "\$d" 2>/dev/null || true
-    rm -rf -- "\$d" 2>/dev/null && swept_roots=\$((swept_roots + 1))
+clear=()
+if [ \${#roots[@]} -gt 0 ]; then
+  if build_scan; then
+    declare -A owned=()
+    while read -r p; do
+      owned["\$p"]=1
+    done <"\$scratch/owned"
+    for d in "\${roots[@]}"; do
+      live_group "\$d" && continue
+      marker_owner_alive "\$d/.fm-test-fixture" && continue
+      [ -z "\${owned[\$d]:-}" ] || continue
+      clear+=("\$d")
+    done
+    stale_roots=\${#clear[@]}
+    if [ \${#clear[@]} -gt 0 ]; then
+      if du_out=\$(du -sk -- "\${clear[@]}" 2>/dev/null); then
+        stale_kb=\$(printf '%s\n' "\$du_out" | awk '{ size += \$1 } END { print size + 0 }')
+      else
+        stale_kb=
+      fi
+      if [ "\$sweep" = yes ]; then
+        chmod -R u+w -- "\${clear[@]}" 2>/dev/null || true
+        rm -rf -- "\${clear[@]}" 2>/dev/null || true
+        for d in "\${clear[@]}"; do
+          [ -e "\$d" ] || [ -L "\$d" ] || swept_roots=\$((swept_roots + 1))
+        done
+      fi
+    fi
+  else
+    stale_roots=
+    stale_kb=
   fi
-done
-[ -z "\$refs" ] || rm -f -- "\$refs" 2>/dev/null || true
+fi
 
 mem_total=\$(awk '\$1 == "MemTotal:" { print \$2; exit }' "\$meminfo" 2>/dev/null)
 mem_available=\$(awk '\$1 == "MemAvailable:" { print \$2; exit }' "\$meminfo" 2>/dev/null)
