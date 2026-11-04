@@ -773,10 +773,10 @@ The Pi typecheck remains a separate blocking command after routed lint succeeds.
 Required PR CI and its existing check contexts remain unchanged.
 
 A failing test or lint receipt fails the caller and never triggers a second run on another tier.
-GitHub unknown results, lost accepted dispatches, missing receipts, and execution-time monitoring failures fail closed.
-GitLab completion with missing receipts or a confirmed GitLab execution timeout falls through to PC02/PC01 admission instead, so its single serial job cannot turn a large plan into a blocked gate; a GitLab receipt showing a failed test still fails.
+Unavailable tiers, a confirmed cancellation after a queue timeout, a confirmed GitLab execution timeout, and GitLab completion without receipts fall through to PC02/PC01 admission instead, so a single serial GitLab job cannot turn a large plan into a blocked gate; an ambiguous GitHub POST whose run never appears within the queue bound is treated as not started and falls through the same way, so it may race that later tier.
+Every other indeterminate hosted outcome fails closed with exit 77 instead of reporting a test or lint verdict, so neither an accepted GitHub dispatch that stays undiscovered nor an ambiguous GitLab pipeline dispatch is retried on another tier; a receipt that contradicts the dispatched head or scripts still exits 1, and a GitLab receipt showing a failed test still fails.
 A queued run can fall back only after its cancellation is confirmed; an interrupt requests cancellation of only the invocation's own run.
-This distinction prevents a transport error from silently accepting a different result or launching duplicate expensive suites.
+These rules prevent a transport error from silently accepting a different result; the script's header owns the exact exit codes and the complete set of fall-through and indeterminate conditions.
 Hosted logs and timing evidence return through partition artifacts, with one-day retention.
 The Test caller streams the downloaded logs into its ordinary output for no-mistakes evidence capture.
 The GitHub hosted round trip was verified end to end on 2026-11-04 UTC: one portable partition dispatched through the Test caller executed on a hosted runner and its matching receipts returned to the caller ([run 41759393085](https://github.com/sKeLe100/firstmate/actions/runs/41759393085)).

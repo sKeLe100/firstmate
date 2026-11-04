@@ -966,7 +966,7 @@ tests/fm-commandcode-harness.test.sh 13970
 tests/fm-commandcode-signals-live-e2e.test.sh 49
 tests/fm-composer-codex-idle-live-e2e.test.sh 77
 tests/fm-composer-matrix-live-e2e.test.sh 51
-tests/fm-config-inherit-lane-caps.test.sh 417
+tests/fm-config-inherit-lane-caps.test.sh 708
 tests/fm-context-usage.test.sh 669
 tests/fm-contributions.test.sh 140911
 tests/fm-control-relaunch.test.sh 114115
@@ -987,7 +987,7 @@ tests/fm-extension-binding.test.sh 11105
 tests/fm-fleet-ledger.test.sh 19980
 tests/fm-fleet-snapshot-view.test.sh 93404
 tests/fm-fleet-sync.test.sh 40541
-tests/fm-forge-detect.test.sh 193
+tests/fm-forge-detect.test.sh 540
 tests/fm-fork-free-helpers.test.sh 746
 tests/fm-gate-refuse.test.sh 9953
 tests/fm-gemini-harness.test.sh 947
@@ -1019,7 +1019,7 @@ tests/fm-launch-prompt-signals-live-e2e.test.sh 50
 tests/fm-lint-nomistakes-config.test.sh 260
 tests/fm-lint-test-size.test.sh 2260
 tests/fm-lint-workflows.test.sh 872
-tests/fm-live-gate.test.sh 7452
+tests/fm-live-gate.test.sh 12207
 tests/fm-live-lab-up-mate.test.sh 17363
 tests/fm-live-lab.test.sh 79639
 tests/fm-llm-usage-lib.test.sh 920
