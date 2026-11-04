@@ -114,7 +114,7 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 ## No-mistakes test configuration
 
 This repository pins `commands.test` in `.no-mistakes.yaml` to the canonical `bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle` invocation, and `bin/fm-lint.sh` fails when that line drifts from it.
-The `--exclude-quarantined` flag applies the tracked quarantine ledger exactly as every CI lane does, and it is the selection fit that keeps a shared-helper change inside the 60-minute test-agent timeout without narrowing to a fixed script list.
+The `--exclude-quarantined` flag applies the tracked quarantine ledger exactly as every CI lane does. It removes only the ledger intersection; measure the actual gate run and narrow with the existing family filters if that run exceeds the test-agent timeout.
 Never swap in a per-branch workaround such as a fixed script list, a family, or the full suite: PR #111 did exactly that to fit a gate time cap, and every later run silently tested only those scripts while the required check still certified full coverage (fork PR #115 restored the pin and added the guard).
 CI owns broad deterministic regression coverage; the no-mistakes Test step still runs its intent-targeted evidence agent on top of the pinned baseline.
 

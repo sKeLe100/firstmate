@@ -1029,7 +1029,7 @@ Missing historical evidence remains explicitly unrecorded and visible until the 
 Imported upstream failures whose fork base passes or lacks the case remain distinct from failures reproduced on the fork base.
 Installing a dependency, an isolated pass, or matching an old symptom does not justify retirement: the owner must demonstrate the original failing case passing in its relevant context.
 
-Coverage currently differs: canonical no-mistakes Test selects changed subjects, excludes the real-Herdr family, and includes quarantined subjects; manual upstream-sync validation selects all subjects and excludes quarantined subjects, including those outside the changed set.
+Coverage currently differs: canonical no-mistakes Test selects changed subjects and excludes the real-Herdr family and quarantined subjects; manual upstream-sync validation selects all subjects and excludes quarantined subjects, including those outside the changed set.
 CI's portable and Herdr lanes also exclude quarantined subjects.
 For identical initial subject and family selections, adding `--exclude-quarantined` removes exactly the intersection with the ledger; compare the runner's `--list` output with and without that flag to publish the actual paths for a candidate rather than comparing totals.
 The runner reports each removed path and the total in execution mode.
