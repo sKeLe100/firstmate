@@ -1972,6 +1972,14 @@ printf '%s\n' "\$TMPDIR" > "$dir/tmpdir-used"
 mkdir -p "\$TMPDIR/ro"
 printf 'x\n' > "\$TMPDIR/ro/file"
 chmod 500 "\$TMPDIR/ro"
+# A read-only directory in the offload mirror outside the runner's own run
+# root, so only the mirror cleanup can reap it.
+[ -n "\$FM_TEST_RUN_ROOT" ] || { echo 'fixture: FM_TEST_RUN_ROOT not published' >&2; exit 1; }
+mirror_tmp=\$(dirname "\$FM_TEST_RUN_ROOT")
+printf '%s\n' "\$mirror_tmp" > "$dir/mirror-tmp-used"
+mkdir -p "\$mirror_tmp/offload-ro"
+printf 'x\n' > "\$mirror_tmp/offload-ro/file"
+chmod 500 "\$mirror_tmp/offload-ro"
 printf 'ok - recorded TMPDIR\n'
 SH
   chmod +x "$fixture"
@@ -1981,8 +1989,13 @@ SH
   expect_code 0 "$status" "the recording fixture must run green remotely: $out"
   assert_contains "$out" "running tests remotely" "the run never went remote: $out"
   used=$(cat "$dir/tmpdir-used" 2>/dev/null || true)
-  case "$used" in
+  mirror_tmp=$(cat "$dir/mirror-tmp-used" 2>/dev/null || true)
+  case "$mirror_tmp" in
     */.fm-pc02-test-offload/run-*/tmp) : ;;
+    *) fail "the remote run did not publish its mirror's temp root: '$mirror_tmp' ($out)" ;;
+  esac
+  case "$used" in
+    "$mirror_tmp"/*) : ;;
     *) fail "the remote run did not place TMPDIR inside its own mirror: '$used' ($out)" ;;
   esac
   [ ! -e "$used" ] || fail "ownership cleanup left the run's read-only TMPDIR content at $used"
@@ -2004,6 +2017,14 @@ printf '%s\n' "\$TMPDIR" > "$dir/tmpdir-used"
 mkdir -p "\$TMPDIR/ro"
 printf 'x\n' > "\$TMPDIR/ro/file"
 chmod 500 "\$TMPDIR/ro"
+# A read-only directory in the offload mirror outside the runner's own run
+# root, so only the mirror cleanup can reap it.
+[ -n "\$FM_TEST_RUN_ROOT" ] || { echo 'fixture: FM_TEST_RUN_ROOT not published' >&2; exit 1; }
+mirror_tmp=\$(dirname "\$FM_TEST_RUN_ROOT")
+printf '%s\n' "\$mirror_tmp" > "$dir/mirror-tmp-used"
+mkdir -p "\$mirror_tmp/offload-ro"
+printf 'x\n' > "\$mirror_tmp/offload-ro/file"
+chmod 500 "\$mirror_tmp/offload-ro"
 sleep 60
 SH
   chmod +x "$fixture"
@@ -2015,8 +2036,13 @@ SH
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the timeout left a mirror behind"
   used=$(cat "$dir/tmpdir-used" 2>/dev/null || true)
   if [ -n "$used" ]; then
-    case "$used" in
+    mirror_tmp=$(cat "$dir/mirror-tmp-used" 2>/dev/null || true)
+    case "$mirror_tmp" in
       */.fm-pc02-test-offload/run-*/tmp) : ;;
+      *) fail "the remote run did not publish its mirror's temp root: '$mirror_tmp' ($out)" ;;
+    esac
+    case "$used" in
+      "$mirror_tmp"/*) : ;;
       *) fail "the remote run did not place TMPDIR inside its own mirror: '$used' ($out)" ;;
     esac
     [ ! -e "$used" ] || fail "the run's TMPDIR survived the timeout at $used"
