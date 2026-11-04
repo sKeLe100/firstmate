@@ -1,0 +1,1 @@
+{"version": 1, "sha": "c49a3912243eaad9e5857fe9734e8d1b75bb0cab", "partition": "portable-serial-2of11", "scripts": ["tests/fm-agentsmd-size.test.sh"], "exit": 0}

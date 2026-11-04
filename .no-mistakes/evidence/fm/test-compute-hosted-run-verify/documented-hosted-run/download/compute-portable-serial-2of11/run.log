@@ -1,0 +1,47 @@
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=3059 ppid=3057
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=3059 ppid=3057 pgid=2126 sid=2126 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T02:14:44Z tests/fm-agentsmd-size.test.sh family=unclassified expected_gate_skip=none
+ok - passes when AGENTS.md (55209 bytes) is under the 100KB ceiling
+ok - fails (1) with diagnostic when AGENTS.md (108171 bytes) exceeds 100KB
+ok - fails when AGENTS.md is missing
+ok - output includes both actual size (55209) and ceiling (102400)
+FM_TEST_END 2026-11-04T02:14:44Z tests/fm-agentsmd-size.test.sh exit=0 duration_ms=93 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=10369
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=93 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-agentsmd-size.test.sh duration_ms=93
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
