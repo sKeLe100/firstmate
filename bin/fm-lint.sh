@@ -124,6 +124,10 @@
 # invocation, failing loudly if a per-branch test-command workaround has
 # been committed as the repo's standing policy.
 #
+# Full lint shares host admission with heavy tests;
+# bin/fm-heavy-admission-lib.sh owns resource floors and bounded wait knobs.
+# Explicit roots and inspection modes are exempt.
+#
 # Usage:
 #   fm-lint.sh                         lint the context-selected file set (see above)
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
@@ -1028,6 +1032,14 @@ if [ "$resolved" != "$REQUIRED_SHELLCHECK" ]; then
     "$REQUIRED_SHELLCHECK" "$resolved" "$REQUIRED_SHELLCHECK" >&2
   exit 1
 fi
+# Explicit roots are targeted checks; all context-selected lint takes the host
+# slot shared with heavy tests, before any ShellCheck workers are started.
+if [ "$EXPLICIT_PATHS" -eq 0 ]; then
+  # shellcheck source=bin/fm-heavy-admission-lib.sh
+  . "$SELF_DIR/fm-heavy-admission-lib.sh" || exit 1
+  fm_heavy_admit lint || exit $?
+fi
+
 if [ "$FAST" -eq 1 ]; then
   printf 'fm-lint.sh: fast local mode; ShellCheck extended analysis disabled\n' >&2
 elif [ "$FOLLOW_SOURCES" -eq 0 ]; then

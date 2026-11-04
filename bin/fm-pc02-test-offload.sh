@@ -119,7 +119,9 @@
 #     environment-parity mismatch routes local as soon as it is compared,
 #     after any gate wait. The files are never unlinked: a dead owner's
 #     kernel lock is released automatically, so a leftover file or process
-#     name is harmless.
+#     name is harmless. The remote suite carries FM_PC02_OFFLOAD_REMOTE=1, so
+#     it is governed by these slot locks rather than PC01's one-heavy-run
+#     admission.
 #   - Supervising-home selection is owned by docs/configuration.md's "PC02
 #     test and lint offload" section; the per-machine slot settings above are
 #     owned here.
@@ -1029,7 +1031,7 @@ fi
 # a second local run, which would silently double the caller's time budget.
 if [ "$LINT_PARTITIONS" = 1 ]; then
   echo "fm-pc02-test-offload: PC02 idle and ready; running lint remotely on $HOST" >&2
-  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") bin/fm-test-compute.sh local-lint"
+  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") env FM_PC02_OFFLOAD_REMOTE=1 bin/fm-test-compute.sh local-lint"
 else
   echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
   has_jobs=0
@@ -1085,9 +1087,9 @@ else
       jobs_i=$((jobs_i + 1))
     done
   fi
-  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT")"
+  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") env FM_PC02_OFFLOAD_REMOTE=1"
   if [ "$has_jobs" -eq 0 ]; then
-    remote_suite_cmd="$remote_suite_cmd env FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
+    remote_suite_cmd="$remote_suite_cmd FM_TEST_RUN_AUTO_JOBS_MAX=$(printf '%q' "$REMOTE_JOBS")"
   fi
   remote_suite_cmd="$remote_suite_cmd bin/fm-test-run.sh"
   for a in ${remote_args[@]+"${remote_args[@]}"}; do

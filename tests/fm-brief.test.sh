@@ -2246,3 +2246,34 @@ test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
 test_task_slots_alone_do_not_fill_the_spec
+
+test_browser_cleanup_instructions_are_portable_and_shell_safe() {
+  local home id kind brief command browser_pid recorded stamp current
+  home="$TMP_ROOT/browser's isolated home"
+  mkdir -p "$home/data" "$home/state"
+  sleep 300 &
+  browser_pid=$!
+  FM_TEST_BROWSER_PIDS+=("$browser_pid")
+  for kind in ship scout; do
+    id="browser-$kind"
+    if [ "$kind" = ship ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1 || fail 'browser ship brief failed'
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1 || fail 'browser scout brief failed'
+    fi
+    brief="$home/data/$id/brief.md"
+    assert_grep 'Close every chrome-devtools-axi bridge or headless Chrome' "$brief" 'worker must close owned browser'
+    assert_grep 'CHROME_DEVTOOLS_AXI_SESSION' "$brief" 'worker must use an isolated browser session'
+    assert_grep 'browser identity registry named below' "$brief" "$kind brief must authorize its registry write"
+    # shellcheck disable=SC2016 # Backticks match literal generated brief markup.
+    command=$(sed -n 's/^   `\(browser_started=.*\)`\.$/\1/p' "$brief")
+    [ -n "$command" ] || fail 'portable registry command missing from brief'
+    browser_pid="$browser_pid" bash -c "$command" || fail 'generated browser registration command failed'
+    IFS=$'\t' read -r recorded stamp <"$home/state/$id.browsers"
+    current=$(TZ=UTC LC_ALL=C ps -p "$browser_pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [ "$recorded" = "$browser_pid" ] && [ "$stamp" = "$current" ] || fail 'generated command recorded wrong browser identity'
+  done
+  fm_test_browser_stop "$browser_pid"
+  pass 'ship and scout browser instructions register exact identities with shell-safe paths'
+}
+test_browser_cleanup_instructions_are_portable_and_shell_safe
