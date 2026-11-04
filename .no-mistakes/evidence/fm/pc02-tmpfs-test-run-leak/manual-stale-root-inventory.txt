@@ -1,0 +1,26 @@
+=== roots before ===
+fm-test-run.leaked exists=yes
+fm-fixture-live exists=yes
+fm-test-run.env-ref exists=yes
+fm-test-run.flag-ref exists=yes
+fm-fixture-recycled exists=yes
+fm-spawn-task.real exists=yes
+=== report ===
+host=pc02
+mem_total_mib=31250 mem_available_mib=23437
+tmp_total_mib=1031018 tmp_used_mib=74030 tmp_free_mib=904543 tmp_used_pct=7
+disk_total_mib=1031018 disk_used_mib=74030 disk_free_mib=904543 disk_used_pct=7
+stale_test_roots=2 stale_test_mib=1
+stale_age_secs=3600
+old_test_procs=0
+idle_age_secs=999999999
+pressure=stale_test_roots
+status=pressure
+hygiene_exit=1
+=== roots after ===
+fm-test-run.leaked exists=yes
+fm-fixture-live exists=yes
+fm-test-run.env-ref exists=yes
+fm-test-run.flag-ref exists=yes
+fm-fixture-recycled exists=yes
+fm-spawn-task.real exists=yes

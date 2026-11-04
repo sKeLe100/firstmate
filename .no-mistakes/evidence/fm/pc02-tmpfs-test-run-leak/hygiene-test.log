@@ -1,0 +1,11 @@
+ok - the hygiene report prints memory, /tmp, disk, stale roots and old processes as data
+ok - the hygiene report names every crossed bound and never deletes or kills
+ok - the hygiene report counts fixture roots only under a matching live owner identity
+ok - an unverifiable reference scan reads as unknown instead of as a clean host
+ok - environment and --flag=value references both keep a stale-looking root live
+ok - an incident-scale stale-root catalog still reads as data inside the report bound
+ok - an unreadable capacity reading is unknown rather than evidence of free space
+ok - a failed process or size read makes the report unknown, never a silent zero
+ok - a malformed local setting refuses loudly instead of reporting a wrong bound
+ok - --help prints the read-only report contract
+# all fm-pc02-hygiene tests passed

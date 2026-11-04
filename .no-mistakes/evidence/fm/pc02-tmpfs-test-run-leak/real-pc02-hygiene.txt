@@ -1,0 +1,11 @@
+host=pc02
+mem_total_mib=28063 mem_available_mib=24761
+tmp_total_mib=14031 tmp_used_mib=1155 tmp_free_mib=12876 tmp_used_pct=8
+disk_total_mib=1031018 disk_used_mib=23222 disk_free_mib=955351 disk_used_pct=2
+stale_test_roots=0 stale_test_mib=0
+stale_age_secs=21600
+old_test_procs=0
+idle_age_secs=10800
+pressure=-
+status=ok
+hygiene_exit=0

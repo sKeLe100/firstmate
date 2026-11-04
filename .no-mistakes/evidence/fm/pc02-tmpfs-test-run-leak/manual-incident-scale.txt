@@ -1,0 +1,13 @@
+fixture_roots=8731
+host=pc02
+mem_total_mib=31250 mem_available_mib=23437
+tmp_total_mib=1031018 tmp_used_mib=74064 tmp_free_mib=904509 tmp_used_pct=7
+disk_total_mib=1031018 disk_used_mib=74064 disk_free_mib=904509 disk_used_pct=7
+stale_test_roots=8731 stale_test_mib=34
+stale_age_secs=3600
+old_test_procs=0
+idle_age_secs=999999999
+pressure=-
+status=ok
+report_wall_secs=6.01
+hygiene_exit=0

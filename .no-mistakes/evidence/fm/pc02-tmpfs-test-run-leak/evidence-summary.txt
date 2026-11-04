@@ -1,0 +1,89 @@
+== real PC02 read-only hygiene report ==
+host=pc02
+mem_total_mib=28063 mem_available_mib=24761
+tmp_total_mib=14031 tmp_used_mib=1155 tmp_free_mib=12876 tmp_used_pct=8
+disk_total_mib=1031018 disk_used_mib=23222 disk_free_mib=955351 disk_used_pct=2
+stale_test_roots=0 stale_test_mib=0
+stale_age_secs=21600
+old_test_procs=0
+idle_age_secs=10800
+pressure=-
+status=ok
+hygiene_exit=0
+
+== real PC02 pre-claim floors ==
+fm-pc02-test-offload: PC02 MemAvailable 24793 MiB is below the 999999999 MiB floor; running on PC01
+=== TMP floor ===
+fm-pc02-test-offload: PC02 /tmp free 12876 MiB is below the 999999999 MiB floor; running on PC01
+ok - local fallback fixture ran
+=== DISK floor ===
+fm-pc02-test-offload: PC02 disk free 955350 MiB is below the 999999999 MiB floor; running on PC01
+ok - local fallback fixture ran
+unreadable capacity: fm-pc02-test-offload: PC02 pre-claim capacity unclear (missing MemAvailable reading); running on PC01
+
+== disposable fake-PC02 stale-root inventory ==
+=== roots before ===
+fm-test-run.leaked exists=yes
+fm-fixture-live exists=yes
+fm-test-run.env-ref exists=yes
+fm-test-run.flag-ref exists=yes
+fm-fixture-recycled exists=yes
+fm-spawn-task.real exists=yes
+=== report ===
+host=pc02
+mem_total_mib=31250 mem_available_mib=23437
+tmp_total_mib=1031018 tmp_used_mib=74030 tmp_free_mib=904543 tmp_used_pct=7
+disk_total_mib=1031018 disk_used_mib=74030 disk_free_mib=904543 disk_used_pct=7
+stale_test_roots=2 stale_test_mib=1
+stale_age_secs=3600
+old_test_procs=0
+idle_age_secs=999999999
+pressure=stale_test_roots
+status=pressure
+hygiene_exit=1
+=== roots after ===
+fm-test-run.leaked exists=yes
+fm-fixture-live exists=yes
+fm-test-run.env-ref exists=yes
+fm-test-run.flag-ref exists=yes
+fm-fixture-recycled exists=yes
+fm-spawn-task.real exists=yes
+
+== incident scale ==
+fixture_roots=8731
+host=pc02
+mem_total_mib=31250 mem_available_mib=23437
+tmp_total_mib=1031018 tmp_used_mib=74064 tmp_free_mib=904509 tmp_used_pct=7
+disk_total_mib=1031018 disk_used_mib=74064 disk_free_mib=904509 disk_used_pct=7
+stale_test_roots=8731 stale_test_mib=34
+stale_age_secs=3600
+old_test_procs=0
+idle_age_secs=999999999
+pressure=-
+status=ok
+report_wall_secs=6.01
+hygiene_exit=0
+
+== targeted tests ==
+ok - the hygiene report prints memory, /tmp, disk, stale roots and old processes as data
+ok - the hygiene report names every crossed bound and never deletes or kills
+ok - the hygiene report counts fixture roots only under a matching live owner identity
+ok - an unverifiable reference scan reads as unknown instead of as a clean host
+ok - environment and --flag=value references both keep a stale-looking root live
+ok - an incident-scale stale-root catalog still reads as data inside the report bound
+ok - an unreadable capacity reading is unknown rather than evidence of free space
+ok - a failed process or size read makes the report unknown, never a silent zero
+ok - a malformed local setting refuses loudly instead of reporting a wrong bound
+ok - --help prints the read-only report contract
+# all fm-pc02-hygiene tests passed
+
+ok - the pre-claim capacity gate reads the host and never removes another run's root
+ok - a remote run keeps its TMPDIR inside its mirror, and cleanup removes read-only content there
+ok - a timed-out offload exits 124 and reaps its mirror and run-scoped TMPDIR
+ok - a malformed capacity bound exits 2 without running the selected command
+
+== strict timeout-path proof (fixture TMPDIR must be recorded) ==
+ok - a timed-out offload exits 124 and reaps its mirror and run-scoped TMPDIR
+
+== real PC02 live offload e2e attempt ==
+skip: live: PC02 LLM lane is occupied right now

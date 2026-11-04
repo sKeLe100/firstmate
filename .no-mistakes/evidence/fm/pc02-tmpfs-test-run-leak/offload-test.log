@@ -1,0 +1,57 @@
+ok - --help prints the whole documented contract
+ok - MemAvailable, /tmp free and disk free floors each route local and name the resource
+ok - the pre-claim capacity gate reads the host and never removes another run's root
+ok - a remote run keeps its TMPDIR inside its mirror, and cleanup removes read-only content there
+ok - a timed-out offload exits 124 and reaps its mirror and run-scoped TMPDIR
+ok - a malformed capacity bound exits 2 without running the selected command
+ok - FM_PC02_OFFLOAD_DISABLE=1 always runs locally without touching ssh or rsync
+ok - a live PC02 LLM lane falls back to a local run without touching ssh
+ok - a missing supervising home refuses the lane probe and falls back locally
+ok - the offload probe scans the supplied supervising home before checking PC02
+ok - an unreachable PC02 falls back to a local run
+ok - PC02 missing a required tool falls back to a local run rather than a thinner remote run
+ok - a stuck or slow probe times out and falls back rather than hanging
+ok - a failed rsync to PC02 falls back to a local run
+ok - the captain's personal-use switch falls back to a local run
+ok - llama-swap holding a loaded model for any live session falls back to a local run
+ok - a healthy llama-swap with no loaded model does not block offloading
+ok - an unparseable llama-swap /running answer defaults to a local run
+ok - a Windows-wide CPU utilization over the threshold falls back to a local run
+ok - a Windows GPU-engine utilization over the threshold falls back to a local run
+ok - an unparseable or missing resource read defaults to a local run rather than an idle guess
+ok - an absent, empty, or zero PC02 thread count routes the run local with a diagnostic
+ok - fm-test-run.sh --pc02-if-idle strips the flag and forwards every other argument unchanged
+ok - PC02 missing perl falls back to a local run instead of failing the remote command
+ok - a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror
+ok - a green remote run exits 0, returns its --json artifact, and removes its mirror
+ok - remote lint mode invokes local-lint and returns its exit code
+ok - PC01 lint fallback runs the changed-file lint instead of canonical partitions
+ok - an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound
+ok - a remote suite passes the 7200-second default to its timeout executable
+ok - remote jobs preserve both caller forms, default to eight, and allow environment overrides with a script cap
+ok - matching PC01 and PC02 parity admits the default two-slot offload
+ok - PC02 open-file capacity accepts higher/equal limits and refuses lower or invalid limits
+ok - offload raises PC02's soft open-file limit to its hard limit without loosening the parity rule
+ok - a PC02 tool-version mismatch names the surface and runs locally
+ok - a hanging local browser dependency probe times out and routes locally
+ok - TERM-ignoring tool and browser version probes are killed at their deadline
+ok - a cached headless-shell version mismatch names the surface and runs locally
+ok - the shared suite and parity resolver prefers Chromium over Google Chrome
+ok - a PC02 Chromium library failure names the library and runs locally
+ok - different resolved Chromium sonames route locally with the named difference
+ok - a launcher browser resolves to its executable without a false fallback
+ok - wrapper parity compares sonames from the resolved executable on both hosts
+ok - one busy of two PC02 slots still runs the next suite remotely
+ok - both busy PC02 slots route the next suite to PC01 with a clear log
+ok - a malformed FM_PC02_OFFLOAD_SLOTS exits 2 and runs no tests
+ok - FM_PC02_OFFLOAD_SLOTS=1 keeps the original single-slot fallback
+ok - a process merely mentioning fm-test-run.sh does not block a free host slot
+ok - TERM during a remote run kills the remote suite and removes its mirror
+ok - TERM with a transport that ignores stdin EOF still stops the remote suite and frees the slot
+ok - abrupt loss of the driver stops the remote suite and frees the slot
+ok - a gate-style bare common store needs the machine file, while FM_STATE_OVERRIDE bypasses discovery
+ok - machine configuration resolves an unset FM_HOME and fails closed when unreadable
+ok - primary clone discovery resolves the home without environment or machine configuration
+ok - two concurrent offloads take both PC02 slots and a third falls back locally
+ok - a dead owner's claim is reclaimed and the next run releases it on timeout
+# all fm-pc02-test-offload tests passed
