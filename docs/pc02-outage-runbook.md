@@ -178,6 +178,27 @@ check is waited on the same way rather than guessing PC02 is free, and an
 unreachable PC02 routes the run to PC01 at once. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut
 or its resource-check script ever need to be redeployed (safe to re-run).
 
+### Reclaiming leaked test roots
+
+When `bin/fm-pc02-hygiene.sh` reports stale test roots, run the cleanup on PC02 itself (for example inside `ssh pc02`); the report is read-only and the offload reaps only its own mirror, so nothing else clears a leaked root.
+Remove only `fm-test-run.*` roots older than six hours that no live process references.
+Do not widen the match to `fm-*`: real task temp roots live there too, so a broad match could delete live work.
+
+```bash
+before=$(df -Pk /tmp | awk 'NR == 2 { print $3 }')
+removed=0
+while IFS= read -r dir; do
+  base=${dir##*/}
+  pgrep -f -- "$base" >/dev/null && continue
+  chmod -R u+w -- "$dir" 2>/dev/null || true
+  rm -rf -- "$dir" && removed=$((removed + 1))
+done < <(find /tmp -maxdepth 1 -type d -name 'fm-test-run.*' -mmin +360)
+after=$(df -Pk /tmp | awk 'NR == 2 { print $3 }')
+printf 'removed=%s tmp_used_kb=%s->%s\n' "$removed" "$before" "$after"
+```
+
+The `chmod -R u+w` is required because test fixtures can leave read-only `*.git-hooks` directories that make `rm -rf` fail.
+
 **Warning**: `wsl --shutdown` (see "WSL is not running" above) drops all
 remote access to PC02, including this offload path, until someone reaches
 the Windows desktop directly and runs `wsl` again - an SSH session cannot
