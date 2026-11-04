@@ -1,0 +1,14 @@
+ok - free host admitted and lock released on exit
+ok - busy host refuses without overlapping holder
+ok - two PC02 offload slots both admit while a local heavy run holds the host slot
+ok - explicit script paths remain exempt from the host slot
+ok - heavy tests and full lint use the same slot
+ok - a reused pid with a stale start identity is reclaimed
+ok - a live reclaim holder blocks a later flock winner until it exits
+ok - reclaim and flock holder-record writes are serialized
+ok - load and available-memory thresholds enforced
+ok - bounded logged backoff releases slot on refusal
+ok - zero polling and load limits fail with a diagnostic
+ok - slot open failure refuses with its path
+ok - holder write failure refuses and releases the slot
+ok - production uses the fixed slot path without the test seam

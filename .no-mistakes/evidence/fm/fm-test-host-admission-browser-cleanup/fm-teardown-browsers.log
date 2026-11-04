@@ -1,0 +1,3 @@
+ok - teardown kills only owned browser processes outside task cwd
+ok - portable registry cleanup verifies PID and start time
+ok - browser reap refusal preserves task and retry records
