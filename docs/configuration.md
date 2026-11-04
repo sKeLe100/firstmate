@@ -130,6 +130,8 @@ config/supervision-branch-effort  Pi supervision-branch model and effort pins; N
 config/startup-memory-budget  per-home startup memory budget (default 7500 tokens); inherited; see "Startup memory budget (config/startup-memory-budget)"
 config/stow-pass-horizon  optional presence flag opting into /stow pass-count decay horizon; NOT inherited; see "Stow pass horizon (config/stow-pass-horizon)"
 config/context-thresholds  session-context warn/restart token-band thresholds; inherited; see "Session context thresholds (config/context-thresholds)"
+config/auto-stow  presence flag opting a secondmate home into the restart-band auto-stow wake; NOT inherited; see "Session context thresholds (config/context-thresholds)"
+config/auto-stow-off  presence flag disabling the restart-band auto-stow wake for any home; NOT inherited; see "Session context thresholds (config/context-thresholds)"
 config/codex-context-thresholds  Codex-side session-context thresholds (separate defaults); NOT inherited; see "Codex context thresholds (config/codex-context-thresholds)"
 config/working-hours  captain attention-window schedule for proactive contact; NOT inherited; see "Captain attention windows (config/working-hours)"
 config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; inherited; see "Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)"
@@ -971,6 +973,15 @@ The restart mechanics reuse the existing owners rather than a parallel mechanism
   When the captain is not attending (a usage-limit block, or a wedged session at reset), the [primary continuity watchdog](#primary-continuity-watchdog) drives this same `/stow`-then-restart sequence unattended.
 - The wake back to the main session is the ordinary status/wake channel: a relaunched worker's next status append, or a secondmate's routed status line, wakes its supervisor.
 - Never send `/clear` through the steer channel: it is mechanically broken and the steer becomes chat the worker reasons about.
+
+The restart band also drives an automatic stow wake for a primary session, so the checkpoint lands before automatic compaction can drop detail.
+The Stop-owned auto-arm (`bin/fm-claude-stop-autoarm.sh`, whose header owns the hook mechanics) reads the session's own transcript from the Stop payload and, at `band=restart`, emits one rewake telling the primary to run `/stow` and then recommend `/clear` to the captain.
+It fires at most once per session, keyed by the session id under `state/.auto-stow-<session-id>`, so a `/clear` that starts a new session gets its own single wake.
+It is offered only while the home is idle or a live watcher already covers supervision, so the stow turn never runs uncovered and never displaces a supervision wake, and it never fires in AFK, which the away daemon owns.
+The wake never runs `/clear` and never blocks a turn.
+The main home is on by default, `config/auto-stow-off` disables it for any home, and a secondmate home fires only when it opts in with the presence flag `config/auto-stow`.
+The PreCompact hook (`bin/fm-precompact-checkpoint.sh`, registered in `.claude/settings.json`) is the safety net for compaction that arrives before a stow.
+It writes a non-blocking checkpoint of the wake queue, open decisions, and tasks in flight under `state/`, and it never blocks or fails compaction.
 
 To read another session's usage, run the helper with `FM_HOME` set to that session's working directory (a task worktree or secondmate home); thresholds then resolve against that home's own `config/context-thresholds`.
 `bin/fm-returning-session-check.sh <home-path> [<state-dir> <task-id>]` wraps that same read into a `verdict=resume|restart-with-carryover|unknown|blocked` line for the specific moment a returning session (not a fresh spawn) is pinged or restarted, so `stuck-crewmate-recovery` and `secondmate-provisioning` can choose an ordinary resume versus the carryover-restart mechanics above without duplicating this threshold logic.
