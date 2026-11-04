@@ -1,0 +1,34 @@
+# 09-control-gitlab-success
+# what it proves: control: with GitHub unavailable, a clean GitLab pipeline proves success through returned receipts
+# product: bin/fm-test-compute.sh copied unmodified from the run worktree
+# emulator: local gh-axi/glab stand-ins on PATH serving synthetic GitHub Actions + GitLab API responses
+# command: fm-test-compute.sh test --changed --exclude-family real-herdr-gated --exclude-quarantined   (SCENARIO=gitlab-clean-success)
+## exit: 0   (expected 0)
+## stdout:
+    receipts: verified
+    head: 9364a2b439f89218867a91638c042d3b9008d2e9
+    gitlab evidence portable-parallel-1
+    gitlab evidence portable-parallel-9
+    result: success
+    head: 9364a2b439f89218867a91638c042d3b9008d2e9
+## stderr:
+    fm-test-compute: GitHub unavailable; trying GitLab
+    fm-test-compute: GitLab pipeline 456 in sean.morden1993/firstmate-ci
+## hosted API calls:
+    gh-axi api /repos/example/firstmate --jq [.private,.default_branch] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml --jq .state --full
+    glab auth status --hostname gitlab.com
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci/repository/branches/firstmate-compute
+    glab api --hostname gitlab.com --method POST projects/sean.morden1993%2Ffirstmate-ci/pipeline --input /var/tmp/nm-daemon-tmp/fm-test-compute.HSzR1f/gitlab.json
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci/pipelines/456
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci/pipelines/456/jobs?per_page=100
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci/jobs/1/artifacts
+## checks:
+    PASS exit 0 == 0
+    PASS diagnostic present: gitlab evidence
+    PASS absent: falling back to local admission
+    PASS no local admission (hosted result stands)
+    PASS GitLab tier was attempted
+    PASS no cancellation requested
+## result: PASS

@@ -1,0 +1,30 @@
+# 01-lint-queue-timeout-falls-back
+# what it proves: the 07:35Z incident: a hosted lint run queued past the bound with confirmed cancellation falls back to local lint admission, never a lint verdict
+# product: bin/fm-test-compute.sh copied unmodified from the run worktree
+# emulator: local gh-axi/glab stand-ins on PATH serving synthetic GitHub Actions + GitLab API responses
+# command: fm-test-compute.sh lint   (SCENARIO=lint-queue-timeout)
+## exit: 0   (expected 0)
+## stdout:
+    local-admission: --lint-partitions
+## stderr:
+    fm-test-compute: https://github.com/example/firstmate/actions/runs/123 (queued)
+    fm-test-compute: GitHub unavailable; trying GitLab
+    fm-test-compute: hosted tiers unavailable; falling back to local admission
+## hosted API calls:
+    gh-axi api /repos/example/firstmate --jq [.private,.default_branch] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml --jq .state --full
+    gh-axi api POST /repos/example/firstmate/actions/workflows/test-compute.yml/dispatches --input /var/tmp/nm-daemon-tmp/fm-test-compute.ydA2LS/dispatch.json --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100 --jq .workflow_runs[] | select(.display_title == "fm-test-compute-79d7856c903044b09d755e20afa2ad70") | [.id,.status,.conclusion] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/runs/123 --jq [.status,.conclusion] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/runs/123 --jq [.status,.conclusion] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/runs/123 --jq [.status,.conclusion] | @tsv --full
+    gh-axi api POST /repos/example/firstmate/actions/runs/123/cancel --full
+    gh-axi api /repos/example/firstmate/actions/runs/123 --jq [.status,.conclusion] | @tsv --full
+    glab auth status --hostname gitlab.com
+## checks:
+    PASS exit 0 == 0
+    PASS diagnostic present: falling back to local admission
+    PASS local admission was used: local-admission: --lint-partitions
+    PASS GitLab tier was attempted
+    PASS cancellation of the owned GitHub run was confirmed
+## result: PASS

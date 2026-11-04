@@ -1,0 +1,121 @@
+# 05-lint-queue-then-gitlab-fault-exit77
+# what it proves: a hosted lint queue timeout followed by a GitLab monitoring fault reports indeterminate 77, not a lint failure
+# product: bin/fm-test-compute.sh copied unmodified from the run worktree
+# emulator: local gh-axi/glab stand-ins on PATH serving synthetic GitHub Actions + GitLab API responses
+# command: fm-test-compute.sh lint   (SCENARIO=gitlab-queue-then-status-fault)
+## exit: 77   (expected 77)
+## stdout:
+## stderr:
+    fm-test-compute: GitHub unavailable; trying GitLab
+    fm-test-compute: GitLab pipeline 456 in sean.morden1993/firstmate-ci
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+        import json,sys; print(json.load(sys.stdin)["status"])
+                               ~~~~~~~~~^^^^^^^^^^^
+      File "/usr/lib/python3.14/json/__init__.py", line 298, in load
+        return loads(fp.read(),
+            cls=cls, object_hook=object_hook,
+            parse_float=parse_float, parse_int=parse_int,
+            parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+      File "/usr/lib/python3.14/json/__init__.py", line 352, in loads
+        return _default_decoder.decode(s)
+               ~~~~~~~~~~~~~~~~~~~~~~~^^^
+      File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+        obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                   ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+      File "/usr/lib/python3.14/json/decoder.py", line 363, in raw_decode
+        raise JSONDecodeError("Expecting value", s, err.value) from None
+    json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+    Error in sys.excepthook:
+    Traceback (most recent call last):
+      File "/usr/lib/python3/dist-packages/apport_python_hook.py", line 238, in partial_apport_excepthook
+        return apport_excepthook(binary, exc_type, exc_obj, exc_tb)
+      File "/usr/lib/python3/dist-packages/apport_python_hook.py", line 122, in apport_excepthook
+        report["ExecutableTimestamp"] = str(int(os.stat(binary).st_mtime))
+                                                ~~~~~~~^^^^^^^^
+    FileNotFoundError: [Errno 2] No such file or directory: '/var/tmp/nm-daemon-tmp/fm-compute-lab.ygfZD1/repo/-c'
+    
+    Original exception was:
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+        import json,sys; print(json.load(sys.stdin)["status"])
+                               ~~~~~~~~~^^^^^^^^^^^
+      File "/usr/lib/python3.14/json/__init__.py", line 298, in load
+        return loads(fp.read(),
+            cls=cls, object_hook=object_hook,
+            parse_float=parse_float, parse_int=parse_int,
+            parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+      File "/usr/lib/python3.14/json/__init__.py", line 352, in loads
+        return _default_decoder.decode(s)
+               ~~~~~~~~~~~~~~~~~~~~~~~^^^
+      File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+        obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                   ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+      File "/usr/lib/python3.14/json/decoder.py", line 363, in raw_decode
+        raise JSONDecodeError("Expecting value", s, err.value) from None
+    json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+    fm-test-compute: GitLab pipeline 456 status unavailable; failing closed
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+        import json,sys; print(json.load(sys.stdin)["status"])
+                               ~~~~~~~~~^^^^^^^^^^^
+      File "/usr/lib/python3.14/json/__init__.py", line 298, in load
+        return loads(fp.read(),
+            cls=cls, object_hook=object_hook,
+            parse_float=parse_float, parse_int=parse_int,
+            parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+      File "/usr/lib/python3.14/json/__init__.py", line 352, in loads
+        return _default_decoder.decode(s)
+               ~~~~~~~~~~~~~~~~~~~~~~~^^^
+      File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+        obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                   ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+      File "/usr/lib/python3.14/json/decoder.py", line 363, in raw_decode
+        raise JSONDecodeError("Expecting value", s, err.value) from None
+    json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+    Error in sys.excepthook:
+    Traceback (most recent call last):
+      File "/usr/lib/python3/dist-packages/apport_python_hook.py", line 238, in partial_apport_excepthook
+        return apport_excepthook(binary, exc_type, exc_obj, exc_tb)
+      File "/usr/lib/python3/dist-packages/apport_python_hook.py", line 122, in apport_excepthook
+        report["ExecutableTimestamp"] = str(int(os.stat(binary).st_mtime))
+                                                ~~~~~~~^^^^^^^^
+    FileNotFoundError: [Errno 2] No such file or directory: '/var/tmp/nm-daemon-tmp/fm-compute-lab.ygfZD1/repo/-c'
+    
+    Original exception was:
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+        import json,sys; print(json.load(sys.stdin)["status"])
+                               ~~~~~~~~~^^^^^^^^^^^
+      File "/usr/lib/python3.14/json/__init__.py", line 298, in load
+        return loads(fp.read(),
+            cls=cls, object_hook=object_hook,
+            parse_float=parse_float, parse_int=parse_int,
+            parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+      File "/usr/lib/python3.14/json/__init__.py", line 352, in loads
+        return _default_decoder.decode(s)
+               ~~~~~~~~~~~~~~~~~~~~~~~^^^
+      File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+        obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                   ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+      File "/usr/lib/python3.14/json/decoder.py", line 363, in raw_decode
+        raise JSONDecodeError("Expecting value", s, err.value) from None
+    json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+## hosted API calls:
+    gh-axi api /repos/example/firstmate --jq [.private,.default_branch] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml --jq .state --full
+    glab auth status --hostname gitlab.com
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci/repository/branches/firstmate-compute
+    glab api --hostname gitlab.com --method POST projects/sean.morden1993%2Ffirstmate-ci/pipeline --input /var/tmp/nm-daemon-tmp/fm-test-compute.7CoRYa/gitlab.json
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci/pipelines/456
+    glab api --hostname gitlab.com --method POST projects/sean.morden1993%2Ffirstmate-ci/pipelines/456/cancel
+    glab api --hostname gitlab.com projects/sean.morden1993%2Ffirstmate-ci/pipelines/456
+## checks:
+    PASS exit 77 == 77
+    PASS diagnostic present: GitLab pipeline 456 status unavailable
+    PASS absent: falling back to local admission
+    PASS no local admission (hosted result stands)
+    PASS GitLab tier was attempted
+    PASS no cancellation requested
+## result: PASS

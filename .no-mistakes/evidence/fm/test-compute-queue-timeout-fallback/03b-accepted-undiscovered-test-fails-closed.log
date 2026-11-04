@@ -1,0 +1,24 @@
+# 03b-accepted-undiscovered-test-fails-closed
+# what it proves: adversarial: an accepted (unambiguous) test dispatch that stays undiscovered fails closed with 77, never duplicated downward
+# product: bin/fm-test-compute.sh copied unmodified from the run worktree
+# emulator: local gh-axi/glab stand-ins on PATH serving synthetic GitHub Actions + GitLab API responses
+# command: fm-test-compute.sh test --changed --exclude-family real-herdr-gated --exclude-quarantined   (SCENARIO=accepted-undiscovered)
+## exit: 77   (expected 77)
+## stdout:
+## stderr:
+    fm-test-compute: GitHub dispatch was accepted but no run appeared within 2s; failing closed
+## hosted API calls:
+    gh-axi api /repos/example/firstmate --jq [.private,.default_branch] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml --jq .state --full
+    gh-axi api POST /repos/example/firstmate/actions/workflows/test-compute.yml/dispatches --input /var/tmp/nm-daemon-tmp/fm-test-compute.F7B9nc/dispatch.json --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100 --jq .workflow_runs[] | select(.display_title == "fm-test-compute-19f5f9be943a474896c41caa15474499") | [.id,.status,.conclusion] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100 --jq .workflow_runs[] | select(.display_title == "fm-test-compute-19f5f9be943a474896c41caa15474499") | [.id,.status,.conclusion] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100 --jq .workflow_runs[] | select(.display_title == "fm-test-compute-19f5f9be943a474896c41caa15474499") | [.id,.status,.conclusion] | @tsv --full
+## checks:
+    PASS exit 77 == 77
+    PASS diagnostic present: accepted but no run appeared
+    PASS absent: falling back to local admission
+    PASS no local admission (hosted result stands)
+    PASS GitLab tier was not contacted
+    PASS no cancellation requested
+## result: PASS

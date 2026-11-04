@@ -1,0 +1,27 @@
+# 02-lint-ambiguous-dispatch-falls-back
+# what it proves: the 09:40Z incident: an ambiguous lint dispatch whose run never appears within the bound falls back to local lint admission
+# product: bin/fm-test-compute.sh copied unmodified from the run worktree
+# emulator: local gh-axi/glab stand-ins on PATH serving synthetic GitHub Actions + GitLab API responses
+# command: fm-test-compute.sh lint   (SCENARIO=ambiguous-dispatch)
+## exit: 0   (expected 0)
+## stdout:
+    local-admission: --lint-partitions
+## stderr:
+    fm-test-compute: GitHub dispatch outcome is ambiguous; looking for the run
+    fm-test-compute: GitHub dispatch outcome stayed ambiguous and no run appeared within 2s; treating as not started
+    fm-test-compute: GitHub unavailable; trying GitLab
+    fm-test-compute: hosted tiers unavailable; falling back to local admission
+## hosted API calls:
+    gh-axi api /repos/example/firstmate --jq [.private,.default_branch] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml --jq .state --full
+    gh-axi api POST /repos/example/firstmate/actions/workflows/test-compute.yml/dispatches --input /var/tmp/nm-daemon-tmp/fm-test-compute.ay2Vh6/dispatch.json --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100 --jq .workflow_runs[] | select(.display_title == "fm-test-compute-6271eddb9dc2404582070082d47e1b77") | [.id,.status,.conclusion] | @tsv --full
+    gh-axi api /repos/example/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100 --jq .workflow_runs[] | select(.display_title == "fm-test-compute-6271eddb9dc2404582070082d47e1b77") | [.id,.status,.conclusion] | @tsv --full
+    glab auth status --hostname gitlab.com
+## checks:
+    PASS exit 0 == 0
+    PASS diagnostic present: treating as not started
+    PASS local admission was used: local-admission: --lint-partitions
+    PASS GitLab tier was attempted
+    PASS no cancellation requested
+## result: PASS
