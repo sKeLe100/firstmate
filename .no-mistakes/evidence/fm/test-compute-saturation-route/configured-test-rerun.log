@@ -1,0 +1,1617 @@
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-pair-dedup.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-backend-herdr.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-procevent.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-watch-triage.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-calm-pi-extension.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-wake-queue.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-secondmate-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-transport-lanes.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-composer-codex-idle-live-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-agy-harness.test.sh
+fm-test-run: FM_TEST_QUARANTINE_EVIDENCE_INCOMPLETE tests/fm-extension-binding.test.sh
+fm-test-run: quarantined skip: tests/fm-task-delivery.test.sh (signature: a ref-format-valid metacharacter prefix should promote safely, owner: sync-preexisting-test-failures)
+fm-test-compute: https://github.com/sKeLe100/firstmate/actions/runs/41914332805 (in_progress)
+receipts: verified
+head: 3aa6e3b69208afa9e78a8b2db413096f38b0d477
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2909 ppid=2907
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=2909 ppid=2907 pgid=2083 sid=2083 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:46Z tests/fm-brief.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract
+ok - fm-brief.sh: bash -n succeeds
+/tmp/fm-test-run.kpZ9c4/s0/tmp/fm-brief.2N3UuM/heredoc-in-substitution.sh:2
+ok - fm-brief.sh: no heredoc is nested inside a command substitution (Bash 3.2 parse-safe)
+ok - fm-brief.sh: --help renders the complete header
+ok - fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly
+ok - fm-brief.sh: --forge forgejo names tea in Rule 3, the direct-PR DOD, and the draft read-back, marks the delivery contract, and the closed set refuses everything else
+ok - fm-brief.sh: --forge external renders the no-push rule, the review contract, and the adapter, and refuses every impossible shape
+ok - fm-brief.sh: ship --mode is required and closed-set validated
+ok - fm-brief.sh: the explicit ship mode wins over the registered posture
+ok - fm-brief.sh: --yolo and scout/secondmate --mode are refused, never silently dropped
+ok - fm-brief.sh: faster paths use configured authority without stacked review
+ok - fm-brief.sh: no-mistakes DOD keeps its apostrophe prose and bans --yes outright
+ok - fm-brief.sh: no-mistakes DOD detects a green PR from the drive call, not a status poll
+ok - fm-brief.sh: PR-based done requires a non-draft PR; a deliberate draft declares a wait
+ok - fm-brief.sh: no-mistakes ask-user findings use one event plus a verbatim snapshot
+ok - fm-brief.sh: ship project-memory wording bounds edits to corrections of wrong information
+ok - fm-brief.sh: ship brief tells bug-fix tasks to fix at the producer and justify throw-site guards
+ok - fm-brief.sh: --herdr-lab emits the complete hard safety contract
+ok - fm-brief.sh: --perspective inserts the catalog fragment between Task and Setup with its marker
+ok - fm-brief.sh: RepoWise context is inserted only for configured projects
+ok - fm-brief.sh: malformed RepoWise config warns; ship briefs get the section
+ok - fm-brief.sh: --perspective refuses unknown, empty, unsafe, and charter-scoped slugs
+ok - fm-brief.sh: --perspective strips HTML comments and keeps the prose around them
+ok - perspective-catalog: every catalog slug renders a bounded, dated brief
+ok - fm-brief.sh: --herdr-lab uses its quoted Firstmate-owned helper path
+ok - fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible
+ok - fm-brief.sh: the documented {TASK} and {FIRSTMATE_SPEC} fills cannot corrupt the Herdr safety gate
+ok - fm-brief.sh: Herdr lab contract covers scouts and rejects secondmate misuse
+ok - fm-brief.sh: --no-projects scaffolds a project-less charter and guards misuse
+ok - fm-brief.sh: marked requests avoid generic acknowledgements and preserve material reporting
+ok - fm-brief.sh: relative directory inputs ignore CDPATH, render stable absolute charter paths, or fail loudly
+ok - fm-brief.sh: custom pause verb renders in every scaffold
+ok - fm-brief.sh: ship and scout scaffolds declare a validation-round pause once, then hold it
+ok - fm-brief.sh: investigation and visual-review completions load the shared decision policy
+ok - fm-brief.sh: ship and scout scaffolds teach the classifier's authoritative key placement
+ok - fm-brief: scout and secondmate code paths still scaffold well-formed briefs
+ok - fm-brief.sh: status appends and scout reports require ls -la verification before trust
+ok - fm-brief.sh: ship and scout scaffolds carry the optional Scope, Known facts, and Report budget task slots
+ok - fm-brief.sh: pt-tracker ship brief carries the tracker-entry law; other briefs are unaffected
+ok - fm-brief.sh: ship brief names a runnable context helper and numbers rules contiguously
+ok - fm-brief.sh: ship brief carries the retry-loop failsafe rule with its ceilings and key
+ok - fm-brief.sh: --upstream-sync emits the never-yolo-merge, supervision-safety, regression, PR-purity, bounded-batch, and real-conflict gates
+ok - fm-brief.sh: --upstream-sync embeds the exact bounded batch planned at scaffold time
+ok - fm-brief.sh: retry-loop review-round ceiling follows config/retry-thresholds
+ok - fm-brief.sh: scout Lavish hosting follows the bootstrap lavish-axi floor
+ok - fm-brief: workers end the turn on a decision, wait in one bounded shell command, and never poll
+ok - fm-brief: without config/wait-no-turns the brief and drive text stay as they were
+ok - fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed
+ok - fm-brief.sh: --base-branch records the base, targets the PR at it, and is refused where no PR carries it
+ok - fm-brief.sh: --branch-prefix omitted defaults every ship mode to fm/<task-id>
+ok - fm-brief.sh: a --branch-prefix override renders identically across every generated section
+ok - fm-brief.sh: an empty --branch-prefix override resolves to a bare <task-id> branch
+ok - fm-brief.sh: --branch-prefix is refused on scout and secondmate scaffolds
+ok - fm-brief.sh: --branch-prefix value is validated against embedded spaces and a leading dash
+Switched to a new branch '$(touch${IFS}/tmp/fm-test-run.kpZ9c4/s0/tmp/fm-brief.2N3UuM/branch-prefix-shell-safe-marker)brief-branch-safe-g3'
+ok - fm-brief.sh: ref-format-valid shell metacharacters stay literal in generated branch commands
+ok - fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool
+ok - fm-dod-lib.sh: task slot lines alone do not count as a Firstmate spec
+ok - ship and scout browser instructions register exact identities with shell-safe paths
+FM_TEST_END 2026-11-04T21:16:08Z tests/fm-brief.test.sh exit=0 duration_ms=21300 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=30050
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=21300 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-brief.test.sh duration_ms=21300
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2927 ppid=2925
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=2927 ppid=2925 pgid=2107 sid=2107 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:47Z tests/fm-lint.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-lint.sh --help reports the complete executable interface
+ok - partition audit accepts clean roots and blocks unexpected no-source codes and tool failures
+ok - fm-lint.sh --list-files reports the complete shell inventory
+ok - two canonical lint partitions preserve complete source-aware coverage and reject weakened modes
+ok - fm-lint.sh accepts --partition KofN for 1 <= K <= N <= 8 and refuses everything else
+ok - the partition packer assigns largest-first to the least-loaded partition with an index tiebreak
+ok - four canonical lint partitions are complete, disjoint, deterministic, and byte-balanced
+ok - tests/lib.sh never follows a source directive into bin/fm-wake-lib.sh
+ok - the lint budget warns at 50 percent and fails at 70 percent of the job cap
+ok - fm-lint.sh --fast disables ShellCheck extended analysis
+ok - fm-lint.sh keeps full ShellCheck analysis by default in CI
+ok - fm-lint.sh rejects explicit --fast mode in CI
+ok - fm-lint.sh --fast catches an ordinary shell lint defect
+ok - fm-lint.sh pins an explicit ShellCheck version (0.11.0)
+ok - ShellCheck installer retries a transient download failure
+ok - ShellCheck installer selects the official archive, URL, and checksum per OS/arch
+ok - ShellCheck installer rejects a wrong checksum
+ok - ShellCheck installer falls back to shasum -a 256 when sha256sum is absent
+ok - ShellCheck installer prefers sha256sum when both hashers are present
+ok - ShellCheck installer rejects an unsupported OS or architecture
+ok - missing ShellCheck fails closed
+ok - fm-lint.sh refuses to lint under a non-pinned ShellCheck version
+ok - fm-lint.sh catches a real lint defect the old no-op gate passed
+ok - fm-lint.sh rejects direct Beads CLI invocations in firstmate core
+ok - fm-lint.sh enforces backend purity for explicit core paths
+ok - fm-lint.sh ignores ambient ShellCheck options
+ok - fm-lint.sh passes a clean fixture
+ok - jobs=1 and jobs=2 preserve deterministic diagnostics, failures, cleanup bounds, and quiet telemetry
+ok - jobs=1 and jobs=2 stop complete worker trees with and without telemetry
+ok - a root pinned at the wall deadline fails by name, reaps its tree, and leaves the sentinel alive
+ok - a root refused by its enforced memory limit fails by name with a memory reason
+ok - memory failures retry without source following, exclude cross-file codes, and preserve a real fallback finding
+ok - a memory fallback runs only within the time left in its root's original deadline
+ok - explicit memory evidence outranks findings and signal reasons (modes: 0 1)
+ok - OOM words in a source excerpt or a root path never classify a root as memory
+ok - FM_LINT_REQUIRE_BOUNDS refuses missing enforcement and proceeds when enforceable
+ok - the pinned ShellCheck both respects and survives under the memory envelope
+ok - the roots sidecar and telemetry record the run's final exit status
+ok - the retained sidecar records each root's lifecycle with a mode, reason, and duration
+ok - seeded dispatcher, adapter, production-owner, and test-local diagnostics preserve parity
+ok - fm-lint.sh changed mode lints only the changed canonical file
+ok - fm-lint.sh forces a full lint in CI even when the local diff would be empty
+ok - fm-lint.sh forces a full lint when HEAD is on main
+ok - fm-lint.sh explicit paths bypass changed-file mode selection
+ok - fm-lint.sh exits 0 with a note when the local branch has no changed lint targets
+ok - fm-lint.sh guards .no-mistakes.yaml commands.test against a divergent invocation
+ok - fm-lint.sh --list-files reports the would-be changed set in changed mode
+ok - fm-lint.sh changed mode drops source following and excludes cross-file codes
+ok - fm-lint.sh changed mode invokes ShellCheck once per root
+ok - fm-lint.sh CI keeps source following without the local exclusion list
+ok - fm-lint.sh on main keeps source following without the local exclusion list
+ok - fm-lint.sh without a merge-base keeps source following without the local exclusion list
+ok - fm-lint.sh explicit paths keep source following
+ok - fm-lint.sh --fast on a local branch keeps source following
+ok - fm-lint.sh changed mode excludes cross-file codes that explicit paths still report
+FM_TEST_END 2026-11-04T21:18:04Z tests/fm-lint.test.sh exit=0 duration_ms=137570 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=147433
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=137570 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-lint.test.sh duration_ms=137570
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2671 ppid=2669
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1014-aws machine=x86_64
+process_model=pid=2671 ppid=2669 pgid=1868 sid=1868 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 55524
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 55524
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:16:12Z tests/fm-review-check.test.sh family=unclassified expected_gate_skip=none
+ok - fm-review-check: records one review= and review_head=, arms no watch, and a re-record replaces both
+ok - fm-review-check: refuses a forge PR, non-https, a pattern mismatch, an unsafe id, missing input, a non-external task, and an unbacked copy
+ok - fm-review-check: a secondmate home publishes the child's review-ready line to the parent channel
+# all fm-review-check tests passed
+FM_TEST_END 2026-11-04T21:16:13Z tests/fm-review-check.test.sh exit=0 duration_ms=1127 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=10111
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=1127 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-review-check.test.sh duration_ms=1127
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2700 ppid=2698
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=2700 ppid=2698 pgid=1886 sid=1886 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:53Z tests/fm-inactive-reconcile.test.sh family=watcher-wake-lock expected_gate_skip=none
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - main direct terminal presentation has a durable receipt
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - a branch-actor acknowledgement retires the inactive-outcome receipt and later scans stay quiet
+ok - unpushed CI-ready ship done: is not published upstream
+ok - a delivered ship done: skips the git gate on later polls
+ok - secondmate delivers a child's terminal ledger line once, on the next poll, from the ledger alone
+ok - multiline terminal outcomes are reported once before or during a state read
+ok - an unterminated continuation line does not withhold a proven child outcome
+ok - later status prose does not change the inactive terminal receipt identity
+ok - busy child locks do not starve later ledger outcomes
+ok - ledger delivery carries the report pointer, the failed verb, and each new terminal line
+ok - pr= requires the recorded PR or a ready-signal terminal line, whatever its stamp, and never a scout
+ok - terminal lines arriving during state reads remain ledger-owned
+ok - inactive and ledger paths reconcile one raced completion without hiding later events
+ok - progress after an inactive fallback starts a distinct terminal event
+ok - complete long ledger lines retain distinct receipt identities
+ok - a ledger line still being appended waits for its newline
+ok - the remote route carries a child's ledger line once
+ok - report delivers a child's final line, owes nothing twice, and refuses only an unwritable channel
+actionable: child outcome needs parent report: child=child state=done (missing or unreadable parent binding .fm-secondmate-parent)
+ok - a pending ship done: is delivered by report after teardown removed the worktree
+ok - report preserves teardown's metadata-before-scan lock order
+actionable: child outcome needs parent report: child=child state=failed (missing or unreadable parent binding .fm-secondmate-parent)
+ok - relative local parent homes fail closed
+ok - invalid secondmate markers block routing and surface the obligation
+ok - remote parent-replies mirror input is durable and idempotent
+ok - reused task ids retain per-incarnation terminal receipts
+ok - legacy metadata rewrites preserve terminal receipt identity
+ok - relaunch cannot replace metadata during terminal snapshot
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - terminal reconciliation ignores heartbeat backoff state
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - scan marker replaces a symlink without overwriting its target
+ok - nonterminal and captain-held workers remain outside inactive terminal reporting
+ok - watcher hook wakes for terminal loss and preserves idle secondmate exemption
+ok - the real watcher poll delivers a child's terminal ledger line to the parent channel
+actionable: inactive terminal outcome awaiting captain presentation: child=b state=done pr=https://example.test/owner/repo/pull/1
+ok - stalled state reads are bounded without starving later children
+ok - aggregate scan budget includes durable wake operations
+actionable: inactive terminal outcome needs parent report: child=child state=failed (missing or unreadable parent binding .fm-secondmate-parent)
+ok - notice recovery remains idempotent across queue acknowledgement
+ok - a secondmate home with no parent binding names the missing binding instead of failing quietly
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - reconciliation makes zero forge or PR API calls
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - reconciliation state reads set no-forge mode
+all inactive reconciliation tests passed
+FM_TEST_END 2026-11-04T21:16:58Z tests/fm-inactive-reconcile.test.sh exit=0 duration_ms=65254 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T21:16:58Z tests/fm-claim-check.test.sh family=unclassified expected_gate_skip=none
+ok - fm-claim-check verifies claimed paths against git facts
+FM_TEST_END 2026-11-04T21:16:59Z tests/fm-claim-check.test.sh exit=0 duration_ms=444 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=74909
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=444 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=65254 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-inactive-reconcile.test.sh duration_ms=65254
+FM_TEST_SLOWEST rank=2 script=tests/fm-claim-check.test.sh duration_ms=444
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2706 ppid=2704
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=2706 ppid=2704 pgid=1891 sid=1891 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:46Z tests/fm-dod-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - scout done: is not gated
+ok - unpushed ship done: is refused
+ok - no-mistakes pre-validation done: is not gated
+ok - named head on a remote-tracking ref is accepted
+ok - a moved remote branch that lacks the named head is refused
+ok - a 40-hex token in the note is not the named head
+ok - a recorded merged PR satisfies the gate after prune
+ok - the merged-PR short-circuit applies only to the recorded PR the done line names
+ok - a forge-recorded head for the named PR is accepted without a local object
+ok - a direct-PR recorded head does not cover a later unpushed commit
+ok - CI-ready notes require checks green and an actual PR reference
+ok - no-mistakes CI-ready done: with extra text is gated
+ok - keyed and spaced ship done: lines are gated
+ok - local-only linked named branch is reachable from the project clone
+ok - local-only detached HEAD only in the disposable copy is refused
+ok - standalone local-only done: requires the named head in the project clone
+ok - non-done lines are not gated
+ok - fenced and indented Captain lines are not authorized intent
+ok - PR-based DoD draft check uses gh-axi
+ok - promotion keeps a scout's recorded base branch and refuses local-only for it
+ok - forge=external composes with direct-PR only and refuses a base branch
+ok - external rule one forbids origin and task-prefixed pushes and names only the backup copy
+ok - external DoD renders the contract, the review grammar, and the adapter, and refuses without one
+ok - external review done: accepted on a canonical URL alone without a backup; PR, non-https, query, fragment, forge, and pattern mismatches refused
+ok - external review done with a backup: refused until HEAD is under refs/remotes/backup/backup/, then accepted
+ok - worker role names the skill and its fallback skill file
+all fm-dod-lib tests passed
+FM_TEST_END 2026-11-04T21:15:49Z tests/fm-dod-lib.test.sh exit=0 duration_ms=3011 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=17993
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=3011 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-dod-lib.test.sh duration_ms=3011
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=3559 ppid=3557
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=3559 ppid=3557 pgid=2093 sid=2093 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58109
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58109
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:46Z tests/fm-heavy-admission.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - free host admitted and lock released on exit
+ok - busy host refuses without overlapping holder
+ok - two PC02 offload slots both admit while a local heavy run holds the host slot
+ok - explicit script paths remain exempt from the host slot
+ok - heavy tests and full lint use the same slot
+ok - a reused pid with a stale start identity is reclaimed
+ok - a live reclaim holder blocks a later flock winner until it exits
+ok - reclaim and flock holder-record writes are serialized
+ok - load and available-memory thresholds enforced
+ok - bounded logged backoff releases slot on refusal
+ok - zero polling and load limits fail with a diagnostic
+ok - slot open failure refuses with its path
+ok - holder write failure refuses and releases the slot
+ok - production uses the fixed slot path without the test seam
+FM_TEST_END 2026-11-04T21:15:57Z tests/fm-heavy-admission.test.sh exit=0 duration_ms=10344 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T21:15:57Z tests/fm-lint-nomistakes-config.test.sh family=unclassified expected_gate_skip=none
+ok - a missing .no-mistakes.yaml passes with nothing to check
+ok - the canonical --changed commands.test passes
+ok - commands.test naming an explicit tests/ path fails
+ok - a comment scoping the config to 'this branch' fails
+ok - a differently-cased 'this branch' comment still fails
+ok - an unrelated comment does not trip the guard
+ok - an explicit file argument is checked directly
+ok - the real repo's .no-mistakes.yaml passes the regression-pattern guard
+FM_TEST_END 2026-11-04T21:15:57Z tests/fm-lint-nomistakes-config.test.sh exit=0 duration_ms=209 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=19530
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=10344 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=209 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-heavy-admission.test.sh duration_ms=10344
+FM_TEST_SLOWEST rank=2 script=tests/fm-lint-nomistakes-config.test.sh duration_ms=209
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2871 ppid=2869
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=2871 ppid=2869 pgid=2077 sid=2077 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:48Z tests/fm-secondmate-safety.test.sh family=secondmate expected_gate_skip=none
+ok - FM_HOME parameterizes data and state paths
+ok - fm-lock status is scoped per home
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - seed allows overlapping project clone lists and drops the owns/owner routing
+ok - home-seed validation rejects registry records no operational parser can consume
+ok - home seeding refuses broken registry symlinks before provisioning
+ok - home seeding refuses unreadable registries before provisioning
+ok - home seed validation rejects duplicate home routes
+ok - home seed validation rejects duplicate id routes
+ok - home seed validation rejects nested home routes
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+leased worktree for dash
+ok - home seeding durably leases treehouse-acquired dash homes under the secondmate id
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding returns rejected acquired homes through treehouse
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seed rollback warns when treehouse-acquired return fails
+ok - home seeding leaves unsafe acquired active homes untouched
+ok - home seeding rolls back failed clone attempts without residue
+ok - home seeding refuses direct seed without filled charter text
+ok - home seeding refuses unfilled placeholder charters
+ok - home seeding refuses empty normalized charter fields
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding scaffolds, registers, and spawns a project-less home end to end
+ok - secondmate spawn resolves home validation and projects from punctuated registry fields
+ok - secondmate spawn refuses ambiguous, supplied-home, and metadata-home registry bindings
+ok - home seeding validates reused project-less charters before mutation
+ok - home seeding refuses project-less conversion of a populated home
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding handles spaced project names in project-less refusal and registry queries
+ok - home seeding refuses project-less homes whose projects directory cannot be inspected
+ok - home seeding refuses project-less homes with symlinked projects directories
+ok - home seeding refuses project-less homes with non-directory projects paths
+ok - home seeding refuses project-less homes whose project registry cannot be inspected
+ok - home seeding fails loudly on accidental project omission and rejects mixed --no-projects
+ok - home seeding refuses local-only projects
+ok - home seeding refuses a registry entry whose posture does not resolve
+ok - home seeding refuses registry delimiter home paths
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses active home and repo root
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses homes marked for another id
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses homes registered to another id
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses same-id reassignment to a different home
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses registered home overlaps
+ok - remote-backed subhome seeding requires a source origin
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - remote-backed subhome seeding validates existing destination origins
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding resolves relative source origins against the source project
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding skips initialized existing no-mistakes clones
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses uninitialized existing no-mistakes clones
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses project destinations outside the subhome
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses operational directories outside the subhome
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home seeding refuses symlinked and non-regular leaf files
+Note: switching to '3aa6e3b69208afa9e78a8b2db413096f38b0d477'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - home reseeding preserves and enforces the durable parent binding
+ok - secondmate spawn validates homes before launch
+ok - secondmate spawn refuses operational directories outside the subhome
+ok - fm-send refuses a bare firstmate window with no metadata in this home
+ok - secondmate teardown retires empty homes and releases routing
+ok - the supervision branch cannot retire a secondmate and leaves it fully intact
+ok - secondmate teardown refuses ambiguous and identity-mismatched registry bindings
+ok - normal secondmate teardown sweeps process events before removal
+ok - secondmate teardown preserves state when process-event sweeping is unavailable
+ok - later teardown refusals preserve active process-event sources
+ok - force teardown sweeps nested secondmate homes before deletion
+ok - force teardown preserves nested process-event restoration status and recovery state
+ok - secondmate teardown refuses to hide failed leased-home return
+ok - secondmate teardown raw-removes plain-clone homes, including a leaked read-only strip dir
+ok - secondmate force teardown discards child work
+ok - forced secondmate teardown refuses duplicated descendant pool slots
+ok - secondmate force teardown preserves child worktree after unproven lock refusal
+ok - force teardown allows non-state operational directory symlinks inside the subhome
+ok - force teardown refuses operational directory symlinks outside the subhome
+ok - secondmate teardown refuses homes containing registered nested homes
+ok - secondmate teardown refuses nested homes from the child registry
+ok - force teardown validates subhome before child cleanup
+ok - forced teardown refuses a non-directory descendant state path
+ok - forced teardown refuses a symlinked descendant state path
+ok - forced teardown locks a descendant whose state directory was absent
+ok - forced teardown refuses while a fresh task is being published in the home
+ok - a fresh spawn refuses to publish while a forced teardown owns the task set
+ok - a fresh spawn refusal identifies another spawn as the task-set holder
+ok - a fresh remote secondmate spawn refuses while the task set is owned
+ok - force teardown refuses child worktrees inside the active home
+ok - force teardown refuses child worktrees inside the firstmate repo
+ok - force teardown refuses unregistered child worktree paths
+ok - secondmate teardown path-boundary matrix refuses unmarked/ancestor/active-descendant/repo-descendant homes
+ok - idle kind=secondmate pane is healthy and not stale
+ok - secondmate charter brief is idle by default and does not self-initiate work
+ok - fm-backlog-handoff aborts atomically on unmatched, in-flight, and unregistered targets
+ok - fm-backlog-handoff refuses Done items under whitespace section headings and unsafe homes
+FM_TEST_END 2026-11-04T21:17:11Z tests/fm-secondmate-safety.test.sh exit=0 duration_ms=83058 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T21:17:11Z tests/fm-pc02-test-offload.test.sh family=unclassified expected_gate_skip=none
+ok - --help prints the whole documented contract
+ok - MemAvailable, /tmp free and disk free floors each route local and name the resource
+ok - the pre-claim capacity gate reads the host and never removes another run's root
+ok - a remote run keeps its TMPDIR inside its mirror, and cleanup removes read-only content there
+ok - a timed-out offload exits 124 and reaps its mirror and run-scoped TMPDIR
+ok - a malformed capacity bound exits 2 without running the selected command
+ok - FM_PC02_OFFLOAD_DISABLE=1 always runs locally without touching ssh or rsync
+ok - a live PC02 LLM lane falls back to a local run once its wait bound is spent
+ok - a live PC02 LLM lane is waited on, then the run takes PC02 once the lane frees
+ok - a live PC02 LLM lane waits up to the bound, then the run falls back to PC01 with a log line
+ok - personal use and a missing tool route local at once even while a busy host would otherwise wait
+ok - a malformed FM_PC02_OFFLOAD_GATE_RECHECK_SECS exits 2 and runs no tests
+ok - a malformed slot-wait or slot-wait-interval setting exits 2 and runs no tests
+ok - a missing supervising home refuses the lane probe and falls back locally
+ok - the offload probe scans the supplied supervising home before checking PC02
+ok - an unreachable PC02 falls back to a local run
+ok - PC02 missing a required tool falls back to a local run rather than a thinner remote run
+ok - a stuck or slow probe times out and falls back rather than hanging
+ok - a failed rsync to PC02 falls back to a local run
+ok - the captain's personal-use switch falls back to a local run
+ok - llama-swap holding a loaded model for any live session falls back to a local run
+ok - a healthy llama-swap with no loaded model does not block offloading
+ok - an unparseable llama-swap /running answer defaults to a local run
+ok - a Windows-wide CPU utilization over the threshold falls back to a local run
+ok - a Windows GPU-engine utilization over the threshold falls back to a local run
+ok - an unparseable or missing resource read defaults to a local run rather than an idle guess
+ok - an absent, empty, or zero PC02 thread count routes the run local with a diagnostic
+ok - fm-test-run.sh --pc02-if-idle strips the flag and forwards every other argument unchanged
+ok - PC02 missing perl falls back to a local run instead of failing the remote command
+ok - a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror
+ok - a green remote run exits 0, returns its --json artifact, and removes its mirror
+ok - remote lint mode invokes local-lint and returns its exit code
+ok - PC01 lint fallback runs the changed-file lint instead of canonical partitions
+ok - an offloaded run keeps fm-test-run.sh's own scheduler and per-script bound
+ok - a remote suite passes the 7200-second default to its timeout executable
+ok - remote jobs preserve both caller forms, default to eight, and allow environment overrides with a script cap
+ok - matching PC01 and PC02 parity admits the default two-slot offload
+ok - PC02 open-file capacity accepts higher/equal limits and refuses lower or invalid limits
+ok - offload raises PC02's soft open-file limit to its hard limit without loosening the parity rule
+ok - a PC02 tool-version mismatch names the surface and runs locally
+ok - a hanging local browser dependency probe times out and routes locally
+ok - TERM-ignoring tool and browser version probes are killed at their deadline
+ok - a cached headless-shell version mismatch names the surface and runs locally
+ok - the shared suite and parity resolver prefers Chromium over Google Chrome
+ok - a PC02 Chromium library failure names the library and runs locally
+ok - different resolved Chromium sonames route locally with the named difference
+ok - a launcher browser resolves to its executable without a false fallback
+ok - wrapper parity compares sonames from the resolved executable on both hosts
+ok - one busy of two PC02 slots still runs the next suite remotely
+ok - a fully busy PC02 is waited on and the run takes the first slot that frees
+ok - busy PC02 slots are waited on up to the bound, then the suite runs locally
+ok - the machine slot file is read every run, the environment overrides it, and malformed values exit 2
+ok - a malformed FM_PC02_OFFLOAD_SLOTS exits 2 and runs no tests
+ok - FM_PC02_OFFLOAD_SLOTS=1 with a zero wait keeps the immediate single-slot fallback
+ok - an occupied PC02 waits at most the 600s default bound
+ok - a caller wall budget clamps the load-gate wait to zero
+ok - a caller wall budget also clamps the slot wait to zero
+ok - a process merely mentioning fm-test-run.sh does not block a free host slot
+ok - TERM during a remote run kills the remote suite and removes its mirror
+ok - TERM with a transport that ignores stdin EOF still stops the remote suite and frees the slot
+ok - abrupt loss of the driver stops the remote suite and frees the slot
+ok - a gate-style bare common store needs the machine file, while FM_STATE_OVERRIDE bypasses discovery
+ok - machine configuration resolves an unset FM_HOME and fails closed when unreadable
+ok - primary clone discovery resolves the home without environment or machine configuration
+ok - two concurrent offloads take both PC02 slots and a third falls back locally
+ok - a dead owner's claim is reclaimed and the next run releases it on timeout
+# all fm-pc02-test-offload tests passed
+FM_TEST_END 2026-11-04T21:21:22Z tests/fm-pc02-test-offload.test.sh exit=0 duration_ms=250857 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T21:21:22Z tests/fm-spawn-external-review.test.sh family=unclassified expected_gate_skip=none
+ok - forge=external spawn: yolo, a missing adapter, an absent or aliasing backup, an overlapping prefix, and a forge mismatch all refuse before launch
+ok - forge=external spawn: installs the push guard even under keep-ai-trailers and records forge and backup in the task record
+# all fm-spawn-external-review tests passed
+FM_TEST_END 2026-11-04T21:21:29Z tests/fm-spawn-external-review.test.sh exit=0 duration_ms=7390 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=0 skipped_gate=0 duration_ms=352236
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=83058 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=258247 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-pc02-test-offload.test.sh duration_ms=250857
+FM_TEST_SLOWEST rank=2 script=tests/fm-secondmate-safety.test.sh duration_ms=83058
+FM_TEST_SLOWEST rank=3 script=tests/fm-spawn-external-review.test.sh duration_ms=7390
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2873 ppid=2871
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=2873 ppid=2871 pgid=2051 sid=2051 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:56Z tests/fm-test-compute.test.sh family=unclassified expected_gate_skip=none
+ok - trusted gate configuration routes lint and preserves the pinned Test baseline
+ok - GitHub result receipts cover only the non-empty Test partitions
+ok - lane listing failure falls back before dispatch
+ok - selection listing failure falls back before dispatch
+ok - a selection with no hosted-capable partitions runs locally
+ok - non-hosted scripts stay on local admission while the hosted subset keeps its tier order
+ok - a hosted failure is never masked by the local-only subset
+ok - a local-only script failure fails the whole routed run
+ok - GitLab carries only hosted-capable scripts and local admission completes the selection
+ok - Lint mode runs every canonical lint partition on hosted compute
+ok - failure cannot become a green fallback
+ok - wrong-head cannot become a green fallback
+ok - wrong-scripts cannot become a green fallback
+ok - download-failure names its fail-closed reason
+ok - discovery-failure names its fail-closed reason
+ok - observation-failure names its fail-closed reason
+ok - invalid-run-id names its fail-closed reason
+ok - cancel-failure names its fail-closed reason
+ok - an accepted but undiscovered test dispatch fails closed instead of duplicating
+ok - an accepted but undiscovered lint dispatch fails closed instead of duplicating
+ok - an ambiguous test dispatch with no run after the bound falls back
+ok - an ambiguous lint dispatch with no run after the bound falls back
+ok - an ambiguous dispatch whose run appears is monitored, not duplicated
+ok - definitive GitHub admission rejection tries the next tier
+ok - GitHub unavailable and unauthenticated GitLab reach existing PC02 admission
+ok - unavailable hosted lint reaches the existing PC02/PC01 fallback
+ok - queue timeout requires confirmed cancellation before fallback
+ok - existing queued runs route the only dispatch to fm-pc02
+ok - fm-pc02:online:busy keeps the hosted dispatch and an idle fm-parallel runner is never chosen, so PC01 stays behind heavy admission
+ok - fm-pc02:offline:idle keeps the hosted dispatch and an idle fm-parallel runner is never chosen, so PC01 stays behind heavy admission
+ok - the PC02 personal-use switch keeps queued-run routing off PC02
+ok - an unreadable PC02 personal-use switch counts as in use
+ok - an empty repository queue keeps the hosted dispatch
+ok - a fully queued hosted test run reroutes after confirmed cancellation with a fresh request id
+ok - a fully queued hosted lint run reroutes after confirmed cancellation with a fresh request id
+ok - busy self-hosted runners keep the existing fallback order
+ok - the PC02 personal-use switch sends a saturated run down the existing fallback order
+ok - a self-hosted run that never gets a runner falls through once
+ok - an unconfirmed cancellation stays indeterminate and never reroutes
+ok - a job observation fault at the queue bound stays indeterminate
+ok - a run whose status reads queued while a job holds a runner is monitored, not cancelled, and admission is read once
+ok - only a saturation signal reroutes to self-hosted
+ok - a hosted lint queue timeout followed by a GitLab monitoring fault is indeterminate, not a lint failure
+ok - a GitHub execution timeout fails closed with a diagnostic
+ok - an unconfirmed GitHub cancellation after timeout fails closed with a diagnostic
+ok - GitLab queue timeout requires confirmed cancellation before fallback
+ok - a confirmed GitLab execution timeout falls through after cancellation
+ok - GitLab completion with missing receipts falls through to local admission
+ok - a GitLab test failure with complete receipts still fails
+ok - gitlab-pipeline-ambiguous fails closed with a diagnostic
+ok - gitlab-invalid-id fails closed with a diagnostic
+ok - gitlab-status-failure fails closed with a diagnostic
+ok - gitlab-jobs-failure fails closed with a diagnostic
+ok - gitlab-artifact-failure fails closed with a diagnostic
+ok - gitlab-bad-artifact fails closed with a diagnostic
+ok - gitlab-bootstrap-failure fails closed with a diagnostic
+ok - gitlab-canceled-green fails closed with a diagnostic
+ok - gitlab-queue-cancel-failure fails closed with a diagnostic
+ok - gitlab-malformed-jobs fails closed with a diagnostic
+ok - gitlab-bad-jobs fails closed with a diagnostic
+ok - github-race-failed cannot treat GitHub completion as cancellation
+ok - github-race-success cannot treat GitHub completion as cancellation
+ok - a completed GitHub run that is not a success is indeterminate, not a test verdict
+ok - gitlab-success executes only after GitHub unavailability and authentication
+ok - gitlab-bootstrap executes only after GitHub unavailability and authentication
+ok - structured GitLab variable permission refusal falls back without duplicate dispatch
+ok - GitLab jobs rejected before start for exhausted compute fall back automatically
+ok - gitlab-race-success cannot treat GitLab completion as cancellation
+ok - gitlab-race-failed cannot treat GitLab completion as cancellation
+ok - private repositories cannot enter a public source relay
+ok - unpushed git bundle restores the exact committed head
+ok - worker captures actual test exit and exact script evidence
+ok - lint worker invokes the canonical partition interface
+ok - inspection never contacts hosted services
+ok - non-baseline test selections stay on local admission
+ok - uncommitted content always uses the existing local mirror path
+ok - unknown commands are rejected before dependencies
+ok - PC01 lint fallback runs changed-file lint while local-lint keeps canonical partitions
+ok - a changed canonical lint count reaches every hosted lint partition
+ok - a changed canonical lint count reaches every local lint partition
+ok - a changed canonical lint count bounds the lint workers it accepts
+ok - an unusable canonical lint count fails closed on every lint path
+ok - repositories outside public Firstmate fall back locally before any hosted call
+ok - oversized snapshots fall back locally before any hosted call
+# all test-compute tests passed
+FM_TEST_END 2026-11-04T21:17:44Z tests/fm-test-compute.test.sh exit=0 duration_ms=108815 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T21:17:44Z tests/fm-fleet-ledger.test.sh family=unclassified expected_gate_skip=none
+ok - flag on: dispatch, polled status lines, the local merge after its task's pending lines, and cleanup are recorded in order
+ok - flag on: a PR merge is recorded once, after the task's pending status lines
+ok - flag on: registering a PR records task.pr_ready with its full URL after the task's pending status lines, and the merge-time re-record adds nothing
+ok - flag on: a worker's status command records its line at once, and the watcher backstop does not record it again
+ok - flag on, state override outside the home: the worker's status command records its line at once
+ok - flag on, relative config override: a worker running elsewhere still records its line at once
+ok - append failing: the worker's status command exits nonzero and records nothing
+ok - ledger failing: the worker's status line still lands exactly, quietly, and the backstop records it later
+ok - flag off: the worker's status command is a plain append and leaves no ledger file, offset, or lock
+ok - flag off: the whole lifecycle leaves no ledger file, offset, or lock
+FM_TEST_END 2026-11-04T21:18:12Z tests/fm-fleet-ledger.test.sh exit=0 duration_ms=27008 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=152981
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=135823 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-test-compute.test.sh duration_ms=108815
+FM_TEST_SLOWEST rank=2 script=tests/fm-fleet-ledger.test.sh duration_ms=27008
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2898 ppid=2896
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=2898 ppid=2896 pgid=2079 sid=2079 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:47Z tests/fm-pi-branch-extension.test.sh family=standalone expected_gate_skip=none
+ok - fm_branch_outcomes and fm_branch_processed call headers match stock on Pi before and from 0.99
+ok - fm_branch_outcomes hides through ToolExecutionComponent while Calm-off and HTML export stay stock
+ok - the installed Pi still bounds the picker's list and ranks its search
+ok - branch owns accepted wakes with a stable prefix and deterministic verdict-driven delivery
+ok - a captain outcome reaches main's model as one typed, sequence-keyed processing request while routine notes stay plain
+ok - requested and unsolicited healthy outcomes keep distinct delivery and event ownership
+ok - captain outcomes are exact and exactly once across crash, reload, busy main, compaction, and an unrelated assistant response
+ok - a captain outcome opens one sequence-keyed processing turn, survives empty and unrelated answers, is re-presented at run end and session start, and closes only on its acknowledgement
+ok - Pi: an abbreviated processing request points to the full outcome and instructs main to read it first
+ok - Pi: a marker-less >1 MiB backlog is presented oldest first in bounded requests and continues after batch acknowledgement
+ok - an unprocessed captain row the store lists without its age is reported to main, never formatted undated, and stays unprocessed until the store is healthy
+ok - scopeForUnreadWake excludes every main-only class without vetoing eligible task-local rows, and writes the eligible snapshot
+ok - scopeForUnreadWake resolves unique Orca terminal owners and refuses conflicting aliases alongside another eligible row
+ok - scope and CLI keep projects with canonical owners in both discovery orders
+ok - second-mate signal rows route by their new span while crewmate and stale routing stay unchanged
+ok - branch prompt_cache_key is stable per home across sessions and distinct between homes
+ok - branch default-on eligibility (task-scoped, heartbeat, legacy flag ignored) binds and a broken branch rejects to watcher fallback
+ok - under the away-posture record the wake carries the verbatim read-back tail, claims every row, opens no processing turn, cancels a pending request, and presents the accumulated rows after archive
+ok - Pi branch: an unchanged held outcome reaches the captain once across cadences, and a later red check on the task still does
+ok - an accepted away-only wake rejects after archive, while a drained task-local wake stays a quiet no-op
+ok - a claimed heartbeat row on a non-heartbeat away wake lifts task scoping for the fleet report
+ok - a heartbeat review survives a check row arriving before its drain
+ok - fm_branch_report refuses a task the wake did not name, fleet included, while a heartbeat is unscoped
+ok - pre-drain eligibility re-check excludes a newly main-owned row without deferring eligible work
+ok - a co-present needs-decision row neither vetoes nor falsely settles routine branch delivery
+ok - a settled branch turn without a durable outcome falls back and releases its grant for main replay
+ok - provider-error latches cool down, re-probe once with backoff, and recover through a durable report
+ok - selection changes preserve in-flight transcript ownership and reset provider-error streaks
+ok - a stale main claim returns the durable wake to watcher delivery
+ok - pre-drain eligibility re-check no-ops an already-drained wake
+ok - dialog mirror filters tool and operational traffic, lands before wakes, and keeps a durable cursor
+ok - the dialog mirror re-anchors for each session's new branch conversation and stays incremental within it
+ok - every main session start begins a new branch conversation while one session keeps its own
+ok - the current pin state binds every branch build, and clearing it returns the branch to main's model
+ok - unpinned branches follow main model changes live while pinned branches stay fixed
+ok - supervision-model command persists the captain's pick and rebinds the live branch
+ok - supervision-model opens a bounded searchable list, follow main first, and pins the branch alone
+ok - branch model picker keeps follow main first and filters the eligible catalog
+ok - the effort pin binds every branch build, and clearing it returns the branch to main's effort
+ok - unpinned branches follow main effort changes live while pinned branches stay fixed
+ok - an extension-registered provider resolves in the isolated branch runtime
+ok - supervision-model runs an effort picker after the model picker and persists both independently
+ok - an unusable model pin rejects to watcher fallback and an unparseable one is treated as no pin
+ok - replacement activation cleans old branch leases and retries failed cleanup
+ok - branch activates on a cold start once the lock is acquired, never before
+ok - queued wakes and mirrors stop mutating branch state after lock ownership is lost
+ok - stale reports, shells, mirrors, cursors, leases, and prompts perform no side effects
+ok - a Pi session that does not own the lock accepts nothing and mutates no branch state
+ok - an extension rebind re-mirrors undelivered dialog instead of dropping it
+ok - outcome delivery keeps the event loop running and interleaved reports stay ordered and exactly once
+ok - a session replaced mid-delivery cancels cleanly and the stored outcome still arrives exactly once
+ok - a failing store script surfaces to the branch and its outcome is neither lost nor delivered twice
+ok - a failed cursor write re-delivers a routine note exactly once more while a captain outcome stays deduplicated
+FM_TEST_END 2026-11-04T21:17:37Z tests/fm-pi-branch-extension.test.sh exit=0 duration_ms=109676 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T21:17:37Z tests/fm-pc02-test-offload-live-e2e.test.sh family=unclassified expected_gate_skip=none
+skip: live: opt-in; set FM_PC02_OFFLOAD_LIVE_E2E=1 to run
+fm-test-run: gate skip: tests/fm-pc02-test-offload-live-e2e.test.sh: live: opt-in; set FM_PC02_OFFLOAD_LIVE_E2E=1 to run
+FM_TEST_END 2026-11-04T21:17:37Z tests/fm-pc02-test-offload-live-e2e.test.sh exit=0 duration_ms=109 gate_skip=true
+FM_TEST_BEGIN 2026-11-04T21:17:37Z tests/fm-self-repo-role.test.sh family=unclassified expected_gate_skip=none
+ok - fm-role.sh report: default, user, and maintainer directives resolve
+ok - fm-role.sh report: malformed, unknown, and unsafe input fails closed
+ok - fm-role.sh check: the default user/operator home cannot publish to firstmate upstream
+ok - fm-role.sh check: a task on an ordinary project is untouched by the boundary
+ok - fm-role.sh check: a matching maintainer scope authorizes the self-repository publication
+ok - fm-role.sh check: scope mismatch and mere upstream remote presence never authorize
+ok - fm-role.sh check: equivalent remote spellings resolve to one publication target
+ok - fm_role_publication_target: disabled remotes are skipped and no publishable target refuses
+ok - fm-role.sh check: repository lineage, not remotes, identifies firstmate across forks
+ok - fm-role.sh check: undeterminable lineage or publication target refuses
+ok - fm-role.sh check: recorded one-task consent authorizes its named repository only
+ok - secondmate home: a role file without an inheritance receipt grants nothing
+ok - secondmate home: inherited grants need a matching receipt; receipt-less and revoked grants are dead
+ok - secondmate home: a primary role its own resolver rejects propagates as revocation
+ok - fm_dod_block: upstream consent renders on publishing contracts and is refused on local-only
+ok - fm-brief.sh: --upstream-consent validates, scopes to ship tasks, and renders normalized
+ok - fm-brief.sh: --project applies the self-repository gate at scaffold time
+ok - fm-spawn.sh: the launch gate refuses a user/operator home and passes a matching maintainer
+ok - fm-spawn.sh: consent must agree between flag and brief, and is refused on local-only
+ok - fm-promote.sh: the self-repository gate governs promotion identically to spawn
+ok - fm-spawn.sh: --upstream-consent is refused on secondmate charters
+# all fm-self-repo-role tests passed
+FM_TEST_END 2026-11-04T21:17:44Z tests/fm-self-repo-role.test.sh exit=0 duration_ms=7275 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=0 skipped_gate=1 duration_ms=125996
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=109676 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=7384 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-pi-branch-extension.test.sh duration_ms=109676
+FM_TEST_SLOWEST rank=2 script=tests/fm-self-repo-role.test.sh duration_ms=7275
+FM_TEST_SLOWEST rank=3 script=tests/fm-pc02-test-offload-live-e2e.test.sh duration_ms=109
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.2.21(1)-release flags=ehuB argv0=fm-test-run.sh pid=2960 ppid=2958
+runner_login_shell=no
+path_entries=~/work/_temp/bin:/opt/hostedtoolcache/node/22.23.4/x64/bin:/snap/bin:~/.local/bin:/opt/pipx_bin:~/.cargo/bin:~/.config/composer/vendor/bin:/usr/local/.ghcup/bin:~/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=7.0.0-1017-azure machine=x86_64
+process_model=pid=2960 ppid=2958 pgid=2076 sid=2076 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 58121
+ulimit=max locked memory           (kbytes, -l) 8192
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 65536
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 16384
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 58121
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+tool=node path=/opt/hostedtoolcache/node/22.23.4/x64/bin/node version=v22.23.4
+tool=pi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/pi version=1.2.0
+tool=tasks-axi path=/opt/hostedtoolcache/node/22.23.4/x64/bin/tasks-axi version=0.2.6
+tool=timeout path=/usr/bin/timeout version=timeout (GNU coreutils) 9.4
+tool=git path=/usr/bin/git version=git version 2.56.0
+tool=herdr absent
+tool=tmux path=/usr/bin/tmux version=tmux 3.4
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.2.7  protocol version 31
+tool=no-mistakes absent
+chrome_startup=failed path=/usr/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_BEGIN 2026-11-04T21:15:58Z tests/fm-pr-check-security.test.sh family=pr-forge expected_gate_skip=none
+ok - raw-byte parser accepts canonical URLs and rejects the complete adversarial matrix
+ok - GitLab merge requests are followed on any instance and never wake falsely
+ok - Forgejo poll reads one pull request by number through tea api and wakes only on merged true
+ok - Forgejo login match parses tea's JSON in every line shape, in the helper and the static poll
+ok - the Gerrit watch wakes only on an explicit merged status and never on submittability
+ok - Gerrit arming records no patch set revision and the merge path refuses to submit
+ok - Gerrit arming accepts a published HEAD only by the change's current patch set tree
+ok - a no-mistakes Gerrit ready report requires the pipeline's fixes recovered into the published copy
+ok - validated merged polls notify once and retire before the next watcher cycle
+ok - a repeat identical merged poll for an already-notified task is absorbed, never queued as a main-blocking row
+ok - a failed upward merge report keeps its poll armed for repair and retry
+ok - staged self-merge and poll interleavings are never silent
+ok - queued merges retain their away authority after captain return
+ok - poll distinguishes attended authorization from external landing
+ok - accepted merge authority refuses rebound task metadata
+ok - accepted merge authority persists under the lifecycle lock
+ok - teardown cannot race merged-poll authority consumption
+ok - poll retirement preserves a replacement authority record
+ok - a merge detected by the poll is reported upward from a secondmate home exactly once
+ok - a different merged PR for the same task gets its own first notification
+ok - a merged poll on a persistent secondmate retires silently: no outcome, marker, or wake, and every lifecycle artifact preserved
+ok - queue, receipt, and every fixed-path removal crash point recover without loss or repeated execution
+ok - open/red, closed-unmerged, malformed, and forge errors remain armed until an exact merged transition
+ok - replacement, nonterminal, tampered, and custom results receive no deletion authority
+ok - queue failure and untrusted receipts preserve canonical poll evidence
+ok - GitHub and GitLab exact merged results share one retirement path
+ok - PR and teardown entrypoints reject invalid arguments before every side effect
+ok - arming refuses a draft pull request, naming it, and arms a ready or unreadable one
+ok - fm-pr-check refuses to record a PR or arm a merge watch on a secondmate record
+ok - fm-pr-check refuses to register a PR whose named head is only in the worker copy
+ok - fm-pr-check refuses a direct-PR registration while a later commit is only in the copy
+ok - valid direct and merge flows record exact metadata and reject multiline head metadata
+ok - rejected metacharacter bytes remain inert at generation and watcher time
+ok - static poll is silent except for one merged line and remains watcher-bounded
+ok - interrupted atomic preparation cleans private temporaries and publishes nothing
+ok - concurrent watchers observe only complete private poll publications
+ok - poll publication paths refuse symlinks and directories
+ok - live poll and custom-check artifacts require private single-link files
+ok - a poll armed before a volume renumber is re-recorded under the control lock and keeps detecting merges
+ok - a renumbered registration is never re-recorded around a tampered artifact: swapped-check altered-check swapped-sidecar altered-sidecar altered-template-hash wrong-mode hardlinked-check split-device foreign-device, or a pending retirement
+ok - direct re-arm publication waits without replacing an armed poll
+ok - device re-record publication waits without rewriting its registration
+ok - post-rename poll validation faults revoke both names and allow a clean retry
+ok - bootstrap does not rewrite unauthenticated checks or emit retired migration diagnostics
+ok - watcher signals promptly stop custom checks and clean private state
+ok - returned custom check descendants are drained on installed and fallback timeout paths
+ok - teardown removes safe poll artifacts and refuses directory-shaped check files without traversal
+FM_TEST_END 2026-11-04T21:21:36Z tests/fm-pr-check-security.test.sh exit=0 duration_ms=338050 gate_skip=false
+FM_TEST_BEGIN 2026-11-04T21:21:36Z tests/fm-documentation-audiences.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - documentation inventory classifies every maintained prose surface exactly once
+ok - classification, setup routing, and maintained-prose scope fail safely
+ok - required documentation owner pointers cannot silently disappear
+ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+FM_TEST_END 2026-11-04T21:21:37Z tests/fm-documentation-audiences.test.sh exit=0 duration_ms=1546 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=349195
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=338050 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=1546 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-pr-check-security.test.sh duration_ms=338050
+FM_TEST_SLOWEST rank=2 script=tests/fm-documentation-audiences.test.sh duration_ms=1546
+fm-test-run: wrote timing artifact: ~/work/_temp/result/timing.json
+result: success
+head: 3aa6e3b69208afa9e78a8b2db413096f38b0d477
+
+real	7m9.901s
+user	0m28.775s
+sys	0m21.910s

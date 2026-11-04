@@ -1,0 +1,85 @@
+ok - trusted gate configuration routes lint and preserves the pinned Test baseline
+ok - GitHub result receipts cover only the non-empty Test partitions
+ok - lane listing failure falls back before dispatch
+ok - selection listing failure falls back before dispatch
+ok - a selection with no hosted-capable partitions runs locally
+ok - non-hosted scripts stay on local admission while the hosted subset keeps its tier order
+ok - a hosted failure is never masked by the local-only subset
+ok - a local-only script failure fails the whole routed run
+ok - GitLab carries only hosted-capable scripts and local admission completes the selection
+ok - Lint mode runs every canonical lint partition on hosted compute
+ok - failure cannot become a green fallback
+ok - wrong-head cannot become a green fallback
+ok - wrong-scripts cannot become a green fallback
+ok - download-failure names its fail-closed reason
+ok - discovery-failure names its fail-closed reason
+ok - observation-failure names its fail-closed reason
+ok - invalid-run-id names its fail-closed reason
+ok - cancel-failure names its fail-closed reason
+ok - an accepted but undiscovered test dispatch fails closed instead of duplicating
+ok - an accepted but undiscovered lint dispatch fails closed instead of duplicating
+ok - an ambiguous test dispatch with no run after the bound falls back
+ok - an ambiguous lint dispatch with no run after the bound falls back
+ok - an ambiguous dispatch whose run appears is monitored, not duplicated
+ok - definitive GitHub admission rejection tries the next tier
+ok - GitHub unavailable and unauthenticated GitLab reach existing PC02 admission
+ok - unavailable hosted lint reaches the existing PC02/PC01 fallback
+ok - queue timeout requires confirmed cancellation before fallback
+ok - existing queued runs route the only dispatch to fm-pc02
+ok - fm-pc02:online:busy keeps the hosted dispatch and an idle fm-parallel runner is never chosen, so PC01 stays behind heavy admission
+ok - fm-pc02:offline:idle keeps the hosted dispatch and an idle fm-parallel runner is never chosen, so PC01 stays behind heavy admission
+ok - the PC02 personal-use switch keeps queued-run routing off PC02
+ok - an unreadable PC02 personal-use switch counts as in use
+ok - an empty repository queue keeps the hosted dispatch
+ok - a fully queued hosted test run reroutes after confirmed cancellation with a fresh request id
+ok - a fully queued hosted lint run reroutes after confirmed cancellation with a fresh request id
+ok - busy self-hosted runners keep the existing fallback order
+ok - the PC02 personal-use switch sends a saturated run down the existing fallback order
+ok - a self-hosted run that never gets a runner falls through once
+ok - an unconfirmed cancellation stays indeterminate and never reroutes
+ok - a job observation fault at the queue bound stays indeterminate
+ok - a run whose status reads queued while a job holds a runner is monitored, not cancelled, and admission is read once
+ok - only a saturation signal reroutes to self-hosted
+ok - a hosted lint queue timeout followed by a GitLab monitoring fault is indeterminate, not a lint failure
+ok - a GitHub execution timeout fails closed with a diagnostic
+ok - an unconfirmed GitHub cancellation after timeout fails closed with a diagnostic
+ok - GitLab queue timeout requires confirmed cancellation before fallback
+ok - a confirmed GitLab execution timeout falls through after cancellation
+ok - GitLab completion with missing receipts falls through to local admission
+ok - a GitLab test failure with complete receipts still fails
+ok - gitlab-pipeline-ambiguous fails closed with a diagnostic
+ok - gitlab-invalid-id fails closed with a diagnostic
+ok - gitlab-status-failure fails closed with a diagnostic
+ok - gitlab-jobs-failure fails closed with a diagnostic
+ok - gitlab-artifact-failure fails closed with a diagnostic
+ok - gitlab-bad-artifact fails closed with a diagnostic
+ok - gitlab-bootstrap-failure fails closed with a diagnostic
+ok - gitlab-canceled-green fails closed with a diagnostic
+ok - gitlab-queue-cancel-failure fails closed with a diagnostic
+ok - gitlab-malformed-jobs fails closed with a diagnostic
+ok - gitlab-bad-jobs fails closed with a diagnostic
+ok - github-race-failed cannot treat GitHub completion as cancellation
+ok - github-race-success cannot treat GitHub completion as cancellation
+ok - a completed GitHub run that is not a success is indeterminate, not a test verdict
+ok - gitlab-success executes only after GitHub unavailability and authentication
+ok - gitlab-bootstrap executes only after GitHub unavailability and authentication
+ok - structured GitLab variable permission refusal falls back without duplicate dispatch
+ok - GitLab jobs rejected before start for exhausted compute fall back automatically
+ok - gitlab-race-success cannot treat GitLab completion as cancellation
+ok - gitlab-race-failed cannot treat GitLab completion as cancellation
+ok - private repositories cannot enter a public source relay
+ok - unpushed git bundle restores the exact committed head
+ok - worker captures actual test exit and exact script evidence
+ok - lint worker invokes the canonical partition interface
+ok - inspection never contacts hosted services
+ok - non-baseline test selections stay on local admission
+ok - uncommitted content always uses the existing local mirror path
+ok - unknown commands are rejected before dependencies
+ok - PC01 lint fallback runs changed-file lint while local-lint keeps canonical partitions
+ok - a changed canonical lint count reaches every hosted lint partition
+ok - a changed canonical lint count reaches every local lint partition
+ok - a changed canonical lint count bounds the lint workers it accepts
+ok - an unusable canonical lint count fails closed on every lint path
+ok - repositories outside public Firstmate fall back locally before any hosted call
+ok - oversized snapshots fall back locally before any hosted call
+# all test-compute tests passed
