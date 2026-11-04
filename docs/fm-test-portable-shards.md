@@ -65,6 +65,31 @@ The 2026-11-04 hint-drift refresh from run 41788821296 raised `tests/fm-pr-state
 The 2026-11-04 hint-drift refresh from run 41821494108 raised `tests/fm-config-inherit-lane-caps.test.sh` from 417 ms to its measured 708 ms (repeated drift 1.70x) and `tests/fm-live-gate.test.sh` from 7452 ms to its measured 12207 ms (repeated drift 1.64x) after two consecutive runs, and `tests/fm-forge-detect.test.sh` from 193 ms to its measured 540 ms (single-run drift warning 2.80x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
+### Provisional admission and browser cleanup hints
+
+The admission and browser cleanup suites postdate the 2026-09-30 CI baseline and use provisional local serial hints until their next CI refresh.
+On 2026-11-02, two complete focused runs on Linux WSL2 (kernel 6.18.33.2, Bash 5.3.9, ShellCheck 0.11.0) measured the following successful script durations in milliseconds.
+Only these two entries use these local seeds; existing CI measurements are retained.
+
+| Suite | Sample 1 | Sample 2 | Initial hint (maximum) |
+| --- | ---: | ---: | ---: |
+| `tests/fm-heavy-admission.test.sh` | 2528 | 2684 | 2684 |
+| `tests/fm-teardown-browsers.test.sh` | 18597 | 24607 | 24607 |
+
+Refresh with two serial focused runs, retaining the emitted JSON and `FM_TEST_END` markers in the chosen artifact directory:
+
+```sh
+timing_dir=$(mktemp -d)
+for sample in 1 2; do
+  bash bin/fm-test-run.sh --jobs 1 --per-script-timeout-secs 120 \
+    --json "$timing_dir/timing-$sample.json" \
+    tests/fm-heavy-admission.test.sh tests/fm-teardown-browsers.test.sh || exit
+done
+```
+
+Both samples reported `FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0`.
+These weights replace the unmeasured fallback for the new suites without changing the coverage or packing limits.
+
 ## Parallel lanes
 
 The two parallel lanes use longest-processing-time assignment over those hints.

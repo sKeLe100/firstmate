@@ -663,7 +663,7 @@ done
 if [ -n "\${FM_FAKE_CAPTURE_RUNNER:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
   cat > "\${args[\${#args[@]}-1]}/bin/fm-test-run.sh" <<'RUNNER'
 #!/usr/bin/env bash
-echo "auto_jobs=\${FM_TEST_RUN_AUTO_JOBS_MAX:-unset} argv=\$*"
+echo "auto_jobs=\${FM_TEST_RUN_AUTO_JOBS_MAX:-unset} remote=\${FM_PC02_OFFLOAD_REMOTE:-unset} argv=\$*"
 RUNNER
 fi
 if [ -n "\${FM_FAKE_CAPTURE_COMPUTE:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
@@ -901,6 +901,7 @@ test_remote_jobs_and_script_bound() {
         ;;
     esac
     assert_contains "$out" '--per-script-timeout-secs 3000' "default script cap changed: $out"
+    assert_contains "$out" 'remote=1' "remote suite did not carry the offload admission marker: $out"
   done
   # One slot may use the whole machine: the cap is the remote thread count.
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \

@@ -291,6 +291,14 @@
 #     A run already terminal
 #     (an outcome is set) or not parked at a gate is left untouched. Idempotent:
 #     an already-aborted run reads back terminal and is skipped on retry.
+#   Browser reap - reap task-owned browsers. A browser a worker launched can
+#     outlive its task and keep consuming the host for hours (observed
+#     2026-11-02: two headless browsers, one running 3 hours), and removing the
+#     task records first would lose the retry context needed to finish the job.
+#     reap_task_browsers finds only processes attributable to this task through
+#     the inherited FM_BROWSER_TASK marker or the task's state/<id>.browsers
+#     PID/start registry, sends TERM then KILL across three passes, and refuses
+#     teardown with the task records retained when any owned browser survives.
 #   Fix 2 - reap leaked descendant processes. A backgrounded/disowned process
 #     started under the worktree (or its per-task tasktmp) does not receive the
 #     SIGHUP/SIGTERM that closing the backend pane sends to its own foreground
@@ -2242,6 +2250,77 @@ task_process_identity_matches() {  # <pid> <identity>
   [ "$current" = "$2" ]
 }
 
+# Browser ownership is opt-in at launch, never inferred from a process name.
+# Linux descendants inherit FM_BROWSER_TASK=<absolute-state-dir>/<task-id>.
+# A portable fallback is state/<id>.browsers: PID<TAB>ps -o lstart= timestamp,
+# one browser launcher per line (TZ=UTC, LC_ALL=C). A stale PID with a changed start is ignored.
+# Register only browsers created for this task, never a shared browser bridge.
+task_browser_owned() {  # <pid>
+  local pid=$1 marker="FM_BROWSER_TASK=$STATE/$ID" recorded stamp current
+  if [ -r "/proc/$pid/environ" ] &&
+    tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -Fxq -- "$marker"; then
+    return 0
+  fi
+  [ -f "$STATE/$ID.browsers" ] && [ ! -L "$STATE/$ID.browsers" ] || return 1
+  current=$(TZ=UTC LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null) || return 1
+  current=$(fm_nm_trim "$current")
+  [ -n "$current" ] || return 1
+  while IFS=$'\t' read -r recorded stamp; do
+    [ "$recorded" = "$pid" ] && [ "$stamp" = "$current" ] && return 0
+  done <"$STATE/$ID.browsers"
+  return 1
+}
+
+reap_task_browsers() {
+  local pid identity pass i state
+  local -a browser_pids browser_identities
+  for pass in 1 2 3; do
+    browser_pids=(); browser_identities=()
+    # The registry also covers systems without procfs. Exact markers discover
+    # reparented Linux Chrome children even when their cwd is outside the task.
+    while IFS= read -r pid; do
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      [ "$pid" -gt 1 ] && [ "$pid" != "$$" ] || continue
+      state=$(ps -p "$pid" -o stat= 2>/dev/null) || continue
+      case "$state" in *Z*) continue ;; esac
+      task_browser_owned "$pid" || continue
+      identity=$(task_process_identity "$pid") || continue
+      browser_pids+=("$pid"); browser_identities+=("$identity")
+    done < <(
+      # shellcheck disable=SC2016 # Perl, not the shell, expands $ARGV.
+      perl -e '
+        my $marker = "FM_BROWSER_TASK=$ARGV[0]";
+        for my $entry (glob "/proc/[0-9]*/environ") {
+          open(my $f, "<", $entry) or next;
+          local $/; my $env = <$f> // "";
+          if (grep { $_ eq $marker } split /\0/, $env) {
+            $entry =~ m{/proc/([0-9]+)/environ}; print "$1\n";
+          }
+        }' "$STATE/$ID"
+      if [ -f "$STATE/$ID.browsers" ] && [ ! -L "$STATE/$ID.browsers" ]; then
+        cut -f1 "$STATE/$ID.browsers"
+      fi
+    )
+    [ "${#browser_pids[@]}" -gt 0 ] || { rm -f "$STATE/$ID.browsers"; return 0; }
+    echo "teardown: reaping task browsers for $ID: ${browser_pids[*]}" >&2
+    for i in "${!browser_pids[@]}"; do
+      pid=${browser_pids[$i]}
+      if task_process_identity_matches "$pid" "${browser_identities[$i]}" && task_browser_owned "$pid"; then
+        kill -TERM "$pid" 2>/dev/null || true
+      fi
+    done
+    sleep 1
+    for i in "${!browser_pids[@]}"; do
+      pid=${browser_pids[$i]}
+      if task_process_identity_matches "$pid" "${browser_identities[$i]}" && task_browser_owned "$pid"; then
+        kill -KILL "$pid" 2>/dev/null || true
+      fi
+    done
+  done
+  echo "REFUSED: task browsers for $ID did not converge; preserving task records for retry" >&2
+  return 1
+}
+
 task_pid_list_contains() {  # <pid-list> <pid>
   printf '%s\n' "$1" | grep -Fxq "$2"
 }
@@ -3666,17 +3745,25 @@ else
 fi
 
 # Every landed/discard-work refusal above has now passed (or --force skipped
-# them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
-# --force, and before ANY destructive step below - a still-parked run or a
-# leaked process can own live work in this exact worktree. Not for
+# them). Fix 1, the browser reap, and Fix 2 (see script header) run here,
+# unconditionally on --force, and before ANY destructive step below - a
+# still-parked run, a live task browser, or a leaked process can own live work
+# in this exact worktree. Not for
 # kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
 # dedicated process-event and firstmate-home removal machinery further below,
 # not by task-worktree cleanup.
-if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
-  conclude_task_no_mistakes_run "$WT"
-  reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
-elif [ "$KIND" != secondmate ]; then
-  reap_task_worktree_processes tasktmp "$TASK_TMP"
+if [ "$KIND" != secondmate ]; then
+  if teardown_owns_worktree; then
+    conclude_task_no_mistakes_run "$WT"
+  fi
+  if ! reap_task_browsers; then
+    exit 1
+  fi
+  if teardown_owns_worktree; then
+    reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  else
+    reap_task_worktree_processes tasktmp "$TASK_TMP"
+  fi
 fi
 if [ "$KIND" = ship ] && teardown_owns_worktree && [ -e "$CONFIG/pipeline-spend" ]; then
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
