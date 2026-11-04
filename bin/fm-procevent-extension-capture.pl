@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use Cwd qw(getcwd);
-use Fcntl qw(O_CREAT O_EXCL O_NOFOLLOW O_RDONLY O_RDWR O_WRONLY);
+use Fcntl qw(F_DUPFD O_CREAT O_EXCL O_NOFOLLOW O_RDONLY O_RDWR O_WRONLY);
 use JSON::PP qw(encode_json);
 use POSIX qw(dup2);
 
@@ -48,6 +48,12 @@ if (@ARGV && $ARGV[0] eq 'handoff') {
   }
   my @claim_lines = split(/\n/, $claim_bytes, -1);
   die "invalid claim\n" unless pop(@claim_lines) eq '' && (@claim_lines == 7 || @claim_lines == 12);
+  # Keep the validated claim on its own descriptor above every descriptor this
+  # handoff later installs. Without this, an inherited descriptor layout can put
+  # the claim itself on 7, so the reservation/capability dup2 calls below alias
+  # it and the host receives a directory where it expects the claim.
+  my $claim_fd = fcntl($claim, F_DUPFD, 10);
+  die "cannot retain claim descriptor\n" unless defined $claim_fd && $claim_fd >= 10;
   die "claim changed\n" unless $claim_lines[0] eq $claim_home && $claim_lines[1] eq $claim_pid
     && $claim_lines[2] eq $claim_token && $claim_lines[3] eq $claim_identity && $claim_lines[6] eq 'active';
   if (@claim_lines == 12) {
@@ -79,7 +85,7 @@ if (@ARGV && $ARGV[0] eq 'handoff') {
   }
   seek($capability, 0, 0) or die "cannot rewind capability\n";
   unlink($capability_name) or die "cannot unlink capability\n";
-  dup2(fileno($claim), 6) >= 0 or die "cannot install claim descriptor\n";
+  dup2($claim_fd, 6) >= 0 or die "cannot install claim descriptor\n";
   dup2(fileno($capability), 7) >= 0 or die "cannot install capability descriptor\n";
   dup2(fileno($inbox), 8) >= 0 or die "cannot install inbox descriptor\n";
   dup2(fileno($result), 9) >= 0 or die "cannot install result descriptor\n";
