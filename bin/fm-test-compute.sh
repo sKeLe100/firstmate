@@ -74,8 +74,9 @@
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
 # Exit: 0 proven success; 1 failed hosted evidence or a failed hosted receipt;
-# 2 usage error; 77 hosted outcome indeterminate (an infrastructure fault, or
-# a dispatched run that may still be executing, never a test or lint verdict).
+# 2 usage error; 77 hosted outcome indeterminate (an infrastructure fault, an
+# incomplete receipt set, or a dispatched run that may still be executing,
+# never a test or lint verdict).
 # Unavailable hosted tiers fall through to PC02/PC01 admission:
 # Test and remote lint return the executed command's status, while PC01's
 # last-resort lint returns bin/fm-lint.sh's changed-file status.
