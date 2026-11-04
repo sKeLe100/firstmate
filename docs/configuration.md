@@ -773,7 +773,8 @@ The Pi typecheck remains a separate blocking command after routed lint succeeds.
 Required PR CI and its existing check contexts remain unchanged.
 
 A failing test or lint receipt fails the caller and never triggers a second run on another tier.
-GitHub unknown results, lost accepted dispatches, missing receipts, and execution-time monitoring failures fail closed.
+GitHub unknown results, missing receipts, and execution-time monitoring failures fail closed with exit 77, which a gate can tell apart from a test or lint failure (exit 1).
+A dispatch whose run never appears within the queue bound, including after an ambiguous dispatch request, was not started and falls back to the next tier.
 GitLab completion with missing receipts or a confirmed GitLab execution timeout falls through to PC02/PC01 admission instead, so its single serial job cannot turn a large plan into a blocked gate; a GitLab receipt showing a failed test still fails.
 A queued run can fall back only after its cancellation is confirmed; an interrupt requests cancellation of only the invocation's own run.
 This distinction prevents a transport error from silently accepting a different result or launching duplicate expensive suites.

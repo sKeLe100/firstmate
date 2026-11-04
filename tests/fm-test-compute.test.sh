@@ -90,12 +90,14 @@ if path.endswith('/cancel'):
     (w/'cancelled').touch(); sys.exit(0)
 if path.endswith('/dispatches'):
     if scenario=='dispatch-ambiguous': sys.exit(1)
+    if scenario=='dispatch-ambiguous-found':
+        (w/'request').write_text(pathlib.Path(a[a.index('--input')+1]).read_text()); sys.exit(1)
     if scenario=='quota': print('error: HTTP 403 billing unavailable'); sys.exit(1)
     (w/'request').write_text(pathlib.Path(a[a.index('--input')+1]).read_text()); sys.exit(0)
 if '/workflows/test-compute.yml/runs?' in path:
     if scenario=='discovery-failure': sys.exit(1)
     if scenario=='invalid-run-id': print('not-an-id\tqueued\t'); sys.exit(0)
-    if scenario=='undiscovered': sys.exit(0)
+    if scenario in ('undiscovered','dispatch-ambiguous'): sys.exit(0)
     print('123\tqueued\t'); sys.exit(0)
 if path.endswith('/actions/runs/123'):
     if scenario=='observation-failure': sys.exit(1)
@@ -297,7 +299,7 @@ assert all(not scripts for scripts in payload['partitions'].values())
 PY
 pass 'Lint mode runs every canonical lint partition on hosted compute'
 
-for scenario in failure missing wrong-head wrong-scripts dispatch-ambiguous; do
+for scenario in failure wrong-head wrong-scripts; do
   run_route "$scenario"
   expect_code 1 "$result" "$scenario must fail closed: $output"
   [[ "$output" != *'local:'* ]] || fail "$scenario fell back locally"
@@ -305,19 +307,32 @@ for scenario in failure missing wrong-head wrong-scripts dispatch-ambiguous; do
   pass "$scenario cannot become a green fallback"
 done
 run_route missing
-expect_code 1 "$result" "$output"
+expect_code 77 "$result" "$output"
+[[ "$output" != *'local:'* ]] || fail 'missing receipts fell back locally'
 assert_contains "$output" 'missing hosted partition receipts:' 'missing GitHub receipts did not name the missing partitions'
-run_route dispatch-ambiguous
-expect_code 1 "$result" "$output"
-assert_contains "$output" 'GitHub dispatch outcome is ambiguous; failing closed' 'ambiguous GitHub dispatch did not name its fail-closed reason'
-for scenario in download-failure discovery-failure observation-failure invalid-run-id undiscovered cancel-failure; do
+for scenario in download-failure discovery-failure observation-failure invalid-run-id cancel-failure; do
   run_route "$scenario"
-  expect_code 1 "$result" "$scenario must fail closed: $output"
+  expect_code 77 "$result" "$scenario must be indeterminate, not a test verdict: $output"
   [[ "$output" != *'local:'* ]] || fail "$scenario fell back locally"
   assert_contains "$output" 'failing closed' "$scenario did not name its fail-closed reason"
   [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail "$scenario fell through to GitLab"
   pass "$scenario names its fail-closed reason"
 done
+for scenario in dispatch-ambiguous undiscovered; do
+  for kind in test lint; do
+    run_route "$scenario" "$kind"
+    expect_code 0 "$result" "$scenario $kind: a run that never appeared must fall back: $output"
+    assert_contains "$output" 'treating as not started' "$scenario $kind did not name why it fell back"
+    assert_contains "$output" 'local:' "$scenario $kind did not reach local admission"
+    [ ! -e "$TMP_ROOT/data/gitlab-payload" ] || fail "$scenario $kind: GitLab tier was skipped incorrectly"
+  done
+done
+pass 'an ambiguous or undiscovered dispatch with no run after the bound falls back'
+run_route dispatch-ambiguous-found
+expect_code 0 "$result" "$output"
+[[ "$output" != *'local:'* ]] || fail 'an ambiguous dispatch whose run appeared fell back locally'
+assert_contains "$output" 'result: success' 'an ambiguous dispatch whose run appeared must be monitored'
+pass 'an ambiguous dispatch whose run appears is monitored, not duplicated'
 run_route quota
 expect_code 0 "$result" "$output"
 assert_contains "$output" 'local:' 'definitive quota rejection should fall back'
@@ -335,12 +350,16 @@ expect_code 0 "$result" "$output"
 [ -e "$TMP_ROOT/data/cancelled" ] || fail 'queue fallback did not cancel owned GitHub run'
 assert_contains "$output" 'local:' 'cancelled queue should fall back'
 pass 'queue timeout requires confirmed cancellation before fallback'
+run_route queued lint
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'local: <--lint-partitions>' 'a confirmed-cancelled hosted lint queue timeout must fall back, never fail lint'
+pass 'a hosted lint queue timeout falls back instead of failing lint'
 rm -f "$TMP_ROOT/data/"*
 set +e
 output=$(FM_TEST_COMPUTE_RUN_SECS=1 SCENARIO=github-timeout "$router" test --changed --exclude-family real-herdr-gated 2>&1)
 result=$?
 set -e
-expect_code 1 "$result" "$output"
+expect_code 77 "$result" "$output"
 assert_contains "$output" 'GitHub run 123 exceeded 1s; failing closed' 'GitHub execution timeout did not name its fail-closed reason'
 [[ "$output" != *'local:'* ]] || fail 'GitHub execution timeout fell back locally'
 pass 'a GitHub execution timeout fails closed with a diagnostic'
@@ -349,7 +368,7 @@ set +e
 output=$(FM_TEST_COMPUTE_RUN_SECS=1 SCENARIO=github-timeout-cancel-failure "$router" test --changed --exclude-family real-herdr-gated 2>&1)
 result=$?
 set -e
-expect_code 1 "$result" "$output"
+expect_code 77 "$result" "$output"
 assert_contains "$output" 'GitHub run 123 exceeded 1s and cancellation was not confirmed; failing closed' 'unconfirmed GitHub cancellation did not name its fail-closed reason'
 [[ "$output" != *'local:'* ]] || fail 'unconfirmed GitHub cancellation fell back locally'
 pass 'an unconfirmed GitHub cancellation after timeout fails closed with a diagnostic'
@@ -383,7 +402,7 @@ assert_contains "$output" 'Hosted partition failed: portable-parallel-1' 'GitLab
 pass 'a GitLab test failure with complete receipts still fails'
 for scenario in github-race-failed github-race-success; do
   run_route "$scenario"
-  expect_code 1 "$result" "$scenario must fail closed after a terminal completion race: $output"
+  expect_code 77 "$result" "$scenario must fail closed after a terminal completion race: $output"
   [[ "$output" != *'local:'* ]] || fail "$scenario fell back after the GitHub run completed"
   [[ "$(cat "$TMP_ROOT/data/calls")" != *'gitlab '* ]] || fail "$scenario reached GitLab after GitHub completed"
   pass "$scenario cannot treat GitHub completion as cancellation"
