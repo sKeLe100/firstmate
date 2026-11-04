@@ -1167,7 +1167,7 @@ tests/fm-trace-context-spawn.test.sh 57488
 tests/fm-turnend-foreign-owner-arm-fix.test.sh 5575
 tests/fm-turnend-guard.test.sh 34727
 tests/fm-update.test.sh 11894
-tests/fm-upstream-batch.test.sh 2000
+tests/fm-upstream-batch.test.sh 3500
 tests/fm-upstream-behind-check.test.sh 27230
 tests/fm-upstream-sync-item.test.sh 13801
 tests/fm-vendor-auth-probe.test.sh 43278
