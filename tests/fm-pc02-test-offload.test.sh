@@ -1970,8 +1970,8 @@ test_remote_run_keeps_its_tmpdir_in_the_mirror_and_cleans_read_only_content() {
 #!/usr/bin/env bash
 printf '%s\n' "\$TMPDIR" > "$dir/tmpdir-used"
 mkdir -p "\$TMPDIR/ro"
-chmod 500 "\$TMPDIR/ro"
 printf 'x\n' > "\$TMPDIR/ro/file"
+chmod 500 "\$TMPDIR/ro"
 printf 'ok - recorded TMPDIR\n'
 SH
   chmod +x "$fixture"
@@ -2002,8 +2002,8 @@ test_remote_timeout_reaps_mirror_and_run_tmp_root() {
 #!/usr/bin/env bash
 printf '%s\n' "\$TMPDIR" > "$dir/tmpdir-used"
 mkdir -p "\$TMPDIR/ro"
-chmod 500 "\$TMPDIR/ro"
 printf 'x\n' > "\$TMPDIR/ro/file"
+chmod 500 "\$TMPDIR/ro"
 sleep 60
 SH
   chmod +x "$fixture"
