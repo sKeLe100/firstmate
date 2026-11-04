@@ -63,6 +63,8 @@ The 2026-11-03 hint-drift refresh from run 41726179368 raised those three split-
 The 2026-11-03 hint-drift refresh from run 41653979363 raised `tests/fm-teardown.test.sh` from 202132 ms to its measured 317102 ms (repeated drift 1.57x).
 The 2026-11-04 hint-drift refresh from run 41788821296 raised `tests/fm-pr-state.test.sh` from 525 ms to its measured 862 ms (repeated drift 1.64x), and the same run's single-run warnings raised `tests/fm-operational-input.test.sh` to 3698 ms, `tests/fm-spawn-pc02-lane-guard.test.sh` to 17964 ms, `tests/fm-test-fixtures.test.sh` to 10194 ms, and `tests/fm-watch-retry-band.test.sh` to 13391 ms.
 The 2026-11-04 hint-drift refresh from run 41821494108 raised `tests/fm-config-inherit-lane-caps.test.sh` from 417 ms to its measured 708 ms (repeated drift 1.70x) and `tests/fm-live-gate.test.sh` from 7452 ms to its measured 12207 ms (repeated drift 1.64x) after two consecutive runs, and `tests/fm-forge-detect.test.sh` from 193 ms to its measured 540 ms (single-run drift warning 2.80x).
+The 2026-11-04 hint-drift refresh from run 41885594800 raised `tests/fm-heavy-admission.test.sh` from 2684 ms to its measured 10318 ms (repeated drift 3.84x).
+The 2026-11-04 refresh from run 41889370230 raised `tests/fm-test-fixture-cleanup.test.sh` from 1446 ms to its measured 2182 ms (repeated drift 1.51x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints
@@ -181,8 +183,8 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 ## Lint partitions and end-to-end latency
 
-`bin/fm-lint.sh` owns the canonical CI partitions (CI runs four), each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
-Each partition also audits its selected roots once without source following, and the four required partitions cover the canonical roots exactly once for that audit; audit failures fail the required lint job.
+`bin/fm-lint.sh` owns the canonical CI partitions (CI runs every one), each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
+Each partition also audits its selected roots once without source following, and the canonical partitions together cover the canonical roots exactly once for that audit; audit failures fail the required lint job.
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, source-aware analysis, the no-source audit, and fallback reporting with small real-ShellCheck fixtures.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
@@ -192,7 +194,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current watch-triage floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses eighteen long-lived Linux jobs (eleven serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses long-lived Linux jobs (eleven serial, two parallel, Herdr, and one per canonical lint partition), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 

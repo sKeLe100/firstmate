@@ -136,11 +136,16 @@
 #   fm-lint.sh --partition <KofN>      lint canonical CI partition K of N (N <= 8)
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
+#   fm-lint.sh --partition-count       print the canonical CI lint partition count
 #   fm-lint.sh --list-files            print the file set that would be linted
 #   fm-lint.sh --help                  print this usage
 set -u
 
 REQUIRED_SHELLCHECK=0.11.0
+# Single owner of the canonical CI lint partition count. The lint matrix in
+# .github/workflows/ci.yml must list exactly this many partitions, which
+# tests/fm-ci-workflow.test.sh enforces; routed lint reads it via --partition-count.
+CANONICAL_PARTITION_COUNT=4
 # Cross-file codes that need --external-sources. No-source checks (local
 # changed-file mode and memory fallback) cannot judge them.
 LOCAL_NOX_EXCLUDE=SC1091,SC2034,SC2153,SC2329
@@ -511,6 +516,11 @@ fi
 
 if [ "${1:-}" = "--required-version" ]; then
   printf '%s\n' "$REQUIRED_SHELLCHECK"
+  exit 0
+fi
+
+if [ "${1:-}" = "--partition-count" ]; then
+  printf '%s\n' "$CANONICAL_PARTITION_COUNT"
   exit 0
 fi
 

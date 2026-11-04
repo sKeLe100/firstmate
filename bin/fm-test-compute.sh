@@ -17,7 +17,7 @@
 # no tests are omitted. The hosted subset is partitioned by the lanes reported
 # by fm-test-run.sh --list-lanes, only non-empty partitions are dispatched, and
 # an exact partition check gates dispatch. `test` dispatches portable test
-# partitions only; `lint` runs the four canonical lint partitions alone on
+# partitions only; `lint` runs every canonical lint partition alone on
 # hosted compute or PC02, while PC01's last-resort lint is the changed-file
 # subset.
 #
@@ -74,15 +74,17 @@
 #   FM_TEST_COMPUTE_API_SECS    per API request bound (default 30)
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
-# Exit: 0 proven success; 1 failed hosted evidence or a failed hosted receipt;
-# 2 usage error; 77 indeterminate hosted outcome that is never a test or lint
-# verdict (GitHub discovery, monitoring, receipt, and undiscovered-dispatch
-# faults; GitLab bootstrap, pipeline-response, monitoring, and artifact
-# faults; a dispatched run that may still be executing; or a completed run
-# whose conclusion is not success despite verified receipts).
-# Unavailable hosted tiers fall through to PC02/PC01 admission:
-# Test and remote lint return the executed command's status, while PC01's
-# last-resort lint returns bin/fm-lint.sh's changed-file status.
+# Exit: 0 proven success; 1 failed hosted evidence, a failed hosted receipt, or
+# an unreadable canonical lint partition count; 2 usage error; 77 indeterminate
+# hosted outcome that is never a test or lint verdict (GitHub discovery,
+# monitoring, receipt, and undiscovered-dispatch faults; GitLab bootstrap,
+# pipeline-response, monitoring, and artifact faults; a dispatched run that may
+# still be executing; or a completed run whose conclusion is not success despite
+# verified receipts). Unavailable hosted tiers fall through to PC02/PC01
+# admission: Test and remote lint return the executed command's status, while
+# PC01's last-resort lint returns bin/fm-lint.sh's changed-file status. An
+# unreadable count is the exception: local-lint, lint dispatch, and lint workers
+# fail closed instead of running only some of the canonical partitions.
 set -u
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SELF_DIR/.." && pwd)
@@ -96,11 +98,25 @@ case "${1:-}" in
   *) error "unknown command: $1" ;;
 esac
 cd "$ROOT" || exit 1
+# bin/fm-lint.sh owns the canonical lint partition count; read it, never restate it.
+# An empty, non-numeric, or zero count is a failure, never a silent zero-partition run;
+# bin/fm-lint.sh owns the partition ceiling.
+lint_partition_count() {
+  local count
+  count=$("$SELF_DIR/fm-lint.sh" --partition-count) || return 1
+  case "$count" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$count" -gt 0 ] || return 1
+  printf '%s\n' "$count"
+}
 
 if [ "$mode" = local-lint ]; then
   [ "$#" = 0 ] || error 'local-lint accepts no arguments'
+  count=$(lint_partition_count) || { echo 'fm-test-compute: canonical lint partition count unavailable' >&2; exit 1; }
   rc=0
-  for n in 1 2 3 4; do "$SELF_DIR/fm-lint.sh" --partition "${n}of4" || rc=1; done
+  n=1
+  while [ "$n" -le "$count" ]; do "$SELF_DIR/fm-lint.sh" --partition "${n}of${count}" || rc=1; n=$((n+1)); done
   exit "$rc"
 fi
 # Payload unpacking uses JSON files, never shell evaluation or argv-sized JSON.
@@ -126,15 +142,19 @@ if [ "$mode" = worker ]; then
   partition=$1; output=$2; payload=$3
   mkdir -p "$output" || exit 1
   export FM_TEST_COMPUTE_DISABLE=1
-  python3 - "$partition" "$output" "$payload" <<'PY'
+  lint_count=0
+  case "$partition" in
+    lint-*) lint_count=$(lint_partition_count) || { echo 'fm-test-compute: canonical lint partition count unavailable' >&2; exit 1; } ;;
+  esac
+  python3 - "$partition" "$output" "$payload" "$lint_count" <<'PY'
 import json, os, pathlib, subprocess, sys
-part, out, payload=sys.argv[1:]
+part, out, payload, lint_count=sys.argv[1:]
 p=json.load(open(payload)); out=pathlib.Path(out)
 assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==p['sha']
 selected=[]
 if part.startswith('lint-'):
-    n=int(part[5:]); assert 1<=n<=4
-    cmd=['bin/fm-lint.sh','--partition',f'{n}of4','--telemetry',str(out/'lint.tsv')]
+    n=int(part[5:]); count=int(lint_count); assert 1<=n<=count
+    cmd=['bin/fm-lint.sh','--partition',f'{n}of{count}','--telemetry',str(out/'lint.tsv')]
 else:
     selected=p['partitions'][part]
     cmd=['bin/fm-test-run.sh',*selected,'--jobs','1','--per-script-timeout-secs','1500','--json',str(out/'timing.json')]
@@ -265,9 +285,13 @@ PY
     "$SELF_DIR/fm-test-run.sh" --list --lane "$lane" > "$work/lanes/$lane" || local_run "lane $lane cannot be listed"
   done < "$work/dispatch-lanes"
 fi
-if ! python3 - "$work" "$sha" "$base" "$repo" "$mode" <<'PY'
+lint_count=
+if [ "$mode" = lint ]; then
+  lint_count=$(lint_partition_count) || { echo 'fm-test-compute: canonical lint partition count unavailable; failing closed' >&2; exit 1; }
+fi
+if ! python3 - "$work" "$sha" "$base" "$repo" "$mode" "$lint_count" <<'PY'
 import base64, collections, json, pathlib, sys
-w=pathlib.Path(sys.argv[1]); sha,base,repo,mode=sys.argv[2:]
+w=pathlib.Path(sys.argv[1]); sha,base,repo,mode,lint_count=sys.argv[2:]
 selected=(w/'selected').read_text().splitlines()
 if mode=='test':
     parts={}
@@ -276,7 +300,7 @@ if mode=='test':
         if scripts: parts[f.name]=scripts
     assert collections.Counter(s for v in parts.values() for s in v)==collections.Counter(selected), 'selected tests do not exactly partition into portable lanes'
 else:
-    parts={f'lint-{n}':[] for n in range(1,5)}
+    parts={f'lint-{n}':[] for n in range(1,int(lint_count)+1)}
 p=dict(version=1,sha=sha,base=base,repo=repo,kind=mode,partitions=parts,bundle=base64.b64encode((w/'source.bundle').read_bytes()).decode())
 (w/'payload.json').write_text(json.dumps(p,separators=(',',':')))
 PY

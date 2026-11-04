@@ -1006,7 +1006,7 @@ tests/fm-harness-adapter-instructions-live-e2e.test.sh 72
 tests/fm-harness-adapter-references.test.sh 64
 tests/fm-harness-liveness-drift-live-e2e.test.sh 1309
 tests/fm-harness-precedence.test.sh 4083
-tests/fm-heavy-admission.test.sh 2684
+tests/fm-heavy-admission.test.sh 10318
 tests/fm-herdr-attached-viewer-live-e2e.test.sh 19000
 tests/fm-herdr-groups.test.sh 5418
 tests/fm-herdr-pi-stale-registration-live-e2e.test.sh 55
@@ -1151,7 +1151,7 @@ tests/fm-teardown-pr-check.sh 4800
 tests/fm-teardown-process-reap.sh 11300
 tests/fm-teardown-secondmate.sh 8200
 tests/fm-teardown.test.sh 317102
-tests/fm-test-fixture-cleanup.test.sh 1446
+tests/fm-test-fixture-cleanup.test.sh 2182
 tests/fm-test-fixtures.test.sh 10194
 tests/fm-test-isolation-proof.test.sh 2866
 tests/fm-test-sandbox-cache-race.test.sh 6604
