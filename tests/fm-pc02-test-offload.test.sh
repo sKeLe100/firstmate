@@ -185,7 +185,7 @@ test_immediate_fallbacks_do_not_wait_for_the_bound() {
   for probe in 'personal-use:on' 'missing:jq'; do
     n=$((n + 1))
     fakebin=$(fm_fakebin "$TMP_ROOT/immediate-no-wait-$n")
-    printf '%s\nresource:cpu=99 gpu=0\n' "$probe" > "$fakebin/probe.txt"
+    printf '%s\nresource:cpu=99 gpu=0\nthreads:8\n' "$probe" > "$fakebin/probe.txt"
     cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
@@ -198,6 +198,12 @@ SH
     status=$?
     expect_code 0 "$status" "a '$probe' probe must fall back at once, not wait out the bound (status $status): $out"
     assert_not_contains "$out" "waiting up to" "a '$probe' fallback waited instead of routing local at once: $out"
+    case "$probe" in
+      personal-use:on) assert_contains "$out" "PC02 personal-use switch is on" \
+        "the personal-use switch was not the immediate fallback reason: $out" ;;
+      missing:jq) assert_contains "$out" "PC02 missing required tool(s): jq" \
+        "the missing tool was not the immediate fallback reason: $out" ;;
+    esac
   done
   pass "personal use and a missing tool route local at once even while a busy host would otherwise wait"
 }
@@ -212,6 +218,26 @@ test_gate_recheck_interval_is_validated() {
       "the gate-recheck refusal did not name the rejected value: $out"
   done
   pass "a malformed FM_PC02_OFFLOAD_GATE_RECHECK_SECS exits 2 and runs no tests"
+}
+
+test_slot_wait_knobs_are_validated() {
+  local knob value out status
+  for knob in FM_PC02_OFFLOAD_SLOT_WAIT_SECS FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS; do
+    for value in abc -1; do
+      out=$(env "$knob=$value" "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+      status=$?
+      expect_code 2 "$status" "$knob=$value must be a configuration error: $out"
+      assert_contains "$out" "$knob must be a" "the refusal did not name $knob: $out"
+      assert_contains "$out" "got '$value'" "the refusal omitted the rejected value: $out"
+      assert_not_contains "$out" "$LOCAL_PROOF_OUT" "$knob=$value still ran the suite: $out"
+    done
+  done
+  out=$(FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=0 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  expect_code 2 "$status" "FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=0 must be a configuration error: $out"
+  assert_contains "$out" "FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS must be a positive integer, got '0'" \
+    "the interval refusal did not name the rejected zero: $out"
+  pass "a malformed slot-wait or slot-wait-interval setting exits 2 and runs no tests"
 }
 
 test_missing_supervising_home_falls_back_to_local() {
@@ -1354,7 +1380,7 @@ SH
     "$SCRIPT" --max-wall-ms 600000 "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   expect_code 0 "$status" "a caller wall budget must still run the real suite locally: $out"
-  assert_contains "$out" "and still so after the 0s wait bound" \
+  assert_contains "$out" "the caller's --max-wall-ms budget leaves no time to wait for it to clear" \
     "a caller wall budget did not clamp the wait to zero: $out"
   assert_not_contains "$out" "waiting up to" "a caller wall budget still waited on PC02: $out"
   [ "$(printf '%s\n' "$out" | grep -v '^fm-pc02-test-offload: ')" = "$LOCAL_PROOF_OUT" ] \
@@ -1906,6 +1932,7 @@ test_gate_waits_then_runs_remotely_when_the_lane_frees
 test_gate_that_never_clears_falls_back_after_the_bound
 test_immediate_fallbacks_do_not_wait_for_the_bound
 test_gate_recheck_interval_is_validated
+test_slot_wait_knobs_are_validated
 test_missing_supervising_home_falls_back_to_local
 test_supervising_home_is_passed_to_lane_probe
 test_unreachable_host_falls_back_to_local

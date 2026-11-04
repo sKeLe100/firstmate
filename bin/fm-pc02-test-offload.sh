@@ -103,8 +103,9 @@
 #     the immediate local fallback, and a forwarded --max-wall-ms budget also
 #     zeroes the wait because that wall clock belongs to the run itself. An
 #     unclear claim routes local at once. PC02 being unreachable, personally
-#     in use, missing a tool, or out of environment parity still routes local
-#     before any wait begins. The files are never unlinked: a dead owner's
+#     in use, or missing a tool still routes local before any wait begins; an
+#     environment-parity mismatch routes local as soon as it is compared,
+#     after any gate wait. The files are never unlinked: a dead owner's
 #     kernel lock is released automatically, so a leftover file or process
 #     name is harmless.
 #   - Supervising-home selection is owned by docs/configuration.md's "PC02
@@ -146,7 +147,10 @@
 #     is within the thread budget, but it is deliberately lighter per run than
 #     the measured two-run shape below instead of a measured six-run result;
 #     raise the whole-run cap only with fresh evidence, and lower the slots
-#     file if PC02's memory or the shared admission shows pressure.
+#     file if PC02's memory or the shared admission shows pressure. At that
+#     per-slot ceiling a full --all selection can exceed the 7200s run cap and
+#     fail with exit 124, so full-suite runs belong on the hosted tier
+#     (backlog item test-compute-full-suite-hosted).
 #   - Two-full-selection measurement (2026-11-03, 316 test scripts, no
 #     --jobs, so the auto scheduler with FM_PC02_OFFLOAD_JOBS=8, two slots
 #     started 5s apart on an otherwise idle 16-thread / 27 GB PC02): both runs
@@ -463,7 +467,8 @@ fi
 # waiting, so the run prints the reason, re-checks every
 # FM_PC02_OFFLOAD_GATE_RECHECK_SECS, and runs nothing on PC02 while a gate
 # holds. Only what waiting cannot clear falls back at once (unreachable, personal
-# use, a missing tool, unusable configuration, parity). The bound is
+# use, a missing tool, unusable configuration), plus a parity mismatch as soon
+# as that comparison runs. The bound is
 # FM_PC02_OFFLOAD_SLOT_WAIT_SECS in total across gate waits and the slot wait,
 # after which the run falls back to PC01 with a logged reason.
 gate_t0=
@@ -592,6 +597,9 @@ if [ -z "$gate" ]; then break; fi
 [ -n "$gate_t0" ] || gate_t0=$(date +%s)
 gate_left=$((SLOT_WAIT - ($(date +%s) - gate_t0)))
 if [ "$gate_left" -le 0 ]; then
+  if [ "$CALLER_WALL_BUDGET" -eq 1 ]; then
+    run_local "$gate and the caller's --max-wall-ms budget leaves no time to wait for it to clear"
+  fi
   run_local "$gate and still so after the ${SLOT_WAIT}s wait bound"
 fi
 if [ "$gate" != "$gate_notice" ]; then
@@ -829,10 +837,10 @@ case "$claim_reply" in
   "claimed "*) echo "fm-pc02-test-offload: claimed PC02 slot ${claim_reply#claimed }" >&2 ;;
   "busy "*)
     kill "$claim_pid" 2>/dev/null || true
-    if [ "$SLOT_WAIT" -le 0 ]; then
+    if [ "$claim_budget" -le 0 ]; then
       run_local "all ${claim_reply#busy } PC02 test slots are busy; running locally"
     else
-      run_local "all ${claim_reply#busy } PC02 test slots stayed busy through the ${SLOT_WAIT}s wait bound; running locally"
+      run_local "all ${claim_reply#busy } PC02 test slots stayed busy through the ${claim_budget}s wait bound; running locally"
     fi
     ;;
   *)
