@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Portable behavior tests for bin/fm-pc02-test-offload.sh's readiness/fallback
 # decision logic: bin/fm-test-run.sh's --pc02-if-idle flag execs into this
-# script, so every path here must fall back to a local run rather than hang
-# or silently change what got tested. The real successful-remote-execution
+# script, so every path here must fall back to a local run, or wait under its
+# bound before doing so, rather than hang or silently change what got tested. The real successful-remote-execution
 # path runs through fake SSH/rsync with real shell execution and kernel
 # locks here; tests/fm-pc02-test-offload-live-e2e.test.sh separately exercises
 # the actual PC02 host when explicitly enabled.
@@ -96,7 +96,7 @@ test_disable_env_var_skips_every_pc02_check() {
 }
 
 test_lane_occupied_falls_back_to_local() {
-  local home out status
+  local home fakebin out status
   home="$TMP_ROOT/lane-occupied"
   mkdir -p "$home/state"
   {
@@ -104,14 +104,114 @@ test_lane_occupied_falls_back_to_local() {
     printf 'backend=tmux\n'
     printf 'target=faketask:0\n'
   } > "$home/state/faketask.meta"
+  # A healthy PC02 probe, so the only reason to fall back is the live lane.
+  fakebin=$(fm_fakebin "$TMP_ROOT/lane-occupied-ssh")
+  cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
+printf 'resource:cpu=1 gpu=0\nthreads:8\n'
+exit 0
+SH
+  chmod +x "$fakebin/ssh"
 
-  out=$(PATH="/nonexistent-so-ssh-is-absent:$PATH" FM_STATE_OVERRIDE="$home/state" \
-    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$home/state" \
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   expect_code 0 "$status" "an occupied lane must still run the real suite locally: $out"
-  assert_contains "$out" "PC02 lane check reported 'occupied: faketask'" \
+  assert_contains "$out" "PC02 lane check reported 'occupied: faketask' and still so after the 0s wait bound" \
     "occupied-lane fallback did not name the holding task: $out"
-  pass "a live PC02 LLM lane falls back to a local run without touching ssh"
+  pass "a live PC02 LLM lane falls back to a local run once its wait bound is spent"
+}
+
+test_gate_waits_then_runs_remotely_when_the_lane_frees() {
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  local dir fakebin home out status freer
+  dir="$TMP_ROOT/gate-clears"
+  fakebin=$(fake_pc02 "$dir")
+  printf '#!/usr/bin/env bash\necho "ok - gate cleared"\n' > "$dir/green.test.sh"
+  chmod +x "$dir/green.test.sh"
+  home="$dir/lane-home"
+  mkdir -p "$home/state"
+  printf 'model=pc02-llamaswap/qwen3.8-27b-dispatch\nbackend=tmux\ntarget=faketask:0\n' > "$home/state/faketask.meta"
+  # The live lane finishes after about two seconds; the wait must then reach PC02.
+  ( sleep 2; rm -f "$home/state/faketask.meta" ) &
+  freer=$!
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$home/state" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=60 FM_PC02_OFFLOAD_GATE_RECHECK_SECS=1 \
+    "$SCRIPT" "$dir/green.test.sh" 2>&1)
+  status=$?
+  wait "$freer" 2>/dev/null || true
+  expect_code 0 "$status" "a run that waited for the lane to free must still run remotely: $out"
+  assert_contains "$out" "PC02 lane check reported 'occupied: faketask'; waiting up to" \
+    "the live-lane wait did not print its reason and bound: $out"
+  assert_contains "$out" "for it to clear" "the live-lane wait did not say it was waiting to clear: $out"
+  assert_contains "$out" "PC02 is free again" "the cleared gate was not announced: $out"
+  assert_contains "$out" "running tests remotely" "the run did not reach PC02 after the lane freed: $out"
+  assert_not_contains "$out" "running on PC01" "the waiting run fell back to PC01 although the lane freed: $out"
+  pass "a live PC02 LLM lane is waited on, then the run takes PC02 once the lane frees"
+}
+
+test_gate_that_never_clears_falls_back_after_the_bound() {
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  local dir fakebin home out status started ended
+  dir="$TMP_ROOT/gate-stuck"
+  fakebin=$(fake_pc02 "$dir")
+  home="$dir/lane-home"
+  mkdir -p "$home/state"
+  printf 'model=pc02-llamaswap/qwen3.8-27b-dispatch\nbackend=tmux\ntarget=faketask:0\n' > "$home/state/faketask.meta"
+  started=$(date +%s)
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$home/state" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=2 FM_PC02_OFFLOAD_GATE_RECHECK_SECS=1 \
+    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+  status=$?
+  ended=$(date +%s)
+  expect_code 0 "$status" "a lane that never clears must fall back to a local run after the bound: $out"
+  assert_contains "$out" "PC02 lane check reported 'occupied: faketask' and still so after the 2s wait bound; running on PC01" \
+    "the expired gate did not log its reason and fallback: $out"
+  [ "$(printf '%s\n' "$out" | grep -v '^fm-pc02-test-offload: ')" = "$LOCAL_PROOF_OUT" ] \
+    || fail "the expired gate did not run the real local suite: $out"
+  [ "$((ended - started))" -ge 2 ] || fail "the gate fell back before waiting out its bound: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "a lane that never cleared still reached PC02"
+  pass "a live PC02 LLM lane waits up to the bound, then the run falls back to PC01 with a log line"
+}
+
+test_immediate_fallbacks_do_not_wait_for_the_bound() {
+  local probe n fakebin out status
+  n=0
+  for probe in 'personal-use:on' 'missing:jq'; do
+    n=$((n + 1))
+    fakebin=$(fm_fakebin "$TMP_ROOT/immediate-no-wait-$n")
+    printf '%s\nresource:cpu=99 gpu=0\n' "$probe" > "$fakebin/probe.txt"
+    cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
+cat "$(dirname "$0")/probe.txt"
+exit 0
+SH
+    chmod +x "$fakebin/ssh"
+    out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+      FM_PC02_OFFLOAD_SLOT_WAIT_SECS=600 timeout 60 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    status=$?
+    expect_code 0 "$status" "a '$probe' probe must fall back at once, not wait out the bound (status $status): $out"
+    assert_not_contains "$out" "waiting up to" "a '$probe' fallback waited instead of routing local at once: $out"
+  done
+  pass "personal use and a missing tool route local at once even while a busy host would otherwise wait"
+}
+
+test_gate_recheck_interval_is_validated() {
+  local value out status
+  for value in 0 abc; do
+    out=$(FM_PC02_OFFLOAD_GATE_RECHECK_SECS="$value" "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    status=$?
+    expect_code 2 "$status" "FM_PC02_OFFLOAD_GATE_RECHECK_SECS=$value must be a configuration error: $out"
+    assert_contains "$out" "FM_PC02_OFFLOAD_GATE_RECHECK_SECS must be a positive integer, got '$value'" \
+      "the gate-recheck refusal did not name the rejected value: $out"
+  done
+  pass "a malformed FM_PC02_OFFLOAD_GATE_RECHECK_SECS exits 2 and runs no tests"
 }
 
 test_missing_supervising_home_falls_back_to_local() {
@@ -271,13 +371,13 @@ test_llama_swap_loaded_model_falls_back_to_local() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
-printf 'llama-swap-running:1\nresource:cpu=1 gpu=0\n'
+printf 'llama-swap-running:1\nresource:cpu=1 gpu=0\nthreads:8\n'
 exit 0
 SH
   chmod +x "$fakebin/ssh"
 
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   expect_code 0 "$status" "a llama-swap with a loaded model must still run the real suite locally: $out"
   assert_contains "$out" "PC02 llama-swap has 1 model(s) loaded" \
@@ -317,13 +417,13 @@ test_unclear_llama_swap_answer_falls_back_to_local() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
-printf 'llama-swap-running:\nresource:cpu=1 gpu=0\n'
+printf 'llama-swap-running:\nresource:cpu=1 gpu=0\nthreads:8\n'
 exit 0
 SH
   chmod +x "$fakebin/ssh"
 
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   expect_code 0 "$status" "an unclear llama-swap answer must still run the real suite locally: $out"
   assert_contains "$out" "PC02 llama-swap running-model check unclear" \
@@ -337,13 +437,13 @@ test_high_cpu_falls_back_to_local() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
-printf 'resource:cpu=97.5 gpu=0\n'
+printf 'resource:cpu=97.5 gpu=0\nthreads:8\n'
 exit 0
 SH
   chmod +x "$fakebin/ssh"
 
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   expect_code 0 "$status" "a busy CPU must still run the real suite locally: $out"
   assert_contains "$out" "PC02 host CPU busy (97.5% >= 50%)" "CPU-busy fallback did not explain why: $out"
@@ -356,13 +456,13 @@ test_high_gpu_falls_back_to_local() {
   cat > "$fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in *fm-pc02-test-slot-*.lock*) echo 'claimed 1 of 2'; read -r command; exit 0 ;; esac
-printf 'resource:cpu=1 gpu=42\n'
+printf 'resource:cpu=1 gpu=42\nthreads:8\n'
 exit 0
 SH
   chmod +x "$fakebin/ssh"
 
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
-    "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   expect_code 0 "$status" "a busy GPU must still run the real suite locally: $out"
   assert_contains "$out" "PC02 host GPU busy (42% >= 5%)" "GPU-busy fallback did not explain why: $out"
@@ -1152,7 +1252,7 @@ test_all_slots_busy_falls_back_locally() {
   expect_code 0 "$status" "a fully occupied PC02 must run locally after its bounded wait: $out"
   assert_contains "$out" "all 2 PC02 test slots are busy; waiting up to 2s for a free slot" \
     "the bounded slot wait was not announced: $out"
-  assert_contains "$out" "all 2 PC02 test slots stayed busy for 2s; running locally" \
+  assert_contains "$out" "all 2 PC02 test slots stayed busy through the 2s wait bound; running locally" \
     "the timeout fallback was not logged clearly: $out"
   [ "$(printf '%s\n' "$out" | grep -v '^fm-pc02-test-offload: ')" = "$LOCAL_PROOF_OUT" ] \
     || fail "the timeout fallback did not run the real local suite: $out"
@@ -1704,6 +1804,7 @@ test_help_prints_the_whole_documented_contract() {
   assert_contains "$out" "FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS" "--help omitted the run-timeout override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_SLOTS" "--help omitted the concurrent-slot override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_SLOT_WAIT_SECS" "--help omitted the slot-wait override: $out"
+  assert_contains "$out" "FM_PC02_OFFLOAD_GATE_RECHECK_SECS" "--help omitted the load-gate recheck interval: $out"
   assert_contains "$out" "pc02-offload-slots" "--help omitted the per-machine slot file: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS" "--help omitted the parity-probe timeout override: $out"
   assert_contains "$out" "integer from 1 to 16" "--help omitted the slot range and integer requirement: $out"
@@ -1727,6 +1828,10 @@ test_pc02_if_idle_flag_forwards_through_fm_test_run() {
 test_help_prints_the_whole_documented_contract
 test_disable_env_var_skips_every_pc02_check
 test_lane_occupied_falls_back_to_local
+test_gate_waits_then_runs_remotely_when_the_lane_frees
+test_gate_that_never_clears_falls_back_after_the_bound
+test_immediate_fallbacks_do_not_wait_for_the_bound
+test_gate_recheck_interval_is_validated
 test_missing_supervising_home_falls_back_to_local
 test_supervising_home_is_passed_to_lane_probe
 test_unreachable_host_falls_back_to_local
