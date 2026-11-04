@@ -447,9 +447,12 @@ fm_test_reap_watchers() {
 # loop, which it starts detached under its own session (setsid) so the arm's
 # process-group teardown cannot reach it. A fixture home therefore leaves a
 # loop parented to init unless the suite stops it, and a suite killed by its
-# runner's timeout used to skip that. Matching is by the loop's own FM_HOME
-# (read from /proc/<pid>/environ) being inside a fixture root this run
-# registered, so it never matches the real home's watchdog or a sibling run's.
+# runner's timeout used to skip that. Every match is by the loop's own FM_HOME
+# (read from /proc/<pid>/environ), never by script name alone, and only a home
+# inside a fixture root under this suite's temp dir or under a marked runner
+# run root qualifies. The real home's watchdog is therefore never matched, and
+# another run's loop is spared while its fixture root's .fm-test-fixture marker
+# still names a live owner process.
 
 # fm_test_fixture_watchdog_pids: print the pid of each live watchdog loop whose
 # FM_HOME is under a fixture root registered by this run.
@@ -489,7 +492,8 @@ fm_test_reap_fixture_watchdogs() {
 
 # fm_test_run_roots: print the marked runner run roots a stale sweep covers.
 # The runner exports its own root as FM_TEST_RUN_ROOT and writes the marker;
-# marked siblings under the same temp base are earlier runs a hard kill left.
+# marked siblings under the same temp base are either a hard kill's leftovers
+# or a concurrent run, whose live owner the stale sweep's marker check spares.
 fm_test_run_roots() {
   local root base sibling seen=$'\n'
   [ -n "${FM_TEST_RUN_ROOT:-}" ] || return 0
@@ -509,8 +513,9 @@ fm_test_run_roots() {
 }
 
 # fm_test_fixture_root_for_home <base> <home>: print the fixture root owning
-# <home> when it sits directly under <base> or under a runner worker's
-# <base>/<script>/tmp base.
+# <home> when it sits directly under <base> or under a runner stage's
+# <base>/<stage>/tmp base, where <stage> is a worker's or a serial script's
+# run-root subdirectory.
 fm_test_fixture_root_for_home() {
   local base=${1%/} home=$2 rest stage tail
   case "$home" in

@@ -3387,6 +3387,8 @@ fi
 
 RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX") || die "could not create run temp dir"
 RUN_TMP=$(cd -P -- "$RUN_TMP" && pwd -P) || die "could not resolve run temp dir"
+# Publishes this run root to a later run's stale sweep (tests/lib.sh
+# fm_test_run_roots), so the marker must survive until the run root is removed.
 : > "$RUN_TMP/.fm-test-run-root" || die "could not mark run temp dir"
 RECORDS="$RUN_TMP/records.tsv"
 FAMILIES_TSV="$RUN_TMP/families.tsv"

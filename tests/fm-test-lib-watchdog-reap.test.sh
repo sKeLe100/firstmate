@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Behavior test for tests/lib.sh's fixture primary-watchdog reaping: a
-# fm-primary-watchdog.sh loop whose FM_HOME is inside a registered fixture root
-# is found and stopped by fm_test_cleanup, while one outside every fixture root
-# (the real home's, a sibling run's) is never touched.
+# fm-primary-watchdog.sh loop whose FM_HOME is inside a covered fixture root is
+# found and stopped (by fm_test_cleanup in-run, or by a later run's stale sweep
+# once its owner is dead), while one outside every covered root (the real
+# home's, a live sibling run's) is never touched.
 set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
