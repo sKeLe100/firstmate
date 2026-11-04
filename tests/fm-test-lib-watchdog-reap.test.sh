@@ -4,6 +4,7 @@
 # is found and stopped by fm_test_cleanup, while one outside every fixture root
 # (the real home's, a sibling run's) is never touched.
 set -u
+# shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 root=$(fm_test_tmproot fm-wdreap)
