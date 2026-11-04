@@ -69,10 +69,13 @@
 #   FM_TEST_COMPUTE_API_SECS    per API request bound (default 30)
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
-# Exit: 0 proven success; 1 failed GitHub evidence or a failed hosted receipt;
-# 2 usage error. Unavailable hosted tiers fall through to PC02/PC01 admission:
-# Test and remote lint return the executed command's status, while PC01's
-# last-resort lint returns bin/fm-lint.sh's changed-file status.
+# Exit: 0 proven success; 1 failed GitHub evidence, a failed hosted receipt, or
+# an unreadable canonical lint partition count; 2 usage error. Unavailable
+# hosted tiers fall through to PC02/PC01 admission: Test and remote lint return
+# the executed command's status, while PC01's last-resort lint returns
+# bin/fm-lint.sh's changed-file status. An unreadable count is the exception:
+# local-lint, lint dispatch, and lint workers fail closed instead of running
+# only some of the canonical partitions.
 set -u
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SELF_DIR/.." && pwd)
