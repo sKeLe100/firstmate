@@ -1,0 +1,27 @@
+# Scenario: the hosted lint worker honors the published count and rejects a partition beyond it
+
+Disposable lab copy of 3f38a37c (owner count=6, ci.yml matrix 1..6, git repo with committed HEAD).
+
+$ bin/fm-test-compute.sh worker lint-6 "$OUT" "$PAYLOAD"   # the partition .github/workflows/test-compute.yml dispatches
+exit status: 0
+
+$ cat "$OUT/result.json"
+{"version": 1, "sha": "1997a2e84e0430cad533ed6cb0804bf9a34c4619", "partition": "lint-6", "scripts": [], "exit": 0}
+$ grep -E "^partition" "$OUT/lint.tsv"   # fm-lint telemetry records the partition it actually ran
+partition	6of6
+
+--- worker lint-6 run log (excerpt):
+  fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+  fm-lint.sh: full ShellCheck extended analysis enabled
+  fm-lint: end bin/fm-lint-nomistakes-config.sh reason=ok rc=0 duration_ms=438 rss_kib=16092
+  fm-lint: end bin/fm-lint-workflows.sh reason=ok rc=0 duration_ms=543 rss_kib=17500
+  fm-lint: end bin/fm-primary-scope-lib.sh reason=ok rc=0 duration_ms=526 rss_kib=17884
+  fm-lint-workflows.sh: 4 workflow files valid
+
+$ bin/fm-test-compute.sh worker lint-7 "$OUT7" "$PAYLOAD"   # one past the canonical count
+exit status: 1
+7of6 partition runs in the log: 0
+--- worker lint-7 log (excerpt):
+  Traceback (most recent call last):
+  AssertionError
+result.json written for lint-7: no

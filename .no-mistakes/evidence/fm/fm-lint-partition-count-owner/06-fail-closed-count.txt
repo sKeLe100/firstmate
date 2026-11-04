@@ -1,0 +1,32 @@
+# Scenario: an unusable owner count fails closed on every lint path
+
+## A. The owner cannot be executed (chmod 000 bin/fm-lint.sh in the lab copy)
+
+$ bin/fm-test-compute.sh local-lint
+  bin/fm-test-compute.sh: line 96: /var/tmp/nm-daemon-tmp/fm-lintlab.cbslrR/bin/fm-lint.sh: Permission denied
+  fm-test-compute: canonical lint partition count unavailable
+  exit status: 1
+  ShellCheck partition attempts: 0
+
+$ bin/fm-test-compute.sh worker lint-1 "$OUT" "$PAYLOAD"
+  bin/fm-test-compute.sh: line 96: /var/tmp/nm-daemon-tmp/fm-lintlab.cbslrR/bin/fm-lint.sh: Permission denied
+  fm-test-compute: canonical lint partition count unavailable
+  exit status: 1
+  ShellCheck partition attempts: 0
+
+## B. The owner publishes an out-of-range count (CANONICAL_PARTITION_COUNT=12 > the owner's own N<=8)
+
+$ bin/fm-lint.sh --partition-count
+  12
+
+$ bin/fm-test-compute.sh lint   # hosted routing reachable (clean tree, origin/main, github origin); gh-axi replaced by a call-logging spy
+  fm-test-compute: canonical lint partition count unavailable; failing closed
+  exit status: 1
+  GitHub API calls made by the spy: 0
+  ShellCheck partition attempts: 0
+  -> fails closed before dispatch instead of dispatching 12 (or a silently narrowed 4) partitions
+
+$ bin/fm-test-compute.sh local-lint
+  fm-test-compute: canonical lint partition count unavailable
+  exit status: 1
+  ShellCheck partition attempts: 0

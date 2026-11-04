@@ -1,0 +1,49 @@
+# Scenario (boundary): the owner's documented maximum count of 8 is accepted and covers every partition
+
+$ cd "$LAB" && bash -x bin/fm-test-compute.sh local-lint
+
+--- owner count read:
++ count=8
+
+--- partitions the router invoked:
++ bin/fm-lint.sh --partition 1of8
++ bin/fm-lint.sh --partition 2of8
++ bin/fm-lint.sh --partition 3of8
++ bin/fm-lint.sh --partition 4of8
++ bin/fm-lint.sh --partition 5of8
++ bin/fm-lint.sh --partition 6of8
++ bin/fm-lint.sh --partition 7of8
++ bin/fm-lint.sh --partition 8of8
+
+--- distinct roots linted (fm-lint stderr, one end line per root):
+  bin/backends/fm-lab-dummy.sh
+  bin/fm-dummy-alpha.sh
+  bin/fm-dummy-beta.sh
+  bin/fm-lint-budget.sh
+  bin/fm-lint-nomistakes-config.sh
+  bin/fm-lint-test-size.sh
+  bin/fm-lint-workflows.sh
+  bin/fm-lint.sh
+  bin/fm-pc02-test-offload.sh
+  bin/fm-primary-scope-lib.sh
+  bin/fm-test-compute.sh
+  bin/fm-timeout-lib.sh
+  tests/fm-dummy-gamma-lib.sh
+
+--- counts:
+  partition invocations: 8
+  root end lines:        13
+  distinct roots:        13
+  'of4' occurrences:     0
+
+--- last non-root lint phases in the log (workflow/backend/config checks per partition run):
+        8 fm-lint-nomistakes-config.sh: /var/tmp/nm-daemon-tmp/fm-lintlab.cbslrR/.no-mistakes.yaml ok
+        8 fm-lint-test-size.sh: tests/*.test.sh sizes ok (0 allowlisted)
+        8 fm-lint-workflows.sh: 4 workflow files valid
+
+--- shell tail:
+  + n=9
+  + '[' 9 -le 8 ']'
+  + exit 0
+
+exit status: 0

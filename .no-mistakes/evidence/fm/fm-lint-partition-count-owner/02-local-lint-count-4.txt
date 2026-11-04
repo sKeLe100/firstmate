@@ -1,0 +1,45 @@
+# Scenario: PC01/PC02 local-lint covers every partition of the current canonical count (4)
+
+$ cd "$LAB" && bash -x bin/fm-test-compute.sh local-lint
+
+--- owner count read:
++ count=4
+
+--- partitions the router invoked:
++ bin/fm-lint.sh --partition 1of4
++ bin/fm-lint.sh --partition 2of4
++ bin/fm-lint.sh --partition 3of4
++ bin/fm-lint.sh --partition 4of4
+
+--- distinct roots linted (fm-lint stderr, one end line per root):
+  bin/backends/fm-lab-dummy.sh
+  bin/fm-dummy-alpha.sh
+  bin/fm-dummy-beta.sh
+  bin/fm-lint-budget.sh
+  bin/fm-lint-nomistakes-config.sh
+  bin/fm-lint-test-size.sh
+  bin/fm-lint-workflows.sh
+  bin/fm-lint.sh
+  bin/fm-pc02-test-offload.sh
+  bin/fm-primary-scope-lib.sh
+  bin/fm-test-compute.sh
+  bin/fm-timeout-lib.sh
+  tests/fm-dummy-gamma-lib.sh
+
+--- counts:
+  partition invocations: 4
+  root end lines:        13
+  distinct roots:        13
+  'of4' occurrences:     4
+
+--- last non-root lint phases in the log (workflow/backend/config checks per partition run):
+        4 fm-lint-nomistakes-config.sh: /var/tmp/nm-daemon-tmp/fm-lintlab.cbslrR/.no-mistakes.yaml ok
+        4 fm-lint-test-size.sh: tests/*.test.sh sizes ok (0 allowlisted)
+        4 fm-lint-workflows.sh: 4 workflow files valid
+
+--- shell tail:
+  + n=5
+  + '[' 5 -le 4 ']'
+  + exit 0
+
+exit status: 0

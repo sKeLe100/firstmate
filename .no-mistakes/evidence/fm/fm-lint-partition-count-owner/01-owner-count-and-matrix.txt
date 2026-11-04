@@ -1,0 +1,23 @@
+# Scenario: the published canonical lint count and the CI lint matrix agree
+
+## Real worktree 3f38a37c (bin/fm-lint.sh owner reads its own constant)
+$ bin/fm-lint.sh --partition-count
+4
+
+$ python3 (parse .github/workflows/ci.yml as a typed model) -> jobs.lint.strategy.matrix.partition
+[1, 2, 3, 4]
+
+$ bash tests/fm-ci-workflow.test.sh   # drives the real matrix model + real --partition/--list-files
+ok - CI matrices cover every executable serial lane and canonical lint root exactly once
+exit status: 0
+
+## Adversarial drift: owner bumped to 6 in a disposable copy, ci.yml matrix left at [1,2,3,4]
+$ sed -i CANONICAL_PARTITION_COUNT=6 bin/fm-lint.sh   # lab copy only
+$ bin/fm-lint.sh --partition-count
+6
+$ grep "partition: \[" .github/workflows/ci.yml
+        partition: [1, 2, 3, 4]
+$ bash tests/fm-ci-workflow.test.sh
+-:20:in `<main>': lint matrix must list the canonical partition count (RuntimeError)
+not ok - CI partition contract
+exit status: 1  (drift is rejected, not silently linted as a 4-partition subset)
