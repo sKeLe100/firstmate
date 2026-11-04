@@ -1455,13 +1455,15 @@ test_cleanup_tolerates_read_only_run_dirs() {
   mkdir -p "$tmp/runtmp"
   # A passing suite that leaves a read-only directory under the runner's own
   # temp root, the shape left by fixtures with read-only *.git-hooks dirs.
+  # Uses realistic read-only permissions (444 for files, 555 for dirs)
+  # rather than the extreme a-w mask that strips even owner write.
   cat >"$tmp/leave-readonly.test.sh" <<'SH'
 #!/usr/bin/env bash
-for run in "$TMPDIR"/fm-test-run.*/; do
-  mkdir -p "$run/ro/inner"
-  : >"$run/ro/inner/file"
-  chmod a-w "$run/ro/inner" "$run/ro"
-done
+run_root=$(cd "$TMPDIR/../.." && pwd -P)
+mkdir -p "$run_root/ro/inner"
+: >"$run_root/ro/inner/file"
+find "$run_root/ro" -type f -exec chmod 444 {} +
+find "$run_root/ro" -type d -exec chmod 555 {} +
 echo "ok - leaves read-only dir"
 SH
   chmod +x "$tmp/leave-readonly.test.sh"

@@ -51,11 +51,16 @@
 #
 # Result receipts bind every hosted partition to HEAD and the exact selected
 # scripts. A test/lint failure is terminal, never grounds for a greener local
-# rerun. GitHub read/receipt ambiguity fails closed. Queued admission can time
-# out and fall back only after the owned run is confirmed cancelled. GitLab
-# work rejected for ci_quota_exceeded before starting, a confirmed GitLab
-# execution timeout, or GitLab completion with missing receipts falls through
-# to local admission; a GitLab receipt showing a failed test still fails.
+# rerun. Indeterminate infrastructure, monitoring, and completion faults fail
+# closed with exit 77 so a gate can tell infrastructure from a test or lint
+# verdict. Unavailable tiers fall through to local admission instead:
+# GitHub workflow state, startup failure, or dispatch rejection; a GitHub
+# ambiguous POST whose run never appears within the queue bound (treated as
+# not started, so it may race a later tier); GitLab authentication, project
+# reads, dispatch rejection, quota rejection, or missing receipts; and a
+# cancellation confirmed after a queue timeout or a GitLab execution timeout.
+# An accepted GitHub dispatch that stays undiscovered fails closed rather than
+# being duplicated.
 # Every API call is bounded. Interrupts cancel only this invocation's run.
 # stdout forwards suite evidence; routing diagnostics go to stderr.
 #
@@ -69,13 +74,17 @@
 #   FM_TEST_COMPUTE_API_SECS    per API request bound (default 30)
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
-# Exit: 0 proven success; 1 failed GitHub evidence, a failed hosted receipt, or
-# an unreadable canonical lint partition count; 2 usage error. Unavailable
-# hosted tiers fall through to PC02/PC01 admission: Test and remote lint return
-# the executed command's status, while PC01's last-resort lint returns
-# bin/fm-lint.sh's changed-file status. An unreadable count is the exception:
-# local-lint, lint dispatch, and lint workers fail closed instead of running
-# only some of the canonical partitions.
+# Exit: 0 proven success; 1 failed hosted evidence, a failed hosted receipt, or
+# an unreadable canonical lint partition count; 2 usage error; 77 indeterminate
+# hosted outcome that is never a test or lint verdict (GitHub discovery,
+# monitoring, receipt, and undiscovered-dispatch faults; GitLab bootstrap,
+# pipeline-response, monitoring, and artifact faults; a dispatched run that may
+# still be executing; or a completed run whose conclusion is not success despite
+# verified receipts). Unavailable hosted tiers fall through to PC02/PC01
+# admission: Test and remote lint return the executed command's status, while
+# PC01's last-resort lint returns bin/fm-lint.sh's changed-file status. An
+# unreadable count is the exception: local-lint, lint dispatch, and lint workers
+# fail closed instead of running only some of the canonical partitions.
 set -u
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SELF_DIR/.." && pwd)
@@ -310,7 +319,10 @@ w=pathlib.Path(sys.argv[1]); ref,rid=sys.argv[2:]
 p=json.load(open(w/'payload.json'))
 (w/'dispatch.json').write_text(json.dumps(dict(ref=ref,inputs=dict(snapshot=(w/'payload.json').read_text(),request_id=rid,partitions=json.dumps(list(p['partitions']))))))
 PY
-# 75 means tier unavailable before test execution; all ambiguous failures fail closed.
+# 75 means the tier could not produce a verdict and falls back; remaining
+# hosted faults fail closed with 77 so a gate can tell infrastructure from a
+# test or lint verdict.
+indeterminate() { echo "fm-test-compute: $1; failing closed" >&2; return 77; }
 verify_results() {
   python3 - "$work" "$sha" "${1:-}" <<'PY'
 import json,pathlib,sys
@@ -337,58 +349,64 @@ try_github() {
   tier=github
   api "/repos/$repo/actions/workflows/test-compute.yml" --jq '.state' > "$work/workflow-state" 2>/dev/null || return 75
   [ "$(cat "$work/workflow-state")" = active ] || return 75
-  # A timed-out POST may have been accepted. Do not duplicate it on another tier.
+  # A dispatch confirmed accepted (ambiguous=0) is never duplicated. A
+  # transport-ambiguous POST may race the next tier when no run is listed.
+  local ambiguous=0
   if ! api POST "/repos/$repo/actions/workflows/test-compute.yml/dispatches" --input "$work/dispatch.json" > "$work/dispatch.out" 2>&1; then
-    # A definitive HTTP rejection did not accept work; transport ambiguity did.
+    # A definitive HTTP rejection did not accept work; transport ambiguity may have.
     if grep -Eq 'HTTP (401|402|403|404|422|429)|^code: (FORBIDDEN|NOT_FOUND|UNAUTHORIZED|UNPROCESSABLE_ENTITY|RATE_LIMITED)$' "$work/dispatch.out"; then return 75; fi
-    echo 'fm-test-compute: GitHub dispatch outcome is ambiguous; failing closed' >&2
-    return 1
+    # Look for the run by request id within the queue bound before deciding.
+    ambiguous=1
+    echo 'fm-test-compute: GitHub dispatch outcome is ambiguous; looking for the run' >&2
   fi
   local start now state conclusion row
   start=$(date +%s)
   while :; do
-    row=$(api "/repos/$repo/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100" --jq ".workflow_runs[] | select(.display_title == \"fm-test-compute-$request_id\") | [.id,.status,.conclusion] | @tsv") || { echo 'fm-test-compute: GitHub run discovery request failed; failing closed' >&2; return 1; }
+    row=$(api "/repos/$repo/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100" --jq ".workflow_runs[] | select(.display_title == \"fm-test-compute-$request_id\") | [.id,.status,.conclusion] | @tsv") || { indeterminate 'GitHub run discovery request failed'; return; }
     if [ -n "$row" ]; then
       IFS=$'\t' read -r run_id state conclusion <<< "$row"
-      [[ "$run_id" =~ ^[0-9]+$ ]] || { echo 'fm-test-compute: GitHub returned an invalid run id; failing closed' >&2; return 1; }
+      [[ "$run_id" =~ ^[0-9]+$ ]] || { indeterminate 'GitHub returned an invalid run id'; return; }
       echo "fm-test-compute: https://github.com/$repo/actions/runs/$run_id ($state)" >&2
       break
     fi
     now=$(date +%s)
-    # Accepted but undiscovered dispatch cannot safely be duplicated.
+    # An accepted dispatch may still start, so only an ambiguous POST falls
+    # back; an accepted but undiscovered run stays fail-closed, never duplicated.
     if [ "$((now-start))" -ge "$QUEUE" ]; then
-      echo "fm-test-compute: GitHub dispatch was accepted but no run appeared within ${QUEUE}s; failing closed" >&2
-      return 1
+      [ "$ambiguous" = 1 ] || { indeterminate "GitHub dispatch was accepted but no run appeared within ${QUEUE}s"; return; }
+      echo "fm-test-compute: GitHub dispatch outcome stayed ambiguous and no run appeared within ${QUEUE}s; treating as not started" >&2
+      return 75
     fi
     sleep "$POLL"
   done
   start=$(date +%s)
   while :; do
-    row=$(api "/repos/$repo/actions/runs/$run_id" --jq '[.status,.conclusion] | @tsv') || { echo "fm-test-compute: GitHub run observation failed for run $run_id; failing closed" >&2; return 1; }
+    row=$(api "/repos/$repo/actions/runs/$run_id" --jq '[.status,.conclusion] | @tsv') || { indeterminate "GitHub run observation failed for run $run_id"; return; }
     IFS=$'\t' read -r state conclusion <<< "$row"
     [ "$state" != completed ] || break
     now=$(date +%s)
     case "$state" in queued|waiting|requested|pending)
       if [ "$((now-start))" -ge "$QUEUE" ]; then
-        cancel || { echo "fm-test-compute: GitHub run $run_id cancellation was not confirmed; failing closed" >&2; return 1; }
+        cancel || { indeterminate "GitHub run $run_id cancellation was not confirmed"; return; }
         finished=1; return 75
       fi ;;
     esac
     if [ "$((now-start))" -ge "$RUN" ]; then
       if cancel; then
-        echo "fm-test-compute: GitHub run $run_id exceeded ${RUN}s; failing closed" >&2
+        indeterminate "GitHub run $run_id exceeded ${RUN}s"
       else
-        echo "fm-test-compute: GitHub run $run_id exceeded ${RUN}s and cancellation was not confirmed; failing closed" >&2
+        indeterminate "GitHub run $run_id exceeded ${RUN}s and cancellation was not confirmed"
       fi
-      return 1
+      return
     fi
     sleep "$POLL"
   done
   finished=1
   case "$conclusion" in startup_failure|action_required) return 75 ;; esac
-  timeout "$API" gh-axi run download "$run_id" -R "$repo" --dir "$work/results" > /dev/null || { echo "fm-test-compute: GitHub evidence download failed for run $run_id; failing closed" >&2; return 1; }
-  verify_results || return 1
-  [ "$conclusion" = success ]
+  timeout "$API" gh-axi run download "$run_id" -R "$repo" --dir "$work/results" > /dev/null || { indeterminate "GitHub evidence download failed for run $run_id"; return; }
+  verify_results
+  case $? in 0) ;; 1) return 1 ;; *) return 77 ;; esac
+  [ "$conclusion" = success ] || { indeterminate "GitHub run $run_id finished $conclusion with verified receipts"; return; }
 }
 try_gitlab() {
   tier=gitlab; run_id=; finished=0
@@ -406,7 +424,7 @@ import json,pathlib,sys
 root,w=map(pathlib.Path,sys.argv[1:])
 (w/'bootstrap.json').write_text(json.dumps(dict(branch='firstmate-compute',commit_message='ci: bootstrap public Firstmate compute relay',actions=[dict(action='create',file_path='.gitlab-ci.yml',content=(root/'.github/workflows/test-compute.gitlab.template').read_text())])))
 PY
-    timeout "$API" glab api --hostname gitlab.com --method POST "projects/$project/repository/commits" --input "$work/bootstrap.json" > /dev/null || return 1
+    timeout "$API" glab api --hostname gitlab.com --method POST "projects/$project/repository/commits" --input "$work/bootstrap.json" > /dev/null || { indeterminate 'GitLab bootstrap commit failed'; return; }
     ref=firstmate-compute
   else
     ref=firstmate-compute
@@ -431,18 +449,18 @@ except (ValueError,AttributeError):
     sys.exit(1)
 PY_REJECTION
     then return 75; fi
-    return 1
+    indeterminate 'GitLab pipeline dispatch outcome is ambiguous'; return
   fi
-  run_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$work/pipeline.json") || return 1
-  [[ "$run_id" =~ ^[0-9]+$ ]] || return 1
+  run_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$work/pipeline.json") || { indeterminate 'GitLab returned an invalid pipeline response'; return; }
+  [[ "$run_id" =~ ^[0-9]+$ ]] || { indeterminate 'GitLab returned an invalid pipeline id'; return; }
   echo "fm-test-compute: GitLab pipeline $run_id in ${project//%2F/\/}" >&2
   start=$(date +%s)
   while :; do
-    state=$(timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])') || return 1
+    state=$(timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])') || { indeterminate "GitLab pipeline $run_id status unavailable"; return; }
     case "$state" in success|failed|canceled|skipped) break ;; esac
     now=$(date +%s)
     case "$state" in pending|created|manual|scheduled|waiting_for_resource)
-      if [ "$((now-start))" -ge "$QUEUE" ]; then cancel || return 1; finished=1; return 75; fi ;;
+      if [ "$((now-start))" -ge "$QUEUE" ]; then cancel || { indeterminate "GitLab pipeline $run_id cancellation was not confirmed"; return; }; finished=1; return 75; fi ;;
     esac
     if [ "$((now-start))" -ge "$RUN" ]; then
       if cancel; then
@@ -450,22 +468,22 @@ PY_REJECTION
         echo "fm-test-compute: GitLab run exceeded ${RUN}s; falling back to local admission" >&2
         return 75
       fi
-      return 1
+      indeterminate "GitLab run exceeded ${RUN}s and cancellation was not confirmed"; return
     fi
     sleep "$POLL"
   done
   finished=1
-  timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id/jobs?per_page=100" > "$work/jobs.json" || return 1
-  python3 - "$work/jobs.json" <<'PY' > "$work/jobs"
+  timeout "$API" glab api --hostname gitlab.com "projects/$project/pipelines/$run_id/jobs?per_page=100" > "$work/jobs.json" || { indeterminate "GitLab job listing failed for pipeline $run_id"; return; }
+  python3 - "$work/jobs.json" <<'PY' > "$work/jobs" || { indeterminate "GitLab returned an invalid job listing for pipeline $run_id"; return; }
 import json,sys
 for j in json.load(open(sys.argv[1])):
     if j.get('artifacts_file'): print(j['id'])
 PY
   mkdir -p "$work/results"
   while IFS= read -r job_id; do
-    [[ "$job_id" =~ ^[0-9]+$ ]] || return 1
-    timeout "$API" glab api --hostname gitlab.com "projects/$project/jobs/$job_id/artifacts" > "$work/$job_id.zip" || return 1
-    python3 - "$work" "$job_id" <<'PY' || return 1
+    [[ "$job_id" =~ ^[0-9]+$ ]] || { indeterminate 'GitLab returned an invalid job id'; return; }
+    timeout "$API" glab api --hostname gitlab.com "projects/$project/jobs/$job_id/artifacts" > "$work/$job_id.zip" || { indeterminate "GitLab artifact download failed for job $job_id"; return; }
+    python3 - "$work" "$job_id" <<'PY' || { indeterminate "GitLab artifact extraction failed for job $job_id"; return; }
 import pathlib,sys,zipfile
 w=pathlib.Path(sys.argv[1]); out=w/'results'/sys.argv[2]; out.mkdir()
 with zipfile.ZipFile(w/(sys.argv[2]+'.zip')) as z:
@@ -484,7 +502,7 @@ PY
     return 75
   fi
   [ "$result_rc" = 0 ] || return "$result_rc"
-  [ "$state" = success ]
+  [ "$state" = success ] || { indeterminate "GitLab pipeline $run_id finished $state without a failing receipt"; return; }
 }
 try_github
 rc=$?

@@ -773,10 +773,10 @@ The Pi typecheck remains a separate blocking command after routed lint succeeds.
 Required PR CI and its existing check contexts remain unchanged.
 
 A failing test or lint receipt fails the caller and never triggers a second run on another tier.
-GitHub unknown results, lost accepted dispatches, missing receipts, and execution-time monitoring failures fail closed.
-GitLab completion with missing receipts or a confirmed GitLab execution timeout falls through to PC02/PC01 admission instead, so its single serial job cannot turn a large plan into a blocked gate; a GitLab receipt showing a failed test still fails.
+Unavailable tiers, a confirmed cancellation after a queue timeout, a confirmed GitLab execution timeout, and GitLab completion without receipts fall through to PC02/PC01 admission instead, so a single serial GitLab job cannot turn a large plan into a blocked gate; an ambiguous GitHub POST whose run never appears within the queue bound is treated as not started and falls through the same way, so it may race that later tier.
+Every other indeterminate hosted outcome fails closed with exit 77 instead of reporting a test or lint verdict, so neither an accepted GitHub dispatch that stays undiscovered nor an ambiguous GitLab pipeline dispatch is retried on another tier; a receipt that contradicts the dispatched head or scripts still exits 1, and a GitLab receipt showing a failed test still fails.
 A queued run can fall back only after its cancellation is confirmed; an interrupt requests cancellation of only the invocation's own run.
-This distinction prevents a transport error from silently accepting a different result or launching duplicate expensive suites.
+These rules prevent a transport error from silently accepting a different result; the script's header owns the exact exit codes and the complete set of fall-through and indeterminate conditions.
 Hosted logs and timing evidence return through partition artifacts, with one-day retention.
 The Test caller streams the downloaded logs into its ordinary output for no-mistakes evidence capture.
 The GitHub hosted round trip was verified end to end on 2026-11-04 UTC: one portable partition dispatched through the Test caller executed on a hosted runner and its matching receipts returned to the caller ([run 41759393085](https://github.com/sKeLe100/firstmate/actions/runs/41759393085)).
@@ -835,6 +835,12 @@ An environment-parity check gates the slot claim; that header owns the compared 
 Measured 2026-11-03: two concurrent full selections on an idle PC02 did not fit the 7200s cap; the script header owns the measurement figures. The `/usr/bin/env` provider, no-mistakes daemon version and shell-availability parity exclusions were reviewed against that run and kept.
 The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
 Exceeding the whole-run cap fails with exit 124 and does not rerun the selected command locally or omit selected work.
+
+Before a slot is claimed, the offload reads PC02 `MemAvailable`, `/tmp` free space and home-disk free space fresh and checks them against local floors.
+A low reading routes the run local naming the resource, the observed value and the floor; an unreadable reading also routes local rather than treating PC02 as free, and the pre-claim gate never removes another run's root.
+An offloaded run places its runner `TMPDIR` inside the per-run PC02 mirror, so its own mirror cleanup reaps the run's temp root on the normal, interrupt and timeout paths, restoring owner write first.
+[`bin/fm-pc02-hygiene.sh`](../bin/fm-pc02-hygiene.sh) exposes those readings plus the stale-root and old-process inventory as a cheap read-only report for firstmate's heartbeat host check: `MemAvailable`, `/tmp` and disk use, the count and size of stale test roots with the first 50 counted paths named (`stale_test_root=`), and test processes older than the idle bound. The capacity readings are the pre-claim floors; the stale-root and old-process counts gate only this report, not the offload's slot claim. It never kills a process or removes a test root, and exits 1 with a named `pressure=` list when a bound is crossed; [docs/pc02-outage-runbook.md](pc02-outage-runbook.md) owns the manual reclamation sequence.
+[`bin/fm-pc02-hygiene-lib.sh`](../bin/fm-pc02-hygiene-lib.sh) owns the readings, floor and stale-root rules, and the offload's header lists every override; `tests/fm-pc02-test-offload.test.sh` and `tests/fm-pc02-hygiene.test.sh` pin them without contacting PC02.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 

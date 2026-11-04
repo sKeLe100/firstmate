@@ -966,7 +966,7 @@ tests/fm-commandcode-harness.test.sh 13970
 tests/fm-commandcode-signals-live-e2e.test.sh 49
 tests/fm-composer-codex-idle-live-e2e.test.sh 77
 tests/fm-composer-matrix-live-e2e.test.sh 51
-tests/fm-config-inherit-lane-caps.test.sh 417
+tests/fm-config-inherit-lane-caps.test.sh 708
 tests/fm-context-usage.test.sh 669
 tests/fm-contributions.test.sh 140911
 tests/fm-control-relaunch.test.sh 114115
@@ -987,7 +987,7 @@ tests/fm-extension-binding.test.sh 11105
 tests/fm-fleet-ledger.test.sh 19980
 tests/fm-fleet-snapshot-view.test.sh 93404
 tests/fm-fleet-sync.test.sh 40541
-tests/fm-forge-detect.test.sh 193
+tests/fm-forge-detect.test.sh 540
 tests/fm-fork-free-helpers.test.sh 746
 tests/fm-gate-refuse.test.sh 9953
 tests/fm-gemini-harness.test.sh 947
@@ -1019,7 +1019,7 @@ tests/fm-launch-prompt-signals-live-e2e.test.sh 50
 tests/fm-lint-nomistakes-config.test.sh 260
 tests/fm-lint-test-size.test.sh 2260
 tests/fm-lint-workflows.test.sh 872
-tests/fm-live-gate.test.sh 7452
+tests/fm-live-gate.test.sh 12207
 tests/fm-live-lab-up-mate.test.sh 17363
 tests/fm-live-lab.test.sh 79639
 tests/fm-llm-usage-lib.test.sh 920
@@ -1037,7 +1037,7 @@ tests/fm-omp-harness.test.sh 63796
 tests/fm-omp-primary-live-e2e.test.sh 74
 tests/fm-on.test.sh 18589
 tests/fm-opencode-primary-live-e2e.test.sh 47
-tests/fm-operational-input.test.sh 2404
+tests/fm-operational-input.test.sh 3698
 tests/fm-orphan-pane-sweep.test.sh 830
 tests/fm-pc02-churn-e2e.test.sh 21689
 tests/fm-pc02-fair-order.test.sh 44123
@@ -1056,7 +1056,7 @@ tests/fm-polytoken-signals-live-e2e.test.sh 103
 tests/fm-pr-check-security.test.sh 300675
 tests/fm-pr-reviewers.test.sh 157
 tests/fm-pr-state-live-e2e.test.sh 47
-tests/fm-pr-state.test.sh 525
+tests/fm-pr-state.test.sh 862
 tests/fm-primary-herdr.test.sh 4000
 tests/fm-primary-scope-lib.test.sh 340
 tests/fm-primary-watchdog.test.sh 31045
@@ -1116,7 +1116,7 @@ tests/fm-spawn-compact-adviser-disable.test.sh 33635
 tests/fm-spawn-dispatch-profile.test.sh 343491
 tests/fm-spawn-host-memory.test.sh 5440
 tests/fm-spawn-orca-worktree.test.sh 60771
-tests/fm-spawn-pc02-lane-guard.test.sh 11846
+tests/fm-spawn-pc02-lane-guard.test.sh 17964
 tests/fm-spawn-pool-base-freshen.test.sh 120467
 tests/fm-spawn-worktree-settle.test.sh 9309
 tests/fm-startup-memory-budget.test.sh 12413
@@ -1145,7 +1145,7 @@ tests/fm-teardown-process-reap.sh 11300
 tests/fm-teardown-secondmate.sh 8200
 tests/fm-teardown.test.sh 317102
 tests/fm-test-fixture-cleanup.test.sh 1446
-tests/fm-test-fixtures.test.sh 6739
+tests/fm-test-fixtures.test.sh 10194
 tests/fm-test-isolation-proof.test.sh 2866
 tests/fm-test-sandbox-cache-race.test.sh 6604
 tests/fm-timeout-lib.test.sh 10750
@@ -1172,7 +1172,7 @@ tests/fm-watch-arm.test.sh 113076
 tests/fm-watch-checkpoint.test.sh 22937
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 59092
-tests/fm-watch-retry-band.test.sh 7547
+tests/fm-watch-retry-band.test.sh 13391
 tests/fm-watch-triage-waits.test.sh 777719
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 72022
@@ -3387,7 +3387,11 @@ if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
   . "$ROOT/bin/fm-timeout-lib.sh"
 fi
 
-RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX")
+RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX") || die "could not create run temp dir"
+RUN_TMP=$(cd -P -- "$RUN_TMP" && pwd -P) || die "could not resolve run temp dir"
+# Publishes this run root to a later run's stale sweep (tests/lib.sh
+# fm_test_run_roots), so the marker must survive until the run root is removed.
+: > "$RUN_TMP/.fm-test-run-root" || die "could not mark run temp dir"
 RECORDS="$RUN_TMP/records.tsv"
 FAMILIES_TSV="$RUN_TMP/families.tsv"
 : >"$RECORDS"
@@ -3395,11 +3399,41 @@ declare -a WORKER_PIDS=()
 declare -a WORKER_IDX=()
 declare -a WORKER_SCRIPTS=()
 
+# Fixture homes a suite killed past the TERM grace can leave a detached
+# primary-watchdog loop under. Each script's TMPDIR is inside this run root, so
+# a run-scoped reap reaches every script without touching a sibling run's loops.
+# shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
+run_fixture_watchdog_pids() {
+  local pid env_home
+  for pid in $(pgrep -f 'fm-primary-watchdog\.sh' 2>/dev/null || true); do
+    [ "$pid" != "$$" ] || continue
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'fm-primary-watchdog\.sh run' || continue
+    env_home=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -n 1)
+    case "$env_home" in "$RUN_TMP"|"$RUN_TMP"/*) printf '%s\n' "$pid" ;; esac
+  done
+}
+
+# shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
+reap_run_fixture_watchdogs() {
+  local pids pid i=0
+  pids=$(run_fixture_watchdog_pids)
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do kill -TERM "$pid" 2>/dev/null || true; done
+  while [ "$i" -lt 20 ]; do
+    sleep 0.1
+    pids=$(run_fixture_watchdog_pids)
+    [ -n "$pids" ] || return 0
+    i=$((i + 1))
+  done
+  for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
+}
+
 # Invoked indirectly by the EXIT trap below. Suites can leave read-only
 # directories under the run root, so restore owner write first, and never let a
 # cleanup failure under set -e replace the suite's aggregate exit status.
 # shellcheck disable=SC2329
 cleanup_run() {
+  reap_run_fixture_watchdogs
   chmod -R u+w "$RUN_TMP" 2>/dev/null || true
   rm -rf "$RUN_TMP" 2>/dev/null || true
 }
@@ -3585,11 +3619,16 @@ run_script_bounded() {  # <script> <out> <stream> <id>
 
 run_one_serial() {
   local script=$1
-  local base family expected out begin_iso begin_ms end_ms end_iso duration rc
+  local base family expected out begin_iso begin_ms end_ms end_iso duration rc work
   base=$(basename "$script")
   family=$(family_for_basename "$base")
   expected=$(expected_gate_skip_for_family "$family")
   out="$RUN_TMP/out.$TOTAL"
+  work="$RUN_TMP/s$TOTAL"
+  # Run-scoped TMPDIR like the concurrent worker's, so cleanup_run's watchdog
+  # reap reaches a serial script killed past its TERM grace.
+  mkdir -p "$work/tmp"
+  chmod 0700 "$work" "$work/tmp" || die "could not chmod 0700 serial root $work"
   begin_iso=$(now_iso)
   begin_ms=$(now_ms)
 
@@ -3598,7 +3637,13 @@ run_one_serial() {
 
   set +e
   # Stream live output while retaining a copy for gate-skip detection.
-  run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  # shellcheck disable=SC2030 # TMPDIR/TMP scoped deliberately to this script subshell.
+  (
+    export TMPDIR="$work/tmp"
+    export TMP="$work/tmp"
+    export FM_TEST_RUN_ROOT="$RUN_TMP"
+    run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  )
   rc=$?
   set -e
   : "${rc:=1}"
@@ -3724,11 +3769,13 @@ else
     expected=$(expected_gate_skip_for_family "$family")
     printf 'FM_TEST_BEGIN %s %s family=%s expected_gate_skip=%s\n' \
       "$(now_iso)" "$script" "$family" "$expected"
+    # shellcheck disable=SC2031 # TMPDIR/TMP scoped deliberately to this worker subshell.
     (
       trap - EXIT HUP INT TERM
       set +e
       export TMPDIR="$work/tmp"
       export TMP="$work/tmp"
+      export FM_TEST_RUN_ROOT="$RUN_TMP"
       unset FM_HOME FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_ROOT_OVERRIDE \
         FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE FM_BACKEND 2>/dev/null || true
       cd "$ROOT" || exit 1
