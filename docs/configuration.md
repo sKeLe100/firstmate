@@ -773,12 +773,12 @@ The Pi typecheck remains a separate blocking command after routed lint succeeds.
 Required PR CI and its existing check contexts remain unchanged.
 
 A failing test or lint receipt fails the caller and never triggers a second run on another tier.
-Hosted faults fail closed with exit 77, which a gate can tell apart from a test or lint failure (exit 1).
+Indeterminate infrastructure and monitoring faults fail closed with exit 77, which a gate can tell apart from a test or lint failure (exit 1); receipt evidence that cannot prove the exact head and scripts still exits 1.
 Unavailable tiers fall through to PC02/PC01 admission instead, so a single serial GitLab job cannot turn a large plan into a blocked gate: GitHub workflow state, startup failure, or dispatch rejection; a GitHub ambiguous dispatch whose run never appears within the queue bound, which is treated as not started and may race that later tier; GitLab authentication, project reads, dispatch rejection, quota rejection, or missing receipts; and a cancellation confirmed after a queue timeout or a GitLab execution timeout.
 An accepted GitHub dispatch that stays undiscovered fails closed rather than duplicating the suite on another tier.
 An ambiguous GitLab pipeline dispatch fails closed with exit 77, and a GitLab receipt showing a failed test still fails.
 A queued run can fall back only after its cancellation is confirmed; an interrupt requests cancellation of only the invocation's own run.
-These rules prevent a transport error from silently accepting a different result; only a dispatch confirmed accepted is never duplicated.
+These rules prevent a transport error from silently accepting a different result; only a GitHub dispatch confirmed accepted is never duplicated.
 Hosted logs and timing evidence return through partition artifacts, with one-day retention.
 The Test caller streams the downloaded logs into its ordinary output for no-mistakes evidence capture.
 The GitHub hosted round trip was verified end to end on 2026-11-04 UTC: one portable partition dispatched through the Test caller executed on a hosted runner and its matching receipts returned to the caller ([run 41759393085](https://github.com/sKeLe100/firstmate/actions/runs/41759393085)).
