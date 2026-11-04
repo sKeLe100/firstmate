@@ -150,28 +150,9 @@ chmod +x "$FAKE_BIN/opencode"
 reset_logs
 out=$(run_probe glm-5.3-flash-free)
 rc=$?
-assert_contains "$out" "capped" "capped case: output should start with 'capped'"
+[ "$out" = "capped" ] || fail "capped case: expected exactly 'capped', got: $out"
 [ "$rc" -eq 3 ] || fail "capped case: expected exit 3, got $rc"
-assert_contains "$out" "retry after 30s" "capped case: should include retry time from log"
-pass "fm-free-model-probe: capped case returns 'capped <retry>' with exit 3 when log entry present"
-
-# --- capped case (log entry present, no retry time) ----------------------------
-
-cat > "$FAKE_BIN/opencode" <<'SH'
-#!/usr/bin/env bash
-printf 'timestamp=%s level=ERROR run=probe message="stream error" providerID=opencode modelID=glm-5.3-flash-free session.id=ses_probe small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached."\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$FM_OPENCODE_LOG"
-exec sleep 300
-SH
-chmod +x "$FAKE_BIN/opencode"
-
-reset_logs
-out=$(run_probe glm-5.3-flash-free)
-rc=$?
-assert_contains "$out" "capped" "capped no-retry: output should start with 'capped'"
-[ "$rc" -eq 3 ] || fail "capped no-retry: expected exit 3, got $rc"
-assert_contains "$out" "unknown retry" "capped no-retry: should include 'unknown retry' when no retry time"
-pass "fm-free-model-probe: capped case returns 'capped unknown retry' with exit 3 when no retry time in log"
+pass "fm-free-model-probe: capped case returns 'capped' with exit 3 when log entry present"
 
 # --- provider-qualified model id ---------------------------------------------
 

@@ -12,9 +12,8 @@
 #
 # Prints exactly one line to stdout for a probe result:
 #   ok              the reply was exactly "OK" (exit 0)
-#   capped <retry>  a log entry for <model-id> since the probe start contained
-#                   "Free usage limit reached" (<retry> is the retry time from
-#                   the log message, or "unknown retry" if not parseable) (exit 3)
+#   capped          a log entry for <model-id> since the probe start contained
+#                   "Free usage limit reached" (exit 3)
 #   unknown <why>   the probe timed out or produced other output (exit 1)
 # A usage error prints no stdout line and exits 2.
 #
@@ -38,9 +37,8 @@ the probe started.
 
 Prints exactly one line to stdout for a probe result:
   ok              the reply was exactly "OK" (exit 0)
-  capped <retry>  a log entry for <model-id> since the probe start contained
-                  "Free usage limit reached" (<retry> is the retry time from
-                  the log message, or "unknown retry" if not parseable) (exit 3)
+  capped          a log entry for <model-id> since the probe start contained
+                  "Free usage limit reached" (exit 3)
   unknown <why>   the probe timed out or produced other output (exit 1)
 
 A usage error prints no stdout line and exits 2.
@@ -139,7 +137,6 @@ log_timestamp_epoch() {  # <log-line>
     || date -u -d "$ts" +%s 2>/dev/null
 }
 
-CAPED_REASON=""
 if [ -r "$OPENCODE_LOG" ]; then
   LOG_MATCH=$(awk -v full="$MODEL_ID" -v provider="$MODEL_PROVIDER" -v bare="$MODEL_BARE" '
     {
@@ -157,13 +154,7 @@ if [ -r "$OPENCODE_LOG" ]; then
   if [ -n "$LOG_MATCH" ]; then
     LOG_EPOCH=$(log_timestamp_epoch "$LOG_MATCH") || LOG_EPOCH=
     if [ -n "$LOG_EPOCH" ] && [ "$LOG_EPOCH" -ge "$PROBE_START_EPOCH" ]; then
-      RETRY_TIME=$(printf '%s\n' "$LOG_MATCH" | grep -oE 'retry after [0-9]+' | head -n 1 | grep -oE '[0-9]+' || true)
-      if [ -n "$RETRY_TIME" ]; then
-        CAPED_REASON="retry after ${RETRY_TIME}s"
-      else
-        CAPED_REASON="unknown retry"
-      fi
-      echo "capped $CAPED_REASON"
+      echo "capped"
       exit 3
     fi
   fi
