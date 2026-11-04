@@ -219,7 +219,7 @@ That is exactly what a long-poll home (`FM_POLL=300`) hit against the Claude Sto
 
 Two readers derive their default grace from the configured poll instead of a bare constant:
 
-- That hook.
+- That hook's auto-arm path.
 - `bin/fm-watch.sh`'s own pre-acquisition staleness check (the "lock held by live pid but heartbeat is stale" refusal).
 
 Both use `max(300, FM_POLL + 60)`.
@@ -246,12 +246,13 @@ The arm wrapper and the watcher it may start then judge staleness with the exact
 The reason is the same.
 The daemon's watcher-restart cadence there is not a fixed poll loop, so a flat grace misreads a daemon that is genuinely still cycling as down.
 
-Every other direct `FM_GUARD_GRACE` reader still falls back to the bare 300-second default unless `FM_GUARD_GRACE` is set explicitly in the environment.
+The remaining direct `FM_GUARD_GRACE` readers still fall back to the bare 300-second default unless `FM_GUARD_GRACE` is set explicitly in the environment.
 Those readers are:
 
 - `bin/fm-guard.sh`.
 - The strict-watcher checks in `bin/fm-turnend-guard.sh` and its harness-specific wrappers.
 - `bin/fm-wake-lib.sh`.
+- The auto-arm's pre-arm auto-stow coverage check in `bin/fm-claude-stop-autoarm.sh`, which must agree with the guard that judges the same Stop instead of using the hook's poll-derived grace (`tests/fm-claude-stop-autostow.test.sh` pins the long-poll agreement).
 
 ## Harness integrations
 
