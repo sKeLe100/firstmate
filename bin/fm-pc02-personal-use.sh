@@ -2,7 +2,7 @@
 # fm-pc02-personal-use.sh - single owner of the captain's PC02 personal-use
 # switch: a flag file in PC02's own WSL home directory that
 # bin/fm-pc02-test-offload.sh checks fresh on every run (its "layer 1")
-# before ever offloading a heavy test run there.
+# before ever offloading a heavy test or lint run there.
 #
 # The flag lives on PC02 itself, not on PC01, because the captain's own
 # no-terminal Windows desktop toggle (installed by `install-toggle` below)

@@ -3,17 +3,18 @@
 #
 # Runs its file set with ShellCheck's default severity, extended analysis,
 # ambient configuration disabled, and one exact ShellCheck version. CI selects
-# canonical partitions; no-mistakes invokes the context-selected default, so
-# both use this owner without duplicating lint configuration.
+# canonical partitions, and the no-mistakes Lint step reaches this owner
+# through bin/fm-test-compute.sh lint on hosted compute or PC02, while PC01's
+# last-resort lint runs this owner's changed-file selection.
 # The explicit --fast mode is local-only and disables ShellCheck's extended
 # dataflow analysis while preserving ordinary shell lint checks and source
 # following. CI, main, and merge-base-less runs attempt --norc
 # --external-sources with full dataflow for each canonical root. An ordinary
-# local branch (changed-file mode, including the no-mistakes lint step) drops
-# --external-sources, keeps dataflow, and excludes SC1091, SC2034, SC2153,
-# and SC2329, the codes that need library context. CI checks those codes
-# on source-following attempts (see the memory fallback below). Explicit
-# paths attempt --external-sources with the selected dataflow mode.
+# local branch in changed-file mode drops --external-sources, keeps dataflow,
+# and excludes SC1091, SC2034, SC2153, and SC2329, the codes that need library
+# context. CI checks those codes on source-following attempts (see the memory
+# fallback below). Explicit paths attempt --external-sources with the selected
+# dataflow mode.
 # Tests stop source analysis at imported production modules because CI analyzes
 # every production shell separately as a canonical, source-aware root.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
@@ -768,7 +769,7 @@ fm_lint_run_backend_purity() {
 # after that silently tested only the swapped-in scripts regardless of the
 # actual diff, while GitHub's required check still certified the test step
 # as covering the change. Fail loudly instead of letting that recur quietly.
-FM_LINT_CANONICAL_NM_TEST="bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle"
+FM_LINT_CANONICAL_NM_TEST="bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle"
 fm_lint_check_nomistakes_test_command() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   local nm_yaml="${FM_LINT_NM_YAML:-$ROOT/.no-mistakes.yaml}"

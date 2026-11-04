@@ -1,0 +1,51 @@
+# Installed only in the existing dedicated relay project, never in source repos.
+# The source is public; glab supplies credentials without exposing tokens here.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api" && $FM_COMPUTE_SNAPSHOT'
+    - when: never
+compute:
+  image: node:22-bookworm
+  tags: [saas-linux-small-amd64]
+  timeout: 3h
+  variables:
+    GIT_STRATEGY: none
+    FM_TEST_COMPUTE_DISABLE: '1'
+    CI: 'true'
+  script:
+    - |
+      set -eu
+      umask 077
+      printf '%s' "$FM_COMPUTE_SNAPSHOT" > "$CI_PROJECT_DIR/snapshot.json"
+      apt-get update -qq
+      apt-get install -y git python3 jq tmux ruby chromium
+      git clone "https://github.com/$FM_COMPUTE_REPO.git" source
+      cd source
+      # First installation cannot require the new helper on GitHub default.
+      # Fetch the bundle with native Git, then let that exact head's helper
+      # validate the snapshot and restore its selection base idempotently.
+      node <<'JS'
+      const fs = require('fs'), cp = require('child_process');
+      const p = JSON.parse(fs.readFileSync('../snapshot.json'));
+      if (!/^[a-f0-9]{40}$/.test(p.sha)) throw new Error('invalid snapshot SHA');
+      if (p.bundle) {
+        fs.writeFileSync('../snapshot.bundle', Buffer.from(p.bundle, 'base64'));
+        cp.execFileSync('git', ['bundle', 'verify', '../snapshot.bundle'], {stdio: 'inherit'});
+        cp.execFileSync('git', ['fetch', '../snapshot.bundle', 'HEAD'], {stdio: 'inherit'});
+      }
+      cp.execFileSync('git', ['checkout', '--detach', p.sha], {stdio: 'inherit'});
+      JS
+      bin/fm-test-compute.sh restore "$CI_PROJECT_DIR/snapshot.json"
+      bin/fm-install-shellcheck.sh /usr/local/bin
+      bin/fm-install-actionlint.sh /usr/local/bin
+      npm install -g tasks-axi @earendil-works/pi-coding-agent@1.2.0
+      node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1])); for (const k of Object.keys(p.partitions)) console.log(k)' "$CI_PROJECT_DIR/snapshot.json" > "$CI_PROJECT_DIR/partitions"
+      rc=0
+      while IFS= read -r PARTITION; do
+        bin/fm-test-compute.sh worker "$PARTITION" "$CI_PROJECT_DIR/result/$PARTITION" "$CI_PROJECT_DIR/snapshot.json" || rc=1
+      done < "$CI_PROJECT_DIR/partitions"
+      exit "$rc"
+  artifacts:
+    when: always
+    expire_in: 1 day
+    paths: [result/]

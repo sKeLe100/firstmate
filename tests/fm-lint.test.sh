@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Parity guard for firstmate's shell-lint definition.
 #
-# bin/fm-lint.sh is the single owner invoked by CI
-# (.github/workflows/ci.yml) and by the pre-push gate (.no-mistakes.yaml
-# commands.lint). CI and the local gate deliberately select different roots;
-# bin/fm-lint.sh owns their analysis modes, memory fallback, configuration,
-# and tool versions.
+# bin/fm-lint.sh is the single owner reached from CI
+# (.github/workflows/ci.yml) and from the pre-push gate (.no-mistakes.yaml
+# commands.lint, through bin/fm-test-compute.sh lint). CI and the local gate
+# both select the canonical partitions; bin/fm-lint.sh owns their analysis
+# modes, memory fallback, configuration, and tool versions.
 # Regression origin: with no commands.lint configured, the local no-mistakes
 # lint step never ran the deterministic shell lint, so PRs passed local
 # validation yet failed CI on info/warning findings such as SC2015, SC1007, and
@@ -806,7 +806,7 @@ YAML
 
   cat > "$nm_yaml" <<'YAML'
 commands:
-  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle'
+  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle'
 YAML
   out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
     FM_TEST_GIT_DIFF_FILE="$diff_file" FM_LINT_NM_YAML="$nm_yaml" "$LINT" 2>&1) \
@@ -814,7 +814,7 @@ YAML
 
   cat > "$nm_yaml" <<'YAML'
 commands:
-  test: "bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle"
+  test: "bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle"
 YAML
   out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
     FM_TEST_GIT_DIFF_FILE="$diff_file" FM_LINT_NM_YAML="$nm_yaml" "$LINT" 2>&1) \

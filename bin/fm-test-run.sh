@@ -154,11 +154,10 @@
 #                   interrupt a running script; per-script hangs are
 #                   bounded by --per-script-timeout-secs. Pathological output
 #                   sinks that block finalization are explicitly out of scope.
-#   --pc02-if-idle  route this run to PC02 when it is idle from LLM duty,
-#                   reachable, and tool-ready, falling back to running here
-#                   otherwise; bin/fm-pc02-test-offload.sh (its own header)
-#                   is the single owner of the readiness checks and remote
-#                   mechanics, and its exit code is returned unchanged.
+#   --pc02-if-idle  try hosted compute first, then the existing PC02/PC01
+#                   admission and fallback path. bin/fm-test-compute.sh owns
+#                   hosted routing; bin/fm-pc02-test-offload.sh owns local
+#                   admission. Inspection flags never contact hosted services.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -244,7 +243,7 @@ RUN_STARTED_MS=$(now_ms)
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
-# --pc02-if-idle routes this run through bin/fm-pc02-test-offload.sh instead
+# --pc02-if-idle routes this run through bin/fm-test-compute.sh instead
 # of running here; strip it out before the option parser below (which has no
 # case arm for it) ever sees it.
 PC02_IF_IDLE=0
@@ -258,7 +257,7 @@ for fm_test_run_arg in "$@"; do
 done
 unset fm_test_run_arg
 if [ "$PC02_IF_IDLE" -eq 1 ]; then
-  exec "$ROOT/bin/fm-pc02-test-offload.sh" "${FM_TEST_RUN_FILTERED_ARGS[@]}"
+  exec "$ROOT/bin/fm-test-compute.sh" test "${FM_TEST_RUN_FILTERED_ARGS[@]}"
 fi
 set -- "${FM_TEST_RUN_FILTERED_ARGS[@]}"
 
@@ -309,9 +308,9 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 # former 900s base; its explicit base now matches the upstream default.
 CHANGED_WATCH_TRIAGE_TIMEOUT_SECS=1500
 WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=
-# Same treatment for tests/fm-captain-hold-lifecycle.test.sh: its portable-serial
-# hint measures 296s alone, but it hit the 900s base under PC01 full-suite
-# contention (load5/cpus stays under 1 here even under real load, so the
+# Same treatment for the captain-hold suites (tests/fm-captain-hold-*.test.sh,
+# split from one file): the single file hit the 900s base under PC01 full-suite
+# contention, and each suite now keeps that same load-scaled 1500s base (the
 # load_scaled_timeout_secs multiplier below never engages on this host).
 CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS=1500
 CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=
@@ -325,7 +324,7 @@ HOST_LOAD_RETRY_POLL_SECS=${FM_TEST_RUN_LOAD_RETRY_POLL_SECS:-10}
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=10
+PORTABLE_SERIAL_SHARDS=11
 
 # Conservative balance hint for a portable-serial script with no measurement.
 # Rounded above the current CI mean, including the capability-skipped scripts.
@@ -516,6 +515,7 @@ family_for_basename() {
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|fm-primary-herdr.test.sh|\
     fm-crew-state.test.sh|fm-crew-state-ci.test.sh|fm-captain-hold-lifecycle.test.sh|\
+    fm-captain-hold-reconcile.test.sh|fm-captain-hold-merge-teardown.test.sh|\
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|\
@@ -721,7 +721,6 @@ list_proven_isolated() {
 tests/fm-arm-pretool-check.test.sh
 tests/fm-backend-herdr.test.sh
 tests/fm-brief.test.sh
-tests/fm-captain-hold-lifecycle.test.sh
 tests/fm-cd-pretool-check.test.sh
 tests/fm-composer-ghost.test.sh
 tests/fm-composer-lib.test.sh
@@ -756,7 +755,6 @@ portable_parallel_weight_hints() {
 tests/fm-arm-pretool-check.test.sh 33778
 tests/fm-backend-herdr.test.sh 36331
 tests/fm-brief.test.sh 10594
-tests/fm-captain-hold-lifecycle.test.sh 343658
 tests/fm-cd-pretool-check.test.sh 16801
 tests/fm-composer-ghost.test.sh 2292
 tests/fm-composer-lib.test.sh 9521
@@ -792,16 +790,15 @@ portable_parallel_lane_weight() {
   ' <(portable_parallel_weight_hints) -
 }
 
-# Portable parallel shard 1: LPT balance of the proven-isolated set over the
-# hints above. Stored order agrees with this lane's --list-scheduled output.
+# Portable parallel shard 1: one half of the proven-isolated set, packed within
+# 5% of shard 2 over the hints above (an LPT split whose two shard swaps kept the
+# lane diff small). Stored order agrees with this lane's --list-scheduled output.
 # tests/fm-pi-primary-types.test.sh runs the production-consumer typecheck here;
 # its own header owns temporary dependency provisioning.
 list_portable_parallel_1() {
   cat <<'EOF'
-tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-pr-merge.test.sh
 tests/fm-test-run.test.sh
-tests/fm-crew-state.test.sh
-tests/fm-backend-herdr.test.sh
 tests/fm-arm-pretool-check.test.sh
 tests/fm-x-mode.test.sh
 tests/fm-herdr-lab.test.sh
@@ -817,6 +814,7 @@ tests/fm-spawn-batch.test.sh
 tests/fm-tmux-submit-busy.test.sh
 tests/fm-send-settle.test.sh
 tests/fm-composer-ghost.test.sh
+tests/fm-ensure-agents-md.test.sh
 tests/fm-transition-lib.test.sh
 EOF
 }
@@ -825,8 +823,8 @@ EOF
 list_portable_parallel_2() {
   cat <<'EOF'
 tests/fm-lint.test.sh
-tests/fm-pr-merge.test.sh
-tests/fm-ensure-agents-md.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-backend-herdr.test.sh
 tests/fm-supervision-instructions.test.sh
 EOF
 }
@@ -953,6 +951,9 @@ tests/fm-calm-claude-mod-plugin.test.sh 77
 tests/fm-calm-claude-mod.test.sh 2527
 tests/fm-calm-pi-extension.test.sh 56463
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1345
+tests/fm-captain-hold-lifecycle.test.sh 243467
+tests/fm-captain-hold-merge-teardown.test.sh 157397
+tests/fm-captain-hold-reconcile.test.sh 175140
 tests/fm-captain-window.test.sh 354
 tests/fm-check-unregister.test.sh 469
 tests/fm-ci-workflow.test.sh 10072
@@ -970,7 +971,7 @@ tests/fm-commandcode-harness.test.sh 13970
 tests/fm-commandcode-signals-live-e2e.test.sh 49
 tests/fm-composer-codex-idle-live-e2e.test.sh 77
 tests/fm-composer-matrix-live-e2e.test.sh 51
-tests/fm-config-inherit-lane-caps.test.sh 417
+tests/fm-config-inherit-lane-caps.test.sh 708
 tests/fm-context-usage.test.sh 669
 tests/fm-contributions.test.sh 140911
 tests/fm-control-relaunch.test.sh 114115
@@ -991,7 +992,7 @@ tests/fm-extension-binding.test.sh 11105
 tests/fm-fleet-ledger.test.sh 19980
 tests/fm-fleet-snapshot-view.test.sh 93404
 tests/fm-fleet-sync.test.sh 40541
-tests/fm-forge-detect.test.sh 193
+tests/fm-forge-detect.test.sh 540
 tests/fm-fork-free-helpers.test.sh 746
 tests/fm-gate-refuse.test.sh 9953
 tests/fm-gemini-harness.test.sh 947
@@ -1024,7 +1025,7 @@ tests/fm-launch-prompt-signals-live-e2e.test.sh 50
 tests/fm-lint-nomistakes-config.test.sh 260
 tests/fm-lint-test-size.test.sh 2260
 tests/fm-lint-workflows.test.sh 872
-tests/fm-live-gate.test.sh 7452
+tests/fm-live-gate.test.sh 12207
 tests/fm-live-lab-up-mate.test.sh 17363
 tests/fm-live-lab.test.sh 79639
 tests/fm-llm-usage-lib.test.sh 920
@@ -1042,7 +1043,7 @@ tests/fm-omp-harness.test.sh 63796
 tests/fm-omp-primary-live-e2e.test.sh 74
 tests/fm-on.test.sh 18589
 tests/fm-opencode-primary-live-e2e.test.sh 47
-tests/fm-operational-input.test.sh 2404
+tests/fm-operational-input.test.sh 3698
 tests/fm-orphan-pane-sweep.test.sh 830
 tests/fm-pc02-churn-e2e.test.sh 21689
 tests/fm-pc02-fair-order.test.sh 44123
@@ -1061,7 +1062,7 @@ tests/fm-polytoken-signals-live-e2e.test.sh 103
 tests/fm-pr-check-security.test.sh 300675
 tests/fm-pr-reviewers.test.sh 157
 tests/fm-pr-state-live-e2e.test.sh 47
-tests/fm-pr-state.test.sh 525
+tests/fm-pr-state.test.sh 862
 tests/fm-primary-herdr.test.sh 4000
 tests/fm-primary-scope-lib.test.sh 340
 tests/fm-primary-watchdog.test.sh 31045
@@ -1121,7 +1122,7 @@ tests/fm-spawn-compact-adviser-disable.test.sh 33635
 tests/fm-spawn-dispatch-profile.test.sh 343491
 tests/fm-spawn-host-memory.test.sh 5440
 tests/fm-spawn-orca-worktree.test.sh 60771
-tests/fm-spawn-pc02-lane-guard.test.sh 11846
+tests/fm-spawn-pc02-lane-guard.test.sh 17964
 tests/fm-spawn-pool-base-freshen.test.sh 120467
 tests/fm-spawn-worktree-settle.test.sh 9309
 tests/fm-startup-memory-budget.test.sh 12413
@@ -1151,7 +1152,7 @@ tests/fm-teardown-process-reap.sh 11300
 tests/fm-teardown-secondmate.sh 8200
 tests/fm-teardown.test.sh 317102
 tests/fm-test-fixture-cleanup.test.sh 1446
-tests/fm-test-fixtures.test.sh 6739
+tests/fm-test-fixtures.test.sh 10194
 tests/fm-test-isolation-proof.test.sh 2866
 tests/fm-test-sandbox-cache-race.test.sh 6604
 tests/fm-timeout-lib.test.sh 10750
@@ -1178,7 +1179,7 @@ tests/fm-watch-arm.test.sh 113076
 tests/fm-watch-checkpoint.test.sh 22937
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 59092
-tests/fm-watch-retry-band.test.sh 7547
+tests/fm-watch-retry-band.test.sh 13391
 tests/fm-watch-triage-waits.test.sh 777719
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 72022
@@ -2139,10 +2140,19 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-watch-triage-waits.test.sh"
       ;;
     tests/fm-hold-diagnostics-lib.sh)
-      # Shared diagnostics harness sourced by the lifecycle test and its own
-      # behavioral test; a change to it must re-run both.
+      # Shared diagnostics harness sourced by the captain-hold suites and its own
+      # behavioral test; a change to it must re-run all of them.
       printf '%s\n' "__script__:fm-hold-diagnostics.test.sh"
       printf '%s\n' "__script__:fm-captain-hold-lifecycle.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-reconcile.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-merge-teardown.test.sh"
+      ;;
+    tests/fm-captain-hold-lib.sh)
+      # Shared harness sourced by every captain-hold suite; a change to it must
+      # re-run each of them.
+      printf '%s\n' "__script__:fm-captain-hold-lifecycle.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-reconcile.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-merge-teardown.test.sh"
       ;;
     tests/*.test.sh)
       # A single test file change selects only that script via basename family
@@ -2428,6 +2438,9 @@ families_for_changed_path() {
         .agents/skills/scout-completion/*|.agents/skills/captain-hold-lifecycle/*)
           printf '%s\n' __script__:fm-branch-supervision.test.sh ;;
       esac
+      ;;
+    .github/workflows/test-compute.yml|.github/workflows/test-compute.gitlab.template)
+      printf '%s\n' "__script__:fm-test-compute.test.sh"
       ;;
     .no-mistakes.yaml)
       printf '%s\n' __script__:fm-lint-nomistakes-config.test.sh
@@ -3399,7 +3412,11 @@ if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
   . "$ROOT/bin/fm-timeout-lib.sh"
 fi
 
-RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX")
+RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX") || die "could not create run temp dir"
+RUN_TMP=$(cd -P -- "$RUN_TMP" && pwd -P) || die "could not resolve run temp dir"
+# Publishes this run root to a later run's stale sweep (tests/lib.sh
+# fm_test_run_roots), so the marker must survive until the run root is removed.
+: > "$RUN_TMP/.fm-test-run-root" || die "could not mark run temp dir"
 RECORDS="$RUN_TMP/records.tsv"
 FAMILIES_TSV="$RUN_TMP/families.tsv"
 : >"$RECORDS"
@@ -3407,11 +3424,41 @@ declare -a WORKER_PIDS=()
 declare -a WORKER_IDX=()
 declare -a WORKER_SCRIPTS=()
 
+# Fixture homes a suite killed past the TERM grace can leave a detached
+# primary-watchdog loop under. Each script's TMPDIR is inside this run root, so
+# a run-scoped reap reaches every script without touching a sibling run's loops.
+# shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
+run_fixture_watchdog_pids() {
+  local pid env_home
+  for pid in $(pgrep -f 'fm-primary-watchdog\.sh' 2>/dev/null || true); do
+    [ "$pid" != "$$" ] || continue
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'fm-primary-watchdog\.sh run' || continue
+    env_home=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -n 1)
+    case "$env_home" in "$RUN_TMP"|"$RUN_TMP"/*) printf '%s\n' "$pid" ;; esac
+  done
+}
+
+# shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
+reap_run_fixture_watchdogs() {
+  local pids pid i=0
+  pids=$(run_fixture_watchdog_pids)
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do kill -TERM "$pid" 2>/dev/null || true; done
+  while [ "$i" -lt 20 ]; do
+    sleep 0.1
+    pids=$(run_fixture_watchdog_pids)
+    [ -n "$pids" ] || return 0
+    i=$((i + 1))
+  done
+  for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
+}
+
 # Invoked indirectly by the EXIT trap below. Suites can leave read-only
 # directories under the run root, so restore owner write first, and never let a
 # cleanup failure under set -e replace the suite's aggregate exit status.
 # shellcheck disable=SC2329
 cleanup_run() {
+  reap_run_fixture_watchdogs
   chmod -R u+w "$RUN_TMP" 2>/dev/null || true
   rm -rf "$RUN_TMP" 2>/dev/null || true
 }
@@ -3565,7 +3612,7 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   : "$id"
   if [ -n "$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-watch-triage.test.sh ]; then
     bound=$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS
-  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-captain-hold-lifecycle.test.sh ]; then
+  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [[ "$(basename "$script")" == fm-captain-hold-*.test.sh ]]; then
     bound=$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS
   fi
   set +e
@@ -3597,11 +3644,16 @@ run_script_bounded() {  # <script> <out> <stream> <id>
 
 run_one_serial() {
   local script=$1
-  local base family expected out begin_iso begin_ms end_ms end_iso duration rc
+  local base family expected out begin_iso begin_ms end_ms end_iso duration rc work
   base=$(basename "$script")
   family=$(family_for_basename "$base")
   expected=$(expected_gate_skip_for_family "$family")
   out="$RUN_TMP/out.$TOTAL"
+  work="$RUN_TMP/s$TOTAL"
+  # Run-scoped TMPDIR like the concurrent worker's, so cleanup_run's watchdog
+  # reap reaches a serial script killed past its TERM grace.
+  mkdir -p "$work/tmp"
+  chmod 0700 "$work" "$work/tmp" || die "could not chmod 0700 serial root $work"
   begin_iso=$(now_iso)
   begin_ms=$(now_ms)
 
@@ -3610,7 +3662,13 @@ run_one_serial() {
 
   set +e
   # Stream live output while retaining a copy for gate-skip detection.
-  run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  # shellcheck disable=SC2030 # TMPDIR/TMP scoped deliberately to this script subshell.
+  (
+    export TMPDIR="$work/tmp"
+    export TMP="$work/tmp"
+    export FM_TEST_RUN_ROOT="$RUN_TMP"
+    run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  )
   rc=$?
   set -e
   : "${rc:=1}"
@@ -3736,11 +3794,13 @@ else
     expected=$(expected_gate_skip_for_family "$family")
     printf 'FM_TEST_BEGIN %s %s family=%s expected_gate_skip=%s\n' \
       "$(now_iso)" "$script" "$family" "$expected"
+    # shellcheck disable=SC2031 # TMPDIR/TMP scoped deliberately to this worker subshell.
     (
       trap - EXIT HUP INT TERM
       set +e
       export TMPDIR="$work/tmp"
       export TMP="$work/tmp"
+      export FM_TEST_RUN_ROOT="$RUN_TMP"
       unset FM_HOME FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_ROOT_OVERRIDE \
         FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE FM_BACKEND 2>/dev/null || true
       cd "$ROOT" || exit 1
