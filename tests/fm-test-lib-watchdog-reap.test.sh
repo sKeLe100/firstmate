@@ -131,6 +131,67 @@ KILLED_SERIAL_ROOT=$(cat "$killed_serial_root_file" 2>/dev/null || true)
 [ -n "$KILLED_SERIAL_ROOT" ] || fail "the serial suite never started its watchdog"
 wait_for_no_loops "$KILLED_SERIAL_ROOT" || fail "runner cleanup did not reap the serial run's KILLed watchdog"
 [ -n "$(child_loops "$LIVE_ROOT")" ] || fail "serial runner cleanup reaped a watchdog outside its run root"
+
+# --- hard-killed runner: the next runner-launched run sweeps its loop -------
+# A runner SIGKILLed by its caller leaves its run root and any detached loop
+# under it. The runner publishes that root with FM_TEST_RUN_ROOT and a marker,
+# so the next runner's suites sweep marked sibling roots while the existing
+# owner marker still spares live runs.
+stale_root_file="$outside/stale-run-root"
+stale_suite="$killed_repo/tests/stale-serial.test.sh"
+cat > "$stale_suite" <<EOF
+#!/usr/bin/env bash
+. "$ROOT/tests/lib.sh"
+r=\$(fm_test_tmproot fm-wdreap-stale)
+mkdir -p "\$r/home" "\$r/bin"
+cat > "\$r/bin/fm-primary-watchdog.sh" <<'SH'
+#!/usr/bin/env bash
+trap 'exit 0' TERM
+for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; done
+SH
+chmod +x "\$r/bin/fm-primary-watchdog.sh"
+FM_HOME="\$r/home" setsid "\$r/bin/fm-primary-watchdog.sh" run </dev/null >/dev/null 2>&1 &
+printf '%s\n' "\$r" > "$stale_root_file"
+sleep 60
+EOF
+sweep_suite="$killed_repo/tests/sweep.test.sh"
+cat > "$sweep_suite" <<EOF
+#!/usr/bin/env bash
+. "$ROOT/tests/lib.sh"
+printf 'ok - next run swept stale runner fixtures\n'
+EOF
+chmod +x "$stale_suite" "$sweep_suite"
+
+stale_runner_pid_file="$outside/stale-runner-pid"
+rm -f "$stale_root_file" "$stale_runner_pid_file"
+# shellcheck disable=SC2016 # Expanded by the setsid child shell.
+setsid bash -c '
+  pidfile=$1
+  cd "$2" || exit 1
+  printf "%s\n" "$$" > "$pidfile"
+  export FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR="$3"
+  exec bin/fm-test-run.sh --jobs 1 --per-script-timeout-secs 0 tests/stale-serial.test.sh
+' _ "$stale_runner_pid_file" "$killed_repo" "$runner_tmp" >/dev/null 2>&1 &
+STALE_WRAPPER=$!
+wait_i=0
+while [ ! -s "$stale_runner_pid_file" ] && [ "$wait_i" -lt 100 ]; do sleep 0.1; wait_i=$((wait_i + 1)); done
+STALE_RUNNER=$(cat "$stale_runner_pid_file" 2>/dev/null || true)
+[ -n "$STALE_RUNNER" ] || fail "the hard-killed runner never published its pid"
+wait_i=0
+while [ ! -s "$stale_root_file" ] && [ "$wait_i" -lt 100 ]; do sleep 0.1; wait_i=$((wait_i + 1)); done
+STALE_ROOT=$(cat "$stale_root_file" 2>/dev/null || true)
+[ -n "$STALE_ROOT" ] || fail "the hard-killed runner never started its watchdog"
+kill -KILL -- "-$STALE_RUNNER" 2>/dev/null || true
+wait "$STALE_WRAPPER" 2>/dev/null || true
+[ -n "$(child_loops "$STALE_ROOT")" ] || fail "hard-killed runner left no watchdog (nothing to sweep)"
+(
+  cd "$killed_repo" || exit 1
+  export FM_TEST_ORPHAN_MAX_AGE_SECONDS=0 TMPDIR="$runner_tmp"
+  exec bin/fm-test-run.sh --jobs 1 --per-script-timeout-secs 0 tests/sweep.test.sh
+) >/dev/null 2>&1 || fail "the next runner-launched run failed"
+wait_for_no_loops "$STALE_ROOT" || fail "the next runner-launched run did not reap the hard-killed run's watchdog"
+[ ! -d "$STALE_ROOT" ] || fail "the next runner-launched run did not remove the hard-killed run's fixture root"
+printf 'ok - next runner-launched run reaps a hard-killed run'"'"'s watchdog and fixture root\n'
 fm_test_reap_orphans
 [ -n "$(child_loops "$LIVE_ROOT")" ] || fail "start-up sweep reaped a live owner's watchdog"
 kill -TERM "$LIVE_CHILD"; wait "$LIVE_CHILD" 2>/dev/null

@@ -487,19 +487,87 @@ fm_test_reap_fixture_watchdogs() {
   for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
 }
 
+# fm_test_run_roots: print the marked runner run roots a stale sweep covers.
+# The runner exports its own root as FM_TEST_RUN_ROOT and writes the marker;
+# marked siblings under the same temp base are earlier runs a hard kill left.
+fm_test_run_roots() {
+  local root base sibling seen=$'\n'
+  [ -n "${FM_TEST_RUN_ROOT:-}" ] || return 0
+  root=$(cd -P -- "${FM_TEST_RUN_ROOT%/}" 2>/dev/null && pwd -P) || return 0
+  [ -f "$root/.fm-test-run-root" ] || return 0
+  printf '%s\n' "$root"
+  seen+="$root"$'\n'
+  base=$(dirname "$root")
+  for sibling in "$base"/fm-test-run.*; do
+    [ -d "$sibling" ] || continue
+    [ -f "$sibling/.fm-test-run-root" ] || continue
+    sibling=$(cd -P -- "$sibling" 2>/dev/null && pwd -P) || continue
+    case "$seen" in *$'\n'"$sibling"$'\n'*) continue ;; esac
+    seen+="$sibling"$'\n'
+    printf '%s\n' "$sibling"
+  done
+}
+
+# fm_test_fixture_root_for_home <base> <home>: print the fixture root owning
+# <home> when it sits directly under <base> or under a runner worker's
+# <base>/<script>/tmp base.
+fm_test_fixture_root_for_home() {
+  local base=${1%/} home=$2 rest stage tail
+  case "$home" in
+    "$base"/fm-*)
+      rest=${home#"$base"/}
+      printf '%s\n' "$base/${rest%%/*}"
+      return 0
+      ;;
+    "$base"/*/tmp/fm-*)
+      rest=${home#"$base"/}
+      stage=${rest%%/tmp/*}
+      tail=${rest#*/tmp/}
+      printf '%s\n' "$base/$stage/tmp/${tail%%/*}"
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# fm_test_fixture_markers: print every .fm-test-fixture marker a stale sweep
+# covers: the current suite temp dir and every marked runner run root.
+fm_test_fixture_markers() {
+  local marker run_root
+  for marker in "${FM_TEST_TMPDIR%/}"/fm-*/.fm-test-fixture; do
+    [ -e "$marker" ] && printf '%s\n' "$marker"
+  done
+  while IFS= read -r run_root; do
+    [ -n "$run_root" ] || continue
+    for marker in "$run_root"/fm-*/.fm-test-fixture "$run_root"/*/tmp/fm-*/.fm-test-fixture; do
+      [ -e "$marker" ] && printf '%s\n' "$marker"
+    done
+  done < <(fm_test_run_roots)
+}
+
 # fm_test_reap_stale_fixture_watchdogs: start-up sweep for loops a run that was
 # SIGKILLed (no trap ran) left behind. Only a loop whose FM_HOME is inside a
-# fixture root directly under the test tmpdir is considered, and only when that
-# root is gone or its .fm-test-fixture marker names an owner that is dead; a
-# live owner's fixtures and any home outside the tmpdir are never touched.
+# fixture root directly under the test tmpdir or under a marked runner run root
+# is considered, and only when that root is gone or its .fm-test-fixture marker
+# names an owner that is dead; a live owner's fixtures and any home outside
+# those roots are never touched.
 fm_test_reap_stale_fixture_watchdogs() {
-  local pid env_home root marker owner_pid owner_identity current_identity base=${FM_TEST_TMPDIR%/}
+  local pid env_home root marker owner_pid owner_identity current_identity base run_root
+  local bases=("${FM_TEST_TMPDIR%/}")
+  while IFS= read -r run_root; do
+    [ -n "$run_root" ] && bases+=("$run_root")
+  done < <(fm_test_run_roots)
   for pid in $(pgrep -f 'fm-primary-watchdog\.sh' 2>/dev/null || true); do
     [ "$pid" != "$$" ] || continue
     tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'fm-primary-watchdog\.sh run' || continue
     env_home=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -n 1)
-    case "$env_home" in "$base"/fm-*) ;; *) continue ;; esac
-    root="$base/$(printf '%s' "${env_home#"$base"/}" | cut -d/ -f1)"
+    root=
+    for base in "${bases[@]}"; do
+      if root=$(fm_test_fixture_root_for_home "$base" "$env_home"); then
+        break
+      fi
+    done
+    [ -n "$root" ] || continue
     marker="$root/.fm-test-fixture"
     if [ -d "$root" ]; then
       [ -f "$marker" ] || continue
@@ -590,7 +658,7 @@ fm_test_reap_orphans() {
   local marker dir mtime now owner_pid owner_identity current_identity
   fm_test_reap_stale_fixture_watchdogs
   now=$(date +%s)
-  for marker in "$FM_TEST_TMPDIR"/fm-*/.fm-test-fixture; do
+  while IFS= read -r marker; do
     [ -e "$marker" ] || continue
     owner_pid=$(sed -n '1p' "$marker" 2>/dev/null) || owner_pid=
     owner_identity=$(sed -n '2,$p' "$marker" 2>/dev/null) || owner_identity=
@@ -607,7 +675,7 @@ fm_test_reap_orphans() {
     [ $((now - mtime)) -ge "$FM_TEST_ORPHAN_MAX_AGE_SECONDS" ] || continue
     dir=$(dirname "$marker")
     fm_test_remove_tree "$dir"
-  done
+  done < <(fm_test_fixture_markers)
 }
 
 # A parent coordinator can reap once before it starts isolated child sections.

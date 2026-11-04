@@ -3387,6 +3387,7 @@ fi
 
 RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX") || die "could not create run temp dir"
 RUN_TMP=$(cd -P -- "$RUN_TMP" && pwd -P) || die "could not resolve run temp dir"
+: > "$RUN_TMP/.fm-test-run-root" || die "could not mark run temp dir"
 RECORDS="$RUN_TMP/records.tsv"
 FAMILIES_TSV="$RUN_TMP/families.tsv"
 : >"$RECORDS"
@@ -3636,6 +3637,7 @@ run_one_serial() {
   (
     export TMPDIR="$work/tmp"
     export TMP="$work/tmp"
+    export FM_TEST_RUN_ROOT="$RUN_TMP"
     run_script_bounded "$script" "$out" 1 "s$TOTAL"
   )
   rc=$?
@@ -3769,6 +3771,7 @@ else
       set +e
       export TMPDIR="$work/tmp"
       export TMP="$work/tmp"
+      export FM_TEST_RUN_ROOT="$RUN_TMP"
       unset FM_HOME FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_ROOT_OVERRIDE \
         FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE FM_BACKEND 2>/dev/null || true
       cd "$ROOT" || exit 1
