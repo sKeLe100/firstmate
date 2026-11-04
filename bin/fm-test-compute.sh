@@ -51,15 +51,16 @@
 #
 # Result receipts bind every hosted partition to HEAD and the exact selected
 # scripts. A test/lint failure is terminal, never grounds for a greener local
-# rerun. Indeterminate infrastructure and monitoring faults fail closed with
-# exit 77 so a gate can tell infrastructure from a test or lint verdict.
-# Unavailable tiers fall through to local admission instead: GitHub workflow
-# state, startup failure, or dispatch rejection; a GitHub ambiguous POST whose
-# run never appears within the queue bound (treated as not started, so it may
-# race a later tier); GitLab authentication, project reads, dispatch rejection,
-# quota rejection, or missing receipts; and a cancellation confirmed after a
-# queue timeout or a GitLab execution timeout. An accepted GitHub dispatch
-# that stays undiscovered fails closed rather than being duplicated.
+# rerun. Indeterminate infrastructure, monitoring, and completion faults fail
+# closed with exit 77 so a gate can tell infrastructure from a test or lint
+# verdict. Unavailable tiers fall through to local admission instead:
+# GitHub workflow state, startup failure, or dispatch rejection; a GitHub
+# ambiguous POST whose run never appears within the queue bound (treated as
+# not started, so it may race a later tier); GitLab authentication, project
+# reads, dispatch rejection, quota rejection, or missing receipts; and a
+# cancellation confirmed after a queue timeout or a GitLab execution timeout.
+# An accepted GitHub dispatch that stays undiscovered fails closed rather than
+# being duplicated.
 # Every API call is bounded. Interrupts cancel only this invocation's run.
 # stdout forwards suite evidence; routing diagnostics go to stderr.
 #
@@ -77,7 +78,8 @@
 # 2 usage error; 77 indeterminate hosted outcome that is never a test or lint
 # verdict (GitHub discovery, monitoring, receipt, and undiscovered-dispatch
 # faults; GitLab bootstrap, pipeline-response, monitoring, and artifact
-# faults; or a dispatched run that may still be executing).
+# faults; a dispatched run that may still be executing; or a completed run
+# whose conclusion is not success despite verified receipts).
 # Unavailable hosted tiers fall through to PC02/PC01 admission:
 # Test and remote lint return the executed command's status, while PC01's
 # last-resort lint returns bin/fm-lint.sh's changed-file status.
