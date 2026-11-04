@@ -1,0 +1,8 @@
+GET /repos/example/firstmate
+GET /repos/example/firstmate/actions/workflows/test-compute.yml
+POST /repos/example/firstmate/actions/workflows/test-compute.yml/dispatches
+GET /repos/example/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100
+GET /repos/example/firstmate/actions/runs/123
+GET /repos/example/firstmate/actions/runs/123
+POST /repos/example/firstmate/actions/runs/123/cancel
+GET /repos/example/firstmate/actions/runs/123

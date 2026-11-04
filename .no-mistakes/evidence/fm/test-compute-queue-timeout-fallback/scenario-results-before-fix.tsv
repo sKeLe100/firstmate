@@ -1,0 +1,9 @@
+lint-queue-timeout	0	0	pass	
+lint-queue-timeout-cancel-refused	77	1	fail	exit 1 != 77
+lint-ambiguous-dispatch	0	1	fail	exit 1 != 0 missing: GitHub dispatch outcome is ambiguous; looking for the run missing: GitHub dispatch outcome stayed ambiguous and no run appeared within 2s; treating as not started missing: hosted tiers unavailable; falling back to local admission missing: fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running on PC01 unexpected: failing closed
+lint-accepted-undiscovered	77	1	fail	exit 1 != 77
+test-accepted-undiscovered	77	1	fail	exit 1 != 77
+lint-completed-cancelled-green	77	1	fail	exit 1 != 77 missing: GitHub run 123 finished cancelled with verified receipts; failing closed
+lint-gitlab-monitoring-fault	77	1	fail	exit 1 != 77 missing: GitLab pipeline 456 status unavailable; failing closed
+lint-receipt-failure	1	1	pass	
+help	0	0	fail	missing: Exit: 0 proven success; 1 failed hosted evidence or a failed hosted receipt; missing: 77 indeterminate hosted outcome that is never a test or lint missing: GitLab authentication, project reads, dispatch rejection, missing: An accepted GitHub dispatch missing: that stays undiscovered fails closed rather than being duplicated.

@@ -1,0 +1,11 @@
+fm-test-compute: GitHub dispatch outcome is ambiguous; looking for the run
+fm-test-compute: GitHub dispatch outcome stayed ambiguous and no run appeared within 2s; treating as not started
+fm-test-compute: GitHub unavailable; trying GitLab
+fm-test-compute: hosted tiers unavailable; falling back to local admission
+fm-pc02-test-offload: offload disabled (FM_PC02_OFFLOAD_DISABLE=1); running on PC01
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: local changed-file mode; ShellCheck source following disabled
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 4 workflow files valid
+fm-lint-test-size.sh: tests/*.test.sh sizes ok (16 allowlisted)
+fm-lint-nomistakes-config.sh: /tmp/fm-live-compute.zErwAH/repo/.no-mistakes.yaml ok

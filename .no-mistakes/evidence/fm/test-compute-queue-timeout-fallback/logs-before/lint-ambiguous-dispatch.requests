@@ -1,0 +1,3 @@
+GET /repos/example/firstmate
+GET /repos/example/firstmate/actions/workflows/test-compute.yml
+POST /repos/example/firstmate/actions/workflows/test-compute.yml/dispatches

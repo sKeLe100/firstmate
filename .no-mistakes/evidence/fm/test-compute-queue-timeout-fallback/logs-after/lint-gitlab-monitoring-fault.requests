@@ -1,0 +1,14 @@
+GET /repos/example/firstmate
+GET /repos/example/firstmate/actions/workflows/test-compute.yml
+POST /repos/example/firstmate/actions/workflows/test-compute.yml/dispatches
+GET /repos/example/firstmate/actions/workflows/test-compute.yml/runs?event=workflow_dispatch&per_page=100
+GET /repos/example/firstmate/actions/runs/123
+GET /repos/example/firstmate/actions/runs/123
+GET /repos/example/firstmate/actions/runs/123
+POST /repos/example/firstmate/actions/runs/123/cancel
+GET /repos/example/firstmate/actions/runs/123
+GET /api/v4/projects/sean.morden1993%2Ffirstmate-ci
+GET /api/v4/projects/sean.morden1993%2Ffirstmate-ci/repository/branches/firstmate-compute
+POST /api/v4/projects/sean.morden1993%2Ffirstmate-ci/pipeline
+GET /api/v4/projects/sean.morden1993%2Ffirstmate-ci/pipelines/456
+POST /api/v4/projects/sean.morden1993%2Ffirstmate-ci/pipelines/456/cancel
