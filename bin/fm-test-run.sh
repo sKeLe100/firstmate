@@ -974,7 +974,7 @@ tests/fm-composer-matrix-live-e2e.test.sh 51
 tests/fm-config-inherit-lane-caps.test.sh 708
 tests/fm-context-usage.test.sh 669
 tests/fm-contributions.test.sh 140911
-tests/fm-control-relaunch.test.sh 114115
+tests/fm-control-relaunch.test.sh 171784
 tests/fm-control.test.sh 72794
 tests/fm-crew-state-ci.test.sh 12000
 tests/fm-crew-state-env-leak.test.sh 4878
@@ -1033,7 +1033,7 @@ tests/fm-llm-usage-telemetry-integration.test.sh 36848
 tests/fm-mail-check.test.sh 7524
 tests/fm-mail.test.sh 9684
 tests/fm-muse-harness.test.sh 46548
-tests/fm-muse-signals-live-e2e.test.sh 52
+tests/fm-muse-signals-live-e2e.test.sh 442
 tests/fm-nm-test-contract.test.sh 853
 tests/fm-no-mistakes-required-live-lookup.test.sh 1423
 tests/fm-no-mistakes-required.test.sh 270
@@ -1071,7 +1071,7 @@ tests/fm-procevent-when.test.sh 25674
 tests/fm-procevent.test.sh 292297
 tests/fm-project-origin.test.sh 123
 tests/fm-public-followup.test.sh 381564
-tests/fm-questionnaire-refill-source.test.sh 139
+tests/fm-questionnaire-refill-source.test.sh 534
 tests/fm-queue-snapshot.test.sh 27987
 tests/fm-quota-array-dispatch-live-e2e.test.sh 50
 tests/fm-quota-choose.test.sh 2860
@@ -1090,7 +1090,7 @@ tests/fm-remote-secondmate-trace-context.test.sh 140132
 tests/fm-remote-transport-lanes.test.sh 66089
 tests/fm-retry-pressure.test.sh 1596
 tests/fm-returning-session-check.test.sh 650
-tests/fm-roundtable-coverage.test.sh 708
+tests/fm-roundtable-coverage.test.sh 1168
 tests/fm-roundtable-factsheet.test.sh 675
 tests/fm-routing-ledger-metrics.test.sh 15993
 tests/fm-rovo-harness.test.sh 15691
@@ -1109,12 +1109,12 @@ tests/fm-send-inbox-doorbell-live-e2e.test.sh 108
 tests/fm-send-inbox.test.sh 41713
 tests/fm-send-remote-delivery.test.sh 31964
 tests/fm-send-resolve-key.test.sh 47317
-tests/fm-send-secondmate-marker-herdr-e2e.test.sh 80
+tests/fm-send-secondmate-marker-herdr-e2e.test.sh 444
 tests/fm-send-secondmate-marker.test.sh 7574
 tests/fm-session-lock-ancestry.test.sh 18918
 tests/fm-session-start.test.sh 363574
 tests/fm-sessionstart-hook-live-e2e.test.sh 50
-tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 49
+tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 434
 tests/fm-sessionstart-nudge.test.sh 71802
 tests/fm-shared-captain-inheritance.test.sh 13218
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 67968
@@ -1127,10 +1127,10 @@ tests/fm-spawn-pool-base-freshen.test.sh 120467
 tests/fm-spawn-worktree-settle.test.sh 9309
 tests/fm-startup-memory-budget.test.sh 12413
 tests/fm-startup-network.test.sh 72106
-tests/fm-stat-shadowing.test.sh 75
+tests/fm-stat-shadowing.test.sh 440
 tests/fm-stow-cascade.test.sh 7215
 tests/fm-subagent-pretool-check.test.sh 1290
-tests/fm-supervision-events.test.sh 673
+tests/fm-supervision-events.test.sh 1034
 tests/fm-supervision-host-attended-live-e2e.test.sh 49
 tests/fm-supervision-host-live-e2e.test.sh 75
 tests/fm-supervision-host.test.sh 789123
