@@ -1122,6 +1122,11 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$RELAUNCH_MOVE_SESSION" -eq 1 ]; then
   exit 1
 fi
 
+if [ "$RELAUNCH_MOVE_SESSION" -eq 1 ] && [ "${HERDR_SESSION:-default}" = default ]; then
+  echo "error: --move-session needs a seat inside a named herdr session (HERDR_SESSION unset or 'default' here); moving would re-create the endpoint in 'default'" >&2
+  exit 1
+fi
+
 # --relaunch reuses an existing task's endpoint, worktree, project, and kind,
 # so every axis this block resolves for a fresh spawn instead comes from that
 # task's own durable record below. Contradicting it on the command line is a

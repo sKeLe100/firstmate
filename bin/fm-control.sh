@@ -1175,6 +1175,8 @@ do_relaunch() {
   if [ "$MOVE_SESSION" = 1 ]; then
     [ "$BACKEND" = herdr ] \
       || die "--move-session needs a task on the herdr backend: only herdr can prove a recorded endpoint gone and re-create it in this seat's session (task $ID runs on $BACKEND)"
+    [ "${HERDR_SESSION:-default}" != default ] \
+      || die "--move-session needs a seat inside a named herdr session (HERDR_SESSION unset or 'default' here); moving would re-create task $ID's endpoint in 'default'. Nothing was stopped"
     move_state=$(agent_state)
     case "$move_state" in
       missing)
