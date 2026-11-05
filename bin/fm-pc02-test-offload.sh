@@ -186,6 +186,8 @@
 # admission lock and whole-run timeout, with no test-runner-only arguments.
 # When PC02 cannot be used, PC01's last-resort lint runs bin/fm-lint.sh with
 # that checkout's changed-file selection instead of the canonical partitions.
+# The run-root name comes from bin/fm-pc02-run-root-lib.sh, which
+# bin/fm-test-run-stop.sh also sources, so the two never disagree about it.
 #
 # Env overrides:
 #   FM_PC02_OFFLOAD_DISABLE=1          always run locally, skipping every
@@ -328,6 +330,8 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   exit 0
 fi
 
+# shellcheck source=bin/fm-pc02-run-root-lib.sh
+. "$SELF_DIR/fm-pc02-run-root-lib.sh"
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SELF_DIR/fm-primary-scope-lib.sh"
 # shellcheck source=bin/fm-pc02-hygiene-lib.sh
@@ -360,8 +364,7 @@ SLOTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots"
 SLOT_WAIT="${FM_PC02_OFFLOAD_SLOT_WAIT_SECS:-600}"
 SLOT_WAIT_INTERVAL="${FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS:-5}"
 GATE_RECHECK="${FM_PC02_OFFLOAD_GATE_RECHECK_SECS:-30}"
-REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
-REMOTE_RUN="$REMOTE_BASE/run-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)-$$"
+REMOTE_RUN="$(fm_pc02_remote_run_prefix "$ROOT")"$$
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
 REMOTE_COMMON="$REMOTE_RUN/common.git"
 REMOTE_TMP="$REMOTE_RUN/tmp"
