@@ -1,0 +1,9 @@
+::warning::fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on this run only for 7 script(s); will refuse only if this recurs on the next run:
+  tests/fm-control-relaunch.test.sh: hint=114115ms measured=171784ms ratio=1.51x
+  tests/fm-muse-signals-live-e2e.test.sh: hint=52ms measured=442ms ratio=8.50x
+  tests/fm-questionnaire-refill-source.test.sh: hint=139ms measured=534ms ratio=3.84x
+  tests/fm-roundtable-coverage.test.sh: hint=708ms measured=1168ms ratio=1.65x
+  tests/fm-send-secondmate-marker-herdr-e2e.test.sh: hint=80ms measured=444ms ratio=5.55x
+  tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh: hint=49ms measured=434ms ratio=8.86x
+  tests/fm-stat-shadowing.test.sh: hint=75ms measured=440ms ratio=5.87x
+FM_TEST_HINT_DRIFT ok checked=8 confirmed=0 warned=7
