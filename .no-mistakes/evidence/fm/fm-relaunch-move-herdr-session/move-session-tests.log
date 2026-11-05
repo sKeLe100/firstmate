@@ -1,0 +1,7 @@
+ok - move-session: a proven-gone endpoint is relocated into the seat's session with the record
+ok - move-session: without the flag a cross-session reclaim keeps today's refusal
+ok - move-session: a seat with no named herdr session refuses before anything is stopped
+ok - move-session: a seat already in the recorded session refuses
+ok - move-session: a move from an orchestrator pane lands in its session
+ok - move-session: a failed re-create names both the recorded and target session
+ok - move-session: an endpoint that still exists refuses before the agent is touched
