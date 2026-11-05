@@ -2363,6 +2363,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   # endpoint that no longer exists. An endpoint that survived - even one that
   # merely holds no agent - must keep its exact address; relocating it would
   # leave a pane behind that nothing points at.
+  if [ "$RELAUNCH_MOVE_SESSION" -eq 1 ] && [ "${RELAUNCH_TARGET%%:*}" = "${HERDR_SESSION:-default}" ]; then
+    echo "error: --move-session needs a seat in a herdr session other than task $ID's recorded session '${RELAUNCH_TARGET%%:*}'; relaunch without --move-session to stay there" >&2
+    exit 1
+  fi
   if [ "$RELAUNCH_MOVE_SESSION" -eq 1 ] && [ "$RELAUNCH_REBIND" -ne 1 ]; then
     echo "error: --move-session requires task $ID's recorded endpoint to be proven gone, but it reads '$RELAUNCH_STATE'; refusing to move an endpoint that still exists" >&2
     exit 1
@@ -4515,7 +4519,9 @@ if [ "$RELAUNCH" -eq 1 ]; then
       # would fire for EVERY named-session task reclaimed from a plain shell and
       # send the operator chasing a session mismatch that was never the cause.
       HERDR_AMBIENT_SES=$(fm_backend_herdr_session)
-      if [ -n "$RELAUNCH_LAUNCHER_PANE_ID" ] && [ "$HERDR_AMBIENT_SES" != "$HERDR_REBIND_SES" ]; then
+      if [ "$RELAUNCH_MOVE_SESSION" -eq 1 ]; then
+        echo "error: task $ID's endpoint could not be moved from its recorded herdr session '${RELAUNCH_TARGET%%:*}' into this seat's session '$HERDR_REBIND_SES'; see the refusal above for what failed" >&2
+      elif [ -n "$RELAUNCH_LAUNCHER_PANE_ID" ] && [ "$HERDR_AMBIENT_SES" != "$HERDR_REBIND_SES" ]; then
         echo "error: task $ID's endpoint could not be re-created in its recorded herdr session '$HERDR_REBIND_SES'; this seat is running in herdr session '$HERDR_AMBIENT_SES', and a reclaim never moves a task to another session" >&2
       else
         echo "error: task $ID's endpoint could not be re-created in its recorded herdr session '$HERDR_REBIND_SES'; see the refusal above for what failed" >&2

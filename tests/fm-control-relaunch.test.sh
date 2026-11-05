@@ -2661,6 +2661,22 @@ test_herdr_move_session_refuses_a_seat_without_a_named_session() {
   pass "move-session: a seat with no named herdr session refuses before anything is stopped"
 }
 
+test_herdr_move_session_refuses_the_recorded_session() {
+  local dir out rc log
+  herdr_case_or_skip move-session-same rl82 firstmate '%none' || {
+    echo "skip - herdr move-session needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+
+  out=$(FM_TEST_HERDR_SESSION=firstmate run_control "$dir" rl82 relaunch --move-session --note "same session"); rc=$?
+  log=$(cat "$dir/fake/herdr-log")
+  expect_code 1 "$rc" "a move into the recorded session must refuse"$'\n'"$out"$'\n'"$log"
+  assert_contains "$out" "other than task rl82's recorded session" "the refusal should name the recorded session"
+  assert_not_contains "$log" "tab create" "a refused move must not mint an endpoint"
+  pass "move-session: a seat already in the recorded session refuses"
+}
+
 test_herdr_move_session_refuses_an_endpoint_that_still_exists() {
   local dir out rc log brief_before
   # The pane survived and its agent is back. --move-session must refuse before
@@ -3007,6 +3023,7 @@ test_herdr_rebind_stays_in_the_recorded_session
 test_herdr_move_session_relocates_a_proven_gone_endpoint
 test_herdr_move_session_requires_the_flag_for_a_cross_session_seat
 test_herdr_move_session_refuses_a_seat_without_a_named_session
+test_herdr_move_session_refuses_the_recorded_session
 test_herdr_move_session_refuses_an_endpoint_that_still_exists
 test_herdr_reclaim_refuses_an_agent_that_came_back
 test_herdr_reclaim_keeps_the_task_whole
