@@ -17,7 +17,7 @@ if [ ! -d /proc/self ] || ! command -v setsid >/dev/null 2>&1; then
 fi
 
 SCRIPT="$ROOT/bin/fm-test-run-stop.sh"
-OFFLOAD="$ROOT/bin/fm-pc02-test-offload.sh"
+. "$ROOT/bin/fm-pc02-run-root-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-test-run-stop)
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/fake")
 ERRF="$TMP_ROOT/stderr"
@@ -143,7 +143,7 @@ chmod +x "$FAKEBIN/ssh"
 # pc02_prefix <local-run-root> <remote-base>: the offload owner's run-root
 # prefix for that local root.
 pc02_prefix() {
-  FM_PC02_OFFLOAD_REMOTE_BASE=$2 bash "$OFFLOAD" --remote-run-prefix "$1"
+  ( FM_PC02_OFFLOAD_REMOTE_BASE=$2; fm_pc02_remote_run_prefix "$1" )
 }
 
 # world <case>: one task (task-a) whose run is RUN-A-<case>, plus an unrelated
@@ -480,9 +480,9 @@ test_pc02_claim_without_root_reports_unknown() {
   world claim
   local client
   # shellcheck disable=SC2016 # The single quotes pass $1 to the launched shell.
-  detach setsid bash -c 'cd "$1" && exec -a "$1/bin/fm-pc02-test-offload.sh" sleep 300' _ "$RUNA"
+  detach setsid bash -c 'cd "$1" && exec -a "$1/bin/$2" sleep 300' _ "$RUNA" "$FM_PC02_OFFLOAD_SCRIPT"
   client=$LAST_PID
-  wait_cmdline "$client" 'fm-pc02-test-offload.sh' || fail "fixture offload client did not start"
+  wait_cmdline "$client" "$FM_PC02_OFFLOAD_SCRIPT" || fail "fixture offload client did not start"
   run_stop task-a --host pc02
   expect_code 1 "$RC" "a PC02 claim with no run root"
   assert_contains "$OUT" "pc02 unknown" "a claim with no root prints pc02 unknown"
@@ -518,9 +518,9 @@ test_default_invocation_with_a_claim_stops_the_pc02_root_first() {
   # A PC01 offload client of the run directory: the PC01 pass would kill it, and
   # its exit trap would then remove the PC02 mirror before a later walk.
   # shellcheck disable=SC2016 # The single quotes pass $1 to the launched shell.
-  detach setsid bash -c 'cd "$1" && exec -a "$1/bin/fm-pc02-test-offload.sh" sleep 300' _ "$RUNA"
+  detach setsid bash -c 'cd "$1" && exec -a "$1/bin/$2" sleep 300' _ "$RUNA" "$FM_PC02_OFFLOAD_SCRIPT"
   client=$LAST_PID
-  wait_cmdline "$client" 'fm-pc02-test-offload.sh' || fail "fixture offload client did not start"
+  wait_cmdline "$client" "$FM_PC02_OFFLOAD_SCRIPT" || fail "fixture offload client did not start"
   prefix=$(pc02_prefix "$RUNA" .fm-pc02-test-offload)
   root="$CASE_DIR/pc02-home/${prefix}777"
   start_run "$root/worktree" 'sleep 300'

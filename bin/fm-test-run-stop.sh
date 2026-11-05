@@ -48,9 +48,8 @@
 # trap removes its PC02 mirror once its group has stopped.
 #
 # PC02: the same walk runs there over one bounded ssh call, over the offload
-# run roots named by the prefix
-# `bin/fm-pc02-test-offload.sh --remote-run-prefix <run-dir>` prints, which the
-# offload owns. A root is walked only when its pgid file names the group the
+# run roots named by fm_pc02_remote_run_prefix in bin/fm-pc02-run-root-lib.sh,
+# which the offload also uses. A root is walked only when its pgid file names the group the
 # run's anchor is in. PC02 is walked before the PC01 pass, because the PC01 pass
 # kills the offload client whose exit trap removes the mirror. A PC02 claim is
 # recorded when a PC01-side offload client of the run directory is alive when
@@ -98,6 +97,8 @@ FM_HOME=${FM_HOME:-$FM_ROOT}
 NM_TIMEOUT=15
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/fm-pc02-run-root-lib.sh
+. "$SCRIPT_DIR/fm-pc02-run-root-lib.sh"
 
 # Functions the PC02 walk needs. They are sent to PC02 verbatim with
 # `declare -f`, so they must use bash builtins plus readlink only.
@@ -510,9 +511,9 @@ main() {
   # PC02 is walked before the PC01 pass: stopping PC01's offload client lets its
   # exit trap remove the PC02 mirror, so a later walk would find nothing to stop.
   if [ "$do_pc02" -eq 1 ]; then
-    prefix=$(bash "$SCRIPT_DIR/fm-pc02-test-offload.sh" --remote-run-prefix "$local_dir" 2>/dev/null) || prefix=""
+    prefix=$(fm_pc02_remote_run_prefix "$local_dir")
     if [ -z "$prefix" ]; then
-      printf 'fm-test-run-stop: PC02 run-root prefix unavailable from bin/fm-pc02-test-offload.sh; PC02 state is not confirmed\n' >&2
+      printf 'fm-test-run-stop: PC02 run-root prefix unavailable from bin/fm-pc02-run-root-lib.sh; PC02 state is not confirmed\n' >&2
       rc=1
       pc02_unknown=1
     else
