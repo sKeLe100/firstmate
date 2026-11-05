@@ -244,6 +244,7 @@ run_control() {  # <case-dir> <args...>
   local -a herdr_env=()
   [ -z "${FM_TEST_HERDR_SESSION:-}" ] || herdr_env+=(HERDR_ENV=1 HERDR_SESSION="$FM_TEST_HERDR_SESSION")
   [ -z "${FM_TEST_HERDR_PANE:-}" ] || herdr_env+=(HERDR_PANE_ID="$FM_TEST_HERDR_PANE")
+  [ -z "${FM_TEST_HERDR_SOCKET:-}" ] || herdr_env+=(HERDR_SOCKET_PATH="$FM_TEST_HERDR_SOCKET")
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), and a relaunch reaches it through fm-control.sh, so this runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
@@ -270,6 +271,7 @@ run_spawn() {  # <case-dir> <args...>
   local -a herdr_env=()
   [ -z "${FM_TEST_HERDR_SESSION:-}" ] || herdr_env+=(HERDR_ENV=1 HERDR_SESSION="$FM_TEST_HERDR_SESSION")
   [ -z "${FM_TEST_HERDR_PANE:-}" ] || herdr_env+=(HERDR_PANE_ID="$FM_TEST_HERDR_PANE")
+  [ -z "${FM_TEST_HERDR_SOCKET:-}" ] || herdr_env+=(HERDR_SOCKET_PATH="$FM_TEST_HERDR_SOCKET")
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), so it runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
@@ -2326,6 +2328,24 @@ if [ -f "$D/herdr-stopped" ]; then
   echo 'error: could not connect to the herdr server' >&2
   exit 1
 fi
+if [ -f "$D/herdr-launcher" ]; then
+  case "${1:-} ${2:-}" in
+    'session list')
+      printf '{"sessions":[{"name":"firstmate","running":true,"socket_path":"%s"}]}\n' "$D/sock/herdr.sock"
+      exit 0 ;;
+    'pane get')
+      if [ "${3:-}" = 'w7:p3' ]; then
+        printf '{"result":{"pane":{"pane_id":"w7:p3","tab_id":"w7:t1","workspace_id":"w7"}}}\n'
+        exit 0
+      fi ;;
+    'tab get')
+      printf '{"result":{"tab":{"tab_id":"w7:t1","workspace_id":"w7"}}}\n'
+      exit 0 ;;
+    'workspace list')
+      printf '{"result":{"workspaces":[{"workspace_id":"w7","label":"orchestrator"}]}}\n'
+      exit 0 ;;
+  esac
+fi
 case "${1:-} ${2:-}" in
   'pane get')
     if [ "${3:-}" = "$(cat "$D/herdr-pane")" ]; then
@@ -2677,6 +2697,46 @@ test_herdr_move_session_refuses_the_recorded_session() {
   pass "move-session: a seat already in the recorded session refuses"
 }
 
+test_herdr_move_session_from_an_orchestrator_pane() {
+  local dir out rc=0 log
+  herdr_case_or_skip move-session-pane rl83 fmlab '%none' || {
+    echo "skip - herdr move-session needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  mkdir -p "$dir/fake/sock"
+  : > "$dir/fake/herdr-launcher"
+
+  out=$(FM_TEST_HERDR_SESSION=firstmate FM_TEST_HERDR_PANE=w7:p3 \
+    FM_TEST_HERDR_SOCKET="$dir/fake/sock/herdr.sock" \
+    run_control "$dir" rl83 relaunch --move-session --note "move from the orchestrator pane") || rc=$?
+  log=$(cat "$dir/fake/herdr-log")
+  expect_code 0 "$rc" "a move from a pane inside the target session should succeed"$'\n'"$out"$'\n'"$log"
+  assert_contains "$(grep 'tab create' "$dir/fake/herdr-log")" "--session firstmate" \
+    "the replacement endpoint must be created in the orchestrator's session"
+  [ "$(meta_field "$dir" rl83 herdr_session)" = firstmate ] || fail "the record must follow the endpoint into the orchestrator's session"
+  pass "move-session: a move from an orchestrator pane lands in its session"
+}
+
+test_herdr_move_session_names_both_sessions_when_the_recreate_fails() {
+  local dir out rc log
+  herdr_case_or_skip move-session-fails rl84 fmlab '%none' || {
+    echo "skip - herdr move-session needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  : > "$dir/fake/herdr-workspace-create-fails"
+
+  out=$(FM_TEST_HERDR_SESSION=firstmate run_spawn "$dir" rl84 --relaunch --harness claude --move-session); rc=$?
+  log=$(cat "$dir/fake/herdr-log")
+  expect_code 1 "$rc" "a failed re-create during a move must refuse"$'\n'"$out"$'\n'"$log"
+  assert_contains "$out" "moved from its recorded herdr session 'fmlab' into this seat's session 'firstmate'" \
+    "the diagnostic must name the recorded and the target session"
+  assert_not_contains "$out" "a reclaim never moves a task to another session" "a requested move must not claim moves are refused"
+  [ "$(meta_field "$dir" rl84 herdr_session)" = fmlab ] || fail "a failed move rewrote the recorded session"
+  pass "move-session: a failed re-create names both the recorded and target session"
+}
+
 test_herdr_move_session_refuses_an_endpoint_that_still_exists() {
   local dir out rc log brief_before
   # The pane survived and its agent is back. --move-session must refuse before
@@ -3024,6 +3084,8 @@ test_herdr_move_session_relocates_a_proven_gone_endpoint
 test_herdr_move_session_requires_the_flag_for_a_cross_session_seat
 test_herdr_move_session_refuses_a_seat_without_a_named_session
 test_herdr_move_session_refuses_the_recorded_session
+test_herdr_move_session_from_an_orchestrator_pane
+test_herdr_move_session_names_both_sessions_when_the_recreate_fails
 test_herdr_move_session_refuses_an_endpoint_that_still_exists
 test_herdr_reclaim_refuses_an_agent_that_came_back
 test_herdr_reclaim_keeps_the_task_whole
