@@ -1,0 +1,23 @@
+ok - refuses bad invocations with exit 2 and prints the header for --help
+ok - refuses with exit 2 when no run is active
+ok - refuses an ambiguous active run selection and stops nothing
+ok - stops the real launch shape's tree, including a descendant in another group
+ok - stops run members by pid in a group that also holds the daemon and the test agent
+ok - acts on the older live run, not the newest terminal row
+ok - stops the task's run group and spares another worktree's run
+ok - --dry-run lists the group and stops nothing
+ok - KILLs a group that ignores TERM after the grace
+ok - stops same-group orphans of the run
+ok - stops a run whose shell wrapper leads the group
+ok - prints none when no run process exists
+ok - stops the PC02 offload run root the owner names, spares the others, and removes nothing
+ok - reports an unconfirmed PC02 instead of a clean none
+ok - prints none only when PC02 has no root and no claim
+ok - reports an unconfirmed PC02 when an offload client claims the run
+ok - the default invocation checks and stops both hosts
+ok - stops the PC02 root before the PC01 pass removes its mirror
+# all fm-test-run-stop tests passed
+
+real	0m6.920s
+user	0m1.839s
+sys	0m1.441s
