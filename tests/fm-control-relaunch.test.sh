@@ -236,14 +236,21 @@ EOF
   TASK_TMPS+=("/tmp/fm-$id")
 }
 
+# FM_TEST_HERDR_SESSION / FM_TEST_HERDR_PANE let one case model a seat that is
+# itself inside a herdr pane (the launcher-identity and ambient-session paths);
+# with neither set the seat has no herdr ancestry, as before.
 run_control() {  # <case-dir> <args...>
   local dir=$1; shift
+  local -a herdr_env=()
+  [ -z "${FM_TEST_HERDR_SESSION:-}" ] || herdr_env+=(HERDR_ENV=1 HERDR_SESSION="$FM_TEST_HERDR_SESSION")
+  [ -z "${FM_TEST_HERDR_PANE:-}" ] || herdr_env+=(HERDR_PANE_ID="$FM_TEST_HERDR_PANE")
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), and a relaunch reaches it through fm-control.sh, so this runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
   mkdir -p "$dir/user-home"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    "${herdr_env[@]}" \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
@@ -260,12 +267,16 @@ run_control() {  # <case-dir> <args...>
 
 run_spawn() {  # <case-dir> <args...>
   local dir=$1; shift
+  local -a herdr_env=()
+  [ -z "${FM_TEST_HERDR_SESSION:-}" ] || herdr_env+=(HERDR_ENV=1 HERDR_SESSION="$FM_TEST_HERDR_SESSION")
+  [ -z "${FM_TEST_HERDR_PANE:-}" ] || herdr_env+=(HERDR_PANE_ID="$FM_TEST_HERDR_PANE")
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), so it runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
   mkdir -p "$dir/user-home"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    "${herdr_env[@]}" \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
@@ -2148,6 +2159,9 @@ test_spawn_relaunch_refuses_contradicting_flags() {
   out=$(run_spawn "$dir" rl16 "$dir/proj" --relaunch); rc=$?
   expect_code 1 "$rc" "a project positional should be refused alongside --relaunch"
   assert_contains "$out" "takes the task id only" "the refusal should name the positional rule"
+  out=$(run_spawn "$dir" rl16 --move-session); rc=$?
+  expect_code 1 "$rc" "--move-session should be refused on a fresh spawn"
+  assert_contains "$out" "applies only to --relaunch" "the refusal should scope --move-session to relaunch"
   pass "fm-spawn --relaunch: every identity axis comes from the record, and a contradicting flag refuses"
 }
 
@@ -2573,6 +2587,88 @@ test_herdr_rebind_stays_in_the_recorded_session() {
   pass "reclaim: a herdr rebind is created in the session the record names, never the ambient one"
 }
 
+test_herdr_move_session_relocates_a_proven_gone_endpoint() {
+  local dir out rc=0 log branch_before head_before
+  # The record names `fmlab` and its pane is gone; this seat sits in `firstmate`.
+  # --move-session is the opt-in exception: both the endpoint and the record
+  # follow the seat, while the worktree and branch stay untouched.
+  herdr_case_or_skip move-session rl78 fmlab '%none' || {
+    echo "skip - herdr move-session needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  printf 'landed on the branch\n' > "$dir/wt/committed.txt"
+  git -C "$dir/wt" add committed.txt
+  git -C "$dir/wt" -c user.email=t@example.com -c user.name=t commit -qm "work in progress"
+  head_before=$(git -C "$dir/wt" rev-parse HEAD)
+  branch_before=$(git -C "$dir/wt" rev-parse --abbrev-ref HEAD)
+
+  out=$(FM_TEST_HERDR_SESSION=firstmate run_control "$dir" rl78 relaunch \
+    --move-session --note "move the stranded task into the orchestrator session") || rc=$?
+  log=$(cat "$dir/fake/herdr-log")
+  expect_code 0 "$rc" "a proven-gone endpoint should move into the seat's session"$'\n'"$out"$'\n'"$log"
+  assert_contains "$log" "tab create" "the moved task must get a fresh endpoint"
+  assert_contains "$(grep 'tab create' "$dir/fake/herdr-log")" "--session firstmate" \
+    "the replacement endpoint must be created in the moving seat's session"
+  [ "$(meta_field "$dir" rl78 herdr_session)" = firstmate ] || fail "the record must follow the endpoint into the seat's session"
+  [ "$(meta_field "$dir" rl78 window)" = 'firstmate:%9' ] || fail "the record's endpoint must be the pane minted in firstmate"
+  [ "$(meta_field "$dir" rl78 herdr_pane_id)" = '%9' ] || fail "the record's pane id must follow the move"
+  [ "$(meta_field "$dir" rl78 herdr_workspace_id)" = wsnew ] || fail "the record's workspace must follow the move"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$head_before" ] || fail "moving the endpoint moved the worktree's HEAD"
+  [ "$(git -C "$dir/wt" rev-parse --abbrev-ref HEAD)" = "$branch_before" ] || fail "moving the endpoint changed the worktree's branch"
+  assert_contains "$(cat "$dir/home/data/rl78/brief.md")" \
+    "move the stranded task into the orchestrator session" "the move must still carry the progress note"
+  pass "move-session: a proven-gone endpoint is relocated into the seat's session with the record"
+}
+
+test_herdr_move_session_requires_the_flag_for_a_cross_session_seat() {
+  local dir out rc log
+  # Same stranded task, and this seat is inside a pane of `firstmate` - but
+  # without the flag the reclaim must keep today's cross-session refusal.
+  herdr_case_or_skip move-session-noflag rl79 fmlab '%none' || {
+    echo "skip - herdr move-session needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+
+  out=$(FM_TEST_HERDR_SESSION=firstmate FM_TEST_HERDR_PANE=w7:p3 \
+    run_spawn "$dir" rl79 --relaunch --harness claude); rc=$?
+  log=$(cat "$dir/fake/herdr-log")
+  expect_code 1 "$rc" "a cross-session seat without --move-session must keep the refusal"$'\n'"$out"$'\n'"$log"
+  assert_contains "$out" "never moves a task to another session" "the refusal should be the unchanged cross-session refusal"
+  assert_contains "$out" "herdr session 'firstmate'" "the refusal should name the seat's session"
+  assert_not_contains "$log" "tab create" "a refused move must not mint an endpoint"
+  [ "$(meta_field "$dir" rl79 herdr_session)" = fmlab ] || fail "a refused move rewrote the recorded session"
+  [ "$(meta_field "$dir" rl79 window)" = 'fmlab:%7' ] || fail "a refused move rewrote the recorded endpoint"
+  pass "move-session: without the flag a cross-session reclaim keeps today's refusal"
+}
+
+test_herdr_move_session_refuses_an_endpoint_that_still_exists() {
+  local dir out rc log brief_before
+  # The pane survived and its agent is back. --move-session must refuse before
+  # anything is stopped: moving a live endpoint would orphan it.
+  herdr_case_or_skip move-session-live rl80 fmlab '%7' || {
+    echo "skip - herdr move-session needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  : > "$dir/fake/herdr-agent-live"
+  brief_before=$(cat "$dir/home/data/rl80/brief.md")
+
+  out=$(FM_TEST_HERDR_SESSION=firstmate run_control "$dir" rl80 relaunch \
+    --move-session --note "this note must never reach a live endpoint"); rc=$?
+  log=$(cat "$dir/fake/herdr-log")
+  expect_code 1 "$rc" "an endpoint that still exists must refuse a move"$'\n'"$out"$'\n'"$log"
+  assert_contains "$out" "only moves an endpoint proven gone" "the refusal should state the proven-gone requirement"
+  assert_contains "$out" "alive" "the refusal should name the state it actually read"
+  assert_not_contains "$log" "tab create" "a refused move must not mint a second endpoint"
+  assert_not_contains "$log" "workspace create" "a refused move must not create a workspace"
+  [ "$(meta_field "$dir" rl80 herdr_session)" = fmlab ] || fail "a refused move rewrote the recorded session"
+  [ "$(meta_field "$dir" rl80 window)" = 'fmlab:%7' ] || fail "a refused move rewrote the recorded endpoint"
+  [ "$(cat "$dir/home/data/rl80/brief.md")" = "$brief_before" ] || fail "a refused move edited instructions a live agent may still be reading"
+  pass "move-session: an endpoint that still exists refuses before the agent is touched"
+}
+
 test_herdr_reclaim_refuses_an_agent_that_came_back() {
   local dir out rc log
   herdr_case_or_skip gone-herdr-alive rl74 || {
@@ -2890,6 +2986,9 @@ test_herdr_relaunch_resumes_only_the_registered_pi_session
 test_herdr_reclaim_adopts_a_pane_that_outlived_its_server
 test_herdr_exit_reports_already_stopped_when_the_pane_outlived_its_server
 test_herdr_rebind_stays_in_the_recorded_session
+test_herdr_move_session_relocates_a_proven_gone_endpoint
+test_herdr_move_session_requires_the_flag_for_a_cross_session_seat
+test_herdr_move_session_refuses_an_endpoint_that_still_exists
 test_herdr_reclaim_refuses_an_agent_that_came_back
 test_herdr_reclaim_keeps_the_task_whole
 test_herdr_reclaim_of_a_secondmate_names_its_own_owner

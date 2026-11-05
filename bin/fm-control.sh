@@ -5,7 +5,7 @@
 # Usage: fm-control.sh <task-id> interrupt
 #        fm-control.sh <task-id> exit
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
-#                                         [--effort <level>]
+#                                         [--effort <level>] [--move-session]
 #                                         (--note <text> | --note-file <path>)
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
@@ -64,6 +64,15 @@
 #              answer. Reclaim is HERDR-ONLY for the reason `exit` gives above:
 #              a tmux `missing` cannot be proven absent from a task record, so
 #              it refuses.
+#              With --move-session, that same proven-gone reclaim creates the
+#              replacement endpoint in THIS seat's ambient herdr session
+#              instead of the session the record names, and rewrites the task's
+#              session/window fields. It is the opt-in path for moving a task
+#              stranded in another session; it refuses when the recorded
+#              endpoint is still there (or cannot be proven gone), before the
+#              agent is stopped, because moving a live endpoint would orphan
+#              it. Without the flag nothing changes: a reclaim stays in the
+#              recorded session.
 #              An explicit `default` model or effort clears that
 #              axis for the replacement, except on codex, which requires an
 #              explicit model plus an effort its own CLI accepts and refuses
@@ -256,6 +265,7 @@ MODEL_SET=0
 EFFORT_SET=0
 NOTE=
 NOTE_SET=0
+MOVE_SESSION=0
 control_want_value=
 for control_arg in "$@"; do
   if [ -n "$control_want_value" ]; then
@@ -291,6 +301,7 @@ for control_arg in "$@"; do
       NOTE=$(cat "${control_arg#--note-file=}")
       NOTE_SET=1
       ;;
+    --move-session) MOVE_SESSION=1 ;;
     *) die "unexpected argument '$control_arg'" ;;
   esac
 done
@@ -301,7 +312,8 @@ fi
 
 if [ "$VERB" != relaunch ]; then
   [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] \
-    || die "--harness, --model, --effort, and --note apply to 'relaunch' only"
+    && [ "$MOVE_SESSION" = 0 ] \
+    || die "--harness, --model, --effort, --note, and --move-session apply to 'relaunch' only"
 fi
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
@@ -1130,7 +1142,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line
+  local exit_result state note_line move_state absence verdict
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1153,6 +1165,36 @@ do_relaunch() {
       die "task $ID records kind '$KIND', which has no defined relaunch shape"
       ;;
   esac
+
+  # --move-session relocates the replacement endpoint into THIS seat's ambient
+  # herdr session, which is only safe for an endpoint that is PROVEN gone: one
+  # that still exists must keep its exact address, and moving it would orphan a
+  # live pane. Prove that here, before anything is stopped, so a live endpoint
+  # refuses with its agent untouched. A plain relaunch keeps the recorded
+  # session and does not run this check.
+  if [ "$MOVE_SESSION" = 1 ]; then
+    [ "$BACKEND" = herdr ] \
+      || die "--move-session needs a task on the herdr backend: only herdr can prove a recorded endpoint gone and re-create it in this seat's session (task $ID runs on $BACKEND)"
+    move_state=$(agent_state)
+    case "$move_state" in
+      missing)
+        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T")
+        verdict=${absence%%$'\t'*}
+        case "$verdict" in
+          gone) ;;
+          unproven)
+            die "--move-session only moves an endpoint proven gone, and task $ID's could not be proven either way: ${absence#*$'\t'}. Nothing was stopped"
+            ;;
+          *)
+            die "--move-session only moves an endpoint proven gone, but task $ID's endpoint is still there ('$verdict'); nothing was stopped. Relaunch without --move-session to adopt it"
+            ;;
+        esac
+        ;;
+      *)
+        die "--move-session only moves an endpoint proven gone, but task $ID's recorded endpoint reads '$move_state'; nothing was stopped. Relaunch without --move-session to adopt the endpoint that still exists"
+        ;;
+    esac
+  fi
 
   if [ -n "$NOTE" ]; then
     note_line="note_file=$NOTE_FILE"
@@ -1178,6 +1220,7 @@ do_relaunch() {
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
+  [ "$MOVE_SESSION" = 0 ] || spawn_args+=(--move-session)
   if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
       "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null; then
     RELAUNCH_META_PUBLISHED=1
