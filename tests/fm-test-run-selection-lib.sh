@@ -775,7 +775,7 @@ test_changed_real_inventory_selection_bounds() {
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
   [ "$count" -ge 1 ] && [ "$count" -le 40 ] || fail "hub leaf selection expected 1-40 scripts, got $count: $listed"
-  assert_contains "$listed" tests/fm-pc02-test-offload.test.sh "hub change retains its direct executable reader"
+  assert_contains "$listed" tests/fm-pc02-test-offload-live-e2e.test.sh "hub change retains its direct executable reader"
   git -C "$repo" checkout -q -- bin/fm-autonomous-pc02-lane.sh
 
   printf '\n' >>"$repo/bin/fm-watch-checkpoint.sh"
