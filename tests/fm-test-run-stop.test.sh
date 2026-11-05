@@ -510,6 +510,32 @@ test_default_invocation_checks_both_hosts() {
   pass "the default invocation checks and stops both hosts"
 }
 
+test_default_invocation_with_a_claim_stops_the_pc02_root_first() {
+  world claimfirst
+  local client victim pc02_victim prefix root
+  start_run "$RUNA" 'sleep 300'
+  victim=$LAST_PID
+  # A PC01 offload client of the run directory: the PC01 pass would kill it, and
+  # its exit trap would then remove the PC02 mirror before a later walk.
+  # shellcheck disable=SC2016 # The single quotes pass $1 to the launched shell.
+  detach setsid bash -c 'cd "$1" && exec -a "$1/bin/fm-pc02-test-offload.sh" sleep 300' _ "$RUNA"
+  client=$LAST_PID
+  wait_cmdline "$client" 'fm-pc02-test-offload.sh' || fail "fixture offload client did not start"
+  prefix=$(pc02_prefix "$RUNA" .fm-pc02-test-offload)
+  root="$CASE_DIR/pc02-home/${prefix}777"
+  start_run "$root/worktree" 'sleep 300'
+  pc02_victim=$LAST_PID
+  printf '%s\n' "$pc02_victim" > "$root/pgid"
+  run_stop task-a
+  expect_code 0 "$RC" "a claimed default run stops both hosts"
+  assert_contains "$OUT" "pc02 group=$pc02_victim " "the PC02 root is stopped while its mirror still exists"
+  assert_not_contains "$OUT" "pc02 unknown" "a claim with a live root is not unknown"
+  proc_live "$pc02_victim" && fail "PC02 survived the claimed stop"
+  proc_live "$victim" && fail "PC01 survived the claimed stop"
+  proc_live "$client" && fail "the PC01 offload client survived the claimed stop"
+  pass "stops the PC02 root before the PC01 pass removes its mirror"
+}
+
 test_refuses_bad_invocations
 test_refuses_when_no_run_is_active
 test_refuses_two_active_runs
@@ -527,5 +553,6 @@ test_pc02_probe_failure_is_reported
 test_pc02_reports_none_without_a_claim
 test_pc02_claim_without_root_reports_unknown
 test_default_invocation_checks_both_hosts
+test_default_invocation_with_a_claim_stops_the_pc02_root_first
 
 echo "# all fm-test-run-stop tests passed"

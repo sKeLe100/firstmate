@@ -24,9 +24,9 @@
 #   - state/<task-id>.meta gives the task's branch and worktree.
 #   - fm_nm_select_run in bin/fm-nm-run-lib.sh owns run attribution and yields
 #     the branch's run ids; each id's status is read with
-#     `no-mistakes axi status --run <id>`. Exactly one run may be running or
-#     pending. No active run, or more than one, refuses with exit 2 and stops
-#     nothing.
+#     `no-mistakes axi status --run <id>`, and fm_nm_run_is_active decides
+#     which are active. Exactly one run may be active. No active run, or more
+#     than one, refuses with exit 2 and stops nothing.
 #   - The run directory is the single $NM_HOME/worktrees/*/<run-id> match.
 #   - An anchor is a process that runs bin/fm-test-run.sh,
 #     bin/fm-test-compute.sh or bin/fm-pc02-test-offload.sh as a program
@@ -51,9 +51,10 @@
 # run roots named by the prefix
 # `bin/fm-pc02-test-offload.sh --remote-run-prefix <run-dir>` prints, which the
 # offload owns. A root is walked only when its pgid file names the group the
-# run's anchor is in. A PC02 claim is recorded when a PC01-side offload client
-# of the run directory is alive when the stop starts; it is captured before the
-# PC01 pass can kill that client.
+# run's anchor is in. PC02 is walked before the PC01 pass, because the PC01 pass
+# kills the offload client whose exit trap removes the mirror. A PC02 claim is
+# recorded when a PC01-side offload client of the run directory is alive when
+# the stop starts, and is captured before any stop.
 #
 # Output (stdout), in this order:
 #   pc01 group=<pgid> stopped=<n> signal=TERM|KILL mode=group|pid
@@ -480,10 +481,9 @@ main() {
   esac
   for id in ${ids//,/ }; do
     [ -n "$id" ] || continue
-    st=$(fm_nm_run_status "$wt" "$id")
-    case "$st" in
-      running|pending) active+=("$id") ;;
-    esac
+    out=$(fm_nm_run "$wt" "$NM_TIMEOUT" axi status --run "$id")
+    [ -n "$out" ] || die "no-mistakes status for run $id is unreadable; nothing stopped"
+    fm_nm_run_is_active "$out" && active+=("$id")
   done
   case "${#active[@]}" in
     1) run_id=${active[0]} ;;
@@ -507,17 +507,8 @@ main() {
     claim=1
   fi
 
-  if [ "$do_pc01" -eq 1 ]; then
-    RUN_DIR=$local_dir
-    REQUIRE_PGID=
-    HOST_LABEL=pc01
-    DRY_RUN=$dry
-    pc01_out=$(ts_engine)
-    r=$?
-    [ "$r" -eq 2 ] && die "run directory $local_dir cannot be resolved; nothing stopped"
-    [ "$r" -eq 0 ] || rc=1
-  fi
-
+  # PC02 is walked before the PC01 pass: stopping PC01's offload client lets its
+  # exit trap remove the PC02 mirror, so a later walk would find nothing to stop.
   if [ "$do_pc02" -eq 1 ]; then
     prefix=$(bash "$SCRIPT_DIR/fm-pc02-test-offload.sh" --remote-run-prefix "$local_dir" 2>/dev/null) || prefix=""
     if [ -z "$prefix" ]; then
@@ -542,6 +533,17 @@ main() {
         pc02_unknown=1
       fi
     fi
+  fi
+
+  if [ "$do_pc01" -eq 1 ]; then
+    RUN_DIR=$local_dir
+    REQUIRE_PGID=
+    HOST_LABEL=pc01
+    DRY_RUN=$dry
+    pc01_out=$(ts_engine)
+    r=$?
+    [ "$r" -eq 2 ] && die "run directory $local_dir cannot be resolved; nothing stopped"
+    [ "$r" -eq 0 ] || rc=1
   fi
 
   [ -z "$pc01_out" ] || printf '%s\n' "$pc01_out"
