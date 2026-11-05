@@ -17,7 +17,4 @@ ok - reports an unconfirmed PC02 when an offload client claims the run
 ok - the default invocation checks and stops both hosts
 ok - stops the PC02 root before the PC01 pass removes its mirror
 # all fm-test-run-stop tests passed
-
-real	0m6.920s
-user	0m1.839s
-sys	0m1.441s
+exit=0
