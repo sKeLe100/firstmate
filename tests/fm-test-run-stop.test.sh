@@ -143,7 +143,7 @@ chmod +x "$FAKEBIN/ssh"
 # pc02_prefix <local-run-root> <remote-base>: the offload owner's run-root
 # prefix for that local root.
 pc02_prefix() {
-  ( FM_PC02_OFFLOAD_REMOTE_BASE=$2; fm_pc02_remote_run_prefix "$1" )
+  FM_PC02_OFFLOAD_REMOTE_BASE=$2 fm_pc02_remote_run_prefix "$1"
 }
 
 # world <case>: one task (task-a) whose run is RUN-A-<case>, plus an unrelated
