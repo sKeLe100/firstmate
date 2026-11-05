@@ -61,6 +61,7 @@
 #   steering inbox. This never rewrites a project's instruction files or a
 #   secondmate's charter.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
+#                                     [--move-session]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded worktree, reusing its recorded endpoint when that
 #   endpoint still exists, instead of creating either from scratch. It is
@@ -88,6 +89,12 @@
 #   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds: a
 #   secondmate whose endpoint is gone is respawned by its own owner
 #   (`--secondmate`, driven by the session-start liveness sweep).
+#   --move-session is the opt-in exception to staying in the recorded session:
+#   on a PROVEN-gone endpoint it creates the replacement in this seat's ambient
+#   herdr session (HERDR_SESSION, as every ordinary spawn resolves it) and the
+#   republished record follows it there. It refuses when the endpoint is not
+#   proven gone, so it can never orphan a pane that still exists, and it has no
+#   effect without --relaunch.
 #   Every fresh ship/scout launch and replacement explicitly enters the recorded
 #   worktree immediately before trust setup and brief delivery, and a pre-launch
 #   cwd check refuses any endpoint that still reports another copy; a Herdr shell
@@ -871,6 +878,9 @@ PURPOSE_SET=0
 REDELEGATED_FROM_SET=0
 REDELEGATION_REASON_SET=0
 RELAUNCH=0
+# Opt-in only: a proven-gone relaunch re-creates its endpoint in the ambient
+# herdr session instead of the one the record names. See the header.
+RELAUNCH_MOVE_SESSION=0
 # Opt-in only: exact-resume presentation-order lock waits instead of refusing.
 # Absent/unset keeps upstream refuse-on-contention. See header.
 HERDR_RESUME_LOCK_WAIT=0
@@ -955,6 +965,7 @@ for a in "$@"; do
     KIND_SET=1
     ;;
   --relaunch) RELAUNCH=1 ;;
+  --move-session) RELAUNCH_MOVE_SESSION=1 ;;
   --purpose) want_value=purpose ;;
   --purpose=*)
     PURPOSE=${a#--purpose=}
@@ -1104,6 +1115,16 @@ if [ "$REDELEGATED_FROM_SET" -eq 1 ] || [ "$REDELEGATION_REASON_SET" -eq 1 ]; th
     echo "error: --redelegated-from must be a task id, not a path" >&2
     exit 1
   }
+fi
+
+if [ "$RELAUNCH" -eq 0 ] && [ "$RELAUNCH_MOVE_SESSION" -eq 1 ]; then
+  echo "error: --move-session applies only to --relaunch; a fresh spawn already lands in this seat's session" >&2
+  exit 1
+fi
+
+if [ "$RELAUNCH_MOVE_SESSION" -eq 1 ] && [ "${HERDR_SESSION:-default}" = default ]; then
+  echo "error: --move-session needs a seat inside a named herdr session (HERDR_SESSION unset or 'default' here); moving would re-create the endpoint in 'default'" >&2
+  exit 1
 fi
 
 # --relaunch reuses an existing task's endpoint, worktree, project, and kind,
@@ -2338,6 +2359,18 @@ if [ "$RELAUNCH" -eq 1 ]; then
       exit 1
       ;;
   esac
+  # Moving a task to another herdr session is only ever a recreation of an
+  # endpoint that no longer exists. An endpoint that survived - even one that
+  # merely holds no agent - must keep its exact address; relocating it would
+  # leave a pane behind that nothing points at.
+  if [ "$RELAUNCH_MOVE_SESSION" -eq 1 ] && [ "${RELAUNCH_TARGET%%:*}" = "${HERDR_SESSION:-default}" ]; then
+    echo "error: --move-session needs a seat in a herdr session other than task $ID's recorded session '${RELAUNCH_TARGET%%:*}'; relaunch without --move-session to stay there" >&2
+    exit 1
+  fi
+  if [ "$RELAUNCH_MOVE_SESSION" -eq 1 ] && [ "$RELAUNCH_REBIND" -ne 1 ]; then
+    echo "error: --move-session requires task $ID's recorded endpoint to be proven gone, but it reads '$RELAUNCH_STATE'; refusing to move an endpoint that still exists" >&2
+    exit 1
+  fi
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
@@ -4462,7 +4495,13 @@ if [ "$RELAUNCH" -eq 1 ]; then
     # session from a seat that is not in it would silently relocate the task
     # onto another herdr server - an identity change, published as a
     # self-consistent but wrong record.
+    #
+    # --move-session is the deliberate exception to that rule: the caller has
+    # asked for exactly this relocation, and the gate above already proved the
+    # old endpoint gone. The ambient session is still resolved the ordinary way
+    # so the record lands wherever this seat's spawns normally land.
     HERDR_REBIND_SES=${RELAUNCH_TARGET%%:*}
+    [ "$RELAUNCH_MOVE_SESSION" -eq 0 ] || HERDR_REBIND_SES=$(fm_backend_herdr_session)
     HERDR_CONTAINER_RAW=$(HERDR_PANE_ID="$RELAUNCH_LAUNCHER_PANE_ID" \
       fm_backend_herdr_container_ensure "$PROJ_ABS" launcher-home "$HERDR_REBIND_SES") || {
       # container_ensure returns 1 for several unrelated reasons - a failed
@@ -4480,7 +4519,9 @@ if [ "$RELAUNCH" -eq 1 ]; then
       # would fire for EVERY named-session task reclaimed from a plain shell and
       # send the operator chasing a session mismatch that was never the cause.
       HERDR_AMBIENT_SES=$(fm_backend_herdr_session)
-      if [ -n "$RELAUNCH_LAUNCHER_PANE_ID" ] && [ "$HERDR_AMBIENT_SES" != "$HERDR_REBIND_SES" ]; then
+      if [ "$RELAUNCH_MOVE_SESSION" -eq 1 ]; then
+        echo "error: task $ID's endpoint could not be moved from its recorded herdr session '${RELAUNCH_TARGET%%:*}' into this seat's session '$HERDR_REBIND_SES'; see the refusal above for what failed" >&2
+      elif [ -n "$RELAUNCH_LAUNCHER_PANE_ID" ] && [ "$HERDR_AMBIENT_SES" != "$HERDR_REBIND_SES" ]; then
         echo "error: task $ID's endpoint could not be re-created in its recorded herdr session '$HERDR_REBIND_SES'; this seat is running in herdr session '$HERDR_AMBIENT_SES', and a reclaim never moves a task to another session" >&2
       else
         echo "error: task $ID's endpoint could not be re-created in its recorded herdr session '$HERDR_REBIND_SES'; see the refusal above for what failed" >&2
