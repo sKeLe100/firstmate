@@ -669,7 +669,7 @@ fi
 if [ -n "\${FM_FAKE_CAPTURE_COMPUTE:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
   cat > "\${args[\${#args[@]}-1]}/bin/fm-test-compute.sh" <<'COMPUTE'
 #!/usr/bin/env bash
-echo "compute_argv=\$*"
+echo "compute_argv=\$* lint_parallel=\${FM_PC02_LINT_PARALLEL:-unset}"
 exit "\${FM_FAKE_CAPTURE_COMPUTE_EXIT:-0}"
 COMPUTE
 fi
@@ -760,8 +760,18 @@ test_remote_lint_runs_local_lint_and_propagates_exit() {
   expect_code 7 "$status" "remote lint must return its own exit code unchanged: $out"
   assert_contains "$out" "PC02 idle and ready; running lint remotely" "the lint run never went remote: $out"
   assert_contains "$out" "compute_argv=local-lint" "remote lint did not invoke the local-lint mode: $out"
+  # A 16-thread fake PC02 with the default two slots bounds lint fan-out at
+  # min(slots, threads / 2) = 2 partitions.
+  assert_contains "$out" "lint_parallel=2" "remote lint did not pass the slot/worker bound: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "remote lint left a mirror behind: $out"
-  pass "remote lint mode invokes local-lint and returns its exit code"
+  out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_COMPUTE=1 \
+    FM_PC02_OFFLOAD_SLOTS=6 "$SCRIPT" --lint-partitions 2>&1)
+  status=$?
+  expect_code 0 "$status" "a six-slot lint run must still succeed: $out"
+  assert_contains "$out" "lint_parallel=6" "six configured slots did not raise the lint fan-out: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "six-slot remote lint left a mirror behind: $out"
+  pass "remote lint mode invokes local-lint with a slot/worker-bounded fan-out and returns its exit code"
 }
 
 test_lint_local_fallback_runs_changed_file_lint() {

@@ -91,7 +91,14 @@
 #     per-script timeout. The whole run defaults to 7200s
 #     (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); exceeding it exits 124 rather than
 #     rerunning locally. Lint mode keeps bin/fm-lint.sh's own worker count and
-#     partition selection untouched; the whole-run bound applies to it too.
+#     partition selection untouched, but runs the canonical partitions
+#     concurrently so an idle PC02 finishes them in about one partition's
+#     time: at most min(configured slots, floor(threads / 2)) partitions at
+#     once, the second term keeping each partition's two default ShellCheck
+#     workers inside PC02's thread count. Each partition writes its own log,
+#     and the aggregate exit status keeps the serial semantics (any failing
+#     partition fails the run, and every partition still runs); the whole-run
+#     bound applies to it too.
 #   - Pre-claim capacity: before any slot is claimed, the run reads PC02's
 #     MemAvailable, TMP_ROOT (/tmp) free space and home-disk free space fresh.
 #     A reading under its floor routes the run local and names the resource, the
@@ -1034,7 +1041,18 @@ fi
 # a second local run, which would silently double the caller's time budget.
 if [ "$LINT_PARTITIONS" = 1 ]; then
   echo "fm-pc02-test-offload: PC02 idle and ready; running lint remotely on $HOST" >&2
-  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") env FM_PC02_OFFLOAD_REMOTE=1 bin/fm-test-compute.sh local-lint"
+  # Lint partitions are independent canonical jobs, so fan them out instead of
+  # paying their sum serially. Bound the fan-out by both the configured slot
+  # ceiling and the host thread count: each partition keeps fm-lint.sh's two
+  # default workers, so floor(threads / 2) partitions fill the host without
+  # oversubscribing it, and no more partitions run than configured slots exist.
+  # local-lint caps the value at the canonical partition count.
+  lint_parallel=$SLOTS
+  lint_thread_cap=$((remote_threads / 2))
+  [ "$lint_thread_cap" -ge 1 ] || lint_thread_cap=1
+  [ "$lint_parallel" -le "$lint_thread_cap" ] || lint_parallel=$lint_thread_cap
+  echo "fm-pc02-test-offload: running up to $lint_parallel canonical lint partition(s) concurrently" >&2
+  remote_suite_cmd="setsid timeout --kill-after=10 $(printf '%q' "$RUN_TIMEOUT") env FM_PC02_OFFLOAD_REMOTE=1 FM_PC02_LINT_PARALLEL=$(printf '%q' "$lint_parallel") bin/fm-test-compute.sh local-lint"
 else
   echo "fm-pc02-test-offload: PC02 idle and ready; running tests remotely on $HOST" >&2
   has_jobs=0

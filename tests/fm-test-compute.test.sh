@@ -46,7 +46,15 @@ LOCAL
 cat > "$fixture/bin/fm-lint.sh" <<'LINT'
 #!/usr/bin/env bash
 if [ "$*" = --partition-count ]; then printf '%s\n' "${LINT_PARTITION_COUNT-4}"; exit 0; fi
+if [ -n "${LINT_TRACE:-}" ]; then
+  printf 'start %s\n' "$*" >> "$LINT_TRACE"
+  sleep "${LINT_SLEEP_SECS:-0}"
+  printf 'end %s\n' "$*" >> "$LINT_TRACE"
+fi
 printf 'lint:'; printf ' <%s>' "$@"; echo
+if [ -n "${LINT_FAIL_PARTITION:-}" ] && [ "$*" = "--partition ${LINT_FAIL_PARTITION}" ]; then
+  exit "${LINT_FAIL_RC:-1}"
+fi
 exit "${SUITE_RC:-0}"
 LINT
 chmod +x "$fixture/bin/"*.sh
@@ -688,6 +696,38 @@ assert_contains "$output" 'changed-file-lint argv=' 'PC01 lint fallback did not 
 output=$("$router" local-lint)
 for n in 1 2 3 4; do assert_contains "$output" "<${n}of4>" 'local canonical lint omitted a partition'; done
 pass 'PC01 lint fallback runs changed-file lint while local-lint keeps canonical partitions'
+# The bound is a hard ceiling: with two allowed, never more than two partitions
+# overlap, while all four still run. The trace records real process overlap.
+lint_trace="$TMP_ROOT/local-lint-trace"
+: > "$lint_trace"
+output=$(LINT_TRACE="$lint_trace" LINT_SLEEP_SECS=1 FM_PC02_LINT_PARALLEL=2 "$router" local-lint 2>&1)
+for n in 1 2 3 4; do assert_contains "$output" "<${n}of4>" 'bounded local lint omitted a partition'; done
+peak=$(awk '$1 == "start" { running++; if (running > peak) peak = running } $1 == "end" { running-- } END { print peak + 0 }' "$lint_trace")
+[ "$peak" -eq 2 ] || fail "FM_PC02_LINT_PARALLEL=2 overlapped $peak partitions, expected 2"
+pass 'local-lint runs canonical partitions concurrently under its bound'
+# The default stays serial, so existing local behavior is unchanged.
+: > "$lint_trace"
+LINT_TRACE="$lint_trace" LINT_SLEEP_SECS=1 "$router" local-lint > /dev/null 2>&1
+peak=$(awk '$1 == "start" { running++; if (running > peak) peak = running } $1 == "end" { running-- } END { print peak + 0 }' "$lint_trace")
+[ "$peak" -eq 1 ] || fail "default local-lint overlapped $peak partitions, expected serial execution"
+pass 'local-lint stays serial unless the offload sets a bound'
+# Aggregate status keeps serial semantics: one failed partition fails the run
+# with status 1 while every other partition still runs.
+set +e
+output=$(FM_PC02_LINT_PARALLEL=2 LINT_FAIL_PARTITION=3of4 LINT_FAIL_RC=7 "$router" local-lint 2>&1)
+result=$?
+set -e
+expect_code 1 "$result" "a failed canonical partition must aggregate to 1: $output"
+for n in 1 2 3 4; do assert_contains "$output" "<${n}of4>" 'aggregate lint run skipped a partition after a failure'; done
+pass 'concurrent local-lint keeps the serial aggregate status'
+# A malformed bound fails closed instead of guessing a concurrency.
+set +e
+output=$(FM_PC02_LINT_PARALLEL=0 "$router" local-lint 2>&1)
+result=$?
+set -e
+expect_code 1 "$result" "a zero lint bound must fail closed: $output"
+assert_contains "$output" 'FM_PC02_LINT_PARALLEL must be a positive integer' 'a malformed lint bound did not name its failure'
+pass 'a malformed local-lint concurrency bound fails closed'
 # The canonical count is owned by bin/fm-lint.sh; the stub answers it from LINT_PARTITION_COUNT.
 set +e
 output=$(LINT_PARTITION_COUNT=9 SCENARIO=success "$router" lint 2>&1)
