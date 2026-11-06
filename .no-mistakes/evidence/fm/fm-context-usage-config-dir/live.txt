@@ -1,0 +1,9 @@
+## A: inherited untrusted id, fresh other session -> newest pick
+context_tokens=186000 window=1000000 percent=18.6 warn_tokens=150000 restart_tokens=250000 band=warn transcript=/var/tmp/nm-daemon-tmp/tmp.XeraRpPMmX/store/projects/-var-tmp-nm-daemon-tmp-tmp-XeraRpPMmX-home/other.jsonl age_seconds=0 pick=newest
+## B: stale only (other removed) -> unavailable
+context_tokens=90000 window=1000000 percent=9.0 warn_tokens=150000 restart_tokens=250000 band=unavailable transcript=/var/tmp/nm-daemon-tmp/tmp.XeraRpPMmX/store/projects/-var-tmp-nm-daemon-tmp-tmp-XeraRpPMmX-home/mine.jsonl age_seconds=7200 pick=newest reason=stale-transcript
+## C: targeted read skips guard
+context_tokens=90000 window=1000000 percent=9.0 warn_tokens=150000 restart_tokens=250000 band=ok transcript=/var/tmp/nm-daemon-tmp/tmp.XeraRpPMmX/store/projects/-var-tmp-nm-daemon-tmp-tmp-XeraRpPMmX-home/mine.jsonl age_seconds=7200
+## D: relative config dir refused
+fm-context-usage: CLAUDE_CONFIG_DIR 'rel' is a relative path, so the transcript store the session reads cannot be guaranteed to be the one named here; set it to an absolute path
+rc=1
