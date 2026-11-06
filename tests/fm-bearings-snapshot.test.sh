@@ -3399,6 +3399,13 @@ install_quota_fixture() {  # <fakebin> <accounts-root>
   cat > "$fb/quota-axi" <<SH
 #!/usr/bin/env bash
 dir=\${CLAUDE_CONFIG_DIR:-ordinary}
+# A pinned profile must be read with --profile-only and the ordinary login without
+# it, so a mislabelled read returns no provider and fails the display assertions.
+case " \$* " in *" --profile-only "*) po=1 ;; *) po=0 ;; esac
+if { [ "\$dir" = ordinary ] && [ "\$po" = 1 ]; } || { [ "\$dir" != ordinary ] && [ "\$po" = 0 ]; }; then
+  printf '%s\n' '{"schemaVersion":5,"providers":[]}'
+  exit 0
+fi
 case "\$dir" in
   */cc-one)
     cat <<'JSON'
@@ -3563,7 +3570,29 @@ test_ordinary_claude_account_uses_the_ambient_read() {
   pass "an ordinary account reads ambient quota with CLAUDE_CONFIG_DIR unset"
 }
 
+test_default_login_path_account_uses_the_ambient_read() {
+  local home fakebin json accounts_root fake_home
+  home=$(make_home claude-default-login-path)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-default-login-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  fake_home="$TMP_ROOT/claude-default-login-home"
+  mkdir -p "$home/config" "$fake_home/.claude"
+  printf 'login:%s/.claude\n' "$fake_home" > "$home/config/claude-accounts"
+
+  json=$(PATH="$fakebin:$PATH" HOME="$fake_home" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    NET_LOG="$home/net.log" CLAUDE_CONFIG_DIR="$accounts_root/cc-one" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].label == "login"
+      and .claude_accounts[0].status == "ok"
+      and .claude_accounts[0].five_hour_percent_remaining == 66
+  ' >/dev/null || fail "an explicit default-login path was not read as the ambient login: $json"
+  pass "an explicit \$HOME/.claude account reads the ambient login, not a pinned profile"
+}
+
 test_claude_accounts_display_every_configured_account
+test_default_login_path_account_uses_the_ambient_read
 test_claude_account_display_degrades_to_unknown_rows
 test_claude_account_reads_share_one_bounded_budget
 test_ordinary_claude_account_uses_the_ambient_read

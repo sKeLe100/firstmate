@@ -372,9 +372,12 @@ bearings_canonical_dir() {  # <value>
   printf '%s' "$d"
 }
 
-DEFAULT_ACCOUNT_AMBIENT=0
-case "${CLAUDE_CONFIG_DIR:-}" in ''|ordinary) DEFAULT_ACCOUNT_AMBIENT=1 ;; esac
+# The ordinary login ($HOME/.claude, or a literal `ordinary`) is read ambiently;
+# every other account is a pinned profile (bin/fm-quota-choose.sh convention).
+ORDINARY_ACCOUNT_DIR=$(bearings_canonical_dir ordinary)
 DEFAULT_ACCOUNT_DIR=$(bearings_canonical_dir "${CLAUDE_CONFIG_DIR:-}")
+DEFAULT_ACCOUNT_AMBIENT=0
+[ "$DEFAULT_ACCOUNT_DIR" = "$ORDINARY_ACCOUNT_DIR" ] && DEFAULT_ACCOUNT_AMBIENT=1
 
 # shellcheck disable=SC2016  # jq program text, not shell expansion
 BEARINGS_CLAUDE_ROW_JQ='
@@ -406,7 +409,7 @@ bearings_quota_account_row() {  # <label> <dir> <timeout> <ambient>
       env -u CLAUDE_CONFIG_DIR quota-axi --provider claude --json 2>/dev/null </dev/null)
   else
     out=$(fm_run_timed "$timeout" \
-      env CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --json 2>/dev/null </dev/null)
+      env CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --profile-only --json 2>/dev/null </dev/null)
   fi
   rc=$?
   if [ "$rc" -eq 124 ]; then
@@ -441,8 +444,7 @@ bearings_quota_account_row() {  # <label> <dir> <timeout> <ambient>
     ' 2>/dev/null || bearings_quota_unknown_row "$label" "$dir" "quota-axi returned invalid JSON"
 }
 
-BEARINGS_ACCOUNTS_FILE=${FM_BEARINGS_CLAUDE_ACCOUNTS:-}
-[ -n "$BEARINGS_ACCOUNTS_FILE" ] || BEARINGS_ACCOUNTS_FILE="$BEARINGS_HOME/config/claude-accounts"
+BEARINGS_ACCOUNTS_FILE="$BEARINGS_HOME/config/claude-accounts"
 ACCOUNT_LABELS=()
 ACCOUNT_DIRS=()
 ACCOUNT_AMBIENT=()
@@ -462,9 +464,9 @@ if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -e "$BEARINGS_ACCOUNTS_FILE" ]; then
       esac
       [ -n "$adir" ] || continue
       [ -n "$alabel" ] || alabel=$adir
-      acct_ambient=0
-      [ "$adir" = ordinary ] && acct_ambient=1
       adir=$(bearings_canonical_dir "$adir")
+      acct_ambient=0
+      [ "$adir" = "$ORDINARY_ACCOUNT_DIR" ] && acct_ambient=1
       case "$ACCOUNT_SEEN" in *$'\n'"$adir"$'\n'*) continue ;; esac
       ACCOUNT_SEEN="$ACCOUNT_SEEN$adir"$'\n'
       ACCOUNT_LABELS+=("$alabel")
