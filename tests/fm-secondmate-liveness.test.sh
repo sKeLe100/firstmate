@@ -820,7 +820,7 @@ test_sweep_noop_with_no_secondmate_meta() {
 # `missing` alone authorize relaunch, and transport failure (ssh exit 255) is
 # never evidence of death. Full-mode remote readiness repair and route
 # revalidation remain the startup sweep's own behavior, covered by the sweep
-# tests above and tests/fm-remote-secondmate-lifecycle-e2e.test.sh.
+# tests above and tests/fm-remote-secondmate-lifecycle-supervision-e2e.test.sh.
 
 # make_remote_probe_world <name>: a parent home carrying one remote-route
 # secondmate meta plus a fake ssh that logs every call and answers with
