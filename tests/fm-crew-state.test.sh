@@ -2951,10 +2951,56 @@ test_no_run_idle_pane_paused_split() {
   assert_contains "$out" "state: blocked" "bare paused + warn band -> blocked"
   out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=ok run_crew_state "$d" feat-psplit)
   assert_contains "$out" "state: paused" "bare paused + ok band stays self-clearing"
+  # A paused crew's transcript stops at the pause, so by the time a supervisor
+  # looks it is old. Its last real band must survive the staleness guard that
+  # applies to live-session reads: an unavailable reading would quietly
+  # re-classify an exhausted crew as self-clearing.
+  quiet_store="$d/quietclaude"
+  quiet_proj="$quiet_store/projects/$(printf '%s' "$d/wt" | tr -c 'a-zA-Z0-9' '-')"
+  mkdir -p "$quiet_proj" "$d/quiethome"
+  printf '{"type":"assistant","isSidechain":false,"message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":259990}}}\n' > "$quiet_proj/session.jsonl"
+  touch -d '2 hours ago' "$quiet_proj/session.jsonl"
+  out=$(HOME="$d/quiethome" CLAUDE_CONFIG_DIR="$quiet_store" run_crew_state "$d" feat-psplit)
+  assert_contains "$out" "state: blocked" "a paused crew idle past the staleness limit keeps its restart band"
   printf 'paused [key=session-limit]: claude session usage limit, resets 14:00\n' > "$d/state/feat-psplit.status"
   out=$(FM_CONTEXT_USAGE_BIN="$d/ctx-usage.sh" FM_FAKE_BAND=restart run_crew_state "$d" feat-psplit)
   assert_contains "$out" "state: paused" "keyed session-limit pause stays self-clearing even at restart band"
   pass "paused: splits into self-clearing (session-limit key or ok band) and blocked (exhausted band)"
+}
+
+# (g''') the paused-band read is per TARGET session, not the supervisor's own
+# store: a crew launched on a pinned account keeps its transcript under that
+# account's root (config/claude-account, recorded as account= by bin/fm-spawn.sh),
+# so a supervisor carrying a different CLAUDE_CONFIG_DIR must read the crew's own
+# store or an exhausted pause silently reads self-clearing.
+test_paused_band_reads_the_crews_own_store() {
+  reset_fakes
+  local d out munged; d=$(new_case paused-store)
+  make_repo_on_branch "$d/wt" fm/feat-store
+  make_fakebin "$d" >/dev/null
+  munged="$(printf '%s' "$d/wt" | tr -c 'a-zA-Z0-9' '-')"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-store
+  mkdir -p "$d/supervisor-store/projects" "$d/supervisor-home"
+  printf 'paused: context exhausted, relaunch to continue\n' > "$d/state/feat-store.status"
+  # A pinned root the supervisor's own environment does not carry.
+  pinned_root="$d/pinned-root"
+  mkdir -p "$pinned_root/projects/$munged"
+  printf '{"type":"assistant","isSidechain":false,"message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":259990}}}\n' > "$pinned_root/projects/$munged/session.jsonl"
+  fm_write_meta "$d/state/feat-store.meta" "window=fm:fm-feat-store" "worktree=$d/wt" "kind=ship" "harness=claude" "account=$pinned_root"
+  out=$(HOME="$d/supervisor-home" CLAUDE_CONFIG_DIR="$d/supervisor-store" run_crew_state "$d" feat-store)
+  assert_contains "$out" "state: blocked" "a crew pinned to its own root keeps its exhausted band"
+  # The ordinary account reads $HOME/.claude even behind another store.
+  mkdir -p "$d/supervisor-home/.claude/projects/$munged"
+  printf '{"type":"assistant","isSidechain":false,"message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":259990}}}\n' > "$d/supervisor-home/.claude/projects/$munged/session.jsonl"
+  fm_write_meta "$d/state/feat-store.meta" "window=fm:fm-feat-store" "worktree=$d/wt" "kind=ship" "harness=claude" "account=ordinary"
+  out=$(HOME="$d/supervisor-home" CLAUDE_CONFIG_DIR="$d/supervisor-store" run_crew_state "$d" feat-store)
+  assert_contains "$out" "state: blocked" "an ordinary-account crew is read from \$HOME/.claude behind the supervisor's store"
+  rm -rf "$d/supervisor-home/.claude"
+  out=$(HOME="$d/supervisor-home" CLAUDE_CONFIG_DIR="$d/supervisor-store" run_crew_state "$d" feat-store)
+  assert_contains "$out" "state: paused" "with no store holding a transcript the pause stays unclassified"
+  pass "paused: the band read follows the crew's own store, not the supervisor's"
 }
 
 test_secondmate_open_block_survives_unrelated_append() {
@@ -5811,6 +5857,7 @@ test_no_run_idle_pane_uses_log
 test_no_run_idle_pane_uses_keyed_log
 test_no_run_idle_pane_paused
 test_no_run_idle_pane_paused_split
+test_paused_band_reads_the_crews_own_store
 test_no_run_idle_pane_custom_paused_verb
 test_no_run_idle_secondmate_resolved_event_not_state
 test_dead_window_ignores_stale_status_log

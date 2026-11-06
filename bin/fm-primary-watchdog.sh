@@ -390,11 +390,15 @@ fm_watchdog_inject() {  # <target> <backend> <message>
 # other session started in the same home overtakes it and its smaller context
 # would be reported as the primary's band. Arming happens from inside the
 # primary's own session (the Stop-hook chain), so the newest transcript at arm
-# time is the primary's; it is pinned there and passed explicitly here. After
-# this watchdog launches a fresh session itself the pin is dropped and a
-# re-pin-after epoch recorded, so the loop re-pins on its own once the new
-# session has written a transcript newer than that launch - without the pin
-# ever silently reverting to "whichever session wrote last".
+# time is the primary's; it is pinned there and passed explicitly here. The
+# project directory is resolved the way bin/fm-context-usage.sh resolves its own
+# auto-pick, under ${CLAUDE_CONFIG_DIR:-$HOME/.claude}: a primary launched with
+# CLAUDE_CONFIG_DIR writes no transcripts at all under $HOME/.claude, so reading
+# that store would pin some other session's stale reading. After this watchdog
+# launches a fresh session itself the pin is dropped and a re-pin-after epoch
+# recorded, so the loop re-pins on its own once the new session has written a
+# transcript newer than that launch - without the pin ever silently reverting
+# to "whichever session wrote last".
 # FM_WATCHDOG_TRANSCRIPT overrides the pin for tests.
 fm_watchdog_primary_transcript() {
   local pinned=${FM_WATCHDOG_TRANSCRIPT:-}
@@ -408,9 +412,14 @@ fm_watchdog_primary_transcript() {
 }
 
 fm_watchdog_pin_primary_transcript() {
-  local munged proj newest epoch after
+  local config_dir munged proj newest epoch after
+  case ${CLAUDE_CONFIG_DIR:-} in
+    '') config_dir="${HOME:-}/.claude" ;;
+    /*) config_dir="$CLAUDE_CONFIG_DIR" ;;
+    *) return 1 ;;
+  esac
   munged=$(printf '%s' "$FM_HOME" | tr -c 'a-zA-Z0-9' '-')
-  proj="$HOME/.claude/projects/$munged"
+  proj="$config_dir/projects/$munged"
   [ -d "$proj" ] || return 1
   after=$(cat "$FM_WATCHDOG_REPIN_MARKER" 2>/dev/null)
   case "$after" in ''|*[!0-9]*) after=0 ;; esac

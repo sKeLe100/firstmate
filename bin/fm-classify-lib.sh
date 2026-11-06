@@ -364,15 +364,18 @@ status_is_captain_held() {  # <status-line>
 # is retroactively misclassified, while an exhausted session is caught even when
 # its brief never knew the key. FM_CONTEXT_USAGE_BIN overrides the band reader
 # (tests); an empty or missing worktree reads as no band evidence.
+# The band read is bin/fm-context-usage.sh's contract (its header owns it);
+# <claude-store> is the target task's recorded account=, or nothing when it
+# recorded no pin.
 FM_CLASSIFY_SESSION_LIMIT_KEY=session-limit
-status_pause_context_band() {  # <worktree> -> ok|warn|restart|unknown
-  local wt=$1 out reader
+status_pause_context_band() {  # <worktree> [claude-store] -> ok|warn|restart|unknown
+  local wt=$1 store=${2:-${FM_CLAUDE_STORE:-}} out reader
   reader=${FM_CONTEXT_USAGE_BIN:-$(dirname "${BASH_SOURCE[0]}")/fm-context-usage.sh}
   if [ -z "$wt" ] || [ ! -d "$wt" ] || [ ! -x "$reader" ]; then
     printf 'unknown'
     return 0
   fi
-  out=$(FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || out=
+  out=$(FM_CLAUDE_STORE="${store:-auto}" FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || out=
   case " $out " in
     *" band=warn "*) printf 'warn' ;;
     *" band=restart "*) printf 'restart' ;;
@@ -381,26 +384,26 @@ status_pause_context_band() {  # <worktree> -> ok|warn|restart|unknown
   esac
 }
 # 0 when a `paused:` line is NOT a self-clearing wait and needs firstmate action.
-status_pause_needs_action() {  # <status-line> [worktree]
-  local line=$1 wt=${2:-}
+status_pause_needs_action() {  # <status-line> [worktree] [claude-store]
+  local line=$1 wt=${2:-} store=${3:-}
   status_is_paused "$line" || return 1
   [ "$(_fm_decision_key "$line")" = "$FM_CLASSIFY_SESSION_LIMIT_KEY" ] && return 1
-  case "$(status_pause_context_band "$wt")" in
+  case "$(status_pause_context_band "$wt" "$store")" in
     warn|restart) return 0 ;;
     *) return 1 ;;
   esac
 }
 # 0 when a `paused:` line is a self-clearing declared wait.
-status_is_self_clearing_pause() {  # <status-line> [worktree]
-  status_is_paused "$1" && ! status_pause_needs_action "$1" "${2:-}"
+status_is_self_clearing_pause() {  # <status-line> [worktree] [claude-store]
+  status_is_paused "$1" && ! status_pause_needs_action "$1" "${2:-}" "${3:-}"
 }
 
 # With a worktree, a context-exhausted pause is excluded: only a self-clearing
 # wait or a captain hold earns the bounded long-cadence treatment.
-status_is_paused_or_captain_held() {  # <status-line> [worktree]
-  local line=$1 wt=${2:-}
+status_is_paused_or_captain_held() {  # <status-line> [worktree] [claude-store]
+  local line=$1 wt=${2:-} store=${3:-}
   if status_is_paused "$line"; then
-    status_is_self_clearing_pause "$line" "$wt"
+    status_is_self_clearing_pause "$line" "$wt" "$store"
   else
     status_is_captain_held "$line"
   fi

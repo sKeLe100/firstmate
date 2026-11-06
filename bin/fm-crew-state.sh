@@ -268,7 +268,7 @@ emit_ship_status_done() {  # [extra-detail]
 
 map_log_state() {  # <line>
   if status_is_paused "$1"; then
-    if status_pause_needs_action "$1" "$WT"; then
+    if status_pause_needs_action "$1" "$WT" "$(meta_value account)"; then
       echo blocked
     else
       echo paused

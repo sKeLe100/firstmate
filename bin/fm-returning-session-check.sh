@@ -18,8 +18,13 @@
 #   be an absolute path to an existing directory, because Claude's transcript
 #   directories are keyed on the absolute home path - a relative or missing
 #   path is a usage error, not missing evidence. It is passed through as
-#   FM_HOME to fm-context-usage.sh, so the same transcript-discovery and
-#   config/context-thresholds resolution apply.
+#   FM_HOME to fm-context-usage.sh, whose header owns transcript discovery,
+#   store resolution, and the staleness guard. This read always names its target
+#   store: the account= recorded for the <state-dir> <task-id> pair wins whenever
+#   that record has one, an ambient FM_CLAUDE_STORE applies only when no record
+#   answers, and `auto` is the last resort, so the guard never applies to an idle
+#   returning session and one exported store can never stand in for another
+#   task's.
 #
 #   <state-dir> and <task-id> are optional and must be given together: the
 #   CALLER's own state directory (never the returning home's own state/,
@@ -42,8 +47,8 @@
 #     restart_tokens=<N> idle_seconds=<N|unknown> ttl_seconds=<N|n/a> \
 #     transcript=<path>
 #   verdict=unknown reason=<text>
-#     printed only for fm-context-usage.sh's known no-evidence-yet failures -
-#     no Claude transcript directory, no *.jsonl transcript found, transcript
+#     printed for fm-context-usage.sh's known no-evidence-yet failures - no
+#     Claude transcript directory, no *.jsonl transcript found, transcript
 #     not found, no assistant usage record (a non-claude harness, or no
 #     session has run there yet). Unknown is not evidence of either band, so
 #     callers proceed with an ordinary bare resume rather than forcing a
@@ -86,7 +91,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,85p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,90p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -110,10 +115,22 @@ home_path="$(cd -- "$home_path" && pwd)"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-cache-ttl-lib.sh
 . "$script_dir/fm-cache-ttl-lib.sh"
+# shellcheck source=bin/fm-backend.sh
+. "$script_dir/fm-backend.sh"
+
+# The target session's own store: the account= its task record carries wins when
+# the <state-dir> <task-id> pair is given, an ambient FM_CLAUDE_STORE applies
+# only when no record answers for that pair, and `auto` when neither names one
+# (bin/fm-context-usage.sh's header owns the values).
+claude_store=
+if [ -n "$state_dir" ] && [ -n "$task_id" ]; then
+  claude_store=$(fm_meta_get "$state_dir/$task_id.meta" account)
+fi
+claude_store="${claude_store:-${FM_CLAUDE_STORE:-auto}}"
 
 usage_output=""
 usage_status=0
-usage_output="$(FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
+usage_output="$(FM_CLAUDE_STORE="$claude_store" FM_HOME="$home_path" "$script_dir/fm-context-usage.sh" 2>&1)" || usage_status=$?
 
 if [ "$usage_status" -ne 0 ]; then
   reason="$(printf '%s' "$usage_output" | tr '\n' ' ' | sed 's/  */ /g')"
@@ -147,6 +164,13 @@ if [ -z "$band" ]; then
   echo "verdict=blocked reason=fm-context-usage.sh produced no band field"
   exit 1
 fi
+
+case "$band" in
+  ok|warn|restart) ;;
+  *)
+    echo "verdict=blocked reason=fm-context-usage.sh produced an unrecognized band: $band"
+    exit 1 ;;
+esac
 
 idle_seconds="unknown"
 if [ -n "$state_dir" ] && [ -n "$task_id" ]; then
