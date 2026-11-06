@@ -1,0 +1,86 @@
+fm-pc02-test-offload: claimed PC02 slot 1 of 6
+fm-pc02-test-offload: PC02 idle and ready; running tests remotely on pc02
+FM_TEST_ENV_RECORD v=1
+shell=bash version=5.3.9(1)-release flags=ehuB argv0=fm-test-run.sh pid=2479808 ppid=2479806
+runner_login_shell=no
+path_entries=~/.local/bin:~/.local/gnu-coreutils/bin:~/.npm-global/bin:~/.local/bin:~/.npm-global/bin:~/.local/bin:~/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:
+shell_options=braceexpand,errexit,hashall,interactive-comments,nounset
+os=Linux kernel=6.18.54.1-microsoft-standard-WSL2 machine=x86_64
+process_model=pid=2479808 ppid=2479806 pgid=2479806 sid=2479806 subreaper=not-exposed-by-procfs
+tmpdir_fs=ext4
+ulimit=real-time non-blocking time  (microseconds, -R) unlimited
+ulimit=core file size              (blocks, -c) 0
+ulimit=data seg size               (kbytes, -d) unlimited
+ulimit=scheduling priority                 (-e) 0
+ulimit=file size                   (blocks, -f) unlimited
+ulimit=pending signals                     (-i) 112225
+ulimit=max locked memory           (kbytes, -l) 65536
+ulimit=max memory size             (kbytes, -m) unlimited
+ulimit=open files                          (-n) 1048576
+ulimit=pipe size                (512 bytes, -p) 8
+ulimit=POSIX message queues         (bytes, -q) 819200
+ulimit=real-time priority                  (-r) 0
+ulimit=stack size                  (kbytes, -s) 8192
+ulimit=cpu time                   (seconds, -t) unlimited
+ulimit=max user processes                  (-u) 112225
+ulimit=virtual memory              (kbytes, -v) unlimited
+ulimit=file locks                          (-x) unlimited
+tool=bash path=/usr/bin/bash version=GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)
+tool=node path=~/.local/bin/node version=v22.22.3
+tool=pi path=~/.npm-global/bin/pi version=0.85.1
+tool=tasks-axi path=~/.local/bin/tasks-axi version=0.2.6
+tool=timeout path=~/.local/gnu-coreutils/bin/timeout version=timeout (GNU coreutils) 9.7
+tool=git path=/usr/bin/git version=git version 2.53.0
+tool=herdr path=~/.local/bin/herdr version=herdr 0.9.5
+tool=tmux path=/usr/bin/tmux version=tmux 3.6
+tool=rsync path=/usr/bin/rsync version=rsync  version 3.4.1  protocol version 32
+tool=no-mistakes path=~/.local/bin/no-mistakes version=no-mistakes version v1.46.0 (20892e6) 2026-08-06T06:41:38Z
+~/.fm-pc02-test-offload/run-580853741-3041945/worktree/bin/fm-test-env-record.sh: line 9: 2480131 Aborted                    env -i PATH="${PATH:-/usr/bin:/bin}" HOME="$chrome_tmp" TMPDIR="$chrome_tmp" timeout 8 "$chrome" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-background-networking --disable-component-update --disable-sync --disable-extensions --no-first-run --no-default-browser-check --user-data-dir="$chrome_tmp/profile" --dump-dom about:blank > /dev/null 2>&1
+chrome_startup=failed path=~/.local/bin/chromium
+FM_TEST_ENV_RECORD_END
+FM_TEST_HOST_LOAD load5=1.70 cpus=16 jobs=1 per_script_timeout_secs=3000 watch_triage_timeout_secs=3000 captain_hold_timeout_secs=3000
+FM_TEST_BEGIN 2026-11-06T12:36:44Z tests/fm-supervision-host-2.test.sh family=afk expected_gate_skip=none
+ok - host+hook: the next park takes over the cycle a main-only pass-through left, so one arm owns it
+ok - host+hook: a park stopped mid take-over leaves the take-over to the next park
+ok - host+hook: a successor that cannot be recorded is stopped, and main's next turn end arms a fresh cycle
+ok - host: a primary with no verified dialog mirror keeps every attended close on main, and its away posture still runs
+ok - host: each wake carries the captain's dialog since the last wake, without operational input
+ok - host: the dialog mirror, its feed, and the wake file are owner-only
+ok - host: dialog a turn never completed with its report (a park boundary, a stopped turn, no report) reaches the next turn
+ok - host: an attended wake whose mirror is missing, cannot be read (at the feed or at the prompt), or holds a malformed entry reaches main before any engine turn, and the cursor stays put
+ok - host: an away wake is handled on the engine through the branch contract and never reaches main
+ok - host: an engine turn that records no outcome hands its durable wake to main
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+ok - host: silent outcomes are excluded from both captain-return handoff paths
+ok - host: an early visible outcome survives more than 1,000 same-turn receipts
+ok - host: an outcome lookup failure forces a visible main handoff
+ok - host: an outcome recorded after the return reaches main even when its host dies at the turn's end
+ok - host: a killed predecessor's engine is reaped and the next host removes its turn files
+ok - host: a turn that reports but leaves its granted rows queued hands the wake to main
+ok - host: a captain return during a failed engine turn still hands that turn's outcomes to main
+ok - host: an engine turn whose result is incomplete hands its wake to main
+ok - host: two engine errors latch the session, main keeps every away wake in the cooldown, a failed probe doubles it up to its cap, and a report recovers it silently
+ok - host: an attended close in a latched session reaches main as the arm printed it and leaves the latch as it was, and a home that opted out with off never reads it
+ok - host: attended, two engine errors latch the session, main keeps every close unchanged in the cooldown, a failed probe doubles it up to its cap, and a routine probe's recovery stays in the ledger, off main
+ok - host: an engine turn is bounded, and tool processes outside its process group are reaped
+ok - host: a restarted host stops, by recorded identity, the cycle a killed predecessor left running
+ok - host: the park ends itself with a boundary wake and a stopped watcher
+ok - host: waiting closes cannot carry the park past its boundary
+ok - host: a close whose margin runs out while the successor starts reaches main at the boundary without a turn
+ok - host: the park's test clock is inert without the test marker
+ok - host: a park at or beyond the Stop-hook registration falls back to the default boundary
+ok - host: an owner's later park limit lets a turn outlive the boundary, and no other limit does
+ok - host: the first cycle's status streams once, --restart replaces a stale watcher, and an owner predecessor makes a handling successor
+ok - host: an unchanged held outcome reaches the captain once across cadences, and a later decision on the task still does
+ok - host: a home naming an unverified engine hands every away wake to main with the reason
+ok - host: a host outside the session-lock owner stands down without arming
+ok - host: a host under a superseded auto-arm generation stands down without touching the owner
+FM_TEST_END 2026-11-06T12:43:31Z tests/fm-supervision-host-2.test.sh exit=0 duration_ms=407365 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=408120
+FM_TEST_SUMMARY_FAMILY family=afk count=1 duration_ms=407365 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-supervision-host-2.test.sh duration_ms=407365
+
+real	6m54.341s
+user	0m1.649s
+sys	0m0.764s
+exit=0
