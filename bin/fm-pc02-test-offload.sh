@@ -1,32 +1,28 @@
 #!/usr/bin/env bash
 # fm-pc02-test-offload.sh - single owner of routing a heavy fm-test-run.sh or
-# fm-lint.sh invocation to PC02 when PC02 is idle from LLM duty AND not the
-# captain's personal machine right now. A busy PC02 (a live LLM lane, host CPU
-# or GPU load, or every test slot held) is waited on under one bound, and the
-# run falls back to running it on PC01 when PC02 is personally in use,
-# unreachable, unready, the transfer fails, or the bound expires.
+# fm-lint.sh invocation to PC02 unless the captain's personal-use switch says
+# otherwise. PC02 is sized to serve a model and run the test slots together
+# (16 threads, ~22 GiB free, six slots; a Qwen lane uses the GPU plus CPU MoE
+# offload), so a live PC02 model worker is NOT test-offload occupancy: it never
+# blocks or pushes a test run back to PC01. The per-slot locks decide admission
+# and a run waits for a free slot under one bound; it falls back to PC01 only
+# when PC02 is personally in use, unreachable, unready, the transfer fails, or
+# that bound expires.
 #
 # Why: on PC01 the no-mistakes test step (bin/fm-test-run.sh --changed
 # --exclude-family real-herdr-gated --exclude-quarantined) can outrun the
 # test-agent deadline under host load, and the canonical lint step's exhaustive
 # ShellCheck audit is equally load-sensitive. PC02 has stronger hardware and,
-# when its llama-swap serving stack is not holding a model for a live task and
-# the captain is not using it personally (gaming, etc.), sits idle.
+# when the captain is not using it personally (gaming, etc.), has room for both
+# a model and the six test slots.
 # fm-test-run.sh's --pc02-if-idle flag tries hosted compute first, then
 # reaches this script through fm-test-compute.sh; this script decides
 # local vs remote and, for remote, owns the transfer and execution mechanics
 # for tests and canonical lint.
 #
 # Reused rather than reinvented:
-#   - "is PC02 serving an LLM for firstmate" is
-#     bin/fm-autonomous-pc02-lane.sh's existing local, bounded scan of
-#     state/*.meta for a live pc02-llamaswap/* task - the same occupancy
-#     signal bin/fm-spawn.sh's pc02_lane_guard already treats as
-#     authoritative.
 #   - ssh access ("ssh pc02" lands in PC02's WSL) is the path documented in
-#     docs/pc02-outage-runbook.md, which also owns llama-swap's tailnet
-#     address (FM_PC02_OFFLOAD_LLAMASWAP_URL's default) used by the
-#     llama-swap occupancy check below.
+#     docs/pc02-outage-runbook.md.
 #   - git-dir/git-common-dir resolution is fm-primary-scope-lib.sh's
 #     fm_resolve_git_path, needed because this script's own worktree is
 #     typically a linked git worktree (bin/fm-spawn.sh's isolated task
@@ -34,22 +30,15 @@
 #
 # Personal-use routing (captain-authorized 2026-09-24, "There will need to be
 # a check or switch in place for when PC02 is being used for personal use or
-# not"), evaluated fresh at every run, each layer logged as one line and any
-# hit routing to PC01 at once, except that the automatic checks below wait
-# under the bound first (see the readiness loop below):
-#   1. Manual switch: a flag file in PC02's own home directory
-#      (bin/fm-pc02-personal-use.sh owns the PC01-side on/off/status toggle;
-#      docs/pc02-outage-runbook.md documents the captain's no-terminal
-#      Windows desktop toggle that writes the same file).
-#   2. Automatic: PC02's own llama-swap /running endpoint listing any loaded
-#      model (any live LLM session, not just one firstmate dispatched; an
-#      idle llama-swap with nothing loaded does not count, and one that is
-#      not answering at all is serving nothing), Windows-side CPU and
-#      GPU utilization (a game or other heavy foreground use shows up here
-#      without needing per-process foreground-window detection), each
-#      against a configurable busy threshold.
-#   3. An unclear read (a llama-swap or resource answer that does not parse)
-#      counts as busy and waits under the bound - never read as an idle host.
+# not"; restated 2026-11-04, "PC02 should be saturated with test work and PC01
+# relieved"): the captain's manual switch is the only thing that stops PC02
+# testing. It is a flag file in PC02's own home directory
+# (bin/fm-pc02-personal-use.sh owns the PC01-side on/off/status toggle;
+# docs/pc02-outage-runbook.md documents the captain's no-terminal Windows
+# desktop toggle that writes the same file); when it is on, the run routes to
+# PC01 at once and logs the reason. A live PC02 model worker and a loaded
+# llama-swap do not count: they share the host with the test slots rather than
+# holding them, and the slot locks below are the only occupancy signal.
 #
 # Every readiness check is local or one bounded ssh call; a stuck or slow
 # probe times out and this script falls back to running locally rather than
@@ -109,22 +98,18 @@
 #     ~/.fm-pc02-test-slot-<n>.lock, one per concurrent test suite or lint
 #     run, cover transfer and execution. A run takes the first free slot.
 #     With every slot held it keeps polling while printing that it is
-#     waiting. The slot wait and any load-gate wait draw on one
-#     FM_PC02_OFFLOAD_SLOT_WAIT_SECS bound (default 600, ten minutes), after
-#     which the run routes local; FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 restores
-#     the immediate local fallback, and a forwarded --max-wall-ms budget also
-#     zeroes the wait because that wall clock belongs to the run itself. An
-#     unclear claim routes local at once. PC02 being unreachable, personally
-#     in use, or missing a tool still routes local before any wait begins; an
-#     environment-parity mismatch routes local as soon as it is compared,
-#     after any gate wait. The files are never unlinked: a dead owner's
-#     kernel lock is released automatically, so a leftover file or process
-#     name is harmless. The remote suite carries FM_PC02_OFFLOAD_REMOTE=1, so
-#     it is governed by these slot locks rather than PC01's one-heavy-run
-#     admission.
-#   - Supervising-home selection is owned by docs/configuration.md's "PC02
-#     test and lint offload" section; the per-machine slot settings above are
-#     owned here.
+#     waiting. The slot wait draws on one FM_PC02_OFFLOAD_SLOT_WAIT_SECS
+#     bound (default 600, ten minutes), after which the run routes local;
+#     FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 restores the immediate local fallback,
+#     and a forwarded --max-wall-ms budget also zeroes the wait because that
+#     wall clock belongs to the run itself. An unclear claim routes local at
+#     once. PC02 being unreachable, personally in use, or missing a tool still
+#     routes local before any wait begins; an environment-parity mismatch
+#     routes local as soon as it is compared. The files are never unlinked: a
+#     dead owner's kernel lock is released automatically, so a leftover file
+#     or process name is harmless. The remote suite carries
+#     FM_PC02_OFFLOAD_REMOTE=1, so it is governed by these slot locks rather
+#     than PC01's one-heavy-run admission.
 #   - The remote fm-test-run.sh prints its own environment record before its
 #     first test, so an offloaded run records PC02's PATH and the limits the
 #     suite actually runs with.
@@ -194,9 +179,8 @@
 #                                      PC02 check
 #   FM_PC02_OFFLOAD_HOST                ssh target (default: pc02)
 #   FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS  bound for the reachability/personal-use/
-#                                      resource/tool probe and the post-sync
-#                                      HEAD check (default: 15; the resource
-#                                      probe's CPU sample alone takes ~1s)
+#                                      tool probe and the post-sync HEAD check
+#                                      (default: 15)
 #   FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS bound for the PC01/PC02 environment
 #                                      parity probe on either host (default:
 #                                      300). Its per-command deadlines (twelve
@@ -229,9 +213,7 @@
 #                                      error that exits 2 without running the
 #                                      selected command.
 #   FM_PC02_OFFLOAD_SLOT_WAIT_SECS      bound, in seconds, on the total wait
-#                                      for PC02 to clear (a live LLM lane, a
-#                                      busy CPU or GPU, an unclear load read,
-#                                      or every slot held) before routing
+#                                      for a free PC02 slot before routing
 #                                      local (default: 600, ten minutes). 0
 #                                      restores the immediate local fallback,
 #                                      and a forwarded --max-wall-ms budget
@@ -243,10 +225,6 @@
 #                                      with its reason; the slot host is
 #                                      polled every
 #                                      FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS.
-#   FM_PC02_OFFLOAD_GATE_RECHECK_SECS   seconds between load-gate re-checks
-#                                      (default: 30). Must be a positive
-#                                      integer; any other value is a
-#                                      configuration error that exits 2.
 #   FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS
 #                                      seconds between slot retries while
 #                                      waiting (default: 5). Must be a
@@ -274,8 +252,6 @@
 #                                      per offload run, removed when the run
 #                                      ends so concurrent runs never share one
 #                                      (default: .fm-pc02-test-offload)
-#   FM_PC02_OFFLOAD_LLAMASWAP_URL       llama-swap base URL as PC02 reaches it
-#                                      (default: http://100.67.55.77:8080)
 #   FM_PC02_OFFLOAD_REQUIRED_TOOLS      space-separated tool list PC02 must
 #                                      have (default: see REQUIRED_TOOLS
 #                                      below); override only to reflect a
@@ -284,15 +260,9 @@
 #                                      a tool-short PC02 pass anyway.
 #   FM_PC02_OFFLOAD_PERSONAL_USE_FLAG   the manual switch's flag file path on
 #                                      PC02, relative to its $HOME (default:
-#                                      .fm-pc02-personal-use); present = on
-#   FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1  the Windows-side resource-check
-#                                      script's path as WSL sees it (default:
-#                                      /mnt/c/pc02-llm-server/bin/fm-pc02-resource-check.ps1)
-#   FM_PC02_OFFLOAD_CPU_BUSY_PCT        Windows-wide CPU%% at/above which PC02
-#                                      reads busy (default: 50)
-#   FM_PC02_OFFLOAD_GPU_BUSY_PCT        summed Windows GPU-engine utilization%%
-#                                      at/above which PC02 reads busy
-#                                      (default: 5; idle measures 0)
+#                                      .fm-pc02-personal-use); present = on.
+#                                      This is the only thing that stops PC02
+#                                      testing.
 #   FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS
 #                                      bound for removing this run's PC02
 #                                      mirror (default: 120)
@@ -316,10 +286,9 @@
 # which runs nothing at all.
 # A readiness check that cannot clear by waiting (PC02 personally in use,
 # unreachable, missing a required tool, or a sync/verification failure) falls
-# back to a local run at once. A load gate (a live LLM lane, busy CPU or GPU,
-# or an unclear load read) waits under the bound first. A capacity floor also
-# falls back to a local run. Either way the local fallback never changes the
-# result the selected command itself reports.
+# back to a local run at once. A full set of PC02 slots waits under the bound
+# first; a capacity floor also falls back to a local run. Either way the local
+# fallback never changes the result the selected command itself reports.
 set -u
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -363,7 +332,6 @@ REMOTE_JOBS="${FM_PC02_OFFLOAD_JOBS:-8}"
 SLOTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots"
 SLOT_WAIT="${FM_PC02_OFFLOAD_SLOT_WAIT_SECS:-600}"
 SLOT_WAIT_INTERVAL="${FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS:-5}"
-GATE_RECHECK="${FM_PC02_OFFLOAD_GATE_RECHECK_SECS:-30}"
 REMOTE_RUN="$(fm_pc02_remote_run_prefix "$ROOT")"$$
 REMOTE_WORKTREE="$REMOTE_RUN/worktree"
 REMOTE_COMMON="$REMOTE_RUN/common.git"
@@ -372,11 +340,7 @@ REMOTE_RUN_CREATED=0
 claim_pid=
 claim_open=0
 claim_tmp=
-LLAMASWAP_URL="${FM_PC02_OFFLOAD_LLAMASWAP_URL:-http://100.67.55.77:8080}"
 PERSONAL_USE_FLAG="${FM_PC02_OFFLOAD_PERSONAL_USE_FLAG:-.fm-pc02-personal-use}"
-RESOURCE_CHECK_PS1="${FM_PC02_OFFLOAD_RESOURCE_CHECK_PS1:-/mnt/c/pc02-llm-server/bin/fm-pc02-resource-check.ps1}"
-CPU_BUSY_PCT="${FM_PC02_OFFLOAD_CPU_BUSY_PCT:-50}"
-GPU_BUSY_PCT="${FM_PC02_OFFLOAD_GPU_BUSY_PCT:-5}"
 CLEANUP_TIMEOUT="${FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS:-120}"
 TMP_ROOT="${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}"
 MEMINFO_PATH="${FM_PC02_OFFLOAD_MEMINFO:-/proc/meminfo}"
@@ -430,11 +394,6 @@ case "$SLOT_WAIT_INTERVAL" in
 esac
 [ "$SLOT_WAIT_INTERVAL" -ge 1 ] \
   || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS must be a positive integer, got '$SLOT_WAIT_INTERVAL'" >&2; exit 2; }
-case "$GATE_RECHECK" in
-  ''|*[!0-9]*) echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_GATE_RECHECK_SECS must be a positive integer, got '$GATE_RECHECK'" >&2; exit 2 ;;
-esac
-[ "$GATE_RECHECK" -ge 1 ] \
-  || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_GATE_RECHECK_SECS must be a positive integer, got '$GATE_RECHECK'" >&2; exit 2; }
 [ "$CALLER_WALL_BUDGET" -eq 0 ] || SLOT_WAIT=0
 
 # A malformed hygiene bound is the same kind of configuration error: refuse
@@ -504,69 +463,16 @@ run_local() {  # <reason>
 command -v ssh >/dev/null 2>&1 || run_local "ssh not available on PC01"
 command -v rsync >/dev/null 2>&1 || run_local "rsync not available on PC01"
 
-# 1. Is PC02 serving as an LLM right now? Reuse the fleet's existing
-# occupancy scan (local, bounded, no network) rather than a second detector.
-# Pass the operational home explicitly: the test runner may execute from a
-# validation checkout that has code but no private state directory.
-lane_home=${FM_HOME:-}
-home_file="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home"
-home_hint="put one absolute operational-home path followed by a newline in $home_file"
-if [ -z "$lane_home" ] && { [ -e "$home_file" ] || [ -L "$home_file" ]; }; then
-  if ! IFS= read -r lane_home < "$home_file" || [[ "$lane_home" != /* ]]; then
-    run_local "supervising home configuration unavailable or invalid ($home_file); $home_hint"
-  fi
-fi
-if [ -z "$lane_home" ] && [ -z "${FM_STATE_OVERRIDE:-}" ]; then
-  common=$(fm_resolve_git_path "$ROOT" --git-common-dir) || run_local "cannot resolve supervising primary clone; $home_hint"
-  [ "$(basename "$common")" = .git ] || run_local "common git store does not identify a primary clone; $home_hint"
-  lane_home=$(dirname "$common")
-fi
-# Transient PC02 load gates wait instead of falling back at once. A live LLM
-# lane, a busy host CPU or GPU, and an unclear load read can all clear by
-# waiting, so the run prints the reason, re-checks every
-# FM_PC02_OFFLOAD_GATE_RECHECK_SECS, and runs nothing on PC02 while a gate
-# holds. Only what waiting cannot clear falls back at once (unreachable, personal
-# use, a missing tool, unusable configuration), plus a parity mismatch as soon
-# as that comparison runs. The bound is
-# FM_PC02_OFFLOAD_SLOT_WAIT_SECS in total across gate waits and the slot wait,
-# after which the run falls back to PC01 with a logged reason.
-gate_t0=
-gate_notice=
-while :; do
-  gate=
-  if [ -z "$lane_home" ]; then
-    lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" 2>&1)
-  else
-    lane_out=$("$SELF_DIR/fm-autonomous-pc02-lane.sh" --home "$lane_home" 2>&1)
-  fi
-  lane_rc=$?
-  # The scan exits 1 with "occupied: <task>" for a live LLM lane, which is a
-  # transient gate; any other result (including an unreadable state directory,
-  # exit 2) is configuration that waiting cannot clear.
-  case "$lane_rc:$lane_out" in
-    0:free) ;;
-    1:occupied:*) gate="PC02 lane check reported '$lane_out'" ;;
-    *) run_local "PC02 lane check reported '$lane_out' (rc=$lane_rc)" ;;
-  esac
-
-# 2. Is PC02 reachable, personally in use, resource-busy, and tool-ready?
-# One bounded ssh call answers all four so a stuck or slow probe cannot hang
-# this script past PROBE_TIMEOUT seconds. $HOME, $t, and $rc_out below are
+# 1. Is PC02 personally in use, tool-ready, and reachable? One bounded ssh
+# call answers it so a stuck or slow probe cannot hang this script past
+# PROBE_TIMEOUT seconds. The captain's manual switch is the only thing that
+# stops PC02 testing; a live PC02 model worker and a loaded llama-swap share
+# the host and are not occupancy (see the header). $HOME and $t below are
 # escaped so they expand on PC02 inside the remote shell, never on PC01.
 probe_cmd=$(cat <<PROBE
 [ -f "\$HOME/$PERSONAL_USE_FLAG" ] && echo "personal-use:on"
 for t in $REQUIRED_TOOLS; do command -v "\$t" >/dev/null 2>&1 || echo "missing:\$t"; done
 echo "threads:\$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)"
-if ls_running=\$(curl -sf --connect-timeout 3 --max-time 5 $(printf '%q' "$LLAMASWAP_URL/running") 2>/dev/null); then
-  echo "llama-swap-running:\$(printf '%s' "\$ls_running" | jq -r '.running | length' 2>/dev/null)"
-fi
-if [ -f "$RESOURCE_CHECK_PS1" ]; then
-  rc_win_path=\$(wslpath -w "$RESOURCE_CHECK_PS1" 2>/dev/null)
-  rc_out=\$(/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -File "\$rc_win_path" 2>/dev/null)
-  echo "resource:\$rc_out"
-else
-  echo "resource:script-missing"
-fi
 PROBE
 )
 probe_out=$(timeout "$PROBE_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$PROBE_TIMEOUT" \
@@ -579,58 +485,21 @@ fi
 
 personal_use=0
 missing_tools=
-llama_swap_running=0
-resource_line=
 remote_threads=
 while IFS= read -r probe_line; do
   case "$probe_line" in
     personal-use:on) personal_use=1 ;;
     missing:*) missing_tools="$missing_tools ${probe_line#missing:}" ;;
-    llama-swap-running:*) llama_swap_running="${probe_line#llama-swap-running:}" ;;
-    resource:*) resource_line="${probe_line#resource:}" ;;
     threads:*) remote_threads="${probe_line#threads:}" ;;
   esac
 done <<PROBE_OUT
 $probe_out
 PROBE_OUT
 
-# Layer 1 (captain's manual switch): flip with bin/fm-pc02-personal-use.sh
-# from PC01 or the no-terminal Windows desktop toggle documented in
-# docs/pc02-outage-runbook.md.
+# The manual switch (captain's 2026-09-24 request): flip with
+# bin/fm-pc02-personal-use.sh from PC01 or the no-terminal Windows desktop
+# toggle documented in docs/pc02-outage-runbook.md.
 [ "$personal_use" -ne 1 ] || run_local "PC02 personal-use switch is on"
-
-# Layer 2 (automatic): any live LLM session at all, not just a firstmate one.
-# An unparseable /running answer is Layer 3 - "unclear" - and routes local.
-case "$llama_swap_running" in
-  0) ;;
-  '' | *[!0-9]*) [ -n "$gate" ] || gate="PC02 llama-swap running-model check unclear (got '$llama_swap_running'); treating as busy" ;;
-  *) [ -n "$gate" ] || gate="PC02 llama-swap has $llama_swap_running model(s) loaded for a live session" ;;
-esac
-
-# Layer 2 (automatic): Windows-wide CPU/GPU utilization. An unparseable
-# resource read is "unclear" and waits like a busy host; a missing resource
-# check script on PC02 is configuration that waiting cannot fix.
-case "$resource_line" in
-  cpu=*gpu=*)
-    cpu_val=${resource_line#cpu=}
-    cpu_val=${cpu_val%% *}
-    gpu_val=${resource_line#*gpu=}
-    gpu_val=${gpu_val%% *}
-    cpu_over=$(awk -v v="$cpu_val" -v t="$CPU_BUSY_PCT" 'BEGIN { print (v + 0 >= t + 0) ? 1 : 0 }' 2>/dev/null)
-    gpu_over=$(awk -v v="$gpu_val" -v t="$GPU_BUSY_PCT" 'BEGIN { print (v + 0 >= t + 0) ? 1 : 0 }' 2>/dev/null)
-    if [ "$cpu_over" = 1 ]; then
-      [ -n "$gate" ] || gate="PC02 host CPU busy (${cpu_val}% >= ${CPU_BUSY_PCT}%)"
-    elif [ "$gpu_over" = 1 ]; then
-      [ -n "$gate" ] || gate="PC02 host GPU busy (${gpu_val}% >= ${GPU_BUSY_PCT}%)"
-    fi
-    ;;
-  script-missing)
-    run_local "PC02 resource check unclear (the resource-check script is missing at $RESOURCE_CHECK_PS1; waiting cannot fix it)"
-    ;;
-  *)
-    [ -n "$gate" ] || gate="PC02 resource check unclear (got '$resource_line'); treating as busy"
-    ;;
-esac
 
 if [ -n "$missing_tools" ]; then
   run_local "PC02 missing required tool(s):$missing_tools"
@@ -650,30 +519,6 @@ case "$remote_threads" in
 esac
 [ "$remote_threads" -ge 1 ] || run_local "PC02 reported zero threads; cannot bound concurrent slot workers"
 
-# A held gate waits and re-checks from the top of the loop, so no PC02 test
-# suite starts while a live LLM lane or busy host is still holding it.
-if [ -z "$gate" ]; then break; fi
-[ -n "$gate_t0" ] || gate_t0=$(date +%s)
-gate_left=$((SLOT_WAIT - ($(date +%s) - gate_t0)))
-if [ "$gate_left" -le 0 ]; then
-  if [ "$CALLER_WALL_BUDGET" -eq 1 ]; then
-    run_local "$gate and the caller's --max-wall-ms budget leaves no time to wait for it to clear"
-  fi
-  run_local "$gate and still so after the ${SLOT_WAIT}s wait bound"
-fi
-if [ "$gate" != "$gate_notice" ]; then
-  echo "fm-pc02-test-offload: $gate; waiting up to ${gate_left}s for it to clear" >&2
-  gate_notice=$gate
-fi
-nap=$GATE_RECHECK
-[ "$nap" -le "$gate_left" ] || nap=$gate_left
-sleep "$nap"
-done
-gate_used=0
-if [ -n "$gate_t0" ]; then
-  gate_used=$(( $(date +%s) - gate_t0 ))
-  echo "fm-pc02-test-offload: PC02 is free again after ${gate_used}s; continuing" >&2
-fi
 jobs_cap=$((remote_threads / SLOTS))
 [ "$jobs_cap" -ge 1 ] || jobs_cap=1
 if [ -z "${FM_PC02_OFFLOAD_JOBS:-}" ] && [ "$REMOTE_JOBS" -gt "$jobs_cap" ]; then
@@ -874,8 +719,7 @@ fi
 # release it ahead of the bounded suite. No PID-file reclamation race.
 # The gate wait and the slot wait draw on one SLOT_WAIT bound, so a run waits
 # at most that long in total before it routes to PC01.
-claim_budget=$((SLOT_WAIT - gate_used))
-[ "$claim_budget" -ge 0 ] || claim_budget=0
+claim_budget=$SLOT_WAIT
 claim_slots=
 slot=1
 while [ "$slot" -le "$SLOTS" ]; do
