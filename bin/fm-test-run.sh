@@ -972,7 +972,7 @@ tests/fm-commandcode-signals-live-e2e.test.sh 49
 tests/fm-composer-codex-idle-live-e2e.test.sh 77
 tests/fm-composer-matrix-live-e2e.test.sh 51
 tests/fm-config-inherit-lane-caps.test.sh 708
-tests/fm-context-usage.test.sh 669
+tests/fm-context-usage.test.sh 1125
 tests/fm-contributions.test.sh 140911
 tests/fm-control-relaunch.test.sh 171784
 tests/fm-control.test.sh 72794
@@ -1089,7 +1089,7 @@ tests/fm-remote-secondmate-relaunch.test.sh 879
 tests/fm-remote-secondmate-trace-context.test.sh 140132
 tests/fm-remote-transport-lanes.test.sh 66089
 tests/fm-retry-pressure.test.sh 1596
-tests/fm-returning-session-check.test.sh 650
+tests/fm-returning-session-check.test.sh 1017
 tests/fm-roundtable-coverage.test.sh 1168
 tests/fm-roundtable-factsheet.test.sh 675
 tests/fm-routing-ledger-metrics.test.sh 15993
