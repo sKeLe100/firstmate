@@ -165,6 +165,7 @@ Every `/bearings` chat response renders EXACTLY these four sections, in THIS ord
 3. **Underway** - live work progressing on its own, one line of current state per direct report.
    Empty-state: "Nothing is underway."
 4. **Charted Next** - queued or gated work waiting on the fleet or a date, deferred or aged captain-hold safety gates, plus action-free fleet-integrity warnings.
+   Render one line per `claude_accounts` entry: the account label with its five-hour and weekly windows both as percent remaining and their reset times, or unknown with its reason.
    Empty-state: "Nothing is queued."
 
 Rules that keep the contract unambiguous:
