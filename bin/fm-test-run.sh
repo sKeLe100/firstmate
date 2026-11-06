@@ -1086,8 +1086,8 @@ tests/fm-remote-job.test.sh 133201
 tests/fm-remote-reply.test.sh 216935
 tests/fm-remote-secondmate-control-launch-settle.test.sh 721
 tests/fm-remote-secondmate-lifecycle-e2e.test.sh 98640
-tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh 107758
-tests/fm-remote-secondmate-lifecycle-supervision-e2e.test.sh 139257
+tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh 243941
+tests/fm-remote-secondmate-lifecycle-supervision-e2e.test.sh 241524
 tests/fm-remote-secondmate-parent-binding.test.sh 76775
 tests/fm-remote-secondmate-relaunch.test.sh 879
 tests/fm-remote-secondmate-trace-context.test.sh 140132
