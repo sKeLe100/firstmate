@@ -45,8 +45,9 @@ A failed script's duration is excluded even when its lane uploaded an artifact.
 In particular, run 36664663190's serial 5 finished in 22m15s with an assertion failure, not a timeout; treating that as a healthy whole-lane sample would hide the failure.
 Collect successful per-script measurements for every member before calculating a split.
 
-`tests/fm-supervision-host.test.sh` uses 789123 ms from run 36669175457, after the merged [host runtime fix](https://github.com/kunchenguid/firstmate/pull/6179), rather than its pre-fix maximum of 1065298 ms.
-That post-fix value has only one sample in this baseline, so further green runs must establish its variance.
+The single-file `tests/fm-supervision-host.test.sh` used 789123 ms from run 36669175457, after the merged [host runtime fix](https://github.com/kunchenguid/firstmate/pull/6179), rather than its pre-fix maximum of 1065298 ms.
+That post-fix value had only one sample in this baseline.
+The 2026-11-06 split replaced it with one PC02 offload sample per part: 267467 ms for `tests/fm-supervision-host.test.sh` and 525849 ms for `tests/fm-supervision-host-2.test.sh`, both passing, so both stay provisional until green CI artifacts replace them.
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 The 2026-10-07 polytoken adapter tests postdate the 2026-09-30 baseline; `tests/fm-polytoken-harness.test.sh` carries 39004 ms from CI run 39357530812's timing artifacts, and the 103 ms live-guard skip for `tests/fm-polytoken-signals-live-e2e.test.sh` remains a provisional local measurement until the next CI refresh.
 The 2026-10-20 hint-drift refresh from that run also raised `tests/fm-dod-lib.test.sh`, `tests/fm-git-strip-ai-trailers.test.sh`, `tests/fm-spawn-compact-adviser-disable.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-spawn-pool-base-freshen.test.sh` to their measured durations.
