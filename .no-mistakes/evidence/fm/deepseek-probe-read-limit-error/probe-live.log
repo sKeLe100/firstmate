@@ -1,0 +1,18 @@
+== FAKE=ok logprovider=opencode model=opencode/glm-5.3-flash-free
+ok
+exit 0
+== FAKE=cap logprovider=opencode model=opencode/glm-5.3-flash-free
+capped
+exit 3
+== FAKE=cap logprovider=opencode model=glm-5.3-flash-free
+capped
+exit 3
+== FAKE=slow logprovider=opencode model=opencode/glm-5.3-flash-free
+unknown probe timed out after 3s
+exit 1
+== FAKE=cap logprovider=other model=opencode/glm-5.3-flash-free
+unknown probe timed out after 3s
+exit 1
+== FAKE=cap logprovider=opencode model=opencode/other-free
+unknown probe timed out after 3s
+exit 1

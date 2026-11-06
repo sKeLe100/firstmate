@@ -1,0 +1,25 @@
+ok - fm-free-model-probe: --help prints usage without probing
+ok - fm-free-model-probe: an unknown option refuses with exit 2 without probing
+ok - fm-free-model-probe: a missing model refuses with exit 2 without probing
+ok - fm-free-model-probe: an empty model refuses with exit 2 without probing
+ok - fm-free-model-probe: a whitespace-only model refuses with exit 2 without probing
+ok - fm-free-model-probe: an empty provider refuses with exit 2 without probing
+ok - fm-free-model-probe: an empty model component refuses with exit 2 without probing
+ok - fm-free-model-probe: a whitespace-only provider refuses with exit 2 without probing
+ok - fm-free-model-probe: too many arguments refuses with exit 2 without probing
+ok - fm-free-model-probe: a zero timeout refuses with exit 2 without probing
+ok - fm-free-model-probe: a non-numeric timeout refuses with exit 2 without probing
+ok - fm-free-model-probe: ok case returns 'ok' with exit 0
+ok - fm-free-model-probe: an OK substring in either stream is not an ok reply
+ok - fm-free-model-probe: runs opencode from a temporary directory
+ok - fm-free-model-probe: capped case returns 'capped' with exit 3 when log entry present
+ok - fm-free-model-probe: a provider-qualified model id matches its providerID and modelID log pair
+ok - fm-free-model-probe: a qualified model id does not match another provider's same bare model
+ok - fm-free-model-probe: a capped entry from before the probe does not classify it as capped
+ok - fm-free-model-probe: a fresh cap for another model does not classify this probe as capped
+ok - fm-free-model-probe: timeout without matching log returns 'unknown probe timed out' with exit 1
+ok - fm-free-model-probe: non-timeout failure returns 'unknown probe exit code' with exit 1
+ok - fm-free-model-probe: a signal-range exit status is reported as that status, not a timeout
+ok - fm-free-model-probe: absent log file treats timeout as unknown
+ok - fm-free-model-probe: an unset HOME still produces a verdict
+# fm-free-model-probe.test.sh: all assertions passed
