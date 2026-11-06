@@ -356,8 +356,8 @@ case "\$*" in
     probe_out=\$(HOME="$dir/home" bash -c "\$*" 2>&1)
     probe_out=\${probe_out//resource:script-missing/resource:cpu=1 gpu=0}
     printf '%s\\n' "\$probe_out" | sed "s/^threads:.*/threads:$threads/"
-    exit 0
     [ -z "\${FM_FAKE_PROBE_EXTRA:-}" ] || printf '%s\\n' "\$FM_FAKE_PROBE_EXTRA"
+    exit 0
     ;;
 esac
 cd "$dir/home" || exit 255
