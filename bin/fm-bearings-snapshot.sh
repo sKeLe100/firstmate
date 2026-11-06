@@ -532,7 +532,7 @@ elif [ ${#ACCOUNT_DIRS[@]} -gt 0 ] || [ "$ACCOUNT_BAD_ROWS" != '[]' ]; then
     fi
     ACCOUNT_PIDS+=("$!")
   done
-  for acct_pid in "${ACCOUNT_PIDS[@]}"; do
+  for acct_pid in ${ACCOUNT_PIDS[@]+"${ACCOUNT_PIDS[@]}"}; do
     wait "$acct_pid" 2>/dev/null || true
   done
   for ((acct_i = 0; acct_i < ${#ACCOUNT_DIRS[@]}; acct_i++)); do
