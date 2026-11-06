@@ -20,6 +20,15 @@
 # partitions only; `lint` runs every canonical lint partition alone on
 # hosted compute or PC02, while PC01's last-resort lint is the changed-file
 # subset.
+# `local-lint` runs the canonical partitions and may fan them out
+# concurrently: FM_PC02_LINT_PARALLEL sets how many partitions run at once
+# (a positive integer; default 1, the serial behavior), capped at the
+# canonical count. Each partition keeps bin/fm-lint.sh's own worker count and
+# writes its own log; the aggregate status is the serial one, so any failing
+# partition fails the run and every partition still runs. The offload owner
+# computes that bound from PC02's slot and thread ceilings. A failing run
+# keeps its logs and prints their directory; FM_PC02_LINT_LOG_DIR chooses that
+# directory instead of a temporary one.
 #
 # GitHub Actions standard ubuntu-latest is tried first, then GitLab.com on a
 # dedicated project, only after `glab auth status` succeeds, then PC02/PC01.
@@ -125,9 +134,50 @@ lint_partition_count() {
 if [ "$mode" = local-lint ]; then
   [ "$#" = 0 ] || error 'local-lint accepts no arguments'
   count=$(lint_partition_count) || { echo 'fm-test-compute: canonical lint partition count unavailable' >&2; exit 1; }
+  # Canonical partitions are independent jobs, so run several at once when the
+  # offload passes a bound; each keeps bin/fm-lint.sh's own worker count and
+  # writes its own log, and the aggregate status is unchanged from a serial
+  # run: any failing partition fails the whole lint, and every partition still
+  # runs. FM_PC02_LINT_PARALLEL=1 (the default) keeps the serial behavior.
+  parallel=${FM_PC02_LINT_PARALLEL:-1}
+  case "$parallel" in
+    ''|*[!0-9]*|0) echo "fm-test-compute: FM_PC02_LINT_PARALLEL must be a positive integer, got '$parallel'" >&2; exit 1 ;;
+  esac
+  [ "$parallel" -le "$count" ] || parallel=$count
+  log_dir=${FM_PC02_LINT_LOG_DIR:-}
+  if [ -n "$log_dir" ]; then
+    mkdir -p "$log_dir" || { echo "fm-test-compute: cannot create lint log directory $log_dir" >&2; exit 1; }
+  else
+    log_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-lint-partitions.XXXXXX") \
+      || { echo 'fm-test-compute: cannot create a canonical lint log directory' >&2; exit 1; }
+  fi
   rc=0
   n=1
-  while [ "$n" -le "$count" ]; do "$SELF_DIR/fm-lint.sh" --partition "${n}of${count}" || rc=1; n=$((n+1)); done
+  while [ "$n" -le "$count" ]; do
+    wave_end=$((n + parallel - 1))
+    [ "$wave_end" -le "$count" ] || wave_end=$count
+    pids=
+    w=$n
+    while [ "$w" -le "$wave_end" ]; do
+      log="$log_dir/partition-${w}-of-${count}.log"
+      "$SELF_DIR/fm-lint.sh" --partition "${w}of${count}" >"$log" 2>&1 &
+      pids="$pids $!"
+      w=$((w + 1))
+    done
+    w=$n
+    for pid in $pids; do
+      wait "$pid" || rc=1
+      log="$log_dir/partition-${w}-of-${count}.log"
+      [ ! -f "$log" ] || cat "$log"
+      w=$((w + 1))
+    done
+    n=$((wave_end + 1))
+  done
+  if [ "$rc" -eq 0 ] && [ -z "${FM_PC02_LINT_LOG_DIR:-}" ]; then
+    rm -rf "$log_dir"
+  elif [ "$rc" -ne 0 ]; then
+    echo "fm-test-compute: canonical lint partition logs retained in $log_dir" >&2
+  fi
   exit "$rc"
 fi
 # Payload unpacking uses JSON files, never shell evaluation or argv-sized JSON.
