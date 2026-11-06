@@ -3398,13 +3398,17 @@ install_quota_fixture() {  # <fakebin> <accounts-root>
   local fb=$1 root=$2
   cat > "$fb/quota-axi" <<SH
 #!/usr/bin/env bash
-dir=\${CLAUDE_CONFIG_DIR:-ordinary}
-# A pinned profile must be read with --profile-only and the ordinary login without
-# it, so a mislabelled read returns no provider and fails the display assertions.
+# The ordinary login is read only with CLAUDE_CONFIG_DIR unset and without
+# --profile-only; a pinned profile only with a configured dir and --profile-only.
+# Any mislabelled read exits nonzero.
 case " \$* " in *" --profile-only "*) po=1 ;; *) po=0 ;; esac
-if { [ "\$dir" = ordinary ] && [ "\$po" = 1 ]; } || { [ "\$dir" != ordinary ] && [ "\$po" = 0 ]; }; then
-  printf '%s\n' '{"schemaVersion":5,"providers":[]}'
-  exit 0
+if [ -z "\${CLAUDE_CONFIG_DIR+x}" ]; then
+  [ "\$po" = 0 ] || { echo "ambient read used --profile-only" >&2; exit 2; }
+  dir=ordinary
+else
+  [ "\$po" = 1 ] || { echo "pinned read lacked --profile-only" >&2; exit 2; }
+  case "\$CLAUDE_CONFIG_DIR" in "$root"/*) ;; *) echo "pinned read used an unconfigured dir" >&2; exit 2 ;; esac
+  dir=\$CLAUDE_CONFIG_DIR
 fi
 case "\$dir" in
   */cc-one)
@@ -3421,6 +3425,13 @@ JSON
     cat <<'JSON'
 {"schemaVersion":5,"providers":[{"provider":"claude","windows":[],"state":{"status":"auth_required","error":"credentials_invalid"},"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
 JSON
+    exit 1
+    ;;
+  */cc-empty)
+    exit 0
+    ;;
+  */cc-down)
+    exit 3
     ;;
   */cc-slow)
     sleep 5
@@ -3434,12 +3445,13 @@ JSON
 JSON
     ;;
   *)
-    printf '%s\n' '{"schemaVersion":5,"providers":[]}'
+    echo "unexpected quota read for \$dir" >&2
+    exit 2
     ;;
 esac
 SH
   chmod +x "$fb/quota-axi"
-  mkdir -p "$root/cc-one" "$root/cc-two" "$root/cc-broken" "$root/cc-slow"
+  mkdir -p "$root/cc-one" "$root/cc-two" "$root/cc-broken" "$root/cc-slow" "$root/cc-empty" "$root/cc-down"
 }
 
 run_claude_quota_bearings() {  # <home> <fakebin> <config-dir> <args...>
@@ -3505,6 +3517,13 @@ test_claude_account_display_degrades_to_unknown_rows() {
       and .claude_accounts[0].five_hour_resets_at == null
   ' >/dev/null || fail "an invalid account was hidden instead of shown as unknown: $json"
 
+  printf 'empty:%s\ndown:%s\n' "$accounts_root/cc-empty" "$accounts_root/cc-down" > "$home/config/claude-accounts"
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one" --json)
+  printf '%s' "$json" | jq -e '
+    ([.claude_accounts[] | select(.label == "empty")][0].reason) == "quota-axi returned no output"
+      and ([.claude_accounts[] | select(.label == "down")][0].reason) == "quota-axi exited 3"
+  ' >/dev/null || fail "empty and failing reads were mislabelled: $json"
+
   rm -f "$home/config/claude-accounts"
   json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
   printf '%s' "$json" | jq -e --arg root "$accounts_root" '
@@ -3515,14 +3534,37 @@ test_claude_account_display_degrades_to_unknown_rows() {
       and .claude_accounts[0].five_hour_percent_remaining == 4
   ' >/dev/null || fail "an absent account list did not fall back to the current CLAUDE_CONFIG_DIR: $json"
 
-  printf 'no separator here\n' > "$home/config/claude-accounts"
+  printf 'Account #1 %s\ngood:%s\nnodir:\n' "$accounts_root/cc-one" "$accounts_root/cc-two" > "$home/config/claude-accounts"
   json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
   printf '%s' "$json" | jq -e '
-    (.claude_accounts | length) == 1
-      and .claude_accounts[0].status == "unknown"
-      and (.claude_accounts[0].reason | contains("no usable label:dir lines"))
-  ' >/dev/null || fail "a malformed account list was silently ignored: $json"
-  pass "an unauthenticated account and a malformed account list are explicit unknown rows"
+    (.claude_accounts | length) == 3
+      and ([.claude_accounts[] | select(.label == "good")][0].status) == "ok"
+      and ([.claude_accounts[] | select(.label == "config/claude-accounts:1")][0]
+           | .status == "unknown" and (.reason | contains("not label:dir")))
+      and ([.claude_accounts[] | select(.label == "config/claude-accounts:3")][0]
+           | .status == "unknown" and (.reason | contains("empty dir")))
+  ' >/dev/null || fail "malformed account lines were silently dropped: $json"
+  pass "an unauthenticated account and malformed account lines are explicit unknown rows"
+}
+
+test_claude_account_cap_discloses_unread_accounts() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-account-cap)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-cap-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'a1:%s\na2:%s\na3:%s\n' "$accounts_root/cc-one" "$accounts_root/cc-two" "$accounts_root/cc-broken" \
+    > "$home/config/claude-accounts"
+  json=$(FM_BEARINGS_CLAUDE_ACCOUNTS_MAX=2 \
+    run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 3
+      and ([.claude_accounts[] | select(.label == "a3")][0]
+           | .status == "unknown" and (.reason | contains("FM_BEARINGS_CLAUDE_ACCOUNTS_MAX")))
+      and ([.claude_accounts[] | select(.label == "a1")][0].status) == "ok"
+  ' >/dev/null || fail "an account beyond the cap was silently dropped: $json"
+  pass "accounts beyond the cap are disclosed as unknown rows"
 }
 
 test_claude_account_reads_share_one_bounded_budget() {
@@ -3594,6 +3636,7 @@ test_default_login_path_account_uses_the_ambient_read() {
 test_claude_accounts_display_every_configured_account
 test_default_login_path_account_uses_the_ambient_read
 test_claude_account_display_degrades_to_unknown_rows
+test_claude_account_cap_discloses_unread_accounts
 test_claude_account_reads_share_one_bounded_budget
 test_ordinary_claude_account_uses_the_ambient_read
 test_task_teardown_during_metadata_capture_does_not_abort_snapshot

@@ -175,7 +175,7 @@ Opt-in surfaces: --fields bodies|paths|actions|endpoints, --all-in-flight,
   --all-secondmates, --all-landed, --all-reports, --all-queued, --all-recorded-prs,
   --all-unhealthy, --all-pr-repos, --include-prs (adds candidate_prs).
 Raise FM_BEARINGS_PR_LIMIT to expand per-repository open-PR results.
-claude_accounts reads up to four accounts listed in config/claude-accounts
+claude_accounts reads up to four accounts (FM_BEARINGS_CLAUDE_ACCOUNTS_MAX; the rest are unknown rows) listed in config/claude-accounts
   (`label:dir` lines; an absent file falls back to the current CLAUDE_CONFIG_DIR)
   in parallel under one shared FM_BEARINGS_CLAUDE_TIMEOUT budget (default 20s).
   A slow, failed, or unauthenticated read is an unknown row with its reason,
@@ -335,7 +335,8 @@ fi
 # with its reason; it never fails the snapshot.
 FM_BEARINGS_CLAUDE_TIMEOUT=${FM_BEARINGS_CLAUDE_TIMEOUT:-20}
 case "$FM_BEARINGS_CLAUDE_TIMEOUT" in ''|*[!0-9]*|0) FM_BEARINGS_CLAUDE_TIMEOUT=20 ;; esac
-FM_BEARINGS_CLAUDE_ACCOUNTS_MAX=4
+FM_BEARINGS_CLAUDE_ACCOUNTS_MAX=${FM_BEARINGS_CLAUDE_ACCOUNTS_MAX:-4}
+case "$FM_BEARINGS_CLAUDE_ACCOUNTS_MAX" in ''|*[!0-9]*|0) FM_BEARINGS_CLAUDE_ACCOUNTS_MAX=4 ;; esac
 
 BEARINGS_HOME=$(printf '%s' "$SNAP" | jq -r '.fm_home // empty')
 [ -n "$BEARINGS_HOME" ] || BEARINGS_HOME=${FM_HOME:-}
@@ -412,16 +413,24 @@ bearings_quota_account_row() {  # <label> <dir> <timeout> <ambient>
       env CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --profile-only --json 2>/dev/null </dev/null)
   fi
   rc=$?
-  if [ "$rc" -eq 124 ]; then
+  if fm_timed_out "$rc"; then
     bearings_quota_unknown_row "$label" "$dir" "quota-axi timed out after ${timeout}s"
     return 0
   fi
-  if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
-    bearings_quota_unknown_row "$label" "$dir" "quota-axi exited $rc"
+  if [ -z "$out" ]; then
+    if [ "$rc" -ne 0 ]; then
+      bearings_quota_unknown_row "$label" "$dir" "quota-axi exited $rc"
+    else
+      bearings_quota_unknown_row "$label" "$dir" "quota-axi returned no output"
+    fi
     return 0
   fi
   if ! printf '%s' "$out" | fm_quota_json_valid; then
-    bearings_quota_unknown_row "$label" "$dir" "quota-axi returned invalid JSON"
+    if [ "$rc" -ne 0 ]; then
+      bearings_quota_unknown_row "$label" "$dir" "quota-axi exited $rc"
+    else
+      bearings_quota_unknown_row "$label" "$dir" "quota-axi returned invalid JSON"
+    fi
     return 0
   fi
   printf '%s' "$out" | jq -c --arg label "$label" --arg dir "$dir" \
@@ -450,19 +459,30 @@ ACCOUNT_DIRS=()
 ACCOUNT_AMBIENT=()
 ACCOUNT_SEEN=$'\n'
 ACCOUNTS_PROBLEM=''
+ACCOUNT_BAD_ROWS='[]'
+bearings_bad_account_line() {  # <line-number> <reason>
+  local r
+  r=$(bearings_quota_unknown_row "config/claude-accounts:$1" "-" "$2")
+  ACCOUNT_BAD_ROWS=$(jq -cn --argjson a "$ACCOUNT_BAD_ROWS" --argjson r "$r" '$a + [$r]')
+}
 if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -e "$BEARINGS_ACCOUNTS_FILE" ]; then
   if [ ! -f "$BEARINGS_ACCOUNTS_FILE" ] || [ ! -r "$BEARINGS_ACCOUNTS_FILE" ]; then
     ACCOUNTS_PROBLEM="config/claude-accounts is not readable"
   else
+    alineno=0
     while IFS= read -r aline || [ -n "$aline" ]; do
+      alineno=$((alineno + 1))
       aline=${aline%$'\r'}
       aline=$(bearings_trim "$aline")
       [ -n "$aline" ] || continue
       case "$aline" in
         *:*) alabel=$(bearings_trim "${aline%%:*}"); adir=$(bearings_trim "${aline#*:}") ;;
-        *) continue ;;
+        *) bearings_bad_account_line "$alineno" "line is not label:dir, so this account was not read"; continue ;;
       esac
-      [ -n "$adir" ] || continue
+      if [ -z "$adir" ]; then
+        bearings_bad_account_line "$alineno" "line has an empty dir, so this account was not read"
+        continue
+      fi
       [ -n "$alabel" ] || alabel=$adir
       adir=$(bearings_canonical_dir "$adir")
       acct_ambient=0
@@ -473,27 +493,22 @@ if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -e "$BEARINGS_ACCOUNTS_FILE" ]; then
       ACCOUNT_DIRS+=("$adir")
       ACCOUNT_AMBIENT+=("$acct_ambient")
     done < "$BEARINGS_ACCOUNTS_FILE"
-    if [ ${#ACCOUNT_DIRS[@]} -eq 0 ]; then
+    if [ ${#ACCOUNT_DIRS[@]} -eq 0 ] && [ "$ACCOUNT_BAD_ROWS" = '[]' ]; then
       ACCOUNTS_PROBLEM="config/claude-accounts has no usable label:dir lines"
     fi
   fi
 fi
-if [ -z "$ACCOUNTS_PROBLEM" ] && [ ${#ACCOUNT_DIRS[@]} -eq 0 ]; then
+if [ -z "$ACCOUNTS_PROBLEM" ] && [ ${#ACCOUNT_DIRS[@]} -eq 0 ] && [ "$ACCOUNT_BAD_ROWS" = '[]' ]; then
   ACCOUNT_LABELS=("default")
   ACCOUNT_DIRS=("$DEFAULT_ACCOUNT_DIR")
   ACCOUNT_AMBIENT=("$DEFAULT_ACCOUNT_AMBIENT")
-fi
-if [ ${#ACCOUNT_DIRS[@]} -gt "$FM_BEARINGS_CLAUDE_ACCOUNTS_MAX" ]; then
-  ACCOUNT_LABELS=("${ACCOUNT_LABELS[@]:0:$FM_BEARINGS_CLAUDE_ACCOUNTS_MAX}")
-  ACCOUNT_DIRS=("${ACCOUNT_DIRS[@]:0:$FM_BEARINGS_CLAUDE_ACCOUNTS_MAX}")
-  ACCOUNT_AMBIENT=("${ACCOUNT_AMBIENT[@]:0:$FM_BEARINGS_CLAUDE_ACCOUNTS_MAX}")
 fi
 
 CLAUDE_ACCOUNTS_JSON='[]'
 if [ -n "$ACCOUNTS_PROBLEM" ]; then
   acct_row=$(bearings_quota_unknown_row "config/claude-accounts" "-" "$ACCOUNTS_PROBLEM")
   CLAUDE_ACCOUNTS_JSON=$(jq -cn --argjson r "$acct_row" '[$r]')
-elif [ ${#ACCOUNT_DIRS[@]} -gt 0 ]; then
+elif [ ${#ACCOUNT_DIRS[@]} -gt 0 ] || [ "$ACCOUNT_BAD_ROWS" != '[]' ]; then
   ACCOUNT_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-bearings-claude.XXXXXX") \
     || ACCOUNT_TMP="${TMPDIR:-/tmp}/fm-bearings-claude.$$"
   mkdir -p "$ACCOUNT_TMP" 2>/dev/null || true
@@ -504,7 +519,11 @@ elif [ ${#ACCOUNT_DIRS[@]} -gt 0 ]; then
     acct_dir=${ACCOUNT_DIRS[$acct_i]}
     acct_ambient=${ACCOUNT_AMBIENT[$acct_i]}
     remaining=$((FM_BEARINGS_CLAUDE_TIMEOUT - (SECONDS - ACCOUNT_STARTED)))
-    if [ "$remaining" -le 0 ]; then
+    if [ "$acct_i" -ge "$FM_BEARINGS_CLAUDE_ACCOUNTS_MAX" ]; then
+      bearings_quota_unknown_row "$acct_label" "$acct_dir" \
+        "quota-axi not read: at most $FM_BEARINGS_CLAUDE_ACCOUNTS_MAX accounts are measured (raise FM_BEARINGS_CLAUDE_ACCOUNTS_MAX)" \
+        > "$ACCOUNT_TMP/$acct_i.json" &
+    elif [ "$remaining" -le 0 ]; then
       bearings_quota_unknown_row "$acct_label" "$acct_dir" \
         "quota-axi timed out after ${FM_BEARINGS_CLAUDE_TIMEOUT}s" > "$ACCOUNT_TMP/$acct_i.json" &
     else
@@ -523,6 +542,7 @@ elif [ ${#ACCOUNT_DIRS[@]} -gt 0 ]; then
     CLAUDE_ACCOUNTS_JSON=$(jq -cn --argjson a "$CLAUDE_ACCOUNTS_JSON" --argjson r "$acct_row" '$a + [$r]')
   done
   rm -rf "$ACCOUNT_TMP"
+  CLAUDE_ACCOUNTS_JSON=$(jq -cn --argjson a "$CLAUDE_ACCOUNTS_JSON" --argjson b "$ACCOUNT_BAD_ROWS" '$a + $b')
 fi
 
 # --- optional live GitHub PR enrichment -------------------------------------
