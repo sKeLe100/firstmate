@@ -1,0 +1,9 @@
+claude_accounts[3]{label,dir,status,reason,five_hour_percent_remaining,five_hour_resets_at,seven_day_percent_remaining,seven_day_resets_at}:
+  Account #1,/var/tmp/nm-daemon-tmp/tmp.qKrYGQPZKi/fakehome/.claude,unknown,credentials_missing,null,null,null,null
+  Account #2,/var/tmp/nm-daemon-tmp/tmp.qKrYGQPZKi/fakehome/.claude-secondary,unknown,Claude profile credentials missing,null,null,null,null
+  "config/claude-accounts:2","-",unknown,"line is not label:dir, so this account was not read",null,null,null,null
+contributions: 
+  scope: owned contributions per home
+  known: 0
+  checked: 0
+  counts: 

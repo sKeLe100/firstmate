@@ -1,0 +1,8 @@
+ok - bearings displays five-hour and weekly percent remaining for every configured Claude account
+ok - an explicit $HOME/.claude account reads the ambient login, not a pinned profile
+ok - an unauthenticated account and malformed account lines are explicit unknown rows
+ok - accounts beyond the cap are disclosed as unknown rows
+ok - Claude account reads share one bounded budget and a timeout degrades only its own row
+ok - an ordinary account reads ambient quota with CLAUDE_CONFIG_DIR unset
+ok - a partial GitHub failure degrades gracefully
+ok - projection and TOON rendering failures exit nonzero with diagnostics

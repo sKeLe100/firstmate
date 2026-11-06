@@ -1,0 +1,60 @@
+{
+  "claude_accounts": [
+    {
+      "label": "Account #1",
+      "dir": "/var/tmp/nm-daemon-tmp/tmp.qKrYGQPZKi/fakehome/.claude",
+      "status": "unknown",
+      "reason": "credentials_missing",
+      "five_hour_percent_remaining": null,
+      "five_hour_resets_at": null,
+      "seven_day_percent_remaining": null,
+      "seven_day_resets_at": null
+    },
+    {
+      "label": "Account #2",
+      "dir": "/var/tmp/nm-daemon-tmp/tmp.qKrYGQPZKi/fakehome/.claude-secondary",
+      "status": "unknown",
+      "reason": "Claude profile credentials missing",
+      "five_hour_percent_remaining": null,
+      "five_hour_resets_at": null,
+      "seven_day_percent_remaining": null,
+      "seven_day_resets_at": null
+    },
+    {
+      "label": "config/claude-accounts:2",
+      "dir": "-",
+      "status": "unknown",
+      "reason": "line is not label:dir, so this account was not read",
+      "five_hour_percent_remaining": null,
+      "five_hour_resets_at": null,
+      "seven_day_percent_remaining": null,
+      "seven_day_resets_at": null
+    }
+  ],
+  "omitted": [
+    {
+      "surface": "backlog item bodies",
+      "reveal": "--fields bodies"
+    },
+    {
+      "surface": "task paths",
+      "reveal": "--fields paths"
+    },
+    {
+      "surface": "watch/steer actions",
+      "reveal": "--fields actions"
+    },
+    {
+      "surface": "healthy endpoint detail",
+      "reveal": "--fields endpoints"
+    },
+    {
+      "surface": "full scout-report inventory",
+      "reveal": "--all-reports"
+    },
+    {
+      "surface": "live PR discovery + checks",
+      "reveal": "--include-prs"
+    }
+  ]
+}
