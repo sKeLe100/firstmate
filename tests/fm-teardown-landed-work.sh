@@ -213,6 +213,272 @@ test_no_mistakes_mirror_only_branch_refuses() {
   assert_refusal_retained_task_state "$case_dir" nm-mirror-only "$local_head"
   pass "branch pushed only to the no-mistakes mirror is refused as unlanded"
 }
+
+# Landed-work proof from current remote state, not stale tracking refs:
+#   (aa) work on another origin branch, pushed from another clone -> ALLOW (any mode)
+#   (ab) same, but the refresh fails                              -> REFUSE, names remote
+#   (ac) refresh runs, commits on no remote branch                -> REFUSE
+#   (ad) same landed work plus uncommitted changes                -> REFUSE
+#   (ae) no remote at all                                         -> REFUSE, no fetch
+#   (af) remote dropped a branch, fetch.prune=true                -> tracking ref kept
+#   (ag) work already reachable                                   -> ALLOW, no fetch
+#   (ah) hung fetch                                               -> bounded, REFUSE
+#   (ai) commits held only by the no-mistakes gate                -> REFUSE, gate not fetched
+#   (aj) file saved during the refresh, work landed                -> REFUSE, file intact
+# Send the task branch's commits to <target> on origin from a separate clone, so
+# the task copy's tracking refs do not show them. Args: case_dir target
+land_task_commits_from_other_clone() {
+  local case_dir=$1 target=$2 other
+  other="$case_dir/_other"
+  git clone -q "$case_dir/origin.git" "$other"
+  git -C "$other" fetch -q "$case_dir/project" fm/task-x1
+  git -C "$other" push -q origin "FETCH_HEAD:refs/heads/$target"
+  rm -rf "$other"
+  [ -n "$(git -C "$case_dir/wt" log --oneline HEAD --not --remotes --)" ] \
+    || fail "fixture: tracking refs already show the task commits"
+}
+
+# Log every git fetch to $case_dir/fetch.log; FM_TEST_FETCH_HANG makes it hang,
+# and FM_TEST_FETCH_WRITES names a file it saves first.
+add_fetch_logging_git() {
+  local case_dir=$1
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$arg" = fetch ]; then
+    printf '%s\n' "\$*" >> "$case_dir/fetch.log"
+    [ -z "\${FM_TEST_FETCH_WRITES:-}" ] || printf 'saved during fetch\n' > "\$FM_TEST_FETCH_WRITES"
+    [ -z "\${FM_TEST_FETCH_HANG:-}" ] || sleep 120
+    break
+  fi
+done
+exec "\$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/git"
+}
+
+test_landed_on_other_origin_branch_with_stale_refs_allows() {
+  local mode case_dir rc expected
+  for mode in local-only direct-PR no-mistakes; do
+    case_dir=$(make_case "stale-refs-$mode")
+    write_meta "$case_dir" "$mode" ship
+    wt_commit_file "$case_dir" feature.txt landed
+    land_task_commits_from_other_clone "$case_dir" release
+
+    # A direct-PR task is stricter (bin/fm-teardown.sh header, #104): reachable
+    # work on origin still needs the merged-PR proof, so it refuses here.
+    expected=0
+    [ "$mode" != direct-PR ] || expected=1
+
+    set +e
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+
+    if [ "$expected" = 0 ]; then
+      expect_code 0 "$rc" "stale-refs-$mode: work on origin should be proven landed"
+      ! grep -q REFUSED "$case_dir/stderr" || fail "stale-refs-$mode: teardown printed a REFUSED line"
+    else
+      expect_code 1 "$rc" "stale-refs-$mode: direct-PR work on origin without a merged PR must refuse"
+      grep -q REFUSED "$case_dir/stderr" || fail "stale-refs-$mode: no REFUSED line in stderr"
+    fi
+  done
+  pass "work landed on another origin branch from another clone is proven after a refresh; direct-PR still needs the merged PR"
+}
+
+test_refresh_failure_does_not_read_as_landed() {
+  local case_dir rc
+  case_dir=$(make_case stale-refs-fetch-fails)
+  write_meta "$case_dir" local-only ship
+  wt_commit_file "$case_dir" feature.txt landed
+  land_task_commits_from_other_clone "$case_dir" release
+  git -C "$case_dir/project" remote set-url origin "$case_dir/missing.git"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "stale-refs-fetch-fails: a failed refresh must refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "stale-refs-fetch-fails: no REFUSED line"
+  grep -q 'Could not refresh remote: origin' "$case_dir/stderr" || fail "stale-refs-fetch-fails: refusal does not name the remote"
+  [ -d "$case_dir/wt" ] || fail "stale-refs-fetch-fails: worktree was removed"
+
+  case_dir=$(make_case stale-refs-fetch-fails-pr)
+  write_meta "$case_dir" direct-PR ship
+  wt_commit_file "$case_dir" feature.txt landed
+  land_task_commits_from_other_clone "$case_dir" release
+  git -C "$case_dir/project" remote set-url origin "$case_dir/missing.git"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "stale-refs-fetch-fails-pr: a failed refresh must refuse"
+  grep -q 'Could not refresh remote: origin' "$case_dir/stderr" || fail "stale-refs-fetch-fails-pr: refusal does not name the remote"
+  pass "a failed refresh refuses and names the remote it could not reach"
+}
+
+test_refreshed_refs_still_refuse_unreachable_commits() {
+  local case_dir rc
+  case_dir=$(make_case refreshed-unreachable)
+  write_meta "$case_dir" local-only ship
+  wt_commit_file "$case_dir" feature.txt never-landed
+  land_on_origin_main "$case_dir" other.txt unrelated
+  add_fetch_logging_git "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "refreshed-unreachable: unreachable commits must refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "refreshed-unreachable: no REFUSED line"
+  [ -s "$case_dir/fetch.log" ] || fail "refreshed-unreachable: no refresh ran, so the case proves nothing"
+  ! grep -q 'Could not refresh' "$case_dir/stderr" || fail "refreshed-unreachable: reported a failure for a working remote"
+  pass "commits on no remote branch still refuse after a successful refresh"
+}
+
+test_uncommitted_work_refuses_even_when_commits_landed() {
+  local case_dir rc
+  case_dir=$(make_case stale-refs-dirty)
+  write_meta "$case_dir" local-only ship
+  wt_commit_file "$case_dir" feature.txt landed
+  land_task_commits_from_other_clone "$case_dir" release
+  printf 'unsaved\n' > "$case_dir/wt/unsaved.txt"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "stale-refs-dirty: uncommitted work must refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "stale-refs-dirty: no REFUSED line"
+  [ -f "$case_dir/wt/unsaved.txt" ] || fail "stale-refs-dirty: uncommitted file was lost"
+  pass "uncommitted work refuses even when the commits have landed"
+}
+
+test_edit_saved_during_refresh_refuses() {
+  local mode case_dir rc
+  for mode in local-only direct-PR no-mistakes; do
+    case_dir=$(make_case "edit-during-refresh-$mode")
+    write_meta "$case_dir" "$mode" ship
+    wt_commit_file "$case_dir" feature.txt landed
+    land_task_commits_from_other_clone "$case_dir" release
+    add_fetch_logging_git "$case_dir"
+
+    set +e
+    FM_TEST_FETCH_WRITES="$case_dir/wt/saved-during-fetch.txt" run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+
+    expect_code 1 "$rc" "edit-during-refresh-$mode: an edit saved during the refresh must refuse"
+    grep -q REFUSED "$case_dir/stderr" || fail "edit-during-refresh-$mode: no REFUSED line"
+    [ -f "$case_dir/wt/saved-during-fetch.txt" ] || fail "edit-during-refresh-$mode: the saved file was lost"
+  done
+  pass "a file saved during the refresh refuses teardown and survives"
+}
+
+test_no_remote_project_refuses_without_fetching() {
+  local case_dir rc
+  case_dir=$(make_case no-remote-unpushed)
+  write_meta "$case_dir" local-only ship
+  wt_commit_file "$case_dir" feature.txt never-landed
+  git -C "$case_dir/project" remote remove origin
+  add_fetch_logging_git "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "no-remote-unpushed: unlanded work must refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "no-remote-unpushed: no REFUSED line"
+  [ ! -e "$case_dir/fetch.log" ] || fail "no-remote-unpushed: a project with no remote ran a fetch"
+  ! grep -q 'Could not refresh' "$case_dir/stderr" || fail "no-remote-unpushed: reported a refresh failure with no remote"
+  pass "a project with no remote refuses as before and fetches nothing"
+}
+
+test_refresh_never_prunes_a_dropped_branch() {
+  local case_dir rc
+  case_dir=$(make_case refresh-no-prune)
+  write_meta "$case_dir" local-only ship
+  git -C "$case_dir/project" config fetch.prune true
+  git -C "$case_dir/origin.git" update-ref refs/heads/dropped refs/heads/main
+  git -C "$case_dir/project" fetch -q origin
+  git -C "$case_dir/origin.git" update-ref -d refs/heads/dropped
+  wt_commit_file "$case_dir" feature.txt never-landed
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "refresh-no-prune: unlanded work must refuse"
+  git -C "$case_dir/project" rev-parse --verify -q refs/remotes/origin/dropped >/dev/null \
+    || fail "refresh-no-prune: the refresh pruned a branch the remote dropped"
+  pass "the refresh keeps a dropped branch's tracking ref even with fetch.prune set"
+}
+
+test_reachable_work_needs_no_fetch() {
+  local case_dir rc
+  case_dir=$(make_case reachable-no-fetch)
+  write_meta "$case_dir" local-only ship
+  wt_commit_file "$case_dir" feature.txt pushed
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  add_fetch_logging_git "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "reachable-no-fetch: reachable work should be torn down"
+  [ ! -e "$case_dir/fetch.log" ] || fail "reachable-no-fetch: work the refs already show still paid for a fetch"
+  pass "work the tracking refs already show adds no network call"
+}
+
+test_hung_fetch_is_bounded_and_refuses() {
+  local case_dir rc started elapsed
+  case_dir=$(make_case hung-fetch)
+  write_meta "$case_dir" local-only ship
+  wt_commit_file "$case_dir" feature.txt landed
+  land_task_commits_from_other_clone "$case_dir" release
+  add_fetch_logging_git "$case_dir"
+
+  started=$(date +%s)
+  set +e
+  FM_TEST_FETCH_HANG=1 run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  elapsed=$(( $(date +%s) - started ))
+
+  expect_code 1 "$rc" "hung-fetch: a hung refresh must refuse"
+  grep -q 'Could not refresh remote: origin' "$case_dir/stderr" || fail "hung-fetch: refusal does not name the remote"
+  [ "$elapsed" -ge 29 ] || fail "hung-fetch: teardown gave up after ${elapsed}s, before the 30-second bound"
+  [ "$elapsed" -lt 60 ] || fail "hung-fetch: teardown waited ${elapsed}s, past the 30-second bound"
+  pass "a hung refresh is cut off at its bound and refuses"
+}
+
+test_gate_remote_is_not_refreshed_into_landed() {
+  local case_dir rc
+  case_dir=$(make_case gate-not-refreshed)
+  write_meta "$case_dir" local-only ship
+  wt_commit_file "$case_dir" feature.txt validating
+  git init -q --bare "$case_dir/gate.git"
+  git -C "$case_dir/project" remote add no-mistakes "$case_dir/gate.git"
+  git -C "$case_dir/wt" push -q "$case_dir/gate.git" fm/task-x1
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "gate-not-refreshed: commits only on the gate must refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "gate-not-refreshed: no REFUSED line"
+  pass "commits held only by the no-mistakes gate are not refreshed into landed"
+}
 test_squash_merged_branch_deleted_allows() {
   local case_dir rc pr_head
   case_dir=$(make_case squash-merged)
