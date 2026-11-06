@@ -6,9 +6,13 @@
 #   fm-nomistakes-gate-check.sh [branch]
 #
 # Resolves the no-mistakes remote, reads the gate config (v2:<hash>), and
-# compares the gate hash against local HEAD using two ancestry checks:
+# compares the gate commit against local HEAD using two ancestry checks:
 #   1. git merge-base --is-ancestor <gate> HEAD   (gate is before HEAD)
 #   2. git merge-base --is-ancestor HEAD <gate>   (HEAD is before gate)
+#
+# The v2 hash is a 64-hex format stamp, not a commit, so it names no head.
+# When the value is such a stamp, the gate commit is the no-mistakes remote's
+# refs/heads/<branch>, which the pipeline keeps at the head it pushed.
 #
 # Prints exactly one of: equal, ahead, behind, diverged
 #   equal   - HEAD and gate hash match exactly
@@ -37,9 +41,12 @@ Detects whether a local branch's HEAD has diverged from the no-mistakes
 pipeline's own gate ref before pushing.
 
 Resolves the no-mistakes remote, reads the gate config (v2:<hash>), and
-compares the gate hash against local HEAD using two ancestry checks:
+compares the gate commit against local HEAD using two ancestry checks:
   git merge-base --is-ancestor <gate> HEAD   (gate is before HEAD)
   git merge-base --is-ancestor HEAD <gate>   (HEAD is before gate)
+
+A v2 hash that is a 64-hex stamp names no commit, so the gate commit is then
+the no-mistakes remote's refs/heads/<branch>; it must be present locally.
 
 Prints exactly one of: equal, ahead, behind, diverged.
 This script is read-only: it never writes, pushes, or attempts to fix anything.
@@ -103,6 +110,33 @@ read_gate_hash() {
   esac
 }
 
+# A 64-hex value is the v2 stamp shape. It is a commit only in a SHA-256 repo.
+is_stamp() {
+  case "$1" in
+    *[!0-9a-f]*) return 1 ;;
+  esac
+  [ "${#1}" -eq 64 ]
+}
+
+# Print the gate commit for <branch> from the no-mistakes gate repository.
+resolve_stamp_gate_head() {
+  local gate_file=$1 branch=$2 gate_dir head
+  if [ -z "$branch" ]; then
+    echo "error: detached HEAD: pass a branch to name the gate ref" >&2
+    return 1
+  fi
+  gate_dir=$(dirname -- "$gate_file")
+  if ! head=$(git -C "$gate_dir" rev-parse --verify --quiet "refs/heads/$branch^{commit}"); then
+    echo "error: gate config holds a v2 stamp, which names no commit; no gate ref refs/heads/$branch in $gate_dir" >&2
+    return 1
+  fi
+  if ! git cat-file -e "$head^{commit}" 2>/dev/null; then
+    echo "error: gate head $head for branch '$branch' is not present in this repository; fetch the no-mistakes remote first" >&2
+    return 1
+  fi
+  printf '%s\n' "$head"
+}
+
 # --- ancestry comparison ----------------------------------------------------
 
 compare_heads() {
@@ -153,22 +187,29 @@ esac
 if [ -n "$TARGET" ] && [ -d "$TARGET" ] && { [ -f "$TARGET/.git" ] || [ -d "$TARGET/.git" ]; }; then
   cd -- "$TARGET" || exit 1
   HEAD_REF="HEAD"
+  BRANCH=$(git symbolic-ref --short -q HEAD || true)
 elif [ -n "$TARGET" ]; then
   # Treat as a branch ref; verify it exists in the current repo
   if ! git rev-parse --verify "$TARGET" >/dev/null 2>&1; then
     die "branch '$TARGET' does not exist"
   fi
   HEAD_REF="$TARGET"
+  BRANCH="$TARGET"
 else
   HEAD_REF="HEAD"
+  BRANCH=$(git symbolic-ref --short -q HEAD || true)
 fi
 
 HEAD_HASH=$(git rev-parse "$HEAD_REF" 2>/dev/null) || die "cannot resolve HEAD hash"
 
 GATE_FILE=$(resolve_gate_config) || die "cannot resolve gate config"
 GATE_HASH=$(read_gate_hash "$GATE_FILE") || die "cannot read gate hash"
-RESOLVED_GATE_HASH=$(git rev-parse --verify --quiet "$GATE_HASH^{commit}") \
-  || die "gate hash '$GATE_HASH' from $GATE_FILE is not a commit in this repository"
-GATE_HASH="$RESOLVED_GATE_HASH"
+if RESOLVED_GATE_HASH=$(git rev-parse --verify --quiet "$GATE_HASH^{commit}"); then
+  GATE_HASH="$RESOLVED_GATE_HASH"
+elif is_stamp "$GATE_HASH"; then
+  GATE_HASH=$(resolve_stamp_gate_head "$GATE_FILE" "$BRANCH") || exit 1
+else
+  die "gate hash '$GATE_HASH' from $GATE_FILE is not a commit in this repository"
+fi
 
 compare_heads "$GATE_HASH" "$HEAD_HASH"

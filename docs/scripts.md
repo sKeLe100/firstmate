@@ -113,7 +113,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-exclude-tools-lib.sh` | Shared parsing and runtime-support checks for `config/crew-exclude-tools` |
 | `fm-nm-run-lib.sh`       | Single owner of shared no-mistakes run-attribution primitives and rules             |
 | `fm-nomistakes-poll-lib.sh` | Bounded, correct polling of a backgrounded `no-mistakes axi run`/`respond` drive call: `classify` one `axi status` blob or `wait` for its next gate/outcome |
-| `fm-nomistakes-gate-check.sh` | Read-only detection of whether a local branch's HEAD is `equal`, `ahead`, `behind`, or `diverged` from the no-mistakes gate ref before pushing |
+| `fm-nomistakes-gate-check.sh` | Read-only detection of whether a local branch's HEAD is `equal`, `ahead`, `behind`, or `diverged` from the no-mistakes gate commit before pushing; a v2 64-hex stamp names no commit, so the gate commit is then the remote's `refs/heads/<branch>` |
 | `fm-pipeline-spend.sh`   | Attribute a task's no-mistakes pipeline spend to the task and keep it in the private spend ledger |
 | `fm-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `fm-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |

@@ -476,6 +476,127 @@ test_abbrev_gate() {
   pass "14. abbreviated gate hash reports equal"
 }
 
+# --- v2 stamp fixtures ----------------------------------------------------
+
+# A 64-hex v2 stamp, as written by the current no-mistakes gate format. It is
+# not a commit in any repository.
+STAMP_V2=44d8c1e631ab399a597b276b491ce485a335e28d07787ed2eb1273580e9b4235
+
+# Create a bare no-mistakes repo whose gate config holds the v2 stamp and whose
+# refs/heads/<branch> is the pipeline-pushed head from gate_dir.
+mk_stamp_remote() {
+  local nm_dir=$1 gate_dir=$2 branch=${3:-main}
+  mkdir -p "$nm_dir"
+  git init --bare -q "$nm_dir"
+  printf 'v2:%s\n' "$STAMP_V2" > "$nm_dir/no-mistakes-gate-config"
+  git -C "$nm_dir" fetch -q "$gate_dir" "HEAD:refs/heads/$branch"
+}
+
+# --- 15. v2 stamp compares against the gate branch ref: equal -------------
+
+test_stamp_equal() {
+  local gate_dir="$tmp/gate-stamp-eq" nm_dir="$tmp/nm-stamp-eq"
+  local workdir="$tmp/work-stamp-eq" gate_sha
+  gate_sha=$(mk_gate_work "$gate_dir" "gate")
+  mk_stamp_remote "$nm_dir" "$gate_dir"
+  mk_workdir "$workdir"
+  (
+    cd "$workdir"
+    git remote add no-mistakes "$nm_dir"
+    git fetch -q "$gate_dir" "$gate_sha" 2>/dev/null
+    git reset -q --hard "$gate_sha"
+  )
+  set +e
+  out="$("$SCRIPT" "$workdir" 2>"$tmp/err")"
+  rc=$?
+  set -e
+  [ "$rc" = 0 ] || fail "stamp-equal: expected exit 0, got $rc ($(cat "$tmp/err"))"
+  [ "$out" = "equal" ] || fail "stamp-equal: expected 'equal', got '$out'"
+  pass "15. v2 stamp compares against the gate branch ref: equal"
+}
+
+# --- 16. v2 stamp with a diverged gate branch reports diverged ------------
+
+test_stamp_diverged() {
+  local gate_dir="$tmp/gate-stamp-div" nm_dir="$tmp/nm-stamp-div"
+  local workdir="$tmp/work-stamp-div" root_sha head_sha
+  root_sha=$(mk_gate_work "$gate_dir" "root")
+  printf 'pipeline fix\n' >> "$gate_dir/README.md"
+  git -C "$gate_dir" commit -qam "pipeline fix"
+  head_sha=$(git -C "$gate_dir" rev-parse HEAD)
+  mk_stamp_remote "$nm_dir" "$gate_dir"
+  mk_workdir "$workdir"
+  (
+    cd "$workdir"
+    git remote add no-mistakes "$nm_dir"
+    git fetch -q "$gate_dir" "$root_sha" 2>/dev/null
+    git reset -q --hard "$root_sha"
+    printf 'local rewrite\n' > local.txt
+    git add local.txt
+    git commit -qm "local rewrite"
+    git fetch -q "$gate_dir" "$head_sha" 2>/dev/null
+  )
+  set +e
+  out="$("$SCRIPT" "$workdir" 2>"$tmp/err")"
+  rc=$?
+  set -e
+  [ "$rc" = 0 ] || fail "stamp-diverged: expected exit 0, got $rc ($(cat "$tmp/err"))"
+  [ "$out" = "diverged" ] || fail "stamp-diverged: expected 'diverged', got '$out'"
+  pass "16. v2 stamp with a diverged gate branch reports diverged"
+}
+
+# --- 17. v2 stamp with no gate ref for the branch errors ------------------
+
+test_stamp_no_gate_ref() {
+  local nm_dir="$tmp/nm-stamp-noref" workdir="$tmp/work-stamp-noref"
+  mkdir -p "$nm_dir"
+  git init --bare -q "$nm_dir"
+  printf 'v2:%s\n' "$STAMP_V2" > "$nm_dir/no-mistakes-gate-config"
+  mk_workdir "$workdir"
+  (
+    cd "$workdir"
+    printf '# work\n' > work.txt
+    git add work.txt
+    git commit -qm "work"
+    git remote add no-mistakes "$nm_dir"
+  )
+  set +e
+  out="$("$SCRIPT" "$workdir" 2>"$tmp/err")"
+  rc=$?
+  set -e
+  [ "$rc" != 0 ] || fail "stamp-no-ref: expected non-zero exit, got '$out'"
+  [ "$out" != "diverged" ] || fail "stamp-no-ref: silently reported 'diverged'"
+  grep -q "no gate ref refs/heads/main" "$tmp/err" \
+    || fail "stamp-no-ref: missing diagnostic ($(cat "$tmp/err"))"
+  pass "17. v2 stamp with no gate ref for the branch errors"
+}
+
+# --- 18. v2 stamp whose gate head is absent locally errors ----------------
+
+test_stamp_head_absent() {
+  local gate_dir="$tmp/gate-stamp-absent" nm_dir="$tmp/nm-stamp-absent"
+  local workdir="$tmp/work-stamp-absent"
+  mk_gate_work "$gate_dir" "gate" >/dev/null
+  mk_stamp_remote "$nm_dir" "$gate_dir"
+  mk_workdir "$workdir"
+  (
+    cd "$workdir"
+    printf '# work\n' > work.txt
+    git add work.txt
+    git commit -qm "work"
+    git remote add no-mistakes "$nm_dir"
+  )
+  set +e
+  out="$("$SCRIPT" "$workdir" 2>"$tmp/err")"
+  rc=$?
+  set -e
+  [ "$rc" != 0 ] || fail "stamp-absent: expected non-zero exit, got '$out'"
+  [ "$out" != "diverged" ] || fail "stamp-absent: silently reported 'diverged'"
+  grep -q "is not present in this repository" "$tmp/err" \
+    || fail "stamp-absent: missing diagnostic ($(cat "$tmp/err"))"
+  pass "18. v2 stamp whose gate head is absent locally errors"
+}
+
 # --- run all tests -------------------------------------------------------
 
 test_equal
@@ -491,5 +612,9 @@ test_branch_arg
 test_unresolvable_gate
 test_help
 test_abbrev_gate
+test_stamp_equal
+test_stamp_diverged
+test_stamp_no_gate_ref
+test_stamp_head_absent
 
 echo "ok: fm-nomistakes-gate-check.test.sh"
