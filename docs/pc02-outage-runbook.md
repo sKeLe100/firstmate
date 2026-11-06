@@ -166,17 +166,15 @@ contract rather than duplicating it here.
 **The captain's personal-use switch**: a Desktop shortcut on PC02 named
 "PC02 Personal Use Toggle" flips a flag with no terminal - one double-click
 turns it on (offloading stays on PC01 only) or off (PC02 may pick up
-idle offloaded runs again), with a brief popup confirming the new state. The
+offloaded runs again), with a brief popup confirming the new state. The
 same switch is reachable from PC01 with `bin/fm-pc02-personal-use.sh
-on|off|status`. Besides that manual switch, every offload attempt also
-checks automatically whether PC02's llama-swap has any model loaded for a
-live session (its `/running` endpoint; a healthy llama-swap with nothing
-loaded does not block offloading), and whether Windows-wide CPU or GPU utilization looks busy (a game
-or other heavy foreground use); a busy PC02 from any of those checks is waited
-on up to the offload's wait bound before the run routes to PC01, an unclear
-check is waited on the same way rather than guessing PC02 is free, and an
-unreachable PC02 routes the run to PC01 at once. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut
-or its resource-check script ever need to be redeployed (safe to re-run).
+on|off|status`. This manual switch is the only thing that stops PC02 testing:
+a live PC02 model worker, a loaded llama-swap, and ordinary host CPU/GPU load
+do not block an offload, because PC02 runs the test slots alongside a model.
+The per-slot locks still bound how many suites run at once, and a run waits for
+a free slot up to the offload's wait bound; an unreachable PC02 routes the run
+to PC01 at once. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the
+shortcut ever needs to be redeployed (safe to re-run).
 
 ### Reclaiming leaked test roots
 

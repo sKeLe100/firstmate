@@ -26,10 +26,6 @@ if ! timeout 10 ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=
   echo "skip: live: pc02 unreachable right now"
   exit 0
 fi
-if [ "$("$ROOT/bin/fm-autonomous-pc02-lane.sh" 2>/dev/null)" != free ]; then
-  echo "skip: live: PC02 LLM lane is occupied right now"
-  exit 0
-fi
 
 test_offloads_a_real_run_and_returns_its_exit_code_and_json_unchanged() {
   local out status json

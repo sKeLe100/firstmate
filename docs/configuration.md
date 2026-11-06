@@ -820,12 +820,9 @@ The record includes selected tool versions and paths, the inherited `PATH` entri
 Missing tools and browser startup failures are recorded as data and do not change the test result; the record never dumps the process environment.
 `bin/fm-test-env-record.sh` owns the exact fields and privacy-safe probes, and `tests/fm-test-run.test.sh` plus `tests/fm-pc02-test-offload.test.sh` pin the local and fake-remote behavior.
 
-The pipeline's canonical Test and Lint commands can offload with `FM_HOME` unset.
-The supervising home is selected from `FM_HOME`, then the per-machine `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` file, then the primary clone containing the current worktree's common `.git` directory.
-A separate bare common store (such as a no-mistakes gate worktree's) identifies no primary clone, so offload from the gate Test or Lint step starts only after `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` exists; the local-fallback diagnostic names that resolved path.
-For an operational home separate from that primary clone (including a validation clone with no private state), create that configuration file with one absolute operational-home path followed by a newline.
-An invalid or unreadable configuration, or an unavailable home state directory, keeps the run local; a configured home is never skipped in favor of a guessed home.
-`FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
+The captain's personal-use switch is the only thing that stops PC02 testing: while it is on, every offload routes to PC01 at once.
+A live PC02 model worker (`pc02-llamaswap/*`) and a loaded llama-swap are not test-offload occupancy. PC02 is sized to serve a model and run its test slots together, so the offload never probes the model lane, llama-swap, or host CPU/GPU load, and the per-slot locks below are the only occupancy signal.
+`bin/fm-pc02-personal-use.sh` owns the switch on PC01; [docs/pc02-outage-runbook.md](pc02-outage-runbook.md) owns the captain's no-terminal Windows desktop toggle for the same flag.
 
 [`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
 The script header and `--help` own the per-machine PC02 slot count (`FM_PC02_OFFLOAD_SLOTS`, or one integer in `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots`), its default and validation, and the `FM_PC02_OFFLOAD_SLOT_WAIT_SECS` and interval wait contract.
