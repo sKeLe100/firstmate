@@ -176,8 +176,9 @@ Opt-in surfaces: --fields bodies|paths|actions|endpoints, --all-in-flight,
   --all-unhealthy, --all-pr-repos, --include-prs (adds candidate_prs).
 Raise FM_BEARINGS_PR_LIMIT to expand per-repository open-PR results.
 claude_accounts reads up to four accounts (FM_BEARINGS_CLAUDE_ACCOUNTS_MAX; the rest are unknown rows) listed in config/claude-accounts
-  (`label:dir` lines; an absent file falls back to the current CLAUDE_CONFIG_DIR)
-  in parallel under one shared FM_BEARINGS_CLAUDE_TIMEOUT budget (default 20s).
+  (`label:dir` lines, where dir `ordinary` or $HOME/.claude is the ordinary login;
+  an absent file falls back to the current CLAUDE_CONFIG_DIR; an unparseable line
+  becomes an unknown row naming the file and line) in parallel under one shared FM_BEARINGS_CLAUDE_TIMEOUT budget (default 20s).
   A slow, failed, or unauthenticated read is an unknown row with its reason,
   never a snapshot error.
 EOF
