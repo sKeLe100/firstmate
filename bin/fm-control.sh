@@ -677,10 +677,55 @@ retire_busy_incarnation() {
   fi
 }
 
+# clear_blocking_dialog <dialog-name> <keys>: deliver a verified in-place clear
+# for a dialog the composer reader named, then prove the result. Returns 0 when
+# the agent is proven stopped, after retiring its busy wiring and printing
+# `stopped`; returns 1 when the dialog is gone and the ordinary exit flow may
+# continue. Dies when a key cannot be delivered on this backend, the dialog
+# survives the presses, or the agent state stays unprovable. The keys are only
+# ever the ones fm_control_blocking_dialog_clear_keys verified for the named
+# dialog; nothing here improvises a keystroke.
+clear_blocking_dialog() {  # <dialog-name> <newline-separated keys>
+  local dialog=$1 keys=$2 key gap state
+  gap=$(fm_control_interrupt_press_gap "$HARNESS") || gap=0.2
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    fm_control_backend_supports_key "$BACKEND" "$key" \
+      || die "task $ID shows the $dialog, which is cleared with $key on $HARNESS, but the $BACKEND backend cannot deliver it; refusing to improvise a different key"
+    fm_backend_send_key "$BACKEND" "$T" "$key" "$LABEL" \
+      || die "task $ID shows the $dialog, and its clear key $key was not delivered on $BACKEND; nothing else was typed"
+    sleep "$gap"
+  done <<EOF
+$keys
+EOF
+  state=$(wait_agent_state "$EXIT_WAIT" dead) || true
+  case "$state" in
+    dead)
+      retire_busy_incarnation
+      printf 'stopped'
+      return 0
+      ;;
+    alive) ;;
+    missing)
+      die "task $ID's recorded endpoint disappeared after clearing the $dialog, so exit cannot prove whether the agent stopped"
+      ;;
+    *)
+      die "task $ID's endpoint reads '$state' after clearing the $dialog rather than a positively classified state; exit cannot prove whether the agent stopped"
+      ;;
+  esac
+  : > "$FM_COMPOSER_DIALOG_SINK" \
+    || die "task $ID's dialog check could not be recorded after clearing the $dialog"
+  fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
+  if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
+    die "task $ID still shows the $(cat "$FM_COMPOSER_DIALOG_SINK") after its verified clear keys were delivered; refusing to type the exit command"
+  fi
+  return 1
+}
+
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog clear_keys
   require_state_verified_backend exit
   state=$(agent_state)
   case "$state" in
@@ -755,7 +800,21 @@ do_exit() {
   # rather than a function that subshell sourced.
   if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
-    refuse_blocking_prompt "$dialog"
+    # A dialog with a verified in-place clear (OpenCode's free-usage retry
+    # banner) is reclaimed; every other dialog keeps the refusal, because
+    # typing Enter or Escape into a picker would answer it.
+    clear_keys=$(fm_control_blocking_dialog_clear_keys "$HARNESS" "$dialog") \
+      || refuse_blocking_prompt "$dialog"
+    if clear_blocking_dialog "$dialog" "$clear_keys"; then
+      return 0
+    fi
+    # The dialog cleared without stopping the agent, so read the composer
+    # again rather than trusting the read that was blocked on it.
+    composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+      || composer_state=unknown
+    if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
+      refuse_blocking_prompt "$(cat "$FM_COMPOSER_DIALOG_SINK")"
+    fi
   fi
   case "$composer_state" in
     empty) ;;

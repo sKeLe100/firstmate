@@ -985,7 +985,7 @@ tests/fm-cursor-primary-live-e2e.test.sh 75
 tests/fm-cursor-primary.test.sh 69845
 tests/fm-daemon.test.sh 50984
 tests/fm-devin-harness.test.sh 3725
-tests/fm-devin-signals-live-e2e.test.sh 49
+tests/fm-devin-signals-live-e2e.test.sh 306
 tests/fm-dispatch-quota-cap.test.sh 11272
 tests/fm-dispatch-resolve.test.sh 10051
 tests/fm-documentation-audiences.test.sh 1301
@@ -1156,7 +1156,7 @@ tests/fm-teardown-pr-check.sh 4800
 tests/fm-teardown-process-reap.sh 11300
 tests/fm-teardown-secondmate.sh 8200
 tests/fm-teardown.test.sh 317102
-tests/fm-test-fixture-cleanup.test.sh 2182
+tests/fm-test-fixture-cleanup.test.sh 3696
 tests/fm-test-fixtures.test.sh 10194
 tests/fm-test-isolation-proof.test.sh 2866
 tests/fm-test-sandbox-cache-race.test.sh 6604
