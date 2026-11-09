@@ -1013,6 +1013,26 @@ test_exit_refuses_a_banner_that_survives_its_clear() {
   pass "fm-control exit: a banner that survives its verified clear is refused, not typed into"
 }
 
+test_relaunch_reclaims_an_opencode_free_usage_banner() {
+  local dir out rc keys
+  dir=$(new_case opencode-banner-relaunch)
+  add_task "$dir" t1 opencode
+  alive_as "$dir" opencode
+  opencode_retry_banner_screen > "$dir/fake/pane"
+  out=$(FM_FAKE_INTERRUPT_STOPS_AGENT=1 run_control "$dir" t1 relaunch --note x); rc=$?
+  # The fixture brief has no spawn sections, so the replacement launch is
+  # expected to stop after the old agent is proven stopped; that is the part
+  # under test.
+  assert_contains "$out" "t1's agent was stopped" \
+    "relaunch should stop the agent after clearing the banner"$'\n'"$out"
+  keys=$(keys_sent "$dir")
+  [ "$keys" = "$(printf 'C-c\nC-c')" ] \
+    || fail "relaunch should clear the banner with two Ctrl+C, got: $keys"
+  [ ! -s "$dir/fake/literal" ] \
+    || fail "relaunch must clear the banner without typing a command, got: $(literals "$dir")"
+  pass "fm-control relaunch: the opencode free-usage banner is cleared before the stop"
+}
+
 test_idle_agent_is_not_interrupted() {
   local dir out rc gen
   dir=$(new_case idle)
@@ -1303,6 +1323,7 @@ test_exit_refuses_the_confirming_enter
 test_exit_names_a_picker_that_renders_after_the_submit
 test_exit_reclaims_an_opencode_free_usage_banner
 test_exit_refuses_a_banner_that_survives_its_clear
+test_relaunch_reclaims_an_opencode_free_usage_banner
 test_interrupt_without_acknowledgement_preserves_busy_state
 test_muse_interrupt_confirms_adapter_acknowledgement
 test_interrupt_revalidates_agent_after_acknowledgement_wait
