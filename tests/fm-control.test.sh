@@ -147,7 +147,7 @@ case "${1:-}" in
         esac
       fi
       if [ -n "${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" ] \
-         && { [ "$payload" = Escape ] || [ "$payload" = C-c ]; }; then
+         && { { [ "$payload" = Escape ] && [ -z "${FM_FAKE_ESCAPE_KEEPS_AGENT:-}" ]; } || [ "$payload" = C-c ]; }; then
         printf 'zsh' > "$D/command"
       fi
       if [ "$payload" = Escape ] && [ -n "${FM_FAKE_MUSE_LOG:-}" ]; then
@@ -261,6 +261,7 @@ run_control() {
     FM_FAKE_MUSE_LOG="${FM_FAKE_MUSE_LOG:-}" \
     FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK="${FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK:-}" \
     FM_FAKE_INTERRUPT_STOPS_AGENT="${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" \
+    FM_FAKE_ESCAPE_KEEPS_AGENT="${FM_FAKE_ESCAPE_KEEPS_AGENT:-}" \
     FM_FAKE_DEVIN_PICKER_STUCK="${FM_FAKE_DEVIN_PICKER_STUCK:-}" \
     "$CONTROL" "$@" 2>&1
 }
@@ -995,6 +996,26 @@ test_exit_reclaims_an_opencode_free_usage_banner() {
   pass "fm-control exit: the opencode free-usage banner is cleared with two Ctrl+C"
 }
 
+test_exit_reclaims_a_busy_opencode_free_usage_banner() {
+  local dir out rc keys gen
+  dir=$(new_case opencode-banner-busy)
+  add_task "$dir" t1 opencode
+  alive_as "$dir" opencode
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
+  opencode_retry_banner_screen > "$dir/fake/pane"
+  out=$(FM_FAKE_INTERRUPT_STOPS_AGENT=1 FM_FAKE_ESCAPE_KEEPS_AGENT=1 run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "a busy agent behind the banner should still exit"$'\n'"$out"
+  assert_contains "$out" "stopped t1 harness=opencode" \
+    "exit should report the stop for a busy agent behind the banner"
+  [ ! -s "$dir/fake/literal" ] \
+    || fail "a busy agent behind the banner must not be typed into, got: $(literals "$dir")"
+  keys=$(keys_sent "$dir")
+  [ "$keys" = "$(printf 'Escape\nEscape\nC-c\nC-c')" ] \
+    || fail "a busy agent should be interrupted, then the banner cleared with two Ctrl+C, got: $keys"
+  pass "fm-control exit: a busy opencode agent behind the free-usage banner is stopped"
+}
+
 test_exit_refuses_a_banner_that_survives_its_clear() {
   local dir out rc keys
   dir=$(new_case opencode-banner-stuck)
@@ -1322,6 +1343,7 @@ test_exit_refuses_an_open_background_picker
 test_exit_refuses_the_confirming_enter
 test_exit_names_a_picker_that_renders_after_the_submit
 test_exit_reclaims_an_opencode_free_usage_banner
+test_exit_reclaims_a_busy_opencode_free_usage_banner
 test_exit_refuses_a_banner_that_survives_its_clear
 test_relaunch_reclaims_an_opencode_free_usage_banner
 test_interrupt_without_acknowledgement_preserves_busy_state
