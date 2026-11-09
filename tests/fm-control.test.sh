@@ -903,6 +903,20 @@ exit_picker_screen() {
     'Enter to confirm · Esc to cancel'
 }
 
+# OpenCode 1.19.3's non-idle footer while it retries a free-tier request that
+# exceeded the usage cap. There is no picker row; the verified clear is the
+# app's own exit confirmation, Ctrl+C twice.
+opencode_retry_banner_screen() {
+  printf '%s\n' \
+    '  Ask anything, / for commands, @ for context' \
+    '' \
+    '╭──────────────────────────────────────────────╮' \
+    '│                                              │' \
+    '╰──────────────────────────────────────────────╯' \
+    '  Build · DeepSeek V4.1 Flash Free' \
+    '  ⠋ Free usage exceeded, subscribe to Go [retrying in 22h attempt #3] esc interrupt'
+}
+
 test_exit_refuses_an_open_background_picker() {
   local dir out rc
   dir=$(new_case open-picker)
@@ -961,6 +975,42 @@ test_exit_names_a_picker_that_renders_after_the_submit() {
   enters=$(grep -c '^Enter$' "$dir/fake/keys" || true)
   [ "$enters" -eq 1 ] || fail "only the submitting Enter should be sent, got $enters"
   pass "fm-control exit: a picker that renders after the submit returned is named when the stop wait times out"
+}
+
+test_exit_reclaims_an_opencode_free_usage_banner() {
+  local dir out rc keys
+  dir=$(new_case opencode-banner)
+  add_task "$dir" t1 opencode
+  alive_as "$dir" opencode
+  opencode_retry_banner_screen > "$dir/fake/pane"
+  out=$(FM_FAKE_INTERRUPT_STOPS_AGENT=1 run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "a banner with a verified clear should exit"$'\n'"$out"
+  assert_contains "$out" "stopped t1 harness=opencode" \
+    "exit should report the stop after clearing the banner"
+  keys=$(keys_sent "$dir")
+  [ "$keys" = "$(printf 'C-c\nC-c')" ] \
+    || fail "the banner should be cleared with two Ctrl+C, got: $keys"
+  [ ! -s "$dir/fake/literal" ] \
+    || fail "the banner must be cleared without typing a command, got: $(literals "$dir")"
+  pass "fm-control exit: the opencode free-usage banner is cleared with two Ctrl+C"
+}
+
+test_exit_refuses_a_banner_that_survives_its_clear() {
+  local dir out rc keys
+  dir=$(new_case opencode-banner-stuck)
+  add_task "$dir" t1 opencode
+  alive_as "$dir" opencode
+  opencode_retry_banner_screen > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "a banner that survives its clear should refuse"$'\n'"$out"
+  assert_contains "$out" "still shows the OpenCode free-usage retry banner" \
+    "the refusal should name the banner that survived"
+  keys=$(keys_sent "$dir")
+  [ "$keys" = "$(printf 'C-c\nC-c')" ] \
+    || fail "the verified clear should still be attempted once, got: $keys"
+  [ ! -s "$dir/fake/literal" ] \
+    || fail "a surviving banner must not receive a typed exit command, got: $(literals "$dir")"
+  pass "fm-control exit: a banner that survives its verified clear is refused, not typed into"
 }
 
 test_idle_agent_is_not_interrupted() {
@@ -1251,6 +1301,8 @@ test_exit_drops_meta_busy_gen_with_the_sidecar
 test_exit_refuses_an_open_background_picker
 test_exit_refuses_the_confirming_enter
 test_exit_names_a_picker_that_renders_after_the_submit
+test_exit_reclaims_an_opencode_free_usage_banner
+test_exit_refuses_a_banner_that_survives_its_clear
 test_interrupt_without_acknowledgement_preserves_busy_state
 test_muse_interrupt_confirms_adapter_acknowledgement
 test_interrupt_revalidates_agent_after_acknowledgement_wait

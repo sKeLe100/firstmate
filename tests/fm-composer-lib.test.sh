@@ -1578,7 +1578,88 @@ test_quoted_exit_picker_text_is_not_a_dialog() {
   pass "picker text quoted above a normal composer is not read as a live picker"
 }
 
+# The non-idle footer row OpenCode 1.19.3 draws while it retries a priced
+# request on the free tier: the composer box, its model line, then the braille
+# spinner, the FreeUsageLimitError message, the retry suffix, and the
+# interrupt hint. No picker is open, so nothing typed is an answer.
+opencode_retry_banner_screen() {
+  printf '%s\n' \
+    '  Ask anything, / for commands, @ for context' \
+    '' \
+    '╭──────────────────────────────────────────────╮' \
+    '│                                              │' \
+    '╰──────────────────────────────────────────────╯' \
+    '  Build · DeepSeek V4.1 Flash Free' \
+    '  ⠋ Free usage exceeded, subscribe to Go [retrying in 22h attempt #3] esc interrupt'
+}
+
+test_opencode_retry_banner_is_a_blocking_dialog() {
+  local screen out rc sink
+  screen=$(opencode_retry_banner_screen)
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 0 ] || fail "the recorded opencode retry banner should match"
+  [ "$out" = 'OpenCode free-usage retry banner' ] || fail "dialog name was '$out'"
+  # The TUI renders `[⋯]` instead of a spinner frame when animations are off.
+  out=$(fm_composer_blocking_dialog '  [⋯] Free usage exceeded, subscribe to Go [retrying in 5m attempt #1] esc interrupt'); rc=$?
+  [ "$rc" -eq 0 ] || fail "the animations-off fallback should still match"
+  # A final attempt with no time left drops the `in <time>` part.
+  out=$(fm_composer_blocking_dialog '  ⠙ Free usage exceeded, subscribe to Go [retrying attempt #4] esc again to interrupt'); rc=$?
+  [ "$rc" -eq 0 ] || fail "a final attempt with no time left should still match"
+  # The footer's right-hand status follows the hint on the same row.
+  out=$(fm_composer_blocking_dialog '  ⠋ Free usage exceeded, subscribe to Go [retrying in 22h attempt #3] esc interrupt   build · deepseek-v4.1-flash-free'); rc=$?
+  [ "$rc" -eq 0 ] || fail "a right-hand status after the hint should still match"
+  # A narrow pane wraps the row, leaving the hint alone on the next row.
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' \
+    '  ╭──────────────╮' \
+    '  │              │' \
+    '  ╰──────────────╯' \
+    '  ⠋ Free usage exceeded, subscribe to Go' \
+    ' [retrying in 22h attempt #3] esc interrupt')"); rc=$?
+  [ "$rc" -eq 0 ] || fail "a wrapped retry row should still match"
+  sink=$(mktemp)
+  FM_COMPOSER_DIALOG_SINK=$sink
+  out=$(fm_composer_classify_screen 'styled=1' "$screen")
+  [ "$(cat "$sink")" = 'OpenCode free-usage retry banner' ] \
+    || fail "classify should note the retry banner, got '$(cat "$sink")'"
+  unset FM_COMPOSER_DIALOG_SINK
+  rm -f "$sink"
+  pass "the opencode free-usage retry banner is read from its recorded footer row"
+}
+
+test_quoted_opencode_retry_banner_is_not_a_dialog() {
+  local screen out rc
+  screen=$(printf '%s\n' \
+    '● Here is the fixture the test uses:' \
+    "+    Free usage exceeded, subscribe to Go [retrying in 22h attempt #3] esc interrupt" \
+    '  The banner reads "Free usage exceeded, subscribe to Go [retrying in 22h attempt #3] esc interrupt".' \
+    '' \
+    '╭──────────────╮' \
+    '│ > next steer │' \
+    '╰──────────────╯')
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 1 ] || fail "banner text quoted above a normal composer must not match"
+  [ -z "$out" ] || fail "a miss must print nothing, got '$out'"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' \
+    'Free usage exceeded, subscribe to Go [retrying in 22h attempt #3]' \
+    '╭──────────────╮' \
+    '│ > next steer │' \
+    '╰──────────────╯')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "the retry row without its interrupt hint must not match"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' \
+    '  Free usage exceeded, subscribe to Go [retrying in 22h attempt #3] esc interrupt' \
+    '╭──────────────╮' \
+    '│ > next steer │' \
+    '╰──────────────╯' \
+    'ordinary output' \
+    'ordinary output' \
+    'ordinary output')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "the retry row above a live composer must not match"
+  pass "opencode retry-banner text quoted above a normal composer is not a live banner"
+}
+
 test_background_exit_picker_stays_pending_and_blocks_retry
 test_dialog_heading_and_footer_must_be_the_recorded_lines
 test_dialog_note_skips_the_match_when_no_sink_is_set
 test_quoted_exit_picker_text_is_not_a_dialog
+test_opencode_retry_banner_is_a_blocking_dialog
+test_quoted_opencode_retry_banner_is_not_a_dialog
