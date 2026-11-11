@@ -759,6 +759,44 @@ test_direct_pr_unpushed_commit_refuses_registration() {
   pass "fm-pr-check refuses a direct-PR registration while a later commit is only in the copy"
 }
 
+# bin/fm-pr-merge.sh re-records through fm-pr-check.sh (FM_PR_CHECK_MERGE=1).
+# A GitLab merge request records no pr_head, so that re-record's gate reads the
+# copy's own refs: it refreshes them first, accepting a head origin holds
+# through the no-mistakes gate clone that the copy never fetched, and still
+# refuses a head that only the copy and the local gate mirror hold.
+test_merge_rerecord_refreshes_before_refusing() {
+  local dir state origin sha url
+  dir=$(make_case merge-rerecord-refresh)
+  state="$dir/home/state"
+  origin="$dir/origin.git"
+  url=https://gitlab.example/group/project/-/merge_requests/4
+  ln -sf "$REAL_JQ" "$dir/fakebin/jq"
+  write_task_meta "$dir"
+  git init -q --bare "$origin"
+  git -C "$dir/wt" remote add origin "file://$origin"
+  git -C "$dir/wt" commit -q --allow-empty -m 'fix the pipeline validates'
+  sha=$(git -C "$dir/wt" rev-parse HEAD)
+  git -C "$dir/wt" update-ref refs/remotes/no-mistakes/fm/task-a "$sha"
+
+  FM_PR_CHECK_MERGE=1 run_check_entry "$dir" task-a "$url" > "$dir/stdout" 2> "$dir/stderr" \
+    && fail "the merge-time re-record registered an unpushed head"
+  grep -Fq "named head $sha is unreachable outside the worker copy" "$dir/stderr" \
+    || fail "the merge-time refusal did not name the unpushed head: $(cat "$dir/stderr")"
+  ! grep -q '^pr=' "$state/task-a.meta" || fail "the refused merge-time re-record recorded pr="
+
+  # The pipeline pushes from its own gate clone, so origin holds the head while
+  # the copy's remote-tracking refs do not.
+  git -C "$origin" fetch -q "$dir/wt" "HEAD:refs/heads/fm/task-a"
+  ! git -C "$dir/wt" rev-parse -q --verify refs/remotes/origin/fm/task-a >/dev/null \
+    || fail "fixture: the copy already tracks origin's branch"
+  FM_PR_CHECK_MERGE=1 run_check_entry "$dir" task-a "$url" > "$dir/stdout" 2> "$dir/stderr" \
+    || fail "the merge-time re-record refused a head origin holds: $(cat "$dir/stderr")"
+  grep -qxF "pr=$url" "$state/task-a.meta" || fail "the merge-time re-record did not record pr="
+  [ "$(git -C "$dir/wt" rev-parse refs/remotes/origin/fm/task-a)" = "$sha" ] \
+    || fail "the merge-time re-record did not leave origin's head in the copy's refs"
+  pass "the merge-time re-record refreshes before refusing: origin's unfetched head is accepted, an unpushed one refused"
+}
+
 test_valid_recording_and_merge_derivation() {
   local dir expected sidecar count rc
   dir=$(make_case valid-recording)
@@ -2838,6 +2876,7 @@ test_draft_pull_request_is_not_armed
 test_secondmate_record_refuses_a_pr_watch
 test_unpushed_named_head_refuses_registration
 test_direct_pr_unpushed_commit_refuses_registration
+test_merge_rerecord_refreshes_before_refusing
 test_valid_recording_and_merge_derivation
 test_rejected_metacharacter_bytes_are_inert
 test_static_poll_contract
