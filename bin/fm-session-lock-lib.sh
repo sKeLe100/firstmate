@@ -203,8 +203,10 @@ fm_harness_pid_alive() {
 #
 # A --fork-session successor mints a new id, so it stays a foreign live owner
 # until the pre-fork process exits; that is the safe direction and a documented
-# non-goal. Two genuinely different live sessions sharing one id is not a
-# supported state (Claude refuses to resume a running session under its id).
+# non-goal. A second live process can carry the same id, because a Claude version
+# can resume a running session under it, so id equality alone does not prove one
+# live session: the recorded pid's own model-loop registry is the discriminator
+# below.
 
 # Print the Claude session id this process may own with, or return 1. $1 is the
 # ancestry list an earlier walk already produced, so a caller that walked once
@@ -244,14 +246,48 @@ fm_session_lock_recorded_session_id() {  # <state>
   printf '%s\n' "$recorded"
 }
 
+# Print the Claude session id pid $1's own model-loop registry record names, or
+# return 1. Claude writes ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions/<pid>.json
+# for a process running a model loop, and its sessionId is that loop's
+# conversation id. The registry is undocumented, so an absent, symlinked,
+# unreadable, or unparseable record is no evidence and never a refusal.
+fm_session_lock_pid_session_id() {  # <pid>
+  local pid=$1 config_dir record id
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  case ${CLAUDE_CONFIG_DIR:-} in
+    '') config_dir="${HOME:-}/.claude" ;;
+    /*) config_dir="$CLAUDE_CONFIG_DIR" ;;
+    *) return 1 ;;
+  esac
+  record="$config_dir/sessions/$pid.json"
+  [ -f "$record" ] && [ ! -L "$record" ] || return 1
+  id=$(sed -n 's/.*"sessionId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$record" 2>/dev/null | head -n 1)
+  [ -n "$id" ] || return 1
+  case "$id" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  printf '%s\n' "$id"
+}
+
 # True when the lock in state dir $1 was recorded by this same Claude session:
 # the trusted id equals the id recorded beside the lock. No trusted id, no
 # sidecar, or a different recorded id is false.
+#
+# A matching id only means the recorded pid is this session's predecessor when
+# that pid is not itself a model loop registered under this same id. When it is,
+# and it is not my CLAUDE_PID, a second live copy of the session is running: the
+# lock stays that copy's and the caller gets the ordinary foreign-owner verdict,
+# so the newcomer runs read-only instead of re-anchoring onto a live rival. A
+# recorded pid with no readable registry record (a recycled front-end, or a dead
+# predecessor) keeps the pre-existing same-session behavior.
 fm_session_lock_same_session() {  # <state> [<ancestry-pids>]
-  local state=$1 trusted recorded
+  local state=$1 trusted recorded lock_pid owner_id
   trusted=$(fm_session_lock_trusted_session_id "${2:-}") || return 1
   recorded=$(fm_session_lock_recorded_session_id "$state") || return 1
-  [ "$recorded" = "$trusted" ]
+  [ "$recorded" = "$trusted" ] || return 1
+  lock_pid=$(cat "$state/.lock" 2>/dev/null) || return 1
+  case "$lock_pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$lock_pid" = "${CLAUDE_PID:-}" ] && return 0
+  owner_id=$(fm_session_lock_pid_session_id "$lock_pid") || return 0
+  [ "$owner_id" != "$recorded" ]
 }
 
 # Print the pid bin/fm-lock.sh records on lock line 1 for this session. For a
