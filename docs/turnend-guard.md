@@ -106,7 +106,7 @@ Ownership is the shared `fm_session_lock_owned_by_self` verdict in `bin/fm-sessi
 The current session owns the lock when either of these holds:
 
 - The recorded pid is a member of the current session's contiguous harness ancestry.
-- The trusted Claude session id recorded beside the lock in `state/.lock-session` matches this hook's own environment while the recorded pid is still a live harness.
+- The trusted Claude session id recorded beside the lock in `state/.lock-session` matches this hook's own environment while the recorded pid is still a live harness, unless that pid is itself another live model loop registered under the same id (see `docs/verification/supervision.md`).
 
 That second signal keeps a background Claude session owning its own lock after the transient helper chain between its hooks and its recorded owner is recycled.
 The library's header owns the trust gate (`CLAUDE_PID` must be a Claude-shaped member of the current run).
