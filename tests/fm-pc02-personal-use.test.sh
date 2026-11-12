@@ -59,12 +59,28 @@ case "$cmd" in
       fi
     fi
     ;;
+  daemon-reload | enable | restart)
+    exit 0
+    ;;
   *)
     exit 1
     ;;
 esac
 SH
 chmod +x "$fakebin/systemctl"
+
+SANDBOX="$TMP_ROOT/sandbox"
+mkdir -p "$SANDBOX/mnt/c/Windows/System32/WindowsPowerShell/v1.0"
+printf '#!/bin/sh\nexit 0\n' > "$SANDBOX/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+chmod +x "$SANDBOX/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+export FM_TEST_SANDBOX="$SANDBOX"
+cat > "$fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+shift
+cmd=${1//\/mnt\/c\//$FM_TEST_SANDBOX\/mnt\/c\/}
+eval "$cmd"
+SH
+chmod +x "$fakebin/ssh"
 
 set_units() {
   cat > "$FM_TEST_UNIT_LIST" <<'UNITS'
@@ -241,6 +257,38 @@ test_flag_created_mid_start_pass_converges_to_stopped() {
   pass "a flag created mid-pass leaves every runner stopped, matching the final flag"
 }
 
+run_install_toggle() {  # <flag>
+  FM_PC02_OFFLOAD_PERSONAL_USE_FLAG="$1" "$ROOT/bin/fm-pc02-personal-use.sh" install-toggle 2>&1
+}
+
+test_install_toggle_deploys_path_unit_service_and_dropins() {
+  local out status udir flag abs_flag
+  abs_flag="$TMP_ROOT/abs-flag"
+  for flag in "$FLAG_REL" "$abs_flag"; do
+    reset_fixture
+    rm -rf "$HOME/.config" "$HOME/.local"
+    status=0
+    out=$(run_install_toggle "$flag") || status=$?
+    expect_code 0 "$status" "install-toggle must succeed: $out"
+    udir="$HOME/.config/systemd/user"
+    local watch="%h/$flag"
+    case "$flag" in /*) watch=$flag ;; esac
+    assert_contains "$(cat "$udir/fm-pc02-personal-use-runners.path")" "PathChanged=$watch" \
+      "path unit must watch $watch"
+    assert_contains "$(cat "$udir/fm-pc02-personal-use-runners.service")" \
+      "Environment=\"FM_PC02_OFFLOAD_PERSONAL_USE_FLAG=$flag\"" "service must carry the flag"
+    local u
+    for u in actions.runner.one.first.service actions.runner.two.second.service actions.runner.three.third.service; do
+      assert_contains "$(cat "$udir/$u.d/10-fm-pc02-personal-use.conf")" "ConditionPathExists=!$watch" \
+        "$u must be gated on $watch"
+    done
+    [ ! -e "$udir/no-mistakes-daemon.service.d" ] || fail "non-runner unit got a drop-in"
+    [ -x "$HOME/.local/bin/fm-pc02-personal-use-runners.sh" ] || fail "runner helper not installed executable"
+    [ -f "$SANDBOX/mnt/c/pc02-llm-server/bin/fm-pc02-personal-use-toggle.vbs" ] || fail "desktop toggle not installed"
+  done
+  pass "install-toggle deploys path unit, service env, and a drop-in per runner for relative and absolute flags"
+}
+
 test_on_stops_every_active_runner
 test_off_starts_every_runner_including_a_third
 test_already_active_runner_is_left_alone
@@ -249,5 +297,6 @@ test_unlistable_units_fail_loudly
 test_stop_failure_is_reported_and_other_runners_continue
 test_flag_removed_mid_stop_pass_converges_to_active
 test_flag_created_mid_start_pass_converges_to_stopped
+test_install_toggle_deploys_path_unit_service_and_dropins
 
 echo "# all fm-pc02-personal-use tests passed"
