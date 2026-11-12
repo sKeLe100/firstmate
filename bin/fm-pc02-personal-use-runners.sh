@@ -23,9 +23,8 @@
 #                                     flag's current state
 #
 # Env:
-#   FM_PC02_OFFLOAD_PERSONAL_USE_FLAG  flag path, relative to $HOME unless it
-#                                      starts with / (default:
-#                                      .fm-pc02-personal-use)
+#   FM_PC02_OFFLOAD_PERSONAL_USE_FLAG  flag path relative to $HOME
+#                                      (default: .fm-pc02-personal-use)
 #
 # Exit status: 0 when every discovered runner matches the final flag, 1 when a
 # systemctl call failed (the failed unit is named on stderr) or the flag kept
@@ -43,10 +42,7 @@ if [ "$#" -gt 0 ]; then
 fi
 
 FLAG="${FM_PC02_OFFLOAD_PERSONAL_USE_FLAG:-.fm-pc02-personal-use}"
-case "$FLAG" in
-  /*) ;;
-  *) FLAG="$HOME/$FLAG" ;;
-esac
+FLAG="$HOME/$FLAG"
 
 MAX_PASSES=5
 

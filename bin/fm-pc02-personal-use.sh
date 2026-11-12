@@ -120,10 +120,7 @@ REMOTE
     remote_units=$(cat <<REMOTE
 set -eu
 flag=$flag_q
-case "\$flag" in
-  /*) watch_path=\$flag ;;
-  *) watch_path="%h/\$flag" ;;
-esac
+watch_path="%h/\$flag"
 unit_dir="\$HOME/.config/systemd/user"
 mkdir -p "\$unit_dir"
 cat > "\$unit_dir/fm-pc02-personal-use-runners.service" <<'UNITEOF'

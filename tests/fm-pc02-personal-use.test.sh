@@ -176,20 +176,6 @@ test_already_active_runner_is_left_alone() {
   pass "an already-active runner is left untouched when personal use turns off"
 }
 
-test_absolute_flag_path_is_honored() {
-  local out status flag
-  reset_fixture
-  flag="$TMP_ROOT/absolute-flag"
-  : > "$flag"
-  set_state actions.runner.one.first.service active
-  out=$(run_guard "$flag") || status=$?
-  status=${status:-0}
-  expect_code 0 "$status" "an absolute flag path must be honored: $out"
-  [ "$(state_of actions.runner.one.first.service)" = inactive ] \
-    || fail "an absolute flag path did not stop the runner"
-  pass "an absolute FM_PC02_OFFLOAD_PERSONAL_USE_FLAG path stops the runners"
-}
-
 test_unlistable_units_fail_loudly() {
   local out status
   reset_fixture
@@ -262,9 +248,8 @@ run_install_toggle() {  # <flag>
 }
 
 test_install_toggle_deploys_path_unit_service_and_dropins() {
-  local out status udir flag abs_flag
-  abs_flag="$TMP_ROOT/abs-flag"
-  for flag in "$FLAG_REL" "$abs_flag"; do
+  local out status udir flag
+  for flag in "$FLAG_REL"; do
     reset_fixture
     rm -rf "$HOME/.config" "$HOME/.local"
     status=0
@@ -272,7 +257,6 @@ test_install_toggle_deploys_path_unit_service_and_dropins() {
     expect_code 0 "$status" "install-toggle must succeed: $out"
     udir="$HOME/.config/systemd/user"
     local watch="%h/$flag"
-    case "$flag" in /*) watch=$flag ;; esac
     assert_contains "$(cat "$udir/fm-pc02-personal-use-runners.path")" "PathChanged=$watch" \
       "path unit must watch $watch"
     assert_contains "$(cat "$udir/fm-pc02-personal-use-runners.service")" \
@@ -286,13 +270,12 @@ test_install_toggle_deploys_path_unit_service_and_dropins() {
     [ -x "$HOME/.local/bin/fm-pc02-personal-use-runners.sh" ] || fail "runner helper not installed executable"
     [ -f "$SANDBOX/mnt/c/pc02-llm-server/bin/fm-pc02-personal-use-toggle.vbs" ] || fail "desktop toggle not installed"
   done
-  pass "install-toggle deploys path unit, service env, and a drop-in per runner for relative and absolute flags"
+  pass "install-toggle deploys path unit, service env, and a drop-in per runner for the relative flag"
 }
 
 test_on_stops_every_active_runner
 test_off_starts_every_runner_including_a_third
 test_already_active_runner_is_left_alone
-test_absolute_flag_path_is_honored
 test_unlistable_units_fail_loudly
 test_stop_failure_is_reported_and_other_runners_continue
 test_flag_removed_mid_stop_pass_converges_to_active
