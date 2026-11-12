@@ -173,8 +173,17 @@ a live PC02 model worker, a loaded llama-swap, and ordinary host CPU/GPU load
 do not block an offload, because PC02 runs the test slots alongside a model.
 The per-slot locks still bound how many suites run at once, and a run waits for
 a free slot up to the offload's wait bound; an unreachable PC02 routes the run
-to PC01 at once. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the
-shortcut ever needs to be redeployed (safe to re-run).
+to PC01 at once.
+
+The same flag gates PC02's self-hosted GitHub Actions runners.
+While it is on, every systemd user unit matching `actions.runner.*` is stopped; turning it off starts them again, whether the flag was flipped from the desktop shortcut or from PC01.
+Stopping a runner ends its process, so a job already running is left to GitHub's own handling and queued jobs simply wait for a runner to return.
+`bin/fm-pc02-personal-use.sh install-toggle` installs the PC02-side gate: a user path unit that watches the flag, the helper it runs, and one drop-in per discovered runner so the runners also stay down across a PC02 reboot while the flag is on.
+Every flip discovers runners from that unit pattern, so a newly registered runner is stopped and started with the rest without editing the script.
+Its reboot drop-in is only written by `install-toggle`, so re-run it after registering a runner.
+A flip that lands while the gate is already running is picked up by a re-check at the end of that run, so a quick on-then-off double flip still ends in the state the flag shows.
+Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut or the
+runner gate ever needs to be redeployed (safe to re-run).
 
 ### Reclaiming leaked test roots
 
