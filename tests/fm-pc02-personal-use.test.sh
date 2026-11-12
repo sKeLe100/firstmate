@@ -248,28 +248,27 @@ run_install_toggle() {  # <flag>
 }
 
 test_install_toggle_deploys_path_unit_service_and_dropins() {
-  local out status udir flag
-  for flag in "$FLAG_REL"; do
-    reset_fixture
-    rm -rf "$HOME/.config" "$HOME/.local"
-    status=0
-    out=$(run_install_toggle "$flag") || status=$?
-    expect_code 0 "$status" "install-toggle must succeed: $out"
-    udir="$HOME/.config/systemd/user"
-    local watch="%h/$flag"
-    assert_contains "$(cat "$udir/fm-pc02-personal-use-runners.path")" "PathChanged=$watch" \
-      "path unit must watch $watch"
-    assert_contains "$(cat "$udir/fm-pc02-personal-use-runners.service")" \
-      "Environment=\"FM_PC02_OFFLOAD_PERSONAL_USE_FLAG=$flag\"" "service must carry the flag"
-    local u
-    for u in actions.runner.one.first.service actions.runner.two.second.service actions.runner.three.third.service; do
-      assert_contains "$(cat "$udir/$u.d/10-fm-pc02-personal-use.conf")" "ConditionPathExists=!$watch" \
-        "$u must be gated on $watch"
-    done
-    [ ! -e "$udir/no-mistakes-daemon.service.d" ] || fail "non-runner unit got a drop-in"
-    [ -x "$HOME/.local/bin/fm-pc02-personal-use-runners.sh" ] || fail "runner helper not installed executable"
-    [ -f "$SANDBOX/mnt/c/pc02-llm-server/bin/fm-pc02-personal-use-toggle.vbs" ] || fail "desktop toggle not installed"
+  local out status udir
+  local flag="$FLAG_REL"
+  reset_fixture
+  rm -rf "$HOME/.config" "$HOME/.local"
+  status=0
+  out=$(run_install_toggle "$flag") || status=$?
+  expect_code 0 "$status" "install-toggle must succeed: $out"
+  udir="$HOME/.config/systemd/user"
+  local watch="%h/$flag"
+  assert_contains "$(cat "$udir/fm-pc02-personal-use-runners.path")" "PathChanged=$watch" \
+    "path unit must watch $watch"
+  assert_contains "$(cat "$udir/fm-pc02-personal-use-runners.service")" \
+    "Environment=\"FM_PC02_OFFLOAD_PERSONAL_USE_FLAG=$flag\"" "service must carry the flag"
+  local u
+  for u in actions.runner.one.first.service actions.runner.two.second.service actions.runner.three.third.service; do
+    assert_contains "$(cat "$udir/$u.d/10-fm-pc02-personal-use.conf")" "ConditionPathExists=!$watch" \
+      "$u must be gated on $watch"
   done
+  [ ! -e "$udir/no-mistakes-daemon.service.d" ] || fail "non-runner unit got a drop-in"
+  [ -x "$HOME/.local/bin/fm-pc02-personal-use-runners.sh" ] || fail "runner helper not installed executable"
+  [ -f "$SANDBOX/mnt/c/pc02-llm-server/bin/fm-pc02-personal-use-toggle.vbs" ] || fail "desktop toggle not installed"
   pass "install-toggle deploys path unit, service env, and a drop-in per runner for the relative flag"
 }
 
