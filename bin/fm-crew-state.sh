@@ -95,7 +95,9 @@
 #      disagreement reports unknown with available candidate ids.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working
 #      (the id-addressed detail read carries step words the overview does not),
-#      awaiting_approval/fix_review -> parked (with gate findings), terminal
+#      awaiting_approval/fix_review -> parked (with gate findings; an awaiting_agent
+#      parked duration also mints the component `gate awaiting agent for <duration>`,
+#      which fm-classify-lib.sh ages stalled waits from), terminal
 #      passed/checks-passed/passed-with-override/passed-with-skips -> done,
 #      failed -> failed, cancelled -> unknown (no verdict unless the green
 #      delivery safeguard below applies). A cancelled outcome takes precedence
@@ -266,7 +268,7 @@ emit_ship_status_done() {  # [extra-detail]
 
 map_log_state() {  # <line>
   if status_is_paused "$1"; then
-    if status_pause_needs_action "$1" "$WT"; then
+    if status_pause_needs_action "$1" "$WT" "$(meta_value account)"; then
       echo blocked
     else
       echo paused
@@ -1274,6 +1276,11 @@ if [ "$HAVE_RUN" = 1 ]; then
       RUN_DETAIL="parked at $gate"
       fcount=$(nm_gate_findings_count)
       [ -n "$fcount" ] && RUN_DETAIL="$RUN_DETAIL: $fcount finding(s)"
+      # How long the pipeline says this gate has waited on the crewmate, minted as
+      # its own component (fm-classify-lib.sh owns the spelling and its consumer)
+      # so a supervisor ages the wait from this one read, not a second read.
+      parked_for=$(printf '%s\n' "$awaiting" | sed -n 's/^[[:space:]]*awaiting_agent:[[:space:]]*parked[[:space:]][[:space:]]*\([^[:space:]][^[:space:]]*\)[[:space:]]*$/\1/p' | head -1)
+      [ -z "$parked_for" ] || RUN_DETAIL="$RUN_DETAIL${SEP}$FM_GATE_AWAITING_AGENT_PREFIX$parked_for"
       # Its own ${SEP} component, not free text inside the detail: consumers
       # compare a whole component for equality, so nothing a gate name or a
       # later note happens to contain can mint it.

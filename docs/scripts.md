@@ -34,7 +34,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
 | `fm-captain-hold.sh`     | Hold tasks for the captain, record the captain's answers, gate investigation completion, and report record divergence between the status log and the backlog |
 | `fm-decision-hold.sh`    | One-release compatibility shim mapping the retired decision commands onto fm-captain-hold.sh |
-| `fm-brief.sh`            | Scaffold ship (explicit `--mode`, plus the project's registered `--forge`), scout, secondmate-charter, and Herdr-lab briefs, with Captain's intent and Firstmate spec subsections on ship/scout |
+| `fm-brief.sh`            | Scaffold ship (explicit `--mode`, plus the project's registered `--forge`), scout, secondmate-charter, and Herdr-lab briefs, with Captain's intent and Firstmate spec subsections plus optional Scope, Known facts, and Report budget slots on ship/scout |
 | [`fm-dod-lib.sh`](../bin/fm-dod-lib.sh) | Own ship/scout worker role scope, ship definitions of done, the named-head reachability gate on ship `done:` acceptance, and the no-mistakes `--intent` contract |
 | `fm-brief-heading-lib.sh` | Single owner of reading a brief's sections, shared by the `--intent` contract, spawn and promotion validation, and `fm-dispatch-resolve.sh` |
 | `fm-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
@@ -51,7 +51,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-guard.sh`            | Warn on primary-checkout tangles, main-session pending wakes, and unhealthy supervision |
 | `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks             |
 | `fm-session-lock-lib.sh` | Shared session-lock ownership from harness ancestry or a trusted Claude session id for fm-lock.sh and the Claude Stop auto-arm, plus the read-only lock inspection behind `fm-lock.sh status` and `fm-inbox.sh ready` |
-| `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity with single-flight exit-2 rewake (docs/watcher-continuity.md) |
+| `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity, single-flight exit-2 rewake, and the restart-band auto-stow wake (docs/watcher-continuity.md, docs/configuration.md) |
 | `fm-precompact-checkpoint.sh` | Non-blocking PreCompact hook writing a compaction checkpoint (wake queue, open decisions, tasks in flight) |
 | `fm-turnend-guard.sh`    | Shared primary turn-end guard predicate so no turn ends blind (docs/turnend-guard.md) |
 | `fm-turnend-guard-grok.sh` | Grok Stop-hook adapter for the primary turn-end guard                              |
@@ -59,6 +59,9 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
 | `fm-arm-command-policy.mjs` | Semantic owner of the watcher-arm PreToolUse policy (docs/arm-pretool-check.md)   |
 | `fm-subagent-pretool-check.sh` | Primary-home delegation-shape PreToolUse guard (docs/subagent-guard.md) |
+| `fm-subagent-context.sh` | Report one subagent's context size, agent id, and model from its own transcript |
+| `fm-haiku-alarm-hook.sh` | Warn a haiku-builder from 80k context and deny its tool calls from 95k except a checkpoint write |
+| `fm-handoff-guard-hook.sh` | Deny an over-budget or malformed-FILES haiku-targeted Agent launch and log each guarded decision |
 | `fm-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
 | `fm-home-seed.sh`        | Transactionally provision a local secondmate home and maintain `data/secondmates.md` |
 | `fm-remote-home-seed.sh` | Register and provision a whole secondmate home on an SSH-reachable host              |
@@ -112,7 +115,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-exclude-tools-lib.sh` | Shared parsing and runtime-support checks for `config/crew-exclude-tools` |
 | `fm-nm-run-lib.sh`       | Single owner of shared no-mistakes run-attribution primitives and rules             |
 | `fm-nomistakes-poll-lib.sh` | Bounded, correct polling of a backgrounded `no-mistakes axi run`/`respond` drive call: `classify` one `axi status` blob or `wait` for its next gate/outcome |
-| `fm-nomistakes-gate-check.sh` | Read-only detection of whether a local branch's HEAD is `equal`, `ahead`, `behind`, or `diverged` from the no-mistakes gate ref before pushing |
+| `fm-nomistakes-gate-check.sh` | Read-only detection of whether a local branch's HEAD is `equal`, `ahead`, `behind`, or `diverged` from the no-mistakes gate commit before pushing; a v2 64-hex stamp names no commit, so the gate commit is then the remote's `refs/heads/<branch>` |
 | `fm-pipeline-spend.sh`   | Attribute a task's no-mistakes pipeline spend to the task and keep it in the private spend ledger |
 | `fm-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `fm-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
@@ -129,6 +132,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-quota-axi-lib.sh`    | Shared `quota-axi` compatibility floor and quota snapshot schema validation           |
 | `fm-quota-choose.sh`     | Choose the first candidate with known positive quota from an ordered harness:model list |
 | `fm-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
+| `fm-free-model-probe.sh` | Probe one free OpenCode model and report ok, capped, or unknown |
 | `fm-wake-drain.sh`       | Present and acknowledge the current actor's claimed wake rows alongside status, outcome-backstop, decision, divergence, supervision-host outcome, recovery, and supervision checks |
 | `fm-wake-grant.sh`       | Serialize Pi supervision-branch wake-row claim activation, publication, release, and deactivation |
 | `fm-wake-lib.sh`         | Shared durable wake queue, recovery generations, portable locks, and watcher identity/health helpers |

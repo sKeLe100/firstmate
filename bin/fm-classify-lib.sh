@@ -364,15 +364,18 @@ status_is_captain_held() {  # <status-line>
 # is retroactively misclassified, while an exhausted session is caught even when
 # its brief never knew the key. FM_CONTEXT_USAGE_BIN overrides the band reader
 # (tests); an empty or missing worktree reads as no band evidence.
+# The band read is bin/fm-context-usage.sh's contract (its header owns it);
+# <claude-store> is the target task's recorded account=, or nothing when it
+# recorded no pin.
 FM_CLASSIFY_SESSION_LIMIT_KEY=session-limit
-status_pause_context_band() {  # <worktree> -> ok|warn|restart|unknown
-  local wt=$1 out reader
+status_pause_context_band() {  # <worktree> [claude-store] -> ok|warn|restart|unknown
+  local wt=$1 store=${2:-${FM_CLAUDE_STORE:-}} out reader
   reader=${FM_CONTEXT_USAGE_BIN:-$(dirname "${BASH_SOURCE[0]}")/fm-context-usage.sh}
   if [ -z "$wt" ] || [ ! -d "$wt" ] || [ ! -x "$reader" ]; then
     printf 'unknown'
     return 0
   fi
-  out=$(FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || out=
+  out=$(FM_CLAUDE_STORE="${store:-auto}" FM_HOME="$wt" "$reader" 2>/dev/null </dev/null) || out=
   case " $out " in
     *" band=warn "*) printf 'warn' ;;
     *" band=restart "*) printf 'restart' ;;
@@ -381,26 +384,26 @@ status_pause_context_band() {  # <worktree> -> ok|warn|restart|unknown
   esac
 }
 # 0 when a `paused:` line is NOT a self-clearing wait and needs firstmate action.
-status_pause_needs_action() {  # <status-line> [worktree]
-  local line=$1 wt=${2:-}
+status_pause_needs_action() {  # <status-line> [worktree] [claude-store]
+  local line=$1 wt=${2:-} store=${3:-}
   status_is_paused "$line" || return 1
   [ "$(_fm_decision_key "$line")" = "$FM_CLASSIFY_SESSION_LIMIT_KEY" ] && return 1
-  case "$(status_pause_context_band "$wt")" in
+  case "$(status_pause_context_band "$wt" "$store")" in
     warn|restart) return 0 ;;
     *) return 1 ;;
   esac
 }
 # 0 when a `paused:` line is a self-clearing declared wait.
-status_is_self_clearing_pause() {  # <status-line> [worktree]
-  status_is_paused "$1" && ! status_pause_needs_action "$1" "${2:-}"
+status_is_self_clearing_pause() {  # <status-line> [worktree] [claude-store]
+  status_is_paused "$1" && ! status_pause_needs_action "$1" "${2:-}" "${3:-}"
 }
 
 # With a worktree, a context-exhausted pause is excluded: only a self-clearing
 # wait or a captain hold earns the bounded long-cadence treatment.
-status_is_paused_or_captain_held() {  # <status-line> [worktree]
-  local line=$1 wt=${2:-}
+status_is_paused_or_captain_held() {  # <status-line> [worktree] [claude-store]
+  local line=$1 wt=${2:-} store=${3:-}
   if status_is_paused "$line"; then
-    status_is_self_clearing_pause "$line" "$wt"
+    status_is_self_clearing_pause "$line" "$wt" "$store"
   else
     status_is_captain_held "$line"
   fi
@@ -2602,8 +2605,15 @@ crew_is_paused() {  # <id>
 # The one spelling of the verdict component that says a parked gate's answer is
 # owed by a HUMAN. bin/fm-crew-state.sh mints it (nm_gate_awaits_human_decision
 # owns the derivation: the findings table's `action` column, read by position);
-# crew_gate_awaits_human_decision below is its only consumer.
+# crew_gate_awaits_human_decision and stalled_wait_line below are its consumers.
 FM_GATE_HUMAN_DECISION='ask-user: authority decision'
+
+# The one spelling of the verdict component that says how long a parked gate has
+# waited on the crewmate: `gate awaiting agent for <duration>`, minted by
+# bin/fm-crew-state.sh from the pipeline's `awaiting_agent: parked <duration>`
+# line. stalled_wait_line below is its only consumer, and it pairs that age with
+# FM_GATE_HUMAN_DECISION above to name the gate's real clearing owner.
+FM_GATE_AWAITING_AGENT_PREFIX='gate awaiting agent for '
 
 # 0 if crew <id>'s authoritative current state is a no-mistakes gate whose answer
 # is owed by a human rather than by the crewmate itself.
@@ -2645,6 +2655,127 @@ crew_gate_awaits_human_decision() {  # <id> -> <run-id> on stdout
   [ -n "$human" ] && [ -n "$run" ] || return 1
   case "$run" in *[[:space:]]*) return 1 ;; esac
   printf '%s\n' "$run"
+}
+
+# --- stalled waits ----------------------------------------------------------
+#
+# A ship can wait on firstmate for hours while nothing reaches OPEN DECISIONS.
+# Two shapes qualify, and stalled_wait_line below is the one owner of that rule:
+#   - its no-mistakes gate has been parked for at least FM_STALLED_WAIT_SECS
+#     with no needs-decision open on the ship, on the crewmate or, when the
+#     gate carries FM_GATE_HUMAN_DECISION, on firstmate's ask-user decision; and
+#   - its authoritative state is paused, and its current declared wait is a
+#     paused: line that names a go or decision from firstmate
+#     (status_pause_awaits_firstmate) and has waited that long by its own
+#     [at=<epoch>] tag.
+# Both ages come from durable evidence only. A missing or unparseable time is
+# unknown and flags nothing; it is never inferred from a file's mtime.
+FM_STALLED_WAIT_SECS=3600
+
+# Whole seconds for a Go-style duration, as no-mistakes prints a parked gate's
+# age (`25m57s`, `1h2m0s`, `2d14h`, `40.5s`), or nothing when the text is not
+# one. Every component is read base 10: the pipeline zero-pads them (`1h08m0s`),
+# and shell arithmetic would otherwise read a leading 0 as octal.
+_fm_go_duration_seconds() {  # <duration> -> whole seconds on stdout
+  local d=$1 re='^(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)(\.[0-9]+)?s)?$'
+  local days hours mins secs
+  [ -n "$d" ] && [[ $d =~ $re ]] || return 1
+  days=${BASH_REMATCH[2]:-0}
+  hours=${BASH_REMATCH[4]:-0}
+  mins=${BASH_REMATCH[6]:-0}
+  secs=${BASH_REMATCH[8]:-0}
+  printf '%s\n' $(( 10#$days * 86400 + 10#$hours * 3600 + 10#$mins * 60 + 10#$secs ))
+}
+
+# A stall age as a compact human span: 4d03h, 1h05m, or 12m.
+_fm_stall_age_text() {  # <seconds>
+  local s=$1
+  if [ "$s" -ge 86400 ]; then
+    printf '%dd%02dh' $((s / 86400)) $((s % 86400 / 3600))
+  elif [ "$s" -ge 3600 ]; then
+    printf '%dh%02dm' $((s / 3600)) $((s % 3600 / 60))
+  else
+    printf '%dm' $((s / 60))
+  fi
+}
+
+# 0 when a declared paused: line's reason names a wait on FIRSTMATE - a go or a
+# decision the crew needs from firstmate - rather than an external delay. The
+# reason is free text, so the rule is deliberately narrow: it needs a wait verb
+# and a go, decision, or steer word, and refuses any quota, pace, weekly, limit,
+# capacity, offload, captain, external, or session marker, which name an external
+# delay or a captain-held wait instead. The session-limit key is never a firstmate
+# wait.
+status_pause_awaits_firstmate() {  # <status-line>
+  local line=$1 note
+  status_is_paused "$line" || return 1
+  [ "$(_fm_decision_key "$line")" = "$FM_CLASSIFY_SESSION_LIMIT_KEY" ] && return 1
+  note=$(status_line_note "$line" | tr '[:upper:]' '[:lower:]')
+  printf '%s' "$note" | grep -Eq '(^|[^a-z])(wait|waiting|waits|held|holding|hold|pending|parked)([^a-z]|$)' || return 1
+  printf '%s' "$note" | grep -Eq '(^|[^a-z])(go|decision|steer|steering)([^a-z]|$)' || return 1
+  printf '%s' "$note" | grep -Eq '(^|[^a-z])(quota|pace|weekly|limit|capacity|offload|captain|external|session)' && return 1
+  return 0
+}
+
+# Prints the status log's current declared wait when it is a paused: line that
+# has waited at least FM_STALLED_WAIT_SECS on firstmate by its own [at=] time, and
+# returns 1 otherwise.
+stalled_wait_pause_line() {  # <status-file> <now>
+  local f=$1 now=$2 line stall_epoch
+  line=$(status_declared_wait_line "$f")
+  [ -n "$line" ] || return 1
+  status_pause_awaits_firstmate "$line" || return 1
+  _fm_status_at_epoch "$line" stall_epoch || return 1
+  [ $((now - stall_epoch)) -ge "$FM_STALLED_WAIT_SECS" ] || return 1
+  printf '%s\n' "$line"
+}
+
+# 0 when the status log still folds a needs-decision open. OPEN DECISIONS already
+# carries that record, so the ship is not silent.
+_fm_status_has_open_needs_decision() {  # <status-file>
+  status_open_decisions "$1" | awk -F '\t' '$2 == "needs-decision" { found = 1 } END { exit !found }'
+}
+
+# Prints one line naming ship <id> when it is in a stalled wait, and nothing
+# otherwise. <state-line> is bin/fm-crew-state.sh's line for <id>; <status-file>
+# is its status log; <now> is the epoch the waits are aged against. Only a parked
+# run-step gate and a paused state are read, and the crew's own state line
+# decides which shape applies, so a stale declared wait cannot outvote a live run.
+stalled_wait_line() {  # <id> <state-line> <status-file> <now>
+  local id=$1 line=$2 f=$3 now=$4 state src rest part gate='' awaiting='' human='' secs pause stall_epoch
+  case "$line" in state:*) ;; *) return 0 ;; esac
+  state=${line#state: }; state=${state%% *}
+  src=${line#*source: }; src=${src%% *}
+  rest="$line · "
+  while [ -n "$rest" ]; do
+    part=${rest%% · *}
+    rest=${rest#* · }
+    case "$part" in
+      "parked at "?*) gate=$part ;;
+      "$FM_GATE_AWAITING_AGENT_PREFIX"?*) awaiting=${part#"$FM_GATE_AWAITING_AGENT_PREFIX"} ;;
+      "$FM_GATE_HUMAN_DECISION") human=1 ;;
+    esac
+  done
+  if [ "$state" = parked ] && [ "$src" = run-step ] && [ -n "$awaiting" ]; then
+    secs=$(_fm_go_duration_seconds "$awaiting") || secs=
+    if [ -n "$secs" ] && [ "$secs" -ge "$FM_STALLED_WAIT_SECS" ] && ! _fm_status_has_open_needs_decision "$f"; then
+      if [ -n "$human" ]; then
+        printf '%s: %s has waited %s on firstmate (%s) with no needs-decision open\n' \
+          "$id" "${gate:-gate parked}" "$(_fm_stall_age_text "$secs")" "$FM_GATE_HUMAN_DECISION"
+      else
+        printf '%s: %s has waited %s on the crewmate with no needs-decision open\n' \
+          "$id" "${gate:-gate parked}" "$(_fm_stall_age_text "$secs")"
+      fi
+      return 0
+    fi
+  fi
+  if [ "$state" = paused ]; then
+    pause=$(stalled_wait_pause_line "$f" "$now") || return 0
+    _fm_status_at_epoch "$pause" stall_epoch || return 0
+    printf '%s: paused %s waiting on firstmate: %s\n' \
+      "$id" "$(_fm_stall_age_text $((now - stall_epoch)))" "$(status_line_note "$pause")"
+  fi
+  return 0
 }
 
 # Directories excluded from the worktree write probe below, and the depth it walks.

@@ -5,7 +5,7 @@
 # Usage: fm-control.sh <task-id> interrupt
 #        fm-control.sh <task-id> exit
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
-#                                         [--effort <level>]
+#                                         [--effort <level>] [--move-session]
 #                                         (--note <text> | --note-file <path>)
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
@@ -64,6 +64,15 @@
 #              answer. Reclaim is HERDR-ONLY for the reason `exit` gives above:
 #              a tmux `missing` cannot be proven absent from a task record, so
 #              it refuses.
+#              With --move-session, that same proven-gone reclaim creates the
+#              replacement endpoint in THIS seat's ambient herdr session
+#              instead of the session the record names, and rewrites the task's
+#              session/window fields. It is the opt-in path for moving a task
+#              stranded in another session; it refuses when the recorded
+#              endpoint is still there (or cannot be proven gone), before the
+#              agent is stopped, because moving a live endpoint would orphan
+#              it. Without the flag nothing changes: a reclaim stays in the
+#              recorded session.
 #              An explicit `default` model or effort clears that
 #              axis for the replacement, except on codex, which requires an
 #              explicit model plus an effort its own CLI accepts and refuses
@@ -256,6 +265,7 @@ MODEL_SET=0
 EFFORT_SET=0
 NOTE=
 NOTE_SET=0
+MOVE_SESSION=0
 control_want_value=
 for control_arg in "$@"; do
   if [ -n "$control_want_value" ]; then
@@ -291,6 +301,7 @@ for control_arg in "$@"; do
       NOTE=$(cat "${control_arg#--note-file=}")
       NOTE_SET=1
       ;;
+    --move-session) MOVE_SESSION=1 ;;
     *) die "unexpected argument '$control_arg'" ;;
   esac
 done
@@ -301,7 +312,8 @@ fi
 
 if [ "$VERB" != relaunch ]; then
   [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] \
-    || die "--harness, --model, --effort, and --note apply to 'relaunch' only"
+    && [ "$MOVE_SESSION" = 0 ] \
+    || die "--harness, --model, --effort, --note, and --move-session apply to 'relaunch' only"
 fi
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
@@ -665,10 +677,55 @@ retire_busy_incarnation() {
   fi
 }
 
+# clear_blocking_dialog <dialog-name> <keys>: deliver a verified in-place clear
+# for a dialog the composer reader named, then prove the result. Returns 0 when
+# the agent is proven stopped, after retiring its busy wiring and printing
+# `stopped`; returns 1 when the dialog is gone and the ordinary exit flow may
+# continue. Dies when a key cannot be delivered on this backend, the dialog
+# survives the presses, or the agent state stays unprovable. The keys are only
+# ever the ones fm_control_blocking_dialog_clear_keys verified for the named
+# dialog; nothing here improvises a keystroke.
+clear_blocking_dialog() {  # <dialog-name> <newline-separated keys>
+  local dialog=$1 keys=$2 key gap state
+  gap=$(fm_control_interrupt_press_gap "$HARNESS") || gap=0.2
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    fm_control_backend_supports_key "$BACKEND" "$key" \
+      || die "task $ID shows the $dialog, which is cleared with $key on $HARNESS, but the $BACKEND backend cannot deliver it; refusing to improvise a different key"
+    fm_backend_send_key "$BACKEND" "$T" "$key" "$LABEL" \
+      || die "task $ID shows the $dialog, and its clear key $key was not delivered on $BACKEND; nothing else was typed"
+    sleep "$gap"
+  done <<EOF
+$keys
+EOF
+  state=$(wait_agent_state "$EXIT_WAIT" dead) || true
+  case "$state" in
+    dead)
+      retire_busy_incarnation
+      printf 'stopped'
+      return 0
+      ;;
+    alive) ;;
+    missing)
+      die "task $ID's recorded endpoint disappeared after clearing the $dialog, so exit cannot prove whether the agent stopped"
+      ;;
+    *)
+      die "task $ID's endpoint reads '$state' after clearing the $dialog rather than a positively classified state; exit cannot prove whether the agent stopped"
+      ;;
+  esac
+  : > "$FM_COMPOSER_DIALOG_SINK" \
+    || die "task $ID's dialog check could not be recorded after clearing the $dialog"
+  fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
+  if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
+    die "task $ID still shows the $(cat "$FM_COMPOSER_DIALOG_SINK") after its verified clear keys were delivered; refusing to type the exit command"
+  fi
+  return 1
+}
+
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog clear_keys
   require_state_verified_backend exit
   state=$(agent_state)
   case "$state" in
@@ -743,7 +800,21 @@ do_exit() {
   # rather than a function that subshell sourced.
   if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
-    refuse_blocking_prompt "$dialog"
+    # A dialog with a verified in-place clear (OpenCode's free-usage retry
+    # banner) is reclaimed; every other dialog keeps the refusal, because
+    # typing Enter or Escape into a picker would answer it.
+    clear_keys=$(fm_control_blocking_dialog_clear_keys "$HARNESS" "$dialog") \
+      || refuse_blocking_prompt "$dialog"
+    if clear_blocking_dialog "$dialog" "$clear_keys"; then
+      return 0
+    fi
+    # The dialog cleared without stopping the agent, so read the composer
+    # again rather than trusting the read that was blocked on it.
+    composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+      || composer_state=unknown
+    if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
+      refuse_blocking_prompt "$(cat "$FM_COMPOSER_DIALOG_SINK")"
+    fi
   fi
   case "$composer_state" in
     empty) ;;
@@ -1140,7 +1211,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line
+  local exit_result state note_line move_state absence verdict
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1163,6 +1234,40 @@ do_relaunch() {
       die "task $ID records kind '$KIND', which has no defined relaunch shape"
       ;;
   esac
+
+  # --move-session relocates the replacement endpoint into THIS seat's ambient
+  # herdr session, which is only safe for an endpoint that is PROVEN gone: one
+  # that still exists must keep its exact address, and moving it would orphan a
+  # live pane. Prove that here, before anything is stopped, so a live endpoint
+  # refuses with its agent untouched. A plain relaunch keeps the recorded
+  # session and does not run this check.
+  if [ "$MOVE_SESSION" = 1 ]; then
+    [ "$BACKEND" = herdr ] \
+      || die "--move-session needs a task on the herdr backend: only herdr can prove a recorded endpoint gone and re-create it in this seat's session (task $ID runs on $BACKEND)"
+    [ "${HERDR_SESSION:-default}" != default ] \
+      || die "--move-session needs a seat inside a named herdr session (HERDR_SESSION unset or 'default' here); moving would re-create task $ID's endpoint in 'default'. Nothing was stopped"
+    [ "${T%%:*}" != "${HERDR_SESSION:-default}" ] \
+      || die "--move-session needs a seat in a herdr session other than task $ID's recorded session '${T%%:*}'; relaunch without --move-session to stay there. Nothing was stopped"
+    move_state=$(agent_state)
+    case "$move_state" in
+      missing)
+        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T")
+        verdict=${absence%%$'\t'*}
+        case "$verdict" in
+          gone) ;;
+          unproven)
+            die "--move-session only moves an endpoint proven gone, and task $ID's could not be proven either way: ${absence#*$'\t'}. Nothing was stopped"
+            ;;
+          *)
+            die "--move-session only moves an endpoint proven gone, but task $ID's endpoint is still there ('$verdict'); nothing was stopped. Relaunch without --move-session to adopt it"
+            ;;
+        esac
+        ;;
+      *)
+        die "--move-session only moves an endpoint proven gone, but task $ID's recorded endpoint reads '$move_state'; nothing was stopped. Relaunch without --move-session to adopt the endpoint that still exists"
+        ;;
+    esac
+  fi
 
   if [ -n "$NOTE" ]; then
     note_line="note_file=$NOTE_FILE"
@@ -1188,6 +1293,7 @@ do_relaunch() {
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
+  [ "$MOVE_SESSION" = 0 ] || spawn_args+=(--move-session)
   if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
       "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null; then
     RELAUNCH_META_PUBLISHED=1

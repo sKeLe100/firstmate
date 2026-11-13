@@ -21,6 +21,7 @@ The [worker helper](../../../bin/fm-quota-choose.sh) and [typed resolver](../../
 The canonical shell helper for a worker that has already performed its model-selection reasoning and now needs to pick the first viable candidate is `bin/fm-quota-choose.sh`.
 Pass it the intake's already-captured default TOON or permitted JSON fallback through stdin or `--snapshot`; it never takes another quota snapshot, so it selects from the same quota state as the intake.
 Pass each candidate as `harness:model`, with earlier candidates preferred.
+Pass that pinned-profile reading as `--claude-profile-snapshot` so its `claude` candidates are judged on the pinned account.
 The helper's header owns its provider mapping and quota selection mechanics.
 An `exhausted_now` runway vetoes the candidate.
 The helper selects a candidate only when every applicable runway is measured (`through_reset` or `projected_exhaustion`), no applicable window is a synthesized placeholder, and its applicable quota has a known `effectivePercentRemaining` greater than zero; an unmeasured runway or a placeholder window fails closed to `none` rather than being read as real headroom.
@@ -71,6 +72,7 @@ Apply quota at the granularity the vendor actually supplies.
 A provider-level or `all_models`/`all_products` scope bounds every model you established in that family within the candidate's matched account, including one with no window of its own.
 A named-model or named-product scope is an additional bound for that model alone.
 Match the candidate to its `quota[]` row by that established provider, its `accountKey` when the snapshot is schema 6 (a Pi lane's auth provider id such as `openai-codex-work`, or `codex-home` for native Codex including Pi's `codex-native/` adapter, then the `default` row, else unmeasured; never a row picked by position, never rows summed across accounts), and scope; a stale, auth-required, or unmeasurable scope is named in `attention[]` instead of a fabricated number.
+Default `quota-axi` measures only the ambient Claude login, so when `config/claude-account` pins a profile path at this intake (the pin names the worker account, which can differ from the primary session's account and change between intakes), a `claude` candidate's row comes from that profile instead: read it once per intake with `CLAUDE_CONFIG_DIR=<pinned path> quota-axi --provider claude --profile-only --json` and judge every `claude` candidate on it, never on the ambient row; an `ordinary` or absent pin keeps the default snapshot's row.
 
 A candidate authenticates through its own tuple's surface; another harness's CLI can never gate it, and `harness=pi` with `model=xai/grok-*` is Pi using xAI rather than the standalone Grok CLI.
 `quota-axi auth --json` lists each provider's credential sources independently, so read the one source the candidate actually uses rather than collapsing a provider to a single status.

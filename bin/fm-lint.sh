@@ -3,17 +3,18 @@
 #
 # Runs its file set with ShellCheck's default severity, extended analysis,
 # ambient configuration disabled, and one exact ShellCheck version. CI selects
-# canonical partitions; no-mistakes invokes the context-selected default, so
-# both use this owner without duplicating lint configuration.
+# canonical partitions, and the no-mistakes Lint step reaches this owner
+# through bin/fm-test-compute.sh lint on hosted compute or PC02, while PC01's
+# last-resort lint runs this owner's changed-file selection.
 # The explicit --fast mode is local-only and disables ShellCheck's extended
 # dataflow analysis while preserving ordinary shell lint checks and source
 # following. CI, main, and merge-base-less runs attempt --norc
 # --external-sources with full dataflow for each canonical root. An ordinary
-# local branch (changed-file mode, including the no-mistakes lint step) drops
-# --external-sources, keeps dataflow, and excludes SC1091, SC2034, SC2153,
-# and SC2329, the codes that need library context. CI checks those codes
-# on source-following attempts (see the memory fallback below). Explicit
-# paths attempt --external-sources with the selected dataflow mode.
+# local branch in changed-file mode drops --external-sources, keeps dataflow,
+# and excludes SC1091, SC2034, SC2153, and SC2329, the codes that need library
+# context. CI checks those codes on source-following attempts (see the memory
+# fallback below). Explicit paths attempt --external-sources with the selected
+# dataflow mode.
 # Tests stop source analysis at imported production modules because CI analyzes
 # every production shell separately as a canonical, source-aware root.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
@@ -50,14 +51,23 @@
 # run holds at most JOBS concurrent ShellCheck processes. Diagnostics replay
 # in stable shard/root order. FM_LINT_JOBS=1 changes concurrency, not diagnostics
 # or exit selection.
-# --partition 1of2/2of2 splits the entire canonical inventory across
-# two CI runners, each with those same concurrency-limited workers.
-# Partitions are complete, disjoint, and byte-weight balanced; --list-files
-# exposes their actual roots.
+# --partition KofN (1 <= K <= N <= 8) splits the entire canonical inventory
+# across N CI runners, each with those same concurrency-limited workers.
+# Partitions are complete, disjoint, and byte-weight balanced by stable
+# largest-first assignment to the least-loaded partition, lowest index on a
+# tie, so 1of2/2of2 keep their two-way selection; --list-files exposes their
+# actual roots.
 # Partition mode starts with full source-aware analysis, never changed-only
 # or --fast, and does not accept explicit paths. Each partition also runs
 # workflow lint and backend-purity checks, keeping either invocation
 # independently useful.
+# Each partition also audits its selected roots once without source following,
+# allowing only LOCAL_NOX_EXCLUDE's cross-file codes. Together the required
+# partitions exhaust the canonical inventory exactly once for this audit.
+# Audit invocations run sequentially inside the existing workers, under the
+# same per-root memory limit and remaining wall deadline; audit failures fail
+# lint. A canonical memory fallback already performs the same audit and is
+# reused rather than repeated. Ordinary Test keeps small real-ShellCheck fixtures.
 #
 # With FM_LINT_REQUIRE_BOUNDS=1, which CI sets, every per-root ShellCheck
 # process runs under an enforced envelope: a wall deadline
@@ -87,7 +97,7 @@
 #
 # Per-root evidence is incremental: workers append begin/end records (root,
 # mode, shard, start, end, duration, final exit status, reason, peak RSS when
-# measured, and whether the final attempt followed sources) to a roots log
+# measured, and whether the canonical attempt followed sources) to a roots log
 # as each root completes, so a mid-run kill still leaves the completed record
 # and names the root in flight as begun-but-unfinished. With --telemetry the
 # log is retained at
@@ -95,6 +105,9 @@
 # .tsv suffix); otherwise it lives only in the
 # run's scratch dir. Reason values are ok, findings, memory-fallback,
 # timeout, memory, signal:<sig>, limit-unavailable, or error:<rc>.
+# A partition audit failure prefixes its reason with no-source-audit:; root
+# duration and peak RSS include the audit, while source-following metadata
+# describes the canonical analysis attempt.
 # Memory requires process-level evidence (a GHC exhaustion status or runtime
 # error on stderr), not an echoed source excerpt or an OOM phrase in a
 # filename. In partition mode begin/end
@@ -111,19 +124,28 @@
 # invocation, failing loudly if a per-branch test-command workaround has
 # been committed as the repo's standing policy.
 #
+# Full lint shares host admission with heavy tests;
+# bin/fm-heavy-admission-lib.sh owns resource floors and bounded wait knobs.
+# Explicit roots and inspection modes are exempt.
+#
 # Usage:
 #   fm-lint.sh                         lint the context-selected file set (see above)
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
 #   fm-lint.sh <path>...               lint explicit roots with the same config
 #   fm-lint.sh --jobs <1|2> [path]...  override concurrent worker count
-#   fm-lint.sh --partition <1of2|2of2> lint one canonical CI partition (see fallback above)
+#   fm-lint.sh --partition <KofN>      lint canonical CI partition K of N (N <= 8)
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
+#   fm-lint.sh --partition-count       print the canonical CI lint partition count
 #   fm-lint.sh --list-files            print the file set that would be linted
 #   fm-lint.sh --help                  print this usage
 set -u
 
 REQUIRED_SHELLCHECK=0.11.0
+# Single owner of the canonical CI lint partition count. The lint matrix in
+# .github/workflows/ci.yml must list exactly this many partitions, which
+# tests/fm-ci-workflow.test.sh enforces; routed lint reads it via --partition-count.
+CANONICAL_PARTITION_COUNT=4
 # Cross-file codes that need --external-sources. No-source checks (local
 # changed-file mode and memory fallback) cannot judge them.
 LOCAL_NOX_EXCLUDE=SC1091,SC2034,SC2153,SC2329
@@ -345,6 +367,33 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
     rss_kib=$(fm_lint_root_rss "$rss_file")
     cat "$root_out" "$root_err" >> "$output_dir/shard.$shard_index.out"
   fi
+  # Audit only canonical partitions: their disjoint inventories make this one
+  # exhaustive pass in CI, without hidden workers inside the behavior suite.
+  if [ "${FM_LINT_INTERNAL_AUDIT:-0}" = 1 ]; then
+    local audit_rc=0 audit_reason audit_secs
+    audit_secs=$(( (start_ms + FM_LINT_INTERNAL_ROOT_SECS * 1000 - $(fm_lint_now_ms)) / 1000 ))
+    if [ "$final_follow_sources" -eq 0 ]; then
+      # The canonical memory fallback already ran this exact no-source check.
+      audit_rc=$invocation_rc
+      audit_reason=$reason
+    elif [ "${FM_LINT_INTERNAL_BOUNDED:-none}" != none ] && [ "$audit_secs" -lt 1 ]; then
+      audit_rc=124
+      audit_reason=timeout
+    else
+      fm_lint_exec_root "$path" "$fallback_out" "$fallback_err" "$fallback_rss" \
+        "$audit_secs" --norc "--exclude=$LOCAL_NOX_EXCLUDE"
+      audit_rc=$FM_LINT_LAST_RC
+      audit_reason=$(fm_lint_classify_root "$audit_rc" "$fallback_err")
+      rss_kib=$(fm_lint_max_root_rss "$rss_kib" "$(fm_lint_root_rss "$fallback_rss")")
+      cat "$fallback_out" "$fallback_err" >> "$output_dir/shard.$shard_index.out"
+    fi
+    printf 'fm-lint: no-source audit %s reason=%s rc=%s\n' \
+      "$path" "$audit_reason" "$audit_rc" >&2
+    if [ "$invocation_rc" -eq 0 ] && [ "$audit_rc" -ne 0 ]; then
+      invocation_rc=$audit_rc
+      reason="no-source-audit:$audit_reason"
+    fi
+  fi
   end_ms=$(fm_lint_now_ms)
   duration_ms=$((end_ms - start_ms))
   if [ -n "${FM_LINT_INTERNAL_ROOTS_LOG:-}" ]; then
@@ -467,6 +516,11 @@ fi
 
 if [ "${1:-}" = "--required-version" ]; then
   printf '%s\n' "$REQUIRED_SHELLCHECK"
+  exit 0
+fi
+
+if [ "${1:-}" = "--partition-count" ]; then
+  printf '%s\n' "$CANONICAL_PARTITION_COUNT"
   exit 0
 fi
 
@@ -725,7 +779,7 @@ fm_lint_run_backend_purity() {
 # after that silently tested only the swapped-in scripts regardless of the
 # actual diff, while GitHub's required check still certified the test step
 # as covering the change. Fail loudly instead of letting that recur quietly.
-FM_LINT_CANONICAL_NM_TEST="bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle"
+FM_LINT_CANONICAL_NM_TEST="bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle"
 fm_lint_check_nomistakes_test_command() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   local nm_yaml="${FM_LINT_NM_YAML:-$ROOT/.no-mistakes.yaml}"
@@ -786,7 +840,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --partition)
-      [ "$#" -ge 2 ] || { printf 'fm-lint.sh: --partition requires 1of2 or 2of2.\n' >&2; exit 2; }
+      [ "$#" -ge 2 ] || { printf 'fm-lint.sh: --partition requires KofN.\n' >&2; exit 2; }
       PARTITION=$2
       PARTITION_REQUESTED=1
       shift 2
@@ -822,20 +876,27 @@ case "$JOBS" in
   *) printf 'fm-lint.sh: jobs must be 1 or 2, got %s.\n' "$JOBS" >&2; exit 2 ;;
 esac
 
+PARTITION_MAX=8
 case "$PARTITION" in
   '')
     if [ "$PARTITION_REQUESTED" -eq 1 ]; then
-      printf 'fm-lint.sh: --partition requires 1of2 or 2of2.\n' >&2
+      printf 'fm-lint.sh: --partition requires KofN.\n' >&2
       exit 2
     fi
     ;;
-  1of2|2of2)
+  [1-9]of[1-9])
+    PARTITION_INDEX=${PARTITION%%of*}
+    PARTITION_COUNT=${PARTITION##*of}
+    if [ "$PARTITION_INDEX" -gt "$PARTITION_COUNT" ] || [ "$PARTITION_COUNT" -gt "$PARTITION_MAX" ]; then
+      printf 'fm-lint.sh: --partition needs 1 <= K <= N <= %s, got %s.\n' "$PARTITION_MAX" "$PARTITION" >&2
+      exit 2
+    fi
     if [ "$FAST" -eq 1 ] || [ "$#" -gt 0 ]; then
       printf 'fm-lint.sh: --partition requires full canonical lint; omit --fast and explicit paths.\n' >&2
       exit 2
     fi
     ;;
-  *) printf 'fm-lint.sh: --partition must be 1of2 or 2of2, got %s.\n' "$PARTITION" >&2; exit 2 ;;
+  *) printf 'fm-lint.sh: --partition must be KofN with 1 <= K <= N <= %s, got %s.\n' "$PARTITION_MAX" "$PARTITION" >&2; exit 2 ;;
 esac
 
 if [ "$FAST" -eq 1 ] && { [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true ]; }; then
@@ -941,8 +1002,14 @@ if [ -n "$PARTITION" ]; then
   partition_weights=$(fm_lint_root_weights) || exit $?
   while IFS="$TAB" read -r index path; do
     PARTITION_ROOTS+=("$path")
-  done < <(printf '%s\n' "$partition_weights" | LC_ALL=C sort -t "$TAB" -k1,1nr -k2,2n | awk -F '\t' -v want="${PARTITION%%of*}" '
-    { shard=(load[2] < load[1]) ? 2 : 1; load[shard]+=$1; if (shard == want) print $2 "\t" $3 }
+  done < <(printf '%s\n' "$partition_weights" | LC_ALL=C sort -t "$TAB" -k1,1nr -k2,2n \
+    | awk -F '\t' -v want="$PARTITION_INDEX" -v count="$PARTITION_COUNT" '
+    {
+      shard=1
+      for (i = 2; i <= count; i++) if (load[i] < load[shard]) shard=i
+      load[shard]+=$1
+      if (shard == want) print $2 "\t" $3
+    }
   ' | LC_ALL=C sort -t "$TAB" -k1,1n)
   ROOTS=("${PARTITION_ROOTS[@]}")
 fi
@@ -975,6 +1042,14 @@ if [ "$resolved" != "$REQUIRED_SHELLCHECK" ]; then
     "$REQUIRED_SHELLCHECK" "$resolved" "$REQUIRED_SHELLCHECK" >&2
   exit 1
 fi
+# Explicit roots are targeted checks; all context-selected lint takes the host
+# slot shared with heavy tests, before any ShellCheck workers are started.
+if [ "$EXPLICIT_PATHS" -eq 0 ]; then
+  # shellcheck source=bin/fm-heavy-admission-lib.sh
+  . "$SELF_DIR/fm-heavy-admission-lib.sh" || exit 1
+  fm_heavy_admit lint || exit $?
+fi
+
 if [ "$FAST" -eq 1 ]; then
   printf 'fm-lint.sh: fast local mode; ShellCheck extended analysis disabled\n' >&2
 elif [ "$FOLLOW_SOURCES" -eq 0 ]; then
@@ -1217,6 +1292,7 @@ fm_lint_run_worker() {  # <worker-index>
   worker_env=(
     FM_LINT_INTERNAL=1
     FM_LINT_INTERNAL_FAST="$FAST"
+    FM_LINT_INTERNAL_AUDIT="${PARTITION:+1}"
     FM_LINT_INTERNAL_FOLLOW_SOURCES="$FOLLOW_SOURCES"
     FM_LINT_INTERNAL_EXCLUDE="$EXCLUDE_CODES"
     FM_LINT_INTERNAL_BOUNDED="$BOUND_MECH"

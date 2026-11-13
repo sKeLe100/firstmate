@@ -401,6 +401,20 @@ test_cli_helper_sets_env_and_appends_trailing_session_flag() {
   pass "fm_backend_herdr_cli: sets HERDR_SESSION AND appends a trailing --session flag on every call"
 }
 
+test_cli_helper_places_session_flag_before_agent_separator() {
+  local dir log resp fb expected
+  dir="$TMP_ROOT/cli-helper-separator"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  fb=$(make_herdr_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_cli fmtest agent start x -- claude --flag' "$ROOT"
+  expect_code 0 $? "fm_backend_herdr_cli agent start with a -- separator should succeed"
+  # --session must sit before `--`; everything after `--` is the agent's own argv.
+  expected=$(printf 'HERDR_SESSION=fmtest\x1fagent\x1fstart\x1fx\x1f--session\x1ffmtest\x1f--\x1fclaude\x1f--flag')
+  [ "$(cat "$log")" = "$expected" ] \
+    || fail "--session must precede the -- separator and not follow the agent args, got: $(cat "$log")"
+  pass "fm_backend_herdr_cli: places --session before a -- separator, never after it"
+}
+
 # --- client selection: a stale client shadowing a compatible one -------------
 #
 # Two herdr clients on PATH is a real host shape (a self-updated ~/.local/bin
@@ -6082,6 +6096,7 @@ test_workspace_label_secondmate_marker_trims_whitespace
 test_workspace_label_empty_marker_falls_back_to_primary
 test_workspace_label_different_secondmates_get_different_labels
 test_cli_helper_sets_env_and_appends_trailing_session_flag
+test_cli_helper_places_session_flag_before_agent_separator
 test_agent_state_bypasses_a_stale_client_shadowing_a_compatible_one
 test_recovery_grade_read_widens_only_at_its_own_boundary
 test_stale_registration_over_a_shell_only_pane_is_agent_free

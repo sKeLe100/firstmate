@@ -147,29 +147,136 @@ ssh pc02 "systemctl --user start llama-swap"
 ssh pc02 "journalctl --user -u llama-swap --no-pager -n 50"
 ```
 
-## PC02 as a test host
+## PC02 as a test and lint host
 
 Besides serving models, PC02's stronger hardware can run this repo's own
-heavy `bin/fm-test-run.sh` suites (including the no-mistakes test step) when
-PC02 is not needed for anything else. `bin/fm-test-run.sh --pc02-if-idle`
-(see its own header) execs into `bin/fm-pc02-test-offload.sh`, which is the
-single owner of every readiness check and the sync/execution mechanics; read
-its header and `--help` for the exact contract rather than duplicating it
-here.
+heavy `bin/fm-test-run.sh` suites and canonical `bin/fm-lint.sh` lint
+(including the no-mistakes test and lint steps) when PC02 is not needed for
+anything else. `bin/fm-test-run.sh --pc02-if-idle` (see its own header) hands
+test runs to `bin/fm-test-compute.sh`, which tries hosted compute first and
+then the existing PC02/PC01 admission path in
+`bin/fm-pc02-test-offload.sh`; set `FM_TEST_COMPUTE_DISABLE=1` when a
+PC02-only/offline route is intended. The no-mistakes lint command reaches the
+same PC02/PC01 admission through `bin/fm-test-compute.sh lint`; PC02 runs the
+canonical partitions, and PC01's last-resort lint runs the changed-file subset.
+`bin/fm-pc02-test-offload.sh` owns every readiness check and the
+sync/execution mechanics for both; read its header and `--help` for the exact
+contract rather than duplicating it here.
 
 **The captain's personal-use switch**: a Desktop shortcut on PC02 named
 "PC02 Personal Use Toggle" flips a flag with no terminal - one double-click
-turns it on (test offloading stays on PC01 only) or off (PC02 may pick up
-idle test runs again), with a brief popup confirming the new state. The same
-switch is reachable from PC01 with `bin/fm-pc02-personal-use.sh
-on|off|status`. Besides that manual switch, every offload attempt also
-checks automatically whether PC02's llama-swap has any model loaded for a
-live session (its `/running` endpoint; a healthy llama-swap with nothing
-loaded does not block offloading), and whether Windows-wide CPU or GPU utilization looks busy (a game
-or other heavy foreground use); any of those routes the run to PC01 instead,
-and an unreachable or unclear check does the same rather than guessing PC02
-is free. Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut
-or its resource-check script ever need to be redeployed (safe to re-run).
+turns it on (offloading stays on PC01 only) or off (PC02 may pick up
+offloaded runs again), with a brief popup confirming the new state. The
+same switch is reachable from PC01 with `bin/fm-pc02-personal-use.sh
+on|off|status`. This manual switch is the only thing that stops PC02 testing:
+a live PC02 model worker, a loaded llama-swap, and ordinary host CPU/GPU load
+do not block an offload, because PC02 runs the test slots alongside a model.
+The per-slot locks still bound how many suites run at once, and a run waits for
+a free slot up to the offload's wait bound; an unreachable PC02 routes the run
+to PC01 at once.
+
+The same flag gates PC02's self-hosted GitHub Actions runners.
+While it is on, every systemd user unit matching `actions.runner.*` is stopped; turning it off starts them again, whether the flag was flipped from the desktop shortcut or from PC01.
+Stopping a runner ends its process, so a job already running is left to GitHub's own handling and queued jobs simply wait for a runner to return.
+`bin/fm-pc02-personal-use.sh install-toggle` installs the PC02-side gate: a user path unit that watches the flag, the helper it runs, and one drop-in per discovered runner so the runners also stay down across a PC02 reboot while the flag is on.
+Every flip discovers runners from that unit pattern, so a newly registered runner is stopped and started with the rest without editing the script.
+Its reboot drop-in is only written by `install-toggle`, so re-run it after registering a runner.
+A flip that lands while the gate is already running is picked up by a re-check at the end of that run, so a quick on-then-off double flip still ends in the state the flag shows.
+Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut or the
+runner gate ever needs to be redeployed (safe to re-run).
+
+### Reclaiming leaked test roots
+
+`bin/fm-pc02-hygiene.sh` is an ssh wrapper, so run it where the checkout lives
+(normally PC01). It is strictly read-only and prints the PC02 paths it counted,
+one per `stale_test_root=` line - at most 50 per run, then a
+`stale_test_roots_omitted=` count - so the printed list is the whole set a
+manual pass may consider. Every removal command runs on PC02 itself, for
+example inside `ssh pc02`: those are PC02 paths, and running `rm` with them from
+PC01 would delete same-named PC01 directories instead.
+
+`bin/fm-pc02-hygiene-lib.sh`'s header owns the exact definition of a counted
+root. It counts exactly three classes, and only these may be removed:
+
+- offload mirrors `$HOME/<FM_PC02_OFFLOAD_REMOTE_BASE>/run-*` left behind by a
+  wrapper whose exit trap never ran;
+- `$TMP_ROOT`/`fm-test-run.*` roots left by a direct test run;
+- `$TMP_ROOT`/`fm-*` directories carrying a `.fm-test-fixture` marker
+  (`tests/lib.sh` writes it). Never widen the match to a bare `fm-*`: real task
+  temp roots live there too.
+
+Every path the report printed already passed its stale-age bound and its live
+reference scan (cwd, environment value, `--flag=value`, open file descriptor)
+plus the owner-marker rules, so never add a root the report did not print: a
+root it excluded is still owned, sometimes only through an environment value or
+an open fd that a name search cannot see. The loop below re-checks on PC02 that
+a path is one of the three counted classes, its stale-age bound, and its owner
+markers (`run-*/pgid`, plus the fixture marker's recorded pid/start-time/cmdline
+identity), then restores owner write with `chmod -R u+w` (test fixtures leave
+read-only `*.git-hooks` directories that block `rm -rf`) and removes the root.
+
+On PC01, hand the report's counted paths to PC02:
+
+```bash
+bin/fm-pc02-hygiene.sh | sed -n 's/^stale_test_root=//p' | ssh pc02 'cat > "$HOME/.pc02-stale-paths"'
+```
+
+On PC02 (inside `ssh pc02`), re-check and remove only those paths:
+
+```bash
+age=${FM_PC02_HYGIENE_STALE_AGE_SECS:-21600}
+tmp_root=${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}
+remote_base=${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}
+now=$(date +%s)
+group_alive() {  # <root>: the mirrored run's pgid still names a live group
+  local pg
+  [ -r "$1/pgid" ] || return 1
+  read -r pg < "$1/pgid" || return 1
+  case "$pg" in "" | *[!0-9]*) return 1 ;; esac
+  kill -0 -- "-$pg" 2>/dev/null
+}
+marker_owner_alive() {  # <root>: the marker's recorded owner is still that process
+  local pid id start hex
+  [ -r "$1/.fm-test-fixture" ] || return 1
+  { read -r pid; read -r id; } < "$1/.fm-test-fixture" || return 1
+  case "$pid" in "" | *[!0-9]*) return 1 ;; esac
+  [ -n "$id" ] && [ -r "/proc/$pid/stat" ] || return 1
+  start=$(awk '{ sub(/^.*\) /, ""); print $20 }' "/proc/$pid/stat" 2>/dev/null)
+  set -- ${id#*=}
+  [ "$1" = "$start" ] || return 1
+  hex=$(od -An -v -tx1 "/proc/$pid/cmdline" 2>/dev/null | tr -d '[:space:]')
+  [ "${id##*cmdline-hex=}" = "$hex" ]
+}
+removed=0
+while IFS= read -r dir; do
+  [ -n "$dir" ] || continue
+  case "$dir" in
+    "$HOME/$remote_base"/run-*) ;;
+    "$tmp_root"/fm-test-run.*) ;;
+    "$tmp_root"/fm-*) [ -f "$dir/.fm-test-fixture" ] || continue ;;
+    *) continue ;;
+  esac
+  [ -d "$dir" ] && [ ! -L "$dir" ] || continue
+  group_alive "$dir" && continue
+  marker_owner_alive "$dir" && continue
+  if [ -f "$dir/.fm-test-fixture" ]; then
+    mtime=$(stat -c %Y -- "$dir/.fm-test-fixture" 2>/dev/null) || continue
+  else
+    mtime=$(stat -c %Y -- "$dir" 2>/dev/null) || continue
+  fi
+  case "$mtime" in "" | *[!0-9]*) continue ;; esac
+  [ $((now - mtime)) -ge "$age" ] || continue
+  chmod -R u+w -- "$dir" 2>/dev/null || true
+  rm -rf -- "$dir" && removed=$((removed + 1))
+done < "$HOME/.pc02-stale-paths"
+printf 'removed=%s\n' "$removed"
+```
+
+Then re-run `bin/fm-pc02-hygiene.sh` on PC01 and repeat while it still prints
+`stale_test_root=` lines; `stale_test_roots` should reach 0, and its
+`tmp_used_mib`/`disk_used_mib` lines show the reclaimed space. If a path the
+loop just removed reappears in the next report, stop: something still owns it
+and the report is the authority on that.
 
 **Warning**: `wsl --shutdown` (see "WSL is not running" above) drops all
 remote access to PC02, including this offload path, until someone reaches

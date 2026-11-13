@@ -41,6 +41,8 @@ fm_crew_dispatch_validate() {
     codex_efforts="${codex_efforts:+$codex_efforts,}\"$tier\""
   done
   codex_efforts="[$codex_efforts]"
+  local codex_max_models
+  codex_max_models=$(codex_max_effort_models_json)
   typed_key=${TYPESAFE_API_KEY_PRIVATE:-${TYPESAFE_API_KEY:-}}
   if [ -z "$typed_key" ] && [ -n "${FM_HOME:-}" ]; then
     typed_key=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
@@ -51,7 +53,7 @@ fm_crew_dispatch_validate() {
   else
     verified_harnesses='["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","agy","muse","rovo","omp","devin","commandcode","polytoken"]'
   fi
-  err=$(jq -r --argjson codex_efforts "$codex_efforts" --argjson typed "$typed_active" \
+  err=$(jq -r --argjson codex_efforts "$codex_efforts" --argjson codex_max_models "$codex_max_models" --argjson typed "$typed_active" \
     --argjson verified_harnesses "$verified_harnesses" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" '
     def verified($h): $verified_harnesses | index($h);
     def provider_id($p): ($p | type) == "string" and ($p | test($provider_re));
@@ -60,7 +62,7 @@ fm_crew_dispatch_validate() {
       elif ($e | type) != "string" then false
       elif $e == "ultra" then (($h == "pi" or $h == "pi-signed") and (($m | type) == "string") and ($m | startswith("codex-native/")) and ($m | length) > 13)
       elif $h == "claude" then (["low","medium","high","xhigh","max"] | index($e))
-      elif $h == "codex" then (($codex_efforts | index($e)) != null or ($e == "max" and $m == "gpt-5.6-luna"))
+      elif $h == "codex" then (($codex_efforts | index($e)) != null or ($e == "max" and ($codex_max_models | index($m)) != null))
       elif $h == "grok" then (["low","medium","high"] | index($e))
       elif $h == "agy" then (["low","medium","high"] | index($e))
       elif $h == "pi" or $h == "pi-signed" or $h == "omp" then (["low","medium","high","xhigh","max"] | index($e))

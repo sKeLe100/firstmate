@@ -76,6 +76,12 @@
 #     retried instead of being judged by the healthy-watcher predicate
 #     (docs/supervision-host.md). On a home that opted out nothing below
 #     changes.
+#   - Auto-stow: a primary session whose own transcript reaches the restart
+#     context band gets one rewake per session telling it to run /stow, so the
+#     checkpoint lands before automatic compaction can drop detail.
+#     autostow_fire below owns its gates and once-per-session marker; the policy,
+#     its coverage gates, and its thresholds are owned by docs/configuration.md
+#     "Session context thresholds".
 #   - Translation: while supervision is still needed and AFK remains inactive,
 #     an actionable arm close (signal:/stale:/check:/heartbeat) prints one
 #     rewake banner to stderr and exits 2, which wakes Claude even while idle
@@ -120,9 +126,13 @@ usage() {
 Usage: fm-claude-stop-autoarm.sh
 
 Claude Stop hook registered in .claude/settings.json; not for manual use.
-It reads the Stop payload on stdin and, in a primary home that needs
-supervision, arms the watcher or supervision host for this session.
-Exit 0 is silent; exit 2 carries a rewake banner on stderr.
+It reads the Stop payload on stdin. In a primary home that needs supervision
+it arms the watcher or supervision host for this session. While supervision
+is already covered - an idle home that needs none, or a live watcher that
+already holds it - it instead emits at most one restart-band auto-stow wake
+per session, telling the session to run /stow.
+Exit 0 is silent; exit 2 carries the rewake banner or the auto-stow wake on
+stderr.
 EOF
 }
 
@@ -166,6 +176,9 @@ esac
 # poll cadence"). fm_poll_derived_grace (bin/fm-wake-lib.sh) is the single
 # owner of that max(300, poll+60) derivation.
 GRACE=${FM_GUARD_GRACE:-$(fm_poll_derived_grace)}
+# The turn-end guard reads the flat ${FM_GUARD_GRACE:-300} (bin/fm-turnend-guard.sh),
+# and the pre-arm coverage check must agree with that reading.
+GUARD_GRACE=${FM_GUARD_GRACE:-300}
 
 # Consume the Stop payload once. The decisions below are state-based; the
 # payload is read so a slow writer can never wedge on a full pipe, and its host
@@ -216,11 +229,56 @@ fi
 # --- AFK: the away daemon owns the watcher and triage; never rewake ----------
 [ -e "$STATE/.afk" ] && exit 0
 
+# --- auto-stow at the restart band ----------------------------------------------
+# autostow_fire runs the mechanical gates below and writes the once-per-session
+# marker; the policy, its coverage gates, and its thresholds are owned by
+# docs/configuration.md "Session context thresholds".
+autostow_fire() {
+  local sid transcript out band marker tokens limit
+  [ -n "$PAYLOAD" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  [ -e "$CONFIG/auto-stow-off" ] && return 1
+  if fm_root_is_secondmate_home "$FM_ROOT"; then
+    [ -e "$CONFIG/auto-stow" ] || return 1
+  fi
+  fm_session_lock_owned_by_self "$STATE" || return 1
+  sid=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null) || return 1
+  transcript=$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty' 2>/dev/null) || return 1
+  case "$sid" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  [ -f "$transcript" ] || return 1
+  marker="$STATE/.auto-stow-$sid"
+  [ -e "$marker" ] && return 1
+  out=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-context-usage.sh" "$transcript" 2>/dev/null) || return 1
+  band=$(printf '%s\n' "$out" | tr ' ' '\n' | sed -n 's/^band=//p' | head -n 1)
+  [ "$band" = restart ] || return 1
+  ( set -C; : > "$marker" ) 2>/dev/null || return 1
+  tokens=$(printf '%s\n' "$out" | tr ' ' '\n' | sed -n 's/^context_tokens=//p' | head -n 1)
+  limit=$(printf '%s\n' "$out" | tr ' ' '\n' | sed -n 's/^restart_tokens=//p' | head -n 1)
+  printf 'firstmate auto-stow - this primary session reached the restart context band (context_tokens=%s, restart_tokens=%s).\n' "$tokens" "$limit" >&2
+  printf 'Run the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.\n' >&2
+  return 0
+}
+
+# Exit 2 with the auto-stow wake when it is due; otherwise return, so the caller's
+# exit 0 stands. Only the coverage-checked call sites below invoke it.
+autostow_exit() {
+  autostow_fire && exit 2
+  return 0
+}
+
 # --- need: whatever bin/fm-supervision-lib.sh counts as supervision need ------
 need_supervision() {
   fm_supervision_needed "$STATE" "$GRACE"
 }
-need_supervision || exit 0
+if ! need_supervision; then
+  autostow_exit
+  exit 0
+fi
+# A live watcher already covers supervision through the stow turn, so the wake
+# may precede arming. With no live watcher the arm below runs first.
+if fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$GUARD_GRACE" "$FM_HOME"; then
+  autostow_exit
+fi
 
 # --- stale session-lock recovery ---------------------------------------------
 # Delegate the claim to fm-lock.sh so its live-owner refusal and write semantics

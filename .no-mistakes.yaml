@@ -24,16 +24,27 @@ document:
 
 # Pin lint to the same owner CI invokes instead of leaving it to no-mistakes'
 # default handling, which does not invoke the repository's canonical lint gate.
-# `bin/fm-lint.sh` owns the context-sensitive ShellCheck modes and GitHub
-# workflow lint via pinned actionlint in `bin/fm-lint-workflows.sh`.
-# Invocation wiring is asserted by `tests/fm-lint.test.sh` and
-# `tests/fm-lint-workflows.test.sh`.
+# `bin/fm-test-compute.sh lint` routes every canonical lint partition through
+# hosted compute and PC02; PC01's last-resort lint is the changed-file subset.
+# `bin/fm-lint.sh` owns the ShellCheck modes and GitHub workflow lint via
+# pinned actionlint in
+# `bin/fm-lint-workflows.sh`.
+# Invocation wiring is asserted by `tests/fm-lint.test.sh`,
+# `tests/fm-lint-workflows.test.sh`, and `tests/fm-test-compute.test.sh`.
 #
 # commands.test is pinned to the canonical --changed invocation;
 # bin/fm-lint.sh guards against it drifting to a per-branch workaround.
+# --exclude-quarantined applies the tracked tests/fm-test-quarantine.tsv to the
+# local gate exactly as every CI lane does, so a known-failing quarantined
+# script cannot force a Test override and a per-PR check waiver. It removes only
+# the ledger intersection. The filtered selection for the reviewed change is
+# 14 scripts; one run on the PC01 fallback took 2041s (34 min) and passed, under
+# the 60-minute test_agent_timeout. PC02 was busy then, so this measurement
+# covers the lower-concurrency PC01 fallback. Re-measure each change and narrow
+# with the existing family filters if a selection exceeds the timeout.
 commands:
-  lint: 'bin/fm-lint.sh && bash tests/fm-pi-primary-types.test.sh'
-  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --pc02-if-idle'
+  lint: 'bin/fm-test-compute.sh lint && bash tests/fm-pi-primary-types.test.sh'
+  test: 'bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle'
 
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.
@@ -47,6 +58,7 @@ test:
     Do not mutate the operator primary checkout, real fleet FM_HOME state, or production credentials (never sign in, sign out, re-login, or edit credential stores), and keep git changes otherwise inside the run worktree. A captain-opted-in live check may use the machine's normal Claude login; Claude's own session and transcript files under the home directory are expected and are not credential mutations. An empty isolated CLAUDE_CONFIG_DIR is not evidence that the normal login is unavailable.
     Read docs/herdr-backend.md and the bin/fm-herdr-lab.sh header as the owners of Herdr lab mechanics rather than reproducing that manual here.
     Ship or scout briefs that will drive Herdr lifecycle still require --herdr-lab at scaffold time; these Test-agent instructions are not a substitute for that brief flag.
+    Exit 77 from the configured test or lint command means no verdict: report the step as not passed and never substitute other evidence to approve it.
   evidence:
     store_in_repo: true
 
@@ -56,11 +68,11 @@ test:
 test_agent_timeout: "60m"
 
 # Maintainability rules the Review step applies to the surfaces where this repo
-# has repeatedly paid for getting them wrong. Kept as pointers for the same
-# reason `document.instructions` is: the coding guideline owns the policy, and a
-# second prose copy here would become a competing owner. Schema caps both the
-# entry count and the total bytes added to the review prompt, so keep each
-# entry short.
+# has repeatedly paid for getting them wrong. Those entries stay pointers for
+# the same reason `document.instructions` is: the coding guideline owns the
+# policy, and a second prose copy here would become a competing owner. Schema
+# caps both the entry count and the total bytes added to the review prompt, so
+# keep each entry short.
 review:
   path_instructions:
     - path: 'bin/*.sh'
@@ -84,3 +96,58 @@ review:
         bin/fm-agentsmd-size.sh (do not re-spell the value here); trim
         resident lookup tables duplicated in docs/configuration.md; preserve
         all safety boundaries and hard rules verbatim.
+    # Guard the bar: unlike the pointers above, these entries state the rule
+    # itself because no skill owns it. The glob engine is Go path.Match, where
+    # `*` stays within one path segment and does not recurse, so each tree gets
+    # one entry per depth. The schema takes one glob per entry, so each depth
+    # repeats this text.
+    - path: 'tests/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'tests/*/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'tests/*/*/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'bin/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: 'bin/backends/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: '.github/workflows/*'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection. Accept it only when the PR description states why.
+    - path: '.no-mistakes.yaml'
+      instructions: |
+        Flag each diff that lowers the bar, citing its concrete line: a deleted,
+        skipped, or quarantined test; a removed or weakened assertion; a new lint
+        or shellcheck suppression; a stub or short-circuit that makes a check
+        pass; a raised timeout, retry count, or tolerance; a narrowed test
+        selection, including weakening these bar-lowering guard rules
+        themselves. Accept it only when the PR description states why.

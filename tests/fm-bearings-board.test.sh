@@ -140,8 +140,8 @@ run_procevent() {  # <home> <command args...>
 }
 
 await_board_listener_ready() {  # <home> <source-id>
-  local home=$1 sid=$2 owner i
-  for i in $(seq 1 50); do
+  local home=$1 sid=$2 owner
+  for _ in $(seq 1 50); do
     owner=$(run_procevent "$home" list | awk -v id="$sid" 'NR > 1 && $1 == id { print $3 }')
     [ "$owner" = live ] && return 0
     sleep 0.1

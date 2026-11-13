@@ -236,14 +236,22 @@ EOF
   TASK_TMPS+=("/tmp/fm-$id")
 }
 
+# FM_TEST_HERDR_SESSION / FM_TEST_HERDR_PANE let one case model a seat that is
+# itself inside a herdr pane (the launcher-identity and ambient-session paths);
+# with neither set the seat has no herdr ancestry, as before.
 run_control() {  # <case-dir> <args...>
   local dir=$1; shift
+  local -a herdr_env=()
+  [ -z "${FM_TEST_HERDR_SESSION:-}" ] || herdr_env+=(HERDR_ENV=1 HERDR_SESSION="$FM_TEST_HERDR_SESSION")
+  [ -z "${FM_TEST_HERDR_PANE:-}" ] || herdr_env+=(HERDR_PANE_ID="$FM_TEST_HERDR_PANE")
+  [ -z "${FM_TEST_HERDR_SOCKET:-}" ] || herdr_env+=(HERDR_SOCKET_PATH="$FM_TEST_HERDR_SOCKET")
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), and a relaunch reaches it through fm-control.sh, so this runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
   mkdir -p "$dir/user-home"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    "${herdr_env[@]}" \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
@@ -260,12 +268,17 @@ run_control() {  # <case-dir> <args...>
 
 run_spawn() {  # <case-dir> <args...>
   local dir=$1; shift
+  local -a herdr_env=()
+  [ -z "${FM_TEST_HERDR_SESSION:-}" ] || herdr_env+=(HERDR_ENV=1 HERDR_SESSION="$FM_TEST_HERDR_SESSION")
+  [ -z "${FM_TEST_HERDR_PANE:-}" ] || herdr_env+=(HERDR_PANE_ID="$FM_TEST_HERDR_PANE")
+  [ -z "${FM_TEST_HERDR_SOCKET:-}" ] || herdr_env+=(HERDR_SOCKET_PATH="$FM_TEST_HERDR_SOCKET")
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), so it runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
   mkdir -p "$dir/user-home"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    "${herdr_env[@]}" \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
@@ -2051,6 +2064,9 @@ test_spawn_relaunch_refuses_contradicting_flags() {
   out=$(run_spawn "$dir" rl16 "$dir/proj" --relaunch); rc=$?
   expect_code 1 "$rc" "a project positional should be refused alongside --relaunch"
   assert_contains "$out" "takes the task id only" "the refusal should name the positional rule"
+  out=$(run_spawn "$dir" rl16 --move-session); rc=$?
+  expect_code 1 "$rc" "--move-session should be refused on a fresh spawn"
+  assert_contains "$out" "applies only to --relaunch" "the refusal should scope --move-session to relaunch"
   pass "fm-spawn --relaunch: every identity axis comes from the record, and a contradicting flag refuses"
 }
 
@@ -2214,6 +2230,24 @@ if [ -f "$D/herdr-stopped" ]; then
   # with no JSON body to classify.
   echo 'error: could not connect to the herdr server' >&2
   exit 1
+fi
+if [ -f "$D/herdr-launcher" ]; then
+  case "${1:-} ${2:-}" in
+    'session list')
+      printf '{"sessions":[{"name":"firstmate","running":true,"socket_path":"%s"}]}\n' "$D/sock/herdr.sock"
+      exit 0 ;;
+    'pane get')
+      if [ "${3:-}" = 'w7:p3' ]; then
+        printf '{"result":{"pane":{"pane_id":"w7:p3","tab_id":"w7:t1","workspace_id":"w7"}}}\n'
+        exit 0
+      fi ;;
+    'tab get')
+      printf '{"result":{"tab":{"tab_id":"w7:t1","workspace_id":"w7"}}}\n'
+      exit 0 ;;
+    'workspace list')
+      printf '{"result":{"workspaces":[{"workspace_id":"w7","label":"orchestrator"}]}}\n'
+      exit 0 ;;
+  esac
 fi
 case "${1:-} ${2:-}" in
   'pane get')
@@ -2712,6 +2746,9 @@ SH
     || fail "the dialog file must be gone when the control lock is released, got: $(cat "$trace" 2>/dev/null)"
   pass "fm-control exit removes the dialog file before it releases the control lock"
 }
+
+# A sibling suite sources this file for its helpers and runs its own cases.
+[ "${FM_RELAUNCH_LIB_ONLY:-}" = 1 ] && return 0
 
 test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file

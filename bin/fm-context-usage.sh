@@ -11,17 +11,67 @@
 # which is the same total the /context command displays.
 #
 # Usage: fm-context-usage.sh [transcript.jsonl]
-#   With no argument, picks the most recently modified *.jsonl transcript in
-#   the Claude project directory for this home (~/.claude/projects/<home path
-#   with every non-alphanumeric character replaced by ->, home = FM_HOME or
-#   the current directory). The active session appends to its transcript
-#   continuously, so the newest file is the current session whenever one is
-#   live.
+#   With no argument, reads the Claude project directory for this home:
+#     <store>/projects/<home path with every non-alphanumeric character
+#     replaced by ->, home = FM_HOME or the current directory.
+#   A self-read binds to the calling session's own transcript, the file named by
+#   the trusted session id from bin/fm-session-lock-lib.sh, and falls back to the
+#   newest *.jsonl with pick=newest only when it has no trusted id or no resolved
+#   store holds that session's transcript. A targeted read (FM_CLAUDE_STORE set)
+#   takes the newest *.jsonl in the named store.
+#   <store> is the one the TARGET session writes, resolved in this order:
+#   - FM_CLAUDE_STORE names the store of ANOTHER session: the account= a spawn
+#     recorded for it - the absolute root a config/claude-account pin names,
+#     `ordinary` for the vendor default login ($HOME/.claude), or `auto` for a
+#     task that recorded no pin and so inherited the store resolved below
+#     (docs/configuration.md "Worker account pin"). Any other value, including
+#     a relative path, is refused.
+#   - otherwise this process's own ${CLAUDE_CONFIG_DIR:-$HOME/.claude}, which is
+#     the store of the session reading its own usage; when that store holds no
+#     project directory for the home being read, the default $HOME/.claude is
+#     tried too, so a crew launched with CLAUDE_CONFIG_DIR unset is still found
+#     by a supervisor running under a different store.
+#   A relative CLAUDE_CONFIG_DIR is refused rather than resolved against this
+#   process's cwd, because it cannot then name the store the session actually
+#   uses.
+#
+#   A self-read (no explicit transcript argument, no FM_CLAUDE_STORE) binds to
+#   the calling session's own transcript rather than to whichever file was
+#   written last. The session id is not read from the environment directly: it
+#   comes from bin/fm-session-lock-lib.sh's trusted same-session gate, which
+#   returns one only when CLAUDE_PID is a Claude-shaped member of this process's
+#   contiguous ancestry, so an inherited id from an enclosing Claude pane (a Pi
+#   or codex primary that shell launched) never binds this read to that other
+#   session's transcript. A trusted id naming <store>/projects/<munged>/<id>.jsonl
+#   that matches ^[A-Za-z0-9][A-Za-z0-9._-]*$ (so it can only ever name a file
+#   directly under the project directory) and exists in a resolved store is that
+#   reading, and the output carries pick=session. A second live session in the
+#   same home appends to its own transcript, so it can no longer take over this
+#   reading. Without a trusted id, or when no resolved store holds that session's
+#   transcript, the reading falls back to the most recently modified *.jsonl and
+#   reports pick=newest: a non-Claude or id-less harness, and a session that has
+#   not written yet, still get a reading, just not a session-bound one. The home's
+#   state/.lock-session records whichever session holds the home's lock, not the
+#   caller; the trusted-id gate walks this process's ancestry with ps through
+#   bin/fm-session-lock-lib.sh, makes no Herdr query, and needs no lock sidecar.
+#
+#   Auto-discovery refuses to report a confident band from a stale transcript
+#   when the read is this process's own session (no FM_CLAUDE_STORE): when the
+#   transcript it picked - session-bound or the newest-mtime fallback - is older
+#   than a fixed 900 seconds it still reports the tokens it found but sets
+#   band=unavailable with reason=stale-transcript, exiting 0. A read that names
+#   a target store is a read of another session, which is idle by definition, so
+#   it reports the band it finds however old that transcript is. An explicit
+#   transcript argument is trusted as given and never gets this guard.
 #
 # Output is one data-only line; callers act on the reported band rather than
 # re-deriving thresholds:
 #   context_tokens=<N> window=<W> percent=<P> warn_tokens=<W1> \
-#     restart_tokens=<W2> band=<ok|warn|restart> transcript=<path> age_seconds=<S>
+#     restart_tokens=<W2> band=<ok|warn|restart|unavailable> transcript=<path> \
+#     age_seconds=<S> [pick=session|newest] [reason=stale-transcript]
+# pick appears only on a self-read, naming whether that reading is bound to the
+# calling session's own transcript (session) or fell back to the newest one
+# (newest); a targeted or explicit read carries no pick field.
 # The window defaults to 1000000 and can be overridden with FM_CONTEXT_WINDOW
 # when a harness or model change alters the real window.
 #
@@ -36,6 +86,11 @@
 #             fresh session for a primary), and wake/advise the main session.
 #             Never send /clear through the steer channel - it is mechanically
 #             broken.
+#   unavailable - the transcript a self-read picked - its own session's, or the
+#             newest-mtime fallback - is older than the 900-second self-read
+#             limit, so the reading is not evidence of a current band; report
+#             the reading as unavailable rather than quoting it as the session's
+#             context.
 # Thresholds come from config/context-thresholds under the same home used for
 # transcript discovery: optional `warn=<N>` and `restart=<N>` lines, one per
 # line, each a positive base-10 integer, warn <= restart. A malformed file is
@@ -43,7 +98,10 @@
 # inherited by secondmate homes via FM_INHERITABLE_CONFIG
 # (bin/fm-config-inherit-lib.sh), so the primary's thresholds propagate.
 # For another session's usage (a crewmate or secondmate), run with FM_HOME set
-# to that session's working directory (task worktree or secondmate home).
+# to that session's working directory (task worktree or secondmate home) and
+# FM_CLAUDE_STORE set to the account= recorded for that task, or to `auto` when
+# it recorded no pin: every cross-session read names its store, because a read
+# that names none is this process's own and gets the staleness guard above.
 #
 # Subagent (sidechain) turns are excluded so a spawned helper's smaller
 # context never masquerades as the primary session's usage.
@@ -54,9 +112,13 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,111p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$script_dir/fm-session-lock-lib.sh"
 
 home_path="${FM_HOME:-$PWD}"
 
@@ -91,18 +153,85 @@ if [ -e "$thresholds_file" ]; then
   fi
 fi
 
+# A self-read whose picked transcript is older than this is not evidence of a
+# current band; targeted and explicit reads skip this guard.
+self_read_stale_seconds=900
+
 transcript="${1:-}"
+self_read=0
+pick=
 if [ -z "$transcript" ]; then
-  munged="$(printf '%s' "$home_path" | tr -c 'a-zA-Z0-9' '-')"
-  proj_dir="$HOME/.claude/projects/$munged"
-  if [ ! -d "$proj_dir" ]; then
-    echo "fm-context-usage: no Claude transcript directory at $proj_dir (non-claude harness, or no session yet)" >&2
-    exit 1
+  targeted=0
+  stores=()
+  case "${FM_CLAUDE_STORE:-}" in
+    '') ;;
+    auto) targeted=1 ;;
+    ordinary)
+      targeted=1
+      if [ -n "${HOME:-}" ]; then
+        stores=("$HOME/.claude")
+      else
+        echo "fm-context-usage: FM_CLAUDE_STORE=ordinary needs HOME to locate the default Claude config directory" >&2
+        exit 1
+      fi ;;
+    /*) targeted=1; stores=("$FM_CLAUDE_STORE") ;;
+    *) echo "fm-context-usage: FM_CLAUDE_STORE must be auto, ordinary or an absolute path: $FM_CLAUDE_STORE" >&2; exit 1 ;;
+  esac
+  if [ "${#stores[@]}" -eq 0 ]; then
+    case ${CLAUDE_CONFIG_DIR:-} in
+      '') if [ -n "${HOME:-}" ]; then
+            stores=("$HOME/.claude")
+          else
+            echo "fm-context-usage: neither CLAUDE_CONFIG_DIR nor HOME is set, so the Claude config directory cannot be located" >&2
+            exit 1
+          fi ;;
+      /*) stores=("$CLAUDE_CONFIG_DIR") ;;
+      *) echo "fm-context-usage: CLAUDE_CONFIG_DIR '$CLAUDE_CONFIG_DIR' is a relative path, so the transcript store the session reads cannot be guaranteed to be the one named here; set it to an absolute path" >&2; exit 1 ;;
+    esac
+    if [ -n "${HOME:-}" ] && [ "${stores[0]}" != "$HOME/.claude" ]; then
+      stores+=("$HOME/.claude")
+    fi
   fi
-  transcript="$(find "$proj_dir" -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+  [ "$targeted" -eq 1 ] || self_read=1
+  munged="$(printf '%s' "$home_path" | tr -c 'a-zA-Z0-9' '-')"
+  transcript=
+  if [ "$self_read" -eq 1 ]; then
+    session_id=$(fm_session_lock_trusted_session_id) || session_id=
+    case "$session_id" in
+      ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) ;;
+      *) for store in "${stores[@]}"; do
+           if [ -f "$store/projects/$munged/$session_id.jsonl" ]; then
+             transcript="$store/projects/$munged/$session_id.jsonl"
+             pick=session
+             break
+           fi
+         done ;;
+    esac
+  fi
   if [ -z "$transcript" ]; then
-    echo "fm-context-usage: no *.jsonl transcript found under $proj_dir" >&2
-    exit 1
+    proj_dir=
+    for store in "${stores[@]}"; do
+      if [ -d "$store/projects/$munged" ]; then
+        proj_dir="$store/projects/$munged"
+        break
+      fi
+    done
+    if [ -z "$proj_dir" ]; then
+      candidates=
+      for store in "${stores[@]}"; do
+        candidates="${candidates:+$candidates, }$store/projects/$munged"
+      done
+      echo "fm-context-usage: no Claude transcript directory at $candidates (non-claude harness, or no session yet)" >&2
+      exit 1
+    fi
+    transcript="$(find "$proj_dir" -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+    if [ -z "$transcript" ]; then
+      echo "fm-context-usage: no *.jsonl transcript found under $proj_dir" >&2
+      exit 1
+    fi
+    if [ "$self_read" -eq 1 ]; then
+      pick=newest
+    fi
   fi
 fi
 
@@ -113,11 +242,14 @@ fi
 
 window="${FM_CONTEXT_WINDOW:-1000000}"
 
-python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" <<'PY'
+python3 - "$transcript" "$window" "$warn_tokens" "$restart_tokens" "$self_read" "$self_read_stale_seconds" "$pick" <<'PY'
 import json, os, sys, time
 
 path, window = sys.argv[1], int(sys.argv[2])
 warn, restart = int(sys.argv[3]), int(sys.argv[4])
+self_read = sys.argv[5] == "1"
+stale_seconds = int(sys.argv[6])
+pick = sys.argv[7]
 last = None
 with open(path, encoding="utf-8", errors="replace") as fh:
     for line in fh:
@@ -143,10 +275,15 @@ total = sum(
     for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 )
 age = max(0, int(time.time() - os.path.getmtime(path)))
-band = "restart" if total >= restart else "warn" if total >= warn else "ok"
+if self_read and age > stale_seconds:
+    band = "unavailable"
+else:
+    band = "restart" if total >= restart else "warn" if total >= warn else "ok"
+reason = " reason=stale-transcript" if band == "unavailable" else ""
+pick_field = " pick=%s" % pick if pick else ""
 print(
     "context_tokens=%d window=%d percent=%.1f warn_tokens=%d restart_tokens=%d"
-    " band=%s transcript=%s age_seconds=%d"
+    " band=%s transcript=%s age_seconds=%d%s%s"
     % (
         total,
         window,
@@ -156,6 +293,8 @@ print(
         band,
         path,
         age,
+        pick_field,
+        reason,
     )
 )
 PY

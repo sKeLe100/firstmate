@@ -121,6 +121,7 @@ exclusion_reason() {
     fm-daemon.test.sh|fm-guard-stale-banner.test.sh|fm-pi-watch-extension.test.sh|\
     fm-supervision-events.test.sh|fm-turnend-guard.test.sh|fm-wake-daemon-lifecycle-e2e.test.sh|\
     fm-wake-queue.test.sh|fm-watch-checkpoint.test.sh|fm-watch-triage.test.sh|\
+    fm-watch-triage-waits.test.sh|\
     fm-watcher-lock.test.sh)
       printf '%s\n' 'watcher/wake/lock family; intentional process locks and daemon races'
       ;;
@@ -164,7 +165,6 @@ list_parallel_candidates() {
 tests/fm-arm-pretool-check.test.sh
 tests/fm-backend-herdr.test.sh
 tests/fm-brief.test.sh
-tests/fm-captain-hold-lifecycle.test.sh
 tests/fm-cd-pretool-check.test.sh
 tests/fm-composer-ghost.test.sh
 tests/fm-composer-lib.test.sh

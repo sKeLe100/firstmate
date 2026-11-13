@@ -265,15 +265,30 @@ fm_ship_rule_one() {  # <no-mistakes|direct-PR|local-only> <task-id> [branch] [<
   esac
 }
 
-# Return 0 when a Task subsection still consists only of its scaffold
-# placeholder. A missing file and legacy briefs carry no such placeholders.
+# Print the first non-blank line of a subsection body, trimmed.
+fm_brief_leading_line() {  # <body>
+  printf '%s\n' "$1" | awk 'NF { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }'
+}
+
+# Print a `## Firstmate spec` body without the optional task slot lines
+# bin/fm-brief.sh scaffolds (`Scope:`, `Known facts:`, `Report budget:`), so a
+# spec holding only those slots reads as empty rather than filled.
+fm_brief_spec_without_slots() {  # <body>
+  printf '%s\n' "$1" | grep -Ev '^[[:space:]]*(Scope|Known facts|Report budget):' || true
+}
+
+# Return 0 when a Task subsection still starts with its scaffold placeholder:
+# that is the whole subsection for a bare scaffold, and the first line of a
+# scaffold whose optional task slots follow it. A filled subsection that only
+# mentions a placeholder token later is not leftover. A missing file and legacy
+# briefs carry no such placeholders.
 fm_brief_task_placeholders_present() {  # <file>
   local file=$1 intent spec
   [ -f "$file" ] || return 1
   intent=$(fm_brief_task_heading_body "$file" "## Captain's intent")
   spec=$(fm_brief_task_heading_body "$file" "## Firstmate spec")
-  [ "$(printf '%s' "$intent" | tr -d '[:space:]')" = '{TASK}' ] && return 0
-  [ "$(printf '%s' "$spec" | tr -d '[:space:]')" = '{FIRSTMATE_SPEC}' ] && return 0
+  [ "$(fm_brief_leading_line "$intent")" = '{TASK}' ] && return 0
+  [ "$(fm_brief_leading_line "$(fm_brief_spec_without_slots "$spec")")" = '{FIRSTMATE_SPEC}' ] && return 0
   return 1
 }
 
@@ -340,7 +355,7 @@ fm_brief_task_content_valid() {  # <file>
   if [ "$has_intent" -eq 1 ] || [ "$has_spec" -eq 1 ]; then
     [ "$has_intent" -eq 1 ] && [ "$has_spec" -eq 1 ] || return 1
     intent=$(fm_brief_task_heading_body "$file" "## Captain's intent")
-    spec=$(fm_brief_task_heading_body "$file" "## Firstmate spec")
+    spec=$(fm_brief_spec_without_slots "$(fm_brief_task_heading_body "$file" "## Firstmate spec")")
     [ -n "$(printf '%s' "$intent" | tr -d '[:space:]')" ] || return 1
     [ -n "$(printf '%s' "$spec" | tr -d '[:space:]')" ] || return 1
     return 0
@@ -376,7 +391,7 @@ EOF
 }
 
 # The forge-independent middle of the no-mistakes contract: how a worker drives
-# the pipeline, what `--intent` may carry, and the two firstmate-specific rules.
+# the pipeline, what `--intent` may carry, and the three firstmate-specific rules.
 # Written once; only the two sentences about a green PR depend on the forge,
 # because on gerrit the ci step is skipped and there is no PR to report.
 FM_DOD_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -426,12 +441,13 @@ $drive_block
 A killed or timed-out call is never evidence the daemon died: the daemon accepts your response immediately and runs the round in the background, so the call was only ever waiting for a read while the run kept working.
 Reattach and keep going rather than reporting the pipeline blocked; rule 7 owns the checks that decide when a pipeline block is real.
 
-Two firstmate-specific rules layer on top of that guidance:
+Three firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to firstmate using rule 6's ask-user format and stop.
   Firstmate applies \`ask-user-authority\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - NEVER pass \`--yes\` (or \`-y\`) to \`no-mistakes axi run\` or \`no-mistakes axi respond\`. It is banned fleet-wide.
   It auto-resolves every gate including ask-user findings with no escalation, and answering your own ask-user finding is a hard rule violation.
+- Exit 77 from a Test or Lint command means no verdict: never approve or override the gate over it; rerun the step or report \`blocked:\`.
 
 After any custody recovery on a rebased branch, run \`bin/fm-nomistakes-gate-check.sh\` before pushing; treat a \`diverged\` result as an immediate \`blocked:\` report rather than pushing anyway.
 

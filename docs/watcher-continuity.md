@@ -513,6 +513,8 @@ It checks that a newly appended keyed decision is classified without rereading e
 It also covers generation-claim single-flight, stuck-claim supersession, superseded-owner silence, notice-marker refusal and retry, ownership-atomic episode reset, and the legacy upgrade shim.
 [`turnend-guard.md`](turnend-guard.md) owns those behavior contracts.
 
+`tests/fm-claude-stop-autostow.test.sh` covers the restart-band auto-stow wake: band gating, once-per-session markers, `config/auto-stow-off` and secondmate opt-in, AFK, uncovered versus covered supervision, the parallel-firing race, and the guard-identical pre-arm grace on a long-poll home.
+
 `FM_CLAUDE_LIVE_E2E=1 tests/fm-claude-stop-autoarm-live-e2e.test.sh`:
 
 1. Starts with the reproduced stale-lock state.

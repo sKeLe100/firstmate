@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# fm-lint-test-size.sh - refuse an oversized tests/*.test.sh file that isn't
+# fm-lint-test-size.sh - refuse an oversized tests/*.test.sh or tests/*-lib.sh file that isn't
 # grandfathered.
 #
 # A single test script growing past a few thousand lines or a few hundred
 # test_ cases becomes its own retry-unit problem: one unrelated failure forces
 # re-running the whole file, and CI shard balance and review size degrade with
 # it (the incident that produced fm-teardown-test-split, at 160 cases). This
-# guard fails on any tests/*.test.sh over the line or test_-function ceiling
+# guard fails on any tests/*.test.sh or tests/*-lib.sh (a suite body a wrapper
+# sources) over the line or test_-function ceiling
 # that is not named in the shrinking allowlist at
 # tests/fm-lint-test-size-allowlist.txt, and fails on a stale allowlist entry
 # (a file that no longer exists, or no longer exceeds either ceiling) so the
@@ -15,8 +16,8 @@
 # bin/fm-lint-workflows.sh's pattern; no new CI job.
 #
 # Usage:
-#   fm-lint-test-size.sh                check tests/*.test.sh under this repo
-#   fm-lint-test-size.sh --root <dir>   check tests/*.test.sh under <dir>
+#   fm-lint-test-size.sh                check tests/*.test.sh and tests/*-lib.sh under this repo
+#   fm-lint-test-size.sh --root <dir>   check tests/*.test.sh and tests/*-lib.sh under <dir>
 #   fm-lint-test-size.sh --help
 set -eu
 
@@ -28,7 +29,7 @@ SELF="$SELF_DIR/fm-lint-test-size.sh"
 ROOT="$(cd "$SELF_DIR/.." && pwd)"
 
 fm_lint_test_size_usage() {
-  sed -n '2,20{s/^# \{0,1\}//;p;}' "$SELF"
+  sed -n '2,21{s/^# \{0,1\}//;p;}' "$SELF"
 }
 
 EXPLICIT_ROOT=
@@ -96,7 +97,7 @@ fi
 
 rc=0
 if [ -d "$TESTS_DIR" ]; then
-  for path in "$TESTS_DIR"/*.test.sh; do
+  for path in "$TESTS_DIR"/*.test.sh "$TESTS_DIR"/*-lib.sh; do
     [ -f "$path" ] || continue
     base=${path##*/}
     printf '%s\n' "$base" >> "$SEEN"

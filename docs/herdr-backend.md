@@ -671,7 +671,7 @@ Workspace and tab ids support verification and cleanup but are not inferred from
 ### Named server and session routing
 
 The adapter starts and polls a named server before workspace, tab, pane, or agent calls.
-Every Herdr invocation goes through `fm_backend_herdr_cli`, which sets the environment and passes an explicit trailing `--session <name>`.
+Every Herdr invocation goes through `fm_backend_herdr_cli`, which sets the environment and passes an explicit `--session <name>`, placed before any `--` separator so an agent's own arguments are never touched, else appended.
 An environment variable alone is not reliable when another Herdr server is running.
 
 When the selected named server is not running, the adapter launches it without these inherited values:
@@ -975,7 +975,7 @@ The helper:
 - Performs destructive stop/delete only through its guarded lifecycle actions.
 
 Immediately before every destructive call it re-queries the named session and refuses empty, missing, literal `default`, or `default:true` identities.
-Its before/after tripwire requires the live default-session snapshot to remain byte-identical.
+Its before/after tripwire requires the default-session snapshot to remain byte-identical. An empty snapshot means there is no default-flagged session; a stopped default session remains an entry with `running: false`.
 
 The helper's header and `--help` own exact commands.
 Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never duplicate the destructive policy.

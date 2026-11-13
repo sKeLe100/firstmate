@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Failure diagnostics, per-case tracing, and bounded fixture waits shared by the
-# long captain-hold lifecycle test and its fast contract test.
+# long captain-hold suites and their fast contract test.
 
 fm_test_preserve_diagnostics() {
   local rc=$1 stamp dest last_command=$FM_TEST_LAST_COMMAND

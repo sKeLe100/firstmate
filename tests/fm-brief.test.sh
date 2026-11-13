@@ -1528,6 +1528,79 @@ test_inbox_listing_command_is_safe_on_empty_inbox() {
   pass "fm-brief: inbox listing is silent on empty/absent inbox and numerically ordered"
 }
 
+# The scaffold offers three optional task slots under `## Firstmate spec` so a
+# worker knows its change boundary, what is already established, and how long
+# its report may run. Each stays optional with `none` as a valid value that
+# fm-spawn must accept, and a scout's report budget defaults to 150 lines.
+test_brief_task_slots_are_scaffolded_and_optional() {
+  local home id brief spec_body
+  home="$TMP_ROOT/task-slots-home"
+  mkdir -p "$home/data"
+
+  for id in brief-slots-ship brief-slots-scout; do
+    if [ "$id" = brief-slots-scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1 \
+        || fail "scout scaffold exited non-zero"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 \
+        || fail "ship scaffold exited non-zero"
+    fi
+    brief="$home/data/$id/brief.md"
+    spec_body=$(awk '$0 == "## Firstmate spec" { emit = 1; next } emit && /^# / { exit } emit { print }' "$brief")
+    assert_contains "$spec_body" "Scope: none - the files, dirs, or URLs you may read and change." \
+      "$id: Firstmate spec lost the optional Scope slot"
+    assert_contains "$spec_body" "Reading outside it is allowed for context, but changing outside it is a \`needs-decision\`." \
+      "$id: the Scope slot must make changing outside scope a needs-decision"
+    assert_contains "$spec_body" "Known facts: none - bullets or a report path of what is already established" \
+      "$id: Firstmate spec lost the optional Known facts slot"
+    assert_contains "$spec_body" "put the TL;DR first" \
+      "$id: the Report budget slot must require a TL;DR first"
+    assert_contains "$spec_body" "appendix or a sibling file" \
+      "$id: the Report budget slot must move evidence out of the main report"
+  done
+
+  assert_grep "Report budget: none - no line cap" \
+    "$home/data/brief-slots-ship/brief.md" \
+    "a ship must default the report budget to no cap"
+  assert_grep "Report budget: 150 lines - put the TL;DR first" \
+    "$home/data/brief-slots-scout/brief.md" \
+    "a scout must default the report budget to 150 lines"
+
+  # The slots are optional, not placeholders fm-spawn refuses: no slot may use
+  # a brace placeholder, so `none` stays a valid value for each.
+  for id in brief-slots-ship brief-slots-scout; do
+    brief="$home/data/$id/brief.md"
+    assert_no_grep "Scope: {" "$brief" "$id: the Scope slot carries a fill placeholder"
+    assert_no_grep "Known facts: {" "$brief" "$id: the Known facts slot carries a fill placeholder"
+    assert_no_grep "Report budget: {" "$brief" "$id: the Report budget slot carries a fill placeholder"
+  done
+
+  pass "fm-brief.sh: ship and scout scaffolds carry the optional Scope, Known facts, and Report budget task slots"
+}
+
+# The scaffolded task slots are not a spec: a brief whose `## Firstmate spec`
+# holds only slot lines must stay invalid, as an empty spec was before them.
+test_task_slots_alone_do_not_fill_the_spec() {
+  local home id brief filled
+  home="$TMP_ROOT/slots-only-home"
+  mkdir -p "$home/data"
+  id="brief-slots-only"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "ship scaffold exited non-zero"
+  brief="$home/data/$id/brief.md"
+  filled="$home/data/$id/filled.md"
+  sed -e 's/^{TASK}$/Fix the bug./' -e 's/^{FIRSTMATE_SPEC}$/Change one line./' "$brief" > "$filled"
+  sed -i -e 's/^{TASK}$/Fix the bug./' -e '/^{FIRSTMATE_SPEC}$/d' "$brief"
+  # shellcheck source=/dev/null
+  ( . "$ROOT/bin/fm-dod-lib.sh"; fm_brief_task_content_valid "$filled" ) \
+    || fail "a filled spec with its task slots must be valid"
+  # shellcheck source=/dev/null
+  if ( . "$ROOT/bin/fm-dod-lib.sh"; fm_brief_task_content_valid "$brief" ); then
+    fail "a spec holding only the task slot lines must be refused as empty"
+  fi
+  pass "fm-dod-lib.sh: task slot lines alone do not count as a Firstmate spec"
+}
+
 # Contract: a waiting worker spends no turns. A decision wait ends the turn, an
 # external wait sleeps in one bounded blocking shell command sized per harness,
 # and a waiting worker neither polls its inbox nor polls a pipeline between holds.
@@ -2003,6 +2076,7 @@ test_scout_and_secondmate_load_decision_hold_policy
 test_ship_and_scout_teach_correct_key_placement
 test_scout_and_secondmate_scaffold
 test_status_and_report_writes_require_verification
+test_brief_task_slots_are_scaffolded_and_optional
 test_pt_tracker_brief_carries_tracker_entry_law
 
 # The generated brief is fm-brief.sh's public output artifact - the prompt a
@@ -2055,6 +2129,19 @@ test_ship_brief_carries_retry_loop_failsafe() {
 
   assert_grep "Retry-loop failsafe" "$brief" \
     "ship brief lost the retry-loop failsafe rule"
+  assert_grep "at most 3 assessed review rounds per automated reviewer per PR" "$brief" \
+    "ship brief lost the per-reviewer PR cap"
+  assert_grep "restarts, relaunches, and follow-ups" "$brief" \
+    "review cap must survive replacement workers and follow-ups"
+  assert_grep 'review_rounds: <reviewer>=<n> run=<no-mistakes-run-id>' "$brief" \
+    "review cap must report cumulative counts with a run id"
+  assert_grep "not a per-run increment" "$brief" "review counts must be cumulative"
+  assert_grep "stop fixing and do not request another review cycle" "$brief" \
+    "review cap must stop the fix/review loop"
+  assert_grep 'needs-decision [at=<epoch>] [key=review-cap]: {PR URL and unresolved findings}' "$brief" \
+    "review cap must deliver unresolved findings for a decision"
+  assert_grep "Without a run id, fall back" "$brief" \
+    "legacy reports must retain the general retry fallback"
   assert_grep "2 consecutive fix no-ops" "$brief" \
     "retry-loop rule lost its fix no-op ceiling"
   assert_grep "after 4 review" "$brief" \
@@ -2157,6 +2244,8 @@ test_ship_brief_round_ceiling_follows_configured_thresholds() {
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "after 6 review" "$brief" \
     "retry-loop rule must use the configured rounds ceiling"
+  assert_grep "at most 3 assessed review rounds per automated reviewer per PR" "$brief" \
+    "configured general threshold must not raise the per-reviewer cap"
   assert_grep "2 consecutive fix no-ops" "$brief" \
     "configured rounds must not disturb the fixed no-op ceiling"
 
@@ -2195,3 +2284,35 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+test_task_slots_alone_do_not_fill_the_spec
+
+test_browser_cleanup_instructions_are_portable_and_shell_safe() {
+  local home id kind brief command browser_pid recorded stamp current
+  home="$TMP_ROOT/browser's isolated home"
+  mkdir -p "$home/data" "$home/state"
+  sleep 300 &
+  browser_pid=$!
+  FM_TEST_BROWSER_PIDS+=("$browser_pid")
+  for kind in ship scout; do
+    id="browser-$kind"
+    if [ "$kind" = ship ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1 || fail 'browser ship brief failed'
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1 || fail 'browser scout brief failed'
+    fi
+    brief="$home/data/$id/brief.md"
+    assert_grep 'Close every chrome-devtools-axi bridge or headless Chrome' "$brief" 'worker must close owned browser'
+    assert_grep 'CHROME_DEVTOOLS_AXI_SESSION' "$brief" 'worker must use an isolated browser session'
+    assert_grep 'browser identity registry named below' "$brief" "$kind brief must authorize its registry write"
+    # shellcheck disable=SC2016 # Backticks match literal generated brief markup.
+    command=$(sed -n 's/^   `\(browser_started=.*\)`\.$/\1/p' "$brief")
+    [ -n "$command" ] || fail 'portable registry command missing from brief'
+    browser_pid="$browser_pid" bash -c "$command" || fail 'generated browser registration command failed'
+    IFS=$'\t' read -r recorded stamp <"$home/state/$id.browsers"
+    current=$(TZ=UTC LC_ALL=C ps -p "$browser_pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [ "$recorded" = "$browser_pid" ] && [ "$stamp" = "$current" ] || fail 'generated command recorded wrong browser identity'
+  done
+  fm_test_browser_stop "$browser_pid"
+  pass 'ship and scout browser instructions register exact identities with shell-safe paths'
+}
+test_browser_cleanup_instructions_are_portable_and_shell_safe

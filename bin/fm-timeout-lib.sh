@@ -133,7 +133,7 @@ fm_run_bash_timeout() {
 }
 
 fm_run_external_timeout() {
-  local runner=$1 seconds=$2 status_file runner_pid runner_rc command_rc
+  local runner=$1 seconds=$2 status_file runner_pid runner_rc command_rc polls=0
   shift 2
   status_file=$(mktemp "${TMPDIR:-/tmp}/fm-timeout-status.XXXXXX" 2>/dev/null) || return 124
   # Run timeout asynchronously so its pid - also the process-group id created
@@ -171,6 +171,13 @@ fm_run_external_timeout() {
   esac
   case "$runner_rc" in
     124|137)
+      # The leftover group got the bound's TERM with the wrapper; give it the
+      # same 1s grace as the runner's -k 1 before the reap, so a descendant
+      # still running its TERM handler is not KILLed mid-way through it.
+      while [ "$polls" -lt 10 ] && kill -0 -- "-$runner_pid" 2>/dev/null; do
+        sleep 0.1
+        polls=$((polls + 1))
+      done
       kill -KILL -- "-$runner_pid" 2>/dev/null || true
       return 124
       ;;

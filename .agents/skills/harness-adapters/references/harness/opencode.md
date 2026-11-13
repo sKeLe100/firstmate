@@ -1,6 +1,6 @@
 # OpenCode
 
-Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue behavior re-verified on 2026-07-20 using 1.18.4, composer furniture re-verified on 2026-09-18 using 1.18.31, and the mode-footer furniture re-verified on 2026-10-14 using 1.19.0.
+Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue behavior re-verified on 2026-07-20 using 1.18.4, composer furniture re-verified on 2026-09-18 using 1.18.31, mode-footer furniture re-verified on 2026-10-14 using 1.19.0, and the worker adapter re-verified on 2026-10-21 using 1.19.3. The 1.19.3 check covered composer/ghost stripping, semantic busy/idle, steer/doorbell, interrupt, exit/relaunch, and effort config; details are in [runtime-backends.md](../../../../../docs/verification/runtime-backends.md#2026-10-21-opencode-1193-worker-adapter).
 
 ## Operating facts
 
@@ -8,14 +8,14 @@ Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue be
 |---|---|
 | Busy state | The Firstmate-owned plugin's semantic `session.status`: `busy` and `retry` are active, `idle` is inactive, latched to the worker's own session. |
 | Exit command | `/exit`. |
-| Interrupt | Double Escape; it is known to be flaky while a long shell command runs, so use `../../../bin/fm-control.sh <task-id> relaunch` for a wedged pane. |
+| Interrupt | Double Escape; it is known to be flaky while a long shell command runs, so use `../../../../../bin/fm-control.sh <task-id> relaunch` for a wedged pane. |
 | Skill invocation | No separate verified form beyond normal slash-command behavior; use natural language when the exact command is uncertain. |
 | Resume | Relaunch with `--continue` to resume the most recent session for the current directory, then send the next instruction after the TUI is ready because `--prompt` does not auto-submit alongside `--continue`. |
 | Model flag | `--model <provider/model>`. |
 | Effort flag | None for Firstmate's interactive `opencode --prompt` launch; `opencode run` has `--variant`, but that is not this path. The effort instead rides the launch's `OPENCODE_CONFIG_CONTENT` JSON as the `build` agent's `variant` keyed to the resolved model, the config schema's per-model reasoning-effort field verified on 1.18.32. It is emitted only when the resolved model's provider is known to expose that effort as a variant (`anthropic/*`: high, max; `openai/*`: low, medium, high, xhigh); with no model resolved, another provider, or an effort outside its family's list, the variant is omitted and the permission-only launch is unchanged. |
 | Model discovery | Run `opencode models [provider]` to list available provider/model identifiers. |
 | Trust dialog | None. |
-| Marker | None; OpenCode publishes no identity marker, so `../../../bin/fm-harness.sh` identifies it from process ancestry. |
+| Marker | None; OpenCode publishes no identity marker, so `../../../../../bin/fm-harness.sh` identifies it from process ancestry. |
 
 OpenCode can auto-upgrade in the background, and the running TUI can exit mid-task.
 That behavior was observed live during an upgrade from 1.15.7 to 1.17.3.
@@ -31,12 +31,19 @@ An earlier read treated those fragments as unsent typed input, which made every 
 OpenCode 1.19.0 also draws the mode/model/branch footer row de-emphasised, with its mode word and middle-dot separators under `fm_composer_strip_ghost`'s luminance threshold, so that furniture is gone from the row the ghost-stripped read sees and the classifier proves it from the ANSI-stripped form of the row instead; the dated capture, the safe plain-form argument, and the regression pointers are in [runtime-backends.md](../../../../../docs/verification/runtime-backends.md).
 Without a cursor anchor a full-pane capture of this version still defers as `unknown` because the status rail below the composer floor row is contiguous, non-blank content; that deferral is the strict posture, not a misclassification.
 
+## Free-usage retry banner
+
+On the free tier OpenCode 1.19.3 renders a non-idle footer row while it retries a request that exceeded the usage cap: the spinner, `Free usage exceeded, subscribe to Go`, a `[retrying in <time> attempt #<n>]` suffix, then `esc interrupt` (and `esc again to interrupt` while an interrupt is pending). It is a status row, not a picker, so no keystroke answers it and there is no composer to read: `fm-control.sh` used to refuse `exit`/`relaunch` with the composer state unknown and an unlanded worker stayed capped.
+`../../../../../bin/fm-composer-lib.sh` names this exact footer structure `OpenCode free-usage retry banner`, anchored on the trailing interrupt hint and its bottom-of-viewport position so quoted banner text in a diff, note, or fixture is not mistaken for a live one, and `../../../../../bin/fm-control-lib.sh` gives it one verified in-place clear: Ctrl+C twice, the app's own exit confirmation.
+`fm-control.sh` sends that clear and then proves the agent stopped; Escape and `/exit` were verified NOT to recover a capped worker on 2026-11-05. A banner that survives the two presses is refused, never typed into.
+Regression coverage is `../../../../../tests/fm-composer-lib.test.sh` and `../../../../../tests/fm-control.test.sh`.
+
 ## Busy-queued Enter
 
 While OpenCode 1.18.4 is mid-turn, its composer accepts Enter as a "send when the turn ends" keystroke but does not clear the typed text until the turn finishes.
 Without a conversion, every typed-plane send to a busy OpenCode pane falsely reports "Enter swallowed", and a daemon escalation that lands while the primary is mid-turn appears wedged.
 
-Tmux and Herdr delegate this exception to the one `fm_composer_queued_enter_verdict` policy in `../../../bin/fm-composer-lib.sh`.
+Tmux and Herdr delegate this exception to the one `fm_composer_queued_enter_verdict` policy in `../../../../../bin/fm-composer-lib.sh`.
 Backend-specific signals are documented in `../../../docs/tmux-backend.md` and `../../../docs/herdr-backend.md`.
 Regression coverage is `../../../tests/fm-tmux-submit-busy.test.sh`, `../../../tests/fm-composer-lib.test.sh`, and `../../../tests/fm-backend-herdr.test.sh`.
 The live Herdr guard is `FM_HERDR_SUBMIT_CONFIRM_LIVE=1 ../../../tests/fm-herdr-submit-confirm-live-e2e.test.sh`.
@@ -45,9 +52,9 @@ The live Herdr guard is `FM_HERDR_SUBMIT_CONFIRM_LIVE=1 ../../../tests/fm-herdr-
 
 The primary integration was verified on 2026-07-08 with OpenCode 1.17.6.
 `.opencode/plugins/fm-primary-turnend-guard.js` listens for `session.idle`.
-Throwing from `session.idle` does not block `opencode run`, so the primary adapter treats the event as passive and uses `client.session.promptAsync` to force one follow-up turn when `../../../bin/fm-turnend-guard.sh` returns 2.
+Throwing from `session.idle` does not block `opencode run`, so the primary adapter treats the event as passive and uses `client.session.promptAsync` to force one follow-up turn when `../../../../../bin/fm-turnend-guard.sh` returns 2.
 The follow-up was verified in the interactive TUI.
-In a home with `config/supervision-host` and no `config/supervision-host-off` the watch-arm plugin spawns the supervision host instead of `../../../bin/fm-watch-arm.sh`, with Claude's print mode as its headless engine; [`supervision-host.md`](../../../../../docs/supervision-host.md) owns the host.
+In a home with `config/supervision-host` and no `config/supervision-host-off` the watch-arm plugin spawns the supervision host instead of `../../../../../bin/fm-watch-arm.sh`, with Claude's print mode as its headless engine; [`supervision-host.md`](../../../../../docs/supervision-host.md) owns the host.
 `opencode run` can exit before displaying a queued follow-up, so the adapter steps aside in headless mode.
 On native Windows, the operational-input adapter runs its Bash helper through `bash`; macOS and Linux invoke it directly.
 

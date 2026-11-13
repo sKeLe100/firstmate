@@ -415,6 +415,54 @@ test_same_session_id_owns_a_recycled_background_chain() {
   pass "session-lock: a trusted same-session id keeps owning a recycled background chain, and nothing weaker does"
 }
 
+# A live recorded pid that is itself a Claude model loop registered under the same
+# session id is a second live copy of the session, not a predecessor whose helper
+# bridge was recycled: Claude 2.1.322 resumes a running session under its own id.
+# The recorded pid's own registry record is the only signal that tells the two
+# apart; an absent or unreadable record stays the recycled-front-end case.
+test_same_session_rival_model_loop_is_a_foreign_owner() {
+  local dir fakebin state registry got
+  dir="$TMP_ROOT/rival-model-loop"
+  fakebin=$(fm_fakebin "$dir")
+  state="$dir/state"
+  registry="$dir/claude"
+  mkdir -p "$state" "$registry/sessions"
+  write_background_session_ps "$fakebin"
+  printf '700\n' > "$state/.lock"
+  printf 'S1\n' > "$state/.lock-session"
+
+  # 700 is a live model loop registered under S1 and the hook's model loop is
+  # 710, so this is a rival copy, not the lock's own predecessor.
+  printf '{"sessionId":"S1","pid":700}\n' > "$registry/sessions/700.json"
+  if CLAUDE_CONFIG_DIR="$registry" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=710 owned "$fakebin" "$state"; then
+    fail "a second live model loop on the same session id was treated as the lock's owner"
+  fi
+  got=$(CLAUDE_CONFIG_DIR="$registry" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=710 foreign_owner "$fakebin" "$state") \
+    || fail "a second live model loop on the same session id was not seen as the live foreign owner"
+  [ "$got" = 700 ] || fail "the rival foreign owner pid was '$got', expected 700"
+
+  # The recorded loop's own process still owns the lock it wrote: a registry
+  # record naming its own CLAUDE_PID is proof of ownership, not a rival.
+  CLAUDE_CONFIG_DIR="$registry" FM_TEST_DAEMON_PRESENT=1 FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=700 \
+    lib_eval "$fakebin" "fm_session_lock_same_session '$state'" \
+    || fail "the recorded model loop's own process lost its lock"
+
+  # No record and an unparseable record are no evidence: the recycled front-end
+  # keeps re-anchoring exactly as before.
+  rm -f "$registry/sessions/700.json"
+  CLAUDE_CONFIG_DIR="$registry" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=710 owned "$fakebin" "$state" \
+    || fail "without a registry record the recycled front-end was no longer owned"
+  printf 'not json\n' > "$registry/sessions/700.json"
+  CLAUDE_CONFIG_DIR="$registry" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=710 owned "$fakebin" "$state" \
+    || fail "an unparseable registry record was treated as rival evidence"
+
+  # A record naming a different id is a predecessor, unchanged behavior.
+  printf '{"sessionId":"S0"}\n' > "$registry/sessions/700.json"
+  CLAUDE_CONFIG_DIR="$registry" FM_TEST_SESSION_ID=S1 FM_TEST_CLAUDE_PID=710 owned "$fakebin" "$state" \
+    || fail "a registry record naming another id changed the same-session verdict"
+  pass "session-lock: a second live model loop on one session id is refused as a foreign owner"
+}
+
 test_anchor_pid_is_the_model_loop_process_only_for_a_trusted_id() {
   local dir fakebin got
   dir="$TMP_ROOT/background-anchor"
@@ -864,6 +912,73 @@ test_e2e_background_session_keeps_its_lock_across_a_recycled_chain() {
   pass "session-lock e2e: a background session keeps its lock and its supervision across a recycled helper chain and a same-process session-id change"
 }
 
+# Two live model loops can carry one session id (Claude 2.1.322 resumes a running
+# session under its own id), so id equality alone no longer proves a single live
+# session. The newcomer must be refused while the recorded loop is alive, and the
+# existing recycled-front-end re-anchor must survive its registry record absent.
+test_e2e_rival_model_loop_on_one_session_id_is_refused() {
+  local dir first_pid second_pid
+  dir="$TMP_ROOT/e2e-rival-model-loop"
+  mkdir -p "$dir/state" "$dir/claude/sessions"
+  cat > "$dir/first.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$FM_HOME/state/first-pid"
+printf '{"sessionId":"S1","pid":%s}\n' "$$" > "$FM_HOME/claude/sessions/$$.json"
+CLAUDE_CODE_SESSION_ID=S1 CLAUDE_PID=$$ "$FM_LOCK" > "$FM_HOME/state/first.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/first.rc"
+while [ ! -e "$FM_HOME/state/stop-first" ]; do sleep 0.05; done
+exit 0
+SH
+  cat > "$dir/second.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$FM_HOME/state/second-pid"
+printf '{"sessionId":"S1","pid":%s}\n' "$$" > "$FM_HOME/claude/sessions/$$.json"
+CLAUDE_CODE_SESSION_ID=S1 CLAUDE_PID=$$ "$FM_LOCK" > "$FM_HOME/state/second.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/second.rc"
+exit 0
+SH
+  chmod +x "$dir/first.sh" "$dir/second.sh"
+
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
+    FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" CLAUDE_CONFIG_DIR="$dir/claude" \
+    "$NAMED_CLAUDE" "$dir/first.sh" &
+  first_pid=$!
+  BG_FIXTURE_PIDS+=("$first_pid")
+  wait_for_file "$dir/state/first.rc" "the first session's lock result"
+  expect_code 0 "$(tr -d '[:space:]' < "$dir/state/first.rc")" \
+    "the first session could not acquire its lock: $(cat "$dir/state/first.out")"
+  [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$first_pid" ] \
+    || fail "the first session's lock names $(cat "$dir/state/.lock"), expected its own pid $first_pid"
+
+  # The second live model loop presents the same id; the first's registry record
+  # names it, so the newcomer is a rival and must run read-only.
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
+    FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" CLAUDE_CONFIG_DIR="$dir/claude" \
+    "$NAMED_CLAUDE" "$dir/second.sh"
+  expect_code 1 "$(tr -d '[:space:]' < "$dir/state/second.rc")" \
+    "a second live model loop on the same session id was not refused: $(cat "$dir/state/second.out")"
+  grep -q "another live firstmate session holds the lock (pid $first_pid, session S1)" "$dir/state/second.out" \
+    || fail "the rival refusal did not name the live owner and its id: $(cat "$dir/state/second.out")"
+  [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$first_pid" ] \
+    || fail "the rival rewrote lock line 1 to $(cat "$dir/state/.lock")"
+
+  # Companion: the recorded pid has no registry record, the recycled-front-end
+  # case, so a same-id process re-anchors line 1 instead of being refused.
+  rm -f "$dir/claude/sessions/$first_pid.json"
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
+    FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" CLAUDE_CONFIG_DIR="$dir/claude" \
+    "$NAMED_CLAUDE" "$dir/second.sh"
+  second_pid=$(tr -d '[:space:]' < "$dir/state/second-pid")
+  expect_code 0 "$(tr -d '[:space:]' < "$dir/state/second.rc")" \
+    "a same-id process over a front-end with no registry record was refused: $(cat "$dir/state/second.out")"
+  [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$second_pid" ] \
+    || fail "the re-anchor left lock line 1 at $(cat "$dir/state/.lock"), expected $second_pid"
+
+  : > "$dir/state/stop-first"
+  wait "$first_pid" || true
+  pass "session-lock e2e: a second live model loop sharing one session id is refused while a front-end re-anchor survives"
+}
+
 # A same-session confirmation must refresh a /clear re-key even while another
 # process holds .lock.acquire. The prior-session-sweep-is-finishing refusal is
 # a takeover rule and does not apply here; the confirmation waits, then writes
@@ -1302,12 +1417,14 @@ test_ordinary_paths_are_never_harness_processes
 test_harness_beyond_a_gap_never_owns_the_lock
 test_competing_version_named_session_is_seen_as_live
 test_same_session_id_owns_a_recycled_background_chain
+test_same_session_rival_model_loop_is_a_foreign_owner
 test_anchor_pid_is_the_model_loop_process_only_for_a_trusted_id
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock
 test_e2e_namespace_local_bwrap_refuses_primary_lock
 test_e2e_background_session_keeps_its_lock_across_a_recycled_chain
+test_e2e_rival_model_loop_on_one_session_id_is_refused
 test_same_session_confirmation_refreshes_rekeyed_id_under_claim_lock
 test_same_session_confirmation_does_not_steal_after_wait
 test_failed_lock_write_restores_previous_sidecar

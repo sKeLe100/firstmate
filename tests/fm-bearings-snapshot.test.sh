@@ -81,7 +81,14 @@ SH
 echo "curl $*" >> "$NET_LOG"
 exit 1
 SH
-  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/gh" "$fb/gh-axi" "$fb/curl"
+  # Bearings reads every Claude account through quota-axi. The default fake
+  # answers "no providers" so existing cases never touch a real credential
+  # store; the Claude-account cases below replace it with a per-dir fixture.
+  cat > "$fb/quota-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"schemaVersion":5,"providers":[]}'
+SH
+  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/gh" "$fb/gh-axi" "$fb/curl" "$fb/quota-axi"
   printf '%s\n' "$fb"
 }
 
@@ -3387,6 +3394,251 @@ test_a_remote_home_without_any_ledger_is_explicitly_unreadable_without_remote_co
   pass "a missing remote ledger stays explicitly unreadable without remote summary computation"
 }
 
+install_quota_fixture() {  # <fakebin> <accounts-root>
+  local fb=$1 root=$2
+  cat > "$fb/quota-axi" <<SH
+#!/usr/bin/env bash
+# The ordinary login is read only with CLAUDE_CONFIG_DIR unset and without
+# --profile-only; a pinned profile only with a configured dir and --profile-only.
+# Any mislabelled read exits nonzero.
+case " \$* " in *" --profile-only "*) po=1 ;; *) po=0 ;; esac
+if [ -z "\${CLAUDE_CONFIG_DIR+x}" ]; then
+  [ "\$po" = 0 ] || { echo "ambient read used --profile-only" >&2; exit 2; }
+  dir=ordinary
+else
+  [ "\$po" = 1 ] || { echo "pinned read lacked --profile-only" >&2; exit 2; }
+  case "\$CLAUDE_CONFIG_DIR" in "$root"/*) ;; *) echo "pinned read used an unconfigured dir" >&2; exit 2 ;; esac
+  dir=\$CLAUDE_CONFIG_DIR
+fi
+case "\$dir" in
+  */cc-one)
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":37},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":88}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":37,"runway":{"status":"through_reset"}}]}}]}
+JSON
+    ;;
+  */cc-two)
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":4},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":42}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":4,"runway":{"status":"through_reset"}}]}}]}
+JSON
+    ;;
+  */cc-broken)
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[],"state":{"status":"auth_required","error":"credentials_invalid"},"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+JSON
+    exit 1
+    ;;
+  */cc-empty)
+    exit 0
+    ;;
+  */cc-down)
+    exit 3
+    ;;
+  */cc-slow)
+    sleep 5
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":10},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":20}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":10,"runway":{"status":"through_reset"}}]}}]}
+JSON
+    ;;
+  ordinary)
+    cat <<'JSON'
+{"schemaVersion":5,"providers":[{"provider":"claude","windows":[{"id":"five_hour","resetsAt":"2026-11-01T00:00:00Z","percentRemaining":66},{"id":"seven_day","resetsAt":"2026-11-06T00:00:00Z","percentRemaining":77}],"state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":66,"runway":{"status":"through_reset"}}]}}]}
+JSON
+    ;;
+  *)
+    echo "unexpected quota read for \$dir" >&2
+    exit 2
+    ;;
+esac
+SH
+  chmod +x "$fb/quota-axi"
+  mkdir -p "$root/cc-one" "$root/cc-two" "$root/cc-broken" "$root/cc-slow" "$root/cc-empty" "$root/cc-down"
+}
+
+run_claude_quota_bearings() {  # <home> <fakebin> <config-dir> <args...>
+  local home=$1 fakebin=$2 config_dir=$3
+  shift 3
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    CLAUDE_CONFIG_DIR="$config_dir" NET_LOG="$home/net.log" "$BEARINGS" "$@"
+}
+
+test_claude_accounts_display_every_configured_account() {
+  local home fakebin json toon accounts_root
+  home=$(make_home claude-dual-accounts)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'account-1:%s\naccount-2:%s\n' \
+    "$accounts_root/cc-one" "$accounts_root/cc-two" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 2
+      and ([.claude_accounts[] | select(.label == "account-1")][0] as $a
+        | $a.dir == ($root + "/cc-one")
+          and $a.status == "ok"
+          and $a.reason == null
+          and $a.five_hour_percent_remaining == 37
+          and $a.five_hour_resets_at == "2026-11-01T00:00:00Z"
+          and $a.seven_day_percent_remaining == 88
+          and $a.seven_day_resets_at == "2026-11-06T00:00:00Z")
+      and ([.claude_accounts[] | select(.label == "account-2")][0] as $b
+        | $b.dir == ($root + "/cc-two")
+          and $b.five_hour_percent_remaining == 4
+          and $b.seven_day_percent_remaining == 42)
+      and (has("orchestrator_account") | not)
+      and (has("warnings") | not)
+  ' >/dev/null || fail "both Claude accounts were not displayed with their windows: $json"
+
+  toon=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two")
+  printf '%s\n' "$toon" | grep -q '^claude_accounts\[2\]{' \
+    || fail "default TOON lost the claude_accounts table: $toon"
+  printf '%s\n' "$toon" | grep -q '^  account-1,.*,37,.*,88,' \
+    || fail "default TOON dropped account-1's window columns: $toon"
+  pass "bearings displays five-hour and weekly percent remaining for every configured Claude account"
+}
+
+test_claude_account_display_degrades_to_unknown_rows() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-account-degrade)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-degrade-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'broken:%s\n' "$accounts_root/cc-broken" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-broken" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].label == "broken"
+      and .claude_accounts[0].status == "unknown"
+      and .claude_accounts[0].reason == "credentials_invalid"
+      and .claude_accounts[0].five_hour_percent_remaining == null
+      and .claude_accounts[0].five_hour_resets_at == null
+  ' >/dev/null || fail "an invalid account was hidden instead of shown as unknown: $json"
+
+  printf 'empty:%s\ndown:%s\n' "$accounts_root/cc-empty" "$accounts_root/cc-down" > "$home/config/claude-accounts"
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one" --json)
+  printf '%s' "$json" | jq -e '
+    ([.claude_accounts[] | select(.label == "empty")][0].reason) == "quota-axi returned no output"
+      and ([.claude_accounts[] | select(.label == "down")][0].reason) == "quota-axi exited 3"
+  ' >/dev/null || fail "empty and failing reads were mislabelled: $json"
+
+  rm -f "$home/config/claude-accounts"
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].label == "default"
+      and .claude_accounts[0].dir == ($root + "/cc-two")
+      and .claude_accounts[0].status == "ok"
+      and .claude_accounts[0].five_hour_percent_remaining == 4
+  ' >/dev/null || fail "an absent account list did not fall back to the current CLAUDE_CONFIG_DIR: $json"
+
+  printf 'Account #1 %s\ngood:%s\nnodir:\n' "$accounts_root/cc-one" "$accounts_root/cc-two" > "$home/config/claude-accounts"
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 3
+      and ([.claude_accounts[] | select(.label == "good")][0].status) == "ok"
+      and ([.claude_accounts[] | select(.label == "config/claude-accounts:1")][0]
+           | .status == "unknown" and (.reason | contains("not label:dir")))
+      and ([.claude_accounts[] | select(.label == "config/claude-accounts:3")][0]
+           | .status == "unknown" and (.reason | contains("empty dir")))
+  ' >/dev/null || fail "malformed account lines were silently dropped: $json"
+  pass "an unauthenticated account and malformed account lines are explicit unknown rows"
+}
+
+test_claude_account_cap_discloses_unread_accounts() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-account-cap)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-cap-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'a1:%s\na2:%s\na3:%s\n' "$accounts_root/cc-one" "$accounts_root/cc-two" "$accounts_root/cc-broken" \
+    > "$home/config/claude-accounts"
+  json=$(FM_BEARINGS_CLAUDE_ACCOUNTS_MAX=2 \
+    run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 3
+      and ([.claude_accounts[] | select(.label == "a3")][0]
+           | .status == "unknown" and (.reason | contains("FM_BEARINGS_CLAUDE_ACCOUNTS_MAX")))
+      and ([.claude_accounts[] | select(.label == "a1")][0].status) == "ok"
+  ' >/dev/null || fail "an account beyond the cap was silently dropped: $json"
+  pass "accounts beyond the cap are disclosed as unknown rows"
+}
+
+test_claude_account_reads_share_one_bounded_budget() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-account-budget)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-budget-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'slow:%s\nfast:%s\n' \
+    "$accounts_root/cc-slow" "$accounts_root/cc-one" > "$home/config/claude-accounts"
+
+  json=$(FM_BEARINGS_CLAUDE_TIMEOUT=1 \
+    run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-one" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 2
+      and ([.claude_accounts[] | select(.label == "slow")][0] as $s
+        | $s.status == "unknown" and ($s.reason | contains("timed out")))
+      and ([.claude_accounts[] | select(.label == "fast")][0] as $f
+        | $f.dir == ($root + "/cc-one")
+          and $f.status == "ok"
+          and $f.five_hour_percent_remaining == 37)
+      and ((.claude_accounts[0] | keys) == (.claude_accounts[1] | keys))
+  ' >/dev/null || fail "a slow account was not bounded while the healthy account still displayed: $json"
+  pass "Claude account reads share one bounded budget and a timeout degrades only its own row"
+}
+
+test_ordinary_claude_account_uses_the_ambient_read() {
+  local home fakebin json accounts_root
+  home=$(make_home claude-ordinary-account)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-ordinary-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'ambient:ordinary\n' > "$home/config/claude-accounts"
+
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    NET_LOG="$home/net.log" env -u CLAUDE_CONFIG_DIR "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].label == "ambient"
+      and .claude_accounts[0].status == "ok"
+      and .claude_accounts[0].five_hour_percent_remaining == 66
+  ' >/dev/null || fail "a literal ordinary account did not use the ambient read: $json"
+  pass "an ordinary account reads ambient quota with CLAUDE_CONFIG_DIR unset"
+}
+
+test_default_login_path_account_uses_the_ambient_read() {
+  local home fakebin json accounts_root fake_home
+  home=$(make_home claude-default-login-path)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-default-login-accounts"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  fake_home="$TMP_ROOT/claude-default-login-home"
+  mkdir -p "$home/config" "$fake_home/.claude"
+  printf 'login:%s/.claude\n' "$fake_home" > "$home/config/claude-accounts"
+
+  json=$(PATH="$fakebin:$PATH" HOME="$fake_home" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    NET_LOG="$home/net.log" CLAUDE_CONFIG_DIR="$accounts_root/cc-one" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.claude_accounts | length) == 1
+      and .claude_accounts[0].label == "login"
+      and .claude_accounts[0].status == "ok"
+      and .claude_accounts[0].five_hour_percent_remaining == 66
+  ' >/dev/null || fail "an explicit default-login path was not read as the ambient login: $json"
+  pass "an explicit \$HOME/.claude account reads the ambient login, not a pinned profile"
+}
+
+test_claude_accounts_display_every_configured_account
+test_default_login_path_account_uses_the_ambient_read
+test_claude_account_display_degrades_to_unknown_rows
+test_claude_account_cap_discloses_unread_accounts
+test_claude_account_reads_share_one_bounded_budget
+test_ordinary_claude_account_uses_the_ambient_read
 test_task_teardown_during_metadata_capture_does_not_abort_snapshot
 test_current_state_uses_captured_status_observation
 test_relaunched_task_does_not_inherit_reused_endpoint_state

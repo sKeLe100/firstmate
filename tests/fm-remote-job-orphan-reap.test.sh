@@ -61,25 +61,21 @@ wait_child() { # <pid> <seconds>
   return 1
 }
 
-# True when <pid>'s parent is a reaper for orphaned processes: init itself, or
-# a subreaper systemd registers one hop below init (PR_SET_CHILD_SUBREAPER,
-# e.g. `systemd --user`) - a live host's per-user manager adopts orphans there
-# instead of letting them reach real init, and that is just as orphaned for
-# this fixture's purpose.
-is_orphaned() { # <pid>
+# Prove reparenting from the fixture's actual launching shell rather than
+# guessing the host's adopter. WSL's /init relay and other subreapers need not
+# be PID 1, or even a direct child of PID 1.
+is_orphaned() { # <pid> <launcher-pid>
   local parent
   parent=$(ppid_of "$1")
   case "$parent" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$parent" = 1 ] && return 0
-  [ "$(ppid_of "$parent")" = 1 ]
+  [ "$parent" != "$2" ] && ! alive "$2"
 }
 
-# Wait up to <seconds> for <pid> to be reparented to an orphan reaper (see
-# is_orphaned) after its launching shell exits; 0 when it does.
-wait_orphaned() { # <pid> <seconds>
-  local pid=$1 deadline=$(( $(date +%s) + $2 ))
+# Wait up to <seconds> for a live worker to lose its original parent.
+wait_orphaned() { # <pid> <launcher-pid> <seconds>
+  local pid=$1 launcher=$2 deadline=$(( $(date +%s) + $3 ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    is_orphaned "$pid" && return 0
+    alive "$pid" && is_orphaned "$pid" "$launcher" && return 0
     sleep 0.1
   done
   return 1
@@ -109,7 +105,7 @@ pid_is_numeric() {
 # start_worker <remote-root> <account-home> <state-root>: start the worker
 # through the shared library start path and echo the supervisor pid.
 start_worker() {
-  local root=$1 account_home=$2 state_root=$3 pid deadline
+  local root=$1 account_home=$2 state_root=$3 pid deadline launcher
   pid=$(
     export FM_REMOTE_JOB_STATE_ROOT="$state_root"
     export FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux
@@ -117,11 +113,15 @@ start_worker() {
     # Production libraries are linted independently by fm-lint.sh.
     # shellcheck source=/dev/null
     . "$ROOT/bin/fm-remote-job-lib.sh"
+    # exec makes the probe report this subshell even on Bash without BASHPID.
+    launcher=$(exec sh -c 'printf "%s\n" "$PPID"')
+    printf '%s\n' "$launcher" > "$state_root.launcher-pid"
     fm_remote_job_start_linux_worker "$root" "$account_home" >&2 || exit 1
     deadline=$(( $(date +%s) + 10 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
       pid=$(pgrep -f "^/bin/bash $root/bin/fm-remote-job-worker.sh\$" | head -n 1)
       if pid_is_numeric "$pid"; then
+        [ "$(ppid_of "$pid")" = "$launcher" ] || exit 1
         printf '%s\n' "$pid"
         exit 0
       fi
@@ -148,8 +148,10 @@ SERVE=$(pgrep -P "$WORKER" | head -n 1)
   fail "the serving child is outside the worker's process group"
 pass "the Linux start path puts the whole worker tree in its own process group"
 
-wait_orphaned "$WORKER" 5 ||
-  fail "the fixture worker is not orphaned to init, so this case does not reproduce the leak"
+LAUNCHER=$(cat "$CASE1/remote-jobs.launcher-pid")
+pid_is_numeric "$LAUNCHER" || fail "the fixture did not record its launching shell"
+wait_orphaned "$WORKER" "$LAUNCHER" 5 ||
+  fail "the fixture worker did not outlive and reparent from its launching shell, so this case does not reproduce the leak"
 
 # The exact teardown shape that leaked in production: a fixture cleanup removes
 # the worker's state root and then stops only the single recorded worker pid -

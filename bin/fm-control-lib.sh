@@ -246,6 +246,24 @@ fm_control_interrupt_clear_key() {  # <harness>
   esac
 }
 
+# The verified key sequence that clears a blocking dialog the composer reader
+# named, one key name per line in press order, or nonzero when this plane has no
+# verified in-place clear for it and must keep the refusal.
+#
+# Only OpenCode's free-usage retry banner has one. That banner is not a picker:
+# it is the TUI's non-idle footer, so no keystroke answers it, and the verified
+# way out is the app's own exit confirmation - Ctrl+C twice stops the agent
+# (verified live 2026-11-05; Escape and /exit did not work, and the banner came
+# back). Every picker keeps the refusal because Escape or Enter would answer it.
+fm_control_blocking_dialog_clear_keys() {  # <harness> <dialog-name>
+  case "${1-}|${2-}" in
+    'opencode|OpenCode free-usage retry banner')
+      printf 'C-c\nC-c\n'
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 fm_control_interrupt_ack_source() {  # <harness>
   case "${1-}" in
     muse) printf 'muse-session-terminal' ;;

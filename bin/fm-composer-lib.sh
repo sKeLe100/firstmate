@@ -1936,6 +1936,52 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     printf '%s' 'Claude background-task exit picker'
     return 0
   fi
+  # OpenCode's free-usage lockout banner is NOT a picker: it is the non-idle
+  # footer row the TUI draws while it retries a priced request. Recorded from
+  # the installed 1.19.3 TUI: SessionRetry maps FreeUsageLimitError to
+  # `Free usage exceeded, subscribe to Go` and renders the row as the spinner,
+  # that message, ` [retrying in <time> attempt #<n>]`, then the
+  # `esc interrupt` hint, with only status rows below it. The message alone is
+  # not enough, exactly as above: a diff, note or fixture can quote it above a
+  # normal composer. The row must also carry the footer interrupt hint and sit
+  # at the bottom of the viewport. The braille spinner and the animations-off
+  # `[⋯]` fallback are stripped before the match. A wrapped row is accepted
+  # when its continuation carries the hint on the next non-blank row.
+  if printf '%s\n' "$screen" \
+     | fm_composer_strip_ansi \
+     | LC_ALL=C sed \
+         -e 's/^\([[:space:]]*\)\(\xe2[\xa0-\xa3][\x80-\xbf]\)\{1,3\}[[:space:]]*/\1/' \
+         -e 's/^\([[:space:]]*\)\[\xe2\x8b\xaf\][[:space:]]*/\1/' \
+     | LC_ALL=C awk '
+    { line = $0; sub(/\r+$/, "", line); rows[NR] = line; n = NR }
+    END {
+      pre = "^[ \t]*Free usage exceeded(, subscribe to Go)?( \\(click to expand\\))?( \\[retrying (in [^][]+ )?attempt #[0-9]+\\])?"
+      inline_hint = "^[ \t]+esc (again to )?interrupt"
+      hint = "esc (again to )?interrupt"
+      last = 0
+      for (i = 1; i <= n; i++) if (rows[i] ~ /[^ \t]/) last = i
+      found = 0
+      for (i = 1; i <= n && !found; i++) {
+        if (!match(rows[i], pre)) continue
+        rest = substr(rows[i], RSTART + RLENGTH)
+        h = 0
+        if (rest ~ inline_hint) {
+          h = i
+        } else if (rest ~ /^[ \t]*$/) {
+          for (j = i + 1; j <= n; j++) {
+            if (rows[j] !~ /[^ \t]/) continue
+            if (rows[j] ~ hint) h = j
+            break
+          }
+        }
+        if (h && last - h <= 3) found = 1
+      }
+      exit !found
+    }
+  '; then
+    printf '%s' 'OpenCode free-usage retry banner'
+    return 0
+  fi
   return 1
 }
 

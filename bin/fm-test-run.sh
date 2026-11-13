@@ -13,6 +13,11 @@
 #   fm-test-run.sh --proven-isolated
 #   fm-test-run.sh tests/<name>.test.sh [more scripts...]
 #
+# Heavy execution selections share host admission with full lint.
+# bin/fm-heavy-admission-lib.sh owns the slot, resource floors, and wait knobs.
+# Explicit script paths (one or more named scripts, used for quick targeted
+# checks) and inspection modes are exempt; full selections take the shared slot.
+#
 # Inspection (no execution):
 #   fm-test-run.sh --list --all
 #   fm-test-run.sh --list --family <name>
@@ -102,12 +107,13 @@
 #                   silently pass as a gate skip.
 #   --jobs N        run the selected scripts with up to N concurrent workers.
 #                   Plain --changed and a plain list of script paths use
-#                   min(4, cpus) workers when multiple selected scripts are
-#                   admissible, then throttled down for host contention: 2
+#                   min(FM_TEST_RUN_AUTO_JOBS_MAX, cpus) workers (default cap 4)
+#                   when multiple selected scripts are admissible, then throttled
+#                   down for host contention: 2
 #                   workers when the 5-minute load average exceeds cpus, 1
 #                   when it exceeds 2x cpus (FM_TEST_HOST_LOAD reports the
-#                   inputs and the result). --lane, --family, and --all stay
-#                   serial unless asked for concurrency explicitly; an
+#                   inputs and the result). Curated selections stay serial
+#                   unless asked for concurrency as described below; an
 #                   explicit --jobs N is never throttled.
 #                   N>1 is allowed only when every selected script is proven
 #                   safe to run concurrently: individually in the proven-isolated
@@ -121,6 +127,10 @@
 #                   scripts run serially after all concurrent phases. Default is
 #                   1 (serial) except for plain --changed and a plain list of
 #                   script paths, which use the bounded automatic scheduler.
+#                   FM_TEST_RUN_AUTO_JOBS_MAX (1..8) overrides its ceiling and
+#                   opts --all/--family into that same scheduler; serial lanes
+#                   and explicit --jobs retain their contracts. Proven-isolated
+#                   phases may use eight; family phases keep their proven caps.
 #   --fail-fast     opt-in; stop the run at the first failing script instead of
 #                   continuing through every remaining selected script. Off by
 #                   default so CI keeps seeing the complete result set.
@@ -144,11 +154,10 @@
 #                   interrupt a running script; per-script hangs are
 #                   bounded by --per-script-timeout-secs. Pathological output
 #                   sinks that block finalization are explicitly out of scope.
-#   --pc02-if-idle  route this run to PC02 when it is idle from LLM duty,
-#                   reachable, and tool-ready, falling back to running here
-#                   otherwise; bin/fm-pc02-test-offload.sh (its own header)
-#                   is the single owner of the readiness checks and remote
-#                   mechanics, and its exit code is returned unchanged.
+#   --pc02-if-idle  try hosted compute first, then the existing PC02/PC01
+#                   admission and fallback path. bin/fm-test-compute.sh owns
+#                   hosted routing; bin/fm-pc02-test-offload.sh owns local
+#                   admission. Inspection flags never contact hosted services.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -212,16 +221,12 @@
 # default weights) and serial_budget_ms (the 20-minute packing target), refusing
 # a split above that target. Neither figure is an execution timeout or proof of
 # observed headroom: refresh growing files from CI measurements.
-# --changed is conservative: it over-selects related families rather than
-# under-selecting, and never expands to the complete suite unless --all. The one
-# place it is deliberately narrow is a bin/ path with no curated family: a test
-# that names it is selected as that SCRIPT, because the reference is per-script
-# evidence. Consumer bin/ scripts still resolve through the curated map, so
-# recorded family-level coupling still expands to the whole family.
-# tests/lib.sh, tests/fixtures.sh, tests/*-helpers.sh and tests/*-fixture.sh are
-# shared files that map to the suites naming them; a fixture under
-# tests/fixtures/<dir>/ is mapped by that directory instead. Curated family arms
-# above those also name individual tests/ files explicitly.
+# --changed combines curated broad mappings for shared infrastructure with
+# per-script reference closure for leaf sources and test helpers. Production
+# comments do not create consumer edges. Unmapped live sources fail closed.
+# Add explicit per-script mappings for dynamic readers invisible to references;
+# keep execution families and CI partition/concurrency admission independent of
+# changed-path selection. docs/fm-test-portable-shards.md owns contributor rules.
 set -eu
 
 now_ms() {
@@ -238,7 +243,7 @@ RUN_STARTED_MS=$(now_ms)
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
-# --pc02-if-idle routes this run through bin/fm-pc02-test-offload.sh instead
+# --pc02-if-idle routes this run through bin/fm-test-compute.sh instead
 # of running here; strip it out before the option parser below (which has no
 # case arm for it) ever sees it.
 PC02_IF_IDLE=0
@@ -252,7 +257,7 @@ for fm_test_run_arg in "$@"; do
 done
 unset fm_test_run_arg
 if [ "$PC02_IF_IDLE" -eq 1 ]; then
-  exec "$ROOT/bin/fm-pc02-test-offload.sh" "${FM_TEST_RUN_FILTERED_ARGS[@]}"
+  exec "$ROOT/bin/fm-test-compute.sh" test "${FM_TEST_RUN_FILTERED_ARGS[@]}"
 fi
 set -- "${FM_TEST_RUN_FILTERED_ARGS[@]}"
 
@@ -281,14 +286,18 @@ JOBS=1
 FAIL_FAST=
 JOBS_EXPLICIT=0
 JOBS_MAX=8
+# Automatic scheduling stays at four locally; offload supplies its per-slot
+# cap (up to eight).
+AUTO_JOBS_MAX="${FM_TEST_RUN_AUTO_JOBS_MAX:-4}"
 MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0
 # Bound applied automatically on the automatic --changed path, derived from
 # measured healthy runtimes with margin rather than picked: the slowest measured
-# script is tests/fm-watch-triage.test.sh at about 1075s under CI load (the hint
-# table below records that loaded figure). 1500s keeps every measured script
-# under the bound with roughly 1.4x headroom over the slowest loaded measurement,
-# and it stays under the 30-minute normal CI tier so a wedged script fails here,
+# script was tests/fm-watch-triage.test.sh at about 1075s under CI load, until it
+# took about 1830s alone on PC01 and was split with
+# tests/fm-watch-triage-waits.test.sh, which the hint table below apportions
+# that loaded figure between. 1500s keeps every measured script under the bound
+# with headroom over the slowest loaded measurement, and it stays under the 30-minute normal CI tier so a wedged script fails here,
 # with its output, before the job cap
 # cancels the lane. It is a guard, not a speed control: a HUNG script becomes a
 # bounded failure instead of an unbounded suite, which is the shape that
@@ -299,9 +308,9 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 # former 900s base; its explicit base now matches the upstream default.
 CHANGED_WATCH_TRIAGE_TIMEOUT_SECS=1500
 WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS=
-# Same treatment for tests/fm-captain-hold-lifecycle.test.sh: its portable-serial
-# hint measures 296s alone, but it hit the 900s base under PC01 full-suite
-# contention (load5/cpus stays under 1 here even under real load, so the
+# Same treatment for the captain-hold suites (tests/fm-captain-hold-*.test.sh,
+# split from one file): the single file hit the 900s base under PC01 full-suite
+# contention, and each suite now keeps that same load-scaled 1500s base (the
 # load_scaled_timeout_secs multiplier below never engages on this host).
 CHANGED_CAPTAIN_HOLD_TIMEOUT_SECS=1500
 CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS=
@@ -315,7 +324,7 @@ HOST_LOAD_RETRY_POLL_SECS=${FM_TEST_RUN_LOAD_RETRY_POLL_SECS:-10}
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=10
+PORTABLE_SERIAL_SHARDS=11
 
 # Conservative balance hint for a portable-serial script with no measurement.
 # Rounded above the current CI mean, including the capability-skipped scripts.
@@ -479,8 +488,8 @@ load_scaled_timeout_secs() {
 # stays deliberate.
 is_load_sensitive_script() {
   case "$(basename "$1")" in
-    fm-watch-triage.test.sh | fm-wake-queue.test.sh | fm-watcher-lock.test.sh | \
-      fm-watch-checkpoint.test.sh | fm-inactive-reconcile.test.sh | \
+    fm-watch-triage.test.sh | fm-watch-triage-waits.test.sh | fm-wake-queue.test.sh | \
+      fm-watcher-lock.test.sh | fm-watch-checkpoint.test.sh | fm-inactive-reconcile.test.sh | \
       fm-wake-daemon-lifecycle-e2e.test.sh | fm-task-inbox.test.sh)
       return 0
       ;;
@@ -506,6 +515,7 @@ family_for_basename() {
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|fm-primary-herdr.test.sh|\
     fm-crew-state.test.sh|fm-crew-state-ci.test.sh|fm-captain-hold-lifecycle.test.sh|\
+    fm-captain-hold-reconcile.test.sh|fm-captain-hold-merge-teardown.test.sh|\
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|\
@@ -517,7 +527,7 @@ family_for_basename() {
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
     fm-subagent-pretool-check.test.sh|\
     fm-supervision-instructions.test.sh|fm-task-delivery.test.sh|\
-    fm-timeout-lib.test.sh|\
+    fm-heavy-admission.test.sh|fm-timeout-lib.test.sh|\
     fm-tmux-submit-busy.test.sh|fm-trace-context-lib.test.sh|\
     fm-transition-lib.test.sh|\
     fm-host-memory.test.sh|\
@@ -533,7 +543,7 @@ family_for_basename() {
     fm-mail.test.sh|fm-mail-check.test.sh|\
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
-    fm-watch-triage.test.sh|fm-watch-retry-band.test.sh|fm-task-inbox.test.sh|\
+    fm-watch-triage.test.sh|fm-watch-triage-waits.test.sh|fm-watch-retry-band.test.sh|fm-task-inbox.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh)
       printf '%s\n' watcher-wake-lock
       ;;
@@ -553,6 +563,8 @@ family_for_basename() {
     fm-remote-doctor.test.sh|fm-remote-herdr-guard.test.sh|fm-remote-job.test.sh|fm-remote-job-orphan-reap.test.sh|\
     fm-remote-transport-lanes.test.sh|\
     fm-remote-reply.test.sh|fm-remote-secondmate-lifecycle-e2e.test.sh|\
+    fm-remote-secondmate-lifecycle-inherit-e2e.test.sh|\
+    fm-remote-secondmate-lifecycle-supervision-e2e.test.sh|\
     fm-remote-secondmate-trace-context.test.sh|\
     fm-secondmate-harness.test.sh|fm-secondmate-lifecycle-e2e.test.sh|\
     fm-secondmate-liveness.test.sh|fm-secondmate-reconcile.test.sh|\
@@ -617,11 +629,11 @@ family_for_basename() {
       ;;
     fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-check-security.test.sh|\
     fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
-    fm-review-diff.test.sh|fm-teardown.test.sh|fm-teardown-*.sh|fm-x-mode.test.sh)
+    fm-review-diff.test.sh|fm-teardown.test.sh|fm-teardown-browsers.test.sh|fm-teardown-*.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
       ;;
     fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|\
-    fm-supervision-host.test.sh|fm-host-mirror.test.sh)
+    fm-supervision-host.test.sh|fm-supervision-host-2.test.sh|fm-host-mirror.test.sh)
       printf '%s\n' afk
       ;;
     fm-bearings-board-render.test.sh|fm-bearings-snapshot.test.sh|fm-contributions.test.sh|\
@@ -715,7 +727,6 @@ list_proven_isolated() {
 tests/fm-arm-pretool-check.test.sh
 tests/fm-backend-herdr.test.sh
 tests/fm-brief.test.sh
-tests/fm-captain-hold-lifecycle.test.sh
 tests/fm-cd-pretool-check.test.sh
 tests/fm-composer-ghost.test.sh
 tests/fm-composer-lib.test.sh
@@ -742,12 +753,14 @@ EOF
 # Per-script serial CI duration hints, one "<path> <ms>" per line, used to
 # pack only the two portable parallel lanes. Measurement provenance and the
 # refresh procedure are owned by docs/fm-test-portable-shards.md.
+# Lint and runner hints use local canonical-runner measurements taken
+# 2026-11-02, with the runner remeasured 2026-11-03.
+# These provisional samples should be refreshed from green CI artifacts.
 portable_parallel_weight_hints() {
   cat <<'EOF'
 tests/fm-arm-pretool-check.test.sh 33778
 tests/fm-backend-herdr.test.sh 36331
 tests/fm-brief.test.sh 10594
-tests/fm-captain-hold-lifecycle.test.sh 343658
 tests/fm-cd-pretool-check.test.sh 16801
 tests/fm-composer-ghost.test.sh 2292
 tests/fm-composer-lib.test.sh 9521
@@ -755,7 +768,7 @@ tests/fm-crew-state.test.sh 82058
 tests/fm-ensure-agents-md.test.sh 895
 tests/fm-grok-harness.test.sh 7666
 tests/fm-herdr-lab.test.sh 18325
-tests/fm-lint.test.sh 252498
+tests/fm-lint.test.sh 469094
 tests/fm-pi-primary-types.test.sh 5426
 tests/fm-pr-merge.test.sh 300199
 tests/fm-review-diff.test.sh 4134
@@ -764,7 +777,7 @@ tests/fm-send-settle.test.sh 2310
 tests/fm-send-strict.test.sh 4804
 tests/fm-spawn-batch.test.sh 2987
 tests/fm-supervision-instructions.test.sh 809
-tests/fm-test-run.test.sh 156781
+tests/fm-test-run.test.sh 141444
 tests/fm-tmux-submit-busy.test.sh 2600
 tests/fm-transition-lib.test.sh 101
 tests/fm-x-mode.test.sh 29896
@@ -783,24 +796,31 @@ portable_parallel_lane_weight() {
   ' <(portable_parallel_weight_hints) -
 }
 
-# Portable parallel shard 1: LPT balance of the proven-isolated set over the
-# hints above. Stored order agrees with this lane's --list-scheduled output.
+# Portable parallel shard 1: one half of the proven-isolated set, packed within
+# 5% of shard 2 over the hints above (an LPT split whose two shard swaps kept the
+# lane diff small). Stored order agrees with this lane's --list-scheduled output.
 # tests/fm-pi-primary-types.test.sh runs the production-consumer typecheck here;
 # its own header owns temporary dependency provisioning.
 list_portable_parallel_1() {
   cat <<'EOF'
 tests/fm-pr-merge.test.sh
-tests/fm-lint.test.sh
-tests/fm-backend-herdr.test.sh
+tests/fm-test-run.test.sh
+tests/fm-arm-pretool-check.test.sh
 tests/fm-x-mode.test.sh
+tests/fm-herdr-lab.test.sh
 tests/fm-cd-pretool-check.test.sh
+tests/fm-brief.test.sh
 tests/fm-composer-lib.test.sh
+tests/fm-grok-harness.test.sh
 tests/fm-send-popup-settle.test.sh
 tests/fm-pi-primary-types.test.sh
+tests/fm-send-strict.test.sh
 tests/fm-review-diff.test.sh
+tests/fm-spawn-batch.test.sh
+tests/fm-tmux-submit-busy.test.sh
 tests/fm-send-settle.test.sh
+tests/fm-composer-ghost.test.sh
 tests/fm-ensure-agents-md.test.sh
-tests/fm-supervision-instructions.test.sh
 tests/fm-transition-lib.test.sh
 EOF
 }
@@ -808,17 +828,10 @@ EOF
 # Portable parallel shard 2: the complementary LPT half of the proven set.
 list_portable_parallel_2() {
   cat <<'EOF'
-tests/fm-captain-hold-lifecycle.test.sh
-tests/fm-test-run.test.sh
+tests/fm-lint.test.sh
 tests/fm-crew-state.test.sh
-tests/fm-arm-pretool-check.test.sh
-tests/fm-herdr-lab.test.sh
-tests/fm-brief.test.sh
-tests/fm-grok-harness.test.sh
-tests/fm-send-strict.test.sh
-tests/fm-spawn-batch.test.sh
-tests/fm-tmux-submit-busy.test.sh
-tests/fm-composer-ghost.test.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-supervision-instructions.test.sh
 EOF
 }
 
@@ -900,13 +913,13 @@ list_portable_serial() {
   done < <(all_repo_tests)
 }
 
-# Measured portable-serial script durations in milliseconds, from the CI timing
-# artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
-# slowest successful sample in the referenced complete/partial CI runs, with
-# the version-specific host and native-Windows exceptions documented there.
-# These are balance hints only: the shard
-# partition stays complete and disjoint whatever they say, so a stale hint costs
-# balance rather than coverage. That doc owns the refresh procedure.
+# Measured portable-serial script durations in milliseconds.
+# docs/fm-test-portable-shards.md owns their measurement provenance - the CI
+# timing artifacts, the provisional local canonical-runner samples, and the
+# version-specific host and native-Windows exceptions - plus the refresh
+# procedure.
+# These are balance hints only: the shard partition stays complete and disjoint
+# whatever they say, so a stale hint costs balance rather than coverage.
 portable_serial_weight_hints() {
   cat <<'EOF'
 tests/fm-afk-contract.test.sh 11101
@@ -937,7 +950,7 @@ tests/fm-bearings-board-render.test.sh 15612
 tests/fm-bearings-board.test.sh 40817
 tests/fm-bearings-snapshot.test.sh 186219
 tests/fm-bootstrap-network-parallel.test.sh 30424
-tests/fm-bootstrap.test.sh 50965
+tests/fm-bootstrap.test.sh 79029
 tests/fm-branch-supervision.test.sh 22979
 tests/fm-busy-adapter-wiring.test.sh 82204
 tests/fm-busy-state.test.sh 3185
@@ -946,9 +959,12 @@ tests/fm-calm-claude-mod-plugin.test.sh 77
 tests/fm-calm-claude-mod.test.sh 2527
 tests/fm-calm-pi-extension.test.sh 56463
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1345
+tests/fm-captain-hold-lifecycle.test.sh 243467
+tests/fm-captain-hold-merge-teardown.test.sh 157397
+tests/fm-captain-hold-reconcile.test.sh 175140
 tests/fm-captain-window.test.sh 354
 tests/fm-check-unregister.test.sh 469
-tests/fm-ci-workflow.test.sh 5833
+tests/fm-ci-workflow.test.sh 10072
 tests/fm-claim-check.test.sh 360
 tests/fm-classify-corr-token.test.sh 23085
 tests/fm-classify-decision-key.test.sh 4362
@@ -963,19 +979,19 @@ tests/fm-commandcode-harness.test.sh 13970
 tests/fm-commandcode-signals-live-e2e.test.sh 49
 tests/fm-composer-codex-idle-live-e2e.test.sh 77
 tests/fm-composer-matrix-live-e2e.test.sh 51
-tests/fm-config-inherit-lane-caps.test.sh 417
-tests/fm-context-usage.test.sh 669
+tests/fm-config-inherit-lane-caps.test.sh 708
+tests/fm-context-usage.test.sh 1125
 tests/fm-contributions.test.sh 140911
-tests/fm-control-relaunch.test.sh 114115
+tests/fm-control-relaunch.test.sh 171784
 tests/fm-control.test.sh 72794
 tests/fm-crew-state-ci.test.sh 12000
 tests/fm-crew-state-env-leak.test.sh 4878
 tests/fm-cursor-harness.test.sh 30088
 tests/fm-cursor-primary-live-e2e.test.sh 75
 tests/fm-cursor-primary.test.sh 69845
-tests/fm-daemon.test.sh 33606
+tests/fm-daemon.test.sh 50984
 tests/fm-devin-harness.test.sh 3725
-tests/fm-devin-signals-live-e2e.test.sh 49
+tests/fm-devin-signals-live-e2e.test.sh 306
 tests/fm-dispatch-quota-cap.test.sh 11272
 tests/fm-dispatch-resolve.test.sh 10051
 tests/fm-documentation-audiences.test.sh 1301
@@ -984,7 +1000,7 @@ tests/fm-extension-binding.test.sh 11105
 tests/fm-fleet-ledger.test.sh 19980
 tests/fm-fleet-snapshot-view.test.sh 93404
 tests/fm-fleet-sync.test.sh 40541
-tests/fm-forge-detect.test.sh 193
+tests/fm-forge-detect.test.sh 540
 tests/fm-fork-free-helpers.test.sh 746
 tests/fm-gate-refuse.test.sh 9953
 tests/fm-gemini-harness.test.sh 947
@@ -998,6 +1014,7 @@ tests/fm-harness-adapter-instructions-live-e2e.test.sh 72
 tests/fm-harness-adapter-references.test.sh 64
 tests/fm-harness-liveness-drift-live-e2e.test.sh 1309
 tests/fm-harness-precedence.test.sh 4083
+tests/fm-heavy-admission.test.sh 10318
 tests/fm-herdr-attached-viewer-live-e2e.test.sh 19000
 tests/fm-herdr-groups.test.sh 5418
 tests/fm-herdr-pi-stale-registration-live-e2e.test.sh 55
@@ -1016,15 +1033,15 @@ tests/fm-launch-prompt-signals-live-e2e.test.sh 50
 tests/fm-lint-nomistakes-config.test.sh 260
 tests/fm-lint-test-size.test.sh 2260
 tests/fm-lint-workflows.test.sh 872
-tests/fm-live-gate.test.sh 7452
+tests/fm-live-gate.test.sh 12207
 tests/fm-live-lab-up-mate.test.sh 17363
 tests/fm-live-lab.test.sh 79639
 tests/fm-llm-usage-lib.test.sh 920
-tests/fm-llm-usage-telemetry-integration.test.sh 24413
+tests/fm-llm-usage-telemetry-integration.test.sh 36848
 tests/fm-mail-check.test.sh 7524
 tests/fm-mail.test.sh 9684
 tests/fm-muse-harness.test.sh 46548
-tests/fm-muse-signals-live-e2e.test.sh 52
+tests/fm-muse-signals-live-e2e.test.sh 442
 tests/fm-nm-test-contract.test.sh 853
 tests/fm-no-mistakes-required-live-lookup.test.sh 1423
 tests/fm-no-mistakes-required.test.sh 270
@@ -1034,7 +1051,7 @@ tests/fm-omp-harness.test.sh 63796
 tests/fm-omp-primary-live-e2e.test.sh 74
 tests/fm-on.test.sh 18589
 tests/fm-opencode-primary-live-e2e.test.sh 47
-tests/fm-operational-input.test.sh 2404
+tests/fm-operational-input.test.sh 3698
 tests/fm-orphan-pane-sweep.test.sh 830
 tests/fm-pc02-churn-e2e.test.sh 21689
 tests/fm-pc02-fair-order.test.sh 44123
@@ -1053,7 +1070,7 @@ tests/fm-polytoken-signals-live-e2e.test.sh 103
 tests/fm-pr-check-security.test.sh 300675
 tests/fm-pr-reviewers.test.sh 157
 tests/fm-pr-state-live-e2e.test.sh 47
-tests/fm-pr-state.test.sh 525
+tests/fm-pr-state.test.sh 862
 tests/fm-primary-herdr.test.sh 4000
 tests/fm-primary-scope-lib.test.sh 340
 tests/fm-primary-watchdog.test.sh 31045
@@ -1062,7 +1079,7 @@ tests/fm-procevent-when.test.sh 25674
 tests/fm-procevent.test.sh 292297
 tests/fm-project-origin.test.sh 123
 tests/fm-public-followup.test.sh 381564
-tests/fm-questionnaire-refill-source.test.sh 139
+tests/fm-questionnaire-refill-source.test.sh 534
 tests/fm-queue-snapshot.test.sh 27987
 tests/fm-quota-array-dispatch-live-e2e.test.sh 50
 tests/fm-quota-choose.test.sh 2860
@@ -1074,14 +1091,16 @@ tests/fm-remote-job-orphan-reap.test.sh 2985
 tests/fm-remote-job.test.sh 133201
 tests/fm-remote-reply.test.sh 216935
 tests/fm-remote-secondmate-control-launch-settle.test.sh 721
-tests/fm-remote-secondmate-lifecycle-e2e.test.sh 345655
+tests/fm-remote-secondmate-lifecycle-e2e.test.sh 98640
+tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh 243941
+tests/fm-remote-secondmate-lifecycle-supervision-e2e.test.sh 241524
 tests/fm-remote-secondmate-parent-binding.test.sh 76775
 tests/fm-remote-secondmate-relaunch.test.sh 879
 tests/fm-remote-secondmate-trace-context.test.sh 140132
 tests/fm-remote-transport-lanes.test.sh 66089
 tests/fm-retry-pressure.test.sh 1596
-tests/fm-returning-session-check.test.sh 650
-tests/fm-roundtable-coverage.test.sh 708
+tests/fm-returning-session-check.test.sh 1017
+tests/fm-roundtable-coverage.test.sh 1168
 tests/fm-roundtable-factsheet.test.sh 675
 tests/fm-routing-ledger-metrics.test.sh 15993
 tests/fm-rovo-harness.test.sh 15691
@@ -1089,7 +1108,7 @@ tests/fm-rovo-signals-live-e2e.test.sh 52
 tests/fm-secondmate-harness.test.sh 188187
 tests/fm-secondmate-busy-contract-live-e2e.test.sh 90000
 tests/fm-secondmate-lifecycle-e2e.test.sh 11268
-tests/fm-secondmate-liveness.test.sh 24564
+tests/fm-secondmate-liveness.test.sh 41663
 tests/fm-secondmate-reconcile.test.sh 100853
 tests/fm-secondmate-restart.test.sh 52591
 tests/fm-secondmate-safety.test.sh 69424
@@ -1100,12 +1119,12 @@ tests/fm-send-inbox-doorbell-live-e2e.test.sh 108
 tests/fm-send-inbox.test.sh 41713
 tests/fm-send-remote-delivery.test.sh 31964
 tests/fm-send-resolve-key.test.sh 47317
-tests/fm-send-secondmate-marker-herdr-e2e.test.sh 80
+tests/fm-send-secondmate-marker-herdr-e2e.test.sh 444
 tests/fm-send-secondmate-marker.test.sh 7574
 tests/fm-session-lock-ancestry.test.sh 18918
 tests/fm-session-start.test.sh 363574
 tests/fm-sessionstart-hook-live-e2e.test.sh 50
-tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 49
+tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 434
 tests/fm-sessionstart-nudge.test.sh 71802
 tests/fm-shared-captain-inheritance.test.sh 13218
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 67968
@@ -1113,23 +1132,25 @@ tests/fm-spawn-compact-adviser-disable.test.sh 33635
 tests/fm-spawn-dispatch-profile.test.sh 343491
 tests/fm-spawn-host-memory.test.sh 5440
 tests/fm-spawn-orca-worktree.test.sh 60771
-tests/fm-spawn-pc02-lane-guard.test.sh 11846
+tests/fm-spawn-pc02-lane-guard.test.sh 17964
 tests/fm-spawn-pool-base-freshen.test.sh 120467
 tests/fm-spawn-worktree-settle.test.sh 9309
 tests/fm-startup-memory-budget.test.sh 12413
 tests/fm-startup-network.test.sh 72106
-tests/fm-stat-shadowing.test.sh 75
+tests/fm-stat-shadowing.test.sh 440
 tests/fm-stow-cascade.test.sh 7215
 tests/fm-subagent-pretool-check.test.sh 1290
-tests/fm-supervision-events.test.sh 673
+tests/fm-supervision-events.test.sh 1034
+tests/fm-supervision-host-2.test.sh 525849
 tests/fm-supervision-host-attended-live-e2e.test.sh 49
 tests/fm-supervision-host-live-e2e.test.sh 75
-tests/fm-supervision-host.test.sh 789123
-tests/fm-tangle-guard.test.sh 8501
+tests/fm-supervision-host.test.sh 267467
+tests/fm-tangle-guard.test.sh 13692
 tests/fm-task-delivery.test.sh 32789
 tests/fm-task-inbox.test.sh 67453
 tests/fm-tasks-axi.test.sh 4751
 tests/fm-teardown-backlog-close.sh 5700
+tests/fm-teardown-browsers.test.sh 24607
 tests/fm-teardown-endpoint-safety.test.sh 40851
 tests/fm-teardown-herdr.sh 5100
 tests/fm-teardown-index-lock.sh 5500
@@ -1140,9 +1161,9 @@ tests/fm-teardown-parked-run.sh 7700
 tests/fm-teardown-pr-check.sh 4800
 tests/fm-teardown-process-reap.sh 11300
 tests/fm-teardown-secondmate.sh 8200
-tests/fm-teardown.test.sh 202132
-tests/fm-test-fixture-cleanup.test.sh 1446
-tests/fm-test-fixtures.test.sh 6739
+tests/fm-teardown.test.sh 317102
+tests/fm-test-fixture-cleanup.test.sh 3696
+tests/fm-test-fixtures.test.sh 10194
 tests/fm-test-isolation-proof.test.sh 2866
 tests/fm-test-sandbox-cache-race.test.sh 6604
 tests/fm-timeout-lib.test.sh 10750
@@ -1153,7 +1174,7 @@ tests/fm-trace-context-spawn.test.sh 57488
 tests/fm-turnend-foreign-owner-arm-fix.test.sh 5575
 tests/fm-turnend-guard.test.sh 34727
 tests/fm-update.test.sh 11894
-tests/fm-upstream-batch.test.sh 2000
+tests/fm-upstream-batch.test.sh 3500
 tests/fm-upstream-behind-check.test.sh 27230
 tests/fm-upstream-sync-item.test.sh 13801
 tests/fm-vendor-auth-probe.test.sh 43278
@@ -1169,8 +1190,9 @@ tests/fm-watch-arm.test.sh 113076
 tests/fm-watch-checkpoint.test.sh 22937
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 59092
-tests/fm-watch-retry-band.test.sh 7547
-tests/fm-watch-triage.test.sh 1074843
+tests/fm-watch-retry-band.test.sh 13391
+tests/fm-watch-triage-waits.test.sh 777719
+tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 72022
 tests/fm-worker-account-live-e2e.test.sh 3179
 tests/fm-worker-account.test.sh 37445
@@ -1188,15 +1210,6 @@ portable_serial_unhinted() {
   list_portable_serial | LC_ALL=C sort -u >"$tmp/serial"
   comm -23 "$tmp/serial" "$tmp/hinted"
   rm -rf "$tmp"
-}
-
-# Sum serial weights for paths on stdin, including the unmeasured default.
-portable_serial_lane_weight() {
-  awk -v fallback="$PORTABLE_SERIAL_DEFAULT_WEIGHT_MS" '
-    NR == FNR { if (NF) { hint[$1] = $2 }; next }
-    NF { total += ($1 in hint) ? hint[$1] : fallback }
-    END { printf "%d\n", total + 0 }
-  ' <(portable_serial_weight_hints) -
 }
 
 portable_parallel_weight_for() {
@@ -1384,24 +1397,30 @@ run_coverage_guard() {
   fi
 
   # Serial (whole lane and each CI shard) + Herdr lane listings without
-  # disturbing a caller's selection.
+  # disturbing a caller's selection. Computing the assignments once and slicing
+  # them per shard avoids re-deriving the whole lane PORTABLE_SERIAL_SHARDS
+  # times, which made this guard the dominant cost of every coverage check.
   saved_scripts=("${SCRIPTS[@]+"${SCRIPTS[@]}"}")
-  SCRIPTS=()
-  select_lane portable-serial
-  printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" | LC_ALL=C sort -u >"$tmp/serial"
+  portable_serial_assignments >"$tmp/serial_assignments"
+  portable_serial_weight_hints >"$tmp/serial_hints"
+  awk -F'\t' 'NF { print $2 }' "$tmp/serial_assignments" | LC_ALL=C sort -u >"$tmp/serial"
   : >"$tmp/serial_shards_raw"
   shard=1
   while [ "$shard" -le "$PORTABLE_SERIAL_SHARDS" ]; do
-    SCRIPTS=()
-    select_lane "portable-serial-${shard}of${PORTABLE_SERIAL_SHARDS}"
-    if [ "${#SCRIPTS[@]}" -eq 0 ]; then
+    awk -F'\t' -v want="$shard" '$1 == want { print $2 }' \
+      "$tmp/serial_assignments" >"$tmp/shard_scripts"
+    if [ ! -s "$tmp/shard_scripts" ]; then
       log "coverage guard: portable serial shard $shard of $PORTABLE_SERIAL_SHARDS is empty"
       SCRIPTS=("${saved_scripts[@]+"${saved_scripts[@]}"}")
       rm -rf "$tmp"
       return 1
     fi
-    printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" >>"$tmp/serial_shards_raw"
-    serial_ms=$(printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" | portable_serial_lane_weight)
+    cat "$tmp/shard_scripts" >>"$tmp/serial_shards_raw"
+    serial_ms=$(awk -v fallback="$PORTABLE_SERIAL_DEFAULT_WEIGHT_MS" '
+      NR == FNR { if (NF) { hint[$1] = $2 }; next }
+      NF { total += ($1 in hint) ? hint[$1] : fallback }
+      END { printf "%d\n", total + 0 }
+    ' "$tmp/serial_hints" "$tmp/shard_scripts")
     [ "$serial_ms" -le "$serial_max_ms" ] || serial_max_ms=$serial_ms
     shard=$((shard + 1))
   done
@@ -1742,36 +1761,291 @@ select_family() {
   [ "$found" -eq 1 ] || die "no tests mapped to family '$want'"
 }
 
-families_for_test_reference() {  # <needle>...
-  local s needle
-  local found=0
+# Literal references select scripts, never the referencing script's family.
+# Test comments remain conservative evidence (fixtures often declare readers
+# there); production-shell comments are removed by the dependency index below.
+scripts_for_test_reference() {  # <needle>...
+  local s needle found=0
   local -a needles=()
   for needle in "$@"; do needles+=(-e "$needle"); done
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     if grep -Fq "${needles[@]}" "$s"; then
-      family_for_basename "$(basename "$s")"
+      printf '__script__:%s\n' "$(basename "$s")"
       found=1
     fi
   done < <(all_repo_tests)
   [ "$found" -eq 1 ]
 }
 
-# Tests that name <needle>, selected as individual scripts rather than widened
-# to each referencing test's whole family. A direct reference is per-script
-# evidence, so it selects per script: one real-Herdr E2E sourcing a shared
-# helper must not drag in every other script of that expensive family.
-scripts_for_test_reference() {
-  local needle=$1 s
-  local found=0
-  while IFS= read -r s; do
-    [ -n "$s" ] || continue
-    if grep -Fq "$needle" "$s"; then
-      printf '__script__:%s\n' "$(basename "$s")"
-      found=1
-    fi
-  done < <(all_repo_tests)
-  [ "$found" -eq 1 ]
+# Build once when changed executable/helper paths need reference discovery.
+# Curated mappings add integration coverage; they never terminate this walk.
+# Ambiguous references remain conservative, including quoted/generated commands.
+build_reference_index() {
+  python3 - "$@" <<'PYREF'
+from collections import defaultdict, deque
+from pathlib import Path
+import re
+import shlex
+import sys
+
+NAME_RE = re.compile(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b")
+
+
+def shell_code(text, keep_heredocs=True):
+    # Retain heredoc payload verbatim: it can generate another executable.
+    # Prompt renderers emit heredoc prose, not commands, so they drop it.
+    # Strip only comments outside quotes, preserving literal/parameter #.
+    quote = None
+    escaped = False
+    heredocs = deque()
+    result = []
+    for line in text.splitlines(keepends=True):
+        if heredocs:
+            delimiter, strip_tabs = heredocs[0]
+            if keep_heredocs or re.search(r"(?<!\\)(?:\$\(|`)", line):
+                result.append(line)
+            if (line.lstrip("\t") if strip_tabs else line).rstrip("\r\n") == delimiter:
+                heredocs.popleft()
+            continue
+        code = []
+        for i, char in enumerate(line):
+            if escaped:
+                code.append(char)
+                escaped = False
+            elif char == "\\" and quote != "'":
+                code.append(char)
+                escaped = True
+            elif char in ("'", '"'):
+                if quote is None:
+                    quote = char
+                elif quote == char:
+                    quote = None
+                code.append(char)
+            elif char == "#" and quote is None and (i == 0 or line[i-1].isspace() or line[i-1] in ";|&()"):
+                code.append("\n")
+                break
+            else:
+                code.append(char)
+        code = "".join(code)
+        result.append(code)
+        for match in re.finditer(r"(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|\"([^\"]+)\"|([A-Za-z_][\w]*))", code):
+            heredocs.append((next(group for group in match.groups()[1:] if group), bool(match[1])))
+    return "".join(result)
+
+
+def shell_executable_names(text):
+    # A filename in ordinary prose is not an executed dependency. Keep names
+    # from command lines (source/./bash/exec/...), command-position scripts,
+    # and assignments whose value is a script path later run; drop prose.
+    names = []
+    declarations = ("local", "declare", "readonly", "export", "typeset")
+    control_words = ("if", "then", "elif", "else", "while", "until", "do", "!", "time")
+    exec_words = (".", "source", "exec", "bash", "sh", "zsh", "dash", "env",
+                  "command", "eval", "python", "python3", "node", "perl",
+                  "ruby", "timeout", "nohup", "setsid", "xargs")
+    for line in text.replace("\\\n", " ").splitlines():
+        stripped = line.strip()
+        if not stripped or not NAME_RE.search(line):
+            continue
+        try:
+            lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            tokens = list(lexer)
+        except ValueError:
+            tokens = []
+        expect_command = True
+        command_payload = False
+        for token in tokens:
+            if token in declarations:
+                expect_command = False
+                continue
+            if re.match(r"^[A-Za-z_]\w*=", token):
+                value = token.split("=", 1)[1]
+                if re.search(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)[\"'}]?$", value):
+                    names.extend(NAME_RE.findall(value))
+                continue
+            if token in control_words or (
+                token and all(char in "();<>|&{}" for char in token)
+            ):
+                expect_command = True
+                continue
+            if expect_command:
+                if token in exec_words:
+                    command_payload = True
+                if NAME_RE.fullmatch(Path(token).name):
+                    names.extend(NAME_RE.findall(token))
+                expect_command = False
+        if command_payload or "`" in line or "$(" in line:
+            names.extend(NAME_RE.findall(line))
+    return names
+
+
+files = sorted({p for directory in ("bin", "tests")
+                for p in Path(directory).rglob("*")
+                if p.is_file() and p.suffix in (".sh", ".py", ".pl", ".jq", ".mjs", ".js", ".ts")})
+by_name = defaultdict(list)
+for path in files:
+    by_name[path.name].append(str(path))
+for changed in sys.argv[1:]:
+    if changed.startswith(("bin/", "tests/")) and changed not in by_name[Path(changed).name]:
+        by_name[Path(changed).name].append(changed)
+consumers = defaultdict(set)
+executable_consumers = defaultdict(set)
+# The runner's own contract suite and the split bodies it sources.
+RUNNER_CONTRACT_SUITE = (
+    "tests/fm-test-run.test.sh",
+    "tests/fm-test-run-selection-lib.sh",
+    "tests/fm-test-run-scheduling-lib.sh",
+)
+for path in files:
+    text = path.read_text(errors="replace")
+    if path.suffix == ".sh" and not path.name.endswith(".test.sh"):
+        text = shell_code(text, keep_heredocs=str(path) not in (
+            "bin/fm-brief.sh", "bin/fm-branch-prompt.sh", "bin/fm-supervision-instructions.sh"))
+    if str(path) in ("bin/fm-test-run.sh", "bin/fm-test-isolation-proof.sh") + RUNNER_CONTRACT_SUITE:
+        # These drivers' candidate lists are metadata, like the --list calls
+        # in their contract suites. Keep runtime paths/commands, and account
+        # for real nested subject invocations at the calling suite. The
+        # contract suite's split bodies carry the same metadata, so they take
+        # the same rule rather than becoming literal-reference consumers.
+        names = re.findall(r"\$\{?ROOT\}?/(?:bin|tests)/([\w.+-]+)", text)
+        if str(path).startswith("bin/"):
+            names.extend(re.findall(r"\$\{?\w+\}?/(?:[\w.+${}-]+/)*([\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts))\b", text))
+            for line in text.replace("\\\n", " ").splitlines():
+                if re.search(r"(?:^|[\s;&|])(?:exec|source|bash|sh|env|command|eval|python3?|node|perl|\.)\s|(?:^|[\s;])\w+=", line):
+                    names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
+        if str(path) in RUNNER_CONTRACT_SUITE:
+            for line in shell_code(text).replace("\\\n", " ").splitlines():
+                if re.search(r"(?:^|[\s;&|])(?:source|bash|\.)\s", line):
+                    names.extend(re.findall(r"[\w.+-]+\.(?:sh|py|pl|jq|mjs|js|ts)\b", line))
+                if not re.search(r"\$\{?RUNNER\}?", line):
+                    continue
+                try:
+                    tokens = shlex.split(line, comments=False)
+                except ValueError:
+                    tokens = []
+                if any(token in ("--list", "--list-scheduled", "--list-families", "--list-lanes", "--check-coverage") for token in tokens):
+                    continue
+                names.extend(re.findall(r"tests/([\w.+-]+\.test\.sh)", line))
+    else:
+        if str(path).startswith("bin/") and path.suffix == ".sh":
+            names = shell_executable_names(text)
+        else:
+            # Test files keep literal references, including a fixture's
+            # comment naming the reader it stands in for.
+            names = NAME_RE.findall(text)
+    executable_names = set(
+        names if str(path).startswith("bin/") and path.suffix == ".sh"
+        else shell_executable_names(
+            text if path.suffix != ".sh" else shell_code(text, keep_heredocs=False)
+        )
+    )
+    for name in set(names):
+        for dependency in by_name.get(name, ()):
+            if dependency == str(path):
+                continue
+            consumers[dependency].add(str(path))
+            if name in executable_names:
+                executable_consumers[dependency].add(str(path))
+
+
+def shared_pass_through(node):
+    # Shared libraries and the universal test harness define helpers that may
+    # name a changed leaf. Following their importers to a fixed point turns any
+    # leaf mention into whole-suite fan-out, so the walk stops at these nodes.
+    # A change to the shared file itself still selects its direct readers.
+    path = Path(node)
+    if path.parent == Path("tests"):
+        name = path.name
+        return name in ("lib.sh", "fixtures.sh") or name.endswith(
+            ("-helpers.sh", "-fixture.sh")
+        )
+    if path.parent == Path("bin"):
+        return path.name.endswith("-lib.sh")
+    return False
+
+
+# A command consumed from more than one place is shared infrastructure, not a
+# leaf: walking its callers turns a leaf mention into whole-suite fan-out.
+HUB_FANIN = 3
+# A thin hub's suites directly drive the path to the leaf. A wider hub's suites
+# each cover one mode, so they are left to the curated map and full CI.
+HUB_THIN_READERS = 3
+
+
+def direct_test_readers(node):
+    return sorted(
+        reader for reader in executable_consumers[node]
+        if reader.startswith("tests/") and reader.endswith(".test.sh")
+    )
+
+
+def walk_reference(dependency, emit_fat_hubs):
+    queue = deque([dependency])
+    queued = {dependency}
+    printed = set()
+    executable_printed = set()
+    fallback = set()
+    while queue:
+        source = queue.popleft()
+        for consumer in sorted(consumers[source]):
+            if consumer.startswith("tests/") and consumer.endswith(".test.sh"):
+                executable = consumer in executable_consumers[source]
+                if source.startswith("tests/") and source.endswith(".test.sh") \
+                        and not executable:
+                    continue
+                if consumer not in printed:
+                    print(dependency + "\t__script__:" + Path(consumer).name)
+                    printed.add(consumer)
+                # A suite is a terminal reader unless it actually executes the
+                # other suite as a wrapper; a comment or fixture mention is not
+                # a reason to fan out through it.
+                if executable:
+                    executable_printed.add(consumer)
+                    if consumer not in queued:
+                        queued.add(consumer)
+                        queue.append(consumer)
+                continue
+            if consumer in queued:
+                continue
+            if shared_pass_through(consumer):
+                # A leaf mention inside a shared library or test harness is a
+                # definition site, not proof that every importer executes it.
+                continue
+            if len(consumers[consumer]) >= HUB_FANIN:
+                # A command invoked from more than one place is shared; walking
+                # its callers fans a single leaf out into the whole suite.
+                readers = direct_test_readers(consumer)
+                if emit_fat_hubs or len(readers) <= HUB_THIN_READERS:
+                    for reader in readers:
+                        if reader not in printed:
+                            print(dependency + "\t__script__:" + Path(reader).name)
+                            printed.add(reader)
+                        executable_printed.add(reader)
+                        if reader not in queued:
+                            queued.add(reader)
+                            queue.append(reader)
+                else:
+                    fallback.update(readers)
+                continue
+            queued.add(consumer)
+            queue.append(consumer)
+    return printed, fallback, executable_printed
+
+
+for dependency in sorted(set(sys.argv[1:])):
+    printed, fallback, executable_printed = walk_reference(dependency, False)
+    if not executable_printed and fallback:
+        walk_reference(dependency, True)
+PYREF
+}
+
+scripts_for_path_reference() {
+  local path=$1
+  awk -F '\t' -v path="$path" '$1 == path { print $2; found=1 } END { exit !found }' \
+    <<<"$REFERENCE_INDEX"
 }
 
 # bin/ scripts other than <needle> itself that name <needle>.
@@ -1783,43 +2057,81 @@ bin_consumers_of() {
   done
 }
 
-# An unmapped bin/ path has no curated family of its own. Its blast radius is
-# the tests that name it, plus the curated families of the bin/ scripts that
-# consume it. Direct test references resolve per script (above) while consumer
-# scripts resolve back through the curated map, so genuine family-level
-# coupling a maintainer recorded is preserved while an incidental single-script
-# reference no longer selects that script's whole family.
-BIN_FALLBACK_DEPTH=0
-families_for_unmapped_bin() {
-  local path=$1 needle consumer out found=0
+# The base runner's broad coverage for a source the reference walk cannot map:
+# its literal direct test readers plus the curated families of the bin scripts
+# that consume it. Used only when the pruned walk would otherwise leave an
+# existing tracked source with no reader at all.
+broad_family_fallback() {
+  local path=$1 needle out consumer
   needle=$(basename "$path")
   if out=$(scripts_for_test_reference "$needle"); then
     printf '%s\n' "$out"
-    found=1
   fi
-  if [ "$BIN_FALLBACK_DEPTH" -lt 2 ]; then
-    BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH + 1))
-    while IFS= read -r consumer; do
-      [ -n "$consumer" ] || continue
-      out=$(families_for_changed_path "$consumer" | grep -v '^__unmapped__:' || true)
-      if [ -n "$out" ]; then
-        printf '%s\n' "$out"
-        found=1
-      fi
-    done < <(bin_consumers_of "$needle")
-    BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH - 1))
+  BIN_FALLBACK_DEPTH=${BIN_FALLBACK_DEPTH:-0}
+  [ "$BIN_FALLBACK_DEPTH" -lt 2 ] || return 0
+  BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH + 1))
+  while IFS= read -r consumer; do
+    [ -n "$consumer" ] || continue
+    [ "$consumer" = "$path" ] && continue
+    out=$(families_for_changed_path "$consumer" | grep -v '^__unmapped__:' || true)
+    [ -n "$out" ] && printf '%s\n' "$out"
+  done < <(bin_consumers_of "$needle")
+  BIN_FALLBACK_DEPTH=$((BIN_FALLBACK_DEPTH - 1))
+}
+
+# An existing tracked source must never fail closed because the pruned walk has
+# no reader left for it; fall back to the broad mapping with one diagnostic.
+# An untracked new source or a deleted path keeps the previous behavior.
+reference_or_broad_fallback() {
+  local path=$1 out
+  if scripts_for_path_reference "$path"; then
+    return 0
   fi
-  [ "$found" -eq 1 ]
+  [ -f "$path" ] || return 0
+  if git -C "$ROOT" ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+    [ "${BIN_FALLBACK_DEPTH:-0}" -gt 0 ] \
+      || printf 'broad fallback: %s\n' "$path" >&2
+    out=$(broad_family_fallback "$path")
+    if [ -n "$out" ]; then
+      printf '%s\n' "$out"
+    else
+      # A tracked source with no fallback reader still fails closed.
+      printf '%s\n' "__unmapped__:$path"
+    fi
+  else
+    # A new untracked source still fails closed: no reader can be inferred.
+    printf '%s\n' "__unmapped__:$path"
+  fi
+  return 0
+}
+
+# Documentation has explicit contract owners and literal repository readers.
+# Do not treat a fixture's mention of a skill or a copied supervisor contract as
+# evidence for its entire runtime family. Dynamic skill/reference readers are
+# listed by the curated map below.
+scripts_for_document_readers() {
+  python3 - "$1" <<'PYDOC'
+from pathlib import Path
+import re
+import sys
+path = re.escape(sys.argv[1])
+for test in sorted(Path("tests").glob("*.test.sh")):
+    if re.search(r"(?:\$\{?ROOT\}?/|\.\./)" + path + r"(?:[\s\"'`]|$)", test.read_text()):
+        print("__script__:" + test.name)
+PYDOC
 }
 
 # Conservative path → family map. Over-selects rather than under-selects.
-# Never expands to the complete suite.
+# Unknown paths fail closed rather than substituting --all.
 families_for_changed_path() {
   local path=$1 fixture_ref
   case "$path" in
     tests/fm-backend-herdr-eventwait.test.py)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
+      ;;
+    tests/fm-teardown-browsers.test.sh)
+      printf '%s\n' __script__:fm-teardown-browsers.test.sh
       ;;
     tests/fm-teardown-*.sh)
       # Split teardown test files are sourced by fm-teardown.test.sh; changes
@@ -1832,11 +2144,39 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-crew-state.test.sh"
       printf '%s\n' "__script__:fm-crew-state-ci.test.sh"
       ;;
+    tests/fm-watch-triage-lib.sh)
+      # Shared cases sourced by both watch-triage test files, which each run
+      # part of them; a change to it must re-run both.
+      printf '%s\n' "__script__:fm-watch-triage.test.sh"
+      printf '%s\n' "__script__:fm-watch-triage-waits.test.sh"
+      ;;
+    tests/fm-remote-secondmate-lifecycle-lib.sh)
+      # Shared fixture sourced by the three remote lifecycle test files, which
+      # each run one stretch of the lifecycle; a change to it must re-run all.
+      printf '%s\n' "__script__:fm-remote-secondmate-lifecycle-e2e.test.sh"
+      printf '%s\n' "__script__:fm-remote-secondmate-lifecycle-inherit-e2e.test.sh"
+      printf '%s\n' "__script__:fm-remote-secondmate-lifecycle-supervision-e2e.test.sh"
+      ;;
     tests/fm-hold-diagnostics-lib.sh)
-      # Shared diagnostics harness sourced by the lifecycle test and its own
-      # behavioral test; a change to it must re-run both.
+      # Shared diagnostics harness sourced by the captain-hold suites and its own
+      # behavioral test; a change to it must re-run all of them.
       printf '%s\n' "__script__:fm-hold-diagnostics.test.sh"
       printf '%s\n' "__script__:fm-captain-hold-lifecycle.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-reconcile.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-merge-teardown.test.sh"
+      ;;
+    tests/fm-captain-hold-lib.sh)
+      # Shared harness sourced by every captain-hold suite; a change to it must
+      # re-run each of them.
+      printf '%s\n' "__script__:fm-captain-hold-lifecycle.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-reconcile.test.sh"
+      printf '%s\n' "__script__:fm-captain-hold-merge-teardown.test.sh"
+      ;;
+    tests/fm-supervision-host-lib.sh)
+      # Shared harness sourced by both supervision-host suites; a change to it
+      # must re-run each of them.
+      printf '%s\n' "__script__:fm-supervision-host.test.sh"
+      printf '%s\n' "__script__:fm-supervision-host-2.test.sh"
       ;;
     tests/*.test.sh)
       # A single test file change selects only that script via basename family
@@ -1896,13 +2236,26 @@ families_for_changed_path() {
       printf '%s\n' real-herdr-gated
       printf '%s\n' pure-contract-unit
       ;;
-    bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
-    bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
+    bin/fm-watch-checkpoint.sh)
+      printf '%s\n' __script__:fm-watch-checkpoint.test.sh
+      printf '%s\n' __script__:fm-arm-pretool-check.test.sh
+      ;;
+    bin/fm-context-usage.sh)
+      printf '%s\n' __script__:fm-watch-triage.test.sh
+      printf '%s\n' __script__:fm-watch-triage-waits.test.sh
+      ;;
+    bin/fm-watch.sh|bin/fm-classify-lib.sh)
+      # Shared loop/classification changes retain broad watcher coverage, plus
+      # readers outside the watcher family (for example crew-state).
       printf '%s\n' watcher-wake-lock
+      reference_or_broad_fallback "$path"
+      ;;
+    bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
+    bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
+      reference_or_broad_fallback "$path"
       ;;
     bin/fm-afk*)
-      printf '%s\n' afk
-      printf '%s\n' real-herdr-gated
+      reference_or_broad_fallback "$path"
       ;;
     bin/fm-supervision-host.sh|bin/fm-supervision-engine-lib.sh|\
     bin/fm-branch-report.sh|bin/fm-branch-dispatch.mjs)
@@ -1961,10 +2314,8 @@ families_for_changed_path() {
     .pi/extensions/fm-branch-supervision.ts|.pi/extensions/lib/fm-async-exec.ts|\
     .pi/extensions/lib/fm-branch-dispatch.ts|.pi/extensions/lib/fm-native-contract.ts)
       # The portable suites that actually load these files, named one by one.
-      # Left unmapped, a Pi extension library resolves through the reference
-      # scan, which widens to each referencing suite's WHOLE family - and
-      # these suites sit in four different families, so that pulls in dozens
-      # of suites with nothing to do with Pi.
+      # Explicit owners also capture dynamically composed extension imports;
+      # their execution-family labels do not widen the portable selection.
       printf '%s\n' __script__:fm-pi-branch-extension.test.sh
       printf '%s\n' __script__:fm-pi-watch-extension.test.sh
       printf '%s\n' __script__:fm-calm-pi-extension.test.sh
@@ -1972,6 +2323,7 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-wake-queue.test.sh
       printf '%s\n' __script__:fm-pi-primary-types.test.sh
       printf '%s\n' __script__:fm-supervision-host.test.sh
+      printf '%s\n' __script__:fm-supervision-host-2.test.sh
       # Whether an arriving outcome still lets the captain type is a fact only
       # a real Pi TUI can answer, so the live guards are selected too.
       printf '%s\n' live-harness-optin
@@ -2006,6 +2358,7 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-pi-windows-shell-invocation.test.sh
       printf '%s\n' session-bootstrap
       printf '%s\n' live-harness-optin
+      scripts_for_test_reference "$path" || true
       ;;
     bin/fm-extension.mjs|bin/fm-extension.sh|docs/examples/process-event-extension/*)
       printf '%s\n' __script__:fm-extension-binding.test.sh
@@ -2015,6 +2368,9 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-procevent.test.sh
       printf '%s\n' __script__:fm-procevent-when.test.sh
       printf '%s\n' __script__:fm-remote-reply.test.sh
+      ;;
+    bin/fm-heavy-admission-lib.sh)
+      printf '%s\n' __script__:fm-heavy-admission.test.sh __script__:fm-test-run.test.sh __script__:fm-lint.test.sh
       ;;
     bin/fm-timeout-lib.sh)
       # The shared hard bound: session start's runtime bound, the fleet/bearings
@@ -2086,42 +2442,69 @@ families_for_changed_path() {
     bin/fm-vendor-auth-probe.sh|\
     bin/fm-primary-scope-lib.sh|bin/fm-project-mode.sh|bin/fm-forge-detect.sh|bin/fm-promote.sh|\
     bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/*pretool*)
-      printf '%s\n' pure-contract-unit
+      reference_or_broad_fallback "$path"
       ;;
     .agents/skills/quota-array-dispatch/SKILL.md)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' live-harness-optin
+      printf '%s\n' __script__:fm-quota-array-dispatch-live-e2e.test.sh
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      scripts_for_document_readers "$path"
       ;;
     .agents/skills/harness-adapters/SKILL.md|.agents/skills/harness-adapters/references/*)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' live-harness-optin
+      printf '%s\n' __script__:fm-harness-adapter-references.test.sh
+      printf '%s\n' __script__:fm-harness-adapter-instructions-live-e2e.test.sh
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
       ;;
     .agents/skills/*/agents/*.yaml)
-      printf '%s\n' pure-contract-unit
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
       ;;
     .agents/skills/*/SKILL.md|.agents/skills/*/references/*)
-      printf '%s\n' pure-contract-unit
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      scripts_for_document_readers "$path"
+      case "$path" in
+        .agents/skills/perspective-catalog/*)
+          printf '%s\n' __script__:fm-brief.test.sh ;;
+        .agents/skills/stuck-crewmate-recovery/*|.agents/skills/ask-user-authority/*|\
+        .agents/skills/scout-completion/*|.agents/skills/captain-hold-lifecycle/*)
+          printf '%s\n' __script__:fm-branch-supervision.test.sh ;;
+      esac
       ;;
-    .github/workflows/ci.yml|.no-mistakes.yaml)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' real-herdr-gated
+    .github/workflows/test-compute.yml|.github/workflows/test-compute.gitlab.template)
+      printf '%s\n' "__script__:fm-test-compute.test.sh"
       ;;
-    docs/fm-test-portable-shards.md|docs/fm-test-isolation-proof.md|\
-    docs/fm-test-isolation-proof.json)
-      printf '%s\n' pure-contract-unit
+    .no-mistakes.yaml)
+      printf '%s\n' __script__:fm-lint-nomistakes-config.test.sh
+      printf '%s\n' __script__:fm-lint.test.sh
+      ;;
+    .gitattributes)
+      printf '%s\n' __script__:fm-test-run.test.sh
+      ;;
+    docs/supervision-protocols/*)
+      printf '%s\n' __script__:fm-supervision-instructions.test.sh
+      printf '%s\n' __script__:fm-session-start.test.sh
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      scripts_for_document_readers "$path"
       ;;
     AGENTS.md)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' "__script__:fm-agentsmd-size.test.sh"
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      printf '%s\n' __script__:fm-agentsmd-size.test.sh
+      scripts_for_document_readers "$path"
       ;;
-    .github/*|.gitattributes|.tasks.toml|CLAUDE.md|CONTRIBUTING.md|\
-    docs/configuration.md|docs/supervision-protocols/*)
-      printf '%s\n' pure-contract-unit
+    CLAUDE.md|CONTRIBUTING.md|docs/*)
+      printf '%s\n' __script__:fm-documentation-audiences.test.sh
+      scripts_for_document_readers "$path"
+      ;;
+    .tasks.toml)
+      printf '%s\n' __script__:fm-tasks-axi.test.sh
+      scripts_for_document_readers "$path"
+      ;;
+    .github/*)
+      printf '%s\n' __script__:fm-lint-workflows.test.sh
+      scripts_for_document_readers "$path"
       ;;
     tests/git-config-helpers.sh)
-      # The reference scan is not transitive, so match the two helpers that
-      # source this one as well: most suites inherit it only through them.
-      families_for_test_reference git-config-helpers.sh lib.sh herdr-test-safety.sh \
+      # The canonical helpers source this one, even in minimal fixture repos
+      # that replace their contents. Select their readers per script.
+      scripts_for_test_reference git-config-helpers.sh lib.sh herdr-test-safety.sh \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/fixtures/*/*)
@@ -2132,7 +2515,7 @@ families_for_changed_path() {
       fixture_ref=${path#tests/fixtures/}
       fixture_ref=${fixture_ref%%/*}
       if [ -d "tests/fixtures/$fixture_ref" ]; then
-        families_for_test_reference "fixtures/$fixture_ref" \
+        scripts_for_test_reference "fixtures/$fixture_ref" \
           || printf '%s\n' "__unmapped__:$path"
       fi
       ;;
@@ -2142,23 +2525,25 @@ families_for_changed_path() {
       # tests/*-fixture.sh would otherwise swallow a nested
       # tests/fixtures/<dir>/<name>-fixture.sh and scan for its basename
       # instead of the fixture directory its readers actually name.
-      families_for_test_reference "$(basename "$path")" \
+      scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/*-part.sh)
       # Split-test blocks are sourced or run by their wrapper suites. Resolve
       # consumers from their references so adding a new part needs no map edit.
-      scripts_for_test_reference "$(basename "$path")" \
+      scripts_for_path_reference "$path" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
+    tests/fm-test-run-*-lib.sh)
+      # The runner contract suite's split bodies are sourced by its wrapper, so
+      # a change to a body re-runs that wrapper (found through the same walk).
+      scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     bin/*)
-      # A deleted script has no consuming suite left to select, the same rule
-      # the fixture case above applies. Refusing on its absent mapping would
-      # make every retirement branch unable to select its changed tests.
-      if [ -e "$path" ]; then
-        families_for_unmapped_bin "$path" \
-          || printf '%s\n' "__unmapped__:$path"
-      fi
+      # Keep readers of a removed source; an unconsumed retirement is empty.
+      # An existing tracked source falls back to the broad mapping.
+      reference_or_broad_fallback "$path"
       ;;
     tests/fm-lint-test-size-allowlist.txt)
       # bin/fm-lint-test-size.sh's grandfathering data, read by its own
@@ -2173,13 +2558,13 @@ families_for_changed_path() {
       ;;
     tests/*.py)
       # A python repro/driver is selected by the suites that name it.
-      families_for_test_reference "$(basename "$path")" \
+      scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;
-    README.md|VISION.md|LICENSE|assets/*|docs/*|.gitignore)
+    README.md|VISION.md|LICENSE|assets/*|.gitignore)
       ;;
     *-edited)
       # Record-only snapshot of an already-deployed, already-smoke-tested
@@ -2188,74 +2573,92 @@ families_for_changed_path() {
       ;;
     *)
       if [ -e "$path" ]; then
-        families_for_test_reference "$path" \
+        scripts_for_test_reference "$path" \
           || printf '%s\n' "__unmapped__:$path"
       else
         # A retired source path with no remaining test consumer cannot select
         # a runnable suite. Known source paths above retain their mappings,
         # and a still-referenced removal is found by the same reference scan.
-        families_for_test_reference "$path" || true
+        scripts_for_test_reference "$path" || true
       fi
       ;;
   esac
 }
 
 select_changed() {
-  local base=$1 path entry fam script_name s
-  local -a wanted_families=()
-  local -a wanted_scripts=()
-
+  local base=$1 path entry target s resolved_selection need_references=0 missing
+  local -a changed_paths=() selected_targets=()
   if ! git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
     die "changed-file base ref not found: $base (pass --base <ref>)"
+  fi
+  while IFS= read -r path; do changed_paths+=("$path"); done < <(
+    { git -C "$ROOT" diff --name-only "${base}...HEAD" 2>/dev/null
+      git -C "$ROOT" diff --name-only HEAD 2>/dev/null
+      git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null; } | LC_ALL=C sort -u)
+  # Documentation mappings do not need the executable graph.
+  REFERENCE_INDEX=
+  need_references=0
+  for path in "${changed_paths[@]+"${changed_paths[@]}"}"; do
+    case "$path" in bin/*|tests/*) need_references=1; break ;; esac
+  done
+  if [ "$need_references" -eq 1 ]; then
+    REFERENCE_INDEX=$(build_reference_index "${changed_paths[@]+"${changed_paths[@]}"}") \
+      || die "could not build changed-test reference index"
   fi
 
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     while IFS= read -r entry; do
       [ -n "$entry" ] || continue
-      case "$entry" in
-        __script__:*)
-          script_name=${entry#__script__:}
-          wanted_scripts+=("$script_name")
-          ;;
+      target=$entry
+      case "$target" in
         __unmapped__:*)
-          die "no changed-test mapping for source path: ${entry#__unmapped__:}"
+          # An unconsumed retirement selects nothing; an existing source with
+          # no mapping or reader still fails closed.
+          missing=${target#__unmapped__:}
+          [ ! -e "$missing" ] || die "no changed-test mapping for source path: $missing"
           ;;
-        *)
-          wanted_families+=("$entry")
-          ;;
+        *) selected_targets+=("$target") ;;
       esac
-    done < <(families_for_changed_path "$path")
-  done < <(git -C "$ROOT" diff --name-only "${base}...HEAD" 2>/dev/null; \
-           git -C "$ROOT" diff --name-only HEAD 2>/dev/null; \
-           git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null)
+    done < <(
+      families_for_changed_path "$path"
+      case "$path" in bin/*|tests/*) scripts_for_path_reference "$path" || true ;; esac
+    )
+  done < <(printf '%s\n' "${changed_paths[@]+"${changed_paths[@]}"}")
 
-  # Dedup families
-  local f seen_f
-  local -a unique_families=()
-  for f in "${wanted_families[@]+"${wanted_families[@]}"}"; do
-    seen_f=0
-    for u in "${unique_families[@]+"${unique_families[@]}"}"; do
-      [ "$u" = "$f" ] && { seen_f=1; break; }
-    done
-    [ "$seen_f" -eq 0 ] && unique_families+=("$f")
-  done
+  # Resolve each family once, not once per path/consumer that selected it.
+  resolved_selection=$(python3 - 3< <(printf '%s\n' "${selected_targets[@]+"${selected_targets[@]}"}") \
+    4< <(while IFS= read -r s; do
+      printf '%s\t%s\n' "$s" "$(family_for_basename "${s##*/}")"
+    done < <(all_repo_tests)) <<'PYSELECT'
+from collections import defaultdict
+import os
 
-  for f in "${unique_families[@]+"${unique_families[@]}"}"; do
-    while IFS= read -r s; do
-      [ -n "$s" ] || continue
-      if [ "$(family_for_basename "$(basename "$s")")" = "$f" ]; then
-        add_script "$s"
-      fi
-    done < <(all_repo_tests)
-  done
-
-  for script_name in "${wanted_scripts[@]+"${wanted_scripts[@]}"}"; do
-    if [ -f "tests/$script_name" ]; then
-      add_script "tests/$script_name"
-    fi
-  done
-
+families = defaultdict(list)
+scripts = set()
+with os.fdopen(4) as inventory:
+    for row in inventory:
+        script, family = row.rstrip("\n").split("\t")
+        families[family].append(script)
+        scripts.add(script)
+chosen = {}
+with os.fdopen(3) as targets:
+    for target in targets:
+        target = target.strip()
+        if not target:
+            continue
+        selected = ["tests/" + target[len("__script__:"):]] if target.startswith("__script__:") else families[target]
+        for script in selected:
+            if script in scripts:
+                chosen.setdefault(script, None)
+for script in chosen:
+    print(script)
+PYSELECT
+  ) || die "could not resolve changed-test selection"
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    add_script "$s"
+  done <<<"$resolved_selection"
   if [ "${#SCRIPTS[@]}" -eq 0 ]; then
     log "no tests selected for changes vs $base (map is conservative; use --all for the complete suite)"
   fi
@@ -2739,6 +3142,10 @@ if [ "${MODE:-}" = "hint-drift" ]; then
   exit $?
 fi
 
+case "$AUTO_JOBS_MAX" in
+  [1-8]) ;;
+  *) die "FM_TEST_RUN_AUTO_JOBS_MAX must be an integer from 1 to $JOBS_MAX" ;;
+esac
 case "$JOBS" in
   ''|*[!0-9]*) die "--jobs must be a positive integer" ;;
 esac
@@ -2764,6 +3171,18 @@ esac
 # who named no selection mode is told that rather than this.
 if [ -n "${MODE:-}" ] && [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
   refuse_primary_checkout_for_task
+fi
+
+# Inspection modes and explicit script paths do not take the heavy host slot.
+# Admit before the environment probe can launch Chrome, on the execution host.
+if [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
+  case "$MODE" in
+    all|family|changed|lane|proven-isolated)
+      # shellcheck source=bin/fm-heavy-admission-lib.sh
+      . "$ROOT/bin/fm-heavy-admission-lib.sh"
+      fm_heavy_admit "tests:$MODE" || exit $?
+      ;;
+  esac
 fi
 
 # Emit the actual runner shell's bounded environment snapshot once, before
@@ -2915,12 +3334,15 @@ done
 # serial chain of separate runs.
 # The curated selections stay untouched: --lane composes CI shards whose serial
 # lane must stay strictly serial, --family is what the required Herdr lane runs,
-# and --all is a deliberate complete regression.
+# and --all is a deliberate complete regression. An environment-supplied
+# automatic ceiling also opts --all/--family into the same phased scheduler.
 AUTO_CONCURRENCY=0
 AUTO_CHANGED_RETRY_ELIGIBLE=0
 HOST_LOAD5=0
 HOST_CPUS=$(cpu_count)
-if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq 0 ]; then
+if { [ "$MODE" = changed ] || [ "$MODE" = scripts ] ||
+     { [ -n "${FM_TEST_RUN_AUTO_JOBS_MAX:-}" ] && { [ "$MODE" = all ] || [ "$MODE" = family ]; }; }; } &&
+   [ "$JOBS_EXPLICIT" -eq 0 ]; then
   AUTO_CHANGED_RETRY_ELIGIBLE=1
   HOST_LOAD5=$(load5)
   if [ "$MODE" = changed ] && [ "${#SCRIPTS[@]}" -gt 0 ] && [ "$PER_SCRIPT_TIMEOUT_SECS" -eq 0 ]; then
@@ -2934,7 +3356,7 @@ if { [ "$MODE" = changed ] || [ "$MODE" = scripts ]; } && [ "$JOBS_EXPLICIT" -eq
   done
   if [ "$auto_admissible" -gt 1 ]; then
     JOBS=$HOST_CPUS
-    [ "$JOBS" -le 4 ] || JOBS=4
+    [ "$JOBS" -le "$AUTO_JOBS_MAX" ] || JOBS=$AUTO_JOBS_MAX
     [ "$JOBS" -ge 1 ] || JOBS=1
     JOBS=$(load_scaled_jobs "$JOBS" "$HOST_LOAD5" "$HOST_CPUS")
     [ "$JOBS" -eq 1 ] || AUTO_CONCURRENCY=1
@@ -3019,7 +3441,11 @@ if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
   . "$ROOT/bin/fm-timeout-lib.sh"
 fi
 
-RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX")
+RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run.XXXXXX") || die "could not create run temp dir"
+RUN_TMP=$(cd -P -- "$RUN_TMP" && pwd -P) || die "could not resolve run temp dir"
+# Publishes this run root to a later run's stale sweep (tests/lib.sh
+# fm_test_run_roots), so the marker must survive until the run root is removed.
+: > "$RUN_TMP/.fm-test-run-root" || die "could not mark run temp dir"
 RECORDS="$RUN_TMP/records.tsv"
 FAMILIES_TSV="$RUN_TMP/families.tsv"
 : >"$RECORDS"
@@ -3027,10 +3453,43 @@ declare -a WORKER_PIDS=()
 declare -a WORKER_IDX=()
 declare -a WORKER_SCRIPTS=()
 
-# Invoked indirectly by the EXIT trap below.
+# Fixture homes a suite killed past the TERM grace can leave a detached
+# primary-watchdog loop under. Each script's TMPDIR is inside this run root, so
+# a run-scoped reap reaches every script without touching a sibling run's loops.
+# shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
+run_fixture_watchdog_pids() {
+  local pid env_home
+  for pid in $(pgrep -f 'fm-primary-watchdog\.sh' 2>/dev/null || true); do
+    [ "$pid" != "$$" ] || continue
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'fm-primary-watchdog\.sh run' || continue
+    env_home=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^FM_HOME=//p' | head -n 1)
+    case "$env_home" in "$RUN_TMP"|"$RUN_TMP"/*) printf '%s\n' "$pid" ;; esac
+  done
+}
+
+# shellcheck disable=SC2329 # Reached from the EXIT cleanup trap.
+reap_run_fixture_watchdogs() {
+  local pids pid i=0
+  pids=$(run_fixture_watchdog_pids)
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do kill -TERM "$pid" 2>/dev/null || true; done
+  while [ "$i" -lt 20 ]; do
+    sleep 0.1
+    pids=$(run_fixture_watchdog_pids)
+    [ -n "$pids" ] || return 0
+    i=$((i + 1))
+  done
+  for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
+}
+
+# Invoked indirectly by the EXIT trap below. Suites can leave read-only
+# directories under the run root, so restore owner write first, and never let a
+# cleanup failure under set -e replace the suite's aggregate exit status.
 # shellcheck disable=SC2329
 cleanup_run() {
-  rm -rf "$RUN_TMP"
+  reap_run_fixture_watchdogs
+  chmod -R u+w "$RUN_TMP" 2>/dev/null || true
+  rm -rf "$RUN_TMP" 2>/dev/null || true
 }
 
 trap cleanup_run EXIT
@@ -3182,7 +3641,7 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   : "$id"
   if [ -n "$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-watch-triage.test.sh ]; then
     bound=$WATCH_TRIAGE_PER_SCRIPT_TIMEOUT_SECS
-  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [ "$(basename "$script")" = fm-captain-hold-lifecycle.test.sh ]; then
+  elif [ -n "$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS" ] && [[ "$(basename "$script")" == fm-captain-hold-*.test.sh ]]; then
     bound=$CAPTAIN_HOLD_PER_SCRIPT_TIMEOUT_SECS
   fi
   set +e
@@ -3214,11 +3673,16 @@ run_script_bounded() {  # <script> <out> <stream> <id>
 
 run_one_serial() {
   local script=$1
-  local base family expected out begin_iso begin_ms end_ms end_iso duration rc
+  local base family expected out begin_iso begin_ms end_ms end_iso duration rc work
   base=$(basename "$script")
   family=$(family_for_basename "$base")
   expected=$(expected_gate_skip_for_family "$family")
   out="$RUN_TMP/out.$TOTAL"
+  work="$RUN_TMP/s$TOTAL"
+  # Run-scoped TMPDIR like the concurrent worker's, so cleanup_run's watchdog
+  # reap reaches a serial script killed past its TERM grace.
+  mkdir -p "$work/tmp"
+  chmod 0700 "$work" "$work/tmp" || die "could not chmod 0700 serial root $work"
   begin_iso=$(now_iso)
   begin_ms=$(now_ms)
 
@@ -3227,7 +3691,13 @@ run_one_serial() {
 
   set +e
   # Stream live output while retaining a copy for gate-skip detection.
-  run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  # shellcheck disable=SC2030 # TMPDIR/TMP scoped deliberately to this script subshell.
+  (
+    export TMPDIR="$work/tmp"
+    export TMP="$work/tmp"
+    export FM_TEST_RUN_ROOT="$RUN_TMP"
+    run_script_bounded "$script" "$out" 1 "s$TOTAL"
+  )
   rc=$?
   set -e
   : "${rc:=1}"
@@ -3336,7 +3806,12 @@ else
       done
       continue
     fi
-    while [ "$active_workers" -ge "$JOBS" ]; do
+    phase_jobs=$JOBS
+    if ! is_proven_isolated_script "$script"; then
+      family_jobs_max=$(concurrent_safe_family_jobs_max "$(family_for_basename "$(basename "$script")")")
+      [ "$phase_jobs" -le "$family_jobs_max" ] || phase_jobs=$family_jobs_max
+    fi
+    while [ "$active_workers" -ge "$phase_jobs" ]; do
       wait_one_completed_job_worker
     done
     worker_n=$((worker_n + 1))
@@ -3348,11 +3823,13 @@ else
     expected=$(expected_gate_skip_for_family "$family")
     printf 'FM_TEST_BEGIN %s %s family=%s expected_gate_skip=%s\n' \
       "$(now_iso)" "$script" "$family" "$expected"
+    # shellcheck disable=SC2031 # TMPDIR/TMP scoped deliberately to this worker subshell.
     (
       trap - EXIT HUP INT TERM
       set +e
       export TMPDIR="$work/tmp"
       export TMP="$work/tmp"
+      export FM_TEST_RUN_ROOT="$RUN_TMP"
       unset FM_HOME FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_ROOT_OVERRIDE \
         FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE FM_BACKEND 2>/dev/null || true
       cd "$ROOT" || exit 1

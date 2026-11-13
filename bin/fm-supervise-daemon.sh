@@ -445,7 +445,7 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     return
   fi
   declared=$(status_declared_wait_line "$state/$task.status")
-  if [ -n "$declared" ] && status_is_paused_or_captain_held "$declared" "$(fm_meta_get "$state/$task.meta" worktree)"; then
+  if [ -n "$declared" ] && status_is_paused_or_captain_held "$declared" "$(fm_meta_get "$state/$task.meta" worktree)" "$(fm_meta_get "$state/$task.meta" account)"; then
     # A DECLARED external-wait pause or a verified captain-held transfer
     # (fm-classify-lib.sh owns which declarations qualify): an idle pane is
     # EXPECTED, so this is not a wedge. The caller records a pause marker (long
@@ -601,7 +601,7 @@ reconcile_pause_tracking() {  # <window> <state> <last-status-line>
   key=$(_stale_key "$task")
   marker="$state/.subsuper-paused-$key"
   watcher_key=$(_stale_key "$win")
-  if status_is_paused_or_captain_held "$last" "$(fm_meta_get "$state/$task.meta" worktree)"; then
+  if status_is_paused_or_captain_held "$last" "$(fm_meta_get "$state/$task.meta" worktree)" "$(fm_meta_get "$state/$task.meta" account)"; then
     stale_marker_remove "$win" "$state"
     pause_marker_record "$win" "$state"
   elif [ -e "$marker" ] || [ -e "$state/.paused-$watcher_key" ]; then
@@ -619,7 +619,7 @@ migrate_watcher_pause_markers() {  # <state>
     key=$(_stale_key "$task")
     watcher_key=$(_stale_key "$win")
     last=$(status_declared_wait_line "$state/$task.status")
-    if status_is_paused_or_captain_held "$last" "$(fm_meta_get "$meta" worktree)" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$watcher_key" ]; then
+    if status_is_paused_or_captain_held "$last" "$(fm_meta_get "$meta" worktree)" "$(fm_meta_get "$meta" account)" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$watcher_key" ]; then
       reconcile_pause_tracking "$win" "$state" "$last"
     fi
   done
@@ -1257,7 +1257,7 @@ housekeeping() {  # <state>
     fi
     task=$(window_to_task "$win" "$state")
     last=$(status_declared_wait_line "$state/$task.status")
-    if [ -n "$last" ] && status_is_paused_or_captain_held "$last" "$(fm_meta_get "$state/$task.meta" worktree)"; then
+    if [ -n "$last" ] && status_is_paused_or_captain_held "$last" "$(fm_meta_get "$state/$task.meta" worktree)" "$(fm_meta_get "$state/$task.meta" account)"; then
       reconcile_pause_tracking "$win" "$state" "$last"
       continue
     fi
@@ -1306,7 +1306,7 @@ housekeeping() {  # <state>
     fi
     task=$(window_to_task "$win" "$state")
     last=$(status_declared_wait_line "$state/$task.status")
-    if [ -z "$last" ] || ! status_is_paused_or_captain_held "$last" "$(fm_meta_get "$state/$task.meta" worktree)"; then
+    if [ -z "$last" ] || ! status_is_paused_or_captain_held "$last" "$(fm_meta_get "$state/$task.meta" worktree)" "$(fm_meta_get "$state/$task.meta" account)"; then
       reconcile_pause_tracking "$win" "$state" "$last"
       continue
     fi
@@ -1642,6 +1642,7 @@ handle_wake() {  # <reason> <state>
                      idle\ *s,\ possible\ wedge,\ escalation\ *)
                        last=$(status_declared_wait_line "$state/$task.status")
                        status_is_paused_or_captain_held "$last" "$(fm_meta_get "$state/$task.meta" worktree)" \
+                         "$(fm_meta_get "$state/$task.meta" account)" \
                          || { [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/wedge-defer-worker-wait" ] \
                                 && status_worker_wait_verb "$state/$task.status" >/dev/null; } \
                          || decision="escalate|${reason#stale: }"

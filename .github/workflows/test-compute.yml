@@ -1,0 +1,84 @@
+name: Hosted Test compute
+run-name: fm-test-compute-${{ inputs.request_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot:
+        description: Bounded public-source bundle and exact partition plan
+        required: true
+        type: string
+      request_id:
+        description: Unique caller correlation
+        required: true
+        type: string
+      partitions:
+        description: Exact partition keys to execute
+        required: true
+        type: string
+      runner:
+        description: Runner label; a self-hosted label is sent only when hosted runners are saturated
+        required: false
+        type: choice
+        default: ubuntu-latest
+        options:
+          - ubuntu-latest
+          - fm-pc02
+permissions:
+  contents: read
+jobs:
+  partition:
+    name: Compute ${{ matrix.partition }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: ${{ fromJSON(inputs.partitions) }}
+    env:
+      FM_TEST_COMPUTE_DISABLE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore exact committed snapshot
+        env:
+          SNAPSHOT: ${{ inputs.snapshot }}
+        run: |
+          set -eu
+          umask 077
+          printf '%s' "$SNAPSHOT" > "$RUNNER_TEMP/snapshot.json"
+          bin/fm-test-compute.sh restore "$RUNNER_TEMP/snapshot.json"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install existing CI prerequisites
+        env:
+          RUNNER_LABEL: ${{ inputs.runner }}
+        run: |
+          set -eu
+          if [ "$RUNNER_LABEL" != ubuntu-latest ]; then
+            # No sudo here, and the host's global npm tools stay untouched.
+            export PATH="$HOME/.local/bin:$PATH" npm_config_prefix="$RUNNER_TEMP/npm"
+            printf '%s\n' "$HOME/.local/bin" "$npm_config_prefix/bin" >> "$GITHUB_PATH"
+            echo "npm_config_prefix=$npm_config_prefix" >> "$GITHUB_ENV"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y tmux jq ruby
+          fi
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          npm install -g tasks-axi @earendil-works/pi-coding-agent@1.2.0
+      - name: Execute canonical partition and record receipt
+        env:
+          PARTITION: ${{ matrix.partition }}
+        run: bin/fm-test-compute.sh worker "$PARTITION" "$RUNNER_TEMP/result" "$RUNNER_TEMP/snapshot.json"
+      - name: Upload evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compute-${{ matrix.partition }}
+          path: ${{ runner.temp }}/result/
+          if-no-files-found: warn
+          retention-days: 1

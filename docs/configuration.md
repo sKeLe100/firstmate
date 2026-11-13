@@ -130,6 +130,8 @@ config/supervision-branch-effort  Pi supervision-branch model and effort pins; N
 config/startup-memory-budget  per-home startup memory budget (default 7500 tokens); inherited; see "Startup memory budget (config/startup-memory-budget)"
 config/stow-pass-horizon  optional presence flag opting into /stow pass-count decay horizon; NOT inherited; see "Stow pass horizon (config/stow-pass-horizon)"
 config/context-thresholds  session-context warn/restart token-band thresholds; inherited; see "Session context thresholds (config/context-thresholds)"
+config/auto-stow  presence flag opting a secondmate home into the restart-band auto-stow wake; NOT inherited; see "Session context thresholds (config/context-thresholds)"
+config/auto-stow-off  presence flag disabling the restart-band auto-stow wake for any home; NOT inherited; see "Session context thresholds (config/context-thresholds)"
 config/codex-context-thresholds  Codex-side session-context thresholds (separate defaults); NOT inherited; see "Codex context thresholds (config/codex-context-thresholds)"
 config/working-hours  captain attention-window schedule for proactive contact; NOT inherited; see "Captain attention windows (config/working-hours)"
 config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; inherited; see "Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)"
@@ -810,39 +812,76 @@ The flag is a home-local supervision-noise preference and is not inherited by se
 
 ## Gate defaults (.no-mistakes.yaml)
 
-The tracked [`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo: true` and runs the canonical [shell/workflow lint](../bin/fm-lint.sh) followed by the [Pi production-consumer typecheck](../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
+The tracked [`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo: true` and routes the canonical [shell/workflow lint](../bin/fm-lint.sh) through hosted compute, then PC02, with PC01's changed-file lint as the last resort, followed by the [Pi production-consumer typecheck](../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
 Storing evidence in the repo publishes each run's test artifacts to the orphan `no-mistakes/evidence` branch and links them from the PR body, instead of keeping them on local disk under the no-mistakes home.
 
 That branch shares no history with code branches, so evidence never enters a pushed feature branch or the default branch; the worktree's `.no-mistakes/` stays local and CI rejects tracked entries under that path.
-The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md#no-mistakes-test-configuration) owns why `commands.test` stays absent and targeted validation belongs to the evidence path.
+The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md#no-mistakes-test-configuration) owns the pinned `commands.test` baseline and the intent-targeted evidence path.
 
 `commands.test` executes code, so no-mistakes honors it only from the default-branch copy of `.no-mistakes.yaml`; a pushed branch cannot change what the gate runs.
 `bin/fm-lint.sh` guards this canonical `commands.test` value on every no-mistakes lint run and fails loudly if the tracked file drifts from it, so a per-branch workaround can no longer land silently as standing policy; the check's exact mechanics are owned by that script's own header comment.
 It raises `test_agent_timeout` to `60m` from the 30m default because that pinned invocation can outrun 30m under host load; the file's own comment owns that rationale.
-It also sets `review.path_instructions` for `bin/*.sh` and `tests/*.test.sh`, which point the Review step at the maintainability rules owned by the [firstmate coding guidelines skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md) rather than restating them; the file's own comment owns why those entries stay short pointers.
+It also sets `review.path_instructions` for `bin/*.sh`, `tests/*.test.sh`, and `AGENTS.md`, which point the Review step at the maintainability rules owned by the [firstmate coding guidelines skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md) rather than restating them, and for the bar-lowering guard globs `tests/*`, `tests/*/*`, `tests/*/*/*`, `bin/*`, `bin/backends/*`, `.github/workflows/*`, and `.no-mistakes.yaml`, which state the rule text directly because no skill owns it; the file's own comment owns why the pointer entries stay short.
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
 
-## PC02 test offload
+## Hosted Test compute
+
+[`bin/fm-test-compute.sh`](../bin/fm-test-compute.sh) routes the pinned no-mistakes Test baseline and the canonical lint partitions through hosted compute, falling back to the existing PC02/PC01 admission path.
+This delivery accepts only public firstmate repositories on github.com; private repositories, other projects, dirty or oversized snapshots, and non-baseline selections keep the existing offload behavior.
+The caller needs `gh-axi`, an authenticated GitHub identity with Actions write access, and network access to the source repository.
+Mechanics: see the header of `bin/fm-test-compute.sh` and its tests under `tests/`, which pin the local-only script exclusions and the local completion path (`tests/fm-test-compute.test.sh`).
+The GitHub hosted round trip was verified end to end on 2026-11-04 UTC: one portable partition dispatched through the Test caller executed on a hosted runner and its matching receipts returned to the caller ([run 41759393085](https://github.com/sKeLe100/firstmate/actions/runs/41759393085)).
+
+### GitLab admission
+
+GitLab admission uses the existing dedicated `sean.morden1993/firstmate-ci` project, overridable with `FM_TEST_COMPUTE_GITLAB_PROJECT`; it never creates an account or a project.
+The relay must have GitLab shared runners enabled, identity verification completed where required, and free compute minutes available.
+Set the dedicated relay's `ci_pipeline_variables_minimum_override_role` to `maintainer` so its authenticated maintainer can submit the snapshot variables.
+For an existing nonempty relay, install the [relay template](../.github/workflows/test-compute.gitlab.template) as `.gitlab-ci.yml` on its `firstmate-compute` branch before using it; the router never overwrites existing configuration.
+
+### Minute accounting
+
+Standard GitHub-hosted runners in public repositories have free, unlimited execution minutes; this route requests no larger paid runners.
+GitHub Free private repositories share 2,000 included minutes per account per month, with job minutes summed across partitions rather than measured as one workflow's wall time.
+For example, twelve Linux Test partition jobs taking ten minutes each consume approximately 120 minutes before per-job rounding, not ten minutes; the separate lint mode adds one job per canonical lint partition.
+Reruns and fallback attempts also consume minutes already spent; moving to another tier does not refund them.
+GitLab Free normally includes 400 compute minutes per top-level namespace per month, with usage equal to each job's duration multiplied by its runner cost factor.
+The relay requests the standard small Linux runner, whose factor is 1.
+These are separate allowances and do not pool across providers.
+This delivery consumes no GitHub private-repository minutes because private GitHub source is deliberately rejected.
+The GitLab relay consumes its own namespace allowance even when the source is public.
+See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions) and [GitLab compute minutes](https://docs.gitlab.com/ci/pipelines/compute_minutes/) for current accounting and allowance rules.
+
+## PC02 test and lint offload
 
 Every executing `bin/fm-test-run.sh` invocation prints one `FM_TEST_ENV_RECORD` before starting tests, from the shell that will run them.
-For an offloaded run this means the record comes from the runner on PC02, with PC02's inherited `PATH` and limits.
+For an offloaded run this means the record comes from the runner on PC02, with PC02's inherited `PATH` and the limits the suite actually runs with.
 The record includes selected tool versions and paths, the inherited `PATH` entries, Bash mode and options, whether the runner's own Bash is a login shell (`runner_login_shell`, which does not describe the invoking SSH shell), soft limits, OS/kernel, process identifiers and session model, TMPDIR filesystem type, and a token-free headless Chrome startup result.
 Missing tools and browser startup failures are recorded as data and do not change the test result; the record never dumps the process environment.
 `bin/fm-test-env-record.sh` owns the exact fields and privacy-safe probes, and `tests/fm-test-run.test.sh` plus `tests/fm-pc02-test-offload.test.sh` pin the local and fake-remote behavior.
 
-The pipeline's canonical Test command can offload with `FM_HOME` unset.
-The supervising home is selected from `FM_HOME`, then the per-machine `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` file, then the primary clone containing the current worktree's common `.git` directory.
-A separate bare common store (such as a no-mistakes gate worktree's) identifies no primary clone, so offload from the gate Test step starts only after `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-offload-home` exists; the local-fallback diagnostic names that resolved path.
-For an operational home separate from that primary clone (including a validation clone with no private state), create that configuration file with one absolute operational-home path followed by a newline.
-An invalid or unreadable configuration, or an unavailable home state directory, keeps testing local; a configured home is never skipped in favor of a guessed home.
-`FM_STATE_OVERRIDE` is honored before any git-common-dir discovery when neither `FM_HOME` nor a machine configuration selects a home.
+The captain's personal-use switch is the only thing that stops PC02 testing: while it is on, every offload routes to PC01 at once.
+A live PC02 model worker (`pc02-llamaswap/*`) and a loaded llama-swap are not test-offload occupancy. PC02 is sized to serve a model and run its test slots together, so the offload never probes the model lane, llama-swap, or host CPU/GPU load, and the per-slot locks below are the only occupancy signal.
+`bin/fm-pc02-personal-use.sh` owns the switch on PC01; [docs/pc02-outage-runbook.md](pc02-outage-runbook.md) owns the captain's no-terminal Windows desktop toggle for the same flag.
 
-[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic host-slot lock, cleanup, serial execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
-The host slot coordinates offloads using this protocol; direct test invocations on PC02 must be scheduled separately.
-A large serial `--changed` selection can exceed the existing 3600-second whole-run cap, just as an `--all` or `--family` selection can.
-The cap remains unchanged: exceeding it fails with exit 124 and does not rerun the suite locally or omit selected tests.
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns remote admission, the atomic per-slot locks, cleanup, parallel execution, and timeout mechanics; `tests/fm-pc02-test-offload.test.sh` exercises those guarantees without contacting PC02.
+The script header and `--help` own the per-machine PC02 slot count (`FM_PC02_OFFLOAD_SLOTS`, or one integer in `${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots`), its default and validation, and the `FM_PC02_OFFLOAD_SLOT_WAIT_SECS` and interval wait contract.
+The no-mistakes Lint step reaches the same path through `bin/fm-test-compute.sh lint`; when hosted tiers are unavailable it runs every canonical lint partition via `bin/fm-pc02-test-offload.sh --lint-partitions` on PC02 under those identical slot and admission rules, concurrently bounded by the slot count and PC02's thread count, and PC01's last-resort lint runs `bin/fm-lint.sh` with its changed-file selection.
+Offloaded suites carry `FM_PC02_OFFLOAD_REMOTE=1` and are governed by these slot locks rather than PC01's one-heavy-run admission. The host slots coordinate test and lint offloads using this protocol; direct test or lint invocations on PC02 must be scheduled separately.
+An explicit caller `--jobs` and the default auto-scheduler ceiling are each reduced to at most `floor(PC02 nproc / slots)` workers per slot, so the slots together stay within PC02's thread count; an explicit `FM_PC02_OFFLOAD_JOBS` override is honored verbatim and may oversubscribe by choice, and an unreadable thread count keeps the run local. The script header owns the cap arithmetic and admission detail.
+Isolation phases, family concurrency caps, serial tails, and curated lane rules remain enforced.
+An environment-parity check gates the slot claim; that header owns the compared fields, the open-file rule and remote soft-limit raise, the parity-probe bound, the intentional exclusions, and the local-fallback reasons.
+Measured 2026-11-03: two concurrent full selections on an idle PC02 did not fit the 7200s cap; the script header owns the measurement figures. The `/usr/bin/env` provider, no-mistakes daemon version and shell-availability parity exclusions were reviewed against that run and kept.
+The whole-run default is 7200 seconds and the per-script cap defaults to 3000 seconds; the script header documents their environment overrides.
+Exceeding the whole-run cap fails with exit 124 and does not rerun the selected command locally or omit selected work.
+
+Before a slot is claimed, the offload reads PC02 `MemAvailable`, `/tmp` free space and home-disk free space fresh and checks them against local floors.
+A low reading routes the run local naming the resource, the observed value and the floor; an unreadable reading also routes local rather than treating PC02 as free, and the pre-claim gate never removes another run's root.
+An offloaded run places its runner `TMPDIR` inside the per-run PC02 mirror, so its own mirror cleanup reaps the run's temp root on the normal, interrupt and timeout paths, restoring owner write first.
+[`bin/fm-pc02-hygiene.sh`](../bin/fm-pc02-hygiene.sh) exposes those readings plus the stale-root and old-process inventory as a cheap read-only report for firstmate's heartbeat host check: `MemAvailable`, `/tmp` and disk use, the count and size of stale test roots with the first 50 counted paths named (`stale_test_root=`), and test processes older than the idle bound. The capacity readings are the pre-claim floors; the stale-root and old-process counts gate only this report, not the offload's slot claim. It never kills a process or removes a test root, and exits 1 with a named `pressure=` list when a bound is crossed; [docs/pc02-outage-runbook.md](pc02-outage-runbook.md) owns the manual reclamation sequence.
+[`bin/fm-pc02-hygiene-lib.sh`](../bin/fm-pc02-hygiene-lib.sh) owns the readings, floor and stale-root rules, and the offload's header lists every override; `tests/fm-pc02-test-offload.test.sh` and `tests/fm-pc02-hygiene.test.sh` pin them without contacting PC02.
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 
@@ -965,7 +1004,8 @@ A remote secondmate launch is not gated by it, because this reading says nothing
 
 `config/context-thresholds` is an optional local, gitignored file setting the session-context bands `bin/fm-context-usage.sh` reports, implementing the captain's session-context policy (directive 2026-08-26).
 The format is at most one `warn=<N>` line and one `restart=<N>` line, each a positive base-10 integer with `warn <= restart`; an absent file or absent key means the built-in defaults of `warn=150000` and `restart=250000`, and a malformed file is rejected loudly rather than silently replaced by defaults.
-The helper reports the resolved thresholds and a `band=ok|warn|restart` field on its one data-only output line; supervision, [`/stow`](../.agents/skills/stow/SKILL.md), and [`/bearings`](../.agents/skills/bearings/SKILL.md) act on that band rather than re-deriving thresholds.
+The helper reports the resolved thresholds and a `band=ok|warn|restart|unavailable` field on its one data-only output line; supervision, [`/stow`](../.agents/skills/stow/SKILL.md), and [`/bearings`](../.agents/skills/bearings/SKILL.md) act on that band rather than re-deriving thresholds.
+The helper's header owns transcript discovery: its no-argument self-read binds to the calling session's own transcript (falling back to the newest one, marked `pick=newest`), resolves the target session's own store, refuses a relative one, and refuses a stale transcript with `band=unavailable` and `reason=stale-transcript` when it reads this session's own context, while a read that names another session's store reports that session's last real band however idle it is; an explicit transcript argument is trusted as given.
 The file is inherited by secondmate homes through `FM_INHERITABLE_CONFIG` (`bin/fm-config-inherit-lib.sh`), so the primary's thresholds propagate on every convergence.
 
 The bands mean:
@@ -982,7 +1022,16 @@ The restart mechanics reuse the existing owners rather than a parallel mechanism
 - The wake back to the main session is the ordinary status/wake channel: a relaunched worker's next status append, or a secondmate's routed status line, wakes its supervisor.
 - Never send `/clear` through the steer channel: it is mechanically broken and the steer becomes chat the worker reasons about.
 
-To read another session's usage, run the helper with `FM_HOME` set to that session's working directory (a task worktree or secondmate home); thresholds then resolve against that home's own `config/context-thresholds`.
+The restart band also drives an automatic stow wake for a primary session, so the checkpoint lands before automatic compaction can drop detail.
+The Stop-owned auto-arm (`bin/fm-claude-stop-autoarm.sh`, whose header owns the hook mechanics) reads the session's own transcript from the Stop payload and, at `band=restart`, emits one rewake telling the primary to run `/stow` and then recommend `/clear` to the captain.
+It fires at most once per session, keyed by the session id under `state/.auto-stow-<session-id>`, so a `/clear` that starts a new session gets its own single wake.
+It is offered only while the home is idle or a live watcher already covers supervision, so the stow turn never runs uncovered and never displaces a supervision wake, and it never fires in AFK, which the away daemon owns.
+The wake never runs `/clear` and never blocks a turn.
+The main home is on by default, `config/auto-stow-off` disables it for any home, and a secondmate home fires only when it opts in with the presence flag `config/auto-stow`.
+The PreCompact hook (`bin/fm-precompact-checkpoint.sh`, registered in `.claude/settings.json`) is the safety net for compaction that arrives before a stow.
+It writes a non-blocking checkpoint of the wake queue, open decisions, and tasks in flight under `state/`, and it never blocks or fails compaction.
+
+To read another session's usage, run the helper with `FM_HOME` set to that session's working directory (a task worktree or secondmate home) and `FM_CLAUDE_STORE` set to the `account=` its task record carries, or to `auto` when it records no pin; thresholds then resolve against that home's own `config/context-thresholds`.
 `bin/fm-returning-session-check.sh <home-path> [<state-dir> <task-id>]` wraps that same read into a `verdict=resume|restart-with-carryover|unknown|blocked` line for the specific moment a returning session (not a fresh spawn) is pinged or restarted, so `stuck-crewmate-recovery` and `secondmate-provisioning` can choose an ordinary resume versus the carryover-restart mechanics above without duplicating this threshold logic.
 It takes an absolute home path, and reports `verdict=unknown` only when the home has no transcript or usage record yet; every other read failure, including a malformed or unreadable `config/context-thresholds`, is `verdict=blocked` with a non-zero exit, so a broken setup is surfaced rather than silently read as safe to resume.
 The optional `<state-dir> <task-id>` pair - the CALLER's own state directory and the task or secondmate id, given together or not at all - feeds `bin/fm-cache-ttl-lib.sh`'s shared activity-age fold into an `idle_seconds` field on the same output line, alongside `ttl_seconds` resolved from `cache-ttl-seconds` in the caller's own `config/` directory beside that `<state-dir>` (the same knob `fm-send.sh`, `fm-fleet-snapshot.sh`, and `fm-inactive-reconcile.sh` read); with the pair omitted there is no marker owner to read that knob from and idle can never affect the verdict, so `ttl_seconds` reports `n/a`.
@@ -1005,9 +1054,12 @@ The helper also reports weekly-quota burn, per-turn weekly delta, and model attr
 
 `config/retry-thresholds` is the optional local, gitignored sibling of `config/context-thresholds` for the repetition-driven failure mode context size cannot sense: repeated relaunches, review-gate rounds, and fix no-ops that each pay a full cold context reload (evidence: `data/session-retry-failsafe-design/report.md`, 2026-09-01).
 The format is at most one `relaunch=<K>` line and one `rounds=<R>` line, each a positive base-10 integer; an absent file or key means the built-in defaults of `relaunch=3` and `rounds=4`, and a malformed file is rejected loudly rather than silently replaced by defaults.
-The `rounds=<R>` ceiling is the review-round ceiling of the worker's own self-check in the ship brief's standing retry-loop rule: `bin/fm-brief.sh` renders the configured value into that rule at scaffold time (falling back to 4 when the file or key is absent or malformed), and the helper reports the same number as `round_ceiling` rather than counting rounds itself, because the protocol has a worker emit one keyed line at that threshold instead of per-round progress lines.
+The `rounds=<R>` ceiling is the review-round ceiling of the worker's own self-check in the ship brief's standing retry-loop rule: `bin/fm-brief.sh` renders the configured value into that rule at scaffold time (falling back to 4 when the file or key is absent or malformed), and the helper reports the same number as `round_ceiling` rather than counting general rounds itself, because for the general band the protocol has a worker emit one keyed line at that threshold instead of per-round progress lines.
+That configured ceiling does not govern the separate fixed cap on automated review: the standing rule allows at most 3 assessed rounds per automated reviewer per PR, counted across workers, restarts, relaunches, and follow-ups, and the helper derives that cap from cumulative `review_rounds: <reviewer>=<n> run=<no-mistakes-run-id>` status reports, not from the configured `rounds` value.
 A redispatch filed under a new task id is intentionally not counted toward a task's relaunch ceiling; that chain's evidence lives in the telemetry's `from_task_id` field (see `docs/llm-usage-telemetry.md`).
-`bin/fm-retry-pressure.sh <task-id>` runs under the dispatching home's `FM_HOME`, where `state/<task-id>.status` and `data/llm-usage/firstmate.jsonl` live (honoring `FM_STATE_OVERRIDE` and `FM_DATA_OVERRIDE` exactly as the writers of those records do, and `FM_CONFIG_OVERRIDE` for the thresholds file, as `bin/fm-brief.sh` also does when rendering the round ceiling) - unlike the context read, which runs under the worker's own home - and reads these ceilings against the task's durable records and reports a `retry_band=ok|loop|halt` field on its one data-only output line; its header owns exact parsing, counting, and output mechanics.
+`bin/fm-retry-pressure.sh <task-id>` runs under the dispatching home's `FM_HOME`, where `state/<task-id>.status` and `data/llm-usage/firstmate.jsonl` live (honoring `FM_STATE_OVERRIDE` and `FM_DATA_OVERRIDE` exactly as the writers of those records do, and `FM_CONFIG_OVERRIDE` for the thresholds file, as `bin/fm-brief.sh` also does when rendering the round ceiling) - unlike the context read, which runs under the worker's own home - and reads these ceilings against the task's durable records and reports a `retry_band=ok|loop|halt` field on its one data-only output line.
+It also reports `review_rounds=<reviewer=N,...|none>` as the per-reviewer maxima across the task's history and `review_cap_reached=<0|1>` when any reviewer reached the fixed cap of 3; those fields are independent of `retry_band`, and a report without a run id or with a malformed count supplies no cap evidence.
+Its header owns exact parsing, counting, and output mechanics.
 Like the context bands, callers act on the reported band rather than re-deriving thresholds, during the same heartbeat review that reads each worker's context band:
 
 - `ok` - keep working.
@@ -1037,12 +1089,12 @@ Missing historical evidence remains explicitly unrecorded and visible until the 
 Imported upstream failures whose fork base passes or lacks the case remain distinct from failures reproduced on the fork base.
 Installing a dependency, an isolated pass, or matching an old symptom does not justify retirement: the owner must demonstrate the original failing case passing in its relevant context.
 
-Coverage currently differs: canonical no-mistakes Test selects changed subjects, excludes the real-Herdr family, and includes quarantined subjects; manual upstream-sync validation selects all subjects and excludes quarantined subjects, including those outside the changed set.
+Coverage currently differs: canonical no-mistakes Test selects changed subjects and excludes the real-Herdr family and quarantined subjects; manual upstream-sync validation selects all subjects and excludes quarantined subjects, including those outside the changed set.
 CI's portable and Herdr lanes also exclude quarantined subjects.
 For identical initial subject and family selections, adding `--exclude-quarantined` removes exactly the intersection with the ledger; compare the runner's `--list` output with and without that flag to publish the actual paths for a candidate rather than comparing totals.
 The runner reports each removed path and the total in execution mode.
 No selection is a substitute for the other, and quarantine diagnostics do not certify the gate selection.
-Aligning canonical Test with manual sync would change the pinned Test contract and requires a separate explicit decision; this upkeep preserves both selections.
+Changing canonical Test from its changed-subject selection to manual sync's all-subject selection would change the pinned Test contract and requires a separate explicit decision; the shared quarantine exclusion does not make their coverage equal.
 Use the runner's bounded quarantine diagnostic mode to report changed signatures, newly passing subjects, and capability skips without letting known failures block the diagnostic invocation.
 A match establishes only the recorded output symptom; retained output and owner follow-up are still necessary for failures masked by an earlier assertion.
 
@@ -1672,7 +1724,7 @@ This single-provider table is separate from the frozen legacy mapping used by `f
 **Model, effort, and fallback behavior**
 
 - `ultra` is native-only: the model-aware validation contract and launch mapping are owned by `bin/fm-harness.sh validate-native-effort` and `bin/fm-spawn.sh` respectively.
-- Codex `max` is valid when the profile selects `gpt-5.6-luna`, whose installed catalog entry supports that reasoning level.
+- Codex `max` is valid when the profile selects `gpt-5.6-luna`, `gpt-6.1-sol`, `gpt-6-astra` or `gpt-6-luna`, whose catalog entries support that reasoning level.
 - An omitted model or effort means the selected harness uses its own default for that axis.
 - OpenCode receives the effort as its default `build` agent's `variant`, keyed to the resolved model, inside the `OPENCODE_CONFIG_CONTENT` JSON its launch already writes (the per-model reasoning-effort field of the config schema, verified on opencode 1.18.32); with no model resolved, the effort is recorded in task metadata but omitted from the launch.
 - Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
@@ -2912,7 +2964,7 @@ FM_HOME_SUMMARY_TIMEOUT=60     # seconds bounding the complete best-effort home-
 FM_HOME_SUMMARY_ERROR_LOG_MAX_BYTES=65536   # approximate size cap for state/.home-summary-refresh.log before it is trimmed to the newest 200 lines; invalid or zero values use 65536
 FM_HOME_SUMMARY_FAILURE_REPORT=2   # recorded publication failures since the ledger's own last publication before session start reports a HOME_SUMMARY line; invalid or zero values use 2
 FM_SNAPSHOT_CREW_STATE_TIMEOUT=10   # seconds bounding each local per-task current-state read inside bin/fm-fleet-snapshot.sh; remote endpoint liveness is not probed on the snapshot path
-FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=8   # maximum local tasks whose current-state and endpoint observations are collected concurrently during snapshot composition
+FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=8   # maximum local tasks whose current-state and endpoint observations are collected concurrently during snapshot composition; also the batch bound for the wake drain's per-ship crew-state reads in its STALLED WAITS section
 FM_SNAPSHOT_BUDGET=5                # one total seconds budget for all concurrent remote home-ledger reads
 FM_SNAPSHOT_CACHE_DIR=$FM_HOME/state/secondmate-summary-cache   # private parent-side cache of successfully fetched remote home ledgers
 FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=14  # floored elapsed-day threshold at which an undated captain hold (no hold-until; age from its UTC hold-set timestamp, falling back to since for legacy unstamped holds) is projected as a Charted Next gate instead of a live Captain's Call; 0 applies once the computed age is non-negative
@@ -3009,7 +3061,7 @@ FM_SECONDMATE_LIVENESS_MAX_ATTEMPTS=3   # automatic relaunch attempts allowed pe
 FM_SECONDMATE_LIVENESS_WINDOW_SECS=3600   # window the relaunch bound counts state/.secondmate-relaunch-<id> attempt lines over; the file is also the durable per-mate relaunch record; zero or invalid values use 3600
 FM_WEDGE_ESCALATE_MAX_SECS=3600    # watcher-only cap on the exponential backoff applied to re-escalations of the same uninterrupted provably-working stale wedge (FM_STALE_ESCALATE_SECS * 2^n)
 FM_PC02_STALE_ESCALATE_SECS=600    # idle floor applied instead of any lower threshold to a harness=opencode pane whose model is a pc02-llamaswap/* model, whose normal silent turns run minutes (2x the documented-normal 4-min gap)
-FM_OPENCODE_LOG=~/.local/share/opencode/log/opencode.log   # opencode log the watcher reads for a "message=loop ... step=" line carrying that task's own recorded session id before a pc02-llamaswap/* lane escalates; a fresh step restarts the quiet spell without burning an escalation
+FM_OPENCODE_LOG=~/.local/share/opencode/log/opencode.log   # opencode log the watcher reads for a "message=loop ... step=" line carrying that task's own recorded session id before a pc02-llamaswap/* lane escalates; a fresh step restarts the quiet spell without burning an escalation; bin/fm-free-model-probe.sh also reads it for modelID-matching "Free usage limit reached" entries
 FM_OPENCODE_LOG_TAIL_BYTES=8388608 # bytes of that shared log's tail scanned per check; bounded by bytes rather than lines so a busy fleet's traffic cannot scroll one task's own step lines out of the quiet window
 FM_WEDGE_DEMAND_INSPECT_COUNT=3    # consecutive provably-working stale escalations on the same unchanged pane before demand-deep-inspection is added
 FM_WEDGE_GUARD_TIMEOUT_SECS=5      # seconds one guard from config/wedge-evidence-guards may run before it counts as no answer; zero or invalid values use 5

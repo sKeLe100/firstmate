@@ -100,15 +100,23 @@ cp "$FAKE/lsof" "$TMP_ROOT/lsof.fake"
 
 # hold <marker-env...> -> HOLDER_PID: a real non-platform process (jq blocked
 # on a fifo this test keeps open) whose environment is exactly the markers.
+# The holder is double-forked so it reparents to init instead of keeping this
+# test process's ancestry: when the suite runs over SSH (the PC02 offload
+# transport), an attached holder would inherit sshd ancestors and be read as
+# SSH-born, making the unmarked cases depend on where the suite runs rather
+# than on the environment each case sets. hold_under below keeps its deliberate
+# ancestry and is unaffected.
 hold() {
-  local fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo"
-  rm -f "$fifo"
+  local fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo" pidfile="$TMP_ROOT/holder-$HOLDER_FD.pid" i=0
+  rm -f "$fifo" "$pidfile"
   mkfifo "$fifo"
   # Open read-write so this never blocks on the reader; the holder sees EOF
   # only when the descriptor closes at exit.
   eval "exec ${HOLDER_FD}<>\"\$fifo\""
-  env -i "$@" "$JQ" . "$fifo" &
-  HOLDER_PID=$!
+  ( env -i "$@" "$JQ" . "$fifo" & printf '%s\n' "$!" > "$pidfile" )
+  while [ ! -s "$pidfile" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$pidfile" ] || fail "holder did not report its pid"
+  HOLDER_PID=$(cat "$pidfile")
   HOLDER_PIDS+=("$HOLDER_PID")
   HOLDER_FD=$((HOLDER_FD + 1))
 }

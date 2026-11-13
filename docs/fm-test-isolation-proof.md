@@ -22,10 +22,12 @@ This record owns concurrent isolation evidence for the portable parallel candida
 
 ## Candidate set
 
+`tests/fm-captain-hold-lifecycle.test.sh` left this set on 2026-11-03 when it was split into three suites that have no isolation proof yet, so they run serially in CI.
+The 2026-08-20 run above predates that split and still includes it, and so do the `docs/fm-test-isolation-proof.json` result and the durations below.
+
 - `tests/fm-arm-pretool-check.test.sh`
 - `tests/fm-backend-herdr.test.sh`
 - `tests/fm-brief.test.sh`
-- `tests/fm-captain-hold-lifecycle.test.sh`
 - `tests/fm-cd-pretool-check.test.sh`
 - `tests/fm-composer-ghost.test.sh`
 - `tests/fm-composer-lib.test.sh`
@@ -234,7 +236,7 @@ On the stale package the case fails serially as well as concurrently, so it is a
 
 Each family measured with `bin/fm-test-run.sh --family <name> --jobs <n>` on the same host, back to back, every run reporting 0 failures.
 Together the pairs quantify the effect when a plain `--changed` or script-list selection contains all three families: the automatic scheduler gives each admitted family its own concurrent phase and leaves unproven work in the serial tail.
-Curated `--family`, `--lane`, and `--all` selections remain serial unless the caller explicitly requests an admissible `--jobs` value, as documented by `bin/fm-test-run.sh --help`.
+Curated `--family`, `--lane`, and `--all` selections stay serial unless the caller explicitly requests concurrency with an admissible `--jobs` value or an environment-supplied automatic ceiling, and `bin/fm-test-run.sh --help` owns that rule.
 
 | family | scripts | `--jobs 1` | `--jobs 4` | speedup | recovered |
 |---|---:|---:|---:|---:|---:|

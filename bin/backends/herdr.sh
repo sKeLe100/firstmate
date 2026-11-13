@@ -370,15 +370,16 @@ fm_backend_herdr_workspace_label() {
 }
 
 # fm_backend_herdr_cli: run `herdr <args...>` scoped to <session>, setting
-# BOTH the HERDR_SESSION env var AND appending a trailing `--session <name>`
-# CLI flag. Verified empirically (docs/herdr-backend.md "Session targeting: the
+# BOTH the HERDR_SESSION env var AND a `--session <name>` CLI flag. Verified
+# empirically (docs/herdr-backend.md "Session targeting: the
 # --session flag, not HERDR_SESSION alone"): on the installed herdr 0.7.1
 # client, the HERDR_SESSION env var is NOT reliably honored by CLI subcommands
 # once ANY other herdr server is already bound on the machine - queries
 # silently fall back to whatever server IS running (the wrong one) instead of
 # routing to the requested session or refusing. The `--session <name>` global
-# flag (verified in both leading and trailing position; trailing used here to
-# keep every call site a minimal, append-only diff) always routes correctly,
+# flag (verified in both leading and trailing position; placed before any `--`
+# separator, else appended, so an agent's own arguments after `--` are never
+# touched) always routes correctly,
 # including starting a genuinely separate, isolated server process. The env
 # var is kept alongside it - harmless, self-documenting, and forward-
 # compatible if a future herdr build honors it. Never used by
@@ -399,15 +400,26 @@ fm_backend_herdr_cli() {  # <session> <herdr-subcommand-and-args...>
     HERDR_SESSION="$session" "$client_bin" "$@" --session "$session"
     return $?
   fi
+  # --session must precede any `--` separator, or it is forwarded to the
+  # launched agent (`agent start ... -- <agent args>`) as an agent argument.
+  local arg args=() placed=0
+  for arg in "$@"; do
+    if [ "$placed" -eq 0 ] && [ "$arg" = -- ]; then
+      args+=(--session "$session"); placed=1
+    fi
+    args+=("$arg")
+  done
+  [ "$placed" -eq 1 ] || args+=(--session "$session")
+  set -- "${args[@]}"
   failed_bin=$client_bin
-  { err=$(HERDR_SESSION="$session" "$failed_bin" "$@" --session "$session" 2>&1 1>&3 3>&-) || rc=$?; } 3>&1
+  { err=$(HERDR_SESSION="$session" "$failed_bin" "$@" 2>&1 1>&3 3>&-) || rc=$?; } 3>&1
   if [ "$rc" -ne 0 ]; then
     case "$err" in
       *protocol_mismatch*)
         fm_backend_herdr_client_select "$session" force
         selected_bin=$(fm_backend_herdr_bin)
         if [ "$selected_bin" != "$failed_bin" ]; then
-          HERDR_SESSION="$session" "$selected_bin" "$@" --session "$session"
+          HERDR_SESSION="$session" "$selected_bin" "$@"
           return $?
         fi
         ;;
