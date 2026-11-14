@@ -1,0 +1,54 @@
+== fm-watcher-lock
+watcher: lock held by live pid 3487070 but heartbeat is stale for 847912883s (>300s); inspect or stop that watcher before re-arming.
+ok - arm reports FAILED and exits non-zero when no fresh watcher can be confirmed
+ok - cycle-exit ledger links a verified successor and remains size-capped
+ok - SIGSTOP distinguishes live PID from stale beacon and termination records the exit class
+exit=0
+== fm-crew-state
+ok - inventory-error run selection reports unknown with candidate ids
+ok - selected-error run selection reports unknown with candidate ids
+ok - legacy conflicting run records report unknown
+all fm-crew-state tests passed
+exit=0
+== fm-send-resolve-key
+ok - fm-send --resolve-key: a stamped close line stays inside the status-line cap
+ok - fm-send --resolve-key: failed-close recovery commands safely quote operator text and paths
+ok - fm-send --resolve-key: a remote secondmate reserved-key close is the same local ledger append
+ok - fm-send --resolve-key: a decision answer refuses the attended branch before sending, a blocked: key stays steering, and the away-posture record relocates the answer
+exit=0
+== fm-send-remote-delivery
+ok - fm-send local: an unconfirmed submit exits 3 with an honest non-error report
+ok - fm-send local: an unconfirmed submit still never closes a --resolve-key decision
+ok - fm-send local: an unconfirmed secondmate send keeps its reply expectation armed
+all fm-send-remote-delivery tests passed
+exit=0
+== fm-remote-job
+ok - a same-home queued command still preempts the poll through the builtin scan
+ok - the lane scan bounds argv in bytes, not characters, in a UTF-8 locale
+ok - barely healthy worker failures remain bounded by the restart guard
+ALL TESTS PASSED
+exit=0
+== fm-secondmate-restart
+rm: cannot remove '/tmp/fm-secondmate-restart.fNi5sK/order-10633/home/state/sm1.git-hooks/post-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-secondmate-restart.fNi5sK/order-10633/home/state/sm1.git-hooks/pre-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-secondmate-restart.fNi5sK/order-10633/home/state/sm1.git-hooks/applypatch-msg': Permission denied
+rm: cannot remove '/tmp/fm-secondmate-restart.fNi5sK/order-10633/home/state/sm1.git-hooks/commit-msg': Permission denied
+exit=0
+== fm-wake-queue
+ok - watch liveness: a per-mate error keeps scanning, recovers later mates, and still wakes
+ok - watch liveness: an outcome that could not be queued surfaces as an error, not a wake
+ok - watch liveness: a mate mid-episode under the shared liveness lock is skipped entirely
+ok - watch liveness: an unreachable remote secondmate is probed, preserved, and never failed over
+exit=0
+== fm-classify-corr-token
+ok - reading through the token does not weaken the reserved-key namespace rule
+ok - the cursor-backed fold and the whole-file fold agree on every correlated transition
+ok - a cursor persisted under the previous reading is discarded and refolded
+ok - both real correlation-token writers produce lines this classifier reads through
+exit=0
+== fm-wake-drain-outcome-backstop
+ok - held-lock initialization accepts a descendant of the outcome lock owner
+ok - index self-heal runs only while the outcome lock is held
+ok - an over-bound unclassifiable routine event stays silent
+ok - the outcome backstop caps each item and its total task output deterministically
+exit=0
