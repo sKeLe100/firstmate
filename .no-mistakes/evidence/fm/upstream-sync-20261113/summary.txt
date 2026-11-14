@@ -1,0 +1,4 @@
+fm-secondmate-liveness exit 0
+fm-watch-triage-waits exit 124
+fm-watch-triage exit 124
+fm-pr-merge exit 124
