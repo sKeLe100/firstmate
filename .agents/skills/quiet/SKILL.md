@@ -10,6 +10,8 @@ metadata:
 
 # quiet
 
+Load the `away-quiet-supervision` skill through the Skill tool as soon as `/quiet` is invoked, since it owns the safety rules this mode shares with `/afk`.
+
 Quiet supervision mode (kunchenguid/firstmate#2356): the same token-saving
 daemon tradeoff as `/afk`, made explicit for a captain who is staying,
 watching the session, and does not want to exit the mode just by chatting.

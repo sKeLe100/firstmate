@@ -27,6 +27,9 @@ Hold-for-return is the default and the only reach profile this release records: 
    Read `bin/fm-afk-contract.sh --help` for the flags rather than memorizing them.
    Plain `/afk` with no words is a valid entry with no mandate; the announcement says no instructions were recorded.
    Re-invoking `/afk` while already away with no new words is a refresh and leaves the standing record untouched; new words replace the mandate at once, preserve the original session entry, and archive the superseded words for the return brief.
+
+Once the record exists, load the `away-quiet-supervision` skill through the Skill tool, since it owns the safety rules that hold in both postures.
+
 2. **Per harness, after the record exists:**
    - **Pi and pi-signed**: nothing to launch; go on to the announcement.
      The away daemon is no longer launched on Pi; the ordinary supervision session (`docs/pi-supervision-branch.md`) keeps running with the record present, and `bin/fm-afk-launch.sh start` refuses on these harnesses.
