@@ -18,6 +18,11 @@ export FM_DATA_OVERRIDE="$HOME_DIR/data"
 export FM_CONFIG_OVERRIDE="$HOME_DIR/config"
 export FM_PROJECTS_OVERRIDE="$HOME_DIR/projects"
 export FM_OPENCODE_LOG="$TMP_ROOT/opencode.log"
+# fm-watch.sh reads FM_PC02_STALE_ESCALATE_SECS once, when it is sourced, and
+# every case below is written against the documented 600s pc02 floor. An
+# operator shell or the no-mistakes daemon that exports another floor would
+# silently change which branch wedge_timer_check takes, so pin the value here.
+export FM_PC02_STALE_ESCALATE_SECS=600
 
 # shellcheck source=bin/fm-watch.sh
 . "$ROOT/bin/fm-watch.sh"
