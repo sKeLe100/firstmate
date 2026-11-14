@@ -37,9 +37,9 @@
 # of the code root's history covers any fork, the parent, and any clone of
 # either. Lineage that cannot be determined (no code root history, or a shallow
 # side sharing no root) refuses rather than permits. The publication target is
-# compared only against a maintainer scope or task consent: the first remote
-# named upstream, github, or origin (the order gh prefers when resolving a
-# default repository), reduced to lowercase host/owner/repo; a local-path remote
+# compared only against a maintainer scope or task consent: the first usable
+# push destination in upstream/github/origin order, constrained by every
+# gh-resolved=base marker, reduced to lowercase host/owner/repo; a local-path remote
 # is resolved one hop through that repository's own origin, and left as
 # path:<abs> when unreadable. An unknown target never permits.
 #
@@ -221,12 +221,15 @@ fm_role_git_common_dir() {
   (CDPATH='' cd -- "$common" 2>/dev/null && pwd -P) || printf '%s\n' "$common"
 }
 
-# fm_role_publication_target <git-dir> - the repository a default publication
-# (gh pr/issue, a no-mistakes PR) would reach: the push URL of the first of
-# upstream, github, origin whose push URL is neither empty nor DISABLED,
-# normalized to host/owner/repo or path:<abs>. Empty when no remote qualifies.
+# fm_role_publication_target <git-dir> - the push URL of the first usable
+# upstream/github/origin remote, normalized to host/owner/repo or path:<abs>.
+# Empty or DISABLED push URLs are skipped. A gh-resolved=base marker is an
+# additional constraint: both its fetch and push identity must match that
+# selected target. An unreadable, disabled or disagreeing marker refuses;
+# custom remote names and multiple markers can constrain, never widen, it.
+# All resolution is offline. Empty when no target satisfies both policies.
 fm_role_publication_target() {
-  local dir=$1 remote url=''
+  local dir=$1 remote url='' target marked_target remotes
   for remote in upstream github origin; do
     url=$(git -C "$dir" remote get-url --push "$remote" 2>/dev/null) || url=
     case $url in
@@ -235,7 +238,22 @@ fm_role_publication_target() {
     esac
   done
   [ -n "$url" ] || return 0
-  fm_role_remote_identity "$url" "$dir"
+  target=$(fm_role_remote_identity "$url" "$dir")
+  [ -n "$target" ] || return 0
+  remotes=$(git -C "$dir" remote 2>/dev/null) || return 0
+  while IFS= read -r remote; do
+    [ -n "$remote" ] || continue
+    if [ "$(git -C "$dir" config --get "remote.$remote.gh-resolved" 2>/dev/null)" = base ]; then
+      url=$(git -C "$dir" remote get-url --push "$remote" 2>/dev/null) || return 0
+      case $url in '' | DISABLED) return 0 ;; esac
+      marked_target=$(fm_role_remote_identity "$url" "$dir")
+      [ "$marked_target" = "$target" ] || return 0
+      url=$(git -C "$dir" remote get-url "$remote" 2>/dev/null) || return 0
+      marked_target=$(fm_role_remote_identity "$url" "$dir")
+      [ "$marked_target" = "$target" ] || return 0
+    fi
+  done <<< "$remotes"
+  printf '%s\n' "$target"
 }
 
 # fm_role_shallow <dir> - 0 when <dir> is a shallow git repository.

@@ -92,7 +92,7 @@ while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt "$EVENT_WAIT_TICKS
 done
 if kill -0 "$watch_pid" 2>/dev/null; then
   kill "$watch_pid" 2>/dev/null || true
-  fail "the watcher did not exit on its auto-relaunch wake within its wait bound"
+  fail "the watcher did not exit on its auto-relaunch wake within its wait bound: $(cat "$TMP_ROOT/watch-liveness.out" "$TMP_ROOT/watch-liveness.err" 2>/dev/null)"
 fi
 wait "$watch_pid" \
   || fail "the liveness watcher leg exited non-zero: $(cat "$TMP_ROOT/watch-liveness.err")"

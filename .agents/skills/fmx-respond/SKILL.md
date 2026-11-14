@@ -1,7 +1,7 @@
 ---
 name: fmx-respond
 description: >-
-  Agent-only playbook for Relay mentions and follow-ups; load on x-mention, x-mode-error, or public-followup check wakes, or terminal wakes for Relay-linked tasks when Relay is enabled.
+  Agent-only playbook for Relay mentions and follow-ups; load on x-mention, x-mode-error, or public-followup check wakes, milestone or terminal wakes for Relay-linked tasks, or when creating, reconciling, or delivering a promised final public reply, when Relay is enabled.
 user-invocable: false
 metadata:
   internal: true
