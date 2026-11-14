@@ -50,9 +50,9 @@ TASK_TMPS=()
 relaunch_cleanup() {
   local d
   for d in "${TASK_TMPS[@]:-}"; do
-    [ -n "$d" ] && rm -rf "$d"
+    [ -n "$d" ] && fm_test_remove_tree "$d"
   done
-  rm -rf "$TMP_ROOT"
+  fm_test_cleanup
 }
 trap relaunch_cleanup EXIT
 
@@ -631,6 +631,35 @@ test_relaunch_appends_the_progress_note_to_the_instructions() {
   pass "fm-control relaunch: progress and the Firstmate-worktree worker identity reach the replacement"
 }
 
+test_relaunch_note_inbox_listing_is_safe_on_empty_inbox() {
+  local dir out rc brief cmd inbox shell_name status
+  dir=$(new_case notelist rl2b)
+  add_ship_task "$dir" rl2b claude
+  out=$(run_control "$dir" rl2b relaunch --note "resume"); rc=$?
+  expect_code 0 "$rc" "relaunch should succeed"$'\n'"$out"
+  brief="$dir/home/data/rl2b/brief.md"
+  # shellcheck disable=SC2016
+  cmd=$(sed -n 's/^`\(find [^`]*\)`.*/\1/p' "$brief" | head -1)
+  [ -n "$cmd" ] || fail "the progress note does not give a find-based inbox listing command"
+  inbox="$dir/home/state/rl2b.inbox"
+  for shell_name in bash zsh; do
+    command -v "$shell_name" >/dev/null 2>&1 || continue
+    rm -rf "$inbox"
+    status=0
+    out=$("$shell_name" -c "$cmd" 2>&1) || status=$?
+    [ "$status" -eq 0 ] && [ -z "$out" ] || fail "$shell_name: absent inbox listing was not silent success (exit $status): $out"
+    mkdir -p "$inbox"
+    status=0
+    out=$("$shell_name" -c "$cmd" 2>&1) || status=$?
+    [ "$status" -eq 0 ] && [ -z "$out" ] || fail "$shell_name: empty inbox listing was not silent success (exit $status): $out"
+    : > "$inbox/1000.msg"
+    : > "$inbox/999.msg"
+    out=$("$shell_name" -c "$cmd" 2>&1 | sed 's#.*/##' | tr '\n' ' ')
+    [ "$out" = "999.msg 1000.msg " ] || fail "$shell_name: messages not listed in numeric order: $out"
+  done
+  pass "fm-control relaunch: the progress note's inbox listing is silent on an empty inbox"
+}
+
 test_relaunch_requires_a_note_for_a_ship_task() {
   local dir out rc before
   dir=$(new_case nonote rl3)
@@ -1015,6 +1044,80 @@ test_worker_account_pin_follows_the_relaunch() {
   pass "fm-control relaunch: the replacement follows the home's current worker account pin"
 }
 
+test_secondmate_account_pin_follows_relaunch_and_refuses_before_stop() {
+  local dir out rc id=rl-sm-acct harness file variable pin
+  for harness in claude pi; do
+    dir=$(new_case "sm-account-$harness" "$id")
+    add_ship_task "$dir" "$id" "$harness"
+    make_claude_auth_stub "$dir"
+    cat > "$dir/fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  --help) printf 'Options: --tui-mode\n' ;;
+  auth)
+    if grep -qx "$4" "$PI_CODING_AGENT_DIR/signed-in" 2>/dev/null; then
+      printf '{"status":"ready"}\n'
+    else
+      printf '{"status":"not_ready","reason":"credentials_not_configured"}\n'
+      exit 1
+    fi ;;
+esac
+SH
+    chmod +x "$dir/fakebin/pi"
+    file=claude-account; variable=CLAUDE_CONFIG_DIR
+    if [ "$harness" = pi ]; then file=pi-account; variable=PI_CODING_AGENT_DIR; fi
+    printf '%s' "$harness" > "$dir/fake/command"
+    printf '%s' "$harness" > "$dir/fake/becomes"
+    mkdir -p "$dir/wt/state" "$dir/wt/data" "$dir/wt/bin" \
+      "$dir/home/config/secondmate-accounts/$id" "$dir/primary" "$dir/mate" "$dir/new-mate"
+    printf '%s\n' "$id" > "$dir/wt/.fm-secondmate-home"
+    printf '# agents\n' > "$dir/wt/AGENTS.md"
+    printf '# charter\n' > "$dir/wt/data/charter.md"
+    printf '%s openai-codex/gpt-5.5\n' "$harness" > "$dir/home/config/secondmate-harness"
+    {
+      printf 'window=fmses:fm-%s\nendpoint_task_id=%s\n' "$id" "$id"
+      printf 'worktree=%s\nproject=%s\nhome=%s\n' "$dir/wt" "$dir/wt" "$dir/wt"
+      printf 'harness=%s\nkind=secondmate\nmode=secondmate\nyolo=off\nmodel=default\neffort=default\n' "$harness"
+    } > "$dir/home/state/$id.meta"
+    : > "$dir/primary/.credentials.json"
+    : > "$dir/mate/.credentials.json"
+    : > "$dir/new-mate/.credentials.json"
+    printf 'openai-codex\n' > "$dir/primary/signed-in"
+    printf 'openai-codex\n' > "$dir/mate/signed-in"
+    printf 'openai-codex\n' > "$dir/new-mate/signed-in"
+    printf '%s\n' "$dir/primary" > "$dir/home/config/$file"
+    [ "$harness" = claude ] || printf 'openai-codex\n' >> "$dir/home/config/$file"
+    pin="$dir/home/config/secondmate-accounts/$id/$file"
+    printf '%s\n' "$dir/mate" > "$pin"
+    [ "$harness" = claude ] || printf 'openai-codex\n' >> "$pin"
+    out=$(run_control "$dir" "$id" relaunch); rc=$?
+    expect_code 0 "$rc" "the secondmate should relaunch on its $harness pin: $out"
+    assert_contains "$(cat "$dir/fake/literal")" "$variable='$dir/mate'" "the replacement must use the mate's pin"
+    [ "$(meta_field "$dir" "$id" account)" = "$dir/mate" ] || fail "the record must name the mate's account"
+    printf '%s\n' "$dir/new-mate" > "$pin"
+    [ "$harness" = claude ] || printf 'openai-codex\n' >> "$pin"
+    : > "$dir/fake/literal"
+    out=$(run_control "$dir" "$id" relaunch); rc=$?
+    expect_code 0 "$rc" "a changed durable pin should govern relaunch: $out"
+    assert_contains "$(cat "$dir/fake/literal")" "$variable='$dir/new-mate'" "relaunch must not reuse the old recorded account"
+    rm "$dir/new-mate/.credentials.json" "$dir/new-mate/signed-in"
+    cp "$dir/home/state/$id.meta" "$dir/meta-before"
+    : > "$dir/fake/literal"
+    out=$(run_control "$dir" "$id" relaunch); rc=$?
+    expect_code 1 "$rc" "a signed-out mate account must refuse before stop"
+    assert_contains "$out" "$pin" "the refusal must name the mate setting"
+    assert_contains "$out" 'not signed in' "the refusal must name the reason"
+    [ "$(cat "$dir/fake/command")" = "$harness" ] || fail "the running mate must remain alive"
+    [ ! -s "$dir/fake/literal" ] || fail "the refused relaunch must send no lifecycle input"
+    cmp -s "$dir/meta-before" "$dir/home/state/$id.meta" || fail "the refused relaunch must preserve metadata"
+    rm "$pin"
+    out=$(run_control "$dir" "$id" relaunch); rc=$?
+    expect_code 0 "$rc" "removing the mate pin should restore the primary's pin: $out"
+    assert_contains "$(cat "$dir/fake/literal")" "$variable='$dir/primary'" "an absent mate setting must restore the primary's pin"
+  done
+  pass "fm-control relaunch: mate pins are re-read for Claude and Pi, and unusable pins refuse before stopping the agent"
+}
+
 test_pi_exclude_tools_follow_the_relaunch() {
   local dir out rc id=rl-pi-excl
   dir=$(new_case pi-exclude "$id")
@@ -1147,208 +1250,8 @@ test_turnend_auth_paths_are_owned_by_the_control_adapter() {
   pass "fm-control-lib: one owner resolves each harness's turn-end registry entry, and refuses a malformed token"
 }
 
-test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
-  local dir home out rc
-  dir=$(new_case smpin sm3)
-  home="$dir/home"
-  mkdir -p "$home/config"
-  printf 'codex some-model high\n' > "$home/config/secondmate-harness"
-  mkdir -p "$home/data/sm3"
-  printf '# secondmate brief\n' > "$home/data/sm3/brief.md"
-  fm_git_worktree "$dir/proj" "$dir/smhome" sm-branch
-  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin"
-  printf 'sm3\n' > "$dir/smhome/.fm-secondmate-home"
-  printf '# agents\n' > "$dir/smhome/AGENTS.md"
-  {
-    echo "window=fmses:fm-sm3"
-    echo "endpoint_task_id=sm3"
-    echo "worktree=$dir/smhome"
-    echo "project=$dir/smhome"
-    echo "harness=claude"
-    echo "kind=secondmate"
-    echo "mode=secondmate"
-    echo "yolo=off"
-    echo "model=default"
-    echo "effort=default"
-    echo "home=$dir/smhome"
-  } > "$home/state/sm3.meta"
-  printf '%s\n' "fm-sm3" > "$dir/fake/windows"
-  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
-  printf 'codex' > "$dir/fake/becomes"
-  out=$(run_control "$dir" sm3 relaunch); rc=$?
-  expect_code 0 "$rc" "a configured secondmate harness should relaunch"$'\n'"$out"
-  [ "$(journal_field "$dir" sm3 to_harness)" = codex ] \
-    || fail "a secondmate relaunch should pick up the configured harness pin, got '$(journal_field "$dir" sm3 to_harness)'"
-  [ "$(journal_field "$dir" sm3 to_model)" = some-model ] \
-    || fail "the configured model token should come with the pin"
-  [ "$(journal_field "$dir" sm3 to_effort)" = high ] \
-    || fail "the configured effort token should come with the pin"
-  assert_not_contains "$out" "not a verified harness" "codex is a verified harness"
-  pass "fm-control relaunch: a secondmate relaunch re-resolves its durable configured harness pin"
-}
-
-test_secondmate_claude_relaunch_keeps_local_settings() {
-  local dir home prior settings out rc
-  dir=$(new_case smlocal sml)
-  home="$dir/home"
-  mkdir -p "$home/config" "$home/data/sml"
-  printf 'codex gpt-5 high\n' > "$home/config/secondmate-harness"
-  printf '# secondmate brief\n' > "$home/data/sml/brief.md"
-  fm_git_worktree "$dir/proj" "$dir/smhome" sm-local-branch
-  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin" "$dir/smhome/.claude"
-  printf 'sml\n' > "$dir/smhome/.fm-secondmate-home"
-  printf '# agents\n' > "$dir/smhome/AGENTS.md"
-  prior='{"permissions":{"allow":["Bash(echo hi)"]}}'
-  printf '%s\n' "$prior" > "$dir/smhome/.claude/settings.local.json"
-  printf '%s\n' '{"feedbackDrafts":"on"}' > "$home/state/sml.claude-settings.json"
-  printf 'gen=retired\n' > "$dir/smhome/.fm-busy-stop"
-  {
-    echo "window=fmses:fm-sml"
-    echo "endpoint_task_id=sml"
-    echo "worktree=$dir/smhome"
-    echo "project=$dir/smhome"
-    echo "harness=claude"
-    echo "kind=secondmate"
-    echo "mode=secondmate"
-    echo "yolo=off"
-    echo "model=default"
-    echo "effort=default"
-    echo "home=$dir/smhome"
-  } > "$home/state/sml.meta"
-  printf '%s\n' "fm-sml" > "$dir/fake/windows"
-  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
-  printf 'codex' > "$dir/fake/becomes"
-  out=$(run_control "$dir" sml relaunch); rc=$?
-  expect_code 0 "$rc" "a claude secondmate relaunch should retire wiring without touching local settings"$'\n'"$out"
-  settings="$dir/smhome/.claude/settings.local.json"
-  [ "$(cat "$settings")" = "$prior" ] \
-    || fail "relaunch rewrote the mate home's settings.local.json"
-  [ ! -e "$home/state/sml.claude-settings.json" ] \
-    || fail "relaunch left the retired claude settings file in place"
-  [ ! -e "$dir/smhome/.fm-busy-stop" ] \
-    || fail "relaunch left the retired Stop pointer in the mate home"
-  pass "fm-control relaunch: a claude secondmate keeps settings.local.json and retires the state settings file and the Stop pointer"
-}
-
-test_secondmate_relaunch_ignores_invalid_configured_effort_before_stop() {
-  local dir home out rc
-  dir=$(new_case invalid-effort sm6)
-  home="$dir/home"
-  mkdir -p "$home/config" "$home/data/sm6"
-  # grok (not codex) here: codex now requires an explicit, valid effort, so it
-  # cannot demonstrate an invalid token being ignored and normalized to default.
-  printf 'grok some-model impossible\n' > "$home/config/secondmate-harness"
-  printf '# secondmate brief\n' > "$home/data/sm6/brief.md"
-  fm_git_worktree "$dir/proj" "$dir/smhome" sm-branch
-  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin"
-  printf 'sm6\n' > "$dir/smhome/.fm-secondmate-home"
-  printf '# agents\n' > "$dir/smhome/AGENTS.md"
-  {
-    echo "window=fmses:fm-sm6"
-    echo "endpoint_task_id=sm6"
-    echo "worktree=$dir/smhome"
-    echo "project=$dir/smhome"
-    echo "harness=claude"
-    echo "kind=secondmate"
-    echo "mode=secondmate"
-    echo "yolo=off"
-    echo "model=default"
-    echo "effort=default"
-    echo "home=$dir/smhome"
-  } > "$home/state/sm6.meta"
-  printf '%s\n' "fm-sm6" > "$dir/fake/windows"
-  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
-  printf 'grok' > "$dir/fake/becomes"
-  out=$(run_control "$dir" sm6 relaunch); rc=$?
-  expect_code 0 "$rc" "an invalid configured effort should be ignored before stop"$'\n'"$out"
-  assert_contains "$out" "effort token 'impossible'" \
-    "relaunch should surface the same warning as a normal secondmate spawn"
-  [ "$(journal_field "$dir" sm6 to_effort)" = default ] \
-    || fail "invalid configured effort should normalize to default"
-  pass "fm-control relaunch: invalid configured effort is ignored before stop"
-}
-
-# muse is a verified adapter, but only for crewmates and scouts: it has no
-# primary supervision protocol, so bin/fm-spawn.sh refuses it for a secondmate.
-# That refusal alone is not enough here, because the launch owner is reached
-# only AFTER the running agent has been stopped - a secondmate would be left
-# with no agent at all. The control plane asks the same capability question
-# before it touches anything, so the refusal lands while the agent is still up.
-test_secondmate_relaunch_onto_a_crewmate_only_adapter_refuses_before_stop() {
-  local dir home out rc
-  dir=$(new_case smkind sm7)
-  home="$dir/home"
-  mkdir -p "$home/config" "$home/data/sm7"
-  printf '# secondmate brief\n' > "$home/data/sm7/brief.md"
-  fm_git_worktree "$dir/proj" "$dir/smhome" sm-branch
-  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin"
-  printf 'sm7\n' > "$dir/smhome/.fm-secondmate-home"
-  printf '# agents\n' > "$dir/smhome/AGENTS.md"
-  {
-    echo "window=fmses:fm-sm7"
-    echo "endpoint_task_id=sm7"
-    echo "worktree=$dir/smhome"
-    echo "project=$dir/smhome"
-    echo "harness=claude"
-    echo "kind=secondmate"
-    echo "mode=secondmate"
-    echo "yolo=off"
-    echo "model=default"
-    echo "effort=default"
-    echo "home=$dir/smhome"
-  } > "$home/state/sm7.meta"
-  printf '%s\n' "fm-sm7" > "$dir/fake/windows"
-  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
-  out=$(run_control "$dir" sm7 relaunch --harness muse); rc=$?
-  expect_code 1 "$rc" "a crewmate-only adapter should refuse a secondmate relaunch"
-  assert_contains "$out" "not verified to run a secondmate task" \
-    "the refusal should name the kind the adapter cannot run"
-  [ "$(cat "$dir/fake/command")" = claude ] \
-    || fail "the refusal must land before the running agent is stopped"
-  [ "$(meta_field "$dir" sm7 harness)" = claude ] \
-    || fail "a refused relaunch must leave the durable record on the recorded harness"
-  pass "fm-control relaunch: an adapter unverified for this task kind refuses before the agent is stopped"
-}
-
-test_explicit_secondmate_harness_ignores_configured_profile_axes() {
-  local dir home out rc
-  dir=$(new_case smexplicit sm4)
-  home="$dir/home"
-  mkdir -p "$home/config"
-  printf 'claude opus high\n' > "$home/config/secondmate-harness"
-  mkdir -p "$home/data/sm4"
-  printf '# secondmate brief\n' > "$home/data/sm4/brief.md"
-  fm_git_worktree "$dir/proj" "$dir/smhome" sm-branch
-  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin"
-  printf 'sm4\n' > "$dir/smhome/.fm-secondmate-home"
-  printf '# agents\n' > "$dir/smhome/AGENTS.md"
-  {
-    echo "window=fmses:fm-sm4"
-    echo "endpoint_task_id=sm4"
-    echo "worktree=$dir/smhome"
-    echo "project=$dir/smhome"
-    echo "harness=claude"
-    echo "kind=secondmate"
-    echo "mode=secondmate"
-    echo "yolo=off"
-    echo "model=opus"
-    echo "effort=high"
-    echo "home=$dir/smhome"
-  } > "$home/state/sm4.meta"
-  printf '%s\n' "fm-sm4" > "$dir/fake/windows"
-  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
-  # grok (not codex) here: codex now refuses a relaunch that resolves no
-  # explicit model/effort, so it cannot demonstrate the reset-to-default case
-  # this test is about.
-  printf 'grok' > "$dir/fake/becomes"
-  out=$(run_control "$dir" sm4 relaunch --harness grok); rc=$?
-  expect_code 0 "$rc" "an explicit secondmate harness should relaunch"$'\n'"$out"
-  [ "$(meta_field "$dir" sm4 model)" = default ] \
-    || fail "an explicit secondmate harness must not inherit the configured model"
-  [ "$(meta_field "$dir" sm4 effort)" = default ] \
-    || fail "an explicit secondmate harness must not inherit the configured effort"
-  pass "fm-control relaunch: explicit secondmate harness resets unnamed profile axes"
-}
+# shellcheck source=tests/fm-control-relaunch-runtime-part.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-control-relaunch-runtime-part.sh"
 
 test_ship_relaunch_ignores_the_crew_harness_config() {
   local dir out
@@ -2903,6 +2806,7 @@ test_relaunch_preserves_durable_task_metadata
 test_relaunch_serializes_concurrent_durable_metadata_publication
 test_disabled_relaunch_clears_prior_trace_context
 test_relaunch_appends_the_progress_note_to_the_instructions
+test_relaunch_note_inbox_listing_is_safe_on_empty_inbox
 test_relaunch_requires_a_note_for_a_ship_task
 test_harness_switch_moves_the_record_and_clears_prior_wiring
 test_codex_relaunch_without_axes_refuses_before_stopping_the_agent
@@ -2918,6 +2822,7 @@ test_same_harness_relaunch_keeps_the_profile_axes
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_signed_out_worker_account_pin_refuses_before_stop
 test_worker_account_pin_follows_the_relaunch
+test_secondmate_account_pin_follows_relaunch_and_refuses_before_stop
 test_pi_exclude_tools_follow_the_relaunch
 test_exclude_tools_refusals_happen_before_the_agent_stops
 test_explicit_model_wins_over_the_recorded_one
@@ -2927,6 +2832,10 @@ test_wiring_removal_failure_refuses_before_replacement_arm
 test_turnend_auth_paths_are_owned_by_the_control_adapter
 test_secondmate_relaunch_picks_up_the_configured_harness_pin
 test_secondmate_claude_relaunch_keeps_local_settings
+test_secondmate_relaunch_lands_on_the_per_mate_pin
+test_secondmate_relaunch_uses_the_default_for_an_unpinned_mate
+test_secondmate_relaunch_with_a_legacy_pin_file_uses_the_first_line
+test_secondmate_relaunch_refuses_an_unreadable_configured_pin_before_stop
 test_secondmate_relaunch_ignores_invalid_configured_effort_before_stop
 test_secondmate_relaunch_onto_a_crewmate_only_adapter_refuses_before_stop
 test_explicit_secondmate_harness_ignores_configured_profile_axes

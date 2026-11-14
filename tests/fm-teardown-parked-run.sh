@@ -34,6 +34,33 @@ test_parked_own_run_is_aborted_before_teardown() {
     "parked-run-abort: teardown did not report aborting the parked run before removing the worker"
   pass "a task's own parked no-mistakes run is aborted, not orphaned, before the worker is removed"
 }
+
+test_parked_run_in_a_resolved_workspace_home_is_aborted() {
+  local case_dir head rc=0
+  case_dir=$(make_case parked-run-resolved-home)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  mkdir -p "$case_dir/workspace-nm"
+  cat > "$case_dir/resolver" <<SH
+#!/usr/bin/env bash
+[ "\$1" = '$case_dir/wt' ] && printf '%s\\n' '$case_dir/workspace-nm'
+SH
+  chmod +x "$case_dir/resolver"
+  printf '%s\n' "$case_dir/resolver" > "$case_dir/config/nm-home-resolver"
+
+  (
+    unset NM_HOME
+    FM_FAKE_NM_EXPECT_HOME="$case_dir/workspace-nm" \
+    FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+    FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+      run_teardown "$case_dir"
+  ) > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "parked-run-resolved-home: teardown should still succeed"
+  assert_grep "abort --run 01RUN" "$case_dir/nm-abort.log" \
+    "parked-run-resolved-home: the parked run in the resolved workspace home was not aborted"
+  pass "a parked run in a resolved workspace no-mistakes home is aborted before the worker is removed"
+}
 test_parked_run_advanced_past_unfetched_head_is_still_aborted() {
   local case_dir rc advanced_short anchor_short
   case_dir=$(make_case parked-run-pipeline-advanced-unfetched)

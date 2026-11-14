@@ -71,6 +71,7 @@ The 2026-11-04 hint-drift refresh from PR 238's run 41891378701 raised `tests/fm
 The 2026-11-06 hint-drift refresh from PR 215's run 42159379751 raised `tests/fm-returning-session-check.test.sh` from 650 ms to its measured 1017 ms (repeated drift 1.56x) and `tests/fm-context-usage.test.sh` from 669 ms to 1125 ms (single-run drift warning 1.68x).
 The 2026-11-06 hint-drift refresh from PR 248's run 42199886708 raised `tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh` from 107758 ms to its measured 243941 ms (repeated drift 2.26x) and `tests/fm-remote-secondmate-lifecycle-supervision-e2e.test.sh` from 139257 ms to its measured 241524 ms (repeated drift 1.73x).
 The 2026-11-09 hint-drift refresh from PR 251's run 42621736300 raised `tests/fm-devin-signals-live-e2e.test.sh` from 49 ms to its measured 306 ms (6.24x) and `tests/fm-test-fixture-cleanup.test.sh` from 2182 ms to its measured 3696 ms (1.69x).
+The 2026-11-14 hint-drift refresh from PR 263's run 43616505698 raised `tests/fm-backend-tmux-smoke.test.sh` from 672 ms to its measured 1143 ms (repeated drift 1.70x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints

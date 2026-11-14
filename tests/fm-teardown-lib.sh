@@ -88,8 +88,14 @@ SH
   # runner's own PATH. Tests exercising the run-abort path override
   # FM_FAKE_AXI_STATUS/FM_FAKE_NM_ABORT_LOG/FM_FAKE_NM_RUNS_LIST before
   # run_teardown.
+  # When FM_FAKE_NM_EXPECT_HOME is set, the stub sees runs only from that
+  # NM_HOME, as a per-workspace daemon would: any other home answers no run
+  # and records no abort.
   cat > "$fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
+if [ -n "${FM_FAKE_NM_EXPECT_HOME:-}" ] && [ "${NM_HOME:-}" != "$FM_FAKE_NM_EXPECT_HOME" ]; then
+  exit 0
+fi
 case "${1:-}" in
   axi)
     shift
