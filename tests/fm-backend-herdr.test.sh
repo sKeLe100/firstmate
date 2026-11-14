@@ -5385,6 +5385,48 @@ test_send_text_submit_claude_grey_slash_command_is_proven_and_submitted() {
   pass "fm_backend_herdr_send_text_submit: a typed slash command Claude draws in muted truecolor grey is proven and submitted"
 }
 
+# A named Claude session titles its composer's top rule, and the away-mode
+# doorbell is wider than most panes, so the typed doorbell wraps onto
+# continuation rows above the closing rule. The payload proof must read that
+# wrapped draft and submit it once: reading it `unknown` cleared every
+# doorbell it typed and returned send-failed, so away mode delivered nothing.
+test_send_text_submit_claude_wrapped_doorbell_under_titled_rule_is_submitted() {
+  local dir log resp fb out enter_count text rule head row first=1
+  dir="$TMP_ROOT/submit-claude-titled-wrapped"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  text=$(bash -c '. "$0/bin/fm-operational-input.sh"; printf "%s%s%s" "$FM_OPERATIONAL_DOORBELL_PREFIX" "$1" "$FM_OPERATIONAL_DOORBELL_SUFFIX"' \
+    "$ROOT" "/home/fm/state/operational-inbox/1794626926-0123456789abcdef.msg")
+  herdr_submit_claude_prefix "$resp" "$text"
+  rule=$(printf '%0.s\xe2\x94\x80' $(seq 1 60))
+  head=$(printf '%0.s\xe2\x94\x80' $(seq 1 19))
+  {
+    printf '\x1b[0m\x1b[38;2;136;136;136m%s Firstmate operational input 1790546042 \xe2\x94\x80\x1b[0m\n' "$head"
+    printf '\xe2\x9d\xaf\xc2\xa0\n'
+    printf '\x1b[0m\x1b[38;2;136;136;136m%s\x1b[0m\n' "$rule"
+    printf '  \x1b[0m\x1b[38;2;86;93;96m\xe2\x8f\xb5\xe2\x8f\xb5 auto mode on\x1b[0m\n'
+  } > "$resp/2.out"
+  {
+    printf '\x1b[0m\x1b[38;2;136;136;136m%s Firstmate operational input 1790546042 \xe2\x94\x80\x1b[0m\n' "$head"
+    while IFS= read -r row; do
+      if [ "$first" = 1 ]; then printf '\xe2\x9d\xaf\xc2\xa0%s\n' "$row"; first=0; else printf '  %s\n' "$row"; fi
+    done <<EOF
+$(printf '%s\n' "$text" | fold -s -w 56)
+EOF
+    printf '\x1b[0m\x1b[38;2;136;136;136m%s\x1b[0m\n' "$rule"
+    printf '  \x1b[0m\x1b[38;2;86;93;96m\xe2\x8f\xb5\xe2\x8f\xb5 auto mode on\x1b[0m\n'
+  } > "$resp/4.out"
+  [ "$(grep -c '' "$resp/4.out")" -ge 6 ] || fail "the doorbell fixture should wrap onto continuation rows"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/5.out"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/7.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
+  [ "$out" = empty ] || fail "a doorbell wrapped under a titled top rule must be proven and submitted, got '$out'"
+  enter_count=$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")
+  [ "$enter_count" -eq 1 ] || fail "the proven wrapped doorbell should be submitted once, sent $enter_count Enter(s)"
+  [ "$(herdr_ctrl_u_count "$log")" -eq 0 ] || fail "a proven wrapped doorbell must not be cleared"
+  pass "fm_backend_herdr_send_text_submit: an away-mode doorbell wrapped under a titled Claude top rule is proven and submitted"
+}
+
 test_send_text_submit_lone_paste_placeholder_submits_the_long_payload() {
   local dir log resp fb out enter_count text
   dir="$TMP_ROOT/submit-paste-placeholder"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -6298,6 +6340,7 @@ test_send_text_submit_refuses_marked_digest_missing_its_head
 test_composer_state_claude_slash_popup_pushes_composer_above_tail_window
 test_send_text_submit_claude_slash_popup_composer_is_still_proven_and_submitted
 test_send_text_submit_claude_grey_slash_command_is_proven_and_submitted
+test_send_text_submit_claude_wrapped_doorbell_under_titled_rule_is_submitted
 test_send_text_submit_lone_paste_placeholder_submits_the_long_payload
 test_send_text_submit_multiline_paste_placeholder_submits_the_long_payload
 test_send_text_submit_refuses_placeholder_followed_by_a_literal_remainder
