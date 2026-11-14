@@ -1678,19 +1678,31 @@ _fm_composer_locate_footer_zone() {  # <plain>
 
 # _fm_composer_bare_rule_sandwich: 0 when bare agent-glyph <row> sits in its
 # own titled composer: a titled rule directly above it and the screen's only
-# unmatched separator directly below it, which is that composer's closing rule.
+# unmatched separator below it, which is that composer's closing rule.
 #
 # The cursorless staleness rule reads an unmatched separator BELOW a candidate
 # as proof the candidate is scrollback. A titled top rule never opens the
 # separator pair, so the composer's own closing rule becomes that unmatched
 # separator and a genuinely idle composer read `unknown`. Adjacency on BOTH
 # edges keeps the staleness rule intact everywhere else: a glyph stranded in
-# scrollback has transcript rows, not its own rules, around it.
+# scrollback has transcript rows, not its own rules, around it. The one
+# allowance is a draft wrapped onto continuation rows (a doorbell line is
+# wider than most panes): up to FM_COMPOSER_PI_MAX_LINES non-blank, edge-free
+# rows may sit between the glyph row and the closing rule, the same rows the
+# bare selection then extends over as content.
 _fm_composer_bare_rule_sandwich() {  # <plain-screen> <row>
-  local plain=$1 row=$2 above below
+  local plain=$1 row=$2 above below close next
   [ "$row" -ge 1 ] || return 1
-  [ "$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR" -eq "$((row + 1))" ] || return 1
-  below=$(_fm_composer_screen_row "$((row + 1))" "$plain")
+  close=$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR
+  [ "$close" -gt "$row" ] && [ "$((close - row))" -le "$FM_COMPOSER_PI_MAX_LINES" ] || return 1
+  next=$((row + 1))
+  while [ "$next" -lt "$close" ]; do
+    below=$(_fm_composer_screen_row "$next" "$plain")
+    fm_composer_normalize_trim_var below
+    [ -n "$below" ] && ! fm_composer_row_has_edge "$below" || return 1
+    next=$((next + 1))
+  done
+  below=$(_fm_composer_screen_row "$close" "$plain")
   fm_composer_normalize_trim_var below
   _fm_composer_pi_separator_row "$below" || return 1
   above=$(_fm_composer_screen_row "$((row - 1))" "$plain")

@@ -1113,6 +1113,40 @@ test_matrix_claude_titled_top_rule() {
   pass "matrix: claude's titled top rule proves an idle composer empty and a draft pending (#5601, #5558)"
 }
 
+test_matrix_claude_wrapped_draft_under_titled_rule() {
+  # A doorbell line is wider than most panes, so once typed under a named
+  # Claude session's titled top rule it wraps onto continuation rows between
+  # the glyph row and the closing rule. Requiring the closing rule directly
+  # below the glyph row read that draft `unknown`, so the Herdr payload proof
+  # cleared every away-mode doorbell it had typed and nothing was delivered.
+  local rule bottom footer gray named idle typed wrapped out claude_idle blankgap toolong
+  claude_idle=$(printf 'claude\tidle')
+  rule='────────────────────────────────────────'
+  bottom="${rule}────"
+  footer='  ⏵⏵ bypass permissions on (shift+tab to cycle)'
+  gray="${ESC}[38;2;138;138;138m"
+  # 21 dashes plus ` Dispatch second mate ─` is the closing rule's 44 columns.
+  named="${ESC}[0m${gray}───────────────────── Dispatch second mate ─${ESC}[0m"
+  idle=$'\n❯'"${NBSP}"$'\n'"${gray}${bottom}${ESC}[0m"$'\n'"$footer"
+  assert_screen "titled rule idle on herdr" empty "$CAPS_STYLED" "${named}${idle}" '' "$claude_idle"
+  typed="${named}"$'\n❯ draft not sent\n'"${bottom}"$'\n'"$footer"
+  assert_screen "titled rule one-row draft on herdr" pending "$CAPS_STYLED" "$typed" '' "$claude_idle"
+  # A wrapped draft is pending, and its full text is the selected content.
+  wrapped="${named}"$'\n❯ : Firstmate instruction waiting: list\n  the steering inbox, then mv each\n  into its handled/.\n'"${bottom}"$'\n'"$footer"
+  assert_screen "wrapped draft under a titled rule" pending "$CAPS_STYLED" "$wrapped" '' "$claude_idle"
+  assert_screen "wrapped draft under a titled rule on zellij" pending "$CAPS_STYLED_NOID" "$wrapped"
+  out=$(FM_COMPOSER_GHOST_LUMA_MAX=0 fm_composer_extract_selected_content "$CAPS_STYLED_NOID" "$wrapped")
+  [ "$out" = ': Firstmate instruction waiting: list the steering inbox, then mv each into its handled/.' ] \
+    || fail "wrapped titled draft should extract every continuation row, got '$out'"
+  # The allowance is bounded: a blank gap, or more continuation rows than a
+  # composer may hold, is not that composer's own draft.
+  blankgap="${named}"$'\n❯ first row\n\n  later row\n'"${bottom}"
+  assert_screen "titled rule with a blank gap above its closing rule" unknown "$CAPS_STYLED_NOID" "$blankgap"
+  toolong="${named}"$'\n❯ row\n  r1\n  r2\n  r3\n  r4\n  r5\n  r6\n  r7\n  r8\n'"${bottom}"
+  assert_screen "titled rule over too many continuation rows" unknown "$CAPS_STYLED_NOID" "$toolong"
+  pass "matrix: a wrapped draft under claude's titled top rule reads pending with its full text"
+}
+
 test_matrix_kimi_bordered_shell_glyph_box() {
   # Kimi's bordered `│ > │` composer - the shape fm-spawn.sh's retired
   # spawn-local regex used to own. Now the shared owner proves it everywhere,
@@ -1383,6 +1417,7 @@ test_matrix_opencode_leftbar_cwd_furniture
 test_matrix_opencode_leftbar_abs_cwd_furniture
 test_matrix_grok_titled_bottom_border
 test_matrix_claude_titled_top_rule
+test_matrix_claude_wrapped_draft_under_titled_rule
 test_matrix_kimi_bordered_shell_glyph_box
 test_matrix_claude_inside_zellij_ansi_dump
 test_strict_blank_row_divergence

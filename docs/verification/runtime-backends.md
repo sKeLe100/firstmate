@@ -867,6 +867,39 @@ The same bytes on a plain backend read `unknown` in both states, because opencod
 Overriding `FM_COMPOSER_LEFTBAR_FOOTER_RE` to a pattern that cannot match puts the false `pending` straight back on the captured idle pane, which pins the exemption as the load-bearing signal rather than an incidental pass.
 `fm_composer_extract_selected_content` applies the same rule to the same run, so the classified-empty pane hands back no composer text and the typed pane hands back only `fix the doorbell skip`; zellij's append proof (`fm_backend_zellij_composer_observed_append` in `bin/backends/zellij.sh`) requires the extracted text to equal the prior content plus the typed text, so a footer leaking into that read fails the send instead of confirming one.
 
+### 2026-11-14 claude 2.1.323 wrapped draft under a titled top rule
+
+Verified on 2026-11-14 on Linux x86_64 (WSL2 6.18.33.2) against Claude Code 2.1.323 at 138 columns.
+A named Claude session draws its name into the composer's top rule (`──── <name> ─`), and the 179-character away-mode doorbell wraps onto a second composer row at that width.
+The titled-rule check required the closing rule directly below the glyph row, so the typed doorbell read `unknown`, the Herdr Claude payload proof could not find it, cleared it with Ctrl+U, and returned `send-failed` on every attempt; an overnight away session delivered nothing.
+An idle titled composer read `empty` throughout, so the composer guard never deferred and the failure surfaced only as repeated `send-failed`.
+
+The live captures come from two sources.
+A read-only Herdr 0.9.5 capture of a live idle named Claude 2.1.323 pane, `herdr pane read <pane> --source visible --format ansi`, which reads `empty` both before and after the change.
+A real Claude 2.1.323 in a private tmux 3.6 server at 138x42 with the session renamed through `/rename`, drafts typed with `tmux send-keys -l` and captured with `tmux capture-pane -e -p`.
+Each capture was read with the Herdr Claude payload-proof descriptor:
+
+```sh
+bash -c '. bin/fm-backend.sh; fm_backend_source herdr
+  cap=$(cat <capture>.ansi)
+  FM_COMPOSER_GHOST_LUMA_MAX=0 fm_composer_extract_selected_content "$(printf "styled=1\ncursor=0\nidentity=0")" "$cap"; echo "rc=$?"
+  fm_composer_classify_screen "$(printf "styled=1\ncursor=0\nidentity=1")" "$cap"'
+```
+
+Observed output per capture, before the change and after it:
+
+```text
+capture                                   before            after
+titled rule, idle                         empty             empty
+titled rule, one-row draft                pending           pending
+titled rule, doorbell wrapped to 2 rows   rc=1 / unknown    full text / pending
+untitled rule, doorbell wrapped           pending           pending
+```
+
+`test_matrix_claude_wrapped_draft_under_titled_rule` in `tests/fm-composer-lib.test.sh` pins the shape and its bounds: a blank gap above the closing rule and more continuation rows than `FM_COMPOSER_PI_MAX_LINES` still read `unknown`.
+`test_send_text_submit_claude_wrapped_doorbell_under_titled_rule_is_submitted` in `tests/fm-backend-herdr.test.sh` drives the Herdr submit end to end and requires one Enter and no Ctrl+U.
+The live composer-matrix guard does not launch a named Claude session, so these captures are this entry's live evidence.
+
 ### 2026-09-20 claude 2.1.236 statusLine footer through Herdr
 
 Verified on 2026-09-20 on macOS arm64 (Darwin 25.6.0) against Claude Code 2.1.236 running as Firstmate workers in Herdr 0.8.0 panes, read through Herdr's ANSI capture with its exact capability descriptor (`styled=1`, `cursor=0`, `identity=1`, `rows=20`).
