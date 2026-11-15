@@ -1771,9 +1771,19 @@ test_claude_task_launch_carries_control_channel_authority() {
     "claude task launch weakened the external-content trust boundary"
   assert_contains "$launch" "does not grant merge, destructive, security-sensitive, or other authority absent from the brief" \
     "claude task launch did not preserve the authority boundary"
-  assert_contains "$launch" "$CLAUDE_TASK_DISALLOWED_FLAG" \
-    "claude task launch did not disallow the built-in tools no task worker uses"
-  pass "a claude task launch establishes only Firstmate's task control channels and disallows unused built-in tools"
+  assert_not_contains "$launch" "--disallowed-tools" \
+    "non-Haiku claude task launch received the built-in tool disallow list"
+
+  id=profile-claude-haiku-trim-z21c
+  rec=$(make_spawn_case profile-claude-haiku-trim claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model claude-haiku-5-5)
+  status=$?
+  expect_code 0 "$status" "claude haiku crewmate spawn should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "$CLAUDE_TASK_DISALLOWED_FLAG--append-system-prompt 'You are a task worker" \
+    "haiku claude task launch did not disallow unused built-in tools ahead of the system prompt"
+  pass "a claude task launch establishes only Firstmate's task control channels and trims built-in tools for Haiku only"
 }
 
 test_claude_secondmate_launch_omits_task_control_channel_authority() {
@@ -2290,13 +2300,13 @@ claude_worker_add_dirs() {  # <home> <id>
   printf '%s ' "--add-dir '$state_real/operational-inbox' --add-dir '$state_real/$2.inbox' --add-dir '$data_real/$2' --add-dir '$root_real/.agents/skills'"
 }
 
-claude_expected_launch() {  # <launch> <home> <id> <permission-flag>
+claude_expected_launch() {  # <launch> <home> <id> <permission-flag> [<disallowed-flag>]
   local doorbell quoted
   doorbell=$(claude_launch_brief_arg "$1")
   [ "$(printf '%s' "$doorbell" | "$ROOT/bin/fm-operational-input.sh" doorbell-kind)" = launch-brief ] \
     || doorbell="not a launch-brief doorbell"
   quoted="'$(printf '%s' "$doorbell" | sed "s/'/'\\\\''/g")'"
-  printf '%s' "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$2" "$3")$(fm_test_launch_git_prefix "$1")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI -u FM_CREW_STATE_META_OVERRIDE -u FM_CREW_STATE_STATUS_OVERRIDE CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $4 $(claude_worker_add_dirs "$2" "$3")--settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_TASK_DISALLOWED_FLAG$CLAUDE_CONTROL_CHANNEL_FLAG $quoted"
+  printf '%s' "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$2" "$3")$(fm_test_launch_git_prefix "$1")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI -u FM_CREW_STATE_META_OVERRIDE -u FM_CREW_STATE_STATUS_OVERRIDE CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $4 $(claude_worker_add_dirs "$2" "$3")--settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' ${5:-}$CLAUDE_CONTROL_CHANNEL_FLAG $quoted"
 }
 
 test_claude_permission_mode_bypass_matches_absent_launch() {

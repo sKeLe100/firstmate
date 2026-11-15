@@ -13,7 +13,7 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 | Model | `--model <model>`; discover through the interactive `/model` picker, with alias or full-name shape documented by `claude --help`. |
 | Effort | `--effort <low\|medium\|high\|xhigh\|max>`, verified on 2.1.196. |
 | Permissions | `--dangerously-skip-permissions` by default, or `--permission-mode auto` when `config/claude-permission-mode` is `auto`; the `auto` shape verified on 2.1.269. See [`Claude permission mode`](../../../../../docs/configuration.md#claude-permission-mode-configclaude-permission-mode) for the launch grant and configuration. |
-| Built-in tools | Ship and scout workers launch with `--disallowed-tools` for the built-in tools no task worker uses; secondmates keep the full set, and `bin/fm-spawn.sh` `launch_template` owns the exact list. |
+| Built-in tools | Ship and scout workers on a Haiku model launch with `--disallowed-tools` for the built-in tools no task worker uses; secondmates and non-Haiku workers keep the full set, and `bin/fm-spawn.sh` `DISALLOWEDFLAG` owns the exact list. |
 
 ## Workspace trust
 
