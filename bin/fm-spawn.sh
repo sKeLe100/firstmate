@@ -2672,9 +2672,7 @@ launch_template() {
     if [ "$kind" != secondmate ]; then
       # Haiku task workers (ship and scout) never use these built-in tools, and
       # their schemas cost first-request context on every turn, so the
-      # __DISALLOWEDFLAG__ placeholder expands to a disallow list for them only. Task
-      # workers drive browsers through chrome-devtools-axi, not MCP, so the same
-      # placeholder adds an empty strict MCP config.
+      # __DISALLOWEDFLAG__ placeholder expands to a disallow list for them only.
       # It sits before --append-system-prompt, which keeps the variadic
       # --disallowed-tools from consuming the trailing brief doorbell.
       printf '%s' '__DISALLOWEDFLAG__'
@@ -6498,7 +6496,7 @@ MODELFLAG=$(model_flag_for_harness "$HARNESS" "$MODEL")
 EFFORTFLAG=$(effort_flag_for_harness "$HARNESS" "$EFFORT" "$MODEL") || exit 1
 DISALLOWEDFLAG=
 case "$HARNESS:$MODEL" in
-claude:*haiku*) DISALLOWEDFLAG='--mcp-config '\''{"mcpServers":{}}'\'' --strict-mcp-config --disallowed-tools Artifact Workflow ScheduleWakeup ReportFindings ReadNotifications ListAgents AskUserQuestion ' ;;
+claude:*haiku*) DISALLOWEDFLAG='--disallowed-tools Artifact Workflow ScheduleWakeup ReportFindings ReadNotifications ListAgents AskUserQuestion ' ;;
 esac
 LAUNCH=${LAUNCH//__DISALLOWEDFLAG__/$DISALLOWEDFLAG}
 LAUNCH=${LAUNCH//__MODELFLAG__/$MODELFLAG}
