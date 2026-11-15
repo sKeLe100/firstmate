@@ -449,7 +449,7 @@ test_stops_the_pc02_offload_run_root() {
   local base_rel=roots-here prefix expected root victim other_root other marker collide_root collide
   export FM_PC02_OFFLOAD_REMOTE_BASE=$base_rel
   prefix=$(pc02_prefix "$RUNA" "$base_rel")
-  expected="$base_rel/run-$(printf '%s' "$(cd "$RUNA" && pwd)" | cksum | cut -d' ' -f1 | cut -c1-$FM_PC02_RUN_DIGEST_CHARS)-"
+  expected="$base_rel/run-$(printf '%s' "$(cd "$RUNA" && pwd)" | cksum | cut -d' ' -f1 | cut -c1-"$FM_PC02_RUN_DIGEST_CHARS")-"
   assert_equals "$expected" "$prefix" "the offload owner names the run root by the documented contract"
   root="$CASE_DIR/pc02-home/${prefix}4242"
   start_run "$root/worktree" 'sleep 300'
@@ -459,7 +459,7 @@ test_stops_the_pc02_offload_run_root() {
   marker="$root/keep.txt"
   : > "$marker"
   : > "$RUNA/keep.txt"
-  other_root="$CASE_DIR/pc02-home/$base_rel/run-$(printf '%s' "$CASE_DIR/some-other-run" | cksum | cut -d' ' -f1 | cut -c1-$FM_PC02_RUN_DIGEST_CHARS)-4243"
+  other_root="$CASE_DIR/pc02-home/$base_rel/run-$(printf '%s' "$CASE_DIR/some-other-run" | cksum | cut -d' ' -f1 | cut -c1-"$FM_PC02_RUN_DIGEST_CHARS")-4243"
   start_run "$other_root/worktree" 'sleep 300'
   other=$LAST_PID
   printf '%s\n' "$other" > "$other_root/pgid"
