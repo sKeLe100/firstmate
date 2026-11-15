@@ -78,10 +78,13 @@
 #     changes.
 #   - Auto-stow: a primary session whose own transcript reaches the restart
 #     context band gets one rewake per session telling it to run /stow, so the
-#     checkpoint lands before automatic compaction can drop detail.
-#     autostow_fire below owns its gates and once-per-session marker; the policy,
-#     its coverage gates, and its thresholds are owned by docs/configuration.md
-#     "Session context thresholds".
+#     checkpoint lands before automatic compaction can drop detail. If context
+#     keeps growing AUTOSTOW_FOLLOWUP_MARGIN tokens past the stow turn's own end
+#     (the first Stop after that wake records the baseline), one follow-up
+#     rewake per session tells the captain to /clear.
+#     autostow_fire below owns its gates and once-per-session markers; the
+#     policy, its coverage gates, and its thresholds are owned by
+#     docs/configuration.md "Session context thresholds".
 #   - Translation: while supervision is still needed and AFK remains inactive,
 #     an actionable arm close (signal:/stale:/check:/heartbeat) prints one
 #     rewake banner to stderr and exits 2, which wakes Claude even while idle
@@ -130,7 +133,8 @@ It reads the Stop payload on stdin. In a primary home that needs supervision
 it arms the watcher or supervision host for this session. While supervision
 is already covered - an idle home that needs none, or a live watcher that
 already holds it - it instead emits at most one restart-band auto-stow wake
-per session, telling the session to run /stow.
+per session, telling the session to run /stow, and at most one follow-up wake
+later in that session once context has grown further past the stow turn.
 Exit 0 is silent; exit 2 carries the rewake banner or the auto-stow wake on
 stderr.
 EOF
@@ -231,10 +235,17 @@ fi
 
 # --- auto-stow at the restart band ----------------------------------------------
 # autostow_fire runs the mechanical gates below and writes the once-per-session
-# marker; the policy, its coverage gates, and its thresholds are owned by
+# markers; the policy, its coverage gates, and its thresholds are owned by
 # docs/configuration.md "Session context thresholds".
+# The first wake records the context_tokens it fired at as its marker's first
+# line; the first Stop after it ends the stow turn and appends that Stop's count
+# as the baseline line, staying silent. The follow-up fires at most once more per
+# session, and only once context has grown AUTOSTOW_FOLLOWUP_MARGIN tokens past
+# that baseline, so the stow's own growth never counts. The margin is a fixed
+# constant because no configured band measures growth past the restart band.
+AUTOSTOW_FOLLOWUP_MARGIN=20000
 autostow_fire() {
-  local sid transcript out band marker tokens limit
+  local sid transcript out band marker followup tokens limit baseline
   [ -n "$PAYLOAD" ] || return 1
   command -v jq >/dev/null 2>&1 || return 1
   [ -e "$CONFIG/auto-stow-off" ] && return 1
@@ -247,13 +258,32 @@ autostow_fire() {
   case "$sid" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   [ -f "$transcript" ] || return 1
   marker="$STATE/.auto-stow-$sid"
-  [ -e "$marker" ] && return 1
+  followup="$STATE/.auto-stow-followup-$sid"
+  [ -e "$followup" ] && return 1
   out=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-context-usage.sh" "$transcript" 2>/dev/null) || return 1
+  tokens=$(printf '%s\n' "$out" | tr ' ' '\n' | sed -n 's/^context_tokens=//p' | head -n 1)
+  if [ -e "$marker" ]; then
+    # A marker whose first line is not the first wake's count, written before
+    # this check existed, never follows up.
+    baseline=$(sed -n '1p' "$marker" 2>/dev/null)
+    case "$baseline" in ''|*[!0-9]*) return 1 ;; esac
+    case "$tokens" in ''|*[!0-9]*) return 1 ;; esac
+    baseline=$(sed -n '2p' "$marker" 2>/dev/null)
+    if [ -z "$baseline" ]; then
+      printf '%s\n' "$tokens" >> "$marker" 2>/dev/null
+      return 1
+    fi
+    case "$baseline" in *[!0-9]*) return 1 ;; esac
+    [ "$tokens" -ge $((baseline + AUTOSTOW_FOLLOWUP_MARGIN)) ] || return 1
+    ( set -C; : > "$followup" ) 2>/dev/null || return 1
+    printf 'firstmate auto-stow follow-up - this primary session kept growing past the restart context band after its stow turn (context_tokens=%s, stow turn ended at context_tokens=%s).\n' "$tokens" "$baseline" >&2
+    printf 'The stow was already asked for in this session and context keeps growing, so recommend the captain run /clear now. Never run /clear yourself. This follow-up fires once per session.\n' >&2
+    return 0
+  fi
   band=$(printf '%s\n' "$out" | tr ' ' '\n' | sed -n 's/^band=//p' | head -n 1)
   [ "$band" = restart ] || return 1
-  ( set -C; : > "$marker" ) 2>/dev/null || return 1
-  tokens=$(printf '%s\n' "$out" | tr ' ' '\n' | sed -n 's/^context_tokens=//p' | head -n 1)
   limit=$(printf '%s\n' "$out" | tr ' ' '\n' | sed -n 's/^restart_tokens=//p' | head -n 1)
+  ( set -C; printf '%s\n' "$tokens" > "$marker" ) 2>/dev/null || return 1
   printf 'firstmate auto-stow - this primary session reached the restart context band (context_tokens=%s, restart_tokens=%s).\n' "$tokens" "$limit" >&2
   printf 'Run the stow skill now (/stow) to checkpoint durable records before automatic compaction can lose detail, then recommend /clear to the captain. Never run /clear yourself. This notice fires once per session.\n' >&2
   return 0

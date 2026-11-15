@@ -94,6 +94,14 @@ expect_silent() {  # <message>
   [ -z "$ERR" ] || fail "$1: expected silence, got: $ERR"
 }
 
+expect_followup() {  # <message>
+  [ "$RC" -eq 2 ] || fail "$1: expected exit 2, got $RC (stderr: $ERR)"
+  case "$ERR" in
+    *"firstmate auto-stow follow-up"*"recommend the captain run /clear now"*"Never run /clear yourself"*) ;;
+    *) fail "$1: expected the auto-stow follow-up banner, got: $ERR" ;;
+  esac
+}
+
 # 1. Restart band in an idle primary home: one wake, exit 2, and a marker keyed
 #    to the session.
 home=$(make_home "$TMP_ROOT/main")
@@ -274,5 +282,49 @@ esac
 [ ! -e "$poll_home/state/.turnend-claude-blocks" ] || fail "the guard must not charge the block budget for a stop the auto-arm covers"
 kill "$poll_watch_pid" 2>/dev/null || true
 wait "$poll_watch_pid" 2>/dev/null || true
+
+# 13. Follow-up: the stow turn's own growth never fires it. First wake at 300000;
+#     the stow turn's Stop at 340000 records the baseline and stays silent; the
+#     follow-up waits for 360000 (baseline + 20000), fires once, never twice.
+follow_home=$(make_home "$TMP_ROOT/followup")
+ft="$TMP_ROOT/followup.jsonl"
+write_transcript "$ft" 300000
+run_stop "$follow_home" sess-follow "$ft"
+expect_wake "follow-up scenario: first wake"
+write_transcript "$ft" 340000
+run_stop "$follow_home" sess-follow "$ft"
+expect_silent "the stow turn's own growth records the baseline only"
+write_transcript "$ft" 359999
+run_stop "$follow_home" sess-follow "$ft"
+expect_silent "context just inside the follow-up margin past the baseline"
+write_transcript "$ft" 360000
+run_stop "$follow_home" sess-follow "$ft"
+expect_followup "context at the follow-up margin past the baseline"
+write_transcript "$ft" 400000
+run_stop "$follow_home" sess-follow "$ft"
+expect_silent "a second follow-up in the same session"
+
+# 14. config/auto-stow-off silences the follow-up as well as the first wake.
+follow_off_home=$(make_home "$TMP_ROOT/followup-off")
+fo="$TMP_ROOT/followup-off.jsonl"
+write_transcript "$fo" 300000
+run_stop "$follow_off_home" sess-follow-off "$fo"
+expect_wake "off-switch follow-up scenario: first wake"
+write_transcript "$fo" 340000
+run_stop "$follow_off_home" sess-follow-off "$fo"
+expect_silent "the off-switch scenario's stow turn"
+: > "$follow_off_home/config/auto-stow-off"
+write_transcript "$fo" 400000
+run_stop "$follow_off_home" sess-follow-off "$fo"
+expect_silent "config/auto-stow-off after the first wake"
+
+# 15. A first-wake marker written before the follow-up existed records no count,
+#     so it never produces a follow-up however far context grows.
+legacy_home=$(make_home "$TMP_ROOT/followup-legacy")
+: > "$legacy_home/state/.auto-stow-sess-legacy"
+lg="$TMP_ROOT/followup-legacy.jsonl"
+write_transcript "$lg" 400000
+run_stop "$legacy_home" sess-legacy "$lg"
+expect_silent "a first-wake marker without a recorded count"
 
 pass "fm-claude-stop-autostow.test.sh"
