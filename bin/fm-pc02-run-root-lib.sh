@@ -40,6 +40,9 @@ FM_PC02_OFFLOAD_SCRIPT=fm-pc02-test-offload.sh
 
 # shellcheck disable=SC2034 # Read by the files that source this library.
 FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT=fmp
+# The base earlier offloads used; roots left there are still reported and reclaimed.
+# shellcheck disable=SC2034 # Read by the files that source this library.
+FM_PC02_OFFLOAD_REMOTE_BASE_LEGACY=.fm-pc02-test-offload
 # Five decimal digits of a 32-bit cksum; the pid still distinguishes concurrent
 # runs, so this only narrows which stale roots a stop walks.
 # shellcheck disable=SC2034 # Read by the files that source this library.

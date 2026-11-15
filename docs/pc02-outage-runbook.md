@@ -227,6 +227,7 @@ On PC02 (inside `ssh pc02`), re-check and remove only those paths:
 age=${FM_PC02_HYGIENE_STALE_AGE_SECS:-21600}
 tmp_root=${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}
 remote_base=${FM_PC02_OFFLOAD_REMOTE_BASE:-fmp}
+legacy_base=.fm-pc02-test-offload
 now=$(date +%s)
 group_alive() {  # <root>: the mirrored run's pgid still names a live group
   local pg
@@ -252,6 +253,7 @@ while IFS= read -r dir; do
   [ -n "$dir" ] || continue
   case "$dir" in
     "$HOME/$remote_base"/run-*) ;;
+    "$HOME/$legacy_base"/run-*) ;;
     "$tmp_root"/fm-test-run.*) ;;
     "$tmp_root"/fm-*) [ -f "$dir/.fm-test-fixture" ] || continue ;;
     *) continue ;;
