@@ -366,13 +366,15 @@ ts_pc02_claim() {  # <run-dir>
 }
 
 # PC02 entry point, run as `bash -s` over ssh. Walks each offload run root the
-# offload's own prefix names and whose pgid file names the run's group.
+# offload's own prefix names, whose local-root file names this run's local
+# directory, and whose pgid file names the run's group.
 # shellcheck disable=SC2329 # Invoked on PC02 from the text `declare -f` sends over ssh.
-ts_remote_main() {  # <remote-prefix> <grace> <dry-run>
-  local prefix=$1 d g rc=0
+ts_remote_main() {  # <remote-prefix> <grace> <dry-run> <local-run-root>
+  local prefix=$1 d g lr rc=0
   local -a hits=()
   GRACE=$2
   DRY_RUN=$3
+  lr=$4
   HOST_LABEL=pc02
   shopt -s nullglob
   case "$prefix" in
@@ -386,6 +388,7 @@ ts_remote_main() {  # <remote-prefix> <grace> <dry-run>
     case "$g" in
       ''|*[!0-9]*) continue ;;
     esac
+    [ -f "$d/local-root" ] && [ "$(cat "$d/local-root" 2>/dev/null)" = "$lr" ] || continue
     RUN_DIR=$d/worktree
     REQUIRE_PGID=$g
     ts_engine || rc=1
@@ -521,7 +524,7 @@ main() {
       pc02_out=$(
         {
           declare -f "${TS_FUNCS[@]}"
-          printf 'ts_remote_main %q %q %q\n' "$prefix" "$GRACE" "$dry"
+          printf 'ts_remote_main %q %q %q %q\n' "$prefix" "$GRACE" "$dry" "$local_dir"
         } | timeout "$ssh_timeout" ssh -o BatchMode=yes -o ConnectTimeout=10 \
               "${FM_PC02_OFFLOAD_HOST:-pc02}" bash -s
       )

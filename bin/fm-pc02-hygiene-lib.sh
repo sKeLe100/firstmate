@@ -152,7 +152,7 @@ done < <(stat -c '%Y %n' -- "\$tmp_root"/fm-*/.fm-test-fixture 2>/dev/null)
 while read -r m d; do
   [ -d "\$d" ] && [ ! -L "\$d" ] || continue
   add_stale_root "\$d" "\$m"
-done < <(stat -c '%Y %n' -- "\$HOME/\$remote_base"/run-* "\$tmp_root"/fm-test-run.* 2>/dev/null)
+done < <(stat -c '%Y %n' -- "\$HOME/\$remote_base"/run-* "\$HOME/.fm-pc02-test-offload"/run-* "\$tmp_root"/fm-test-run.* 2>/dev/null)
 
 build_scan() {
   scratch=\$(mktemp -d "\$HOME/.fm-pc02-hygiene.XXXXXX" 2>/dev/null) || return 1

@@ -986,6 +986,7 @@ ulimit -Sn \"\$(ulimit -Hn)\" 2>/dev/null || true
 # rather than silently leave TMPDIR empty.
 run_dir=\$(cd $(printf '%q' "$REMOTE_RUN") && pwd) || exit 1
 mkdir -p \"\$run_dir/tmp\" || exit 1
+printf '%s\\n' $(printf '%q' "$ROOT") > \"\$run_dir/local-root\" || exit 1
 export TMPDIR=\"\$run_dir/tmp\"
 cd \"\$run_dir/worktree\" || exit 1
 $remote_suite_cmd &

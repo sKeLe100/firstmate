@@ -446,7 +446,7 @@ test_run_root_name_is_dot_free_and_socket_safe() {
 
 test_stops_the_pc02_offload_run_root() {
   world pc02
-  local base_rel=roots-here prefix expected root victim other_root other marker
+  local base_rel=roots-here prefix expected root victim other_root other marker collide_root collide
   export FM_PC02_OFFLOAD_REMOTE_BASE=$base_rel
   prefix=$(pc02_prefix "$RUNA" "$base_rel")
   expected="$base_rel/run-$(printf '%s' "$(cd "$RUNA" && pwd)" | cksum | cut -d' ' -f1 | cut -c1-$FM_PC02_RUN_DIGEST_CHARS)-"
@@ -455,6 +455,7 @@ test_stops_the_pc02_offload_run_root() {
   start_run "$root/worktree" 'sleep 300'
   victim=$LAST_PID
   printf '%s\n' "$victim" > "$root/pgid"
+  printf '%s\n' "$RUNA" > "$root/local-root"
   marker="$root/keep.txt"
   : > "$marker"
   : > "$RUNA/keep.txt"
@@ -462,6 +463,12 @@ test_stops_the_pc02_offload_run_root() {
   start_run "$other_root/worktree" 'sleep 300'
   other=$LAST_PID
   printf '%s\n' "$other" > "$other_root/pgid"
+  printf '%s\n' "$CASE_DIR/some-other-run" > "$other_root/local-root"
+  collide_root="$CASE_DIR/pc02-home/${prefix}4244"
+  start_run "$collide_root/worktree" 'sleep 300'
+  collide=$LAST_PID
+  printf '%s\n' "$collide" > "$collide_root/pgid"
+  printf '%s\n' "$CASE_DIR/prefix-collision" > "$collide_root/local-root"
   run_stop task-a --host pc02 --dry-run
   expect_code 0 "$RC" "PC02 dry-run"
   assert_contains "$OUT" "dry-run pc02 group=$victim would-stop=2 mode=group" "PC02 dry-run names the offload group"
@@ -472,6 +479,7 @@ test_stops_the_pc02_offload_run_root() {
   assert_contains "$OUT" "run RUN-A-pc02 status=running" "the run's status follows the stop lines"
   proc_live "$victim" && fail "the PC02 offload run survived its stop"
   proc_live "$other" || fail "a PC02 run root of another run directory was stopped"
+  proc_live "$collide" || fail "a PC02 run root sharing the prefix but recording another local root was stopped"
   assert_grep "bash -s" "$CASE_DIR/ssh.log" "PC02 was reached over the one bounded ssh call"
   [ -e "$marker" ] || fail "the stop removed a file from the PC02 run root"
   [ -e "$RUNA/keep.txt" ] || fail "the stop removed a file from the local run directory"
@@ -525,6 +533,7 @@ test_default_invocation_checks_both_hosts() {
   start_run "$root/worktree" 'sleep 300'
   pc02_victim=$LAST_PID
   printf '%s\n' "$pc02_victim" > "$root/pgid"
+  printf '%s\n' "$RUNA" > "$root/local-root"
   run_stop task-a
   expect_code 0 "$RC" "default two-host invocation"
   assert_contains "$OUT" "pc01 group=$victim " "the default invocation stops PC01"
@@ -551,6 +560,7 @@ test_default_invocation_with_a_claim_stops_the_pc02_root_first() {
   start_run "$root/worktree" 'sleep 300'
   pc02_victim=$LAST_PID
   printf '%s\n' "$pc02_victim" > "$root/pgid"
+  printf '%s\n' "$RUNA" > "$root/local-root"
   run_stop task-a
   expect_code 0 "$RC" "a claimed default run stops both hosts"
   assert_contains "$OUT" "pc02 group=$pc02_victim " "the PC02 root is stopped while its mirror still exists"
