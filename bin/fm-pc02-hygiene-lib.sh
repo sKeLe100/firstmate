@@ -40,7 +40,9 @@
 # required field as an unclear host read rather than zero.
 #
 # Definitions (owned here, not restated in the callers):
-#   - A test root is "$HOME/<remote_base>"/run-*, "<tmp_root>"/fm-test-run.*, or
+#   - A test root is "$HOME/<remote_base>"/run-* (the offload's short dot-free
+#     run root from bin/fm-pc02-run-root-lib.sh) or "$HOME/<legacy base>"/run-* (the
+#     earlier offload base named there), "<tmp_root>"/fm-test-run.*, or
 #     a "<tmp_root>"/fm-* directory carrying the tests/lib.sh .fm-test-fixture
 #     marker: a real directory (not a symlink) whose mtime - the marker's own
 #     for a fixture root - is at least stale_age_secs old.
@@ -111,14 +113,16 @@ REMOTE
 
 fm_pc02_hygiene_remote_script() {  # <tmp_root> <remote_base> <stale_age> <idle_age> <meminfo>
   local tmp_root=$1 remote_base=$2 stale_age=$3 idle_age=$4 meminfo=$5
-  local q_tmp q_base q_meminfo shown_cap=$FM_PC02_DEFAULT_STALE_PATHS_SHOWN
+  local q_tmp q_base q_legacy q_meminfo shown_cap=$FM_PC02_DEFAULT_STALE_PATHS_SHOWN
   q_tmp=$(printf '%q' "$tmp_root")
   q_base=$(printf '%q' "$remote_base")
+  q_legacy=$(printf '%q' "$FM_PC02_OFFLOAD_REMOTE_BASE_LEGACY")
   q_meminfo=$(printf '%q' "$meminfo")
   cat <<REMOTE
 # fm-pc02-hygiene-probe
 tmp_root=$q_tmp
 remote_base=$q_base
+legacy_base=$q_legacy
 stale_age=$stale_age
 idle_age=$idle_age
 meminfo=$q_meminfo
@@ -151,7 +155,7 @@ done < <(stat -c '%Y %n' -- "\$tmp_root"/fm-*/.fm-test-fixture 2>/dev/null)
 while read -r m d; do
   [ -d "\$d" ] && [ ! -L "\$d" ] || continue
   add_stale_root "\$d" "\$m"
-done < <(stat -c '%Y %n' -- "\$HOME/\$remote_base"/run-* "\$tmp_root"/fm-test-run.* 2>/dev/null)
+done < <(stat -c '%Y %n' -- "\$HOME/\$remote_base"/run-* "\$HOME/\$legacy_base"/run-* "\$tmp_root"/fm-test-run.* 2>/dev/null)
 
 build_scan() {
   scratch=\$(mktemp -d "\$HOME/.fm-pc02-hygiene.XXXXXX" 2>/dev/null) || return 1

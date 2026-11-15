@@ -11,6 +11,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SCRIPT="$ROOT/bin/fm-pc02-hygiene.sh"
+# shellcheck source=bin/fm-pc02-run-root-lib.sh
+. "$ROOT/bin/fm-pc02-run-root-lib.sh"
 # The probe reads Linux-only fields (GNU stat -c and ps etimes) and the report
 # bounds its ssh call with GNU timeout; the fake host below runs that probe
 # locally, so the field cases only prove anything where those tools exist.
@@ -79,6 +81,21 @@ test_report_is_data_only_and_ok_when_within_bounds() {
     *stale_test_root=*) fail "a clean host named stale root paths: $out" ;;
   esac
   pass "the hygiene report prints memory, /tmp, disk, stale roots and old processes as data"
+}
+
+test_report_counts_a_stale_root_under_the_legacy_base() {
+  local out legacy
+  if ! probe_host_supported; then
+    pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
+  fi
+  legacy="$FM_HYGIENE_FAKE_HOME/$FM_PC02_OFFLOAD_REMOTE_BASE_LEGACY/run-x"
+  mkdir -p "$legacy"
+  touch -d '3 hours ago' "$legacy"
+  out=$(FM_PC02_HYGIENE_STALE_AGE_SECS=3600 FM_PC02_HYGIENE_STALE_ROOTS_MAX=0 "$SCRIPT" 2>&1)
+  assert_contains "$out" "stale_test_root=$legacy" "a stale root under the legacy base was not reported: $out"
+  [ -d "$legacy" ] || fail "the read-only report removed a legacy root"
+  rm -rf "$legacy"
+  pass "a stale root under the legacy offload base is reported"
 }
 
 test_report_names_each_crossed_bound_and_never_deletes() {
@@ -175,7 +192,7 @@ test_unverifiable_reference_scan_is_unknown_not_ok() {
     pass "skip: the PC02 probe needs GNU stat/ps fields and GNU timeout"; return
   fi
   tmp="$TMP_ROOT/no-scan"
-  stale="$tmp/home/.fm-pc02-test-offload/run-stale"
+  stale="$tmp/home/$FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT/run-stale"
   mkdir -p "$stale" "$tmp/tmp"
   touch -d '3 hours ago' "$stale"
   chmod 500 "$tmp/home"
@@ -314,6 +331,7 @@ test_help_prints_the_read_only_contract() {
 }
 
 test_report_is_data_only_and_ok_when_within_bounds
+test_report_counts_a_stale_root_under_the_legacy_base
 test_report_names_each_crossed_bound_and_never_deletes
 test_fixture_roots_count_only_with_their_marker
 test_unverifiable_reference_scan_is_unknown_not_ok

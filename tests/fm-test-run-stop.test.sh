@@ -170,7 +170,7 @@ world() {
   export FM_TEST_SSH_FAIL=0
   export FM_TEST_RUN_STOP_GRACE_SECS=2
   export FM_PC02_OFFLOAD_HOST=pc02
-  export FM_PC02_OFFLOAD_REMOTE_BASE=.fm-pc02-test-offload
+  export FM_PC02_OFFLOAD_REMOTE_BASE=$FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT
   export PATH="$FAKEBIN:$PATH"
 }
 
@@ -419,24 +419,56 @@ test_reports_none_when_nothing_runs() {
   pass "prints none when no run process exists"
 }
 
+# The run root is also the offload's TMPDIR parent, and the suite nests worker,
+# family, and fixture roots below it before binding an AF_UNIX socket. A long
+# or dotted root makes unrelated tests fail, so the contract is pinned here.
+test_run_root_name_is_dot_free_and_socket_safe() {
+  local prefix rel comp tmp
+  unset FM_PC02_OFFLOAD_REMOTE_BASE
+  prefix=$(fm_pc02_remote_run_prefix /home/sean_/.treehouse/firstmate-0c6912/4/firstmate)
+  rel=$prefix
+  case "$rel" in /*) ;; *) rel=/$rel ;; esac
+  local IFS=/
+  for comp in $rel; do
+    [ -z "$comp" ] && continue
+    case "$comp" in
+      .*) fail "the run root carries the dot component '$comp', which git check-ref-format rejects: $prefix" ;;
+    esac
+  done
+  unset IFS
+  # TMPDIR, then /fm-test-run.XXXXXX, /w1/tmp, /fm-herdr-groups.XXXXXX and
+  # /view-helper/s.sock: 68 fixed characters to the socket path.
+  tmp="/home/sean_/${prefix}1234567/tmp"
+  [ "$((${#tmp} + 68))" -le 107 ] \
+    || fail "the offload TMPDIR plus the suite's nested socket path is $(( ${#tmp} + 68 )) bytes, over the 107-byte AF_UNIX limit: $tmp"
+  pass "the offload run root is dot-free and keeps the suite's socket path inside the AF_UNIX limit"
+}
+
 test_stops_the_pc02_offload_run_root() {
   world pc02
-  local base_rel=roots-here prefix expected root victim other_root other marker
+  local base_rel=roots-here prefix expected root victim other_root other marker collide_root collide
   export FM_PC02_OFFLOAD_REMOTE_BASE=$base_rel
   prefix=$(pc02_prefix "$RUNA" "$base_rel")
-  expected="$base_rel/run-$(printf '%s' "$(cd "$RUNA" && pwd)" | cksum | cut -d' ' -f1)-"
+  expected="$base_rel/run-$(printf '%s' "$(cd "$RUNA" && pwd)" | cksum | cut -d' ' -f1 | cut -c1-"$FM_PC02_RUN_DIGEST_CHARS")-"
   assert_equals "$expected" "$prefix" "the offload owner names the run root by the documented contract"
   root="$CASE_DIR/pc02-home/${prefix}4242"
   start_run "$root/worktree" 'sleep 300'
   victim=$LAST_PID
   printf '%s\n' "$victim" > "$root/pgid"
+  printf '%s\n' "$RUNA" > "$root/local-root"
   marker="$root/keep.txt"
   : > "$marker"
   : > "$RUNA/keep.txt"
-  other_root="$CASE_DIR/pc02-home/$base_rel/run-$(printf '%s' "$CASE_DIR/some-other-run" | cksum | cut -d' ' -f1)-4243"
+  other_root="$CASE_DIR/pc02-home/$base_rel/run-$(printf '%s' "$CASE_DIR/some-other-run" | cksum | cut -d' ' -f1 | cut -c1-"$FM_PC02_RUN_DIGEST_CHARS")-4243"
   start_run "$other_root/worktree" 'sleep 300'
   other=$LAST_PID
   printf '%s\n' "$other" > "$other_root/pgid"
+  printf '%s\n' "$CASE_DIR/some-other-run" > "$other_root/local-root"
+  collide_root="$CASE_DIR/pc02-home/${prefix}4244"
+  start_run "$collide_root/worktree" 'sleep 300'
+  collide=$LAST_PID
+  printf '%s\n' "$collide" > "$collide_root/pgid"
+  printf '%s\n' "$CASE_DIR/prefix-collision" > "$collide_root/local-root"
   run_stop task-a --host pc02 --dry-run
   expect_code 0 "$RC" "PC02 dry-run"
   assert_contains "$OUT" "dry-run pc02 group=$victim would-stop=2 mode=group" "PC02 dry-run names the offload group"
@@ -447,6 +479,7 @@ test_stops_the_pc02_offload_run_root() {
   assert_contains "$OUT" "run RUN-A-pc02 status=running" "the run's status follows the stop lines"
   proc_live "$victim" && fail "the PC02 offload run survived its stop"
   proc_live "$other" || fail "a PC02 run root of another run directory was stopped"
+  proc_live "$collide" || fail "a PC02 run root sharing the prefix but recording another local root was stopped"
   assert_grep "bash -s" "$CASE_DIR/ssh.log" "PC02 was reached over the one bounded ssh call"
   [ -e "$marker" ] || fail "the stop removed a file from the PC02 run root"
   [ -e "$RUNA/keep.txt" ] || fail "the stop removed a file from the local run directory"
@@ -495,11 +528,12 @@ test_default_invocation_checks_both_hosts() {
   local victim pc02_victim prefix root
   start_run "$RUNA" 'sleep 300'
   victim=$LAST_PID
-  prefix=$(pc02_prefix "$RUNA" .fm-pc02-test-offload)
+  prefix=$(pc02_prefix "$RUNA" "$FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT")
   root="$CASE_DIR/pc02-home/${prefix}777"
   start_run "$root/worktree" 'sleep 300'
   pc02_victim=$LAST_PID
   printf '%s\n' "$pc02_victim" > "$root/pgid"
+  printf '%s\n' "$RUNA" > "$root/local-root"
   run_stop task-a
   expect_code 0 "$RC" "default two-host invocation"
   assert_contains "$OUT" "pc01 group=$victim " "the default invocation stops PC01"
@@ -521,11 +555,12 @@ test_default_invocation_with_a_claim_stops_the_pc02_root_first() {
   detach setsid bash -c 'cd "$1" && exec -a "$1/bin/$2" sleep 300' _ "$RUNA" "$FM_PC02_OFFLOAD_SCRIPT"
   client=$LAST_PID
   wait_cmdline "$client" "$FM_PC02_OFFLOAD_SCRIPT" || fail "fixture offload client did not start"
-  prefix=$(pc02_prefix "$RUNA" .fm-pc02-test-offload)
+  prefix=$(pc02_prefix "$RUNA" "$FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT")
   root="$CASE_DIR/pc02-home/${prefix}777"
   start_run "$root/worktree" 'sleep 300'
   pc02_victim=$LAST_PID
   printf '%s\n' "$pc02_victim" > "$root/pgid"
+  printf '%s\n' "$RUNA" > "$root/local-root"
   run_stop task-a
   expect_code 0 "$RC" "a claimed default run stops both hosts"
   assert_contains "$OUT" "pc02 group=$pc02_victim " "the PC02 root is stopped while its mirror still exists"
@@ -548,6 +583,7 @@ test_escalates_to_kill_when_term_is_ignored
 test_stops_orphans_of_the_run_group
 test_stops_a_run_led_by_a_shell_wrapper
 test_reports_none_when_nothing_runs
+test_run_root_name_is_dot_free_and_socket_safe
 test_stops_the_pc02_offload_run_root
 test_pc02_probe_failure_is_reported
 test_pc02_reports_none_without_a_claim
