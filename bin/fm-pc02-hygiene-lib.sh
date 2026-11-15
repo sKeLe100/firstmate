@@ -40,7 +40,8 @@
 # required field as an unclear host read rather than zero.
 #
 # Definitions (owned here, not restated in the callers):
-#   - A test root is "$HOME/<remote_base>"/run-*, "<tmp_root>"/fm-test-run.*, or
+#   - A test root is "$HOME/<remote_base>"/run-* (the offload's short dot-free
+#     run root from bin/fm-pc02-run-root-lib.sh), "<tmp_root>"/fm-test-run.*, or
 #     a "<tmp_root>"/fm-* directory carrying the tests/lib.sh .fm-test-fixture
 #     marker: a real directory (not a symlink) whose mtime - the marker's own
 #     for a fixture root - is at least stale_age_secs old.

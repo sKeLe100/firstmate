@@ -226,7 +226,7 @@ On PC02 (inside `ssh pc02`), re-check and remove only those paths:
 ```bash
 age=${FM_PC02_HYGIENE_STALE_AGE_SECS:-21600}
 tmp_root=${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}
-remote_base=${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}
+remote_base=${FM_PC02_OFFLOAD_REMOTE_BASE:-fmp}
 now=$(date +%s)
 group_alive() {  # <root>: the mirrored run's pgid still names a live group
   local pg

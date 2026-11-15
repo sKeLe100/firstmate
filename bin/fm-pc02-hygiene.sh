@@ -46,7 +46,8 @@
 #   FM_PC02_HYGIENE_TIMEOUT_SECS   bound for the one ssh call (default: 20)
 #   FM_PC02_OFFLOAD_TMP_ROOT       PC02 tmp directory to inspect (default: /tmp)
 #   FM_PC02_OFFLOAD_REMOTE_BASE    PC02 offload run-root base, relative to
-#                                  $HOME (default: .fm-pc02-test-offload)
+#                                  $HOME (default: fmp; short and dot-free,
+#                                  see bin/fm-pc02-run-root-lib.sh)
 #   FM_PC02_OFFLOAD_MEMINFO        meminfo path on PC02 (default: /proc/meminfo)
 #   FM_PC02_HYGIENE_STALE_AGE_SECS test-root age that reads stale
 #                                  (default: 21600, six hours)
@@ -78,11 +79,13 @@ fi
 
 # shellcheck source=bin/fm-pc02-hygiene-lib.sh
 . "$SELF_DIR/fm-pc02-hygiene-lib.sh"
+# shellcheck source=bin/fm-pc02-run-root-lib.sh
+. "$SELF_DIR/fm-pc02-run-root-lib.sh"
 
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 TIMEOUT="${FM_PC02_HYGIENE_TIMEOUT_SECS:-20}"
 TMP_ROOT="${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}"
-REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-.fm-pc02-test-offload}"
+REMOTE_BASE="${FM_PC02_OFFLOAD_REMOTE_BASE:-$FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT}"
 MEMINFO="${FM_PC02_OFFLOAD_MEMINFO:-/proc/meminfo}"
 STALE_AGE="${FM_PC02_HYGIENE_STALE_AGE_SECS:-$FM_PC02_DEFAULT_STALE_AGE_SECS}"
 IDLE_AGE="${FM_PC02_HYGIENE_IDLE_AGE_SECS:-$FM_PC02_DEFAULT_IDLE_AGE_SECS}"

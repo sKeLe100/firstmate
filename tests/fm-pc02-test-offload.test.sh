@@ -12,6 +12,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SCRIPT="$ROOT/bin/fm-pc02-test-offload.sh"
+# shellcheck source=bin/fm-pc02-run-root-lib.sh
+. "$ROOT/bin/fm-pc02-run-root-lib.sh"
 # The nested fm-test-run.sh records its environment before the fixture runs;
 # its bounded tool and browser probes can exceed 30s on a loaded host.
 REMOTE_SUITE_START_TRIES=1800  # 0.1s per try, up to 180s
@@ -411,7 +413,7 @@ SH
 }
 
 remote_runs_left() {  # <fake pc02 dir>
-  find "$1/home/.fm-pc02-test-offload" -mindepth 1 -maxdepth 1 -name 'run-*' 2>/dev/null | wc -l | tr -d ' '
+  find "$1/home/$FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT" -mindepth 1 -maxdepth 1 -name 'run-*' 2>/dev/null | wc -l | tr -d ' '
 }
 
 test_live_pc02_model_worker_does_not_block_offload() {
@@ -564,7 +566,7 @@ test_lint_local_fallback_runs_changed_file_lint() {
   local dir out status
   dir="$TMP_ROOT/lint-local-fallback"
   mkdir -p "$dir/bin"
-  cp "$ROOT/bin/fm-pc02-test-offload.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$ROOT/bin/fm-pc02-hygiene-lib.sh" "$dir/bin/"
+  cp "$ROOT/bin/fm-pc02-test-offload.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$ROOT/bin/fm-pc02-hygiene-lib.sh" "$ROOT/bin/fm-pc02-run-root-lib.sh" "$dir/bin/"
   cat > "$dir/bin/fm-lint.sh" <<'LINT'
 #!/usr/bin/env bash
 printf 'changed-file-lint argv=%s\n' "$*"
@@ -1604,7 +1606,7 @@ test_preclaim_capacity_never_removes_another_runs_roots() {
   dir="$TMP_ROOT/preclaim-untouched"
   fakebin=$(fake_pc02 "$dir")
   home="$dir/home"
-  base="$home/.fm-pc02-test-offload"
+  base="$home/$FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT"
   tmp="$FM_PC02_OFFLOAD_TMP_ROOT"
   mkdir -p "$base/run-other" "$tmp/fm-test-run.other" "$tmp/fm-fixture-other/read-only"
   printf 'keep\n' > "$base/run-other/file"
@@ -1661,7 +1663,7 @@ SH
   used=$(cat "$dir/tmpdir-used" 2>/dev/null || true)
   mirror_tmp=$(cat "$dir/mirror-tmp-used" 2>/dev/null || true)
   case "$mirror_tmp" in
-    */.fm-pc02-test-offload/run-*/tmp) : ;;
+    *"/${FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT}"/run-*/tmp) : ;;
     *) fail "the remote run did not publish its mirror's temp root: '$mirror_tmp' ($out)" ;;
   esac
   case "$used" in
@@ -1708,7 +1710,7 @@ SH
   if [ -n "$used" ]; then
     mirror_tmp=$(cat "$dir/mirror-tmp-used" 2>/dev/null || true)
     case "$mirror_tmp" in
-      */.fm-pc02-test-offload/run-*/tmp) : ;;
+      *"/${FM_PC02_OFFLOAD_REMOTE_BASE_DEFAULT}"/run-*/tmp) : ;;
       *) fail "the remote run did not publish its mirror's temp root: '$mirror_tmp' ($out)" ;;
     esac
     case "$used" in

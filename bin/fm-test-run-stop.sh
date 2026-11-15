@@ -78,7 +78,8 @@
 #   FM_TEST_RUN_STOP_GRACE_SECS         TERM-to-KILL grace, 0-300 (default: 10)
 #   FM_PC02_OFFLOAD_HOST                PC02 ssh target (default: pc02)
 #   FM_PC02_OFFLOAD_REMOTE_BASE         PC02 run-root base under $HOME
-#                                       (default: .fm-pc02-test-offload)
+#                                       (default: fmp; owns the short dot-free
+#                                       path budget in bin/fm-pc02-run-root-lib.sh)
 #   FM_TEST_RUN_STOP_SSH_TIMEOUT_SECS   bound for the one PC02 call (default: 60)
 #
 # Permission rule: the auto-mode classifier must not block this script. The
