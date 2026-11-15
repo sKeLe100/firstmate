@@ -949,7 +949,7 @@ tests/fm-bearings-board-lavish-live-e2e.test.sh 51
 tests/fm-bearings-board-render.test.sh 15612
 tests/fm-bearings-board.test.sh 40817
 tests/fm-bearings-snapshot.test.sh 186219
-tests/fm-bootstrap-network-parallel.test.sh 30424
+tests/fm-bootstrap-network-parallel.test.sh 67475
 tests/fm-bootstrap.test.sh 79029
 tests/fm-branch-supervision.test.sh 22979
 tests/fm-busy-adapter-wiring.test.sh 82204
@@ -1195,7 +1195,7 @@ tests/fm-watch-triage-waits.test.sh 777719
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 72022
 tests/fm-worker-account-live-e2e.test.sh 3179
-tests/fm-worker-account.test.sh 37445
+tests/fm-worker-account.test.sh 81494
 tests/fm-worktree-guard.test.sh 3041
 EOF
 }
