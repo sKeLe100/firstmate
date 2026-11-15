@@ -283,21 +283,24 @@ esac
 kill "$poll_watch_pid" 2>/dev/null || true
 wait "$poll_watch_pid" 2>/dev/null || true
 
-# 13. Follow-up: after the first wake, the session stays silent until context has
-#     grown the 20000-token margin past the first wake's 300000, fires exactly
-#     one follow-up at 320000, and never fires a second one.
+# 13. Follow-up: the stow turn's own growth never fires it. First wake at 300000;
+#     the stow turn's Stop at 340000 records the baseline and stays silent; the
+#     follow-up waits for 360000 (baseline + 20000), fires once, never twice.
 follow_home=$(make_home "$TMP_ROOT/followup")
 ft="$TMP_ROOT/followup.jsonl"
 write_transcript "$ft" 300000
 run_stop "$follow_home" sess-follow "$ft"
 expect_wake "follow-up scenario: first wake"
-write_transcript "$ft" 319999
-run_stop "$follow_home" sess-follow "$ft"
-expect_silent "context just inside the follow-up margin"
-write_transcript "$ft" 320000
-run_stop "$follow_home" sess-follow "$ft"
-expect_followup "context at the follow-up margin"
 write_transcript "$ft" 340000
+run_stop "$follow_home" sess-follow "$ft"
+expect_silent "the stow turn's own growth records the baseline only"
+write_transcript "$ft" 359999
+run_stop "$follow_home" sess-follow "$ft"
+expect_silent "context just inside the follow-up margin past the baseline"
+write_transcript "$ft" 360000
+run_stop "$follow_home" sess-follow "$ft"
+expect_followup "context at the follow-up margin past the baseline"
+write_transcript "$ft" 400000
 run_stop "$follow_home" sess-follow "$ft"
 expect_silent "a second follow-up in the same session"
 
@@ -307,8 +310,11 @@ fo="$TMP_ROOT/followup-off.jsonl"
 write_transcript "$fo" 300000
 run_stop "$follow_off_home" sess-follow-off "$fo"
 expect_wake "off-switch follow-up scenario: first wake"
-: > "$follow_off_home/config/auto-stow-off"
 write_transcript "$fo" 340000
+run_stop "$follow_off_home" sess-follow-off "$fo"
+expect_silent "the off-switch scenario's stow turn"
+: > "$follow_off_home/config/auto-stow-off"
+write_transcript "$fo" 400000
 run_stop "$follow_off_home" sess-follow-off "$fo"
 expect_silent "config/auto-stow-off after the first wake"
 
