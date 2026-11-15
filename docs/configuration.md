@@ -1025,6 +1025,9 @@ The restart mechanics reuse the existing owners rather than a parallel mechanism
 The restart band also drives an automatic stow wake for a primary session, so the checkpoint lands before automatic compaction can drop detail.
 The Stop-owned auto-arm (`bin/fm-claude-stop-autoarm.sh`, whose header owns the hook mechanics) reads the session's own transcript from the Stop payload and, at `band=restart`, emits one rewake telling the primary to run `/stow` and then recommend `/clear` to the captain.
 It fires at most once per session, keyed by the session id under `state/.auto-stow-<session-id>`, so a `/clear` that starts a new session gets its own single wake.
+If the session keeps working past that stow without a `/clear`, it gets at most one follow-up wake: once its context has grown 20000 tokens (`AUTOSTOW_FOLLOWUP_MARGIN`) past the count the first wake fired at, the follow-up says the stow was already asked for and recommends the captain run `/clear` now.
+The first wake's marker records that count, and the follow-up is keyed by `state/.auto-stow-followup-<session-id>` so it never repeats.
+The margin is a fixed constant in the hook rather than a config knob, because no configured band measures growth past the restart band.
 It is offered only while the home is idle or a live watcher already covers supervision, so the stow turn never runs uncovered and never displaces a supervision wake, and it never fires in AFK, which the away daemon owns.
 The wake never runs `/clear` and never blocks a turn.
 The main home is on by default, `config/auto-stow-off` disables it for any home, and a secondmate home fires only when it opts in with the presence flag `config/auto-stow`.
