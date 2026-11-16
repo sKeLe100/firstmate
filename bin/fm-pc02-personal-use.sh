@@ -20,7 +20,8 @@
 # Usage:
 #   fm-pc02-personal-use.sh on              flip the switch on (PC01 only)
 #   fm-pc02-personal-use.sh off             flip the switch off (PC02 may offload)
-#   fm-pc02-personal-use.sh status          print "on" or "off"
+#   fm-pc02-personal-use.sh status          print "on" or "off"; read from the
+#                                            local flag directly when run on PC02
 #   fm-pc02-personal-use.sh install-toggle  (re)deploy the Windows desktop
 #                                            toggle and the runner gate onto
 #                                            PC02; safe to re-run
@@ -29,6 +30,10 @@
 #   FM_PC02_OFFLOAD_HOST                ssh target (default: pc02)
 #   FM_PC02_OFFLOAD_PERSONAL_USE_FLAG   flag file path relative to PC02's
 #                                      $HOME (default: .fm-pc02-personal-use)
+#   FM_PC02_LOCAL                      1 forces the local flag read and skips
+#                                      ssh; 0 forces the remote path
+#   FM_PC02_HOSTNAME                   hostname that identifies this machine as
+#                                      PC02 (default: pc02)
 #
 # Exit status: 0 on success, 2 on a usage error, 1 if the ssh call itself
 # fails (network/host problem, not a usage error).
@@ -52,6 +57,21 @@ HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PERSONAL_USE_FLAG="${FM_PC02_OFFLOAD_PERSONAL_USE_FLAG:-.fm-pc02-personal-use}"
 WIN_POWERSHELL='/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
 
+# is_local_host: true when this machine is PC02 itself, so `status` can read
+# the flag file directly instead of ssh-ing back to its own alias.
+is_local_host() {
+  case "${FM_PC02_LOCAL:-}" in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
+  local host target
+  host=$(hostname 2>/dev/null || uname -n)
+  host=$(printf '%s' "${host%%.*}" | tr '[:upper:]' '[:lower:]')
+  target=$(printf '%s' "${FM_PC02_HOSTNAME:-pc02}" | tr '[:upper:]' '[:lower:]')
+  target=${target%%.*}
+  [ -n "$target" ] && [ "$host" = "$target" ]
+}
+
 case "$ACTION" in
   on)
     cmd="touch \"\$HOME/$PERSONAL_USE_FLAG\" && echo on"
@@ -64,9 +84,13 @@ case "$ACTION" in
     ssh "$HOST" "bash -lc $(printf '%q' "$cmd")" || exit 1
     ;;
   status)
-    cmd="[ -f \"\$HOME/$PERSONAL_USE_FLAG\" ] && echo on || echo off"
-    # shellcheck disable=SC2029 # deliberate client-side expansion: cmd is already %q-quoted for the remote shell's re-parse.
-    ssh "$HOST" "bash -lc $(printf '%q' "$cmd")" || exit 1
+    if is_local_host; then
+      if [ -f "$HOME/$PERSONAL_USE_FLAG" ]; then echo on; else echo off; fi
+    else
+      cmd="[ -f \"\$HOME/$PERSONAL_USE_FLAG\" ] && echo on || echo off"
+      # shellcheck disable=SC2029 # deliberate client-side expansion: cmd is already %q-quoted for the remote shell's re-parse.
+      ssh "$HOST" "bash -lc $(printf '%q' "$cmd")" || exit 1
+    fi
     ;;
   install-toggle)
     # The no-terminal toggle: a double-clickable .vbs (wscript.exe runs it
