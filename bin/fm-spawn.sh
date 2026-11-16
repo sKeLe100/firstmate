@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--keep-mcp] [--herdr-resume-lock-wait]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--keep-mcp] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -99,6 +99,9 @@
 #   Haiku claude ship or scout worker. By default such a launch passes
 #   --strict-mcp-config with no --mcp-config, so no MCP server starts; the
 #   choice is recorded as keep_mcp=1 in state/<id>.meta and a relaunch keeps it.
+#   Pass it only when the task needs an MCP integration, such as the rea
+#   reverse-engineering server or claude-in-chrome; ordinary browser work uses
+#   the chrome-devtools-axi CLI and needs no MCP.
 #   It has no effect on other models, harnesses, or secondmates, and it is
 #   refused with --relaunch.
 #   Every fresh ship/scout launch and replacement explicitly enters the recorded
@@ -6516,8 +6519,8 @@ DISALLOWEDFLAG=
 case "$HARNESS:$MODEL" in
 claude:*haiku*) DISALLOWEDFLAG='--disallowed-tools Artifact Workflow ScheduleWakeup ReportFindings ReadNotifications ListAgents AskUserQuestion ' ;;
 esac
-# A relaunch keeps the opt-in its record holds, which the carried-forward meta
-# already contains by this point.
+# A relaunch keeps the opt-in its record holds, read from the task's existing
+# meta, which is not replaced until commit.
 if [ "$RELAUNCH" -eq 1 ] && [ "$(fm_meta_get "$STATE/$ID.meta" keep_mcp)" = 1 ]; then KEEP_MCP=1; fi
 MCPFLAG=
 case "$HARNESS:$MODEL" in
