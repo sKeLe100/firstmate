@@ -324,7 +324,7 @@ HOST_LOAD_RETRY_POLL_SECS=${FM_TEST_RUN_LOAD_RETRY_POLL_SECS:-10}
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=11
+PORTABLE_SERIAL_SHARDS=12
 
 # Conservative balance hint for a portable-serial script with no measurement.
 # Rounded above the current CI mean, including the capability-skipped scripts.
@@ -1032,7 +1032,7 @@ tests/fm-kimi-harness.test.sh 58917
 tests/fm-launch-prompt-signals-live-e2e.test.sh 50
 tests/fm-lint-nomistakes-config.test.sh 260
 tests/fm-lint-test-size.test.sh 2260
-tests/fm-lint-workflows.test.sh 872
+tests/fm-lint-workflows.test.sh 1591
 tests/fm-live-gate.test.sh 12207
 tests/fm-live-lab-up-mate.test.sh 17363
 tests/fm-live-lab.test.sh 79639
@@ -1092,7 +1092,7 @@ tests/fm-remote-job.test.sh 133201
 tests/fm-remote-reply.test.sh 216935
 tests/fm-remote-secondmate-control-launch-settle.test.sh 721
 tests/fm-remote-secondmate-lifecycle-e2e.test.sh 98640
-tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh 243941
+tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh 374937
 tests/fm-remote-secondmate-lifecycle-supervision-e2e.test.sh 241524
 tests/fm-remote-secondmate-parent-binding.test.sh 76775
 tests/fm-remote-secondmate-relaunch.test.sh 879
@@ -1127,7 +1127,7 @@ tests/fm-sessionstart-hook-live-e2e.test.sh 50
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 434
 tests/fm-sessionstart-nudge.test.sh 71802
 tests/fm-shared-captain-inheritance.test.sh 13218
-tests/fm-spawn-compact-adviser-disable-remote.test.sh 67968
+tests/fm-spawn-compact-adviser-disable-remote.test.sh 108286
 tests/fm-spawn-compact-adviser-disable.test.sh 33635
 tests/fm-spawn-dispatch-profile.test.sh 343491
 tests/fm-spawn-host-memory.test.sh 5440
@@ -1164,12 +1164,12 @@ tests/fm-teardown-secondmate.sh 8200
 tests/fm-teardown.test.sh 317102
 tests/fm-test-fixture-cleanup.test.sh 3696
 tests/fm-test-fixtures.test.sh 10194
-tests/fm-test-isolation-proof.test.sh 2866
+tests/fm-test-isolation-proof.test.sh 4403
 tests/fm-test-sandbox-cache-race.test.sh 6604
 tests/fm-timeout-lib.test.sh 10750
 tests/fm-tmux-agent-liveness.test.sh 3770
-tests/fm-tool-update-check.test.sh 14383
-tests/fm-trace-context-lib.test.sh 221
+tests/fm-tool-update-check.test.sh 25439
+tests/fm-trace-context-lib.test.sh 491
 tests/fm-trace-context-spawn.test.sh 57488
 tests/fm-turnend-foreign-owner-arm-fix.test.sh 5575
 tests/fm-turnend-guard.test.sh 34727

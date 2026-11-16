@@ -73,6 +73,7 @@ The 2026-11-06 hint-drift refresh from PR 248's run 42199886708 raised `tests/fm
 The 2026-11-09 hint-drift refresh from PR 251's run 42621736300 raised `tests/fm-devin-signals-live-e2e.test.sh` from 49 ms to its measured 306 ms (6.24x) and `tests/fm-test-fixture-cleanup.test.sh` from 2182 ms to its measured 3696 ms (1.69x).
 The 2026-11-14 hint-drift refresh from PR 263's run 43616505698 raised `tests/fm-backend-tmux-smoke.test.sh` from 672 ms to its measured 1143 ms (repeated drift 1.70x).
 The 2026-11-15 hint-drift refresh from PR 264's run 43681294435 raised `tests/fm-bootstrap-network-parallel.test.sh` from 30424 ms to its measured 67475 ms (repeated drift 2.22x) and `tests/fm-worker-account.test.sh` from 37445 ms to its measured 81494 ms (repeated drift 2.18x).
+The 2026-11-16 hint-drift refresh from PR 270's run 43976918150 raised `tests/fm-lint-workflows.test.sh` from 872 ms to its measured 1591 ms (repeated drift 1.82x), `tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh` from 243941 ms to 374937 ms (1.54x), `tests/fm-spawn-compact-adviser-disable-remote.test.sh` from 67968 ms to 108286 ms (1.59x), `tests/fm-test-isolation-proof.test.sh` from 2866 ms to 4403 ms (1.54x), `tests/fm-tool-update-check.test.sh` from 14383 ms to 25439 ms (1.77x), and `tests/fm-trace-context-lib.test.sh` from 221 ms to 491 ms (2.22x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints
@@ -202,7 +203,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current watch-triage floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses long-lived Linux jobs (eleven serial, two parallel, Herdr, and one per canonical lint partition), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses long-lived Linux jobs (twelve serial, two parallel, Herdr, and one per canonical lint partition), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
@@ -228,7 +229,7 @@ This fork keeps two measured normal-tier overrides, each still a hang tripwire r
 | Job | Bound | Rationale |
 |---|---|---|
 | lint partitions | 45 minutes | This fork's merged script set measured 20-22 minutes on main and overran a 25-minute cap on the 2026-09-14 upstream sync. |
-| portable serial 1-11 | job 40 minutes; per-script bound derived by `bin/fm-test-run.sh` | A merged lane previously measured 26.5 minutes. The per-script bound remains a second tripwire derived at `PORTABLE_SERIAL_TIMEOUT_MULTIPLIER` (2x) the slowest hint, so a wedged script fails with captured output before the job cap. Pass `--per-script-timeout-secs` explicitly to override it for one invocation. |
+| portable serial 1-12 | job 40 minutes; per-script bound derived by `bin/fm-test-run.sh` | A merged lane previously measured 26.5 minutes. The per-script bound remains a second tripwire derived at `PORTABLE_SERIAL_TIMEOUT_MULTIPLIER` (2x) the slowest hint, so a wedged script fails with captured output before the job cap. Pass `--per-script-timeout-secs` explicitly to override it for one invocation. |
 
 The fork also removed the macOS stock Bash job (the workflow's own comment owns that ruling), so it belongs to no tier.
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) holds the executable values and names each job's tier or fork override beside its `timeout-minutes`; `bin/fm-test-run.sh` owns the portable-serial per-script bound, derived from the hint table so it cannot lose margin independently of a hint refresh.
