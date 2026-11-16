@@ -1853,6 +1853,51 @@ test_keep_mcp_recorded_and_scoped_to_haiku_task_workers() {
   pass "keep_mcp is recorded only when asked, and MCP stripping covers Haiku scouts but never secondmates"
 }
 
+test_relaunch_keeps_the_recorded_mcp_choice() {
+  local rec id out status launch keep
+  for keep in 1 0; do
+    id=profile-relaunch-mcp-$keep-z21j
+    rec=$(make_spawn_case profile-relaunch-mcp-$keep claude "$id")
+    read_case_record "$rec"
+    {
+      echo "window=firstmate:fm-$id"
+      echo "endpoint_task_id=$id"
+      echo "harness=claude"
+      echo "model=claude-haiku-5-5"
+      echo "kind=ship"
+      echo "mode=no-mistakes"
+      echo "yolo=off"
+      echo "backend=tmux"
+      echo "project=$PROJ_DIR"
+      echo "worktree=$WT_DIR"
+      [ "$keep" -eq 0 ] || echo "keep_mcp=1"
+    } > "$HOME_DIR/state/$id.meta"
+    printf 'working: relaunch fixture\n' > "$HOME_DIR/state/$id.status"
+    mkdir -p "$CASE_DIR/relaunch-bin"
+    cat > "$CASE_DIR/relaunch-bin/tmux" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *pane_current_command*) printf 'bash\\n'; exit 0 ;;
+esac
+if [ "\${1:-}" = list-windows ]; then printf 'fm-$id\\n'; exit 0; fi
+exec "$FAKEBIN_DIR/tmux" "\$@"
+SH
+    chmod +x "$CASE_DIR/relaunch-bin/tmux"
+    out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$CASE_DIR/relaunch-bin:$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" --relaunch --model claude-haiku-5-5)
+    status=$?
+    expect_code 0 "$status" "haiku relaunch (keep_mcp=$keep) should succeed"$'\n'"$out"
+    launch=$(cat "$LAUNCH_LOG")
+    assert_contains "$launch" "--disallowed-tools" "relaunch (keep_mcp=$keep) produced no claude launch"$'\n'"$out"
+    if [ "$keep" -eq 1 ]; then
+      assert_not_contains "$launch" "--strict-mcp-config" "relaunch dropped the MCP opt-in the record holds"
+      assert_grep "keep_mcp=1" "$HOME_DIR/state/$id.meta" "relaunch dropped keep_mcp from the task record"
+    else
+      assert_contains "$launch" "--strict-mcp-config" "relaunch of a task that never opted in kept MCP servers"
+    fi
+  done
+  pass "a relaunch keeps the MCP choice its task record holds"
+}
+
 test_claude_secondmate_launch_omits_task_control_channel_authority() {
   local rec id sm out status launch
   id=profile-secondmate-control-channel-z21b
@@ -2686,6 +2731,7 @@ test_non_claude_harness_ignores_config_dir
 test_claude_task_launch_carries_control_channel_authority
 test_keep_mcp_refused_with_relaunch
 test_keep_mcp_recorded_and_scoped_to_haiku_task_workers
+test_relaunch_keeps_the_recorded_mcp_choice
 test_claude_secondmate_launch_omits_task_control_channel_authority
 test_claude_long_launch_is_delivered_intact
 test_claude_crewmate_launch_carries_the_attribution_policy
