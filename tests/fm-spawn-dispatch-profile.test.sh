@@ -1802,6 +1802,107 @@ test_claude_task_launch_carries_control_channel_authority() {
   pass "a claude task launch establishes only Firstmate's task control channels, trims built-in tools for Haiku only, and strips MCP servers from Haiku unless --keep-mcp opts in"
 }
 
+# A worktree is a Firstmate checkout when it carries the coding-guidelines
+# skill; the other skill directories stand in for the supervisor skills.
+make_firstmate_checkout_skills() {  # <worktree>
+  local skill
+  for skill in firstmate-coding-guidelines afk stow captain-hold-lifecycle; do
+    mkdir -p "$1/.agents/skills/$skill"
+    printf -- '---\nname: %s\n---\n' "$skill" > "$1/.agents/skills/$skill/SKILL.md"
+  done
+  # A directory without a SKILL.md is not a skill and must not be listed.
+  mkdir -p "$1/.agents/skills/references/docs"
+  printf 'notes\n' > "$1/.agents/skills/references/docs/notes.md"
+  # The spawn refreshes the pooled worktree to origin's default branch, so the
+  # skills must be published there rather than left as uncommitted files.
+  git -C "$1" add .agents
+  git -C "$1" -c user.name=t -c user.email=t@example.invalid commit -q -m 'add skills'
+  git -C "$1" push -q origin HEAD:refs/heads/main
+}
+
+test_haiku_firstmate_worker_launches_without_agents_md_and_supervisor_skills() {
+  local rec id out launch settings brief wt_real
+  id=profile-haiku-trim-agents-z22a
+  rec=$(make_spawn_case profile-haiku-trim-agents claude "$id")
+  read_case_record "$rec"
+  make_firstmate_checkout_skills "$WT_DIR"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model claude-haiku-5-5)
+  expect_code 0 "$?" "haiku firstmate-checkout spawn should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  settings="$HOME_DIR/state/$id.claude-settings.json"
+  [ -f "$settings" ] || fail "haiku firstmate-checkout launch wrote no settings file"
+  assert_contains "$launch" "--settings '$(cd "$HOME_DIR/state" && pwd -P)/$id.claude-settings.json' " \
+    "haiku firstmate-checkout launch did not pass the settings file"
+  jq -e . "$settings" >/dev/null || fail "settings file is not valid JSON: $(cat "$settings")"
+  wt_real=$(jq -r '.claudeMdExcludes[0]' "$settings")
+  [ "$(basename "$wt_real")" = AGENTS.md ] && [ "${wt_real#/}" != "$wt_real" ] \
+    || fail "claudeMdExcludes is not an absolute AGENTS.md path: $wt_real"
+  [ "$(jq -r '.claudeMdExcludes | length' "$settings")" = 1 ] || fail "claudeMdExcludes should hold exactly the worktree AGENTS.md"
+  [ "$(cd "$(dirname "$wt_real")" && pwd -P)" = "$(cd "$WT_DIR" && pwd -P)" ] \
+    || fail "claudeMdExcludes names a file outside the task worktree: $wt_real"
+  [ "$(jq -c '.skillOverrides' "$settings")" = '{"afk":"off","stow":"off","captain-hold-lifecycle":"off"}' ] \
+    || [ "$(jq -S -c '.skillOverrides' "$settings")" = '{"afk":"off","captain-hold-lifecycle":"off","stow":"off"}' ] \
+    || fail "skillOverrides is not exactly the supervisor skills: $(cat "$settings")"
+  [ "$(jq -r '.feedbackDrafts' "$settings")" = off ] || fail "merge dropped feedbackDrafts"
+  [ "$(jq -c '.attribution' "$settings")" = '{"commit":"","pr":"","sessionUrl":false}' ] || fail "merge dropped the attribution policy"
+  assert_contains "$launch" "$CLAUDE_TASK_DISALLOWED_FLAG--append-system-prompt" "the trim dropped the tool disallow list"
+  assert_not_contains "$launch" "--setting-sources" "launch narrowed the setting sources"
+  assert_not_contains "$launch" "--disable-slash-commands" "launch disabled slash commands"
+  assert_not_contains "$launch" "--bare" "launch used --bare"
+  assert_not_contains "$launch" "--safe-mode" "launch used --safe-mode"
+  brief=$(cat "$HOME_DIR/data/$id/launch-brief.md")
+  assert_contains "$brief" "The repository root AGENTS.md is the supervisor contract and is not loaded for you" \
+    "role contract does not say AGENTS.md is excluded"
+  assert_contains "$brief" 'Never put "captain" or any other direct address in a commit message' \
+    "role contract lost the no-direct-address rule"
+  pass "a Haiku worker in a Firstmate checkout gets claudeMdExcludes, skillOverrides and the matching role lines"
+}
+
+test_haiku_trim_skips_other_projects_other_models_and_secondmates() {
+  local rec id out launch brief sm
+  # A Haiku worker in a project that is not a Firstmate checkout.
+  id=profile-haiku-trim-other-project-z22b
+  rec=$(make_spawn_case profile-haiku-trim-other-project claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model claude-haiku-5-5)
+  expect_code 0 "$?" "haiku spawn in another project should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "--settings '{\"feedbackDrafts\":\"off\",\"attribution\"" "other-project launch lost its inline settings"
+  assert_not_contains "$launch" "claudeMdExcludes" "other-project launch excluded an AGENTS.md"
+  assert_not_contains "$launch" "skillOverrides" "other-project launch switched skills off"
+  [ ! -e "$HOME_DIR/state/$id.claude-settings.json" ] || fail "other-project launch wrote a settings file"
+  brief=$(cat "$HOME_DIR/data/$id/launch-brief.md")
+  assert_not_contains "$brief" "is not loaded for you" "other-project brief says AGENTS.md is absent"
+
+  # A non-Haiku worker in a Firstmate checkout.
+  id=profile-nonhaiku-trim-z22c
+  rec=$(make_spawn_case profile-nonhaiku-trim claude "$id")
+  read_case_record "$rec"
+  make_firstmate_checkout_skills "$WT_DIR"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model claude-opus-5-5)
+  expect_code 0 "$?" "non-haiku firstmate-checkout spawn should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "claudeMdExcludes" "non-haiku launch excluded an AGENTS.md"
+  assert_not_contains "$launch" "skillOverrides" "non-haiku launch switched skills off"
+  [ ! -e "$HOME_DIR/state/$id.claude-settings.json" ] || fail "non-haiku launch wrote a settings file"
+  brief=$(cat "$HOME_DIR/data/$id/launch-brief.md")
+  assert_not_contains "$brief" "is not loaded for you" "non-haiku brief says AGENTS.md is absent"
+
+  # A Haiku secondmate keeps its own settings file and never gets the trim.
+  id=profile-haiku-secondmate-trim-z22d
+  rec=$(make_spawn_case profile-haiku-secondmate-trim claude "$id")
+  read_case_record "$rec"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+  make_firstmate_checkout_skills "$sm"
+  out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/claude-work" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate --model claude-haiku-5-5)
+  expect_code 0 "$?" "haiku secondmate spawn should succeed"$'\n'"$out"
+  assert_not_contains "$(cat "$HOME_DIR/state/$id.claude-settings.json")" "claudeMdExcludes" "secondmate settings excluded an AGENTS.md"
+  assert_not_contains "$(cat "$HOME_DIR/state/$id.claude-settings.json")" "skillOverrides" "secondmate settings switched skills off"
+  pass "the AGENTS.md and skill trim never reaches another project, a non-Haiku worker, or a secondmate"
+}
+
 test_keep_mcp_refused_with_relaunch() {
   local rec id out status
   id=profile-keep-mcp-relaunch-z21e
@@ -2729,6 +2830,8 @@ test_claude_remote_control_invalid_refuses_before_endpoint_or_metadata
 test_non_claude_harness_ignores_claude_remote_control
 test_non_claude_harness_ignores_config_dir
 test_claude_task_launch_carries_control_channel_authority
+test_haiku_firstmate_worker_launches_without_agents_md_and_supervisor_skills
+test_haiku_trim_skips_other_projects_other_models_and_secondmates
 test_keep_mcp_refused_with_relaunch
 test_keep_mcp_recorded_and_scoped_to_haiku_task_workers
 test_relaunch_keeps_the_recorded_mcp_choice

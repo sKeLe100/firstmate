@@ -464,7 +464,11 @@
 #     __CLAUDERCFLAG__ the --remote-control flag selected by config/claude-remote-control (empty when off)
 #     __CLAUDESETTINGS__ the single claude --settings value: a quoted inline
 #                  JSON object for a crewmate or scout, or a quoted path to
-#                  state/<task-id>.claude-settings.json for a secondmate
+#                  state/<task-id>.claude-settings.json for a secondmate or a
+#                  Haiku worker in a Firstmate checkout (fm_haiku_agents_trim_applies
+#                  in fm-dod-lib.sh), where it also carries claudeMdExcludes for
+#                  the worktree's AGENTS.md and skillOverrides "off" for every
+#                  supervisor skill but firstmate-coding-guidelines
 #     __PIBIN__    quoted concrete Pi-family executable path resolved from PATH
 #     __PITUIMODE__ optional --tui-mode regular when that executable advertises it
 #     __PIAPPROVE__ optional --approve on a seeded Pi/pi-signed secondmate when
@@ -3993,23 +3997,30 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   SOURCE_BRIEF=$BRIEF
   BRIEF="$DATA/$ID/launch-brief.md"
   BRIEF_TMP="$DATA/$ID/.launch-brief.md.${BASHPID:-$$}"
-  {
-    fm_brief_worker_role "$STATE" "$ID" "$FM_ROOT" &&
-      printf '\n' &&
-      cat "$SOURCE_BRIEF" &&
-      if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
-        fm_brief_intent_overlay "$CAPTAIN_INTENT"
-      fi
-  } >"$BRIEF_TMP" || {
-    rm -f -- "$BRIEF_TMP"
-    echo "error: could not render current launch contract for $SOURCE_BRIEF" >&2
-    exit 1
+  # Renders the launch brief. The worktree does not exist yet on a fresh spawn,
+  # so this first render is the standard contract; a Haiku Claude launch whose
+  # worktree turns out to be a Firstmate checkout renders it again with
+  # agents-excluded=1 once fm_haiku_agents_trim_applies can be answered.
+  render_launch_brief() {  # <agents-excluded 0|1>
+    {
+      fm_brief_worker_role "$STATE" "$ID" "$FM_ROOT" "$1" &&
+        printf '\n' &&
+        cat "$SOURCE_BRIEF" &&
+        if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
+          fm_brief_intent_overlay "$CAPTAIN_INTENT"
+        fi
+    } >"$BRIEF_TMP" || {
+      rm -f -- "$BRIEF_TMP"
+      echo "error: could not render current launch contract for $SOURCE_BRIEF" >&2
+      exit 1
+    }
+    if ! mv "$BRIEF_TMP" "$BRIEF"; then
+      rm -f -- "$BRIEF_TMP"
+      echo "error: could not publish current launch contract for $SOURCE_BRIEF" >&2
+      exit 1
+    fi
   }
-  if ! mv "$BRIEF_TMP" "$BRIEF"; then
-    rm -f -- "$BRIEF_TMP"
-    echo "error: could not publish current launch contract for $SOURCE_BRIEF" >&2
-    exit 1
-  fi
+  render_launch_brief 0
 fi
 
 delivery_rigor_rank() { # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
@@ -6544,7 +6555,33 @@ case "$LAUNCH" in
   if [ "$KIND" = secondmate ]; then
     LAUNCH=${LAUNCH//__CLAUDESETTINGS__/$(shell_quote "$STATE_REAL/$ID.claude-settings.json")}
   else
-    claude_settings="'{\"feedbackDrafts\":\"off\"__CLAUDEATTRIBUTION__}'"
+    if fm_haiku_agents_trim_applies "$HARNESS" "$MODEL" "$KIND" "$WT"; then
+      # A Haiku worker in a Firstmate checkout skips the supervisor contract
+      # and the supervisor skills: claudeMdExcludes takes the absolute
+      # AGENTS.md path (never a glob, so no other project's file is touched)
+      # and skillOverrides switches off every skill directory except
+      # firstmate-coding-guidelines, read from the worktree at each spawn. The
+      # keys join feedbackDrafts and attribution in one firstmate-owned file,
+      # as the secondmate path does, because the JSON outgrows the pane
+      # command. The brief is re-rendered so it says AGENTS.md is absent only
+      # for a launch that really excludes it.
+      trim_json='"feedbackDrafts":"off",'
+      [ "$KEEP_AI_TRAILERS" = 1 ] || trim_json="$trim_json"'"attribution":{"commit":"","pr":"","sessionUrl":false},'
+      trim_json="$trim_json\"claudeMdExcludes\":[\"$(json_escape "$WT/AGENTS.md")\"],\"skillOverrides\":{"
+      trim_sep=
+      for trim_skill in "$WT"/.agents/skills/*/; do
+        trim_name=${trim_skill%/}
+        trim_name=${trim_name##*/}
+        [ "$trim_name" != firstmate-coding-guidelines ] && [ -f "$trim_skill/SKILL.md" ] || continue
+        trim_json="$trim_json$trim_sep\"$(json_escape "$trim_name")\":\"off\""
+        trim_sep=,
+      done
+      printf '{%s}}\n' "$trim_json" >"$STATE_REAL/$ID.claude-settings.json"
+      claude_settings=$(shell_quote "$STATE_REAL/$ID.claude-settings.json")
+      render_launch_brief 1
+    else
+      claude_settings="'{\"feedbackDrafts\":\"off\"__CLAUDEATTRIBUTION__}'"
+    fi
     LAUNCH=${LAUNCH//__CLAUDESETTINGS__/$claude_settings}
   fi
   ;;

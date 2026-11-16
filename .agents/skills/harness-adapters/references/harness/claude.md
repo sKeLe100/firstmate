@@ -13,7 +13,7 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 | Model | `--model <model>`; discover through the interactive `/model` picker, with alias or full-name shape documented by `claude --help`. |
 | Effort | `--effort <low\|medium\|high\|xhigh\|max>`, verified on 2.1.196. |
 | Permissions | `--dangerously-skip-permissions` by default, or `--permission-mode auto` when `config/claude-permission-mode` is `auto`; the `auto` shape verified on 2.1.269. See [`Claude permission mode`](../../../../../docs/configuration.md#claude-permission-mode-configclaude-permission-mode) for the launch grant and configuration. |
-| Built-in tools | Ship and scout workers on a Haiku model launch with `--disallowed-tools` for the built-in tools no task worker uses and with `--strict-mcp-config` unless the task passes `--keep-mcp`; secondmates and non-Haiku workers keep the full set, and `bin/fm-spawn.sh` `DISALLOWEDFLAG` and `MCPFLAG` own the exact flags. |
+| Built-in tools | Ship and scout workers on a Haiku model launch with `--disallowed-tools` for the built-in tools no task worker uses and with `--strict-mcp-config` unless the task passes `--keep-mcp`; secondmates and non-Haiku workers keep the full set, and `bin/fm-spawn.sh` `DISALLOWEDFLAG` and `MCPFLAG` own the exact flags; a Haiku ship or scout worker in a Firstmate checkout also launches with the worktree's `AGENTS.md` excluded (`claudeMdExcludes`) and the supervisor skills but `firstmate-coding-guidelines` switched off (`skillOverrides`) in its `--settings` file. |
 
 ## Workspace trust
 
