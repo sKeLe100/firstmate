@@ -469,6 +469,7 @@
 #     __CLAUDEADDDIRS__ quoted --add-dir flags granting exactly this task's
 #                  Firstmate channel directories (claude_add_dirs_flag below;
 #                  supplies its own trailing space, empty never used)
+#     __CODEMODEENV__ the Code Mode env prefix set by --code-mode (empty otherwise)
 #     __CLAUDERCFLAG__ the --remote-control flag selected by config/claude-remote-control (empty when off)
 #     __CLAUDESETTINGS__ the single claude --settings value: a quoted inline
 #                  JSON object for a crewmate or scout, or a quoted path to
