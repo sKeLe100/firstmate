@@ -141,8 +141,26 @@
 # shellcheck source=bin/fm-external-review-lib.sh
 . "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-external-review-lib.sh"
 
-fm_brief_worker_role() {  # <state-dir> <task-id> <code-root>
-  local state=$1 task_id=$2 root=$3
+# fm_haiku_agents_trim_applies owns the one condition under which a Haiku
+# Claude task worker launches without the repository root AGENTS.md and with
+# the supervisor skills switched off: harness claude, a Haiku model, a task
+# worker (never a secondmate), and a worktree that carries
+# .agents/skills/firstmate-coding-guidelines/SKILL.md, which only a Firstmate
+# checkout does. bin/fm-spawn.sh evaluates it once the worktree is known, and
+# both the --settings keys and fm_brief_worker_role's agents-excluded argument
+# follow that single answer, so a worker is told AGENTS.md is absent only when
+# the launch really excludes it.
+fm_haiku_agents_trim_applies() {  # <harness> <model> <kind> <worktree>
+  [ "$3" != secondmate ] || return 1
+  case "$1:$2" in
+    claude:*haiku*) ;;
+    *) return 1 ;;
+  esac
+  [ -f "$4/.agents/skills/firstmate-coding-guidelines/SKILL.md" ]
+}
+
+fm_brief_worker_role() {  # <state-dir> <task-id> <code-root> [<agents-excluded 0|1>]
+  local state=$1 task_id=$2 root=$3 agents_excluded=${4:-0}
   cat <<'EOF'
 # Current worker role contract
 You are a crewmate: an autonomous worker agent managed by firstmate.
@@ -155,6 +173,12 @@ Never inspect or change any other home's endpoint namespace; this authorization 
 When this task works on Firstmate itself, the repository root `AGENTS.md` (also imported by `CLAUDE.md`) is project content and the supervisor contract for the firstmate managing you: follow this brief instead of that supervisor contract.
 Project instructions still govern the work wherever they do not conflict with this worker identity, including `CONTRIBUTING.md` and `firstmate-coding-guidelines` for Firstmate changes.
 EOF
+  if [ "$agents_excluded" = 1 ]; then
+    cat <<'EOF'
+The repository root AGENTS.md is the supervisor contract and is not loaded for you; Read it only when the task edits it, after loading firstmate-coding-guidelines.
+Never put "captain" or any other direct address in a commit message, PR or issue text, code, or comment.
+EOF
+  fi
   printf "If the \`firstmate-coding-guidelines\` skill name does not resolve in this session, read \`%s/.agents/skills/firstmate-coding-guidelines/SKILL.md\` instead.\n" "$root"
 }
 
