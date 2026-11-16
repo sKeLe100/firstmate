@@ -1773,6 +1773,8 @@ test_claude_task_launch_carries_control_channel_authority() {
     "claude task launch did not preserve the authority boundary"
   assert_not_contains "$launch" "--disallowed-tools" \
     "non-Haiku claude task launch received the built-in tool disallow list"
+  assert_not_contains "$launch" "--strict-mcp-config" \
+    "non-Haiku claude task launch received the strict MCP config"
 
   id=profile-claude-haiku-trim-z21c
   rec=$(make_spawn_case profile-claude-haiku-trim claude "$id")
@@ -1781,9 +1783,119 @@ test_claude_task_launch_carries_control_channel_authority() {
   status=$?
   expect_code 0 "$status" "claude haiku crewmate spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "--strict-mcp-config $CLAUDE_TASK_DISALLOWED_FLAG--append-system-prompt 'You are a task worker" \
+    "haiku claude task launch did not default to strict MCP config ahead of the disallow list and system prompt"
+  assert_not_contains "$launch" "--mcp-config" \
+    "haiku claude task launch passed an MCP config file by default"
+
+  id=profile-claude-haiku-keep-mcp-z21d
+  rec=$(make_spawn_case profile-claude-haiku-keep-mcp claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model claude-haiku-5-5 --keep-mcp)
+  status=$?
+  expect_code 0 "$status" "claude haiku crewmate spawn with --keep-mcp should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "--strict-mcp-config" \
+    "haiku claude task launch with --keep-mcp still stripped MCP servers"
   assert_contains "$launch" "$CLAUDE_TASK_DISALLOWED_FLAG--append-system-prompt 'You are a task worker" \
-    "haiku claude task launch did not disallow unused built-in tools ahead of the system prompt"
-  pass "a claude task launch establishes only Firstmate's task control channels and trims built-in tools for Haiku only"
+    "haiku claude task launch with --keep-mcp lost the built-in tool disallow list"
+  pass "a claude task launch establishes only Firstmate's task control channels, trims built-in tools for Haiku only, and strips MCP servers from Haiku unless --keep-mcp opts in"
+}
+
+test_keep_mcp_refused_with_relaunch() {
+  local rec id out status
+  id=profile-keep-mcp-relaunch-z21e
+  rec=$(make_spawn_case profile-keep-mcp-relaunch claude "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" --relaunch --keep-mcp)
+  status=$?
+  expect_code 1 "$status" "--keep-mcp with --relaunch should be refused"
+  assert_contains "$out" "--keep-mcp applies only to a fresh spawn" \
+    "relaunch refusal did not explain the fresh-spawn-only rule"
+  [ ! -s "$LAUNCH_LOG" ] || fail "refused --keep-mcp relaunch must not launch anything"
+  pass "--keep-mcp is refused on a relaunch"
+}
+
+test_keep_mcp_recorded_and_scoped_to_haiku_task_workers() {
+  local rec id out status launch sm
+  id=profile-keep-mcp-meta-z21f
+  rec=$(make_spawn_case profile-keep-mcp-meta claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model claude-haiku-5-5 --keep-mcp)
+  expect_code 0 "$?" "haiku ship spawn with --keep-mcp should succeed"$'\n'"$out"
+  assert_grep "keep_mcp=1" "$HOME_DIR/state/$id.meta" "--keep-mcp was not recorded in the task meta"
+
+  id=profile-no-keep-mcp-meta-z21g
+  rec=$(make_spawn_case profile-no-keep-mcp-meta claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model claude-haiku-5-5)
+  expect_code 0 "$?" "haiku ship spawn should succeed"$'\n'"$out"
+  ! grep -q keep_mcp "$HOME_DIR/state/$id.meta" || fail "default launch recorded a keep_mcp choice"
+
+  id=profile-haiku-scout-mcp-z21h
+  rec=$(make_spawn_case profile-haiku-scout-mcp claude "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout --model claude-haiku-5-5)
+  expect_code 0 "$?" "haiku scout spawn should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "--strict-mcp-config " "haiku scout launch kept MCP servers by default"
+
+  id=profile-secondmate-mcp-z21i
+  rec=$(make_spawn_case profile-secondmate-mcp claude "$id")
+  read_case_record "$rec"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+  out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/claude-work" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate --model claude-haiku-5-5)
+  expect_code 0 "$?" "haiku secondmate spawn should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "--strict-mcp-config" "secondmate launch was stripped of MCP servers"
+  pass "keep_mcp is recorded only when asked, and MCP stripping covers Haiku scouts but never secondmates"
+}
+
+test_relaunch_keeps_the_recorded_mcp_choice() {
+  local rec id out status launch keep
+  for keep in 1 0; do
+    id=profile-relaunch-mcp-$keep-z21j
+    rec=$(make_spawn_case profile-relaunch-mcp-$keep claude "$id")
+    read_case_record "$rec"
+    {
+      echo "window=firstmate:fm-$id"
+      echo "endpoint_task_id=$id"
+      echo "harness=claude"
+      echo "model=claude-haiku-5-5"
+      echo "kind=ship"
+      echo "mode=no-mistakes"
+      echo "yolo=off"
+      echo "backend=tmux"
+      echo "project=$PROJ_DIR"
+      echo "worktree=$WT_DIR"
+      [ "$keep" -eq 0 ] || echo "keep_mcp=1"
+    } > "$HOME_DIR/state/$id.meta"
+    printf 'working: relaunch fixture\n' > "$HOME_DIR/state/$id.status"
+    mkdir -p "$CASE_DIR/relaunch-bin"
+    cat > "$CASE_DIR/relaunch-bin/tmux" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *pane_current_command*) printf 'bash\\n'; exit 0 ;;
+esac
+if [ "\${1:-}" = list-windows ]; then printf 'fm-$id\\n'; exit 0; fi
+exec "$FAKEBIN_DIR/tmux" "\$@"
+SH
+    chmod +x "$CASE_DIR/relaunch-bin/tmux"
+    out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$CASE_DIR/relaunch-bin:$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" --relaunch --model claude-haiku-5-5)
+    status=$?
+    expect_code 0 "$status" "haiku relaunch (keep_mcp=$keep) should succeed"$'\n'"$out"
+    launch=$(cat "$LAUNCH_LOG")
+    assert_contains "$launch" "--disallowed-tools" "relaunch (keep_mcp=$keep) produced no claude launch"$'\n'"$out"
+    if [ "$keep" -eq 1 ]; then
+      assert_not_contains "$launch" "--strict-mcp-config" "relaunch dropped the MCP opt-in the record holds"
+      assert_grep "keep_mcp=1" "$HOME_DIR/state/$id.meta" "relaunch dropped keep_mcp from the task record"
+    else
+      assert_contains "$launch" "--strict-mcp-config" "relaunch of a task that never opted in kept MCP servers"
+    fi
+  done
+  pass "a relaunch keeps the MCP choice its task record holds"
 }
 
 test_claude_secondmate_launch_omits_task_control_channel_authority() {
@@ -2617,6 +2729,9 @@ test_claude_remote_control_invalid_refuses_before_endpoint_or_metadata
 test_non_claude_harness_ignores_claude_remote_control
 test_non_claude_harness_ignores_config_dir
 test_claude_task_launch_carries_control_channel_authority
+test_keep_mcp_refused_with_relaunch
+test_keep_mcp_recorded_and_scoped_to_haiku_task_workers
+test_relaunch_keeps_the_recorded_mcp_choice
 test_claude_secondmate_launch_omits_task_control_channel_authority
 test_claude_long_launch_is_delivered_intact
 test_claude_crewmate_launch_carries_the_attribution_policy
