@@ -669,24 +669,31 @@ test_many_scout_reports_survive_argv_limit() {
 
 # Snapshot temp files hold whole backlog- and task-sized payloads. An
 # interrupted run (a captain hitting Ctrl-C on /bearings) must not leave them
-# behind in TMPDIR.
-test_interrupted_snapshot_leaves_no_temp_files() {
-  local home tmp pid i leftovers
-  home=$(make_home interrupted-snapshot)
-  tmp=$TMP_ROOT/interrupted-tmpdir
-  mkdir -p "$tmp"
-  {
-    printf '## In flight\n\n## Queued\n\n## Done\n'
-    for i in $(seq 1 3000); do
-      printf -- '- [x] slow-task-%04d - Synthetic backlog record %04d keeping the snapshot busy long enough to interrupt https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-01)\n' \
-        "$i" "$i" "$i"
-    done
-  } > "$home/data/backlog.md"
-  TMPDIR="$tmp" FM_HOME="$home" "$SNAPSHOT" --json >/dev/null 2>&1 &
+# behind in TMPDIR. Only snapshot-owned residue (fm-fleet-snapshot.*) is
+# asserted: the bash timeout fallback's fm-bash-timeout-command.* files belong
+# to bin/fm-timeout-lib.sh, not to the snapshot.
+
+# Fails when a snapshot-owned temp entry sits directly in <tmp>. Snapshot
+# transport dirs are created as ${TMPDIR}/fm-fleet-snapshot.XXXXXX, so one
+# level is enough.
+assert_no_snapshot_residue() {  # <tmp>
+  local leftovers
+  leftovers=$(find "$1" -mindepth 1 -maxdepth 1 -name 'fm-fleet-snapshot.*' 2>/dev/null)
+  [ -z "$leftovers" ] || fail "interrupted snapshot left temp files behind: $leftovers"
+}
+
+# Starts the snapshot with <tmp> as TMPDIR and sends SIGTERM once an entry
+# matching <glob> appears directly in <tmp>. Extra VAR=value arguments join
+# the snapshot's environment. Fails if the run ends before it can be interrupted.
+interrupt_snapshot_run() {  # <home> <tmp> <glob> [VAR=value...]
+  local home=$1 tmp=$2 glob=$3 pid i observed=0
+  shift 3
+  env TMPDIR="$tmp" FM_HOME="$home" "$@" "$SNAPSHOT" --json >/dev/null 2>&1 &
   pid=$!
-  local observed=0
-  for i in $(seq 1 200); do
-    if [ -n "$(find "$tmp" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+  # Polls for up to about a minute: a timed collector can start well after the
+  # backlog is read, and a run that finishes first still fails below.
+  for i in $(seq 1 1200); do
+    if [ -n "$(find "$tmp" -mindepth 1 -maxdepth 1 -name "$glob" -print -quit 2>/dev/null)" ]; then
       observed=1
       break
     fi
@@ -696,7 +703,7 @@ test_interrupted_snapshot_leaves_no_temp_files() {
   [ "$observed" = 1 ] || {
     kill -TERM "$pid" 2>/dev/null
     wait "$pid" 2>/dev/null
-    fail "snapshot never created a temp file to interrupt; the test proved nothing"
+    fail "snapshot never created a $glob temp entry to interrupt; the test proved nothing"
   }
   kill -0 "$pid" 2>/dev/null || {
     wait "$pid" 2>/dev/null
@@ -704,9 +711,72 @@ test_interrupted_snapshot_leaves_no_temp_files() {
   }
   kill -TERM "$pid" 2>/dev/null
   wait "$pid" 2>/dev/null
-  leftovers=$(find "$tmp" -mindepth 1 2>/dev/null)
-  [ -z "$leftovers" ] || fail "interrupted snapshot left temp files behind: $leftovers"
+}
+
+# Writes the synthetic backlog that keeps one snapshot run busy long enough to
+# interrupt. <home> is the fake FM_HOME from make_home.
+write_slow_backlog() {  # <home>
+  local i
+  {
+    printf '## In flight\n\n## Queued\n\n## Done\n'
+    for i in $(seq 1 3000); do
+      printf -- '- [x] slow-task-%04d - Synthetic backlog record %04d keeping the snapshot busy long enough to interrupt https://github.com/kunchenguid/firstmate/pull/%d (repo: alpha) (kind: ship) (merged 2026-08-01)\n' \
+        "$i" "$i" "$i"
+    done
+  } > "$1/data/backlog.md"
+}
+
+test_interrupted_snapshot_leaves_no_temp_files() {
+  local home tmp
+  home=$(make_home interrupted-snapshot)
+  tmp=$TMP_ROOT/interrupted-tmpdir
+  mkdir -p "$tmp"
+  write_slow_backlog "$home"
+  interrupt_snapshot_run "$home" "$tmp" '*'
+  assert_no_snapshot_residue "$tmp"
   pass "an interrupted snapshot cleans up its temp files"
+}
+
+# Hosts without timeout, gtimeout, or perl take the bash timeout fallback in
+# bin/fm-timeout-lib.sh. Force that path so this runs on every host: the
+# interrupt waits for the fallback's own fm-bash-timeout-command.* entry, which
+# only fm_run_bash_timeout creates, so a run that never reached the fallback
+# fails instead of passing. The snapshot reads crew state through a timed
+# collector only for a crew row, so the fixture seeds one.
+test_interrupted_snapshot_bash_fallback_cleans_up() {
+  local home tmp
+  home=$(make_home interrupted-snapshot-bash-fallback)
+  tmp=$TMP_ROOT/interrupted-bash-fallback-tmpdir
+  mkdir -p "$tmp"
+  write_slow_backlog "$home"
+  fm_write_meta "$home/state/fallback-task.meta" \
+    "window=firstmate:fm-fallback-task" \
+    "worktree=$home/projects/alpha-worktree" \
+    "project=alpha" \
+    "harness=claude" \
+    "kind=ship" \
+    "mode=ship" \
+    "yolo=off"
+  printf 'working: fallback fixture\n' > "$home/state/fallback-task.status"
+  interrupt_snapshot_run "$home" "$tmp" 'fm-bash-timeout-command.*' FM_TIMEOUT_MECHANISM_OVERRIDE=bash
+  assert_no_snapshot_residue "$tmp"
+  pass "an interrupted snapshot on the bash timeout fallback cleans up its snapshot temp files"
+}
+
+# Negative control: the residue assertion must fail on planted snapshot residue
+# and must ignore the fallback's own files.
+test_residue_assertion_fails_on_planted_snapshot_residue() {
+  local planted ignored
+  planted=$TMP_ROOT/residue-planted
+  ignored=$TMP_ROOT/residue-ignored
+  mkdir -p "$planted/fm-fleet-snapshot.planted" "$ignored"
+  : > "$ignored/fm-bash-timeout-command.planted"
+  if ( assert_no_snapshot_residue "$planted" ) >/dev/null 2>&1; then
+    fail "negative control: planted fm-fleet-snapshot.* residue must fail the cleanup assertion"
+  fi
+  ( assert_no_snapshot_residue "$ignored" ) >/dev/null 2>&1 \
+    || fail "fm-bash-timeout-command.* files must not count as snapshot residue"
+  pass "the cleanup assertion fails on planted snapshot residue and ignores fallback files"
 }
 
 # The registered-secondmate loop accumulates one record per home. Each valid
@@ -1476,6 +1546,8 @@ test_large_backlog_contribution_input_survives_argv_limit
 test_many_secondmate_summaries_survive_argv_limit
 test_many_scout_reports_survive_argv_limit
 test_interrupted_snapshot_leaves_no_temp_files
+test_interrupted_snapshot_bash_fallback_cleans_up
+test_residue_assertion_fails_on_planted_snapshot_residue
 test_unreadable_remote_summary_degrades_to_fallback_row
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
