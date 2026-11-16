@@ -1478,6 +1478,14 @@ Connected devices can send prompts into a registered session; AGENTS.md hard rul
 A finished worker leaves an offline entry in the app's session list until the captain archives it there; no CLI archive path exists.
 `bin/fm-primary-herdr.sh` reads the same config to register the primary session itself as `firstmate-primary`.
 
+## Claude Code Mode (fm-spawn.sh --code-mode)
+
+`bin/fm-spawn.sh --code-mode` is a per-task opt-in that launches one Claude ship or scout worker in Claude Code's experimental Code Mode, where the model writes JavaScript that calls its tools instead of calling them one at a time.
+It adds `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` to that worker's launch environment and omits `--remote-control` for that task only, because Code Mode turns Remote Control off, so `config/claude-remote-control` stays unchanged for every other launch.
+The choice is recorded as `code_mode=1` in the task record and a relaunch keeps it, since a Code Mode session resumes only while the variable is still set.
+The flag is refused for any other harness, a raw launch command, a secondmate, and `--relaunch`, and without it nothing changes.
+The first Code Mode start in a Claude config directory asks once for "Yes, turn on Code Mode" and stores its acceptance in that directory's `.claude.json`; Firstmate never writes that acceptance or the variable into any `settings.json`, so the captain answers that prompt once per worker account.
+
 ## Lavish server address (config/lavish-axi-host)
 
 The optional local, gitignored `config/lavish-axi-host` contains one non-empty address without whitespace for the per-machine Lavish server.

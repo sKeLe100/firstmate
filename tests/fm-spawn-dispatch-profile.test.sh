@@ -2649,6 +2649,89 @@ test_non_claude_harness_ignores_claude_permission_mode() {
   pass "config/claude-permission-mode changes claude launches only"
 }
 
+# --code-mode (bin/fm-spawn.sh header): a per-task opt-in that launches one
+# claude worker in Claude Code's experimental Code Mode. The launch carries the
+# enabling environment variable and drops --remote-control for that task only,
+# even when config/claude-remote-control is on, and the choice lands in the meta.
+test_code_mode_sets_the_env_and_skips_remote_control_for_that_task_only() {
+  local rec id out launch
+  id="code-mode-on-z40"
+  rec=$(make_spawn_case code-mode-on claude "$id")
+  read_case_record "$rec"
+  printf 'on\n' > "$HOME_DIR/config/claude-remote-control"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --code-mode)
+  expect_code 0 "$?" "claude spawn with --code-mode should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "CLAUDE_CODE_SEND_FEEDBACK=0 CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude "     "--code-mode did not put the Code Mode variable in the claude launch environment"
+  assert_not_contains "$launch" "--remote-control" "a Code Mode launch must skip --remote-control"
+  assert_grep "code_mode=1" "$HOME_DIR/state/$id.meta" "--code-mode was not recorded in the task meta"
+
+  id="code-mode-off-z41"
+  rec=$(make_spawn_case code-mode-off claude "$id")
+  read_case_record "$rec"
+  printf 'on\n' > "$HOME_DIR/config/claude-remote-control"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  expect_code 0 "$?" "a claude spawn without --code-mode should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "CODE_MODE" "a default launch must not mention Code Mode"
+  assert_contains "$launch" "--remote-control 'firstmate-fm-$id'" "a default launch must keep Remote Control"
+  ! grep -q code_mode "$HOME_DIR/state/$id.meta" || fail "a default launch recorded a code_mode choice"
+  pass "--code-mode enables Code Mode and skips Remote Control for that task only"
+}
+
+test_code_mode_scout_spawn_is_supported() {
+  local rec id out launch
+  id="code-mode-scout-z42"
+  rec=$(make_spawn_case code-mode-scout claude "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout --code-mode)
+  expect_code 0 "$?" "claude scout spawn with --code-mode should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude " "a Code Mode scout launch lost the variable"
+  assert_grep "code_mode=1" "$HOME_DIR/state/$id.meta" "a Code Mode scout was not recorded in the task meta"
+  pass "--code-mode applies to a scout worker"
+}
+
+test_code_mode_refused_for_other_harnesses_secondmates_and_relaunch() {
+  local rec id out status sm
+  id="code-mode-codex-z43"
+  rec=$(make_spawn_case code-mode-codex codex "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high --code-mode)
+  status=$?
+  expect_code 1 "$status" "--code-mode on a codex spawn should be refused"
+  assert_contains "$out" "applies only to a claude harness" "refusal did not say Code Mode is claude-only"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused --code-mode spawn must not launch anything"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused --code-mode spawn must not write a task record"
+
+  id="code-mode-raw-z44"
+  rec=$(make_spawn_case code-mode-raw claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness "claude --model x" --code-mode)
+  expect_code 1 "$?" "--code-mode on a raw launch command should be refused"
+  assert_contains "$out" "applies only to a claude harness" "raw launch refusal did not explain itself"
+
+  id="code-mode-second-z45"
+  rec=$(make_spawn_case code-mode-second claude "$id")
+  read_case_record "$rec"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+  out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/claude-work" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate --code-mode)
+  expect_code 1 "$?" "--code-mode on a secondmate spawn should be refused"
+  assert_contains "$out" "never a secondmate" "secondmate refusal did not explain itself"
+
+  id="code-mode-relaunch-z46"
+  rec=$(make_spawn_case code-mode-relaunch claude "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" --relaunch --code-mode)
+  expect_code 1 "$?" "--code-mode with --relaunch should be refused"
+  assert_contains "$out" "--code-mode applies only to a fresh spawn" "relaunch refusal did not explain the fresh-spawn-only rule"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused --code-mode relaunch must not launch anything"
+  pass "--code-mode is refused for other harnesses, raw launches, secondmates, and relaunches"
+}
+
 # config/claude-remote-control (docs/configuration.md "Claude Remote
 # Control"): absent and `off` both produce today's launch byte-for-byte, `on`
 # inserts a home-and-task-named `--remote-control` flag right after the
@@ -2822,6 +2905,9 @@ test_claude_permission_mode_auto_reaches_scout_launch
 test_claude_worker_launch_covers_task_channel_dirs
 test_claude_permission_mode_invalid_refuses_before_endpoint_or_metadata
 test_non_claude_harness_ignores_claude_permission_mode
+test_code_mode_sets_the_env_and_skips_remote_control_for_that_task_only
+test_code_mode_scout_spawn_is_supported
+test_code_mode_refused_for_other_harnesses_secondmates_and_relaunch
 test_claude_remote_control_off_matches_absent_launch
 test_claude_remote_control_on_adds_named_flag
 test_claude_remote_control_on_secondmate_uses_2ndmate_name

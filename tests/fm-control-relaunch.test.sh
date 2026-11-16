@@ -510,6 +510,45 @@ test_relaunch_preserves_durable_task_metadata() {
   pass "fm-control relaunch: durable task metadata survives replacement launch publication"
 }
 
+test_relaunch_keeps_the_recorded_code_mode_choice() {
+  local dir out rc
+  dir=$(new_case code-mode rl50)
+  add_ship_task "$dir" rl50 claude
+  printf '%s\n' 'code_mode=1' >> "$dir/home/state/rl50.meta"
+  mkdir -p "$dir/home/config"
+  printf 'on\n' > "$dir/home/config/claude-remote-control"
+
+  out=$(run_control "$dir" rl50 relaunch --note "resume in Code Mode"); rc=$?
+  expect_code 0 "$rc" "a Code Mode relaunch should succeed"$'\n'"$out"
+  assert_grep "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude " "$dir/fake/literal" \
+    "the relaunch must keep the Code Mode variable, since a Code Mode session resumes only with it set"
+  ! grep -q -- '--remote-control' "$dir/fake/literal" \
+    || fail "a Code Mode relaunch must skip --remote-control"
+  [ "$(meta_field "$dir" rl50 code_mode)" = 1 ] || fail "the relaunch must keep code_mode in the task record"
+
+  dir=$(new_case code-mode-none rl51)
+  add_ship_task "$dir" rl51 claude
+  mkdir -p "$dir/home/config"
+  printf 'on\n' > "$dir/home/config/claude-remote-control"
+  out=$(run_control "$dir" rl51 relaunch --note "ordinary relaunch"); rc=$?
+  expect_code 0 "$rc" "an ordinary relaunch should succeed"$'\n'"$out"
+  ! grep -q 'CODE_MODE' "$dir/fake/literal" || fail "a task that never opted in must not relaunch in Code Mode"
+  assert_grep "--remote-control" "$dir/fake/literal" "an ordinary relaunch must keep Remote Control"
+  pass "fm-control relaunch: a recorded Code Mode choice survives the relaunch, and nothing else changes"
+}
+
+test_relaunch_onto_another_harness_leaves_code_mode_out() {
+  local dir out rc
+  dir=$(new_case code-mode-switch rl52)
+  add_ship_task "$dir" rl52 claude
+  printf '%s\n' 'code_mode=1' >> "$dir/home/state/rl52.meta"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl52 relaunch --harness codex --model gpt-5 --effort high --note "switching runtime"); rc=$?
+  expect_code 0 "$rc" "a harness switch off a Code Mode task should succeed"$'\n'"$out"
+  ! grep -q 'CODE_MODE' "$dir/fake/literal" || fail "the Code Mode variable must not reach another harness's launch"
+  pass "fm-control relaunch: switching off claude drops the Code Mode environment from the launch"
+}
+
 test_relaunch_serializes_concurrent_durable_metadata_publication() {
   local dir control_pid link_pid rc i=0 traceparent prepare launch_release waiting ready release
   dir=$(new_case metadata-race rl28)
@@ -2803,6 +2842,8 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata
+test_relaunch_keeps_the_recorded_code_mode_choice
+test_relaunch_onto_another_harness_leaves_code_mode_out
 test_relaunch_serializes_concurrent_durable_metadata_publication
 test_disabled_relaunch_clears_prior_trace_context
 test_relaunch_appends_the_progress_note_to_the_instructions
