@@ -1773,6 +1773,8 @@ test_claude_task_launch_carries_control_channel_authority() {
     "claude task launch did not preserve the authority boundary"
   assert_not_contains "$launch" "--disallowed-tools" \
     "non-Haiku claude task launch received the built-in tool disallow list"
+  assert_not_contains "$launch" "--strict-mcp-config" \
+    "non-Haiku claude task launch received the strict MCP config"
 
   id=profile-claude-haiku-trim-z21c
   rec=$(make_spawn_case profile-claude-haiku-trim claude "$id")
@@ -1781,9 +1783,23 @@ test_claude_task_launch_carries_control_channel_authority() {
   status=$?
   expect_code 0 "$status" "claude haiku crewmate spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "--strict-mcp-config $CLAUDE_TASK_DISALLOWED_FLAG--append-system-prompt 'You are a task worker" \
+    "haiku claude task launch did not default to strict MCP config ahead of the disallow list and system prompt"
+  assert_not_contains "$launch" "--mcp-config" \
+    "haiku claude task launch passed an MCP config file by default"
+
+  id=profile-claude-haiku-keep-mcp-z21d
+  rec=$(make_spawn_case profile-claude-haiku-keep-mcp claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model claude-haiku-5-5 --keep-mcp)
+  status=$?
+  expect_code 0 "$status" "claude haiku crewmate spawn with --keep-mcp should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "--strict-mcp-config" \
+    "haiku claude task launch with --keep-mcp still stripped MCP servers"
   assert_contains "$launch" "$CLAUDE_TASK_DISALLOWED_FLAG--append-system-prompt 'You are a task worker" \
-    "haiku claude task launch did not disallow unused built-in tools ahead of the system prompt"
-  pass "a claude task launch establishes only Firstmate's task control channels and trims built-in tools for Haiku only"
+    "haiku claude task launch with --keep-mcp lost the built-in tool disallow list"
+  pass "a claude task launch establishes only Firstmate's task control channels, trims built-in tools for Haiku only, and strips MCP servers from Haiku unless --keep-mcp opts in"
 }
 
 test_claude_secondmate_launch_omits_task_control_channel_authority() {
