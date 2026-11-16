@@ -1,0 +1,17 @@
+## local, flag absent
+off
+rc=0
+## local, flag present
+on
+rc=0
+## FM_PC02_LOCAL=1 forced
+on
+rc=0
+## hostname mismatch -> ssh
+SSH-CALLED
+remote-on
+rc=0
+## LOCAL=0 forced remote
+SSH-CALLED
+remote-on
+rc=0
