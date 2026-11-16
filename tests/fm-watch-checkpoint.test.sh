@@ -166,6 +166,21 @@ PL
   pass "non-GNU timeout falls back to Perl and honors the cleanup bound before escalating"
 }
 
+test_perl_fallback_quiet_checkpoint_with_sigint_ignored_by_caller() {
+  local home status
+  home=$(make_home perl-int-ignored)
+  mkdir -p "$home/stubs"
+  write_non_gnu_timeout_stub "$home/stubs/timeout"
+  status=0
+  # A caller that backgrounds the run leaves INT ignored; GNU timeout resets it
+  # across exec, so the perl fallback must too or the watcher cannot trap INT.
+  PATH="$home/stubs:$PATH" FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+    bash -c 'trap "" INT; exec "$0" --seconds 1' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  expect_code 124 "$status" "Perl fallback checkpoint with INT ignored exit"
+  assert_absent "$home/state/.watch.lock/pid" "watch lock pid survived the Perl fallback checkpoint with INT ignored"
+  pass "Perl fallback checkpoint ends the watcher cleanly even when the caller ignores INT"
+}
+
 test_announced_recovery_is_not_reannounced_by_next_checkpoint() {
   local home out err status marker
   home=$(make_home announced-recovery)
@@ -424,6 +439,7 @@ test_quiet_checkpoint_exits_124_cleanly
 test_gnu_timeout_runs_the_watcher_bound
 test_non_gnu_timeout_uses_gnu_gtimeout
 test_non_gnu_timeout_falls_back_to_perl_before_escalating
+test_perl_fallback_quiet_checkpoint_with_sigint_ignored_by_caller
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
 test_queue_append_during_checkpoint_still_resurfaces

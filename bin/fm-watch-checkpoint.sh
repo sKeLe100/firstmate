@@ -85,6 +85,9 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
     die "fork failed\n" unless defined $pid;
     if (!$pid) {
       setpgrp(0, 0);
+      # An ignored-at-entry signal stays ignored across exec and bash cannot trap
+      # it, so hand the command default dispositions for what we may send.
+      $SIG{$_} = "DEFAULT" for ("INT", "TERM", $signal);
       exec @ARGV;
       die "exec failed: $!\n";
     }
