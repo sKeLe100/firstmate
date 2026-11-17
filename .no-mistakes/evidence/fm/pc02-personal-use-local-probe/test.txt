@@ -1,0 +1,5 @@
+ok - status reports the local flag off when FM_PC02_HOSTNAME matches
+ok - status with a non-matching FM_PC02_HOSTNAME still asks the host over ssh
+ok - status with FM_PC02_HOSTNAME unset asks the host over ssh
+ok - install-toggle deploys path unit, service env, and a drop-in per runner for the relative flag
+# all fm-pc02-personal-use tests passed

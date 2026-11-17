@@ -1,0 +1,22 @@
+== local, flag absent
+$ FM_PC02_HOSTNAME=SeansMiniPC
+off
+rc=0
+== local, flag present
+$ FM_PC02_HOSTNAME=SeansMiniPC
+on
+rc=0
+== uppercase FQDN
+$ FM_PC02_HOSTNAME=SEANSMINIPC.example.com
+on
+rc=0
+== non-matching -> ssh
+$ FM_PC02_HOSTNAME=otherbox
+SSH CALLED
+remote-off
+rc=0
+== unset -> ssh
+$ FM_X=1
+SSH CALLED
+remote-off
+rc=0
