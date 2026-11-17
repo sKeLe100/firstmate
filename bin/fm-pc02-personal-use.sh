@@ -30,10 +30,12 @@
 #   FM_PC02_OFFLOAD_HOST                ssh target (default: pc02)
 #   FM_PC02_OFFLOAD_PERSONAL_USE_FLAG   flag file path relative to PC02's
 #                                      $HOME (default: .fm-pc02-personal-use)
-#   FM_PC02_LOCAL                      1 forces the local flag read and skips
-#                                      ssh; 0 forces the remote path
-#   FM_PC02_HOSTNAME                   hostname that identifies this machine as
-#                                      PC02 (default: pc02)
+#   FM_PC02_HOSTNAME                   no default. PC02 sets this (for example
+#                                      in its shell profile) to its own
+#                                      hostname; when it matches this
+#                                      machine's hostname case-insensitively,
+#                                      `status` reads the local flag instead of
+#                                      ssh-ing. Unset: `status` always uses ssh.
 #
 # Exit status: 0 on success, 2 on a usage error, 1 if the ssh call itself
 # fails (network/host problem, not a usage error).
@@ -60,14 +62,11 @@ WIN_POWERSHELL='/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
 # is_local_host: true when this machine is PC02 itself, so `status` can read
 # the flag file directly instead of ssh-ing back to its own alias.
 is_local_host() {
-  case "${FM_PC02_LOCAL:-}" in
-    1) return 0 ;;
-    0) return 1 ;;
-  esac
+  [ -n "${FM_PC02_HOSTNAME:-}" ] || return 1
   local host target
   host=$(hostname 2>/dev/null || uname -n)
   host=$(printf '%s' "${host%%.*}" | tr '[:upper:]' '[:lower:]')
-  target=$(printf '%s' "${FM_PC02_HOSTNAME:-pc02}" | tr '[:upper:]' '[:lower:]')
+  target=$(printf '%s' "$FM_PC02_HOSTNAME" | tr '[:upper:]' '[:lower:]')
   target=${target%%.*}
   [ -n "$target" ] && [ "$host" = "$target" ]
 }

@@ -246,49 +246,64 @@ test_flag_created_mid_start_pass_converges_to_stopped() {
   pass "a flag created mid-pass leaves every runner stopped, matching the final flag"
 }
 
-run_status() {  # <FM_PC02_LOCAL> <FM_PC02_HOSTNAME>
-  PATH="$fakebin:$PATH" \
-    FM_PC02_LOCAL="$1" \
-    FM_PC02_HOSTNAME="$2" \
-    "$ROOT/bin/fm-pc02-personal-use.sh" status 2>&1
+run_status() {  # <FM_PC02_HOSTNAME or empty for unset>
+  if [ -n "$1" ]; then
+    PATH="$fakebin:$PATH" FM_PC02_HOSTNAME="$1" "$ROOT/bin/fm-pc02-personal-use.sh" status 2>&1
+  else
+    env -u FM_PC02_HOSTNAME PATH="$fakebin:$PATH" "$ROOT/bin/fm-pc02-personal-use.sh" status 2>&1
+  fi
 }
 
 test_status_local_on_reads_flag_without_ssh() {
-  local out status
+  local out status host
   reset_fixture
   : > "$HOME/$FLAG_REL"
+  host=$(hostname | cut -d. -f1 | tr '[:lower:]' '[:upper:]')
   status=0
-  out=$(run_status 1 pc02) || status=$?
+  out=$(run_status "$host") || status=$?
   expect_code 0 "$status" "local status with the flag on must exit 0: $out"
   assert_equals on "$out" "local status with the flag on must print on"
   [ ! -s "$FM_TEST_SSH_LOG" ] || fail "local status still called ssh: $(cat "$FM_TEST_SSH_LOG")"
-  pass "status reads the local flag directly when run on PC02"
+  pass "status reads the local flag directly when FM_PC02_HOSTNAME matches"
 }
 
-test_status_local_off_matches_hostname() {
+test_status_local_off_reads_flag_without_ssh() {
   local out status host
   reset_fixture
   rm -f "$HOME/$FLAG_REL"
   host=$(hostname | cut -d. -f1)
   status=0
-  out=$(run_status '' "$host") || status=$?
+  out=$(run_status "$host") || status=$?
   expect_code 0 "$status" "local status with the flag off must exit 0: $out"
   assert_equals off "$out" "local status with the flag off must print off"
-  [ ! -s "$FM_TEST_SSH_LOG" ] || fail "hostname-detected local status still called ssh: $(cat "$FM_TEST_SSH_LOG")"
-  pass "status detects PC02 by hostname and reports the local flag off"
+  [ ! -s "$FM_TEST_SSH_LOG" ] || fail "local status still called ssh: $(cat "$FM_TEST_SSH_LOG")"
+  pass "status reports the local flag off when FM_PC02_HOSTNAME matches"
 }
 
-test_status_remote_path_still_uses_ssh() {
+test_status_mismatched_hostname_uses_ssh() {
   local out status log
   reset_fixture
   : > "$HOME/$FLAG_REL"
   status=0
-  out=$(run_status 0 fm-not-pc02) || status=$?
+  out=$(run_status fm-not-pc02) || status=$?
   expect_code 0 "$status" "the remote status path must still succeed: $out"
   assert_equals on "$out" "the remote status path must report the remote flag"
   log=$(cat "$FM_TEST_SSH_LOG")
-  assert_contains "$log" "bash -lc" "the remote status path did not call ssh"
-  pass "status off PC02 still asks the host over ssh, unchanged"
+  assert_contains "$log" "bash -lc" "a mismatched hostname did not call ssh"
+  pass "status with a non-matching FM_PC02_HOSTNAME still asks the host over ssh"
+}
+
+test_status_unset_hostname_uses_ssh() {
+  local out status log
+  reset_fixture
+  : > "$HOME/$FLAG_REL"
+  status=0
+  out=$(run_status '') || status=$?
+  expect_code 0 "$status" "the unset-hostname status path must succeed: $out"
+  assert_equals on "$out" "the unset-hostname status path must report the remote flag"
+  log=$(cat "$FM_TEST_SSH_LOG")
+  assert_contains "$log" "bash -lc" "unset FM_PC02_HOSTNAME did not call ssh"
+  pass "status with FM_PC02_HOSTNAME unset asks the host over ssh"
 }
 
 run_install_toggle() {  # <flag>
@@ -328,8 +343,9 @@ test_stop_failure_is_reported_and_other_runners_continue
 test_flag_removed_mid_stop_pass_converges_to_active
 test_flag_created_mid_start_pass_converges_to_stopped
 test_status_local_on_reads_flag_without_ssh
-test_status_local_off_matches_hostname
-test_status_remote_path_still_uses_ssh
+test_status_local_off_reads_flag_without_ssh
+test_status_mismatched_hostname_uses_ssh
+test_status_unset_hostname_uses_ssh
 test_install_toggle_deploys_path_unit_service_and_dropins
 
 echo "# all fm-pc02-personal-use tests passed"
