@@ -1058,7 +1058,7 @@ tests/fm-nomistakes-gate-check.test.sh 2985
 tests/fm-nomistakes-poll-lib.test.sh 8717
 tests/fm-omp-harness.test.sh 65609
 tests/fm-omp-primary-live-e2e.test.sh 106
-tests/fm-on.test.sh 18589
+tests/fm-on.test.sh 28836
 tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh 98
 tests/fm-opencode-primary-live-e2e.test.sh 108
 tests/fm-opencode-session-sweep.test.sh 142
@@ -1068,7 +1068,7 @@ tests/fm-parent-channel-scan-exclusion.test.sh 3838
 tests/fm-pc02-churn-e2e.test.sh 21689
 tests/fm-pc02-fair-order.test.sh 44123
 tests/fm-pc02-hygiene.test.sh 10219
-tests/fm-pc02-personal-use.test.sh 540
+tests/fm-pc02-personal-use.test.sh 910
 tests/fm-pc02-test-offload-live-e2e.test.sh 155
 tests/fm-pc02-test-offload.test.sh 265976
 tests/fm-peek-remote.test.sh 1220
@@ -1124,7 +1124,7 @@ tests/fm-remote-secondmate-trace-context.test.sh 209227
 tests/fm-remote-transport-lanes.test.sh 66089
 tests/fm-retry-pressure.test.sh 1596
 tests/fm-returning-session-check.test.sh 1017
-tests/fm-review-check.test.sh 1255
+tests/fm-review-check.test.sh 2006
 tests/fm-roundtable-coverage.test.sh 1168
 tests/fm-roundtable-factsheet.test.sh 722
 tests/fm-routing-ledger-metrics.test.sh 15993
@@ -1171,7 +1171,7 @@ tests/fm-stow-cascade.test.sh 10938
 tests/fm-subagent-context.test.sh 299
 tests/fm-subagent-pretool-check.test.sh 1290
 tests/fm-supervision-events.test.sh 1034
-tests/fm-supervision-host-2.test.sh 525849
+tests/fm-supervision-host-2.test.sh 974763
 tests/fm-supervision-host-attended-live-e2e.test.sh 231
 tests/fm-supervision-host-live-e2e.test.sh 179
 tests/fm-supervision-host.test.sh 267467

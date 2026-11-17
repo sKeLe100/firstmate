@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--keep-mcp] [--herdr-resume-lock-wait]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--keep-mcp] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--keep-mcp] [--code-mode] [--herdr-resume-lock-wait]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--keep-mcp] [--code-mode] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -104,6 +104,14 @@
 #   the chrome-devtools-axi CLI and needs no MCP.
 #   It has no effect on other models, harnesses, or secondmates, and it is
 #   refused with --relaunch.
+#   --code-mode is the fresh-spawn opt-in that launches one claude ship or scout
+#   worker in Claude Code's experimental Code Mode: the launch carries
+#   CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 in its environment and omits
+#   --remote-control for that task only, because Code Mode turns Remote Control
+#   off (docs/configuration.md "Claude Code Mode"). The choice is recorded as
+#   code_mode=1 in state/<id>.meta and a relaunch keeps it, since a Code Mode
+#   session resumes only with the variable still set. It is refused for any
+#   other harness, a raw launch command, a secondmate, and --relaunch.
 #   Every fresh ship/scout launch and replacement explicitly enters the recorded
 #   worktree immediately before trust setup and brief delivery, and a pre-launch
 #   cwd check refuses any endpoint that still reports another copy; a Herdr shell
@@ -461,6 +469,7 @@
 #     __CLAUDEADDDIRS__ quoted --add-dir flags granting exactly this task's
 #                  Firstmate channel directories (claude_add_dirs_flag below;
 #                  supplies its own trailing space, empty never used)
+#     __CODEMODEENV__ the Code Mode env prefix set by --code-mode (empty otherwise)
 #     __CLAUDERCFLAG__ the --remote-control flag selected by config/claude-remote-control (empty when off)
 #     __CLAUDESETTINGS__ the single claude --settings value: a quoted inline
 #                  JSON object for a crewmate or scout, or a quoted path to
@@ -897,6 +906,8 @@ REDELEGATION_REASON_SET=0
 RELAUNCH=0
 # Opt-in only: keep MCP servers for a Haiku claude task worker. See the header.
 KEEP_MCP=0
+# Opt-in only: launch a claude task worker in Code Mode. See the header.
+CODE_MODE=0
 # Opt-in only: a proven-gone relaunch re-creates its endpoint in the ambient
 # herdr session instead of the one the record names. See the header.
 RELAUNCH_MOVE_SESSION=0
@@ -985,6 +996,7 @@ for a in "$@"; do
     ;;
   --relaunch) RELAUNCH=1 ;;
   --keep-mcp) KEEP_MCP=1 ;;
+  --code-mode) CODE_MODE=1 ;;
   --move-session) RELAUNCH_MOVE_SESSION=1 ;;
   --purpose) want_value=purpose ;;
   --purpose=*)
@@ -1144,6 +1156,16 @@ fi
 
 if [ "$RELAUNCH" -eq 1 ] && [ "$KEEP_MCP" -eq 1 ]; then
   echo "error: --keep-mcp applies only to a fresh spawn; a relaunch keeps the MCP choice its record already holds" >&2
+  exit 1
+fi
+
+if [ "$RELAUNCH" -eq 1 ] && [ "$CODE_MODE" -eq 1 ]; then
+  echo "error: --code-mode applies only to a fresh spawn; a relaunch keeps the Code Mode choice its record already holds" >&2
+  exit 1
+fi
+
+if [ "$KIND" = secondmate ] && [ "$CODE_MODE" -eq 1 ]; then
+  echo "error: --code-mode applies only to a ship or scout worker, never a secondmate" >&2
   exit 1
 fi
 
@@ -2678,6 +2700,9 @@ launch_template() {
   # pane on a one-time interactive question - while a "Block" answer anywhere
   # on the machine writes permissions.blockReadsOutsideWorkingDirectories
   # into user settings and refuses those reads under bypass too.
+  # __CODEMODEENV__ is empty unless the task opted in with --code-mode, in
+  # which case it carries CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 and
+  # __CLAUDERCFLAG__ stays empty, since Code Mode turns Remote Control off.
   # __CLAUDERCFLAG__ is empty unless config/claude-remote-control is on, in
   # which case it carries a trailing-spaced `--remote-control "<name>" ` so
   # this worker registers in the Claude Code app's session list
@@ -2689,7 +2714,7 @@ launch_template() {
   # project and fetched content. A persistent secondmate receives its own
   # supervisor contract instead, so this task-worker statement does not apply.
   claude)
-    printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ __CLAUDERCFLAG____CLAUDEADDDIRS__--settings __CLAUDESETTINGS__ '
+    printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 __CODEMODEENV__claude __CLAUDEPERMFLAG__ __CLAUDERCFLAG____CLAUDEADDDIRS__--settings __CLAUDESETTINGS__ '
     if [ "$kind" != secondmate ]; then
       # Haiku task workers (ship and scout) never use these built-in tools, and
       # their schemas cost first-request context on every turn, so the
@@ -2997,6 +3022,18 @@ case "$ARG3" in
   ;;
 esac
 
+# --code-mode needs the claude launch template's environment prefix, so any
+# other harness, and a raw launch command that has no template, is refused.
+# A relaunch reads the recorded choice instead and applies it to claude only.
+if [ "$CODE_MODE" -eq 1 ] && { [ "$HARNESS" != claude ] || [ "$RAW_LAUNCH" -eq 1 ]; }; then
+  echo "error: --code-mode is Claude Code's experimental Code Mode and applies only to a claude harness launch from its template (this launch resolved to '${HARNESS:-none}', raw launch command: $([ "$RAW_LAUNCH" -eq 1 ] && echo yes || echo no))" >&2
+  exit 1
+fi
+if [ "$RELAUNCH" -eq 1 ] && [ "$HARNESS" = claude ] && [ "$RAW_LAUNCH" -eq 0 ] \
+  && [ "$(fm_meta_get "$STATE/$ID.meta" code_mode)" = 1 ]; then
+  CODE_MODE=1
+fi
+
 # config/claude-remote-control eligibility preflight (docs/configuration.md
 # "Claude Remote Control"): notice-only, never a refusal, because a worker
 # whose Remote Control registration fails still launches and only loses the
@@ -3006,7 +3043,7 @@ esac
 # The probe runs bounded and with stdin detached (same shape as
 # agy_model_validate above) so an unreachable or prompting `claude auth
 # status` can never stall or block a spawn.
-if [ "$CLAUDE_REMOTE_CONTROL" = on ] && [ "$HARNESS" = claude ]; then
+if [ "$CLAUDE_REMOTE_CONTROL" = on ] && [ "$HARNESS" = claude ] && [ "$CODE_MODE" -eq 0 ]; then
   claude_rc_bound=${FM_CLAUDE_RC_AUTH_TIMEOUT:-10}
   case "$claude_rc_bound" in ''|*[!0-9]*|0*) claude_rc_bound=10 ;; esac
   if command -v claude >/dev/null 2>&1; then
@@ -6348,6 +6385,7 @@ preserve_relaunch_meta() {
   echo "effort=${EFFORT:-default}"
   # Written only on a fresh spawn that opted in; a relaunch carries it forward.
   if [ "$KEEP_MCP" -eq 1 ] && [ "$RELAUNCH" -eq 0 ]; then echo "keep_mcp=1"; fi
+  if [ "$CODE_MODE" -eq 1 ] && [ "$RELAUNCH" -eq 0 ]; then echo "code_mode=1"; fi
   # The worker account pin, only when this home declares one, so an unpinned
   # task record stays byte-identical.
   [ -z "$WORKER_ACCOUNT" ] || echo "account=$WORKER_ACCOUNT_DECLARED"
@@ -6591,8 +6629,12 @@ if [ "$KEEP_AI_TRAILERS" = 1 ]; then
 else
   LAUNCH=${LAUNCH//__CLAUDEATTRIBUTION__/,'"attribution":{"commit":"","pr":"","sessionUrl":false}'}
 fi
+CODE_MODE_ENV=''
+[ "$CODE_MODE" -eq 0 ] || CODE_MODE_ENV='CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 '
+LAUNCH=${LAUNCH//__CODEMODEENV__/$CODE_MODE_ENV}
 CLAUDE_RC_FLAG=''
-if [ "$CLAUDE_REMOTE_CONTROL" = on ]; then
+# Code Mode turns Remote Control off, so the two never combine on one launch.
+if [ "$CLAUDE_REMOTE_CONTROL" = on ] && [ "$CODE_MODE" -eq 0 ]; then
   claude_rc_home_label=firstmate
   if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
     claude_rc_marker_id=$(tr -d '[:space:]' < "$FM_HOME/$SUB_HOME_MARKER" 2>/dev/null || true)

@@ -1469,7 +1469,7 @@ A matching primary-side per-secondmate pin for a remote route refuses before rem
 ## Claude Remote Control (config/claude-remote-control)
 
 The optional local, gitignored `config/claude-remote-control` holds `on` or `off`, trimmed of whitespace; an absent file, and any file holding `off`, mean today's launch is unchanged.
-`on` adds `--remote-control "<name>"` to every Claude worker launch and relaunch (crewmates, scouts, and Claude secondmates), registering that session in the Claude Code app's session list (claude.ai/code and the mobile/desktop apps) so the captain can see it running without asking.
+`on` adds `--remote-control "<name>"` to every Claude worker launch and relaunch (crewmates, scouts, and Claude secondmates), except a task spawned with `--code-mode` (see "Claude Code Mode"), registering that session in the Claude Code app's session list (claude.ai/code and the mobile/desktop apps) so the captain can see it running without asking.
 `bin/fm-spawn.sh` names each worker `<home-label>-fm-<task-id>` (`<home-label>-2ndmate-<task-id>` when the spawn itself creates a secondmate), where `<home-label>` is `firstmate` for the primary home or `2ndmate-<secondmate-id>` for a secondmate home, so two homes launching Claude workers with the same task id never collide in the app's list.
 Any value other than `on` or `off`, or an unreadable file, refuses every spawn from that home before any endpoint, worktree, or task record exists, the same fail-closed shape as `config/claude-permission-mode`.
 When `on`, `fm-spawn.sh` also checks `claude auth status` and the four Remote-Control-disabling environment variables (`DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_GROWTHBOOK`) and prints a notice, never a refusal, when eligibility looks doubtful: a worker whose Remote Control registration fails still launches normally and only loses the app-visibility feature, so this preflight can never block a spawn.
@@ -1477,6 +1477,14 @@ The file is a captain-wide preference and is inherited into secondmate homes the
 Connected devices can send prompts into a registered session; AGENTS.md hard rule 4 already treats that as direct captain intervention.
 A finished worker leaves an offline entry in the app's session list until the captain archives it there; no CLI archive path exists.
 `bin/fm-primary-herdr.sh` reads the same config to register the primary session itself as `firstmate-primary`.
+
+## Claude Code Mode (fm-spawn.sh --code-mode)
+
+`bin/fm-spawn.sh --code-mode` is a per-task opt-in that launches one Claude ship or scout worker in Claude Code's experimental Code Mode, where the model writes JavaScript that calls its tools instead of calling them one at a time.
+It adds `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` to that worker's launch environment and omits `--remote-control` for that task only, because Code Mode turns Remote Control off, so `config/claude-remote-control` stays unchanged for every other launch.
+The choice is recorded as `code_mode=1` in the task record and a relaunch keeps it, since a Code Mode session resumes only while the variable is still set.
+The flag is refused for any other harness, a raw launch command, a secondmate, and `--relaunch`, and without it nothing changes.
+The first Code Mode start in a Claude config directory asks once for "Yes, turn on Code Mode" and stores its acceptance in that directory's `.claude.json`; Firstmate never writes that acceptance or the variable into any `settings.json`, so the captain answers that prompt once per worker account.
 
 ## Lavish server address (config/lavish-axi-host)
 
