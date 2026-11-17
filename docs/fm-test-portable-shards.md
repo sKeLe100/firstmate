@@ -76,6 +76,7 @@ The 2026-11-15 hint-drift refresh from PR 264's run 43681294435 raised `tests/fm
 The 2026-11-16 hint-drift refresh from PR 270's run 43976918150 (ubuntu-latest moved to 26.04, a slower runner) raised the six repeated drifters, `tests/fm-lint-workflows.test.sh` (872 to 1591 ms), `tests/fm-remote-secondmate-lifecycle-inherit-e2e.test.sh` (243941 to 374937 ms), `tests/fm-spawn-compact-adviser-disable-remote.test.sh` (67968 to 108286 ms), `tests/fm-test-isolation-proof.test.sh` (2866 to 4403 ms), `tests/fm-tool-update-check.test.sh` (14383 to 25439 ms), and `tests/fm-trace-context-lib.test.sh` (221 to 491 ms), plus other drifters and unhinted scripts, and moved the portable serial remainder to twelve shards.
 The 2026-11-17 hint-drift refresh from PR 276's run 44006844023 raised `tests/fm-pc02-personal-use.test.sh` from 540 ms to its measured 910 ms (repeated drift 1.69x) and `tests/fm-review-check.test.sh` from 1255 ms to its measured 2006 ms (repeated drift 1.60x).
 The 2026-11-17 hint-drift refresh from PR 276's run 44010176385 raised `tests/fm-on.test.sh` from 18589 ms to its measured 28836 ms (repeated drift 1.55x).
+The 2026-11-17 hint-drift refresh from PR 276's run 44013976090 raised `tests/fm-supervision-host-2.test.sh` from 525849 ms to its measured 974763 ms (repeated drift 1.85x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints

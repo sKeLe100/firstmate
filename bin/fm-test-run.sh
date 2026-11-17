@@ -1171,7 +1171,7 @@ tests/fm-stow-cascade.test.sh 10938
 tests/fm-subagent-context.test.sh 299
 tests/fm-subagent-pretool-check.test.sh 1290
 tests/fm-supervision-events.test.sh 1034
-tests/fm-supervision-host-2.test.sh 525849
+tests/fm-supervision-host-2.test.sh 974763
 tests/fm-supervision-host-attended-live-e2e.test.sh 231
 tests/fm-supervision-host-live-e2e.test.sh 179
 tests/fm-supervision-host.test.sh 267467
