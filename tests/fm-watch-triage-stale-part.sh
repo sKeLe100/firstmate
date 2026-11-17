@@ -1001,7 +1001,7 @@ test_live_paused_until_controls_recheck_time() {
     || fail "pane churn bypassed a live worker's declared future time"
   wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' \
     "$state/.wake-queue" 2>/dev/null || echo 0)
-  [ "$wakes" -eq 0 ] || fail "a live worker produced $wakes wakes before its declared time"
+  [ "$wakes" -eq 0 ] || fail "a live worker produced $wakes wakes before its declared time$(wake_evidence "$state")"
 
   past=$(iso_utc_at "$(( $(date +%s) - 120 ))")
   printf 'paused: rate limit until %s\n' "$past" >> "$statusf"
@@ -1011,14 +1011,14 @@ test_live_paused_until_controls_recheck_time() {
     || fail "a live worker did not wake when its declared time passed"
   wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' \
     "$state/.wake-queue" 2>/dev/null || echo 0)
-  [ "$wakes" -eq 1 ] || fail "a passed declared time produced $wakes wakes instead of one"
+  [ "$wakes" -eq 1 ] || fail "a passed declared time produced $wakes wakes instead of one$(wake_evidence "$state")"
   ack_stopped_cycle "$state" || fail "could not acknowledge the due declared-time recheck"
   printf 'parked, elapsed 4s' > "$capture_file"
   parked_watch_round "$state" "$fakebin" "$out" "$capture_file" "$window" absorb \
     || fail "a due declared time bypassed the reset long cadence"
   wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' \
     "$state/.wake-queue" 2>/dev/null || echo 0)
-  [ "$wakes" -eq 0 ] || fail "a due declared time rechecked again inside the long cadence"
+  [ "$wakes" -eq 0 ] || fail "a due declared time rechecked again inside the long cadence$(wake_evidence "$state")"
   pass "a live paused worker stays absorbed until its declared time, then rechecks"
 }
 

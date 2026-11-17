@@ -136,6 +136,14 @@ wait_numeric_file() {
   done
 }
 
+# The evidence a wake-count assertion needs when it fails: the durable queue rows
+# and the watcher's own absorb/surface decisions, so a failure on a host nobody
+# can rerun at will still says which poll queued the unexpected row and why.
+wake_evidence() {  # <state>
+  printf '\nwake queue:\n%s\ntriage log tail:\n%s' \
+    "$(cat "$1/.wake-queue" 2>/dev/null)" "$(tail -n 20 "$1/.watch-triage.log" 2>/dev/null)"
+}
+
 # Portable mtime in epoch seconds. Platform-detected, never the `stat -f || stat -c`
 # fallback (which writes a partial filesystem dump on Linux; see fm-watch.sh).
 file_mtime() {
