@@ -669,16 +669,16 @@ test_many_scout_reports_survive_argv_limit() {
 
 # Snapshot temp files hold whole backlog- and task-sized payloads. An
 # interrupted run (a captain hitting Ctrl-C on /bearings) must not leave them
-# behind in TMPDIR. Only snapshot-owned residue (fm-fleet-snapshot.*) is
+# behind in TMPDIR. Only snapshot-owned residue (fm-fleet-*) is
 # asserted: the bash timeout fallback's fm-bash-timeout-command.* files belong
 # to bin/fm-timeout-lib.sh, not to the snapshot.
 
 # Fails when a snapshot-owned temp entry sits directly in <tmp>. Snapshot
-# transport dirs are created as ${TMPDIR}/fm-fleet-snapshot.XXXXXX, so one
-# level is enough.
+# dirs (fm-fleet-snapshot.*, fm-fleet-tasks.*, fm-fleet-ledgers.*) are created
+# directly under ${TMPDIR}, so one level is enough.
 assert_no_snapshot_residue() {  # <tmp>
   local leftovers
-  leftovers=$(find "$1" -mindepth 1 -maxdepth 1 -name 'fm-fleet-snapshot.*' 2>/dev/null)
+  leftovers=$(find "$1" -mindepth 1 -maxdepth 1 -name 'fm-fleet-*' 2>/dev/null)
   [ -z "$leftovers" ] || fail "interrupted snapshot left temp files behind: $leftovers"
 }
 
@@ -766,14 +766,17 @@ test_interrupted_snapshot_bash_fallback_cleans_up() {
 # Negative control: the residue assertion must fail on planted snapshot residue
 # and must ignore the fallback's own files.
 test_residue_assertion_fails_on_planted_snapshot_residue() {
-  local planted ignored
-  planted=$TMP_ROOT/residue-planted
+  local planted ignored name
   ignored=$TMP_ROOT/residue-ignored
-  mkdir -p "$planted/fm-fleet-snapshot.planted" "$ignored"
+  mkdir -p "$ignored"
   : > "$ignored/fm-bash-timeout-command.planted"
-  if ( assert_no_snapshot_residue "$planted" ) >/dev/null 2>&1; then
-    fail "negative control: planted fm-fleet-snapshot.* residue must fail the cleanup assertion"
-  fi
+  for name in fm-fleet-snapshot fm-fleet-tasks fm-fleet-ledgers; do
+    planted=$TMP_ROOT/residue-planted-$name
+    mkdir -p "$planted/$name.planted"
+    if ( assert_no_snapshot_residue "$planted" ) >/dev/null 2>&1; then
+      fail "negative control: planted $name.* residue must fail the cleanup assertion"
+    fi
+  done
   ( assert_no_snapshot_residue "$ignored" ) >/dev/null 2>&1 \
     || fail "fm-bash-timeout-command.* files must not count as snapshot residue"
   pass "the cleanup assertion fails on planted snapshot residue and ignores fallback files"
