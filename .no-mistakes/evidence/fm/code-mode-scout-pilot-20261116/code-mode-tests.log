@@ -1,0 +1,56 @@
+== tests/fm-spawn-dispatch-profile.test.sh
+ok - config/claude-remote-control=on names a secondmate spawn firstmate-2ndmate-<id>
+ok - config/claude-remote-control=on prefixes the name with the launching home's own label
+ok - an unrecognized config/claude-remote-control token refuses before any endpoint or metadata
+ok - config/claude-remote-control changes claude launches only
+ok - non-claude harnesses do not receive the claude CLAUDE_CONFIG_DIR prefix
+ok - a claude task launch establishes only Firstmate's task control channels, trims built-in tools for Haiku only, and strips MCP servers from Haiku unless --keep-mcp opts in
+ok - a Haiku worker in a Firstmate checkout gets claudeMdExcludes, skillOverrides and the matching role lines
+fatal: 'origin' does not appear to be a git repository
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+ok - the AGENTS.md and skill trim never reaches another project, a non-Haiku worker, or a secondmate
+ok - --keep-mcp is refused on a relaunch
+ok - keep_mcp is recorded only when asked, and MCP stripping covers Haiku scouts but never secondmates
+ok - a relaunch keeps the MCP choice its task record holds
+ok - a persistent claude secondmate keeps its supervisor contract without a task-worker authority overlay
+ok - fm-spawn: a Claude launch longer than 1024 bytes is delivered intact through the staging path
+ok - a claude crewmate launch carries the attribution-off policy in its own settings
+ok - keep-ai-trailers omits Claude attribution settings and the pane strip hooks
+ok - keep-ai-trailers is inherited so a secondmate's crew launch keeps AI trailers
+ok - a claude secondmate launch carries the attribution-off policy too
+ok - active crew-dispatch profile does not block secondmate launches
+ok - codex secondmate spawn requires the same explicit model/effort as a crew spawn
+# all fm-spawn-dispatch-profile tests passed
+exit=0
+== tests/fm-control-relaunch.test.sh
+ok - fm-control relaunch: two control actions on one task serialize instead of interleaving
+ok - fm-spawn relaunch: direct entry participates in lifecycle serialization
+ok - fm-promote: promotion participates in lifecycle serialization
+ok - fm-spawn --relaunch: refuses to launch a second agent into a live endpoint
+ok - fm-spawn --relaunch: symlinked records refuse before inspection
+ok - fm-spawn --relaunch: keeps its early meta lock continuous
+ok - fm-spawn --relaunch: pending closes refuse before replacement begins
+ok - fm-spawn --relaunch: every identity axis comes from the record, and a contradicting flag refuses
+ok - fm-spawn --relaunch: an unrecorded task is refused
+ok - fm-spawn --relaunch: refuses to start a replacement outside the copy holding its work
+ok - tmux: a window absent from its session refuses both verbs rather than being assumed gone
+ok - tmux: an unfindable session refuses both verbs, so a live agent is never duplicated
+ok - tmux: a dead server on this socket refuses both verbs rather than proving absence
+ok - reclaim: an unclassifiable endpoint is still refused, so two agents cannot share one
+ok - fm-spawn --relaunch: resumes the bound Pi session only for a Pi registration
+ok - reclaim: a herdr pane that outlived its stopped server is adopted, never orphaned beside a new tab
+ok - fm-control exit: a herdr pane that outlived its stopped server is already-stopped, not gone
+ok - reclaim: a herdr rebind is created in the session the record names, never the ambient one
+ok - reclaim: a herdr agent that came back with its server refuses, so one worktree keeps one agent
+ok - reclaim: a herdr reclaim rebinds the endpoint and leaves the whole rest of the task alone
+ok - reclaim: a herdr secondmate whose endpoint is gone is sent to its own respawn owner
+ok - reclaim: a rebind refused from a plain shell reports the real cause, not a fabricated session mismatch
+ok - relaunch re-reads the backlog item instead of blindly re-running the transition
+ok - relaunch heals an item that drifted out of In flight while the task stayed live
+ok - away supervision relaunches existing In-flight and queued items under the saturated fresh-spawn spend cap
+exit=0
+
+[exited with code 0]
