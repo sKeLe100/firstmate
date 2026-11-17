@@ -168,7 +168,9 @@ contract rather than duplicating it here.
 turns it on (offloading stays on PC01 only) or off (PC02 may pick up
 offloaded runs again), with a brief popup confirming the new state. The
 same switch is reachable from PC01 with `bin/fm-pc02-personal-use.sh
-on|off|status`. This manual switch is the only thing that stops PC02 testing:
+on|off|status` (`status` also works when run on PC02 itself, reading the flag
+locally, once PC02 sets `FM_PC02_HOSTNAME` to its own hostname; the script
+header owns the details). This manual switch is the only thing that stops PC02 testing:
 a live PC02 model worker, a loaded llama-swap, and ordinary host CPU/GPU load
 do not block an offload, because PC02 runs the test slots alongside a model.
 The per-slot locks still bound how many suites run at once, and a run waits for
