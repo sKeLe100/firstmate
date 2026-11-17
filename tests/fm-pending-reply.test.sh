@@ -1079,6 +1079,9 @@ test_delivery_confirmation_fallback_reconciles() {
     [ -f "$marker" ] || fail "delivery confirmation fallback marker should persist"
     [ -z "$(fm_pending_reply_get "$rec" delivered_epoch)" ] \
       || fail "failed primary commit should leave delivered_epoch empty"
+    # Deliberately not followed: fm-pending-reply-lib.sh is analyzed once at
+    # the top; this re-source only restores runtime state after a failed commit.
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-pending-reply-lib.sh"
     fm_pending_reply_tick_one "$state" "$corr" unknown \
       || fail "watcher should reconcile the delivery marker"
@@ -1273,7 +1276,9 @@ test_restart_preserves_expectation_and_parent_destination() {
   parent_status=$(fm_pending_reply_get "$rec" parent_status)
   parent_home=$(fm_pending_reply_get "$rec" parent_home)
   # Simulate process restart: re-source library and re-read the same record.
-  # shellcheck source=bin/fm-pending-reply-lib.sh
+  # Deliberately not followed: fm-pending-reply-lib.sh is analyzed once at the
+  # top; this re-source only simulates a process restart.
+  # shellcheck source=/dev/null
   . "$ROOT/bin/fm-pending-reply-lib.sh"
   [ -f "$rec" ] || fail "record must survive restart"
   [ "$(fm_pending_reply_get "$rec" parent_status)" = "$parent_status" ] \
