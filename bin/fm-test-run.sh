@@ -1058,7 +1058,7 @@ tests/fm-nomistakes-gate-check.test.sh 2985
 tests/fm-nomistakes-poll-lib.test.sh 8717
 tests/fm-omp-harness.test.sh 65609
 tests/fm-omp-primary-live-e2e.test.sh 106
-tests/fm-on.test.sh 18589
+tests/fm-on.test.sh 28836
 tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh 98
 tests/fm-opencode-primary-live-e2e.test.sh 108
 tests/fm-opencode-session-sweep.test.sh 142
