@@ -1068,7 +1068,7 @@ tests/fm-parent-channel-scan-exclusion.test.sh 3838
 tests/fm-pc02-churn-e2e.test.sh 21689
 tests/fm-pc02-fair-order.test.sh 44123
 tests/fm-pc02-hygiene.test.sh 10219
-tests/fm-pc02-personal-use.test.sh 540
+tests/fm-pc02-personal-use.test.sh 910
 tests/fm-pc02-test-offload-live-e2e.test.sh 155
 tests/fm-pc02-test-offload.test.sh 265976
 tests/fm-peek-remote.test.sh 1220
@@ -1124,7 +1124,7 @@ tests/fm-remote-secondmate-trace-context.test.sh 209227
 tests/fm-remote-transport-lanes.test.sh 66089
 tests/fm-retry-pressure.test.sh 1596
 tests/fm-returning-session-check.test.sh 1017
-tests/fm-review-check.test.sh 1255
+tests/fm-review-check.test.sh 2006
 tests/fm-roundtable-coverage.test.sh 1168
 tests/fm-roundtable-factsheet.test.sh 722
 tests/fm-routing-ledger-metrics.test.sh 15993
