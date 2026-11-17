@@ -323,12 +323,41 @@ SH
   printf '%s\n' "$dir"
 }
 
+# A positive wait's ceiling stretched by host contention: <base> 0.1s ticks
+# times ceil(load1 / cpus), never less than <base> and never more than eight
+# times it, so a slow-but-healthy step on a loaded host gets proportionally more
+# time while a genuinely hung one still fails in bounded time. Callers read it
+# only once their base budget has run out, so a wait that succeeds in time never
+# pays for the load read, and an idle host keeps the exact base budget.
+fm_test_load_scaled_ticks() {  # <base-ticks> -> ticks on stdout
+  local base=$1 load='' cpus=''
+  if [ -r /proc/loadavg ]; then
+    read -r load _ < /proc/loadavg || load=''
+  else
+    load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{ print $1 }') || load=''
+  fi
+  cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null) || cpus=''
+  awk -v b="$base" -v l="${load:-0}" -v c="${cpus:-1}" 'BEGIN {
+    r = (c > 0) ? l / c : 1
+    s = int(r); if (s < r) s++
+    if (s < 1) s = 1; if (s > 8) s = 8
+    printf "%d\n", b * s
+  }'
+}
+
 # Only pass a process owned by this test. A deadline must also bound cleanup:
 # TERM can be ignored or remain pending on a stopped child, so never follow it
 # with an unbounded wait. Keep process evidence before the final owned-PID kill.
+# The <limit> ceiling is load-scaled (fm_test_load_scaled_ticks) once it runs out.
 wait_for_exit() {
-  local pid=$1 limit=${2:-50} i=0
-  while [ "$i" -lt "$limit" ]; do
+  local pid=$1 limit=${2:-50} i=0 scaled=0
+  while :; do
+    if [ "$i" -ge "$limit" ]; then
+      [ "$scaled" -eq 0 ] || break
+      scaled=1
+      limit=$(fm_test_load_scaled_ticks "$limit")
+      [ "$i" -lt "$limit" ] || break
+    fi
     if ! is_live_non_zombie "$pid"; then
       wait "$pid"
       return "$?"

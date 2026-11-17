@@ -21,5 +21,4 @@ fm-procevent.test.sh
 fm-public-followup.test.sh
 fm-secondmate-safety.test.sh
 fm-voice-relay.test.sh
-fm-watch-triage-lib.sh
 fm-x-mode.test.sh
