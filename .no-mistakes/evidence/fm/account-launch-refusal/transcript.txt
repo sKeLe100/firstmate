@@ -1,0 +1,16 @@
+[no file, unpinned] rc=0 out=
+[ambient=reserved] rc=1 out=error: this Claude launch would run on /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/amb, the orchestrator account reserved by /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account; pin a worker account in config/claude-account, or remove /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account
+[ambient=other] rc=0 out=
+[raw env reserved] rc=1 out=error: this Claude launch would run on /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/amb, the orchestrator account reserved by /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account; pin a worker account in config/claude-account, or remove /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account
+[default home, reserved!=home] rc=0 out=
+[default $HOME/.claude reserved] rc=0 out=
+[raw $HOME expansion] rc=1 out=error: this Claude launch would run on /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/h/.claude, the orchestrator account reserved by /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account; pin a worker account in config/claude-account, or remove /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account
+[raw empty] rc=1 out=error: this Claude launch would run on /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/h/.claude, the orchestrator account reserved by /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account; pin a worker account in config/claude-account, or remove /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account
+[malformed] rc=1 out=error: config/claude-orchestrator-account must hold one absolute path on a single line: /var/tmp/nm-daemon-tmp/tmp.bI4voq9x38/config/claude-orchestrator-account
+ok - a pinned home refuses a raw Claude command that overrides the account
+ok - an unpinned home keeps a raw Claude account override
+ok - a local secondmate reads the launching home's pin and its own home's file is never inherited over
+ok - an orchestrator account file refuses Claude launches on its root and is inert otherwise
+# all fm-worker-account tests passed
+error: this Claude launch would run on /var/tmp/nm-daemon-tmp/tmp.cLh04zQ4D5/h/.claude, the orchestrator account reserved by /var/tmp/nm-daemon-tmp/tmp.cLh04zQ4D5/config/claude-orchestrator-account; pin a worker account in config/claude-account, or remove /var/tmp/nm-daemon-tmp/tmp.cLh04zQ4D5/config/claude-orchestrator-account
+rc=1
