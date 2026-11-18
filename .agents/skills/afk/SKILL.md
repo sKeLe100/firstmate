@@ -26,7 +26,7 @@ Hold-for-return is the default and the only reach profile this release records: 
    If `config/afk-standing-words` exists, append its text verbatim to the words you pass to `enter` when entering fresh or when the captain gives new words; a no-words re-invocation while already away stays a refresh and passes no words.
    The words are the whole mandate: `bin/fm-afk-contract.sh` records them exactly as given, with no clause fields, verbs, ids, or merge-grant list, and by the captain's mandate no parser, tokenizer, classifier, or grammar reads them anywhere.
    Read `bin/fm-afk-contract.sh --help` for the flags rather than memorizing them.
-   Plain `/afk` with no words is a valid entry with no mandate; the announcement says no instructions were recorded.
+   Plain `/afk` with no words is a valid entry with no mandate beyond any `config/afk-standing-words` text; with no such file, the announcement says no instructions were recorded.
    Re-invoking `/afk` while already away with no new words is a refresh and leaves the standing record untouched; new words replace the mandate at once, preserve the original session entry, and archive the superseded words for the return brief.
 
 Once the record exists, load the `away-quiet-supervision` skill through the Skill tool, since it owns the safety rules that hold in both postures.
