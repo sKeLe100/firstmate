@@ -60,6 +60,16 @@ else
   fail "blocked-detection: limit signature must match"
 fi
 
+# Claude's current limit notice, plus wording drift around it.
+for text in "You've hit your 5-hour limit - resets 3am" "You've hit your weekly limit"; do
+  fm_backend_capture() { printf '%s\n' "$text"; }
+  if fm_watchdog_primary_blocked "test:0" "tmux"; then
+    pass "blocked-detection: matches '$text'"
+  else
+    fail "blocked-detection: must match '$text'"
+  fi
+done
+
 fm_backend_target_exists() { return 1; }
 if fm_watchdog_primary_blocked "test:0" "tmux"; then
   pass "blocked-detection: gone target counts as blocked"

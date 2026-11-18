@@ -176,7 +176,7 @@ FM_WATCHDOG_STOW_REQUEST=${FM_WATCHDOG_STOW_REQUEST:-"run the /stow skill now to
 FM_WATCHDOG_TRANSCRIPT_PIN="$FM_WATCHDOG_STATE/.primary-watchdog.transcript"
 FM_WATCHDOG_REPIN_MARKER="$FM_WATCHDOG_STATE/.primary-watchdog.repin-after"
 
-FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|limit reached.*resets'
+FM_WATCHDOG_LIMIT_SIGNATURE_DEFAULT='usage limit reached|5-hour limit reached|limit reached.*resets|hit your .*limit'
 
 # fm_watchdog_liveness_target: the target form the backend's liveness readers
 # (fm_backend_agent_state / fm_backend_busy_state) accept. discover_supervisor_
