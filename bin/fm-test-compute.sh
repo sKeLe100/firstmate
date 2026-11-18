@@ -3,18 +3,23 @@
 #
 # Usage:
 #   fm-test-compute.sh test --changed --exclude-family real-herdr-gated [--exclude-quarantined]
+#   fm-test-compute.sh test --all [--exclude-quarantined]
 #   fm-test-compute.sh lint
 #   fm-test-compute.sh local-lint                   (PC02/local worker only)
 #   fm-test-compute.sh restore <payload-file>       (hosted worker only)
 #   fm-test-compute.sh worker <partition> <output-dir> <payload-file>
 #   fm-test-compute.sh --help
 #
-# The pinned no-mistakes Test command enters through --pc02-if-idle.
-# Only that exact baseline, with or without the canonical --exclude-quarantined
-# selection filter, is distributed; other arguments (including --json,
-# inspection and custom selection) retain the existing PC02/local behavior.
-# The baseline selection is split into hosted-capable and local-only scripts;
-# no tests are omitted. The hosted subset is partitioned by the lanes reported
+# The pinned no-mistakes Test baseline (fm-test-run.sh --changed
+# --exclude-family real-herdr-gated) and the full-suite/post-merge regression
+# selection (fm-test-run.sh --all) enter through --pc02-if-idle. Only those two
+# exact selections, each with or without the canonical --exclude-quarantined
+# filter, are distributed; other arguments (including --json, inspection and
+# custom selection) retain the existing PC02/local behavior.
+# The selection is split into hosted-capable and local-only scripts; no tests
+# are omitted. Scripts outside the portable lanes (the real-herdr-gated family)
+# and the host-facility scripts below run locally after the hosted subset
+# succeeds. The hosted subset is partitioned by the lanes reported
 # by fm-test-run.sh --list-lanes, only non-empty partitions are dispatched, and
 # an exact partition check gates dispatch. `test` dispatches portable test
 # partitions only; `lint` runs every canonical lint partition alone on
@@ -63,8 +68,9 @@
 # Three scripts depend on local host facilities that the hosted runners do not
 # provide: tests/fm-devin-harness.test.sh (jq/config-writer),
 # tests/fm-calm-pi-extension.test.sh (ANSI yellow), and
-# tests/fm-captain-hold-lifecycle.test.sh (request retirement). They are removed
-# from the hosted payload and run through the existing PC02/PC01 admission path
+# tests/fm-captain-hold-lifecycle.test.sh (request retirement). The
+# real-herdr-gated family needs a real tmux/herdr host. They are removed from
+# the hosted payload and run through the existing PC02/PC01 admission path
 # after the hosted subset succeeds; every other selected script keeps the
 # GitHub then GitLab order. A local-only failure fails the routed run too.
 #
@@ -256,7 +262,7 @@ local_run() {
 # Preserve all semantics for unsupported commands; inspection never contacts APIs.
 if [ "$mode" = test ]; then
   case " $* " in
-    " --changed --exclude-family real-herdr-gated " | " --changed --exclude-family real-herdr-gated --exclude-quarantined ") ;;
+    " --changed --exclude-family real-herdr-gated " | " --changed --exclude-family real-herdr-gated --exclude-quarantined " | " --all " | " --all --exclude-quarantined ") ;;
     *) exec "$SELF_DIR/fm-pc02-test-offload.sh" "${ARGS[@]}" ;;
   esac
 fi
@@ -319,20 +325,8 @@ else
   : > "$work/source.bundle"
 fi
 if [ "$mode" = test ]; then
-  "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}" --list > "$work/selected" || local_run 'test selection cannot be listed'
-  python3 - "$work" "${NOT_HOSTED_SCRIPTS[@]}" <<'PY' || local_run 'selection cannot be split without loss'
-import pathlib, sys
-w=pathlib.Path(sys.argv[1]); non_hosted=set(sys.argv[2:])
-selected=(w/'selected').read_text().splitlines()
-(w/'local-only').write_text(''.join(s+'\n' for s in selected if s in non_hosted))
-(w/'selected').write_text(''.join(s+'\n' for s in selected if s not in non_hosted))
-PY
-else
-  : > "$work/selected"
-  : > "$work/local-only"
-fi
-# Derive the dispatchable lane set from the runner that owns lane composition.
-if [ "$mode" = test ]; then
+  "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}" --list > "$work/list" || local_run 'test selection cannot be listed'
+  # Derive the dispatchable lane set from the runner that owns lane composition.
   "$SELF_DIR/fm-test-run.sh" --list-lanes > "$work/lane-names" || local_run 'lane listing unavailable'
   python3 - "$work/lane-names" "$work/dispatch-lanes" <<'PY' || local_run 'lane listing is not dispatchable'
 import pathlib,re,sys
@@ -345,6 +339,21 @@ PY
   while IFS= read -r lane; do
     "$SELF_DIR/fm-test-run.sh" --list --lane "$lane" > "$work/lanes/$lane" || local_run "lane $lane cannot be listed"
   done < "$work/dispatch-lanes"
+  # Split the selection into hosted portable-lane scripts and the local-only
+  # remainder: the host-facility scripts above and any selected script outside
+  # the portable lanes (the real-herdr-gated family). No test is omitted.
+  python3 - "$work" "${NOT_HOSTED_SCRIPTS[@]}" <<'PY' || local_run 'selection cannot be split without loss'
+import pathlib, sys
+w=pathlib.Path(sys.argv[1]); non_hosted=set(sys.argv[2:])
+listed=(w/'list').read_text().splitlines()
+portable={s for f in (w/'lanes').iterdir() for s in f.read_text().splitlines() if s}
+hosted=[s for s in listed if s in portable and s not in non_hosted]
+(w/'selected').write_text(''.join(s+'\n' for s in hosted))
+(w/'local-only').write_text(''.join(s+'\n' for s in listed if s not in hosted))
+PY
+else
+  : > "$work/selected"
+  : > "$work/local-only"
 fi
 lint_count=
 if [ "$mode" = lint ]; then
