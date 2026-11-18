@@ -148,6 +148,7 @@ config/wedge-defer-parked-gate  opt-in deferral of a wedge escalation for a lane
 config/primary-continuity  OPTS OUT of primary continuity watchdog (inverted polarity); inherited; see "Primary continuity watchdog"
 config/cmux-socket-password  cmux control-socket password; see docs/cmux-backend.md "Setup"
 config/wedge-alarm  away-mode wedge-alarm active-alert channels (off/auto/osascript/herdr/command); absent means auto; see docs/wedge-alarm.md and "Away-mode wedge alarm channels (config/wedge-alarm)"
+config/afk-standing-words  standing text appended verbatim to /afk entry words; NOT inherited; see .agents/skills/afk/SKILL.md
 config/watched-tools.json  watched tool updates list; NOT inherited; see "Watched tool updates (config/watched-tools.json)"
 config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; see "Relay (.env)"
 data/                personal fleet records; LOCAL, gitignored as a whole
