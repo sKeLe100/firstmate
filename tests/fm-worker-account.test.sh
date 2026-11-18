@@ -486,7 +486,7 @@ test_remote_secondmate_account_override_refuses_locally() {
 }
 
 test_orchestrator_account_launch_refusal() {
-  local out rc id=acct-orch
+  local out rc v id=acct-orch
   new_case orch claude
   signed_in_claude_root "$CASE/work"
   printf '%s\n' "$CASE/ambient-claude" > "$HOME_DIR/config/claude-orchestrator-account"
@@ -497,6 +497,13 @@ test_orchestrator_account_launch_refusal() {
   out=$(spawn_ship "$id-rawenv" --harness "FOO=1 CLAUDE_CONFIG_DIR=$CASE/ambient-claude claude --print raw"); rc=$?
   expect_code 1 "$rc" "a raw CLAUDE_CONFIG_DIR on the orchestrator root must refuse without a pin"
   assert_refused_before_launch "$id-rawenv" "$out" "the orchestrator account reserved by"
+  for v in 'CLAUDE_CONFIG_DIR=$HOME/.claude' 'CLAUDE_CONFIG_DIR=${HOME}/.claude' 'CLAUDE_CONFIG_DIR='; do
+    printf '%s\n' "$HOME_DIR/user-home/.claude" > "$HOME_DIR/config/claude-orchestrator-account"
+    out=$(spawn_ship "$id-rawhome" --harness "$v claude --print raw"); rc=$?
+    expect_code 1 "$rc" "raw '$v' resolving to the default root must refuse"
+    assert_refused_before_launch "$id-rawhome" "$out" "the orchestrator account reserved by"
+  done
+  printf '%s\n' "$CASE/ambient-claude" > "$HOME_DIR/config/claude-orchestrator-account"
   out=$(spawn_ship "$id-rawother" --harness "CLAUDE_CONFIG_DIR=$CASE/work claude --print raw"); rc=$?
   expect_code 0 "$rc" "a raw CLAUDE_CONFIG_DIR on another root should launch: $out"
   printf '%s\n' "$CASE/ambient-claude" > "$HOME_DIR/config/claude-account"

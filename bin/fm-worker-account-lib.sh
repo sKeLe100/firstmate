@@ -289,6 +289,9 @@ fm_worker_account_select() {
       done
       effective=${effective#[\"\']}
       effective=${effective%[\"\']}
+      effective=${effective//\$\{HOME\}/${HOME:-}}
+      effective=${effective//\$HOME/${HOME:-}}
+      [ -n "$effective" ] || effective=${HOME:-}/.claude
       fm_worker_account_orchestrator_guard "$config" "$effective" || return 1
       return 0
     fi
