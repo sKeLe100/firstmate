@@ -272,14 +272,24 @@ fm_worker_account_orchestrator_guard() {
 # agent.
 fm_worker_account_select() {
   local harness=$1 config=$2 model=$3 executable=$4 raw=${5:-} mate=${6:-}
-  local selection declared root providers word provider='' selected_config setting
+  local selection declared root providers word provider='' selected_config setting effective
   selected_config=$(fm_worker_account_config "$harness" "$config" "$mate") || return 1
   setting="config/$(fm_worker_account_file "$harness")"
   [ "$selected_config" = "$config" ] || setting="$selected_config/$(fm_worker_account_file "$harness")"
   selection=$(fm_worker_account_resolve "$harness" "$selected_config" "$setting") || return 1
   if [ -z "$selection" ]; then
     if [ "$harness" = claude ] && [ "$selected_config" = "$config" ]; then
-      fm_worker_account_orchestrator_guard "$config" "${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}" || return 1
+      effective=${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}
+      for word in $raw; do
+        case "$word" in
+        CLAUDE_CONFIG_DIR=*) effective=${word#CLAUDE_CONFIG_DIR=} ;;
+        [A-Za-z_]*=*) ;;
+        *) break ;;
+        esac
+      done
+      effective=${effective#[\"\']}
+      effective=${effective%[\"\']}
+      fm_worker_account_orchestrator_guard "$config" "$effective" || return 1
       return 0
     fi
     [ "$selected_config" = "$config" ] && return 0

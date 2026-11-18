@@ -493,6 +493,12 @@ test_orchestrator_account_launch_refusal() {
   out=$(spawn_ship "$id"); rc=$?
   expect_code 1 "$rc" "an unpinned launch on the orchestrator root must refuse"
   assert_refused_before_launch "$id" "$out" "config/claude-orchestrator-account"
+  rm -f "$HOME_DIR/config/claude-account"
+  out=$(spawn_ship "$id-rawenv" --harness "FOO=1 CLAUDE_CONFIG_DIR=$CASE/ambient-claude claude --print raw"); rc=$?
+  expect_code 1 "$rc" "a raw CLAUDE_CONFIG_DIR on the orchestrator root must refuse without a pin"
+  assert_refused_before_launch "$id-rawenv" "$out" "the orchestrator account reserved by"
+  out=$(spawn_ship "$id-rawother" --harness "CLAUDE_CONFIG_DIR=$CASE/work claude --print raw"); rc=$?
+  expect_code 0 "$rc" "a raw CLAUDE_CONFIG_DIR on another root should launch: $out"
   printf '%s\n' "$CASE/ambient-claude" > "$HOME_DIR/config/claude-account"
   out=$(spawn_ship "$id"); rc=$?
   expect_code 1 "$rc" "a pin onto the orchestrator root must refuse"
