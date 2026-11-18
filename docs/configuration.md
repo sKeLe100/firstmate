@@ -1440,7 +1440,7 @@ A home that authenticates Claude through environment credentials on purpose shou
 A home can reserve the Claude account its orchestrator runs on so workers never spend it.
 The file is optional, local, and gitignored, and holds one absolute path to a Claude config directory.
 When it is present, a Claude launch whose effective config root equals that path refuses before any endpoint exists, and the refusal names the file.
-The effective root is the `config/claude-account` pin, else `$CLAUDE_CONFIG_DIR`, else `$HOME/.claude`; `ordinary` resolves to `$HOME/.claude`.
+The effective root is the `config/claude-account` pin, else `$CLAUDE_CONFIG_DIR` (including one set in the launch command), else `$HOME/.claude`; `ordinary` resolves to `$HOME/.claude`.
 A malformed file refuses too.
 Without the file, launches are unchanged.
 
