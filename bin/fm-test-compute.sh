@@ -325,7 +325,10 @@ else
   : > "$work/source.bundle"
 fi
 if [ "$mode" = test ]; then
-  "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}" --list > "$work/list" || local_run 'test selection cannot be listed'
+  list_rc=0
+  "$SELF_DIR/fm-test-run.sh" "${ARGS[@]}" --list > "$work/list" 2> "$work/list.err" || list_rc=$?
+  cat "$work/list.err" >&2
+  [ "$list_rc" = 0 ] || local_run 'test selection cannot be listed'
   # Derive the dispatchable lane set from the runner that owns lane composition.
   "$SELF_DIR/fm-test-run.sh" --list-lanes > "$work/lane-names" || local_run 'lane listing unavailable'
   python3 - "$work/lane-names" "$work/dispatch-lanes" <<'PY' || local_run 'lane listing is not dispatchable'
@@ -642,6 +645,10 @@ if [ "$rc" = 0 ] && [ -s "$work/local-only" ]; then
   while IFS= read -r script; do local_scripts+=("$script"); done < "$work/local-only"
   "$SELF_DIR/fm-pc02-test-offload.sh" "${local_scripts[@]}"
   rc=$?
+fi
+# Re-emit the selection's quarantine markers that --list keeps off stdout.
+if [ -s "$work/list.err" ]; then
+  grep -E '^FM_TEST_QUARANTIN(ED|E_SUMMARY) ' "$work/list.err" || true
 fi
 # Print test evidence on failure too; never turn a failing hosted suite green.
 if [ -d "$work/results" ]; then

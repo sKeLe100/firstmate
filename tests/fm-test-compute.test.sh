@@ -30,6 +30,10 @@ case "$*" in
   '--all --list'|'--all --exclude-quarantined --list')
     [ "${SELECTION_RC:-0}" = 0 ] || exit "$SELECTION_RC"
     printf '%s\n' tests/sample.test.sh tests/derived.test.sh tests/fm-herdr-sample.test.sh
+    if [ "$2" = --exclude-quarantined ]; then
+      echo 'FM_TEST_QUARANTINED tests/flaky.test.sh signature=sig-x reason=reason-x owner=owner-x' >&2
+      echo 'FM_TEST_QUARANTINE_SUMMARY quarantined=1' >&2
+    fi
     ;;
   '--list --lane portable-parallel-1')
     echo tests/sample.test.sh
@@ -674,13 +678,25 @@ pass 'full-suite selections distribute portable lanes and complete the rest loca
 
 rm -f "$TMP_ROOT/data/"*
 set +e
-output=$(SCENARIO=success "$router" test --all --exclude-quarantined 2>&1)
+output=$(SCENARIO=success "$router" test --all --exclude-quarantined 2>/dev/null)
 result=$?
 set -e
 expect_code 0 "$result" "$output"
 assert_contains "$output" 'result: success' 'the post-merge regression selection must distribute its portable lanes'
 assert_contains "$output" 'local: <tests/fm-herdr-sample.test.sh>' 'the post-merge regression selection must run non-portable scripts locally'
-pass 'the post-merge regression selection routes through hosted compute'
+assert_contains "$output" 'FM_TEST_QUARANTINED tests/flaky.test.sh signature=sig-x reason=reason-x owner=owner-x' 'a routed post-merge run must report each quarantined skip on stdout'
+assert_contains "$output" 'FM_TEST_QUARANTINE_SUMMARY quarantined=1' 'a routed post-merge run must report the quarantine summary on stdout'
+pass 'the post-merge regression selection routes through hosted compute and reports quarantined skips'
+
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$(SELECTION_RC=1 "$router" test --all 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'local: <--all>' 'an unlistable full-suite selection must fall back to local admission'
+[ ! -e "$TMP_ROOT/data/calls" ] || fail 'an unlistable full-suite selection contacted hosted services'
+pass 'an unlistable full-suite selection falls back to local admission'
 
 rm -f "$TMP_ROOT/data/"*
 set +e

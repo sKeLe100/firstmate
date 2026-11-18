@@ -2833,12 +2833,15 @@ apply_exclude_quarantined() {
         signature=${signature:-}
         reason=${reason:-}
         owner=${owner:-}
-        # The machine-parseable marker rides stdout only in a real run: --list
-        # and --list-scheduled keep stdout as a clean path list. The stderr log
-        # is loud in every mode, so a quarantine skip is never hidden.
+        # The machine-parseable marker rides stdout in a real run and stderr
+        # under --list and --list-scheduled, which keep stdout a clean path
+        # list, so a quarantine skip is never hidden.
         if [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
           printf 'FM_TEST_QUARANTINED %s signature=%s reason=%s owner=%s\n' \
             "$script" "$signature" "$reason" "$owner"
+        else
+          printf 'FM_TEST_QUARANTINED %s signature=%s reason=%s owner=%s\n' \
+            "$script" "$signature" "$reason" "$owner" >&2
         fi
         log "quarantined skip: $script (signature: ${signature:-<none>}, owner: ${owner:-<none>})"
         QUARANTINED_COUNT=$((QUARANTINED_COUNT + 1))
@@ -3292,6 +3295,8 @@ if [ "$EXCLUDE_QUARANTINED" -eq 1 ]; then
   SELECTION_DESC="${SELECTION_DESC};exclude-quarantined"
   if [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
     printf 'FM_TEST_QUARANTINE_SUMMARY quarantined=%s\n' "${QUARANTINED_COUNT:-0}"
+  else
+    printf 'FM_TEST_QUARANTINE_SUMMARY quarantined=%s\n' "${QUARANTINED_COUNT:-0}" >&2
   fi
 fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
