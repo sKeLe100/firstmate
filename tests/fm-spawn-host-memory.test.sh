@@ -79,7 +79,8 @@ EOF2
   out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
   status=$?
   expect_code 1 "$status" "a spawn under the memory floor must refuse: $out"
-  assert_contains "$out" "host memory floor" "the refusal must name the floor: $out"
+  assert_contains "$out" "host memory low" "the refusal must name the low host memory: $out"
+  assert_contains "$out" "3072MiB" "the refusal must name the floor it failed: $out"
   assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must publish no task record"
   pass "fm-spawn.sh: a proven low host-memory reading refuses the launch"
 }
@@ -97,7 +98,7 @@ EOF2
   out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
   status=$?
   expect_code 0 "$status" "an unmeasurable host reading must not block the launch: $out"
-  assert_contains "$out" "host memory floor not enforced" \
+  assert_contains "$out" "host memory reading not enforced" \
     "the unmeasurable reading must be disclosed, not silent: $out"
   [ -f "$HOME_DIR/state/$id.meta" ] \
     || fail "the launch that proceeded published no task record: $out"
@@ -129,8 +130,8 @@ EOF2
   out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
   status=$?
   expect_code 1 "$status" "a mostly used swap must refuse the launch: $out"
-  assert_contains "$out" "swap pressure" "the refusal must name swap pressure: $out"
-  assert_contains "$out" "97%" "the refusal must name the measured swap percentage: $out"
+  assert_contains "$out" "swap 97% used" "the refusal must name the measured swap percentage: $out"
+  assert_contains "$out" "90%" "the refusal must name the swap bound: $out"
   assert_absent "$HOME_DIR/state/$id.meta" "a swap-refused spawn must publish no task record"
   pass "fm-spawn.sh: a mostly used swap refuses the launch"
 }
@@ -144,27 +145,30 @@ test_swap_below_the_limit_allows_the_launch() {
 $rec
 EOF2
   meminfo="$CASE_DIR/meminfo-swap-ok"
-  # 25% of swap in use, well below the 90% admission limit.
+  # 25% of swap in use, well below the 90% admission bound.
   printf 'MemTotal:       14000000 kB\nMemAvailable:    8388608 kB\nSwapTotal:       4000000 kB\nSwapFree:        3000000 kB\n' > "$meminfo"
   out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
   status=$?
-  expect_code 0 "$status" "swap below the limit must not block the launch: $out"
+  expect_code 0 "$status" "swap below the bound must not block the launch: $out"
   [ -f "$HOME_DIR/state/$id.meta" ] \
     || fail "the launch under a healthy swap reading published no task record: $out"
-  pass "fm-spawn.sh: swap below the admission limit allows the launch"
+  pass "fm-spawn.sh: swap below the admission bound allows the launch"
 }
 test_swap_below_the_limit_allows_the_launch
 
-test_live_sessions_count_toward_the_memory_budget() {
+test_parked_sessions_are_counted_through_memavailable() {
   local rec id out status meminfo
-  id=hostmem-budget-low
-  rec=$(make_case budget-low "$id")
+  id=hostmem-parked
+  rec=$(make_case parked "$id")
   IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
 $rec
 EOF2
-  meminfo="$CASE_DIR/meminfo-budget-low"
-  # 3500 MiB clears the 3072 MiB floor, but three live sessions at the default
-  # 1024 MiB reserve need 4096 MiB for this fourth launch.
+  meminfo="$CASE_DIR/meminfo-parked"
+  # Three idle parked sessions are already live, and MemAvailable has their
+  # resident memory deducted by the kernel. At 3500 MiB the reading is above the
+  # 3072 MiB floor, so this launch must proceed: subtracting a fixed reserve per
+  # parked session again would count the same memory twice and refuse work the
+  # host can carry.
   printf 'MemTotal:       14000000 kB\nMemAvailable:    3584000 kB\n' > "$meminfo"
   write_live_session "$HOME_DIR" other-1
   write_live_session "$HOME_DIR" other-2
@@ -172,35 +176,12 @@ EOF2
   out=$(FM_FAKE_WINDOWS=$'fm-other-1\nfm-other-2\nfm-other-3' FM_FAKE_PANE_CMD=claude \
     run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
   status=$?
-  expect_code 1 "$status" "live sessions must count toward the memory budget: $out"
-  assert_contains "$out" "host memory budget" "the refusal must name the memory budget: $out"
-  assert_absent "$HOME_DIR/state/$id.meta" "a budget-refused spawn must publish no task record"
-  pass "fm-spawn.sh: idle parked live sessions count toward the memory budget"
-}
-test_live_sessions_count_toward_the_memory_budget
-
-test_enough_memory_for_live_sessions_allows_the_launch() {
-  local rec id out status meminfo
-  id=hostmem-budget-ok
-  rec=$(make_case budget-ok "$id")
-  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
-$rec
-EOF2
-  meminfo="$CASE_DIR/meminfo-budget-ok"
-  # 4608 MiB covers the three live sessions and this fourth launch's reserve.
-  printf 'MemTotal:       14000000 kB\nMemAvailable:    4718592 kB\n' > "$meminfo"
-  write_live_session "$HOME_DIR" other-1
-  write_live_session "$HOME_DIR" other-2
-  write_live_session "$HOME_DIR" other-3
-  out=$(FM_FAKE_WINDOWS=$'fm-other-1\nfm-other-2\nfm-other-3' FM_FAKE_PANE_CMD=claude \
-    run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
-  status=$?
-  expect_code 0 "$status" "enough memory for the live sessions must allow the launch: $out"
+  expect_code 0 "$status" "parked sessions are counted through MemAvailable, not subtracted twice: $out"
   [ -f "$HOME_DIR/state/$id.meta" ] \
-    || fail "the launch with budget headroom published no task record: $out"
-  pass "fm-spawn.sh: a host with room for live sessions launches the next worker"
+    || fail "the launch above the floor published no task record: $out"
+  pass "fm-spawn.sh: idle parked sessions count through MemAvailable without a second subtraction"
 }
-test_enough_memory_for_live_sessions_allows_the_launch
+test_parked_sessions_are_counted_through_memavailable
 
 test_relaunch_is_not_refused_by_the_floor() {
   local rec id out meminfo

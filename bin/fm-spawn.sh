@@ -3418,10 +3418,12 @@ pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 
 # Host-memory floor: neither the dispatch cap nor the PC02 lane guard knows
 # what this machine can carry, and an agent launched with no memory left wedges
-# mid-run instead of failing to start. bin/fm-host-memory.sh owns the reading
-# and the floor; only a proven low reading (exit 1) refuses a launch, while
-# exit 2 (unreadable /proc/meminfo, malformed floor) is disclosed uncertainty
-# that is noted and proceeds, the same direction the /autonomous pass takes.
+# mid-run instead of failing to start. bin/fm-host-memory.sh owns the reading -
+# both the MemAvailable floor and the swap bound - so /autonomous and this launch
+# share one verdict instead of parsing /proc/meminfo twice. Only a proven low
+# reading (exit 1) refuses a launch, while exit 2 (unreadable /proc/meminfo,
+# malformed floor) is disclosed uncertainty that is noted and proceeds, the same
+# direction the /autonomous pass takes.
 # Local launches only: a remote secondmate runs on another host, whose memory
 # this reading says nothing about, and that path never reaches here.
 # A --relaunch is exempt: it replaces one agent with another for the same task,
@@ -3429,87 +3431,16 @@ pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 # while the agent being replaced still holds its memory - refusing exactly the
 # recovery relaunch a low-memory wedge needs.
 #
-# Swap pressure and the live-session memory budget sit beside the floor because
-# the floor alone missed the PC01 WSL OOM crash of 2026-11-03: MemAvailable can
-# stay above a small floor while swap is nearly exhausted, and an idle parked
-# worker session keeps holding memory even when it has nothing to do. Both read
-# the same source as the floor (FM_MEMINFO_OVERRIDE supplies the test fixture)
-# and both follow the floor's direction: only a proven reading refuses, and an
-# unreadable field is disclosed and passed.
-HOST_MEMINFO_DEFAULT=/proc/meminfo
-HOST_SWAP_MAX_USED_PCT_DEFAULT=90
-HOST_WORKER_MEMORY_MIB_DEFAULT=1024
-
-host_meminfo_field() {  # <field-name>: print that field's kB value from the guard's source
-  local src field=$1
-  src=${FM_MEMINFO_OVERRIDE:-$HOST_MEMINFO_DEFAULT}
-  awk -v want="$field" '$1 == want { print $2; found = 1; exit } END { exit !found }' "$src" 2>/dev/null
-}
-
-host_swap_guard() {  # <task-id>: 0 unless swap is mostly used
-  local id=$1 total free used pct limit
-  # No SwapTotal line means this host reports no swap (a container, a macOS
-  # host, a swapless WSL install); there is nothing to bound and no note.
-  total=$(host_meminfo_field 'SwapTotal:') || return 0
-  case "$total" in '' | *[!0-9]*) return 0 ;; esac
-  [ "$total" -gt 0 ] || return 0
-  free=$(host_meminfo_field 'SwapFree:') || {
-    echo "note: swap pressure not enforced: SwapTotal is readable but SwapFree is not" >&2
-    return 0
-  }
-  case "$free" in '' | *[!0-9]*) return 0 ;; esac
-  used=$((total - free))
-  [ "$used" -ge 0 ] || used=0
-  pct=$((used * 100 / total))
-  limit=${FM_SPAWN_SWAP_MAX_USED_PCT:-$HOST_SWAP_MAX_USED_PCT_DEFAULT}
-  case "$limit" in '' | *[!0-9]*) limit=$HOST_SWAP_MAX_USED_PCT_DEFAULT ;; esac
-  [ "$pct" -lt "$limit" ] && return 0
-  echo "error: swap pressure: ${pct}% of swap in use (${used}KiB of ${total}KiB), at or above the ${limit}% admission limit; refusing to launch task '$id' onto a thrashing host - free memory or swap here (quiesce an idle worker) before dispatching again" >&2
-  return 1
-}
-
-host_live_worker_sessions() {  # count this home's live non-secondmate sessions
-  local meta backend target state count=0
-  for meta in "$STATE"/*.meta; do
-    [ -f "$meta" ] || continue
-    [ "$(fm_meta_get "$meta" kind)" = secondmate ] && continue
-    target=$(fm_backend_target_of_meta "$meta") || target=
-    [ -n "$target" ] || continue
-    backend=$(fm_backend_of_meta "$meta")
-    state=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null) || state=unknown
-    # Only a positively dead or missing endpoint frees its memory: an
-    # unreadable probe keeps counting, matching pc02_lane_guard's direction.
-    [ "$state" = dead ] && continue
-    count=$((count + 1))
-  done
-  printf '%s\n' "$count"
-}
-
-host_worker_memory_guard() {  # <task-id>: 0 unless live sessions already reserve the memory
-  local id=$1 live reserve available need
-  # With no other live session the host-memory floor is the whole question, and
-  # a single launch is unchanged.
-  live=$(host_live_worker_sessions) || return 0
-  case "$live" in '' | *[!0-9]*) return 0 ;; esac
-  [ "$live" -gt 0 ] || return 0
-  reserve=${FM_SPAWN_WORKER_MEMORY_MIB:-$HOST_WORKER_MEMORY_MIB_DEFAULT}
-  case "$reserve" in '' | *[!0-9]*) reserve=$HOST_WORKER_MEMORY_MIB_DEFAULT ;; esac
-  [ "$reserve" -gt 0 ] || return 0
-  available=$(host_meminfo_field 'MemAvailable:') || return 0
-  case "$available" in '' | *[!0-9]*) return 0 ;; esac
-  available=$((available / 1024))
-  need=$(( (live + 1) * reserve ))
-  [ "$available" -ge "$need" ] && return 0
-  echo "error: host memory budget: ${live} live worker session(s) already reserve ${reserve}MiB each and only ${available}MiB is available, below the ${need}MiB this launch needs; refusing to launch task '$id' on a host that cannot carry another worker - quiesce an idle worker or free memory, since an idle parked session still holds its share" >&2
-  return 1
-}
-
-host_memory_guard() {  # <task-id>: 0 unless this host is provably below the floor
+# The reading already counts every live session's resident memory - idle parked
+# worker sessions included - because their pages are not available to a new
+# workload. There is no separate per-session budget on top of it: subtracting a
+# fixed reserve again would count the same parked session twice.
+host_memory_guard() {  # <task-id>: 0 unless this host is provably low on memory
   local id=$1 out rc
   out=$("$SCRIPT_DIR/fm-host-memory.sh" 2>&1)
   rc=$?
   if [ "$rc" -eq 1 ]; then
-    echo "error: host memory floor: $out; refusing to launch task '$id' onto a host that cannot carry another agent - free memory on this host (quiesce another lane) or lower config/host-memory-floor" >&2
+    echo "error: host memory low: $out; refusing to launch task '$id' onto a host that cannot carry another agent - free memory on this host (quiesce another lane) or lower config/host-memory-floor" >&2
     return 1
   fi
   # Only a proven low reading blocks a launch. Any other nonzero rc means the
@@ -3517,10 +3448,8 @@ host_memory_guard() {  # <task-id>: 0 unless this host is provably below the flo
   # malformed floor); that is disclosed uncertainty, not evidence of pressure,
   # so it is noted and the launch proceeds.
   if [ "$rc" -ne 0 ]; then
-    echo "note: host memory floor not enforced: $out" >&2
+    echo "note: host memory reading not enforced: $out" >&2
   fi
-  host_swap_guard "$id" || return 1
-  host_worker_memory_guard "$id" || return 1
   return 0
 }
 

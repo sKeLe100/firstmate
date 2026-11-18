@@ -117,3 +117,65 @@ test_reads_memavailable_not_memfree() {
 }
 test_reads_memavailable_not_memfree
 
+
+swap_meminfo() {  # <name> <SwapTotal-kB> <SwapFree-kB>
+  local f="$TMP_ROOT/$1.meminfo"
+  {
+    printf 'MemTotal:       14680064 kB\n'
+    printf 'MemAvailable:    8388608 kB\n'
+    printf 'SwapTotal:      %8s kB\n' "$2"
+    printf 'SwapFree:       %8s kB\n' "$3"
+  } > "$f"
+  printf '%s' "$f"
+}
+
+test_mostly_used_swap_reads_low() {
+  local home mi out rc
+  home=$(mk_home swap_high)
+  mi=$(swap_meminfo swap_high 4000000 100000)   # 97% used
+  out=$(emit "$home" "$mi") && rc=0 || rc=$?
+  [ "$rc" -eq 1 ] || fail "97% swap used must exit 1, got $rc: $out"
+  assert_contains "$out" "swap 97% used" "the low line must name the measured swap percentage"
+  assert_contains "$out" "90%" "the low line must name the fixed swap bound"
+  pass "fm-host-memory.sh: mostly used swap reads low above a healthy MemAvailable"
+}
+test_mostly_used_swap_reads_low
+
+test_swap_below_the_bound_reads_free() {
+  local home mi out rc
+  home=$(mk_home swap_ok)
+  mi=$(swap_meminfo swap_ok 4000000 3000000)   # 25% used
+  out=$(emit "$home" "$mi"); rc=$?
+  [ "$rc" -eq 0 ] || fail "25% swap used must exit 0, got $rc: $out"
+  [ "$out" = free ] || fail "expected free below the swap bound, got: $out"
+  pass "fm-host-memory.sh: swap below the bound reads free"
+}
+test_swap_below_the_bound_reads_free
+
+test_swap_total_zero_adds_no_constraint() {
+  local home mi out rc
+  home=$(mk_home swap_none)
+  mi=$(swap_meminfo swap_none 0 0)
+  out=$(emit "$home" "$mi"); rc=$?
+  [ "$rc" -eq 0 ] || fail "a host reporting no swap must exit 0, got $rc: $out"
+  [ "$out" = free ] || fail "expected free on a swapless host, got: $out"
+  pass "fm-host-memory.sh: SwapTotal 0 adds no swap constraint"
+}
+test_swap_total_zero_adds_no_constraint
+
+test_missing_swapfree_is_disclosed_and_passes() {
+  local home f out rc
+  home=$(mk_home swap_partial)
+  f="$TMP_ROOT/swap-partial.meminfo"
+  {
+    printf 'MemTotal:       14680064 kB\n'
+    printf 'MemAvailable:    8388608 kB\n'
+    printf 'SwapTotal:       4000000 kB\n'
+  } > "$f"
+  out=$(emit "$home" "$f" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] || fail "SwapTotal without SwapFree must not refuse, got $rc: $out"
+  assert_contains "$out" "swap not assessed" "the unreadable SwapFree field must be disclosed"
+  assert_contains "$out" "free" "the disclosed uncertainty must not read low: $out"
+  pass "fm-host-memory.sh: a readable SwapTotal without SwapFree is disclosed and never treated as pressure"
+}
+test_missing_swapfree_is_disclosed_and_passes

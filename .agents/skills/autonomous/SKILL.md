@@ -193,10 +193,11 @@ Neither the cap nor the PC02 lane guard answers whether this HOST can carry
 another agent: both are quota and lane accounting, and an agent starved of
 memory wedges its pipeline rather than failing to launch.
 Before treating any candidate as dispatchable, run
-`bin/fm-host-memory.sh`, which reads `MemAvailable` from `/proc/meminfo`
+`bin/fm-host-memory.sh`, which compares `MemAvailable` from `/proc/meminfo`
 against the floor in `config/host-memory-floor` (absent means the built-in
-default). It prints `free` (exit 0) or `low: <available>MiB < <floor>MiB`
-(exit 1); an unreadable `/proc/meminfo` or a malformed floor prints an error
+default) and also reports low when at least 90% of a readable swap is in use.
+It prints `free` (exit 0) or a `low:` reason (exit 1); an unreadable
+`/proc/meminfo` or a malformed floor prints an error
 on stderr and exits 2, which means the host reading is unavailable: record the
 reason and continue evaluating candidates normally rather than deferring
 dispatch. Only a `low` reading defers.
