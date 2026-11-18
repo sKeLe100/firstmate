@@ -497,6 +497,7 @@ test_orchestrator_account_launch_refusal() {
   out=$(spawn_ship "$id-rawenv" --harness "FOO=1 CLAUDE_CONFIG_DIR=$CASE/ambient-claude claude --print raw"); rc=$?
   expect_code 1 "$rc" "a raw CLAUDE_CONFIG_DIR on the orchestrator root must refuse without a pin"
   assert_refused_before_launch "$id-rawenv" "$out" "the orchestrator account reserved by"
+  # shellcheck disable=SC2016 # literal $HOME is intentional: the guard must expand it
   for v in 'CLAUDE_CONFIG_DIR=$HOME/.claude' 'CLAUDE_CONFIG_DIR=${HOME}/.claude' 'CLAUDE_CONFIG_DIR='; do
     printf '%s\n' "$HOME_DIR/user-home/.claude" > "$HOME_DIR/config/claude-orchestrator-account"
     out=$(spawn_ship "$id-rawhome" --harness "$v claude --print raw"); rc=$?
