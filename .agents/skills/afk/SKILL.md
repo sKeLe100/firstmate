@@ -23,6 +23,7 @@ Hold-for-return is the default and the only reach profile this release records: 
 1. **Write the record first, in this same turn.**
    Before any other work, run `bin/fm-afk-launch.sh enter --words-file <path> [--expected-return <UTC ISO 8601>] [--spend <n>]` (or `--words <text>`).
    It writes `state/.afk-contract` at once, with no separate confirmation step, then prints the entry announcement and the record's read-back.
+   If `config/afk-standing-words` exists, append its text verbatim to the words you pass to `enter`.
    The words are the whole mandate: `bin/fm-afk-contract.sh` records them exactly as given, with no clause fields, verbs, ids, or merge-grant list, and by the captain's mandate no parser, tokenizer, classifier, or grammar reads them anywhere.
    Read `bin/fm-afk-contract.sh --help` for the flags rather than memorizing them.
    Plain `/afk` with no words is a valid entry with no mandate; the announcement says no instructions were recorded.
