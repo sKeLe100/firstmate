@@ -807,7 +807,7 @@ wait_for_herdr_server() {
 }
 
 start_herdr_server() {
-  local dir log starter i
+  local dir log starter deadline
   if ! herdr_adapter_load; then
     fix_report herdr-server failed "herdr and jq must both resolve before the server can be started"
     return 1
@@ -835,17 +835,16 @@ start_herdr_server() {
   # scrub; this only runs it in the detached session with the log as its output.
   # shellcheck disable=SC2016 # The detached shell expands these from its own positional parameters.
   "$starter" "$BASH" -c '
-    . "$1/bin/fm-backend.sh" || exit 1
+    . "$1/fm-backend.sh" || exit 1
     fm_backend_source herdr || exit 1
     fm_backend_herdr_server_exec "$2"
-  ' fm-herdr-server "$FM_ROOT" "$HERDR_SESSION_NAME" </dev/null >>"$log" 2>&1 &
-  i=0
-  while [ "$i" -lt 20 ]; do
+  ' fm-herdr-server "$SCRIPT_DIR" "$HERDR_SESSION_NAME" </dev/null >>"$log" 2>&1 &
+  deadline=$((SECONDS + 10))
+  while [ "$SECONDS" -lt "$deadline" ]; do
     if herdr_server_running; then
       fix_report herdr-server applied "started the herdr server for session $HERDR_SESSION_NAME (log: $log)"
       return 0
     fi
-    i=$((i + 1))
     sleep 0.5
   done
   fix_report herdr-server failed "the herdr server for session $HERDR_SESSION_NAME did not come up; see $log"
