@@ -105,6 +105,102 @@ EOF2
 }
 test_unmeasurable_reading_allows_the_launch
 
+write_live_session() {  # <home> <task-id>
+  cat > "$1/state/$2.meta" <<META
+window=firstmate:fm-$2
+endpoint_task_id=$2
+harness=claude
+kind=ship
+backend=tmux
+META
+}
+
+test_mostly_used_swap_refuses_the_launch() {
+  local rec id out status meminfo
+  id=hostmem-swap-high
+  rec=$(make_case swap-high "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-swap-high"
+  # Plenty of RAM, but 97% of swap is already in use: the floor alone would
+  # admit this launch, which is the shape of the PC01 WSL OOM crash.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    8388608 kB\nSwapTotal:       4000000 kB\nSwapFree:         100000 kB\n' > "$meminfo"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 1 "$status" "a mostly used swap must refuse the launch: $out"
+  assert_contains "$out" "swap pressure" "the refusal must name swap pressure: $out"
+  assert_contains "$out" "97%" "the refusal must name the measured swap percentage: $out"
+  assert_absent "$HOME_DIR/state/$id.meta" "a swap-refused spawn must publish no task record"
+  pass "fm-spawn.sh: a mostly used swap refuses the launch"
+}
+test_mostly_used_swap_refuses_the_launch
+
+test_swap_below_the_limit_allows_the_launch() {
+  local rec id out status meminfo
+  id=hostmem-swap-ok
+  rec=$(make_case swap-ok "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-swap-ok"
+  # 25% of swap in use, well below the 90% admission limit.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    8388608 kB\nSwapTotal:       4000000 kB\nSwapFree:        3000000 kB\n' > "$meminfo"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 0 "$status" "swap below the limit must not block the launch: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] \
+    || fail "the launch under a healthy swap reading published no task record: $out"
+  pass "fm-spawn.sh: swap below the admission limit allows the launch"
+}
+test_swap_below_the_limit_allows_the_launch
+
+test_live_sessions_count_toward_the_memory_budget() {
+  local rec id out status meminfo
+  id=hostmem-budget-low
+  rec=$(make_case budget-low "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-budget-low"
+  # 3500 MiB clears the 3072 MiB floor, but three live sessions at the default
+  # 1024 MiB reserve need 4096 MiB for this fourth launch.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    3584000 kB\n' > "$meminfo"
+  write_live_session "$HOME_DIR" other-1
+  write_live_session "$HOME_DIR" other-2
+  write_live_session "$HOME_DIR" other-3
+  out=$(FM_FAKE_WINDOWS=$'fm-other-1\nfm-other-2\nfm-other-3' FM_FAKE_PANE_CMD=claude \
+    run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 1 "$status" "live sessions must count toward the memory budget: $out"
+  assert_contains "$out" "host memory budget" "the refusal must name the memory budget: $out"
+  assert_absent "$HOME_DIR/state/$id.meta" "a budget-refused spawn must publish no task record"
+  pass "fm-spawn.sh: idle parked live sessions count toward the memory budget"
+}
+test_live_sessions_count_toward_the_memory_budget
+
+test_enough_memory_for_live_sessions_allows_the_launch() {
+  local rec id out status meminfo
+  id=hostmem-budget-ok
+  rec=$(make_case budget-ok "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-budget-ok"
+  # 4608 MiB covers the three live sessions and this fourth launch's reserve.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    4718592 kB\n' > "$meminfo"
+  write_live_session "$HOME_DIR" other-1
+  write_live_session "$HOME_DIR" other-2
+  write_live_session "$HOME_DIR" other-3
+  out=$(FM_FAKE_WINDOWS=$'fm-other-1\nfm-other-2\nfm-other-3' FM_FAKE_PANE_CMD=claude \
+    run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 0 "$status" "enough memory for the live sessions must allow the launch: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] \
+    || fail "the launch with budget headroom published no task record: $out"
+  pass "fm-spawn.sh: a host with room for live sessions launches the next worker"
+}
+test_enough_memory_for_live_sessions_allows_the_launch
 
 test_relaunch_is_not_refused_by_the_floor() {
   local rec id out meminfo
@@ -114,7 +210,9 @@ test_relaunch_is_not_refused_by_the_floor() {
 $rec
 EOF2
   meminfo="$CASE_DIR/meminfo-low"
-  printf 'MemTotal:       14000000 kB\nMemAvailable:     524288 kB\n' > "$meminfo"
+  # Low memory and a mostly used swap together: without the --relaunch
+  # exemption the guard would refuse on the first check it reaches.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:     524288 kB\nSwapTotal:       4000000 kB\nSwapFree:         100000 kB\n' > "$meminfo"
   # The task record and agent-free endpoint --relaunch requires; without them
   # the run aborts long before the guard and the case would pin nothing.
   cat > "$HOME_DIR/state/$id.meta" <<META
