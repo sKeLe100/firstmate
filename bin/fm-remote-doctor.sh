@@ -831,20 +831,13 @@ start_herdr_server() {
     fix_report herdr-server failed "neither setsid nor nohup resolves, so the server cannot be detached"
     return 1
   }
-  # The adapter stays the single owner of the session-scoped invocation; this
-  # only runs it in the detached session with the log as its output. The
-  # environment scrub mirrors the adapter's own server launch so later panes do
-  # not inherit the launcher's home or harness identity.
+  # The adapter stays the single owner of the server launch and its environment
+  # scrub; this only runs it in the detached session with the log as its output.
   # shellcheck disable=SC2016 # The detached shell expands these from its own positional parameters.
   "$starter" "$BASH" -c '
-    root=$1
-    session=$2
-    . "$root/bin/fm-backend.sh" || exit 1
+    . "$1/bin/fm-backend.sh" || exit 1
     fm_backend_source herdr || exit 1
-    unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE \
-      CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT FM_SUPERVISION_MODEL \
-      FM_CREW_STATE_META_OVERRIDE FM_CREW_STATE_STATUS_OVERRIDE
-    fm_backend_herdr_cli "$session" server
+    fm_backend_herdr_server_exec "$2"
   ' fm-herdr-server "$FM_ROOT" "$HERDR_SESSION_NAME" </dev/null >>"$log" 2>&1 &
   i=0
   while [ "$i" -lt 20 ]; do
