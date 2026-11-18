@@ -47,7 +47,9 @@
 #
 # --fix is idempotent and closes only automatable gaps: it writes and reloads
 # both Firstmate-owned Aqua agents, starts the Linux workers where no Aqua agent
-# applies, recreates the entrypoint symlink, and may add an owned ~/.local/bin
+# applies, starts a missing Herdr server in its own detached session with its
+# output in <home>/state/herdr-fm-remote.log (so it never keeps the SSH caller
+# waiting), recreates the entrypoint symlink, and may add an owned ~/.local/bin
 # wrapper for a required tool it can discover under nvm, asdf, or mise. It never
 # installs packages, creates a login session, writes an auto-login password,
 # changes FileVault, stores an account password, or replaces a non-Firstmate
@@ -805,15 +807,55 @@ wait_for_herdr_server() {
 }
 
 start_herdr_server() {
+  local dir log starter i
   if ! herdr_adapter_load; then
     fix_report herdr-server failed "herdr and jq must both resolve before the server can be started"
     return 1
   fi
-  if fm_backend_herdr_server_ensure "$HERDR_SESSION_NAME" >/dev/null 2>&1; then
-    fix_report herdr-server applied "started the herdr server for session $HERDR_SESSION_NAME"
-    return 0
+  # The server outlives this readiness run, so start it in its own session with
+  # a fresh stdin and its output in a log. Started as an ordinary child it keeps
+  # the SSH caller's stdout open, and a caller that reads this command through a
+  # pipe then waits forever for a server that never exits.
+  dir="${FM_HOME:-${HOME:-}/.firstmate}/state"
+  log="$dir/herdr-$HERDR_SESSION_NAME.log"
+  if ! mkdir -p "$dir" 2>/dev/null || [ ! -w "$dir" ]; then
+    fix_report herdr-server failed "cannot write the herdr server log directory $dir"
+    return 1
   fi
-  fix_report herdr-server failed "the herdr server for session $HERDR_SESSION_NAME did not come up"
+  if starter=$(command -v setsid 2>/dev/null); then
+    :
+  else
+    starter=$(command -v nohup 2>/dev/null) || starter=
+  fi
+  [ -n "$starter" ] || {
+    fix_report herdr-server failed "neither setsid nor nohup resolves, so the server cannot be detached"
+    return 1
+  }
+  # The adapter stays the single owner of the session-scoped invocation; this
+  # only runs it in the detached session with the log as its output. The
+  # environment scrub mirrors the adapter's own server launch so later panes do
+  # not inherit the launcher's home or harness identity.
+  # shellcheck disable=SC2016 # The detached shell expands these from its own positional parameters.
+  "$starter" "$BASH" -c '
+    root=$1
+    session=$2
+    . "$root/bin/fm-backend.sh" || exit 1
+    fm_backend_source herdr || exit 1
+    unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE \
+      CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT FM_SUPERVISION_MODEL \
+      FM_CREW_STATE_META_OVERRIDE FM_CREW_STATE_STATUS_OVERRIDE
+    fm_backend_herdr_cli "$session" server
+  ' fm-herdr-server "$FM_ROOT" "$HERDR_SESSION_NAME" </dev/null >>"$log" 2>&1 &
+  i=0
+  while [ "$i" -lt 20 ]; do
+    if herdr_server_running; then
+      fix_report herdr-server applied "started the herdr server for session $HERDR_SESSION_NAME (log: $log)"
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 0.5
+  done
+  fix_report herdr-server failed "the herdr server for session $HERDR_SESSION_NAME did not come up; see $log"
   return 1
 }
 

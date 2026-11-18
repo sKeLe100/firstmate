@@ -271,6 +271,7 @@ case "${1:-} ${2:-}" in
     printf '{"client":{"version":"0.7.5","protocol":16},"server":{"running":%s,"socket":"%s"}}\n' "$running" "$FM_FAKE_HERDR_SOCKET"
     ;;
   "server "*|"server ")
+    printf 'fake herdr server started\n'
     printf 'true\n' > "$FM_FAKE_HERDR_RUNNING"
     ;;
 esac
@@ -785,7 +786,14 @@ expect_code 0 "$DOCTOR_RC" "--fix did not start the herdr server on linux"
 assert_contains "$DOCTOR_OUT" 'fix herdr-server=applied:' "--fix did not report starting the server"
 assert_contains "$DOCTOR_OUT" 'check herdr-server=ok:' "the started server was not confirmed by the re-check"
 [ ! -s "$CASE_LAUNCHCTL_LOG" ] || fail "the linux path invoked launchctl"
-pass "a non-darwin host skips launch agents and starts its herdr server directly"
+HERDR_SERVER_LOG="$CASE_PROJECT_HOME/state/herdr-fm-remote.log"
+i=0
+while [ ! -s "$HERDR_SERVER_LOG" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+assert_grep 'fake herdr server started' "$HERDR_SERVER_LOG" \
+  "the detached herdr server did not write its output to the per-session log"
+assert_not_contains "$DOCTOR_OUT" 'fake herdr server started' \
+  "the herdr server inherited the caller's stdout instead of writing to its log"
+pass "a non-darwin host skips launch agents and starts its herdr server detached, logging its output"
 
 # --- --fix may add only owned wrappers for version-manager tools -------------
 
