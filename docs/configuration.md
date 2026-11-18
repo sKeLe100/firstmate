@@ -1435,6 +1435,15 @@ Pi ranks a root's stored logins above environment variables, so a pinned Pi laun
 
 A home that authenticates Claude through environment credentials on purpose should leave the pin absent.
 
+### Orchestrator account guard (config/claude-orchestrator-account)
+
+A home can reserve the Claude account its orchestrator runs on so workers never spend it.
+The file is optional, local, and gitignored, and holds one absolute path to a Claude config directory.
+When it is present, a Claude launch whose effective config root equals that path refuses before any endpoint exists, and the refusal names the file.
+The effective root is the `config/claude-account` pin, else `$CLAUDE_CONFIG_DIR`, else `$HOME/.claude`; `ordinary` resolves to `$HOME/.claude`.
+A malformed file refuses too.
+Without the file, launches are unchanged.
+
 ### Failures, reporting, and inheritance
 
 A malformed file, a root that is not a readable directory, or a signed-out account refuses the launch and names the file to fix; Firstmate never falls back to the ambient account and never changes a global login or copies a credential.

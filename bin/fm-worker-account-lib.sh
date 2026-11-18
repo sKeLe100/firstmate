@@ -239,6 +239,29 @@ fm_worker_account_check() {
   return 0
 }
 
+# fm_worker_account_orchestrator_guard <config-dir> <effective-root>
+# Opt-in launch refusal: when the home has config/claude-orchestrator-account
+# (one absolute path), refuses a Claude launch whose effective config root
+# equals it, so a worker cannot spend the account the orchestrator runs on.
+# An absent file returns 0 and changes nothing. Prints one error naming the
+# file and returns 1 on a match or a malformed file.
+fm_worker_account_orchestrator_guard() {
+  local config=$1 effective=$2 file="$1/claude-orchestrator-account" body reserved
+  [ -e "$file" ] || return 0
+  body=$(cat "$file" 2>/dev/null) || body=
+  if [ -z "$body" ] || [ "${body#/}" = "$body" ] || [ "$(printf '%s\n' "$body" | wc -l)" -ne 1 ]; then
+    echo "error: config/claude-orchestrator-account must hold one absolute path on a single line: $file" >&2
+    return 1
+  fi
+  reserved=$(realpath -m -- "$body" 2>/dev/null) || reserved=$body
+  effective=$(realpath -m -- "$effective" 2>/dev/null || printf '%s\n' "$effective")
+  if [ "$reserved" = "$effective" ]; then
+    echo "error: this Claude launch would run on $effective, the orchestrator account reserved by $file; pin a worker account in config/claude-account, or remove $file" >&2
+    return 1
+  fi
+  return 0
+}
+
 # fm_worker_account_select <harness> <config-dir> <model> <executable> [<raw-command>] [<secondmate-id>]
 # The whole launch-time decision. Prints nothing for an unpinned runner, so
 # the caller keeps today's launch unchanged. For a pinned one prints
@@ -255,6 +278,10 @@ fm_worker_account_select() {
   [ "$selected_config" = "$config" ] || setting="$selected_config/$(fm_worker_account_file "$harness")"
   selection=$(fm_worker_account_resolve "$harness" "$selected_config" "$setting") || return 1
   if [ -z "$selection" ]; then
+    if [ "$harness" = claude ] && [ "$selected_config" = "$config" ]; then
+      fm_worker_account_orchestrator_guard "$config" "${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}" || return 1
+      return 0
+    fi
     [ "$selected_config" = "$config" ] && return 0
     echo "error: secondmate account pin disappeared during selection: $setting" >&2
     return 1
@@ -264,6 +291,7 @@ fm_worker_account_select() {
   providers=${root#*$'\t'}
   root=${root%%$'\t'*}
   if [ "$harness" = claude ]; then
+    fm_worker_account_orchestrator_guard "$config" "${root:-${HOME:-}/.claude}" || return 1
     for word in $raw; do
       case "$word" in
       [A-Za-z_]*=*)

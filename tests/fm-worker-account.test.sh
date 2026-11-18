@@ -485,6 +485,28 @@ test_remote_secondmate_account_override_refuses_locally() {
   pass "a remote route refuses a primary-side account override instead of silently ignoring it"
 }
 
+test_orchestrator_account_launch_refusal() {
+  local out rc id=acct-orch
+  new_case orch claude
+  signed_in_claude_root "$CASE/work"
+  printf '%s\n' "$CASE/ambient-claude" > "$HOME_DIR/config/claude-orchestrator-account"
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 1 "$rc" "an unpinned launch on the orchestrator root must refuse"
+  assert_refused_before_launch "$id" "$out" "config/claude-orchestrator-account"
+  printf '%s\n' "$CASE/ambient-claude" > "$HOME_DIR/config/claude-account"
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 1 "$rc" "a pin onto the orchestrator root must refuse"
+  assert_refused_before_launch "$id" "$out" "the orchestrator account reserved by"
+  printf '%s\n' "$CASE/work" > "$HOME_DIR/config/claude-account"
+  out=$(spawn_ship "$id"); rc=$?
+  expect_code 0 "$rc" "a pin to a different root should launch: $out"
+  printf 'relative/path\n' > "$HOME_DIR/config/claude-orchestrator-account"
+  out=$(spawn_ship "acct-orch-bad"); rc=$?
+  expect_code 1 "$rc" "a malformed orchestrator file must refuse"
+  assert_contains "$out" "must hold one absolute path" "the refusal should explain the format"
+  pass "an orchestrator account file refuses Claude launches on its root and is inert otherwise"
+}
+
 test_secondmate_account_override
 test_secondmate_account_refusals
 test_remote_secondmate_account_override_refuses_locally
@@ -501,5 +523,6 @@ test_raw_claude_command_receives_the_pin
 test_raw_claude_account_override_refuses_under_a_pin
 test_raw_claude_account_override_is_kept_without_a_pin
 test_local_secondmate_reads_the_launching_home_pin
+test_orchestrator_account_launch_refusal
 
 echo "# all fm-worker-account tests passed"
