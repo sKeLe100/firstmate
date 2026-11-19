@@ -1461,7 +1461,7 @@ Without the file, launches are unchanged.
 
 The same file is the orchestrator's own account pin: a Claude primary launch from `bin/fm-primary-herdr.sh` exports that absolute root into the pane as `CLAUDE_CONFIG_DIR` before starting the agent, so the boot launch runs on the orchestrator account rather than an ambient or worker login.
 It never reads `config/claude-account`, which pins workers away from this account.
-A malformed file refuses the primary launch.
+A malformed file, or a root that is not a readable directory, refuses the primary launch.
 
 ### Failures, reporting, and inheritance
 
