@@ -1,0 +1,7 @@
+$ bin/fm-test-run.sh --list --all --exclude-quarantined  (real runner, real tests/fm-test-quarantine.tsv)
+exit=0
+stdout lines: 319; stdout lines that are not tests/*.sh paths: 0
+stderr FM_TEST_QUARANTINED lines: 17
+FM_TEST_QUARANTINE_SUMMARY quarantined=17
+quarantine TSV data rows: 17
+quarantined scripts leaking into stdout list: 0
