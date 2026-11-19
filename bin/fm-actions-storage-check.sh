@@ -23,17 +23,18 @@
 # report, GET /users/{username}/settings/billing/usage, whose documented
 # usageItems carry one row per day, product, SKU, and repository. Actions
 # artifact storage is sku actions_storage and GitHub Packages storage is sku
-# packages_storage, both in gigabyte-hours; this check sums every storage row
-# for the most recent day in the report and divides by 24 for that day's
-# average gigabytes, which is the pooled figure the plan's included allowance
-# applies to. That endpoint requires a classic token with the `user` scope;
+# packages_storage, both in gigabyte-hours; this check requests the report for
+# yesterday in UTC, the most recent completed day, sums every storage row in it,
+# and divides by 24 for that day's average gigabytes, which is the pooled figure
+# the plan's included allowance applies to. The current UTC day is never read,
+# because its gigabyte-hours are still accumulating. That endpoint requires a classic token with the `user` scope;
 # authorize once with `gh auth refresh -h github.com -s user`. A token without
 # that scope gets a 404, and this check reports that as an actionable finding
 # rather than going quiet, because an unwatched account blocks uploads at 100
 # percent when it has no payment method or a zero spending limit.
 #
-# The figure comes from the latest day in the billing report, so it reflects
-# that day's average and trails current storage until the next report. It is the
+# The figure is yesterday's average, so it trails current storage by up to a
+# day. It is the
 # supported replacement for the retired shared-storage estimate endpoint, which
 # now answers 410 Gone.
 #
@@ -49,8 +50,8 @@
 # expire artifacts, change retention settings, or touch a spending limit.
 #
 # Probing costs a network call, so `check` probes at most once per day (86400
-# seconds) and only reads its small record in between. The probe is bounded by
-# FM_ACTIONS_STORAGE_PROBE_SECS (default 10, valid 1..30). The report record
+# seconds) and only reads its small record in between. Each probe request is
+# bounded to 10 seconds. The report record
 # state/.actions-storage-check is written only when a sweep runs to its end, and
 # it carries the last reported finding, so the warning prints once per daily
 # evaluation rather than on every watcher pass.
@@ -71,6 +72,7 @@ RECORD_SCHEMA_LINE=$'schema\tfm-actions-storage-check-v1'
 INTERVAL=86400
 WARN_PERCENT=80
 MAX_LINE=400
+PROBE_SECS=10
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -82,23 +84,13 @@ MAX_LINE=400
 . "$SCRIPT_DIR/fm-check-lib.sh"
 
 usage() {
-  sed -n '2,56{s/^# \{0,1\}//;p;}' "$0"
+  sed -n '2,57{s/^# \{0,1\}//;p;}' "$0"
 }
 
 fail() {
   printf 'fm-actions-storage-check: %s\n' "$1" >&2
   exit 1
 }
-
-PROBE_SECS=${FM_ACTIONS_STORAGE_PROBE_SECS:-10}
-case "$PROBE_SECS" in
-  ''|*[!0-9]*|0)
-    fail "FM_ACTIONS_STORAGE_PROBE_SECS must be a whole number from 1 to 30"
-    ;;
-esac
-if [ "$PROBE_SECS" -gt 30 ]; then
-  fail "FM_ACTIONS_STORAGE_PROBE_SECS must be a whole number from 1 to 30"
-fi
 
 ALLOWANCE_MB=${FM_ACTIONS_STORAGE_ALLOWANCE_MB:-500}
 case "$ALLOWANCE_MB" in
@@ -158,10 +150,12 @@ append_finding() {
 }
 
 # The usage report is read as a documented shape: usageItems must be an array,
-# and the value that counts is the storage rows of the most recent date. A
-# response that is absent, of the wrong type, or carries a non-numeric or
-# negative quantity is an unusable response, never a zero. A zero would turn a
-# broken read into a silent "everything is fine".
+# and the value that counts is every storage row of the one requested day. A
+# response that is absent, of the wrong type, or carries a storage row with a
+# non-numeric or negative quantity or a unit other than gigabyte-hours is an
+# unusable response, never a zero. A zero would turn a broken read into a silent
+# "everything is fine". The unit is compared without case or punctuation, so
+# both "gigabyte-hours" and "GigabyteHours" are accepted.
 read_usage() {  # <json-text>
   printf '%s' "$1" | jq -r '
     if (.usageItems | type) != "array" then empty
@@ -170,23 +164,21 @@ read_usage() {  # <json-text>
         | select(type == "object")
         | select((((.sku // "") | ascii_downcase) as $s
                   | $s == "actions_storage" or $s == "packages_storage"))
-        | select(((.unitType // "") | ascii_downcase) == "gigabyte-hours")
-      ] as $rows
-      | (([ $rows[] | .date // "" ] | max) // "") as $as_of
-      | (if $as_of == "" then 0
-         else
-           [ $rows[] | select((.date // "") == $as_of) | .quantity ]
-           | if all(.[]; type == "number" and . >= 0)
-             then ((add // 0) / 24 * 1000000 | round) / 1000000
-             else error("unusable storage quantity") end
-         end) as $gb
-      | "\($as_of)\t\($gb)"
+      ]
+      | if all(.[]; (.quantity | type == "number" and . >= 0)
+                    and ((.unitType // "") | ascii_downcase | gsub("[^a-z0-9]"; "")) == "gigabytehours")
+        then ([ .[].quantity ] | (add // 0) / 24 * 1000000 | round) / 1000000
+        else error("unusable storage row") end
     end
   ' 2>/dev/null
 }
 
-probe_billing() {  # <stderr-file>
-  local login out status err=$1
+utc_yesterday() {  # <now-epoch>
+  jq -rn --argjson t "$(( $1 - 86400 ))" '$t | todate | .[0:10]' 2>/dev/null
+}
+
+probe_billing() {  # <stderr-file> <day>
+  local login out status err=$1 day=$2 query
   out=$(fm_run_timed "$PROBE_SECS" "$GH_BIN" api /user --jq .login 2>/dev/null) || status=$?
   if [ "${status:-0}" -ne 0 ]; then
     if fm_timed_out "${status:-0}"; then
@@ -204,9 +196,10 @@ probe_billing() {  # <stderr-file>
   esac
   login=$out
 
+  query="year=$((10#${day:0:4}))&month=$((10#${day:5:2}))&day=$((10#${day:8:2}))"
   status=0
   : > "$err"
-  out=$(fm_run_timed "$PROBE_SECS" "$GH_BIN" api "/users/$login/settings/billing/usage" 2>"$err") || status=$?
+  out=$(fm_run_timed "$PROBE_SECS" "$GH_BIN" api "/users/$login/settings/billing/usage?$query" 2>"$err") || status=$?
   if [ "$status" -ne 0 ]; then
     if fm_timed_out "$status"; then
       append_finding "billing usage unreadable: the GitHub billing request exceeded ${PROBE_SECS}s"
@@ -226,7 +219,7 @@ probe_billing() {  # <stderr-file>
 }
 
 run_check() {
-  local now reported_previous storage_gb as_of as_of_text percent mb_used line
+  local now reported_previous storage_gb as_of percent mb_used line
   if ! now=$(check_due); then
     return 0
   fi
@@ -244,11 +237,16 @@ run_check() {
   printf '%s\n' "$RECORD_SCHEMA_LINE" > "$NEW_RECORD" || exit 1
   printf '%s\t%s\n' last_eval "$now" >> "$NEW_RECORD" || exit 1
 
+  as_of=$(utc_yesterday "$now")
+  case "$as_of" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+    *) fail "could not compute yesterday's UTC date" ;;
+  esac
+
   if ! command -v "$GH_BIN" >/dev/null 2>&1; then
     append_finding "billing usage unreadable: gh not found"
-  elif probe_billing "$ERR_FILE"; then
-    as_of=${USAGE%%$'\t'*}
-    storage_gb=${USAGE#*$'\t'}
+  elif probe_billing "$ERR_FILE" "$as_of"; then
+    storage_gb=$USAGE
     mb_used=$(awk -v gb="$storage_gb" 'BEGIN { printf "%.1f", gb * 1024 }')
     percent=$(awk -v gb="$storage_gb" -v mb="$ALLOWANCE_MB" 'BEGIN { printf "%.1f", (gb * 1024 / mb) * 100 }')
     printf '%s\t%s\n' as_of "$as_of" >> "$NEW_RECORD" || exit 1
@@ -256,11 +254,7 @@ run_check() {
     printf '%s\t%s\n' allowance_mb "$ALLOWANCE_MB" >> "$NEW_RECORD" || exit 1
     printf '%s\t%s\n' percent "$percent" >> "$NEW_RECORD" || exit 1
     if awk -v p="$percent" -v warn="$WARN_PERCENT" 'BEGIN { exit !(p >= warn) }'; then
-      case "$as_of" in
-        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) as_of_text="as of $as_of" ;;
-        *) as_of_text='in the latest daily report' ;;
-      esac
-      append_finding "${mb_used} MB of ${ALLOWANCE_MB} MB used (${percent}%) ${as_of_text}; uploads block at 100%"
+      append_finding "${mb_used} MB of ${ALLOWANCE_MB} MB used (${percent}%) as of ${as_of}; uploads block at 100%"
     fi
   fi
 
