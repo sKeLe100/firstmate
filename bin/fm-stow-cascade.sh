@@ -276,7 +276,8 @@ printf '\n'
 emit "secondmates=$total"
 emit "exceptions=$exceptions"
 # With secondmates enumerated, the cascade itself still lies ahead of this
-# process; the /stow skill stamps completion via --complete once it finishes.
+# process; the /stow skill stamps completion via --complete once it has sent
+# every secondmate request and finished its local cascade actions.
 [ "$total" -gt 0 ] || record_stow_completion
 [ "$exceptions" -eq 0 ] || exit 3
 exit 0
