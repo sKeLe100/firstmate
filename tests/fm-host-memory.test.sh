@@ -117,7 +117,6 @@ test_reads_memavailable_not_memfree() {
 }
 test_reads_memavailable_not_memfree
 
-
 swap_meminfo() {  # <name> <SwapTotal-kB> <SwapFree-kB>
   local f="$TMP_ROOT/$1.meminfo"
   {

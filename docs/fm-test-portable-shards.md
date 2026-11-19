@@ -77,6 +77,7 @@ The 2026-11-16 hint-drift refresh from PR 270's run 43976918150 (ubuntu-latest m
 The 2026-11-17 hint-drift refresh from PR 276's run 44006844023 raised `tests/fm-pc02-personal-use.test.sh` from 540 ms to its measured 910 ms (repeated drift 1.69x) and `tests/fm-review-check.test.sh` from 1255 ms to its measured 2006 ms (repeated drift 1.60x).
 The 2026-11-17 hint-drift refresh from PR 276's run 44010176385 raised `tests/fm-on.test.sh` from 18589 ms to its measured 28836 ms (repeated drift 1.55x).
 The 2026-11-17 hint-drift refresh from PR 276's run 44013976090 raised `tests/fm-supervision-host-2.test.sh` from 525849 ms to its measured 974763 ms (repeated drift 1.85x).
+The 2026-11-18 hint-drift refresh from PR 281's run 44215887347 raised the two repeated drifters, `tests/fm-fork-free-helpers.test.sh` from 995 ms to its measured 1626 ms (1.63x) and `tests/fm-test-sandbox-cache-race.test.sh` from 8977 ms to 13939 ms (1.55x), and the three single-run drifters it also recorded, `tests/fm-haiku-builder-example.test.sh` (715 to 1782 ms, 2.49x), `tests/fm-spawn-host-memory.test.sh` (6292 to 16340 ms, 2.60x, its new swap and parked-session cases), and `tests/fm-subagent-pretool-check.test.sh` (1290 to 1970 ms, 1.53x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints
