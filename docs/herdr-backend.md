@@ -65,11 +65,15 @@ No separate first-run provisioning is required.
 ### Primary desktop startup
 
 `bin/fm-primary-herdr.sh` is the supported launcher for a primary Firstmate that is opened from a desktop shortcut or login task.
-Use `normal` for the ordinary Claude primary, `emergency` for a deliberate Codex takeover after Claude has exited, and `server` for diagnostics or a deployment that should restore only the named Herdr server.
+Use `normal` for the ordinary Claude primary, `normal --boot` for unattended startup recovery, `emergency` for a deliberate Codex takeover after Claude has exited, and `server` for diagnostics or a deployment that should restore only the named Herdr server.
 The launcher records response-derived workspace, tab, pane, and harness identity in the selected home's `state/.primary-herdr`, serializes startup attempts, and reports success only after the selected harness owns the home's session lock and its matching session-start completion record exists.
+The primary Herdr session comes from the local `config/herdr-session` setting, which defaults to `default` so the orchestrator shares the session its workers use; `--boot` always honors the setting while an attended `normal` or `emergency` run may override it with `HERDR_SESSION` for one explicit launch (see [`configuration.md`](configuration.md#primary-herdr-session-configherdr-session)).
+When the home's `config/claude-orchestrator-account` names an absolute Claude config root, a Claude primary launch exports it as `CLAUDE_CONFIG_DIR` into the pane before starting the agent, so the primary runs on the orchestrator account rather than the worker pin in `config/claude-account`.
 The primary-only launcher requires `FM_HOME` and `FM_ROOT_OVERRIDE` to resolve to the same canonical Firstmate directory, because Herdr panes inherit the launcher's operational environment.
 It refuses a role change while another live primary owns the home, a live endpoint without matching ownership, an unreadable endpoint, an unrecorded agent rooted at the primary home, or an unrecorded workspace labeled `firstmate`.
 Those conservative refusals keep mutable Herdr labels out of lifecycle authority while still allowing a confirmed agent-free recorded pane to receive an explicit normal-to-emergency or emergency-to-normal handoff.
+`--boot` is the one reconciliation path: when no live primary lock exists and the recorded endpoint is stale or unknown, it proves no live agent is rooted at the primary home in any running Herdr session, clears the record, and creates a fresh primary.
+It never relaxes the live-endpoint, live-lock, or unreadable-inventory refusals, and without `--boot` every refusal above is unchanged.
 
 The interactive Codex TUI does not have the native SessionStart transport described in [`sessionstart-nudge.md`](sessionstart-nudge.md).
 Emergency mode therefore supplies the exact session-start command as Codex's initial prompt and waits for its durable completion proof before reporting the takeover ready.
@@ -82,11 +86,11 @@ The main primary's locked session-start sweep recovers registered dead or missin
 Example shortcut commands are:
 
 ```sh
-FM_HOME=/home/example/firstmate HERDR_SESSION=firstmate bin/fm-primary-herdr.sh normal
-FM_HOME=/home/example/firstmate HERDR_SESSION=firstmate bin/fm-primary-herdr.sh emergency
+FM_HOME=/home/example/firstmate bin/fm-primary-herdr.sh normal
+FM_HOME=/home/example/firstmate HERDR_SESSION=other bin/fm-primary-herdr.sh emergency
 ```
 
-For automatic normal recovery, let the operating system run `bin/fm-primary-herdr.sh normal --no-attach` at login and let the attended desktop shortcut run `normal` to reconnect and focus the same session.
+For automatic normal recovery, let the operating system run `bin/fm-primary-herdr.sh normal --boot --no-attach` at login and let the attended desktop shortcut run `normal` to reconnect and focus the same session.
 Do not automatically select emergency mode at boot.
 
 The required CI lane uses the pinned installers in `bin/fm-install-herdr.sh` and `bin/fm-install-treehouse.sh`.

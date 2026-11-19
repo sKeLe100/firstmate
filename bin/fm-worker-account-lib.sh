@@ -239,6 +239,23 @@ fm_worker_account_check() {
   return 0
 }
 
+# fm_worker_account_orchestrator_root <config-dir>
+# Prints the absolute Claude config root named by the home's optional
+# config/claude-orchestrator-account file, the same value the private account
+# roles helper derives from config/claude-roles. An absent file prints nothing
+# and returns 0, so a home that has not declared an orchestrator account keeps
+# today's behavior. A malformed file prints one error naming it and returns 1.
+fm_worker_account_orchestrator_root() {
+  local config=$1 file="$1/claude-orchestrator-account" body
+  [ -e "$file" ] || return 0
+  body=$(cat "$file" 2>/dev/null) || body=
+  if [ -z "$body" ] || [ "${body#/}" = "$body" ] || [ "$(printf '%s\n' "$body" | wc -l)" -ne 1 ]; then
+    echo "error: config/claude-orchestrator-account must hold one absolute path on a single line: $file" >&2
+    return 1
+  fi
+  printf '%s\n' "$body"
+}
+
 # fm_worker_account_orchestrator_guard <config-dir> <effective-root>
 # Opt-in launch refusal: when the home has config/claude-orchestrator-account
 # (one absolute path), refuses a Claude launch whose effective config root
@@ -246,17 +263,13 @@ fm_worker_account_check() {
 # An absent file returns 0 and changes nothing. Prints one error naming the
 # file and returns 1 on a match or a malformed file.
 fm_worker_account_orchestrator_guard() {
-  local config=$1 effective=$2 file="$1/claude-orchestrator-account" body reserved
-  [ -e "$file" ] || return 0
-  body=$(cat "$file" 2>/dev/null) || body=
-  if [ -z "$body" ] || [ "${body#/}" = "$body" ] || [ "$(printf '%s\n' "$body" | wc -l)" -ne 1 ]; then
-    echo "error: config/claude-orchestrator-account must hold one absolute path on a single line: $file" >&2
-    return 1
-  fi
-  reserved=$(realpath -m -- "$body" 2>/dev/null) || reserved=$body
+  local config=$1 effective=$2 root reserved
+  root=$(fm_worker_account_orchestrator_root "$config") || return 1
+  [ -n "$root" ] || return 0
+  reserved=$(realpath -m -- "$root" 2>/dev/null) || reserved=$root
   effective=$(realpath -m -- "$effective" 2>/dev/null || printf '%s\n' "$effective")
   if [ "$reserved" = "$effective" ]; then
-    echo "error: this Claude launch would run on $effective, the orchestrator account reserved by $file; pin a worker account in config/claude-account, or remove $file" >&2
+    echo "error: this Claude launch would run on $effective, the orchestrator account reserved by $config/claude-orchestrator-account; pin a worker account in config/claude-account, or remove $config/claude-orchestrator-account" >&2
     return 1
   fi
   return 0
