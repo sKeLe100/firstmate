@@ -65,13 +65,13 @@ run_turn() {  # <home> <stub>
     # shellcheck disable=SC2030,SC2031
     export FM_CONFIG_OVERRIDE="$home/config"
     export FM_SUPERVISION_ENGINE_CLAUDE_BIN="$stub"
-    unset FM_SUPERVISION_ENGINE_ACCOUNT
     # shellcheck source=bin/fm-wake-lib.sh
     . "$ROOT/bin/fm-wake-lib.sh"
     # shellcheck source=bin/fm-timeout-lib.sh
     . "$ROOT/bin/fm-timeout-lib.sh"
     # shellcheck source=bin/fm-supervision-engine-lib.sh
     . "$ROOT/bin/fm-supervision-engine-lib.sh"
+    fm_supervision_host_config "$home/config" claude
     fm_supervision_engine_turn claude sonnet "$home/prompt" "$home/message" \
       session-1 new 60 "$home/result" "$home/errors"
   ) >"$home/turn.out" 2>&1
@@ -147,25 +147,8 @@ test_unusable_files_leave_the_home_without_an_engine() {
   pass "an unusable account file leaves the home without an engine and names the file"
 }
 
-test_unusable_file_refuses_the_turn_instead_of_falling_back() {
-  local home stub rc
-  home=$(make_home turn-bad)
-  stub="$TMP_ROOT/stub-turn-bad"
-  make_stub "$stub"
-  printf 'relative/account\n' > "$home/config/supervision-engine-account"
-
-  run_turn "$home" "$stub"
-  rc=$?
-  expect_code 127 "$rc" "a declared but unusable account must refuse the engine launch"
-  assert_grep 'config/supervision-engine-account' "$home/errors" \
-    "the refusal must name the file to fix"
-  assert_absent "$home/engine.log" "the engine must not launch on the declined inherited account"
-  pass "an unusable account refuses the launch rather than falling back to the inherited account"
-}
-
 test_absent_file_keeps_the_inherited_account
 test_present_file_selects_the_engine_account
 test_unusable_files_leave_the_home_without_an_engine
-test_unusable_file_refuses_the_turn_instead_of_falling_back
 
 echo "# all fm-supervision-engine-account tests passed"

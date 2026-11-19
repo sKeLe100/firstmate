@@ -1004,6 +1004,22 @@ test_latch_trips_after_two_engine_errors_then_probes_and_recovers() {
   pass "host: two engine errors latch the session, main keeps every away wake in the cooldown, a failed probe doubles it up to its cap, and a report recovers it silently"
 }
 
+test_account_change_starts_outside_the_old_accounts_latch() {
+  local home
+  home=$(make_home latch-account away)
+  trip_latch "$home"
+
+  mkdir -p "$home/claude-2"
+  printf '%s\n' "$home/claude-2" > "$home/config/supervision-engine-account"
+  echo handle > "$home/stub-mode"
+  park_again "$home"
+  append_status "$home" 'after the account change'
+  wait_until 250 handled_at_least "$home" 1 || fail "latch account: the wake on the new account was not handled: $(cat "$home/host.out")"
+  [ "$(engine_calls "$home")" -eq 3 ] || fail "the new account's first wake did not run the engine"
+  host_exited "$home" && fail "a wake on a new account must not inherit the old account's cooldown: $(cat "$home/host.out")"
+  pass "host: an account change leaves the old account's engine-error latch behind"
+}
+
 # The latch lives only in the opted-in host's away path: an attended close in a
 # latched session and a home that dropped config/supervision-host both reach
 # main exactly as they do without it.
@@ -1178,6 +1194,7 @@ test_report_without_acknowledgement_hands_the_wake_to_main
 test_return_during_a_failed_turn_still_hands_its_outcomes_to_main
 test_incomplete_engine_result_hands_the_wake_to_main
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers
+test_account_change_starts_outside_the_old_accounts_latch
 test_latch_keeps_attended_closes_on_main_and_skips_unopted_homes
 test_attended_latch_keeps_closes_on_main_and_records_recovery_off_main
 test_engine_turn_is_bounded_and_its_descendants_reaped

@@ -252,12 +252,13 @@ fm_supervision_host_main_key() {
 
 # fm_supervision_host_health_key <state-dir>: the key the host's
 # broken-session latch (bin/fm-supervision-host.sh, state/.supervision-host-health)
-# is kept under: the current main session, engine, and model; fails with no
-# main-session key. Needs fm_supervision_host_config first.
+# is kept under: the current main session, engine, model, and engine account;
+# fails with no main-session key. Needs fm_supervision_host_config first.
 fm_supervision_host_health_key() {
   local key
   key=$(fm_supervision_host_main_key "$1") || return 1
-  printf '%s|%s|%s\n' "$key" "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL"
+  printf '%s|%s|%s|%s\n' "$key" "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL" \
+    "${FM_SUPERVISION_ENGINE_ACCOUNT:-}"
 }
 
 # The latch's first cooldown in seconds: the host's initial trip sets it, and
@@ -419,10 +420,6 @@ fm_supervision_engine_turn() {
         args+=(--session-id "$session")
       else
         args+=(--resume "$session")
-      fi
-      if [ -z "$account" ]; then
-        account=$(fm_supervision_engine_account "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" 2>"$errors") \
-          || return 127
       fi
       ;;
     *)

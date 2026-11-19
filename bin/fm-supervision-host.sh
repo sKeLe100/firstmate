@@ -144,7 +144,8 @@
 #
 # STATE (all under state/, owned here): .supervision-host (this host's pid and
 # the processes it runs), .supervision-host-engine (the engine conversation:
-# engine, model, session id, main-session key, turn count, running cost),
+# engine, model, engine account, session id, main-session key, turn count,
+# running cost),
 # .supervision-host-turn and .supervision-host-receipts (the current turn's
 # report scope and the reports it recorded), .supervision-host-prompt and
 # .supervision-host-wake (the prompt and wake text of the current turn),
