@@ -260,7 +260,7 @@ The first trip adds one `supervision-host:` line to the failing turn's handback;
 The away return brief (`bin/fm-afk-return.sh`) reports engine errors in the window and any latch visible at return, using a lower bound for the window's error count because the host ledger is bounded.
 It names the trip time only when the ledger retains the initial-trip row: a failed-probe row cannot establish that time or prove the latch predated the window, and a paused latch with no initial-trip row is reported with "trip time unavailable" even if the ledger is missing.
 The brief also says whether the latch is still paused or has recovered.
-The latch belongs to one main session, engine, and model, so a new main session or another engine or model starts clean.
+The latch belongs to one main session, engine, model, and engine account, so a new main session or another engine, model, or engine account starts clean.
 
 ### Lost ownership
 
