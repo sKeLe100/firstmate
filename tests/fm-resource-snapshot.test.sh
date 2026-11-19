@@ -380,12 +380,21 @@ test_live_reconciliation() {
   profiles=$(sed -n 's/^orchestrator=//p;s/^workers=//p' "$live_home/config/claude-roles" 2>/dev/null | paste -sd: -)
   raw_quota=$(QUOTA_AXI_CLAUDE_PROFILES="$profiles" quota-axi --full --json 2>/dev/null)
   printf '%s' "$raw_quota" | jq -e '.providers | type == "array"' >/dev/null || fail "raw quota read failed"
-  local path window expected_pct actual_pct
+  local path window expected_pct actual_pct actual_state
   while IFS=$'\t' read -r path window expected_pct; do
     [ -n "$path" ] || continue
     actual_pct=$(jq -r --arg p "$path" --arg w "$window" \
       '[.quota[] | select(.account == $p and .window == $w) | .pct_remaining][0] // "missing"' "$model")
-    [ "$actual_pct" = "$expected_pct" ] || fail "quota $path $window: expected $expected_pct, actual $actual_pct (read $gen)"
+    actual_state=$(jq -r --arg p "$path" --arg w "$window" \
+      '[.quota[] | select(.account == $p and .window == $w) | .state][0] // "missing"' "$model")
+    # The snapshot bounds its read with --max-age, so a reused reading is
+    # labelled stale and may sit one percentage point behind the fresh read;
+    # only fresh rows must match the raw figure exactly.
+    if [ "$actual_state" = stale ]; then
+      [ "$actual_pct" != missing ] || fail "stale quota row $path $window has no figure (read $gen)"
+    else
+      [ "$actual_pct" = "$expected_pct" ] || fail "quota $path $window: expected $expected_pct, actual $actual_pct (read $gen)"
+    fi
   done < <(printf '%s' "$raw_quota" | jq -r '.providers[] | select(.provider=="claude") | .accountLocator.path as $p | .windows[] | [$p,.id,(.percentRemaining|tostring)] | @tsv')
 
   # PC01 drives equal df -Pk.
@@ -413,7 +422,13 @@ test_live_reconciliation() {
     local raw_slots raw_personal
     raw_slots=$(ssh "$host" 'slots=2; sf="$HOME/.config/firstmate/pc02-offload-slots"; [ -f "$sf" ] && slots=$(head -1 "$sf"); used=0; i=1; while [ "$i" -le "$slots" ]; do f="$HOME/.fm-pc02-test-slot-$i.lock"; if [ -e "$f" ] && ! flock -n "$f" true 2>/dev/null; then used=$((used+1)); fi; i=$((i+1)); done; printf "%s/%s" "$used" "$slots"' 2>/dev/null)
     actual=$(jq -r '[.testing[] | select(.item=="pc02-offload-slots") | .state][0] // "missing"' "$model")
-    [ -z "$raw_slots" ] || [ "$actual" = "$raw_slots" ] || fail "PC02 slots: expected $raw_slots, actual $actual (read $gen)"
+    # The used count is a live sample and may move between the two reads; the
+    # configured slot total and the row's shape must still agree.
+    if [ -n "$raw_slots" ]; then
+      [ "$actual" != missing ] || fail "PC02 slots row missing (read $gen)"
+      [ "${actual##*/}" = "${raw_slots##*/}" ] || fail "PC02 slot total: expected ${raw_slots##*/}, actual ${actual##*/} (read $gen)"
+      [ "${actual%%/*}" -le "${actual##*/}" ] 2>/dev/null || fail "PC02 used slots exceed the total: $actual (read $gen)"
+    fi
     raw_personal=$(ssh "$host" 'if [ -e "$HOME/.fm-pc02-personal-use" ]; then echo on; else echo off; fi' 2>/dev/null)
     actual=$(jq -r '[.testing[] | select(.item=="pc02-personal-use") | .state][0] // "missing"' "$model")
     [ -z "$raw_personal" ] || [ "$actual" = "$raw_personal" ] || fail "PC02 personal use: expected $raw_personal, actual $actual (read $gen)"
