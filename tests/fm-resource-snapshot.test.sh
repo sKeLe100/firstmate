@@ -121,8 +121,8 @@ write_fixtures() {  # <name>
       {"machine":"PC01","load1":0.5,"cores":16,"mem_free_pct":80,"disk_free_gb":850.0,"disk_path":"/home/test","uptime":1000,"read_utc":"2026-11-20T00:00:00Z"}
     ],
     "drives":[
-      {"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"warn":"ok","read_utc":"2026-11-20T00:00:00Z"},
-      {"machine":"PC01","mount":"C:","total_gb":500.0,"free_gb":88.0,"pct_used":82,"warn":"ok","read_utc":"2026-11-20T00:00:00Z"}
+      {"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"read_utc":"2026-11-20T00:00:00Z"},
+      {"machine":"PC01","mount":"C:","total_gb":500.0,"free_gb":88.0,"pct_used":82,"read_utc":"2026-11-20T00:00:00Z"}
     ]}'
   write_json "$dir/herdr-pc01.json" '{
     "sessions":[{"name":"default","status":"running"}],
@@ -140,7 +140,7 @@ write_fixtures() {  # <name>
     ]}'
   write_json "$dir/remote.json" '{
     "hosts":[{"machine":"PC02","load1":1.5,"cores":16,"mem_free_pct":75,"disk_free_gb":900.0,"disk_path":"/home/test/mate","uptime":2000,"read_utc":"2026-11-20T00:00:00Z"}],
-    "drives":[{"machine":"PC02","mount":"C:","total_gb":900.0,"free_gb":23.0,"pct_used":97,"warn":"watch","read_utc":"2026-11-20T00:00:00Z"}],
+    "drives":[{"machine":"PC02","mount":"C:","total_gb":900.0,"free_gb":23.0,"pct_used":97,"read_utc":"2026-11-20T00:00:00Z"}],
     "sessions":[{"name":"fm-remote","status":"running"}],
     "workers":[
       {"home_lane":"pc02-mate","task":"delta","kind":"ship","model":"opencode-go/deepseek-v4.1-flash","spend_lane":"opencode-go","stage":"state: working · source: pane","age":"5m","last_active":"2026-11-20T00:00:00Z","ctx_band":"n/a","pr":"-","read_utc":"2026-11-20T00:00:00Z"},
@@ -164,7 +164,7 @@ write_fixtures() {  # <name>
     ]}'
   write_json "$dir/hosts-pc01.json" '{
     "hosts":[{"machine":"PC01","load1":0.5,"cores":16,"mem_free_pct":80,"disk_free_gb":850.0,"disk_path":"/home/test","uptime":1000,"read_utc":"2026-11-20T00:00:00Z"}],
-    "drives":[{"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"warn":"ok","read_utc":"2026-11-20T00:00:00Z"}]
+    "drives":[{"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"read_utc":"2026-11-20T00:00:00Z"}]
   }'
   write_json "$dir/down.json" '{
     "hosts":[],"drives":[],"sessions":[],"workers":[],"mate_account":"",

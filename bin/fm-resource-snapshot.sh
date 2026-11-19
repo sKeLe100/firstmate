@@ -322,6 +322,12 @@ drive_warn() {  # <available-kb>
   fi
 }
 
+fixture_drive_warn() {
+  awk -F'\t' -v OFS='\t' '{
+    if ($4 ~ /^[0-9]+(\.[0-9]+)?$/) $6 = ($4 < 20 ? "low" : ($4 < 40 ? "watch" : "ok")); else $6 = "unknown"
+    print }'
+}
+
 drive_one() {  # <machine> <label> <path>
   local machine=$1 label=$2 path=$3 total avail used pct
   read -r total avail <<EOF
@@ -535,8 +541,8 @@ collect_remote() {
   if [ -n "${FM_RESOURCE_REMOTE_FIXTURE:-}" ] && [ -f "$FM_RESOURCE_REMOTE_FIXTURE" ]; then
     jq -r '.hosts[]? | [.machine, (.load1 // "unknown"), (.cores // "unknown"), (.mem_free_pct // "unknown"), (.disk_free_gb // "-"), (.disk_path // "-"), (.uptime // "unknown"), (.read_utc // "-")] | @tsv' \
       "$FM_RESOURCE_REMOTE_FIXTURE" >> "$TMP/hosts.tsv"
-    jq -r '.drives[]? | [.machine, .mount, (.total_gb // "-"), (.free_gb // "-"), (.pct_used // "-"), (.warn // "ok"), (.read_utc // "-")] | @tsv' \
-      "$FM_RESOURCE_REMOTE_FIXTURE" >> "$TMP/drives.tsv"
+    jq -r '.drives[]? | [.machine, .mount, (.total_gb // "-"), (.free_gb // "-"), (.pct_used // "-"), "-", (.read_utc // "-")] | @tsv' \
+      "$FM_RESOURCE_REMOTE_FIXTURE" | fixture_drive_warn >> "$TMP/drives.tsv"
     jq -r '.sessions[]? | [.name, (.status // "-")] | @tsv' \
       "$FM_RESOURCE_REMOTE_FIXTURE" > "$TMP/remote_sessions.tsv"
     jq -r '.workers[]? | ["PC02", .home_lane, .task, (.kind // "unknown"), (.model // "unknown"), (.spend_lane // "unknown"), (.stage // "unknown"), (.age // "-"), (.last_active // "-"), (.ctx_band // "n/a"), (.pr // "-"), (.read_utc // "-")] | @tsv' \
@@ -1147,8 +1153,8 @@ build_model() {
   if [ -n "${FM_RESOURCE_HOSTS_JSON:-}" ] && [ -f "$FM_RESOURCE_HOSTS_JSON" ]; then
     jq -r '.hosts[]? | [.machine, (.load1 // "unknown"), (.cores // "unknown"), (.mem_free_pct // "unknown"), (.disk_free_gb // "-"), (.disk_path // "-"), (.uptime // "unknown"), (.read_utc // "-")] | @tsv' \
       "$FM_RESOURCE_HOSTS_JSON" >> "$TMP/hosts.tsv"
-    jq -r '.drives[]? | [.machine, .mount, (.total_gb // "-"), (.free_gb // "-"), (.pct_used // "-"), (.warn // "ok"), (.read_utc // "-")] | @tsv' \
-      "$FM_RESOURCE_HOSTS_JSON" >> "$TMP/drives.tsv"
+    jq -r '.drives[]? | [.machine, .mount, (.total_gb // "-"), (.free_gb // "-"), (.pct_used // "-"), "-", (.read_utc // "-")] | @tsv' \
+      "$FM_RESOURCE_HOSTS_JSON" | fixture_drive_warn >> "$TMP/drives.tsv"
   fi
 
   cat "$TMP/workers_local.tsv" "$TMP/workers_remote.tsv" > "$TMP/workers.tsv"
