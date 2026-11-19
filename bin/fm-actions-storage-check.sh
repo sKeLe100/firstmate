@@ -154,7 +154,10 @@ append_finding() {
 # non-numeric or negative quantity, or with a unit other than gigabyte-hours is
 # an unusable response, never a zero. A zero would turn a broken read into a silent
 # "everything is fine". The unit is compared without case or punctuation, so
-# both "gigabyte-hours" and "GigabyteHours" are accepted.
+# both "gigabyte-hours" and "GigabyteHours" are accepted. The SKU is compared
+# after lowercasing and collapsing every non-alphanumeric run to one underscore,
+# because the live billing report spells it "Actions storage" while the
+# documented form is "actions_storage".
 read_usage() {  # <json-text> <settled-day>
   printf '%s' "$1" | jq -r --arg day "$2" '
     ($day[0:8]) as $month
@@ -162,7 +165,7 @@ read_usage() {  # <json-text> <settled-day>
     else
       [ .usageItems[]
         | select(type == "object")
-        | select((((.sku // "") | ascii_downcase) as $s
+        | select((((.sku // "") | ascii_downcase | gsub("[^a-z0-9]+"; "_")) as $s
                   | $s == "actions_storage" or $s == "packages_storage"))
       ]
       | if all(.[]; ((.date // "") | tostring | startswith($month))

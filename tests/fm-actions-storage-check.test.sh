@@ -338,6 +338,18 @@ test_arm_and_disarm_manage_the_registered_check() {
   pass "arm registers the check shim and disarm removes it"
 }
 
+test_vendor_sku_spelling_is_matched() {
+  local rec home fb usage result
+  rec=$(make_world vendor); home=${rec%%|*}; fb=${rec#*|}
+  usage="$TMP_ROOT/vendor-usage.json"
+  printf '%s\n' '{"usageItems":[{"date":"2026-11-18","product":"actions","sku":"Actions storage","quantity":120,"unitType":"GigabyteHours","repositoryName":"sKeLe100/firstmate"}]}' > "$usage"
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
+  assert_grep $'storage_gb_hours\t120' "$home/state/.actions-storage-check" \
+    "the live vendor SKU spelling (Actions storage) was not counted"
+  pass "the live vendor SKU spelling is matched"
+}
+
+test_vendor_sku_spelling_is_matched
 test_under_threshold_is_silent_and_records_usage
 test_documented_response_fixture_is_read
 test_no_storage_rows_means_zero_without_a_warning
