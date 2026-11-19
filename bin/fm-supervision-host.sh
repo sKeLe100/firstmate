@@ -153,7 +153,8 @@
 # rendered), .supervision-host-left (the pid and identity of the successor arm a
 # pass-through left running for main, until that arm is gone),
 # .supervision-host-health (the latch: errors, cooldown, and probe time, keyed
-# to the main session, engine, and model), and .supervision-host.log (a bounded
+# to the main session, engine, model, and engine account), and
+# .supervision-host.log (a bounded
 # ledger of where every close went, with each engine turn's usage and
 # outcome).
 #

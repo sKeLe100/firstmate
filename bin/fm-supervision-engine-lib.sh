@@ -30,8 +30,9 @@
 # exactly as before, and present it must hold one absolute path to an existing
 # readable, searchable directory, which the engine's launch receives.
 # docs/configuration.md "Supervision host" owns the operator-facing contract;
-# fm_supervision_engine_account is the one parser both the launch and the
-# home-gate read use. The runner returns the
+# fm_supervision_engine_account owns the parse, fm_supervision_host_config
+# resolves it into FM_SUPERVISION_ENGINE_ACCOUNT, and fm_supervision_engine_turn
+# launches with that value. The runner returns the
 # process exit status; the host separately requires a complete successful
 # result, a durable report, and acknowledgement before counting a wake handled.
 # The turn is bounded by fm_exec_timed

@@ -421,7 +421,7 @@ Firstmate's other environment credentials, such as `ANTHROPIC_API_KEY`, still ra
 
 An unreadable file, a relative or nonexistent path, or a malformed line leaves the home without an engine, exactly like a malformed `config/supervision-host`: every wake reaches main and the away line names the problem.
 The file applies to the Claude engine, the only verified engine today.
-`fm_supervision_engine_account` in `bin/fm-supervision-engine-lib.sh` owns the parse and the launch environment.
+`fm_supervision_engine_account` in `bin/fm-supervision-engine-lib.sh` owns the parse; `fm_supervision_host_config` resolves it into `FM_SUPERVISION_ENGINE_ACCOUNT`, and `fm_supervision_engine_turn` launches the engine with that value as `CLAUDE_CONFIG_DIR`.
 
 ### Failures, when changes apply, and inheritance
 

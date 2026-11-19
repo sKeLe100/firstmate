@@ -452,6 +452,8 @@ test_away_wake_is_handled_on_the_engine_and_never_reaches_main() {
   wait_until 250 handled_at_least "$home" 3 || fail "away: the wake after the account change was not handled"
   assert_re '^arg=--session-id$' "$home/engine-call.3" "an account change must start a new conversation"
   assert_no_re '^arg=--resume$' "$home/engine-call.3" "an account change must not resume a session stored under the old account"
+  [ "$(sed -n 's/^account=//p' "$home/state/.supervision-host-engine")" = "$home/claude-2" ] \
+    || fail "the engine record must name the account its conversation lives under"
 
   pid=$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")
   watcher=$(cat "$home/state/.watch.lock/pid")
