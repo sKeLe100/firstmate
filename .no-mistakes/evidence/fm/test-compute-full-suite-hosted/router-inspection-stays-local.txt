@@ -1,0 +1,5 @@
+$ bin/fm-test-compute.sh test --all --exclude-quarantined --list
+exit=0 stdout_lines=318 github_api_calls=0 (no gh-axi call recorded)
+tests/fm-afk-contract.test.sh
+tests/fm-afk-inject-e2e.test.sh
+tests/fm-afk-inject-herdr-e2e.test.sh
