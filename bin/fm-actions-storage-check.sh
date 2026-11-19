@@ -151,13 +151,14 @@ append_finding() {
 
 # The usage report is read as a documented shape: usageItems must be an array,
 # and the value that counts is every storage row of the one requested day. A
-# response that is absent, of the wrong type, or carries a storage row with a
-# non-numeric or negative quantity or a unit other than gigabyte-hours is an
+# response that is absent, of the wrong type, or carries a storage row dated
+# another day, with a non-numeric or negative quantity, or with a unit other
+# than gigabyte-hours is an
 # unusable response, never a zero. A zero would turn a broken read into a silent
 # "everything is fine". The unit is compared without case or punctuation, so
 # both "gigabyte-hours" and "GigabyteHours" are accepted.
-read_usage() {  # <json-text>
-  printf '%s' "$1" | jq -r '
+read_usage() {  # <json-text> <day>
+  printf '%s' "$1" | jq -r --arg day "$2" '
     if (.usageItems | type) != "array" then empty
     else
       [ .usageItems[]
@@ -165,7 +166,8 @@ read_usage() {  # <json-text>
         | select((((.sku // "") | ascii_downcase) as $s
                   | $s == "actions_storage" or $s == "packages_storage"))
       ]
-      | if all(.[]; (.quantity | type == "number" and . >= 0)
+      | if all(.[]; ((.date // "") | tostring | startswith($day))
+                    and (.quantity | type == "number" and . >= 0)
                     and ((.unitType // "") | ascii_downcase | gsub("[^a-z0-9]"; "")) == "gigabytehours")
         then ([ .[].quantity ] | (add // 0) / 24 * 1000000 | round) / 1000000
         else error("unusable storage row") end
@@ -211,7 +213,7 @@ probe_billing() {  # <stderr-file> <day>
     return 1
   fi
 
-  if ! USAGE=$(read_usage "$out") || [ -z "$USAGE" ]; then
+  if ! USAGE=$(read_usage "$out" "$day") || [ -z "$USAGE" ]; then
     append_finding "billing usage unreadable: the GitHub billing response was not usable JSON"
     return 1
   fi

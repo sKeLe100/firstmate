@@ -109,6 +109,7 @@ test_request_names_yesterday_in_utc() {
     "the billing request did not name yesterday in UTC"
   : > "$log"
   rec=$(make_world newyear); home=${rec%%|*}; fb=${rec#*|}
+  usage_json "$usage" 0.4125 2026-12-31
   # 2027-01-01T03:00:00Z
   result=$(run_check "$home" "$fb" 1798772400 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
   out=$(output_part "$result")
@@ -147,7 +148,7 @@ test_changed_usage_reports_again() {
   rec=$(make_world changed); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/changed-1.json"; usage_json "$usage" 0.4125
   run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" >/dev/null
-  usage="$TMP_ROOT/changed-2.json"; usage_json "$usage" 0.461
+  usage="$TMP_ROOT/changed-2.json"; usage_json "$usage" 0.461 2026-11-19
   result=$(run_check "$home" "$fb" "$T1" FAKE_USAGE_JSON="$usage")
   out=$(output_part "$result")
   assert_contains "$out" '472.1 MB of 500 MB used (94.4%)' "a changed warning was not reported again"
@@ -194,6 +195,20 @@ test_non_numeric_quantity_is_unusable() {
   assert_contains "$out" 'the GitHub billing response was not usable JSON' \
     "a non-numeric storage quantity was not reported as unusable"
   pass "a non-numeric storage quantity is reported rather than read as zero"
+}
+
+test_storage_row_from_another_day_is_unusable() {
+  local rec home fb usage result out
+  rec=$(make_world otherday); home=${rec%%|*}; fb=${rec#*|}
+  usage="$TMP_ROOT/otherday-usage.json"
+  printf '{"usageItems":[{"date":"2026-11-18","product":"actions","sku":"actions_storage","quantity":3.6,"unitType":"gigabyte-hours"},{"date":"2026-11-17","product":"actions","sku":"actions_storage","quantity":3.6,"unitType":"gigabyte-hours"}]}\n' > "$usage"
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
+  out=$(output_part "$result")
+  assert_contains "$out" 'the GitHub billing response was not usable JSON' \
+    "a storage row outside the requested day was summed instead of reported as unusable"
+  [ -z "$(awk -F '\t' '$1 == "storage_gb" { print $2 }' "$home/state/.actions-storage-check")" ] \
+    || fail "a response spanning other days was recorded as a storage figure"
+  pass "a storage row outside the requested day is reported rather than summed"
 }
 
 test_daily_gate_skips_the_probe() {
@@ -261,6 +276,7 @@ test_allowance_override_changes_the_threshold() {
   result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" FM_ACTIONS_STORAGE_ALLOWANCE_MB=1024)
   out=$(output_part "$result")
   [ -z "$out" ] || fail "the allowance override did not move the threshold: $out"
+  usage="$TMP_ROOT/allowance-usage-2.json"; usage_json "$usage" 0.4125 2026-11-19
   result=$(run_check "$home" "$fb" "$T1" FAKE_USAGE_JSON="$usage" FM_ACTIONS_STORAGE_ALLOWANCE_MB=400)
   out=$(output_part "$result")
   assert_contains "$out" '422.4 MB of 400 MB used (105.6%)' "the allowance override was not applied to the warning"
@@ -289,6 +305,7 @@ test_over_threshold_reports_the_completed_day
 test_request_names_yesterday_in_utc
 test_unchanged_finding_is_deduped
 test_storage_row_with_unknown_unit_is_unusable
+test_storage_row_from_another_day_is_unusable
 test_changed_usage_reports_again
 test_daily_gate_skips_the_probe
 test_missing_user_scope_is_actionable
