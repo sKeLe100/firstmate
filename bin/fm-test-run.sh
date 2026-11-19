@@ -618,6 +618,7 @@ family_for_basename() {
     fm-herdr-session-cleanup.test.sh|fm-send-resolve-key.test.sh|fm-send-strict.test.sh|\
     fm-send-inbox.test.sh|fm-spawn-batch.test.sh|\
     fm-spawn-dispatch-profile.test.sh|fm-spawn-host-memory.test.sh|fm-claude-trust.test.sh|\
+    fm-spawn-claude-runway.test.sh|\
     fm-worker-account.test.sh|\
     fm-git-strip-ai-trailers.test.sh|\
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
@@ -1153,6 +1154,7 @@ tests/fm-sessionstart-hook-live-e2e.test.sh 127
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 434
 tests/fm-sessionstart-nudge.test.sh 71802
 tests/fm-shared-captain-inheritance.test.sh 20677
+tests/fm-spawn-claude-runway.test.sh 21000
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 108286
 tests/fm-spawn-compact-adviser-disable.test.sh 33635
 tests/fm-spawn-dispatch-profile.test.sh 462910

@@ -971,8 +971,9 @@ The helper's header owns exact parsing and output mechanics.
 It sets the base cap on live Claude lanes dispatched at once; a malformed value is rejected rather than treated as the default.
 The cap is fleet-wide, not per-project: it bounds concurrent autonomous Claude lanes across every dispatched task in this home, alongside a separate PC02 lane already outside this cap.
 
-The base cap is reduced by a quota ladder read from `quota-axi --json` (schemaVersion 5) at dispatch intake, checked alongside the base cap rather than replacing it.
+The base cap is reduced by a quota ladder read from `quota-axi` (schemaVersion 5) at dispatch intake, checked alongside the base cap rather than replacing it.
 The ladder is pace-based (captain ruling 2026-09-25, superseding the 2026-09-02 elapsed-time ceiling): Claude lanes step down only as burn outruns the time left in the five-hour and weekly windows, so on-pace spend keeps the base cap right up to the reset and usage rides out the full window instead of stopping early.
+The reading is always the account the lane will spend: `config/claude-account` when it pins workers and reviewers, read the way `bin/fm-quota-choose.sh --claude-profile-snapshot` reads it, or the home's `ordinary` account when no pin exists. It is never the ambient login of whichever process happens to run the gate.
 The effective cap is the tightest cap any applicable row yields:
 
 | Condition | Effective cap and effect |
@@ -981,12 +982,21 @@ The effective cap is the tightest cap any applicable row yields:
 | `five_hour.percentRemaining < 25`, or a window's pace is ahead with `burnMultiple > 1.15` | cap **2**; senior-tier (Fable/Opus) dispatch needs a stated reason; cosmetic/nice-to-have work parks |
 | `five_hour.percentRemaining <= 15`, or a window's pace is ahead with `burnMultiple > 1.5` | cap **1**; only work the captain is actually waiting on; everything else goes to the PC02 roster and non-Claude cloud lanes |
 | `model:fable.percentRemaining < 20` | Fable is not the automatic senior pick - `quota-array-dispatch` arbitrates to Opus; never silently downgrade out of the senior class entirely |
+| `five_hour.pace.projectedExhaustedAt < five_hour.resetsAt + 20m` | cap **0** on that account: every new Claude lane queues until the window resets |
+| `five_hour.percentRemaining < 40` | cap **1**: no new lane while one implementing Claude lane is already live on that account |
+| the bound account's reading cannot be taken, or is rate-limited or signed out | cap **1**, never headroom |
 
 The pace rows read both `five_hour` and `seven_day` `pace` objects; the five-hour pace is ignored during that window's first 30 minutes, when a small early spend reads as a large multiple.
-`quota-axi --json` exposes only `five_hour.resetsAt`, so elapsed time is derived from the window's fixed five-hour duration (`5h - (resetsAt - generatedAt)`).
+`quota-axi` exposes only `five_hour.resetsAt`, so elapsed time is derived from the window's fixed five-hour duration (`5h - (resetsAt - generatedAt)`).
 PC02 stays on at every rung, and non-Claude cloud lanes (DeepSeek, Grok, Codex) absorb the work a lowered Claude cap turns away, within their own provider caps.
 
-`bin/fm-dispatch-quota-cap.sh` is the ladder's executable owner: it applies the rows above to the base cap and prints `effective_cap: <n>`, `codex_spawn: yes|no` (no whenever the Codex provider's weekly window reports ahead-of-pace), and `claude_pace: <burnMultiple>`, and exits 2 rather than reporting headroom when the quota reading is unavailable; its header owns its flags and exact exit codes.
+The per-account runway rows are the admission rule for the five-hour window: the projection is the vendor meter's own exhaustion estimate, and the account is counted from this home's `state/*.meta` records (`harness=claude`, `kind` other than `secondmate`, matching `account=`), so a secondmate holds no dispatched lane and does not consume the count.
+A missing projection falls through to the percent row rather than reading as headroom.
+`bin/fm-spawn.sh` enforces the per-account rows before any brief, endpoint, worktree, or record exists: a fresh Claude ship or scout that would exceed the account's runway cap is deferred with exit **75**, its backlog item stays queued, and the reason is printed on one line, exactly like the project-capacity refusal. A relaunch replaces a lane that already holds its place and is exempt, and non-Claude harnesses never reach the gate.
+
+`bin/fm-dispatch-quota-cap.sh` is the ladder's executable owner: it applies the rows above to the base cap and prints `effective_cap: <n>`, `codex_spawn: yes|no`, `claude_pace: <burnMultiple>`, `claude_account`, `claude_lanes`, `claude_runway_cap`, `claude_runway_block`, and a one-line `claude_runway_reason`.
+The Codex weekly window is found by `kind`/`id` (`weekly`) or by a `window:<hours>h` id of at least a week, which is how quota-axi now names it (`window:720h`); a missing Codex provider or window is optional evidence and leaves `codex_spawn` at `yes` instead of refusing the gate.
+A reading that cannot be taken reports the tight cap 1 and exits 0; exit 2 is reserved for a malformed `config/dispatch-cap`, an unreadable `config/claude-account`, or a malformed supplied quota document. Its header owns its flags and exact exit codes.
 
 Open captain-held decisions never throttle the cap - they affect only dispatch *eligibility* (a captain-gated item is not dispatchable).
 
