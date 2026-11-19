@@ -993,11 +993,13 @@ A malformed value is rejected rather than treated as the default.
 
 It exists because the dispatch cap and the PC02 lane guard are quota and lane accounting and neither knows what the machine can carry.
 An agent launched onto a host with no memory left does not fail to start - it wedges mid-run and takes its pipeline with it, which is what happened to the 2026-09-08 `codex-phase1b-spawn-guards` test step on a 14 GB host with 3 GB available.
-`bin/fm-host-memory.sh` is the one owner of the reading, in the same data-only shape as `bin/fm-context-usage.sh`: it compares `MemAvailable` from `/proc/meminfo` against the floor and reports `free` (exit 0) or `low: <available>MiB < <floor>MiB` (exit 1).
-`MemAvailable`, not `MemFree`, is the number, because the question is what a new workload can claim without swapping.
+`bin/fm-host-memory.sh` is the one owner of the reading, in the same data-only shape as `bin/fm-context-usage.sh`: it compares `MemAvailable` from `/proc/meminfo` against the floor and reports `free` (exit 0) or a `low:` reason (exit 1).
+`MemAvailable`, not `MemFree`, is the number, because the question is what a new workload can claim without swapping; it already counts every live session's resident memory, idle parked worker sessions included, so no per-session budget is subtracted on top.
+The reading also bounds swap: when `SwapTotal` is readable and at least 90% of it is in use, the host is thrashing and the verdict is `low` even with `MemAvailable` above the floor - the direction the 2026-11-03 PC01 WSL OOM crash was missed from.
+The bound is fixed rather than configurable, and a host reporting no swap adds no swap constraint.
 
 Exit 2 - an unreadable `/proc/meminfo` or a malformed floor - means the reading could not be taken: the script itself still exits 2 and never reports `free`, and its callers treat that as disclosed uncertainty rather than pressure, noting the reason and proceeding. Only a `low` reading (exit 1) blocks a dispatch or a launch.
-Two callers enforce it: the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) pass's step 3 defers new dispatch while the host reads low, and `bin/fm-spawn.sh` refuses a local launch below the floor so a dispatch that bypassed the pass is still caught, except for `--relaunch`, which is exempt: a same-task replacement is net-neutral rather than new usage, and the reading there would be taken while the agent being replaced still holds its memory.
+Two callers enforce it: the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) pass's step 3 defers new dispatch while the host reads low, and `bin/fm-spawn.sh` refuses a local launch on a low reading so a dispatch that bypassed the pass is still caught, except for `--relaunch`, which is exempt: a same-task replacement is net-neutral rather than new usage, and the reading there would be taken while the agent being replaced still holds its memory.
 A remote secondmate launch is not gated by it, because this reading says nothing about the host that launch lands on.
 
 ## Session context thresholds (config/context-thresholds)

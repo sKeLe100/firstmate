@@ -79,7 +79,10 @@ EOF2
   out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
   status=$?
   expect_code 1 "$status" "a spawn under the memory floor must refuse: $out"
-  assert_contains "$out" "host memory floor" "the refusal must name the floor: $out"
+  assert_contains "$out" "host memory low" "the refusal must name the low host memory: $out"
+  assert_contains "$out" "3072MiB" "the refusal must name the floor it failed: $out"
+  assert_contains "$out" "or lower config/host-memory-floor" \
+    "a floor refusal must point at the floor config that governs it: $out"
   assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must publish no task record"
   pass "fm-spawn.sh: a proven low host-memory reading refuses the launch"
 }
@@ -97,7 +100,7 @@ EOF2
   out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
   status=$?
   expect_code 0 "$status" "an unmeasurable host reading must not block the launch: $out"
-  assert_contains "$out" "host memory floor not enforced" \
+  assert_contains "$out" "host memory reading not enforced" \
     "the unmeasurable reading must be disclosed, not silent: $out"
   [ -f "$HOME_DIR/state/$id.meta" ] \
     || fail "the launch that proceeded published no task record: $out"
@@ -105,6 +108,129 @@ EOF2
 }
 test_unmeasurable_reading_allows_the_launch
 
+write_live_session() {  # <home> <task-id>
+  cat > "$1/state/$2.meta" <<META
+window=firstmate:fm-$2
+endpoint_task_id=$2
+harness=claude
+kind=ship
+backend=tmux
+META
+}
+
+test_mostly_used_swap_refuses_the_launch() {
+  local rec id out status meminfo
+  id=hostmem-swap-high
+  rec=$(make_case swap-high "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-swap-high"
+  # Plenty of RAM, but 97% of swap is already in use: the floor alone would
+  # admit this launch, which is the shape of the PC01 WSL OOM crash.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    8388608 kB\nSwapTotal:       4000000 kB\nSwapFree:         100000 kB\n' > "$meminfo"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 1 "$status" "a mostly used swap must refuse the launch: $out"
+  assert_contains "$out" "swap 97% used" "the refusal must name the measured swap percentage: $out"
+  assert_contains "$out" "90%" "the refusal must name the swap bound: $out"
+  assert_not_contains "$out" "or lower config/host-memory-floor" \
+    "a swap-only refusal must not advise lowering the floor, which cannot clear it: $out"
+  assert_absent "$HOME_DIR/state/$id.meta" "a swap-refused spawn must publish no task record"
+  pass "fm-spawn.sh: a mostly used swap refuses the launch"
+}
+test_mostly_used_swap_refuses_the_launch
+
+test_low_floor_and_swap_refusal_names_both_causes() {
+  local rec id out status meminfo
+  id=hostmem-both-low
+  rec=$(make_case both-low "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-both-low"
+  # 512 MiB available under the 3072 MiB floor and 97% of swap in use: lowering
+  # the floor clears only one of the two causes.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:     524288 kB\nSwapTotal:       4000000 kB\nSwapFree:         100000 kB\n' > "$meminfo"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 1 "$status" "low memory with mostly used swap must refuse the launch: $out"
+  assert_contains "$out" "swap 97% used" "the refusal must name the swap cause: $out"
+  assert_not_contains "$out" "or lower config/host-memory-floor" \
+    "the refusal must not suggest the floor alone clears a refusal swap also drives: $out"
+  assert_contains "$out" "alone cannot clear" \
+    "the refusal must say lowering the floor alone is not enough: $out"
+  pass "fm-spawn.sh: a floor-and-swap refusal does not offer the floor as the whole remedy"
+}
+test_low_floor_and_swap_refusal_names_both_causes
+
+test_swap_below_the_limit_allows_the_launch() {
+  local rec id out status meminfo
+  id=hostmem-swap-ok
+  rec=$(make_case swap-ok "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-swap-ok"
+  # 25% of swap in use, well below the 90% admission bound.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    8388608 kB\nSwapTotal:       4000000 kB\nSwapFree:        3000000 kB\n' > "$meminfo"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 0 "$status" "swap below the bound must not block the launch: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] \
+    || fail "the launch under a healthy swap reading published no task record: $out"
+  pass "fm-spawn.sh: swap below the admission bound allows the launch"
+}
+test_swap_below_the_limit_allows_the_launch
+
+test_unassessed_swap_is_disclosed_and_allows_the_launch() {
+  local rec id out status meminfo
+  id=hostmem-swap-unassessed
+  rec=$(make_case swap-unassessed "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-swap-unassessed"
+  # Swap is reported but its free figure is missing: the launch proceeds on
+  # the healthy RAM reading, and the unassessed swap must still reach stderr.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    8388608 kB\nSwapTotal:       4000000 kB\n' > "$meminfo"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 0 "$status" "an unassessed swap must not block the launch: $out"
+  assert_contains "$out" "swap not assessed" \
+    "the unassessed swap must be disclosed on the launch path, not swallowed: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] \
+    || fail "the launch with unassessed swap published no task record: $out"
+  pass "fm-spawn.sh: an unassessed swap is disclosed and the launch proceeds"
+}
+test_unassessed_swap_is_disclosed_and_allows_the_launch
+
+test_parked_sessions_are_counted_through_memavailable() {
+  local rec id out status meminfo
+  id=hostmem-parked
+  rec=$(make_case parked "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-parked"
+  # Three idle parked sessions are already live, and MemAvailable has their
+  # resident memory deducted by the kernel. At 3500 MiB the reading is above the
+  # 3072 MiB floor, so this launch must proceed: subtracting a fixed reserve per
+  # parked session again would count the same memory twice and refuse work the
+  # host can carry.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    3584000 kB\n' > "$meminfo"
+  write_live_session "$HOME_DIR" other-1
+  write_live_session "$HOME_DIR" other-2
+  write_live_session "$HOME_DIR" other-3
+  out=$(FM_FAKE_WINDOWS=$'fm-other-1\nfm-other-2\nfm-other-3' FM_FAKE_PANE_CMD=claude \
+    run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 0 "$status" "parked sessions are counted through MemAvailable, not subtracted twice: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] \
+    || fail "the launch above the floor published no task record: $out"
+  pass "fm-spawn.sh: idle parked sessions count through MemAvailable without a second subtraction"
+}
+test_parked_sessions_are_counted_through_memavailable
 
 test_relaunch_is_not_refused_by_the_floor() {
   local rec id out meminfo
@@ -114,7 +240,9 @@ test_relaunch_is_not_refused_by_the_floor() {
 $rec
 EOF2
   meminfo="$CASE_DIR/meminfo-low"
-  printf 'MemTotal:       14000000 kB\nMemAvailable:     524288 kB\n' > "$meminfo"
+  # Low memory and a mostly used swap together: without the --relaunch
+  # exemption the guard would refuse on the first check it reaches.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:     524288 kB\nSwapTotal:       4000000 kB\nSwapFree:         100000 kB\n' > "$meminfo"
   # The task record and agent-free endpoint --relaunch requires; without them
   # the run aborts long before the guard and the case would pin nothing.
   cat > "$HOME_DIR/state/$id.meta" <<META

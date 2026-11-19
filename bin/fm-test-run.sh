@@ -1004,7 +1004,7 @@ tests/fm-fleet-ledger.test.sh 22147
 tests/fm-fleet-snapshot-view.test.sh 111523
 tests/fm-fleet-sync.test.sh 40541
 tests/fm-forge-detect.test.sh 540
-tests/fm-fork-free-helpers.test.sh 995
+tests/fm-fork-free-helpers.test.sh 1626
 tests/fm-free-model-probe.test.sh 36810
 tests/fm-gate-refuse.test.sh 12135
 tests/fm-gemini-harness.test.sh 1247
@@ -1016,7 +1016,7 @@ tests/fm-grok-continuity-live-e2e.test.sh 185
 tests/fm-grok-stop-live-e2e.test.sh 186
 tests/fm-guard-stale-banner.test.sh 18158
 tests/fm-haiku-alarm-hook.test.sh 917
-tests/fm-haiku-builder-example.test.sh 715
+tests/fm-haiku-builder-example.test.sh 1782
 tests/fm-handoff-guard-hook.test.sh 1552
 tests/fm-harness-adapter-instructions-live-e2e.test.sh 97
 tests/fm-harness-adapter-references.test.sh 143
@@ -1157,7 +1157,7 @@ tests/fm-spawn-compact-adviser-disable-remote.test.sh 108286
 tests/fm-spawn-compact-adviser-disable.test.sh 33635
 tests/fm-spawn-dispatch-profile.test.sh 462910
 tests/fm-spawn-external-review.test.sh 7633
-tests/fm-spawn-host-memory.test.sh 6292
+tests/fm-spawn-host-memory.test.sh 16340
 tests/fm-spawn-orca-worktree.test.sh 61493
 tests/fm-spawn-pc02-lane-guard.test.sh 17964
 tests/fm-spawn-pool-base-freshen.test.sh 120467
@@ -1169,7 +1169,7 @@ tests/fm-startup-network.test.sh 109131
 tests/fm-stat-shadowing.test.sh 440
 tests/fm-stow-cascade.test.sh 10938
 tests/fm-subagent-context.test.sh 299
-tests/fm-subagent-pretool-check.test.sh 1290
+tests/fm-subagent-pretool-check.test.sh 1970
 tests/fm-supervision-events.test.sh 1034
 tests/fm-supervision-host-2.test.sh 974763
 tests/fm-supervision-host-attended-live-e2e.test.sh 231
@@ -1198,7 +1198,7 @@ tests/fm-test-fixtures.test.sh 11790
 tests/fm-test-isolation-proof.test.sh 4403
 tests/fm-test-lib-watchdog-reap.test.sh 13409
 tests/fm-test-run-stop.test.sh 6966
-tests/fm-test-sandbox-cache-race.test.sh 8977
+tests/fm-test-sandbox-cache-race.test.sh 13939
 tests/fm-timeout-lib.test.sh 12305
 tests/fm-tmux-agent-liveness.test.sh 3991
 tests/fm-tool-update-check.test.sh 25439

@@ -193,15 +193,16 @@ Neither the cap nor the PC02 lane guard answers whether this HOST can carry
 another agent: both are quota and lane accounting, and an agent starved of
 memory wedges its pipeline rather than failing to launch.
 Before treating any candidate as dispatchable, run
-`bin/fm-host-memory.sh`, which reads `MemAvailable` from `/proc/meminfo`
+`bin/fm-host-memory.sh`, which compares `MemAvailable` from `/proc/meminfo`
 against the floor in `config/host-memory-floor` (absent means the built-in
-default). It prints `free` (exit 0) or `low: <available>MiB < <floor>MiB`
-(exit 1); an unreadable `/proc/meminfo` or a malformed floor prints an error
+default) and also reports low when at least 90% of a readable swap is in use.
+It prints `free` (exit 0) or a `low:` reason (exit 1); an unreadable
+`/proc/meminfo` or a malformed floor prints an error
 on stderr and exits 2, which means the host reading is unavailable: record the
 reason and continue evaluating candidates normally rather than deferring
 dispatch. Only a `low` reading defers.
 When it reports `low`, defer every new dispatch this pass and record the
-host-memory reason; `bin/fm-spawn.sh` enforces the same floor at spawn time,
+host-memory reason; `bin/fm-spawn.sh` enforces the same reading at spawn time,
 so a candidate dispatched past this check is refused there anyway, except for a `--relaunch`, which is exempt because a same-task replacement is net-neutral and would be measured while the agent it replaces still holds its memory.
 
 When a PC02-routed candidate is in play, run `bin/fm-pc02-hygiene.sh`, which
@@ -385,7 +386,7 @@ An item becomes deferred-ready when either condition holds:
   `gate: dispatchable` and passed the stale-work check).
 
 Each deferred-ready item carries its plain-language deferral reason
-(dispatch-cap occupancy, PC02 lane occupied, host memory below the floor,
+(dispatch-cap occupancy, PC02 lane occupied, host memory low,
 outside attention window, or senior-tier daytime restriction). Below threshold, stay silent - no
 separate ping, no notification. Rides the existing summary ping and its band gating.
 
