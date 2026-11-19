@@ -1,0 +1,23 @@
+=== Boundary: 17 days x 16.9 = 287.3 GB-h = 79.8% (expect silent) ===
+[exit 0]
+percent	79.8
+=== Boundary: 17 days x 17 = 289 GB-h = 80.3% (expect warning) ===
+actions-storage: 289.0 of 360 GB-hours used (80.3%) of the 500 MB monthly allowance through 2026-11-18; uploads block at 100%
+[exit 0]
+=== Heartbeat: arm lab home, run the real watcher once, expect a check: wake ===
+armed: state/actions-storage.check.sh
+actions-storage.check-trust
+actions-storage.check.sh
+[watcher exit 0]
+--- watcher stdout:
+check: /tmp/fm-storage-drive.9ui85H/lab2/state/actions-storage.check.sh: actions-storage: 376.8 of 360 GB-hours used (104.7%) of the 500 MB monthly allowance through 2026-11-17; uploads block at 100%
+--- watcher stderr (tail):
+--- bearings TOON after the watcher's evaluation:
+storage_alert: 
+  line: 376.8 of 360 GB-hours used (104.7%) of the 500 MB monthly allowance through 2026-11-17; uploads block at 100%
+  percent: 104.7
+  as_of: 2026-11-17
+  checked_at: 1795113724
+=== disarm ===
+disarmed: state/actions-storage.check.sh
+0

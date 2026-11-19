@@ -1,0 +1,14 @@
+$ gh auth status | grep scopes
+  - Token scopes: 'gist', 'read:org', 'repo', 'workflow'
+$ FM_HOME=<lab> bin/fm-actions-storage-check.sh check   # real gh, real api.github.com, no FM_ACTIONS_STORAGE_NOW
+actions-storage: billing usage unreadable: the GitHub token needs the "user" scope (run: gh auth refresh -h github.com -s user)
+[exit 0]
+--- record:
+schema	fm-actions-storage-check-v1
+last_eval	1795113732
+reported	billing usage unreadable: the GitHub token needs the "user" scope (run: gh auth refresh -h github.com -s user)
+--- bearings:
+storage_alert: 
+  line: "billing usage unreadable: the GitHub token needs the \"user\" scope (run: gh auth refresh -h github.com -s user)"
+  checked_at: 1795113732
+omitted[6]{surface,reveal}:

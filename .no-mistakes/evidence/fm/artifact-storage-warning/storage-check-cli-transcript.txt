@@ -1,0 +1,51 @@
+=== S1 over-threshold month (synthetic 1.5GB Nov1-10 then 0.1GB) ===
+$ FM_ACTIONS_STORAGE_NOW=1795089600 fm-actions-storage-check.sh check   # 2026-11-19 12:00Z; settled day 2026-11-17
+actions-storage: 376.8 of 360 GB-hours used (104.7%) of the 500 MB monthly allowance through 2026-11-17; uploads block at 100%
+[exit 0]
+--- record:
+schema	fm-actions-storage-check-v1
+last_eval	1795089600
+as_of	2026-11-17
+storage_gb_hours	376.8
+allowance_gb_hours	360
+percent	104.7
+reported	376.8 of 360 GB-hours used (104.7%) of the 500 MB monthly allowance through 2026-11-17; uploads block at 100%
+=== S1b same day re-run (daily gate; expect silent, no gh call) ===
+$ FM_ACTIONS_STORAGE_NOW=1795093200 fm-actions-storage-check.sh check   # +1h
+[exit 0]
+gh calls: 0
+=== S2 bearings shows storage_alert ===
+storage_alert: 
+  line: 376.8 of 360 GB-hours used (104.7%) of the 500 MB monthly allowance through 2026-11-17; uploads block at 100%
+  percent: 104.7
+  as_of: 2026-11-17
+  checked_at: 1795089600
+omitted[6]{surface,reveal}:
+{
+  "line": "376.8 of 360 GB-hours used (104.7%) of the 500 MB monthly allowance through 2026-11-17; uploads block at 100%",
+  "percent": 104.7,
+  "as_of": "2026-11-17",
+  "checked_at": 1795089600
+}
+=== S3 under-threshold (next day, low usage, unit spelled GigabyteHours) ===
+$ FM_ACTIONS_STORAGE_NOW=1795176000 fm-actions-storage-check.sh check   # 2026-11-20; settled 2026-11-18
+[exit 0]
+--- record:
+schema	fm-actions-storage-check-v1
+last_eval	1795176000
+as_of	2026-11-18
+storage_gb_hours	40.8
+allowance_gb_hours	360
+percent	11.3
+--- bearings storage_alert (expect null):
+null
+=== S4 adversarial rollover: 2026-12-01 03:00Z with November near-exhausted (expect silent, no gh call) ===
+$ FM_ACTIONS_STORAGE_NOW=1796094000 fm-actions-storage-check.sh check   # settled day 2026-11-29 is previous month
+[exit 0]
+gh calls: 0
+schema	fm-actions-storage-check-v1
+last_eval	1796094000
+=== S5 adversarial: response rows from another month (endpoint ignores query) -> unusable, not a number ===
+$ FM_ACTIONS_STORAGE_NOW=1795521600 fm-actions-storage-check.sh check   # 2026-11-24
+actions-storage: billing usage unreadable: the GitHub billing response was not usable JSON
+[exit 0]
