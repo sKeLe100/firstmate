@@ -1149,6 +1149,29 @@ EOF
   pass "default TOON renders a scalar string array as an inline primitive array"
 }
 
+# The artifact-storage warning is a bounded local read of the check's record:
+# bearings shows the last reported finding with its numbers and freshness, and
+# shows nothing at all while the record carries no warning.
+test_artifact_storage_warning_surfaces_from_the_local_record() {
+  local home fakebin json
+  home=$(make_home storage-alert); write_fixture "$home"
+  printf 'schema\tfm-actions-storage-check-v1\nlast_eval\t1783792800\nstorage_gb\t0.4125\nallowance_mb\t500\npercent\t84.5\ndays_left_in_billing_cycle\t12\nreported\t422.4 MB of 500 MB used (84.5%%) with 12 day(s) left in the billing cycle; uploads block at 100%%\n' \
+    > "$home/state/.actions-storage-check"
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    .storage_alert.percent == 84.5
+      and .storage_alert.days_left_in_billing_cycle == 12
+      and .storage_alert.checked_at == 1783792800
+      and (.storage_alert.line | startswith("422.4 MB of 500 MB used"))
+  ' >/dev/null || fail "the artifact-storage warning was not projected from its local record: $json"
+  rm -f "$home/state/.actions-storage-check"
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e 'has("storage_alert") | not' >/dev/null \
+    || fail "an absent warning record must not project a storage_alert: $json"
+  pass "bearings surfaces the artifact-storage warning from its local record only"
+}
+
 test_open_decision_surfaces_end_to_end() {
   local home fakebin json
   home=$(make_home e2e-decision); write_fixture "$home"
@@ -3661,6 +3684,7 @@ test_current_landed_baseline_is_repeatable_and_prior_report_independent
 test_default_is_bounded_and_local_only
 test_toon_json_parity
 test_toon_renders_primitive_string_arrays
+test_artifact_storage_warning_surfaces_from_the_local_record
 test_landed_includes_secondmate_home_merges
 test_landed_accepts_only_kind_owned_delivery_artifacts
 test_kind_fallback_matches_tasks_axi_word_boundaries
