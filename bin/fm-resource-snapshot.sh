@@ -323,9 +323,14 @@ drive_warn() {  # <available-kb>
 }
 
 fixture_drive_warn() {
-  awk -F'\t' -v OFS='\t' '{
-    if ($4 ~ /^[0-9]+(\.[0-9]+)?$/) $6 = ($4 < 20 ? "low" : ($4 < 40 ? "watch" : "ok")); else $6 = "unknown"
-    print }'
+  local machine mount total free pct _w read kb warn
+  while IFS=$'\t' read -r machine mount total free pct _w read; do
+    case "$free" in
+      ''|*[!0-9.]*|*.*.*) warn=unknown ;;
+      *) kb=$(awk -v g="$free" 'BEGIN { printf "%d", g * 1048576 + 0.5 }'); warn=$(drive_warn "$kb") ;;
+    esac
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$machine" "$mount" "$total" "$free" "$pct" "$warn" "$read"
+  done
 }
 
 drive_one() {  # <machine> <label> <path>

@@ -140,7 +140,11 @@ write_fixtures() {  # <name>
     ]}'
   write_json "$dir/remote.json" '{
     "hosts":[{"machine":"PC02","load1":1.5,"cores":16,"mem_free_pct":75,"disk_free_gb":900.0,"disk_path":"/home/test/mate","uptime":2000,"read_utc":"2026-11-20T00:00:00Z"}],
-    "drives":[{"machine":"PC02","mount":"C:","total_gb":900.0,"free_gb":23.0,"pct_used":97,"read_utc":"2026-11-20T00:00:00Z"}],
+    "drives":[{"machine":"PC02","mount":"C:","total_gb":900.0,"free_gb":23.0,"pct_used":97,"read_utc":"2026-11-20T00:00:00Z"},
+{"machine":"PC02","mount":"B1","total_gb":100.0,"free_gb":19.9,"pct_used":50,"read_utc":"2026-11-20T00:00:00Z"},
+{"machine":"PC02","mount":"B2","total_gb":100.0,"free_gb":20.0,"pct_used":50,"read_utc":"2026-11-20T00:00:00Z"},
+{"machine":"PC02","mount":"B3","total_gb":100.0,"free_gb":39.9,"pct_used":50,"read_utc":"2026-11-20T00:00:00Z"},
+{"machine":"PC02","mount":"B4","total_gb":100.0,"free_gb":40.0,"pct_used":50,"read_utc":"2026-11-20T00:00:00Z"}],
     "sessions":[{"name":"fm-remote","status":"running"}],
     "workers":[
       {"home_lane":"pc02-mate","task":"delta","kind":"ship","model":"opencode-go/deepseek-v4.1-flash","spend_lane":"opencode-go","stage":"state: working · source: pane","age":"5m","last_active":"2026-11-20T00:00:00Z","ctx_band":"n/a","pr":"-","read_utc":"2026-11-20T00:00:00Z"},
@@ -164,7 +168,11 @@ write_fixtures() {  # <name>
     ]}'
   write_json "$dir/hosts-pc01.json" '{
     "hosts":[{"machine":"PC01","load1":0.5,"cores":16,"mem_free_pct":80,"disk_free_gb":850.0,"disk_path":"/home/test","uptime":1000,"read_utc":"2026-11-20T00:00:00Z"}],
-    "drives":[{"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"read_utc":"2026-11-20T00:00:00Z"}]
+    "drives":[{"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"read_utc":"2026-11-20T00:00:00Z"},
+{"machine":"PC01","mount":"B1","total_gb":100.0,"free_gb":19.9,"pct_used":50,"read_utc":"2026-11-20T00:00:00Z"},
+{"machine":"PC01","mount":"B2","total_gb":100.0,"free_gb":20.0,"pct_used":50,"read_utc":"2026-11-20T00:00:00Z"},
+{"machine":"PC01","mount":"B3","total_gb":100.0,"free_gb":39.9,"pct_used":50,"read_utc":"2026-11-20T00:00:00Z"},
+{"machine":"PC01","mount":"B4","total_gb":100.0,"free_gb":40.0,"pct_used":50,"read_utc":"2026-11-20T00:00:00Z"}]
   }'
   write_json "$dir/down.json" '{
     "hosts":[],"drives":[],"sessions":[],"workers":[],"mate_account":"",
@@ -220,7 +228,7 @@ test_every_section_renders_and_agrees() {
     jq -e "has(\"$section\")" "$TMP_ROOT/model.json" >/dev/null || fail "missing section $section"
   done
   [ "$(count_json "$TMP_ROOT/model.json" '.hosts')" = 2 ] || fail "hosts count"
-  [ "$(count_json "$TMP_ROOT/model.json" '.drives')" = 3 ] || fail "drives count"
+  [ "$(count_json "$TMP_ROOT/model.json" '.drives')" = 7 ] || fail "drives count"
   [ "$(count_json "$TMP_ROOT/model.json" '.quota')" = 8 ] || fail "quota rows: $(jq -c '.quota' "$TMP_ROOT/model.json")"
   [ "$(count_json "$TMP_ROOT/model.json" '.workers')" = 5 ] || fail "workers must union both homes"
   [ "$(count_json "$TMP_ROOT/model.json" '.panes')" = 4 ] || fail "panes count"
@@ -318,6 +326,11 @@ test_remote_fixture_alone_supplies_pc02_rows() {
     "$TMP_ROOT/remote-only.json" >/dev/null || fail "PC02 C: at 23 GB must render watch from the remote fixture alone"
   jq -e '.panes | map(select(.machine == "PC02")) | length == 1' "$TMP_ROOT/remote-only.json" >/dev/null \
     || fail "PC02 panes must resolve the running session from the remote fixture"
+  local m
+  for m in PC01 PC02; do
+    jq -e --arg m "$m" '[.drives[] | select(.machine == $m and (.mount | startswith("B"))) | .warn] == ["low","watch","watch","ok"]' \
+      "$TMP_ROOT/remote-only.json" >/dev/null || fail "$m boundary drives must warn low,watch,watch,ok at 19.9/20/39.9/40 GB: $(jq -c '[.drives[] | select(.mount | startswith("B"))]' "$TMP_ROOT/remote-only.json")"
+  done
   pass "the remote fixture alone supplies PC02 hosts, drives, and the running session"
 }
 
