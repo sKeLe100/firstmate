@@ -271,7 +271,12 @@ case "${1:-} ${2:-}" in
     printf '{"client":{"version":"0.7.5","protocol":16},"server":{"running":%s,"socket":"%s"}}\n' "$running" "$FM_FAKE_HERDR_SOCKET"
     ;;
   "server "*|"server ")
+    printf 'fake herdr server started\n'
     printf 'true\n' > "$FM_FAKE_HERDR_RUNNING"
+    if [ -s "$FM_FAKE_STATE/herdr-server-linger" ]; then
+      printf '%s %s\n' "$$" "$(ps -o sid= -p "$$" | tr -d ' ')" > "$FM_FAKE_STATE/herdr-server-proc"
+      exec "$(cat "$FM_FAKE_STATE/herdr-server-linger")" 30
+    fi
     ;;
 esac
 exit 0
@@ -774,18 +779,36 @@ pass "repeated repair reuses one resolved login shell and remains a no-op"
 # --- linux has no launch agent, and --fix starts the server directly ---------
 
 new_case Linux with-herdr no-gui
+command -v sleep > "$CASE_STATE/herdr-server-linger"
 doctor
 expect_code 1 "$DOCTOR_RC" "a linux host with a stopped herdr server was reported ready"
 assert_contains "$DOCTOR_OUT" 'platform=linux' "the platform was misreported"
 assert_contains "$DOCTOR_OUT" 'check launchagent=skip:' "launch agents were checked on linux"
 assert_contains "$DOCTOR_OUT" 'check gui-session=skip:' "an Aqua login session was required on linux"
 assert_contains "$DOCTOR_OUT" 'check herdr-server=fixable:' "a stopped linux herdr server was not tagged fixable"
+started=$SECONDS
 doctor --fix
+elapsed=$((SECONDS - started))
 expect_code 0 "$DOCTOR_RC" "--fix did not start the herdr server on linux"
+[ -s "$CASE_STATE/herdr-server-proc" ] || fail "the lingering fake herdr server did not record its process"
+read -r SERVER_PID SERVER_SID < "$CASE_STATE/herdr-server-proc"
+HOLDER_PIDS+=("$SERVER_PID")
+kill -0 "$SERVER_PID" 2>/dev/null || fail "the fake herdr server was not still running when --fix returned"
+[ "$elapsed" -lt 20 ] || fail "--fix kept its captured stdout open for ${elapsed}s behind the running server"
+if command -v setsid >/dev/null 2>&1; then
+  [ "$SERVER_SID" != "$(ps -o sid= -p "$$" | tr -d ' ')" ] \
+    || fail "the herdr server stayed in the caller's session instead of detaching"
+fi
 assert_contains "$DOCTOR_OUT" 'fix herdr-server=applied:' "--fix did not report starting the server"
 assert_contains "$DOCTOR_OUT" 'check herdr-server=ok:' "the started server was not confirmed by the re-check"
 [ ! -s "$CASE_LAUNCHCTL_LOG" ] || fail "the linux path invoked launchctl"
-pass "a non-darwin host skips launch agents and starts its herdr server directly"
+HERDR_SERVER_LOG="$CASE_PROJECT_HOME/state/herdr-fm-remote.log"
+i=0
+while [ ! -s "$HERDR_SERVER_LOG" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+assert_grep 'fake herdr server started' "$HERDR_SERVER_LOG" \
+  "the detached herdr server did not write its output to the per-session log"
+kill "$SERVER_PID" 2>/dev/null || true
+pass "a non-darwin host skips launch agents and starts its herdr server detached, logging its output"
 
 # --- --fix may add only owned wrappers for version-manager tools -------------
 

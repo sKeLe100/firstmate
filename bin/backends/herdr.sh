@@ -1697,24 +1697,31 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
   return 0
 }
 
+# fm_backend_herdr_server_exec: run the long-lived herdr server for <session>
+# in the foreground of the calling shell. Single owner of the server launch
+# environment: it removes home, harness identity, and supervision selection
+# from the current shell first, so callers must run it in a subshell or a
+# dedicated process and own its stdio and detachment themselves.
+fm_backend_herdr_server_exec() {  # <session>
+  unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE \
+    CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT FM_SUPERVISION_MODEL \
+    FM_CREW_STATE_META_OVERRIDE FM_CREW_STATE_STATUS_OVERRIDE
+  fm_backend_herdr_cli "$1" server
+}
+
 # fm_backend_herdr_server_ensure: start the herdr server for <session>
 # headless (no TUI client) if not already running, mirroring tmux's `tmux
 # has-session || tmux new-session -d`. Verified: a bare socket CLI call does
 # NOT auto-start the server, so this must run before any workspace/tab/pane
 # call. The server outlives its launcher and passes its startup environment to
 # every later pane, so remove home, harness identity, and supervision selection
-# inherited from whichever agent happened to start it. Bounded poll for the
-# server to report running.
+# inherited from whichever agent happened to start it (see
+# fm_backend_herdr_server_exec). Bounded poll for the server to report running.
 fm_backend_herdr_server_ensure() {  # <session>
   local session=$1 running out i
   running=$(fm_backend_herdr_cli "$session" status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)
   [ "$running" = "true" ] && return 0
-  (
-    unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE \
-      CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT FM_SUPERVISION_MODEL \
-      FM_CREW_STATE_META_OVERRIDE FM_CREW_STATE_STATUS_OVERRIDE
-    fm_backend_herdr_cli "$session" server </dev/null >/dev/null 2>&1 &
-  ) || return 1
+  ( fm_backend_herdr_server_exec "$session" </dev/null >/dev/null 2>&1 & ) || return 1
   for i in $(seq 1 20); do
     running=$(fm_backend_herdr_cli "$session" status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)
     [ "$running" = "true" ] && return 0
