@@ -318,7 +318,7 @@ In a primary home the receipt includes the cascade below; the durable stow-compl
 
 In a primary home, every `/stow` cascades to every registered secondmate after this home's own required pass and knowledge sweep are complete.
 In a secondmate home, `/stow` curates that home only and never cascades further.
-The cascade changes nothing until `/stow` is invoked: it adds no notification, no digest section, and no background work.
+Nothing runs until `/stow` is invoked: the cascade adds no notification, no digest section, and no standing background work of its own.
 
 Run `bin/fm-stow-cascade.sh` once the primary's own pass is done.
 It enumerates each registered secondmate exactly once, reports that home's own budget accounting, and resolves how the sweep reaches it; its header owns the stanza fields, the bound, and the exit codes.
