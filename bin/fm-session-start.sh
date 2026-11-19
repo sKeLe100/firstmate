@@ -474,13 +474,14 @@ print_projects_one_line() {
 }
 
 # Print only the STANDING ORDERS block, bounded to 40 lines of 600 characters.
-# The full captain file remains in CONTEXT below, including any omitted orders.
+# Any omitted orders stay in the full captain file, which the truncation marker
+# names by path because the post-clear digest does not reprint it in CONTEXT.
 print_standing_orders() {
   [ -f "$DATA/captain.md" ] || return 0
-  awk '
+  awk -v data="$DATA" '
     /^## / { if (active) exit; if ($0 == "## STANDING ORDERS") active = 1 }
     active {
-      if (++lines > 40) { print "[STANDING ORDERS excerpt truncated; read data/captain.md in CONTEXT below]"; exit }
+      if (++lines > 40) { print "[STANDING ORDERS excerpt truncated; read data/captain.md under " data " for the rest]"; exit }
       print (length($0) > 600 ? substr($0, 1, 588) " [truncated]" : $0)
     }
   ' "$DATA/captain.md"

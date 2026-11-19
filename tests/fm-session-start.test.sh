@@ -2062,7 +2062,12 @@ EOF
   PROJECT-CONTINUATION-MARKER alpha detail that the slim digest does not need
 - beta [direct-PR +yolo] - beta project (added 2026-01-02)
 EOF
-  awk 'BEGIN { for (i = 0; i < 500; i++) printf "CAPTAIN-FULL-MARKER preference line %04d padding padding padding\n", i }' > "$home/data/captain.md"
+  awk 'BEGIN {
+    print "## STANDING ORDERS"
+    for (i = 0; i < 60; i++) printf "- ORDER-MARKER standing order %02d\n", i
+    print "## Preferences"
+    for (i = 0; i < 500; i++) printf "CAPTAIN-FULL-MARKER preference line %04d padding padding padding\n", i
+  }' > "$home/data/captain.md"
   awk 'BEGIN { for (i = 0; i < 500; i++) printf "LEARNINGS-FULL-MARKER learning line %04d padding padding padding\n", i }' > "$home/data/learnings.md"
   mkdir -p "$home/projects/firstmate"
   cat > "$home/state/task-x.meta" <<EOF
@@ -2111,6 +2116,10 @@ EOF
     "the post-clear digest reprinted the full captain preferences"
   assert_not_contains "$reemit" "LEARNINGS-FULL-MARKER" \
     "the post-clear digest reprinted the full learnings file"
+  assert_contains "$reemit" "[STANDING ORDERS excerpt truncated; read data/captain.md under $home/data for the rest]" \
+    "the post-clear digest's standing-orders truncation did not point at the captain file path"
+  assert_not_contains "$reemit" "in CONTEXT below" \
+    "the post-clear digest pointed at a CONTEXT copy it does not print"
   assert_contains "$reemit" "Not reprinted in this post-clear digest" \
     "the post-clear digest did not say which context sources it omitted"
 
