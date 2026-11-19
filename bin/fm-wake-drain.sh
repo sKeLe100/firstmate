@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Present durable watcher wake records, retire rows no actor could ever consume,
-# optionally acknowledge handled records,
+# optionally acknowledge handled records (and, with --quiet-ack, acknowledge a
+# routine no-change heartbeat drain in that same command),
 # annotate every unread line for validated signal status keys, surface unread
 # informational status lines, latest captain-facing statuses not covered by a
 # newer branch outcome, OPEN DECISIONS, captain-call record divergence, STALLED
@@ -46,6 +47,7 @@ RECOVERY_ACK_REQUIRED=false
 RECOVERY_ACK_MOVED=false
 ACK_THROUGH=
 ACK_GENERATION=
+QUIET_ACK=false
 ACK_REMOVED=0
 PRESENTED_MAX=0
 ACK_FINGERPRINTS=
@@ -219,8 +221,28 @@ presented_max_row() { # <rows-file>
   fi
 }
 
+# A drain the caller can acknowledge in the same command: --quiet-ack, main
+# only, with at least one presented row and every presented row a routine
+# no-change heartbeat (`heartbeat` kind with its bare `heartbeat` payload).
+# Anything else - a signal, stale, check, notice, or a halt-bearing heartbeat
+# that bin/fm-watch.sh already prefixes `check:` - stays durable and prints the
+# usual WAKE_ACK_REQUIRED boundary for the handling turn to acknowledge.
+quiet_ack_eligible() {
+  [ "$QUIET_ACK" = true ] || return 1
+  [ "$ACTOR" = main ] || return 1
+  [ -n "$RAW_ROWS" ] || return 1
+  printf '%s\n' "$RAW_ROWS" | awk -F '\t' '
+    NF != 5 || $3 != "heartbeat" || $5 != "heartbeat" { bad = 1 }
+    END { exit bad ? 1 : 0 }
+  '
+}
+
 case "${1:-}" in
   '') ;;
+  --quiet-ack)
+    [ "$#" -eq 1 ] || { echo "wake drain: --quiet-ack takes no further arguments" >&2; exit 2; }
+    QUIET_ACK=true
+    ;;
   --ack-through)
     ACK_THROUGH=${2:-}
     case "$ACK_THROUGH" in ''|*[!0-9]*) echo "wake drain: invalid acknowledgement sequence" >&2; exit 2 ;; esac
@@ -230,7 +252,7 @@ case "${1:-}" in
     case "$ACK_GENERATION" in ''|*[!A-Za-z0-9._-]*) echo "wake drain: invalid recovery generation" >&2; exit 2 ;; esac
     [ "$#" -eq 4 ] || { echo "wake drain: unexpected acknowledgement arguments" >&2; exit 2; }
     ;;
-  *) echo "usage: fm-wake-drain.sh [--ack-through SEQUENCE --recovery-generation GENERATION]" >&2; exit 2 ;;
+  *) echo "usage: fm-wake-drain.sh [--quiet-ack | --ack-through SEQUENCE --recovery-generation GENERATION]" >&2; exit 2 ;;
 esac
 
 [ "$ACTOR" != branch ] || require_branch_eligible_rows || exit 1
@@ -1182,6 +1204,23 @@ case "$RECOVERY_MARKER_TOKEN" in
 esac
 fm_lock_release "$FM_WAKE_QUEUE_LOCK"
 DRAIN_LOCK_HELD=false
+
+if quiet_ack_eligible; then
+  # One command drains and acknowledges a routine no-op wake: present it, then
+  # re-enter the ordinary acknowledgement path for exactly the presented rows so
+  # the recovery generation, inactive-outcome receipts, and queue mutation stay
+  # owned by that one tested path. An actionable wake never reaches here and
+  # keeps its durable WAKE_ACK_REQUIRED boundary below.
+  (print_status_presentation "$RAW_ROWS") || true
+  print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
+  assert_watcher_liveness
+  # A failed outcome presentation leaves its rows unread and the wake durable,
+  # so never consume the queue behind that error.
+  [ "$BRANCH_OUTCOMES_RC" -eq 0 ] || exit "$BRANCH_OUTCOMES_RC"
+  exec "$SCRIPT_DIR/fm-wake-drain.sh" --ack-through "$ACK_THROUGH" \
+    --recovery-generation "${RECOVERY_MARKER_TOKEN##*:}"
+fi
+
 printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
   "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}" >&2
 
