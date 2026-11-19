@@ -7,6 +7,9 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-actions-storage-check)
 CHECK="$ROOT/bin/fm-actions-storage-check.sh"
+# 2026-11-19T03:00:00Z, so the most recent completed UTC day is 2026-11-18.
+T0=1795057200
+T1=$((T0 + 89000))
 
 make_fake_gh() {  # <dir>
   local fb=$1
@@ -19,7 +22,7 @@ if [ "${1:-}" = api ] && [ "${2:-}" = /user ]; then
   printf 'octocat\n'
   exit 0
 fi
-if [ "${1:-}" = api ] && [ "${2:-}" = /users/octocat/settings/billing/usage ]; then
+if [ "${1:-}" = api ] && [ "${2%%\?*}" = /users/octocat/settings/billing/usage ]; then
   if [ "${FAKE_SCOPE_MISSING:-0}" = 1 ]; then
     printf '{"message":"Not Found","status":"404"}\n'
     printf 'gh: This API operation needs the "user" scope. To request it, run:  gh auth refresh -h github.com -s user\n' >&2
@@ -70,52 +73,95 @@ test_under_threshold_is_silent_and_records_usage() {
   local rec home fb usage result out
   rec=$(make_world under); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/under-usage.json"; usage_json "$usage" 0.2
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage")
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
   [ "$(status_part "$result")" = 0 ] || fail "under-threshold check failed: $(output_part "$result")"
   out=$(output_part "$result")
   [ -z "$out" ] || fail "storage under the threshold must stay silent: $out"
-  assert_grep $'last_eval\t1000' "$home/state/.actions-storage-check" "the evaluation time was not recorded"
+  assert_grep $'last_eval\t'"$T0" "$home/state/.actions-storage-check" "the evaluation time was not recorded"
   assert_grep $'storage_gb\t0.2' "$home/state/.actions-storage-check" "the reported storage was not recorded"
   assert_grep $'percent\t41.0' "$home/state/.actions-storage-check" "the computed percentage was not recorded"
   pass "storage under the threshold stays silent and records its usage"
 }
 
-test_over_threshold_reports_once_and_dedupes() {
+test_over_threshold_reports_the_completed_day() {
   local rec home fb usage result out
   rec=$(make_world over); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/over-usage.json"; usage_json "$usage" 0.4125
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage")
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
   [ "$(status_part "$result")" = 0 ] || fail "over-threshold check failed: $(output_part "$result")"
   out=$(output_part "$result")
   assert_contains "$out" 'actions-storage: 422.4 MB of 500 MB used (84.5%)' "the over-threshold storage warning was not reported"
   assert_contains "$out" 'as of 2026-11-18' "the warning did not date the measurement"
   assert_contains "$out" 'uploads block at 100%' "the warning did not explain the consequence"
-  result=$(run_check "$home" "$fb" 90000 FAKE_USAGE_JSON="$usage")
+  pass "an over-threshold warning reports the most recent completed day"
+}
+
+# GitHub reports storage hourly in gigabyte-hours, so the current UTC day is a
+# partial sum; the request must name the last completed UTC day, including
+# across a year boundary.
+test_request_names_yesterday_in_utc() {
+  local rec home fb usage result out log
+  rec=$(make_world yesterday); home=${rec%%|*}; fb=${rec#*|}
+  usage="$TMP_ROOT/yesterday-usage.json"; usage_json "$usage" 0.4125
+  log="$TMP_ROOT/yesterday-calls.log"; : > "$log"
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
+  assert_grep 'gh api /users/octocat/settings/billing/usage?year=2026&month=11&day=18' "$log" \
+    "the billing request did not name yesterday in UTC"
+  : > "$log"
+  rec=$(make_world newyear); home=${rec%%|*}; fb=${rec#*|}
+  # 2027-01-01T03:00:00Z
+  result=$(run_check "$home" "$fb" 1798772400 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
   out=$(output_part "$result")
-  [ -z "$out" ] || fail "an unchanged warning was repeated on the next daily evaluation: $out"
-  pass "an over-threshold warning is reported once and deduped while unchanged"
+  assert_grep 'gh api /users/octocat/settings/billing/usage?year=2026&month=12&day=31' "$log" \
+    "the billing request did not roll back across the year boundary"
+  assert_contains "$out" '(84.5%) as of 2026-12-31' "the warning did not fire for the completed day"
+  pass "the billing request names the last completed UTC day"
+}
+
+test_unchanged_finding_is_deduped() {
+  local rec home fb usage result out
+  rec=$(make_world dedupe); home=${rec%%|*}; fb=${rec#*|}
+  usage="$TMP_ROOT/dedupe-usage.json"; usage_json "$usage" 0.2
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" FAKE_SCOPE_MISSING=1)
+  assert_contains "$(output_part "$result")" 'needs the "user" scope' "the first finding was not reported"
+  result=$(run_check "$home" "$fb" "$T1" FAKE_USAGE_JSON="$usage" FAKE_SCOPE_MISSING=1)
+  out=$(output_part "$result")
+  [ -z "$out" ] || fail "an unchanged finding was repeated on the next daily evaluation: $out"
+  pass "an unchanged finding is reported once and deduped"
+}
+
+test_storage_row_with_unknown_unit_is_unusable() {
+  local rec home fb usage result out
+  rec=$(make_world badunit); home=${rec%%|*}; fb=${rec#*|}
+  usage="$TMP_ROOT/badunit-usage.json"
+  printf '{"usageItems":[{"date":"2026-11-18","product":"actions","sku":"actions_storage","quantity":9.9,"unitType":"gigabytes"}]}\n' > "$usage"
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
+  out=$(output_part "$result")
+  assert_contains "$out" 'the GitHub billing response was not usable JSON' \
+    "a storage row with an unrecognized unit was not reported as unusable"
+  pass "a storage row with an unrecognized unit is reported rather than read as zero"
 }
 
 test_changed_usage_reports_again() {
   local rec home fb usage result out
   rec=$(make_world changed); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/changed-1.json"; usage_json "$usage" 0.4125
-  run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage" >/dev/null
+  run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" >/dev/null
   usage="$TMP_ROOT/changed-2.json"; usage_json "$usage" 0.461
-  result=$(run_check "$home" "$fb" 90000 FAKE_USAGE_JSON="$usage")
+  result=$(run_check "$home" "$fb" "$T1" FAKE_USAGE_JSON="$usage")
   out=$(output_part "$result")
   assert_contains "$out" '472.1 MB of 500 MB used (94.4%)' "a changed warning was not reported again"
   pass "storage growth past a new value reports again instead of staying silent"
 }
 
 # The documented enhanced billing response shape is read as shipped: rows are
-# filtered by storage SKU and gigabyte-hours unit, only the latest date counts,
-# and Actions plus Packages storage join the same pool.
+# filtered by storage SKU, the gigabyte-hours unit is accepted in both the API
+# and CSV-export spellings, and Actions plus Packages storage join one pool.
 test_documented_response_fixture_is_read() {
   local rec home fb fixture result out
   rec=$(make_world fixture); home=${rec%%|*}; fb=${rec#*|}
   fixture="$ROOT/tests/fixtures/gh-user-billing-usage.json"
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$fixture")
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$fixture")
   [ "$(status_part "$result")" = 0 ] || fail "fixture check failed: $(output_part "$result")"
   out=$(output_part "$result")
   assert_contains "$out" 'actions-storage: 422.4 MB of 500 MB used (84.5%) as of 2026-11-18; uploads block at 100%' \
@@ -129,7 +175,7 @@ test_no_storage_rows_means_zero_without_a_warning() {
   local rec home fb usage result out
   rec=$(make_world empty); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/empty-usage.json"; printf '{"usageItems":[]}\n' > "$usage"
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage")
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
   [ "$(status_part "$result")" = 0 ] || fail "empty-usage check failed: $(output_part "$result")"
   out=$(output_part "$result")
   [ -z "$out" ] || fail "no storage usage must stay silent: $out"
@@ -143,7 +189,7 @@ test_non_numeric_quantity_is_unusable() {
   rec=$(make_world badqty); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/badqty-usage.json"
   printf '{"usageItems":[{"date":"2026-11-18","product":"actions","sku":"actions_storage","quantity":"a lot","unitType":"gigabyte-hours"}]}\n' > "$usage"
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage")
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
   out=$(output_part "$result")
   assert_contains "$out" 'the GitHub billing response was not usable JSON' \
     "a non-numeric storage quantity was not reported as unusable"
@@ -155,13 +201,13 @@ test_daily_gate_skips_the_probe() {
   rec=$(make_world gate); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/gate-usage.json"; usage_json "$usage" 0.2
   log="$TMP_ROOT/gate-calls.log"; : > "$log"
-  run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log" >/dev/null
+  run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log" >/dev/null
   : > "$log"
-  result=$(run_check "$home" "$fb" 2000 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
+  result=$(run_check "$home" "$fb" "$((T0 + 1000))" FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
   out=$(output_part "$result")
   [ -z "$out" ] || fail "a poll inside the daily interval should stay silent: $out"
   [ ! -s "$log" ] || fail "a poll inside the daily interval still probed GitHub: $(cat "$log")"
-  [ "$(awk -F '\t' '$1 == "last_eval" { print $2 }' "$home/state/.actions-storage-check")" = 1000 ] \
+  [ "$(awk -F '\t' '$1 == "last_eval" { print $2 }' "$home/state/.actions-storage-check")" = "$T0" ] \
     || fail "a poll inside the daily interval rewrote the record"
   pass "a poll inside the daily interval skips the network probe entirely"
 }
@@ -170,7 +216,7 @@ test_missing_user_scope_is_actionable() {
   local rec home fb usage result out
   rec=$(make_world scope); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/scope-usage.json"; usage_json "$usage" 0.2
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage" FAKE_SCOPE_MISSING=1)
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" FAKE_SCOPE_MISSING=1)
   [ "$(status_part "$result")" = 0 ] || fail "scope-missing check failed: $(output_part "$result")"
   out=$(output_part "$result")
   assert_contains "$out" 'needs the "user" scope' "the missing token scope was not named"
@@ -182,7 +228,7 @@ test_unusable_json_is_reported() {
   local rec home fb usage result out
   rec=$(make_world json); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/json-usage.json"; printf '{"unexpected":true}\n' > "$usage"
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage")
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
   out=$(output_part "$result")
   assert_contains "$out" 'the GitHub billing response was not usable JSON' "an unusable billing response was not reported"
   pass "an unusable billing response is reported rather than read as zero usage"
@@ -192,7 +238,7 @@ test_billing_request_failure_is_reported() {
   local rec home fb usage result out
   rec=$(make_world fail); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/fail-usage.json"; usage_json "$usage" 0.2
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage" FAKE_BILLING_FAIL=1)
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" FAKE_BILLING_FAIL=1)
   out=$(output_part "$result")
   assert_contains "$out" 'the GitHub billing request failed' "a failed billing request was not reported"
   pass "a failed billing request is reported instead of staying silent"
@@ -202,7 +248,7 @@ test_exactly_eighty_percent_warns() {
   local rec home fb usage result out
   rec=$(make_world boundary); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/boundary-usage.json"; usage_json "$usage" 0.390625
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage")
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
   out=$(output_part "$result")
   assert_contains "$out" '400.0 MB of 500 MB used (80.0%)' "exactly 80 percent must warn"
   pass "exactly 80 percent of the allowance warns"
@@ -212,10 +258,10 @@ test_allowance_override_changes_the_threshold() {
   local rec home fb usage result out
   rec=$(make_world allowance); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/allowance-usage.json"; usage_json "$usage" 0.4125
-  result=$(run_check "$home" "$fb" 1000 FAKE_USAGE_JSON="$usage" FM_ACTIONS_STORAGE_ALLOWANCE_MB=1024)
+  result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" FM_ACTIONS_STORAGE_ALLOWANCE_MB=1024)
   out=$(output_part "$result")
   [ -z "$out" ] || fail "the allowance override did not move the threshold: $out"
-  result=$(run_check "$home" "$fb" 90000 FAKE_USAGE_JSON="$usage" FM_ACTIONS_STORAGE_ALLOWANCE_MB=400)
+  result=$(run_check "$home" "$fb" "$T1" FAKE_USAGE_JSON="$usage" FM_ACTIONS_STORAGE_ALLOWANCE_MB=400)
   out=$(output_part "$result")
   assert_contains "$out" '422.4 MB of 400 MB used (105.6%)' "the allowance override was not applied to the warning"
   pass "FM_ACTIONS_STORAGE_ALLOWANCE_MB moves the warning threshold"
@@ -239,7 +285,10 @@ test_under_threshold_is_silent_and_records_usage
 test_documented_response_fixture_is_read
 test_no_storage_rows_means_zero_without_a_warning
 test_non_numeric_quantity_is_unusable
-test_over_threshold_reports_once_and_dedupes
+test_over_threshold_reports_the_completed_day
+test_request_names_yesterday_in_utc
+test_unchanged_finding_is_deduped
+test_storage_row_with_unknown_unit_is_unusable
 test_changed_usage_reports_again
 test_daily_gate_skips_the_probe
 test_missing_user_scope_is_actionable

@@ -1,19 +1,7 @@
 {
   "usageItems": [
     {
-      "date": "2026-11-17",
-      "product": "actions",
-      "sku": "actions_storage",
-      "quantity": 20,
-      "unitType": "gigabyte-hours",
-      "pricePerUnit": 0.000336,
-      "grossAmount": 0.00672,
-      "discountAmount": 0.00672,
-      "netAmount": 0,
-      "repositoryName": ""
-    },
-    {
-      "date": "2026-11-17",
+      "date": "2026-11-18",
       "product": "actions",
       "sku": "actions_linux",
       "quantity": 240,
@@ -41,7 +29,7 @@
       "product": "packages",
       "sku": "packages_storage",
       "quantity": 0.3,
-      "unitType": "gigabyte-hours",
+      "unitType": "GigabyteHours",
       "pricePerUnit": 0.000336,
       "grossAmount": 0.0001008,
       "discountAmount": 0.0001008,
