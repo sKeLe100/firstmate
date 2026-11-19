@@ -1,0 +1,70 @@
+== Scenario A: 450 MB stored yesterday (90% of 500 MB) at 03:00 UTC ==
+$ env FM_HOME=$LAB GH_CALL_LOG=$LAB/gh.log FM_ACTIONS_STORAGE_NOW=1795057200 bin/fm-actions-storage-check.sh check
+actions-storage: 450.0 MB of 500 MB used (90.0%) as of 2026-11-18; uploads block at 100%
+[exit 0]
+--- gh calls ---
+gh api /user --jq .login
+gh api ~/settings/billing/usage?year=2026&month=11&day=18
+--- record ---
+schema	fm-actions-storage-check-v1
+last_eval	1795057200
+as_of	2026-11-18
+storage_gb	0.439453
+allowance_mb	500
+percent	90.0
+reported	450.0 MB of 500 MB used (90.0%) as of 2026-11-18; uploads block at 100%
+== Scenario B: second watcher pass an hour later, same day ==
+$ env FM_HOME=$LAB GH_CALL_LOG=$LAB/gh.log FM_ACTIONS_STORAGE_NOW=1795060800 bin/fm-actions-storage-check.sh check
+[exit 0]
+gh calls total: 2
+== Scenario C: bearings in the same home shows storage_alert ==
+[bearings exit 0]
+{
+  "line": "450.0 MB of 500 MB used (90.0%) as of 2026-11-18; uploads block at 100%",
+  "percent": 90.0,
+  "as_of": "2026-11-18",
+  "checked_at": 1795057200
+}
+== Scenario C2: default bearings render (what the captain reads) ==
+33:storage_alert: 
+34-  line: 450.0 MB of 500 MB used (90.0%) as of 2026-11-18; uploads block at 100%
+35-  percent: 90.0
+36-  as_of: 2026-11-18
+37-  checked_at: 1795057200
+38-omitted[6]{surface,reveal}:
+== Scenario D: 200 MB stored (40%) -> silent, and bearings shows no storage_alert ==
+$ fm-actions-storage-check.sh check  (FAKE_MB=200)
+[exit 0]
+percent	40.0
+bearings storage_alert: null
+== Scenario E (adversarial): endpoint ignores ?day and returns year-to-date rows of 150 MB each ==
+$ fm-actions-storage-check.sh check  (FAKE_IGNORE_DAY=1)
+actions-storage: billing usage unreadable: the GitHub billing response was not usable JSON
+[exit 0]
+reported	billing usage unreadable: the GitHub billing response was not usable JSON
+== Scenario F (adversarial): unit spelled GigabyteHours, 420 MB (84%) ==
+$ fm-actions-storage-check.sh check  (FAKE_UNIT=GigabyteHours FAKE_MB=420)
+actions-storage: 420.0 MB of 500 MB used (84.0%) as of 2026-11-18; uploads block at 100%
+[exit 0]
+== Scenario F2 (adversarial): unit Megabytes -> refused, not a silent 0 ==
+$ fm-actions-storage-check.sh check  (FAKE_UNIT=Megabytes, next day)
+actions-storage: billing usage unreadable: the GitHub billing response was not usable JSON
+[exit 0]
+== Scenario G: arm, then one real fm-watch.sh cycle turns the warning into a check: wake (heartbeat surface), 450 MB, real clock ==
+$ fm-actions-storage-check.sh arm
+armed: state/actions-storage.check.sh
+[exit 0]
+-rw------- 1 sean_ sean_  84 Nov 18 22:37 actions-storage.check-trust
+-rwx------ 1 sean_ sean_ 172 Nov 18 22:37 actions-storage.check.sh
+#!/usr/bin/env bash
+export FM_HOME=$LAB
+exec {run-worktree}/bin/fm-actions-storage-check.sh check
+$ fm-watch.sh  (FM_CHECK_INTERVAL=0, inert tmux, lab home)
+[watch exit 0]
+check: $LAB/state/actions-storage.check.sh: actions-storage: 450.0 MB of 500 MB used (90.0%) as of 2026-11-18; uploads block at 100%
+--- queued wake (fm-wake-drain.sh) ---
+1795059433	1	check	$LAB/state/actions-storage.check.sh	check: $LAB/state/actions-storage.check.sh: actions-storage: 450.0 MB of 500 MB used (90.0%) as of 2026-11-18; uploads block at 100%
+$ fm-actions-storage-check.sh disarm
+disarmed: state/actions-storage.check.sh
+[exit 0]
+0

@@ -1,0 +1,17 @@
+ok - storage under the threshold stays silent and records its usage
+ok - the documented enhanced billing response fixture is read correctly
+ok - an empty usage report means zero storage and stays silent
+ok - a non-numeric storage quantity is reported rather than read as zero
+ok - an over-threshold warning reports the most recent completed day
+ok - the billing request names the last completed UTC day
+ok - an unchanged finding is reported once and deduped
+ok - a storage row with an unrecognized unit is reported rather than read as zero
+ok - a storage row outside the requested day is reported rather than summed
+ok - storage growth past a new value reports again instead of staying silent
+ok - a poll inside the daily interval skips the network probe entirely
+ok - a missing user scope is reported with its remedy instead of going quiet
+ok - an unusable billing response is reported rather than read as zero usage
+ok - a failed billing request is reported instead of staying silent
+ok - exactly 80 percent of the allowance warns
+ok - FM_ACTIONS_STORAGE_ALLOWANCE_MB moves the warning threshold
+ok - arm registers the check shim and disarm removes it
