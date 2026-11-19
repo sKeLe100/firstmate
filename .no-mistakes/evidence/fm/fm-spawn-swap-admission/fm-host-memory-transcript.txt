@@ -1,0 +1,29 @@
+$ [fixture swap97: MemTotal: 14000000 kB MemAvailable: 8388608 kB SwapTotal: 4194304 kB SwapFree: 125829 kB ]
+low: swap 97% used (3973MiB of 4096MiB) >= 90%
+exit=1
+
+$ [fixture swap90: MemTotal: 14000000 kB MemAvailable: 8388608 kB SwapTotal: 4194304 kB SwapFree: 419430 kB ]
+low: swap 90% used (3686MiB of 4096MiB) >= 90%
+exit=1
+
+$ [fixture swap50: MemTotal: 14000000 kB MemAvailable: 8388608 kB SwapTotal: 4194304 kB SwapFree: 2097152 kB ]
+free
+exit=0
+
+$ [fixture both: MemTotal: 14000000 kB MemAvailable: 524288 kB SwapTotal: 4194304 kB SwapFree: 0 kB ]
+low: 512MiB < 3072MiB; swap 100% used (4096MiB of 4096MiB) >= 90%
+exit=1
+
+$ [fixture noswap: MemTotal: 14000000 kB MemAvailable: 8388608 kB SwapTotal: 0 kB SwapFree: 0 kB ]
+free
+exit=0
+
+$ [fixture nofree: MemTotal: 14000000 kB MemAvailable: 8388608 kB SwapTotal: 4194304 kB ]
+fm-host-memory.sh: swap not assessed: SwapTotal is readable but SwapFree is not
+free
+exit=0
+
+$ [real host /proc/meminfo]
+free
+exit=0
+

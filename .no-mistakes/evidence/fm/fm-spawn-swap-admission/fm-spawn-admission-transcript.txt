@@ -1,0 +1,22 @@
+== fm-spawn.sh lab-swaponly  meminfo: MemTotal: 14000000 kB MemAvailable: 8388608 kB SwapTotal: 4194304 kB SwapFree: 125829 kB 
+exit=1
+error: host memory low: low: swap 97% used (3973MiB of 4096MiB) >= 90%; refusing to launch task 'lab-swaponly' onto a host that cannot carry another agent - free memory on this host (quiesce another lane) until swap use drops below its fixed bound; config/host-memory-floor does not govern swap
+
+== fm-spawn.sh lab-both  meminfo: MemTotal: 14000000 kB MemAvailable: 524288 kB SwapTotal: 4194304 kB SwapFree: 0 kB 
+exit=1
+error: host memory low: low: 512MiB < 3072MiB; swap 100% used (4096MiB of 4096MiB) >= 90%; refusing to launch task 'lab-both' onto a host that cannot carry another agent - free memory on this host (quiesce another lane); lowering config/host-memory-floor alone cannot clear this refusal while swap use stays at or above its fixed bound
+
+== fm-spawn.sh lab-flooronly  meminfo: MemTotal: 14000000 kB MemAvailable: 524288 kB SwapTotal: 4194304 kB SwapFree: 4000000 kB 
+exit=1
+error: host memory low: low: 512MiB < 3072MiB; refusing to launch task 'lab-flooronly' onto a host that cannot carry another agent - free memory on this host (quiesce another lane) or lower config/host-memory-floor
+
+== fm-spawn.sh lab-swapok  meminfo: MemTotal: 14000000 kB MemAvailable: 8388608 kB SwapTotal: 4194304 kB SwapFree: 2097152 kB 
+exit=0
+warning: /tmp/fm-spawn-host-memory.D9Fqbl/swapok/home/data/lab-swapok/launch-brief.md records no ship branch; defaulting to legacy branch fm/lab-swapok
+warning: /tmp/fm-spawn-host-memory.D9Fqbl/swapok/home/data/lab-swapok/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned lab-swapok harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-lab-swapok worktree=/tmp/fm-spawn-host-memory.D9Fqbl/swapok/wt
+
+== fm-spawn.sh lab-nofree  meminfo: MemTotal: 14000000 kB MemAvailable: 8388608 kB SwapTotal: 4194304 kB 
+exit=0
+note: fm-host-memory.sh: swap not assessed: SwapTotal is readable but SwapFree is not
+

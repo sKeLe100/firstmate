@@ -1,0 +1,21 @@
+ok - fm-host-memory.sh: MemAvailable above the default floor reads free
+ok - fm-host-memory.sh: MemAvailable below the floor reads low and names both numbers
+ok - fm-host-memory.sh: config/host-memory-floor overrides the built-in default in both directions
+ok - fm-host-memory.sh: a malformed floor is rejected loudly rather than silently defaulted
+ok - fm-host-memory.sh: an unreadable or MemAvailable-less source exits 2 and never reads free
+ok - fm-host-memory.sh: the verdict comes from MemAvailable, not MemFree
+ok - fm-host-memory.sh: mostly used swap reads low above a healthy MemAvailable
+ok - fm-host-memory.sh: swap below the bound reads free
+ok - fm-host-memory.sh: SwapTotal 0 adds no swap constraint
+ok - fm-host-memory.sh: a readable SwapTotal without SwapFree is disclosed and never treated as pressure
+rc=0
+ok - fm-spawn.sh: a proven low host-memory reading refuses the launch
+ok - fm-spawn.sh: an unmeasurable host-memory reading is disclosed and the launch proceeds
+ok - fm-spawn.sh: a mostly used swap refuses the launch
+ok - fm-spawn.sh: a floor-and-swap refusal does not offer the floor as the whole remedy
+ok - fm-spawn.sh: swap below the admission bound allows the launch
+ok - fm-spawn.sh: an unassessed swap is disclosed and the launch proceeds
+ok - fm-spawn.sh: idle parked sessions count through MemAvailable without a second subtraction
+ok - fm-spawn.sh: the host-memory floor does not refuse a --relaunch
+# all fm-spawn-host-memory tests passed
+rc=0
