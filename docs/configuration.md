@@ -856,8 +856,8 @@ Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](f
 
 ## Hosted Test compute
 
-[`bin/fm-test-compute.sh`](../bin/fm-test-compute.sh) routes the pinned no-mistakes Test baseline and the canonical lint partitions through hosted compute, falling back to the existing PC02/PC01 admission path.
-This delivery accepts only public firstmate repositories on github.com; private repositories, other projects, dirty or oversized snapshots, and non-baseline selections keep the existing offload behavior.
+[`bin/fm-test-compute.sh`](../bin/fm-test-compute.sh) routes the pinned no-mistakes Test baseline, the full-suite/post-merge regression selection (`bin/fm-test-run.sh --all`, with or without `--exclude-quarantined`), and the canonical lint partitions through hosted compute, falling back to the existing PC02/PC01 admission path.
+This delivery accepts only public firstmate repositories on github.com; private repositories, other projects, dirty or oversized snapshots, and other non-baseline selections keep the existing offload behavior.
 The caller needs `gh-axi`, an authenticated GitHub identity with Actions write access, and network access to the source repository.
 Mechanics: see the header of `bin/fm-test-compute.sh` and its tests under `tests/`, which pin the local-only script exclusions and the local completion path (`tests/fm-test-compute.test.sh`).
 The GitHub hosted round trip was verified end to end on 2026-11-04 UTC: one portable partition dispatched through the Test caller executed on a hosted runner and its matching receipts returned to the caller ([run 41759393085](https://github.com/sKeLe100/firstmate/actions/runs/41759393085)).
@@ -1135,7 +1135,7 @@ Installing a dependency, an isolated pass, or matching an old symptom does not j
 Coverage currently differs: canonical no-mistakes Test selects changed subjects and excludes the real-Herdr family and quarantined subjects; manual upstream-sync validation selects all subjects and excludes quarantined subjects, including those outside the changed set.
 CI's portable and Herdr lanes also exclude quarantined subjects.
 For identical initial subject and family selections, adding `--exclude-quarantined` removes exactly the intersection with the ledger; compare the runner's `--list` output with and without that flag to publish the actual paths for a candidate rather than comparing totals.
-The runner reports each removed path and the total in execution mode.
+The runner reports each removed path and the total on stdout in execution mode and on stderr under `--list`, which keeps stdout a clean path list.
 No selection is a substitute for the other, and quarantine diagnostics do not certify the gate selection.
 Changing canonical Test from its changed-subject selection to manual sync's all-subject selection would change the pinned Test contract and requires a separate explicit decision; the shared quarantine exclusion does not make their coverage equal.
 Use the runner's bounded quarantine diagnostic mode to report changed signatures, newly passing subjects, and capability skips without letting known failures block the diagnostic invocation.

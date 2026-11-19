@@ -1407,7 +1407,12 @@ test_exclude_quarantined() {
 
   # --exclude-quarantined drops exactly the listed scripts and keeps stdout a
   # clean path list; the loud markers go to stderr, not the path list.
-  listed=$("$RUNNER" --quarantine-file "$qfile" --list --all --exclude-quarantined 2>/dev/null)
+  listed=$("$RUNNER" --quarantine-file "$qfile" --list --all --exclude-quarantined 2>"$tmp/list.err")
+  listed_err=$(cat "$tmp/list.err")
+  assert_contains "$listed_err" "FM_TEST_QUARANTINED tests/fm-transition-lib.test.sh signature=sig-x reason=reason-x owner=owner-x" \
+    "--list must report each quarantined skip marker on stderr"
+  assert_contains "$listed_err" "FM_TEST_QUARANTINE_SUMMARY quarantined=1" \
+    "--list must report the quarantine summary on stderr"
   printf '%s\n' "$listed" | grep -Fxq 'tests/fm-transition-lib.test.sh' \
     && fail "exclude-quarantined left a quarantined script selected"
   printf '%s\n' "$listed" | grep -Fxq 'tests/fm-lint.test.sh' \

@@ -27,6 +27,14 @@ case "$*" in
       fi
     fi
     ;;
+  '--all --list'|'--all --exclude-quarantined --list')
+    [ "${SELECTION_RC:-0}" = 0 ] || exit "$SELECTION_RC"
+    printf '%s\n' tests/sample.test.sh tests/derived.test.sh tests/fm-herdr-sample.test.sh
+    if [ "$2" = --exclude-quarantined ]; then
+      echo 'FM_TEST_QUARANTINED tests/flaky.test.sh signature=sig-x reason=reason-x owner=owner-x' >&2
+      echo 'FM_TEST_QUARANTINE_SUMMARY quarantined=1' >&2
+    fi
+    ;;
   '--list --lane portable-parallel-1')
     echo tests/sample.test.sh
     if [ "${NON_HOSTED:-0}" = 1 ]; then
@@ -34,6 +42,7 @@ case "$*" in
     fi
     ;;
   '--list --lane portable-parallel-9') echo tests/derived.test.sh ;;
+  '--list --lane real-herdr-gated') echo tests/fm-herdr-sample.test.sh ;;
   '--list --lane '*) : ;;
   *) printf 'ran:'; printf ' <%s>' "$@"; echo; exit "${SUITE_RC:-0}" ;;
 esac
@@ -656,7 +665,46 @@ output=$("$router" test --all 2>&1)
 result=$?
 set -e
 expect_code 0 "$result" "$output"
-assert_contains "$output" 'local: <--all>' 'non-baseline test selection left local admission'
+assert_contains "$output" 'result: success' 'a full-suite selection must distribute its portable lanes'
+assert_contains "$output" 'local: <tests/fm-herdr-sample.test.sh>' 'a full-suite selection must run non-portable scripts locally'
+python3 - "$TMP_ROOT/data/request" <<'PY'
+import json,sys
+payload=json.loads(json.load(open(sys.argv[1]))['inputs']['snapshot'])
+scripts=[s for v in payload['partitions'].values() for s in v]
+assert 'tests/sample.test.sh' in scripts, 'portable script was withheld from hosted dispatch'
+assert 'tests/fm-herdr-sample.test.sh' not in scripts, 'non-portable script entered hosted dispatch'
+PY
+pass 'full-suite selections distribute portable lanes and complete the rest locally'
+
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$(SCENARIO=success "$router" test --all --exclude-quarantined 2>/dev/null)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'result: success' 'the post-merge regression selection must distribute its portable lanes'
+assert_contains "$output" 'local: <tests/fm-herdr-sample.test.sh>' 'the post-merge regression selection must run non-portable scripts locally'
+assert_contains "$output" 'FM_TEST_QUARANTINED tests/flaky.test.sh signature=sig-x reason=reason-x owner=owner-x' 'a routed post-merge run must report each quarantined skip on stdout'
+assert_contains "$output" 'FM_TEST_QUARANTINE_SUMMARY quarantined=1' 'a routed post-merge run must report the quarantine summary on stdout'
+pass 'the post-merge regression selection routes through hosted compute and reports quarantined skips'
+
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$(SELECTION_RC=1 "$router" test --all 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'local: <--all>' 'an unlistable full-suite selection must fall back to local admission'
+[ ! -e "$TMP_ROOT/data/calls" ] || fail 'an unlistable full-suite selection contacted hosted services'
+pass 'an unlistable full-suite selection falls back to local admission'
+
+rm -f "$TMP_ROOT/data/"*
+set +e
+output=$("$router" test --family real-herdr-gated 2>&1)
+result=$?
+set -e
+expect_code 0 "$result" "$output"
+assert_contains "$output" 'local: <--family> <real-herdr-gated>' 'non-baseline test selection left local admission'
 [ ! -e "$TMP_ROOT/data/calls" ] || fail 'non-baseline test selection contacted hosted services'
 pass 'non-baseline test selections stay on local admission'
 printf dirty > "$fixture/untracked"
