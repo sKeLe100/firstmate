@@ -1,0 +1,49 @@
+== 89% left, projected exhaust before reset+20m -> cap0
+effective_cap: 0
+claude_lanes: 0
+claude_runway_cap: 0
+claude_runway_block: yes
+claude_runway_reason: projected exhaustion 2026-11-19T18:00:00+00:00 is before the reset 2026-11-19T20:00:00+00:00 plus 20m
+exit 0
+== 89% left, safe -> none
+effective_cap: 3
+claude_lanes: 0
+claude_runway_cap: none
+claude_runway_block: no
+claude_runway_reason: healthy: 89% left, projection 2026-11-19T22:00:00+00:00 after reset
+exit 0
+== 30% left, no lanes -> cap1 admits
+effective_cap: 1
+claude_lanes: 0
+claude_runway_cap: 1
+claude_runway_block: no
+claude_runway_reason: 30% left (< 40); one implementing lane allowed on this account
+exit 0
+== 30% left, 1 implementing lane -> block
+effective_cap: 1
+claude_lanes: 1
+claude_runway_cap: 1
+claude_runway_block: yes
+claude_runway_reason: 30% left (< 40); one implementing lane allowed on this account
+exit 0
+== pr= recorded -> not counted
+effective_cap: 1
+claude_lanes: 0
+claude_runway_cap: 1
+claude_runway_block: no
+claude_runway_reason: 30% left (< 40); one implementing lane allowed on this account
+exit 0
+== rate_limited, no window -> cap1 not error
+effective_cap: 1
+claude_lanes: 0
+claude_runway_cap: 1
+claude_runway_block: no
+claude_runway_reason: quota reading unavailable; treated as tight
+exit 0
+== 89% left, missing projection -> none (not headroom?)
+effective_cap: 3
+claude_lanes: 0
+claude_runway_cap: none
+claude_runway_block: no
+claude_runway_reason: healthy: 89% left, no projected exhaustion
+exit 0
