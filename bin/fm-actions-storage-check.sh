@@ -9,7 +9,7 @@
 #   fm-actions-storage-check.sh --help
 #
 # `check` prints one line when the account's pooled GitHub Actions artifact and
-# Packages storage reaches 80 percent of the plan's included allowance, and
+# Packages storage reaches 80 percent of the plan's monthly included allowance, and
 # prints nothing at all otherwise, so it composes with the existing watcher
 # state-check contract instead of needing a schedule of its own. `arm` writes
 # state/actions-storage.check.sh and binds its bytes with fm-check-register.sh,
@@ -23,29 +23,29 @@
 # report, GET /users/{username}/settings/billing/usage, whose documented
 # usageItems carry one row per day, product, SKU, and repository. Actions
 # artifact storage is sku actions_storage and GitHub Packages storage is sku
-# packages_storage, both in gigabyte-hours; this check requests the report for
-# the day before yesterday in UTC, the latest fully settled day, sums every
-# storage row in it, and divides by 24 for that day's average gigabytes, which is
-# the pooled figure the plan's included allowance applies to. The current UTC
-# day is never read, because its gigabyte-hours are still accumulating, and
-# neither is yesterday, because the report is ingested with a lag of up to
-# several hours. That endpoint requires a classic token with the `user` scope;
+# packages_storage, both in gigabyte-hours. GitHub bills this pooled storage as
+# gigabyte-hours accumulated over the billing month, so this check requests the
+# report for the month of the latest fully settled day (the day before yesterday
+# in UTC), sums every storage row from the first of that month through that day,
+# and compares the month-to-date total against the monthly allowance: 0.5 GB for
+# every hour of the month. The current UTC day is never counted, because its
+# gigabyte-hours are still accumulating, and neither is yesterday, because the
+# report is ingested with a lag of up to several hours. That endpoint requires a classic token with the `user` scope;
 # authorize once with `gh auth refresh -h github.com -s user`. A token without
 # that scope gets a 404, and this check reports that as an actionable finding
 # rather than going quiet, because an unwatched account blocks uploads at 100
 # percent when it has no payment method or a zero spending limit.
 #
-# The figure is the day before yesterday's average, so it trails current
-# storage by up to two days. It is the supported replacement for the retired shared-storage estimate endpoint, which
+# The figure is month-to-date through the day before yesterday, so it trails
+# current usage by up to two days, and it is not a projection. It is the
+# supported replacement for the retired shared-storage estimate endpoint, which
 # now answers 410 Gone.
 #
-# Why 80 percent and 500 MB. GitHub Free includes 500 MB of shared artifact and
-# GitHub Packages storage (GitHub Pro 1 GB, Team 2 GB, Enterprise Cloud 50 GB),
-# measured in binary units where 1 GB is 1024 MB. Cache storage is a separate
+# Why 80 percent and 500 MB. GitHub Free includes 500 MB (0.5 GB) of shared
+# artifact and GitHub Packages storage per month. Cache storage is a separate
 # per-repository allowance and is not part of this pool. Uploads stop when the
-# included allowance is consumed, so the warning is deliberately ahead of 100
-# percent. Set FM_ACTIONS_STORAGE_ALLOWANCE_MB when the plan includes a
-# different amount.
+# month's included gigabyte-hours are consumed, so the warning is deliberately
+# ahead of 100 percent.
 #
 # What this check never does: it reports, and it deletes nothing. It does not
 # expire artifacts, change retention settings, or touch a spending limit.
@@ -74,6 +74,7 @@ INTERVAL=86400
 WARN_PERCENT=80
 MAX_LINE=400
 PROBE_SECS=10
+ALLOWANCE_MB=500
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -92,13 +93,6 @@ fail() {
   printf 'fm-actions-storage-check: %s\n' "$1" >&2
   exit 1
 }
-
-ALLOWANCE_MB=${FM_ACTIONS_STORAGE_ALLOWANCE_MB:-500}
-case "$ALLOWANCE_MB" in
-  ''|*[!0-9]*|0)
-    fail "FM_ACTIONS_STORAGE_ALLOWANCE_MB must be a positive whole number of megabytes"
-    ;;
-esac
 
 now_epoch() {
   case "${FM_ACTIONS_STORAGE_NOW:-}" in
@@ -151,29 +145,41 @@ append_finding() {
 }
 
 # The usage report is read as a documented shape: usageItems must be an array,
-# and the value that counts is every storage row of the one requested day. A
-# response that is absent, of the wrong type, or carries a storage row dated
-# another day, with a non-numeric or negative quantity, or with a unit other
-# than gigabyte-hours is an
-# unusable response, never a zero. A zero would turn a broken read into a silent
+# and the value that counts is the gigabyte-hours of every storage row of the
+# requested month dated on or before the settled day; later rows of the same
+# month are unsettled and skipped. A response that is absent, of the wrong type,
+# or carries a storage row dated outside the requested month, with a
+# non-numeric or negative quantity, or with a unit other than gigabyte-hours is
+# an unusable response, never a zero. A zero would turn a broken read into a silent
 # "everything is fine". The unit is compared without case or punctuation, so
 # both "gigabyte-hours" and "GigabyteHours" are accepted.
-read_usage() {  # <json-text> <day>
+read_usage() {  # <json-text> <settled-day>
   printf '%s' "$1" | jq -r --arg day "$2" '
-    if (.usageItems | type) != "array" then empty
+    ($day[0:8]) as $month
+    | if (.usageItems | type) != "array" then empty
     else
       [ .usageItems[]
         | select(type == "object")
         | select((((.sku // "") | ascii_downcase) as $s
                   | $s == "actions_storage" or $s == "packages_storage"))
       ]
-      | if all(.[]; ((.date // "") | tostring | startswith($day))
+      | if all(.[]; ((.date // "") | tostring | startswith($month))
                     and (.quantity | type == "number" and . >= 0)
                     and ((.unitType // "") | ascii_downcase | gsub("[^a-z0-9]"; "")) == "gigabytehours")
-        then ([ .[].quantity ] | (add // 0) / 24 * 1000000 | round) / 1000000
+        then ([ .[] | select((.date | tostring | .[0:10]) <= $day) | .quantity ]
+              | (add // 0) * 1000000 | round) / 1000000
         else error("unusable storage row") end
     end
   ' 2>/dev/null
+}
+
+days_in_month() {  # <year> <month>
+  local y=$1 m=$2
+  case "$m" in
+    2) if [ $((y % 4)) -eq 0 ] && { [ $((y % 100)) -ne 0 ] || [ $((y % 400)) -eq 0 ]; }; then echo 29; else echo 28; fi ;;
+    4|6|9|11) echo 30 ;;
+    *) echo 31 ;;
+  esac
 }
 
 utc_settled_day() {  # <now-epoch>
@@ -199,7 +205,7 @@ probe_billing() {  # <stderr-file> <day>
   esac
   login=$out
 
-  query="year=$((10#${day:0:4}))&month=$((10#${day:5:2}))&day=$((10#${day:8:2}))"
+  query="year=$((10#${day:0:4}))&month=$((10#${day:5:2}))"
   status=0
   : > "$err"
   out=$(fm_run_timed "$PROBE_SECS" "$GH_BIN" api "/users/$login/settings/billing/usage?$query" 2>"$err") || status=$?
@@ -222,7 +228,7 @@ probe_billing() {  # <stderr-file> <day>
 }
 
 run_check() {
-  local now reported_previous storage_gb as_of percent mb_used line
+  local now reported_previous gb_hours allowance_gb_hours as_of percent line
   if ! now=$(check_due); then
     return 0
   fi
@@ -249,15 +255,15 @@ run_check() {
   if ! command -v "$GH_BIN" >/dev/null 2>&1; then
     append_finding "billing usage unreadable: gh not found"
   elif probe_billing "$ERR_FILE" "$as_of"; then
-    storage_gb=$USAGE
-    mb_used=$(awk -v gb="$storage_gb" 'BEGIN { printf "%.1f", gb * 1024 }')
-    percent=$(awk -v gb="$storage_gb" -v mb="$ALLOWANCE_MB" 'BEGIN { printf "%.1f", (gb * 1024 / mb) * 100 }')
+    gb_hours=$USAGE
+    allowance_gb_hours=$(( ALLOWANCE_MB * 24 * $(days_in_month "$((10#${as_of:0:4}))" "$((10#${as_of:5:2}))") / 1000 ))
+    percent=$(awk -v used="$gb_hours" -v allow="$allowance_gb_hours" 'BEGIN { printf "%.1f", used / allow * 100 }')
     printf '%s\t%s\n' as_of "$as_of" >> "$NEW_RECORD" || exit 1
-    printf '%s\t%s\n' storage_gb "$storage_gb" >> "$NEW_RECORD" || exit 1
-    printf '%s\t%s\n' allowance_mb "$ALLOWANCE_MB" >> "$NEW_RECORD" || exit 1
+    printf '%s\t%s\n' storage_gb_hours "$gb_hours" >> "$NEW_RECORD" || exit 1
+    printf '%s\t%s\n' allowance_gb_hours "$allowance_gb_hours" >> "$NEW_RECORD" || exit 1
     printf '%s\t%s\n' percent "$percent" >> "$NEW_RECORD" || exit 1
     if awk -v p="$percent" -v warn="$WARN_PERCENT" 'BEGIN { exit !(p >= warn) }'; then
-      append_finding "${mb_used} MB of ${ALLOWANCE_MB} MB used (${percent}%) as of ${as_of}; uploads block at 100%"
+      append_finding "$(awk -v used="$gb_hours" 'BEGIN { printf "%.1f", used }') of ${allowance_gb_hours} GB-hours used (${percent}%) of the ${ALLOWANCE_MB} MB monthly allowance through ${as_of}; uploads block at 100%"
     fi
   fi
 
