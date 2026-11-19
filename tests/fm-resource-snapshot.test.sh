@@ -408,6 +408,17 @@ test_live_reconciliation() {
     [ "$actual" = "$verify_acct" ] || fail "orchestrator account: expected $verify_acct, actual $actual (read $gen)"
   fi
 
+  # PC02 offload slots and personal-use switch equal their raw files.
+  if [ -n "$host" ]; then
+    local raw_slots raw_personal
+    raw_slots=$(ssh "$host" 'slots=2; sf="$HOME/.config/firstmate/pc02-offload-slots"; [ -f "$sf" ] && slots=$(head -1 "$sf"); used=0; i=1; while [ "$i" -le "$slots" ]; do f="$HOME/.fm-pc02-test-slot-$i.lock"; if [ -e "$f" ] && ! flock -n "$f" true 2>/dev/null; then used=$((used+1)); fi; i=$((i+1)); done; printf "%s/%s" "$used" "$slots"' 2>/dev/null)
+    actual=$(jq -r '[.testing[] | select(.item=="pc02-offload-slots") | .state][0] // "missing"' "$model")
+    [ -z "$raw_slots" ] || [ "$actual" = "$raw_slots" ] || fail "PC02 slots: expected $raw_slots, actual $actual (read $gen)"
+    raw_personal=$(ssh "$host" 'if [ -e "$HOME/.fm-pc02-personal-use" ]; then echo on; else echo off; fi' 2>/dev/null)
+    actual=$(jq -r '[.testing[] | select(.item=="pc02-personal-use") | .state][0] // "missing"' "$model")
+    [ -z "$raw_personal" ] || [ "$actual" = "$raw_personal" ] || fail "PC02 personal use: expected $raw_personal, actual $actual (read $gen)"
+  fi
+
   # GitLab minutes equal the namespace quota read.
   local gl_used
   gl_used=$(glab api 'namespaces/sean.morden1993' 2>/dev/null | jq -r '.ci_minutes_usage.total_minutes_used // empty')
