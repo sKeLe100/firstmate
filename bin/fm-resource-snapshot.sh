@@ -59,12 +59,26 @@
 # isolated subshells; exit 0 when any section rendered, 1 only when nothing
 # rendered.
 #
+# Account identities are never built in. They come from one private config file,
+# <home>/config/resource-snapshot, of generic key=value lines, and each key can
+# be overridden by the environment variable FM_RESOURCE_<KEY in upper case>:
+#   github_user, github_repo           GitHub Actions billing and run reads
+#   gitlab_namespace                   GitLab free-tier minute read
+#   forgejo_url, forgejo_owner,        Forgejo API base, repo owner and repo name
+#   forgejo_repo
+#   forgejo_credentials                path to a file with "Username: ..." and
+#                                      "Password: ..." lines; there is no default
+#                                      path, and the secret is only ever piped to
+#                                      curl on stdin, never in argv or output
+# A collector whose keys are absent renders one unavailable row with reason
+# "not configured"; the rest of the snapshot still renders.
+#
 # Fixture seams, for tests and for deterministic replay:
 #   FM_RESOURCE_NOW               epoch seconds or ISO time to report as now
 #   FM_RESOURCE_STATE_DIR         override the home's state directory
 #   FM_RESOURCE_DATA_DIR          override the home's data directory
-#   FM_RESOURCE_HOSTS_JSON        {"hosts":[...],"drives":[...]} replaces live
-#                                 host and drive probes on both machines
+#   FM_RESOURCE_HOSTS_JSON        {"hosts":[...],"drives":[...]} replaces live PC01 host
+#                                 and drive probes; PC02 rows come from the remote fixture
 #   FM_RESOURCE_HERDR_JSON_PC01   {"sessions":[],"workspaces":[],"panes":[]}
 #   FM_RESOURCE_HERDR_JSON_PC02   same shape for PC02
 #   FM_RESOURCE_ROLES_FILE        JSON array used verbatim as roles[]
@@ -73,6 +87,7 @@
 #   FM_RESOURCE_TESTING_FIXTURE   JSON {testing:[...],compute:[...]} replaces
 #                                 every live testing and compute probe
 #   FM_RESOURCE_CONTEXT_FIXTURE   JSON object mapping task id to ctx_band
+#   FM_RESOURCE_<KEY>             override one config key (see below)
 #   QUOTA_AXI_SNAPSHOT            passed through to quota-axi (its own seam)
 #   FM_RESOURCE_SKIP_REMOTE=1     skip PC02 collection entirely
 set -u
@@ -117,6 +132,31 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+cfg() {  # <key> -> env override FM_RESOURCE_<KEY>, else config/resource-snapshot
+  local key=$1 up v
+  up=$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')
+  eval "v=\${FM_RESOURCE_$up:-}"
+  if [ -z "$v" ] && [ -f "$CONFIG/resource-snapshot" ]; then
+    v=$(awk -F= -v k="$key" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$CONFIG/resource-snapshot" 2>/dev/null)
+  fi
+  printf '%s' "$v"
+}
+
+# slot_busy <lockfile>: true when some process holds a lock on the file, read
+# from /proc/locks without ever taking the lock; falls back to fuser, then lsof.
+slot_busy() {
+  local f=$1 inode
+  [ -e "$f" ] || return 1
+  inode=$(stat -c %i "$f" 2>/dev/null)
+  if [ -n "$inode" ] && [ -r /proc/locks ]; then
+    awk -v i="$inode" '{ n = split($6, a, ":"); if (a[n] == i) { found = 1 } } END { exit !found }' /proc/locks
+    return
+  fi
+  if command -v fuser >/dev/null 2>&1; then fuser "$f" >/dev/null 2>&1; return; fi
+  if command -v lsof >/dev/null 2>&1; then lsof -- "$f" >/dev/null 2>&1; return; fi
+  return 1
+}
 
 bound() {  # <name> <default>
   local v
@@ -415,7 +455,8 @@ used=0
 i=1
 while [ "$i" -le "$slots" ]; do
   f="$HOME/.fm-pc02-test-slot-$i.lock"
-  if [ -e "$f" ] && ! flock -n "$f" true 2>/dev/null; then used=$((used + 1)); fi
+  ino=$(stat -c %i "$f" 2>/dev/null)
+  if [ -n "$ino" ] && awk -v i="$ino" '{ n = split($6, a, ":"); if (a[n] == i) found = 1 } END { exit !found }' /proc/locks 2>/dev/null; then used=$((used + 1)); fi
   i=$((i + 1))
 done
 printf 'T\tpc02-offload-slots\t%s/%s\tlocked slots under ~/.fm-pc02-test-slot-*.lock\n' "$used" "$slots"
@@ -492,11 +533,11 @@ collect_remote() {
   remote_records > "$TMP/remote_records.tsv" 2>/dev/null || : > "$TMP/remote_records.tsv"
 
   if [ -n "${FM_RESOURCE_REMOTE_FIXTURE:-}" ] && [ -f "$FM_RESOURCE_REMOTE_FIXTURE" ]; then
-    jq -r '.hosts[]? | ["H", .machine, (.load1 // "unknown"), (.cores // "unknown"), (.mem_free_pct // "unknown"), (.disk_free_gb // "-"), (.disk_path // "-"), (.uptime // "unknown"), (.read_utc // "-")] | @tsv' \
-      "$FM_RESOURCE_REMOTE_FIXTURE" > "$TMP/remote_host.tsv"
-    jq -r '.drives[]? | ["D", .machine, .mount, (.total_gb // "-"), (.free_gb // "-"), (.pct_used // "-"), (.warn // "ok"), (.read_utc // "-")] | @tsv' \
-      "$FM_RESOURCE_REMOTE_FIXTURE" > "$TMP/remote_drives.tsv"
-    jq -r '.sessions[]? | ["S", .name, (.status // "-")] | @tsv' \
+    jq -r '.hosts[]? | [.machine, (.load1 // "unknown"), (.cores // "unknown"), (.mem_free_pct // "unknown"), (.disk_free_gb // "-"), (.disk_path // "-"), (.uptime // "unknown"), (.read_utc // "-")] | @tsv' \
+      "$FM_RESOURCE_REMOTE_FIXTURE" >> "$TMP/hosts.tsv"
+    jq -r '.drives[]? | [.machine, .mount, (.total_gb // "-"), (.free_gb // "-"), (.pct_used // "-"), (.warn // "ok"), (.read_utc // "-")] | @tsv' \
+      "$FM_RESOURCE_REMOTE_FIXTURE" >> "$TMP/drives.tsv"
+    jq -r '.sessions[]? | [.name, (.status // "-")] | @tsv' \
       "$FM_RESOURCE_REMOTE_FIXTURE" > "$TMP/remote_sessions.tsv"
     jq -r '.workers[]? | ["PC02", .home_lane, .task, (.kind // "unknown"), (.model // "unknown"), (.spend_lane // "unknown"), (.stage // "unknown"), (.age // "-"), (.last_active // "-"), (.ctx_band // "n/a"), (.pr // "-"), (.read_utc // "-")] | @tsv' \
       "$FM_RESOURCE_REMOTE_FIXTURE" > "$TMP/workers_remote.tsv"
@@ -895,7 +936,7 @@ collect_local_testing() {
   local lock=$HOME/.fm-heavy-run-slot.lock holder state runs count
   if [ -e "$lock" ]; then
     holder=$(head -1 "$lock" 2>/dev/null)
-    if flock -n "$lock" true 2>/dev/null; then state=free; else state=busy; fi
+    if slot_busy "$lock"; then state=busy; else state=free; fi
     testing_row PC01 pc01-test-slot "$state" "${holder:-holder unknown}"
   else
     testing_row PC01 pc01-test-slot free 'no holder recorded'
@@ -908,36 +949,46 @@ collect_local_testing() {
 }
 
 collect_forgejo() {
-  local state queued='-' runners='-' user pass code
+  local state queued='-' runners='-' user pass code url owner repo cred
+  url=$(cfg forgejo_url); owner=$(cfg forgejo_owner); repo=$(cfg forgejo_repo); cred=$(cfg forgejo_credentials)
+  if [ -z "$url" ] || [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$cred" ]; then
+    note_unavailable 'forgejo' 'not configured'
+    return
+  fi
   if systemctl --user is-active --quiet forgejo.service 2>/dev/null; then state=active; else state=down; fi
   testing_row PC01 forgejo-pc01 "$state" 'forgejo.service (user unit)'
   if [ "$state" = active ]; then
-    code=$(fm_run_timed 3 curl -sS -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/v1/version 2>/dev/null </dev/null)
+    code=$(fm_run_timed 3 curl -sS -m 3 -o /dev/null -w '%{http_code}' "$url/api/v1/version" 2>/dev/null </dev/null)
     testing_row PC01 forgejo-api "${code:-failed}" 'GET /api/v1/version'
-    user=$(awk -F': *' '/^Username:/{print $2; exit}' /home/sean_/forgejo/ADMIN-CREDENTIALS 2>/dev/null)
-    pass=$(awk -F': *' '/^Password:/{print $2; exit}' /home/sean_/forgejo/ADMIN-CREDENTIALS 2>/dev/null)
+    user=$(awk -F': *' '/^Username:/{print $2; exit}' "$cred" 2>/dev/null)
+    pass=$(awk -F': *' '/^Password:/{print $2; exit}' "$cred" 2>/dev/null)
     if [ -n "$user" ] && [ -n "$pass" ]; then
       runners=$(printf 'user = "%s:%s"\n' "$user" "$pass" \
         | fm_run_timed "$TESTING_TIMEOUT" curl -sS -m "$TESTING_TIMEOUT" -K - \
-          'http://127.0.0.1:3000/api/v1/admin/actions/runners' 2>/dev/null \
+          "$url/api/v1/admin/actions/runners" 2>/dev/null \
         | jq -r '[.[]? | .name + ":" + (.status // "unknown")] | join(",")' 2>/dev/null)
       queued=$(printf 'user = "%s:%s"\n' "$user" "$pass" \
         | fm_run_timed "$TESTING_TIMEOUT" curl -sS -m "$TESTING_TIMEOUT" -K - \
-          'http://127.0.0.1:3000/api/v1/repos/fmadmin/groundwork/actions/runs?limit=50' 2>/dev/null \
+          "$url/api/v1/repos/$owner/$repo/actions/runs?limit=50" 2>/dev/null \
         | jq -r '[.workflow_runs[]? | select(.status == "waiting" or .status == "running" or .status == "queued")] | length' 2>/dev/null)
     else
-      note_unavailable 'forgejo' 'admin credential file unreadable'
+      note_unavailable 'forgejo' 'credential file unreadable'
     fi
   fi
   [ -n "$runners" ] || runners='unavailable'
   [ -n "$queued" ] || queued='unavailable'
   testing_row PC01 forgejo-runners "${runners:-unavailable}" 'PC02 runner registered to PC01 Forgejo'
   testing_row PC01 forgejo-queued "${queued:-unavailable}" 'waiting+running workflow runs'
-  compute_row forgejo fmadmin self-hosted - - - "$state" "${queued} queued"
+  compute_row forgejo "$owner" self-hosted - - - "$state" "${queued} queued"
 }
 
 collect_github() {
-  local usage minutes runs since
+  local usage minutes runs since ghuser ghrepo
+  ghuser=$(cfg github_user); ghrepo=$(cfg github_repo)
+  if [ -z "$ghuser" ] || [ -z "$ghrepo" ]; then
+    note_unavailable 'github' 'not configured'
+    return
+  fi
   if ! command -v gh >/dev/null 2>&1; then
     note_unavailable 'github' 'gh not found'
     return
@@ -946,10 +997,10 @@ collect_github() {
   year=$(jq -rn --argjson t "$NOW" '$t | todate | .[0:4]')
   month=$(jq -rn --argjson t "$NOW" '$t | todate | .[5:7] | tonumber')
   usage=$(fm_run_timed "$TESTING_TIMEOUT" gh api \
-    "/users/sKeLe100/settings/billing/usage?year=$year&month=$month" 2>/dev/null </dev/null)
+    "/users/$ghuser/settings/billing/usage?year=$year&month=$month" 2>/dev/null </dev/null)
   if [ -n "$usage" ] && printf '%s' "$usage" | jq -e '.usageItems | type == "array"' >/dev/null 2>&1; then
     minutes=$(printf '%s' "$usage" | jq -r '[.usageItems[]? | select(.product == "actions" and ((.sku | ascii_downcase) | contains("storage") | not)) | .quantity] | add // 0')
-    compute_row github-actions sKeLe100 'free/public' "${minutes} min MTD" 'public unlimited; private 2000/mo' 'month rollover' ok '-'
+    compute_row github-actions "$ghuser" 'free/public' "${minutes} min MTD" 'public unlimited; private 2000/mo' 'month rollover' ok '-'
     local gb_hours allowance percent as_of
     if [ -f "$STATE/.actions-storage-check" ] && [ ! -L "$STATE/.actions-storage-check" ]; then
       gb_hours=$(awk -F'\t' '$1 == "storage_gb_hours" { print $2; exit }' "$STATE/.actions-storage-check" 2>/dev/null)
@@ -971,7 +1022,7 @@ collect_github() {
     if [ -n "${gb_hours:-}" ] && [ -n "${allowance:-}" ]; then
       local st=ok
       if [ -n "${percent:-}" ] && awk -v p="$percent" 'BEGIN { exit !(p >= 80) }'; then st=warn; fi
-      compute_row github-storage sKeLe100 free "${gb_hours} GB-h to ${as_of:--}" "${allowance} GB-h" 'month rollover' "$st" '-'
+      compute_row github-storage "$ghuser" free "${gb_hours} GB-h to ${as_of:--}" "${allowance} GB-h" 'month rollover' "$st" '-'
     else
       note_unavailable 'github:storage' 'artifact storage probe returned no figure'
     fi
@@ -980,18 +1031,23 @@ collect_github() {
   fi
   since=$(jq -rn --argjson t "$NOW" '($t - 86400) | todate')
   runs=$(fm_run_timed "$TESTING_TIMEOUT" gh api \
-    "/repos/sKeLe100/firstmate/actions/runs?created=%3E%3D${since}&per_page=1" 2>/dev/null </dev/null \
+    "/repos/$ghuser/$ghrepo/actions/runs?created=%3E%3D${since}&per_page=1" 2>/dev/null </dev/null \
     | jq -r '.total_count // empty' 2>/dev/null)
-  [ -z "$runs" ] || compute_row github-runs sKeLe100 free - - - ok "${runs} runs/24h"
+  [ -z "$runs" ] || compute_row github-runs "$ghuser" free - - - ok "${runs} runs/24h"
 }
 
 collect_gitlab() {
-  local usage used plan reset status
+  local usage used plan reset status ns
+  ns=$(cfg gitlab_namespace)
+  if [ -z "$ns" ]; then
+    note_unavailable 'gitlab' 'not configured'
+    return
+  fi
   if ! command -v glab >/dev/null 2>&1; then
     note_unavailable 'gitlab' 'glab not found'
     return
   fi
-  usage=$(fm_run_timed "$TESTING_TIMEOUT" glab api 'namespaces/sean.morden1993' 2>/dev/null </dev/null)
+  usage=$(fm_run_timed "$TESTING_TIMEOUT" glab api "namespaces/$ns" 2>/dev/null </dev/null)
   if [ -z "$usage" ]; then
     note_unavailable 'gitlab' 'namespace quota read failed'
     return
@@ -1005,7 +1061,7 @@ collect_gitlab() {
     | ($d[5:7] | tonumber) as $m
     | if $m == 12 then "\($y + 1)-01-01" else "\($y)-\(if $m < 9 then "0" else "" end)\($m + 1)-01" end')
   if [ "$used" -ge 400 ] 2>/dev/null; then status=exhausted; else status=ok; fi
-  compute_row gitlab sean.morden1993 "${plan:-free}" "${used} min MTD" '400 min/mo' "${reset:--}" "$status" 'relay rung'
+  compute_row gitlab "$ns" "${plan:-free}" "${used} min MTD" '400 min/mo' "${reset:--}" "$status" 'relay rung'
 }
 
 collect_testing_and_compute() {
@@ -1090,9 +1146,9 @@ build_model() {
 
   if [ -n "${FM_RESOURCE_HOSTS_JSON:-}" ] && [ -f "$FM_RESOURCE_HOSTS_JSON" ]; then
     jq -r '.hosts[]? | [.machine, (.load1 // "unknown"), (.cores // "unknown"), (.mem_free_pct // "unknown"), (.disk_free_gb // "-"), (.disk_path // "-"), (.uptime // "unknown"), (.read_utc // "-")] | @tsv' \
-      "$FM_RESOURCE_HOSTS_JSON" > "$TMP/hosts.tsv"
+      "$FM_RESOURCE_HOSTS_JSON" >> "$TMP/hosts.tsv"
     jq -r '.drives[]? | [.machine, .mount, (.total_gb // "-"), (.free_gb // "-"), (.pct_used // "-"), (.warn // "ok"), (.read_utc // "-")] | @tsv' \
-      "$FM_RESOURCE_HOSTS_JSON" > "$TMP/drives.tsv"
+      "$FM_RESOURCE_HOSTS_JSON" >> "$TMP/drives.tsv"
   fi
 
   cat "$TMP/workers_local.tsv" "$TMP/workers_remote.tsv" > "$TMP/workers.tsv"

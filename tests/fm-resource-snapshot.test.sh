@@ -118,13 +118,11 @@ write_fixtures() {  # <name>
     ]}'
   write_json "$dir/hosts.json" '{
     "hosts":[
-      {"machine":"PC01","load1":0.5,"cores":16,"mem_free_pct":80,"disk_free_gb":850.0,"disk_path":"/home/test","uptime":1000,"read_utc":"2026-11-20T00:00:00Z"},
-      {"machine":"PC02","load1":1.5,"cores":16,"mem_free_pct":75,"disk_free_gb":900.0,"disk_path":"/home/test/mate","uptime":2000,"read_utc":"2026-11-20T00:00:00Z"}
+      {"machine":"PC01","load1":0.5,"cores":16,"mem_free_pct":80,"disk_free_gb":850.0,"disk_path":"/home/test","uptime":1000,"read_utc":"2026-11-20T00:00:00Z"}
     ],
     "drives":[
       {"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"warn":"ok","read_utc":"2026-11-20T00:00:00Z"},
-      {"machine":"PC01","mount":"C:","total_gb":500.0,"free_gb":88.0,"pct_used":82,"warn":"ok","read_utc":"2026-11-20T00:00:00Z"},
-      {"machine":"PC02","mount":"C:","total_gb":900.0,"free_gb":23.0,"pct_used":97,"warn":"watch","read_utc":"2026-11-20T00:00:00Z"}
+      {"machine":"PC01","mount":"C:","total_gb":500.0,"free_gb":88.0,"pct_used":82,"warn":"ok","read_utc":"2026-11-20T00:00:00Z"}
     ]}'
   write_json "$dir/herdr-pc01.json" '{
     "sessions":[{"name":"default","status":"running"}],
@@ -161,8 +159,8 @@ write_fixtures() {  # <name>
       {"machine":"PC02","item":"pc02-personal-use","state":"off","detail":"-","read_utc":"2026-11-20T00:00:00Z"}
     ],
     "compute":[
-      {"rung":"gitlab","account":"sean.morden1993","plan":"free","used":"443 min MTD","allowance":"400 min/mo","reset":"2026-12-01","status":"exhausted","runs":"relay rung","read_utc":"2026-11-20T00:00:00Z"},
-      {"rung":"github-storage","account":"sKeLe100","plan":"free","used":"120 GB-h","allowance":"360 GB-h","reset":"month rollover","status":"ok","runs":"-","read_utc":"2026-11-20T00:00:00Z"}
+      {"rung":"gitlab","account":"example-group","plan":"free","used":"443 min MTD","allowance":"400 min/mo","reset":"2026-12-01","status":"exhausted","runs":"relay rung","read_utc":"2026-11-20T00:00:00Z"},
+      {"rung":"github-storage","account":"example-user","plan":"free","used":"120 GB-h","allowance":"360 GB-h","reset":"month rollover","status":"ok","runs":"-","read_utc":"2026-11-20T00:00:00Z"}
     ]}'
   write_json "$dir/hosts-pc01.json" '{
     "hosts":[{"machine":"PC01","load1":0.5,"cores":16,"mem_free_pct":80,"disk_free_gb":850.0,"disk_path":"/home/test","uptime":1000,"read_utc":"2026-11-20T00:00:00Z"}],
@@ -298,6 +296,31 @@ test_down_pc02_keeps_pc01() {
   pass "a down PC02 yields unavailable rows and keeps PC01 complete"
 }
 
+test_remote_fixture_alone_supplies_pc02_rows() {
+  local rec home fb out rc
+  rec=$(make_home remote-only fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  out=$(env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC02="$TMP_ROOT/fixture/herdr-pc02.json" \
+    FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/remote.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1); rc=$?
+  expect_code 0 "$rc" "remote-fixture-only render"
+  printf '%s\n' "$out" > "$TMP_ROOT/remote-only.json"
+  jq -e '.hosts | map(.machine) | sort == ["PC01","PC02"]' "$TMP_ROOT/remote-only.json" >/dev/null \
+    || fail "PC02 host must come from the remote fixture alone"
+  jq -e '.drives[] | select(.machine == "PC02" and .mount == "C:") | .free_gb == "23.0" and .warn == "watch"' \
+    "$TMP_ROOT/remote-only.json" >/dev/null || fail "PC02 C: at 23 GB must render watch from the remote fixture alone"
+  jq -e '.panes | map(select(.machine == "PC02")) | length == 1' "$TMP_ROOT/remote-only.json" >/dev/null \
+    || fail "PC02 panes must resolve the running session from the remote fixture"
+  pass "the remote fixture alone supplies PC02 hosts, drives, and the running session"
+}
+
 test_row_caps_and_omitted() {
   local rec home fb out rc
   rec=$(make_home caps fresh); home=${rec%%|*}; fb=${rec#*|}
@@ -420,7 +443,7 @@ test_live_reconciliation() {
   # PC02 offload slots and personal-use switch equal their raw files.
   if [ -n "$host" ]; then
     local raw_slots raw_personal
-    raw_slots=$(ssh "$host" 'slots=2; sf="$HOME/.config/firstmate/pc02-offload-slots"; [ -f "$sf" ] && slots=$(head -1 "$sf"); used=0; i=1; while [ "$i" -le "$slots" ]; do f="$HOME/.fm-pc02-test-slot-$i.lock"; if [ -e "$f" ] && ! flock -n "$f" true 2>/dev/null; then used=$((used+1)); fi; i=$((i+1)); done; printf "%s/%s" "$used" "$slots"' 2>/dev/null)
+    raw_slots=$(ssh "$host" 'slots=2; sf="$HOME/.config/firstmate/pc02-offload-slots"; [ -f "$sf" ] && slots=$(head -1 "$sf"); printf "0/%s" "$slots"' 2>/dev/null)
     actual=$(jq -r '[.testing[] | select(.item=="pc02-offload-slots") | .state][0] // "missing"' "$model")
     # The used count is a live sample and may move between the two reads; the
     # configured slot total and the row's shape must still agree.
@@ -435,8 +458,10 @@ test_live_reconciliation() {
   fi
 
   # GitLab minutes equal the namespace quota read.
-  local gl_used
-  gl_used=$(glab api 'namespaces/sean.morden1993' 2>/dev/null | jq -r '.ci_minutes_usage.total_minutes_used // empty')
+  local gl_used='' gl_ns
+  gl_ns=$(awk -F= '$1 == "gitlab_namespace" { print $2; exit }' "$live_home/config/resource-snapshot" 2>/dev/null)
+  gl_ns=${FM_RESOURCE_GITLAB_NAMESPACE:-$gl_ns}
+  [ -z "$gl_ns" ] || gl_used=$(glab api "namespaces/$gl_ns" 2>/dev/null | jq -r '.ci_minutes_usage.total_minutes_used // empty')
   if [ -n "$gl_used" ]; then
     actual=$(jq -r '[.compute[] | select(.rung=="gitlab") | .used][0] // "missing"' "$model")
     [ "$actual" = "${gl_used} min MTD" ] || fail "gitlab minutes: expected ${gl_used} min MTD, actual $actual (read $gen)"
@@ -454,6 +479,7 @@ test_every_section_renders_and_agrees
 test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
 test_down_pc02_keeps_pc01
+test_remote_fixture_alone_supplies_pc02_rows
 test_row_caps_and_omitted
 test_read_only_leaves_fixture_untouched
 test_home_only_renders_workers_only

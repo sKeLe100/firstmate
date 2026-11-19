@@ -57,7 +57,7 @@ make_world() {  # <name>
 usage_json() {  # <file> <gigabyte-hours> [date]
   local file=$1 gbh=$2 date=${3:-2026-11-18}
   awk -v gbh="$gbh" -v d="$date" 'BEGIN {
-    printf "{\"usageItems\":[{\"date\":\"%s\",\"product\":\"actions\",\"sku\":\"actions_storage\",\"quantity\":%.9f,\"unitType\":\"gigabyte-hours\",\"pricePerUnit\":0.000336,\"grossAmount\":0.001,\"discountAmount\":0.001,\"netAmount\":0,\"repositoryName\":\"sKeLe100/firstmate\"}]}\n", d, gbh
+    printf "{\"usageItems\":[{\"date\":\"%s\",\"product\":\"actions\",\"sku\":\"actions_storage\",\"quantity\":%.9f,\"unitType\":\"gigabyte-hours\",\"pricePerUnit\":0.000336,\"grossAmount\":0.001,\"discountAmount\":0.001,\"netAmount\":0,\"repositoryName\":\"example-user/example-repo\"}]}\n", d, gbh
   }' > "$file"
 }
 
@@ -342,7 +342,7 @@ test_vendor_sku_spelling_is_matched() {
   local rec home fb usage result
   rec=$(make_world vendor); home=${rec%%|*}; fb=${rec#*|}
   usage="$TMP_ROOT/vendor-usage.json"
-  printf '%s\n' '{"usageItems":[{"date":"2026-11-18","product":"actions","sku":"Actions storage","quantity":120,"unitType":"GigabyteHours","repositoryName":"sKeLe100/firstmate"}]}' > "$usage"
+  printf '%s\n' '{"usageItems":[{"date":"2026-11-18","product":"actions","sku":"Actions storage","quantity":120,"unitType":"GigabyteHours","repositoryName":"example-user/example-repo"}]}' > "$usage"
   result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage")
   assert_grep $'storage_gb_hours\t120' "$home/state/.actions-storage-check" \
     "the live vendor SKU spelling (Actions storage) was not counted"
