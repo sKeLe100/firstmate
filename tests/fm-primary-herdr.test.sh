@@ -48,6 +48,7 @@ case "$*" in
     agent_var="FAKE_AGENT_LIST_${agent_session//-/_}"
     if [ -n "${!agent_var:-}" ]; then printf '%s\n' "${!agent_var}"; elif [ -n "${FAKE_AGENT_LIST:-}" ]; then printf '%s\n' "$FAKE_AGENT_LIST"; else printf '{"result":{"agents":[]}}\n'; fi ;;
   *'pane run'*) : ;;
+  *'pane wait-output'*) exit "${FAKE_WAIT_RC:-0}" ;;
   *'tab get w1:t1'*) printf '{"result":{"tab":{"tab_id":"w1:t1","workspace_id":"%s"}}}\n' "${FAKE_TAB_WORKSPACE:-w1}" ;;
   *'pane get w1:p1'*) printf '{"result":{"pane":{"pane_id":"w1:p1","tab_id":"%s","workspace_id":"%s"}}}\n' "${FAKE_PANE_TAB:-w1:t1}" "${FAKE_PANE_WORKSPACE:-w1}" ;;
   *'agent get w1:p1'*)
@@ -522,6 +523,26 @@ test_claude_primary_pins_orchestrator_account_not_worker_pin() {
   pass 'a Claude primary launch pins the orchestrator account and never config/claude-account'
 }
 
+test_orchestrator_pin_refuses_unconfirmed_or_missing_root() {
+  local dir="$TMP_ROOT/account-unconfirmed" home="$TMP_ROOT/account-unconfirmed/home" fake="$TMP_ROOT/account-unconfirmed/fake" log="$TMP_ROOT/account-unconfirmed/log" out
+  make_home "$home"; make_fakebin "$fake"; mkdir -p "$home/config" "$dir/orchestrator"; : > "$log"
+  printf '%s\n' "$dir/orchestrator" > "$home/config/claude-orchestrator-account"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_WAIT_RC=1 \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'an unconfirmed orchestrator pin launched anyway'
+  fi
+  printf '%s' "$out" | grep -F 'could not confirm the orchestrator Claude account' >/dev/null || fail 'unconfirmed pin refusal was unclear'
+  ! grep -F 'agent start' "$log" >/dev/null || fail 'launched Claude without a confirmed pin'
+  printf '%s\n' "$dir/missing" > "$home/config/claude-orchestrator-account"; : > "$log"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'a missing orchestrator root was accepted'
+  fi
+  printf '%s' "$out" | grep -F 'not a readable directory' >/dev/null || fail 'missing root refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'missing root refused after Herdr mutation'
+  pass 'an unconfirmed or missing orchestrator pin refuses before launching Claude'
+}
+
 test_malformed_orchestrator_account_refuses() {
   local home="$TMP_ROOT/account-bad/home" fake="$TMP_ROOT/account-bad/fake" log="$TMP_ROOT/account-bad/log" out
   make_home "$home"; make_fakebin "$fake"; mkdir -p "$home/config"; : > "$log"
@@ -544,6 +565,7 @@ test_primary_session_setting_defaults_to_default
 test_primary_session_setting_reads_config
 test_primary_session_setting_refuses_malformed
 test_claude_primary_pins_orchestrator_account_not_worker_pin
+test_orchestrator_pin_refuses_unconfirmed_or_missing_root
 test_malformed_orchestrator_account_refuses
 test_emergency_launch_is_explicit_and_completes
 test_normal_launch_is_explicit_and_completes

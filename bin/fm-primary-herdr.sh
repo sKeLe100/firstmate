@@ -413,10 +413,13 @@ REQUESTED=claude
 [ "$MODE" = emergency ] && REQUESTED=codex
 ORCHESTRATOR_ROOT=
 if [ "$REQUESTED" = claude ]; then
-  # config/claude-orchestrator-account is the orchestrator account the private
-  # account-roles helper derives from config/claude-roles. It is deliberately
-  # never config/claude-account, which pins workers away from this account.
+  # config/claude-orchestrator-account names the orchestrator account. It is
+  # deliberately never config/claude-account, which pins workers away from it.
   ORCHESTRATOR_ROOT=$(fm_worker_account_orchestrator_root "$CONFIG") || exit 1
+  if [ -n "$ORCHESTRATOR_ROOT" ] && [ ! -d "$ORCHESTRATOR_ROOT" -o ! -r "$ORCHESTRATOR_ROOT" ]; then
+    echo "error: config/claude-orchestrator-account names $ORCHESTRATOR_ROOT, which is not a readable directory; sign in with CLAUDE_CONFIG_DIR=$ORCHESTRATOR_ROOT claude, then /login, or fix the file" >&2
+    exit 1
+  fi
 fi
 
 IFS=$'\t' read -r LOCK_KIND LOCK_PID LOCK_HARNESS <<EOF
@@ -506,12 +509,12 @@ if [ "$REQUESTED" = claude ]; then
     # Herdr starts the agent from the pane's own shell, not from this process,
     # so export the orchestrator account into that shell before the launch.
     fm_backend_herdr_cli "$SESSION" pane run "$PANE" \
-      "export CLAUDE_CONFIG_DIR=$(printf '%q' "$ORCHESTRATOR_ROOT")" >/dev/null \
+      "export CLAUDE_CONFIG_DIR=$(printf '%q' "$ORCHESTRATOR_ROOT"); printf 'fm-pin-%s\\n' \"\$CLAUDE_CONFIG_DIR\"" >/dev/null \
+      && fm_backend_herdr_cli "$SESSION" pane wait-output "$PANE" --match "fm-pin-$ORCHESTRATOR_ROOT" --timeout "$((START_TIMEOUT))" >/dev/null \
       || {
-        echo "error: could not export the orchestrator Claude account into pane $PANE; refusing to launch on an unpinned account" >&2
+        echo "error: could not confirm the orchestrator Claude account in pane $PANE; refusing to launch on an unpinned account" >&2
         exit 1
       }
-    sleep 0.3
   fi
   CLAUDE_RC_ARGS=()
   [ "$CLAUDE_REMOTE_CONTROL" != on ] || CLAUDE_RC_ARGS=(--remote-control firstmate-primary)

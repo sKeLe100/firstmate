@@ -241,8 +241,7 @@ fm_worker_account_check() {
 
 # fm_worker_account_orchestrator_root <config-dir>
 # Prints the absolute Claude config root named by the home's optional
-# config/claude-orchestrator-account file, the same value the private account
-# roles helper derives from config/claude-roles. An absent file prints nothing
+# config/claude-orchestrator-account file. An absent file prints nothing
 # and returns 0, so a home that has not declared an orchestrator account keeps
 # today's behavior. A malformed file prints one error naming it and returns 1.
 fm_worker_account_orchestrator_root() {
