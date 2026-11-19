@@ -14,7 +14,12 @@
 #   Reads, under FM_HOME (default: current directory), honoring the same
 #   FM_STATE_OVERRIDE and FM_DATA_OVERRIDE directory overrides its writers use:
 #   - data/llm-usage/firstmate.jsonl delegation events for this task_id since
-#     its last landed/completed outcome event (relaunch count),
+#     its last landed/completed outcome event (relaunch count). Only a
+#     delegation the relauncher wrote after confirming a live agent counts; a
+#     row that explicitly records agent_started=false is a launch that never
+#     produced an agent and is skipped, so a mechanical launch failure is
+#     reported as that, never as a retry loop. A row with no agent_started field
+#     is older than that evidence and keeps its established meaning.
 #   - state/<task-id>.status keyed retry-loop reports, when the status file
 #     exists: the `[key=retry-loop]` decision counts only while the shared fold
 #     in bin/fm-classify-lib.sh still reads it open, under either opening verb
@@ -125,6 +130,8 @@ for line in open(sys.argv[1]):
     if row.get("event_type") == "outcome" and row.get("result") in ("landed", "completed"):
         count = 0
     elif row.get("event_type") == "delegation" and row.get("trigger") == "relaunch":
+        if row.get("agent_started") is False or row.get("agent_started") == "false":
+            continue
         count += 1
 print(count)
 PY

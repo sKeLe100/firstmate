@@ -170,7 +170,7 @@ test_no_profile_keeps_claude_profile_defaults() {
 
   launch=$(cat "$LAUNCH_LOG")
   expected=$(claude_expected_launch "$launch" "$HOME_DIR" "$id" --dangerously-skip-permissions)
-  [ "$launch" = "$expected" ] || fail "no-profile claude launch did not use the canonical launch kind"$'\n'"expected: $expected"$'\n'"actual:   $launch"
+  [ "$(canonical_launch_body "$launch")" = "$expected" ] || fail "no-profile claude launch did not use the canonical launch kind"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   pass "no --model/--effort records defaults and types the claude launch instructions"
 }
 
@@ -2034,7 +2034,7 @@ test_claude_long_launch_is_delivered_intact() {
     || fail "Claude regression fixture is too short to cover the terminal line limit: ${#expected} bytes"
   [ "${#launch}" -gt 1024 ] \
     || fail "long Claude launch was truncated to ${#launch} bytes; staging must deliver the full command"
-  [ "$launch" = "$expected" ] \
+  [ "$(canonical_launch_body "$launch")" = "$expected" ] \
     || fail "long Claude launch was not delivered intact (${#launch}/${#expected} bytes)"
   pass "fm-spawn: a Claude launch longer than 1024 bytes is delivered intact through the staging path"
 }
@@ -2513,6 +2513,13 @@ claude_worker_add_dirs() {  # <home> <id>
   printf '%s ' "--add-dir '$state_real/operational-inbox' --add-dir '$state_real/$2.inbox' --add-dir '$data_real/$2' --add-dir '$root_real/.agents/skills'"
 }
 
+# canonical_launch_body <launch>: drop the launch-path guard prelude every
+# staged launch carries, so these comparisons still assert the full agent
+# command rather than the guard lines above it.
+canonical_launch_body() {
+  printf '%s\n' "$1" | sed -n '/^export COMPACT_ADVISER_DISABLE=1/,$p'
+}
+
 claude_expected_launch() {  # <launch> <home> <id> <permission-flag> [<disallowed-flag>]
   local doorbell quoted
   doorbell=$(claude_launch_brief_arg "$1")
@@ -2534,7 +2541,7 @@ test_claude_permission_mode_bypass_matches_absent_launch() {
   expect_code 0 "$status" "claude spawn with claude-permission-mode=bypass should succeed"
   launch=$(cat "$LAUNCH_LOG")
   expected=$(claude_expected_launch "$launch" "$HOME_DIR" "$id" --dangerously-skip-permissions)
-  [ "$launch" = "$expected" ] || fail "explicit bypass did not reproduce the absent-file launch"$'\n'"expected: $expected"$'\n'"actual:   $launch"
+  [ "$(canonical_launch_body "$launch")" = "$expected" ] || fail "explicit bypass did not reproduce the absent-file launch"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   pass "config/claude-permission-mode=bypass launches exactly as an absent file does"
 }
 
@@ -2552,7 +2559,7 @@ test_claude_permission_mode_auto_swaps_only_the_permission_flag() {
   assert_contains "$out" "spawned $id harness=claude" "auto spawn did not report claude"
   launch=$(cat "$LAUNCH_LOG")
   expected=$(claude_expected_launch "$launch" "$HOME_DIR" "$id" '--permission-mode auto')
-  [ "$launch" = "$expected" ] || fail "auto changed more than the permission flag"$'\n'"expected: $expected"$'\n'"actual:   $launch"
+  [ "$(canonical_launch_body "$launch")" = "$expected" ] || fail "auto changed more than the permission flag"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   assert_not_contains "$launch" "--dangerously-skip-permissions" "auto launch must not request bypass mode"
   pass "config/claude-permission-mode=auto replaces --dangerously-skip-permissions with --permission-mode auto"
 }
@@ -2748,7 +2755,7 @@ test_claude_remote_control_off_matches_absent_launch() {
   expect_code 0 "$status" "claude spawn with claude-remote-control=off should succeed"
   launch=$(cat "$LAUNCH_LOG")
   expected=$(claude_expected_launch "$launch" "$HOME_DIR" "$id" --dangerously-skip-permissions)
-  [ "$launch" = "$expected" ] || fail "explicit off did not reproduce the absent-file launch"$'\n'"expected: $expected"$'\n'"actual:   $launch"
+  [ "$(canonical_launch_body "$launch")" = "$expected" ] || fail "explicit off did not reproduce the absent-file launch"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   assert_not_contains "$launch" "--remote-control" "off must never add --remote-control"
   pass "config/claude-remote-control=off launches exactly as an absent file does"
 }

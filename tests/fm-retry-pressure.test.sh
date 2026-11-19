@@ -251,3 +251,28 @@ test_retry_thresholds_is_inheritable_config() {
   pass "fm-retry-pressure.sh: config/retry-thresholds is inherited by secondmate homes"
 }
 test_retry_thresholds_is_inheritable_config
+
+test_launch_that_never_started_an_agent_does_not_count() {
+  local home out t=nostart-task
+  home=$(mk_home nostart)
+  {
+    delegation_row "$t"
+    delegation_row "$t"
+    printf '{"event_type":"delegation","task_id":"%s","trigger":"relaunch","agent_started":"false"}\n' "$t"
+  } >> "$home/data/llm-usage/firstmate.jsonl"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" relaunches)" = "2" ] \
+    || fail "a never-started launch advanced the relaunch count: $out"
+  [ "$(field "$out" retry_band)" = "ok" ] \
+    || fail "a never-started launch pushed the band past ok: $out"
+
+  printf '{"event_type":"delegation","task_id":"%s","trigger":"relaunch","agent_started":"true"}\n' "$t" \
+    >> "$home/data/llm-usage/firstmate.jsonl"
+  out=$(emit "$home" "$t")
+  [ "$(field "$out" relaunches)" = "3" ] \
+    || fail "a confirmed relaunch did not count: $out"
+  [ "$(field "$out" retry_band)" = "halt" ] \
+    || fail "the ceiling no longer trips on confirmed relaunches: $out"
+  pass "fm-retry-pressure.sh: a launch that never started an agent is not a relaunch attempt"
+}
+test_launch_that_never_started_an_agent_does_not_count

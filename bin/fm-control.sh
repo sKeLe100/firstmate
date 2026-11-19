@@ -1211,7 +1211,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line move_state absence verdict
+  local exit_result state note_line move_state absence verdict launch_failure
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1290,6 +1290,10 @@ do_relaunch() {
   # per-task harness wiring before arming the new one, so nothing to do here.
   RELAUNCH_TX="${BASHPID:-$$}.$(date -u +%Y%m%dT%H%M%SZ).$RANDOM"
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
+  # The launch owner also clears this, but doing it here means a refusal before
+  # it stages the launch cannot leave an older attempt's record behind for the
+  # wait below to misread.
+  rm -f "$STATE/$ID.launch-failure" 2>/dev/null || true
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
@@ -1321,6 +1325,13 @@ do_relaunch() {
   fi
 
   state=$(wait_agent_state "$LAUNCH_WAIT" alive) || {
+    launch_failure=
+    if [ -r "$STATE/$ID.launch-failure" ]; then
+      launch_failure=$(sed -n 's/^reason=//p' "$STATE/$ID.launch-failure" 2>/dev/null | tail -1) || launch_failure=
+    fi
+    if [ -n "$launch_failure" ]; then
+      die "the replacement agent for $ID never started within ${LAUNCH_WAIT}s (endpoint reads '$state'): $launch_failure"
+    fi
     die "the replacement agent for $ID did not come up within ${LAUNCH_WAIT}s (endpoint reads '$state')"
   }
   RELAUNCH_AGENT_CONFIRMED=1
@@ -1330,11 +1341,15 @@ do_relaunch() {
   # it already exists to tell the replacement worker what happened. A
   # harness/model relaunch is always a re-delegation in the telemetry sense,
   # whether triggered by a failure or a deliberate captain-directed switch.
+  # agent_started=true is the explicit launch evidence: this row is written only
+  # after a live agent is confirmed above, so a mechanical launch failure that
+  # never started one records no delegation and cannot count as a relaunch
+  # attempt in bin/fm-retry-pressure.sh.
   # Best-effort: never blocks or unwinds a confirmed relaunch.
   fm_llm_usage_emit "$DATA" "$STATE" delegation \
     "task_id=$ID" "from_harness=$PRIOR_RECORDED_HARNESS" "from_model=$PRIOR_MODEL" \
     "to_harness=$TARGET_HARNESS" "to_model=$TARGET_MODEL" \
-    "had_issue=true" "reason=$NOTE" "trigger=relaunch" || true
+    "had_issue=true" "reason=$NOTE" "trigger=relaunch" "agent_started=true" || true
 
   journal_write complete "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
   RELAUNCH_ACTIVE=0

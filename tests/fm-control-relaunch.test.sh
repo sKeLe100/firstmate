@@ -90,6 +90,10 @@ case "${1:-}" in
           ;;
         *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
           cat "$D/becomes" > "$D/command"
+          [ -z "${FM_FAKE_LAUNCH_FAILURE_RECORD:-}" ] || {
+            printf 'v1\n'
+            printf 'reason=%s\n' "${FM_FAKE_LAUNCH_FAILURE_REASON:-harness binary does not resolve on PATH in the launch pane}"
+          } > "$FM_FAKE_LAUNCH_FAILURE_RECORD"
           [ -z "${FM_FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START:-}" ] || exit 1
           ;;
       esac
@@ -1607,6 +1611,27 @@ test_launch_failure_keeps_the_prior_record_and_reports_it() {
   pass "fm-control relaunch: a launch failure after the stop keeps the prior record and reports the real state"
 }
 
+test_launch_that_never_starts_reports_the_launch_failure_record() {
+  local dir out rc record
+  dir=$(new_case launch-path rl14)
+  add_ship_task "$dir" rl14 claude
+  printf 'zsh' > "$dir/fake/becomes"
+  record="$dir/home/state/rl14.launch-failure"
+  # The replacement launch runs but its harness never resolves, so the launch
+  # owner leaves the durable record the relaunch transaction must read back.
+  out=$(FM_FAKE_LAUNCH_FAILURE_RECORD="$record" \
+    FM_FAKE_LAUNCH_FAILURE_REASON='harness binary codex does not resolve on PATH in the launch pane; the agent never started' \
+    FM_CONTROL_LAUNCH_WAIT=0.3 \
+    run_control "$dir" rl14 relaunch --harness codex --model gpt-5 --effort high --note "carry this forward"); rc=$?
+  expect_code 1 "$rc" "a launch that never starts must fail closed"$'\n'"$out"
+  assert_contains "$out" "never started" \
+    "the failure should say the agent never started rather than only reading the endpoint"
+  assert_contains "$out" "harness binary codex does not resolve on PATH" \
+    "the failure should relay the recorded launch-failure reason"
+  [ -r "$record" ] || fail "the launch-failure record should survive for later recovery"
+  pass "fm-control relaunch: a launch that never produced an agent is reported as a launch failure"
+}
+
 test_prepublication_failure_keeps_concurrent_durable_metadata() {
   local dir control_pid link_out rc i=0
   dir=$(new_case rollback-race rl30)
@@ -2896,6 +2921,7 @@ test_missing_instructions_refuse_before_stopping_anything
 test_checkpoint_refusal_leaves_the_record_byte_identical
 test_checkpoint_refuses_uninspectable_head_and_status
 test_launch_failure_keeps_the_prior_record_and_reports_it
+test_launch_that_never_starts_reports_the_launch_failure_record
 test_prepublication_failure_keeps_concurrent_durable_metadata
 test_post_publication_launch_failure_keeps_the_new_record
 test_relaunch_keeps_the_pr_poll_authenticated
