@@ -2,11 +2,18 @@
 # Enumerate this home's registered secondmates for an internal /stow cascade.
 # Usage: fm-stow-cascade.sh [--complete] [--help]
 #
-# --complete writes only the durable stow-completion marker
-# (state/.stow-last-run) and exits; the /stow skill runs it after the
-# skill-driven cascade to secondmates has genuinely finished. See
-# record_stow_completion below for why the enumeration run does not stamp the
-# marker itself when secondmates exist.
+# The durable stow-completion marker (state/.stow-last-run) means this home's
+# own /stow pass finished; secondmate stows may still be running in the
+# background. The enumeration run stamps it after this home's own pass even
+# when secondmates exist, so a primary can clear without waiting on them.
+#
+# --complete stamps the same marker and exits; it is idempotent. When the
+# caller is still collecting per-home receipts for secondmate stows it already
+# dispatched in the background, --complete waits no longer than
+# FM_STOW_CASCADE_RECEIPT_WAIT seconds (default 300, about five minutes) for
+# each local home with a live agent to stamp its own marker, returns as soon as
+# all of them report, then stamps regardless. It never awaits a direct,
+# deferred, or remote home, so an unreachable one cannot extend the bound.
 #
 # The internal /stow skill owns curation judgement; this command owns only the
 # mechanical inputs a cascade needs: which homes exist, what each home's own
@@ -45,6 +52,11 @@
 # blocking the primary's own /stow. A local endpoint probe reads this host's
 # recorded backend in process, like every other caller of that contract.
 #
+# Secondmate stows themselves are never run or awaited here: the /stow skill
+# dispatches them in the background, and the primary's marker is already
+# stamped by the enumeration, so a slow secondmate never deadlocks a
+# /stow-then-clear.
+#
 # A secondmate home never cascades: secondmates do not own secondmates, so this
 # command reports the empty cascade there rather than reaching for a registry.
 #
@@ -54,7 +66,7 @@
 set -u
 
 usage() {
-  sed -n '2,53{s/^# \{0,1\}//;p;}' "$0"
+  sed -n '2,65{s/^# \{0,1\}//;p;}' "$0"
 }
 
 case "${1:-}" in
@@ -87,6 +99,11 @@ case "$BOUND" in
 esac
 [ "$BOUND" -gt 0 ] \
   || { printf 'error: FM_STOW_CASCADE_TIMEOUT must be a positive integer: %s\n' "$BOUND" >&2; exit 2; }
+
+RECEIPT_WAIT=${FM_STOW_CASCADE_RECEIPT_WAIT:-300}
+case "$RECEIPT_WAIT" in
+  ''|*[!0-9]*) printf 'error: FM_STOW_CASCADE_RECEIPT_WAIT must be a non-negative integer: %s\n' "$RECEIPT_WAIT" >&2; exit 2 ;;
+esac
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 emit() { printf '%s\n' "$1"; }
@@ -168,19 +185,70 @@ resolve_remote_transport() { # <id>
 
 # Durable stow-completion evidence. The marker's mtime is the contract other
 # tooling anchors on (bin/fm-primary-watchdog.sh waits for it before restarting
-# a limit-blocked primary), so it must mean the whole /stow pass - including
-# the skill-driven cascade to secondmates that happens AFTER this enumeration
-# returns - is genuinely done, never merely that enumeration printed. The
-# enumeration run therefore writes it only on terminal paths where no cascade
-# follows (a secondmate home, no registry, an empty registry); when secondmates
-# were enumerated, the /stow skill runs `fm-stow-cascade.sh --complete` once
-# every secondmate's curation is finished, and that call writes the marker.
+# a limit-blocked primary), so it means this home's own /stow pass is done.
+# Secondmate stows dispatched in the background may still be running, which is
+# exactly the deadlock this marker must not inherit: the enumeration run stamps
+# it after this home's own pass even when secondmates were enumerated.
 record_stow_completion() {
   mkdir -p "$STATE" 2>/dev/null || return 0
   : >"$STATE/.stow-last-run" 2>/dev/null || true
 }
 
+# Bounded wait for secondmate stows the /stow skill dispatched in the
+# background. Only a local home with a live agent is observable: it stamps its
+# own state/.stow-last-run when its pass finishes. Direct, deferred, and remote
+# homes are never awaited, so none can extend the bound. The caller's own
+# marker already exists, so this only enriches the receipt and never gates
+# clearing.
+await_secondmate_stows() {
+  local since deadline interval=5 line id home resolved marker pending mtime baseline own
+  local -a markers=()
+  [ "$RECEIPT_WAIT" -gt 0 ] || return 0
+  if [ -e "$FM_HOME/$SUB_HOME_MARKER" ] || [ -L "$FM_HOME/$SUB_HOME_MARKER" ]; then
+    return 0
+  fi
+  [ -e "$REGISTRY" ] || [ -L "$REGISTRY" ] || return 0
+  secondmate_registry_validate_bindings "$REGISTRY" secondmate_registry_path_key || return 0
+  # This pass's own receipt is the baseline: the enumeration stamped it right
+  # before the skill dispatched the background stows, so a secondmate marker at
+  # least that new has reported for this pass. Fall back to now when no receipt
+  # exists yet.
+  since=$(date +%s)
+  own="$STATE/.stow-last-run"
+  if [ -e "$own" ]; then
+    baseline=$(stat -c %Y "$own" 2>/dev/null || stat -f %m "$own" 2>/dev/null || printf '')
+    case "$baseline" in ''|*[!0-9]*) baseline= ;; esac
+    [ -z "$baseline" ] || since=$baseline
+  fi
+  deadline=$(( $(date +%s) + RECEIPT_WAIT ))
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    secondmate_registry_parse_line "$line" || continue
+    [ "$SECONDMATE_REGISTRY_REMOTE" -eq 0 ] || continue
+    id=$SECONDMATE_REGISTRY_ID
+    home=$SECONDMATE_REGISTRY_HOME
+    validate_secondmate_home "$id" "$home" || continue
+    resolved=$VALIDATED_HOME
+    resolve_local_transport "$id" "$resolved"
+    [ "$TRANSPORT" = agent ] || continue
+    markers+=("$resolved/state/.stow-last-run")
+  done < <(grep '^- ' "$REGISTRY" 2>/dev/null || true)
+  [ "${#markers[@]}" -gt 0 ] || return 0
+  while :; do
+    pending=0
+    for marker in "${markers[@]}"; do
+      mtime=$(stat -c %Y "$marker" 2>/dev/null || stat -f %m "$marker" 2>/dev/null || printf '0')
+      case "$mtime" in ''|*[!0-9]*) mtime=0 ;; esac
+      [ "$mtime" -gt "$since" ] || pending=1
+    done
+    [ "$pending" -eq 0 ] && return 0
+    [ "$(date +%s)" -ge "$deadline" ] && return 0
+    sleep "$interval"
+  done
+}
+
 if [ "$MODE" = complete ]; then
+  await_secondmate_stows
   record_stow_completion
   exit 0
 fi
@@ -275,8 +343,7 @@ done < "$TMP/records"
 printf '\n'
 emit "secondmates=$total"
 emit "exceptions=$exceptions"
-# With secondmates enumerated, the cascade itself still lies ahead of this
-# process; the /stow skill stamps completion via --complete once it finishes.
-[ "$total" -gt 0 ] || record_stow_completion
+# This home's own pass is done; secondmate stows continue in the background.
+record_stow_completion
 [ "$exceptions" -eq 0 ] || exit 3
 exit 0

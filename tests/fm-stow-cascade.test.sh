@@ -109,6 +109,19 @@ run_cascade() { # <primary-home> [env assignments...]
     "$CASCADE"
 }
 
+run_complete() { # <primary-home> [env assignments...]
+  local home=$1
+  shift
+  env -i \
+    PATH="$FAKEBIN:$BASE_PATH" \
+    HOME="${HOME:-/tmp}" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    FM_HOME="$home" \
+    FM_SSH_BIN="$FAKEBIN/fake-ssh" \
+    "$@" \
+    "$CASCADE" --complete
+}
+
 # stanza <output> <id>: the block of key=value lines for one secondmate.
 stanza() {
   printf '%s\n' "$1" | awk -v id="secondmate=$2" '
@@ -362,38 +375,81 @@ test_no_cascade_without_secondmates_or_from_a_secondmate_home() {
   pass "the cascade stays silent with no secondmates and never runs from a secondmate home"
 }
 
-test_completion_marker_waits_for_the_real_cascade() {
+test_receipt_is_stamped_after_the_primary_pass() {
   local primary a out
-  # With secondmates enumerated, the skill-driven cascade still lies ahead, so
-  # the enumeration run must NOT stamp state/.stow-last-run; only an explicit
-  # --complete (run by the /stow skill after the cascade finishes) may.
+  # Secondmate stows run in the background, so the receipt must not wait for
+  # them: enumeration with secondmates stamps it after this home's own pass.
   primary=$(new_primary marker)
   a=$(new_home marker-a)
   local_record marker-a "$a" > "$primary/data/secondmates.md"
   set +e
   out=$(run_cascade "$primary")
   set -e
-  [ ! -e "$primary/state/.stow-last-run" ] \
-    || fail "enumeration with secondmates stamped the completion marker early"
+  [ -e "$primary/state/.stow-last-run" ] \
+    || fail "enumeration with secondmates did not stamp the receipt after the primary pass"
+
+  # A secondmate home stamps its own receipt when it stows.
   set +e
-  FM_HOME="$primary" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-stow-cascade.sh" --complete
+  out=$(run_cascade "$a")
+  set -e
+  [ -e "$a/state/.stow-last-run" ] \
+    || fail "a secondmate home did not stamp its own receipt"
+
+  # --complete stays idempotent and never blocks on a direct home.
+  set +e
+  run_complete "$primary" FM_STOW_CASCADE_RECEIPT_WAIT=0
   set -e
   [ -e "$primary/state/.stow-last-run" ] \
     || fail "--complete did not stamp the completion marker"
-  # A primary with no registry has no cascade ahead: the enumeration run is
-  # itself terminal and stamps the marker.
-  primary=$(new_primary marker-empty)
+  pass "the receipt is stamped after the primary pass, not after secondmate stows"
+}
+
+test_complete_wait_is_bounded_and_only_follows_live_agents() {
+  local primary live idle marker started elapsed rc pid
+  primary=$(new_primary bounded-await)
+  live=$(new_home await-live)
+  idle=$(new_home await-idle)
+  {
+    local_record await-live "$live"
+    local_record await-idle "$idle"
+  } > "$primary/data/secondmates.md"
+  fm_write_secondmate_meta "$primary/state/await-live.meta" "$live" 'firstmate:fm-await-live' alpha claude
+  marker="$live/state/.stow-last-run"
+
+  # A live local agent that never reports its own receipt cannot hold
+  # --complete past the configured bound.
+  started=$(date +%s)
   set +e
-  out=$(run_cascade "$primary")
+  run_complete "$primary" FM_STOW_CASCADE_RECEIPT_WAIT=1 FM_FAKE_TMUX_WINDOW='fm-await-live'
+  rc=$?
   set -e
-  [ -e "$primary/state/.stow-last-run" ] \
-    || fail "a no-registry enumeration did not stamp its terminal marker"
-  pass "the completion marker waits for --complete when secondmates exist"
+  elapsed=$(( $(date +%s) - started ))
+  expect_code 0 "$rc" "--complete should succeed on the receipt path"
+  [ "$elapsed" -lt 20 ] || fail "the bounded wait ran $elapsed s, far past its 1 s bound"
+  [ -e "$primary/state/.stow-last-run" ] || fail "the bounded wait did not stamp the receipt"
+
+  # When the live agent stamps its own receipt while --complete is waiting,
+  # the wait returns early instead of running out the bound.
+  started=$(date +%s)
+  set +e
+  run_complete "$primary" FM_STOW_CASCADE_RECEIPT_WAIT=60 FM_FAKE_TMUX_WINDOW='fm-await-live' \
+    >/dev/null 2>&1 &
+  pid=$!
+  sleep 2
+  : > "$marker"
+  wait "$pid"
+  rc=$?
+  set -e
+  elapsed=$(( $(date +%s) - started ))
+  expect_code 0 "$rc" "--complete should succeed once the live home reports"
+  [ "$elapsed" -lt 20 ] || fail "the wait did not return early after the live home reported ($elapsed s)"
+  pass "the receipt wait is bounded and returns early when live secondmates report"
 }
 
 test_budget_is_enforced_per_home_and_never_summed
 test_every_registered_home_is_enumerated_exactly_once
-test_completion_marker_waits_for_the_real_cascade
+test_receipt_is_stamped_after_the_primary_pass
+test_complete_wait_is_bounded_and_only_follows_live_agents
 test_transport_routes_by_placement_and_liveness
 test_receipt_facts_are_complete_and_show_before_and_after
 test_a_slow_remote_is_bounded_and_the_rest_still_report
