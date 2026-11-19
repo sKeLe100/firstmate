@@ -1,0 +1,50 @@
+### real doctor --fix piped through cat (isolated HOME=/tmp/fm-doc-live.kb2iek, real herdr 0.9.5); returned in ~2.5s with timeout-rc=0
+mode=fix
+path=~/.local/bin:~/.local/gnu-coreutils/bin:~/.npm-global/bin:~/.local/bin:~/.local/gnu-coreutils/bin:~/.npm-global/bin:~/go/bin:~/.npm-global/bin:~/.local/bin:~/.local/bin:~/.npm-global/bin:~/.local/bin:~/go/bin:~/.cargo/bin:~/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin
+entrypoint=no
+note: not launched through the fixed remote entrypoint; the reported PATH is this caller environment.
+platform=linux
+fix remote-job-worker=applied: installed or reloaded dev.firstmate.remote-job
+fix herdr-server=applied: started the herdr server for session fm-remote (log: /tmp/fm-doc-live.kb2iek/fm/state/herdr-fm-remote.log)
+required git=/usr/bin/git
+required jq=/usr/bin/jq
+required herdr=MISSING
+required tasks-axi=MISSING
+required treehouse=MISSING
+required harness=MISSING
+optional tmux=/usr/bin/tmux
+optional no-mistakes=~/.local/bin/no-mistakes
+optional gh=~/.local/bin/gh
+check herdr=ok: ~/.local/bin/herdr
+check gui-session=skip: no Aqua login session applies on linux
+check remote-job-worker=ok: the Linux remote job worker is running
+check remote-job-worker-loaded=skip: Aqua launch agents do not apply on linux
+check remote-job-probe=ok: the remote job worker completed the required-tool probe
+check launchagent=skip: launch agents apply only on darwin
+check launchagent-scope=skip: launch agents apply only on darwin
+check launchagent-loaded=skip: launch agents apply only on darwin
+check herdr-server=ok: session fm-remote is running
+check entrypoint-link=skip: this run did not come through the fixed remote entrypoint
+error: required tools do not resolve on the remote runtime PATH: herdr tasks-axi treehouse harness
+fix: install each one where it resolves on the path reported above, or put a wrapper script for it in /tmp/fm-doc-live.kb2iek/.local/bin, which is always on that PATH.
+fix: tools in an unselected nvm version or outside the discovered asdf or mise paths need an absolute wrapper; see docs/remote-secondmates.md for the wrapper recipe.
+error: this host is not ready for a remote second mate
+pipeline-status=1 0
+
+### after --fix returned: processes under the isolated home
+3077486 /usr/bin/bash -c      . "$1/fm-backend.sh" || exit 1     fm_backend_source herdr || exit 1     fm_backend_herdr_server_exec "$2"    fm-herdr-server {worktrees}
+3077556 herdr server --session fm-remote
+    PID    PPID     SID    PGID TT       ELAPSED COMMAND
+3077556 3077486 3077486 3077486 ?             13 herdr server --session fm-remote
+### caller shell sid: 3117567
+### isolated status:
+{"running":true,"socket":"/tmp/fm-doc-live.kb2iek/.config/herdr/sessions/fm-remote/herdr.sock"}
+### log file:
+-rw-rw-r-- 1 sean_ sean_ 408 Nov 18 22:35 /tmp/fm-doc-live.kb2iek/fm/state/herdr-fm-remote.log
+herdr server running; you can use any herdr CLI command in another terminal.
+api socket: /tmp/fm-doc-live.kb2iek/.config/herdr/sessions/fm-remote/herdr.sock
+client socket: /tmp/fm-doc-live.kb2iek/.config/herdr/sessions/fm-remote/herdr-client.sock
+logs: /tmp/fm-doc-live.kb2iek/.config/herdr/sessions/fm-remote/herdr-server.log
+did you mean to open the Herdr TUI? run `herdr`; you do not need `herdr server`.
+### host's own fm-remote session (must be unchanged):
+{"running":true,"socket":"~/.config/herdr/sessions/fm-remote/herdr.sock"}

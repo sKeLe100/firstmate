@@ -1,0 +1,32 @@
+### BASE 27fd11d6: real doctor --fix | cat under timeout 45 (isolated HOME=/tmp/fm-doc-base.pkpYKv, real herdr)
+### doctor printed its full report, but the pipeline never closed: timeout fired (rc 124), no pipeline-status line
+mode=fix
+entrypoint=no
+note: not launched through the fixed remote entrypoint; the reported PATH is this caller environment.
+platform=linux
+fix remote-job-worker=applied: installed or reloaded dev.firstmate.remote-job
+fix herdr-server=applied: started the herdr server for session fm-remote
+required git=/usr/bin/git
+required jq=~/.local/bin/jq
+required herdr=~/.local/bin/herdr
+required tasks-axi=~/.local/bin/tasks-axi
+required treehouse=~/.local/bin/treehouse
+required harness=claude:~/.local/bin/claude
+optional tmux=/usr/bin/tmux
+optional no-mistakes=~/.local/bin/no-mistakes
+optional gh=~/.local/bin/gh
+check herdr=ok: ~/.local/bin/herdr
+check gui-session=skip: no Aqua login session applies on linux
+check remote-job-worker=ok: the Linux remote job worker is running
+check remote-job-worker-loaded=skip: Aqua launch agents do not apply on linux
+check remote-job-probe=fixable: the remote job worker returned an invalid required-tool probe result
+check launchagent=skip: launch agents apply only on darwin
+check launchagent-scope=skip: launch agents apply only on darwin
+check launchagent-loaded=skip: launch agents apply only on darwin
+check herdr-server=ok: session fm-remote is running
+check entrypoint-link=skip: this run did not come through the fixed remote entrypoint
+action: remote-job-probe: rerun this command with --fix to restart the worker
+error: this host is not ready for a remote second mate; unresolved: remote-job-probe
+timeout-rc=124
+
+### leftover processes observed at +20s: doctor subshell (fd 10/11 = pipe) and 'herdr server --session fm-remote' in the caller's sid 3387889 (not detached)
