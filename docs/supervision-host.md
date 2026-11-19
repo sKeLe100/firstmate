@@ -260,7 +260,7 @@ The first trip adds one `supervision-host:` line to the failing turn's handback;
 The away return brief (`bin/fm-afk-return.sh`) reports engine errors in the window and any latch visible at return, using a lower bound for the window's error count because the host ledger is bounded.
 It names the trip time only when the ledger retains the initial-trip row: a failed-probe row cannot establish that time or prove the latch predated the window, and a paused latch with no initial-trip row is reported with "trip time unavailable" even if the ledger is missing.
 The brief also says whether the latch is still paused or has recovered.
-The latch belongs to one main session, engine, and model, so a new main session or another engine or model starts clean.
+The latch belongs to one main session, engine, model, and engine account, so a new main session or another engine, model, or engine account starts clean.
 
 ### Lost ownership
 
@@ -326,10 +326,11 @@ A captain message typed during the park waits for the checkpoint to return, at m
 
 The engine keeps one conversation across wakes so the byte-stable prompt stays cached.
 That conversation is keyed to the current main session.
-A new one opens in two cases:
+A new one opens in three cases:
 
 - At every main session start.
 - Every `FM_SUPERVISION_HOST_ROTATE_TURNS` turns, because each wake adds history and the per-wake cost grows with it.
+- When the engine, model, or engine account changes; Claude stores each transcript under its own config directory, so a conversation cannot resume on another account.
 
 Nothing captain-facing rides on that conversation, because the outcome store carries every result.
 The captain context it acts on is the [dialog mirror](#the-dialog-mirror) at the head of every attended wake and the away record's read-back at the tail of every away wake.
@@ -397,6 +398,9 @@ Such a process is never recorded and survives the turn, the same residual `bin/f
 
 The default model is `sonnet`, which handled every measured wake correctly at a fraction of a larger model's cost.
 `config/supervision-host` can name another.
+
+The engine normally inherits the primary's own `CLAUDE_CONFIG_DIR`.
+[`config/supervision-engine-account`](configuration.md#engine-account-configsupervision-engine-account) can point an opted-in home's engine at another Claude account; absent, the inherited account is unchanged.
 
 The Claude engine runs beside any of the six primaries, and an empty `config/supervision-host` selects it on a Claude primary.
 A Cursor, OpenCode, omp, Grok, or Codex home names it (`claude`, optionally with a model) in `config/supervision-host`.

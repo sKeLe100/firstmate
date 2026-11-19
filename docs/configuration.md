@@ -383,7 +383,7 @@ Both choices are local to each Firstmate home and are not part of secondmate inh
 
 ## Supervision host (config/supervision-host)
 
-Two optional local, gitignored files control the supervision host for this home: `config/supervision-host-off` opts the home out, and `config/supervision-host` opts a home in and selects its engine.
+Three optional local, gitignored files control the supervision host for this home: `config/supervision-host-off` opts the home out, `config/supervision-host` opts a home in and selects its engine, and `config/supervision-engine-account` moves the engine to another Claude account.
 The host runs the supervision branch's contract on a headless engine session beside a non-Pi primary.
 [docs/supervision-host.md](supervision-host.md) defines its design, current scope, and verified engines.
 A Claude, Cursor, OpenCode, omp, Grok, or Codex primary can run the host.
@@ -409,16 +409,31 @@ Grok's arm command is rendered at session start, so a change to its host mode ta
 
 Only Claude has a verified engine of its own, so a Cursor, OpenCode, omp, Grok, or Codex home names `claude` in the file.
 
+### Engine account (config/supervision-engine-account)
+
+By default the headless engine inherits firstmate's own `CLAUDE_CONFIG_DIR`, so it spends the same Claude account as the primary session.
+`config/supervision-engine-account`, which is local and gitignored, moves the engine to another account.
+It holds one line: the absolute path of an existing Claude config directory, with no other line or control character.
+A final newline is optional.
+
+The file is opt-in; absent, the engine keeps inheriting the primary's account exactly as before.
+Sign the account in first with `CLAUDE_CONFIG_DIR=<path> claude`, then `/login`; Firstmate never copies credentials or changes a global login.
+Firstmate's other environment credentials, such as `ANTHROPIC_API_KEY`, still rank above a stored login in the selected directory, so a home that authenticates through the environment should leave the file absent.
+
+An unreadable file, a relative or nonexistent path, or a malformed line leaves the home without an engine, exactly like a malformed `config/supervision-host`: every wake reaches main and the away line names the problem.
+The file applies to the Claude engine, the only verified engine today.
+`fm_supervision_engine_account` in `bin/fm-supervision-engine-lib.sh` owns the parse; `fm_supervision_host_config` resolves it into `FM_SUPERVISION_ENGINE_ACCOUNT`, and `fm_supervision_engine_turn` launches the engine with that value as `CLAUDE_CONFIG_DIR`.
+
 ### Failures, when changes apply, and inheritance
 
 An unverified engine, a primary without a verified engine, or a malformed line leaves the host without an engine.
 It takes no wake, so every wake reaches main as it would without the host.
 Each away-posture wake includes a line naming the problem.
-The running host reads both files at every wake, so an engine change or an opt-out takes effect at the next wake without a restart.
+The running host reads `config/supervision-host-off`, `config/supervision-host`, and `config/supervision-engine-account` at every wake, so an engine change, an account change, or an opt-out takes effect at the next wake without a restart; an account change starts a new engine conversation.
 
 The opt-out is inherited into secondmate homes: a primary that opts out also opts its secondmates out, and clearing it restores each mate's own host setting at its next spawn or convergence.
 The primary-authoritative propagation contract, including removal of a mate's local opt-out when the primary has none, is owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
-`config/supervision-host` is local to each home and not inherited, because each home's engine and model are its own choice.
+`config/supervision-host` and `config/supervision-engine-account` are local to each home and not inherited, because each home's engine, model, and engine account are its own choice.
 While the home runs the host, main's lease-checked commands also take the per-task lease lock, so a claim by the host's engine cannot race a mutation main already started (`bin/fm-lease-lib.sh`).
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
