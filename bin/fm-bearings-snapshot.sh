@@ -157,7 +157,9 @@ Default fields: schema, home, generated, prs,
   decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at},
   landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner,deferred_since,filed}, reports{id,path}, recorded_prs{id,url},
-  unhealthy_endpoints{...} (only when non-empty), omitted{surface,reveal}.
+  unhealthy_endpoints{...} (only when non-empty),
+  storage_alert{line,percent,as_of,checked_at}
+  (only when the local artifact-storage warning record reports one), omitted{surface,reveal}.
 Default gates are selected newest filed first before their bound; undated gates
   retain input order after dated gates.
 landed merges this home's Done with registered secondmate homes' Done, bounded by
@@ -175,6 +177,9 @@ Opt-in surfaces: --fields bodies|paths|actions|endpoints, --all-in-flight,
   --all-secondmates, --all-landed, --all-reports, --all-queued, --all-recorded-prs,
   --all-unhealthy, --all-pr-repos, --include-prs (adds candidate_prs).
 Raise FM_BEARINGS_PR_LIMIT to expand per-repository open-PR results.
+storage_alert is a bounded local read of this home's state/.actions-storage-check
+  record, written by bin/fm-actions-storage-check.sh; bearings makes no network
+  call for it and shows nothing while that record reports no warning.
 claude_accounts reads up to four accounts (FM_BEARINGS_CLAUDE_ACCOUNTS_MAX; the rest are unknown rows) listed in config/claude-accounts
   (`label:dir` lines, where dir `ordinary` or $HOME/.claude is the ordinary login;
   an absent file falls back to the current CLAUDE_CONFIG_DIR; an unparseable line
@@ -324,6 +329,24 @@ if [ -f "$UPSTREAM_REPORT" ]; then
       | $base + (if $areas != null then {areas:$areas} else {} end)' 2>/dev/null) || UPSTREAM_JSON=null
     [ -n "$UPSTREAM_JSON" ] || UPSTREAM_JSON=null
   fi
+fi
+
+# --- cached artifact-storage warning (local file, no network) ----------------
+# bin/fm-actions-storage-check.sh owns the daily probe, its report record, and
+# the wording; bearings only reads that record so a storage warning shows up
+# without a second network call. A record with no reported finding (under the
+# threshold) surfaces nothing.
+STORAGE_LINE='' STORAGE_PERCENT='' STORAGE_AS_OF='' STORAGE_CHECKED=''
+STORAGE_REPORT="$(printf '%s' "$SNAP" | jq -r '.fm_home')/state/.actions-storage-check"
+if [ -f "$STORAGE_REPORT" ] && [ ! -L "$STORAGE_REPORT" ]; then
+  storage_field() {  # <key>
+    awk -F '\t' -v k="$1" '$1 == k { print substr($0, index($0, "\t") + 1); exit }' "$STORAGE_REPORT" 2>/dev/null
+  }
+  STORAGE_LINE=$(storage_field reported)
+  STORAGE_PERCENT=$(storage_field percent)
+  STORAGE_AS_OF=$(storage_field as_of)
+  STORAGE_CHECKED=$(storage_field last_eval)
+  [ -z "$STORAGE_LINE" ] || STORAGE_LINE=${STORAGE_LINE:0:400}
 fi
 
 # --- Claude account quota display (local quota-axi, shared budget) ----------
@@ -660,6 +683,10 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --arg today "$BEARINGS_TODAY" \
   --arg prs "$PR_STATUS" \
   --arg upstream "$UPSTREAM_JSON" \
+  --arg storage_line "$STORAGE_LINE" \
+  --arg storage_percent "$STORAGE_PERCENT" \
+  --arg storage_as_of "$STORAGE_AS_OF" \
+  --arg storage_checked "$STORAGE_CHECKED" \
   --arg fields "$FIELDS" \
   --argjson landed_n "$FM_BEARINGS_LANDED" \
   --argjson landed_per_home_n "$FM_BEARINGS_LANDED_PER_HOME" \
@@ -973,6 +1000,11 @@ MODEL=$(printf '%s' "$SNAP" | jq \
            {unhealthy_endpoints:(if $all_unhealthy == 1 then $unhealthy_all else $unhealthy_all[:$unhealthy_n] end)}
          else {} end)
   | . + (($upstream|fromjson) as $u | if $u != null then {upstream:$u} else {} end)
+  | . + (if $storage_line == "" then {} else {storage_alert:
+        ({line:$storage_line}
+         + (if ($storage_percent | test("^[0-9]+(\\.[0-9]+)?$")) then {percent:($storage_percent|tonumber)} else {} end)
+         + (if ($storage_as_of | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")) then {as_of:$storage_as_of} else {} end)
+         + (if ($storage_checked | test("^[0-9]+$")) then {checked_at:($storage_checked|tonumber)} else {} end))} end)
   | . + (if $include_prs == 1 then {candidate_prs:$candidate_prs} else {} end)
   | . + (if $f_bodies then {bodies:[ $snap.backlog.records[] | select(.structured and (.state == "queued" or .state == "done")) | {id, body:((.body_excerpt // .raw // "-") | trunc(200))} ]} else {} end)
   | . + (if $f_paths then {paths:[ $snap.tasks[] | {id, worktree:(.paths.worktree.path // "-"), home:(.paths.home.path // "-"), status:.paths.status_log.path, report:.paths.report.path} ]} else {} end)

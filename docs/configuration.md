@@ -1177,6 +1177,18 @@ That one line goes out through the shared per-line digest cut, so an over-long f
 Older bulk learning files remain reference-only; this monitor neither loads nor merges them.
 A reported review need is only a recommendation, not cleanup authority.
 
+## GitHub Actions storage warning
+
+A home can arm an opt-in daily storage warning with `bin/fm-actions-storage-check.sh arm`.
+It writes `state/actions-storage.check.sh` and binds it through the same authenticated watcher-check mechanism as the other standing checks, so no extra daemon or scheduler is installed, and an armed home keeps needing a watcher after its last task is torn down.
+The check reads GitHub's enhanced billing usage report, `GET /users/{username}/settings/billing/usage`, whose `usageItems` rows carry the `actions_storage` and `packages_storage` SKUs in gigabyte-hours; GitHub bills the shared Actions artifact and Packages pool as gigabyte-hours accumulated over the month, so the check requests the month of the day before yesterday in UTC, the latest fully settled day (the current day is still accumulating and yesterday may not be fully ingested), and sums those rows from the first of the month through that day.
+The retired `shared-storage` estimate endpoint now answers 410 Gone, so the usage report is the supported source.
+That endpoint requires a classic token with the `user` scope; authorize once with `gh auth refresh -h github.com -s user`.
+GitHub Free includes 500 MB (0.5 GB) of shared artifact and Packages storage, a monthly allowance of 0.5 GB for every hour of the month (360 GB-hours in a 30-day month), and uploads stop once that is used up when an account has no payment method or a zero spending limit, so the check warns when the month-to-date total reaches 80% of it.
+The figure is month-to-date through the day before yesterday, with no projection, so it can trail current usage by up to two days; on the 1st and 2nd of a UTC month that day still belongs to the month that has just reset, so the check stays silent and records no figure until the 3rd; each request is bounded to 10 seconds, and the check reports once per daily evaluation, reports a missing scope with its remedy instead of going quiet, and never deletes artifacts or changes retention.
+Its line becomes the ordinary `check:` wake, and `bin/fm-bearings-snapshot.sh` shows the last reported finding as `storage_alert` from the local record with no network call.
+Use `bin/fm-actions-storage-check.sh disarm` to remove the check, its trust binding, and the local report record.
+
 ## Stow pass horizon (config/stow-pass-horizon)
 
 `config/stow-pass-horizon` is an optional local, gitignored presence flag that opts this home in to the pass-count decay horizon in the internal [`/stow` skill](../.agents/skills/stow/SKILL.md).
