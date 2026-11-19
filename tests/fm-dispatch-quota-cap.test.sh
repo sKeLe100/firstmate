@@ -217,6 +217,21 @@ out=$(run_cap "$home" "$(quota_doc auth2 80 4 behind 0.8 behind '' '' '' '' auth
 assert_contains "$out" "claude_runway_block: yes" "an unavailable reading blocks a second lane, got: $out"
 rm -f "$home/state/other-4.meta"
 
+# 10c. A record with a recorded PR handoff is no longer an implementing lane.
+pr_home=$(mk_home pr-handoff)
+mk_lane "$pr_home" done-1 claude ship ordinary
+printf 'pr=https://example.test/pr/1\n' >> "$pr_home/state/done-1.meta"
+out=$(run_cap "$pr_home" "$tight") || fail "pr handoff count must succeed: $out"
+assert_contains "$out" "claude_lanes: 0" "a record with pr= is not counted, got: $out"
+assert_contains "$out" "claude_runway_block: no" "a handed-off lane does not block a new one, got: $out"
+
+# 11a. A fixture row that is rate limited with no five_hour window is tight, not a refusal.
+rl_doc=$(mktemp)
+printf '%s' '{"schemaVersion":5,"providers":[{"provider":"claude","state":{"status":"rate_limited"},"windows":[]}]}' > "$rl_doc"
+out=$(run_cap "$home" "$rl_doc") || fail "rate_limited fixture without windows must not refuse: $out"
+assert_contains "$out" "claude_runway_cap: 1" "rate-limited fixture is tight, got: $out"
+rm -f "$rl_doc"
+
 # 11b. A live run whose configured account is unreadable still reads as tight.
 missing_home=$(mk_home missing-account)
 printf '/definitely/not/a/claude/root\n' > "$missing_home/config/claude-account"

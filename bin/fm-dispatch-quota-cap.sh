@@ -52,9 +52,11 @@
 #   five_hour.percentRemaining < 40                           -> cap 1
 #   the reading cannot be taken or is a rate-limited/auth state -> cap 1
 # cap 0 queues every new Claude lane; cap 1 admits new lanes only while no
-# live Claude lane is on that account. Live lanes are counted from
+# implementing Claude lane is on that account. Lanes are counted from
 # state/*.meta records (harness=claude, kind not secondmate, matching
-# account=); a secondmate holds no dispatched lane and is exempt. A missing
+# account=, no pr= handoff recorded, the same occupancy rule as
+# bin/fm-project-capacity-lib.sh); a secondmate holds no dispatched lane and
+# is exempt. The count is advisory under concurrent spawns: it takes no lock. A missing
 # projectedExhaustedAt falls through to the percent row rather than reading
 # as headroom. The per-account cap is also folded into effective_cap, so the
 # /autonomous pass stops offering Claude lanes at the same point.
@@ -290,6 +292,8 @@ for path in glob.glob(os.path.join(state, "*.meta")):
         continue
     if meta_value(path, "kind") == "secondmate":
         continue
+    if meta_value(path, "pr"):
+        continue
     recorded = meta_value(path, "account")
     if account == "ordinary":
         if recorded in ("", "ordinary"):
@@ -311,13 +315,13 @@ if claude is not None:
     five = window_by_id(claude, "five_hour")
     seven = window_by_id(claude, "seven_day")
     if five is None:
-        if fixture:
+        if fixture and not unavailable:
             refuse("quota document has no claude five_hour window")
         unavailable = True
     else:
         five_pct = number(five, "percentRemaining")
         if five_pct is None:
-            if fixture:
+            if fixture and not unavailable:
                 refuse("five_hour window has no numeric percentRemaining")
             unavailable = True
     source_doc = doc if fixture else claude_doc
