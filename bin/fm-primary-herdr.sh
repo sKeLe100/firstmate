@@ -508,13 +508,12 @@ if [ "$REQUESTED" = claude ]; then
   if [ -n "$ORCHESTRATOR_ROOT" ]; then
     # Herdr starts the agent from the pane's own shell, not from this process,
     # so export the orchestrator account into that shell before the launch.
-    fm_backend_herdr_cli "$SESSION" pane run "$PANE" \
-      "export CLAUDE_CONFIG_DIR=$(printf '%q' "$ORCHESTRATOR_ROOT"); printf 'fm-pin-%s\\n' \"\$CLAUDE_CONFIG_DIR\"" >/dev/null \
-      && fm_backend_herdr_cli "$SESSION" pane wait-output "$PANE" --match "fm-pin-$ORCHESTRATOR_ROOT" --timeout "$((START_TIMEOUT))" >/dev/null \
-      || {
-        echo "error: could not confirm the orchestrator Claude account in pane $PANE; refusing to launch on an unpinned account" >&2
-        exit 1
-      }
+    if ! { fm_backend_herdr_cli "$SESSION" pane run "$PANE" \
+      "export CLAUDE_CONFIG_DIR=$(printf '%q' "$ORCHESTRATOR_ROOT"); printf 'fm-pin-%s\\n' \"\$CLAUDE_CONFIG_DIR\"" >/dev/null &&
+      fm_backend_herdr_cli "$SESSION" pane wait-output "$PANE" --match "fm-pin-$ORCHESTRATOR_ROOT" --timeout "$((START_TIMEOUT))" >/dev/null; }; then
+      echo "error: could not confirm the orchestrator Claude account in pane $PANE; refusing to launch on an unpinned account" >&2
+      exit 1
+    fi
   fi
   CLAUDE_RC_ARGS=()
   [ "$CLAUDE_REMOTE_CONTROL" != on ] || CLAUDE_RC_ARGS=(--remote-control firstmate-primary)
