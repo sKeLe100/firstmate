@@ -3441,6 +3441,7 @@ host_memory_guard() {  # <task-id>: 0 unless this host is provably low on memory
   rc=$?
   if [ "$rc" -eq 1 ]; then
     case "$out" in
+      *"MiB < "*"; swap "*) remedy="free memory on this host (quiesce another lane); lowering config/host-memory-floor alone cannot clear this refusal while swap use stays at or above its fixed bound" ;;
       *"MiB < "*) remedy="free memory on this host (quiesce another lane) or lower config/host-memory-floor" ;;
       *) remedy="free memory on this host (quiesce another lane) until swap use drops below its fixed bound; config/host-memory-floor does not govern swap" ;;
     esac

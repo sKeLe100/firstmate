@@ -141,6 +141,29 @@ EOF2
 }
 test_mostly_used_swap_refuses_the_launch
 
+test_low_floor_and_swap_refusal_names_both_causes() {
+  local rec id out status meminfo
+  id=hostmem-both-low
+  rec=$(make_case both-low "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-both-low"
+  # 512 MiB available under the 3072 MiB floor and 97% of swap in use: lowering
+  # the floor clears only one of the two causes.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:     524288 kB\nSwapTotal:       4000000 kB\nSwapFree:         100000 kB\n' > "$meminfo"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 1 "$status" "low memory with mostly used swap must refuse the launch: $out"
+  assert_contains "$out" "swap 97% used" "the refusal must name the swap cause: $out"
+  assert_not_contains "$out" "or lower config/host-memory-floor" \
+    "the refusal must not suggest the floor alone clears a refusal swap also drives: $out"
+  assert_contains "$out" "alone cannot clear" \
+    "the refusal must say lowering the floor alone is not enough: $out"
+  pass "fm-spawn.sh: a floor-and-swap refusal does not offer the floor as the whole remedy"
+}
+test_low_floor_and_swap_refusal_names_both_causes
+
 test_swap_below_the_limit_allows_the_launch() {
   local rec id out status meminfo
   id=hostmem-swap-ok
