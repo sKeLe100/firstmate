@@ -24,18 +24,19 @@
 # usageItems carry one row per day, product, SKU, and repository. Actions
 # artifact storage is sku actions_storage and GitHub Packages storage is sku
 # packages_storage, both in gigabyte-hours; this check requests the report for
-# yesterday in UTC, the most recent completed day, sums every storage row in it,
-# and divides by 24 for that day's average gigabytes, which is the pooled figure
-# the plan's included allowance applies to. The current UTC day is never read,
-# because its gigabyte-hours are still accumulating. That endpoint requires a classic token with the `user` scope;
+# the day before yesterday in UTC, the latest fully settled day, sums every
+# storage row in it, and divides by 24 for that day's average gigabytes, which is
+# the pooled figure the plan's included allowance applies to. The current UTC
+# day is never read, because its gigabyte-hours are still accumulating, and
+# neither is yesterday, because the report is ingested with a lag of up to
+# several hours. That endpoint requires a classic token with the `user` scope;
 # authorize once with `gh auth refresh -h github.com -s user`. A token without
 # that scope gets a 404, and this check reports that as an actionable finding
 # rather than going quiet, because an unwatched account blocks uploads at 100
 # percent when it has no payment method or a zero spending limit.
 #
-# The figure is yesterday's average, so it trails current storage by up to a
-# day. It is the
-# supported replacement for the retired shared-storage estimate endpoint, which
+# The figure is the day before yesterday's average, so it trails current
+# storage by up to two days. It is the supported replacement for the retired shared-storage estimate endpoint, which
 # now answers 410 Gone.
 #
 # Why 80 percent and 500 MB. GitHub Free includes 500 MB of shared artifact and
@@ -51,10 +52,10 @@
 #
 # Probing costs a network call, so `check` probes at most once per day (86400
 # seconds) and only reads its small record in between. Each probe request is
-# bounded to 10 seconds. The report record
-# state/.actions-storage-check is written only when a sweep runs to its end, and
-# it carries the last reported finding, so the warning prints once per daily
-# evaluation rather than on every watcher pass.
+# bounded to 10 seconds. The report record state/.actions-storage-check is
+# written only when a sweep runs to its end, and it carries the last reported
+# finding, so the warning prints once per daily evaluation rather than on
+# every watcher pass.
 set -u
 export LC_ALL=C
 export GIT_TERMINAL_PROMPT=0
@@ -84,7 +85,7 @@ PROBE_SECS=10
 . "$SCRIPT_DIR/fm-check-lib.sh"
 
 usage() {
-  sed -n '2,57{s/^# \{0,1\}//;p;}' "$0"
+  awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
 }
 
 fail() {
@@ -175,8 +176,8 @@ read_usage() {  # <json-text> <day>
   ' 2>/dev/null
 }
 
-utc_yesterday() {  # <now-epoch>
-  jq -rn --argjson t "$(( $1 - 86400 ))" '$t | todate | .[0:10]' 2>/dev/null
+utc_settled_day() {  # <now-epoch>
+  jq -rn --argjson t "$(( $1 - 172800 ))" '$t | todate | .[0:10]' 2>/dev/null
 }
 
 probe_billing() {  # <stderr-file> <day>
@@ -239,10 +240,10 @@ run_check() {
   printf '%s\n' "$RECORD_SCHEMA_LINE" > "$NEW_RECORD" || exit 1
   printf '%s\t%s\n' last_eval "$now" >> "$NEW_RECORD" || exit 1
 
-  as_of=$(utc_yesterday "$now")
+  as_of=$(utc_settled_day "$now")
   case "$as_of" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-    *) fail "could not compute yesterday's UTC date" ;;
+    *) fail "could not compute the settled UTC day" ;;
   esac
 
   if ! command -v "$GH_BIN" >/dev/null 2>&1; then

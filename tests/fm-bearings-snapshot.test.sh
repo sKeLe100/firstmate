@@ -1165,6 +1165,11 @@ test_artifact_storage_warning_surfaces_from_the_local_record() {
       and .storage_alert.checked_at == 1783792800
       and (.storage_alert.line | startswith("422.4 MB of 500 MB used"))
   ' >/dev/null || fail "the artifact-storage warning was not projected from its local record: $json"
+  printf 'schema\tfm-actions-storage-check-v1\nlast_eval\t1783792800\nas_of\t2026-11-18\nstorage_gb\t0.2\nallowance_mb\t500\npercent\t41.0\n' \
+    > "$home/state/.actions-storage-check"
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e 'has("storage_alert") | not' >/dev/null \
+    || fail "a record without a reported warning must not project a storage_alert: $json"
   rm -f "$home/state/.actions-storage-check"
   json=$(run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e 'has("storage_alert") | not' >/dev/null \

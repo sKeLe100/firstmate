@@ -7,8 +7,9 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-actions-storage-check)
 CHECK="$ROOT/bin/fm-actions-storage-check.sh"
-# 2026-11-19T03:00:00Z, so the most recent completed UTC day is 2026-11-18.
-T0=1795057200
+# 2026-11-20T03:00:00Z, so the latest fully settled UTC day (the day before
+# yesterday) is 2026-11-18.
+T0=1795143600
 T1=$((T0 + 89000))
 
 make_fake_gh() {  # <dir>
@@ -93,30 +94,34 @@ test_over_threshold_reports_the_completed_day() {
   assert_contains "$out" 'actions-storage: 422.4 MB of 500 MB used (84.5%)' "the over-threshold storage warning was not reported"
   assert_contains "$out" 'as of 2026-11-18' "the warning did not date the measurement"
   assert_contains "$out" 'uploads block at 100%' "the warning did not explain the consequence"
-  pass "an over-threshold warning reports the most recent completed day"
+  pass "an over-threshold warning reports the latest fully settled day"
 }
 
 # GitHub reports storage hourly in gigabyte-hours, so the current UTC day is a
-# partial sum; the request must name the last completed UTC day, including
-# across a year boundary.
-test_request_names_yesterday_in_utc() {
+# partial sum, and the report is ingested with a lag of hours, so yesterday can
+# be partial too; the request must name the day before yesterday in UTC,
+# including across a year boundary.
+test_request_names_the_settled_day_in_utc() {
   local rec home fb usage result out log
-  rec=$(make_world yesterday); home=${rec%%|*}; fb=${rec#*|}
-  usage="$TMP_ROOT/yesterday-usage.json"; usage_json "$usage" 0.4125
-  log="$TMP_ROOT/yesterday-calls.log"; : > "$log"
+  rec=$(make_world settled); home=${rec%%|*}; fb=${rec#*|}
+  usage="$TMP_ROOT/settled-usage.json"; usage_json "$usage" 0.4125
+  log="$TMP_ROOT/settled-calls.log"; : > "$log"
   result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
   assert_grep 'gh api /users/octocat/settings/billing/usage?year=2026&month=11&day=18' "$log" \
-    "the billing request did not name yesterday in UTC"
+    "the billing request did not name the day before yesterday in UTC"
+  if grep -Eq 'day=(19|20)$' "$log"; then
+    fail "the billing request read the current or the previous UTC day: $(cat "$log")"
+  fi
   : > "$log"
   rec=$(make_world newyear); home=${rec%%|*}; fb=${rec#*|}
   usage_json "$usage" 0.4125 2026-12-31
-  # 2027-01-01T03:00:00Z
-  result=$(run_check "$home" "$fb" 1798772400 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
+  # 2027-01-02T03:00:00Z
+  result=$(run_check "$home" "$fb" 1798858800 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
   out=$(output_part "$result")
   assert_grep 'gh api /users/octocat/settings/billing/usage?year=2026&month=12&day=31' "$log" \
     "the billing request did not roll back across the year boundary"
-  assert_contains "$out" '(84.5%) as of 2026-12-31' "the warning did not fire for the completed day"
-  pass "the billing request names the last completed UTC day"
+  assert_contains "$out" '(84.5%) as of 2026-12-31' "the warning did not fire for the settled day"
+  pass "the billing request names the latest fully settled UTC day"
 }
 
 test_unchanged_finding_is_deduped() {
@@ -302,7 +307,7 @@ test_documented_response_fixture_is_read
 test_no_storage_rows_means_zero_without_a_warning
 test_non_numeric_quantity_is_unusable
 test_over_threshold_reports_the_completed_day
-test_request_names_yesterday_in_utc
+test_request_names_the_settled_day_in_utc
 test_unchanged_finding_is_deduped
 test_storage_row_with_unknown_unit_is_unusable
 test_storage_row_from_another_day_is_unusable
