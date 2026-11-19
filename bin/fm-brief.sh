@@ -894,6 +894,14 @@ IFS= read -r -d '' SHARED_NO_CD_RULE <<'EOF' || true
 EOF
 SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
 
+# One shared string keeps the ship and scout context-economy lines identical.
+IFS= read -r -d '' SHARED_CONTEXT_LINES <<'EOF' || true
+   Grep first and read with offset and limit; read a whole file only when the whole file is the task.
+   Do not re-read a file already in your context unless it has changed since.
+   Keep build and test output to the failures and the summary line.
+EOF
+SHARED_CONTEXT_LINES=${SHARED_CONTEXT_LINES%$'\n'}
+
 if [ -n "$BASE_BRANCH" ]; then
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean copy of its base branch.
 Base branch: $BASE_BRANCH"
@@ -925,6 +933,7 @@ The report is the only thing that survives, so anything worth keeping must be in
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; the only files you may write outside it are the report, the status file, and the browser identity registry named below.
+$SHARED_CONTEXT_LINES
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 $CREWMATE_BROWSER_INSTRUCTIONS
 4. Report status by appending one line:
@@ -1036,6 +1045,7 @@ $RULE1
    Outside the worktree, write only that task material, the status and steering-inbox records, and the browser identity registry named below.
    Leave the worktree clean before reporting done.
    The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or $FM_ROOT/bin/fm-context-usage.sh for actual context numbers.
+$SHARED_CONTEXT_LINES
 3. $FORGE_RULE_LINE
 $CREWMATE_BROWSER_INSTRUCTIONS
 4. Report status by appending one line:

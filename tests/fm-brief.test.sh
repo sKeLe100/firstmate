@@ -2118,6 +2118,37 @@ test_ship_brief_context_rule_and_rule_numbering() {
 }
 test_ship_brief_context_rule_and_rule_numbering
 
+# The context-economy lines are one shared string, so the ship and scout briefs
+# must emit the same three lines byte-for-byte.
+test_ship_and_scout_briefs_share_context_economy_lines() {
+  local home ship scout ship_lines scout_lines
+  home="$TMP_ROOT/context-economy-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ctx-ship alpha --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship brief exited non-zero"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ctx-scout alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh --scout exited non-zero"
+  ship="$home/data/brief-ctx-ship/brief.md"
+  scout="$home/data/brief-ctx-scout/brief.md"
+
+  for brief in "$ship" "$scout"; do
+    assert_grep "Grep first and read with offset and limit; read a whole file only when the whole file is the task." "$brief" \
+      "brief lost the grep-first context line"
+    assert_grep "Do not re-read a file already in your context unless it has changed since." "$brief" \
+      "brief lost the no-re-read context line"
+    assert_grep "Keep build and test output to the failures and the summary line." "$brief" \
+      "brief lost the quiet-output context line"
+  done
+
+  ship_lines=$(awk '/^   Grep first and read with offset/,/^   Keep build and test output/' "$ship")
+  scout_lines=$(awk '/^   Grep first and read with offset/,/^   Keep build and test output/' "$scout")
+  [ -n "$ship_lines" ] || fail "ship brief emitted no context-economy lines to compare"
+  [ "$ship_lines" = "$scout_lines" ] \
+    || fail "scout and ship context-economy lines have drifted apart"
+  pass "fm-brief.sh: ship and scout briefs carry the same context-economy lines"
+}
+test_ship_and_scout_briefs_share_context_economy_lines
+
 test_ship_brief_carries_retry_loop_failsafe() {
   local home id brief
   home="$TMP_ROOT/retry-loop-home"
