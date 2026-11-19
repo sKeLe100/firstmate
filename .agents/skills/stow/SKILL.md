@@ -312,7 +312,7 @@ Report the outcome in plain captain-facing language with all of these facts:
 State what reset-safe means in the same breath as the claim: nothing this session knew has been lost.
 It is never a claim that the home's durable records are correct, because this pass checks no record the session did not name.
 Do not hide an over-budget result behind a reset-safe claim.
-In a primary home the receipt includes the cascade below; the durable stow-completion marker is stamped by the cascade enumeration after this home's own pass, so a slow secondmate never holds the session open.
+In a primary home the receipt includes the cascade below; the durable stow-completion marker is stamped once every secondmate request is sent, never after a secondmate stow finishes, so a slow secondmate never holds the session open.
 
 ## Automatic cascade to secondmates
 
@@ -322,7 +322,6 @@ The cascade changes nothing until `/stow` is invoked: it adds no notification, n
 
 Run `bin/fm-stow-cascade.sh` once the primary's own pass is done.
 It enumerates each registered secondmate exactly once, reports that home's own budget accounting, and resolves how the sweep reaches it; its header owns the stanza fields, the bound, and the exit codes.
-It also stamps the durable stow-completion marker after this home's own pass, before any secondmate stow finishes, so a `/stow`-then-clear never deadlocks on a secondmate.
 Secondmate stows run in the background: send them, do not sit waiting for them, and never let one hold this session's receipt.
 Every home is judged against its own `config/startup-memory-budget` allowance, so never add homes together or treat one home's excess as another's.
 
@@ -345,16 +344,16 @@ Act on each home by its reported `transport`:
 A newly discovered shared captain preference still routes to the primary's `data/captain-shared.md` under the existing primary-authoritative contract, whichever home found it.
 Offload proposals and the cold archive are per-home: file proposals only in the home whose pass produced them, and never cascade either to another home.
 
-The enumeration already stamped the durable stow-completion marker after this home's own pass, so this session is resettable without waiting for a secondmate; other tooling (the primary continuity watchdog) anchors on that marker.
-If this session is collecting the background secondmates' receipts, run `bin/fm-stow-cascade.sh --complete`.
-It waits at most about five minutes (`FM_STOW_CASCADE_RECEIPT_WAIT`, default 300) for each live local secondmate to stamp its own marker, returns early once they all have, and stamps regardless; never wait past that bound or for a deferred, direct, or remote home.
-Finish the receipt with whatever answered and report every outstanding home as running in the background.
+Once every background secondmate request has been durably sent and every `direct` home curated, run `bin/fm-stow-cascade.sh --complete` exactly once, before ending this pass, to stamp the durable stow-completion marker; do not wait for any secondmate stow to finish first, so a `/stow`-then-clear never deadlocks on a secondmate.
+Never run `--complete` before those requests are sent: other tooling (the primary continuity watchdog) anchors on that marker as permission to restart this session, so an early stamp can lose pending requests.
+The enumeration run deliberately does not stamp it when secondmates exist.
+Report every home whose reply has not arrived as still stowing in the background.
 
 Extend the completion receipt with one entry per secondmate alongside the primary's own, carrying that home's budget before and after, its per-file actions, its exceptions, whether that home swept itself or was curated from here, and its reported context reading alongside the same tokens-and-percent-of-window shape as the primary's own.
 An `agent`-transport home's context reading is whatever that session reported back; a `direct`, `deferred`, or `unavailable` home has no live session to ask, so its entry states the reading is unavailable rather than inventing, inferring, or reusing another home's number.
 A home that does not report a context reading never blocks this home's `/stow`: it is a reported field on the existing entry, not a new gate on the cascade bound or on that home's own reset-safety.
 Keep those entries in the same plain captain-facing language the rest of the receipt uses.
-This session is reset-safe once this home is within its own budget with no unresolved exception; a home still stowing in the background reports through its own status, owns its own reset-safety, and never blocks this session's claim.
+This session is reset-safe once the marker is stamped and this home is within its own budget with no unresolved exception; a home still stowing in the background reports through its own status, owns its own reset-safety, and never blocks this session's claim.
 
 ## Scope exclusion: no skill storage by the pass
 
