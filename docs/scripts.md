@@ -159,7 +159,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-upstream-sync-item.sh` | File or refresh the one stable-id `upstream-sync` backlog item with its bounded batch and auto-dispatch eligibility |
 | `fm-upstream-batch.sh`   | Plan the next bounded upstream sync batch: the exact upstream commit to true-merge, never a rebase target |
 | `fm-startup-growth-check.sh` | Daily metadata-only growth check for startup memory and tracked startup/instruction surfaces |
-| `fm-actions-storage-check.sh` | Daily GitHub Actions artifact + Packages storage warning at 80% of the plan's included allowance, via the billing shared-storage endpoint |
+| `fm-actions-storage-check.sh` | Daily GitHub Actions artifact + Packages storage warning at 80% of the plan's included allowance, via the enhanced billing usage report |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated pull-request, merge-request, and Gerrit-change poll sidecars |
 | `fm-contributions.sh`    | Observe owned publications, retain exact-head judgments, measure required actors, and wake on maintainer signals |

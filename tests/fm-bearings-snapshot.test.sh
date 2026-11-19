@@ -1155,13 +1155,13 @@ EOF
 test_artifact_storage_warning_surfaces_from_the_local_record() {
   local home fakebin json
   home=$(make_home storage-alert); write_fixture "$home"
-  printf 'schema\tfm-actions-storage-check-v1\nlast_eval\t1783792800\nstorage_gb\t0.4125\nallowance_mb\t500\npercent\t84.5\ndays_left_in_billing_cycle\t12\nreported\t422.4 MB of 500 MB used (84.5%%) with 12 day(s) left in the billing cycle; uploads block at 100%%\n' \
+  printf 'schema\tfm-actions-storage-check-v1\nlast_eval\t1783792800\nas_of\t2026-11-18\nstorage_gb\t0.4125\nallowance_mb\t500\npercent\t84.5\nreported\t422.4 MB of 500 MB used (84.5%%) as of 2026-11-18; uploads block at 100%%\n' \
     > "$home/state/.actions-storage-check"
   fakebin=$(make_fakebin "$home")
   json=$(run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e '
     .storage_alert.percent == 84.5
-      and .storage_alert.days_left_in_billing_cycle == 12
+      and .storage_alert.as_of == "2026-11-18"
       and .storage_alert.checked_at == 1783792800
       and (.storage_alert.line | startswith("422.4 MB of 500 MB used"))
   ' >/dev/null || fail "the artifact-storage warning was not projected from its local record: $json"

@@ -158,7 +158,7 @@ Default fields: schema, home, generated, prs,
   landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner,deferred_since,filed}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty),
-  storage_alert{line,percent,days_left_in_billing_cycle,checked_at}
+  storage_alert{line,percent,as_of,checked_at}
   (only when the local artifact-storage warning record reports one), omitted{surface,reveal}.
 Default gates are selected newest filed first before their bound; undated gates
   retain input order after dated gates.
@@ -336,7 +336,7 @@ fi
 # the wording; bearings only reads that record so a storage warning shows up
 # without a second network call. A record with no reported finding (under the
 # threshold) surfaces nothing.
-STORAGE_LINE='' STORAGE_PERCENT='' STORAGE_DAYS='' STORAGE_CHECKED=''
+STORAGE_LINE='' STORAGE_PERCENT='' STORAGE_AS_OF='' STORAGE_CHECKED=''
 STORAGE_REPORT="$(printf '%s' "$SNAP" | jq -r '.fm_home')/state/.actions-storage-check"
 if [ -f "$STORAGE_REPORT" ] && [ ! -L "$STORAGE_REPORT" ]; then
   storage_field() {  # <key>
@@ -344,7 +344,7 @@ if [ -f "$STORAGE_REPORT" ] && [ ! -L "$STORAGE_REPORT" ]; then
   }
   STORAGE_LINE=$(storage_field reported)
   STORAGE_PERCENT=$(storage_field percent)
-  STORAGE_DAYS=$(storage_field days_left_in_billing_cycle)
+  STORAGE_AS_OF=$(storage_field as_of)
   STORAGE_CHECKED=$(storage_field last_eval)
   [ -z "$STORAGE_LINE" ] || STORAGE_LINE=${STORAGE_LINE:0:400}
 fi
@@ -685,7 +685,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --arg upstream "$UPSTREAM_JSON" \
   --arg storage_line "$STORAGE_LINE" \
   --arg storage_percent "$STORAGE_PERCENT" \
-  --arg storage_days "$STORAGE_DAYS" \
+  --arg storage_as_of "$STORAGE_AS_OF" \
   --arg storage_checked "$STORAGE_CHECKED" \
   --arg fields "$FIELDS" \
   --argjson landed_n "$FM_BEARINGS_LANDED" \
@@ -1003,7 +1003,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   | . + (if $storage_line == "" then {} else {storage_alert:
         ({line:$storage_line}
          + (if ($storage_percent | test("^[0-9]+(\\.[0-9]+)?$")) then {percent:($storage_percent|tonumber)} else {} end)
-         + (if ($storage_days | test("^[0-9]+$")) then {days_left_in_billing_cycle:($storage_days|tonumber)} else {} end)
+         + (if ($storage_as_of | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")) then {as_of:$storage_as_of} else {} end)
          + (if ($storage_checked | test("^[0-9]+$")) then {checked_at:($storage_checked|tonumber)} else {} end))} end)
   | . + (if $include_prs == 1 then {candidate_prs:$candidate_prs} else {} end)
   | . + (if $f_bodies then {bodies:[ $snap.backlog.records[] | select(.structured and (.state == "queued" or .state == "done")) | {id, body:((.body_excerpt // .raw // "-") | trunc(200))} ]} else {} end)
