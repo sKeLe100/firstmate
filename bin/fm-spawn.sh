@@ -3436,20 +3436,26 @@ pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 # workload. There is no separate per-session budget on top of it: subtracting a
 # fixed reserve again would count the same parked session twice.
 host_memory_guard() {  # <task-id>: 0 unless this host is provably low on memory
-  local id=$1 out rc
+  local id=$1 out rc remedy
   out=$("$SCRIPT_DIR/fm-host-memory.sh" 2>&1)
   rc=$?
   if [ "$rc" -eq 1 ]; then
-    echo "error: host memory low: $out; refusing to launch task '$id' onto a host that cannot carry another agent - free memory on this host (quiesce another lane) or lower config/host-memory-floor" >&2
+    case "$out" in
+      *"MiB < "*) remedy="free memory on this host (quiesce another lane) or lower config/host-memory-floor" ;;
+      *) remedy="free memory on this host (quiesce another lane) until swap use drops below its fixed bound; config/host-memory-floor does not govern swap" ;;
+    esac
+    echo "error: host memory low: $out; refusing to launch task '$id' onto a host that cannot carry another agent - $remedy" >&2
     return 1
+  fi
+  if [ "$rc" -eq 0 ]; then
+    printf '%s\n' "$out" | grep -v '^free$' | sed 's/^/note: /' >&2
+    return 0
   fi
   # Only a proven low reading blocks a launch. Any other nonzero rc means the
   # helper could not measure this host at all (no /proc/meminfo on macOS, a
   # malformed floor); that is disclosed uncertainty, not evidence of pressure,
   # so it is noted and the launch proceeds.
-  if [ "$rc" -ne 0 ]; then
-    echo "note: host memory reading not enforced: $out" >&2
-  fi
+  echo "note: host memory reading not enforced: $out" >&2
   return 0
 }
 

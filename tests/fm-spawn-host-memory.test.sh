@@ -81,6 +81,8 @@ EOF2
   expect_code 1 "$status" "a spawn under the memory floor must refuse: $out"
   assert_contains "$out" "host memory low" "the refusal must name the low host memory: $out"
   assert_contains "$out" "3072MiB" "the refusal must name the floor it failed: $out"
+  assert_contains "$out" "or lower config/host-memory-floor" \
+    "a floor refusal must point at the floor config that governs it: $out"
   assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must publish no task record"
   pass "fm-spawn.sh: a proven low host-memory reading refuses the launch"
 }
@@ -132,6 +134,8 @@ EOF2
   expect_code 1 "$status" "a mostly used swap must refuse the launch: $out"
   assert_contains "$out" "swap 97% used" "the refusal must name the measured swap percentage: $out"
   assert_contains "$out" "90%" "the refusal must name the swap bound: $out"
+  assert_not_contains "$out" "or lower config/host-memory-floor" \
+    "a swap-only refusal must not advise lowering the floor, which cannot clear it: $out"
   assert_absent "$HOME_DIR/state/$id.meta" "a swap-refused spawn must publish no task record"
   pass "fm-spawn.sh: a mostly used swap refuses the launch"
 }
@@ -155,6 +159,28 @@ EOF2
   pass "fm-spawn.sh: swap below the admission bound allows the launch"
 }
 test_swap_below_the_limit_allows_the_launch
+
+test_unassessed_swap_is_disclosed_and_allows_the_launch() {
+  local rec id out status meminfo
+  id=hostmem-swap-unassessed
+  rec=$(make_case swap-unassessed "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  meminfo="$CASE_DIR/meminfo-swap-unassessed"
+  # Swap is reported but its free figure is missing: the launch proceeds on
+  # the healthy RAM reading, and the unassessed swap must still reach stderr.
+  printf 'MemTotal:       14000000 kB\nMemAvailable:    8388608 kB\nSwapTotal:       4000000 kB\n' > "$meminfo"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$meminfo")
+  status=$?
+  expect_code 0 "$status" "an unassessed swap must not block the launch: $out"
+  assert_contains "$out" "swap not assessed" \
+    "the unassessed swap must be disclosed on the launch path, not swallowed: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] \
+    || fail "the launch with unassessed swap published no task record: $out"
+  pass "fm-spawn.sh: an unassessed swap is disclosed and the launch proceeds"
+}
+test_unassessed_swap_is_disclosed_and_allows_the_launch
 
 test_parked_sessions_are_counted_through_memavailable() {
   local rec id out status meminfo
