@@ -1,0 +1,64 @@
+{
+  "usageItems": [
+    {
+      "date": "2026-11-17",
+      "product": "actions",
+      "sku": "actions_storage",
+      "quantity": 20,
+      "unitType": "gigabyte-hours",
+      "pricePerUnit": 0.000336,
+      "grossAmount": 0.00672,
+      "discountAmount": 0.00672,
+      "netAmount": 0,
+      "repositoryName": ""
+    },
+    {
+      "date": "2026-11-17",
+      "product": "actions",
+      "sku": "actions_linux",
+      "quantity": 240,
+      "unitType": "minutes",
+      "pricePerUnit": 0.008,
+      "grossAmount": 1.92,
+      "discountAmount": 1.92,
+      "netAmount": 0,
+      "repositoryName": "sKeLe100/firstmate"
+    },
+    {
+      "date": "2026-11-18",
+      "product": "actions",
+      "sku": "actions_storage",
+      "quantity": 9.6,
+      "unitType": "gigabyte-hours",
+      "pricePerUnit": 0.000336,
+      "grossAmount": 0.0032256,
+      "discountAmount": 0.0032256,
+      "netAmount": 0,
+      "repositoryName": ""
+    },
+    {
+      "date": "2026-11-18",
+      "product": "packages",
+      "sku": "packages_storage",
+      "quantity": 0.3,
+      "unitType": "gigabyte-hours",
+      "pricePerUnit": 0.000336,
+      "grossAmount": 0.0001008,
+      "discountAmount": 0.0001008,
+      "netAmount": 0,
+      "repositoryName": ""
+    },
+    {
+      "date": "2026-11-18",
+      "product": "actions",
+      "sku": "actions_macos",
+      "quantity": 120,
+      "unitType": "minutes",
+      "pricePerUnit": 0.062,
+      "grossAmount": 7.44,
+      "discountAmount": 7.44,
+      "netAmount": 0,
+      "repositoryName": "sKeLe100/firstmate"
+    }
+  ]
+}
