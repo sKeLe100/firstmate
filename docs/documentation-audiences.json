@@ -166,7 +166,7 @@
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/fleet-snapshot/SKILL.md",
+      "path": ".agents/skills/fleet/SKILL.md",
       "audience": "agent-runtime"
     },
     {
