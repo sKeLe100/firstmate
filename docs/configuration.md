@@ -1137,6 +1137,18 @@ That one line goes out through the shared per-line digest cut, so an over-long f
 Older bulk learning files remain reference-only; this monitor neither loads nor merges them.
 A reported review need is only a recommendation, not cleanup authority.
 
+## GitHub Actions storage warning
+
+A home can arm an opt-in daily storage warning with `bin/fm-actions-storage-check.sh arm`.
+It writes `state/actions-storage.check.sh` and binds it through the same authenticated watcher-check mechanism as the other standing checks, so no extra daemon or scheduler is installed, and an armed home keeps needing a watcher after its last task is torn down.
+The check reads GitHub's billing endpoint `GET /users/{username}/settings/billing/shared-storage`, which reports the estimated free-plus-paid storage used in the billing cycle for Actions artifacts and GitHub Packages together.
+That endpoint requires a classic token with the `user` scope; authorize once with `gh auth refresh -h github.com -s user`.
+GitHub Free includes 500 MB of shared artifact and Packages storage, and uploads stop at 100% when an account has no payment method or a zero spending limit, so the check warns at 80%.
+Set `FM_ACTIONS_STORAGE_ALLOWANCE_MB` for a plan that includes a different amount.
+It reports once per daily evaluation while a finding is unchanged, reports a missing scope with its remedy instead of going quiet, and never deletes artifacts or changes retention.
+Its line becomes the ordinary `check:` wake, and `bin/fm-bearings-snapshot.sh` shows the last reported finding as `storage_alert` from the local record with no network call.
+Use `bin/fm-actions-storage-check.sh disarm` to remove the check, its trust binding, and the local report record.
+
 ## Stow pass horizon (config/stow-pass-horizon)
 
 `config/stow-pass-horizon` is an optional local, gitignored presence flag that opts this home in to the pass-count decay horizon in the internal [`/stow` skill](../.agents/skills/stow/SKILL.md).
