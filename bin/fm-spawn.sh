@@ -2093,7 +2093,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project is at capacity, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - project capacity or Claude account runway is full, so it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -3952,6 +3952,39 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   echo "error: spawn refused: project $PROJ_ABS has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C $PROJ_ABS commit --allow-empty -m \"chore: initial commit\"', then spawn again" >&2
   exit 1
 fi
+# Claude 5-hour runway admission (bin/fm-dispatch-quota-cap.sh owns the rule):
+# a fresh Claude worker or scout whose bound account is projected to exhaust
+# its five-hour window before the reset, or is under 40% remaining with a live
+# lane already on that account, is deferred here before any brief, endpoint,
+# worktree, or record exists, so its backlog item stays queued. A relaunch
+# replaces a lane that already holds its place, and a secondmate is not a
+# dispatched lane, so both are exempt. Non-Claude harnesses never reach this
+# gate. The FM_DISPATCH_QUOTA_JSON seam lets tests supply the reading; under
+# the ordinary suite seam without it the gate stays off so no test reaches the
+# network.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ]; then
+  CLAUDE_RUNWAY_ACCOUNT=${WORKER_ACCOUNT_DECLARED:-ordinary}
+  [ -n "$CLAUDE_RUNWAY_ACCOUNT" ] || CLAUDE_RUNWAY_ACCOUNT=ordinary
+  if [ -z "${FM_DISPATCH_QUOTA_JSON:-}" ] && [ "${FM_TEST_SEAM:-}" = 1 ]; then
+    echo "note: claude runway gate not enforced under the test seam (set FM_DISPATCH_QUOTA_JSON to exercise it)" >&2
+  else
+    CLAUDE_RUNWAY_RC=0
+    CLAUDE_RUNWAY_OUT=$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" FM_STATE_OVERRIDE="$STATE" \
+      "$SCRIPT_DIR/fm-dispatch-quota-cap.sh" --claude-account "$CLAUDE_RUNWAY_ACCOUNT" 2>&1) || CLAUDE_RUNWAY_RC=$?
+    if [ "$CLAUDE_RUNWAY_RC" -ne 0 ]; then
+      echo "error: spawn refused: the Claude five-hour runway reading for $CLAUDE_RUNWAY_ACCOUNT could not be evaluated ($CLAUDE_RUNWAY_OUT); refusing rather than launching on an unknown quota" >&2
+      exit 1
+    fi
+    case "$CLAUDE_RUNWAY_OUT" in
+      *"claude_runway_block: yes"*)
+        CLAUDE_RUNWAY_REASON=$(printf '%s\n' "$CLAUDE_RUNWAY_OUT" | sed -n 's/^claude_runway_reason: //p')
+        echo "deferred: Claude account $CLAUDE_RUNWAY_ACCOUNT has no headroom for a new lane ($CLAUDE_RUNWAY_REASON); task $ID was not launched and its backlog item stays queued - dispatch it again once the five-hour window resets or a live lane finishes" >&2
+        exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+        ;;
+    esac
+  fi
+fi
+
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
 # declaration, what holds a place, and why this is race-safe). A fresh worker
 # for a project whose declared capacity is already held is deferred here, before

@@ -138,15 +138,17 @@ independent of whether a decision nudge is due.
 
 Read the base concurrent dispatch cap from `config/dispatch-cap`.
 The effective cap is that base reduced by the quota ladder read from
-`quota-axi --json` (schemaVersion 5) at dispatch intake, checked
+`quota-axi` (schemaVersion 5) at dispatch intake, checked
 alongside the base cap rather than replacing it. `docs/configuration.md`
-owns the full ladder, including its percent-remaining floor and its
-pace-based dimension; `bin/fm-dispatch-quota-cap.sh` is its
+owns the full ladder, including its per-account five-hour runway rows and
+its pace-based dimension; `bin/fm-dispatch-quota-cap.sh` is its
 executable owner - run it and read `effective_cap: <n>` rather than
 re-deriving the ladder by hand, since a restated threshold here can drift.
 It also prints `codex_spawn: yes|no` (no whenever Codex's weekly pace is
 ahead), which is the answer step 9 uses before offering the Codex sidecar.
-If it exits 2 the quota reading is unavailable: treat that as no headroom.
+An unavailable reading already reports the tight cap 1 rather than failing;
+if it exits 2 its configuration or supplied quota document is malformed:
+treat that as no headroom.
 Count only the recorded autonomous Claude lanes that are actually live
 against that effective cap before treating a lane as available, never every
 lane merely on record.
