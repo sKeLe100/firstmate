@@ -965,7 +965,7 @@ tests/fm-captain-hold-merge-teardown.test.sh 157397
 tests/fm-captain-hold-reconcile.test.sh 175140
 tests/fm-captain-window.test.sh 413
 tests/fm-check-unregister.test.sh 707
-tests/fm-ci-workflow.test.sh 10126
+tests/fm-ci-workflow.test.sh 16689
 tests/fm-claim-check.test.sh 550
 tests/fm-classify-corr-token.test.sh 34691
 tests/fm-classify-decision-key.test.sh 4479
