@@ -1,0 +1,4 @@
+ok - an absent config/supervision-engine-account keeps today's inherited account
+ok - a present config/supervision-engine-account moves the engine to that account
+ok - an unusable account file leaves the home without an engine and names the file
+# all fm-supervision-engine-account tests passed

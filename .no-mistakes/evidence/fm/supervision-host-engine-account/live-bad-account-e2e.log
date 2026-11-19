@@ -1,0 +1,7 @@
+# inherited (primary) CLAUDE_CONFIG_DIR=~/.claude-secondary ; account file selects ~/.claude
+# host exit rc=0
+# host.out:
+#   watcher: started pid=2626731 (beacon fresh)
+#   signal: /tmp/fm-supervision-host-live.TIjDzq/fm/state/demo.status
+#   supervision-host: no supervision engine runs here: config/supervision-engine-account must name an existing readable directory: /tmp/fm-supervision-host-live.TIjDzq/fm/config/supervision-engine-account -> /nonexistent/claude-2; this wake is yours
+ok - unusable account file: the real host runs no engine and hands the wake to main

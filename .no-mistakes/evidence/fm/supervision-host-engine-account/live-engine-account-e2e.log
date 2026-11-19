@@ -1,0 +1,23 @@
+# inherited (primary) CLAUDE_CONFIG_DIR=~/.claude-secondary ; account file selects ~/.claude
+# first turn: handled	turn=host-333883-1795087005.1	posture=away	rc=0
+# outcome: {"seq":1,"epoch":1795087020,"task":"demo","wake":"signal: /tmp/fm-supervision-host-live.Au9kmy/fm/state/demo.status","verdict":"routine","summary":"Demo task reports its cleanup finished with nothing else needed; its workspace is already gone and no PR is involved. No action taken (merge and dispatch are barred by the away instructions).","silent":false,"statusEndpoint":72,"statusIdent":"strong:76:3203424:2026-11-19 06:16:46.758761742 -0500"}
+# engine record after turn 1:
+#   engine=claude
+#   model=sonnet
+#   account=~/.claude
+#   session=2e54b355-31c2-4b3f-8c36-95fb41ba52a2
+#   key=333872:2807140541:4294967295
+#   turns=1
+#   conversation_cost=0.02579
+# turn-1 transcript under selected account: ~/.claude/projects/-tmp-fm-supervision-host-live-Au9kmy-fm/2e54b355-31c2-4b3f-8c36-95fb41ba52a2.jsonl ; under inherited account: none
+# second turn: handled	turn=host-333883-1795087005.2	posture=away	rc=0
+# engine record after account removal + turn 3:
+#   engine=claude
+#   model=sonnet
+#   account=
+#   session=e5e21cac-3104-4e99-86b6-c6ccf044040d
+#   key=333872:2807140541:4294967295
+#   turns=1
+#   conversation_cost=0.090434
+# turn-3 new session e5e21cac-3104-4e99-86b6-c6ccf044040d transcript under inherited account: ~/.claude-secondary/projects/-tmp-fm-supervision-host-live-Au9kmy-fm/e5e21cac-3104-4e99-86b6-c6ccf044040d.jsonl
+ok - supervision host account live (2.1.328 (Claude Code)): a real engine handles and resumes away wakes under the branch contract without waking main
