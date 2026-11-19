@@ -30,7 +30,9 @@
 # and compares the month-to-date total against the monthly allowance: 0.5 GB for
 # every hour of the month. The current UTC day is never counted, because its
 # gigabyte-hours are still accumulating, and neither is yesterday, because the
-# report is ingested with a lag of up to several hours. That endpoint requires a classic token with the `user` scope;
+# report is ingested with a lag of up to several hours. On the first two days of
+# a UTC month the settled day still belongs to the month that has just reset,
+# so the check stays silent and records no figure until the 3rd. That endpoint requires a classic token with the `user` scope;
 # authorize once with `gh auth refresh -h github.com -s user`. A token without
 # that scope gets a 404, and this check reports that as an actionable finding
 # rather than going quiet, because an unwatched account blocks uploads at 100
@@ -182,8 +184,8 @@ days_in_month() {  # <year> <month>
   esac
 }
 
-utc_settled_day() {  # <now-epoch>
-  jq -rn --argjson t "$(( $1 - 172800 ))" '$t | todate | .[0:10]' 2>/dev/null
+utc_day() {  # <epoch>
+  jq -rn --argjson t "$1" '$t | todate | .[0:10]' 2>/dev/null
 }
 
 probe_billing() {  # <stderr-file> <day>
@@ -228,7 +230,7 @@ probe_billing() {  # <stderr-file> <day>
 }
 
 run_check() {
-  local now reported_previous gb_hours allowance_gb_hours as_of percent line
+  local now today reported_previous gb_hours allowance_gb_hours as_of percent line
   if ! now=$(check_due); then
     return 0
   fi
@@ -246,13 +248,16 @@ run_check() {
   printf '%s\n' "$RECORD_SCHEMA_LINE" > "$NEW_RECORD" || exit 1
   printf '%s\t%s\n' last_eval "$now" >> "$NEW_RECORD" || exit 1
 
-  as_of=$(utc_settled_day "$now")
-  case "$as_of" in
-    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+  as_of=$(utc_day "$((now - 172800))")
+  today=$(utc_day "$now")
+  case "$as_of $today" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\ [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
     *) fail "could not compute the settled UTC day" ;;
   esac
 
-  if ! command -v "$GH_BIN" >/dev/null 2>&1; then
+  if [ "${as_of:0:7}" != "${today:0:7}" ]; then
+    :
+  elif ! command -v "$GH_BIN" >/dev/null 2>&1; then
     append_finding "billing usage unreadable: gh not found"
   elif probe_billing "$ERR_FILE" "$as_of"; then
     gb_hours=$USAGE

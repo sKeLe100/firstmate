@@ -101,8 +101,8 @@ test_over_threshold_reports_the_completed_day() {
 
 # GitHub bills storage as gigabyte-hours over the month, the current UTC day is
 # a partial sum, and the report is ingested with a lag of hours, so the request
-# must name the month of the day before yesterday in UTC, including across a
-# year boundary where that month is the previous year's December.
+# must name the month of the day before yesterday in UTC, and a 31-day month
+# carries 0.5 x 24 x 31 = 372 GB-hours.
 test_request_names_the_settled_month_in_utc() {
   local rec home fb usage result out log
   rec=$(make_world settled); home=${rec%%|*}; fb=${rec#*|}
@@ -114,14 +114,14 @@ test_request_names_the_settled_month_in_utc() {
     fail "the billing request did not name the settled month in UTC: $(cat "$log")"
   fi
   : > "$log"
-  rec=$(make_world newyear); home=${rec%%|*}; fb=${rec#*|}
-  usage_json "$usage" 306.9 2026-12-31
-  # 2027-01-02T03:00:00Z
-  result=$(run_check "$home" "$fb" 1798858800 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
+  rec=$(make_world december); home=${rec%%|*}; fb=${rec#*|}
+  usage_json "$usage" 306.9 2026-12-29
+  # 2026-12-31T03:00:00Z
+  result=$(run_check "$home" "$fb" 1798686000 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
   out=$(output_part "$result")
   grep -qx 'gh api /users/octocat/settings/billing/usage?year=2026&month=12' "$log" \
-    || fail "the billing request did not roll back across the year boundary: $(cat "$log")"
-  assert_contains "$out" '306.9 of 372 GB-hours used (82.5%) of the 500 MB monthly allowance through 2026-12-31' \
+    || fail "the billing request did not name December: $(cat "$log")"
+  assert_contains "$out" '306.9 of 372 GB-hours used (82.5%) of the 500 MB monthly allowance through 2026-12-29' \
     "the warning did not measure December's 31-day allowance"
   pass "the billing request names the latest fully settled UTC month"
 }
@@ -245,6 +245,27 @@ test_storage_row_from_another_month_is_unusable() {
   pass "a storage row outside the requested month is reported rather than summed"
 }
 
+# On 2026-12-01 the day before yesterday is 2026-11-29, but November's
+# allowance has already reset, so even a November at 342 of 360 GB-hours (95%)
+# must not warn that uploads will block, nor leave a figure for bearings.
+test_month_rollover_stays_silent_about_the_reset_month() {
+  local rec home fb usage result out log
+  rec=$(make_world rollover); home=${rec%%|*}; fb=${rec#*|}
+  usage="$TMP_ROOT/rollover-usage.json"; usage_json "$usage" 342 2026-11-29
+  log="$TMP_ROOT/rollover-calls.log"; : > "$log"
+  # 2026-12-01T03:00:00Z
+  result=$(run_check "$home" "$fb" 1796094000 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
+  [ "$(status_part "$result")" = 0 ] || fail "rollover check failed: $(output_part "$result")"
+  out=$(output_part "$result")
+  [ -z "$out" ] || fail "a reset month was reported as about to block uploads: $out"
+  if awk -F '\t' '$1 == "reported" || $1 == "percent" { found = 1 } END { exit !found }' "$home/state/.actions-storage-check"; then
+    fail "a reset month left a storage figure in the record: $(cat "$home/state/.actions-storage-check")"
+  fi
+  result=$(run_check "$home" "$fb" 1796180400 FAKE_USAGE_JSON="$usage" GH_CALL_LOG="$log")
+  [ -z "$(output_part "$result")" ] || fail "the second day of a month reported the reset month: $(output_part "$result")"
+  pass "the first days of a month stay silent about the month that has reset"
+}
+
 test_daily_gate_skips_the_probe() {
   local rec home fb usage result out log
   rec=$(make_world gate); home=${rec%%|*}; fb=${rec#*|}
@@ -328,6 +349,7 @@ test_unchanged_finding_is_deduped
 test_storage_row_with_unknown_unit_is_unusable
 test_storage_row_from_another_month_is_unusable
 test_changed_usage_reports_again
+test_month_rollover_stays_silent_about_the_reset_month
 test_daily_gate_skips_the_probe
 test_missing_user_scope_is_actionable
 test_unusable_json_is_reported

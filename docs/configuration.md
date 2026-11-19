@@ -1185,7 +1185,7 @@ The check reads GitHub's enhanced billing usage report, `GET /users/{username}/s
 The retired `shared-storage` estimate endpoint now answers 410 Gone, so the usage report is the supported source.
 That endpoint requires a classic token with the `user` scope; authorize once with `gh auth refresh -h github.com -s user`.
 GitHub Free includes 500 MB (0.5 GB) of shared artifact and Packages storage, a monthly allowance of 0.5 GB for every hour of the month (360 GB-hours in a 30-day month), and uploads stop once that is used up when an account has no payment method or a zero spending limit, so the check warns when the month-to-date total reaches 80% of it.
-The figure is month-to-date through the day before yesterday, with no projection, so it can trail current usage by up to two days; each request is bounded to 10 seconds, and the check reports once per daily evaluation, reports a missing scope with its remedy instead of going quiet, and never deletes artifacts or changes retention.
+The figure is month-to-date through the day before yesterday, with no projection, so it can trail current usage by up to two days; on the 1st and 2nd of a UTC month that day still belongs to the month that has just reset, so the check stays silent and records no figure until the 3rd; each request is bounded to 10 seconds, and the check reports once per daily evaluation, reports a missing scope with its remedy instead of going quiet, and never deletes artifacts or changes retention.
 Its line becomes the ordinary `check:` wake, and `bin/fm-bearings-snapshot.sh` shows the last reported finding as `storage_alert` from the local record with no network call.
 Use `bin/fm-actions-storage-check.sh disarm` to remove the check, its trust binding, and the local report record.
 
