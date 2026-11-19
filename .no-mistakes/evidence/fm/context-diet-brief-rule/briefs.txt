@@ -1,0 +1,16 @@
+== s1
+35-   Leave the worktree clean before reporting done.
+36-   The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or {run-worktree}/bin/fm-context-usage.sh for actual context numbers.
+37:   Grep first and read with offset and limit; read a whole file only when the whole file is the task.
+38-   Do not re-read a file already in your context unless it has changed since.
+39-   Keep build and test output to the failures and the summary line.
+40-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+41-   Close every chrome-devtools-axi bridge or headless Chrome you start before reporting done (use the tool's stop command or terminate your owned browser PID).
+== s2
+28-1. Never push to any remote and never open a PR.
+29-2. Stay inside this worktree; the only files you may write outside it are the report, the status file, and the browser identity registry named below.
+30:   Grep first and read with offset and limit; read a whole file only when the whole file is the task.
+31-   Do not re-read a file already in your context unless it has changed since.
+32-   Keep build and test output to the failures and the summary line.
+33-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+34-   Close every chrome-devtools-axi bridge or headless Chrome you start before reporting done (use the tool's stop command or terminate your owned browser PID).
