@@ -166,7 +166,7 @@ test_changed_usage_reports_again() {
 test_documented_response_fixture_is_read() {
   local rec home fb fixture result out
   rec=$(make_world fixture); home=${rec%%|*}; fb=${rec#*|}
-  fixture="$ROOT/tests/fixtures/gh-user-billing-usage.json"
+  fixture="$ROOT/tests/fixtures/gh-user-billing-usage/gh-user-billing-usage.json"
   result=$(run_check "$home" "$fb" "$T0" FAKE_USAGE_JSON="$fixture")
   [ "$(status_part "$result")" = 0 ] || fail "fixture check failed: $(output_part "$result")"
   out=$(output_part "$result")
