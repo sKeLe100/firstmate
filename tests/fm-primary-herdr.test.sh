@@ -30,6 +30,8 @@ set -eu
 printf '%s\n' "$*" >> "${FAKE_LOG:?}"
 case "$*" in
   *'status --json'*) printf '{"client":{"protocol":19,"version":"0.9.0"},"server":{"running":true,"protocol":19,"version":"0.9.0"}}\n' ;;
+  *'session list --json'*)
+    if [ -n "${FAKE_SESSION_LIST:-}" ]; then printf '%s\n' "$FAKE_SESSION_LIST"; else printf '%s\n' '{"sessions":[{"name":"default","running":true,"socket_path":"/tmp/fake-default.sock"}]}'; fi ;;
   *'workspace create'*)
     [ "${FAKE_CREATE_RC:-0}" -eq 0 ] || exit "$FAKE_CREATE_RC"
     if [ -n "${FAKE_CREATE_OUTPUT:-}" ]; then printf '%s\n' "$FAKE_CREATE_OUTPUT"; else printf '{"result":{"workspace":{"workspace_id":"w1"},"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}\n'; fi ;;
@@ -37,13 +39,23 @@ case "$*" in
     [ "${FAKE_WORKSPACE_LIST_RC:-0}" -eq 0 ] || exit "$FAKE_WORKSPACE_LIST_RC"
     if [ -n "${FAKE_WORKSPACE_LIST:-}" ]; then printf '%s\n' "$FAKE_WORKSPACE_LIST"; else printf '{"result":{"workspaces":[]}}\n'; fi ;;
   *'agent list'*)
-    if [ -n "${FAKE_AGENT_LIST:-}" ]; then printf '%s\n' "$FAKE_AGENT_LIST"; else printf '{"result":{"agents":[]}}\n'; fi ;;
+    agent_session=
+    previous=
+    for argument in "$@"; do
+      [ "$previous" = --session ] && agent_session=$argument
+      previous=$argument
+    done
+    agent_var="FAKE_AGENT_LIST_${agent_session//-/_}"
+    if [ -n "${!agent_var:-}" ]; then printf '%s\n' "${!agent_var}"; elif [ -n "${FAKE_AGENT_LIST:-}" ]; then printf '%s\n' "$FAKE_AGENT_LIST"; else printf '{"result":{"agents":[]}}\n'; fi ;;
+  *'pane run'*) : ;;
+  *'pane wait-output'*) exit "${FAKE_WAIT_RC:-0}" ;;
   *'tab get w1:t1'*) printf '{"result":{"tab":{"tab_id":"w1:t1","workspace_id":"%s"}}}\n' "${FAKE_TAB_WORKSPACE:-w1}" ;;
   *'pane get w1:p1'*) printf '{"result":{"pane":{"pane_id":"w1:p1","tab_id":"%s","workspace_id":"%s"}}}\n' "${FAKE_PANE_TAB:-w1:t1}" "${FAKE_PANE_WORKSPACE:-w1}" ;;
   *'agent get w1:p1'*)
     case "${FAKE_AGENT_STATE:-none}" in
       live-claude) printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' ;;
       live-codex) printf '{"result":{"agent":{"agent":"codex","agent_status":"idle"}}}\n' ;;
+      unknown) printf '{"result":{"agent":{"agent":"claude","agent_status":"mystery"}}}\n' ;;
       *) printf '{"error":{"code":"agent_not_found"}}\n' ;;
     esac ;;
   *'agent start'*)
@@ -115,6 +127,7 @@ test_normal_launch_is_explicit_and_completes() {
   printf '%s' "$log" | grep -F 'agent start firstmate-primary --kind claude --pane w1:p1' >/dev/null || fail 'normal launch did not target the exact pane as Claude'
   printf '%s' "$log" | grep -F -- "workspace create --cwd $TMP_ROOT/normal/home --label firstmate --no-focus" >/dev/null || fail 'normal launch did not create the workspace from the tracked root'
   printf '%s' "$log" | grep -F -- '--dangerously-skip-permissions' >/dev/null || fail 'normal launch omitted the verified Claude execution shape'
+  ! printf '%s' "$log" | grep -F 'pane run' >/dev/null || fail 'unpinned primary launch exported a Claude account'
   grep -F 'harness=claude' "$TMP_ROOT/normal/home/state/.primary-herdr" >/dev/null || fail 'normal endpoint record omitted Claude identity'
   pass 'normal startup selects Claude, records the endpoint, and waits for ownership proof'
 }
@@ -166,7 +179,7 @@ pane=w1:p1
 harness=claude
 EOF
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" HERDR_SESSION=firstmate "$SCRIPT" normal --no-attach 2>&1); then
     fail 'startup accepted an incomplete primary endpoint record'
   fi
   printf '%s' "$out" | grep -F 'recorded primary endpoint is invalid' >/dev/null || fail 'incomplete-record refusal was unclear'
@@ -191,7 +204,7 @@ test_recorded_husk_checks_competing_agent() {
   make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
     FAKE_AGENT_LIST="{\"result\":{\"agents\":[{\"agent\":\"claude\",\"cwd\":\"$home\"}]}}" \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    HERDR_SESSION=firstmate FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'husk reuse accepted a competing primary agent'
   fi
   printf '%s' "$out" | grep -F 'unrecorded agent(s) rooted at the primary home' >/dev/null || fail 'husk competitor refusal was unclear'
@@ -204,7 +217,7 @@ test_recorded_husk_checks_competing_workspace() {
   make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
     FAKE_WORKSPACE_LIST='{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w2","label":"firstmate"}]}}' \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    HERDR_SESSION=firstmate FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'husk reuse accepted competing primary workspaces'
   fi
   printf '%s' "$out" | grep -F 'not the unique, consistent primary endpoint' >/dev/null || fail 'husk workspace refusal was unclear'
@@ -216,7 +229,7 @@ test_recorded_husk_checks_parent_relationships() {
   local home="$TMP_ROOT/husk-parent/home" fake="$TMP_ROOT/husk-parent/fake" log="$TMP_ROOT/husk-parent/log" out
   make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_TAB_WORKSPACE=w2 \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    HERDR_SESSION=firstmate FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
     fail 'husk reuse accepted an inconsistent tab parent'
   fi
   printf '%s' "$out" | grep -F 'not the unique, consistent primary endpoint' >/dev/null || fail 'husk parent refusal was unclear'
@@ -286,7 +299,7 @@ pane=w1:p1
 harness=claude
 EOF
   out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_AGENT_STATE=live-claude \
-    FAKE_PS_COMM=claude FAKE_PS_ARGS=claude FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FAKE_PS_COMM=claude FAKE_PS_ARGS=claude FM_HOME="$home" FM_ROOT_OVERRIDE="$home" HERDR_SESSION=firstmate \
     "$SCRIPT" normal --no-attach)
   printf '%s' "$out" | grep -F 'primary reconnected: harness=claude' >/dev/null || fail 'healthy same-role startup did not reconnect'
   ! grep -F 'agent start' "$log" >/dev/null || fail 'healthy same-role reconnect launched a duplicate agent'
@@ -318,7 +331,7 @@ pane=w1:p1
 harness=claude
 EOF
   if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_AGENT_STATE=live-claude \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" HERDR_SESSION=firstmate "$SCRIPT" normal --no-attach 2>&1); then
     fail 'startup accepted a live endpoint without matching lock ownership'
   fi
   printf '%s' "$out" | grep -F 'exists without matching lock ownership' >/dev/null || fail 'orphan live endpoint refusal was unclear'
@@ -365,7 +378,7 @@ harness=claude
 EOF
   out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_READY_PID=$$ \
     FAKE_WORKSPACE_LIST='{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"}]}}' \
-    FAKE_PS_COMM=codex FAKE_PS_ARGS=codex FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FAKE_PS_COMM=codex FAKE_PS_ARGS=codex FM_HOME="$home" FM_ROOT_OVERRIDE="$home" HERDR_SESSION=firstmate \
     FM_PRIMARY_READY_TIMEOUT=1 "$SCRIPT" emergency --no-attach)
   printf '%s' "$out" | grep -F 'primary ready: harness=codex' >/dev/null || fail 'confirmed empty-pane handoff did not start Codex'
   grep -F 'agent start firstmate-primary --kind codex --pane w1:p1' "$log" >/dev/null || fail 'empty-pane handoff did not reuse the recorded pane'
@@ -382,6 +395,178 @@ test_server_mode_never_starts_agent() {
   pass 'boot server mode starts no primary agent'
 }
 
+write_stale_record() {
+  local home=$1
+  cat > "$home/state/.primary-herdr" <<'EOF'
+version=1
+session=firstmate
+workspace=w2S
+tab=w2S:t1
+pane=w2S:p1
+harness=claude
+EOF
+}
+
+test_boot_reconciles_stale_session_record() {
+  local dir="$TMP_ROOT/boot-stale" home="$TMP_ROOT/boot-stale/home" fake="$TMP_ROOT/boot-stale/fake" log="$TMP_ROOT/boot-stale/log" out record
+  make_home "$home"; make_fakebin "$fake"; : > "$log"; write_stale_record "$home"
+  out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" HERDR_SESSION=firstmate \
+    FAKE_READY_PID=$$ FAKE_PS_COMM=claude FAKE_PS_ARGS=claude \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_PRIMARY_READY_TIMEOUT=1 \
+    "$SCRIPT" normal --boot --no-attach)
+  record=$(cat "$home/state/.primary-herdr")
+  printf '%s' "$out" | grep -F 'primary ready: harness=claude' >/dev/null || fail 'boot reconcile did not report a fresh primary ready'
+  printf '%s' "$out" | grep -F 'primary record reconciled' >/dev/null || fail 'boot reconcile did not report clearing the stale record'
+  printf '%s' "$record" | grep -F 'session=default' >/dev/null || fail 'boot reconcile did not target the configured default session'
+  grep -F 'workspace create --cwd' "$log" >/dev/null || fail 'boot reconcile did not create a fresh primary workspace'
+  grep -F 'agent start firstmate-primary --kind claude --pane w1:p1' "$log" >/dev/null || fail 'boot reconcile did not launch the fresh primary'
+  grep -F -- '--session default' "$log" >/dev/null || fail 'boot reconcile did not address the default session'
+  ! grep -F -- '--session firstmate' "$log" >/dev/null || fail 'boot reconcile still addressed the stale firstmate session'
+  pass 'boot reconciles a stale recorded session and creates a fresh default-session primary'
+}
+
+test_boot_reconciles_unknown_endpoint() {
+  local home="$TMP_ROOT/boot-unknown/home" fake="$TMP_ROOT/boot-unknown/fake" log="$TMP_ROOT/boot-unknown/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
+  out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" HERDR_SESSION=firstmate \
+    FAKE_AGENT_STATE=unknown FAKE_READY_PID=$$ FAKE_PS_COMM=claude FAKE_PS_ARGS=claude \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_PRIMARY_READY_TIMEOUT=1 \
+    "$SCRIPT" normal --boot --no-attach)
+  printf '%s' "$out" | grep -F 'primary ready: harness=claude' >/dev/null || fail 'boot reconcile of an unknown endpoint did not report a fresh primary ready'
+  grep -F 'workspace create --cwd' "$log" >/dev/null || fail 'boot reconcile of an unknown endpoint did not create a fresh workspace'
+  grep -F 'session=default' "$home/state/.primary-herdr" >/dev/null || fail 'boot reconcile of an unknown endpoint did not target the configured default session'
+  pass 'boot reconciles an unknown recorded endpoint after proving no live rooted primary'
+}
+
+test_boot_refuses_unreadable_cross_session_inventory() {
+  local home="$TMP_ROOT/boot-unreadable/home" fake="$TMP_ROOT/boot-unreadable/fake" log="$TMP_ROOT/boot-unreadable/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"; write_stale_record "$home"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FAKE_AGENT_LIST_default='{"result":{}}' \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --boot --no-attach 2>&1); then
+    fail 'boot reconcile accepted an unreadable cross-session agent inventory'
+  fi
+  printf '%s' "$out" | grep -F 'discovery across all running sessions was unreadable' >/dev/null || fail 'unreadable cross-session inventory refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'unreadable cross-session inventory created a workspace'
+  pass 'boot reconcile refuses an unreadable cross-session agent inventory'
+}
+
+test_boot_refuses_live_rooted_primary_in_another_session() {
+  local home="$TMP_ROOT/boot-other-live/home" fake="$TMP_ROOT/boot-other-live/fake" log="$TMP_ROOT/boot-other-live/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"; write_stale_record "$home"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" HERDR_SESSION=firstmate \
+    FAKE_SESSION_LIST='{"sessions":[{"name":"default","running":true,"socket_path":"/tmp/fake-default.sock"},{"name":"firstmate","running":true,"socket_path":"/tmp/fake-firstmate.sock"}]}' \
+    FAKE_AGENT_LIST_firstmate="{\"result\":{\"agents\":[{\"agent\":\"claude\",\"cwd\":\"$home\"}]}}" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --boot --no-attach 2>&1); then
+    fail 'boot reconcile accepted a live primary rooted in another session'
+  fi
+  printf '%s' "$out" | grep -F 'live agent(s) rooted at the primary home' >/dev/null || fail 'cross-session live-primary refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'cross-session live-primary refusal created a workspace'
+  grep -F 'session=firstmate' "$home/state/.primary-herdr" >/dev/null || fail 'cross-session live-primary refusal cleared the record'
+  pass 'boot reconcile refuses while any running Herdr session holds a live rooted primary'
+}
+
+test_boot_keeps_live_endpoint_refusal() {
+  local home="$TMP_ROOT/boot-live-endpoint/home" fake="$TMP_ROOT/boot-live-endpoint/fake" log="$TMP_ROOT/boot-live-endpoint/log" out
+  make_home "$home"; make_fakebin "$fake"; : > "$log"; write_husk_record "$home"
+  sed -i 's/^session=firstmate$/session=default/' "$home/state/.primary-herdr"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FAKE_AGENT_STATE=live-claude FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    "$SCRIPT" normal --boot --no-attach 2>&1); then
+    fail 'boot reconcile accepted a live endpoint without matching lock ownership'
+  fi
+  printf '%s' "$out" | grep -F 'exists without matching lock ownership' >/dev/null || fail 'live-endpoint boot refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'live-endpoint boot refusal created a workspace'
+  grep -F 'session=default' "$home/state/.primary-herdr" >/dev/null || fail 'live-endpoint boot refusal cleared the record'
+  pass 'boot keeps the live-endpoint refusal unchanged'
+}
+
+test_primary_session_setting_defaults_to_default() {
+  local home="$TMP_ROOT/session-default/home" out
+  make_home "$home"
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" status)
+  printf '%s' "$out" | grep -F 'session=default' >/dev/null || fail 'absent config/herdr-session did not default to default'
+  [ ! -e "$home/config/herdr-session" ] || fail 'status created a session setting'
+  pass 'the primary session setting defaults to default'
+}
+
+test_primary_session_setting_reads_config() {
+  local home="$TMP_ROOT/session-config/home" out
+  make_home "$home"; mkdir -p "$home/config"; printf 'labprimary\n' > "$home/config/herdr-session"
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" status)
+  printf '%s' "$out" | grep -F 'session=labprimary' >/dev/null || fail 'config/herdr-session was not read'
+  pass 'the primary session setting selects the configured Herdr session'
+}
+
+test_primary_session_setting_refuses_malformed() {
+  local home="$TMP_ROOT/session-bad/home" out
+  make_home "$home"; mkdir -p "$home/config"; printf 'not a session\n' > "$home/config/herdr-session"
+  if out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" status 2>&1); then
+    fail 'a malformed config/herdr-session was accepted'
+  fi
+  printf '%s' "$out" | grep -F 'config/herdr-session' >/dev/null || fail 'malformed session setting refusal was unclear'
+  pass 'a malformed primary session setting refuses and names the file'
+}
+
+test_claude_primary_pins_orchestrator_account_not_worker_pin() {
+  local dir="$TMP_ROOT/account-pin" home="$TMP_ROOT/account-pin/home" fake="$TMP_ROOT/account-pin/fake" log="$TMP_ROOT/account-pin/log" out
+  make_home "$home"; make_fakebin "$fake"; mkdir -p "$home/config" "$dir/orchestrator" "$dir/worker"; : > "$log"
+  printf '%s\n' "$dir/orchestrator" > "$home/config/claude-orchestrator-account"
+  printf '%s\n' "$dir/worker" > "$home/config/claude-account"
+  out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" HERDR_SESSION=firstmate \
+    FAKE_READY_PID=$$ FAKE_PS_COMM=claude FAKE_PS_ARGS=claude \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_PRIMARY_READY_TIMEOUT=1 \
+    "$SCRIPT" normal --no-attach)
+  printf '%s' "$out" | grep -F 'primary ready: harness=claude' >/dev/null || fail 'pinned primary launch did not report ready'
+  grep -F "pane run w1:p1 export CLAUDE_CONFIG_DIR=$dir/orchestrator" "$log" >/dev/null || fail 'primary launch did not export the orchestrator account'
+  ! grep -F "$dir/worker" "$log" >/dev/null || fail 'primary launch used the worker account pin'
+  pass 'a Claude primary launch pins the orchestrator account and never config/claude-account'
+}
+
+test_orchestrator_pin_refuses_unconfirmed_or_missing_root() {
+  local dir="$TMP_ROOT/account-unconfirmed" home="$TMP_ROOT/account-unconfirmed/home" fake="$TMP_ROOT/account-unconfirmed/fake" log="$TMP_ROOT/account-unconfirmed/log" out
+  make_home "$home"; make_fakebin "$fake"; mkdir -p "$home/config" "$dir/orchestrator"; : > "$log"
+  printf '%s\n' "$dir/orchestrator" > "$home/config/claude-orchestrator-account"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" FAKE_WAIT_RC=1 \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'an unconfirmed orchestrator pin launched anyway'
+  fi
+  printf '%s' "$out" | grep -F 'could not confirm the orchestrator Claude account' >/dev/null || fail 'unconfirmed pin refusal was unclear'
+  ! grep -F 'agent start' "$log" >/dev/null || fail 'launched Claude without a confirmed pin'
+  printf '%s\n' "$dir/missing" > "$home/config/claude-orchestrator-account"; : > "$log"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'a missing orchestrator root was accepted'
+  fi
+  printf '%s' "$out" | grep -F 'not a readable directory' >/dev/null || fail 'missing root refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'missing root refused after Herdr mutation'
+  pass 'an unconfirmed or missing orchestrator pin refuses before launching Claude'
+}
+
+test_malformed_orchestrator_account_refuses() {
+  local home="$TMP_ROOT/account-bad/home" fake="$TMP_ROOT/account-bad/fake" log="$TMP_ROOT/account-bad/log" out
+  make_home "$home"; make_fakebin "$fake"; mkdir -p "$home/config"; : > "$log"
+  printf 'relative/path\n' > "$home/config/claude-orchestrator-account"
+  if out=$(env PATH="$fake:$PATH" FAKE_LOG="$log" FAKE_HOME="$home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$SCRIPT" normal --no-attach 2>&1); then
+    fail 'a malformed orchestrator account file was accepted'
+  fi
+  printf '%s' "$out" | grep -F 'config/claude-orchestrator-account must hold one absolute path' >/dev/null || fail 'malformed orchestrator-account refusal was unclear'
+  ! grep -F 'workspace create' "$log" >/dev/null || fail 'malformed orchestrator-account refusal created a workspace'
+  pass 'a malformed orchestrator account file refuses before any Herdr mutation'
+}
+
+test_boot_reconciles_stale_session_record
+test_boot_reconciles_unknown_endpoint
+test_boot_refuses_unreadable_cross_session_inventory
+test_boot_refuses_live_rooted_primary_in_another_session
+test_boot_keeps_live_endpoint_refusal
+test_primary_session_setting_defaults_to_default
+test_primary_session_setting_reads_config
+test_primary_session_setting_refuses_malformed
+test_claude_primary_pins_orchestrator_account_not_worker_pin
+test_orchestrator_pin_refuses_unconfirmed_or_missing_root
+test_malformed_orchestrator_account_refuses
 test_emergency_launch_is_explicit_and_completes
 test_normal_launch_is_explicit_and_completes
 test_unreadable_workspace_inventory_refuses

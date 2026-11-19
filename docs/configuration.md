@@ -11,7 +11,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
 | Worker permissions, accounts, or environment | [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
-| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), and [Calm preference](#calm-preference-configcalm) |
+| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [primary Herdr session](#primary-herdr-session-configherdr-session), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Optional repository context through RepoWise | [RepoWise integration](repowise.md) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
@@ -138,6 +138,7 @@ config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; in
 config/host-memory-floor  free-memory MiB floor below which lanes are refused; primary-authoritative; see "Host memory floor (config/host-memory-floor)"
 config/retry-thresholds  retry-loop relaunch/round ceilings; inherited; see "Retry-loop thresholds (config/retry-thresholds)"
 config/herdr-presentation-spaces  Herdr visual projection on/off opt-in; inherited; see docs/herdr-backend.md "Presentation spaces"
+config/herdr-session  named Herdr session for the primary launcher (absent → default); NOT inherited; see "Primary Herdr session (config/herdr-session)"
 config/trace-context  W3C trace-context propagation flag; inherited; see "Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)"
 config/lavish-axi-host  per-machine Lavish server address exported into every worker launch; LOCAL, gitignored; inherited; see "Lavish server address (config/lavish-axi-host)"
 config/repowise  opted-in project names and embedding endpoint for worker briefs; LOCAL, gitignored; NOT inherited; see "RepoWise project opt-in (config/repowise)"
@@ -611,6 +612,18 @@ The caller-facing label remains `fm-<id>`, but the actual cmux workspace title i
 
 Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.md#current-operation-and-safety), never enumerate-and-close every workspace.
 `config/backend` is inherited into secondmate homes under the primary-authoritative contract owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
+
+## Primary Herdr session (config/herdr-session)
+
+The optional local, gitignored `config/herdr-session` names the one Herdr session `bin/fm-primary-herdr.sh` uses for its server, workspace, and agent.
+It holds one session name made of letters, digits, dot, underscore, or dash.
+An absent file means `default`, so the orchestrator starts in the same Herdr session as its workers without any hand-written configuration; a malformed value refuses the launch and names the file.
+The setting is local to the primary home and is not inherited.
+
+`--boot` always reads this setting, so an automatic startup targets the configured session even when the environment's `HERDR_SESSION` names another one.
+An attended `normal` or `emergency` run lets `HERDR_SESSION` override the setting for one explicit launch.
+`--boot` also reconciles a stale or unknown recorded primary endpoint: after proving no live agent is rooted at the primary home in any running Herdr session, it clears `state/.primary-herdr` and creates a fresh primary. Without `--boot`, every conservative refusal is unchanged.
+[`docs/herdr-backend.md`](herdr-backend.md#primary-desktop-startup) owns the startup and boot-reconcile contract.
 
 ## Away-mode supervisor backend (FM_SUPERVISOR_BACKEND / FM_SUPERVISOR_TARGET)
 
@@ -1445,6 +1458,10 @@ When it is present, a Claude launch whose effective config root equals that path
 The effective root is the `config/claude-account` pin, else `$CLAUDE_CONFIG_DIR` (including one set in the launch command), else `$HOME/.claude`; `ordinary` resolves to `$HOME/.claude`.
 A malformed file refuses too.
 Without the file, launches are unchanged.
+
+The same file is the orchestrator's own account pin: a Claude primary launch from `bin/fm-primary-herdr.sh` exports that absolute root into the pane as `CLAUDE_CONFIG_DIR` before starting the agent, so the boot launch runs on the orchestrator account rather than an ambient or worker login.
+It never reads `config/claude-account`, which pins workers away from this account.
+A malformed file, or a root that is not a readable directory, refuses the primary launch.
 
 ### Failures, reporting, and inheritance
 

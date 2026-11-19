@@ -2,12 +2,16 @@
 # Start or reconnect to the primary Firstmate in one named Herdr session.
 #
 # Usage:
-#   fm-primary-herdr.sh normal [--no-attach]
+#   fm-primary-herdr.sh normal [--no-attach] [--boot]
 #   fm-primary-herdr.sh emergency [--no-attach]
 #   fm-primary-herdr.sh server
 #   fm-primary-herdr.sh status
 #
 # normal starts Claude as the ordinary primary.
+# normal --boot additionally reconciles a stale or unknown recorded endpoint
+# after proving no live primary is rooted in any running Herdr session, then
+# clears the record and creates a fresh primary. Every other mode keeps the
+# conservative refusals unchanged.
 # emergency starts Codex only when no live primary owns this home.
 # server starts only the named Herdr server, for a boot/login service.
 # status performs no mutation and reports the durable primary record, lock,
@@ -20,7 +24,9 @@
 # Safety contract:
 # - FM_HOME identifies the one primary home; it defaults to this tracked root.
 # - This primary-only launcher requires canonical FM_HOME and FM_ROOT to match.
-# - HERDR_SESSION selects one explicit named session and defaults to firstmate.
+# - The primary Herdr session comes from config/herdr-session and defaults to
+#   default. --boot always uses that setting; normal and emergency let
+#   HERDR_SESSION override it for one explicit attended launch.
 # - state/.primary-herdr records response-derived endpoint ids and the selected
 #   primary harness. Labels are presentation only and never authorize reuse.
 # - state/.primary-launch.lock serializes normal, emergency, and boot starts.
@@ -28,6 +34,12 @@
 # - A live or unreadable recorded Herdr endpoint refuses duplicate launch.
 # - A confirmed no-agent husk may be relaunched in its recorded pane.
 # - A missing recorded pane permits a fresh primary workspace.
+# - --boot reconciles only when no live primary lock exists and the recorded
+#   endpoint is unknown or invalid, and only after proving zero live agents
+#   rooted at this home across every running Herdr session.
+# - A Claude primary launch pins the orchestrator account named by
+#   config/claude-orchestrator-account when that file is present; it never
+#   reads config/claude-account, which pins workers.
 # - Success is reported only after the new harness owns state/.lock and the
 #   matching state/.session-start-complete record exists.
 # - Codex interactive TUI has no native SessionStart transport, so emergency
@@ -36,7 +48,7 @@
 # Environment:
 #   FM_HOME                         primary operational home
 #   FM_ROOT_OVERRIDE                tracked Firstmate code root
-#   HERDR_SESSION                   named Herdr session (firstmate)
+#   HERDR_SESSION                   named Herdr session override (non-boot)
 #   FM_PRIMARY_CODEX_MODEL          emergency model (gpt-5.6-luna)
 #   FM_PRIMARY_CODEX_EFFORT         emergency effort (low|medium|high|xhigh)
 #   FM_PRIMARY_READY_TIMEOUT        seconds to await startup proof (120)
@@ -52,11 +64,11 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-SESSION="${HERDR_SESSION:-firstmate}"
 RECORD="$STATE/.primary-herdr"
 START_LOCK="$STATE/.primary-launch.lock"
 MODE=${1:-}
 ATTACH=1
+BOOT=0
 
 usage() {
   sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'
@@ -68,14 +80,18 @@ case "$MODE" in
   *) usage >&2; exit 2 ;;
 esac
 shift
-case "${1:-}" in
-  '') ;;
-  --no-attach) ATTACH=0; shift ;;
-  *) echo "error: unknown argument: $1" >&2; exit 2 ;;
-esac
-[ "$#" -eq 0 ] || { echo "error: too many arguments" >&2; exit 2; }
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --no-attach) ATTACH=0 ;;
+    --boot) BOOT=1 ;;
+    *) echo "error: unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 [ "$MODE" = normal ] || [ "$MODE" = emergency ] || [ "$ATTACH" -eq 1 ] \
   || { echo "error: --no-attach applies only to normal or emergency" >&2; exit 2; }
+[ "$BOOT" -eq 0 ] || [ "$MODE" = normal ] \
+  || { echo "error: --boot applies only to normal" >&2; exit 2; }
 
 [ -d "$FM_HOME" ] && [ ! -L "$FM_HOME" ] \
   || { echo "error: primary home is unavailable or unsafe: $FM_HOME" >&2; exit 1; }
@@ -86,12 +102,44 @@ CANONICAL_HOME=$(cd "$FM_HOME" 2>/dev/null && pwd -P) || { echo "error: primary 
 [ "$CANONICAL_HOME" = "$CANONICAL_ROOT" ] \
   || { echo "error: primary launcher requires FM_HOME and FM_ROOT to be the same canonical directory" >&2; exit 1; }
 
+# config/herdr-session (docs/configuration.md "Primary Herdr session"):
+# names the one Herdr session this launcher uses, defaulting to default so the
+# orchestrator follows the same session as its workers. --boot always honors
+# the setting; an attended normal or emergency run may name another session
+# through HERDR_SESSION for a one-off launch.
+primary_session() {
+  local setting="$CONFIG/herdr-session" configured=default
+  if [ -e "$setting" ]; then
+    if [ ! -f "$setting" ] || [ ! -r "$setting" ]; then
+      echo "error: config/herdr-session must be a readable regular file holding one Herdr session name" >&2
+      return 1
+    fi
+    configured=$(cat "$setting") || configured=
+    case "$configured" in
+      ''|*[!A-Za-z0-9._-]*)
+        echo "error: config/herdr-session must hold one Herdr session name using only letters, digits, dot, underscore, or dash" >&2
+        return 1
+        ;;
+    esac
+    [ "$(printf '%s\n' "$configured" | wc -l)" -eq 1 ] \
+      || { echo "error: config/herdr-session must hold exactly one Herdr session name" >&2; return 1; }
+  fi
+  if [ "$BOOT" -eq 1 ]; then
+    printf '%s\n' "$configured"
+  else
+    printf '%s\n' "${HERDR_SESSION:-$configured}"
+  fi
+}
+SESSION=$(primary_session) || exit 1
+
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/backends/herdr.sh"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-worker-account-lib.sh"
 
 # config/claude-remote-control (docs/configuration.md "Claude Remote
 # Control"): same fail-closed on/off contract as bin/fm-spawn.sh, resolved
@@ -177,9 +225,9 @@ endpoint_state() {
   fi
 }
 
-rooted_primary_count() {
+rooted_primary_count_in_session() { # <session>
   local out count
-  out=$(fm_backend_herdr_cli "$SESSION" agent list 2>/dev/null) || return 1
+  out=$(fm_backend_herdr_cli "$1" agent list 2>/dev/null) || return 1
   count=$(jq -r --arg home "$CANONICAL_HOME" '
     if (.result.agents | type) != "array" then
       error("invalid agent inventory")
@@ -191,6 +239,33 @@ rooted_primary_count() {
     ''|*[!0-9]*) return 1 ;;
   esac
   printf '%s' "$count"
+}
+
+rooted_primary_count() {
+  rooted_primary_count_in_session "$SESSION"
+}
+
+# rooted_primary_count_all_sessions: live agents rooted at this primary home in
+# every running Herdr session. Boot reconcile uses this to prove no primary is
+# alive anywhere before it clears a stale record; an unreadable inventory
+# fails closed rather than risking a duplicate primary.
+rooted_primary_count_all_sessions() {
+  local list sessions session count total=0
+  list=$(fm_backend_herdr_cli "$SESSION" session list --json 2>/dev/null) || return 1
+  sessions=$(jq -r '
+    if (.sessions | type) != "array" then
+      error("invalid sessions inventory")
+    else
+      .sessions[] | select(.running == true) | .name
+    end
+  ' <<<"$list") || return 1
+  [ -n "$sessions" ] || { printf '0'; return 0; }
+  while IFS= read -r session; do
+    [ -n "$session" ] || return 1
+    count=$(rooted_primary_count_in_session "$session") || return 1
+    total=$((total + count))
+  done <<<"$sessions"
+  printf '%s' "$total"
 }
 
 primary_workspace_count() {
@@ -257,6 +332,40 @@ write_primary_record() {
   mv -f "$tmp" "$RECORD"
 }
 
+create_primary_workspace() {
+  local create
+  create=$(fm_backend_herdr_cli "$SESSION" workspace create --cwd "$FM_ROOT" --label firstmate --no-focus)
+  WORKSPACE=$(jq -er '.result.workspace.workspace_id | select(type == "string" and length > 0)' <<<"$create")
+  TAB=$(jq -er '.result.tab.tab_id | select(type == "string" and length > 0)' <<<"$create")
+  PANE=$(jq -er '.result.root_pane.pane_id | select(type == "string" and length > 0)' <<<"$create")
+}
+
+# reconcile_stale_primary_on_boot: the one boot-only relaxation of the
+# duplicate-launch refusal. It runs only when no live primary lock exists and
+# the recorded endpoint is unknown or invalid, and only after proving zero
+# live agents are rooted at this home across every running Herdr session. Any
+# unreadable inventory or a single live rooted primary refuses instead, so a
+# boot can never create a second primary beside a live one.
+reconcile_stale_primary_on_boot() {
+  local count
+  count=$(rooted_primary_count_all_sessions) || {
+    echo "error: Herdr primary-agent discovery across all running sessions was unreadable; refusing boot reconcile" >&2
+    return 1
+  }
+  case "$count" in
+    ''|*[!0-9]*) echo "error: Herdr primary-agent discovery across all running sessions was unreadable; refusing boot reconcile" >&2; return 1 ;;
+  esac
+  [ "$count" -eq 0 ] || {
+    echo "error: Herdr reports $count live agent(s) rooted at the primary home in a running session; refusing boot reconcile" >&2
+    return 1
+  }
+  rm -f -- "$RECORD" || {
+    echo "error: could not clear the stale primary endpoint record: $RECORD" >&2
+    return 1
+  }
+  echo "primary record reconciled: cleared stale endpoint record and creating a fresh primary"
+}
+
 report_status() {
   local ls es
   ls=$(lock_state)
@@ -302,6 +411,16 @@ fi
 
 REQUESTED=claude
 [ "$MODE" = emergency ] && REQUESTED=codex
+ORCHESTRATOR_ROOT=
+if [ "$REQUESTED" = claude ]; then
+  # config/claude-orchestrator-account names the orchestrator account. It is
+  # deliberately never config/claude-account, which pins workers away from it.
+  ORCHESTRATOR_ROOT=$(fm_worker_account_orchestrator_root "$CONFIG") || exit 1
+  if [ -n "$ORCHESTRATOR_ROOT" ] && { [ ! -d "$ORCHESTRATOR_ROOT" ] || [ ! -r "$ORCHESTRATOR_ROOT" ]; }; then
+    echo "error: config/claude-orchestrator-account names $ORCHESTRATOR_ROOT, which is not a readable directory; sign in with CLAUDE_CONFIG_DIR=$ORCHESTRATOR_ROOT claude, then /login, or fix the file" >&2
+    exit 1
+  fi
+fi
 
 IFS=$'\t' read -r LOCK_KIND LOCK_PID LOCK_HARNESS <<EOF
 $(lock_state)
@@ -335,8 +454,13 @@ case "$ENDPOINT_KIND" in
     echo "error: a live $ENDPOINT_HARNESS primary agent exists without matching lock ownership; refusing duplicate startup" >&2
     exit 1 ;;
   unknown|invalid)
-    echo "error: recorded primary endpoint is $ENDPOINT_KIND; refusing startup until its identity is reconciled" >&2
-    exit 1 ;;
+    if [ "$BOOT" -eq 1 ]; then
+      reconcile_stale_primary_on_boot || exit 1
+      create_primary_workspace
+    else
+      echo "error: recorded primary endpoint is $ENDPOINT_KIND; refusing startup until its identity is reconciled" >&2
+      exit 1
+    fi ;;
   no-agent)
     PANE=$ENDPOINT_PANE
     WORKSPACE=$(record_value workspace)
@@ -371,10 +495,7 @@ case "$ENDPOINT_KIND" in
       echo "error: Herdr already has $workspace_count unrecorded workspace(s) labeled firstmate; refusing to create a conflicting primary workspace" >&2
       exit 1
     }
-    CREATE=$(fm_backend_herdr_cli "$SESSION" workspace create --cwd "$FM_ROOT" --label firstmate --no-focus)
-    WORKSPACE=$(jq -er '.result.workspace.workspace_id | select(type == "string" and length > 0)' <<<"$CREATE")
-    TAB=$(jq -er '.result.tab.tab_id | select(type == "string" and length > 0)' <<<"$CREATE")
-    PANE=$(jq -er '.result.root_pane.pane_id | select(type == "string" and length > 0)' <<<"$CREATE")
+    create_primary_workspace
     ;;
   *)
     echo "error: unexpected primary endpoint state: $ENDPOINT_KIND" >&2
@@ -384,6 +505,16 @@ esac
 write_primary_record
 
 if [ "$REQUESTED" = claude ]; then
+  if [ -n "$ORCHESTRATOR_ROOT" ]; then
+    # Herdr starts the agent from the pane's own shell, not from this process,
+    # so export the orchestrator account into that shell before the launch.
+    if ! { fm_backend_herdr_cli "$SESSION" pane run "$PANE" \
+      "export CLAUDE_CONFIG_DIR=$(printf '%q' "$ORCHESTRATOR_ROOT"); printf 'fm-pin-%s\\n' \"\$CLAUDE_CONFIG_DIR\"" >/dev/null &&
+      fm_backend_herdr_cli "$SESSION" pane wait-output "$PANE" --match "fm-pin-$ORCHESTRATOR_ROOT" --timeout "$((START_TIMEOUT))" >/dev/null; }; then
+      echo "error: could not confirm the orchestrator Claude account in pane $PANE; refusing to launch on an unpinned account" >&2
+      exit 1
+    fi
+  fi
   CLAUDE_RC_ARGS=()
   [ "$CLAUDE_REMOTE_CONTROL" != on ] || CLAUDE_RC_ARGS=(--remote-control firstmate-primary)
   fm_backend_herdr_cli "$SESSION" agent start firstmate-primary --kind claude --pane "$PANE" --timeout "$START_TIMEOUT" -- \
