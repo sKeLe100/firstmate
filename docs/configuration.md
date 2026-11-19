@@ -382,7 +382,7 @@ Both choices are local to each Firstmate home and are not part of secondmate inh
 
 ## Supervision host (config/supervision-host)
 
-Two optional local, gitignored files control the supervision host for this home: `config/supervision-host-off` opts the home out, and `config/supervision-host` opts a home in and selects its engine.
+Three optional local, gitignored files control the supervision host for this home: `config/supervision-host-off` opts the home out, `config/supervision-host` opts a home in and selects its engine, and `config/supervision-engine-account` moves the engine to another Claude account.
 The host runs the supervision branch's contract on a headless engine session beside a non-Pi primary.
 [docs/supervision-host.md](supervision-host.md) defines its design, current scope, and verified engines.
 A Claude, Cursor, OpenCode, omp, Grok, or Codex primary can run the host.
@@ -407,6 +407,21 @@ Grok's arm command is rendered at session start, so a change to its host mode ta
 - `<engine> [<model>]` names a verified engine, currently only `claude`, and optionally the engine's own model name or alias; `default <model>` selects the primary harness's engine with that model.
 
 Only Claude has a verified engine of its own, so a Cursor, OpenCode, omp, Grok, or Codex home names `claude` in the file.
+
+### Engine account (config/supervision-engine-account)
+
+By default the headless engine inherits firstmate's own `CLAUDE_CONFIG_DIR`, so it spends the same Claude account as the primary session.
+`config/supervision-engine-account`, which is local and gitignored, moves the engine to another account.
+It holds one line: the absolute path of an existing Claude config directory, with no other line or control character.
+A final newline is optional.
+
+The file is opt-in; absent, the engine keeps inheriting the primary's account exactly as before.
+Sign the account in first with `CLAUDE_CONFIG_DIR=<path> claude`, then `/login`; Firstmate never copies credentials or changes a global login.
+Firstmate's other environment credentials, such as `ANTHROPIC_API_KEY`, still rank above a stored login in the selected directory, so a home that authenticates through the environment should leave the file absent.
+
+An unreadable file, a relative or nonexistent path, or a malformed line leaves the home without an engine, exactly like a malformed `config/supervision-host`: every wake reaches main and the away line names the problem.
+The file applies to the Claude engine, the only verified engine today.
+`fm_supervision_engine_account` in `bin/fm-supervision-engine-lib.sh` owns the parse and the launch environment.
 
 ### Failures, when changes apply, and inheritance
 

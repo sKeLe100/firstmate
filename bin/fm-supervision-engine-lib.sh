@@ -24,7 +24,14 @@
 # ONE ENGINE TURN (fm_supervision_engine_turn). One prompt to one engine
 # conversation, bounded, from the tracked code root, with the environment the
 # caller exported (the host exports the branch actor, the lease holder pid,
-# the primary-harness pin, and the report-turn id). The runner returns the
+# the primary-harness pin, and the report-turn id).
+# The optional config/supervision-engine-account file selects a Claude account
+# for the engine: absent, the engine inherits firstmate's own CLAUDE_CONFIG_DIR
+# exactly as before, and present it must hold one absolute path to an existing
+# readable, searchable directory, which the engine's launch receives.
+# docs/configuration.md "Supervision host" owns the operator-facing contract;
+# fm_supervision_engine_account is the one parser both the launch and the
+# home-gate read use. The runner returns the
 # process exit status; the host separately requires a complete successful
 # result, a durable report, and acknowledgement before counting a wake handled.
 # The turn is bounded by fm_exec_timed
@@ -88,17 +95,58 @@ fm_supervision_engine_default_model() {  # <engine>
   esac
 }
 
+# fm_supervision_engine_account <config-dir>: print the Claude config directory
+# config/supervision-engine-account selects for the headless engine, or nothing
+# when the file is absent, which leaves the engine on the account it inherits
+# from firstmate (today's behaviour). A present file must hold one absolute
+# path to an existing readable, searchable directory and no other line;
+# otherwise print one plain reason and return 1, never falling back to the
+# inherited account.
+fm_supervision_engine_account() {
+  local file="$1/supervision-engine-account" line extra
+  [ -e "$file" ] || [ -L "$file" ] || return 0
+  if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+    printf 'config/supervision-engine-account must be a readable regular file: %s\n' "$file" >&2
+    return 1
+  fi
+  line='' extra=''
+  { IFS= read -r line || true; IFS= read -r extra || true; } < "$file"
+  if [ -n "$extra" ]; then
+    printf 'config/supervision-engine-account must hold one absolute path and no other line: %s\n' "$file" >&2
+    return 1
+  fi
+  case "$line" in
+    '') printf 'config/supervision-engine-account is empty; remove it to inherit the primary account: %s\n' "$file" >&2
+      return 1 ;;
+    /*) ;;
+    *) printf 'config/supervision-engine-account must hold an absolute path, not %s: %s\n' "$line" "$file" >&2
+      return 1 ;;
+  esac
+  case "$line" in
+    *[[:cntrl:]]*) printf 'config/supervision-engine-account must hold no control character: %s\n' "$file" >&2
+      return 1 ;;
+  esac
+  if [ ! -d "$line" ] || [ ! -r "$line" ] || [ ! -x "$line" ]; then
+    printf 'config/supervision-engine-account must name an existing readable directory: %s -> %s\n' "$file" "$line" >&2
+    return 1
+  fi
+  printf '%s\n' "$line"
+}
+
 # fm_supervision_host_config <config-dir> <primary-harness>
 # Returns 1 when the home does not run the host (fm_supervision_host_enabled).
 # Otherwise returns 0 and sets
-# FM_SUPERVISION_ENGINE and FM_SUPERVISION_ENGINE_MODEL for a usable engine, or
-# leaves both empty and sets FM_SUPERVISION_ENGINE_PROBLEM to one plain
+# FM_SUPERVISION_ENGINE and FM_SUPERVISION_ENGINE_MODEL for a usable engine,
+# plus FM_SUPERVISION_ENGINE_ACCOUNT (empty when the engine inherits the
+# primary's own Claude account), or
+# leaves them empty and sets FM_SUPERVISION_ENGINE_PROBLEM to one plain
 # sentence naming why this home has no engine.
 # shellcheck disable=SC2034 # Output globals, read by the sourcing caller.
 fm_supervision_host_config() {
-  local config=$1 primary=${2:-} line engine model extra
+  local config=$1 primary=${2:-} line engine model extra account
   FM_SUPERVISION_ENGINE=''
   FM_SUPERVISION_ENGINE_MODEL=''
+  FM_SUPERVISION_ENGINE_ACCOUNT=''
   FM_SUPERVISION_ENGINE_PROBLEM=''
   fm_supervision_host_enabled "$config" "$primary" || return 1
   line=
@@ -134,8 +182,14 @@ EOF
       return 0
       ;;
   esac
+  if [ "$engine" = claude ] \
+    && ! account=$(fm_supervision_engine_account "$config" 2>&1); then
+    FM_SUPERVISION_ENGINE_PROBLEM=$account
+    return 0
+  fi
   FM_SUPERVISION_ENGINE=$engine
   FM_SUPERVISION_ENGINE_MODEL=$model
+  FM_SUPERVISION_ENGINE_ACCOUNT=${account:-}
   return 0
 }
 
@@ -336,12 +390,13 @@ _fm_engine_reap() {
 # an engine its crashed predecessor left running.
 fm_supervision_engine_turn() {
   local engine=$1 model=$2 prompt=$3 message=$4 session=$5 mode=$6 timeout=$7 result=$8 errors=$9
-  local pid_file=${10:-} bin grace i ledger watched rc home_phys root_phys state_phys identity recorded
-  local -a args
+  local pid_file=${10:-} bin grace i ledger watched rc home_phys root_phys state_phys identity recorded account
+  local -a args launch
   bin=$(fm_supervision_engine_bin "$engine" 2>"$errors") || return 127
   case "$timeout" in ''|0*|*[!0-9]*) timeout=1200 ;; esac
   grace=${FM_SUPERVISION_ENGINE_GRACE:-30}
   case "$grace" in ''|0*|*[!0-9]*) grace=30 ;; esac
+  account=${FM_SUPERVISION_ENGINE_ACCOUNT:-}
   case "$engine" in
     claude)
       # The prompt is the first positional argument, ahead of the variadic
@@ -365,16 +420,24 @@ fm_supervision_engine_turn() {
       else
         args+=(--resume "$session")
       fi
+      if [ -z "$account" ]; then
+        account=$(fm_supervision_engine_account "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" 2>"$errors") \
+          || return 127
+      fi
       ;;
     *)
       printf 'no engine turn is defined for %s\n' "$engine" > "$errors"
       return 127
       ;;
   esac
+  launch=("$bin" "${args[@]}")
+  if [ "$engine" = claude ] && [ -n "$account" ]; then
+    launch=(env "CLAUDE_CONFIG_DIR=$account" "${launch[@]}")
+  fi
   ledger=$(mktemp "$STATE/.supervision-host-descendants.XXXXXX") || return 127
   (
     cd "$FM_ROOT" || exit 127
-    fm_exec_timed "$timeout" "$grace" "$bin" "${args[@]}"
+    fm_exec_timed "$timeout" "$grace" "${launch[@]}"
   ) </dev/null >"$result" 2>"$errors" &
   watched=$!
   recorded=

@@ -398,6 +398,9 @@ Such a process is never recorded and survives the turn, the same residual `bin/f
 The default model is `sonnet`, which handled every measured wake correctly at a fraction of a larger model's cost.
 `config/supervision-host` can name another.
 
+The engine normally inherits the primary's own `CLAUDE_CONFIG_DIR`.
+[`config/supervision-engine-account`](configuration.md#engine-account-configsupervision-engine-account) can point an opted-in home's engine at another Claude account; absent, the inherited account is unchanged.
+
 The Claude engine runs beside any of the six primaries, and an empty `config/supervision-host` selects it on a Claude primary.
 A Cursor, OpenCode, omp, Grok, or Codex home names it (`claude`, optionally with a model) in `config/supervision-host`.
 `/afk` there says so when the file selects no engine.
