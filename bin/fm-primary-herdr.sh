@@ -416,7 +416,7 @@ if [ "$REQUESTED" = claude ]; then
   # config/claude-orchestrator-account names the orchestrator account. It is
   # deliberately never config/claude-account, which pins workers away from it.
   ORCHESTRATOR_ROOT=$(fm_worker_account_orchestrator_root "$CONFIG") || exit 1
-  if [ -n "$ORCHESTRATOR_ROOT" ] && [ ! -d "$ORCHESTRATOR_ROOT" -o ! -r "$ORCHESTRATOR_ROOT" ]; then
+  if [ -n "$ORCHESTRATOR_ROOT" ] && { [ ! -d "$ORCHESTRATOR_ROOT" ] || [ ! -r "$ORCHESTRATOR_ROOT" ]; }; then
     echo "error: config/claude-orchestrator-account names $ORCHESTRATOR_ROOT, which is not a readable directory; sign in with CLAUDE_CONFIG_DIR=$ORCHESTRATOR_ROOT claude, then /login, or fix the file" >&2
     exit 1
   fi
