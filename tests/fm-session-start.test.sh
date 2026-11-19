@@ -1976,7 +1976,10 @@ FIXTURE
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
   mkdir -p "$home/data"
-  awk 'BEGIN { for (i = 0; i < 400; i++) printf "preference line %04d padding padding padding\n", i }' > "$home/data/captain.md"
+  # The slim post-clear digest still prints one line per project, so a large
+  # registry keeps this fixture above the harness's hook-output limit without
+  # relying on the full context files the slim digest no longer reprints.
+  awk 'BEGIN { for (i = 0; i < 400; i++) printf "- project-%04d [no-mistakes] - a registered project with a description (added 2026-07-01)\n", i }' > "$home/data/projects.md"
 
   normal=$(FM_FAKE_HARNESS_PID=$$ run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_not_contains "$normal" "RE-EMIT CUE" "a normal start printed the re-emit cue"
@@ -2038,6 +2041,88 @@ EOF
   assert_contains "$reemit" "NEXT STEP" "--reemit dropped the closing reminder"
 
   pass "--reemit reprints the digest without repeating startup's mutating sweeps and still drains queued wakes"
+}
+
+# The post-clear digest is deliberately slim: active backlog rows only (in
+# flight and held one line each, top dispatchable queue), one line per task,
+# and one line per project. The full-context sources it used to reprint are
+# named for a targeted read instead, and the whole digest lands under 30KB.
+test_reemit_slims_backlog_state_and_projects() {
+  local rec root home fakebin normal reemit
+  rec=$(new_world reemit-slim)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_tasks_axi_compact "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  write_long_body_backlog "$home/data/backlog.md"
+  cat > "$home/data/projects.md" <<'EOF'
+- alpha [no-mistakes] - alpha project (added 2026-01-01)
+  PROJECT-CONTINUATION-MARKER alpha detail that the slim digest does not need
+- beta [direct-PR +yolo] - beta project (added 2026-01-02)
+EOF
+  awk 'BEGIN { for (i = 0; i < 500; i++) printf "CAPTAIN-FULL-MARKER preference line %04d padding padding padding\n", i }' > "$home/data/captain.md"
+  awk 'BEGIN { for (i = 0; i < 500; i++) printf "LEARNINGS-FULL-MARKER learning line %04d padding padding padding\n", i }' > "$home/data/learnings.md"
+  mkdir -p "$home/projects/firstmate"
+  cat > "$home/state/task-x.meta" <<EOF
+window=fm-sess:slim
+worktree=$home/projects/firstmate
+project=firstmate
+kind=ship
+note=METADATA-BLOCK-MARKER full task block detail
+EOF
+  printf 'working: earlier line\nworking: LAST-STATUS-MARKER current work\n' > "$home/state/task-x.status"
+
+  normal=$(FM_FAKE_HARNESS_PID=$$ FM_FAKE_TASKS_AXI_READY=8 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  reemit=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_FAKE_HARNESS_PID=$$ FM_FAKE_TASKS_AXI_READY=8 \
+    PATH="$fakebin:$BASE_PATH" env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    "$SESSION_START" --reemit)
+
+  # Active backlog rows survive, each on its own line.
+  assert_contains "$reemit" "compact-startup,in_flight,ship,firstmate,Compact startup digest,none,captain,captain choice pending" \
+    "the post-clear digest dropped an in-flight row"
+  assert_contains "$reemit" "held-queued,queued,ship,firstmate,Held queued work,none,captain,captain choice pending" \
+    "the post-clear digest dropped a held row"
+  assert_not_contains "$reemit" "DONE-ROW-LINE" "the post-clear digest listed a done row"
+  assert_contains "$reemit" "ready-5,queued" "the post-clear digest did not show its top dispatchable queue"
+  assert_not_contains "$reemit" "ready-6,queued" "the post-clear digest did not bound the dispatchable queue to the top"
+  assert_contains "$reemit" "(3 more queued - bin/fm-tasks-axi.sh ready)" \
+    "the post-clear digest did not disclose the dispatchable remainder"
+
+  # One line per task: endpoint plus last status line, never the whole block.
+  assert_contains "$reemit" "--- task-x --- endpoint: " "the post-clear digest dropped the task endpoint line"
+  assert_contains "$reemit" "(backend=tmux window=fm-sess:slim)" "the post-clear digest dropped the task endpoint identity"
+  assert_contains "$reemit" "last status: working: LAST-STATUS-MARKER current work" \
+    "the post-clear digest dropped the task's last status line"
+  assert_not_contains "$reemit" "METADATA-BLOCK-MARKER" \
+    "the post-clear digest reprinted a whole task meta block"
+  assert_not_contains "$reemit" "status tail (last" \
+    "the post-clear digest reprinted full status tails"
+
+  # One line per project registry entry, and no full context files.
+  assert_contains "$reemit" "- alpha [no-mistakes] - alpha project (added 2026-01-01)" \
+    "the post-clear digest dropped a project entry"
+  assert_contains "$reemit" "- beta [direct-PR +yolo] - beta project (added 2026-01-02)" \
+    "the post-clear digest dropped a project entry"
+  assert_not_contains "$reemit" "PROJECT-CONTINUATION-MARKER" \
+    "the post-clear digest printed a project registry continuation line"
+  assert_not_contains "$reemit" "CAPTAIN-FULL-MARKER" \
+    "the post-clear digest reprinted the full captain preferences"
+  assert_not_contains "$reemit" "LEARNINGS-FULL-MARKER" \
+    "the post-clear digest reprinted the full learnings file"
+  assert_contains "$reemit" "Not reprinted in this post-clear digest" \
+    "the post-clear digest did not say which context sources it omitted"
+
+  # The startup digest still carries the full recovery view.
+  assert_contains "$normal" "METADATA-BLOCK-MARKER" "the startup digest lost a task meta block"
+  assert_contains "$normal" "status tail (last" "the startup digest lost its status tails"
+  assert_contains "$normal" "CAPTAIN-FULL-MARKER" "the startup digest lost the captain preferences"
+
+  [ "${#normal}" -gt 30000 ] || fail "the fixture did not exceed 30KB in the full startup digest: ${#normal}"
+  [ "${#reemit}" -le 30000 ] || fail "the post-clear digest exceeded 30KB: ${#reemit}"
+
+  pass "the post-clear digest carries active backlog rows, one line per task, and one line per project, under 30KB"
 }
 
 test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact() {
@@ -2688,6 +2773,7 @@ test_runtime_bound_leaves_a_healthy_digest_untouched
 test_runtime_bound_leaves_harness_ancestry_headroom
 test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain
 test_reemit_cue_survives_the_hook_output_preview
+test_reemit_slims_backlog_state_and_projects
 test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact
 test_read_only_pi_compact_refreshes_against_its_own_session_identity
 test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh
