@@ -1,0 +1,50 @@
+
+
+● Captain, you're marked as away. Monitoring is running in the background, so you don't need to do anything else.
+
+  How this works while you're out: nothing can reach your phone, so anything that needs you waits until you're back. Your instructions are saved word for word, and I'll carry them out where I can.
+  Anything I'm unsure about waits for you. Nothing destructive, irreversible or security-sensitive will happen, whatever the instructions say.
+
+  What I understand you're asking:
+  - Docs lane review: see the docs lane's open pull request through its review to the end. If that PR is green at its latest commit and finishing it means merging, I can merge it under your away
+    instructions. If it's red, still waiting on a required check, or raises a question only you can answer, it waits for you.
+  - Dependabot lanes (your standing order): keep them green, which means making sure their failures get fixed through the normal process. This alone doesn't let me merge them; a merge waits for you
+    unless your words clearly call for it.
+  - Billing repo (your standing order): don't touch it at all. No work, merges or cleanup there.
+
+  What I can't do while you're away: merge anything with failing or missing checks, discard work, or land a branch that's only local. Those wait for you.
+
+  Expected return: not given. Spend cap: 4 workers at once.
+
+  If I've read any of this wrong, send /afk again with corrected wording and it replaces these instructions right away.
+
+✻ Sautéed for 25s · done 5:10 PM
+
+❯ /afk
+
+● This is a refresh with no new words, so the recorded instructions stay as they are.
+
+  Ran 1 shell command
+
+● Captain, you're still marked as away. Nothing changed: you gave no new instructions, so the ones from 22:10 UTC still apply, and the background monitoring is still running.
+
+  How this works while you're out: nothing can reach your phone, so anything that needs you waits until you're back. I'll carry out your instructions where I can, and anything I'm unsure about waits
+  for you. Nothing destructive, irreversible or security-sensitive will happen, whatever the instructions say.
+
+  What I understand you're asking:
+  - Docs lane review: see the docs lane pull request through its review. If it's green at its latest commit and finishing it means merging, I'll merge it.
+  - Dependabot lanes (your standing order): keep them green by getting their failures fixed. Merging them still waits for you unless your words clearly call for it.
+  - Billing repo (your standing order): don't touch it at all.
+
+  What waits for you: merging anything with failing or missing checks, discarding work, and landing a branch that's only local.
+
+  Expected return: not given. Spend cap: 4 workers at once.
+
+  To change these instructions, send /afk with new wording.
+
+✻ Cogitated for 8s · done 5:11 PM · 1 shell still running
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on · 1 shell · ↓ to manage
