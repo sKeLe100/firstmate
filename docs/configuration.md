@@ -428,11 +428,11 @@ The file applies to the Claude engine, the only verified engine today.
 An unverified engine, a primary without a verified engine, or a malformed line leaves the host without an engine.
 It takes no wake, so every wake reaches main as it would without the host.
 Each away-posture wake includes a line naming the problem.
-The running host reads both files at every wake, so an engine change or an opt-out takes effect at the next wake without a restart.
+The running host reads `config/supervision-host-off`, `config/supervision-host`, and `config/supervision-engine-account` at every wake, so an engine change, an account change, or an opt-out takes effect at the next wake without a restart; an account change starts a new engine conversation.
 
 The opt-out is inherited into secondmate homes: a primary that opts out also opts its secondmates out, and clearing it restores each mate's own host setting at its next spawn or convergence.
 The primary-authoritative propagation contract, including removal of a mate's local opt-out when the primary has none, is owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
-`config/supervision-host` is local to each home and not inherited, because each home's engine and model are its own choice.
+`config/supervision-host` and `config/supervision-engine-account` are local to each home and not inherited, because each home's engine, model, and engine account are its own choice.
 While the home runs the host, main's lease-checked commands also take the per-task lease lock, so a claim by the host's engine cannot race a mutation main already started (`bin/fm-lease-lib.sh`).
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)

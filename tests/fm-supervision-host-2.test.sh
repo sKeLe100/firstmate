@@ -446,6 +446,13 @@ test_away_wake_is_handled_on_the_engine_and_never_reaches_main() {
   assert_re '	handled	turn=[^	]*\.2	.* cost=0\.25 conversation_cost=0\.5 ' "$home/state/.supervision-host.log" \
     "a resumed turn must log its own cost, not the conversation's running total"
 
+  mkdir -p "$home/claude-2"
+  printf '%s\n' "$home/claude-2" > "$home/config/supervision-engine-account"
+  append_status "$home" 'step three'
+  wait_until 250 handled_at_least "$home" 3 || fail "away: the wake after the account change was not handled"
+  assert_re '^arg=--session-id$' "$home/engine-call.3" "an account change must start a new conversation"
+  assert_no_re '^arg=--resume$' "$home/engine-call.3" "an account change must not resume a session stored under the old account"
+
   pid=$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")
   watcher=$(cat "$home/state/.watch.lock/pid")
   kill -TERM "$pid"
