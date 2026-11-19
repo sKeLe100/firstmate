@@ -111,6 +111,7 @@ FM_BEARINGS_LANDED_PER_HOME=${FM_BEARINGS_LANDED_PER_HOME:-$FM_BEARINGS_LANDED}
 FM_BEARINGS_IN_FLIGHT=${FM_BEARINGS_IN_FLIGHT:-20}
 FM_BEARINGS_DECISIONS=${FM_BEARINGS_DECISIONS:-20}
 FM_BEARINGS_SECONDMATES=${FM_BEARINGS_SECONDMATES:-20}
+FM_BEARINGS_SECONDMATE_STALE_SECONDS=${FM_BEARINGS_SECONDMATE_STALE_SECONDS:-900}
 FM_BEARINGS_GATES=${FM_BEARINGS_GATES:-20}
 FM_BEARINGS_REPORTS=${FM_BEARINGS_REPORTS:-20}
 FM_BEARINGS_RECORDED_PRS=${FM_BEARINGS_RECORDED_PRS:-20}
@@ -127,6 +128,7 @@ validate_bound FM_BEARINGS_LANDED_PER_HOME "$FM_BEARINGS_LANDED_PER_HOME"
 validate_bound FM_BEARINGS_IN_FLIGHT "$FM_BEARINGS_IN_FLIGHT"
 validate_bound FM_BEARINGS_DECISIONS "$FM_BEARINGS_DECISIONS"
 validate_bound FM_BEARINGS_SECONDMATES "$FM_BEARINGS_SECONDMATES"
+validate_bound FM_BEARINGS_SECONDMATE_STALE_SECONDS "$FM_BEARINGS_SECONDMATE_STALE_SECONDS"
 validate_bound FM_BEARINGS_GATES "$FM_BEARINGS_GATES"
 validate_bound FM_BEARINGS_REPORTS "$FM_BEARINGS_REPORTS"
 validate_bound FM_BEARINGS_RECORDED_PRS "$FM_BEARINGS_RECORDED_PRS"
@@ -152,7 +154,7 @@ Default fields: schema, home, generated, prs,
   claude_accounts{label,dir,status,reason,five_hour_percent_remaining,
   five_hour_resets_at,seven_day_percent_remaining,seven_day_resets_at},
   in_flight{id,kind,state,repo,name,doing},
-  secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
+  secondmates{id,state,doing,provenance,freshness,stale,invalid_ids,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
   decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at},
   landed{id,what,artifact,owner},
@@ -172,6 +174,9 @@ For every registered secondmate, readable structured facts from its own home are
   Parent events and bounded terminal reads are labeled fallback or contradiction
   evidence and never become current work. The provenance and freshness fields
   distinguish live and cached ledgers; a home without either is explicitly unreadable.
+A local ledger past FM_BEARINGS_SECONDMATE_STALE_SECONDS (default 900) is labeled
+  with its age ("ledger 57m old") instead of "fresh", and one action-free
+  (secondmate-stale) warning names it; unknown/invalid child ids are named in full.
 Opt-in surfaces: --fields bodies|paths|actions|endpoints, --all-in-flight,
   --all-decisions (all open decisions and captain holds in the bounded snapshot),
   --all-secondmates, --all-landed, --all-reports, --all-queued, --all-recorded-prs,
@@ -693,6 +698,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --argjson in_flight_n "$FM_BEARINGS_IN_FLIGHT" \
   --argjson decisions_n "$FM_BEARINGS_DECISIONS" \
   --argjson secondmates_n "$FM_BEARINGS_SECONDMATES" \
+  --argjson secondmate_stale_s "$FM_BEARINGS_SECONDMATE_STALE_SECONDS" \
   --argjson gates_n "$FM_BEARINGS_GATES" \
   --argjson reports_n "$FM_BEARINGS_REPORTS" \
   --argjson recorded_prs_n "$FM_BEARINGS_RECORDED_PRS" \
@@ -720,6 +726,23 @@ MODEL=$(printf '%s' "$SNAP" | jq \
     | if $n <= 0 then ""
       elif length > $n then (if $n == 1 then "…" else (.[:($n - 1)] + "…") end)
       else . end;
+  def short_age($s):
+    if $s == null then "unknown"
+    elif $s < 60 then (($s | floor) | tostring) + "s"
+    elif $s < 3600 then (((($s / 60) + 0.5) | floor) | tostring) + "m"
+    elif $s < 86400 then (((($s / 3600) + 0.5) | floor) | tostring) + "h"
+    else (((($s / 86400) + 0.5) | floor) | tostring) + "d" end;
+  def stale_ledger($bound):
+    .freshness.status == "fresh"
+    and (.freshness.age_seconds != null)
+    and (.freshness.age_seconds > $bound);
+  def name_ids($reason; $ids):
+    ($ids | map(select(type == "string" and . != ""))) as $clean
+    | reduce $clean[] as $id ($reason;
+        if ($id != "" and (. | contains($id))) then .
+        else (if . == "" then $id
+              else (. + (if (. | test("[,:;] *$")) then " " else ", " end)) + $id end)
+        end);
   def live_captain_call: .hold_bucket == "live";
   def projected_deferred_hold:
     .hold_bucket != null and .hold_bucket != "live";
@@ -820,19 +843,31 @@ MODEL=$(printf '%s' "$SNAP" | jq \
           age_seconds:null,contradiction:false,reason:(.secondmate_current.registry.reason // "Registered secondmate table unavailable")}
        else empty end ]
      + [ $secondmate_views[]
-       | {id,state:.bearings_state,
-          doing:((if .bearings_state == "active_child_work" then
-                    ([.active_children[] | .id + ": " + (.doing // .state)] | join("; "))
-                  elif .bearings_state == "captain_decision" then
-                    ([.bearings_captain_holds[] | .summary] | join("; "))
-                  elif .bearings_state == "externally_held" then
-                    ([.bearings_holds[] | .id + ": " + (.reason // "held")] | join("; "))
-                  elif .bearings_state == "no_active_work" then "No active child work"
-                  else (.current.reason // "Current home state unavailable") end) | trunc(120)),
-          provenance:(if .provenance.summary_source == "remote-ledger-cache" then "structured-home-cache"
-                      else .provenance.selected end),freshness:.freshness.status,
-          age_seconds:.freshness.age_seconds,contradiction:(.contradiction // false),
-          reason:(.current.reason // "-")} ]) as $secondmates_all
+        | .bearings_state as $bstate
+        | (((.invalidity.ids // []) + (.reconcile_inventory.ids // []))
+            | map(select(type == "string")) | unique) as $unknown_ids
+        | ((if $bstate == "active_child_work" then
+              ([.active_children[] | .id + ": " + (.doing // .state)] | join("; "))
+            elif $bstate == "captain_decision" then
+              ([.bearings_captain_holds[] | .summary] | join("; "))
+            elif $bstate == "externally_held" then
+              ([.bearings_holds[] | .id + ": " + (.reason // "held")] | join("; "))
+            elif $bstate == "no_active_work" then "No active child work"
+            else name_ids((.current.reason // "Current home state unavailable"); $unknown_ids)
+            end)
+           | if $bstate == "unknown" then . else trunc(120) end) as $doing
+        | (stale_ledger($secondmate_stale_s)) as $stale
+        | {id,state:$bstate,
+           doing:$doing,
+           provenance:(if .provenance.summary_source == "remote-ledger-cache" then "structured-home-cache"
+                       else .provenance.selected end),
+           freshness:(if $stale then ("ledger " + short_age(.freshness.age_seconds) + " old")
+                      else .freshness.status end),
+           stale:$stale,
+           invalid_ids:($unknown_ids | join(",")),
+           age_seconds:.freshness.age_seconds,contradiction:(.contradiction // false),
+           reason:(.current.reason // "-")} ]) as $secondmates_all
+  | ([ $secondmates_all[] | select(.stale == true) ]) as $stale_secondmates
   | ([ .tasks[]
        | select(.kind != "secondmate")
        | select(.backlog.current_role != "program")
@@ -910,6 +945,19 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          owner:"(main)",
          filed:null}]
      else [] end) as $return_catchup_gate
+  | (if ($stale_secondmates | length) > 0 then
+       [{id:"(secondmate-stale)",
+         title:("stale secondmate ledger: "
+                + ($stale_secondmates | map(.id + " " + .freshness) | join(", "))),
+         blocked_by:"-",
+         reason:("secondmate ledger older than "
+                 + ($secondmate_stale_s | tostring) + "s"
+                 + (([ $stale_secondmates[] | select(.invalid_ids != "")
+                       | .id + " unknown children: " + .invalid_ids ] | join("; ")) as $unknown
+                    | if $unknown == "" then "" else "; " + $unknown end)),
+         owner:"(main)",
+         filed:null}]
+     else [] end) as $secondmate_stale_gate
   | ((if (.main_inventory.valid == false) then
         [{id:"(main-inventory)",
           title:((.main_inventory.reason // "main inventory invalid") | trunc(60)),
@@ -991,6 +1039,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
       landed: ($done | map({id, what:(.title | trunc(70)),
                             artifact:(landed_artifact // "-"),owner:.home_id})),
       gates: ($return_catchup_gate
+              + $secondmate_stale_gate
               + ($gates_all | newest_filed_first
                  | if $all_queued == 1 then . else .[:$gates_n] end)),
       reports: (if $all_reports == 1 then $reports_all else $reports_all[:$reports_n] end),
