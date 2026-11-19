@@ -2125,6 +2125,33 @@ EOF
   pass "the post-clear digest carries active backlog rows, one line per task, and one line per project, under 30KB"
 }
 
+# A registry whose lines do not follow bin/fm-project-mode.sh's "- <name>"
+# grammar has no one-line entries to show, so the post-clear digest prints the
+# whole file rather than hiding it; a "* " bullet is not a registry entry.
+test_reemit_projects_fallback_prints_nonstandard_registry() {
+  local rec root home fakebin reemit
+  rec=$(new_world reemit-projects-fallback)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  cat > "$home/data/projects.md" <<'EOF'
+* gamma [no-mistakes] - STAR-BULLET-MARKER gamma project
+  NONSTANDARD-CONTINUATION-MARKER gamma detail
+EOF
+  reemit=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_FAKE_HARNESS_PID=$$ \
+    PATH="$fakebin:$BASE_PATH" env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    "$SESSION_START" --reemit)
+
+  assert_contains "$reemit" "* gamma [no-mistakes] - STAR-BULLET-MARKER gamma project" \
+    "the post-clear digest hid a registry with no parseable entry"
+  assert_contains "$reemit" "NONSTANDARD-CONTINUATION-MARKER" \
+    "the post-clear digest did not fall back to the whole nonstandard registry"
+
+  pass "the post-clear digest prints a registry with no \"- <name>\" entry in full"
+}
+
 test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact() {
   local rec root home fakebin startup compact_equal compact_first compact_second clear_out resume_out reset_out baseline baseline_after expected_hash refresh_line bootstrap_line
   rec=$(new_world agents-refresh)
@@ -2774,6 +2801,7 @@ test_runtime_bound_leaves_harness_ancestry_headroom
 test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain
 test_reemit_cue_survives_the_hook_output_preview
 test_reemit_slims_backlog_state_and_projects
+test_reemit_projects_fallback_prints_nonstandard_registry
 test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact
 test_read_only_pi_compact_refreshes_against_its_own_session_identity
 test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh

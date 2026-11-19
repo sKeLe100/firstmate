@@ -177,13 +177,14 @@
 # safety sections but bounds two otherwise unbounded bulks:
 #   - the backlog listing keeps only active rows - every in-flight and held
 #     row one line each, the blocked queued rows, and only the top of the
-#     dispatchable queue (FM_SESSION_START_REEMIT_QUEUED_LIMIT, default 5;
-#     FM_SESSION_START_QUEUED_LIMIT still overrides both startup defaults).
+#     dispatchable queue (default 5; FM_SESSION_START_QUEUED_LIMIT still
+#     overrides both startup defaults).
 #   - each in-flight task is ONE line (id, endpoint verdict, last status line)
 #     plus the full status-log path, not its whole meta block and status tail.
 #   - CONTEXT prints one line per data/projects.md project entry and does not
 #     reprint data/secondmates.md, data/captain.md, data/captain-shared.md, or
-#     data/learnings.md; the RE-EMIT CUE names the paths for a targeted read.
+#     data/learnings.md; the RE-EMIT CUE names them and says to read one only
+#     when the turn needs it.
 # The target is a digest at or under 30KB, down from the about-110KB report
 # measurement. A normal startup keeps the full recovery digest it always had.
 #
@@ -415,8 +416,7 @@ case "$STATUS_TAIL" in ''|*[!0-9]*) STATUS_TAIL=5 ;; esac
 # yet taken the helm.
 QUEUED_LIMIT_DEFAULT=20
 if [ "$REEMIT" -eq 1 ]; then
-  QUEUED_LIMIT_DEFAULT=${FM_SESSION_START_REEMIT_QUEUED_LIMIT:-5}
-  case "$QUEUED_LIMIT_DEFAULT" in ''|*[!0-9]*|0) QUEUED_LIMIT_DEFAULT=5 ;; esac
+  QUEUED_LIMIT_DEFAULT=5
 fi
 QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-$QUEUED_LIMIT_DEFAULT}
 case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=$QUEUED_LIMIT_DEFAULT ;; esac
@@ -461,7 +461,7 @@ print_file_or_absent() {
 # this digest does not need. A registry with no parseable entry falls back to
 # the full file, so a nonstandard registry is never silently hidden.
 print_projects_one_line() {
-  local path=$1 entries
+  local path=$1
   if [ ! -f "$path" ]; then
     printf 'ABSENT\n'
     return 0
@@ -470,13 +470,7 @@ print_projects_one_line() {
     printf '(present, empty)\n'
     return 0
   fi
-  entries=$(grep -c '^[-*][[:space:]][^[:space:]]' "$path" 2>/dev/null || true)
-  case "$entries" in ''|*[!0-9]*) entries=0 ;; esac
-  if [ "$entries" -eq 0 ]; then
-    cat "$path"
-    return 0
-  fi
-  grep '^[-*][[:space:]][^[:space:]]' "$path"
+  grep '^- [^[:space:]]' "$path" || cat "$path"
 }
 
 # Print only the STANDING ORDERS block, bounded to 40 lines of 600 characters.
@@ -924,8 +918,8 @@ if [ "$REEMIT" -eq 1 ]; then
   # CONTEXT prints last, so this cue is the part that must survive the spill.
   printf 'RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",\n'
   printf "read it to the end, paging with offset until the line 'The digest above is complete', before acting.\n"
-  printf 'Otherwise read data/captain.md, data/captain-shared.md,\n'
-  printf 'and data/learnings.md under %s now if any of them is missing below.\n' "$DATA"
+  printf 'data/secondmates.md, data/captain.md, data/captain-shared.md, and data/learnings.md\n'
+  printf 'under %s are not reprinted; read one only when this turn needs it.\n' "$DATA"
   section "SESSION START (CONTEXT RE-EMIT) - $FM_HOME"
   printf 'This session already took the helm at its own startup and has only lost its\n'
   printf 'context. Lock ownership is re-verified and the durable records below are\n'
@@ -1330,7 +1324,7 @@ section "CONTEXT"
 if [ "$REEMIT" -eq 1 ]; then
   # Post-clear digest: the registry is the only context file that earns bulk
   # here, and only as one line per project. The curated-memory files are one
-  # targeted read away, which the RE-EMIT CUE above already points at.
+  # targeted read away, which the RE-EMIT CUE above names.
   subsection "data/projects.md (one line per project)"
   print_projects_one_line "$DATA/projects.md"
   printf '\nNot reprinted in this post-clear digest: data/secondmates.md, data/captain.md,\n'
