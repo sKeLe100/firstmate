@@ -1629,6 +1629,10 @@ test_launch_that_never_starts_reports_the_launch_failure_record() {
   assert_contains "$out" "harness binary codex does not resolve on PATH" \
     "the failure should relay the recorded launch-failure reason"
   [ -r "$record" ] || fail "the launch-failure record should survive for later recovery"
+  if [ -s "$dir/home/data/llm-usage/firstmate.jsonl" ] \
+    && grep -q '"task_id":"rl14".*"trigger":"relaunch"\|"trigger":"relaunch".*"task_id":"rl14"' "$dir/home/data/llm-usage/firstmate.jsonl"; then
+    fail "a launch that never started an agent must not write a relaunch delegation row"
+  fi
   pass "fm-control relaunch: a launch that never produced an agent is reported as a launch failure"
 }
 

@@ -119,7 +119,6 @@ between models, what went wrong, and where it landed. Covers at minimum:
 | `had_issue` | `"true"` unless the switch was a deliberate non-failure choice |
 | `reason` | free text: what the issue was, or why the switch happened |
 | `trigger` | `relaunch` \| `redispatch` |
-| `agent_started` | `"true"` when the relaunch wrote this row only after confirming a live replacement agent; a row explicitly recording `"false"` is a launch that never produced an agent and is not counted as a relaunch attempt by `bin/fm-retry-pressure.sh`, while a row without this field keeps its earlier meaning |
 
 ### `outcome` — emitted at teardown
 

@@ -1341,15 +1341,11 @@ do_relaunch() {
   # it already exists to tell the replacement worker what happened. A
   # harness/model relaunch is always a re-delegation in the telemetry sense,
   # whether triggered by a failure or a deliberate captain-directed switch.
-  # agent_started=true is the explicit launch evidence: this row is written only
-  # after a live agent is confirmed above, so a mechanical launch failure that
-  # never started one records no delegation and cannot count as a relaunch
-  # attempt in bin/fm-retry-pressure.sh.
   # Best-effort: never blocks or unwinds a confirmed relaunch.
   fm_llm_usage_emit "$DATA" "$STATE" delegation \
     "task_id=$ID" "from_harness=$PRIOR_RECORDED_HARNESS" "from_model=$PRIOR_MODEL" \
     "to_harness=$TARGET_HARNESS" "to_model=$TARGET_MODEL" \
-    "had_issue=true" "reason=$NOTE" "trigger=relaunch" "agent_started=true" || true
+    "had_issue=true" "reason=$NOTE" "trigger=relaunch" || true
 
   journal_write complete "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
   RELAUNCH_ACTIVE=0

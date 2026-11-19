@@ -396,8 +396,6 @@ test_real_relaunch_records_delegation_event() {
     [ "$(field "$line" to_harness)" = codex ] || fail "delegation record has wrong to_harness: $line"
     [ "$(field "$line" reason)" = "claude produced a broken patch three times in a row" ] \
       || fail "delegation record did not reuse the relaunch note as reason: $line"
-    [ "$(field "$line" agent_started)" = true ] \
-      || fail "a confirmed relaunch should record agent_started=true: $line"
     found=1
   done < <(archive_records "$home")
   [ "$found" -eq 1 ] || fail "no delegation record was written for a real fm-control.sh relaunch"
