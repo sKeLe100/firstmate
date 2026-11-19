@@ -14,3 +14,6 @@ __pycache__/
 config/
 
 .tools/
+
+# Claude Code client backups written into a worker worktree
+backups/.claude.json.backup.*
