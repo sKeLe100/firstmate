@@ -34,8 +34,8 @@
 #                               wakes get handled in the existing session.
 #        band=warn|restart  -> inject /stow, wait up to
 #                               FM_WATCHDOG_STOW_WINDOW seconds (default
-#                               1800, comfortably longer than a full
-#                               secondmate cascade)
+#                               1800, a safety fallback for a pass that
+#                               never reaches its stamp)
 #                               for completion evidence (state/.stow-last-run,
 #                               written by bin/fm-stow-cascade.sh once a pass's
 #                               own sweep is done, newer than the inject time);
