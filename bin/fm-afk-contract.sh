@@ -104,9 +104,9 @@
 #   fm-afk-contract.sh words [--path <record>]
 #   fm-afk-contract.sh validate [--path <record>]  exit 0 when the record is readable and complete
 #   fm-afk-contract.sh live-workers
-#     Print the ordinary worker count this home holds right now (SPEND CAP
-#     below). Reads no record, so it answers before an entry as well as during
-#     one.
+#     Print the live ordinary worker count this home holds right now (SPEND CAP
+#     below). Reads no away record, so it answers before an entry as well as
+#     during one.
 #   fm-afk-contract.sh archive              move the record aside; print its path
 #   fm-afk-contract.sh archived <entered_epoch>   print that archived record's path
 #
@@ -131,11 +131,15 @@
 # both the number written at entry and the counting rule behind it).
 # The cap bounds how many ordinary workers this home runs concurrently while an
 # away record stands; bin/fm-spawn.sh enforces it by refusing a fresh ordinary
-# spawn once the home already holds that many. An ordinary worker record is
-# every state/*.meta whose kind is not secondmate, counted by
-# fm_afk_contract_live_ordinary_workers and exposed as `live-workers`, which is
-# the one implementation both the entry default and that refusal read, so the
-# two can never count differently.
+# spawn once the home already holds that many. A live ordinary worker is every
+# state/*.meta whose kind is not secondmate and whose current state is live:
+# working, parked, blocked, or paused. A done or failed record, an unknown
+# record whose endpoint is gone, and a record whose backlog row is held for the
+# captain are no seat, because nothing is working in it (the rule
+# .agents/skills/autonomous/SKILL.md step 3 states). The count is
+# fm_afk_contract_live_ordinary_workers, exposed as `live-workers`, which is the
+# one implementation the entry default, bin/fm-spawn.sh's refusal, and
+# bin/fm-capacity.sh's lane count read, so they can never count differently.
 # Without --spend, entry records the count standing at that moment, so away mode
 # never narrows work already under way; it never records less than
 # FM_AFK_CONTRACT_SPEND_DEFAULT, so an idle home still enters with the ordinary
@@ -186,15 +190,106 @@ fm_afk_contract_present() {  # [state-dir]
   [ -f "$(fm_afk_contract_path "${1:-$FM_AFK_CONTRACT_STATE}")" ]
 }
 
+# Lazily reach the endpoint-existence reader and the backlog readers the
+# liveness count needs. Both stay off every other path of this script, and each
+# loader is idempotent so a caller that already sourced them pays nothing.
+fm_afk_contract_backend_helpers() {
+  command -v fm_backend_target_exists >/dev/null 2>&1 && return 0
+  # shellcheck source=bin/fm-backend.sh
+  . "$FM_AFK_CONTRACT_DIR/fm-backend.sh"
+}
+
+fm_afk_contract_backlog_helpers() {
+  command -v fm_backlog_row_list >/dev/null 2>&1 && return 0
+  # shellcheck source=bin/fm-tasks-axi-lib.sh
+  . "$FM_AFK_CONTRACT_DIR/fm-tasks-axi-lib.sh"
+  # shellcheck source=bin/fm-backlog-transition-lib.sh
+  . "$FM_AFK_CONTRACT_DIR/fm-backlog-transition-lib.sh"
+}
+
+# The ids in this home's backlog held for the captain, one per line. A home with
+# no data directory, an unreadable backlog, or an incompatible tasks-axi yields
+# nothing: a row read that cannot answer must never free a seat.
+fm_afk_contract_captain_held_ids() {  # <state-dir>
+  local state=$1 home data out
+  home=$(dirname "$state")
+  data=$home/data
+  [ -d "$data" ] || return 0
+  fm_afk_contract_backlog_helpers || return 0
+  out=$(fm_backlog_row_list "$data" --state held --fields hold_kind 2>/dev/null) || return 0
+  # The listing ends with the requested hold_kind field, so a title carrying
+  # commas cannot shift it; only a captain hold frees the seat.
+  printf '%s\n' "$out" | awk -F, '
+    /^  [A-Za-z0-9._-]+,/ {
+      id = $1
+      sub(/^[[:space:]]+/, "", id)
+      last = $NF
+      gsub(/["[:space:]]/, "", last)
+      if (last == "captain") print id
+    }
+  '
+}
+
+# True when state/<id>.meta is a live ordinary worker: not a secondmate, not
+# held for the captain, and not terminal or provably gone. The rule is the one
+# .agents/skills/autonomous/SKILL.md step 3 states: a lane occupies a slot only
+# while its current state is live (working, parked, blocked, or paused); a
+# positive done or failed reading frees it, and an unknown reading frees it only
+# when the endpoint is gone. An unreadable reading still occupies its slot.
+# bin/fm-crew-state.sh is the authoritative current-state reader, but it may
+# make bounded no-mistakes and forge reads, so it is consulted only after the
+# cheap status and endpoint evidence has failed to prove the record live.
+fm_afk_contract_record_is_live() {  # <state-dir> <id>
+  local state=$1 id=$2 meta kind status line verb backend target endpoint=0 live
+  meta=$state/$id.meta
+  kind=$(grep '^kind=' "$meta" 2>/dev/null | tail -1 | cut -d= -f2-)
+  [ "$kind" != secondmate ] || return 1
+  status=$state/$id.status
+  line=$(status_current_line "$status" "${kind:-ship}")
+  verb=$(status_line_verb "$line")
+  fm_afk_contract_backend_helpers || return 0
+  backend=$(fm_backend_of_meta "$meta")
+  target=$(fm_backend_target_of_meta "$meta")
+  if [ -n "$target" ] && fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
+    endpoint=1
+  fi
+  case "$verb" in
+    working|paused|needs-decision|blocked)
+      [ "$endpoint" -eq 1 ] && return 0
+      ;;
+    done|failed) ;;
+    *)
+      # An unknown reading over a live endpoint still occupies its slot.
+      [ "$endpoint" -eq 1 ] && return 0
+      ;;
+  esac
+  live=$(FM_HOME="$(dirname "$state")" FM_STATE_OVERRIDE="$state" \
+    "$FM_AFK_CONTRACT_DIR/fm-crew-state.sh" "$id" 2>/dev/null) || live=
+  live=${live#state: }
+  live=${live%% *}
+  case "$live" in
+    done|failed) return 1 ;;
+    unknown) [ "$endpoint" -eq 0 ] && return 1 ;;
+  esac
+  return 0
+}
+
 # The ordinary worker records this home holds right now (the header's SPEND
-# CAP): every state/*.meta whose kind is not secondmate, because a secondmate is
-# a persistent home rather than spend. This is the one implementation of that
-# count, read by the entry default here and by bin/fm-spawn.sh's refusal.
+# CAP): every state/*.meta whose kind is not secondmate and that is still live,
+# because a secondmate is a persistent home rather than spend and a dead, done,
+# or captain-held record is no seat at all. This is the one implementation of
+# that count, read by the entry default here, by bin/fm-spawn.sh's refusal, and
+# by bin/fm-capacity.sh's lane count.
 fm_afk_contract_live_ordinary_workers() {  # [state-dir]
-  local state=${1:-$FM_AFK_CONTRACT_STATE} meta live=0
+  local state=${1:-$FM_AFK_CONTRACT_STATE} meta id live=0 held
+  held=$(fm_afk_contract_captain_held_ids "$state")
   for meta in "$state"/*.meta; do
     [ -f "$meta" ] || continue
-    [ "$(grep '^kind=' "$meta" 2>/dev/null | tail -1 | cut -d= -f2-)" != secondmate ] || continue
+    id=$(basename "$meta" .meta)
+    case $'\n'"$held"$'\n' in
+      *$'\n'"$id"$'\n'*) continue ;;
+    esac
+    fm_afk_contract_record_is_live "$state" "$id" || continue
     live=$((live + 1))
   done
   printf '%s\n' "$live"

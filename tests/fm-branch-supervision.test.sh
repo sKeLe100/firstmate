@@ -1346,7 +1346,7 @@ test_branch_cannot_force_teardown_or_directly_relaunch() {
 # either actor; and an unconfirmed, archived, or invalid record is absence,
 # restoring the attended refusal byte for byte.
 test_away_record_relocates_main_owned_actions_to_the_branch() {
-  local home root out status refusal
+  local home root out status refusal fakebin
   home="$TMP_ROOT/away-home"
   root="$TMP_ROOT/away-root"
   mkdir -p "$home/state" "$root"
@@ -1382,23 +1382,34 @@ test_away_record_relocates_main_owned_actions_to_the_branch() {
   # task record against a cap of 2, then a second ordinary record refuses.
   # An arbitrary id is not already-queued work, so the branch is refused at
   # that gate rather than proceeding to ordinary validation.
-  fm_write_meta "$home/state/task-a.meta" "window=fm-task-a" "kind=ship"
+  fakebin=$(fm_fakebin "$TMP_ROOT/away-spend-fakebin")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-panes) printf '%%live-pane\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
+  fm_write_meta "$home/state/task-a.meta" "window=%live-pane" "kind=ship"
+  printf 'working [at=1700000000]: busy\n' > "$home/state/task-a.status"
   fm_write_meta "$home/state/mate-1.meta" "window=remote:mate-1" "kind=secondmate"
-  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_SUPERVISION_ACTOR=branch \
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_SUPERVISION_ACTOR=branch \
     "$ROOT/bin/fm-spawn.sh" task-new --mode no-mistakes --yolo off 2>&1)
   status=$?
   [ "$status" -ne 6 ] || fail "branch fm-spawn still hit the partition under the record: $out"
   assert_contains "$out" "main is parked" "the spawn relocation did not announce itself"
   assert_contains "$out" "queued unblocked work" "an arbitrary branch spawn was not held to queued work"
   assert_not_contains "$out" "caps concurrent workers" "one ordinary task under a cap of 2 was refused"
-  fm_write_meta "$home/state/task-b.meta" "window=fm-task-b" "kind=ship"
-  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_SUPERVISION_ACTOR=branch \
+  fm_write_meta "$home/state/task-b.meta" "window=%live-pane" "kind=ship"
+  printf 'working [at=1700000000]: busy\n' > "$home/state/task-b.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_SUPERVISION_ACTOR=branch \
     "$ROOT/bin/fm-spawn.sh" task-new --mode no-mistakes --yolo off 2>&1)
   status=$?
   [ "$status" -eq 1 ] || fail "spend-cap refusal exited $status, not 1: $out"
   assert_contains "$out" "caps concurrent workers at 2 and 2 ordinary task(s) are live" "spend-cap refusal lost its count"
   # The cap binds main too: the posture, not the actor, is what caps spend.
-  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ROOT/bin/fm-spawn.sh" task-new --mode no-mistakes --yolo off 2>&1)
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ROOT/bin/fm-spawn.sh" task-new --mode no-mistakes --yolo off 2>&1)
   status=$?
   [ "$status" -eq 1 ] || fail "main spawn past the cap exited $status, not 1: $out"
   assert_contains "$out" "caps concurrent workers" "main was not held to the spend cap"
@@ -1545,30 +1556,50 @@ WRAPPER
 # A quiet-mode record is a present captain: its spend cap never queues the
 # captain's own dispatch for a return, while an away record's cap still binds.
 test_quiet_record_never_caps_a_present_captains_spawn() {
-  local home root out
+  local home root out fakebin
   home="$TMP_ROOT/quiet-spend-home"
   root="$TMP_ROOT/quiet-spend-root"
   mkdir -p "$home/state" "$root/bin"
   git init -q -b main "$root"
   git -C "$root" commit -q --allow-empty -m init
+  fakebin=$(fm_fakebin "$TMP_ROOT/quiet-spend-fakebin")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-panes) printf '%%live-pane\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
   FM_AFK_MODE=quiet FM_HOME="$home" "$ROOT/bin/fm-afk-contract.sh" enter --spend 1 >/dev/null || fail "quiet entry failed"
-  fm_write_meta "$home/state/task-a.meta" "window=fm-task-a" "kind=ship"
-  fm_write_meta "$home/state/task-b.meta" "window=fm-task-b" "kind=ship"
-  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ROOT/bin/fm-spawn.sh" task-new --mode no-mistakes --yolo off 2>&1)
+  fm_write_meta "$home/state/task-a.meta" "window=%live-pane" "kind=ship"
+  printf 'working [at=1700000000]: busy\n' > "$home/state/task-a.status"
+  fm_write_meta "$home/state/task-b.meta" "window=%live-pane" "kind=ship"
+  printf 'working [at=1700000000]: busy\n' > "$home/state/task-b.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ROOT/bin/fm-spawn.sh" task-new --mode no-mistakes --yolo off 2>&1)
   assert_not_contains "$out" "caps concurrent workers" "a quiet record capped a present captain's spawn"
   FM_HOME="$home" "$ROOT/bin/fm-afk-contract.sh" enter --spend 1 >/dev/null 2>&1 || fail "away entry over quiet failed"
-  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ROOT/bin/fm-spawn.sh" task-new --mode no-mistakes --yolo off 2>&1)
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ROOT/bin/fm-spawn.sh" task-new --mode no-mistakes --yolo off 2>&1)
   assert_contains "$out" "caps concurrent workers at 1 and 2 ordinary task(s) are live" "the away record's cap no longer binds"
   pass "a quiet-mode record never caps a present captain's spawn, while the away record's cap still binds"
 }
 
 test_away_spend_cap_is_rechecked_under_the_task_set_lock() {
-  local home root out i
+  local home root out i fakebin
   home="$TMP_ROOT/away-cap-lock-home"
   root="$TMP_ROOT/away-cap-lock-root"
   mkdir -p "$home/state" "$home/data" "$home/config" "$root/bin"
   git init -q -b main "$root"
   git -C "$root" commit -q --allow-empty -m init
+  fakebin=$(fm_fakebin "$TMP_ROOT/away-cap-lock-fakebin")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-panes) printf '%%live-pane\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
   for f in "$ROOT/bin"/*; do
     ln -s "$f" "$root/bin/${f##*/}"
   done
@@ -1598,7 +1629,7 @@ WRAPPER
   chmod +x "$root/bin/fm-afk-contract.sh"
   FM_HOME="$home" "$ROOT/bin/fm-afk-contract.sh" enter --spend 1 >/dev/null || fail "away entry failed"
 
-  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
     "$root/bin/fm-spawn.sh" task-q1 --mode no-mistakes --yolo off \
     > "$home/q1.out" 2>&1 &
   i=0
@@ -1607,7 +1638,8 @@ WRAPPER
     [ "$i" -lt 200 ] || fail "spawn never reached the early spend-cap check: $(cat "$home/q1.out" 2>/dev/null || true)"
     sleep 0.05
   done
-  fm_write_meta "$home/state/task-live.meta" "window=fm-task-live" "kind=ship"
+  fm_write_meta "$home/state/task-live.meta" "window=%live-pane" "kind=ship"
+  printf 'working [at=1700000000]: busy\n' > "$home/state/task-live.status"
   : > "$home/competitor-published"
   wait || true
   out=$(cat "$home/q1.out" 2>/dev/null || true)

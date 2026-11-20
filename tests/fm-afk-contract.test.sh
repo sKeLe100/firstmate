@@ -627,26 +627,27 @@ test_away_entry_over_quiet_mode_becomes_away_and_quiet_never_masks_away() {
 # away mode never narrows work that is already under way. The earlier default
 # stays a floor, and a secondmate is a persistent home rather than spend.
 test_entry_without_spend_records_the_live_worker_count_never_below_the_floor() {
-  local home out i
+  local home out i fakebin
+  fakebin=$(make_live_tmux "$TMP_ROOT/fake-spend-live")
   home=$(make_home spend-live-above)
   for i in 1 2 3 4 5 6; do
-    fm_write_meta "$home/state/task-$i.meta" "window=fm-task-$i" "kind=ship"
+    write_live_ship "$home" "task-$i" '%live-pane' working
   done
   fm_write_meta "$home/state/mate-1.meta" "window=remote:mate-1" "kind=secondmate"
-  [ "$(contract "$home" live-workers)" = 6 ] \
-    || fail "live-workers counted the secondmate or miscounted: $(contract "$home" live-workers)"
-  out=$(contract "$home" enter --words 'keep the lane busy' 2>&1) || fail "entry failed: $out"
-  [ "$(contract "$home" field spend_max_concurrent_workers)" = 6 ] \
-    || fail "entry did not take the live count as the cap: $(contract "$home" field spend_max_concurrent_workers)"
+  [ "$(contract_live "$fakebin" "$home" live-workers)" = 6 ] \
+    || fail "live-workers counted the secondmate or miscounted: $(contract_live "$fakebin" "$home" live-workers)"
+  out=$(contract_live "$fakebin" "$home" enter --words 'keep the lane busy' 2>&1) || fail "entry failed: $out"
+  [ "$(contract_live "$fakebin" "$home" field spend_max_concurrent_workers)" = 6 ] \
+    || fail "entry did not take the live count as the cap: $(contract_live "$fakebin" "$home" field spend_max_concurrent_workers)"
   assert_contains "$out" 'Spend cap: 6 concurrent workers.' 'the announcement carries the live count'
   assert_contains "$out" '  spend cap: 6 concurrent workers' 'the read-back carries the live count'
 
   home=$(make_home spend-live-below)
-  fm_write_meta "$home/state/task-1.meta" "window=fm-task-1" "kind=ship"
+  write_live_ship "$home" task-1 '%live-pane' working
   fm_write_meta "$home/state/mate-1.meta" "window=remote:mate-1" "kind=secondmate"
-  out=$(contract "$home" enter --words 'quiet lane' 2>&1) || fail "entry failed: $out"
-  [ "$(contract "$home" field spend_max_concurrent_workers)" = 4 ] \
-    || fail "a home below the floor did not keep the default cap: $(contract "$home" field spend_max_concurrent_workers)"
+  out=$(contract_live "$fakebin" "$home" enter --words 'quiet lane' 2>&1) || fail "entry failed: $out"
+  [ "$(contract_live "$fakebin" "$home" field spend_max_concurrent_workers)" = 4 ] \
+    || fail "a home below the floor did not keep the default cap: $(contract_live "$fakebin" "$home" field spend_max_concurrent_workers)"
 
   home=$(make_home spend-live-empty)
   out=$(contract "$home" enter --words 'nothing running' 2>&1) || fail "entry failed: $out"
@@ -656,18 +657,98 @@ test_entry_without_spend_records_the_live_worker_count_never_below_the_floor() {
 
   home=$(make_home spend-live-explicit)
   for i in 1 2 3 4 5 6; do
-    fm_write_meta "$home/state/task-$i.meta" "window=fm-task-$i" "kind=ship"
+    write_live_ship "$home" "task-$i" '%live-pane' working
   done
-  contract "$home" enter --words 'hold it down' --spend 2 >/dev/null 2>&1 || fail "explicit entry failed"
-  [ "$(contract "$home" field spend_max_concurrent_workers)" = 2 ] \
+  contract_live "$fakebin" "$home" enter --words 'hold it down' --spend 2 >/dev/null 2>&1 || fail "explicit entry failed"
+  [ "$(contract_live "$fakebin" "$home" field spend_max_concurrent_workers)" = 2 ] \
     || fail "an explicit --spend lost to the live count"
   pass "entry without --spend records the live worker count, never below the default floor, and an explicit --spend still wins"
+}
+
+# A fake tmux that answers the one read the endpoint-existence predicate makes.
+make_live_tmux() {  # <dir> -> prints the fakebin dir
+  local fakebin
+  fakebin=$(fm_fakebin "$1")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-panes) printf '%%live-pane\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
+  printf '%s\n' "$fakebin"
+}
+
+contract_live() {  # <fakebin> <home> <args...>
+  local fakebin=$1
+  shift
+  PATH="$fakebin:$PATH" contract "$@"
+}
+
+write_live_ship() {  # <home> <id> <window> <verb>
+  local home=$1 id=$2 window=$3 verb=$4
+  fm_write_meta "$home/state/$id.meta" \
+    "window=$window" "worktree=$home/state/$id-wt" "project=$home" "kind=ship" "mode=no-mistakes"
+  printf '%s [at=1700000000]: busy\n' "$verb" > "$home/state/$id.status"
+}
+
+# D1: a seat is live work only. A dead ship, a released scout, a done ship, and
+# a secondmate hold no seat, and one live record holds exactly one. A record
+# whose backlog row is held for the captain holds none even while it looks live.
+test_live_workers_count_only_live_work() {
+  local home fakebin
+  home=$(make_home liveness)
+  fakebin=$(make_live_tmux "$TMP_ROOT/fake-liveness")
+  fm_write_meta "$home/state/dead-ship.meta" \
+    "window=absent:dead-ship" "worktree=$home/state/gone-dead" "project=$home" "kind=ship" "mode=no-mistakes"
+  fm_write_meta "$home/state/released-scout.meta" \
+    "window=absent:released-scout" "worktree=$home/state/gone-scout" "project=$home" "kind=scout"
+  fm_write_meta "$home/state/done-ship.meta" \
+    "window=%live-pane" "worktree=$home" "project=$home" "kind=ship" "mode=no-mistakes" "harness=claude"
+  printf 'done [at=1700000000]: finished\n' > "$home/state/done-ship.status"
+  printf 'g1\n' > "$home/state/done-ship.busy-gen"
+  printf 'v1 gen=g1 seq=1 state=idle source=claude-hook event=stop ts=1700000000\n' \
+    > "$home/state/done-ship.busy-state"
+  fm_write_secondmate_meta "$home/state/mate-1.meta" "$home"
+  [ "$(contract_live "$fakebin" "$home" live-workers)" = 0 ] \
+    || fail "dead, released, done, and secondmate records held a seat: $(contract_live "$fakebin" "$home" live-workers)"
+
+  write_live_ship "$home" live-ship '%live-pane' working
+  [ "$(contract_live "$fakebin" "$home" live-workers)" = 1 ] \
+    || fail "one live record did not hold exactly one seat: $(contract_live "$fakebin" "$home" live-workers)"
+
+  if command -v tasks-axi >/dev/null 2>&1; then
+    mkdir -p "$home/data"
+    cat > "$home/.tasks.toml" <<'TOML'
+backend = "markdown"
+
+[markdown]
+path = "data/backlog.md"
+done_keep = 10
+TOML
+    cat > "$home/data/backlog.md" <<'BACKLOG'
+# Backlog
+
+## In flight
+- [ ] held-ship - work held for the captain (kind: ship) (since 2026-11-20) (hold: fm-hold-v1:cmVhc29u) (hold-kind: captain)
+
+## Queued
+
+## Done
+BACKLOG
+    write_live_ship "$home" held-ship '%live-pane' working
+    [ "$(contract_live "$fakebin" "$home" live-workers)" = 1 ] \
+      || fail "a captain-held record held a seat: $(contract_live "$fakebin" "$home" live-workers)"
+  fi
+  pass "live-workers counts only live work: dead, released, done, and captain-held records hold no seat"
 }
 
 test_readback_renders_words_verbatim_with_the_record_scalars
 test_words_preserve_final_newline_shape
 test_enter_writes_a_v2_record_in_one_step_and_announces_hold_for_return
 test_entry_without_spend_records_the_live_worker_count_never_below_the_floor
+test_live_workers_count_only_live_work
 test_retired_two_step_entry_is_refused_by_name
 test_enter_removes_a_legacy_proposal_without_promoting_it
 test_same_turn_entry_pre_authorizes_nothing_on_the_never_set
