@@ -738,8 +738,9 @@ MODEL=$(printf '%s' "$SNAP" | jq \
     and (.freshness.age_seconds > $bound);
   def name_ids($reason; $ids):
     ($ids | map(select(type == "string" and . != ""))) as $clean
-    | reduce $clean[] as $id ($reason;
-        if ($id != "" and (. | contains($id))) then .
+    | ($reason | [splits("[\\s,;:()\\[\\]]+")]) as $tokens
+    | reduce ($clean | unique)[] as $id ($reason;
+        if ($tokens | index($id)) != null then .
         else (if . == "" then $id
               else (. + (if (. | test("[,:;] *$")) then " " else ", " end)) + $id end)
         end);

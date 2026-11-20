@@ -820,6 +820,24 @@ test_secondmate_stale_ledger_age_label_and_unknown_ids() {
     (.secondmates | any(.id == "stale-ledger" and .freshness == "fresh" and .stale == false))
       and ([.gates[] | select(.id == "(secondmate-stale)")] | length) == 0
   ' >/dev/null || fail "FM_BEARINGS_SECONDMATE_STALE_SECONDS did not move the staleness bound: $json"
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    FM_BEARINGS_SECONDMATE_STALE_SECONDS=3420 NET_LOG="$home/net.log" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.secondmates | any(.id == "stale-ledger" and .freshness == "fresh" and .stale == false))
+  ' >/dev/null || fail "a ledger whose age equals the bound was treated as stale: $json"
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    FM_BEARINGS_SECONDMATE_STALE_SECONDS=3419 NET_LOG="$home/net.log" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.secondmates | any(.id == "stale-ledger" and .stale == true))
+  ' >/dev/null || fail "a ledger one second past the bound was not stale: $json"
+  local bad rc
+  for bad in 0 abc; do
+    rc=0
+    PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+      FM_BEARINGS_SECONDMATE_STALE_SECONDS=$bad NET_LOG="$home/net.log" "$BEARINGS" --json \
+      >/dev/null 2>&1 || rc=$?
+    [ "$rc" = 2 ] || fail "FM_BEARINGS_SECONDMATE_STALE_SECONDS=$bad exited $rc, want 2"
+  done
   pass "a stale secondmate ledger is age-labeled, warned once, and names unknown child ids in full"
 }
 
