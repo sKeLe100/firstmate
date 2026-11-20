@@ -59,6 +59,7 @@ SH
 #!/usr/bin/env bash
 case "${1:-}" in
   list-panes) printf '%%live-pane\n' ;;
+  list-windows) printf "can't find session: absent\n" >&2; exit 1 ;;
   *) exit 1 ;;
 esac
 SH

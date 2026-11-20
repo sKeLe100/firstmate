@@ -673,6 +673,7 @@ make_live_tmux() {  # <dir> -> prints the fakebin dir
 #!/usr/bin/env bash
 case "${1:-}" in
   list-panes) printf '%%live-pane\n' ;;
+  list-windows) printf "can't find session: absent\n" >&2; exit 1 ;;
   *) exit 1 ;;
 esac
 SH
@@ -691,6 +692,25 @@ write_live_ship() {  # <home> <id> <window> <verb>
   fm_write_meta "$home/state/$id.meta" \
     "window=$window" "worktree=$home/state/$id-wt" "project=$home" "kind=ship" "mode=no-mistakes"
   printf '%s [at=1700000000]: busy\n' "$verb" > "$home/state/$id.status"
+}
+
+# A backend that cannot answer is not a backend that says the endpoint is gone:
+# an unknown-reading record whose probe fails with an unrelated error keeps its seat.
+test_unanswering_backend_never_frees_a_seat() {
+  local home fakebin
+  home=$(make_home unanswering)
+  fakebin=$(fm_fakebin "$TMP_ROOT/fake-unanswering")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+echo "server exited unexpectedly" >&2
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  fm_write_meta "$home/state/mute-ship.meta" \
+    "window=sess:mute-ship" "worktree=$home/state/gone-mute" "project=$home" "kind=ship" "mode=no-mistakes"
+  [ "$(contract_live "$fakebin" "$home" live-workers)" = 1 ] \
+    || fail "a probe that could not answer freed a seat: $(contract_live "$fakebin" "$home" live-workers)"
+  pass "a backend that cannot answer never frees a seat"
 }
 
 # D1: a seat is live work only. A dead ship, a released scout, a done ship, and
@@ -749,6 +769,7 @@ test_words_preserve_final_newline_shape
 test_enter_writes_a_v2_record_in_one_step_and_announces_hold_for_return
 test_entry_without_spend_records_the_live_worker_count_never_below_the_floor
 test_live_workers_count_only_live_work
+test_unanswering_backend_never_frees_a_seat
 test_retired_two_step_entry_is_refused_by_name
 test_enter_removes_a_legacy_proposal_without_promoting_it
 test_same_turn_entry_pre_authorizes_nothing_on_the_never_set
