@@ -750,6 +750,112 @@ test_secondmate_and_child_bounds_are_disclosed() {
   pass "secondmate and per-home child counts are bounded, disclosed, and explicitly expandable"
 }
 
+write_local_secondmate_summary() {  # <home> <generated-epoch> <valid> <state> <invalidity-kind> <ids-json>
+  local home=$1 epoch=$2 valid=$3 state=$4 kind=$5 ids=$6
+  mkdir -p "$home/state"
+  jq -n --arg home "$home" --argjson epoch "$epoch" --argjson valid "$valid" \
+    --arg state "$state" --arg kind "$kind" --argjson ids "$ids" '
+    {
+      schema:"fm-secondmate-home-summary.v1",
+      hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      generated:"2026-07-11T17:00:00Z",generated_epoch:$epoch,home:$home,
+      valid:$valid,
+      reason:(if $valid then null
+              else "structured home state invalid: child current state unavailable: "
+                   + ($ids | join(", ")) end),
+      invalidity:(if $valid then {kind:null,ids:[]} else {kind:$kind,ids:$ids} end),
+      state:$state,
+      active_children:[],decisions_open:[],holds:[],queued:[],landed:[],endpoints:[],
+      counts:{active_children:0,decisions_open:0,holds:0,queued:0,landed:0,endpoints:0},omitted:[]
+    }' > "$home/state/home-summary.json"
+}
+
+# A frozen secondmate ledger used to render as "fresh" beside its real age, and its
+# unknown-state reason was truncated mid-id. Bearings now labels a local ledger past
+# its staleness bound with the age, emits one action-free (secondmate-stale) warning,
+# and names unknown/invalid child ids in full.
+test_secondmate_stale_ledger_age_label_and_unknown_ids() {
+  local home fakebin now json mate
+  home=$(make_home stale-ledgers)
+  : > "$home/data/secondmates.md"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  now=1783792800
+
+  mate="$TMP_ROOT/stale-fresh-mate"
+  make_valid_secondmate_home fresh-ledger "$mate"
+  append_secondmate_registry "$home" fresh-ledger "$mate"
+  write_local_secondmate_summary "$mate" "$((now - 100))" true no_active_work null '[]'
+
+  mate="$TMP_ROOT/stale-stale-mate"
+  make_valid_secondmate_home stale-ledger "$mate"
+  append_secondmate_registry "$home" stale-ledger "$mate"
+  write_local_secondmate_summary "$mate" "$((now - 3420))" true no_active_work null '[]'
+
+  mate="$TMP_ROOT/stale-invalid-mate"
+  make_valid_secondmate_home invalid-ledger "$mate"
+  append_secondmate_registry "$home" invalid-ledger "$mate"
+  write_local_secondmate_summary "$mate" "$((now - 100))" false unknown child_current_unavailable \
+    '["fm-spawn-test-real-claude-leak","secondmate-transport-flaky-tests"]'
+
+  fakebin=$(make_fakebin "$home")
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    NET_LOG="$home/net.log" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.secondmates | any(.id == "fresh-ledger" and .freshness == "fresh" and .stale == false))
+      and (.secondmates | any(.id == "stale-ledger"
+            and .freshness == "ledger 57m old" and .stale == true))
+      and ([.gates[] | select(.id == "(secondmate-stale)")] | length) == 1
+      and (.gates | any(.id == "(secondmate-stale)"
+            and (.title | contains("stale-ledger"))
+            and (.title | contains("ledger 57m old"))))
+      and (.secondmates | any(.id == "invalid-ledger" and .state == "unknown"
+            and (.doing | contains("fm-spawn-test-real-claude-leak"))
+            and (.doing | endswith("secondmate-transport-flaky-tests"))
+            and .invalid_ids == "fm-spawn-test-real-claude-leak,secondmate-transport-flaky-tests"))
+  ' >/dev/null || fail "stale ledgers were not age-labeled or unknown child ids were truncated: $json"
+
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    FM_BEARINGS_SECONDMATE_STALE_SECONDS=5000 NET_LOG="$home/net.log" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.secondmates | any(.id == "stale-ledger" and .freshness == "fresh" and .stale == false))
+      and ([.gates[] | select(.id == "(secondmate-stale)")] | length) == 0
+  ' >/dev/null || fail "FM_BEARINGS_SECONDMATE_STALE_SECONDS did not move the staleness bound: $json"
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    FM_BEARINGS_SECONDMATE_STALE_SECONDS=3420 NET_LOG="$home/net.log" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.secondmates | any(.id == "stale-ledger" and .freshness == "fresh" and .stale == false))
+  ' >/dev/null || fail "a ledger whose age equals the bound was treated as stale: $json"
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    FM_BEARINGS_SECONDMATE_STALE_SECONDS=3419 NET_LOG="$home/net.log" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    (.secondmates | any(.id == "stale-ledger" and .stale == true))
+  ' >/dev/null || fail "a ledger one second past the bound was not stale: $json"
+  mate="$TMP_ROOT/stale-prefix-mate"
+  make_valid_secondmate_home prefix-ledger "$mate"
+  append_secondmate_registry "$home" prefix-ledger "$mate"
+  write_local_secondmate_summary "$mate" "$((now - 100))" false unknown child_current_unavailable \
+    '["task-1","task-10"]'
+  jq '.reason = "structured home state invalid: child current state unavailable: task-10"' \
+    "$mate/state/home-summary.json" > "$mate/state/home-summary.tmp" \
+    && mv "$mate/state/home-summary.tmp" "$mate/state/home-summary.json"
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    NET_LOG="$home/net.log" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    .secondmates | any(.id == "prefix-ledger"
+      and (.doing | test("task-1(,|$)"))
+      and (.doing | contains("task-10")))
+  ' >/dev/null || fail "an id that prefixes another unknown id was dropped from the reason: $json"
+  local bad rc
+  for bad in 0 abc; do
+    rc=0
+    PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+      FM_BEARINGS_SECONDMATE_STALE_SECONDS=$bad NET_LOG="$home/net.log" "$BEARINGS" --json \
+      >/dev/null 2>&1 || rc=$?
+    [ "$rc" = 2 ] || fail "FM_BEARINGS_SECONDMATE_STALE_SECONDS=$bad exited $rc, want 2"
+  done
+  pass "a stale secondmate ledger is age-labeled, warned once, and names unknown child ids in full"
+}
+
 test_parent_decision_is_untrusted_contradiction_only() {
   local home mate fakebin canonical json
   home=$(make_home parent-decision-only)
@@ -3681,6 +3787,7 @@ test_structured_child_decision_reaches_captains_call
 test_bad_secondmate_homes_never_revive_parent_work
 test_oversized_secondmate_summary_stays_strict_unknown
 test_secondmate_and_child_bounds_are_disclosed
+test_secondmate_stale_ledger_age_label_and_unknown_ids
 test_parent_decision_is_untrusted_contradiction_only
 test_parent_evidence_reconciles_by_verb_and_key
 test_nonprogressing_child_states_are_explicit
