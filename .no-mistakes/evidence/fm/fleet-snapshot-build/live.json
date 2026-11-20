@@ -1,0 +1,389 @@
+{
+  "schema": "fm-resource-snapshot.v1",
+  "generated": "2026-11-20T13:08:06Z",
+  "generated_et": "2026-11-20T08:08:06-0500",
+  "budget_exceeded": [],
+  "omitted": {
+    "workers": 0,
+    "panes": 0,
+    "strays": 0
+  },
+  "hosts": [
+    {
+      "machine": "PC01",
+      "load1": "0.61",
+      "cores": "16",
+      "mem_free_pct": "73",
+      "disk_free_gb": "10.1",
+      "disk_path": "/tmp/fm-lab.mNl1Rb",
+      "uptime": "221408",
+      "read_utc": "2026-11-20T13:08:06Z"
+    }
+  ],
+  "drives": [
+    {
+      "machine": "PC01",
+      "mount": "/",
+      "total_gb": "1006.9",
+      "free_gb": "859.1",
+      "pct_used": "14",
+      "warn": "ok",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "mount": "C:",
+      "total_gb": "474.9",
+      "free_gb": "81.8",
+      "pct_used": "82",
+      "warn": "ok",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "mount": "G:",
+      "total_gb": "3726.0",
+      "free_gb": "2776.9",
+      "pct_used": "25",
+      "warn": "ok",
+      "read_utc": "2026-11-20T13:08:06Z"
+    }
+  ],
+  "quota": [
+    {
+      "lane": "opencode-go",
+      "account": "-",
+      "plan": "OpenCode Go",
+      "window": "rolling",
+      "pct_remaining": 99,
+      "resets_et": "2026-11-20 12:26 EST",
+      "pace": "behind",
+      "state": "fresh",
+      "read_utc": "2026-11-20T13:08:06Z",
+      "reason": "-"
+    },
+    {
+      "lane": "opencode-go",
+      "account": "-",
+      "plan": "OpenCode Go",
+      "window": "weekly",
+      "pct_remaining": 81,
+      "resets_et": "2026-11-22 19:00 EST",
+      "pace": "behind",
+      "state": "fresh",
+      "read_utc": "2026-11-20T13:08:06Z",
+      "reason": "-"
+    },
+    {
+      "lane": "opencode-go",
+      "account": "-",
+      "plan": "OpenCode Go",
+      "window": "monthly",
+      "pct_remaining": 91,
+      "resets_et": "2026-12-16 17:31 EST",
+      "pace": "behind",
+      "state": "fresh",
+      "read_utc": "2026-11-20T13:08:06Z",
+      "reason": "-"
+    },
+    {
+      "lane": "claude:-",
+      "account": "-",
+      "plan": "pro",
+      "window": "five_hour",
+      "pct_remaining": 59,
+      "resets_et": "2026-11-20 11:00 EST",
+      "pace": "behind",
+      "state": "fresh",
+      "read_utc": "2026-11-20T13:08:06Z",
+      "reason": "-"
+    },
+    {
+      "lane": "claude:-",
+      "account": "-",
+      "plan": "pro",
+      "window": "seven_day",
+      "pct_remaining": 94,
+      "resets_et": "2026-11-26 20:00 EST",
+      "pace": "behind",
+      "state": "fresh",
+      "read_utc": "2026-11-20T13:08:06Z",
+      "reason": "-"
+    },
+    {
+      "lane": "codex",
+      "account": "-",
+      "plan": "free",
+      "window": "720h",
+      "pct_remaining": 0,
+      "resets_et": "2026-12-06 21:29 EST",
+      "pace": "ahead",
+      "state": "fresh",
+      "read_utc": "2026-11-20T13:08:06Z",
+      "reason": "-"
+    }
+  ],
+  "workers": [],
+  "panes": [
+    {
+      "machine": "PC01",
+      "session": "default",
+      "workspace": "firstmate",
+      "tab": "wGF:t1",
+      "pane": "wGF:p1",
+      "agent": "claude",
+      "agent_status": "blocked",
+      "task": "-",
+      "cwd": "~/firstmate",
+      "title": "Bearings reconcile and carryover planning",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "session": "default",
+      "workspace": "firstmate",
+      "tab": "wGF:t1",
+      "pane": "wGF:p9",
+      "agent": "-",
+      "agent_status": "unknown",
+      "task": "-",
+      "cwd": "~/.config/herdr/plugins/github-installations/herdr-mobile-relay.events-cf495399b2fa/3042418-0/checkout/relay",
+      "title": "-",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "session": "default",
+      "workspace": "└ relaunch-launch-failure-not-attempt · p:OkTGzpePBCivh5-0mItSMA",
+      "tab": "wKW:t2",
+      "pane": "wKW:p2",
+      "agent": "opencode",
+      "agent_status": "done",
+      "task": "-",
+      "cwd": "~/firstmate",
+      "title": "OC | Fix: failed relaunch shouldn't count …",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "session": "default",
+      "workspace": "└ fleet-snapshot-build · p:uP2jxPrXRRF20QvdGDaySQ",
+      "tab": "wME:t2",
+      "pane": "wME:p2",
+      "agent": "opencode",
+      "agent_status": "working",
+      "task": "-",
+      "cwd": "~/firstmate",
+      "title": "OC | Building /fleet resource snapshot skill",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "session": "default",
+      "workspace": "└ halo-mods-compat · p:JlR68hAWsLGeAIVSmKd0RQ",
+      "tab": "wMM:t2",
+      "pane": "wMM:p2",
+      "agent": "opencode",
+      "agent_status": "done",
+      "task": "-",
+      "cwd": "~/firstmate/projects/halo-ce-mods",
+      "title": "OC | Halo CE mods version compatibility re…",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "session": "default",
+      "workspace": "└ gate-agent-runway-admission · p:2TeBFIcb1MBGMdaYttpvzw",
+      "tab": "wMN:t2",
+      "pane": "wMN:p2",
+      "agent": "opencode",
+      "agent_status": "done",
+      "task": "-",
+      "cwd": "~/firstmate",
+      "title": "OC | Claude gate-agent runway admission he…",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "session": "default",
+      "workspace": "└ overnight-common-sense-review · p:LrALlrjJua23igGbm7tb-w",
+      "tab": "wMP:t2",
+      "pane": "wMP:p2",
+      "agent": "claude",
+      "agent_status": "done",
+      "task": "-",
+      "cwd": "~/firstmate",
+      "title": "Firstmate operational inbox message",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC02",
+      "session": "-",
+      "workspace": "2ndmate-pc02-mate",
+      "tab": "wE:tA",
+      "pane": "wE:pA",
+      "agent": "claude",
+      "agent_status": "done",
+      "task": "-",
+      "cwd": "~/fm-pc02-mate",
+      "title": "Firstmate operational inbox message",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC02",
+      "session": "-",
+      "workspace": "└ watch-triage-backend-herdr-test-split · p:Bg9A0byrl_Yu7V3LviREYw",
+      "tab": "wF:t2",
+      "pane": "wF:p2",
+      "agent": "opencode",
+      "agent_status": "working",
+      "task": "-",
+      "cwd": "~/fm-pc02-mate",
+      "title": "OC | Splitting and de-flaking fm-watch-tri…",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC02",
+      "session": "-",
+      "workspace": "└ afk-standing-words-skill-line · p:X1Qg6-85Fe4equKA-GsaiQ",
+      "tab": "wG:t2",
+      "pane": "wG:p2",
+      "agent": "opencode",
+      "agent_status": "idle",
+      "task": "-",
+      "cwd": "~/fm-pc02-mate",
+      "title": "OC | AFK skill: append afk-standing-words …",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC02",
+      "session": "-",
+      "workspace": "└ orchestrator-watchdog-limit-rearm · p:8D77VqViHw_IcIhVgYwzhQ",
+      "tab": "wP:t2",
+      "pane": "wP:p2",
+      "agent": "opencode",
+      "agent_status": "idle",
+      "task": "-",
+      "cwd": "~/fm-pc02-mate",
+      "title": "OC | Watchdog 5-hour limit detection and r…",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC02",
+      "session": "-",
+      "workspace": "└ burn-quiet-wake-turns · p:6S7hFxaHMPyqo4Ta3t5AEg",
+      "tab": "wS:t2",
+      "pane": "wS:p2",
+      "agent": "opencode",
+      "agent_status": "idle",
+      "task": "-",
+      "cwd": "~/fm-pc02-mate",
+      "title": "OC | Quiet wake turns fix for burn report",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC02",
+      "session": "-",
+      "workspace": "└ burn-pc02-mate-rules · p:w5GfMGxnxbbRD8-PdCJf8A",
+      "tab": "wT:t2",
+      "pane": "wT:p2",
+      "agent": "opencode",
+      "agent_status": "working",
+      "task": "-",
+      "cwd": "~/fm-pc02-mate",
+      "title": "OC | Wedge check: skip blocking no-mistake…",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC02",
+      "session": "-",
+      "workspace": "└ burn-stow-clear-deadlock · p:FYDUJCU96cNRFMgtQrH6Ug",
+      "tab": "wV:t2",
+      "pane": "wV:p2",
+      "agent": "opencode",
+      "agent_status": "working",
+      "task": "-",
+      "cwd": "~/fm-pc02-mate",
+      "title": "OC | Stow-to-clear receipt deadlock fix",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC02",
+      "session": "-",
+      "workspace": "└ burn-slim-postclear-digest · p:T_dWzILoUs6LISH5LqMkgQ",
+      "tab": "wW:t2",
+      "pane": "wW:p2",
+      "agent": "opencode",
+      "agent_status": "done",
+      "task": "-",
+      "cwd": "~/fm-pc02-mate",
+      "title": "OC | Slim post-clear digest to 30 KB",
+      "read_utc": "2026-11-20T13:08:06Z"
+    }
+  ],
+  "strays": [
+    {
+      "machine": "PC01",
+      "pane": "wGF:p9",
+      "reason": "no-agent",
+      "workspace_label": "firstmate",
+      "foreground_cwd": "~/.config/herdr/plugins/github-installations/herdr-mobile-relay.events-cf495399b2fa/3042418-0/checkout/relay"
+    }
+  ],
+  "secondmates": [],
+  "roles": [
+    {
+      "role": "orchestrator",
+      "where": "PC01",
+      "account": "unknown",
+      "evidence": "config/claude-orchestrator-account (fm-claude-roles.sh verify)",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "role": "supervision",
+      "where": "-",
+      "account": "-",
+      "evidence": "disabled",
+      "read_utc": "2026-11-20T13:08:06Z"
+    }
+  ],
+  "testing": [
+    {
+      "machine": "PC01",
+      "item": "pc01-test-slot",
+      "state": "free",
+      "detail": "pid=1699918 start=starttime=16812665 task=bearings-secondmate-stale-disclosure run=lint",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "machine": "PC01",
+      "item": "test-runs",
+      "state": "2 running",
+      "detail": "sh -c { printf '%s\\n' 1000 > /proc/self/oom_score_adj; } 2>/dev/null; bin/fm-test-run.sh --changed --exclude-family real-herdr-gated --exclude-quarantined --pc02-if-idle bash /home",
+      "read_utc": "2026-11-20T13:08:06Z"
+    }
+  ],
+  "compute": [],
+  "unavailable": [
+    {
+      "source": "gitlab",
+      "reason": "not configured",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "source": "github",
+      "reason": "not configured",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "source": "forgejo",
+      "reason": "not configured",
+      "read_utc": "2026-11-20T13:08:06Z"
+    },
+    {
+      "source": "android",
+      "reason": "no reader for Android emulator availability",
+      "read_utc": "2026-11-20T13:08:06Z"
+    }
+  ]
+}
