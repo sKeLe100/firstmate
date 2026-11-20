@@ -915,11 +915,10 @@ build_roles() {
   awk -F'\t' '$6 != "" && $6 != "unknown" { n[$6]++; key = $6 "\t" $1; if (!seen[key]++) { if (m[$6] != "") m[$6] = m[$6] ","; m[$6] = m[$6] $1 } } END { for (l in m) print l "\t" m[l] "\t" n[l] }' \
     "$TMP/workers_local.tsv" "$TMP/workers_remote.tsv" | sort \
     | while IFS=$'\t' read -r lane where count; do
-        case "$lane" in
-          claude#1) lane_account=$orchestrator ;;
-          claude#2) lane_account=$worker_account ;;
-          *) lane_account='-' ;;
-        esac
+        lane_account='-'
+        for account in "$worker_account" "$orchestrator"; do
+          if [ "$(spend_lane claude '' "$account")" = "$lane" ]; then lane_account=$account; break; fi
+        done
         printf 'worker-lane:%s\t%s\t%s\t%s worker(s) on %s\t%s\n' "$lane" "$(clean_field "$where")" \
           "$(clean_field "$lane_account")" "${count:-0}" "$lane" "$read_iso" >> "$TMP/roles.tsv"
       done

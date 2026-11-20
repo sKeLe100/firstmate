@@ -334,6 +334,40 @@ test_remote_fixture_alone_supplies_pc02_rows() {
   pass "the remote fixture alone supplies PC02 hosts, drives, and the running session"
 }
 
+test_worker_lane_account_follows_lane_not_role() {
+  local rec home fb out rc
+  rec=$(make_home lane-account fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  cat > "$home/data/account-roles/fm-claude-roles.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "ok: config/claude-orchestrator-account = /home/test/.claude-secondary"
+echo "ok: config/claude-account = /home/test/.claude"
+EOF
+  cat > "$home/state/delta.meta" <<'EOF'
+endpoint_task_id=delta
+kind=ship
+harness=claude
+model=claude-sonnet-5-5
+account=/home/test/.claude
+spawn_gen=s1.1.1
+EOF
+  out=$(env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
+    FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/down.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1); rc=$?
+  expect_code 0 "$rc" "live roles render"
+  printf '%s\n' "$out" > "$TMP_ROOT/lane-account.json"
+  jq -e '[.roles[] | select(.role == "worker-lane:claude#1") | .account] == ["/home/test/.claude"]' "$TMP_ROOT/lane-account.json" >/dev/null \
+    || fail "worker-lane:claude#1 must report the .claude account: $(jq -c '.roles' "$TMP_ROOT/lane-account.json")"
+  jq -e '[.roles[] | select(.role == "worker-lane:claude#2") | .account] == ["/home/test/.claude-secondary"]' "$TMP_ROOT/lane-account.json" >/dev/null \
+    || fail "worker-lane:claude#2 must report the claude-secondary account: $(jq -c '.roles' "$TMP_ROOT/lane-account.json")"
+  pass "worker-lane accounts follow the lane classification, not the orchestrator role"
+}
+
 test_row_caps_and_omitted() {
   local rec home fb out rc
   rec=$(make_home caps fresh); home=${rec%%|*}; fb=${rec#*|}
@@ -493,6 +527,7 @@ test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
 test_down_pc02_keeps_pc01
 test_remote_fixture_alone_supplies_pc02_rows
+test_worker_lane_account_follows_lane_not_role
 test_row_caps_and_omitted
 test_read_only_leaves_fixture_untouched
 test_home_only_renders_workers_only
