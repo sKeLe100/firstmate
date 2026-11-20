@@ -1,0 +1,16 @@
+== ok
+exit=0
+== low
+fm-claude-runway-admit: refusing Claude gate agent on account ordinary: 5% left (< 40); one implementing lane allowed on this account
+exit=75
+== mid
+fm-claude-runway-admit: refusing Claude gate agent on account ordinary: 30% left (< 40); one implementing lane allowed on this account
+exit=75
+== low cached then healthy doc (TTL)
+fm-claude-runway-admit: refusing Claude gate agent on account ordinary: 5% left (< 40); one implementing lane allowed on this account
+exit=75
+== opt-out
+exit=0
+== bad arg
+fm-claude-runway-admit: unknown argument: --bogus
+exit=2
