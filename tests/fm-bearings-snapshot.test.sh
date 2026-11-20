@@ -830,6 +830,21 @@ test_secondmate_stale_ledger_age_label_and_unknown_ids() {
   printf '%s' "$json" | jq -e '
     (.secondmates | any(.id == "stale-ledger" and .stale == true))
   ' >/dev/null || fail "a ledger one second past the bound was not stale: $json"
+  mate="$TMP_ROOT/stale-prefix-mate"
+  make_valid_secondmate_home prefix-ledger "$mate"
+  append_secondmate_registry "$home" prefix-ledger "$mate"
+  write_local_secondmate_summary "$mate" "$((now - 100))" false unknown child_current_unavailable \
+    '["task-1","task-10"]'
+  jq '.reason = "structured home state invalid: child current state unavailable: task-10"' \
+    "$mate/state/home-summary.json" > "$mate/state/home-summary.tmp" \
+    && mv "$mate/state/home-summary.tmp" "$mate/state/home-summary.json"
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_BEARINGS_NOW=2026-07-11T18:00:00Z \
+    NET_LOG="$home/net.log" "$BEARINGS" --json)
+  printf '%s' "$json" | jq -e '
+    .secondmates | any(.id == "prefix-ledger"
+      and (.doing | test("task-1(,|$)"))
+      and (.doing | contains("task-10")))
+  ' >/dev/null || fail "an id that prefixes another unknown id was dropped from the reason: $json"
   local bad rc
   for bad in 0 abc; do
     rc=0
