@@ -234,9 +234,9 @@ fm_afk_contract_captain_held_ids() {  # <state-dir>
 # held for the captain, and not terminal or provably gone. The rule is the one
 # .agents/skills/autonomous/SKILL.md step 3 states: a lane occupies a slot only
 # while its current state is live (working, parked, blocked, or paused); a
-# positive done or failed reading frees it, and an unknown reading frees it only
-# when the backend authoritatively reports the endpoint missing (a probe that
-# cannot answer is not absence). An unreadable reading still occupies its slot.
+# positive done or failed reading frees it, and so does a backend that
+# authoritatively reports the agent dead or the endpoint missing (a probe that
+# cannot answer is not absence, so an unknown reading holds). An unreadable reading still occupies its slot.
 # bin/fm-crew-state.sh is the authoritative current-state reader, but it may
 # make bounded no-mistakes and forge reads, so it is consulted only after the
 # cheap status and endpoint evidence has failed to prove the record live.
@@ -251,6 +251,11 @@ fm_afk_contract_record_is_live() {  # <state-dir> <id>
   fm_afk_contract_backend_helpers || return 0
   backend=$(fm_backend_of_meta "$meta")
   target=$(fm_backend_target_of_meta "$meta")
+  if [ -n "$target" ]; then
+    case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null)" in
+      dead|missing) return 1 ;;
+    esac
+  fi
   if [ -n "$target" ] && fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
     endpoint=1
   fi
@@ -270,10 +275,6 @@ fm_afk_contract_record_is_live() {  # <state-dir> <id>
   live=${live%% *}
   case "$live" in
     done|failed) return 1 ;;
-    unknown)
-      [ "$endpoint" -eq 0 ] && [ -n "$target" ] &&
-        [ "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null)" = missing ] && return 1
-      ;;
   esac
   return 0
 }

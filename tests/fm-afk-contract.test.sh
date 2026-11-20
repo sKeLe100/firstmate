@@ -713,6 +713,32 @@ SH
   pass "a backend that cannot answer never frees a seat"
 }
 
+# A worker whose agent exited leaves its pane alive with a bare shell. Even with
+# a stale working status line, that record is dead and holds no seat.
+test_dead_agent_in_a_live_pane_holds_no_seat() {
+  local home fakebin
+  home=$(make_home deadpane)
+  fakebin=$(fm_fakebin "$TMP_ROOT/fake-deadpane")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows) printf 'dead-win\n' ;;
+  list-panes) printf '%%shellpane\n' ;;
+  display-message)
+    case "$*" in
+      *pane_current_command*) printf 'bash\n' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
+  write_live_ship "$home" dead-pane 'sess:dead-win' working
+  [ "$(contract_live "$fakebin" "$home" live-workers)" = 0 ] \
+    || fail "a dead agent in a live pane held a seat: $(contract_live "$fakebin" "$home" live-workers)"
+  pass "a dead agent in a surviving pane holds no seat despite a working status line"
+}
+
 # D1: a seat is live work only. A dead ship, a released scout, a done ship, and
 # a secondmate hold no seat, and one live record holds exactly one. A record
 # whose backlog row is held for the captain holds none even while it looks live.
@@ -774,6 +800,7 @@ test_enter_writes_a_v2_record_in_one_step_and_announces_hold_for_return
 test_entry_without_spend_records_the_live_worker_count_never_below_the_floor
 test_live_workers_count_only_live_work
 test_unanswering_backend_never_frees_a_seat
+test_dead_agent_in_a_live_pane_holds_no_seat
 test_retired_two_step_entry_is_refused_by_name
 test_enter_removes_a_legacy_proposal_without_promoting_it
 test_same_turn_entry_pre_authorizes_nothing_on_the_never_set
