@@ -80,6 +80,7 @@ The 2026-11-17 hint-drift refresh from PR 276's run 44013976090 raised `tests/fm
 The 2026-11-18 hint-drift refresh from PR 281's run 44215887347 raised the two repeated drifters, `tests/fm-fork-free-helpers.test.sh` from 995 ms to its measured 1626 ms (1.63x) and `tests/fm-test-sandbox-cache-race.test.sh` from 8977 ms to 13939 ms (1.55x), and the three single-run drifters it also recorded, `tests/fm-haiku-builder-example.test.sh` (715 to 1782 ms, 2.49x), `tests/fm-spawn-host-memory.test.sh` (6292 to 16340 ms, 2.60x, its new swap and parked-session cases), and `tests/fm-subagent-pretool-check.test.sh` (1290 to 1970 ms, 1.53x).
 The 2026-11-19 hint-drift refresh from PR 280's run 44558016485 raised `tests/fm-ci-workflow.test.sh` from 10126 ms to its measured 16689 ms (repeated drift 1.65x).
 The 2026-11-20 hint-drift refresh from PR 290's run 44744059932 raised `tests/fm-primary-herdr.test.sh` from 4000 ms to its measured 6030 ms (repeated drift 1.51x).
+The 2026-11-20 hint-drift refresh from PR 295's run 44777981451 raised `tests/fm-remote-backlog-handoff.test.sh` from 97072 ms to its measured 152340 ms (repeated drift 1.57x). That refresh pushed the largest twelve-shard pack 455 ms over the 1200000 ms target, so it also moved the portable serial remainder to thirteen shards.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints
@@ -209,7 +210,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current watch-triage floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses long-lived Linux jobs (twelve serial, two parallel, Herdr, and one per canonical lint partition), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses long-lived Linux jobs (thirteen serial, two parallel, Herdr, and one per canonical lint partition), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
@@ -235,7 +236,7 @@ This fork keeps two measured normal-tier overrides, each still a hang tripwire r
 | Job | Bound | Rationale |
 |---|---|---|
 | lint partitions | 45 minutes | This fork's merged script set measured 20-22 minutes on main and overran a 25-minute cap on the 2026-09-14 upstream sync. |
-| portable serial 1-12 | job 40 minutes; per-script bound derived by `bin/fm-test-run.sh` | A merged lane previously measured 26.5 minutes. The per-script bound remains a second tripwire derived at `PORTABLE_SERIAL_TIMEOUT_MULTIPLIER` (2x) the slowest hint, so a wedged script fails with captured output before the job cap. Pass `--per-script-timeout-secs` explicitly to override it for one invocation. |
+| portable serial 1-13 | job 40 minutes; per-script bound derived by `bin/fm-test-run.sh` | A merged lane previously measured 26.5 minutes. The per-script bound remains a second tripwire derived at `PORTABLE_SERIAL_TIMEOUT_MULTIPLIER` (2x) the slowest hint, so a wedged script fails with captured output before the job cap. Pass `--per-script-timeout-secs` explicitly to override it for one invocation. |
 
 The fork also removed the macOS stock Bash job (the workflow's own comment owns that ruling), so it belongs to no tier.
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) holds the executable values and names each job's tier or fork override beside its `timeout-minutes`; `bin/fm-test-run.sh` owns the portable-serial per-script bound, derived from the hint table so it cannot lose margin independently of a hint refresh.

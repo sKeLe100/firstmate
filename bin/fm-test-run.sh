@@ -324,7 +324,7 @@ HOST_LOAD_RETRY_POLL_SECS=${FM_TEST_RUN_LOAD_RETRY_POLL_SECS:-10}
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=12
+PORTABLE_SERIAL_SHARDS=13
 
 # Conservative balance hint for a portable-serial script with no measurement.
 # Rounded above the current CI mean, including the capability-skipped scripts.
@@ -970,6 +970,7 @@ tests/fm-ci-workflow.test.sh 16689
 tests/fm-claim-check.test.sh 550
 tests/fm-classify-corr-token.test.sh 34691
 tests/fm-classify-decision-key.test.sh 4479
+tests/fm-claude-runway-admit.test.sh 1000
 tests/fm-claude-stop-autoarm-live-e2e.test.sh 184
 tests/fm-claude-stop-autoarm.test.sh 61189
 tests/fm-claude-stop-autostow.test.sh 8594
@@ -1104,7 +1105,7 @@ tests/fm-questionnaire-refill-source.test.sh 534
 tests/fm-queue-snapshot.test.sh 27987
 tests/fm-quota-array-dispatch-live-e2e.test.sh 154
 tests/fm-quota-choose.test.sh 4024
-tests/fm-remote-backlog-handoff.test.sh 97072
+tests/fm-remote-backlog-handoff.test.sh 152340
 tests/fm-remote-delta-read.test.sh 6214
 tests/fm-remote-doctor.test.sh 25301
 tests/fm-remote-entrypoint.test.sh 197
