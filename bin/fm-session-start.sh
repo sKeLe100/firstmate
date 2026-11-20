@@ -171,6 +171,23 @@
 # compatible tasks-axi is available, or `data/backlog.md` when the file body is
 # truly needed.
 #
+# POST-CLEAR RE-EMIT: a `--reemit` after a proven start (a /clear or a
+# compaction) is the post-clear digest, and it is deliberately slim because
+# that process already reconciled the fleet once. It keeps the same readiness
+# safety sections but bounds two otherwise unbounded bulks:
+#   - the backlog listing keeps only active rows - every in-flight and held
+#     row one line each, the blocked queued rows, and only the top of the
+#     dispatchable queue (default 5; FM_SESSION_START_QUEUED_LIMIT still
+#     overrides both startup defaults).
+#   - each in-flight task is ONE line (id, endpoint verdict, last status line)
+#     plus the full status-log path, not its whole meta block and status tail.
+#   - CONTEXT prints one line per data/projects.md project entry and does not
+#     reprint data/secondmates.md, data/captain.md, data/captain-shared.md, or
+#     data/learnings.md; the RE-EMIT CUE names them and says to read one only
+#     when the turn needs it.
+# The target is a digest at or under 30KB, down from the about-110KB report
+# measurement. A normal startup keeps the full recovery digest it always had.
+#
 # STATUS TAILS: FM_SESSION_START_STATUS_TAIL bounds how many lines each task's
 # tail prints, and bin/fm-line-cap-lib.sh bounds how long each of those lines
 # may be. Both bounds are safe because the section prints every task's full
@@ -208,7 +225,9 @@
 #   an agent skip the rest of the digest.
 #
 #   --reemit  This process ALREADY took the helm at its own startup and has
-#             only lost its context (a /clear or a compaction). Skip the
+#             only lost its context (a /clear or a compaction). It prints the
+#             slim POST-CLEAR RE-EMIT digest (see that note above) instead of
+#             the full recovery digest. Skip the
 #             mutating sweeps that startup already reconciled - the stale Herdr
 #             projection cleanup and bootstrap's seven mutating sweeps (fleet
 #             sync, same-home backlog reconciliation, secondmate convergence and
@@ -390,8 +409,17 @@ if fm_tasks_axi_compatible; then TASKS_AXI_COMPATIBLE=1; else TASKS_AXI_COMPATIB
 
 STATUS_TAIL=${FM_SESSION_START_STATUS_TAIL:-5}
 case "$STATUS_TAIL" in ''|*[!0-9]*) STATUS_TAIL=5 ;; esac
-QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-20}
-case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=20 ;; esac
+# The post-clear re-emit is the digest a session reads after a /clear or a
+# compaction, so it shows only the top of the dispatchable queue (see the
+# POST-CLEAR RE-EMIT note in this file's header). A normal startup keeps the
+# wider bound, since it is the first recovery read for a session that has not
+# yet taken the helm.
+QUEUED_LIMIT_DEFAULT=20
+if [ "$REEMIT" -eq 1 ]; then
+  QUEUED_LIMIT_DEFAULT=5
+fi
+QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-$QUEUED_LIMIT_DEFAULT}
+case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=$QUEUED_LIMIT_DEFAULT ;; esac
 # One per-task endpoint read may never outlive this bound: a hung backend CLI
 # becomes that task's endpoint: error line instead of the digest's whole
 # runtime budget.
@@ -426,14 +454,34 @@ print_file_or_absent() {
   fi
 }
 
+# print_projects_one_line <path>: the post-clear digest's project registry
+# view - one line per registered project instead of the whole file.
+# bin/fm-project-mode.sh owns the registry grammar: a project entry is a
+# top-level "- <name> ..." line, and any indented continuation carries detail
+# this digest does not need. A registry with no parseable entry falls back to
+# the full file, so a nonstandard registry is never silently hidden.
+print_projects_one_line() {
+  local path=$1
+  if [ ! -f "$path" ]; then
+    printf 'ABSENT\n'
+    return 0
+  fi
+  if [ ! -s "$path" ]; then
+    printf '(present, empty)\n'
+    return 0
+  fi
+  grep '^- [^[:space:]]' "$path" || cat "$path"
+}
+
 # Print only the STANDING ORDERS block, bounded to 40 lines of 600 characters.
-# The full captain file remains in CONTEXT below, including any omitted orders.
+# Any omitted orders stay in the full captain file, which the truncation marker
+# names by path because the post-clear digest does not reprint it in CONTEXT.
 print_standing_orders() {
   [ -f "$DATA/captain.md" ] || return 0
-  awk '
+  awk -v data="$DATA" '
     /^## / { if (active) exit; if ($0 == "## STANDING ORDERS") active = 1 }
     active {
-      if (++lines > 40) { print "[STANDING ORDERS excerpt truncated; read data/captain.md in CONTEXT below]"; exit }
+      if (++lines > 40) { print "[STANDING ORDERS excerpt truncated; read data/captain.md under " data " for the rest]"; exit }
       print (length($0) > 600 ? substr($0, 1, 588) " [truncated]" : $0)
     }
   ' "$DATA/captain.md"
@@ -753,6 +801,24 @@ print_status_tail() {
   done < <(tail -n "$STATUS_TAIL" "$status")
 }
 
+# print_status_last_line <status> <missing-text>: the post-clear digest's
+# one-line status view. The full log remains one targeted read away and its
+# path is printed with the line, so the slim re-emit never loses recoverability.
+print_status_last_line() {
+  local status=$1 missing=$2 line
+  if [ ! -f "$status" ]; then
+    printf 'last status: %s (%s)\n' "$missing" "$status"
+    return 0
+  fi
+  line=$(tail -n 1 "$status" 2>/dev/null) || line=
+  if [ -z "$line" ]; then
+    printf 'last status: (empty status log: %s)\n' "$status"
+    return 0
+  fi
+  printf 'last status: %s\n' "$(fm_cap_line "$line")"
+  printf 'status log: %s\n' "$status"
+}
+
 # fm_session_start_endpoint_read <backend> <target> [expected-label]: ONE
 # bounded, crash-isolated endpoint-liveness read. The read runs in its own
 # bash under fm_run_timed's bound instead of in this digest process, because
@@ -853,8 +919,8 @@ if [ "$REEMIT" -eq 1 ]; then
   # CONTEXT prints last, so this cue is the part that must survive the spill.
   printf 'RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",\n'
   printf "read it to the end, paging with offset until the line 'The digest above is complete', before acting.\n"
-  printf 'Otherwise read data/captain.md, data/captain-shared.md,\n'
-  printf 'and data/learnings.md under %s now if any of them is missing below.\n' "$DATA"
+  printf 'data/secondmates.md, data/captain.md, data/captain-shared.md, and data/learnings.md\n'
+  printf 'under %s are not reprinted; read one only when this turn needs it.\n' "$DATA"
   section "SESSION START (CONTEXT RE-EMIT) - $FM_HOME"
   printf 'This session already took the helm at its own startup and has only lost its\n'
   printf 'context. Lock ownership is re-verified and the durable records below are\n'
@@ -1052,7 +1118,18 @@ fi
 # a stage that never ran, which the truncation banner names by stage.
 stage read-once
 section "READ-ONCE CONTRACT"
-cat <<'EOF'
+if [ "$REEMIT" -eq 1 ]; then
+  cat <<'EOF'
+This post-clear digest is deliberately slim: it carries only the active
+data/backlog.md rows (in flight, held, and the top dispatchable queue), one
+line per task in state/*.meta, and one line per project in data/projects.md.
+Every task's full status log path is printed with its line.
+Do NOT bulk-read data/backlog.md or state/*.status: query one record when it
+is needed. data/secondmates.md, data/captain.md, data/captain-shared.md, and
+data/learnings.md are not reprinted here.
+EOF
+else
+  cat <<'EOF'
 Everything below is printed in full for this session start: every state/*.meta,
 a compact data/backlog.md listing, a bounded tail of every state/*.status,
 data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
@@ -1060,6 +1137,9 @@ and data/learnings.md.
 Do NOT re-read any of them after reading this digest, and do NOT bulk-read
 data/backlog.md or state/*.status: re-reading everything defeats the entire
 point of this command.
+EOF
+fi
+cat <<'EOF'
 
 Go to a source directly only when:
   - this digest flagged it ABSENT (then rebuild or create it per AGENTS.md),
@@ -1085,17 +1165,24 @@ print_standing_orders
 section "FLEET STATE"
 print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
 
-subsection "Work under way (state/*.meta)"
+# The post-clear re-emit keeps one line per task instead of the full metadata
+# block and status tail. The startup digest keeps the full block, because it is
+# the first recovery read for a session that has not yet taken the helm.
+if [ "$REEMIT" -eq 1 ]; then
+  subsection "Work under way (one line per task; read state/<id>.meta and its status log for detail)"
+else
+  subsection "Work under way (state/*.meta)"
+fi
 META_FOUND=0
 for meta in "$STATE"/*.meta; do
   [ -f "$meta" ] || continue
   META_FOUND=1
   id=$(basename "$meta" .meta)
-  printf '\n--- %s ---\n' "$id"
-  cat "$meta"
 
   window=$(fm_meta_get "$meta" window)
   target=$(fm_backend_target_of_meta "$meta")
+  backend=
+  endpoint_state=unknown
   if [ -n "$window" ]; then
     backend=$(fm_backend_of_meta "$meta")
     endpoint_rc=0
@@ -1104,13 +1191,31 @@ for meta in "$STATE"/*.meta; do
     # the bound firing and >=128 is a signal death. Every other nonzero status
     # is the probe's own verdict that the endpoint is gone.
     if [ "$endpoint_rc" -eq 0 ]; then
-      printf 'endpoint: alive (backend=%s window=%s)\n' "$backend" "$window"
+      endpoint_state=alive
     elif [ "$endpoint_rc" -eq 124 ] || [ "$endpoint_rc" -ge 128 ]; then
-      printf 'endpoint: error (backend=%s window=%s - the endpoint read died or hit its %ss bound; the digest continued past it)\n' \
-        "$backend" "$window" "$ENDPOINT_TIMEOUT"
+      endpoint_state=error
     else
-      printf 'endpoint: dead (backend=%s window=%s)\n' "$backend" "$window"
+      endpoint_state=dead
     fi
+  fi
+
+  if [ "$REEMIT" -eq 1 ]; then
+    printf -- '--- %s --- endpoint: %s' "$id" "$endpoint_state"
+    [ -n "$backend" ] && printf ' (backend=%s window=%s)' "$backend" "$window"
+    printf '\n'
+    print_status_last_line "$STATE/$id.status" "no status file yet"
+    continue
+  fi
+
+  printf '\n--- %s ---\n' "$id"
+  cat "$meta"
+  if [ "$endpoint_state" = alive ]; then
+    printf 'endpoint: alive (backend=%s window=%s)\n' "$backend" "$window"
+  elif [ "$endpoint_state" = error ]; then
+    printf 'endpoint: error (backend=%s window=%s - the endpoint read died or hit its %ss bound; the digest continued past it)\n' \
+      "$backend" "$window" "$ENDPOINT_TIMEOUT"
+  elif [ "$endpoint_state" = dead ]; then
+    printf 'endpoint: dead (backend=%s window=%s)\n' "$backend" "$window"
   else
     printf 'endpoint: unknown (no window recorded)\n'
   fi
@@ -1131,8 +1236,13 @@ for status in "$STATE"/*.status; do
   id=$(basename "$status" .status)
   [ -f "$STATE/$id.meta" ] && continue
   ORPHAN_STATUS_FOUND=1
-  printf '\n--- %s ---\n' "$id"
-  print_status_tail "$status"
+  if [ "$REEMIT" -eq 1 ]; then
+    printf -- '--- %s --- ' "$id"
+    print_status_last_line "$status" "no status file yet"
+  else
+    printf '\n--- %s ---\n' "$id"
+    print_status_tail "$status"
+  fi
 done
 [ "$ORPHAN_STATUS_FOUND" -eq 1 ] || printf '(none)\n'
 
@@ -1212,11 +1322,22 @@ fi
 # take (see this file's ORDERING note).
 stage context
 section "CONTEXT"
-print_file_or_absent "$DATA/projects.md" "data/projects.md"
-print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
-print_file_or_absent "$DATA/captain.md" "data/captain.md"
-print_file_or_absent "$DATA/captain-shared.md" "data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)"
-print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
+if [ "$REEMIT" -eq 1 ]; then
+  # Post-clear digest: the registry is the only context file that earns bulk
+  # here, and only as one line per project. The curated-memory files are one
+  # targeted read away, which the RE-EMIT CUE above names.
+  subsection "data/projects.md (one line per project)"
+  print_projects_one_line "$DATA/projects.md"
+  printf '\nNot reprinted in this post-clear digest: data/secondmates.md, data/captain.md,\n'
+  printf 'data/captain-shared.md, and data/learnings.md. Read them from %s now if this\n' "$DATA"
+  printf 'turn needs them.\n'
+else
+  print_file_or_absent "$DATA/projects.md" "data/projects.md"
+  print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
+  print_file_or_absent "$DATA/captain.md" "data/captain.md"
+  print_file_or_absent "$DATA/captain-shared.md" "data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)"
+  print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
+fi
 
 # --- 9. closing reminder -----------------------------------------------
 stage next-step
