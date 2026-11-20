@@ -637,7 +637,7 @@ A task whose group changes later keeps its position until it ends.
 
 ### Verification status
 
-The tags, the agents view, and the placement are covered by offline tests against a scripted Herdr CLI and socket helper (`tests/fm-herdr-groups.test.sh` and the ordering cases in `tests/fm-backend-herdr.test.sh`).
+The tags, the agents view, and the placement are covered by offline tests against a scripted Herdr CLI and socket helper (`tests/fm-herdr-groups.test.sh` and the ordering cases in `tests/fm-backend-herdr-presentation-part.sh`, run by `tests/fm-backend-herdr.test.sh`).
 They were also exercised against a real Herdr 0.9.5 server (protocol 22) in a guarded lab session: after one watcher poll `herdr pane list` showed the `fm_*` tokens on each task pane, the agents list header read `projects` with tasks ordered by group and then status, a newly spawned projected task landed after the other tasks of its group with only that workspace moving and no focus change, and `fm-herdr-groups.sh clear` removed the tokens and the view.
 To repeat the check on a live session, turn the feature on, wait one watcher poll, and confirm the same four results.
 
