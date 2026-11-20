@@ -230,12 +230,26 @@ fm_afk_contract_captain_held_ids() {  # <state-dir>
   '
 }
 
+# A record spawned within this many seconds keeps its seat while its pane still
+# reads dead, so a worker whose agent has not launched yet is not freed.
+FM_AFK_CONTRACT_LAUNCH_WINDOW_SECS=180
+
+# True when the meta's spawn_gen (s<epoch>.<pid>.<rand>) is inside the launch window.
+fm_afk_contract_in_launch_window() {  # <meta>
+  local gen epoch
+  gen=$(grep '^spawn_gen=' "$1" 2>/dev/null | tail -1 | cut -d= -f2-)
+  epoch=${gen#s}
+  epoch=${epoch%%.*}
+  case "$epoch" in ''|*[!0-9]*) return 1 ;; esac
+  [ $(( $(date +%s) - epoch )) -lt "$FM_AFK_CONTRACT_LAUNCH_WINDOW_SECS" ]
+}
+
 # True when state/<id>.meta is a live ordinary worker: not a secondmate, not
 # held for the captain, and not terminal or provably gone. The rule is the one
 # .agents/skills/autonomous/SKILL.md step 3 states: a lane occupies a slot only
 # while its current state is live (working, parked, blocked, or paused); a
 # positive done or failed reading frees it, and so does a backend that
-# authoritatively reports the agent dead or the endpoint missing (a probe that
+# authoritatively reports the agent dead (past its 180s launch window) or the endpoint missing (a probe that
 # cannot answer is not absence, so an unknown reading holds). An unreadable reading still occupies its slot.
 # bin/fm-crew-state.sh is the authoritative current-state reader, but it may
 # make bounded no-mistakes and forge reads, so it is consulted only after the
@@ -253,7 +267,8 @@ fm_afk_contract_record_is_live() {  # <state-dir> <id>
   target=$(fm_backend_target_of_meta "$meta")
   if [ -n "$target" ]; then
     case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null)" in
-      dead|missing) return 1 ;;
+      missing) return 1 ;;
+      dead) fm_afk_contract_in_launch_window "$meta" || return 1 ;;
     esac
   fi
   if [ -n "$target" ] && fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then

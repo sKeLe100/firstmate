@@ -739,6 +739,37 @@ SH
   pass "a dead agent in a surviving pane holds no seat despite a working status line"
 }
 
+# A just-spawned worker whose pane still shows only the shell keeps its seat
+# until the launch window passes; an old spawn_gen frees it.
+test_fresh_spawn_keeps_its_seat_while_the_pane_reads_dead() {
+  local home fakebin now
+  home=$(make_home freshpane)
+  fakebin=$(fm_fakebin "$TMP_ROOT/fake-freshpane")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows) printf 'dead-win\n' ;;
+  list-panes) printf '%%shellpane\n' ;;
+  display-message)
+    case "$*" in
+      *pane_current_command*) printf 'bash\n' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
+  now=$(date +%s)
+  write_live_ship "$home" fresh 'sess:dead-win' working
+  printf 'spawn_gen=s%s.1.1\n' "$now" >> "$home/state/fresh.meta"
+  [ "$(contract_live "$fakebin" "$home" live-workers)" = 1 ] \
+    || fail "a fresh spawn with a shell-only pane lost its seat: $(contract_live "$fakebin" "$home" live-workers)"
+  sed -i "s/^spawn_gen=.*/spawn_gen=s$((now - 600)).1.1/" "$home/state/fresh.meta"
+  [ "$(contract_live "$fakebin" "$home" live-workers)" = 0 ] \
+    || fail "an old spawn with a shell-only pane kept its seat: $(contract_live "$fakebin" "$home" live-workers)"
+  pass "a record inside the launch window keeps its seat while its pane reads dead"
+}
+
 # D1: a seat is live work only. A dead ship, a released scout, a done ship, and
 # a secondmate hold no seat, and one live record holds exactly one. A record
 # whose backlog row is held for the captain holds none even while it looks live.
@@ -801,6 +832,7 @@ test_entry_without_spend_records_the_live_worker_count_never_below_the_floor
 test_live_workers_count_only_live_work
 test_unanswering_backend_never_frees_a_seat
 test_dead_agent_in_a_live_pane_holds_no_seat
+test_fresh_spawn_keeps_its_seat_while_the_pane_reads_dead
 test_retired_two_step_entry_is_refused_by_name
 test_enter_removes_a_legacy_proposal_without_promoting_it
 test_same_turn_entry_pre_authorizes_nothing_on_the_never_set
