@@ -1105,7 +1105,7 @@ tests/fm-questionnaire-refill-source.test.sh 534
 tests/fm-queue-snapshot.test.sh 27987
 tests/fm-quota-array-dispatch-live-e2e.test.sh 154
 tests/fm-quota-choose.test.sh 4024
-tests/fm-remote-backlog-handoff.test.sh 97072
+tests/fm-remote-backlog-handoff.test.sh 152340
 tests/fm-remote-delta-read.test.sh 6214
 tests/fm-remote-doctor.test.sh 25301
 tests/fm-remote-entrypoint.test.sh 197
