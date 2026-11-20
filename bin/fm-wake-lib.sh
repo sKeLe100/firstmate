@@ -1179,13 +1179,18 @@ fm_recovery_marker_reopen_announced() {
 
 # Bound consecutive recovery resurfaces of one unchanged, undrained queue.
 # docs/watcher-continuity.md "Resurface bound" owns the contract. The streak
-# record is "<fingerprint>\t<count>"; the fingerprint covers the queue bytes
-# and the session-lock owner, so a new wake, an acknowledgement, or a session
-# restart starts a fresh streak; the drain clears the record when it completes an
-# acknowledgement, because an empty queue leaves the fingerprint unchanged. A drain that only presents an unacknowledged
-# row changes neither and must not reset the streak on its own. Sets
-# FM_REARM_RESURFACE_REASON to the reason to deliver, or empty to stay quiet.
-# Any record read or write failure delivers the ordinary reason.
+# record is "<fingerprint>\t<count>". The fingerprint covers a normalized view
+# of the queue and the session-lock owner: a repeated `stale` wake for a key
+# already queued collapses to that key's first row, because a pane that stays
+# stale re-announces with a fresh epoch/sequence and an updated idle-age payload
+# while it remains the same queued wake, and the raw bytes would otherwise reset
+# the bound on every poll. Any other row, a new stale key, an acknowledgement,
+# or a session restart changes the fingerprint and starts a fresh streak; the
+# drain clears the record when it completes an acknowledgement, because an empty
+# queue leaves the fingerprint unchanged. A drain that only presents an
+# unacknowledged row changes neither and must not reset the streak on its own.
+# Sets FM_REARM_RESURFACE_REASON to the reason to deliver, or empty to stay
+# quiet. Any record read or write failure delivers the ordinary reason.
 FM_REARM_RESURFACE_STREAK="$STATE/.rearm-resurface-streak"
 FM_REARM_RESURFACE_REASON=
 
@@ -1193,7 +1198,23 @@ fm_rearm_resurface_decide() {
   local limit=${FM_REARM_RESURFACE_LIMIT:-3} fingerprint queue_sum lock_owner record prior_count count=1 tmp
   case "$limit" in ''|*[!0-9]*|0) limit=3 ;; esac
   FM_REARM_RESURFACE_REASON='check: rearm-resurface'
-  queue_sum=$(cksum < "$FM_WAKE_QUEUE" 2>/dev/null) || queue_sum=absent
+  if [ -f "$FM_WAKE_QUEUE" ] && [ -r "$FM_WAKE_QUEUE" ]; then
+    queue_sum=$(
+      awk -F '\t' '
+        NF >= 5 {
+          if ($3 == "stale") {
+            if ($4 in seen) next
+            seen[$4] = 1
+            print "stale", $4, $2
+            next
+          }
+          print
+        }
+      ' "$FM_WAKE_QUEUE" 2>/dev/null | cksum
+    ) || queue_sum=absent
+  else
+    queue_sum=absent
+  fi
   lock_owner=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
   fingerprint="${queue_sum// /:}|${lock_owner}"
   if [ -f "$FM_REARM_RESURFACE_STREAK" ] && [ ! -L "$FM_REARM_RESURFACE_STREAK" ]; then
