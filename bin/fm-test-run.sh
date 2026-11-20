@@ -1023,7 +1023,7 @@ tests/fm-handoff-guard-hook.test.sh 1552
 tests/fm-harness-adapter-instructions-live-e2e.test.sh 97
 tests/fm-harness-adapter-references.test.sh 143
 tests/fm-harness-liveness-drift-live-e2e.test.sh 1309
-tests/fm-harness-precedence.test.sh 4283
+tests/fm-harness-precedence.test.sh 6533
 tests/fm-heavy-admission.test.sh 10402
 tests/fm-herdr-attached-viewer-live-e2e.test.sh 19000
 tests/fm-herdr-groups.test.sh 5418
@@ -1166,7 +1166,7 @@ tests/fm-spawn-pc02-lane-guard.test.sh 17964
 tests/fm-spawn-pool-base-freshen.test.sh 120467
 tests/fm-spawn-worktree-settle.test.sh 11342
 tests/fm-stalled-waits.test.sh 23702
-tests/fm-startup-growth-check.test.sh 6479
+tests/fm-startup-growth-check.test.sh 9794
 tests/fm-startup-memory-budget.test.sh 18202
 tests/fm-startup-network.test.sh 109131
 tests/fm-stat-shadowing.test.sh 440
@@ -1227,7 +1227,7 @@ tests/fm-watch-checkpoint.test.sh 27227
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 74607
 tests/fm-watch-retry-band.test.sh 13391
-tests/fm-watch-triage-waits.test.sh 777719
+tests/fm-watch-triage-waits.test.sh 1196801
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 77062
 tests/fm-worker-account-live-e2e.test.sh 3179
