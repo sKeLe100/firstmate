@@ -2,9 +2,8 @@ Mode: Claude Stop-hook-owned supervision.
 
 When this session owns supervision and away mode is not active:
 1. Drain first with `bin/fm-wake-drain.sh`.
-   For a routine heartbeat wake, run `bin/fm-wake-drain.sh --quiet-ack`: it drains and acknowledges in that one command. When it presents nothing actionable, the turn ends with no closing text; when it does present open decisions, unread status lines, or branch outcomes, handle those as usual and send only that captain-facing text.
-   Any actionable wake still prints `WAKE_ACK_REQUIRED` and is handled as usual; after handling all emitted wakes and reconciling open decisions and unread status lines, run that exact `--ack-through` command. Until then the work remains durable for idempotent re-handling after interruption.
-   A relay turn emits its captain-facing text in one or two calls: drain and acknowledge (`--quiet-ack` when it covers the wake, otherwise the printed `--ack-through` command), then send the captain text as the reply, with no narration between the calls.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+   A relay turn emits its captain-facing text in one or two calls: drain and acknowledge (via the printed `--ack-through` command), then send the captain text as the reply, with no narration between the calls.
 2. Routine watcher arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`), never by you.
    Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens.
    An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
