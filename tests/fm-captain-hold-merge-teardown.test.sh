@@ -1488,6 +1488,60 @@ SH
   pass "cleanup refuses a ship row when its captain hold cannot be read"
 }
 
+# Holding a task whose worker is gone concludes its parked no-mistakes run so
+# the run stops holding a daemon review slot, while the worktree, branch and
+# worker record stay. A live worker's run is never touched.
+make_parked_run_task() {  # <home> <id>
+  local home=$1 id=$2 wt head
+  wt="$home/wt-$id"
+  git init -q "$wt" || fail "could not build the task worktree"
+  git -C "$wt" checkout -q -b "fm/$id" || fail "could not branch the task worktree"
+  git -C "$wt" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work \
+    || fail "could not commit in the task worktree"
+  head=$(git -C "$wt" rev-parse HEAD)
+  fm_write_meta "$home/state/$id.meta" \
+    "worktree=$wt" "project=$home/projects/sample" "kind=ship" "mode=no-mistakes" \
+    "spawn_gen=fixture-$id"
+  cat > "$home/fakebin/no-mistakes" <<SH
+#!/usr/bin/env bash
+case "\${1:-} \${2:-}" in
+  "axi status")
+    if [ "\${3:-}" = --run ] && grep -Fxq "abort --run 01RUN" "$home/abort.log" 2>/dev/null; then
+      printf 'run:\\n  id: "01RUN"\\n  outcome: cancelled\\n'
+    else
+      printf 'run:\\n  id: "01RUN"\\n  branch: fm/$id\\n  status: awaiting_approval\\n  awaiting_agent: parked 2m\\n  head: "$head"\\ngate: review\\n'
+    fi ;;
+  "axi abort") printf 'abort %s\\n' "\${3:-} \${4:-}" >> "$home/abort.log" ;;
+esac
+exit 0
+SH
+  chmod +x "$home/fakebin/no-mistakes"
+}
+
+test_hold_concludes_the_parked_run_of_a_dead_worker() {
+  local home id=sample-dead-run
+  home=$(make_home hold-dead-run)
+  make_parked_run_task "$home" "$id"
+  run_captain "$home" hold "$id" --title "Parked task" --reason "shelved" --repo sample \
+    >/dev/null 2>"$home/hold.err" || fail "hold failed: $(cat "$home/hold.err")"
+  assert_grep "abort --run 01RUN" "$home/abort.log" "a dead worker's parked run was not aborted"
+  assert_present "$home/wt-$id/.git" "hold removed the worktree"
+  git -C "$home/wt-$id" rev-parse --verify -q "refs/heads/fm/$id" >/dev/null \
+    || fail "hold removed the branch"
+  assert_present "$home/state/$id.meta" "hold removed the worker record"
+  pass "holding a task with a dead worker aborts its parked run and keeps the worktree and branch"
+}
+
+test_hold_leaves_the_run_of_a_live_worker_alone() {
+  local home id=sample-live-run
+  home=$(make_home hold-live-run)
+  make_parked_run_task "$home" "$id"
+  FM_FORCE_ENDPOINT_ALIVE=1 run_captain "$home" hold "$id" --title "Live task" --reason "wait" \
+    --repo sample >/dev/null 2>"$home/hold.err" || fail "hold failed: $(cat "$home/hold.err")"
+  assert_absent "$home/abort.log" "a live worker's run was aborted by a hold"
+  pass "holding a task with a live worker never touches its run"
+}
+
 # A shown scalar field is a JSON-encoded bare string, and JSON::PP accepts one
 # only when allow_nonref is on. Recent releases default it on, so this case
 # forces the older default back off for every perl the command spawns - the same
@@ -1514,3 +1568,5 @@ run_case test_merge_entrypoints_refuse_a_reused_task_incarnation
 run_case test_merge_entrypoints_serialize_forced_teardown_before_task_reads
 run_case test_released_merge_passes_the_entrypoint_and_lands
 run_case test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read
+run_case test_hold_concludes_the_parked_run_of_a_dead_worker
+run_case test_hold_leaves_the_run_of_a_live_worker_alone

@@ -251,6 +251,12 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 # shellcheck source=bin/fm-backend.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-nm-run-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/fm-nm-conclude-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-nm-conclude-lib.sh"
 
 PARENT_HOLD_PUBLISHED=0
 publish_parent_hold() {  # <task-id> <occurrence> <verb> <note>
@@ -914,6 +920,23 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
   printf '%s %s %s\n' "$id" "$how" "$origin_state"
 }
 
+# A hold on a task whose worker is gone must not leave its parked no-mistakes
+# run holding a daemon review slot. Reuses cleanup's run conclusion
+# (bin/fm-nm-conclude-lib.sh) but keeps the worktree, branch, PR, meta and
+# status; a live endpoint is never touched. Best-effort: a run that cannot be
+# confirmed stopped is reported on stderr and does not undo the hold.
+conclude_held_task_run() {  # <task-id>
+  local id=$1 meta="$STATE/${1}.meta" wt
+  [ -f "$meta" ] || return 0
+  wt=$(fm_meta_get "$meta" worktree)
+  [ -n "$wt" ] && [ -d "$wt" ] || return 0
+  ! task_endpoint_alive "$id" || return 0
+  ID=$id
+  KIND=$(fm_meta_get "$meta" kind)
+  [ -n "$KIND" ] || KIND=ship
+  NM_CONCLUDE_CONTEXT=hold conclude_task_no_mistakes_run "$wt" || true
+}
+
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
   local existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason previous_origin='' hold_status=0
@@ -1022,6 +1045,7 @@ command_hold() {
   occurrence=$(( $(resolution_record_count "$(show_field "$show" body)") + 1 ))
   [ -n "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
     || fail "task $id lost its hold-set stamp while being held"
+  conclude_held_task_run "$id"
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason"
   printf '%s\n' "$id"
 }
