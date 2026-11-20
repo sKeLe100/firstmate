@@ -59,6 +59,28 @@ watch_bg() {  # <state> <fakebin> <out> [extra env assignments...]
     FM_SECONDMATE_LIVENESS_SECS=99999999 "$@" "$WATCH" > "$out" &
 }
 
+# A positive wait's ceiling stretched by host contention: <base> 0.1s ticks
+# times ceil(load1 / cpus), never less than <base> and never more than eight
+# times it, so a slow-but-healthy step on a loaded host gets proportionally more
+# time while a genuinely hung one still fails in bounded time. An idle host keeps
+# the exact base budget. wait_for_exit_scaled samples it before waiting; the
+# lazy waits below sample it only once their base budget has run out.
+fm_test_load_scaled_ticks() {  # <base-ticks> -> ticks on stdout
+  local base=$1 load='' cpus=''
+  if [ -r /proc/loadavg ]; then
+    read -r load _ < /proc/loadavg || load=''
+  else
+    load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{ print $1 }') || load=''
+  fi
+  cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null) || cpus=''
+  awk -v b="$base" -v l="${load:-0}" -v c="${cpus:-1}" 'BEGIN {
+    r = (c > 0) ? l / c : 1
+    s = int(r); if (s < r) s++
+    if (s < 1) s = 1; if (s > 8) s = 8
+    printf "%d\n", b * s
+  }'
+}
+
 # Wait up to <limit> 0.1s ticks while <pid> stays alive; 0 if still alive, 1 if it died.
 # Only for an absence window whose case passes more easily under load, never as
 # proof that a watcher reached a poll: wait_poll_cycle below owns that.
@@ -86,7 +108,7 @@ wait_live() {
 # 0 if the watcher is still alive after a completed cycle, 1 if it exited.
 # Every positive wait in these cases is a ceiling, not a schedule: it returns as
 # soon as its event lands, and a budget that runs out is stretched once by host
-# load (fm_test_load_scaled_ticks in tests/wake-helpers.sh) before it counts as a
+# load (fm_test_load_scaled_ticks above) before it counts as a
 # failure, so contention alone cannot turn a slow poll into a spurious one.
 wait_poll_cycle() {  # <state> <pid> [limit-ticks]
   local state=$1 pid=$2 limit=${3:-300} beat first='' now i=0 scaled=0
