@@ -1629,10 +1629,10 @@ test_portable_parallel_lanes_stay_duration_balanced() {
 
 test_portable_serial_shards_partition_the_serial_lane() {
   local listed
-  # The exhaustive real-inventory coverage guard checks all twelve shards for
+  # The exhaustive real-inventory coverage guard checks all thirteen shards for
   # nonempty, disjoint membership and exact union. Exercise the public valid
   # shard-list path once here; invalid shard names are checked below.
-  listed=$("$RUNNER" --list --lane portable-serial-1of12)
+  listed=$("$RUNNER" --list --lane portable-serial-1of13)
   [ -n "$listed" ] || fail "portable serial shard 1 of 11 selected no tests"
   pass "portable serial shard listing is backed by the exhaustive coverage guard"
 }
@@ -1713,7 +1713,7 @@ test_portable_serial_shard_lane_refusals() {
   local RUNNER="$FIXTURE_RUNNER"
   local tmp count rc other
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-shard-lane.XXXXXX")
-  count=12
+  count=13
   other=$((count + 1))
 
   # A lane built for a different shard count must refuse rather than run a
