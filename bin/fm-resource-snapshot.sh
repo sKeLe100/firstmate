@@ -39,6 +39,11 @@
 #
 # "Lane" always means the spend lane: claude#1, claude#2, opencode-go, codex
 # (other models report `unknown`, which the model column still explains).
+# ctx_band is the worker's own harness context band as `<band>(<pct>%)`:
+# bin/fm-context-usage.sh reads a Claude transcript and
+# bin/fm-opencode-context-usage.sh reads OpenCode's session store; both use the
+# config/context-thresholds bands. It is `unknown` when the harness's store has
+# no evidence and `n/a` for a harness with no context reader.
 # Every figure carries the UTC read time of the snapshot run that produced it;
 # a stale or failed figure is labelled stale/failed, never rendered as zero.
 #
@@ -286,9 +291,20 @@ context_band() {  # <task> <harness> <worktree> <account>
     jq -r --arg id "$id" '.[$id] // "n/a"' "$FM_RESOURCE_CONTEXT_FIXTURE" 2>/dev/null || printf 'n/a'
     return
   fi
-  [ "$harness" = claude ] && [ -n "$wt" ] || { printf 'n/a'; return; }
-  line=$(fm_run_timed "$CONTEXT_TIMEOUT" env FM_HOME="$wt" FM_CLAUDE_STORE="${account:-auto}" \
-    "$SCRIPT_DIR/fm-context-usage.sh" 2>/dev/null </dev/null | head -1)
+  [ -n "$wt" ] || { printf 'n/a'; return; }
+  case "$harness" in
+    claude)
+      [ -x "$SCRIPT_DIR/fm-context-usage.sh" ] || { printf 'n/a'; return; }
+      line=$(fm_run_timed "$CONTEXT_TIMEOUT" env FM_HOME="$wt" FM_CLAUDE_STORE="${account:-auto}" \
+        "$SCRIPT_DIR/fm-context-usage.sh" 2>/dev/null </dev/null | head -1) ;;
+    opencode)
+      [ -x "$SCRIPT_DIR/fm-opencode-context-usage.sh" ] || { printf 'n/a'; return; }
+      line=$(fm_run_timed "$CONTEXT_TIMEOUT" env FM_HOME="$wt" \
+        "$SCRIPT_DIR/fm-opencode-context-usage.sh" --worktree "$wt" \
+        --session-file "$STATE/$id.opencode-session" 2>/dev/null </dev/null | head -1) ;;
+    *)
+      printf 'n/a'; return ;;
+  esac
   band=$(printf '%s' "$line" | sed -n 's/.*band=\([A-Za-z_-]*\).*/\1/p')
   pct=$(printf '%s' "$line" | sed -n 's/.*percent=\([0-9.]*\).*/\1/p')
   if [ -z "$band" ]; then printf 'unknown'; return; fi

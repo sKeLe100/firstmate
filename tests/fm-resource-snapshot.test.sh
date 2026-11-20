@@ -522,7 +522,47 @@ test_live_reconciliation() {
   pass "the live snapshot matches the raw readers for workers, quota, drives, panes, roles, GitLab, and Forgejo"
 }
 
+test_opencode_worker_gets_a_context_band() {
+  setup_fixture
+  local store models out
+  store="$TMP_ROOT/fixture/opencode-store"
+  models="$TMP_ROOT/fixture/opencode-models.json"
+  mkdir -p "$store"
+  printf '%s\n' '{"opencode-go":{"models":{"deepseek-v4.1-flash":{"limit":{"context":1000000}}}}}' > "$models"
+  python3 - "$store/opencode.db" "$TMP_ROOT/fixture/nowhere" <<'PY'
+import json, sqlite3, sys
+db, wt = sys.argv[1], sys.argv[2]
+con = sqlite3.connect(db)
+con.executescript(
+    "CREATE TABLE session (id text PRIMARY KEY, directory text, parent_id text,"
+    " model text, time_updated integer);"
+    "CREATE TABLE message (id text PRIMARY KEY, session_id text,"
+    " time_created integer, data text);"
+)
+con.execute("INSERT INTO session VALUES (?,?,?,?,?)", ("ses_beta", wt, None, None, 1795123200000))
+con.execute("INSERT INTO message VALUES (?,?,?,?)", ("m1", "ses_beta", 1, json.dumps(
+    {"role": "assistant", "providerID": "opencode-go", "modelID": "deepseek-v4.1-flash",
+     "tokens": {"input": 1000, "output": 50, "cache": {"read": 159000, "write": 0}}})))
+con.commit()
+PY
+  out=$(env PATH="$FB:$BASE_PATH" FM_HOME="$HOME_DIR" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_SKIP_REMOTE=1 \
+    FM_OPENCODE_STORE="$store" FM_OPENCODE_MODELS="$models" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1)
+  printf '%s\n' "$out" > "$TMP_ROOT/opencode-context.json"
+  jq -e '.workers[] | select(.task == "beta") | .ctx_band == "warn(16.0%)"' \
+    "$TMP_ROOT/opencode-context.json" >/dev/null \
+    || fail "opencode worker must get its context band: $(jq -c '.workers' "$TMP_ROOT/opencode-context.json")"
+  pass "an opencode worker's context band comes from its session store"
+}
+
 test_every_section_renders_and_agrees
+test_opencode_worker_gets_a_context_band
 test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
 test_down_pc02_keeps_pc01
