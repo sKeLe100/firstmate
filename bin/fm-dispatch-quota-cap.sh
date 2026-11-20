@@ -72,6 +72,7 @@
 #   codex_spawn: yes|no
 #   claude_pace: <burnMultiple the pace rows used, 0.00 when none applied>
 #   claude_account: <ordinary|/path>
+#   claude_reading: available|unavailable
 #   claude_lanes: <n>
 #   claude_runway_cap: none|0|1
 #   claude_runway_block: yes|no
@@ -411,6 +412,7 @@ print(f"effective_cap: {cap}")
 print(f"codex_spawn: {codex_spawn}")
 print(f"claude_pace: {pace_burn_used:.2f}")
 print(f"claude_account: {account}")
+print(f"claude_reading: {'unavailable' if unavailable else 'available'}")
 print(f"claude_lanes: {lanes}")
 print(f"claude_runway_cap: {'none' if runway_cap is None else runway_cap}")
 print(f"claude_runway_block: {'yes' if block else 'no'}")

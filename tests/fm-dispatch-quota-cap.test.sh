@@ -85,6 +85,7 @@ home=$(mk_home default)
 out=$(run_cap "$home" "$(quota_doc calm 80 4 behind 0.8 behind)") || fail "calm quota must succeed: $out"
 assert_contains "$out" "effective_cap: 3" "no ladder row applies: base cap 3 stands, got: $out"
 assert_contains "$out" "codex_spawn: yes" "Codex behind pace may spawn, got: $out"
+assert_contains "$out" "claude_reading: available" "a healthy reading is reported available, got: $out"
 assert_contains "$out" "claude_runway_cap: none" "a healthy account has no runway cap, got: $out"
 assert_contains "$out" "claude_runway_block: no" "a healthy account admits a lane, got: $out"
 
@@ -209,6 +210,7 @@ assert_contains "$out" "claude_runway_block: no" "another account's lane does no
 # 11. An unavailable or rate-limited reading is tight (cap 1), never headroom
 # and never a gate failure.
 out=$(run_cap "$home" "$(quota_doc auth 80 4 behind 0.8 behind '' '' '' '' auth_required)") || fail "auth_required must not refuse the gate: $out"
+assert_contains "$out" "claude_reading: unavailable" "an unavailable reading is reported unavailable, got: $out"
 assert_contains "$out" "claude_runway_cap: 1" "an unavailable reading is tight, got: $out"
 assert_contains "$out" "quota reading unavailable" "the reason discloses the unavailable reading, got: $out"
 assert_contains "$out" "effective_cap: 1" "an unavailable reading tightens the effective cap, got: $out"
