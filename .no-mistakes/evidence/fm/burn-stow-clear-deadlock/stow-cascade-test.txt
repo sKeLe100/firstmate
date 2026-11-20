@@ -1,0 +1,7 @@
+ok - each home is accounted against its own allowance instead of a fleet total
+ok - the cascade emits one stanza per registered home and refuses a double-counted registry
+ok - the completion marker follows dispatch, never a background secondmate stow
+ok - transport follows placement and live-agent state, and a remote home without an agent defers
+ok - each stanza carries the facts a per-home receipt needs, before and after curation
+ok - one slow or unreachable home is bounded and every other home still reports
+ok - the cascade stays silent with no secondmates and never runs from a secondmate home
