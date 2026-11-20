@@ -166,6 +166,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/fleet/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/harness-adapters/SKILL.md",
       "audience": "agent-runtime"
     },

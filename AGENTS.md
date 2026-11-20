@@ -299,6 +299,8 @@ Load the `autonomous` skill when the captain invokes `/autonomous`, mentions sta
 
 Load `bearings` on a contributions check wake or when filing work linked to an upstream issue; its contribution-follow-up section owns triage and exact signal acknowledgement.
 
+Load `fleet` when the captain invokes `/fleet` or asks for a fleet resource, quota, pane, worker, secondmate, or role inventory; it is read-only and never supervises.
+
 When any wake reports a merged PR for a project cloned in this home, refresh that clone through the guarded fleet-sync path.
 When Relay-linked work reaches a milestone or terminal state, load `fmx-respond`; before terminal teardown, use its promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up so the link clears even if earlier follow-ups were spent.
 
