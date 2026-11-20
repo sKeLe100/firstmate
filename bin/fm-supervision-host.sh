@@ -84,6 +84,9 @@
 # the BRANCH OUTCOMES section (bin/fm-wake-drain.sh) presents every
 # unprocessed captain outcome until main acknowledges it. Otherwise the host
 # parks on the successor.
+# While away, a stale wake on a worker that already drew
+# FM_SUPERVISION_HOST_LADDER_LIMIT (3) identical captain verdicts with no state
+# change (bin/fm-branch-outcome.sh repeats) skips the engine and goes to main.
 # Every other outcome exits with the close's own reason line plus one
 # "supervision-host:" line saying why main has this wake, after stopping the
 # successor cycle so main's next turn end starts from the same state as
@@ -218,6 +221,8 @@ PARK_SECONDS=$(numeric_or "${FM_SUPERVISION_HOST_PARK_SECONDS:-}" 27000)
 PARK_LIMIT=$(numeric_or "${FM_SUPERVISION_HOST_PARK_LIMIT:-}" "$PARK_SECONDS")
 { [ "$PARK_LIMIT" -lt 28800 ] && [ "$PARK_LIMIT" -ge "$PARK_SECONDS" ]; } 2>/dev/null || PARK_LIMIT=$PARK_SECONDS
 TURN_TIMEOUT=$(numeric_or "${FM_SUPERVISION_HOST_TURN_TIMEOUT:-}" 1200)
+# Identical captain verdicts on one stale worker, while away, before main gets its wake.
+WAKE_LADDER_LIMIT=$(numeric_or "${FM_SUPERVISION_HOST_LADDER_LIMIT:-}" 3)
 ROTATE_TURNS=$(numeric_or "${FM_SUPERVISION_HOST_ROTATE_TURNS:-}" 20)
 READY_TIMEOUT=$(numeric_or "${FM_SUPERVISION_HOST_READY_TIMEOUT:-}" 25)
 POLL=$(numeric_or "${FM_SUPERVISION_HOST_POLL:-}" 1)
@@ -837,6 +842,13 @@ health_record() {  # <engine-error 0|1> <reports>
   health_save
 }
 
+# True when one of the claimed wake rows is a stale wake, whichever close
+# happened to carry it.
+ladder_claims_stale() {  # <rows>
+  awk -F '\t' -v rows=" $1 " '$3 == "stale" && index(rows, " " $2 " ") { found = 1 } END { exit !found }' \
+    "$STATE/.wake-queue" 2>/dev/null
+}
+
 # Handle one close on the engine, in the posture the record gives when the
 # turn starts (TURN_POSTURE). Returns 0 when the wake is handled (or held
 # nothing the branch may claim), 2 with ATTENDED_WHY set when the turn starts
@@ -846,7 +858,7 @@ health_record() {  # <engine-error 0|1> <reports>
 # never a subshell, because it advances the host's grant and turn state.
 handle_wake() {  # <reason-lines>
   local reason=$1 first scope status corrupted rows tasks unscoped rc turn readback
-  local receipts usage result errors unacked mirror
+  local receipts usage result errors unacked mirror repeats
   LAST_TURN=
   ENGINE_ERROR=0
   HEALTH_NOTE=
@@ -876,6 +888,21 @@ handle_wake() {  # <reason-lines>
   if [ "$status" = empty ] || [ -z "$rows" ]; then
     log_line "no-op	nothing for the branch to claim	$first"
     return 0
+  fi
+  # The ladder's end action: the engine's only output while away is a captain
+  # verdict left for the return brief, so a worker whose stale wake already
+  # drew WAKE_LADDER_LIMIT identical verdicts with no state change gets main.
+  if [ "$TURN_POSTURE" = away ] && ladder_claims_stale "$rows"; then
+    # shellcheck disable=SC2086 # tasks is a space-separated list of task ids.
+    set -- $tasks
+    if [ "$#" -eq 1 ]; then
+      repeats=$("$SCRIPT_DIR/fm-branch-outcome.sh" repeats --task "$1" 2>/dev/null) || repeats=0
+      case "$repeats" in ''|*[!0-9]*) repeats=0 ;; esac
+      if [ "$repeats" -ge "$WAKE_LADDER_LIMIT" ]; then
+        HANDLE_WHY="the away session already gave $repeats identical captain verdicts on $1 with no change in its state"
+        return 1
+      fi
+    fi
   fi
   if [ "$GRANT_ACTIVE" -eq 0 ]; then
     if ! "$SCRIPT_DIR/fm-wake-grant.sh" activate "$HOST_PID" "$GEN" >/dev/null 2>&1; then

@@ -163,7 +163,7 @@ RECORDED_AGO_JQ='def recorded_ago: ([$now - .epoch, 0] | max) as $s
     else "\($s / 86400 | floor)d" end;'
 
 usage() {
-  echo "usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | present | processed-init [--held-lock] | list [--recent <n>] | lookup --seqs <n,...> | startup-replay | seed-tail" >&2
+  echo "usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | present | processed-init [--held-lock] | list [--recent <n>] | repeats --task <id> | lookup --seqs <n,...> | startup-replay | seed-tail" >&2
   exit 2
 }
 
@@ -714,6 +714,34 @@ case "$CMD" in
     fi
     if [ -s "$STORE" ]; then
       tail -n "$RECENT" "$STORE"
+    fi
+    fm_lock_release "$LOCK"
+    ;;
+  repeats)
+    # The length of the task's trailing run of captain outcomes recorded at
+    # the task's CURRENT status position: how many times in a row the branch
+    # gave the same captain verdict while the worker's state did not move. A
+    # routine outcome, an older status position, or a status change since
+    # breaks the run, so 0 means the ladder starts over. The supervision host
+    # hands a stale wake to main once this reaches its limit while away.
+    [ "$#" -eq 2 ] && [ "$1" = --task ] || usage
+    TASK=$2
+    outcome_index_path "$TASK" >/dev/null || usage
+    fm_lock_acquire_wait "$LOCK"
+    if ! last_seq >/dev/null; then
+      fm_lock_release "$LOCK"
+      echo "error: refusing read because the outcome store is malformed or non-sequential" >&2
+      exit 1
+    fi
+    capture_status_position "$TASK"
+    if [ -s "$STORE" ]; then
+      jq -s --arg task "$TASK" --argjson ep "$CAPTURED_STATUS_ENDPOINT" --arg id "$CAPTURED_STATUS_IDENT" '
+        [.[] | select(.task == $task)] | reverse
+        | [ foreach .[] as $r (true;
+            . and $r.verdict == "captain" and $r.statusEndpoint == $ep and $r.statusIdent == $id;
+            .) ] | map(select(.)) | length' "$STORE"
+    else
+      echo 0
     fi
     fm_lock_release "$LOCK"
     ;;
