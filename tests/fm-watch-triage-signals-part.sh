@@ -820,7 +820,7 @@ test_afk_procevent_covered_signal_queued_not_absorbed() {
   export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || { unset FM_FAKE_CREW_STATE
+  wait_for_exit_scaled "$pid" 100 || { unset FM_FAKE_CREW_STATE
     fail "with .afk present the watcher did not exit one-shot for a coverable signal: $(cat "$out")"; }
   unset FM_FAKE_CREW_STATE
   grep -F "signal: $status_file" "$out" >/dev/null \
@@ -867,7 +867,7 @@ test_turn_ended_not_working_surfaced() {
   export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface a turn-end whose crew is not provably working"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a turn-end whose crew is not provably working"
   grep -F "signal: $state/task.turn-ended" "$out" >/dev/null || fail "watcher did not print the surfaced turn-end signal"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the surfaced turn-end failed"
   grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$state/task.turn-ended" >/dev/null || fail "surfaced turn-end was not queued"
@@ -985,7 +985,7 @@ test_turn_ended_churn_resets_prior_stale_classification() {
   # This is a new quiet interval, so it must surface through ordinary staleness
   # instead of inheriting the earlier interval's wedge timer.
   printf 'idle prompt from an earlier turn' > "$capture_file"
-  wait_for_exit "$pid" 100 \
+  wait_for_exit_scaled "$pid" 100 \
     || { reap "$pid"; fail "a stopped pane matching an earlier stale render waited for the wedge timeout"; }
   grep -Fx "stale: $window" "$out" >/dev/null \
     || fail "the returned stale render did not surface through ordinary staleness"
@@ -1026,7 +1026,7 @@ test_fresh_watcher_seeds_idle_clock_from_stop_record() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 150 || { reap "$pid"; fail "a restarted watcher restarted the idle clock for an already-long-idle pane: $(cat "$out")"; }
+  wait_for_exit_scaled "$pid" 150 || { reap "$pid"; fail "a restarted watcher restarted the idle clock for an already-long-idle pane: $(cat "$out")"; }
   grep -F "stale: $window" "$out" >/dev/null || fail "fresh watcher did not print a stale wake for the long-idle pane"
   grep -F "possible wedge" "$out" >/dev/null || fail "fresh watcher did not escalate the long-idle pane as a possible wedge"
   [ "$(cat "$state/.stale-since-$key" 2>/dev/null || echo 0)" -lt $(( $(date +%s) - 400 )) ] \
@@ -1071,7 +1071,7 @@ SH
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 150 || { reap "$pid"; fail "a failed first capture consumed the one-time idle-clock seed: $(cat "$out")"; }
+  wait_for_exit_scaled "$pid" 150 || { reap "$pid"; fail "a failed first capture consumed the one-time idle-clock seed: $(cat "$out")"; }
   [ -e "$dir/capture-failed-once" ] || fail "the fixture's first capture did not fail"
   grep -F "possible wedge" "$out" >/dev/null || fail "watcher did not escalate the long-idle pane after a failed first capture"
   [ "$(cat "$state/.stale-since-$key" 2>/dev/null || echo 0)" -lt $(( $(date +%s) - 400 )) ] \
@@ -1218,7 +1218,7 @@ test_turn_ended_still_pane_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface a bare turn-end from an unchanged pane"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a bare turn-end from an unchanged pane"
   grep -F "signal: $state/codexstopped.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the surfaced still-pane turn-end signal"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the still-pane turn-end failed"
@@ -1245,7 +1245,7 @@ test_turn_ended_malformed_prior_hash_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a turn-end backed by a malformed prior hash"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a turn-end backed by a malformed prior hash"
   grep -F "signal: $state/codexmalformed.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the surfaced malformed-hash turn-end"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1286,7 +1286,7 @@ unknown_alive_stale_case() {  # <evidence: status|worktree|none>
 
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "[$evidence] the first unknown-but-alive stale sight did not surface"
+  wait_for_exit_scaled "$pid" 100 || fail "[$evidence] the first unknown-but-alive stale sight did not surface"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "[$evidence] the first unknown-but-alive alarm changed its wording"
   if [ "$evidence" = none ]; then
     [ ! -e "$state/.paused-resurfaced-$key" ] || fail "[none] an alarm without progress evidence recorded a repeat bound"
@@ -1305,7 +1305,7 @@ unknown_alive_stale_case() {  # <evidence: status|worktree|none>
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
   if [ "$evidence" = none ]; then
-    wait_for_exit "$pid" 100 || fail "[none] an unknown-but-alive pane without progress evidence went quiet"
+    wait_for_exit_scaled "$pid" 100 || fail "[none] an unknown-but-alive pane without progress evidence went quiet"
     grep -Fx "stale: $window" "$out" >/dev/null \
       || fail "[none] an unknown-but-alive pane without progress evidence did not re-surface: $(cat "$out")"
     unset FM_FAKE_CREW_STATE FM_FAKE_TMUX_WINDOW FM_FAKE_TMUX_CURRENT_COMMAND FM_FAKE_TMUX_CAPTURE FM_PAUSE_RESURFACE_SECS
@@ -1328,7 +1328,7 @@ unknown_alive_stale_case() {  # <evidence: status|worktree|none>
   : > "$out"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "[$evidence] an expired unknown-but-alive bound did not re-surface"
+  wait_for_exit_scaled "$pid" 100 || fail "[$evidence] an expired unknown-but-alive bound did not re-surface"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "[$evidence] the expired unknown-but-alive bound changed wake wording: $(cat "$out")"
   unset FM_FAKE_CREW_STATE FM_FAKE_TMUX_WINDOW FM_FAKE_TMUX_CAPTURE FM_FAKE_TMUX_CURRENT_COMMAND FM_PAUSE_RESURFACE_SECS
 }
@@ -1361,7 +1361,7 @@ test_turn_ended_trailing_newline_prior_hash_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a turn-end backed by a newline-terminated prior hash"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a turn-end backed by a newline-terminated prior hash"
   grep -F "signal: $state/codexnewline.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the surfaced newline-hash turn-end"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1392,7 +1392,7 @@ test_secondmate_turn_ended_churning_pane_surfaced() {
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_SECONDMATE_LIVENESS_SECS=99999999 \
     "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface a churning secondmate turn-end"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a churning secondmate turn-end"
   grep -F "signal: $state/mate.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the surfaced churning secondmate turn-end"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1421,7 +1421,7 @@ test_turn_ended_colliding_window_key_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface a turn-end with an ambiguous pane marker"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a turn-end with an ambiguous pane marker"
   grep -F "signal: $state/a.b.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the surfaced ambiguous-marker turn-end"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1450,7 +1450,7 @@ test_turn_ended_duplicate_endpoint_records_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a turn-end shared by two endpoint records"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a turn-end shared by two endpoint records"
   grep -F "signal: $state/first.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the surfaced duplicate-endpoint turn-end"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1523,7 +1523,7 @@ test_turn_ended_mixed_positive_evidence_batch_default_off() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a mixed-evidence batch without the opt-in flag"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a mixed-evidence batch without the opt-in flag"
   grep -F "$state/firstoff.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the first default-off turn-end"
   grep -F "$state/secondoff.turn-ended" "$out" >/dev/null \
@@ -1560,7 +1560,7 @@ test_status_and_turn_end_batch_never_uses_churn_evidence() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a status-and-turn-end batch on churn evidence"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a status-and-turn-end batch on churn evidence"
   grep -F "$state/firststatus.status" "$out" >/dev/null \
     || fail "watcher did not print the status file from the surfaced mixed batch"
   grep -F "$state/secondturn.turn-ended" "$out" >/dev/null \
@@ -1598,7 +1598,7 @@ test_turn_ended_churn_absorb_off_by_default() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a churning turn-end without the opt-in flag"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a churning turn-end without the opt-in flag"
   grep -F "signal: $state/codexdefault.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the surfaced default-off churning turn-end"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1636,7 +1636,7 @@ test_turn_ended_churn_absorb_bounded() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 \
+  wait_for_exit_scaled "$pid" 100 \
     || fail "a perpetually churning pane deferred its turn-end past the absorb bound"
   grep -F "signal: $state/codexclock.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the turn-end surfaced by the exhausted absorb bound"
@@ -1668,7 +1668,7 @@ test_turn_ended_churn_timer_write_failure_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>/dev/null &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a churning turn-end without recording its deadline"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a churning turn-end without recording its deadline"
   grep -F "signal: $state/codextimer.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the turn-end whose churn deadline could not be recorded"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1696,7 +1696,7 @@ test_turn_ended_invalid_churn_bound_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>/dev/null &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface a turn-end with an invalid churn bound"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a turn-end with an invalid churn bound"
   grep -F "signal: $state/codexbound.turn-ended" "$out" >/dev/null \
     || fail "watcher terminated before printing the invalid-bound turn-end"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1726,7 +1726,7 @@ test_turn_ended_oversized_churn_bound_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>/dev/null &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface a turn-end with an oversized churn bound"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a turn-end with an oversized churn bound"
   grep -F "signal: $state/codexoversized.turn-ended" "$out" >/dev/null \
     || fail "watcher terminated before printing the oversized-bound turn-end"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1767,7 +1767,7 @@ test_turn_ended_invalid_churn_deadline_surfaced() {
       FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
       FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>/dev/null &
     pid=$!
-    wait_for_exit "$pid" 100 || fail "watcher did not surface a turn-end with a $variant churn deadline"
+    wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a turn-end with a $variant churn deadline"
     grep -F "signal: $state/codexdeadline.turn-ended" "$out" >/dev/null \
       || fail "watcher terminated before printing the $variant-deadline turn-end"
     FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
@@ -1804,7 +1804,7 @@ test_turn_ended_surfaced_batch_opens_no_partial_deadline() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>/dev/null &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a batch containing an invalid churn deadline"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a batch containing an invalid churn deadline"
   grep -F "$state/first.turn-ended" "$out" >/dev/null \
     || fail "watcher did not print the first turn-end from the surfaced batch"
   grep -F "$state/second.turn-ended" "$out" >/dev/null \
@@ -1835,7 +1835,7 @@ test_working_note_not_working_surfaced() {
   export FM_FAKE_CREW_STATE='state: working · source: status-log · working: compiling step 2'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface a working: note whose crew has no running pipeline and an idle pane"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a working: note whose crew has no running pipeline and an idle pane"
   grep -F "signal: $status_file" "$out" >/dev/null || fail "watcher did not print the surfaced working: signal"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the surfaced working: note failed"
   grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$status_file" >/dev/null || fail "surfaced working: note was not queued"
@@ -1854,7 +1854,7 @@ test_secondmate_status_note_surfaced_despite_busy_agent() {
   export FM_FAKE_CREW_STATE='state: working · source: run-step · running'
   FM_CONFIG_OVERRIDE="$(churn_config "$dir")" watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a busy secondmate's routed status note"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a busy secondmate's routed status note"
   grep -F "signal: $state/mate.status" "$out" >/dev/null \
     || fail "watcher did not print the surfaced secondmate note"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the surfaced note failed"
@@ -1882,7 +1882,7 @@ test_secondmate_routine_progress_absorbed_then_note_surfaced() {
   [ -s "$state/.seen-mate_status" ] || { reap "$pid"; fail "absorbed secondmate progress did not advance its .seen-* suppressor"; }
   # ...while a note: from the SAME still-busy mate surfaces on the next append.
   printf 'note: routed reply for the parent\n' >> "$state/mate.status"
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a busy secondmate's note after absorbing its routine progress"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a busy secondmate's note after absorbing its routine progress"
   grep -F "signal: $state/mate.status" "$out" >/dev/null \
     || fail "watcher did not print the surfaced secondmate note"
   grep -F "$state/mate.status" "$state/.wake-queue" >/dev/null \
@@ -1902,7 +1902,7 @@ test_secondmate_buried_block_wakes_despite_busy_agent() {
     export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy'
     watch_bg "$state" "$fakebin" "$out"
     pid=$!
-    wait_for_exit "$pid" 100 || fail "busy secondmate's blocker did not wake after '$suffix'"
+    wait_for_exit_scaled "$pid" 100 || fail "busy secondmate's blocker did not wake after '$suffix'"
     grep -F "signal: $state/mate.status" "$out" >/dev/null \
       || fail "busy secondmate's blocker was not surfaced"
     grep -F "$state/mate.status" "$state/.wake-queue" >/dev/null \
@@ -1936,7 +1936,7 @@ test_self_announced_close_does_not_rewake_but_next_note_does() {
   # A later, different note on the SAME task still wakes: dedup is keyed on the
   # exact announced bytes, never on task identity.
   printf 'needs-decision [key=k2]: a genuinely new decision\n' >> "$status_file"
-  wait_for_exit "$pid" 100 || fail "a later different note after a self-announced close was swallowed"
+  wait_for_exit_scaled "$pid" 100 || fail "a later different note after a self-announced close was swallowed"
   grep -F "signal: $status_file" "$out" >/dev/null \
     || fail "the later note did not surface as a signal"
   pass "a self-announced close never wakes its own home, and the next real note still does"
@@ -1970,7 +1970,7 @@ test_self_announced_close_after_open_decisions_fold_does_not_rewake() {
   [ ! -s "$out" ] || { reap "$pid"; fail "folded close printed a wake reason: $(cat "$out")"; }
   [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "folded close enqueued a durable wake"; }
   printf 'blocked: worker still needs help\n' >> "$status_file"
-  wait_for_exit "$pid" 100 || fail "a later worker line after a folded close was swallowed"
+  wait_for_exit_scaled "$pid" 100 || fail "a later worker line after a folded close was swallowed"
   grep -F "signal: $status_file" "$out" >/dev/null \
     || fail "the later worker line did not surface as a signal"
   pass "a close after OPEN DECISIONS fold never wakes its own home, and the next real note still does"
@@ -1991,7 +1991,7 @@ test_folded_worker_decision_without_home_append_still_wakes() {
   export FM_FAKE_CREW_STATE='state: unknown · source: none · idle worker'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "a folded worker decision with no home append was swallowed"
+  wait_for_exit_scaled "$pid" 100 || fail "a folded worker decision with no home append was swallowed"
   grep -F "signal: $status_file" "$out" >/dev/null \
     || fail "the folded worker decision did not surface as a signal: $(cat "$out")"
   pass "a folded worker decision with no home append still wakes"
@@ -2025,7 +2025,7 @@ test_separate_self_announced_answers_after_fold_wake_once() {
   export FM_FAKE_CREW_STATE='state: unknown · source: none · idle worker'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "the unclassified worker decisions were swallowed"
+  wait_for_exit_scaled "$pid" 100 || fail "the unclassified worker decisions were swallowed"
   grep -F "signal: $status_file" "$out" >/dev/null \
     || fail "the worker decisions did not surface as a signal: $(cat "$out")"
   ack_stopped_cycle "$state" || fail "could not handle the worker decisions' wake"
@@ -2038,7 +2038,7 @@ test_separate_self_announced_answers_after_fold_wake_once() {
   [ ! -s "$out" ] || { reap "$pid"; fail "the owned answers printed a wake reason: $(cat "$out")"; }
   [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "the owned answers enqueued another durable wake"; }
   printf 'blocked: need staging credentials\n' >> "$status_file"
-  wait_for_exit "$pid" 100 || fail "a later worker line after two owned answers was swallowed"
+  wait_for_exit_scaled "$pid" 100 || fail "a later worker line after two owned answers was swallowed"
   grep -F "signal: $status_file" "$out" >/dev/null \
     || fail "the later worker line did not surface as a signal"
   pass "separate answers over unclassified decisions wake once, and the next real note still does"
@@ -2069,7 +2069,7 @@ test_self_announced_close_after_fold_still_surfaces_folded_worker_failure() {
   export FM_FAKE_CREW_STATE='state: unknown · source: none · idle worker'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "the folded worker failure was swallowed by the supervisor's close"
+  wait_for_exit_scaled "$pid" 100 || fail "the folded worker failure was swallowed by the supervisor's close"
   grep -F "signal: $status_file" "$out" >/dev/null \
     || fail "the folded worker failure did not surface as a signal: $(cat "$out")"
   pass "a close after OPEN DECISIONS fold still surfaces a worker failure inside the folded span"
@@ -2103,7 +2103,7 @@ test_self_announced_close_after_fold_still_surfaces_folded_secondmate_lines() {
     export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy'
     watch_bg "$state" "$fakebin" "$out"
     pid=$!
-    wait_for_exit "$pid" 100 || fail "the supervisor's close swallowed folded secondmate lines: $lagging"
+    wait_for_exit_scaled "$pid" 100 || fail "the supervisor's close swallowed folded secondmate lines: $lagging"
     grep -F "signal: $status_file" "$out" >/dev/null \
       || fail "folded secondmate lines did not surface as a signal: $(cat "$out")"
   done

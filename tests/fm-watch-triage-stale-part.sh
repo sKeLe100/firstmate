@@ -16,7 +16,7 @@ test_actionable_signal_surfaced() {
   printf 'working: setup\nneeds-decision: pick A or B\n' > "$status_file"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not exit for an actionable needs-decision signal"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not exit for an actionable needs-decision signal"
   grep -F "signal: $status_file" "$out" >/dev/null || fail "watcher did not print the actionable signal reason"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the actionable signal failed"
   grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$status_file" >/dev/null || fail "actionable signal was not queued"
@@ -38,7 +38,7 @@ test_needs_decision_signal_payload_marked_for_branch_exclusion() {
   printf 'working: setup\nneeds-decision: pick A or B\n' > "$status_file"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not exit for an actionable needs-decision signal"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not exit for an actionable needs-decision signal"
   grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null \
     || fail "a needs-decision signal row was not payload-marked for branch exclusion: $(cat "$state/.wake-queue")"
   pass "a needs-decision signal row's queued payload is marked needs-decision: for branch exclusion"
@@ -58,7 +58,7 @@ test_needs_decision_reconciliation_required_still_marked() {
     > "$status_file"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not exit for a rejected-reserved-key needs-decision"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not exit for a rejected-reserved-key needs-decision"
   grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null \
     || fail "a reconciliation-required needs-decision row was not payload-marked for branch exclusion: $(cat "$state/.wake-queue")"
   pass "a reconciliation-required needs-decision row's queued payload is still marked needs-decision:"
@@ -76,7 +76,7 @@ test_captain_held_signal_payload_marked_for_branch_exclusion() {
   export FM_FAKE_CREW_STATE='state: working · source: run-step · still wrapping up'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher absorbed a captain-held signal while the crew was still working"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher absorbed a captain-held signal while the crew was still working"
   grep -F "signal: $status_file" "$out" >/dev/null \
     || fail "a captain-held signal changed its wake reason: $(cat "$out")"
   grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null \
@@ -94,7 +94,7 @@ test_pending_reply_escalation_signal_payload_marked_for_branch_exclusion() {
     "$corr" "$corr" > "$status_file"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not exit for a pending-reply escalation"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not exit for a pending-reply escalation"
   grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null \
     || fail "a pending-reply escalation was not payload-marked for branch exclusion: $(cat "$state/.wake-queue")"
   pass "a pending-reply second-mate escalation is marked for main-only routing"
@@ -108,7 +108,7 @@ test_ordinary_blocked_signal_payload_remains_branch_eligible() {
   printf 'blocked [key=dependency]: waiting for an upstream release\n' > "$status_file"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not exit for an ordinary blocked event"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not exit for an ordinary blocked event"
   grep -F "$(printf 'signal\ttask.status\tsignal:')" "$state/.wake-queue" >/dev/null \
     || fail "an ordinary blocked event lost branch-eligible routing: $(cat "$state/.wake-queue")"
   if grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null; then
@@ -127,7 +127,7 @@ test_routine_signal_payload_not_marked_needs_decision() {
   printf 'working: setup\ndone: migration complete ; needs-decision: documented in follow-up\n' > "$status_file"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not exit for an actionable done signal"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not exit for an actionable done signal"
   grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null \
     && fail "a routine done signal was incorrectly payload-marked needs-decision: $(cat "$state/.wake-queue")"
   grep -F "$(printf 'signal\ttask.status\tsignal:')" "$state/.wake-queue" >/dev/null \
@@ -157,7 +157,7 @@ test_actionable_signal_survives_a_later_routine_append() {
   export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 \
+  wait_for_exit_scaled "$pid" 100 \
     || { reap "$pid"; fail "watcher absorbed a needs-decision hidden behind a later working: line"; }
   grep -F "signal: $status_file" "$out" >/dev/null || fail "watcher did not print the actionable signal reason"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the masked signal failed"
@@ -197,7 +197,7 @@ SH
   export FM_STATUS_SPAN_READER="$reader" FM_TEST_SPAN_READS="$reads"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 \
+  wait_for_exit_scaled "$pid" 100 \
     || { reap "$pid"; fail "watcher did not surface a keyed decision appended to a long decision history"; }
   unset FM_STATUS_SPAN_READER FM_TEST_SPAN_READS
   grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null \
@@ -222,7 +222,7 @@ test_release_completion_survives_a_later_routine_append() {
   export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 \
+  wait_for_exit_scaled "$pid" 100 \
     || { reap "$pid"; fail "watcher absorbed a release/install completion hidden behind later cleanup chatter"; }
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the masked completion failed"
   grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$status_file" >/dev/null \
@@ -263,7 +263,7 @@ test_unreadable_status_reports_once_per_file_state() {
 
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || { reap "$pid"; fail "a dangling status symlink was not reported"; }
+  wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "a dangling status symlink was not reported"; }
   grep -Fx "signal: $status_file" "$out" >/dev/null \
     || fail "a dangling status symlink did not use the immediate signal path: $(cat "$out")"
   sig=$(status_observed_signature "$status_file")
@@ -285,7 +285,7 @@ test_unreadable_status_reports_once_per_file_state() {
   target="$dir/status-target-two-longer"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || { reap "$pid"; fail "a changed unreadable status did not report again"; }
+  wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "a changed unreadable status did not report again"; }
   [ "$(status_presentation_marker_offset "$marker" "$status_file")" = 0 ] \
     || fail "a changed unreadable status advanced its classification position"
   ack_stopped_cycle "$state" || fail "could not acknowledge the changed unreadable-status wake"
@@ -294,7 +294,7 @@ test_unreadable_status_reports_once_per_file_state() {
   cp "$target" "$status_file"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || { reap "$pid"; fail "a readable replacement did not surface preserved content"; }
+  wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "a readable replacement did not surface preserved content"; }
   [ "$(status_presentation_marker_offset "$marker" "$status_file")" = "$(size_of "$status_file")" ] \
     || fail "readable recovery did not classify content written before the failure"
   pass "unreadable status reports are bounded without advancing classification"
@@ -315,7 +315,7 @@ test_permission_recovery_surfaces_preserved_status() {
 
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 100 || { reap "$pid"; chmod 600 "$status_file"; fail "an unreadable regular status was not reported"; }
+  wait_for_exit_scaled "$pid" 100 || { reap "$pid"; chmod 600 "$status_file"; fail "an unreadable regular status was not reported"; }
   [ "$(status_presentation_marker_offset "$marker" "$status_file")" = 0 ] \
     || { chmod 600 "$status_file"; fail "an unreadable regular status advanced its classification position"; }
   ack_stopped_cycle "$state" || { chmod 600 "$status_file"; fail "could not acknowledge the unreadable regular-status wake"; }
@@ -329,7 +329,7 @@ test_permission_recovery_surfaces_preserved_status() {
   chmod 600 "$status_file"
   after_ident=$(_fm_open_decisions_file_ident "$status_file")
   [ "$after_ident" = "$before_ident" ] || { reap "$pid"; fail "the permission-only recovery changed file identity"; }
-  wait_for_exit "$pid" 100 || { reap "$pid"; fail "readability recovery did not surface preserved content"; }
+  wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "readability recovery did not surface preserved content"; }
   grep -Fx "signal: $status_file" "$out" >/dev/null \
     || fail "readability recovery did not use the actionable signal path: $(cat "$out")"
   [ "$(status_presentation_marker_offset "$marker" "$status_file")" = "$(size_of "$status_file")" ] \
@@ -353,7 +353,7 @@ test_terminal_stale_surfaced() {
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not exit for a stale pane on a terminal status"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not exit for a stale pane on a terminal status"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "watcher did not print the terminal stale wake"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the terminal stale failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "terminal stale was not queued"
@@ -413,7 +413,7 @@ test_stale_terminal_status_overridden_by_active_run() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not escalate an overridden stale terminal status past the threshold"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not escalate an overridden stale terminal status past the threshold"
   grep -F "stale: $window" "$out" >/dev/null || fail "escalation did not print a stale wake"
   grep -F "possible wedge" "$out" >/dev/null || fail "escalation did not flag a possible wedge"
   unset FM_FAKE_CREW_STATE
@@ -466,7 +466,7 @@ test_nonterminal_stale_provably_working_absorbed_then_escalated() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not escalate a provably-working non-terminal stale past the threshold"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not escalate a provably-working non-terminal stale past the threshold"
   grep -F "stale: $window" "$out" >/dev/null || fail "escalation did not print a stale wake"
   grep -F "possible wedge" "$out" >/dev/null || fail "escalation did not flag a possible wedge"
   [ ! -e "$state/.stale-since-$key" ] || fail "stale-since timer was not cleared after escalation"
@@ -504,7 +504,7 @@ test_nonterminal_stale_not_working_surfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface a not-provably-working non-terminal stale at once"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface a not-provably-working non-terminal stale at once"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "watcher did not print the immediate stale wake"
   grep -F "possible wedge" "$out" >/dev/null && fail "an immediate stopped-crew stale was mislabeled a wedge"
   [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor was not advanced on surface"
@@ -573,7 +573,7 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not re-surface a declared pause past the threshold"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not re-surface a declared pause past the threshold"
   grep -F "stale: $window" "$out" >/dev/null || fail "re-surface did not print a stale wake"
   grep -F "awaiting external" "$out" >/dev/null || fail "re-surface was not labeled a paused/awaiting-external recheck"
   grep -F "possible wedge" "$out" >/dev/null && fail "a declared pause was mislabeled a possible wedge"
@@ -608,7 +608,7 @@ test_own_work_wait_keeps_first_alert_then_long_cadence() {
       FM_FAKE_CREW_STATE='state: paused · source: status-log · waiting for own work' \
       watch_bg "$state" "$fakebin" "$out" env FM_PAUSE_RESURFACE_SECS=999
     pid=$!
-    wait_for_exit "$pid" 100 || { reap "$pid"; fail "$wait_kind lost its first-sight alert"; }
+    wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "$wait_kind lost its first-sight alert"; }
     grep -Fx "stale: $window" "$out" >/dev/null || fail "$wait_kind did not surface as a plain stale"
     ack_stopped_cycle "$state" || fail "could not acknowledge $wait_kind first alert"
 
@@ -639,7 +639,7 @@ test_own_work_wait_keeps_first_alert_then_long_cadence() {
       watch_bg "$state" "$fakebin" "$dir/long-cadence.out" env \
         FM_STALE_ESCALATE_SECS=1 FM_PAUSE_RESURFACE_SECS=240
     pid=$!
-    wait_for_exit "$pid" 100 || { reap "$pid"; fail "$wait_kind never rechecked on the long cadence"; }
+    wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "$wait_kind never rechecked on the long cadence"; }
     grep -F 'awaiting external' "$dir/long-cadence.out" >/dev/null || fail "$wait_kind recheck lost its pause reason"
     grep -F 'possible wedge' "$dir/long-cadence.out" >/dev/null && fail "$wait_kind recheck became a wedge"
   done
@@ -657,7 +657,7 @@ test_own_work_wait_keeps_first_alert_then_long_cadence() {
     FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available' \
     watch_bg "$state" "$fakebin" "$out" env FM_STALE_ESCALATE_SECS=999
   pid=$!
-  wait_for_exit "$pid" 100 || { reap "$pid"; fail "undeclared idle worker no longer alarms"; }
+  wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "undeclared idle worker no longer alarms"; }
   grep -Fx "stale: $window" "$out" >/dev/null || fail "undeclared idle worker did not surface"
   grep -F "stale: $window" "$state/.wake-queue" >/dev/null || fail "undeclared idle worker's wake was not queued"
   pass "own-work waits keep one first alert, then bounded rechecks without wedges; undeclared idle still alarms"
@@ -737,7 +737,7 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "captain-held dead-agent pane did not re-surface on the bounded cadence"
+  wait_for_exit_scaled "$pid" 100 || fail "captain-held dead-agent pane did not re-surface on the bounded cadence"
   grep -F "awaiting the captain" "$state/.wake-queue" >/dev/null \
     || fail "captain-held dead-agent pane surfaced as a stopped crew instead of a captain-owned recheck: $(cat "$state/.wake-queue")"
   grep -F "awaiting external" "$state/.wake-queue" >/dev/null \
@@ -762,7 +762,7 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" >> "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "live external-decision gate did not surface immediately"
+  wait_for_exit_scaled "$pid" 100 || fail "live external-decision gate did not surface immediately"
   ack_stopped_cycle "$state" || fail "could not acknowledge the immediate external-decision surface"
 
   # Re-arm with the stale timer already beyond the wedge threshold. This is the
@@ -823,7 +823,7 @@ test_absorbed_replacement_wait_does_not_inherit_the_old_throttle() {
       FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
       FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" >> "$out" &
     pid=$!
-    wait_for_exit "$pid" 100 || fail "[$name] initial declared wait did not re-surface"
+    wait_for_exit_scaled "$pid" 100 || fail "[$name] initial declared wait did not re-surface"
     ack_stopped_cycle "$state" || fail "[$name] could not acknowledge the initial declared wait"
 
     printf '%s\n' "$replacement" >> "$statusf"
@@ -836,7 +836,7 @@ test_absorbed_replacement_wait_does_not_inherit_the_old_throttle() {
       FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
       FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" >> "$out" &
     pid=$!
-    wait_for_exit "$pid" 100 \
+    wait_for_exit_scaled "$pid" 100 \
       || { reap "$pid"; fail "[$name] replacement declared wait inherited the old throttle"; }
     wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' \
       "$state/.wake-queue" 2>/dev/null || echo 0)
@@ -870,7 +870,7 @@ parked_watch_round() {  # <state> <fakebin> <out> <capture> <window> <exit|absor
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" >> "$out" &
   pid=$!
   if [ "$mode" = exit ]; then
-    wait_for_exit "$pid" 100 || { reap "$pid"; return 1; }
+    wait_for_exit_scaled "$pid" 100 || { reap "$pid"; return 1; }
     return 0
   fi
   while [ "$cycles" -lt 4 ]; do
@@ -1060,7 +1060,7 @@ wedge_threshold_round() {  # <state> <fakebin> <out> <capture> <window> <verdict
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" >> "$out" &
   pid=$!
   if [ "$mode" = exit ]; then
-    wait_for_exit "$pid" 100 || { reap "$pid"; return 1; }
+    wait_for_exit_scaled "$pid" 100 || { reap "$pid"; return 1; }
     return 0
   fi
   while [ "$cycles" -lt 3 ]; do

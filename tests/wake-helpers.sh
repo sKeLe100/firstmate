@@ -348,16 +348,9 @@ fm_test_load_scaled_ticks() {  # <base-ticks> -> ticks on stdout
 # Only pass a process owned by this test. A deadline must also bound cleanup:
 # TERM can be ignored or remain pending on a stopped child, so never follow it
 # with an unbounded wait. Keep process evidence before the final owned-PID kill.
-# The <limit> ceiling is load-scaled (fm_test_load_scaled_ticks) once it runs out.
 wait_for_exit() {
-  local pid=$1 limit=${2:-50} i=0 scaled=0
-  while :; do
-    if [ "$i" -ge "$limit" ]; then
-      [ "$scaled" -eq 0 ] || break
-      scaled=1
-      limit=$(fm_test_load_scaled_ticks "$limit")
-      [ "$i" -lt "$limit" ] || break
-    fi
+  local pid=$1 limit=${2:-50} i=0
+  while [ "$i" -lt "$limit" ]; do
     if ! is_live_non_zombie "$pid"; then
       wait "$pid"
       return "$?"

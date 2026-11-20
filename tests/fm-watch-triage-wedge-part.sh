@@ -85,7 +85,7 @@ hold_watch_surface() {  # <dir> <out> <capture> <pane-text>
   local dir=$1 out=$2 capture=$3 text=$4
   printf '%s\n' "$text" > "$capture"
   hold_watch_launch "$dir" "$out" "$capture"
-  wait_for_exit "$HOLD_WATCH_PID" 100 || { reap "$HOLD_WATCH_PID"; return 1; }
+  wait_for_exit_scaled "$HOLD_WATCH_PID" 100 || { reap "$HOLD_WATCH_PID"; return 1; }
   return 0
 }
 
@@ -212,7 +212,7 @@ test_failed_wake_append_does_not_arm_the_captain_hold_throttle() {
   mkdir -p "$state/.wake-queue"
   printf 'idle, elapsed 1s\n' > "$capture"
   hold_watch_launch "$dir" "$out" "$capture"
-  wait_for_exit "$HOLD_WATCH_PID" 100
+  wait_for_exit_scaled "$HOLD_WATCH_PID" 100
   rc=$?
   rmdir "$state/.wake-queue"
   [ "$rc" -ne 124 ] || fail "the watcher did not exit when its durable queue could not be written"
@@ -290,7 +290,7 @@ test_secondmate_paused_resurfaces_in_normal_mode() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not re-surface a paused secondmate"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not re-surface a paused secondmate"
   grep -F "stale: $window" "$out" >/dev/null || fail "paused secondmate did not emit a stale recheck"
   grep -F "awaiting external" "$out" >/dev/null || fail "paused secondmate recheck omitted its external-wait reason"
   grep -F "awaiting the captain" "$out" >/dev/null && fail "paused secondmate recheck named the captain instead of its external dependency"
@@ -324,7 +324,7 @@ test_secondmate_captain_held_resurfaces_in_normal_mode() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not re-surface a captain-held secondmate"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not re-surface a captain-held secondmate"
   grep -F "stale: $window" "$out" >/dev/null || fail "captain-held secondmate did not emit a stale recheck"
   grep -F "awaiting the captain" "$out" >/dev/null || fail "captain-held secondmate recheck did not name the captain as the blocker: $(cat "$out")"
   grep -F "awaiting external" "$out" >/dev/null && fail "captain-held secondmate recheck claimed an external wait"
@@ -533,7 +533,7 @@ test_paused_authoritative_working_preserves_wedge_timer() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "authoritative working state did not wedge-escalate past the threshold once the declaration was lifted"
+  wait_for_exit_scaled "$pid" 100 || fail "authoritative working state did not wedge-escalate past the threshold once the declaration was lifted"
   grep -F "possible wedge" "$out" >/dev/null || fail "authoritative working wedge escalation omitted its reason"
   [ ! -e "$state/.stale-since-$key" ] || fail "wedge timer remained after authoritative working escalation"
   unset FM_FAKE_CREW_STATE
@@ -595,7 +595,7 @@ test_wedge_escalation_marks_demand_deep_inspection_after_threshold() {
       FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_WEDGE_ESCALATE_MAX_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
       FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
     pid=$!
-    wait_for_exit "$pid" 100 || fail "watcher did not escalate on consecutive wedge round $n: $(cat "$out")"
+    wait_for_exit_scaled "$pid" 100 || fail "watcher did not escalate on consecutive wedge round $n: $(cat "$out")"
     grep -F "escalation $n" "$out" >/dev/null || fail "round $n did not report escalation count $n: $(cat "$out")"
     if [ "$n" -lt 3 ]; then
       grep -F "demand-deep-inspection" "$out" >/dev/null && fail "round $n escalated to demand-deep-inspection before the threshold: $(cat "$out")"
@@ -692,7 +692,7 @@ test_wedge_escalation_prompt_first_fire() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not escalate the first wedge at the base threshold: $(cat "$out")"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not escalate the first wedge at the base threshold: $(cat "$out")"
   grep -F "escalation 1" "$out" >/dev/null || fail "first escalation did not report escalation count 1: $(cat "$out")"
   [ "$(cat "$state/.wedge-escalations-$key" 2>/dev/null || echo 0)" = 1 ] || fail "first escalation did not record counter 1"
   unset FM_FAKE_CREW_STATE
@@ -722,7 +722,7 @@ test_wedge_escalation_reset_on_nonterminal_surface() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface the inconclusive non-terminal stale: $(cat "$out")"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface the inconclusive non-terminal stale: $(cat "$out")"
   grep -F "stale: $window" "$out" >/dev/null || fail "watcher did not print the non-terminal stale wake: $(cat "$out")"
   [ ! -e "$state/.stale-since-$key" ] || fail "surfacing a non-terminal stale did not clear the wedge timer"
   [ ! -e "$state/.wedge-escalations-$key" ] || fail "surfacing a non-terminal stale did not clear the wedge-escalation counter"
@@ -768,7 +768,7 @@ test_wedge_escalation_reset_on_terminal_absorb() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_WEDGE_ESCALATE_MAX_SECS=3600 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "the fresh quiet spell after a terminal absorb did not escalate promptly: $(cat "$out")"
+  wait_for_exit_scaled "$pid" 100 || fail "the fresh quiet spell after a terminal absorb did not escalate promptly: $(cat "$out")"
   grep -F "stale: $window" "$out" >/dev/null || fail "prompt escalation did not print a stale wake: $(cat "$out")"
   grep -F "escalation 1" "$out" >/dev/null || fail "prompt escalation did not report a first escalation: $(cat "$out")"
   unset FM_FAKE_CREW_STATE
@@ -797,7 +797,7 @@ test_wedge_escalation_reset_on_terminal_surface() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not surface the terminal stale: $(cat "$out")"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not surface the terminal stale: $(cat "$out")"
   grep -F "stale: $window" "$out" >/dev/null || fail "watcher did not print the terminal stale wake: $(cat "$out")"
   [ ! -e "$state/.stale-since-$key" ] || fail "surfacing a terminal stale did not clear the wedge timer"
   [ ! -e "$state/.wedge-escalations-$key" ] || fail "surfacing a terminal stale did not clear the wedge-escalation counter"
@@ -845,7 +845,7 @@ test_wedge_escalation_reset_on_nonterminal_working_absorb() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_WEDGE_ESCALATE_MAX_SECS=3600 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "the fresh quiet spell after a non-terminal absorb did not escalate promptly: $(cat "$out")"
+  wait_for_exit_scaled "$pid" 100 || fail "the fresh quiet spell after a non-terminal absorb did not escalate promptly: $(cat "$out")"
   grep -F "stale: $window" "$out" >/dev/null || fail "prompt escalation did not print a stale wake: $(cat "$out")"
   grep -F "escalation 1" "$out" >/dev/null || fail "prompt escalation did not report a first escalation: $(cat "$out")"
   unset FM_FAKE_CREW_STATE
@@ -902,7 +902,7 @@ test_wedge_escalation_backs_off_after_first_fire() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not escalate past the backed-off second threshold: $(cat "$out")"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not escalate past the backed-off second threshold: $(cat "$out")"
   grep -F "escalation 2" "$out" >/dev/null || fail "second escalation did not report escalation count 2: $(cat "$out")"
   ack_stopped_cycle "$state" || fail "could not acknowledge the second escalation"
 
@@ -969,7 +969,7 @@ test_wedge_escalation_backoff_is_capped() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_WEDGE_ESCALATE_MAX_SECS=3600 \
     FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not escalate at the capped threshold: $(cat "$out")"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not escalate at the capped threshold: $(cat "$out")"
   grep -F "escalation 6" "$out" >/dev/null || fail "capped escalation did not report escalation count 6: $(cat "$out")"
   unset FM_FAKE_CREW_STATE
   pass "wedge re-escalation backoff is capped rather than growing without bound"
@@ -1037,7 +1037,7 @@ test_wedge_escalation_backoff_resets_to_prompt_on_activity() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not escalate promptly on the new quiet spell after an activity reset: $(cat "$out")"
+  wait_for_exit_scaled "$pid" 100 || fail "watcher did not escalate promptly on the new quiet spell after an activity reset: $(cat "$out")"
   grep -F "escalation 1" "$out" >/dev/null || fail "post-reset escalation did not restart the count at 1: $(cat "$out")"
   [ "$(cat "$state/.wedge-escalations-$key" 2>/dev/null || echo 0)" = 1 ] || fail "post-reset escalation counter did not restart at 1"
   unset FM_FAKE_CREW_STATE
@@ -1080,7 +1080,7 @@ test_term_stops_a_watcher_blocked_inside_a_poll() {
     fail "the watcher never blocked inside its pane capture: $(cat "$out")"
   fi
   kill "$pid" 2>/dev/null || true
-  wait_for_exit "$pid" 100
+  wait_for_exit_scaled "$pid" 100
   rc=$?
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
@@ -1107,7 +1107,7 @@ test_term_stops_a_watcher_blocked_inside_a_poll() {
 # second read comes only from a retry after a completed failed acquire, so that
 # read marks real contention in $dir/marker-lock-contended; the holder then
 # frees the lock <release-ticks> tenths of a second later. The caller's environment
-# reaches the watcher; its wait_for_exit code lands in HELD_MARKER_LOCK_RC.
+# reaches the watcher; its wait_for_exit_scaled code lands in HELD_MARKER_LOCK_RC.
 term_watcher_with_held_marker_lock() {  # <dir> [release-ticks]
   local dir=$1 release_ticks=${2:-} successor=0 state fakebin out capture_file window sig pid holder i
   state="$dir/state"; fakebin="$dir/fakebin"
@@ -1187,7 +1187,7 @@ term_watcher_with_held_marker_lock() {  # <dir> [release-ticks]
     reap "$pid"; fail "the fixture could not take the downtime-marker lock"
   fi
   kill "$pid" 2>/dev/null || true
-  wait_for_exit "$pid" 100
+  wait_for_exit_scaled "$pid" 100
   HELD_MARKER_LOCK_RC=$?
   : > "$dir/release-marker-lock"
   wait "$holder" 2>/dev/null || true
@@ -1314,7 +1314,7 @@ test_busy_pane_stable_hash_escalates_past_turn_age_bound() {
     FM_STATE_OVERRIDE="$state" FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "a stable-hash busy pane did not wedge-escalate past the turn-age bound"
+  wait_for_exit_scaled "$pid" 100 || fail "a stable-hash busy pane did not wedge-escalate past the turn-age bound"
   grep -F "stale: $window" "$out" >/dev/null || fail "busy turn-age escalation did not print the stale wake"
   grep -F "possible wedge" "$out" >/dev/null || fail "busy turn-age escalation did not flag a possible wedge"
   pass "a busy worker with a stable pane hash still escalates once its completed-turn age reaches the bound"
@@ -1359,7 +1359,7 @@ test_busy_pane_changing_hash_escalates_past_turn_age_bound() {
     FM_STATE_OVERRIDE="$state" FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "a changing-hash busy pane did not wedge-escalate past the turn-age bound"
+  wait_for_exit_scaled "$pid" 100 || fail "a changing-hash busy pane did not wedge-escalate past the turn-age bound"
   grep -F "stale: $window" "$out" >/dev/null || fail "busy turn-age escalation (changing hash) did not print the stale wake"
   grep -F "possible wedge" "$out" >/dev/null || fail "busy turn-age escalation (changing hash) did not flag a possible wedge"
   pass "a busy worker whose pane hash changes every poll still escalates once its completed-turn age reaches the bound"
@@ -1474,7 +1474,7 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection() {
       FM_STATE_OVERRIDE="$state" FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=240 FM_WEDGE_ESCALATE_MAX_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
       FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
     pid=$!
-    wait_for_exit "$pid" 100 || fail "busy turn-age escalation round $n did not escalate: $(cat "$out")"
+    wait_for_exit_scaled "$pid" 100 || fail "busy turn-age escalation round $n did not escalate: $(cat "$out")"
     grep -F "escalation $n" "$out" >/dev/null || fail "busy turn-age round $n did not report escalation count $n: $(cat "$out")"
     if [ "$n" -lt 3 ]; then
       grep -F "demand-deep-inspection" "$out" >/dev/null && fail "busy turn-age round $n escalated to demand-deep-inspection before the threshold: $(cat "$out")"
@@ -1549,7 +1549,7 @@ test_busy_declared_pause_is_rechecked_not_wedge_escalated() {
     FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || { reap "$pid"; fail "a declared pause past the long cadence was never rechecked"; }
+  wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "a declared pause past the long cadence was never rechecked"; }
   grep -F "awaiting external" "$out" >/dev/null || fail "the recheck was not labeled a declared-pause recheck: $(cat "$out")"
   grep -F "possible wedge" "$out" >/dev/null && fail "a declared pause on a busy pane was mislabeled a possible wedge: $(cat "$out")"
   [ -e "$state/.paused-resurfaced-$key" ] || fail "the declared-pause re-surface throttle was cleared by the busy-turn bound"
@@ -1584,7 +1584,7 @@ test_busy_declared_pause_is_rechecked_not_wedge_escalated() {
     FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || { reap "$pid"; fail "a lifted pause on an over-age busy pane no longer wedge-escalates"; }
+  wait_for_exit_scaled "$pid" 100 || { reap "$pid"; fail "a lifted pause on an over-age busy pane no longer wedge-escalates"; }
   grep -F "possible wedge" "$out" >/dev/null || fail "the restored busy-turn escalation did not flag a possible wedge: $(cat "$out")"
   pass "a busy pane under a declared pause is rechecked on the long cadence, and lifting the pause restores the wedge escalation"
 }
@@ -1627,7 +1627,7 @@ test_afk_busy_declared_pause_hands_off_plain_stale() {
     FM_POLL=0.2 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 150 || { reap "$pid"; fail "the away-mode busy-turn bound never handed the declared pause to the daemon"; }
+  wait_for_exit_scaled "$pid" 150 || { reap "$pid"; fail "the away-mode busy-turn bound never handed the declared pause to the daemon"; }
   grep -Fx "stale: $window" "$out" >/dev/null \
     || fail "the away-mode busy-turn bound did not hand off the plain window identity: $(cat "$out")"
   grep -F "possible wedge" "$out" >/dev/null \
@@ -1671,7 +1671,7 @@ test_afk_busy_declared_pause_hands_off_plain_stale() {
     FM_POLL=0.2 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 150 || { reap "$pid"; fail "a lifted pause on an away-mode over-age busy pane no longer wedge-escalates"; }
+  wait_for_exit_scaled "$pid" 150 || { reap "$pid"; fail "a lifted pause on an away-mode over-age busy pane no longer wedge-escalates"; }
   grep -F "possible wedge" "$out" >/dev/null \
     || fail "the restored away-mode busy-turn escalation did not flag a possible wedge: $(cat "$out")"
   pass "away mode hands a busy declared pause to the daemon as a plain stale, and lifting the declaration restores the wedge escalation"
@@ -1737,7 +1737,7 @@ SH
     FM_POLL=0.2 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 150 || { reap "$pid"; fail "the away-mode busy-turn bound never handed a ticking declared pause to the daemon"; }
+  wait_for_exit_scaled "$pid" 150 || { reap "$pid"; fail "the away-mode busy-turn bound never handed a ticking declared pause to the daemon"; }
   grep -Fx "stale: $window" "$out" >/dev/null \
     || fail "the away-mode busy-turn bound did not hand off the plain window identity for a ticking pane: $(cat "$out")"
   grep -F "possible wedge" "$out" >/dev/null \

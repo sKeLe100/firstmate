@@ -111,7 +111,15 @@ wait_poll_cycle() {  # <state> <pid> [limit-ticks]
   done
 }
 
-# Every wait_for_exit budget in this file is 100 ticks (10s) before load
+# wait_for_exit with its tick ceiling stretched by host load (opt-in: the shared
+# wait_for_exit keeps its fixed ceiling for every other suite).
+wait_for_exit_scaled() {  # <pid> [limit-ticks]
+  local limit
+  limit=$(fm_test_load_scaled_ticks "${2:-50}")
+  wait_for_exit "$1" "$limit"
+}
+
+# Every wait_for_exit_scaled budget in this file is 100 ticks (10s) before load
 # scaling, not because any watcher takes that long to decide, but because
 # fm-watch.sh does bounded startup work before its first poll: a tighter budget
 # reaps the process while it is still starting and reports a spurious "did not
@@ -201,15 +209,15 @@ record_pi_busy() {  # <state-dir> <id>
 }
 
 # Stop an owned watcher. TERM must end it through its EXIT cleanup, so one still
-# alive after the file's standard 100-tick budget fails the case here, with the
-# process evidence wait_for_exit prints, instead of an unbounded wait hanging
+# alive after its load-scaled budget fails the case here, with the
+# process evidence wait_for_exit_scaled prints, instead of an unbounded wait hanging
 # the whole suite until the CI job timeout.
 reap() {
   local rc
   kill "$1" 2>/dev/null || true
-  wait_for_exit "$1" 100
+  wait_for_exit_scaled "$1" 100
   rc=$?
-  [ "$rc" -ne 124 ] || fail "watcher pid $1 did not exit within 10s of TERM"
+  [ "$rc" -ne 124 ] || fail "watcher pid $1 did not exit within its load-scaled budget after TERM"
 }
 
 # The cases themselves, split by subject so no single file outgrows the test-size
