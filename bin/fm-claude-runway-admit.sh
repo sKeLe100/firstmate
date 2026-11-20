@@ -26,7 +26,11 @@
 #                                 [--state-dir <dir>] [--ttl <seconds>]
 #   --claude-account <v>  evaluate this bound account instead of reading
 #                         config/claude-account, exactly as
-#                         bin/fm-dispatch-quota-cap.sh does.
+#                         bin/fm-dispatch-quota-cap.sh does. A gate-agent
+#                         wrapper MUST pass this explicitly (the path of the
+#                         account it launches): its environment may not point
+#                         at the right config, and the helper would then judge
+#                         the wrong account's window.
 #   --quota-json <file>   pass the offline quota fixture through to the cap
 #                         script (FM_DISPATCH_QUOTA_JSON is the env form).
 #   --state-dir <dir>     keep the decision cache in <dir> instead of
