@@ -1,0 +1,7 @@
+ok - blocked-detection: ordinary output does not match
+ok - blocked-detection: limit signature matches
+ok - blocked-detection: matches 'You've hit your 5-hour limit - resets 3am'
+ok - blocked-detection: matches 'You've hit your weekly limit'
+ok - blocked-detection: conversational 'once you hit your context limit the session compacts' does not match
+ok - blocked-detection: conversational 'we hit your rate limit earlier' does not match
+ok - blocked-detection: gone target counts as blocked
