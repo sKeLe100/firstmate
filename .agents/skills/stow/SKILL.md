@@ -312,22 +312,25 @@ Report the outcome in plain captain-facing language with all of these facts:
 State what reset-safe means in the same breath as the claim: nothing this session knew has been lost.
 It is never a claim that the home's durable records are correct, because this pass checks no record the session did not name.
 Do not hide an over-budget result behind a reset-safe claim.
-In a primary home the receipt is written after the cascade below, not instead of it.
+In a primary home the receipt includes the cascade below; the durable stow-completion marker is stamped once every secondmate request is sent, never after a secondmate stow finishes, so a slow secondmate never holds the session open.
 
 ## Automatic cascade to secondmates
 
 In a primary home, every `/stow` cascades to every registered secondmate after this home's own required pass and knowledge sweep are complete.
 In a secondmate home, `/stow` curates that home only and never cascades further.
-The cascade changes nothing until `/stow` is invoked: it adds no notification, no digest section, and no background work.
+Nothing runs until `/stow` is invoked: the cascade adds no notification, no digest section, and no standing background work of its own.
 
 Run `bin/fm-stow-cascade.sh` once the primary's own pass is done.
 It enumerates each registered secondmate exactly once, reports that home's own budget accounting, and resolves how the sweep reaches it; its header owns the stanza fields, the bound, and the exit codes.
+Secondmate stows run in the background: send them, do not sit waiting for them, and never let one hold this session's receipt.
 Every home is judged against its own `config/startup-memory-budget` allowance, so never add homes together or treat one home's excess as another's.
 
 Act on each home by its reported `transport`:
 
-- `agent` - send the marked request with `bin/fm-send.sh fm-<id> "<request>"` so the live secondmate performs its own `/stow`, including the uncaptured knowledge that exists only in its session.
-  Ask it for the same completion receipt this skill defines, plus that session's own real context reading obtained the same way, `bin/fm-context-usage.sh` run in that session, and read its reply from its status file or the document it points to, never from its chat.
+- `agent` - send the marked request with `bin/fm-send.sh fm-<id> --fire-and-forget <delivery-id> "<request>"` so the live secondmate performs its own `/stow` in the background, including the uncaptured knowledge that exists only in its session.
+  Use a fresh 16-hex delivery id such as `$(LC_ALL=C od -An -v -tx1 -N 8 /dev/urandom | tr -d ' \n')`, so an uncertain retry reuses the same record and no reply expectation is armed for this won't-block delivery.
+  Ask it for the same completion receipt this skill defines, plus that session's own real context reading obtained the same way, `bin/fm-context-usage.sh` run in that session.
+  Do not wait for its reply before producing this session's receipt; read it from its status file or the document it points to if it has already arrived, and otherwise report that home's stow as running in the background.
 - `direct` - curate that local home's editable memory files yourself under the same retention plan, then re-run the cascade to confirm the after totals.
   `data/captain-shared.md` stays a read-only counted input there, exactly as it is in any secondmate home.
   There is no live session there to ask, so this home's context reading is unavailable in the receipt.
@@ -341,13 +344,16 @@ Act on each home by its reported `transport`:
 A newly discovered shared captain preference still routes to the primary's `data/captain-shared.md` under the existing primary-authoritative contract, whichever home found it.
 Offload proposals and the cold archive are per-home: file proposals only in the home whose pass produced them, and never cascade either to another home.
 
-Once every enumerated home has been acted on and its outcome recorded - the whole cascade is genuinely finished, not merely enumerated - run `bin/fm-stow-cascade.sh --complete` to stamp the durable stow-completion marker; other tooling (the primary continuity watchdog) anchors on that marker as evidence the full pass completed, and the enumeration run deliberately does not stamp it when secondmates exist.
+Once every background secondmate request has been durably sent and every `direct` home curated, run `bin/fm-stow-cascade.sh --complete` exactly once, before ending this pass, to stamp the durable stow-completion marker; do not wait for any secondmate stow to finish first, so a `/stow`-then-clear never deadlocks on a secondmate.
+Never run `--complete` before those requests are sent: other tooling (the primary continuity watchdog) anchors on that marker as permission to restart this session, so an early stamp can lose pending requests.
+The enumeration run deliberately does not stamp it when secondmates exist.
+Report every home whose reply has not arrived as still stowing in the background.
 
 Extend the completion receipt with one entry per secondmate alongside the primary's own, carrying that home's budget before and after, its per-file actions, its exceptions, whether that home swept itself or was curated from here, and its reported context reading alongside the same tokens-and-percent-of-window shape as the primary's own.
 An `agent`-transport home's context reading is whatever that session reported back; a `direct`, `deferred`, or `unavailable` home has no live session to ask, so its entry states the reading is unavailable rather than inventing, inferring, or reusing another home's number.
 A home that does not report a context reading never blocks this home's `/stow`: it is a reported field on the existing entry, not a new gate on the cascade bound or on that home's own reset-safety.
 Keep those entries in the same plain captain-facing language the rest of the receipt uses.
-The session is reset-safe only when every home is within its own budget with no unresolved exception.
+This session is reset-safe once the marker is stamped and this home is within its own budget with no unresolved exception; a home still stowing in the background reports through its own status, owns its own reset-safety, and never blocks this session's claim.
 
 ## Scope exclusion: no skill storage by the pass
 

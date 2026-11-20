@@ -3195,7 +3195,7 @@ FM_SUPERVISION_ENGINE_GRACE=30           # seconds between TERM and KILL when an
 # primary continuity watchdog (bin/fm-primary-watchdog.sh); always-on, see "Primary continuity watchdog" above
 FM_WATCHDOG_POLL_INTERVAL=60       # seconds between watchdog detect-or-idle passes
 FM_WATCHDOG_COOLDOWN=900           # seconds after one watchdog action before another may fire
-FM_WATCHDOG_STOW_WINDOW=1800       # seconds the watchdog waits for stow-completion evidence (state/.stow-last-run) before restarting anyway; the default comfortably exceeds a full secondmate cascade
+FM_WATCHDOG_STOW_WINDOW=1800       # seconds the watchdog waits for stow-completion evidence (state/.stow-last-run) before restarting anyway; the marker lands once the cascade has sent its secondmate requests, so this is a safety fallback for a pass that never reaches its stamp
 FM_WATCHDOG_DEAD_CONFIRMATIONS=2   # consecutive polls that must report the harness gone before a fresh session is launched, so a captain who exits to a shell prompt is not hijacked
 # spoken interface and captain inbox; see "Spoken interface and captain inbox" above
 FM_VOICE_REGION=        # overrides config/voice-region for one relay run

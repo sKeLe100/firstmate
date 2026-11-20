@@ -3,10 +3,10 @@
 # Usage: fm-stow-cascade.sh [--complete] [--help]
 #
 # --complete writes only the durable stow-completion marker
-# (state/.stow-last-run) and exits; the /stow skill runs it after the
-# skill-driven cascade to secondmates has genuinely finished. See
-# record_stow_completion below for why the enumeration run does not stamp the
-# marker itself when secondmates exist.
+# (state/.stow-last-run) and exits; the /stow skill runs it once it has sent
+# every background secondmate request and finished its local cascade actions,
+# never waiting for any secondmate stow to finish. See record_stow_completion
+# below for why the enumeration run does not stamp it when secondmates exist.
 #
 # The internal /stow skill owns curation judgement; this command owns only the
 # mechanical inputs a cascade needs: which homes exist, what each home's own
@@ -168,13 +168,13 @@ resolve_remote_transport() { # <id>
 
 # Durable stow-completion evidence. The marker's mtime is the contract other
 # tooling anchors on (bin/fm-primary-watchdog.sh waits for it before restarting
-# a limit-blocked primary), so it must mean the whole /stow pass - including
-# the skill-driven cascade to secondmates that happens AFTER this enumeration
-# returns - is genuinely done, never merely that enumeration printed. The
+# a limit-blocked primary), so it must mean this home's pass is done and the
+# skill-driven cascade that happens AFTER this enumeration returns has sent
+# every secondmate request and finished its local actions - never that every
+# secondmate stow completed, since those run in the background. The
 # enumeration run therefore writes it only on terminal paths where no cascade
 # follows (a secondmate home, no registry, an empty registry); when secondmates
-# were enumerated, the /stow skill runs `fm-stow-cascade.sh --complete` once
-# every secondmate's curation is finished, and that call writes the marker.
+# were enumerated, the /stow skill runs `fm-stow-cascade.sh --complete`.
 record_stow_completion() {
   mkdir -p "$STATE" 2>/dev/null || return 0
   : >"$STATE/.stow-last-run" 2>/dev/null || true
@@ -276,7 +276,8 @@ printf '\n'
 emit "secondmates=$total"
 emit "exceptions=$exceptions"
 # With secondmates enumerated, the cascade itself still lies ahead of this
-# process; the /stow skill stamps completion via --complete once it finishes.
+# process; the /stow skill stamps completion via --complete once it has sent
+# every secondmate request and finished its local cascade actions.
 [ "$total" -gt 0 ] || record_stow_completion
 [ "$exceptions" -eq 0 ] || exit 3
 exit 0

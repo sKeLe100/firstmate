@@ -34,8 +34,8 @@
 #                               wakes get handled in the existing session.
 #        band=warn|restart  -> inject /stow, wait up to
 #                               FM_WATCHDOG_STOW_WINDOW seconds (default
-#                               1800, comfortably longer than a full
-#                               secondmate cascade)
+#                               1800, a safety fallback for a pass that
+#                               never reaches its stamp)
 #                               for completion evidence (state/.stow-last-run,
 #                               written by bin/fm-stow-cascade.sh once a pass's
 #                               own sweep is done, newer than the inject time);
@@ -454,12 +454,12 @@ fm_watchdog_context_band() {
 }
 
 # fm_watchdog_wait_for_stow: poll up to FM_WATCHDOG_STOW_WINDOW seconds
-# (default 1800 - the marker is stamped only when the whole skill-driven
-# cascade completes, which for a home with agent-transport secondmates
-# includes each secondmate running its own /stow and reporting back) for
-# evidence the injected /stow turn completed
-# (state/.stow-last-run, the marker bin/fm-stow-cascade.sh writes once a pass's
-# own sweep is complete, newer than the injection time). Returns 0 on evidence
+# (default 1800 - a safety fallback for a pass that never reaches its stamp)
+# for evidence the injected /stow turn completed (state/.stow-last-run, the
+# marker bin/fm-stow-cascade.sh writes once a pass's own sweep is complete and
+# the skill-driven cascade has sent every secondmate request and finished its
+# local actions - never waiting for each secondmate to run its own /stow -
+# newer than the injection time). Returns 0 on evidence
 # found, 1 on timeout - a timeout is NOT an error to the caller: report 11.4
 # open question 6 (captain-accepted) says proceed to restart anyway.
 fm_watchdog_wait_for_stow() {  # <injected-at-epoch>

@@ -109,6 +109,19 @@ run_cascade() { # <primary-home> [env assignments...]
     "$CASCADE"
 }
 
+run_complete() { # <primary-home> [env assignments...]
+  local home=$1
+  shift
+  env -i \
+    PATH="$FAKEBIN:$BASE_PATH" \
+    HOME="${HOME:-/tmp}" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    FM_HOME="$home" \
+    FM_SSH_BIN="$FAKEBIN/fake-ssh" \
+    "$@" \
+    "$CASCADE" --complete
+}
+
 # stanza <output> <id>: the block of key=value lines for one secondmate.
 stanza() {
   printf '%s\n' "$1" | awk -v id="secondmate=$2" '
@@ -362,24 +375,37 @@ test_no_cascade_without_secondmates_or_from_a_secondmate_home() {
   pass "the cascade stays silent with no secondmates and never runs from a secondmate home"
 }
 
-test_completion_marker_waits_for_the_real_cascade() {
-  local primary a out
-  # With secondmates enumerated, the skill-driven cascade still lies ahead, so
-  # the enumeration run must NOT stamp state/.stow-last-run; only an explicit
-  # --complete (run by the /stow skill after the cascade finishes) may.
+test_completion_marker_follows_dispatch_not_secondmate_stows() {
+  local primary live started elapsed rc out
+  # The watchdog restarts on state/.stow-last-run, so enumeration with
+  # secondmates must not stamp it: the skill still has requests to send.
   primary=$(new_primary marker)
-  a=$(new_home marker-a)
-  local_record marker-a "$a" > "$primary/data/secondmates.md"
+  live=$(new_home marker-live)
+  local_record marker-live "$live" > "$primary/data/secondmates.md"
+  fm_write_secondmate_meta "$primary/state/marker-live.meta" "$live" 'firstmate:fm-marker-live' alpha claude
   set +e
-  out=$(run_cascade "$primary")
+  out=$(run_cascade "$primary" FM_FAKE_TMUX_WINDOW='fm-marker-live')
   set -e
+  [ "$(value_in "$(stanza "$out" marker-live)" transport)" = agent ] \
+    || fail "the live secondmate was not routed to its agent"
   [ ! -e "$primary/state/.stow-last-run" ] \
-    || fail "enumeration with secondmates stamped the completion marker early"
+    || fail "enumeration with secondmates stamped the completion marker before dispatch"
+
+  # Once the requests are sent, --complete stamps at once even though the live
+  # secondmate has not stowed (it has no marker of its own).
+  started=$(date +%s)
   set +e
-  FM_HOME="$primary" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-stow-cascade.sh" --complete
+  run_complete "$primary" FM_FAKE_TMUX_WINDOW='fm-marker-live'
+  rc=$?
   set -e
+  elapsed=$(( $(date +%s) - started ))
+  expect_code 0 "$rc" "--complete should succeed"
+  [ "$elapsed" -lt 5 ] || fail "--complete waited ${elapsed}s on a background secondmate stow"
   [ -e "$primary/state/.stow-last-run" ] \
     || fail "--complete did not stamp the completion marker"
+  [ ! -e "$live/state/.stow-last-run" ] \
+    || fail "--complete touched the secondmate's own marker"
+
   # A primary with no registry has no cascade ahead: the enumeration run is
   # itself terminal and stamps the marker.
   primary=$(new_primary marker-empty)
@@ -388,12 +414,12 @@ test_completion_marker_waits_for_the_real_cascade() {
   set -e
   [ -e "$primary/state/.stow-last-run" ] \
     || fail "a no-registry enumeration did not stamp its terminal marker"
-  pass "the completion marker waits for --complete when secondmates exist"
+  pass "the completion marker follows dispatch, never a background secondmate stow"
 }
 
 test_budget_is_enforced_per_home_and_never_summed
 test_every_registered_home_is_enumerated_exactly_once
-test_completion_marker_waits_for_the_real_cascade
+test_completion_marker_follows_dispatch_not_secondmate_stows
 test_transport_routes_by_placement_and_liveness
 test_receipt_facts_are_complete_and_show_before_and_after
 test_a_slow_remote_is_bounded_and_the_rest_still_report
