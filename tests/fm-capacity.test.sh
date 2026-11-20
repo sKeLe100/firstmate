@@ -139,7 +139,11 @@ test_dead_done_and_held_records_hold_no_lane() {
   out=$(run_capacity "$home" "$fakebin")
   assert_contains "$out" 'lanes=1 ' "done and dead records must not hold a lane: $out"
 
-  if command -v tasks-axi >/dev/null 2>&1; then
+  local held_note=", and captain-held records"
+  if ! command -v tasks-axi >/dev/null 2>&1; then
+    held_note=" (captain-held case SKIPPED: tasks-axi not on PATH)"
+    printf 'skip - captain-held lane case needs tasks-axi, which is not on PATH\n'
+  else
     mkdir -p "$home/data"
     cat > "$home/.tasks.toml" <<'TOML'
 backend = "markdown"
@@ -164,7 +168,7 @@ BACKLOG
     out=$(run_capacity "$home" "$fakebin")
     assert_contains "$out" 'lanes=1 ' "a captain-held record must not hold a lane: $out"
   fi
-  pass "done, dead, and captain-held records hold no lane"
+  pass "done, dead$held_note hold no lane"
 }
 
 test_host_constraints_close_lanes() {

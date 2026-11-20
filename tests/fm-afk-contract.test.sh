@@ -738,7 +738,11 @@ test_live_workers_count_only_live_work() {
   [ "$(contract_live "$fakebin" "$home" live-workers)" = 1 ] \
     || fail "one live record did not hold exactly one seat: $(contract_live "$fakebin" "$home" live-workers)"
 
-  if command -v tasks-axi >/dev/null 2>&1; then
+  local held_note=", and captain-held records"
+  if ! command -v tasks-axi >/dev/null 2>&1; then
+    held_note=" (captain-held case SKIPPED: tasks-axi not on PATH)"
+    printf 'skip - captain-held seat case needs tasks-axi, which is not on PATH\n'
+  else
     mkdir -p "$home/data"
     cat > "$home/.tasks.toml" <<'TOML'
 backend = "markdown"
@@ -761,7 +765,7 @@ BACKLOG
     [ "$(contract_live "$fakebin" "$home" live-workers)" = 1 ] \
       || fail "a captain-held record held a seat: $(contract_live "$fakebin" "$home" live-workers)"
   fi
-  pass "live-workers counts only live work: dead, released, done, and captain-held records hold no seat"
+  pass "live-workers counts only live work: dead, released, done$held_note hold no seat"
 }
 
 test_readback_renders_words_verbatim_with_the_record_scalars
