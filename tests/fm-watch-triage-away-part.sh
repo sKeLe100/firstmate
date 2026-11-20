@@ -851,6 +851,44 @@ test_heartbeat_no_change_absorbed() {
   pass "a heartbeat with no captain-relevant change is absorbed and backs off the cadence"
 }
 
+test_away_record_heartbeat_forwarded() {
+  local dir state fakebin out drain_out pid
+  dir=$(make_case away-record-heartbeat); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  # A supervision-host home's away session owns triage and wants every heartbeat
+  # (fleet review and lane refill), but that home never writes the away daemon's
+  # flag state/.afk: the away record is the only signal that the captain is away.
+  write_away_record "$state"
+  [ ! -e "$state/.afk" ] || fail "fixture: the supervision-host home must not write the daemon flag"
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 \
+    || { reap "$pid"; fail "an away record's heartbeat was absorbed instead of forwarded to the away session: $(cat "$out")"; }
+  grep -Fx "heartbeat" "$out" >/dev/null || fail "the away record did not forward a heartbeat wake: $(cat "$out")"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the away record's heartbeat failed"
+  grep "$(printf '\theartbeat\t')" "$drain_out" >/dev/null || fail "the away record's heartbeat was not queued for the away session"
+  pass "an away record forwards every heartbeat to the away session without the daemon flag"
+}
+
+test_daemon_flag_heartbeat_forwarded() {
+  local dir state fakebin out drain_out pid
+  dir=$(make_case daemon-heartbeat); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  # The away daemon's own flag still forwards every heartbeat, unchanged by the
+  # away-record path above.
+  date '+%s' > "$state/.afk"
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 \
+    || { reap "$pid"; fail "the daemon flag stopped forwarding heartbeats: $(cat "$out")"; }
+  grep -Fx "heartbeat" "$out" >/dev/null || fail "the daemon flag did not forward a heartbeat wake: $(cat "$out")"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the daemon flag's heartbeat failed"
+  grep "$(printf '\theartbeat\t')" "$drain_out" >/dev/null || fail "the daemon flag's heartbeat was not queued"
+  pass "the daemon flag still forwards every heartbeat, unchanged"
+}
+
 test_heartbeat_backstop_surfaces_a_masked_status() {
   local dir state fakebin out sig pid
   dir=$(make_case heartbeat-masked); state="$dir/state"; fakebin="$dir/fakebin"

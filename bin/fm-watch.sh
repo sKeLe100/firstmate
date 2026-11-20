@@ -4313,8 +4313,11 @@ EOF
     # turns up a captain-relevant status the per-wake path missed. Absorb the
     # no-change case (advance the schedule and back off exactly as wake() would,
     # without exiting); the away-mode daemon, when present, owns triage and wants
-    # every heartbeat.
-    if afk_present; then
+    # every heartbeat. A supervision host's away session owns triage the same way
+    # and never writes the daemon flag state/.afk, so an away record forwards too:
+    # heartbeats are its fleet-review and lane-refill beats, and absorbing them
+    # here starves it for the whole away window.
+    if afk_present || away_record_present; then
       retry_halt_collect
       hb_reason=$(heartbeat_reason_with_queued_halts)
       fm_wake_append heartbeat heartbeat "$hb_reason" || exit 1
