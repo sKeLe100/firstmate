@@ -258,9 +258,9 @@ An acknowledged episode does not freeze the generation, because the next downtim
 ## Resurface bound
 
 A queue the model cannot drain, because the drain is denied, fails, or has no one to run it, must not force a new turn at every harness turn end.
-`bin/fm-wake-lib.sh` (`fm_rearm_resurface_decide`) counts consecutive `check: rearm-resurface` announcements against a fingerprint of the queue bytes and the session-lock owner in `state/.rearm-resurface-streak`.
+`bin/fm-wake-lib.sh` (`fm_rearm_resurface_decide`) counts consecutive `check: rearm-resurface` announcements against a fingerprint of a normalized view of the queue and the session-lock owner in `state/.rearm-resurface-streak`.
 After `FM_REARM_RESURFACE_LIMIT` (default 3) ordinary announcements of one unchanged queue, the watcher delivers one distinct `check: rearm-resurface stalled` escalation, then absorbs further recovery announcements and keeps supervising.
-A new wake or row acknowledgement changes the queue, a completed drain acknowledgement clears the streak record (an empty queue would otherwise leave the fingerprint unchanged across episodes), and a session restart changes the lock owner, so ordinary delivery resumes on the next change; a drain that only presents an unacknowledged row changes neither and does not reset the streak.
+A repeated `stale` wake for a key already queued collapses to that key's first row, because a pane that stays stale re-announces with a fresh sequence and idle-age payload and would otherwise reset the bound on every poll. Any other new wake, a new stale key, or a row acknowledgement changes the fingerprint, a completed drain acknowledgement clears the streak record (an empty queue would otherwise leave the fingerprint unchanged across episodes), and a session restart changes the lock owner, so ordinary delivery resumes on the next change; a drain that only presents an unacknowledged row changes neither and does not reset the streak.
 The bound never drops, rewrites, or acknowledges a queued row, never delays a new wake, and fails open to the ordinary announcement when its record cannot be read or written.
 
 ## Per-actor acknowledgement
