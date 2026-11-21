@@ -778,7 +778,7 @@ done
 [ ! -f "$flag" ] || { printf "stopped-personal-use\n"; exit 75; }
 printf "claimed %s of '"$SLOTS"'\n" "$held"
 IFS= read -r -t '"$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5))"' command || exit 1
-[ ! -f "$flag" ] || { printf "stopped-personal-use\n"; exit 75; }
+[ ! -f "$flag" ] || { printf "fm-pc02-test-offload: stopped: personal use\n"; exit 75; }
 eval "$command"'
 # FIFOs keep this compatible with stock macOS Bash (which has no coproc).
 claim_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-pc02-claim.XXXXXX") || run_local "cannot prepare claim channel"
