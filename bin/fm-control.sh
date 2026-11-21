@@ -1211,7 +1211,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line move_state absence verdict
+  local exit_result state note_line move_state absence verdict launch_failure
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1290,6 +1290,10 @@ do_relaunch() {
   # per-task harness wiring before arming the new one, so nothing to do here.
   RELAUNCH_TX="${BASHPID:-$$}.$(date -u +%Y%m%dT%H%M%SZ).$RANDOM"
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
+  # The launch owner also clears this, but doing it here means a refusal before
+  # it stages the launch cannot leave an older attempt's record behind for the
+  # wait below to misread.
+  rm -f "$STATE/$ID.launch-failure" 2>/dev/null || true
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
@@ -1321,6 +1325,13 @@ do_relaunch() {
   fi
 
   state=$(wait_agent_state "$LAUNCH_WAIT" alive) || {
+    launch_failure=
+    if [ -r "$STATE/$ID.launch-failure" ]; then
+      launch_failure=$(sed -n 's/^reason=//p' "$STATE/$ID.launch-failure" 2>/dev/null | tail -1) || launch_failure=
+    fi
+    if [ -n "$launch_failure" ]; then
+      die "the replacement agent for $ID never started within ${LAUNCH_WAIT}s (endpoint reads '$state'): $launch_failure"
+    fi
     die "the replacement agent for $ID did not come up within ${LAUNCH_WAIT}s (endpoint reads '$state')"
   }
   RELAUNCH_AGENT_CONFIRMED=1

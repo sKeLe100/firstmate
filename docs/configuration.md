@@ -169,6 +169,7 @@ state/               runtime records and signals; gitignored
   <id>.meta          task metadata; each producer script's header owns its exact fields and mutation contract
   <id>.inbox/        durable steering inbox for sequenced firstmate instructions
   <id>.busy-state <id>.busy-gen   semantic busy-state record and its per-incarnation gen sidecar; bin/fm-busy-event.sh is the only writer and bin/fm-busy-lib.sh owns the format; removed by retire and teardown
+  <id>.launch-failure  the launch owner's record that a harness binary did not resolve in the pane and the agent never started; written by the staged launch, cleared on the next launch, and removed by teardown
   <id>.merge-authority  private canonical-PR-bound authority persisted after firstmate's forge merge request is accepted and consumed by a later merged poll; bin/fm-merge-authority-lib.sh owns its format and lifecycle
   mail.check.sh .mail-*  generated received-mail poll shim, its trust binding, and bin/fm-mail.sh's private cursors; present only after bin/fm-mail-check.sh arm (mail schema: "Mail plane")
   .afk-contract      the away-posture record: the captain's verbatim away words, expected return, reach profile, and spend cap; written only by bin/fm-afk-contract.sh after the captain confirms the read-back, archived under afk-contracts/ at return; its presence IS the away posture in every harness

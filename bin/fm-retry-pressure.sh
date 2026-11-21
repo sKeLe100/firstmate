@@ -14,7 +14,8 @@
 #   Reads, under FM_HOME (default: current directory), honoring the same
 #   FM_STATE_OVERRIDE and FM_DATA_OVERRIDE directory overrides its writers use:
 #   - data/llm-usage/firstmate.jsonl delegation events for this task_id since
-#     its last landed/completed outcome event (relaunch count),
+#     its last landed/completed outcome event (relaunch count). Only a
+#     delegation the relauncher wrote after confirming a live agent counts.
 #   - state/<task-id>.status keyed retry-loop reports, when the status file
 #     exists: the `[key=retry-loop]` decision counts only while the shared fold
 #     in bin/fm-classify-lib.sh still reads it open, under either opening verb

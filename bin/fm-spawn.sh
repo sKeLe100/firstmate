@@ -372,6 +372,15 @@
 #   prevents equal task ids in different Firstmate homes from sharing a file.
 #   Spawn refuses an unsafe pre-existing task temp root or launch namespace, and
 #   task teardown removes only the current home's launch namespace.
+#   A launch whose harness binary is named on the pane's PATH (claude, codex,
+#   opencode, grok, gemini) first verifies it resolves in the pane, and on a
+#   miss retries once with the PATH the pane's own login shell would supply.
+#   That keeps a relaunch into a long-lived pane working when its shell predates
+#   the harness install directory. A launch that still cannot resolve records
+#   state/<id>.launch-failure and prints a specific launch-failure line instead
+#   of dying silently as a bare `env:` error in scrollback; the relaunch
+#   transaction reports that record, and a launch that never started an agent is
+#   not a relaunch attempt in the retry-pressure count.
 # Launch environment (config/launch-env-allowlist):
 #   Absent means unchanged ambient inheritance. A present readable regular file
 #   opts every launch (ship, scout, secondmate, raw command, and relaunch) into
@@ -2975,6 +2984,65 @@ launch_template() {
   esac
 }
 
+# launch_path_guard_text <state-dir> <id> <harness> <binary>
+#
+# Emits the leading statement of a staged launch file. A relaunch reuses the
+# task's existing pane, and a long-lived tmux/Herdr server can hand that pane a
+# shell whose PATH predates the directory holding the harness binary. The launch
+# then dies at once with a bare "env: <bin>: No such file or directory" in
+# scrollback and no agent ever runs, while the supervisor only sees a dead
+# endpoint. Verify the binary resolves in the pane, and when it does not ask the
+# pane's own login shell for the PATH a fresh login would give it before
+# retrying once. A launch that still cannot resolve records a specific
+# launch-failure file and fails loudly instead of leaving a dead pane.
+launch_path_guard_text() {  # <state-dir> <id> <harness> <binary>
+  local state=$1 id=$2 harness=$3 bin=$4
+  local sq_bin sq_id sq_harness sq_record
+  sq_bin=$(shell_quote "$bin")
+  sq_id=$(shell_quote "$id")
+  sq_harness=$(shell_quote "$harness")
+  sq_record=$(shell_quote "$state/$id.launch-failure")
+  cat <<EOF
+if ! command -v $sq_bin >/dev/null 2>&1; then
+  __fm_login_shell=\${SHELL:-}
+  case "\$__fm_login_shell" in
+    /*) [ -x "\$__fm_login_shell" ] || __fm_login_shell= ;;
+    *) __fm_login_shell= ;;
+  esac
+  if [ -z "\$__fm_login_shell" ] && [ -x /bin/bash ]; then
+    __fm_login_shell=/bin/bash
+  fi
+  if [ -n "\$__fm_login_shell" ]; then
+    __fm_login_path=\$("\$__fm_login_shell" -l -c 'printenv PATH' 2>/dev/null | tail -1) || __fm_login_path=
+    if [ -n "\$__fm_login_path" ]; then
+      if [ -n "\${PATH:-}" ]; then
+        PATH="\$PATH:\$__fm_login_path"
+      else
+        PATH="\$__fm_login_path"
+      fi
+      export PATH
+    fi
+  fi
+  unset __fm_login_shell __fm_login_path
+fi
+if ! command -v $sq_bin >/dev/null 2>&1; then
+  __fm_launch_failure_record=$sq_record
+  {
+    printf 'v1\n'
+    printf 'task=%s\n' $sq_id
+    printf 'harness=%s\n' $sq_harness
+    printf 'binary=%s\n' $sq_bin
+    printf 'ts=%s\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'reason=%s\n' 'harness binary does not resolve on PATH in the launch pane after one login-shell PATH retry; the agent never started'
+    printf 'pane_path=%s\n' "\${PATH:-}"
+  } > "\$__fm_launch_failure_record" 2>/dev/null || true
+  printf 'error: firstmate launch failure for %s: harness binary %s does not resolve on PATH in this pane; the agent never started. See %s\n' $sq_id $sq_bin "\$__fm_launch_failure_record" >&2
+  unset __fm_launch_failure_record
+  return 1 2>/dev/null || exit 1
+fi
+EOF
+}
+
 case "$ARG3" in
 *' '*) # raw launch command (unverified-adapter escape hatch)
   RAW_LAUNCH=1
@@ -3021,6 +3089,17 @@ case "$ARG3" in
   }
   ;;
 esac
+
+# The adapters whose launch names a bare executable resolved through the pane's
+# PATH get the launch-path guard. Every other adapter's binary is already
+# substituted as an absolute path below, so it cannot depend on the pane's
+# PATH. A raw launch command has an unknown shape and is left untouched.
+LAUNCH_PATH_GUARD_BIN=
+if [ "$RAW_LAUNCH" -eq 0 ]; then
+  case "$HARNESS" in
+  claude | codex | opencode | grok | gemini) LAUNCH_PATH_GUARD_BIN=$HARNESS ;;
+  esac
+fi
 
 # --code-mode needs the claude launch template's environment prefix, so any
 # other harness, and a raw launch command that has no template, is refused.
@@ -7016,6 +7095,11 @@ if [ "$LAUNCH_ENV_ENABLED" = 1 ]; then
     LAUNCH_ENV_PREFIX="$LAUNCH_ENV_PREFIX "'${TRACEPARENT+"TRACEPARENT=$TRACEPARENT"}'
   fi
   LAUNCH="$LAUNCH_ENV_PREFIX /bin/sh -c $(shell_quote "$LAUNCH")"
+fi
+# A previous launch's failure record never describes this one.
+rm -f "$STATE_REAL/$ID.launch-failure" 2>/dev/null || true
+if [ -n "$LAUNCH_PATH_GUARD_BIN" ]; then
+  LAUNCH="$(launch_path_guard_text "$STATE_REAL" "$ID" "$HARNESS" "$LAUNCH_PATH_GUARD_BIN")"$'\n'"$LAUNCH"
 fi
 if ! (umask 077 && mkdir "$LAUNCH_DIR") 2>/dev/null; then
   if [ -L "$LAUNCH_DIR" ] || [ ! -d "$LAUNCH_DIR" ] || [ ! -O "$LAUNCH_DIR" ] ||

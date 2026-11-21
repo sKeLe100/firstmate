@@ -120,6 +120,13 @@ fm_test_launch_git_prefix() {  # <launch>
 # leading export statements, for suites that split it into arguments.
 fm_test_launch_command() {  # <launch>
   local command=$1 end=' || return 1 2>/dev/null || exit 1; '
+  # Drop the launch-path guard prelude bin/fm-spawn.sh may stage ahead of the
+  # agent command; every launch-shape assertion wants the command it guards.
+  case "$command" in
+    *$'\n'export\ COMPACT_ADVISER_DISABLE=1\;*)
+      command=${command#*$'\n'export\ COMPACT_ADVISER_DISABLE=1;}
+      command=${command# } ;;
+  esac
   case "$command" in *"$end"*) command=${command#*"$end"} ;; esac
   while [[ "$command" == export\ *\;* ]]; do
     command=${command#*; }
