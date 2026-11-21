@@ -2423,7 +2423,7 @@ families_for_changed_path() {
     bin/fm-x-*|bin/fm-check*|bin/fm-pipeline-spend.sh)
       printf '%s\n' pr-forge
       ;;
-    bin/fm-nm-run-lib.sh)
+    bin/fm-nm-run-lib.sh|bin/fm-nm-conclude-lib.sh)
       # Shared no-mistakes run-attribution primitives, sourced by both
       # bin/fm-crew-state.sh (pure-contract-unit) and bin/fm-teardown.sh's
       # pre-teardown run abort (pr-forge).
