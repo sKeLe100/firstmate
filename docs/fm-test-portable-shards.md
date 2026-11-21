@@ -82,6 +82,7 @@ The 2026-11-18 hint-drift refresh from PR 281's run 44215887347 raised the two r
 The 2026-11-19 hint-drift refresh from PR 280's run 44558016485 raised `tests/fm-ci-workflow.test.sh` from 10126 ms to its measured 16689 ms (repeated drift 1.65x).
 The 2026-11-20 hint-drift refresh from PR 290's run 44744059932 raised `tests/fm-primary-herdr.test.sh` from 4000 ms to its measured 6030 ms (repeated drift 1.51x).
 The 2026-11-20 hint-drift refresh from PR 295's run 44777981451 raised `tests/fm-remote-backlog-handoff.test.sh` from 97072 ms to its measured 152340 ms (repeated drift 1.57x). That refresh pushed the largest twelve-shard pack 455 ms over the 1200000 ms target, so it also moved the portable serial remainder to thirteen shards.
+The 2026-11-21 hint-drift refresh raised the three repeated drifters `tests/fm-claim-check.test.sh` (550 to 844 ms), `tests/fm-precompact-checkpoint.test.sh` (179 to 499 ms), and `tests/fm-wake-drain-unread-status.test.sh` (24251 to 41228 ms) to their slowest successful measured durations across eleven portable-serial artifact sets, after the check refused on PR 301's run 44873589584 (fm-claim-check 839 ms, 1.53x) and main's run 44832131534 at 0e84eb97 (fm-precompact-checkpoint 453 ms, 2.53x; fm-wake-drain-unread-status 36801 ms, 1.52x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints
