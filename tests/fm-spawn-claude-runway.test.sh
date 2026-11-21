@@ -72,11 +72,11 @@ write_meminfo() {  # <file>
   printf 'MemTotal:       14000000 kB\nMemAvailable:    8388608 kB\n' > "$1"
 }
 
-quota_fixture() {  # <file> <five_pct> <hours> <projected_hours|empty>
-  python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
+quota_fixture() {  # <file> <five_pct> <hours> <projected_hours|empty> [projection_confidence]
+  python3 - "$1" "$2" "$3" "${4:-}" "${5:-}" <<'PY'
 import json, sys
 from datetime import datetime, timedelta, timezone
-f, pct, hours, projected = sys.argv[1:]
+f, pct, hours, projected, confidence = sys.argv[1:]
 gen = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
 resets = gen + timedelta(hours=float(hours))
 pace = {"status": "behind", "burnMultiple": 0.4}
@@ -84,6 +84,8 @@ if projected:
     pace["projectedExhaustedAt"] = (
         gen + timedelta(hours=float(projected))
     ).isoformat().replace("+00:00", "Z")
+if confidence:
+    pace["projectionConfidence"] = confidence
 json.dump({
     "generatedAt": gen.isoformat().replace("+00:00", "Z"),
     "schemaVersion": 5,
@@ -171,11 +173,50 @@ EOF2
   out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$quota")
   status=$?
   expect_code 75 "$status" "projected exhaustion before reset must defer even at 89% left: $out"
-  assert_contains "$out" "projected exhaustion" \
-    "the deferral must name projected exhaustion: $out"
+  assert_contains "$out" "est. exhaustion" \
+    "the deferral must label the projection as an estimate: $out"
   assert_absent "$HOME_DIR/state/$id.meta" "a deferred spawn must publish no task record"
   pass "fm-spawn.sh: projected exhaustion before the reset defers a new Claude lane"
 }
 test_projected_exhaustion_defers_even_at_high_remaining
+
+test_on_pace_projection_keeps_the_spawn_admitted() {
+  local rec id out status quota
+  id=runway-on-pace
+  rec=$(make_case on-pace "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  write_meminfo "$HOME_DIR/meminfo"
+  quota="$CASE_DIR/quota-on-pace.json"
+  # 89% left with exhaustion projected at the reset itself: spend on pace must
+  # ride out the window, so the lane is admitted.
+  quota_fixture "$quota" 89 4 4.05 established
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$quota")
+  status=$?
+  expect_code 0 "$status" "an on-pace projection must admit the lane: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] || fail "the admitted lane published no task record: $out"
+  pass "fm-spawn.sh: an on-pace projection keeps the base cap"
+}
+test_on_pace_projection_keeps_the_spawn_admitted
+
+test_early_projection_keeps_the_spawn_admitted() {
+  local rec id out status quota
+  id=runway-early
+  rec=$(make_case early "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  write_meminfo "$HOME_DIR/meminfo"
+  quota="$CASE_DIR/quota-early.json"
+  # An early projection swings by hours and is never used as a verdict.
+  quota_fixture "$quota" 89 4 1 early
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$quota")
+  status=$?
+  expect_code 0 "$status" "an early projection must admit the lane: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] || fail "the admitted lane published no task record: $out"
+  pass "fm-spawn.sh: an early projection keeps the base cap"
+}
+test_early_projection_keeps_the_spawn_admitted
 
 printf '# all fm-spawn-claude-runway tests passed\n'

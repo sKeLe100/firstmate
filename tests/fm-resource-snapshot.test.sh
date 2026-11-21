@@ -241,6 +241,11 @@ test_every_section_renders_and_agrees() {
     "$TMP_ROOT/model.json" >/dev/null || fail "PC02 C: must be watch at 23 GB"
   jq -e '.quota | map(.lane) | .[0] == "claude#1" and .[2] == "claude#2" and .[4] == "opencode-go" and .[7] == "codex"' \
     "$TMP_ROOT/model.json" >/dev/null || fail "quota lane order must be Claude #1, Claude #2, OpenCode Go, Codex"
+  jq -e '.quota[] | select(.lane == "claude#1" and .window == "five_hour")
+    | .account == "/home/test/.claude" and .pct_remaining == 71
+      and .resets_et != "-" and .reading_utc == "2026-11-20T00:00:00Z"' \
+    "$TMP_ROOT/model.json" >/dev/null \
+    || fail "a Claude quota row must carry account, percent, reset, and the quota read time: $(jq -c '.quota' "$TMP_ROOT/model.json")"
   jq -e '.workers[] | select(.task == "alpha") | .ctx_band == "warn(23.5%)" and .spend_lane == "claude#2"' \
     "$TMP_ROOT/model.json" >/dev/null || fail "claude context band and lane"
   jq -e '.workers[] | select(.task == "gamma") | .kind == "unknown" and .model == "unknown" and .age == "-"' \

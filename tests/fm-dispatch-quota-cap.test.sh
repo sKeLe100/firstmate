@@ -25,14 +25,14 @@ mk_home() {  # <name>
 
 # quota_doc <name> <five_pct> <hours-until-reset> <week-status> <week-burn>
 #           <codex-status> [<five-status> <five-burn> <projected-hours>
-#           <codex-id> <claude-status>]
+#           <codex-id> <claude-status> <projection-confidence>]
 quota_doc() {
   local f="$TMP_ROOT/$1.json"
   python3 - "$f" "$2" "$3" "$4" "$5" "$6" "${7:-behind}" "${8:-0.5}" \
-    "${9:-}" "${10:-weekly}" "${11:-fresh}" <<'PY'
+    "${9:-}" "${10:-weekly}" "${11:-fresh}" "${12:-}" <<'PY'
 import json, sys
 from datetime import datetime, timedelta, timezone
-f, five_pct, hours, wstatus, wburn, cstatus, fstatus, fburn, projected, codex_id, claude_status = sys.argv[1:]
+f, five_pct, hours, wstatus, wburn, cstatus, fstatus, fburn, projected, codex_id, claude_status, confidence = sys.argv[1:]
 gen = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
 resets = gen + timedelta(hours=float(hours))
 five_pace = {"status": fstatus, "burnMultiple": float(fburn)}
@@ -40,6 +40,8 @@ if projected:
     five_pace["projectedExhaustedAt"] = (
         gen + timedelta(hours=float(projected))
     ).isoformat().replace("+00:00", "Z")
+if confidence:
+    five_pace["projectionConfidence"] = confidence
 providers = [
     {"provider": "claude", "windows": [
         {"id": "five_hour", "kind": "session", "resetsAt": resets.isoformat(),
@@ -166,23 +168,45 @@ PY
 run_cap "$home" "$TMP_ROOT/no-claude.json" >/dev/null 2>&1
 [ $? -eq 2 ] || fail "a document without the claude five_hour window must exit 2"
 
-# 9. Projected exhaustion before the reset plus 20 minutes caps new lanes at 0.
+# 9. Projected exhaustion materially before the reset caps new lanes at 0.
 # 89% left with the projection an hour before the reset is the 2026-11-19 case
-# the old 25% row could not see.
-out=$(run_cap "$home" "$(quota_doc projected 89 4 behind 0.8 behind '' '' 3)") || fail "projected-exhaustion quota must succeed"
+# the old 25% row could not see. The projection is reported as an estimate.
+out=$(run_cap "$home" "$(quota_doc projected 89 4 behind 0.8 behind '' '' 3 '' '' established)") || fail "projected-exhaustion quota must succeed"
 assert_contains "$out" "claude_runway_cap: 0" "a projection before the reset caps at 0, got: $out"
 assert_contains "$out" "claude_runway_block: yes" "cap 0 blocks a new lane, got: $out"
 assert_contains "$out" "effective_cap: 0" "the runway cap is folded into the effective cap, got: $out"
-assert_contains "$out" "projected exhaustion" "the reason names projected exhaustion, got: $out"
+assert_contains "$out" "est. exhaustion" "the reason labels the projection as an estimate, got: $out"
+assert_contains "$out" "claude_exhaustion_estimate: est. 2026-09-14T15:00:00+00:00" "the forecast line is labelled est., got: $out"
+assert_contains "$out" "claude_five_hour_percent_remaining: 89" "the five-hour fact is printed, got: $out"
+assert_contains "$out" "claude_five_hour_resets_at: 2026-09-14T16:00:00+00:00" "the five-hour reset fact is printed, got: $out"
+assert_contains "$out" "claude_seven_day_percent_remaining: 80" "the weekly fact is printed, got: $out"
+assert_contains "$out" "claude_read_at: 2026-09-14T12:00:00+00:00" "the read time is printed, got: $out"
+
+# 9a. An account burning exactly on pace projects exhaustion at the reset and
+# must keep the base cap: on-pace spend rides out the window.
+out=$(run_cap "$home" "$(quota_doc on-pace 83 4 behind 0.8 behind '' '' 4.05 '' '' established)") || fail "on-pace projection must succeed"
+assert_contains "$out" "claude_runway_cap: none" "an on-pace projection at the reset does not block, got: $out"
+assert_contains "$out" "claude_runway_block: no" "an on-pace lane is admitted, got: $out"
+assert_contains "$out" "effective_cap: 3" "on-pace spend keeps the base cap, got: $out"
+assert_contains "$out" "claude_runway_reason: healthy: 83% left, est. exhaustion" "the on-pace readout keeps the facts and labels the forecast, got: $out"
 
 # 9b. A projection after the reset is not projected exhaustion.
-out=$(run_cap "$home" "$(quota_doc projected-late 89 4 behind 0.8 behind '' '' 5)") || fail "late projection must succeed"
+out=$(run_cap "$home" "$(quota_doc projected-late 89 4 behind 0.8 behind '' '' 5 '' '' established)") || fail "late projection must succeed"
 assert_contains "$out" "claude_runway_cap: none" "a projection after the reset leaves the account healthy, got: $out"
 assert_contains "$out" "claude_runway_block: no" "a healthy projection admits a lane, got: $out"
 
-# 9c. A projection exactly at resetsAt + 20m is not before it.
-out=$(run_cap "$home" "$(quota_doc projected-edge 89 4 behind 0.8 behind '' '' 4.3333333333333333)") || fail "edge projection must succeed"
-assert_contains "$out" "claude_runway_cap: none" "a projection at the reset+20m boundary is not early, got: $out"
+# 9c. A projection exactly at resetsAt - 20m is not strictly before it.
+out=$(run_cap "$home" "$(quota_doc projected-edge 89 4 behind 0.8 behind '' '' 3.6666666666666665 '' '' established)") || fail "edge projection must succeed"
+assert_contains "$out" "claude_runway_cap: none" "a projection at the reset-20m boundary is not early, got: $out"
+
+# 9d. A projection flagged early swings by hours and is never used, even when
+# it lands far before the reset.
+out=$(run_cap "$home" "$(quota_doc projected-early 89 4 behind 0.8 behind '' '' 1 '' '' early)") || fail "early projection must succeed"
+assert_contains "$out" "claude_runway_cap: none" "an early projection does not block, got: $out"
+assert_contains "$out" "claude_runway_block: no" "an early projection admits a lane, got: $out"
+assert_contains "$out" "effective_cap: 3" "an early projection keeps the base cap, got: $out"
+assert_contains "$out" "claude_exhaustion_estimate: -" "the early projection is omitted from the forecast line, got: $out"
+assert_contains "$out" "projection omitted (early)" "the reason says the early projection is omitted, got: $out"
 
 # 10. Under 40% with a live Claude lane on that account blocks the next one;
 # the lane count excludes secondmates and other harnesses.

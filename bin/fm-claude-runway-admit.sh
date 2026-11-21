@@ -14,7 +14,8 @@
 # `claude_account`, and `claude_runway_reason` lines. Because a gate agent is
 # not a dispatched lane, the refusal does not depend on the lane count; a real
 # reading is refused when its runway cap is 0 (exhausted, or projected to
-# exhaust before the reset plus 20 minutes) or 1 (under 40% remaining, which
+# exhaust more than 20 minutes before the reset on a non-early projection) or
+# 1 (under 40% remaining, which
 # in fm-spawn still admits one implementing lane). An unavailable or
 # rate-limited reading is not a real reading: it admits, because an outage of
 # the quota endpoint must never stop every check. The same holds for a cap

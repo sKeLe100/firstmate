@@ -152,7 +152,7 @@ remote homes under one shared snapshot budget and may refresh the parent-side ca
 
 Default fields: schema, home, generated, prs,
   claude_accounts{label,dir,status,reason,five_hour_percent_remaining,
-  five_hour_resets_at,seven_day_percent_remaining,seven_day_resets_at},
+  five_hour_resets_at,seven_day_percent_remaining,seven_day_resets_at,read_at},
   in_flight{id,kind,state,repo,name,doing},
   secondmates{id,state,doing,provenance,freshness,stale,invalid_ids,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
@@ -413,14 +413,15 @@ DEFAULT_ACCOUNT_AMBIENT=0
 BEARINGS_CLAUDE_ROW_JQ='
   def bearings_window($p; $id):
     if $p == null then null else ([$p.windows[]? | select(.id == $id)] | first) end;
-  def bearings_claude_row($label; $dir; $status; $reason; $p):
+  def bearings_claude_row($label; $dir; $status; $reason; $p; $read):
     {label:$label, dir:$dir, status:$status, reason:$reason,
      five_hour_percent_remaining:((bearings_window($p; "five_hour")).percentRemaining // null),
      five_hour_resets_at:((bearings_window($p; "five_hour")).resetsAt // null),
      seven_day_percent_remaining:((bearings_window($p; "seven_day")).percentRemaining // null),
-     seven_day_resets_at:((bearings_window($p; "seven_day")).resetsAt // null)};
+     seven_day_resets_at:((bearings_window($p; "seven_day")).resetsAt // null),
+     read_at:$read};
   def bearings_unknown_claude_row($label; $dir; $reason):
-    bearings_claude_row($label; $dir; "unknown"; $reason; null);
+    bearings_claude_row($label; $dir; "unknown"; $reason; null; null);
 '
 
 bearings_quota_unknown_row() {  # <label> <dir> <reason>
@@ -464,7 +465,8 @@ bearings_quota_account_row() {  # <label> <dir> <timeout> <ambient>
   fi
   printf '%s' "$out" | jq -c --arg label "$label" --arg dir "$dir" \
     "$FM_QUOTA_ROW_JQ$BEARINGS_CLAUDE_ROW_JQ"'
-      quota_row(.; "claude"; "") as $p
+      (.generatedAt // null) as $read
+      | quota_row(.; "claude"; "") as $p
       | if $p == null then
           bearings_unknown_claude_row($label; $dir; "quota-axi reported no claude provider")
         else
@@ -477,7 +479,7 @@ bearings_quota_account_row() {  # <label> <dir> <timeout> <ambient>
                     elif $state != "" then $state
                     else "quota unavailable" end)
                else null end);
-              $p)
+              $p; ($p.state.refreshedAt // $read))
         end
     ' 2>/dev/null || bearings_quota_unknown_row "$label" "$dir" "quota-axi returned invalid JSON"
 }
