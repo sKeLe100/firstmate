@@ -82,7 +82,7 @@ worktree=${worktree:-${FM_HOME:-$PWD}}
 # Threshold resolution: defaults, then a strict optional config/context-thresholds.
 warn_tokens=150000
 restart_tokens=250000
-thresholds_file="$FM_HOME/config/context-thresholds"
+thresholds_file="${FM_HOME:-}/config/context-thresholds"
 if [ -n "${FM_HOME:-}" ] && [ -e "$thresholds_file" ]; then
   if [ ! -f "$thresholds_file" ]; then
     echo "fm-opencode-context-usage: $thresholds_file is not a regular file" >&2
