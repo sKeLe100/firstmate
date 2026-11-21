@@ -1,0 +1,12 @@
+# real store, worktree match, FM_HOME unset (review-1 fix)
+context_tokens=188400 window=1000000 percent=18.8 warn_tokens=150000 restart_tokens=250000 band=warn harness=opencode session=ses_e050d4d4effeYTUjJGg3jfP1Xs age_seconds=130 match=worktree
+exit=0
+# real store, no session for dir
+context_tokens=unknown window=unknown percent=- warn_tokens=150000 restart_tokens=250000 band=unknown harness=opencode session=- age_seconds=unknown match=- reason=no-session
+exit=0
+# missing db
+context_tokens=unknown window=unknown percent=- warn_tokens=150000 restart_tokens=250000 band=unknown harness=opencode session=- age_seconds=unknown match=- reason=no-store
+exit=0
+context_tokens=100000 window=1000000 percent=10.0 warn_tokens=150000 restart_tokens=250000 band=ok harness=opencode session=s0 age_seconds=0 match=worktree
+context_tokens=160000 window=1000000 percent=16.0 warn_tokens=150000 restart_tokens=250000 band=warn harness=opencode session=s1 age_seconds=0 match=worktree
+context_tokens=260000 window=1000000 percent=26.0 warn_tokens=150000 restart_tokens=250000 band=restart harness=opencode session=s2 age_seconds=0 match=worktree

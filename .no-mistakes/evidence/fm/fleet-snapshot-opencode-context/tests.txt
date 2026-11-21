@@ -1,0 +1,14 @@
+# all fm-opencode-context-usage tests passed
+rc=0
+ok - every section renders and JSON/TOON share the same model
+ok - an opencode worker's context band comes from its session store
+ok - a failed quota read is labelled and never rendered as zero
+ok - a rate-limited quota read shows state and retry, never 0 percent
+ok - a down PC02 yields unavailable rows and keeps PC01 complete
+ok - the remote fixture alone supplies PC02 hosts, drives, and the running session
+ok - worker-lane accounts follow the lane classification, not the orchestrator role
+ok - row caps hold and the omitted counts report the cut rows
+ok - the command creates no file and leaves fixture mtimes unchanged
+ok - home-only renders just one home's workers for the remote call
+skip: live: opt-in; set FM_FLEET_LIVE=1 to run
+rc=0
