@@ -54,7 +54,7 @@ It works in this order:
 3. When `--origin` is supplied, it records the origin on the task, replacing any previous association.
 4. It invokes the underlying tasks-axi hold operation.
 5. It verifies the hold and timestamp.
-6. When the held task records a worktree and its worker endpoint is dead or absent, it aborts that task's own parked no-mistakes run through `bin/fm-nm-conclude-lib.sh`, the step teardown also uses, so the run frees its daemon review slot; the worktree, branch, PR, meta and status stay, and a live endpoint's run is never touched.
+6. When the held task records a worktree and its worker endpoint is confirmed dead by its backend, it aborts that task's own parked no-mistakes run through `bin/fm-nm-conclude-lib.sh`, the step teardown also uses, so the run frees its daemon review slot; the worktree, branch, PR, meta and status stay, and the run of a live or unconfirmed endpoint is never touched.
 
 Publishing the stamp first ensures a snapshot cannot observe a newly captain-held task without the timestamp that defines its age.
 
