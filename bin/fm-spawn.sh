@@ -4178,6 +4178,17 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       fi
     fi
   fi
+  # Advisory duplicate check (bin/fm-predispatch-check.sh): warn when this ask
+  # looks like work a merged pull request or a recent default-branch commit
+  # already landed, so firstmate can stop a redundant lane. It prints warnings
+  # and never refuses, so a false positive cannot block a dispatch.
+  if [ "$KIND" = ship ] && [ "$RELAUNCH" -eq 0 ]; then
+    PREDISPATCH_TEXT=${CAPTAIN_INTENT:-}
+    if [ -z "$PREDISPATCH_TEXT" ] && fm_brief_task_heading_present "$BRIEF" "## Captain's intent"; then
+      PREDISPATCH_TEXT=$(fm_brief_task_heading_body "$BRIEF" "## Captain's intent")
+    fi
+    "$FM_ROOT/bin/fm-predispatch-check.sh" "$ID" --project "$PROJ_ABS" --branch "$BRANCH" --text "$PREDISPATCH_TEXT" || true
+  fi
   if [ "$RELAUNCH" -eq 1 ]; then
     BASE_BRANCH=$(fm_meta_get "$RELAUNCH_META" base_branch)
   elif [ "$BASE_BRANCH_SET" -eq 1 ]; then
