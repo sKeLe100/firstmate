@@ -214,9 +214,12 @@
 #   root Firstmate home's state directory before slot allocation and holds it through
 #   task metadata publication. Teardown holds that same lock while proving and
 #   returning a slot, so allocation cannot reuse a slot before its owner record
-#   is published. Under that same lock it writes the slot's owner claim, which is
-#   what lets teardown leave a slot reassigned since untouched; bin/fm-wake-lib.sh
-#   owns the claim and bin/fm-teardown.sh owns what it protects. A slot that
+#   is published. Under that same lock it first reserves, with a durable
+#   Treehouse lease, every pool slot another task record still names, so a kept
+#   copy is never reissued while its record exists; it then writes the slot's
+#   owner claim, which is what lets teardown leave a slot reassigned since
+#   untouched; bin/fm-wake-lib.sh owns both and bin/fm-teardown.sh owns what the
+#   claim protects. A slot that
 #   cannot be claimed refuses the spawn rather than launching a worker whose slot
 #   could later be released out from under its successor. A spawn that aborts
 #   while it still holds the allocation lock drops its own claim; an abort after
@@ -5616,6 +5619,16 @@ elif [ "$RELAUNCH" -eq 1 ]; then
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  # Keep out of this acquisition every slot one of this home's other task
+  # records still names, so a parked, shelved, or exited worker's kept copy is
+  # never handed to a new task. Done under the allocation lock held since
+  # capacity admission, so the reservation and this get cannot interleave with
+  # another spawn or return; bin/fm-wake-lib.sh owns the reservation itself.
+  [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ] || {
+    echo "error: refusing to acquire a Treehouse slot without the project allocation lock held; a slot this home's task records still name could be reissued to this task" >&2
+    exit 1
+  }
+  fm_treehouse_reserve_recorded_slots "$PROJ_ABS" "$STATE" "$ID" || exit 1
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
