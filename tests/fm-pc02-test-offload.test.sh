@@ -354,7 +354,7 @@ case "\$*" in
     ;;
 esac
 case "\$*" in
-  *personal-use*)
+  *personal-use:on*)
     probe_out=\$(HOME="$dir/home" bash -c "\$*" 2>&1)
     probe_out=\${probe_out//resource:script-missing/resource:cpu=1 gpu=0}
     printf '%s\\n' "\$probe_out" | sed "s/^threads:.*/threads:$threads/"
@@ -506,6 +506,51 @@ SH
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
   flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "failure retained the host claim"
   pass "a remote run returns the suite's own exit code promptly despite a straggler and removes its mirror"
+}
+
+test_remote_run_stops_when_personal_use_turns_on() {
+  local dir fakebin fixture pid status _
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-personal-use-stop"
+  fakebin=$(fake_pc02 "$dir")
+  fixture="$dir/hang.test.sh"
+  cat > "$fixture" <<SH
+#!/usr/bin/env bash
+echo "\$\$" > "$dir/suite-pid"
+touch "$dir/suite-started"
+sleep 60
+SH
+  chmod +x "$fixture"
+
+  PATH="$fakebin:$PATH" \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$SCRIPT" "$fixture" > "$dir/out.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 "$REMOTE_SUITE_START_TRIES"); do
+    [ -f "$dir/suite-started" ] && break
+    sleep 0.1
+  done
+  [ -f "$dir/suite-started" ] || { kill "$pid" 2>/dev/null; fail "the remote suite never started: $(cat "$dir/out.log")"; }
+  : > "$dir/home/.fm-pc02-personal-use"
+  for _ in $(seq 1 300); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  wait "$pid"
+  status=$?
+  expect_code 77 "$status" "a personal-use flip must stop the run as no verdict: $(cat "$dir/out.log")"
+  assert_contains "$(cat "$dir/out.log")" "stopped: personal use" \
+    "the stopped run was not reported cleanly: $(cat "$dir/out.log")"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "a personal-use stop left the PC02 mirror behind: $(cat "$dir/out.log")"
+  for _ in $(seq 1 50); do
+    kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || break
+    sleep 0.1
+  done
+  ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "a personal-use stop left the remote suite running"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "a personal-use stop retained the host claim"
+  pass "turning personal use on stops an in-flight offload, frees its slot, and reports no verdict"
 }
 
 test_remote_run_passes_through_green_suite_and_json() {
@@ -1788,6 +1833,7 @@ test_missing_perl_falls_back_to_local
 test_live_pc02_model_worker_does_not_block_offload
 test_loaded_llama_swap_and_busy_probe_do_not_block_offload
 test_remote_run_returns_suite_exit_code_despite_straggler
+test_remote_run_stops_when_personal_use_turns_on
 test_remote_run_passes_through_green_suite_and_json
 test_remote_lint_runs_local_lint_and_propagates_exit
 test_lint_local_fallback_runs_changed_file_lint

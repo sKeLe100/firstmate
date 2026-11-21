@@ -40,6 +40,13 @@
 # llama-swap do not count: they share the host with the test slots rather than
 # holding them, and the slot locks below are the only occupancy signal.
 #
+# The switch also stops a run that is already under way. While the run waits
+# for a slot and while its remote suite executes, it watches the same flag on
+# PC02; when the flag appears it ends only the process session it started,
+# releases its slot, removes its mirror, and reports `stopped: personal use`
+# with exit 77 (no verdict) rather than a test failure. Non-test processes are
+# never signalled.
+#
 # Every readiness check is local or one bounded ssh call; a stuck or slow
 # probe times out and this script falls back to running locally rather than
 # hanging waiting on PC02. Once a check has committed to a remote run it
@@ -290,7 +297,10 @@
 # Exit status: the status of the command that actually ran: fm-test-run.sh for
 # tests, the aggregate of every canonical lint partition on PC02, and
 # bin/fm-lint.sh's changed-file lint on PC01; or 124 if the remote run itself
-# exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS; or 2 for a malformed
+# exceeded FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS; or 77 with a `stopped: personal
+# use` message when the captain's PC02 switch turned on while this run was in
+# flight (no verdict: rerun when PC02 is free, never a test or lint failure);
+# or 2 for a malformed
 # FM_PC02_OFFLOAD_SLOTS (not an integer from 1 to 16), a malformed
 # pc02-offload-slots file or wait setting, a malformed
 # FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS, or a malformed capacity floor setting,
@@ -468,6 +478,15 @@ run_local() {  # <reason>
   release_claim
   if [ "$LINT_PARTITIONS" = 1 ]; then exec "$SELF_DIR/fm-lint.sh"; fi
   exec "$SELF_DIR/fm-test-run.sh" ${ARGS[@]+"${ARGS[@]}"}
+}
+
+# The captain's switch turned on while this run was already in flight. Report
+# it as a no-verdict stop rather than a test failure, so the caller reruns when
+# PC02 is free instead of treating the stopped suite as a failing one. The EXIT
+# trap removes this run's mirror and releases its claim.
+stop_personal_use() {
+  echo "fm-pc02-test-offload: stopped: personal use (the PC02 switch is on); no test verdict - rerun when PC02 is free" >&2
+  exit 77
 }
 
 [ "${FM_PC02_OFFLOAD_DISABLE:-}" != "1" ] || run_local "offload disabled (FM_PC02_OFFLOAD_DISABLE=1)"
@@ -739,9 +758,11 @@ while [ "$slot" -le "$SLOTS" ]; do
 done
 # shellcheck disable=SC2016 # HOME and command expand on PC02.
 claim_cmd='held=
+flag=$HOME/'"$(printf '%q' "$PERSONAL_USE_FLAG")"'
 deadline=$(( $(date +%s) + '"$claim_budget"' ))
 wait_notice=0
 while [ -z "$held" ]; do
+  [ ! -f "$flag" ] || { printf "stopped-personal-use\n"; exit 75; }
   for i in'"$claim_slots"'; do
     exec 8> "$HOME/.fm-pc02-test-slot-$i.lock" || exit 1
     if flock -n 8; then held=$i; break 2; fi
@@ -754,8 +775,10 @@ while [ -z "$held" ]; do
   if [ "$wait_notice" -eq 0 ]; then printf "waiting %s\n" "$pause"; wait_notice=1; fi
   sleep "$pause"
 done
+[ ! -f "$flag" ] || { printf "stopped-personal-use\n"; exit 75; }
 printf "claimed %s of '"$SLOTS"'\n" "$held"
 IFS= read -r -t '"$((SYNC_TIMEOUT * 3 + PROBE_TIMEOUT * 5))"' command || exit 1
+[ ! -f "$flag" ] || { printf "stopped-personal-use\n"; exit 75; }
 eval "$command"'
 # FIFOs keep this compatible with stock macOS Bash (which has no coproc).
 claim_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-pc02-claim.XXXXXX") || run_local "cannot prepare claim channel"
@@ -795,6 +818,7 @@ while :; do
 done
 case "$claim_reply" in
   "claimed "*) echo "fm-pc02-test-offload: claimed PC02 slot ${claim_reply#claimed }" >&2 ;;
+  "stopped-personal-use") stop_personal_use ;;
   "busy "*)
     kill "$claim_pid" 2>/dev/null || true
     if [ "$claim_budget" -le 0 ]; then
@@ -989,15 +1013,34 @@ mkdir -p \"\$run_dir/tmp\" || exit 1
 printf '%s\\n' $(printf '%q' "$ROOT") > \"\$run_dir/local-root\" || exit 1
 export TMPDIR=\"\$run_dir/tmp\"
 cd \"\$run_dir/worktree\" || exit 1
+flag=\$HOME/$(printf '%q' "$PERSONAL_USE_FLAG")
 $remote_suite_cmd &
 pgid=\$!
 echo \"\$pgid\" > \"\$run_dir/pgid\"
 (exec 8>&-; while read -r _; do :; done; pkill -KILL -s \"\$pgid\" 2>/dev/null) <&5 &
 watcher=\$!
+# Watch the same flag the admission probe read, so a flip after the run started
+# stops this run's own process session instead of letting a full suite keep
+# holding PC02 while the captain uses it.
+( exec 8>&-; while kill -0 \"\$pgid\" 2>/dev/null; do
+    if [ -f \"\$flag\" ]; then
+      : > \"\$run_dir/stopped\"
+      pkill -TERM -s \"\$pgid\" 2>/dev/null
+      sleep 5
+      pkill -KILL -s \"\$pgid\" 2>/dev/null
+      exit 0
+    fi
+    sleep 2
+  done ) &
+flag_watcher=\$!
 wait \"\$pgid\"
 rc=\$?
-kill \"\$watcher\" 2>/dev/null
+kill \"\$watcher\" \"\$flag_watcher\" 2>/dev/null
 pkill -KILL -s \"\$pgid\" 2>/dev/null
+if [ -e \"\$run_dir/stopped\" ]; then
+  printf '%s\\n' 'fm-pc02-test-offload: stopped: personal use'
+  rc=75
+fi
 exit \"\$rc\""
 # printf %q keeps the multiline command as one protocol line. Execution is
 # inside the lock-owning SSH shell, so its descendants also retain the lock.
@@ -1010,6 +1053,9 @@ claim_pid=
 wait "$stream_pid" || true
 if [ "$rc" -eq 124 ]; then
   echo "fm-pc02-test-offload: remote run on PC02 exceeded ${RUN_TIMEOUT}s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry" >&2
+fi
+if [ "$rc" -eq 75 ]; then
+  stop_personal_use
 fi
 
 # A --json artifact lands on PC02's mirror; pull it back so callers reading the

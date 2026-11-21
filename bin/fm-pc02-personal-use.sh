@@ -5,6 +5,13 @@
 # offloading a heavy test or lint run there. This switch is the only thing
 # that stops PC02 testing.
 #
+# An offload that is already running is stopped too: it watches the same flag
+# on PC02 while it waits for a slot and while its suite executes, then ends
+# only its own process session, releases its slot, removes its mirror, and
+# reports `stopped: personal use` (no verdict) instead of a test failure. So
+# the CLI `on` below and the Windows desktop toggle behave alike, and nothing
+# outside the offloaded run is signalled.
+#
 # The same flag gates PC02's self-hosted GitHub Actions runners:
 # `install-toggle` deploys bin/fm-pc02-personal-use-runners.sh, a user path
 # unit that triggers it, and a drop-in per discovered `actions.runner.*` unit,
