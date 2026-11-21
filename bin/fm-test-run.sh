@@ -960,7 +960,7 @@ tests/fm-calm-claude-mod-plugin.test.sh 180
 tests/fm-calm-claude-mod.test.sh 2727
 tests/fm-calm-pi-extension.test.sh 56463
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1345
-tests/fm-capacity.test.sh 839
+tests/fm-capacity.test.sh 3076
 tests/fm-captain-hold-lifecycle.test.sh 251658
 tests/fm-captain-hold-merge-teardown.test.sh 157397
 tests/fm-captain-hold-reconcile.test.sh 175140

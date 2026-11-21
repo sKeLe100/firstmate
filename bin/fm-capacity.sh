@@ -12,9 +12,14 @@
 #     mem_free_pct=<N|unknown> disk_free_mb=<N|unknown>
 # (one physical line). A short human summary follows it.
 #
-# lanes counts task metadata records whose kind is not secondmate (ship and
-# scout work, including records not yet reconciled after an endpoint died).
+# lanes counts LIVE ship and scout work: task metadata records whose kind is not
+# secondmate and whose current state is live, shared with the away spend cap
+# through bin/fm-afk-contract.sh's `live-workers` (a done or failed record, an
+# unknown record whose endpoint is gone, and a captain-held record hold no lane).
 # secondmates counts persistent secondmates separately; they hold no lane.
+# That shared count may reconcile a record that is not positively live through
+# bin/fm-crew-state.sh, so a lane read is read-only but not always a single file
+# read.
 #
 # target comes only from config/lane-capacity: one non-negative integer, the
 # number of concurrent lanes this home should run. Absent means no target, so
@@ -67,16 +72,26 @@ is_uint() {
 }
 
 # --- lanes ------------------------------------------------------------------
+# One liveness rule for both counts: bin/fm-afk-contract.sh's `live-workers` is
+# the owner, so a dead, done, failed, or captain-held record frees its lane just
+# as it frees an away spend-cap seat. An unreadable count falls back to every
+# non-secondmate record, because a failed probe must never free a lane.
 lanes=0
 secondmates=0
 for meta in "$STATE"/*.meta; do
   [ -f "$meta" ] || continue
-  if grep -qx 'kind=secondmate' "$meta" 2>/dev/null; then
-    secondmates=$((secondmates + 1))
-  else
-    lanes=$((lanes + 1))
-  fi
+  grep -qx 'kind=secondmate' "$meta" 2>/dev/null && secondmates=$((secondmates + 1))
 done
+lanes=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" live-workers 2>/dev/null) || lanes=
+case "$lanes" in
+  ''|*[!0-9]*)
+    lanes=0
+    for meta in "$STATE"/*.meta; do
+      [ -f "$meta" ] || continue
+      grep -qx 'kind=secondmate' "$meta" 2>/dev/null || lanes=$((lanes + 1))
+    done
+    ;;
+esac
 
 target=none
 target_error=

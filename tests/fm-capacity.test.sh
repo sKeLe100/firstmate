@@ -8,17 +8,27 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+# The lane count reads captain holds from the backlog through tasks-axi, which
+# lives outside BASE_PATH on a normal install; keep it reachable when present.
+TASKS_AXI_DIR=
+if tasks_axi_path=$(command -v tasks-axi 2>/dev/null); then
+  TASKS_AXI_DIR=$(dirname "$tasks_axi_path")
+fi
 TMP_ROOT=$(fm_test_tmproot fm-capacity)
 CAPACITY="$ROOT/bin/fm-capacity.sh"
 
-# make_home <name> <ship-count> <secondmate-count>: a home with that many
-# ship metas and secondmate metas.
+# make_home <name> <ship-count> <secondmate-count>: a home with that many live
+# ship metas and secondmate metas. A ship is live because its endpoint exists
+# and its current status is working; the fake tmux in make_probes supplies the
+# endpoint.
 make_home() {
   local home="$TMP_ROOT/$1" i
   mkdir -p "$home/state" "$home/config"
   i=0
   while [ "$i" -lt "$2" ]; do
-    fm_write_meta "$home/state/ship-$i.meta" "kind=ship" "mode=no-mistakes"
+    fm_write_meta "$home/state/ship-$i.meta" \
+      "window=%live-pane" "worktree=$home" "project=$home" "kind=ship" "mode=no-mistakes"
+    printf 'working [at=1700000000]: busy\n' > "$home/state/ship-$i.status"
     i=$((i + 1))
   done
   i=0
@@ -44,6 +54,16 @@ case "\$2" in
 esac
 SH
   printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/getconf"
+  # The lane count's endpoint read: every live fixture targets %live-pane.
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-panes) printf '%%live-pane\n' ;;
+  list-windows) printf "can't find session: absent\n" >&2; exit 1 ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
   cat > "$fakebin/df" <<SH
 #!/usr/bin/env bash
 [ -n "$5" ] || exit 1
@@ -55,7 +75,7 @@ SH
 }
 
 run_capacity() {  # <home> <fakebin>
-  PATH="$2:$BASE_PATH" FM_HOME="$1" "$CAPACITY" 2>&1
+  PATH="$2:$BASE_PATH${TASKS_AXI_DIR:+:$TASKS_AXI_DIR}" FM_HOME="$1" "$CAPACITY" 2>&1
 }
 
 test_no_target_prints_counts_only() {
@@ -99,6 +119,56 @@ test_target_yields_open_lanes_and_full() {
   out=$(run_capacity "$home" "$fakebin")
   assert_contains "$out" 'free_lanes=0 reason=full lanes=2 target=1' "over target must not go negative"
   pass "a target yields open lanes, full, and never a negative count"
+}
+
+test_dead_done_and_held_records_hold_no_lane() {
+  local home fakebin out
+  home=$(make_home lane-liveness 1 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-liveness" 0.50 60 8 20971520)
+  out=$(run_capacity "$home" "$fakebin")
+  assert_contains "$out" 'lanes=1 ' "a live record must hold its lane"
+
+  fm_write_meta "$home/state/done-ship.meta" \
+    "window=%live-pane" "worktree=$home" "project=$home" "kind=ship" "mode=no-mistakes" "harness=claude"
+  printf 'done [at=1700000000]: finished\n' > "$home/state/done-ship.status"
+  printf 'g1\n' > "$home/state/done-ship.busy-gen"
+  printf 'v1 gen=g1 seq=1 state=idle source=claude-hook event=stop ts=1700000000\n' \
+    > "$home/state/done-ship.busy-state"
+  fm_write_meta "$home/state/dead-ship.meta" \
+    "window=absent:dead-ship" "worktree=$home/state/gone" "project=$home" "kind=ship" "mode=no-mistakes"
+  out=$(run_capacity "$home" "$fakebin")
+  assert_contains "$out" 'lanes=1 ' "done and dead records must not hold a lane: $out"
+
+  local held_note=", and captain-held records"
+  if ! command -v tasks-axi >/dev/null 2>&1; then
+    held_note=" (captain-held case SKIPPED: tasks-axi not on PATH)"
+    printf 'skip - captain-held lane case needs tasks-axi, which is not on PATH\n'
+  else
+    mkdir -p "$home/data"
+    cat > "$home/.tasks.toml" <<'TOML'
+backend = "markdown"
+
+[markdown]
+path = "data/backlog.md"
+done_keep = 10
+TOML
+    cat > "$home/data/backlog.md" <<'BACKLOG'
+# Backlog
+
+## In flight
+- [ ] held-ship - work held for the captain (kind: ship) (since 2026-11-20) (hold: fm-hold-v1:cmVhc29u) (hold-kind: captain)
+
+## Queued
+
+## Done
+BACKLOG
+    fm_write_meta "$home/state/held-ship.meta" \
+      "window=%live-pane" "worktree=$home" "project=$home" "kind=ship" "mode=no-mistakes"
+    printf 'working [at=1700000000]: busy\n' > "$home/state/held-ship.status"
+    out=$(run_capacity "$home" "$fakebin")
+    assert_contains "$out" 'lanes=1 ' "a captain-held record must not hold a lane: $out"
+  fi
+  pass "done, dead$held_note hold no lane"
 }
 
 test_host_constraints_close_lanes() {
@@ -169,6 +239,7 @@ test_real_host_smoke() {
 test_no_target_prints_counts_only
 test_no_target_never_prints_constrained_line
 test_target_yields_open_lanes_and_full
+test_dead_done_and_held_records_hold_no_lane
 test_host_constraints_close_lanes
 test_unavailable_probes_degrade
 test_invalid_target_is_reported
