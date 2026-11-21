@@ -655,6 +655,7 @@ family_for_basename() {
       ;;
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
     fm-busy-state.test.sh|fm-classify-corr-token.test.sh|\
+    fm-claude-account-quota.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
     fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
@@ -970,6 +971,7 @@ tests/fm-ci-workflow.test.sh 16689
 tests/fm-claim-check.test.sh 844
 tests/fm-classify-corr-token.test.sh 34691
 tests/fm-classify-decision-key.test.sh 4479
+tests/fm-claude-account-quota.test.sh 2492
 tests/fm-claude-runway-admit.test.sh 1000
 tests/fm-claude-stop-autoarm-live-e2e.test.sh 184
 tests/fm-claude-stop-autoarm.test.sh 61189
@@ -986,6 +988,7 @@ tests/fm-composer-matrix-live-e2e.test.sh 171
 tests/fm-config-inherit-lane-caps.test.sh 708
 tests/fm-context-usage.test.sh 1173
 tests/fm-contributions.test.sh 200990
+tests/fm-control-relaunch-account.test.sh 14639
 tests/fm-control-relaunch-move-session.test.sh 7444
 tests/fm-control-relaunch.test.sh 174828
 tests/fm-control.test.sh 72794
@@ -2331,12 +2334,16 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
+      printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
       ;;
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       ;;
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
+      ;;
+    bin/fm-claude-account-quota.sh)
+      printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
       ;;
     bin/fm-dispatch-resolve.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
