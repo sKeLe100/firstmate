@@ -30,7 +30,7 @@ Today it runs beside a Claude, Cursor, OpenCode, omp, Grok, or Codex primary: aw
   Every other close reaches main exactly as the plain watcher arm delivers it.
 - Attended on OpenCode, omp, Grok, and Codex, the host is a pass-through: every close reaches main as without the host.
 - Away (an away record exists), the host hands each close to the engine.
-  Main stays parked unless the host hands the wake back.
+  Main stays parked unless the host hands the wake back, which it also does for a stale wake on a worker that already drew three identical captain verdicts with no change in its state (`FM_SUPERVISION_HOST_LADDER_LIMIT`, `bin/fm-branch-outcome.sh repeats`); a routine verdict or any status change starts the count over.
 - `/afk` launches no away daemon on a home of those harnesses that runs the host, because the host is the away session there.
 - `/quiet` enters nothing where the attended host runs, and elsewhere launches the daemon; see [Quiet mode](#quiet-mode).
   While the daemon's flag `state/.afk` exists, the host stands aside exactly as the plain arm does.

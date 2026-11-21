@@ -487,6 +487,57 @@ test_away_turn_without_a_report_hands_the_wake_to_main() {
   pass "host: an engine turn that records no outcome hands its durable wake to main"
 }
 
+# The ladder's end action: while away, a stale wake on a worker that already
+# drew three identical captain verdicts with no change in its state goes to
+# main instead of the engine; a changed verdict or state starts the count over.
+seed_ladder_outcomes() {  # <home> <verdict>...
+  local home=$1 verdict
+  shift
+  for verdict in "$@"; do
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$ROOT/bin/fm-branch-outcome.sh" append \
+      --task demo --verdict "$verdict" --summary "demo is still wedged" --wake 'stale: fm-demo' >/dev/null \
+      || fail "fixture: could not seed a $verdict outcome"
+  done
+}
+
+inject_stale_wake() {  # <home> <n>
+  FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" bash -c '
+    . "$1"
+    fm_wake_append stale fm-demo "stale: fm-demo (idle 900s, possible wedge, escalation $2)"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$2" || fail "fixture: could not queue a stale wake"
+}
+
+test_away_ladder_hands_the_fourth_identical_verdict_wake_to_main() {
+  local home
+  home=$(make_home away-ladder away)
+  seed_ladder_outcomes "$home" captain captain captain
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "ladder: the host never started a watcher cycle"
+  inject_stale_wake "$home" 4
+  wait_until 250 host_exited "$home" || fail "ladder: the host did not hand the wake to main: $(cat "$home/state/.supervision-host.log")"
+  assert_re '^supervision-host: the away session could not take this wake: .*3 identical captain verdicts on demo.*this wake is yours$' "$home/host.out" "ladder: the handback must say why"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "ladder: the engine ran on a wake past the ladder limit"
+  pass "host: while away, the wake after three identical captain verdicts on one worker goes to main"
+}
+
+test_away_ladder_count_resets_when_the_verdict_or_state_changes() {
+  local home
+  home=$(make_home away-ladder-reset away)
+  seed_ladder_outcomes "$home" captain captain routine captain captain
+  [ "$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$ROOT/bin/fm-branch-outcome.sh" repeats --task demo)" = 2 ] \
+    || fail "ladder: a routine verdict must end the run of captain verdicts"
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "ladder reset: the host never started a watcher cycle"
+  inject_stale_wake "$home" 4
+  wait_until 250 handled_at_least "$home" 1 || fail "ladder reset: the engine did not take the wake: $(cat "$home/state/.supervision-host.log")"
+  [ ! -s "$home/host.rc" ] || fail "ladder reset: a wake under the limit reached main: $(cat "$home/host.out")"
+  seed_ladder_outcomes "$home" captain
+  append_status "$home" 'the worker moved'
+  [ "$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$ROOT/bin/fm-branch-outcome.sh" repeats --task demo)" = 0 ] \
+    || fail "ladder: a change in the worker's state must reset the run"
+  pass "host: the ladder count resets on a changed verdict or worker state"
+}
+
 test_return_during_an_engine_turn_hands_its_outcomes_to_main() {
   local home
   home=$(make_home away-return away)
@@ -1186,6 +1237,8 @@ test_undelivered_dialog_is_fed_again_on_the_next_turn
 test_attended_wake_with_an_unreadable_mirror_reaches_main
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main
 test_away_turn_without_a_report_hands_the_wake_to_main
+test_away_ladder_hands_the_fourth_identical_verdict_wake_to_main
+test_away_ladder_count_resets_when_the_verdict_or_state_changes
 test_return_during_an_engine_turn_hands_its_outcomes_to_main
 test_silent_outcomes_are_not_relayed_when_the_captain_returns
 test_large_turn_relays_an_early_visible_outcome
