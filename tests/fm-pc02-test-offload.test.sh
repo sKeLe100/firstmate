@@ -384,6 +384,7 @@ SH
   cat > "$fakebin/rsync" <<SH
 #!/usr/bin/env bash
 args=(--exclude=/state --exclude=/data --exclude=/config --exclude=/projects)
+[ -z "\${FM_FAKE_RSYNC_TOUCH:-}" ] || : > "\$FM_FAKE_RSYNC_TOUCH"
 while [ "\$#" -gt 0 ]; do
   case "\$1" in
     -e) shift 2; continue ;;
@@ -551,6 +552,58 @@ SH
   ! kill -0 "$(cat "$dir/suite-pid")" 2>/dev/null || fail "a personal-use stop left the remote suite running"
   flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "a personal-use stop retained the host claim"
   pass "turning personal use on stops an in-flight offload, frees its slot, and reports no verdict"
+}
+
+test_personal_use_flip_during_sync_stops_before_the_suite_runs() {
+  local dir fakebin fixture out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-personal-use-sync"
+  fakebin=$(fake_pc02 "$dir")
+  fixture="$dir/never.test.sh"
+  printf '#!/usr/bin/env bash\ntouch %q\n' "$dir/suite-ran" > "$fixture"
+  chmod +x "$fixture"
+  out=$(PATH="$fakebin:$PATH" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    FM_FAKE_RSYNC_TOUCH="$dir/home/.fm-pc02-personal-use" \
+    "$SCRIPT" "$fixture" 2>&1)
+  status=$?
+  expect_code 77 "$status" "a flip during the mirror sync must stop the run as no verdict: $out"
+  assert_contains "$out" "stopped: personal use" "the sync-window stop was not reported: $out"
+  [ ! -e "$dir/suite-ran" ] || fail "the suite ran after personal use turned on during sync: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "a sync-window stop left the PC02 mirror behind: $out"
+  flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true || fail "a sync-window stop retained the host claim"
+  pass "a personal-use flip during the mirror sync stops the run before the suite and frees the slot"
+}
+
+test_personal_use_flip_while_waiting_for_a_slot_stops_the_run() {
+  local dir fakebin fixture out status holder _
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/remote-personal-use-wait"
+  fakebin=$(fake_pc02 "$dir")
+  fixture="$dir/never.test.sh"
+  printf '#!/usr/bin/env bash\ntouch %q\n' "$dir/suite-ran" > "$fixture"
+  chmod +x "$fixture"
+  flock "$dir/home/.fm-pc02-test-slot-1.lock" sleep 30 &
+  holder=$!
+  for _ in $(seq 1 50); do
+    flock -n "$dir/home/.fm-pc02-test-slot-1.lock" true 2>/dev/null || break
+    sleep 0.1
+  done
+  ( sleep 2; : > "$dir/home/.fm-pc02-personal-use" ) &
+  out=$(PATH="$fakebin:$PATH" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=1 \
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=30 FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
+    timeout 60 "$SCRIPT" "$fixture" 2>&1)
+  status=$?
+  kill "$holder" 2>/dev/null
+  wait "$holder" 2>/dev/null
+  expect_code 77 "$status" "a flip while waiting for a slot must stop the run as no verdict: $out"
+  assert_contains "$out" "stopped: personal use" "the slot-wait stop was not reported: $out"
+  [ ! -e "$dir/suite-ran" ] || fail "the suite ran after personal use turned on during the slot wait: $out"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "a slot-wait stop left a PC02 mirror behind: $out"
+  pass "a personal-use flip while every slot is busy stops the waiting run instead of running anywhere"
 }
 
 test_remote_run_passes_through_green_suite_and_json() {
@@ -1834,6 +1887,8 @@ test_live_pc02_model_worker_does_not_block_offload
 test_loaded_llama_swap_and_busy_probe_do_not_block_offload
 test_remote_run_returns_suite_exit_code_despite_straggler
 test_remote_run_stops_when_personal_use_turns_on
+test_personal_use_flip_during_sync_stops_before_the_suite_runs
+test_personal_use_flip_while_waiting_for_a_slot_stops_the_run
 test_remote_run_passes_through_green_suite_and_json
 test_remote_lint_runs_local_lint_and_propagates_exit
 test_lint_local_fallback_runs_changed_file_lint
