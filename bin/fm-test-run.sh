@@ -1090,7 +1090,7 @@ tests/fm-pr-check-security.test.sh 355229
 tests/fm-pr-reviewers.test.sh 305
 tests/fm-pr-state-live-e2e.test.sh 96
 tests/fm-pr-state.test.sh 862
-tests/fm-precompact-checkpoint.test.sh 179
+tests/fm-precompact-checkpoint.test.sh 445
 tests/fm-primary-herdr.test.sh 6030
 tests/fm-primary-scope-lib.test.sh 340
 tests/fm-primary-watchdog.test.sh 31045
