@@ -434,7 +434,8 @@ test_routine_working_and_covered_done_stay_silent_on_the_empty_queue() {
     --task task8 --verdict captain --summary 'shipped clean was handled' >/dev/null \
     || fail "could not record the newer branch outcome fixture"
 
-  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed with routine working and covered done lines"
+  printf '0.10 0.10 0.10 1/100 1\n' > "$dir/loadavg"
+  FM_LOADAVG_FILE="$dir/loadavg" FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed with routine working and covered done lines"
 
   if grep -F 'UNREAD STATUS' "$out" >/dev/null; then
     fail "routine working/covered done lines printed an UNREAD STATUS section: $(cat "$out")"
