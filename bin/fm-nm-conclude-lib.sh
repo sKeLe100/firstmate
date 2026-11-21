@@ -124,6 +124,8 @@ conclude_task_no_mistakes_run() {  # <worktree>
   elif task_status_is_run_not_found "$out" "$run_id"; then
     return 0
   fi
-  echo "REFUSED: no-mistakes run for $ID is still parked after axi abort; confirm it stopped (no-mistakes axi status) or abort it manually (no-mistakes axi abort --run <id>) before retrying teardown." >&2
+  local next='before retrying teardown'
+  [ "${NM_CONCLUDE_CONTEXT:-teardown}" = teardown ] || next='so it stops holding a review slot'
+  echo "REFUSED: no-mistakes run for $ID is still parked after axi abort; confirm it stopped (no-mistakes axi status) or abort it manually (no-mistakes axi abort --run <id>) $next." >&2
   return 1
 }

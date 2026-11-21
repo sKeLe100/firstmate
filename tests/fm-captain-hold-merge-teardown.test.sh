@@ -1491,8 +1491,9 @@ SH
 # Holding a task whose worker is gone concludes its parked no-mistakes run so
 # the run stops holding a daemon review slot, while the worktree, branch and
 # worker record stay. A live worker's run is never touched.
-make_parked_run_task() {  # <home> <id>
+make_parked_run_task() {  # <home> <id> [extra meta line...]
   local home=$1 id=$2 wt head
+  shift 2
   wt="$home/wt-$id"
   git init -q "$wt" || fail "could not build the task worktree"
   git -C "$wt" checkout -q -b "fm/$id" || fail "could not branch the task worktree"
@@ -1501,7 +1502,7 @@ make_parked_run_task() {  # <home> <id>
   head=$(git -C "$wt" rev-parse HEAD)
   fm_write_meta "$home/state/$id.meta" \
     "worktree=$wt" "project=$home/projects/sample" "kind=ship" "mode=no-mistakes" \
-    "spawn_gen=fixture-$id"
+    "spawn_gen=fixture-$id" "$@"
   cat > "$home/fakebin/no-mistakes" <<SH
 #!/usr/bin/env bash
 case "\${1:-} \${2:-}" in
@@ -1511,17 +1512,23 @@ case "\${1:-} \${2:-}" in
     else
       printf 'run:\\n  id: "01RUN"\\n  branch: fm/$id\\n  status: awaiting_approval\\n  awaiting_agent: parked 2m\\n  head: "$head"\\ngate: review\\n'
     fi ;;
-  "axi abort") printf 'abort %s\\n' "\${3:-} \${4:-}" >> "$home/abort.log" ;;
+  "axi abort") [ -f "$home/abort.noop" ] || printf 'abort %s\\n' "\${3:-} \${4:-}" >> "$home/abort.log" ;;
 esac
 exit 0
 SH
   chmod +x "$home/fakebin/no-mistakes"
 }
 
+make_dead_backend() {  # <home> [tmux stderr message]
+  printf '#!/usr/bin/env bash\necho "%s" >&2\nexit 1\n' "${2:-no server running on gone}" > "$1/fakebin/tmux"
+  chmod +x "$1/fakebin/tmux"
+}
+
 test_hold_concludes_the_parked_run_of_a_dead_worker() {
   local home id=sample-dead-run
   home=$(make_home hold-dead-run)
-  make_parked_run_task "$home" "$id"
+  make_dead_backend "$home"
+  make_parked_run_task "$home" "$id" backend=tmux window=gone:win
   run_captain "$home" hold "$id" --title "Parked task" --reason "shelved" --repo sample \
     >/dev/null 2>"$home/hold.err" || fail "hold failed: $(cat "$home/hold.err")"
   assert_grep "abort --run 01RUN" "$home/abort.log" "a dead worker's parked run was not aborted"
@@ -1540,6 +1547,30 @@ test_hold_leaves_the_run_of_a_live_worker_alone() {
     --repo sample >/dev/null 2>"$home/hold.err" || fail "hold failed: $(cat "$home/hold.err")"
   assert_absent "$home/abort.log" "a live worker's run was aborted by a hold"
   pass "holding a task with a live worker never touches its run"
+}
+
+test_hold_leaves_the_run_alone_when_worker_liveness_is_unknown() {
+  local home id=sample-unknown-run
+  home=$(make_home hold-unknown-run)
+  make_dead_backend "$home" "tmux transient failure"
+  make_parked_run_task "$home" "$id" backend=tmux window=flaky:win
+  run_captain "$home" hold "$id" --title "Unknown task" --reason "wait" \
+    --repo sample >/dev/null 2>"$home/hold.err" || fail "hold failed: $(cat "$home/hold.err")"
+  assert_absent "$home/abort.log" "a hold aborted the run of a worker whose liveness is unknown"
+  pass "holding a task whose liveness probe fails never touches its run"
+}
+
+test_hold_reports_a_run_that_abort_did_not_stop() {
+  local home id=sample-stuck-run
+  home=$(make_home hold-stuck-run)
+  make_dead_backend "$home"
+  make_parked_run_task "$home" "$id" backend=tmux window=gone:win
+  : > "$home/abort.noop"
+  run_captain "$home" hold "$id" --title "Stuck task" --reason "shelved" --repo sample \
+    >/dev/null 2>"$home/hold.err" || fail "hold failed: $(cat "$home/hold.err")"
+  assert_grep "REFUSED: no-mistakes run for $id is still parked" "$home/hold.err" "a run abort left parked was not reported"
+  if grep -q "before retrying teardown" "$home/hold.err"; then fail "hold reported teardown wording"; fi
+  pass "a hold reports a still-parked run without teardown wording and still succeeds"
 }
 
 # A shown scalar field is a JSON-encoded bare string, and JSON::PP accepts one
@@ -1570,3 +1601,5 @@ run_case test_released_merge_passes_the_entrypoint_and_lands
 run_case test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read
 run_case test_hold_concludes_the_parked_run_of_a_dead_worker
 run_case test_hold_leaves_the_run_of_a_live_worker_alone
+run_case test_hold_leaves_the_run_alone_when_worker_liveness_is_unknown
+run_case test_hold_reports_a_run_that_abort_did_not_stop

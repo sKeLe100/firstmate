@@ -930,7 +930,7 @@ conclude_held_task_run() {  # <task-id>
   [ -f "$meta" ] || return 0
   wt=$(fm_meta_get "$meta" worktree)
   [ -n "$wt" ] && [ -d "$wt" ] || return 0
-  ! task_endpoint_alive "$id" || return 0
+  task_endpoint_confirmed_dead "$id" || return 0
   ID=$id
   KIND=$(fm_meta_get "$meta" kind)
   [ -n "$KIND" ] || KIND=ship
@@ -1259,6 +1259,20 @@ task_endpoint_alive() {  # <task-id>
   local state
   state=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null) || return 1
   [ "$state" = "alive" ]
+}
+
+# Returns 0 only when the backend positively reports the recorded endpoint's
+# agent dead; a missing record, unreadable probe or unverified backend is
+# unknown and returns 1, so callers never act on a worker that may be live.
+task_endpoint_confirmed_dead() {  # <task-id>
+  [ "${FM_FORCE_ENDPOINT_ALIVE:-0}" = 1 ] && return 1
+  local meta="$STATE/${1}.meta" backend target
+  [ -f "$meta" ] || return 1
+  backend=$(fm_meta_get "$meta" backend)
+  [ -n "$backend" ] || return 1
+  target=$(fm_backend_target_of_meta "$meta")
+  [ -n "$target" ] || return 1
+  [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null)" = dead ]
 }
 
 command_answer() {
