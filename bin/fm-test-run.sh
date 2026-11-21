@@ -967,7 +967,7 @@ tests/fm-captain-hold-reconcile.test.sh 175140
 tests/fm-captain-window.test.sh 413
 tests/fm-check-unregister.test.sh 707
 tests/fm-ci-workflow.test.sh 16689
-tests/fm-claim-check.test.sh 550
+tests/fm-claim-check.test.sh 844
 tests/fm-classify-corr-token.test.sh 34691
 tests/fm-classify-decision-key.test.sh 4479
 tests/fm-claude-runway-admit.test.sh 1000
@@ -1090,7 +1090,7 @@ tests/fm-pr-check-security.test.sh 355229
 tests/fm-pr-reviewers.test.sh 305
 tests/fm-pr-state-live-e2e.test.sh 96
 tests/fm-pr-state.test.sh 862
-tests/fm-precompact-checkpoint.test.sh 179
+tests/fm-precompact-checkpoint.test.sh 499
 tests/fm-primary-herdr.test.sh 6030
 tests/fm-primary-scope-lib.test.sh 340
 tests/fm-primary-watchdog.test.sh 31045
@@ -1219,7 +1219,7 @@ tests/fm-wake-daemon-lifecycle-e2e.test.sh 10205
 tests/fm-wake-drain-open-decisions-cursor.test.sh 57278
 tests/fm-wake-drain-open-decisions.test.sh 10882
 tests/fm-wake-drain-outcome-backstop.test.sh 55046
-tests/fm-wake-drain-unread-status.test.sh 24251
+tests/fm-wake-drain-unread-status.test.sh 41228
 tests/fm-wake-pair-dedup.test.sh 61865
 tests/fm-wake-queue.test.sh 165906
 tests/fm-watch-arm.test.sh 146594
