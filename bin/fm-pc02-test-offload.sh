@@ -1039,13 +1039,12 @@ kill \"\$watcher\" \"\$flag_watcher\" 2>/dev/null
 pkill -KILL -s \"\$pgid\" 2>/dev/null
 if [ -e \"\$run_dir/stopped\" ]; then
   printf '%s\\n' 'fm-pc02-test-offload: stopped: personal use'
-  rc=75
 fi
 exit \"\$rc\""
 # printf %q keeps the multiline command as one protocol line. Execution is
 # inside the lock-owning SSH shell, so its descendants also retain the lock.
 printf '%s\n' "$(printf '%q' bash) -c $(printf '%q' "$remote_test_cmd")" >&6 || exit 1
-cat <&7 6>&- &
+tee "$claim_tmp/stream" <&7 6>&- &
 stream_pid=$!
 wait "$claim_pid"
 rc=$?
@@ -1054,7 +1053,7 @@ wait "$stream_pid" || true
 if [ "$rc" -eq 124 ]; then
   echo "fm-pc02-test-offload: remote run on PC02 exceeded ${RUN_TIMEOUT}s (FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS); failing rather than doubling the budget with a local retry" >&2
 fi
-if [ "$rc" -eq 75 ]; then
+if grep -qxF 'fm-pc02-test-offload: stopped: personal use' "$claim_tmp/stream" 2>/dev/null; then
   stop_personal_use
 fi
 
