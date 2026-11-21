@@ -84,7 +84,8 @@ terms=$(
       }'
 )
 
-# count_matches <terms> <text>: number of distinct shared stemmed tokens.
+# count_matches <terms> <text>: "<shared> <total>", the number of distinct shared
+# stemmed tokens and the number of distinct significant tokens in the text.
 # A trailing plural "s" is stripped on both sides so "disclosure" and
 # "disclosures" count as the same term.
 count_matches() {
@@ -106,6 +107,7 @@ count_matches() {
       for (i = 1; i <= NF; i++) {
         w = stem($i)
         if (w != "") seen[w] = 1
+        if (w != "" && length($i) >= 4 && $i !~ /^(feat|fix|chore|docs|test|tests|refactor|perf|build)$/ && !(w in tot)) { tot[w] = 1; total++ }
       }
     }
     END {
@@ -117,12 +119,22 @@ count_matches() {
           c++
         }
       }
-      print c
+      print c, total + 0
     }'
 }
 
-# A task id or its branch is a strong direct signal; two or more shared terms is
-# the fuzzy title signal. One shared term alone is too noisy to warn about.
+# is_fuzzy_match <title>: at least two shared terms AND at least a third of the
+# title's own significant terms, so a long ask cannot match a title by chance.
+is_fuzzy_match() {
+  local shared total
+  read -r shared total <<EOT
+$(count_matches "$terms" "$1")
+EOT
+  [ "$shared" -ge 2 ] && [ $((shared * 3)) -ge "$total" ]
+}
+
+# A task id or its branch is a strong direct signal; the fuzzy title signal is
+# is_fuzzy_match. One shared term alone is too noisy to warn about.
 is_direct_match() {  # <haystack>
   local hay=$1 bare=${BRANCH#fm/}
   if [ "${#ID}" -ge 4 ]; then
@@ -172,8 +184,7 @@ if [ -n "$slug" ] && command -v gh >/dev/null 2>&1; then
     [ -n "$number" ] || continue
     direct=0
     is_direct_match "$head" && direct=1
-    fuzzy=$(count_matches "$terms" "$title")
-    if [ "$direct" -eq 1 ] || [ "$fuzzy" -ge 2 ]; then
+    if [ "$direct" -eq 1 ] || is_fuzzy_match "$title"; then
       report "task $ID may already be done: merged pull request #$number \"$title\" $url (merged ${merged_at:-unknown})"
       shown=$((shown + 1))
       [ "$shown" -ge 3 ] && break
@@ -204,8 +215,7 @@ if [ -n "$base_ref" ]; then
     if [ "${#ID}" -ge 4 ]; then
       case "$subject" in *"$ID"*) direct=1 ;; esac
     fi
-    fuzzy=$(count_matches "$terms" "$subject")
-    if [ "$direct" -eq 1 ] || [ "$fuzzy" -ge 2 ]; then
+    if [ "$direct" -eq 1 ] || is_fuzzy_match "$subject"; then
       report "task $ID may already be done: recent commit $sha \"$subject\" on ${base_ref#refs/remotes/origin/}"
       shown=$((shown + 1))
       [ "$shown" -ge 3 ] && break

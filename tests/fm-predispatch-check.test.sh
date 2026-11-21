@@ -125,6 +125,22 @@ test_silent_when_nothing_matches() {
   pass "no match prints nothing and exits 0"
 }
 
+test_long_text_with_incidental_overlap_is_silent() {
+  set -e
+  local repo rows fakebin out
+  repo="$TMP_ROOT/repo-long"
+  rows="$TMP_ROOT/prs-long.tsv"
+  fakebin="$TMP_ROOT/fakebin-long"
+  new_repo "$repo" "feat(bin): choose a Claude account per ship or scout from a declared list"
+  pr_fixture "$rows"
+  make_fake_gh "$fakebin" "$rows"
+
+  out=$(run_check "$fakebin" unrelated-task --project "$repo" \
+    --text "Harden quota routing so claude outages and ship pacing stay visible, review dashboards, alerts, retries, logging, metrics, thresholds and reports" 2>&1)
+  [ -z "$out" ] || fail "two incidental shared terms in a long ask must stay silent, got: $out"
+  pass "long ask with incidental overlap prints nothing"
+}
+
 test_missing_gh_and_non_github_origin_degrade_quietly() {
   set -e
   local repo out rc nobin nogh
@@ -170,5 +186,6 @@ test_usage_errors_are_loud() {
 test_reports_matching_merged_pr_and_commit
 test_direct_branch_match_reports_even_with_different_wording
 test_silent_when_nothing_matches
+test_long_text_with_incidental_overlap_is_silent
 test_missing_gh_and_non_github_origin_degrade_quietly
 test_usage_errors_are_loud
