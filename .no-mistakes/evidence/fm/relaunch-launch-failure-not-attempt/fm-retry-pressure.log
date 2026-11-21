@@ -1,0 +1,14 @@
+ok - fm-retry-pressure.sh: zero evidence reads ok with zero counts
+ok - fm-retry-pressure.sh: halt at the relaunch ceiling, reset by a landed outcome
+ok - fm-retry-pressure.sh: non-object telemetry lines are zero evidence, not an error
+ok - fm-retry-pressure.sh: a worker's keyed retry-loop report reads as loop
+ok - fm-retry-pressure.sh: keyed retry-loop reads follow the shared status-key fold
+ok - fm-retry-pressure.sh: a resolved keyed line clears the loop until it reopens
+ok - fm-retry-pressure.sh: an open needs-decision retry-loop key reads as loop
+ok - fm-retry-pressure.sh: config parsing matches the sibling helper's contract
+ok - fm-retry-pressure.sh: threshold file overrides apply and malformed files fail loudly
+ok - fm-retry-pressure.sh: FM_STATE_OVERRIDE/FM_DATA_OVERRIDE resolve like the writers
+ok - fm-retry-pressure.sh: FM_CONFIG_OVERRIDE resolves the thresholds file like the config writer
+ok - fm-retry-pressure.sh: cumulative per-reviewer counts survive runs, duplicates, and resolved reports
+ok - fm-retry-pressure.sh: missing run ids and malformed counts retain general bands; carried counts honor task and state override
+ok - fm-retry-pressure.sh: config/retry-thresholds is inherited by secondmate homes

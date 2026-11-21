@@ -1,0 +1,3 @@
+ok - fm-spawn launch guard: a stale pane PATH is retried through the login shell and the agent starts
+ok - fm-spawn launch guard: an unresolvable harness fails loudly and records a specific launch failure
+ok - fm-spawn launch guard: a harness already on the pane PATH launches without a login-shell probe
