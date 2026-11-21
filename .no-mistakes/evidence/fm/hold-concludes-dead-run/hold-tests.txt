@@ -1,0 +1,7 @@
+ok - merge entrypoints own task state before forced cleanup can retire it
+ok - a released merge passes the guarded entrypoint and remains recently landed
+ok - cleanup refuses a ship row when its captain hold cannot be read
+ok - holding a task with a dead worker aborts its parked run and keeps the worktree and branch
+ok - holding a task with a live worker never touches its run
+ok - holding a task whose liveness probe fails never touches its run
+ok - a hold reports a still-parked run without teardown wording and still succeeds
