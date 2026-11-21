@@ -1,0 +1,6 @@
+--- band run (170k expect warn)
+context_tokens=170000 window=400000 percent=42.5 warn_tokens=150000 restart_tokens=250000 band=warn harness=opencode session=ses_a age_seconds=1795283711 match=worktree
+--- no session
+context_tokens=unknown window=unknown percent=- warn_tokens=150000 restart_tokens=250000 band=unknown harness=opencode session=- age_seconds=unknown match=- reason=no-session
+--- no store
+context_tokens=unknown window=unknown percent=- warn_tokens=150000 restart_tokens=250000 band=unknown harness=opencode session=- age_seconds=unknown match=- reason=no-store
