@@ -1,0 +1,27 @@
+== after fix (HEAD)
+FM_TEST_HINT_DRIFT ok checked=3 confirmed=0 warned=0
+exit=0
+FM_TEST_HINT_DRIFT ok checked=3 confirmed=0 warned=0
+exit(2nd)=0
+== before fix (base script)
+::warning::fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on this run only for 3 script(s); will refuse only if this recurs on the next run:
+  tests/fm-claim-check.test.sh: hint=550ms measured=839ms ratio=1.53x
+  tests/fm-precompact-checkpoint.test.sh: hint=179ms measured=453ms ratio=2.53x
+  tests/fm-wake-drain-unread-status.test.sh: hint=24251ms measured=36801ms ratio=1.52x
+FM_TEST_HINT_DRIFT ok checked=3 confirmed=0 warned=3
+exit=0
+fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on two consecutive runs for 3 script(s):
+  tests/fm-claim-check.test.sh: hint=550ms measured=839ms ratio=1.53x
+  tests/fm-precompact-checkpoint.test.sh: hint=179ms measured=453ms ratio=2.53x
+  tests/fm-wake-drain-unread-status.test.sh: hint=24251ms measured=36801ms ratio=1.52x
+fm-test-run: refresh the hints: docs/fm-test-portable-shards.md
+exit=1
+== real regression: genuine drift still caught
+::warning::fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on this run only for 1 script(s); will refuse only if this recurs on the next run:
+  tests/fm-claim-check.test.sh: hint=844ms measured=3000ms ratio=3.55x
+FM_TEST_HINT_DRIFT ok checked=1 confirmed=0 warned=1
+exit=0
+fm-test-run: hint drift: measured duration exceeded hint by more than 1.5x and by at least 250ms on two consecutive runs for 1 script(s):
+  tests/fm-claim-check.test.sh: hint=844ms measured=3000ms ratio=3.55x
+fm-test-run: refresh the hints: docs/fm-test-portable-shards.md
+exit=1
