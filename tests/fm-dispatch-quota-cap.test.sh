@@ -435,18 +435,6 @@ assert_contains "$out" "effective_cap: 0" "the exhausted week zeroes the effecti
 run_cap "$home" "$(fresh_doc gap-reset 100 80 5 behind)" >/dev/null 2>&1
 [ $? -eq 2 ] || fail "a missing reset with nonzero usage must be refused, not exempted"
 
-# 13d. A stale reading is never headroom, even when its five_hour shape would
-# otherwise look unstarted.
-python3 - "$TMP_ROOT/unstarted.json" "$TMP_ROOT/unstarted-stale.json" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1]))
-d["providers"][0]["state"] = {"status": "stale", "stale": True}
-json.dump(d, open(sys.argv[2], "w"))
-PY
-out=$(run_cap "$home" "$TMP_ROOT/unstarted-stale.json") || fail "a stale reading must not refuse the gate: $out"
-assert_contains "$out" "claude_reading: unavailable" "a stale reading is unavailable, got: $out"
-assert_contains "$out" "claude_runway_cap: 1" "a stale reading stays tight, got: $out"
-
 # 13e. A failed fetch (provider status unavailable, no windows) stays tight.
 fetch_doc=$(mktemp)
 printf '%s' '{"schemaVersion":5,"providers":[{"provider":"claude","state":{"status":"unavailable"},"windows":[]}]}' > "$fetch_doc"

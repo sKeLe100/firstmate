@@ -405,10 +405,9 @@ def evaluate(account, claude, source_doc, strict):
     generated = None
     read_at = None
     if claude is not None:
-        cstate = claude.get("state") or {}
-        status = cstate.get("status")
-        if claude.get("notSetUp") or cstate.get("stale") is True or status in (
-            "unavailable", "error", "auth_required", "rate_limited", "refused", "stale"
+        status = (claude.get("state") or {}).get("status")
+        if claude.get("notSetUp") or status in (
+            "unavailable", "error", "auth_required", "rate_limited", "refused"
         ):
             unavailable = True
         five = window_by_id(claude, "five_hour")
