@@ -798,7 +798,9 @@ fm_dod_should_gate_ship_done() {  # <kind> <mode> <line>
 # no-mistakes done that reports no PR URL is the pipeline handoff rather than a
 # delivered pull request. Only bin/fm-crew-state.sh asks for this reading, by
 # passing fm_dod_accept_ship_done's <require_pr> argument, so the ready-signal
-# callers keep the documented ungated handoff semantics. forge=external reports
+# callers keep the documented ungated handoff semantics. A recorded pr= (which
+# any recorded merge is keyed on) means the PR exists, so it is not awaited.
+# forge=external reports
 # a review upload instead of a PR, so it is exempt. Empty mode is treated as
 # no-mistakes, the unregistered-project default.
 fm_dod_ship_done_awaits_pr() {  # <kind> <mode> <line> <meta>
@@ -810,6 +812,9 @@ fm_dod_ship_done_awaits_pr() {  # <kind> <mode> <line> <meta>
     *) return 1 ;;
   esac
   if [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" forge)" = external ]; then
+    return 1
+  fi
+  if [ -n "$meta" ] && [ -n "$(fm_dod_meta_value "$meta" pr)" ]; then
     return 1
   fi
   ! fm_dod_pr_url_from_done_note "$(status_line_note "$line")" >/dev/null

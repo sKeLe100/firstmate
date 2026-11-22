@@ -2558,6 +2558,30 @@ test_no_mistakes_done_with_pr_stays_done() {
   pass "no-mistakes done with a PR: stays current-state done"
 }
 
+# A free-text done reads done when the task's meta already records its PR: the
+# PR exists, so "pull request is missing" would be false.
+test_no_mistakes_free_text_done_with_recorded_pr_stays_done() {
+  reset_fakes
+  local d out
+  d=$(new_case nm-done-recorded)
+  make_repo_on_branch "$d/wt" fm/nm-done-recorded
+  git -C "$d/wt" commit -q --allow-empty -m 'the validated fix'
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/nm-done-recorded.meta" \
+    "window=fm:fm-nm-done-recorded" "worktree=$d/wt" "project=$d/wt" \
+    "kind=ship" "mode=no-mistakes" "harness=claude" \
+    "pr=https://github.com/o/r/pull/12"
+  printf 'done: merged and cleaned up\n' > "$d/state/nm-done-recorded.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" nm-done-recorded
+  out=$(run_crew_state "$d" nm-done-recorded)
+  assert_contains "$out" "state: done" "a done with a recorded PR reads done"
+  assert_not_contains "$out" "pull request is missing" "the PR exists, so it must not be called missing"
+  pass "no-mistakes free-text done with a recorded pr=: stays current-state done"
+}
+
 test_moved_remote_branch_without_named_head_is_blocked() {
   reset_fakes
   local d main_sha fix_sha out
@@ -6234,6 +6258,7 @@ test_unpushed_ship_done_is_blocked
 test_merged_pr_reads_done_under_captured_meta
 test_no_mistakes_prevalidation_done_without_pr_is_blocked
 test_no_mistakes_done_with_pr_stays_done
+test_no_mistakes_free_text_done_with_recorded_pr_stays_done
 test_moved_remote_branch_without_named_head_is_blocked
 test_external_review_done_reads_ready
 test_no_run_busy_pane
