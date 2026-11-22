@@ -1006,6 +1006,7 @@ The effective cap is the tightest cap any applicable row yields:
 
 The pace rows read both `five_hour` and `seven_day` `pace` objects; the five-hour pace is ignored during that window's first 30 minutes, when a small early spend reads as a large multiple.
 `quota-axi` exposes only `five_hour.resetsAt`, so elapsed time is derived from the window's fixed five-hour duration (`5h - (resetsAt - generatedAt)`).
+A five-hour window whose countdown has not started (quota-axi reports 100% remaining with no `resetsAt`, zero usage, and unknown pace) is not an unreadable reading: it bounds nothing, so the weekly window alone decides, and a fresh account reads as headroom unless its week is exhausted. A missing `resetsAt` with any other usage or a real pace still reads as unavailable and tight.
 PC02 stays on at every rung, and non-Claude cloud lanes (DeepSeek, Grok, Codex) absorb the work a lowered Claude cap turns away, within their own provider caps.
 
 The per-account runway rows are the admission rule for the five-hour window: the projection is the vendor meter's own exhaustion estimate, and the account is counted from this home's `state/*.meta` records (`harness=claude`, `kind` other than `secondmate`, matching `account=`, and no recorded `pr=` handoff, the same occupancy rule as project capacity), so a secondmate holds no dispatched lane and a lane that has handed off its PR does not consume the count; the count is advisory under concurrent spawns because it takes no lock.
