@@ -1,0 +1,20 @@
+== unstarted
+effective_cap: 3
+claude_reading: available
+claude_runway_cap: none
+claude_runway_block: no
+claude_runway_reason: healthy: five-hour window not started yet (100% left); weekly 80% left
+exit=0
+== week-exhausted
+effective_cap: 0
+claude_reading: available
+claude_runway_cap: 0
+claude_runway_block: yes
+claude_runway_reason: five-hour window has not started, but the weekly allowance is exhausted (0% left)
+exit=0
+== gap-reset-used5
+exit=2
+ok - fm-dispatch-quota-cap.sh: quota ladder, per-account runway, and Codex pace gate
+ok - fm-spawn.sh: an early projection keeps the base cap
+ok - fm-spawn.sh: a fresh account whose five-hour window has not started is admitted
+# all fm-spawn-claude-runway tests passed
