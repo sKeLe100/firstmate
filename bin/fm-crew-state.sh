@@ -257,7 +257,11 @@ fi
 # `blocked` (firstmate action needed); status_pause_needs_action owns that split.
 # A ship `done:` is not current-state done while bin/fm-dod-lib.sh refuses the
 # named-head reachability gate: that claim is blocked so a disposable copy is
-# not treated as finished-and-safe.
+# not treated as finished-and-safe. A no-mistakes `done:` that reports no PR
+# URL is the pipeline handoff, not a delivered pull request, so it reads
+# blocked with a reason naming the missing PR until the run's PR exists -
+# otherwise a worker that stopped after only a local commit would be mistaken
+# for finished and safe.
 # This read never refreshes remote-tracking refs: a fetch bounded at 30 seconds
 # per remote does not fit a caller's per-task bound (bin/fm-fleet-snapshot.sh
 # defaults to 10 seconds) and would repeat on every read. bin/fm-pr-check.sh,
@@ -265,7 +269,7 @@ fi
 # it refuses, so a read after it sees the fetched head.
 emit_ship_status_done() {  # [extra-detail]
   local extra=${1:-} reason
-  if reason=$(fm_dod_accept_ship_done "$KIND" "$(meta_value mode)" "$WT" "$(meta_value project)" "$LOG_LINE" "$STATE" "$ID" "$META"); then
+  if reason=$(fm_dod_accept_ship_done "$KIND" "$(meta_value mode)" "$WT" "$(meta_value project)" "$LOG_LINE" "$STATE" "$ID" "$META" 1); then
     emit "done" status-log "$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
   fi
   emit blocked status-log "$reason"

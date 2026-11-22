@@ -2428,7 +2428,7 @@ test_other_branch_run_ignored() {
   make_repo_on_branch "$d/wt" fm/feat-g
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-g.meta" "window=fm:fm-feat-g" "worktree=$d/wt" "kind=ship" "harness=claude"
-  printf 'done: implemented, ready to validate\n' > "$d/state/feat-g.status"
+  printf 'done: PR https://github.com/o/r/pull/5 checks green\n' > "$d/state/feat-g.status"
   FM_FAKE_AXI_STATUS="$(run_running fm/some-other)"
   FM_FAKE_RUNS_LIST="$(cat <<'EOF'
   running    fm/some-other aaaaaaa  2026-07-02 22:10
@@ -2501,7 +2501,12 @@ test_merged_pr_reads_done_under_captured_meta() {
   pass "recorded merged PR reads done under the fleet snapshot's captured meta"
 }
 
-test_no_mistakes_prevalidation_done_stays_done() {
+# The 2026-11-21 gap: a no-mistakes ship reported done after only a local
+# commit, with no pipeline run and no PR, and firstmate had to notice and steer
+# it. A no-mistakes done with no PR URL is the pipeline handoff, not a
+# delivered pull request, so current state must read blocked and name the
+# missing PR instead of finished-and-safe.
+test_no_mistakes_prevalidation_done_without_pr_is_blocked() {
   reset_fakes
   local d out
   d=$(new_case preval-done)
@@ -2517,9 +2522,40 @@ test_no_mistakes_prevalidation_done_stays_done() {
   FM_FAKE_BUSY=0
   arm_idle_record "$d/state" preval
   out=$(run_crew_state "$d" preval)
-  assert_contains "$out" "state: done" "no-mistakes pre-validation done: remains done"
-  assert_not_contains "$out" "state: blocked" "pre-validation done: must not be the named-head gate"
-  pass "no-mistakes pre-validation done: stays current-state done"
+  assert_contains "$out" "state: blocked" "a no-mistakes done without a PR must not read done"
+  assert_contains "$out" "source: status-log" "the unready handoff stays status-log sourced"
+  assert_contains "$out" "carries no PR URL" "the refusal must name the missing PR"
+  assert_contains "$out" "pull request is missing" "the refusal must name the missing pull request"
+  assert_not_contains "$out" "state: done" "a no-mistakes done without a PR must not remain done"
+  pass "no-mistakes done without a PR: is current-state blocked"
+}
+
+# The regression's other direction: once the done names its PR and the named
+# head is reachable outside the worker copy, the CI-ready done still reads done.
+test_no_mistakes_done_with_pr_stays_done() {
+  reset_fakes
+  local d sha out
+  d=$(new_case nm-done-pr)
+  make_repo_on_branch "$d/wt" fm/nm-done-pr
+  git -C "$d/wt" commit -q --allow-empty -m 'the validated fix'
+  sha=$(git -C "$d/wt" rev-parse HEAD)
+  git -C "$d/wt" update-ref refs/remotes/origin/fm/nm-done-pr "$sha"
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/nm-done-pr.meta" \
+    "window=fm:fm-nm-done-pr" "worktree=$d/wt" "project=$d/wt" \
+    "kind=ship" "mode=no-mistakes" "harness=claude"
+  printf 'done: PR https://github.com/o/r/pull/12 checks green\n' \
+    > "$d/state/nm-done-pr.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" nm-done-pr
+  out=$(run_crew_state "$d" nm-done-pr)
+  assert_contains "$out" "state: done" "a CI-ready done naming its PR still reads done"
+  assert_contains "$out" "source: status-log" "the ready reading stays status-log sourced"
+  assert_contains "$out" "checks green" "the ready detail preserves the report"
+  assert_not_contains "$out" "state: blocked" "a CI-ready done with a PR must not read blocked"
+  pass "no-mistakes done with a PR: stays current-state done"
 }
 
 test_moved_remote_branch_without_named_head_is_blocked() {
@@ -3128,7 +3164,7 @@ test_newest_open_decision_supplies_the_reported_detail() {
 
 test_single_owner_terminal_declaration_supersedes_stale_decision() {
   reset_fakes
-  local d kind opener terminal out key expected
+  local d kind opener terminal out key expected note
   d=$(new_case terminal-stale-decision)
   make_repo_on_branch "$d/wt" fm/task
   make_fakebin "$d" >/dev/null
@@ -3137,8 +3173,12 @@ test_single_owner_terminal_declaration_supersedes_stale_decision() {
     fm_write_meta "$d/state/task.meta" "window=fm:fm-task" "worktree=$d/wt" "kind=$kind" "harness=claude"
     for opener in needs-decision blocked; do
       for terminal in 'done' failed; do
-        printf '%s [key=choice]: an earlier decision\n%s: final outcome\nContinuation prose.\n\n' \
-          "$opener" "$terminal" > "$d/state/task.status"
+        note="$terminal: final outcome"
+        if [ "$kind" = ship ] && [ "$terminal" = "done" ]; then
+          note='done: PR https://github.com/o/r/pull/77 checks green final outcome'
+        fi
+        printf '%s [key=choice]: an earlier decision\n%s\nContinuation prose.\n\n' \
+          "$opener" "$note" > "$d/state/task.status"
         out=$(run_crew_state "$d" task)
         assert_contains "$out" "state: $terminal" "$kind terminal declaration supersedes stale $opener"
         assert_contains "$out" "final outcome" "the terminal declaration supplies the detail"
@@ -6192,7 +6232,8 @@ test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
 test_other_branch_run_ignored
 test_unpushed_ship_done_is_blocked
 test_merged_pr_reads_done_under_captured_meta
-test_no_mistakes_prevalidation_done_stays_done
+test_no_mistakes_prevalidation_done_without_pr_is_blocked
+test_no_mistakes_done_with_pr_stays_done
 test_moved_remote_branch_without_named_head_is_blocked
 test_external_review_done_reads_ready
 test_no_run_busy_pane
