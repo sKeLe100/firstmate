@@ -1,0 +1,6 @@
+ok - matching merged PR and recent commit are reported, exit stays 0
+ok - a matching merged PR head branch is reported on its own
+ok - no match prints nothing and exits 0
+ok - long ask with incidental overlap prints nothing
+ok - missing gh and non-GitHub origin degrade quietly
+ok - usage errors exit 2

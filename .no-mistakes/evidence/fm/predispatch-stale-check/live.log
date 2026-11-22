@@ -1,0 +1,7 @@
+== incident (should warn)
+warning: task bearings-pc02-disclosure may already be done: merged pull request #289 "feat: bearings pc02 disclosure" https://github.com/x/y/pull/289 (merged 2026-11-20)
+warning: task bearings-pc02-disclosure may already be done: recent commit baa88f4 "feat(pc02): disclose bearings in PC02 disclosure" on main
+warning: this is advisory evidence, not a refusal; confirm these are not the same work before relying on this task's worker
+rc=0
+== unrelated (silent)
+rc=0
