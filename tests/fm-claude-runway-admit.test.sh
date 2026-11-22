@@ -86,13 +86,13 @@ assert_contains "$out" "exhausted" "the refusal must carry the reason: $out"
 [ "$(printf '%s\n' "$out" | grep -c .)" -eq 1 ] \
   || fail "a refusal must be exactly one stderr line, got: $out"
 
-# 3. Projected exhaustion before the reset plus 20m refuses even at high
-# remaining, the 2026-11-19 failure case.
+# 3. Projected exhaustion materially before the reset refuses even at high
+# remaining, the 2026-11-19 failure case. The reason labels it an estimate.
 home=$(mk_home projected)
 out=$(run_admit "$home" "$(quota_doc projected 89 4 3)")
 rc=$?
 expect_code 75 "$rc" "projected exhaustion must refuse: $out"
-assert_contains "$out" "projected exhaustion" "the reason must name the projection: $out"
+assert_contains "$out" "est. exhaustion" "the reason must label the projection as an estimate: $out"
 
 # 4. A real reading under 40% is below the existing runway threshold.
 home=$(mk_home tight)

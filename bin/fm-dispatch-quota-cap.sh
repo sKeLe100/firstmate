@@ -48,9 +48,19 @@
 #
 # Per-account 5-hour runway admission (the bound account's own five_hour
 # window, report section 5 of data/claude-5h-window-system/report.md):
-#   projectedExhaustedAt < resetsAt + 20m                     -> cap 0
+#   projectedExhaustedAt < resetsAt - 20m, and the projection is not
+#     flagged `early`                                         -> cap 0
 #   five_hour.percentRemaining < 40                           -> cap 1
 #   the reading cannot be taken or is a rate-limited/auth state -> cap 1
+# The projection is linear, so an account burning exactly on pace projects
+# exhaustion at the reset itself; only exhaustion materially before the
+# reset (by more than 20 minutes) blocks, and an `early` projection is never
+# used because it swings by hours in a window's first 10%. On-pace spend
+# keeps its lanes right up to the reset.
+# A projection is always a forecast: the readout below labels it `est.` and
+# omits it while `early`. The plain facts - the account, the five_hour and
+# seven_day percentages left, their reset times, and when the reading was
+# taken - are printed separately and never reworded as a verdict.
 # cap 0 queues every new Claude lane; cap 1 admits new lanes only while no
 # implementing Claude lane is on that account. Lanes are counted from
 # state/*.meta records (harness=claude, kind not secondmate, matching
@@ -73,6 +83,12 @@
 #   claude_pace: <burnMultiple the pace rows used, 0.00 when none applied>
 #   claude_account: <ordinary|/path>
 #   claude_reading: available|unavailable
+#   claude_five_hour_percent_remaining: <n|->  (fact)
+#   claude_five_hour_resets_at: <iso|->        (fact)
+#   claude_seven_day_percent_remaining: <n|->  (fact)
+#   claude_seven_day_resets_at: <iso|->        (fact)
+#   claude_read_at: <iso|->                    (fact: when quota-axi read it)
+#   claude_exhaustion_estimate: est. <iso> | - (forecast; `-` while early)
 #   claude_lanes: <n>
 #   claude_runway_cap: none|0|1
 #   claude_runway_block: yes|no
@@ -307,6 +323,7 @@ five = None
 seven = None
 five_pct = None
 generated = None
+read_at = None
 if claude is not None:
     status = (claude.get("state") or {}).get("status")
     if claude.get("notSetUp") or status in (
@@ -327,17 +344,42 @@ if claude is not None:
             unavailable = True
     source_doc = doc if fixture else claude_doc
     generated = ts(source_doc.get("generatedAt")) if isinstance(source_doc, dict) else None
+    read_at = ts((claude.get("state") or {}).get("refreshedAt")) or generated
 
 runway_cap = None
 reason = ""
 pace_burn_used = 0.0
+projected = None
+early = False
+five_resets = None
+seven_pct = None
+seven_resets = None
+
+if five is not None:
+    five_resets = ts(five.get("resetsAt"))
+if seven is not None:
+    seven_pct = number(seven, "percentRemaining")
+    seven_resets = ts(seven.get("resetsAt"))
+
+def runway_confidence():
+    semantics = claude.get("quotaSemantics") if isinstance(claude, dict) else None
+    entries = semantics.get("effectiveAvailability") if isinstance(semantics, dict) else None
+    for entry in entries if isinstance(entries, list) else []:
+        runway = entry.get("runway") if isinstance(entry, dict) else None
+        if not isinstance(runway, dict):
+            continue
+        ids = runway.get("limitingWindowIds")
+        ids = ids if isinstance(ids, list) else [runway.get("limitingWindowId")]
+        if "five_hour" in ids and runway.get("projectionConfidence") is not None:
+            return runway["projectionConfidence"]
+    return None
 
 if unavailable:
     runway_cap = 1
     reason = "quota reading unavailable; treated as tight"
 else:
     pace = five.get("pace") if isinstance(five.get("pace"), dict) else {}
-    resets = ts(five.get("resetsAt"))
+    resets = five_resets
     if resets is None:
         if fixture:
             refuse("five_hour window has no parseable resetsAt")
@@ -348,16 +390,24 @@ else:
         projected = ts(pace.get("projectedExhaustedAt"))
         if projected is None:
             projected = ts(five.get("projectedExhaustedAt"))
+        confidence = pace.get("projectionConfidence")
+        if confidence is None:
+            confidence = runway_confidence()
+        early = confidence == "early"
         exhausted_now = five_pct <= 0 or pace.get("status") == "exhausted_now"
-        projected_first = projected is not None and projected < resets + timedelta(minutes=20)
+        projected_first = (
+            projected is not None
+            and not early
+            and projected < resets - timedelta(minutes=20)
+        )
         if exhausted_now:
             runway_cap = 0
             reason = f"{five_pct:g}% left; five-hour window already exhausted"
         elif projected_first:
             runway_cap = 0
             reason = (
-                f"projected exhaustion {projected.isoformat()} is before the reset "
-                f"{resets.isoformat()} plus 20m"
+                f"est. exhaustion {projected.isoformat()} is before the reset "
+                f"{resets.isoformat()} minus 20m"
             )
         elif five_pct < 40:
             runway_cap = 1
@@ -366,8 +416,10 @@ else:
             runway_cap = None
             if projected is None:
                 reason = f"healthy: {five_pct:g}% left, no projected exhaustion"
+            elif early:
+                reason = f"healthy: {five_pct:g}% left, projection omitted (early)"
             else:
-                reason = f"healthy: {five_pct:g}% left, projection {projected.isoformat()} after reset"
+                reason = f"healthy: {five_pct:g}% left, est. exhaustion {projected.isoformat()}"
         if five is not None and seven is not None:
             pace_burn_used = pace_burn(seven)
         if five is not None and generated is not None and seven is not None:
@@ -408,11 +460,27 @@ codex_window = codex_weekly(codex) if codex is not None and not codex.get("notSe
 codex_pace = (codex_window or {}).get("pace") if isinstance(codex_window, dict) else None
 codex_spawn = "no" if isinstance(codex_pace, dict) and codex_pace.get("status") == "ahead" else "yes"
 
+def fmt_num(value):
+    return "-" if value is None else f"{value:g}"
+
+def fmt_ts(value):
+    return "-" if value is None else value.isoformat()
+
+estimate = "-"
+if projected is not None and not early:
+    estimate = f"est. {projected.isoformat()}"
+
 print(f"effective_cap: {cap}")
 print(f"codex_spawn: {codex_spawn}")
 print(f"claude_pace: {pace_burn_used:.2f}")
 print(f"claude_account: {account}")
 print(f"claude_reading: {'unavailable' if unavailable else 'available'}")
+print(f"claude_five_hour_percent_remaining: {fmt_num(five_pct)}")
+print(f"claude_five_hour_resets_at: {fmt_ts(five_resets)}")
+print(f"claude_seven_day_percent_remaining: {fmt_num(seven_pct)}")
+print(f"claude_seven_day_resets_at: {fmt_ts(seven_resets)}")
+print(f"claude_read_at: {fmt_ts(read_at)}")
+print(f"claude_exhaustion_estimate: {estimate}")
 print(f"claude_lanes: {lanes}")
 print(f"claude_runway_cap: {'none' if runway_cap is None else runway_cap}")
 print(f"claude_runway_block: {'yes' if block else 'no'}")

@@ -1000,7 +1000,7 @@ The effective cap is the tightest cap any applicable row yields:
 | `five_hour.percentRemaining < 25`, or a window's pace is ahead with `burnMultiple > 1.15` | cap **2**; senior-tier (Fable/Opus) dispatch needs a stated reason; cosmetic/nice-to-have work parks |
 | `five_hour.percentRemaining <= 15`, or a window's pace is ahead with `burnMultiple > 1.5` | cap **1**; only work the captain is actually waiting on; everything else goes to the PC02 roster and non-Claude cloud lanes |
 | `model:fable.percentRemaining < 20` | Fable is not the automatic senior pick - `quota-array-dispatch` arbitrates to Opus; never silently downgrade out of the senior class entirely |
-| `five_hour.pace.projectedExhaustedAt < five_hour.resetsAt + 20m` | cap **0** on that account: every new Claude lane queues until the window resets |
+| `five_hour.pace.projectedExhaustedAt < five_hour.resetsAt - 20m`, with a projection not flagged `early` | cap **0** on that account: every new Claude lane queues until the window resets |
 | `five_hour.percentRemaining < 40` | cap **1**: no new lane while one implementing Claude lane is already live on that account |
 | the bound account's reading cannot be taken, or is rate-limited or signed out | cap **1**, never headroom |
 
@@ -1009,10 +1009,12 @@ The pace rows read both `five_hour` and `seven_day` `pace` objects; the five-hou
 PC02 stays on at every rung, and non-Claude cloud lanes (DeepSeek, Grok, Codex) absorb the work a lowered Claude cap turns away, within their own provider caps.
 
 The per-account runway rows are the admission rule for the five-hour window: the projection is the vendor meter's own exhaustion estimate, and the account is counted from this home's `state/*.meta` records (`harness=claude`, `kind` other than `secondmate`, matching `account=`, and no recorded `pr=` handoff, the same occupancy rule as project capacity), so a secondmate holds no dispatched lane and a lane that has handed off its PR does not consume the count; the count is advisory under concurrent spawns because it takes no lock.
+Because the projection is linear, an account burning exactly on pace projects exhaustion at the reset itself, so only exhaustion more than 20 minutes before the reset blocks, and a projection flagged `early` (the first 10% of a window) is never used because it swings by hours.
+A projection is always a forecast, never a reading: readouts label it `est.` and omit it while `early`, and the plain facts are reported separately.
 A missing projection falls through to the percent row rather than reading as headroom.
 `bin/fm-spawn.sh` enforces the per-account rows before any brief, endpoint, worktree, or record exists: a fresh Claude ship or scout that would exceed the account's runway cap is deferred with exit **75**, its backlog item stays queued, and the reason is printed on one line, exactly like the project-capacity refusal. A relaunch replaces a lane that already holds its place and is exempt, and non-Claude harnesses never reach the gate.
 
-`bin/fm-dispatch-quota-cap.sh` is the ladder's executable owner: it applies the rows above to the base cap and prints `effective_cap: <n>`, `codex_spawn: yes|no`, `claude_pace: <burnMultiple>`, `claude_account`, `claude_reading: available|unavailable`, `claude_lanes`, `claude_runway_cap`, `claude_runway_block`, and a one-line `claude_runway_reason`.
+`bin/fm-dispatch-quota-cap.sh` is the ladder's executable owner: it applies the rows above to the base cap and prints `effective_cap: <n>`, `codex_spawn: yes|no`, `claude_pace: <burnMultiple>`, `claude_account`, `claude_reading: available|unavailable`, the fact lines `claude_five_hour_percent_remaining`, `claude_five_hour_resets_at`, `claude_seven_day_percent_remaining`, `claude_seven_day_resets_at`, `claude_read_at`, the forecast line `claude_exhaustion_estimate` (prefixed `est.` and `-` while `early`), `claude_lanes`, `claude_runway_cap`, `claude_runway_block`, and a one-line `claude_runway_reason`.
 The Codex weekly window is found by `kind`/`id` (`weekly`) or by a `window:<hours>h` id of at least a week, which is how quota-axi now names it (`window:720h`); a missing Codex provider or window is optional evidence and leaves `codex_spawn` at `yes` instead of refusing the gate.
 A reading that cannot be taken reports the tight cap 1 and exits 0; exit 2 is reserved for a malformed `config/dispatch-cap`, an unreadable `config/claude-account`, or a malformed supplied quota document. Its header owns its flags and exact exit codes.
 

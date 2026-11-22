@@ -25,7 +25,10 @@
 #   drives[]       machine,mount,total_gb,free_gb,pct_used,warn,read_utc
 #                  warn=low under 20 GB, watch under 40 GB, ok otherwise
 #   quota[]        lane,account,plan,window,pct_remaining,resets_et,pace,state,
-#                  read_utc,reason
+#                  read_utc,reading_utc,reason
+#                  reading_utc is when quota-axi itself took the reading (the
+#                  provider's refreshedAt, else the document's generatedAt);
+#                  no projection is ever rendered as a fact.
 #   workers[]      machine,home_lane,task,kind,model,spend_lane,stage,age,
 #                  last_active,ctx_band,pr,read_utc
 #   panes[]        machine,session,workspace,tab,pane,agent,agent_status,task,
@@ -707,7 +710,8 @@ collect_quota() {
       else ((.error // .state.error // .state.status // "unavailable")
             + (if (.retryAfter // .state.retryAfter) then " retry " + (.retryAfter // .state.retryAfter) else "" end)) end;
     def winorder: { five_hour: 0, seven_day: 1, rolling: 2, weekly: 3, monthly: 4 };
-    ($profiles | split(":") | map(select(length > 0))) as $paths
+    (.generatedAt // "-") as $gen
+    | ($profiles | split(":") | map(select(length > 0))) as $paths
     | .providers as $all
     | ($all | map(select(.provider == "claude"))) as $claudes
     | [ $all[] | select(.provider == "claude" or .provider == "opencode-go" or .provider == "codex")
@@ -719,14 +723,15 @@ collect_quota() {
     | ($row.p) as $p
     | ($row.lane) as $lane
     | (if $p.provider == "claude" then (($p.accountLocator.path // "") as $path | if $path != "" then $path else ($paths[$row.ci] // "-") end) else "-" end) as $account
+    | ($p.state.refreshedAt // $gen // "-") as $reading
     | ($p | stateof) as $state
     | if (($p.windows // []) | length) == 0 or ($state != "fresh" and $state != "stale") then
-        [$lane, $account, ($p.plan // "-"), "-", "", "-", "-", $state, $read, ($p | reasonof)] | @tsv
+        [$lane, $account, ($p.plan // "-"), "-", "", "-", "-", $state, $read, $reading, ($p | reasonof)] | @tsv
       else
         ($p.windows | sort_by(winorder[.id] // 9) | .[]) as $w
         | [$lane, $account, ($p.plan // "-"),
            ($w.id | sub("^window:"; "")), (($w.percentRemaining // "") | tostring),
-           ($w.resetsAt | et), ($w.pace.status // "-"), $state, $read,
+           ($w.resetsAt | et), ($w.pace.status // "-"), $state, $read, $reading,
            (if $state == "stale" then "cached reading" else "-" end)] | @tsv
       end
   ' > "$TMP/quota.tsv"
@@ -1126,7 +1131,8 @@ tsv_to_json_quota() {  # <tsv>
     split("\n") | map(select(length > 0)) | map(split("\t") |
       {lane: .[0], account: .[1], plan: .[2], window: .[3],
        pct_remaining: (if (.[4] // "") == "" then null else (.[4] | tonumber? // .[4]) end),
-       resets_et: .[5], pace: .[6], state: .[7], read_utc: .[8], reason: .[9]})
+       resets_et: .[5], pace: .[6], state: .[7], read_utc: .[8],
+       reading_utc: .[9], reason: .[10]})
   ' "$1"
 }
 
