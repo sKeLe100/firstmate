@@ -2375,10 +2375,10 @@ families_for_changed_path() {
       ;;
     bin/backends/t3code*|bin/fm-t3-mcp.mjs)
       printf '%s\n' backend-dispatch
-      families_for_unmapped_bin "$path" || true
+      broad_family_fallback "$path" || true
       ;;
     tests/t3-fake-*)
-      families_for_test_reference "$(basename "$path")" t3-fake-lib.sh \
+      scripts_for_test_reference "$(basename "$path")" t3-fake-lib.sh \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     bin/fm-backend.sh|bin/fm-backend-hometag-lib.sh)
@@ -2736,7 +2736,7 @@ families_for_changed_path() {
       capture_ref=${path#tests/captures/}
       capture_ref=${capture_ref%%/*}
       if [ -d "tests/captures/$capture_ref" ]; then
-        families_for_test_reference "captures/$capture_ref" \
+        scripts_for_test_reference "captures/$capture_ref" \
           || printf '%s\n' "__unmapped__:$path"
       fi
       ;;
