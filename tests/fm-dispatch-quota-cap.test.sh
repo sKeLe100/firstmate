@@ -281,4 +281,101 @@ printf '/definitely/not/a/claude/root\n' > "$missing_home/config/claude-account"
 run_cap "$missing_home" "$(quota_doc missing 80 4 behind 0.8 behind)" >/dev/null 2>&1
 [ $? -eq 2 ] || fail "an invalid config/claude-account must refuse rather than guess an account"
 
+# 12. Several declared accounts (config/claude-accounts): every entry is
+# evaluated separately and the effective cap sums them under the base cap.
+# snap_line <account> <quota-doc> prints one --snapshots line.
+snap_line() {
+  python3 -c 'import json,sys; print(json.dumps({"account": sys.argv[1], "root": sys.argv[1], "snapshot": json.load(open(sys.argv[2]))}))' "$1" "$2"
+}
+multi_home=$(mk_home multi)
+snaps="$TMP_ROOT/multi.jsonl"
+{
+  snap_line /acct/one "$(quota_doc multi-exhausted 0 4 behind 0.8 behind exhausted_now 2.0)"
+  snap_line /acct/two "$(quota_doc multi-healthy 80 4 behind 0.8 behind)"
+} > "$snaps"
+
+# 12a. One exhausted and one healthy account: capacity stays open and names
+# the healthy account, while the exhausted one reports cap 0.
+out=$(FM_HOME="$multi_home" "$HELPER" --accounts-jsonl "$snaps") || fail "multi-account evaluation must succeed: $out"
+assert_contains "$out" "effective_cap: 3" "a healthy second account keeps the base cap open, got: $out"
+assert_contains "$out" "claude_accounts: 2" "both declared accounts are reported, got: $out"
+assert_contains "$out" "claude_headroom_accounts: /acct/two" "the healthy account is named as headroom, got: $out"
+assert_contains "$out" "claude_account_row: /acct/one  cap=0  lanes=0  runway_cap=0  runway_block=yes" "the exhausted account caps at 0, got: $out"
+assert_contains "$out" "claude_account_row: /acct/two  cap=3  lanes=0  runway_cap=none  runway_block=no" "the healthy account keeps the base cap, got: $out"
+assert_not_contains "$out" "claude_runway_block:" "the single-account lines are not printed for several accounts, got: $out"
+
+# 12b. Lanes count per account, and the sum never exceeds the base cap.
+{
+  snap_line /acct/one "$(quota_doc multi-low 30 4 behind 0.8 behind)"
+  snap_line /acct/two "$(quota_doc multi-healthy2 80 4 behind 0.8 behind)"
+} > "$TMP_ROOT/multi-low.jsonl"
+mk_lane "$multi_home" lane-one claude ship /acct/one
+out=$(FM_HOME="$multi_home" "$HELPER" --accounts-jsonl "$TMP_ROOT/multi-low.jsonl") || fail "multi-account lanes must succeed: $out"
+assert_contains "$out" "effective_cap: 3" "1 + 3 is held to the base cap of 3, got: $out"
+assert_contains "$out" "claude_account_row: /acct/one  cap=1  lanes=1  runway_cap=1  runway_block=yes" "the under-40% account is full with its one lane, got: $out"
+assert_contains "$out" "claude_headroom_accounts: /acct/two" "only the account with a free slot is headroom, got: $out"
+rm -f "$multi_home/state/lane-one.meta"
+
+# 12c. An account whose read failed is tight, never headroom and never a refusal.
+{
+  snap_line /acct/one "$(quota_doc multi-exhausted2 0 4 behind 0.8 behind exhausted_now 2.0)"
+  printf '%s\n' '{"account":"/acct/two","root":"/acct/two","error":"quota-axi could not read this account"}'
+} > "$TMP_ROOT/multi-error.jsonl"
+out=$(FM_HOME="$multi_home" "$HELPER" --accounts-jsonl "$TMP_ROOT/multi-error.jsonl") || fail "a failed account read must not refuse: $out"
+assert_contains "$out" "effective_cap: 1" "an exhausted plus an unread account caps at 1, got: $out"
+assert_contains "$out" "claude_account_row: /acct/two  cap=1  lanes=0  runway_cap=1  runway_block=no  reading=unavailable" "the unread account is tight, got: $out"
+
+# 12d. The live path reads config/claude-accounts through
+# bin/fm-claude-account-quota.sh, one isolated read per declared root.
+live_home=$(mk_home multi-live)
+fakebin="$TMP_ROOT/multi-fakebin"
+mkdir -p "$fakebin" "$TMP_ROOT/root-one" "$TMP_ROOT/root-two"
+# live_root <doc> <dest>: a real profile-only read carries quotaSemantics,
+# which bin/fm-claude-account-quota.sh validates, so the fixture does too.
+live_root() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+doc["providers"] = [p for p in doc["providers"] if p["provider"] == "claude"]
+for p in doc["providers"]:
+    pct = p["windows"][0]["percentRemaining"]
+    p["quotaSemantics"] = {"status": "known", "effectiveAvailability": [
+        {"scope": "all_models", "status": "known", "effectivePercentRemaining": pct,
+         "runway": {"status": "exhausted_now" if pct <= 0 else "through_reset"}}]}
+json.dump(doc, open(sys.argv[2], "w"))
+PY
+}
+live_root "$(quota_doc live-exhausted 0 4 behind 0.8 behind exhausted_now 2.0)" "$TMP_ROOT/root-one/quota.json"
+live_root "$(quota_doc live-healthy 71 4 behind 0.8 behind)" "$TMP_ROOT/root-two/quota.json"
+cat > "$fakebin/quota-axi" <<'SH'
+#!/usr/bin/env bash
+case " $* " in *" --provider codex "*) exit 1 ;; esac
+[ -f "${CLAUDE_CONFIG_DIR:-/nonexistent}/quota.json" ] || exit 1
+cat "$CLAUDE_CONFIG_DIR/quota.json"
+SH
+chmod +x "$fakebin/quota-axi"
+printf '%s\n%s\n' "$TMP_ROOT/root-one" "$TMP_ROOT/root-two" > "$live_home/config/claude-accounts"
+out=$(PATH="$fakebin:$PATH" FM_HOME="$live_home" "$HELPER") || fail "the live multi-account read must succeed: $out"
+assert_contains "$out" "effective_cap: 3" "the live healthy account keeps capacity open, got: $out"
+assert_contains "$out" "claude_headroom_accounts: $TMP_ROOT/root-two" "the live healthy account is named, got: $out"
+assert_contains "$out" "claude_account_row: $TMP_ROOT/root-two  cap=3  lanes=0  runway_cap=none  runway_block=no  reading=available  five_hour_percent_remaining=71" "the live healthy row carries its own reading, got: $out"
+
+# 12e. An explicit --claude-account still evaluates that one account, as
+# bin/fm-spawn.sh and bin/fm-claude-runway-admit.sh call it.
+out=$(PATH="$fakebin:$PATH" FM_HOME="$live_home" "$HELPER" --claude-account "$TMP_ROOT/root-one") || fail "an explicit account must succeed: $out"
+assert_contains "$out" "claude_account: $TMP_ROOT/root-one" "an explicit account stays single-account, got: $out"
+assert_contains "$out" "claude_runway_block: yes" "the explicit exhausted account blocks, got: $out"
+assert_not_contains "$out" "claude_accounts:" "an explicit account prints no multi-account lines, got: $out"
+
+# 12f. The list together with the single pin refuses, as every launch does.
+printf 'ordinary\n' > "$live_home/config/claude-account"
+PATH="$fakebin:$PATH" FM_HOME="$live_home" "$HELPER" >/dev/null 2>&1
+[ $? -eq 2 ] || fail "config/claude-accounts with config/claude-account must refuse"
+
+# 12g. No list: the output keys are exactly the single-account set, unchanged.
+out=$(run_cap "$home" "$(quota_doc nolist 80 4 behind 0.8 behind)") || fail "list-less home must succeed: $out"
+keys=$(printf '%s\n' "$out" | sed 's/:.*//' | tr '\n' ' ')
+[ "$keys" = "effective_cap codex_spawn claude_pace claude_account claude_reading claude_five_hour_percent_remaining claude_five_hour_resets_at claude_seven_day_percent_remaining claude_seven_day_resets_at claude_read_at claude_exhaustion_estimate claude_lanes claude_runway_cap claude_runway_block claude_runway_reason " ] \
+  || fail "a home with no list keeps the single-account output, got keys: $keys"
+
 pass "fm-dispatch-quota-cap.sh: quota ladder, per-account runway, and Codex pace gate"

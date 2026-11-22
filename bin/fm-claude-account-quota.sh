@@ -4,6 +4,7 @@
 #
 # Usage:
 #   fm-claude-account-quota.sh [--model <model>]
+#   fm-claude-account-quota.sh --snapshots
 #
 # For every declared entry, in file order, runs
 #   CLAUDE_CONFIG_DIR=<root> quota-axi --provider claude --profile-only --json
@@ -40,6 +41,12 @@
 #   bin/fm-worker-account-lib.sh refuses, which is actionable, never selected
 #   around.
 #
+# --snapshots prints, instead of the block, one JSON object per declared entry
+# in file order: {"account", "root", "snapshot"} carrying that account's whole
+# quota-axi document, or {"account", "root", "error"} when it could not be read
+# (including a missing quota-axi). bin/fm-dispatch-quota-cap.sh applies its
+# ladder to each account from these lines; --model does not apply to them.
+#
 # Data only: this never launches Claude, checks a sign-in, writes a credential,
 # or changes any home or account file. bin/fm-spawn.sh runs the sign-in check
 # for the account a launch names.
@@ -67,6 +74,7 @@ usage() {
 }
 
 MODEL=
+SNAPSHOTS=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --model)
@@ -79,6 +87,7 @@ while [ "$#" -gt 0 ]; do
       [ -n "$MODEL" ] || die "--model needs a value"
       shift
       ;;
+    --snapshots) SNAPSHOTS=1; shift ;;
     -h|--help|help) usage; exit 0 ;;
     *) die "unexpected argument: $1" ;;
   esac
@@ -90,6 +99,14 @@ LISTED=$(fm_worker_account_list claude "$CONFIG") || exit 2
 [ -n "$LISTED" ] || die "this home declares no config/claude-accounts; there is nothing to measure"
 
 if ! command -v quota-axi >/dev/null 2>&1; then
+  if [ "$SNAPSHOTS" = 1 ]; then
+    while IFS= read -r entry; do
+      root=$entry
+      [ "$entry" != ordinary ] || root="${HOME:-}/.claude"
+      jq -cn --arg account "$entry" --arg root "$root" '{account: $account, root: $root, error: "quota-axi not installed"}'
+    done <<< "$LISTED"
+    exit 0
+  fi
   printf 'claude-account-quota:\n  error: quota-axi not installed\n'
   exit 0
 fi
@@ -115,6 +132,11 @@ while IFS= read -r entry; do
     jq -c --arg account "$entry" --arg root "$root" '{account: $account, root: $root, snapshot: .}' "$WORK/snapshot.json"
   fi >> "$WORK/accounts.jsonl" || die "cannot record the quota reading for $entry"
 done <<< "$LISTED"
+
+if [ "$SNAPSHOTS" = 1 ]; then
+  cat "$WORK/accounts.jsonl"
+  exit 0
+fi
 
 jq -rs --arg model "$MODEL" '
   def flat: tostring | gsub("[\t\r\n]"; " ");

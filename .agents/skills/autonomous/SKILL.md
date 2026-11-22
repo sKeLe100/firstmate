@@ -146,6 +146,8 @@ executable owner - run it and read `effective_cap: <n>` rather than
 re-deriving the ladder by hand, since a restated threshold here can drift.
 It also prints `codex_spawn: yes|no` (no whenever Codex's weekly pace is
 ahead), which is the answer step 9 uses before offering the Codex sidecar.
+With `config/claude-accounts` declared it measures every account and its
+`claude_headroom_accounts` line names the accounts with a free slot.
 An unavailable reading already reports the tight cap 1 rather than failing;
 if it exits 2 its configuration or supplied quota document is malformed:
 treat that as no headroom.

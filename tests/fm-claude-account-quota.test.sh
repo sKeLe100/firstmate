@@ -183,6 +183,22 @@ test_absent_or_malformed_lists_refuse() {
   pass "an absent or malformed list refuses before any quota read"
 }
 
+test_snapshots_print_each_accounts_document() {
+  local out rc
+  new_case snapshots
+  account "$CASE/a" 70 0.2
+  mkdir -p "$CASE/unread"
+  printf '%s\n%s\n' "$CASE/a" "$CASE/unread" > "$HOME_DIR/config/claude-accounts"
+  out=$(run_tool --snapshots); rc=$?
+  expect_code 0 "$rc" "--snapshots should succeed: $out"
+  [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 2 ] || fail "--snapshots prints one line per declared account, got: $out"
+  assert_contains "$(printf '%s\n' "$out" | sed -n 1p | jq -r '[.account, .root, .snapshot.providers[0].quotaSemantics.effectiveAvailability[0].effectivePercentRemaining] | @tsv')" \
+    "$CASE/a	$CASE/a	70" "the first line carries account a's own document"
+  assert_contains "$(printf '%s\n' "$out" | sed -n 2p | jq -r '[.account, .error] | @tsv')" \
+    "$CASE/unread	quota-axi could not read this account" "an unreadable account is an error line, not a skipped one"
+  pass "--snapshots prints each declared account's own quota document in file order"
+}
+
 test_two_accounts_print_their_own_rows
 test_the_model_scope_is_printed
 test_exhausted_and_unreadable_accounts_print_facts
@@ -190,5 +206,6 @@ test_projected_runway_prints_its_seconds
 test_a_rate_limited_account_names_the_vendor_reason
 test_ordinary_is_measured_from_the_default_root
 test_absent_or_malformed_lists_refuse
+test_snapshots_print_each_accounts_document
 
 echo "# all fm-claude-account-quota tests passed"
