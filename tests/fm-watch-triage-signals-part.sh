@@ -923,7 +923,7 @@ test_turn_ended_churning_pane_absorbed() {
   : > "$state/codexer.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexer.meta"
   printf 'apply_patch: writing bin/thing.sh' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   # The previous poll recorded DIFFERENT pane content, so this poll's capture is
   # churn: the crew rendered output between the two polls.
   printf '%s' "$(hash_text 'reading the brief')" > "$state/.hash-$key"
@@ -959,7 +959,7 @@ test_turn_ended_churn_resets_prior_stale_classification() {
   old_hash=$(hash_text 'idle prompt from an earlier turn')
   active_hash=$(hash_text 'rendering a new turn')
   printf 'rendering a new turn' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$old_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   printf '%s' "$old_hash" > "$state/.stale-$key"
@@ -1010,7 +1010,7 @@ test_fresh_watcher_seeds_idle_clock_from_stop_record() {
   printf 'window=%s\nkind=ship\nharness=claude\n' "$window" > "$state/longidle.meta"
   printf 'working: validation under way\n' > "$state/longidle.status"
   printf '%s' "$(seen_sig "$state/longidle.status")" > "$state/.seen-longidle_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" longidle)
   "$ROOT/bin/fm-busy-event.sh" apply "$state" longidle idle --gen "$gen" --source claude-hook --event stop >/dev/null
   rec="$state/longidle.busy-state"
@@ -1048,7 +1048,7 @@ test_first_observation_seed_survives_failed_first_capture() {
   printf 'window=%s\nkind=ship\nharness=claude\n' "$window" > "$state/flaky.meta"
   printf 'working: validation under way\n' > "$state/flaky.status"
   printf '%s' "$(seen_sig "$state/flaky.status")" > "$state/.seen-flaky_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" flaky)
   "$ROOT/bin/fm-busy-event.sh" apply "$state" flaky idle --gen "$gen" --source claude-hook --event stop >/dev/null
   rec="$state/flaky.busy-state"
@@ -1094,7 +1094,7 @@ test_churned_pane_ignores_old_stop_record_for_idle_clock() {
   printf 'window=%s\nkind=ship\nharness=claude\n' "$window" > "$state/churnidle.meta"
   printf 'working: validation under way\n' > "$state/churnidle.status"
   printf '%s' "$(seen_sig "$state/churnidle.status")" > "$state/.seen-churnidle_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" churnidle)
   "$ROOT/bin/fm-busy-event.sh" apply "$state" churnidle idle --gen "$gen" --source claude-hook --event stop >/dev/null
   rec="$state/churnidle.busy-state"
@@ -1136,7 +1136,7 @@ test_turn_ended_churn_resets_wedge_state_before_stale_poll() {
   : > "$state/codexfreshinterval.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexfreshinterval.meta"
   printf 'rendering a new turn' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'idle output from the prior interval')" > "$state/.hash-$key"
   printf '2\n' > "$state/.wedge-escalations-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1172,7 +1172,7 @@ test_turn_ended_churn_existing_marker_absorbed() {
   : > "$state/codexmarked.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexmarked.meta"
   printf 'apply_patch: writing bin/thing.sh' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'reading the brief')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   # The deferral window is already open from an earlier churning turn-end, so
@@ -1208,7 +1208,7 @@ test_turn_ended_still_pane_surfaced() {
   : > "$state/codexstopped.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexstopped.meta"
   printf 'apply_patch: writing bin/thing.sh' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   # The previous poll recorded THIS pane content: nothing rendered since.
   printf '%s' "$(hash_text 'apply_patch: writing bin/thing.sh')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
@@ -1236,7 +1236,7 @@ test_turn_ended_malformed_prior_hash_surfaced() {
   : > "$state/codexmalformed.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexmalformed.meta"
   printf 'stopped after rendering this' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf 'x' > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1277,7 +1277,7 @@ unknown_alive_stale_case() {  # <evidence: status|worktree|none>
     [ "$evidence" != worktree ] || printf 'recovered\n' > "$dir/wt/src/recovered.c"
   fi
   printf '%s' "$(seen_sig "$state/codexunknown.status")" > "$state/.seen-codexunknown_status"
-  key=$(printf '%s' "$window" | tr ':/. ' '____')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'unreadable long Codex turn')" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1352,7 +1352,7 @@ test_turn_ended_trailing_newline_prior_hash_surfaced() {
   : > "$state/codexnewline.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexnewline.meta"
   printf 'rendered after the prior poll' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s\n' "$(hash_text 'the previous render')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1382,7 +1382,7 @@ test_secondmate_turn_ended_churning_pane_surfaced() {
   : > "$state/mate.turn-ended"
   printf 'window=%s\nkind=secondmate\nharness=pi\n' "$window" > "$state/mate.meta"
   printf 'working on the next routed item' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'waiting for work')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable'
@@ -1412,7 +1412,7 @@ test_turn_ended_colliding_window_key_surfaced() {
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/a.b.meta"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$colliding" > "$state/a_b.meta"
   printf 'rendered after the prior poll' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=test_fm-a_b  # The ambiguous legacy key, deliberately not current evidence.
   printf '%s' "$(hash_text 'the other window pane')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1441,7 +1441,7 @@ test_turn_ended_duplicate_endpoint_records_surfaced() {
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/first.meta"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/second.meta"
   printf 'rendered after the prior poll' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'the previous render')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1473,8 +1473,8 @@ test_turn_ended_mixed_positive_evidence_batch_absorbed() {
   printf 'window=%s\nkind=ship\nharness=pi\n' "$first_window" > "$state/first.meta"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$second_window" > "$state/second.meta"
   printf 'second task rendered after the prior poll' > "$capture_file"
-  first_key=$(printf '%s' "$first_window" | tr ':/.' '___')
-  second_key=$(printf '%s' "$second_window" | tr ':/.' '___')
+  first_key=$(watch_window_key "$first_window")
+  second_key=$(watch_window_key "$second_window")
   printf '%s' "$(hash_text 'first task static pane')" > "$state/.hash-$first_key"
   printf '%s' "$(hash_text 'second task previous render')" > "$state/.hash-$second_key"
   printf '0\n' > "$state/.count-$first_key"
@@ -1510,8 +1510,8 @@ test_turn_ended_mixed_positive_evidence_batch_default_off() {
   printf 'window=%s\nkind=ship\nharness=pi\n' "$first_window" > "$state/firstoff.meta"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$second_window" > "$state/secondoff.meta"
   printf 'second task rendered after the prior poll' > "$capture_file"
-  first_key=$(printf '%s' "$first_window" | tr ':/.' '___')
-  second_key=$(printf '%s' "$second_window" | tr ':/.' '___')
+  first_key=$(watch_window_key "$first_window")
+  second_key=$(watch_window_key "$second_window")
   printf '%s' "$(hash_text 'first task static pane')" > "$state/.hash-$first_key"
   printf '%s' "$(hash_text 'second task previous render')" > "$state/.hash-$second_key"
   printf '0\n' > "$state/.count-$first_key"
@@ -1550,7 +1550,7 @@ test_status_and_turn_end_batch_never_uses_churn_evidence() {
   printf 'window=%s\nkind=ship\nharness=pi\n' "$first_window" > "$state/firststatus.meta"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$second_window" > "$state/secondturn.meta"
   printf 'second task rendered after the prior poll' > "$capture_file"
-  second_key=$(printf '%s' "$second_window" | tr ':/.' '___')
+  second_key=$(watch_window_key "$second_window")
   printf '%s' "$(hash_text 'second task previous render')" > "$state/.hash-$second_key"
   printf '0\n' > "$state/.count-$second_key"
   export FM_FAKE_CREW_STATE_firststatus='state: working · source: run-step · running'
@@ -1589,7 +1589,7 @@ test_turn_ended_churn_absorb_off_by_default() {
   : > "$state/codexdefault.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexdefault.meta"
   printf 'apply_patch: writing bin/thing.sh' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'reading the brief')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1625,7 +1625,7 @@ test_turn_ended_churn_absorb_bounded() {
   : > "$state/codexclock.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexclock.meta"
   printf 'a background renderer that never stops' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'the previous frame')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   # This endpoint has already been riding churn evidence longer than the bound.
@@ -1658,7 +1658,7 @@ test_turn_ended_churn_timer_write_failure_surfaced() {
   : > "$state/codextimer.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codextimer.meta"
   printf 'rendered after the previous poll' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'the previous render')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   mkdir "$state/.churn-since-$key"
@@ -1687,7 +1687,7 @@ test_turn_ended_invalid_churn_bound_surfaced() {
   : > "$state/codexbound.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexbound.meta"
   printf 'rendered after the previous poll' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'the previous render')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1717,7 +1717,7 @@ test_turn_ended_oversized_churn_bound_surfaced() {
   : > "$state/codexoversized.turn-ended"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexoversized.meta"
   printf 'rendered after the previous poll' > "$capture_file"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'the previous render')" > "$state/.hash-$key"
   printf '0\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
@@ -1749,7 +1749,7 @@ test_turn_ended_invalid_churn_deadline_surfaced() {
     : > "$state/codexdeadline.turn-ended"
     printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexdeadline.meta"
     printf 'rendered after the previous poll' > "$capture_file"
-    key=$(printf '%s' "$window" | tr ':/.' '___')
+    key=$(watch_window_key "$window")
     marker="$state/.churn-since-$key"
     printf '%s' "$(hash_text 'the previous render')" > "$state/.hash-$key"
     printf '0\n' > "$state/.count-$key"
@@ -1791,8 +1791,8 @@ test_turn_ended_surfaced_batch_opens_no_partial_deadline() {
   printf 'window=%s\nkind=ship\nharness=codex\n' "$first_window" > "$state/first.meta"
   printf 'window=%s\nkind=ship\nharness=codex\n' "$second_window" > "$state/second.meta"
   printf 'rendered after the previous poll' > "$capture_file"
-  first_key=$(printf '%s' "$first_window" | tr ':/.' '___')
-  second_key=$(printf '%s' "$second_window" | tr ':/.' '___')
+  first_key=$(watch_window_key "$first_window")
+  second_key=$(watch_window_key "$second_window")
   printf '%s' "$(hash_text 'first previous render')" > "$state/.hash-$first_key"
   printf '%s' "$(hash_text 'second previous render')" > "$state/.hash-$second_key"
   printf '0\n' > "$state/.count-$first_key"

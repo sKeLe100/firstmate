@@ -29,7 +29,7 @@ test_wedge_escalation_deferred_while_worktree_is_written() {
   printf 'window=%s\nkind=ship\nworktree=%s\n' "$window" "$wt" > "$state/writing.meta"
   printf 'working: implementing\n' > "$state/writing.status"
   sig=$(seen_sig "$state/writing.status"); printf '%s' "$sig" > "$state/.seen-writing_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -141,7 +141,7 @@ test_write_deferral_resurfaces_on_the_bounded_cadence() {
   printf 'window=%s\nkind=ship\nworktree=%s\n' "$window" "$wt" > "$state/churn.meta"
   printf 'working: implementing\n' > "$state/churn.status"
   sig=$(seen_sig "$state/churn.status"); printf '%s' "$sig" > "$state/.seen-churn_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -195,7 +195,7 @@ test_secondmate_home_supervision_churn_is_not_write_evidence() {
   # it into the wedge timer.
   printf 'working: implementing\n' > "$state/mate.status"
   sig=$(seen_sig "$state/mate.status"); printf '%s' "$sig" > "$state/.seen-mate_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   set_mtime "$(( $(date +%s) - 4000 ))" "$state/mate.meta"
   back=$(( $(date +%s) - 500 ))
   echo "$back" > "$state/.stale-since-$key"
@@ -236,7 +236,7 @@ test_timer_repair_drops_a_finished_write_deferral_chain() {
   printf 'window=%s\nkind=ship\nworktree=%s\n' "$window" "$wt" > "$state/chain-repair.meta"
   printf 'working: implementing\n' > "$state/chain-repair.status"
   sig=$(seen_sig "$state/chain-repair.status"); printf '%s' "$sig" > "$state/.seen-chain-repair_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -305,7 +305,7 @@ test_terminal_first_sight_drops_a_finished_write_deferral_chain() {
   printf 'window=%s\nkind=ship\nworktree=%s\n' "$window" "$wt" > "$state/chain-first.meta"
   printf 'done: implementation complete, ready to validate\n' > "$state/chain-first.status"
   sig=$(seen_sig "$state/chain-first.status"); printf '%s' "$sig" > "$state/.seen-chain-first_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "no-mistakes axi run: validating...")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1343,7 +1343,7 @@ bg_job_paused_case() {  # <name> <status-line> -> dir
   printf 'window=%s\nkind=scout\nharness=grok\nbackend=tmux\n' "$window" > "$state/parked.meta"
   printf '%s\n' "$2" > "$state/parked.status"
   printf '%s' "$(seen_sig "$state/parked.status")" > "$state/.seen-parked_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf 'nightly build running' > "$dir/pane.txt"
   printf '%s' "$(hash_text 'nightly build running')" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1438,7 +1438,7 @@ prime_picker_window() {  # <state> <id> <window> <kind> <capture> <status-line>
   printf 'window=%s\nkind=%s\nbackend=tmux\n' "$window" "$kind" > "$state/$id.meta"
   printf '%s\n' "$status_line" > "$statusf"
   printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-${id}_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text "$(cat "$capture")")" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   printf '%s' "$key"
@@ -1626,7 +1626,7 @@ test_exit_picker_backoff_defers_to_backlog_hold() {
   dir=$(backlog_hold_wedge_fixture exit-picker-backoff-hold 0 1000) \
     || fail "could not build the combined picker/backoff/hold fixture"
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   write_exit_picker "$capture"
   printf '%s' "$(hash_text "$(cat "$capture")")" > "$state/.hash-$key"
   printf '%s' "$(hash_text "$(cat "$capture")")" > "$state/.stale-$key"

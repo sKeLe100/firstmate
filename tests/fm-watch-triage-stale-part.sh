@@ -346,7 +346,7 @@ test_terminal_stale_surfaced() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/done.meta"
   printf 'done: PR https://example.test/pr/3\n' > "$state/done.status"
   sig=$(seen_sig "$state/done.status"); printf '%s' "$sig" > "$state/.seen-done_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "finished, awaiting review")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -382,7 +382,7 @@ test_stale_terminal_status_overridden_by_active_run() {
   # pipeline itself runs.
   printf 'done: implementation complete, ready to validate\n' > "$state/validating.status"
   sig=$(seen_sig "$state/validating.status"); printf '%s' "$sig" > "$state/.seen-validating_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "no-mistakes axi run: validating...")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -436,7 +436,7 @@ test_nonterminal_stale_provably_working_absorbed_then_escalated() {
   # the stale path.
   printf 'working: still compiling\n' > "$state/quiet.status"
   sig=$(seen_sig "$state/quiet.status"); printf '%s' "$sig" > "$state/.seen-quiet_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -492,7 +492,7 @@ test_nonterminal_stale_not_working_surfaced() {
   # primed so the signal scan does not pre-empt the stale path.
   printf 'working: implementing\n' > "$state/stopped.status"
   sig=$(seen_sig "$state/stopped.status"); printf '%s' "$sig" > "$state/.seen-stopped_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle prompt, finished")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -534,7 +534,7 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   # not pre-empt the stale path.
   printf 'paused: holding for the upstream tool release\n' > "$statusf"
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle, holding for upstream")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -592,7 +592,7 @@ test_own_work_wait_keeps_first_alert_then_long_cadence() {
   for wait_kind in background-shell pipeline-run foreground-command; do
     dir=$(make_case "own-work-$wait_kind"); state="$dir/state"; fakebin="$dir/fakebin"
     out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/own-work.status"
-    window="test:fm-own-work"; key=$(printf '%s' "$window" | tr ':/.' '___')
+    window="test:fm-own-work"; key=$(watch_window_key "$window")
     printf 'idle worker awaiting its own %s\n' "$wait_kind" > "$capture_file"
     printf 'window=%s\nkind=scout\nharness=grok\nbackend=tmux\n' "$window" > "$state/own-work.meta"
     printf 'paused: waiting for my %s to finish; resume on completion\n' "$wait_kind" > "$statusf"
@@ -682,7 +682,7 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
   if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
   else touch -m -d "@$back" "$statusf"; fi
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle bare shell after agent exit")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -728,7 +728,7 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
   if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
   else touch -m -d "@$back" "$statusf"; fi
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle bare shell after captain-held transfer")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -750,7 +750,7 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
   printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/gate.meta"
   printf 'paused: waiting at an active external-decision gate\n' > "$statusf"
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-gate_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle external-decision gate")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -813,7 +813,7 @@ test_absorbed_replacement_wait_does_not_inherit_the_old_throttle() {
     if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
     else touch -m -d "@$back" "$statusf"; fi
     sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
-    key=$(printf '%s' "$window" | tr ':/.' '___')
+    key=$(watch_window_key "$window")
     printf '%s' "$(hash_text 'idle after agent exit')" > "$state/.hash-$key"
     printf '1\n' > "$state/.count-$key"
 
@@ -908,7 +908,7 @@ test_live_declared_wait_churn_honors_the_resurface_throttle() {
     printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/parked.meta"
     printf '%s\n' "$status_line" > "$statusf"
     sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-parked_status"
-    key=$(printf '%s' "$window" | tr ':/.' '___')
+    key=$(watch_window_key "$window")
     throttle="$state/.paused-resurfaced-$key"
 
     # First sight of a parked-but-live worker must still surface: the state is
@@ -990,7 +990,7 @@ test_live_paused_until_controls_recheck_time() {
   future=$(iso_utc_at "$(( $(date +%s) + 7200 ))")
   printf 'paused: rate limit until %s\n' "$future" > "$statusf"
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-parked_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf 'parked, elapsed 1s' > "$capture_file"
   printf '%s' "$(hash_text 'parked, elapsed 1s')" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1092,7 +1092,7 @@ wedge_threshold_fixture() {  # <name> <status-log> <status-age-secs> [<wedge-tim
   back=$(( $(date +%s) - age ))
   set_mtime "$back" "$statusf"
   printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-wedge_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text "$text")" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   # Already surfaced once, as it is after the supervision turn that handled the
@@ -1133,7 +1133,7 @@ test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict() {
   dir=$(wedge_threshold_fixture declared-wait-working \
     'paused: final validation at step 6/6 - clean whole-assembly baseline (~20 min)' 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   n=1
   while [ "$n" -le 3 ]; do
     wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
@@ -1214,7 +1214,7 @@ test_wedge_wait_deferral_resets_backoff_to_base_threshold() {
   future=$(iso_utc_at "$(( $(date +%s) + 7200 ))")
   dir=$(wedge_threshold_fixture declared-wait-backoff-reset "paused: waiting on the build queue until $future" 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   statusf="$state/wedge.status"
   # Two escalations deep: the backed-off threshold is 240 * 4 = 960s.
   printf '2\n' > "$state/.wedge-escalations-$key"
@@ -1251,7 +1251,7 @@ test_wedge_threshold_keeps_a_wait_past_a_default_key_answer() {
   dir=$(wedge_threshold_fixture default-answer-after-wait \
     "$(printf 'needs-decision: which color\npaused: waiting on the vendor release\nresolved [key=default]: answered: blue')" 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   n=1
   while [ "$n" -le 3 ]; do
     wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
@@ -1287,7 +1287,7 @@ test_wedge_threshold_recheck_names_the_captain_for_a_held_lane() {
   dir=$(wedge_threshold_fixture captain-held-wait \
     'captain-held: which retention window wins' 2000)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   FM_TEST_PAUSE_RESURFACE=240 wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
     || fail "a captain-held lane older than the recheck cadence was never rechecked: $(cat "$out")"
   grep -F 'awaiting the captain' "$out" >/dev/null \
@@ -1386,7 +1386,7 @@ test_wedge_threshold_defers_to_a_backlog_captain_hold() {
   local working='state: working · source: run-step · ci running'
   command -v tasks-axi >/dev/null 2>&1 \
     || { echo "skip: tasks-axi not found (backlog captain hold wedge bound)"; return 0; }
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
 
   # A fresh status line is no record of when the hold began, so the first
   # threshold rechecks it once, as a wait on the captain with no wait age.
@@ -1491,7 +1491,7 @@ test_wedge_threshold_defers_to_a_parked_gate_awaiting_a_human() {
   # ladder away.
   local crewmate='state: parked · source: run-step · parked at fix_review (ask-user: authority decision follow-up): 2 finding(s) · run: 01RUNGATE'
 
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
 
   # The log every case here shares: the crew escalated the gate's question and
   # nobody has answered it yet, so its decision fold still holds one open
@@ -1645,7 +1645,7 @@ test_wedge_threshold_parked_gate_is_off_until_armed() {
   local human='state: parked · source: run-step · parked at awaiting_approval: 2 finding(s) · ask-user: authority decision · run: 01RUNGATE'
   local escalated='needs-decision [key=nm-01RUNGATE-review]: the gate raised an authority question
 working: still parked at that gate'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
 
   dir=$(wedge_threshold_fixture parked-gate-unarmed "$escalated" 2000)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
@@ -1710,7 +1710,7 @@ working: still parked at that gate'
 test_wedge_threshold_parked_gate_needs_an_unanswered_decision() {
   local dir state fakebin out capture window key n
   local human='state: parked · source: run-step · parked at awaiting_approval: 2 finding(s) · ask-user: authority decision · run: 01RUNGATE'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
 
   # Answered, not yet relayed. The gate verdict is byte-identical to the one the
   # test above defers on; only the closing `resolved` line differs, and the
@@ -1778,7 +1778,7 @@ arm_worker_wait() {  # <case-dir>
 test_wedge_threshold_defers_to_a_worker_blocker() {
   local dir state fakebin out capture window key n reported case_log
   local working='state: working · source: run-step · ci running'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
 
   dir=$(wedge_threshold_fixture worker-blocker-fresh \
     'working: wiring the client
@@ -1861,7 +1861,7 @@ resolved: firstmate supplied the key' \
 test_wedge_threshold_worker_wait_is_off_until_armed() {
   local dir state fakebin out capture window key
   local working='state: working · source: run-step · ci running'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   dir=$(wedge_threshold_fixture worker-blocker-unarmed 'blocked: need the API key for the staging account' 2000 600)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
   [ ! -e "$dir/config/wedge-defer-worker-wait" ] \
@@ -1973,7 +1973,7 @@ arm_validating() {  # <case-dir>
 
 test_wedge_threshold_defers_to_an_executing_validation_run() {
   local dir state fakebin out capture window key n verdict step queued
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
 
   for step in running fixing; do
     verdict="state: working · source: run-step · validating ($step) · run: 01RUNLIVE"
@@ -2042,7 +2042,7 @@ test_wedge_threshold_defers_to_an_executing_validation_run() {
 # unreadable verdict.
 test_wedge_threshold_escalates_when_no_run_is_executing() {
   local dir state fakebin out capture window key n spec name verdict
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   for spec in \
     'parked|state: parked · source: run-step · parked at awaiting_approval: 2 finding(s) · run: 01RUNLIVE' \
     'failed|state: failed · source: run-step · run failed · run: 01RUNLIVE' \
@@ -2079,7 +2079,7 @@ test_wedge_threshold_escalates_when_no_run_is_executing() {
 test_wedge_threshold_validating_run_is_off_until_armed() {
   local dir state fakebin out capture window key n probes
   local verdict='state: working · source: run-step · validating (running) · run: 01RUNLIVE'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   dir=$(wedge_threshold_fixture validating-unarmed 'working: handed to validation' 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
   [ ! -e "$dir/config/wedge-defer-validating" ] \
@@ -2139,7 +2139,7 @@ gone_endpoint_env() {  # <dead|missing> -> assignments for the round below
 test_gone_endpoint_reports_once_instead_of_escalating_forever() {
   local dir state fakebin out capture window key verdict round
   local failed='state: failed · source: run-step · run failed'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   for verdict in dead missing; do
     dir=$(wedge_threshold_fixture "gone-endpoint-$verdict" 'working: still compiling' 0)
     state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
@@ -2183,7 +2183,7 @@ test_gone_endpoint_reports_once_instead_of_escalating_forever() {
 test_live_and_unproven_endpoints_still_wedge_escalate() {
   local dir state fakebin out capture window key spec verdict comm inventory
   local working='state: working · source: run-step · ci running'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   for spec in 'alive|grok|fm-wedge' 'ambiguous|node|fm-wedge' 'unreadable||fm-wedge'; do
     verdict=${spec%%|*}; comm=${spec#*|}; inventory=${comm#*|}; comm=${comm%%|*}
     dir=$(wedge_threshold_fixture "wedge-live-$verdict" 'working: still compiling' 0)
@@ -2249,7 +2249,7 @@ WEDGE_GUARD_CRITICAL='printf "%s\n" "{\"name\":\"ticket\",\"status\":\"CRITICAL\
 test_wedge_guards_absent_config_keeps_the_unchanged_ladder() {
   local dir state fakebin out capture window key n guard
   local working='state: working · source: run-step · ci running'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
 
   dir=$(wedge_threshold_fixture guards-absent 'working: still compiling' 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
@@ -2289,7 +2289,7 @@ test_wedge_guards_absent_config_keeps_the_unchanged_ladder() {
 test_wedge_guard_critical_defers_one_window_at_a_time_up_to_the_cap() {
   local dir state fakebin out capture window key guard
   local working='state: working · source: run-step · ci running'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   dir=$(wedge_threshold_fixture guards-critical 'working: running the remote suite' 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
   guard=$(make_wedge_guard "$dir" ticket "$WEDGE_GUARD_CRITICAL")
@@ -2338,7 +2338,7 @@ test_wedge_guard_critical_defers_one_window_at_a_time_up_to_the_cap() {
 test_wedge_guard_failures_fail_open() {
   local dir state fakebin out capture window key spec label body guard
   local working='state: working · source: run-step · ci running'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   for spec in \
     'timeout|sleep 10' \
     'nonzero|printf "%s\n" "{\"status\":\"CRITICAL\",\"recommendation\":\"r\"}"; exit 3' \
@@ -2407,7 +2407,7 @@ test_gone_report_rearms_when_the_endpoint_comes_back() {
   local dir state fakebin out capture window key
   local failed='state: failed · source: run-step · run failed'
   local working='state: working · source: run-step · ci running'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   dir=$(wedge_threshold_fixture gone-rearm 'working: still compiling' 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
 
@@ -2454,7 +2454,7 @@ test_second_death_after_a_same_window_relaunch_reports_in_full() {
   local dir state fakebin out capture window key
   local failed='state: failed · source: run-step · run failed'
   local working='state: working · source: run-step · ci running'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   dir=$(wedge_threshold_fixture gone-relaunch-swallow 'working: still compiling' 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
 
@@ -2525,7 +2525,7 @@ test_second_death_after_a_same_window_relaunch_reports_in_full() {
 test_identical_dead_display_of_a_successor_still_reports() {
   local dir state fakebin out capture window key
   local failed='state: failed · source: run-step · run failed'
-  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
   dir=$(wedge_threshold_fixture identical-dead-display 'working: still compiling' 0)
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
 

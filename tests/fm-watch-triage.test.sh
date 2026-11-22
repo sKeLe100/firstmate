@@ -187,7 +187,8 @@ test_pi_model_progress_and_legacy_fallback() {
       closed) "$ROOT/bin/fm-busy-event.sh" stream "$state" stream close --gen "$gen" --request 1 ;;
       replaced) "$ROOT/bin/fm-busy-event.sh" stream "$state" stream open --gen "$gen" --request 2 ;;
     esac
-    echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+    # Aged past the fork's 3600s exponential-backoff ceiling: the seeded count of 7 backs the ladder off to it.
+    echo $(( $(date +%s) - 4000 )) > "$state/.stale-since-$key"
     echo 7 > "$state/.wedge-escalations-$key"
     if [ "$mode" = closed ] || [ "$mode" = replaced ]; then
       date +%s > "$state/.wedge-permanent-$key"

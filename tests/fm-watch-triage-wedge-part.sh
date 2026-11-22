@@ -31,7 +31,7 @@
 
 # The window key every hold fixture uses, derived the way fm-watch.sh derives it.
 hold_key() {
-  printf '%s' test:fm-held-merge | tr ':/.' '___'
+  watch_window_key test:fm-held-merge
 }
 
 # bin/fm-captain-hold.sh against a hold fixture's own home.
@@ -391,7 +391,7 @@ test_nonterminal_stale_pause_transitions_reclassify_unchanged_hash() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/transition.meta"
   printf 'paused: awaiting the upstream release\n' > "$state/transition.status"
   sig=$(seen_sig "$state/transition.status"); printf '%s' "$sig" > "$state/.seen-transition_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle awaiting external")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '%s' "$pane_hash" > "$state/.stale-$key"
@@ -448,7 +448,7 @@ test_nonterminal_paused_rechecks_authoritative_state() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/pause-recheck.meta"
   printf 'paused: awaiting the upstream release\n' > "$state/pause-recheck.status"
   sig=$(seen_sig "$state/pause-recheck.status"); printf '%s' "$sig" > "$state/.seen-pause-recheck_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle awaiting external")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '%s' "$pane_hash" > "$state/.stale-$key"
@@ -478,7 +478,7 @@ test_paused_authoritative_working_preserves_wedge_timer() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/paused-working.meta"
   printf 'paused: awaiting the upstream release\n' > "$state/paused-working.status"
   sig=$(seen_sig "$state/paused-working.status"); printf '%s' "$sig" > "$state/.seen-paused-working_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle awaiting external")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '%s' "$pane_hash" > "$state/.stale-$key"
@@ -560,7 +560,7 @@ test_wedge_escalation_marks_demand_deep_inspection_after_threshold() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedged.meta"
   printf 'working: still monitoring ci\n' > "$state/wedged.status"
   sig=$(seen_sig "$state/wedged.status"); printf '%s' "$sig" > "$state/.seen-wedged_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -619,7 +619,7 @@ test_wedge_escalation_resets_when_pane_becomes_active() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedged-reset.meta"
   printf 'working: still monitoring ci\n' > "$state/wedged-reset.status"
   sig=$(seen_sig "$state/wedged-reset.status"); printf '%s' "$sig" > "$state/.seen-wedged-reset_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -657,7 +657,7 @@ test_wedge_escalation_prompt_first_fire() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-prompt.meta"
   printf 'working: still monitoring ci\n' > "$state/wedge-prompt.status"
   sig=$(seen_sig "$state/wedge-prompt.status"); printf '%s' "$sig" > "$state/.seen-wedge-prompt_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -708,7 +708,7 @@ test_wedge_escalation_reset_on_nonterminal_surface() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-surface.meta"
   printf 'working: still monitoring ci\n' > "$state/wedge-surface.status"
   sig=$(seen_sig "$state/wedge-surface.status"); printf '%s' "$sig" > "$state/.seen-wedge-surface_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "inconclusive quiet pane")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -739,7 +739,7 @@ test_wedge_escalation_reset_on_terminal_absorb() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-terminal.meta"
   printf 'done: implementation complete, ready to validate\n' > "$state/wedge-terminal.status"
   sig=$(seen_sig "$state/wedge-terminal.status"); printf '%s' "$sig" > "$state/.seen-wedge-terminal_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "no-mistakes axi run: validating...")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -784,7 +784,7 @@ test_wedge_escalation_reset_on_terminal_surface() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-terminal-surface.meta"
   printf 'done: implementation complete\n' > "$state/wedge-terminal-surface.status"
   sig=$(seen_sig "$state/wedge-terminal-surface.status"); printf '%s' "$sig" > "$state/.seen-wedge-terminal-surface_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle done pane")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -814,7 +814,7 @@ test_wedge_escalation_reset_on_nonterminal_working_absorb() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-nonterm-absorb.meta"
   printf 'working: still monitoring ci\n' > "$state/wedge-nonterm-absorb.status"
   sig=$(seen_sig "$state/wedge-nonterm-absorb.status"); printf '%s' "$sig" > "$state/.seen-wedge-nonterm-absorb_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "quiet pane waiting on ci")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   # Already stably stale, so this poll reaches the non-terminal triage branch
@@ -861,7 +861,7 @@ test_wedge_escalation_backs_off_after_first_fire() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-backoff.meta"
   printf 'working: still monitoring ci\n' > "$state/wedge-backoff.status"
   sig=$(seen_sig "$state/wedge-backoff.status"); printf '%s' "$sig" > "$state/.seen-wedge-backoff_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -930,7 +930,7 @@ test_wedge_escalation_backoff_is_capped() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-cap.meta"
   printf 'working: still monitoring ci\n' > "$state/wedge-cap.status"
   sig=$(seen_sig "$state/wedge-cap.status"); printf '%s' "$sig" > "$state/.seen-wedge-cap_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -984,7 +984,7 @@ test_wedge_escalation_backoff_resets_to_prompt_on_activity() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/wedge-reset-pace.meta"
   printf 'working: still monitoring ci\n' > "$state/wedge-reset-pace.status"
   sig=$(seen_sig "$state/wedge-reset-pace.status"); printf '%s' "$sig" > "$state/.seen-wedge-reset-pace_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash1=$(hash_text "idle building output")
   printf '%s' "$pane_hash1" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1261,7 +1261,7 @@ test_busy_pane_below_turn_age_bound_is_absorbed() {
   record_pi_busy "$state" busy-fresh
   printf 'working: setup complete\n' > "$state/busy-fresh.status"
   sig=$(seen_sig "$state/busy-fresh.status"); printf '%s' "$sig" > "$state/.seen-busy-fresh_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   touch "$state/busy-fresh.turn-ended"
   prime_turnend_seen "$state/busy-fresh.turn-ended"
 
@@ -1287,7 +1287,7 @@ test_busy_pane_stable_hash_escalates_past_turn_age_bound() {
   record_pi_busy "$state" busy-stable
   printf 'working: setup complete\n' > "$state/busy-stable.status"
   sig=$(seen_sig "$state/busy-stable.status"); printf '%s' "$sig" > "$state/.seen-busy-stable_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "Working...")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1332,7 +1332,7 @@ test_busy_pane_changing_hash_escalates_past_turn_age_bound() {
   record_pi_busy "$state" busy-ticking
   printf 'working: setup complete\n' > "$state/busy-ticking.status"
   sig=$(seen_sig "$state/busy-ticking.status"); printf '%s' "$sig" > "$state/.seen-busy-ticking_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   touch -t 200001010000 "$state/busy-ticking.meta"
   # No pre-seeded .hash-<key>: with a real ticking elapsed footer, every poll
   # lands here (h != prev) - the reproduction's actual masking condition.
@@ -1374,7 +1374,7 @@ test_busy_pane_turn_end_touch_resets_age() {
   record_pi_busy "$state" busy-reset
   printf 'working: setup complete\n' > "$state/busy-reset.status"
   sig=$(seen_sig "$state/busy-reset.status"); printf '%s' "$sig" > "$state/.seen-busy-reset_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "Working...")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1408,7 +1408,7 @@ test_busy_pane_native_progress_resets_age() {
   record_pi_busy "$state" busy-reset
   printf 'working: setup complete\n' > "$state/busy-reset.status"
   sig=$(seen_sig "$state/busy-reset.status"); printf '%s' "$sig" > "$state/.seen-busy-reset_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "Working...")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1444,7 +1444,7 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection() {
   record_pi_busy "$state" busy-demand
   printf 'working: setup complete\n' > "$state/busy-demand.status"
   sig=$(seen_sig "$state/busy-demand.status"); printf '%s' "$sig" > "$state/.seen-busy-demand_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "Working...")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1507,7 +1507,7 @@ test_busy_declared_pause_is_rechecked_not_wedge_escalated() {
   record_pi_busy "$state" review-scout
   printf 'paused: hosting the Lavish review, awaiting captain feedback\n' > "$statusf"
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-review-scout_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   # No completed turn for hours (the single blocking poll call): age the spawn
   # record itself, exactly as the never-completed-a-turn fixtures above do.
   touch -t 200001010000 "$state/review-scout.meta"
@@ -1614,7 +1614,7 @@ test_afk_busy_declared_pause_hands_off_plain_stale() {
   record_pi_busy "$state" afk-review-scout
   printf 'paused: hosting the Lavish review, awaiting captain feedback\n' > "$statusf"
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-afk-review-scout_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   touch -t 200001010000 "$state/afk-review-scout.meta"
   date '+%s' > "$state/.afk"
 
@@ -1719,7 +1719,7 @@ SH
   record_pi_busy "$state" afk-ticking-scout
   printf 'paused: hosting the Lavish review, awaiting captain feedback\n' > "$statusf"
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-afk-ticking-scout_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   touch -t 200001010000 "$state/afk-ticking-scout.meta"
   date '+%s' > "$state/.afk"
   # An undeclared busy phase already ran the wedge timer and escalated twice
@@ -1804,7 +1804,7 @@ test_busy_pane_default_turn_age_bound_is_3600s() {
   record_pi_busy "$state" busy-default
   printf 'working: setup complete\n' > "$state/busy-default.status"
   sig=$(seen_sig "$state/busy-default.status"); printf '%s' "$sig" > "$state/.seen-busy-default_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "Working...")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1846,7 +1846,7 @@ test_nonterminal_stale_repairs_missing_or_corrupt_timer() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/quiet-timer.meta"
   printf 'working: still compiling\n' > "$state/quiet-timer.status"
   sig=$(seen_sig "$state/quiet-timer.status"); printf '%s' "$sig" > "$state/.seen-quiet-timer_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"

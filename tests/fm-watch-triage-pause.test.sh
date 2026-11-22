@@ -960,7 +960,7 @@ make_superseded_pause_case() {  # <name> <status-line> [armed|unarmed]
   printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/paused.meta"
   printf '%s\n' "$status_line" > "$state/paused.status"
   sig=$(seen_sig "$state/paused.status"); printf '%s' "$sig" > "$state/.seen-paused_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'idle at declared wait')" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   printf '%s\n' "$dir"
