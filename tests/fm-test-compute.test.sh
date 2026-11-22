@@ -226,6 +226,7 @@ MOCK
 chmod +x "$TMP_ROOT/tools/"*
 export PATH="$TMP_ROOT/tools:$PATH" FM_TEST_COMPUTE_QUEUE_SECS=1 FM_TEST_COMPUTE_POLL_SECS=1 FM_TEST_COMPUTE_API_SECS=3
 export FM_TEST_COMPUTE_DISABLE=0 CI=true GITHUB_ACTIONS=false GITLAB_CI=false
+unset FM_PC02_HOSTNAME
 ruby -ryaml - "$ROOT/.no-mistakes.yaml" <<'YAML'
 config = YAML.load_file(ARGV.fetch(0))
 abort 'configured lint must route canonical partitions before the Pi typecheck' unless

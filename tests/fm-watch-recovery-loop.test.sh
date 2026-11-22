@@ -343,6 +343,47 @@ test_undrainable_queue_resurface_is_bounded() {
   pass "an acknowledgement, a new wake, or a session restart restores ordinary resurface delivery, but a presentation-only drain does not"
 }
 
+# T4: a stale pane that re-announces while its wake stays undrained must count
+# toward the resurface bound instead of resetting it with every new row. Each
+# repeat carries a fresh epoch/sequence and an updated idle-age payload, so only
+# collapsing the repeated stale key keeps the fingerprint stable.
+test_repeated_stale_wake_counts_toward_bound() {
+  local dir state
+  dir=$(make_case repeated-stale-resurface)
+  state="$dir/state"
+  mkdir -p "$dir/home/data"
+  append_wake "$state" stale 'fm-remote:demo:p1' \
+    'stale: fm-remote:demo:p1 (idle 10s, possible wedge, escalation 1)' \
+    || fail "could not seed the first stale wake"
+  expect_resurface_close "$dir" "$dir/s1.out" 'check: rearm-resurface' "stale cycle 1"
+  ! grep -qF 'stalled' "$dir/s1.out" || fail "stale cycle 1 escalated before the bound: $(cat "$dir/s1.out")"
+  [ "$(streak_count "$state")" = 1 ] \
+    || fail "stale cycle 1 streak is $(streak_count "$state"), expected 1"
+
+  append_wake "$state" stale 'fm-remote:demo:p1' \
+    'stale: fm-remote:demo:p1 (idle 20s, possible wedge, escalation 2)' \
+    || fail "could not append the repeated stale wake"
+  expect_resurface_close "$dir" "$dir/s2.out" 'check: rearm-resurface' "stale cycle 2"
+  ! grep -qF 'stalled' "$dir/s2.out" || fail "stale cycle 2 escalated before the bound: $(cat "$dir/s2.out")"
+  [ "$(streak_count "$state")" = 2 ] \
+    || fail "a repeated stale wake for the same pane reset the streak to $(streak_count "$state") instead of counting it"
+
+  append_wake "$state" stale 'fm-remote:demo:p1' \
+    'stale: fm-remote:demo:p1 (idle 30s, possible wedge, escalation 3)' \
+    || fail "could not append the third stale wake"
+  expect_resurface_close "$dir" "$dir/s3.out" 'check: rearm-resurface stalled' "stale cycle 3"
+
+  # An unrelated new wake still changes the fingerprint and resumes ordinary
+  # delivery, so the collapse is scoped to repeated stale rows alone.
+  append_wake "$state" check unrelated 'check: an unrelated condition changed' \
+    || fail "could not append an unrelated wake"
+  expect_resurface_close "$dir" "$dir/s4.out" 'check: rearm-resurface' "after an unrelated wake"
+  ! grep -qF 'stalled' "$dir/s4.out" \
+    || fail "an unrelated new wake did not reset the stale streak: $(cat "$dir/s4.out")"
+  pass "a repeated stale wake for the same pane counts toward the resurface bound, and an unrelated wake still resumes ordinary delivery"
+}
+
 test_handling_successor_does_not_go_blind
 test_unacknowledged_recovery_is_announced_once_per_generation
 test_undrainable_queue_resurface_is_bounded
+test_repeated_stale_wake_counts_toward_bound
