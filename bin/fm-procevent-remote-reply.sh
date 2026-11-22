@@ -520,7 +520,7 @@ stage_mirror_lines() { # <source> <rewritten> <source-record> <status> <status-a
 cmd_ingest() {
   local id=${1:-} result=${2:-} seq=${3:-} class blank payload normalized_payload schema status path from to from_hash to_hash payload_hash payload_bytes reason
   local actual_bytes actual_hash line doc local_doc appended=0 cursor_already=0 lock status_file source_record tmp
-  local fetch_rc append_rc offered='' delivered_map='' mirrored='' status_additions='' source_additions='' undelivered=''
+  local kept fetch_rc append_rc offered='' delivered_map='' mirrored='' status_additions='' source_additions='' undelivered=''
   validate_id "$id"
   [ -f "$result" ] && [ ! -L "$result" ] || die "result file is unavailable or unsafe: $result"
   class=$(classify_result "$result")
@@ -642,6 +642,20 @@ EOF
   stage_mirror_lines "$normalized_payload" "$mirrored" "$source_record" "$status_file" \
     "$status_additions" "$source_additions" \
     || { fm_lock_release "$lock"; die "cannot stage remote reply mirror identity"; }
+  # A relayed captain hold the parent already closed (the captain's answer or
+  # deferral, written by fm-send --resolve-key) is not reopened by the mate
+  # restating it; the source line stays recorded as mirrored, so it never
+  # returns (status_captain_hold_reopens_closed owns the rule).
+  kept="$tmp/status-kept"
+  : > "$kept" \
+    || { fm_lock_release "$lock"; die "cannot stage remote reply mirror identity"; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    if ! status_captain_hold_reopens_closed "$line" "$status_file" "$kept"; then
+      printf '%s\n' "$line" >> "$kept" \
+        || { fm_lock_release "$lock"; die "cannot stage remote reply mirror identity"; }
+    fi
+  done < "$status_additions"
+  status_additions=$kept
   cat "$status_additions" >> "$status_file" \
     || { fm_lock_release "$lock"; die "cannot append remote reply"; }
   appended=$(LC_ALL=C awk 'END { print NR + 0 }' "$status_additions") \

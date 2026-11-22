@@ -163,6 +163,11 @@ fm_parent_channel_append_once() {  # <path> <line>
   if status_event_recorded "$path" "$line"; then
     return 0
   fi
+  # A hold the channel already closed stays closed: the captain's answer or
+  # deferral is not undone by the mate restating the same hold.
+  if status_captain_hold_reopens_closed "$line" "$path"; then
+    return 0
+  fi
   printf '%s\n' "$line" >> "$path"
 }
 

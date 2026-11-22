@@ -788,6 +788,39 @@ assert_not_contains "$(status_open_decisions "$PARENT/state/ios.status")" \
 unset FM_PENDING_REPLY_GRACE_SECS
 pass "a reply that arrives after escalation resolves it and clears the open decision"
 
+# A relayed captain hold the parent already closed stays closed when the mate
+# restates it (a re-hold that records the captain's answer or deferral), while a
+# genuine re-hold after a recorded answer arrives under the next occurrence key
+# and opens normally.
+printf 'needs-decision [key=captain-hold-gallery-1]: captain hold gallery: needs rescope\n' \
+  >> "$REMOTE/state/parent-replies.status"
+GEN=$((GEN + 1))
+await_reply_result "$PARENT/state/procevent-inbox/$SID.$GEN.result" \
+  || fail "the relayed captain hold was not captured"
+assert_contains "$(status_open_decisions "$PARENT/state/ios.status")" "captain-hold-gallery-1" \
+  "the relayed captain hold did not open"
+printf 'resolved [key=captain-hold-gallery-1]: answered: keep held, revisit on CI-minute pressure\n' \
+  >> "$PARENT/state/ios.status"
+{
+  printf 'needs-decision [key=captain-hold-gallery-1]: captain hold gallery: keep held, revisit later\n'
+  printf 'needs-decision [key=captain-hold-gallery-2]: captain hold gallery: a new question\n'
+} >> "$REMOTE/state/parent-replies.status"
+GEN=$((GEN + 1))
+await_reply_result "$PARENT/state/procevent-inbox/$SID.$GEN.result" \
+  || fail "the restated captain hold wedged the relay"
+restated_offset=$(LC_ALL=C wc -c < "$REMOTE/state/parent-replies.status" | tr -d ' ')
+assert_grep "offset=$restated_offset" "$PARENT/state/remote-replies/ios.cursor" \
+  "a restated captain hold held the cursor back"
+assert_not_contains "$(cat "$PARENT/state/ios.status")" "keep held, revisit later" \
+  "the restated captain hold was appended after the parent closed it"
+restated_open=$(status_open_decisions "$PARENT/state/ios.status")
+assert_not_contains "$restated_open" "captain-hold-gallery-1" \
+  "a restated captain hold reopened after the parent resolved its key"
+assert_contains "$restated_open" "captain-hold-gallery-2" \
+  "a new occurrence of the captain hold did not open"
+printf 'resolved [key=captain-hold-gallery-2]: answered\n' >> "$PARENT/state/ios.status"
+pass "a mirrored captain hold the parent already closed stays closed while a new occurrence opens"
+
 # The listener keeps one claim across empty polls and across a delta. Reconcile
 # is not involved: nothing here starts a second runner.
 stop_reply_listener || fail "the reply listener did not stop before the continuity check"
