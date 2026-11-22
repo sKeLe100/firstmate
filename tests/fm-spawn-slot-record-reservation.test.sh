@@ -44,11 +44,11 @@ make_pool_case() {  # <name>
   printf '{"worktrees":[{"name":"1","path":"%s"},{"name":"2","path":"%s"}]}\n' \
     "$slot_root/1/project" "$slot_root/2/project" > "$slot_root/treehouse-state.json"
 
-  printf '%s\n' "$case_dir|$home|$project|$fakebin|$slot_root|$initial"
+  printf '%s\n' "$case_dir|$home|$project|$fakebin|$slot_root"
 }
 
 read_pool_case() {
-  IFS='|' read -r CASE_DIR HOME_DIR PROJECT_DIR FAKEBIN_DIR SLOT_ROOT INITIAL_SHA <<EOF
+  IFS='|' read -r CASE_DIR HOME_DIR PROJECT_DIR FAKEBIN_DIR SLOT_ROOT <<EOF
 $1
 EOF
 }
