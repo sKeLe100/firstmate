@@ -1042,6 +1042,7 @@ tests/fm-composer-matrix-live-e2e.test.sh 171
 tests/fm-config-inherit-lane-caps.test.sh 708
 tests/fm-context-usage.test.sh 1173
 tests/fm-contributions.test.sh 200990
+tests/fm-control-relaunch-account.test.sh 14639
 tests/fm-control-relaunch-move-session.test.sh 7444
 tests/fm-control-relaunch.test.sh 174828
 tests/fm-control.test.sh 72794
