@@ -1,0 +1,3 @@
+ok - no-mistakes done without a PR: is current-state blocked
+ok - no-mistakes done with a PR: stays current-state done
+ok - no-mistakes free-text done with a recorded pr=: stays current-state done
