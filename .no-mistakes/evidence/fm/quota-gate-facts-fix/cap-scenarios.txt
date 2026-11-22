@@ -1,0 +1,50 @@
+=== onpace (proj 0m before reset, conf=none in pace)
+effective_cap: 3
+claude_five_hour_percent_remaining: 60
+claude_five_hour_resets_at: 2026-11-22T03:58:54+00:00
+claude_seven_day_resets_at: 2026-11-25T01:58:54+00:00
+claude_read_at: 2026-11-22T01:51:54+00:00
+claude_exhaustion_estimate: est. 2026-11-22T03:58:54+00:00
+claude_runway_cap: none
+claude_runway_block: no
+claude_runway_reason: healthy: 60% left, est. exhaustion 2026-11-22T03:58:54+00:00
+=== late25 (proj 25m before reset, conf=none in pace)
+effective_cap: 0
+claude_five_hour_percent_remaining: 60
+claude_five_hour_resets_at: 2026-11-22T03:58:54+00:00
+claude_seven_day_resets_at: 2026-11-25T01:58:54+00:00
+claude_read_at: 2026-11-22T01:51:54+00:00
+claude_exhaustion_estimate: est. 2026-11-22T03:33:54+00:00
+claude_runway_cap: 0
+claude_runway_block: yes
+claude_runway_reason: est. exhaustion 2026-11-22T03:33:54+00:00 is before the reset 2026-11-22T03:58:54+00:00 minus 20m
+=== early_pace (proj 90m before reset, conf=early in pace)
+effective_cap: 3
+claude_five_hour_percent_remaining: 60
+claude_five_hour_resets_at: 2026-11-22T03:58:54+00:00
+claude_seven_day_resets_at: 2026-11-25T01:58:54+00:00
+claude_read_at: 2026-11-22T01:51:54+00:00
+claude_exhaustion_estimate: -
+claude_runway_cap: none
+claude_runway_block: no
+claude_runway_reason: healthy: 60% left, projection omitted (early)
+=== early_runway (proj 90m before reset, conf=early in runway)
+effective_cap: 3
+claude_five_hour_percent_remaining: 60
+claude_five_hour_resets_at: 2026-11-22T03:58:54+00:00
+claude_seven_day_resets_at: 2026-11-25T01:58:54+00:00
+claude_read_at: 2026-11-22T01:51:54+00:00
+claude_exhaustion_estimate: -
+claude_runway_cap: none
+claude_runway_block: no
+claude_runway_reason: healthy: 60% left, projection omitted (early)
+=== mature_runway (proj 90m before reset, conf=mature in runway)
+effective_cap: 0
+claude_five_hour_percent_remaining: 60
+claude_five_hour_resets_at: 2026-11-22T03:58:54+00:00
+claude_seven_day_resets_at: 2026-11-25T01:58:54+00:00
+claude_read_at: 2026-11-22T01:51:54+00:00
+claude_exhaustion_estimate: est. 2026-11-22T02:28:54+00:00
+claude_runway_cap: 0
+claude_runway_block: yes
+claude_runway_reason: est. exhaustion 2026-11-22T02:28:54+00:00 is before the reset 2026-11-22T03:58:54+00:00 minus 20m

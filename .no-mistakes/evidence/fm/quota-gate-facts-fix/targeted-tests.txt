@@ -1,0 +1,21 @@
+## fm-dispatch-quota-cap
+ok - fm-dispatch-quota-cap.sh: quota ladder, per-account runway, and Codex pace gate
+exit=0
+## fm-spawn-claude-runway
+ok - fm-spawn.sh: an on-pace projection keeps the base cap
+ok - fm-spawn.sh: an early projection keeps the base cap
+# all fm-spawn-claude-runway tests passed
+exit=0
+## fm-claude-runway-admit
+ok - fm-claude-runway-admit.sh: gate-agent runway admission, outage admit, and per-account cache
+exit=0
+## fm-resource-snapshot
+ok - the command creates no file and leaves fixture mtimes unchanged
+ok - home-only renders just one home's workers for the remote call
+skip: live: opt-in; set FM_FLEET_LIVE=1 to run
+exit=0
+## fm-bearings-snapshot
+ok - live PR enrichment caps repositories with counted expansion
+ok - per-repository open-PR caps are disclosed with an expansion knob
+ok - projection and TOON rendering failures exit nonzero with diagnostics
+exit=0
