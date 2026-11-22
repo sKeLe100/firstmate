@@ -220,7 +220,8 @@
 # no new persisted state, and an exact retry republishes the same line, which
 # the channel deduplicates. A restated hold whose key the parent already closed
 # (the captain answered or deferred it through fm-send --resolve-key) is not
-# appended again (status_captain_hold_reopens_closed, bin/fm-classify-lib.sh). A main home has no channel and publishes nothing.
+# appended again (status_captain_hold_reopens_closed, bin/fm-classify-lib.sh).
+# A main home has no channel and publishes nothing.
 # The hold or answer is already durable in the backlog, so a channel that
 # cannot be written is reported as `actionable:` on stderr rather than undoing
 # the record; bin/fm-inactive-reconcile.sh's diagnostics name a broken binding.
