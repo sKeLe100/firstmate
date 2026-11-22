@@ -67,6 +67,35 @@ PY
   printf '%s' "$f"
 }
 
+# fresh_doc <name> <five-pct> <seven-pct> <five-used|omit> <seven-status>
+#           [<five-pace-status|none>]
+# A claude five_hour row with NO resetsAt, quota-axi's shape for a window
+# whose countdown has not started: 100% remaining, zero usage, unknown pace.
+# seven_day is a readable weekly row so the fresh-window exemption can apply.
+fresh_doc() {
+  local f="$TMP_ROOT/$1.json"
+  python3 - "$f" "$2" "$3" "$4" "$5" "${6:-none}" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+f, five_pct, seven_pct, five_used, seven_status, five_pace = sys.argv[1:]
+gen = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+five = {"id": "five_hour", "kind": "session", "percentRemaining": float(five_pct)}
+if five_used != "omit":
+    five["percentUsed"] = float(five_used)
+if five_pace != "none":
+    five["pace"] = {"status": five_pace}
+seven = {"id": "seven_day", "kind": "weekly",
+         "resetsAt": "2026-09-18T12:00:00Z",
+         "percentRemaining": float(seven_pct),
+         "pace": {"status": seven_status, "burnMultiple": 0.8}}
+doc = {"generatedAt": gen, "schemaVersion": 5,
+       "providers": [{"provider": "claude", "state": {"status": "fresh"},
+                      "windows": [five, seven]}]}
+json.dump(doc, open(f, "w"))
+PY
+  printf '%s' "$f"
+}
+
 run_cap() {  # <home> <doc> [extra args...]
   local home=$1 doc=$2
   shift 2
@@ -377,5 +406,44 @@ out=$(run_cap "$home" "$(quota_doc nolist 80 4 behind 0.8 behind)") || fail "lis
 keys=$(printf '%s\n' "$out" | sed 's/:.*//' | tr '\n' ' ')
 [ "$keys" = "effective_cap codex_spawn claude_pace claude_account claude_reading claude_five_hour_percent_remaining claude_five_hour_resets_at claude_seven_day_percent_remaining claude_seven_day_resets_at claude_read_at claude_exhaustion_estimate claude_lanes claude_runway_cap claude_runway_block claude_runway_reason " ] \
   || fail "a home with no list keeps the single-account output, got keys: $keys"
+
+# 13. A fresh account whose five_hour countdown has not started reports 100%
+# with no reset; a readable, healthy week makes that full headroom, not an
+# unreadable reading. This is the account #2 refusal the rule must not repeat.
+out=$(run_cap "$home" "$(fresh_doc unstarted 100 80 omit behind)") || fail "unstarted five-hour window must succeed: $out"
+assert_contains "$out" "claude_reading: available" "an unstarted five-hour window is a real reading, got: $out"
+assert_contains "$out" "claude_five_hour_resets_at: -" "the unstarted window has no reset fact, got: $out"
+assert_contains "$out" "claude_runway_cap: none" "an unstarted five-hour window is full headroom, got: $out"
+assert_contains "$out" "claude_runway_block: no" "an unstarted five-hour window admits a lane, got: $out"
+assert_contains "$out" "effective_cap: 3" "an unstarted window does not tighten the base cap, got: $out"
+assert_contains "$out" "five-hour window not started" "the reason names the not-yet-started window, got: $out"
+
+# 13a. quota-axi may publish an explicit zero percentUsed instead of omitting it.
+out=$(run_cap "$home" "$(fresh_doc unstarted-zero 100 80 0 behind)") || fail "explicit zero usage must succeed: $out"
+assert_contains "$out" "claude_runway_cap: none" "explicit zero usage is still an unstarted window, got: $out"
+assert_contains "$out" "claude_runway_block: no" "explicit zero usage admits a lane, got: $out"
+
+# 13b. The week is the only bound that can refuse while the five-hour window
+# has not started; an exhausted week blocks even the first lane.
+out=$(run_cap "$home" "$(fresh_doc unstarted-week0 100 0 omit behind)") || fail "unstarted with exhausted week must succeed: $out"
+assert_contains "$out" "claude_runway_cap: 0" "an exhausted week while unstarted blocks, got: $out"
+assert_contains "$out" "claude_runway_block: yes" "the exhausted week blocks the first lane, got: $out"
+assert_contains "$out" "effective_cap: 0" "the exhausted week zeroes the effective cap, got: $out"
+
+# 13c. A missing reset with nonzero usage is a data gap, not "not yet started",
+# and is refused rather than read as headroom.
+run_cap "$home" "$(fresh_doc gap-reset 100 80 5 behind)" >/dev/null 2>&1
+[ $? -eq 2 ] || fail "a missing reset with nonzero usage must be refused, not exempted"
+
+# 13e. A failed fetch (provider status unavailable, no windows) stays tight.
+fetch_doc=$(mktemp)
+printf '%s' '{"schemaVersion":5,"providers":[{"provider":"claude","state":{"status":"unavailable"},"windows":[]}]}' > "$fetch_doc"
+out=$(run_cap "$home" "$fetch_doc") || fail "a failed fetch must not refuse the gate: $out"
+assert_contains "$out" "claude_reading: unavailable" "a failed fetch is unavailable, got: $out"
+assert_contains "$out" "claude_runway_cap: 1" "a failed fetch stays tight, got: $out"
+mk_lane "$home" fetch-1 claude ship ordinary
+out=$(run_cap "$home" "$fetch_doc") || fail "a failed fetch with a lane must report: $out"
+assert_contains "$out" "claude_runway_block: yes" "a failed fetch blocks a new lane, got: $out"
+rm -f "$fetch_doc" "$home/state/fetch-1.meta"
 
 pass "fm-dispatch-quota-cap.sh: quota ladder, per-account runway, and Codex pace gate"
