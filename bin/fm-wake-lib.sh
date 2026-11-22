@@ -1827,6 +1827,67 @@ fm_treehouse_slot_owner_release() {  # <worktree> <task-id>
   rm -f "$marker" 2>/dev/null || true
 }
 
+# Keep every pool slot a kept task record still names out of the next
+# acquisition. A task record's `worktree=` line names a copy the task still
+# owns: a parked or shelved task keeps its isolated copy after its pane closes,
+# and a worker that exits leaves its record until teardown. Treehouse protects
+# an interactive `treehouse get` only with a process lease, which lapses with
+# the pane, so the pool hands that same slot to a new task while the old record
+# still names it - two live records sharing one slot, and the newcomer's
+# teardown then refuses a slot another record still claims.
+#
+# Before a spawn acquires, reserve each slot another task's record names with the
+# durable lease `treehouse get --lease` writes: a leased worktree is never handed
+# out by a later get and never removed by prune or destroy. The spawning task's
+# own record is skipped because a fresh spawn republishes it, so reserving that
+# slot would strand a lease on a slot the task no longer holds. The caller holds
+# the shared Treehouse project lock, so no concurrent spawn or return can
+# interleave with this reservation.
+fm_treehouse_reserve_recorded_slots() {  # <project-dir> <state-dir> <task-id>
+  local project=$1 state=$2 self=$3 meta id path real reserved='' slots
+  local name slot_path slot_real lease holder
+  [ -d "$state" ] || return 0
+  for meta in "$state"/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    id=$(basename "$meta" .meta)
+    [ -n "$id" ] && [ "$id" != "$self" ] || continue
+    path=$(sed -n 's/^worktree=//p' "$meta" 2>/dev/null | tail -n 1)
+    [ -n "$path" ] || continue
+    real=$(CDPATH='' cd -- "$path" 2>/dev/null && pwd -P) || continue
+    fm_treehouse_pool_slot "$project" "$real" || continue
+    reserved="$reserved$real"$'\t'"$id"$'\n'
+  done
+  [ -n "$reserved" ] || return 0
+  if ! { cd -- "$project" && treehouse lease --help; } >/dev/null 2>&1; then
+    echo "warning: this treehouse has no 'lease' subcommand; skipping pool-slot reservation, so a kept record's slot may be reissued on this version" >&2
+    return 0
+  fi
+  command -v jq >/dev/null 2>&1 || {
+    echo "error: jq is required to reserve the Treehouse pool slots this home's task records still name; refusing an acquisition that could reissue another task's copy" >&2
+    return 1
+  }
+  slots=$( { cd -- "$project" && treehouse status --json; } 2>/dev/null ) || {
+    echo "error: could not read the Treehouse pool at $project while reserving the slots this home's task records still name; refusing an acquisition that could reissue another task's copy" >&2
+    return 1
+  }
+  printf '%s' "$slots" | jq -e 'type == "array"' >/dev/null 2>&1 || {
+    echo "error: the Treehouse pool listing at $project is unreadable; refusing an acquisition that could reissue another task's copy" >&2
+    return 1
+  }
+  while IFS=$'\t' read -r name slot_path lease; do
+    [ -n "$name" ] || continue
+    slot_real=$(CDPATH='' cd -- "$slot_path" 2>/dev/null && pwd -P) || slot_real=$slot_path
+    holder=$(printf '%s' "$reserved" | awk -F'\t' -v p="$slot_real" '$1 == p { print $2; exit }')
+    [ -n "$holder" ] || continue
+    [ -z "$lease" ] || continue
+    if ! { cd -- "$project" && treehouse lease "$name" --lease-holder "$holder"; } >/dev/null 2>&1; then
+      echo "error: could not reserve Treehouse pool slot $name for task $holder, whose record still names it; refusing an acquisition that could reissue that task's copy" >&2
+      return 1
+    fi
+  done < <(printf '%s' "$slots" | jq -r '.[]? | [(.name // ""), (.path // ""), (.lease_id // "")] | @tsv' 2>/dev/null)
+  return 0
+}
+
 fm_failure_episode_reset() {
   local state=$1 mode=${2:-acquire} lock current pid acquired=0 path
   lock="$state/.turnend-claude-blocks.lock"
