@@ -323,6 +323,7 @@ five = None
 seven = None
 five_pct = None
 generated = None
+read_at = None
 if claude is not None:
     status = (claude.get("state") or {}).get("status")
     if claude.get("notSetUp") or status in (
@@ -343,6 +344,7 @@ if claude is not None:
             unavailable = True
     source_doc = doc if fixture else claude_doc
     generated = ts(source_doc.get("generatedAt")) if isinstance(source_doc, dict) else None
+    read_at = ts((claude.get("state") or {}).get("refreshedAt")) or generated
 
 runway_cap = None
 reason = ""
@@ -353,16 +355,31 @@ five_resets = None
 seven_pct = None
 seven_resets = None
 
+if five is not None:
+    five_resets = ts(five.get("resetsAt"))
+if seven is not None:
+    seven_pct = number(seven, "percentRemaining")
+    seven_resets = ts(seven.get("resetsAt"))
+
+def runway_confidence():
+    semantics = claude.get("quotaSemantics") if isinstance(claude, dict) else None
+    entries = semantics.get("effectiveAvailability") if isinstance(semantics, dict) else None
+    for entry in entries if isinstance(entries, list) else []:
+        runway = entry.get("runway") if isinstance(entry, dict) else None
+        if not isinstance(runway, dict):
+            continue
+        ids = runway.get("limitingWindowIds")
+        ids = ids if isinstance(ids, list) else [runway.get("limitingWindowId")]
+        if "five_hour" in ids and runway.get("projectionConfidence") is not None:
+            return runway["projectionConfidence"]
+    return None
+
 if unavailable:
     runway_cap = 1
     reason = "quota reading unavailable; treated as tight"
 else:
     pace = five.get("pace") if isinstance(five.get("pace"), dict) else {}
-    resets = ts(five.get("resetsAt"))
-    five_resets = resets
-    if seven is not None:
-        seven_pct = number(seven, "percentRemaining")
-        seven_resets = ts(seven.get("resetsAt"))
+    resets = five_resets
     if resets is None:
         if fixture:
             refuse("five_hour window has no parseable resetsAt")
@@ -373,7 +390,10 @@ else:
         projected = ts(pace.get("projectedExhaustedAt"))
         if projected is None:
             projected = ts(five.get("projectedExhaustedAt"))
-        early = pace.get("projectionConfidence") == "early"
+        confidence = pace.get("projectionConfidence")
+        if confidence is None:
+            confidence = runway_confidence()
+        early = confidence == "early"
         exhausted_now = five_pct <= 0 or pace.get("status") == "exhausted_now"
         projected_first = (
             projected is not None
@@ -459,7 +479,7 @@ print(f"claude_five_hour_percent_remaining: {fmt_num(five_pct)}")
 print(f"claude_five_hour_resets_at: {fmt_ts(five_resets)}")
 print(f"claude_seven_day_percent_remaining: {fmt_num(seven_pct)}")
 print(f"claude_seven_day_resets_at: {fmt_ts(seven_resets)}")
-print(f"claude_read_at: {fmt_ts(generated)}")
+print(f"claude_read_at: {fmt_ts(read_at)}")
 print(f"claude_exhaustion_estimate: {estimate}")
 print(f"claude_lanes: {lanes}")
 print(f"claude_runway_cap: {'none' if runway_cap is None else runway_cap}")

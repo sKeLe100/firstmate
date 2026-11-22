@@ -208,6 +208,23 @@ assert_contains "$out" "effective_cap: 3" "an early projection keeps the base ca
 assert_contains "$out" "claude_exhaustion_estimate: -" "the early projection is omitted from the forecast line, got: $out"
 assert_contains "$out" "projection omitted (early)" "the reason says the early projection is omitted, got: $out"
 
+# 9e. A document carrying early confidence only on the five_hour-bound runway
+# still omits the projection; read time prefers state.refreshedAt.
+python3 - "$TMP_ROOT/projected-early.json" "$TMP_ROOT/runway-early.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+c = d["providers"][0]
+del c["windows"][0]["pace"]["projectionConfidence"]
+c["state"]["refreshedAt"] = "2026-09-14T11:00:00Z"
+c["quotaSemantics"] = {"effectiveAvailability": [
+    {"scope": "all_models", "runway": {"limitingWindowIds": ["five_hour"], "projectionConfidence": "early"}}]}
+json.dump(d, open(sys.argv[2], "w"))
+PY
+out=$(run_cap "$home" "$TMP_ROOT/runway-early.json") || fail "runway-early must succeed"
+assert_contains "$out" "claude_runway_cap: none" "runway-carried early confidence does not block, got: $out"
+assert_contains "$out" "claude_exhaustion_estimate: -" "runway-carried early projection is omitted, got: $out"
+assert_contains "$out" "claude_read_at: 2026-09-14T11:00:00+00:00" "read time prefers refreshedAt, got: $out"
+
 # 10. Under 40% with a live Claude lane on that account blocks the next one;
 # the lane count excludes secondmates and other harnesses.
 tight=$(quota_doc lanes 30 4 behind 0.8 behind)
