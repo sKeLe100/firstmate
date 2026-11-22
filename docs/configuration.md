@@ -893,7 +893,7 @@ The record includes selected tool versions and paths, the inherited `PATH` entri
 Missing tools and browser startup failures are recorded as data and do not change the test result; the record never dumps the process environment.
 `bin/fm-test-env-record.sh` owns the exact fields and privacy-safe probes, and `tests/fm-test-run.test.sh` plus `tests/fm-pc02-test-offload.test.sh` pin the local and fake-remote behavior.
 
-The captain's personal-use switch is the only thing that stops PC02 testing: while it is on, every offload routes to PC01 at once.
+The captain's personal-use switch is the only thing that stops PC02 testing: while it is on, every offload routes to PC01 at once, and an offload already in flight stops itself, releases its slot, and reports a no-verdict `stopped: personal use` rather than a test failure.
 A live PC02 model worker (`pc02-llamaswap/*`) and a loaded llama-swap are not test-offload occupancy. PC02 is sized to serve a model and run its test slots together, so the offload never probes the model lane, llama-swap, or host CPU/GPU load, and the per-slot locks below are the only occupancy signal.
 `bin/fm-pc02-personal-use.sh` owns the switch on PC01; [docs/pc02-outage-runbook.md](pc02-outage-runbook.md) owns the captain's no-terminal Windows desktop toggle for the same flag.
 

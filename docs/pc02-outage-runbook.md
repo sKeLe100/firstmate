@@ -173,6 +173,10 @@ locally, once PC02 sets `FM_PC02_HOSTNAME` to its own hostname; the script
 header owns the details). This manual switch is the only thing that stops PC02 testing:
 a live PC02 model worker, a loaded llama-swap, and ordinary host CPU/GPU load
 do not block an offload, because PC02 runs the test slots alongside a model.
+Turning it on also stops offloads that are already running there: each run
+watches the same flag, ends only its own process session, releases its slot,
+and reports `stopped: personal use` as a no-verdict result rather than a test
+failure, so nothing outside the offloaded run is signalled.
 The per-slot locks still bound how many suites run at once, and a run waits for
 a free slot up to the offload's wait bound; an unreachable PC02 routes the run
 to PC01 at once.
