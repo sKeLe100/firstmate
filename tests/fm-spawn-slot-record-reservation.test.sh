@@ -81,6 +81,8 @@ leased_name() {  # <name>
 }
 case "${1:-}" in
   status)
+    [ ! -e "$slots/.status-fails" ] || { echo "treehouse status: pool unreadable" >&2; exit 1; }
+    [ ! -e "$slots/.status-garbage" ] || { printf '{"worktrees":[]}\n'; exit 0; }
     first=1
     printf '['
     for slot in "$slots"/*/project; do
@@ -89,16 +91,16 @@ case "${1:-}" in
       if leased_name "$name"; then
         holder=$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' "$leases" 2>/dev/null)
         lease="lease-$name"
-        state=leased
+        leased_at='"2026-11-22T10:00:00Z"'
       else
         holder=
         lease=
-        state=available
+        leased_at=null
       fi
       [ "$first" -eq 1 ] || printf ','
       first=0
-      printf '{"name":"%s","path":"%s","status":"%s","lease_id":"%s","lease_holder":"%s"}' \
-        "$name" "$slot" "$state" "$lease" "$holder"
+      printf '{"name":"%s","path":"%s","status":"available","branch":"","flavor":"git","lease_id":"%s","lease_holder":"%s","leased_at":%s,"processes":[]}' \
+        "$name" "$slot" "$lease" "$holder" "$leased_at"
     done
     printf ']\n'
     ;;
@@ -113,6 +115,7 @@ case "${1:-}" in
       esac
     done
     [ -n "$name" ] || { echo "treehouse lease: missing worktree name" >&2; exit 2; }
+    [ ! -e "$slots/.lease-fails" ] || { echo "treehouse lease: cannot lease" >&2; exit 1; }
     if leased_name "$name"; then
       echo "worktree $name is already leased" >&2
       exit 1
@@ -286,5 +289,33 @@ test_a_stale_record_for_the_spawning_task_does_not_reserve_its_slot() {
 test_kept_record_reserves_its_slot_from_a_fresh_spawn
 test_without_a_kept_record_the_lowest_slot_is_still_handed_out
 test_a_stale_record_for_the_spawning_task_does_not_reserve_its_slot
+
+# Each failure to read or lease the pool must refuse the spawn rather than
+# acquire blind: the kept record's slot could otherwise be reissued.
+test_pool_failures_refuse_the_spawn() {  # <case> <marker> <message>
+  local case_name=$1 marker=$2 msg=$3 rec id out status
+  id="slot-reserve-$case_name-r1"
+  rec=$(make_pool_case "$case_name")
+  read_pool_case "$rec"
+  mkdir -p "$HOME_DIR/data/$id"
+  fm_test_spawn_brief "$HOME_DIR" "$id"
+  seed_kept_record "$HOME_DIR" 'kept-scout' "$SLOT_ROOT/1/project"
+  install_slot_world "$FAKEBIN_DIR" "$CASE_DIR/tmux-world" "$SLOT_ROOT"
+  : > "$SLOT_ROOT/$marker"
+
+  out=$(run_spawn "$id" --scout 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "$case_name: the spawn launched despite the pool failure"$'\n'"$out"
+  case "$out" in
+    *"$msg"*) ;;
+    *) fail "$case_name: refusal did not name the pool failure"$'\n'"$out" ;;
+  esac
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "$case_name: a refused spawn published a task record"
+  pass "$case_name refuses the spawn"
+}
+
+test_pool_failures_refuse_the_spawn status-fails .status-fails 'could not read the Treehouse pool'
+test_pool_failures_refuse_the_spawn status-garbage .status-garbage 'is unreadable'
+test_pool_failures_refuse_the_spawn lease-fails .lease-fails 'could not reserve Treehouse pool slot 1'
 
 printf '# all fm-spawn-slot-record-reservation tests passed\n'
