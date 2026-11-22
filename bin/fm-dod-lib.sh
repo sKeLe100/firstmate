@@ -31,9 +31,14 @@
 # (fm_dod_named_head_reachable_outside_worktree); the other callers read the
 # refs as that refresh left them.
 # The check tests that head, not whether some branch moved. In no-mistakes
-# mode the pre-validation `done: {summary}` is the pipeline handoff and is
-# not gated; only the later CI-ready `done: PR <url> checks green` is, or on a
-# Gerrit project the later `done: PR <change url> published for review`. The
+# mode the pre-validation `done: {summary}` is the pipeline handoff and the
+# ready-signal callers leave it ungated; only the later CI-ready
+# `done: PR <url> checks green` is, or on a Gerrit project the later
+# `done: PR <change url> published for review`. A current-state read
+# (bin/fm-crew-state.sh, through fm_dod_accept_ship_done's <require_pr>
+# argument) is stricter: a no-mistakes done that reports no PR URL is the
+# handoff, not a delivered pull request, so it stays visibly not-ready until
+# the pipeline's PR exists instead of reading as finished and safe. The
 # named head is the worker copy's HEAD, except that a done naming the task's
 # recorded pr= passes when the forge holds that head: a forge-reported
 # pr_head= in no-mistakes mode, or a recorded merge
@@ -771,9 +776,11 @@ fm_dod_accept_external_review_done() {  # <worktree> <project> <line> <meta>
   return 1
 }
 
-# 0 when this ship done: is one the named-head gate must accept or refuse.
-# no-mistakes pre-validation done: is the pipeline handoff and is not gated.
-# Empty mode is treated as no-mistakes, the unregistered-project default.
+# 0 when this ship done: is one the ready-signal named-head gate must accept or
+# refuse. no-mistakes pre-validation done: is the pipeline handoff and is not
+# gated here; fm_dod_ship_done_awaits_pr below owns the stricter current-state
+# reading. Empty mode is treated as no-mistakes, the unregistered-project
+# default.
 fm_dod_should_gate_ship_done() {  # <kind> <mode> <line>
   local note
   [ "$1" = ship ] || return 1
@@ -785,6 +792,32 @@ fm_dod_should_gate_ship_done() {  # <kind> <mode> <line>
       fm_dod_note_reports_ci_ready "$note" || fm_dod_note_reports_published_change "$note" ;;
     *) return 1 ;;
   esac
+}
+
+# 0 when a current-state read must hold this ship done: as not-ready: a
+# no-mistakes done that reports no PR URL is the pipeline handoff rather than a
+# delivered pull request. Only bin/fm-crew-state.sh asks for this reading, by
+# passing fm_dod_accept_ship_done's <require_pr> argument, so the ready-signal
+# callers keep the documented ungated handoff semantics. A recorded pr= (which
+# any recorded merge is keyed on) means the PR exists, so it is not awaited.
+# forge=external reports
+# a review upload instead of a PR, so it is exempt. Empty mode is treated as
+# no-mistakes, the unregistered-project default.
+fm_dod_ship_done_awaits_pr() {  # <kind> <mode> <line> <meta>
+  local kind=$1 mode=$2 line=$3 meta=$4
+  [ "$kind" = ship ] || return 1
+  [ "$(status_line_verb "$line")" = "done" ] || return 1
+  case "$mode" in
+    no-mistakes|'') ;;
+    *) return 1 ;;
+  esac
+  if [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" forge)" = external ]; then
+    return 1
+  fi
+  if [ -n "$meta" ] && [ -n "$(fm_dod_meta_value "$meta" pr)" ]; then
+    return 1
+  fi
+  ! fm_dod_pr_url_from_done_note "$(status_line_note "$line")" >/dev/null
 }
 
 # The PR/MR URL from a `done: PR <url>...` note, or empty.
@@ -1017,8 +1050,20 @@ fm_dod_named_head_reachable_outside_worktree() {  # <worktree> <project> <mode> 
 # output. <state> <id> <meta> supply pr=,
 # pr_head=, and the merge-notified marker; <meta> may be a captured copy
 # (bin/fm-fleet-snapshot.sh), so the marker is read from <state>.
-fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta>]
-  local kind=$1 mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit
+# The optional ninth argument <require_pr> asks for the current-state reading:
+# a no-mistakes ship done that reports no PR URL is refused as the pipeline
+# handoff still awaiting its pull request (fm_dod_ship_done_awaits_pr), with a
+# reason naming the missing PR. The ready-signal callers omit it and keep the
+# documented ungated handoff semantics.
+fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta> [<require_pr>]]
+  local kind=$1 mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} require_pr=${9:-} url sha gerrit branch=''
+  if [ -n "$require_pr" ] && fm_dod_ship_done_awaits_pr "$kind" "$mode" "$line" "$meta"; then
+    if [ -n "$wt" ] && [ -d "$wt" ]; then
+      branch=$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null) || branch=
+    fi
+    printf '%s\n' "no-mistakes done${branch:+ for branch $branch} carries no PR URL: the pipeline handoff's pull request is missing, so the task is not current-state done"
+    return 1
+  fi
   fm_dod_should_gate_ship_done "$kind" "$mode" "$line" || return 0
   if [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" forge)" = external ]; then
     fm_dod_accept_external_review_done "$wt" "$project" "$line" "$meta"

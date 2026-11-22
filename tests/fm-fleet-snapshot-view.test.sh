@@ -1516,7 +1516,7 @@ EOF
     "kind=ship" \
     "mode=no-mistakes"
   record_claude_idle "$home/state" terminal-ship
-  printf 'done: complete\n' > "$home/state/terminal-ship.status"
+  printf 'done: PR https://github.com/o/r/pull/1 complete\n' > "$home/state/terminal-ship.status"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
   printf '%s' "$out" | jq -e '
     .valid == false
