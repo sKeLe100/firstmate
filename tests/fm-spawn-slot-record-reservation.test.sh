@@ -105,6 +105,10 @@ case "${1:-}" in
     printf ']\n'
     ;;
   lease)
+    if [ "${2:-}" = --help ]; then
+      [ ! -e "$slots/.no-lease-command" ] || { echo 'unknown command "lease"' >&2; exit 1; }
+      exit 0
+    fi
     name=${2:-}
     shift 2 2>/dev/null || shift "$#"
     holder=
@@ -317,5 +321,30 @@ test_pool_failures_refuse_the_spawn() {  # <case> <marker> <message>
 test_pool_failures_refuse_the_spawn status-fails .status-fails 'could not read the Treehouse pool'
 test_pool_failures_refuse_the_spawn status-garbage .status-garbage 'is unreadable'
 test_pool_failures_refuse_the_spawn lease-fails .lease-fails 'could not reserve Treehouse pool slot 1'
+
+# An older Treehouse (v2.0.1, the CI pin) has no `lease` subcommand and no
+# `status --json`; the reservation is skipped with a warning, not a refusal.
+test_old_treehouse_without_lease_still_spawns() {
+  local id=slot-reserve-old-treehouse-r1 rec out status
+  rec=$(make_pool_case old-treehouse)
+  read_pool_case "$rec"
+  mkdir -p "$HOME_DIR/data/$id"
+  fm_test_spawn_brief "$HOME_DIR" "$id"
+  seed_kept_record "$HOME_DIR" 'kept-scout' "$SLOT_ROOT/1/project"
+  install_slot_world "$FAKEBIN_DIR" "$CASE_DIR/tmux-world" "$SLOT_ROOT"
+  : > "$SLOT_ROOT/.no-lease-command"
+  : > "$SLOT_ROOT/.status-fails"
+
+  out=$(run_spawn "$id" --scout 2>&1)
+  status=$?
+  expect_code 0 "$status" "a treehouse without lease must not refuse the spawn"$'\n'"$out"
+  case "$out" in
+    *"has no 'lease' subcommand"*) ;;
+    *) fail "the skipped reservation was not warned about"$'\n'"$out" ;;
+  esac
+  pass "a treehouse without a lease subcommand skips reservation and still spawns"
+}
+
+test_old_treehouse_without_lease_still_spawns
 
 printf '# all fm-spawn-slot-record-reservation tests passed\n'

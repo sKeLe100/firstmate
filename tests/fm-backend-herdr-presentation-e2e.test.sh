@@ -654,7 +654,11 @@ assert_raw_presentation_mutations_preserved_since "$SHAPE_FOCUS_AUDIT_START" "pr
 ON_META="$TMP_ROOT/on.meta"
 cp "$HOME_DIR/state/shape.meta" "$ON_META"
 ON_WT=$(remember_meta_worktree "$ON_META")
-cmp -s "$TMP_ROOT/off-treehouse.log" "$TREEHOUSE_CALL_LOG" \
+# Slot reservation (status/lease) is a one-time pool-state change: the opted-out
+# spawn leases the anchor's recorded slot, so the projected spawn legitimately
+# skips the lease. Compare only the acquisition calls.
+cmp -s <(grep -v -P '^(status|lease)\t' "$TMP_ROOT/off-treehouse.log") \
+  <(grep -v -P '^(status|lease)\t' "$TREEHOUSE_CALL_LOG") \
   || fail "Treehouse command sequence changed between opted-out and projected spawns"
 JOURNAL="$HOME_DIR/state/shape.herdr-presentation"
 [ -f "$JOURNAL" ] || fail "projected spawn did not publish its presentation journal"

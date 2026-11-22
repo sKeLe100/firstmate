@@ -1837,6 +1837,10 @@ fm_treehouse_reserve_recorded_slots() {  # <project-dir> <state-dir> <task-id>
     reserved="$reserved$real"$'\t'"$id"$'\n'
   done
   [ -n "$reserved" ] || return 0
+  if ! { cd -- "$project" && treehouse lease --help; } >/dev/null 2>&1; then
+    echo "warning: this treehouse has no 'lease' subcommand; skipping pool-slot reservation, so a kept record's slot may be reissued on this version" >&2
+    return 0
+  fi
   command -v jq >/dev/null 2>&1 || {
     echo "error: jq is required to reserve the Treehouse pool slots this home's task records still name; refusing an acquisition that could reissue another task's copy" >&2
     return 1
