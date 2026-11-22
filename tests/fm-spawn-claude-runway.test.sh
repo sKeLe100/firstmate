@@ -105,6 +105,31 @@ json.dump({
 PY
 }
 
+quota_fresh_fixture() {  # <file>
+  python3 - "$1" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+gen = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
+stamp = gen.isoformat().replace("+00:00", "Z")
+# A five_hour window whose countdown has not started: no resetsAt, zero
+# usage, unknown pace - exactly what quota-axi publishes on a fresh account.
+json.dump({
+    "generatedAt": stamp,
+    "schemaVersion": 5,
+    "providers": [
+        {"provider": "claude", "state": {"status": "fresh"}, "windows": [
+            {"id": "five_hour", "kind": "session", "percentUsed": 0,
+             "percentRemaining": 100,
+             "pace": {"status": "unknown", "reason": "missing_cycle"}},
+            {"id": "seven_day", "kind": "weekly",
+             "resetsAt": "2026-09-18T12:00:00Z", "percentRemaining": 80,
+             "pace": {"status": "behind", "burnMultiple": 0.4}},
+        ]},
+    ],
+}, open(sys.argv[1], "w"))
+PY
+}
+
 write_live_lane() {  # <home> <task-id>
   cat > "$1/state/$2.meta" <<META
 window=firstmate:fm-$2
@@ -218,5 +243,26 @@ EOF2
   pass "fm-spawn.sh: an early projection keeps the base cap"
 }
 test_early_projection_keeps_the_spawn_admitted
+
+test_unstarted_five_hour_window_still_spawns() {
+  local rec id out status quota
+  id=runway-unstarted
+  rec=$(make_case unstarted "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  write_meminfo "$HOME_DIR/meminfo"
+  quota="$CASE_DIR/quota-unstarted.json"
+  # A completely fresh account: the five-hour countdown has not started, so
+  # the report is 100% with no reset. That is headroom, not an unreadable
+  # reading, and must not defer the launch.
+  quota_fresh_fixture "$quota"
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$quota")
+  status=$?
+  expect_code 0 "$status" "an unstarted five-hour window must admit the lane: $out"
+  [ -f "$HOME_DIR/state/$id.meta" ] || fail "the admitted lane published no task record: $out"
+  pass "fm-spawn.sh: a fresh account whose five-hour window has not started is admitted"
+}
+test_unstarted_five_hour_window_still_spawns
 
 printf '# all fm-spawn-claude-runway tests passed\n'

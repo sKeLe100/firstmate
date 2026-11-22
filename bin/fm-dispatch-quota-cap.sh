@@ -405,9 +405,10 @@ def evaluate(account, claude, source_doc, strict):
     generated = None
     read_at = None
     if claude is not None:
-        status = (claude.get("state") or {}).get("status")
-        if claude.get("notSetUp") or status in (
-            "unavailable", "error", "auth_required", "rate_limited", "refused"
+        cstate = claude.get("state") or {}
+        status = cstate.get("status")
+        if claude.get("notSetUp") or cstate.get("stale") is True or status in (
+            "unavailable", "error", "auth_required", "rate_limited", "refused", "stale"
         ):
             unavailable = True
         five = window_by_id(claude, "five_hour")
@@ -453,13 +454,53 @@ def evaluate(account, claude, source_doc, strict):
                 return runway["projectionConfidence"]
         return None
 
+    def five_not_yet_started():
+        # quota-axi leaves resetsAt out and reports 100% remaining with zero usage
+        # for a five_hour window whose countdown has not started, and marks that
+        # window's pace unknown. Only that exact shape is exempt; a missing reset
+        # alongside any other usage, or a real pace, is a data gap and stays tight.
+        if five is None or five_pct != 100:
+            return False
+        used = number(five, "percentUsed")
+        if used is not None and used != 0:
+            return False
+        fpace = five.get("pace") if isinstance(five.get("pace"), dict) else None
+        if fpace is not None and fpace.get("status") not in (None, "unknown"):
+            return False
+        return True
+
+    def seven_exhausted():
+        if seven is None or seven_pct is None:
+            return False
+        if seven_pct <= 0:
+            return True
+        space = seven.get("pace") if isinstance(seven.get("pace"), dict) else None
+        return isinstance(space, dict) and space.get("status") == "exhausted_now"
+
     if unavailable:
         runway_cap = 1
         reason = "quota reading unavailable; treated as tight"
     else:
         pace = five.get("pace") if isinstance(five.get("pace"), dict) else {}
         resets = five_resets
-        if resets is None:
+        if resets is None and five_not_yet_started() \
+                and seven is not None and seven_pct is not None:
+            # The five-hour countdown has not started, so it bounds nothing yet;
+            # the week is the only bound that can still refuse.
+            if seven_exhausted():
+                runway_cap = 0
+                reason = (
+                    "five-hour window has not started, but the weekly allowance "
+                    f"is exhausted ({seven_pct:g}% left)"
+                )
+            else:
+                runway_cap = None
+                reason = (
+                    "healthy: five-hour window not started yet (100% left); "
+                    f"weekly {seven_pct:g}% left"
+                )
+                pace_burn_used = pace_burn(seven)
+        elif resets is None:
             if strict:
                 refuse("five_hour window has no parseable resetsAt")
             unavailable = True
