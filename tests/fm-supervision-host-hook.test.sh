@@ -422,30 +422,26 @@ test_claude_stop_hook_rewakes_a_present_captain_beside_a_quiet_record() {
 }
 
 
-# Default-on for Claude (docs/configuration.md "Supervision host"): through the
-# real Stop hook and mirror writer, a Claude primary home with no
-# config/supervision-host runs the host at the default engine, mirrors the
-# captain's dialog, and keeps a routine attended wake off main; a home with
-# config/supervision-host-off runs the plain watcher arm, mirrors nothing, and every wake
-# reaches main as the arm printed it.
-test_claude_stop_hook_runs_the_host_without_the_file_and_off_opts_out() {
-  local home first
-  home=$(make_primary_home hook-default-on)
+# Opt-in on every primary, Claude included (docs/supervision-host.md): through
+# the real Stop hook, a Claude primary home with no config/supervision-host
+# runs the plain watcher arm, mirrors nothing, and every wake reaches main as
+# the arm printed it; a home with config/supervision-host-off does the same.
+test_claude_stop_hook_without_the_opt_in_runs_the_plain_arm_and_off_keeps_it() {
+  local home
+  home=$(make_primary_home hook-no-opt-in)
   ln -s "$ROOT/.agents" "$home/.agents"
   rm -f "$home/config/supervision-host"
   start_hook_session "$home"
   turn_end "$home"
-  wait_until 150 watcher_live "$home" || fail "default-on: the Stop hook never started a watcher cycle: $(cat "$home/hook.err" 2>/dev/null)"
-  assert_grep 'watch the fleet for me' "$home/state/.host-mirror.jsonl" "a Claude home without the file must mirror the captain's dialog"
+  wait_until 150 watcher_live "$home" || fail "no opt-in: the Stop hook never started a watcher cycle: $(cat "$home/hook.err" 2>/dev/null)"
   append_status "$home" 'step one'
-  wait_until 250 handled_at_least "$home" 1 \
-    || fail "default-on: the wake was not handled on the engine: $(cat "$home/hook.err" 2>/dev/null; cat "$home/state/.supervision-host.log" 2>/dev/null)"
-  first="$home/engine-call.1"
-  assert_re '^arg=sonnet$' "$first" "a Claude home without the file must run the Claude engine at its default model"
-  assert_re '^primary=claude$' "$first" "the engine must carry the Claude primary pin"
-  assert_re '	handled	turn=[^	]*	posture=attended	' "$home/state/.supervision-host.log" "the ledger must record the attended turn"
-  [ ! -s "$home/hook.rc" ] || fail "a routine attended wake on a Claude home without the file reached main: $(cat "$home/hook.err")"
-  watcher_live "$home" || fail "default-on: the host is not parked on a live successor"
+  wait_until_deadline 60 hook_exited "$home" || fail "no opt-in: the Stop hook never closed"
+  assert_rewoke_main "$home" "no opt-in"
+  assert_re '^signal: .*demo.status' "$home/hook.err" "no opt-in: the rewake must carry the arm's close"
+  assert_no_re '^supervision-host' "$home/hook.err" "no opt-in: the close must reach main exactly as the arm printed it"
+  assert_absent "$home/state/.supervision-host.log" "a Claude home without config/supervision-host must never run the host"
+  assert_absent "$home/state/.host-mirror.jsonl" "a Claude home without config/supervision-host must mirror nothing"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "a Claude home without config/supervision-host ran an engine turn"
   : > "$home/session.stop"
   stop_home_processes "$home"
 
@@ -464,7 +460,7 @@ test_claude_stop_hook_runs_the_host_without_the_file_and_off_opts_out() {
   [ "$(engine_calls "$home")" -eq 0 ] || fail "a home opted out by config/supervision-host-off ran an engine turn"
   : > "$home/session.stop"
   stop_home_processes "$home"
-  pass "host+hook: a Claude home without config/supervision-host runs the host at the default engine, and an off file restores the plain arm"
+  pass "host+hook: a Claude home without config/supervision-host runs the plain arm (opt-in), and an off file keeps it"
 }
 
 
@@ -704,7 +700,7 @@ fm_test_run \
   test_claude_stop_hook_delivers_a_main_only_pass_through \
   test_claude_stop_hook_rewakes_main_for_an_inbox_note_after_a_handled_wake \
   test_claude_stop_hook_rewakes_a_present_captain_beside_a_quiet_record \
-  test_claude_stop_hook_runs_the_host_without_the_file_and_off_opts_out \
+  test_claude_stop_hook_without_the_opt_in_runs_the_plain_arm_and_off_keeps_it \
   test_claude_stop_hook_delivers_a_close_that_turns_main_only_at_its_turn \
   test_successor_left_at_the_turn_survives_the_hook_process_group_teardown \
   test_claude_stop_hook_notifies_when_at_turn_downtime_write_fails \

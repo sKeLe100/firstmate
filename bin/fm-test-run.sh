@@ -554,8 +554,7 @@ family_for_basename() {
     fm-watch-inbox-meta.test.sh|fm-watch-open-decisions.test.sh|\
     fm-watch-triage.test.sh|fm-watch-triage-waits.test.sh|fm-watch-triage-pause.test.sh|\
     fm-watch-triage-wedge-defer.test.sh|fm-watch-retry-band.test.sh|fm-task-inbox.test.sh|\
-    fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh|\
-    fm-watch-wedge-cap-unconfigured-parity.test.sh)
+    fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh)
       printf '%s\n' watcher-wake-lock
       ;;
     fm-afk-inject-herdr-e2e.test.sh|fm-afk-launch.test.sh|fm-backend-autodetect-smoke.test.sh|\
@@ -1313,7 +1312,6 @@ tests/fm-watch-retry-band.test.sh 13391
 tests/fm-watch-triage-waits.test.sh 1196801
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watch-wedge-cap.test.sh 374225
-tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 27763
 tests/fm-watch-wedge-cap-live.test.sh 74
 tests/fm-watcher-lock.test.sh 77062
 tests/fm-worker-account-live-e2e.test.sh 3179
