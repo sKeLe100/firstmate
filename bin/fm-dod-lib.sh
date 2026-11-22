@@ -45,8 +45,8 @@
 # ready-signal callers leave it ungated; only the later CI-ready
 # `done: PR <url> checks green` is, or on a Gerrit project the later
 # `done: PR <change url> published for review`. A current-state read
-# (bin/fm-crew-state.sh, through fm_dod_accept_ship_done's <require_pr>
-# argument) is stricter: a no-mistakes done that reports no PR URL is the
+# (bin/fm-crew-state.sh, through fm_dod_accept_ship_done's require-pr
+# token) is stricter: a no-mistakes done that reports no PR URL is the
 # handoff, not a delivered pull request, so it stays visibly not-ready until
 # the pipeline's PR exists instead of reading as finished and safe. The
 # named head is the worker copy's HEAD, except that a done naming the task's
@@ -891,7 +891,7 @@ fm_dod_should_gate_ship_done() {  # <kind> <mode> <line>
 # 0 when a current-state read must hold this ship done: as not-ready: a
 # no-mistakes done that reports no PR URL is the pipeline handoff rather than a
 # delivered pull request. Only bin/fm-crew-state.sh asks for this reading, by
-# passing fm_dod_accept_ship_done's <require_pr> argument, so the ready-signal
+# passing fm_dod_accept_ship_done's require-pr token, so the ready-signal
 # callers keep the documented ungated handoff semantics. A recorded pr= (which
 # any recorded merge is keyed on) means the PR exists, so it is not awaited.
 # forge=external reports
@@ -1212,8 +1212,36 @@ fm_dod_named_head_reachable_outside_worktree() {  # <worktree> <project> <mode> 
 # output. <state> <id> <meta> supply pr=,
 # pr_head=, and the merge-notified marker; <meta> may be a captured copy
 # (bin/fm-fleet-snapshot.sh), so the marker is read from <state>.
-fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta> [meta-locked]]
-  local kind=$1 mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit captured=''
+# Optional named tokens after <meta>, in any order:
+#   meta-locked  the caller already holds the live meta lock; it is passed to
+#                fm_dod_pin_local_done_head, which then retains that lock.
+#   require-pr   the current-state reading: a no-mistakes ship done that
+#                reports no PR URL is refused as the pipeline handoff still
+#                awaiting its pull request (fm_dod_ship_done_awaits_pr), with
+#                a reason naming the missing PR. The ready-signal callers omit
+#                it and keep the documented ungated handoff semantics.
+# An unknown token is refused rather than guessed.
+fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta> [meta-locked] [require-pr]]
+  local kind=$1 mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit captured='' meta_locked='' require_pr='' branch='' token
+  if [ "$#" -gt 8 ]; then
+    for token in "${@:9}"; do
+      case "$token" in
+        meta-locked) meta_locked=meta-locked ;;
+        require-pr) require_pr=1 ;;
+        *)
+          printf '%s\n' "unknown fm_dod_accept_ship_done option: $token"
+          return 1
+          ;;
+      esac
+    done
+  fi
+  if [ -n "$require_pr" ] && fm_dod_ship_done_awaits_pr "$kind" "$mode" "$line" "$meta"; then
+    if [ -n "$wt" ] && [ -d "$wt" ]; then
+      branch=$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null) || branch=
+    fi
+    printf '%s\n' "no-mistakes done${branch:+ for branch $branch} carries no PR URL: the pipeline handoff's pull request is missing, so the task is not current-state done"
+    return 1
+  fi
   fm_dod_should_gate_ship_done "$kind" "$mode" "$line" || return 0
   if [ "$mode" = local-only ] && [ -n "$meta" ]; then
     captured=$(cat "$meta") || return 1
@@ -1263,7 +1291,7 @@ fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state
   if fm_dod_named_head_reachable_outside_worktree "$wt" "$project" "$mode" "$sha"; then
     if [ "$mode" = local-only ] && [ -n "$meta" ]; then
       if [ -z "$state" ] || [ -z "$id" ] \
-        || ! fm_dod_pin_local_done_head "$state" "$id" "$meta" "$sha" "$captured" "${9:-}"; then
+        || ! fm_dod_pin_local_done_head "$state" "$id" "$meta" "$sha" "$captured" "$meta_locked"; then
         printf '%s\n' "local-only done head could not be recorded or differs from the recorded head; revised work requires a new task/approval record"
         return 1
       fi
