@@ -130,7 +130,7 @@ test_dead_done_and_held_records_hold_no_lane() {
 
   fm_write_meta "$home/state/done-ship.meta" \
     "window=%live-pane" "worktree=$home" "project=$home" "kind=ship" "mode=no-mistakes" "harness=claude"
-  printf 'done [at=1700000000]: finished\n' > "$home/state/done-ship.status"
+  printf 'done [at=1700000000]: PR https://github.com/o/r/pull/1 finished\n' > "$home/state/done-ship.status"
   printf 'g1\n' > "$home/state/done-ship.busy-gen"
   printf 'v1 gen=g1 seq=1 state=idle source=claude-hook event=stop ts=1700000000\n' \
     > "$home/state/done-ship.busy-state"
