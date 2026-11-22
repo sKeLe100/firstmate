@@ -3851,13 +3851,17 @@ if [ "$KIND" != secondmate ]; then
   if teardown_owns_worktree; then
     conclude_task_no_mistakes_run "$WT"
   fi
-  if ! reap_task_browsers; then
-    exit 1
-  fi
-  if teardown_owns_worktree; then
-    reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
-  else
-    reap_task_worktree_processes tasktmp "$TASK_TMP"
+  # Herdr defers the browser and process reap until its pane close is confirmed
+  # gone (below), so a refused close never ends the pane shell in the task copy.
+  if [ "$BACKEND" != herdr ]; then
+    if ! reap_task_browsers; then
+      exit 1
+    fi
+    if teardown_owns_worktree; then
+      reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+    else
+      reap_task_worktree_processes tasktmp "$TASK_TMP"
+    fi
   fi
 fi
 
@@ -3977,6 +3981,11 @@ if [ "$BACKEND" = herdr ]; then
   fi
 fi
 
+if [ "$KIND" != secondmate ] && [ "$BACKEND" = herdr ]; then
+  if ! reap_task_browsers; then
+    exit 1
+  fi
+fi
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
 elif [ "$KIND" != secondmate ]; then
