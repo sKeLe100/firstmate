@@ -457,7 +457,6 @@ Each arm owner's own suite covers its host mode against a stub host.
 
 | Test | What it covers |
 |---|---|
-| `tests/fm-supervision-host-drain.test.sh` | Report surface, dispatch entry, and the drain's `BRANCH OUTCOMES` section against the shared stub-engine fixtures. |
 | `tests/fm-supervision-host.test.sh` | Drives the real host, auto-arm, grant, drain, report, and lease scripts against a stub engine, in both postures, including the shared offer rule and the drain's `BRANCH OUTCOMES` section. |
 | `tests/fm-supervision-host-2.test.sh` | The second half of the same host suite, sharing its harness in `tests/fm-supervision-host-lib.sh`. |
 | `tests/fm-supervision-host-park.test.sh` | Latch, park boundary, compaction, and lock ownership against the same stub-engine fixtures. |

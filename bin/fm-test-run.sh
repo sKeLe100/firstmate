@@ -300,7 +300,7 @@ PER_SCRIPT_TIMEOUT_SECS=0
 # script was tests/fm-watch-triage.test.sh at about 1075s under CI load, until it
 # took about 1830s alone on PC01 and was split with
 # tests/fm-watch-triage-waits.test.sh (upstream separately split out
-# tests/fm-watch-triage-pause.test.sh and tests/fm-watch-triage-wedge-defer.test.sh),
+# tests/fm-watch-triage-pause.test.sh),
 # which the hint table below apportions that loaded figure between. 1500s keeps
 # every measured script under the bound with headroom over the slowest loaded
 # measurement, and it stays under the 30-minute normal CI tier so a wedged script fails here,
@@ -553,7 +553,7 @@ family_for_basename() {
     fm-codex-stop-park.test.sh|\
     fm-watch-inbox-meta.test.sh|fm-watch-open-decisions.test.sh|\
     fm-watch-triage.test.sh|fm-watch-triage-waits.test.sh|fm-watch-triage-pause.test.sh|\
-    fm-watch-triage-wedge-defer.test.sh|fm-watch-retry-band.test.sh|fm-task-inbox.test.sh|\
+    fm-watch-retry-band.test.sh|fm-task-inbox.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh)
       printf '%s\n' watcher-wake-lock
       ;;
@@ -650,7 +650,7 @@ family_for_basename() {
       printf '%s\n' pr-forge
       ;;
     fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|\
-    fm-supervision-host.test.sh|fm-supervision-host-2.test.sh|fm-supervision-host-drain.test.sh|\
+    fm-supervision-host.test.sh|fm-supervision-host-2.test.sh|\
     fm-supervision-host-hook.test.sh|fm-supervision-host-park.test.sh|\
     fm-host-mirror.test.sh)
       printf '%s\n' afk
@@ -1248,7 +1248,6 @@ tests/fm-subagent-pretool-check.test.sh 1970
 tests/fm-supervision-events.test.sh 1034
 tests/fm-supervision-host-2.test.sh 974763
 tests/fm-supervision-host-attended-live-e2e.test.sh 231
-tests/fm-supervision-host-drain.test.sh 45950
 tests/fm-supervision-host-hook.test.sh 403793
 tests/fm-supervision-host-live-e2e.test.sh 179
 tests/fm-supervision-host-park.test.sh 329326
@@ -1307,7 +1306,6 @@ tests/fm-watch-inbox-meta.test.sh 283
 tests/fm-watch-pc02-cadence.test.sh 17332
 tests/fm-watch-recovery-loop.test.sh 74607
 tests/fm-watch-triage-pause.test.sh 466750
-tests/fm-watch-triage-wedge-defer.test.sh 526980
 tests/fm-watch-retry-band.test.sh 13391
 tests/fm-watch-triage-waits.test.sh 1196801
 tests/fm-watch-triage.test.sh 593600
@@ -2510,7 +2508,6 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-pi-primary-types.test.sh
       printf '%s\n' __script__:fm-supervision-host.test.sh
       printf '%s\n' __script__:fm-supervision-host-2.test.sh
-      printf '%s\n' __script__:fm-supervision-host-drain.test.sh
       printf '%s\n' __script__:fm-supervision-host-hook.test.sh
       printf '%s\n' __script__:fm-supervision-host-park.test.sh
       # Whether an arriving outcome still lets the captain type is a fact only
