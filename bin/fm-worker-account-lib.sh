@@ -363,7 +363,7 @@ fm_worker_account_root() {
 # advisory under concurrent launches.
 fm_worker_account_orchestrator_cap_check() {
   local state=$1 config=$2 root=${3:-${HOME:-}/.claude} id=$4
-  local cap=1 reserved count=0 holders= meta account
+  local cap=1 reserved count=0 holders='' meta account
   reserved=$(fm_worker_account_orchestrator_root "$config") || return 2
   [ -n "$reserved" ] || return 0
   reserved=$(realpath -m -- "$reserved" 2>/dev/null || printf '%s\n' "$reserved")
