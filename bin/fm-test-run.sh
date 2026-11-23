@@ -973,7 +973,7 @@ tests/fm-claim-check.test.sh 844
 tests/fm-classify-corr-token.test.sh 34691
 tests/fm-classify-decision-key.test.sh 4479
 tests/fm-claude-account-quota.test.sh 2492
-tests/fm-claude-runway-admit.test.sh 1000
+tests/fm-claude-runway-admit.test.sh 1502
 tests/fm-claude-stop-autoarm-live-e2e.test.sh 184
 tests/fm-claude-stop-autoarm.test.sh 61189
 tests/fm-claude-stop-autostow.test.sh 8594
