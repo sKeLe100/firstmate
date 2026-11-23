@@ -206,9 +206,12 @@ assert_nothing_created() {  # <case-dir> <home> <id> <calls-before> <worktrees-b
   local case_dir=$1 home=$2 id=$3 before=$4 worktrees=$5 after
   assert_absent "$home/state/$id.meta" "a deferred spawn published a task record for $id"
   assert_absent "$home/data/$id/launch-brief.md" "a deferred spawn rendered a launch brief for $id"
-  after=$(call_count "$case_dir")
-  [ "$after" -eq "$before" ] ||
-    fail "a deferred spawn touched the terminal or worktree pool for $id: $(tail -n +"$((before + 1))" "$case_dir/calls.log")"
+  after=$(tail -n +"$((before + 1))" "$case_dir/calls.log" |
+    grep -Ev '^(list-windows|display-message|list-panes) ' || true)
+  # The fork's live-lane count (#299) reads endpoints; only read-only tmux
+  # probes are allowed, and any other call is a mutation.
+  [ -z "$after" ] ||
+    fail "a deferred spawn touched the terminal or worktree pool for $id: $after"
   assert_equals "$worktrees" "$(worktree_list "$case_dir")" "a deferred spawn left a git worktree for $id"
   if [ "$HAVE_TASKS_AXI" = 1 ]; then
     [ "$(row_state "$home" "$id")" = queued ] ||
@@ -670,6 +673,10 @@ test_lane_capacity_gate_defers_without_leaving_anything_behind() {
   home="$case_dir/home"
   printf '1\nadmit-spawns\n' > "$home/config/lane-capacity"
   write_live "$home" live-a "$case_dir/project"
+  # The fork's lane count (#299) holds a lane only for a live record: a
+  # working status and an endpoint the fake tmux lists.
+  printf 'working [at=1700000000]: busy\n' > "$home/state/live-a.status"
+  printf '%s\n' fm-live-a >> "$case_dir/calls.log.window"
   before=$(call_count "$case_dir")
   worktrees=$(worktree_list "$case_dir")
   out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
