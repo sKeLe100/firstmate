@@ -2364,6 +2364,24 @@ families_for_changed_path() {
       printf '%s\n' pr-forge
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
       ;;
+    .opencode/plugins/*)
+      # OpenCode loads every plugin here from the primary checkout, and the
+      # package.json module type applies to all of them, so a change to any one
+      # re-runs every portable suite that exercises a plugin plus the live
+      # OpenCode guard. The cd and pretool seatbelts delegate to the bin owners
+      # their own suites cover.
+      printf '%s\n' __script__:fm-busy-state.test.sh
+      printf '%s\n' __script__:fm-busy-adapter-wiring.test.sh
+      printf '%s\n' __script__:fm-control-relaunch.test.sh
+      printf '%s\n' __script__:fm-operational-input.test.sh
+      printf '%s\n' __script__:fm-sessionstart-nudge.test.sh
+      printf '%s\n' __script__:fm-turnend-guard.test.sh
+      printf '%s\n' __script__:fm-watch-arm.test.sh
+      printf '%s\n' __script__:fm-worktree-guard.test.sh
+      printf '%s\n' __script__:fm-cd-pretool-check.test.sh
+      printf '%s\n' __script__:fm-arm-pretool-check.test.sh
+      printf '%s\n' __script__:fm-opencode-primary-live-e2e.test.sh
+      ;;
     .pi/extensions/fm-branch-supervision.ts|.pi/extensions/lib/fm-async-exec.ts|\
     .pi/extensions/lib/fm-branch-dispatch.ts|.pi/extensions/lib/fm-native-contract.ts)
       # The portable suites that actually load these files, named one by one.

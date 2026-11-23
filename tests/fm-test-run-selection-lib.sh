@@ -516,6 +516,71 @@ test_changed_dependency_selection_and_unmapped_failure() {
   pass "changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source"
 }
 
+# A change under .opencode/plugins/ - which OpenCode loads from the primary
+# checkout - must select the suites that exercise the plugins instead of dying
+# with "no changed-test mapping". That gap forced a Test-step override on the
+# upstream catch-up PR, so this is the regression that keeps it closed.
+test_changed_opencode_plugin_selects_its_covering_tests() {
+  local tmp repo listed script
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-opencode-plugin.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests" "$repo/.opencode/plugins/lib"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$repo/bin/"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  : >"$repo/tests/lib.sh"
+  for script in \
+    fm-busy-state.test.sh fm-busy-adapter-wiring.test.sh \
+    fm-control-relaunch.test.sh fm-operational-input.test.sh \
+    fm-sessionstart-nudge.test.sh fm-turnend-guard.test.sh \
+    fm-watch-arm.test.sh fm-worktree-guard.test.sh \
+    fm-cd-pretool-check.test.sh fm-arm-pretool-check.test.sh \
+    fm-opencode-primary-live-e2e.test.sh; do
+    printf '#!/usr/bin/env bash\n# tests/lib.sh\n' >"$repo/tests/$script"
+    chmod +x "$repo/tests/$script"
+  done
+  printf 'export const FmPrimaryCdCheck = async () => ({});\n' \
+    >"$repo/.opencode/plugins/fm-primary-cd-check.js"
+  printf '{"private":true,"type":"module"}\n' >"$repo/.opencode/plugins/package.json"
+  printf 'export const encode = (s) => s;\n' \
+    >"$repo/.opencode/plugins/lib/fm-operational-input.js"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+
+  printf '\n' >>"$repo/.opencode/plugins/fm-primary-cd-check.js"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD 2>&1) \
+    || fail ".opencode/plugins change failed closed instead of selecting tests: $listed"
+  assert_contains "$listed" "tests/fm-cd-pretool-check.test.sh" \
+    "the cd seatbelt plugin selects the bin owner's suite"
+  assert_contains "$listed" "tests/fm-worktree-guard.test.sh" \
+    "an OpenCode plugin change selects the plugin suites"
+  assert_contains "$listed" "tests/fm-operational-input.test.sh" \
+    "an OpenCode plugin change selects the shared input library suite"
+  git -C "$repo" add .opencode/plugins/fm-primary-cd-check.js
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm plugin-change
+
+  # A nested lib/ file is matched by the same directory arm.
+  printf '\n' >>"$repo/.opencode/plugins/lib/fm-operational-input.js"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD 2>&1) \
+    || fail ".opencode/plugins/lib/ change failed closed: $listed"
+  assert_contains "$listed" "tests/fm-operational-input.test.sh" \
+    "a nested plugin library change selects its suite"
+  git -C "$repo" add .opencode/plugins/lib/fm-operational-input.js
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm plugin-lib-change
+
+  # package.json's module type applies to every plugin, so it selects the same
+  # covering suites rather than failing closed.
+  printf '\n' >>"$repo/.opencode/plugins/package.json"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD 2>&1) \
+    || fail ".opencode/plugins/package.json change failed closed: $listed"
+  assert_contains "$listed" "tests/fm-watch-arm.test.sh" \
+    "the plugin package.json selects the plugin suites"
+  rm -rf "$tmp"
+  pass "a .opencode/plugins/ change selects covering tests instead of failing closed"
+}
+
 # References select individual readers across mapped and unmapped sources.
 test_changed_bin_reference_selects_per_script_not_per_family() {
   local tmp repo listed subject reader
