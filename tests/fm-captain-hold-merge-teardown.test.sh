@@ -1142,6 +1142,7 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
     "window=firstmate:fm-$local_id" "endpoint_task_id=$local_id" \
     "worktree=$local_old_wt" "project=$local_old_repo" "harness=codex" \
     "kind=ship" "mode=local-only" "spawn_gen=original-$local_id"
+  printf 'local_done_head=%s\n' "$(git -C "$local_old_wt" rev-parse HEAD)" >> "$local_home/state/$local_id.meta"
   printf 'done: local merge ready\n' > "$local_home/state/$local_id.status"
 
   local_teardown_ready="$local_home/reuse-teardown-ready"
@@ -1327,6 +1328,7 @@ SH
     "window=firstmate:fm-$local_id" "endpoint_task_id=$local_id" "worktree=$local_wt" \
     "project=$local_repo" "harness=codex" "kind=ship" "mode=local-only" \
     "spawn_gen=fixture-$local_id"
+  printf 'local_done_head=%s\n' "$(git -C "$local_wt" rev-parse HEAD)" >> "$local_home/state/$local_id.meta"
   printf 'done: local merge ready\n' > "$local_home/state/$local_id.status"
   run_captain "$local_home" hold "$local_id" \
     --reason "captain local merge approval pending" >/dev/null \
@@ -1341,7 +1343,8 @@ SH
   local_release="$local_home/local-validation-release"
   cat > "$local_home/fakebin/git" <<'SH'
 #!/usr/bin/env bash
-if [ "$*" = "-C ${FM_TEST_RACE_REPO:-} rev-parse --short main" ]; then
+if [ "${1:-}" = -C ] && [ "${2:-}" = "${FM_TEST_RACE_REPO:-}" ] \
+    && [ "${3:-}" = merge-base ] && [ "${4:-}" = --is-ancestor ]; then
   output=$("$FM_TEST_REAL_GIT" "$@") || exit $?
   : > "$FM_TEST_RACE_READY"
   i=0
