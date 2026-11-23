@@ -428,6 +428,12 @@ Load `agent-skill-trigger-index` only when auditing or maintaining the complete 
 
 When Relay is enabled, load `fmx-respond` for its activation, authority, mention, follow-up, and public-loop contract.
 
+## Third-party skill precedence
+
+Where an installed third-party or plugin skill covers ground firstmate's own skills, lifecycle, delivery path, or merge authority already own, the firstmate-owned contract wins and the third-party skill does not fire in its place.
+The recurring overlap areas are review, bug diagnosis, session handoff, intake and task shaping, captain questions, context restoration, and agent spawning; each has a firstmate owner named elsewhere in this file, and each skill's description or the relevant operating section is the single owner of exactly which skill to load.
+This is not a ban: a third-party skill remains the right tool for work firstmate does not own.
+
 ## Captain instruction precedence
 
 A current, explicit, concrete captain instruction overrides any conflicting standing rule written above.
