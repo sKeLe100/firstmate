@@ -800,7 +800,7 @@ test_raw_codex_launch_command_is_exempt_from_the_axis_guard() {
   status=$?
   expect_code 0 "$status" \
     "a raw codex launch command is the documented escape hatch and must not hit the axis guard"$'\n'"$out"
-  launch=$(cat "$LAUNCH_LOG")
+  launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
   case "$launch" in
     *"codex --dangerously-bypass-approvals-and-sandbox") ;;
     *) fail "the raw codex command was not launched verbatim"$'\n'"actual: $launch" ;;
@@ -1093,9 +1093,11 @@ test_codex_approval_mode_contract() {
         *) printf '%s\n' "$value" > "$HOME_DIR/config/codex-approval-mode" ;;
       esac
       if [ "$kind" = ship ]; then
-        out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+        out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+          --model gpt-5 --effort high 2>&1)
       else
-        out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout 2>&1)
+        out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout \
+          --model gpt-5 --effort high 2>&1)
       fi
       status=$?
       if [ "$value" = invalid ] || [ "$value" = split ]; then
