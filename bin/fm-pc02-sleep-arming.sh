@@ -13,7 +13,7 @@
 # gated backstop that needs hibernation off and a verified RTC wake task.
 #
 # Usage:
-#   fm-pc02-sleep-arming.sh install [--host HOST] [--idle-minutes N]
+#   fm-pc02-sleep-arming.sh install [--host HOST] [--idle-minutes N] [--dry-run]
 #   fm-pc02-sleep-arming.sh test-sleep [--host HOST] [--attended]
 #                                      [--test-minutes N] [--sleep-timeout SECS]
 #                                      [--wake-timeout SECS] [--backstop-wait SECS]
@@ -22,18 +22,26 @@
 #   fm-pc02-sleep-arming.sh uninstall [--host HOST]
 #   fm-pc02-sleep-arming.sh --help
 #
+# Automatic idle sleep is OFF by default. install deploys the guard, the
+# keep-awake watcher, and the wake support, but it arms the AC standby timer
+# and enables the watcher's forced-sleep path only when the explicit opt-in
+# file config/pc02-sleep-auto-arm exists (FM_PC02_AUTO_ARM_FILE overrides the
+# path). Without it, standby-idle stays 0 (never) and the watcher runs with
+# -NoSleep, so wake-before-dispatch, the keep-awake flags, and asleep
+# (wakeable) reporting stay live while nothing arms sleep.
 # install is idempotent and must run while PC02 is reachable; it caches the
 # wake config through bin/fm-pc02-wake.sh discover, deploys the guard to the
 # WSL home, deploys the watcher to C:\ProgramData\Pc02Power, registers and
-# starts the logon scheduled task, sets AC standby-idle to --idle-minutes
-# (default 30), sets AC hibernate-idle to never, turns hibernation off so the
-# only suspend state is S3, proves that a wake-enabled backstop task can be
-# registered, and adds a Parsec system request override. It never shuts down
-# or reboots Windows.
+# starts the logon scheduled task, sets AC hibernate-idle to never, turns
+# hibernation off so the only suspend state is S3, proves that a wake-enabled
+# backstop task can be registered, and adds a Parsec system request override.
+# --dry-run prints the resolved arming plan and exits without touching PC02.
+# It never shuts down or reboots Windows.
 #
-# test-sleep is the only remote sleep check. It refuses unless the captain is
-# present: it fails when the home has state/.afk or when PC01's America/New_York
-# local hour is 22:00-08:00, and both refusals need an explicit --attended.
+# test-sleep is the only remote sleep check. It refuses unless the auto-arm
+# opt-in file exists and the captain is present: it fails when the home has
+# state/.afk or when PC01's America/New_York local hour is 22:00-08:00, and the
+# presence refusals need an explicit --attended.
 # It keeps the OS standby timer at the production 30 minutes and arms only the
 # watcher's in-memory test window, waits for the sleep, wakes PC02, and always
 # reinstalls the 30-minute production window afterward. The watcher also
@@ -53,6 +61,7 @@
 #   FM_PC02_WAKE_HOST     SSH target (default: pc02)
 #   FM_PC02_WAKE_CONFIG   wake config path (see bin/fm-pc02-wake.sh)
 #   FM_HOME, FM_STATE_OVERRIDE  home whose state/.afk gates test-sleep
+#   FM_PC02_AUTO_ARM_FILE      opt-in path (default: <home>/config/pc02-sleep-auto-arm)
 set -u
 
 usage() {
@@ -64,11 +73,20 @@ die() {
   exit 1
 }
 
+auto_arm_enabled() {
+  [ -f "$AUTO_ARM_FILE" ]
+}
+
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FM_ROOT=$(cd "$SELF_DIR/.." && pwd -P)
 GUARD_SRC="$SELF_DIR/fm-pc02-sleep-guard.sh"
 WATCHER_SRC="$SELF_DIR/fm-pc02-sleep-watcher.ps1"
 WAKE="$SELF_DIR/fm-pc02-wake.sh"
+AUTO_ARM_FILE=${FM_PC02_AUTO_ARM_FILE:-${FM_HOME:-$FM_ROOT}/config/pc02-sleep-auto-arm}
+INSTALL_OUT=
+INSTALL_AUTO_ARM=0
+INSTALL_OS_IDLE=0
+INSTALL_WATCHER_NO_SLEEP=1
 
 MODE=${1:-}
 case "$MODE" in
@@ -91,6 +109,7 @@ TEST_MINUTES=2
 SLEEP_TIMEOUT=300
 WAKE_TIMEOUT=120
 BACKSTOP_WAIT=700
+DRY_RUN=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --host)
@@ -113,6 +132,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --attended)
       ATTENDED=1
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=1
       shift
       ;;
     --test-minutes)
@@ -172,7 +195,7 @@ for pair in "idle-minutes:$IDLE_MINUTES" "watcher-idle-minutes:$WATCHER_IDLE_MIN
   esac
   [ "$value" -ge 1 ] || die "--$name must be at least 1"
 done
-if [ "$MODE" = install ] && [ "$IDLE_MINUTES" -lt 30 ]; then
+if [ "$MODE" = install ] && auto_arm_enabled && [ "$IDLE_MINUTES" -lt 30 ]; then
   die "install keeps the production window at 30 minutes or more; use test-sleep for a shortened test window"
 fi
 
@@ -238,6 +261,12 @@ assert_attended() {
   return 0
 }
 
+assert_auto_arm() {
+  auto_arm_enabled && return 0
+  printf 'fm-pc02-sleep-arming.sh: refusing a remote sleep test while %s is absent; create that file to opt in to automatic idle sleep\n' "$AUTO_ARM_FILE" >&2
+  return 4
+}
+
 restore_production_window() {
   # Called from the test-sleep EXIT trap. The OS standby timer is never set
   # below 30 minutes, and this re-arms the watcher's production window too.
@@ -255,6 +284,11 @@ restore_production_window() {
 test_sleep_pieces() {
   local deadline started=0
   assert_attended || exit 3
+  assert_auto_arm || exit 4
+  if [ "$DRY_RUN" -eq 1 ]; then
+    install_pieces
+    return 0
+  fi
   require_awake
   IDLE_MINUTES=30
   WATCHER_IDLE_MINUTES=$TEST_MINUTES
@@ -313,6 +347,23 @@ check_attendance_pieces() {
 
 install_pieces() {
   local remote_home temp_wsl temp_win watcher_name setup_name setup_local setup_win out
+  local auto_arm=0 os_idle=0 watcher_no_sleep=1 watcher_args
+  if auto_arm_enabled; then
+    auto_arm=1
+    os_idle=$IDLE_MINUTES
+    watcher_no_sleep=0
+  fi
+  watcher_args="-IdleMinutes $WATCHER_IDLE_MINUTES"
+  [ "$watcher_no_sleep" -eq 0 ] || watcher_args="$watcher_args -NoSleep"
+  INSTALL_AUTO_ARM=$auto_arm
+  INSTALL_OS_IDLE=$os_idle
+  INSTALL_WATCHER_NO_SLEEP=$watcher_no_sleep
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf 'auto_arm=%s opt_in=%s standby_ac_minutes=%s watcher_force_sleep=%s\n' \
+      "$( [ "$auto_arm" -eq 1 ] && printf on || printf off )" "$AUTO_ARM_FILE" \
+      "$os_idle" "$( [ "$watcher_no_sleep" -eq 1 ] && printf no || printf yes )"
+    return 0
+  fi
   require_awake
   remote_home=$(remote_bash <<'REMOTE' | tail -1
 printf %s "$HOME"
@@ -350,14 +401,14 @@ icacls.exe \$InstallDir /grant "*\${sid}:(OI)(CI)M" | Out-Null
 Copy-Item -LiteralPath \$SourceWatcher -Destination "\$InstallDir\\fm-pc02-sleep-watcher.ps1" -Force
 \$user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 \$ps = "\$env:SystemRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-\$action = New-ScheduledTaskAction -Execute \$ps -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \`"\$InstallDir\\fm-pc02-sleep-watcher.ps1\`" -IdleMinutes $WATCHER_IDLE_MINUTES"
+\$action = New-ScheduledTaskAction -Execute \$ps -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \`"\$InstallDir\\fm-pc02-sleep-watcher.ps1\`" $watcher_args"
 \$trigger = New-ScheduledTaskTrigger -AtLogOn -User \$user
 \$principal = New-ScheduledTaskPrincipal -UserId \$user -LogonType Interactive -RunLevel Highest
 \$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Stop-ScheduledTask -TaskName \$TaskName -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName \$TaskName -Action \$action -Trigger \$trigger -Principal \$principal -Settings \$settings -Force | Out-Null
 Start-ScheduledTask -TaskName \$TaskName
-powercfg.exe /change standby-timeout-ac $IDLE_MINUTES
+powercfg.exe /change standby-timeout-ac $os_idle
 if (\$LASTEXITCODE -ne 0) { throw "powercfg standby-timeout-ac failed: \$LASTEXITCODE" }
 powercfg.exe /change hibernate-timeout-ac 0
 powercfg.exe /setacvalueindex SCHEME_CURRENT SUB_SLEEP HYBRIDSLEEP 0
@@ -384,7 +435,7 @@ if (-not \$probe.Settings.WakeToRun) { throw 'wake backstop task was not registe
 Unregister-ScheduledTask -TaskName \$BackstopName -Confirm:\$false
 Start-Sleep -Seconds 3
 \$task = Get-ScheduledTask -TaskName \$TaskName
-Write-Output "installed task=\$TaskName user=\$user idleMinutes=$IDLE_MINUTES watcherIdleMinutes=$WATCHER_IDLE_MINUTES hibernate=off wake-backstop=verified taskState=\$(\$task.State)"
+Write-Output "installed task=\$TaskName user=\$user idleMinutes=$os_idle autoArm=$( [ "$auto_arm" -eq 1 ] && printf on || printf off ) watcherForceSleep=$( [ "$watcher_no_sleep" -eq 1 ] && printf no || printf yes ) watcherArgs=$watcher_args hibernate=off wake-backstop=verified taskState=\$(\$task.State)"
 if (Test-Path -LiteralPath "\$InstallDir\\status.txt") { Write-Output ("watcher=" + (Get-Content -LiteralPath "\$InstallDir\\status.txt" -Raw).Trim()) }
 EOF
   ssh -o BatchMode=yes -o ConnectTimeout=5 "$HOST" \
@@ -443,8 +494,18 @@ verify_installed() {
   case "$standby" in
     '' | *[!0-9A-Fa-f]*) die "could not read PC02's AC standby timer" ;;
   esac
-  [ "$((16#$standby))" -eq "$((IDLE_MINUTES * 60))" ] \
-    || die "PC02 AC standby timer is $((16#$standby))s, expected $((IDLE_MINUTES * 60))s"
+  [ "$((16#$standby))" -eq "$((INSTALL_OS_IDLE * 60))" ] \
+    || die "PC02 AC standby timer is $((16#$standby))s, expected $((INSTALL_OS_IDLE * 60))s"
+  if [ "$INSTALL_WATCHER_NO_SLEEP" -eq 1 ]; then
+    case "$watcher_action" in
+      *' -NoSleep'*) ;;
+      *) die "auto-sleep is off but the watcher task does not carry -NoSleep: $watcher_action" ;;
+    esac
+  else
+    case "$watcher_action" in
+      *' -NoSleep'*) die "auto-sleep is on but the watcher task carries -NoSleep: $watcher_action" ;;
+    esac
+  fi
   case "$hibernate" in
     '' | *[!0-9A-Fa-f]*) die "could not read PC02's AC hibernate timer" ;;
   esac
@@ -453,12 +514,14 @@ verify_installed() {
     Ready | Running) ;;
     *) die "PC02 sleep watcher task state is '$task'" ;;
   esac
-  printf 'guard=%s standby_ac=%ss hibernate_ac=0 s3_only=yes wake_backstop=verified task=%s\n' "$guard" "$((16#$standby))" "$task"
+  printf 'guard=%s standby_ac=%ss hibernate_ac=0 s3_only=yes wake_backstop=verified auto_arm=%s task=%s\n' "$guard" "$((16#$standby))" "$( [ "$INSTALL_AUTO_ARM" -eq 1 ] && printf on || printf off )" "$task"
   [ -z "$watcher" ] || printf 'watcher=%s\n' "$watcher"
 }
 
 status_pieces() {
   local probe
+  printf 'auto_arm=%s\n' "$(auto_arm_enabled && printf on || printf off)"
+  printf 'opt_in=%s\n' "$AUTO_ARM_FILE"
   probe=$("$WAKE" status --host "$HOST" 2>/dev/null) || probe=unknown
   case "$probe" in
     asleep)

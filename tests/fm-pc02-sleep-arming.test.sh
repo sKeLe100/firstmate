@@ -16,6 +16,7 @@ export FM_STATE_OVERRIDE="$STATE"
 export FM_TEST_SSH_LOG="$TMP_ROOT/ssh.log"
 export FM_TEST_ET_HOUR=12
 export FM_TEST_DATE_FAILS=0
+export FM_PC02_AUTO_ARM_FILE="$TMP_ROOT/pc02-sleep-auto-arm"
 export PATH="$fakebin:$PATH"
 
 cat >"$fakebin/date" <<'SH'
@@ -38,6 +39,42 @@ chmod +x "$fakebin"/*
 run_gate() {
   FM_TEST_ET_HOUR=$1 bash "$SCRIPT" check-attendance "${@:2}" 2>"$TMP_ROOT/err"
 }
+
+rm -f "$STATE/.afk" "$FM_TEST_SSH_LOG" "$FM_PC02_AUTO_ARM_FILE"
+out=$(FM_TEST_ET_HOUR=12 bash "$SCRIPT" install --dry-run 2>"$TMP_ROOT/err")
+rc=$?
+[ "$rc" -eq 0 ] || fail "install --dry-run must not require PC02, got $rc: $(cat "$TMP_ROOT/err")"
+grep -q 'auto_arm=off' <<< "$out" || fail "the default plan must not arm auto-sleep: $out"
+grep -q 'standby_ac_minutes=0' <<< "$out" || fail "the default plan must leave standby at never: $out"
+grep -q 'watcher_force_sleep=no' <<< "$out" || fail "the default plan must disable the forced sleep: $out"
+[ ! -e "$FM_TEST_SSH_LOG" ] || fail "install --dry-run must not touch PC02"
+pass "the default install plan does not arm PC02 idle sleep"
+
+: >"$FM_PC02_AUTO_ARM_FILE"
+out=$(FM_TEST_ET_HOUR=12 bash "$SCRIPT" install --dry-run 2>"$TMP_ROOT/err")
+rc=$?
+[ "$rc" -eq 0 ] || fail "the opted-in dry-run failed: $rc: $(cat "$TMP_ROOT/err")"
+grep -q 'auto_arm=on' <<< "$out" || fail "the opt-in must arm auto-sleep: $out"
+grep -q 'standby_ac_minutes=30' <<< "$out" || fail "the opt-in must plan a 30-minute standby timer: $out"
+grep -q 'watcher_force_sleep=yes' <<< "$out" || fail "the opt-in must enable the forced sleep: $out"
+rm -f "$FM_PC02_AUTO_ARM_FILE"
+pass "the explicit opt-in arms the 30-minute plan"
+
+out=$(FM_TEST_ET_HOUR=12 bash "$SCRIPT" test-sleep 2>"$TMP_ROOT/err")
+rc=$?
+[ "$rc" -eq 4 ] || fail "test-sleep must refuse without the auto-arm opt-in, got $rc: $(cat "$TMP_ROOT/err")"
+grep -q 'pc02-sleep-auto-arm' "$TMP_ROOT/err" || fail "the opt-in refusal must name the opt-in file"
+[ ! -e "$FM_TEST_SSH_LOG" ] || fail "a refused test-sleep must not reach the host"
+pass "test-sleep refuses without the auto-arm opt-in"
+
+: >"$FM_PC02_AUTO_ARM_FILE"
+out=$(FM_TEST_ET_HOUR=12 bash "$SCRIPT" test-sleep --dry-run --attended 2>"$TMP_ROOT/err")
+rc=$?
+[ "$rc" -eq 0 ] || fail "the opted-in test-sleep dry-run failed: $rc: $(cat "$TMP_ROOT/err")"
+grep -q 'auto_arm=on' <<< "$out" || fail "the opted-in test-sleep plan must arm"
+[ ! -e "$FM_TEST_SSH_LOG" ] || fail "the test-sleep dry-run must not reach the host"
+rm -f "$FM_PC02_AUTO_ARM_FILE"
+pass "the opted-in test-sleep has a dry-run plan"
 
 rm -f "$STATE/.afk" "$FM_TEST_SSH_LOG"
 out=$(run_gate 12)
