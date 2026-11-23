@@ -484,7 +484,7 @@
 #   relaunch reuses the recorded entry unless --account moves it. Without the
 #   list, --account refuses and nothing else changes. The list may declare the
 #   orchestrator account (config/claude-orchestrator-account), which then admits
-#   at most one fresh worker beside the orchestrator; a second is deferred (exit
+#   at most one worker beside the orchestrator; a second is deferred (exit
 #   75) before any endpoint exists. docs/configuration.md "Several Claude
 #   accounts" owns the contract.
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
