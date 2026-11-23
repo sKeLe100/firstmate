@@ -576,6 +576,86 @@ esac' \
   pass "boot_completed renders 0, unknown for empty, and failed for an unanswered probe"
 }
 
+run_pc02_android_live() {  # <name> <ssh-mode: run|fail> <adb-body> <emulator-body> -> JSON
+  local name=$1 mode=$2 rec home fb fake
+  rec=$(make_home "pc02-android-$name" fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  fake="$TMP_ROOT/pc02-android-fake-$name"
+  mkdir -p "$fake"
+  printf '#!/usr/bin/env bash\n%s\n' "$3" > "$fake/adb"
+  printf '#!/usr/bin/env bash\n%s\n' "$4" > "$fake/emulator"
+  cat > "$fake/ssh" <<EOF
+#!/usr/bin/env bash
+script=\$(cat)
+case "\$script" in
+  *android_probe_host*) [ "$mode" = run ] && { printf '%s\n' "\$script" | bash -s; exit \$?; } ;;
+esac
+exit 255
+EOF
+  chmod +x "$fake/adb" "$fake/emulator" "$fake/ssh"
+  env PATH="$fake:$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" FM_SSH_BIN="$fake/ssh" \
+    FM_RESOURCE_ANDROID_FIXTURE= \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1
+}
+
+test_android_physical_device_does_not_hide_stopped_avd() {
+  local out
+  out=$(run_android_probe physical \
+    'case "$*" in devices) printf "List of devices attached\nR58M12ABC\tdevice\n" ;; *) exit 1 ;; esac' \
+    '[ "$*" = "-list-avds" ] && { printf "pt_pixel8pro\n"; exit 0; }; exit 1')
+  printf '%s\n' "$out" > "$TMP_ROOT/android-physical.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro") | .state] == ["stopped"]' \
+    "$TMP_ROOT/android-physical.json" >/dev/null \
+    || fail "a physical adb device must not hide a stopped AVD: $(jq -c '.android' "$TMP_ROOT/android-physical.json")"
+  pass "a non-emulator adb serial leaves a stopped AVD rendered stopped"
+}
+
+test_android_probe_timeouts_are_stated() {
+  local out
+  out=$(run_android_probe timeout 'exit 124' 'exit 124')
+  printf '%s\n' "$out" > "$TMP_ROOT/android-timeout.json"
+  jq -e '[.android[] | select(.machine == "PC01")] | length == 0' "$TMP_ROOT/android-timeout.json" >/dev/null \
+    || fail "timed-out probes must not render a zero-device row"
+  jq -e '[.unavailable[] | select(.source == "android:PC01") | .reason] | sort == ["adb devices timed out","emulator -list-avds timed out"]' \
+    "$TMP_ROOT/android-timeout.json" >/dev/null \
+    || fail "timeouts must be stated: $(jq -c '.unavailable' "$TMP_ROOT/android-timeout.json")"
+  pass "timed-out adb and emulator probes render as stated reasons"
+}
+
+test_pc02_android_live_read() {
+  local out
+  out=$(run_pc02_android_live ok run \
+    'case "$*" in
+  devices) printf "List of devices attached\nemulator-5554\tdevice\n" ;;
+  "-s emulator-5554 emu avd name") printf "pt_pixel8pro\nOK\n" ;;
+  "-s emulator-5554 shell getprop sys.boot_completed") printf "1\n" ;;
+  *) exit 1 ;;
+esac' \
+    '[ "$*" = "-list-avds" ] && { printf "pt_pixel8pro\nother_avd\n"; exit 0; }; exit 1')
+  printf '%s\n' "$out" > "$TMP_ROOT/pc02-android-ok.json"
+  jq -e '[.android[] | select(.machine == "PC02") | {(.avd): [.state, .boot_completed]}] | add == {"pt_pixel8pro":["device","1"],"other_avd":["stopped","-"]}' \
+    "$TMP_ROOT/pc02-android-ok.json" >/dev/null \
+    || fail "PC02 live Android rows: $(jq -c '.android' "$TMP_ROOT/pc02-android-ok.json")"
+  pass "the shipped PC02 Android probe returns rows over the ssh boundary"
+}
+
+test_pc02_android_live_failure_is_stated() {
+  local out
+  out=$(run_pc02_android_live down fail 'exit 1' 'exit 1')
+  printf '%s\n' "$out" > "$TMP_ROOT/pc02-android-down.json"
+  jq -e '[.android[] | select(.machine == "PC02")] | length == 0' "$TMP_ROOT/pc02-android-down.json" >/dev/null \
+    || fail "a failed PC02 Android read must not render rows"
+  jq -e '[.unavailable[] | select(.reason | test("remote Android read failed"))] | length == 1' \
+    "$TMP_ROOT/pc02-android-down.json" >/dev/null \
+    || fail "PC02 Android failure must be stated: $(jq -c '.unavailable' "$TMP_ROOT/pc02-android-down.json")"
+  pass "a failed PC02 Android read is an unavailable row, never zero devices"
+}
+
 test_android_missing_tools_is_stated_not_zero() {
   local rec home fb out rc
   rec=$(make_home android-missing fresh); home=${rec%%|*}; fb=${rec#*|}
@@ -746,6 +826,10 @@ test_android_unresolved_name_is_not_stopped
 test_android_probe_failures_are_stated_not_zero
 test_android_empty_clean_reads_render_none
 test_android_boot_completed_variants
+test_android_physical_device_does_not_hide_stopped_avd
+test_android_probe_timeouts_are_stated
+test_pc02_android_live_read
+test_pc02_android_live_failure_is_stated
 test_android_missing_tools_is_stated_not_zero
 test_opencode_worker_gets_a_context_band
 test_failed_quota_is_labelled_not_zero

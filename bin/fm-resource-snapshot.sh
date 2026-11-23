@@ -1124,7 +1124,7 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
   done
   local unresolved=0
   for j in "${!serials[@]}"; do
-    [ "${serial_avds[$j]}" != - ] || unresolved=$((unresolved + 1))
+    case "${serials[$j]}" in emulator-*) [ "${serial_avds[$j]}" != - ] || unresolved=$((unresolved + 1)) ;; esac
   done
   for i in "${!avds[@]}"; do
     avd=${avds[$i]}
