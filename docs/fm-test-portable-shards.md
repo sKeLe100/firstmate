@@ -244,7 +244,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the three watch-triage members still sum to about 26 minutes of CI test time.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses long-lived Linux jobs (sixteen serial, two parallel, Herdr, and one per canonical lint partition), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses long-lived Linux jobs (seventeen serial, two parallel, Herdr, and one per canonical lint partition), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession and keeps only the newest of close main pushes' runs, without changing the compliance workflow's event semantics.
 
@@ -279,3 +279,4 @@ A passing coverage guard does not establish a healthy job duration; refresh the 
 
 The suspected mechanism behind the wedged script that motivated the per-script bound above is a rare bash async-signal/trap race in `bin/fm-wake-lib.sh`'s lock-wait/handoff path (`_fm_lock_acquire_wait_handoff`, `fm_lock_acquire_wait_bounded`) under external process-group kill; it has not been reproduced locally and `fm-wake-lib.sh` is safety-critical, so no fix has been attempted there pending real reproduction.
 The 2026-11-23 hint-drift refresh from PR 320's run 45127152954 raised `tests/fm-self-repo-role.test.sh` from 7363 ms to its measured 12589 ms (repeated drift 1.71x).
+The 2026-11-23 upstream catch-up hint-drift refresh from PR 322's run 45187699838 raised the 38 suites the merge grew or that carried upstream-runner hints to their measured durations; the larger hints pushed the largest serial shard past the 1200000 ms target, so `PORTABLE_SERIAL_SHARDS` rose from 16 to 17 with the matching `shard` matrix in ci.yml.
