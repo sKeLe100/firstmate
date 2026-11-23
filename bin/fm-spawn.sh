@@ -3620,6 +3620,19 @@ if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
   fi
 fi
 
+# A pc02-llamaswap/* lane is served by PC02's llama-swap, so PC02 must be
+# awake before the worker starts. bin/fm-pc02-wake.sh owns the wake; a host
+# this home does not manage is a no-op, preserving other model lanes.
+if [ "${FM_PC02_WAKE:-1}" != 0 ] && [ -x "$SCRIPT_DIR/fm-pc02-wake.sh" ]; then
+  case "${MODEL:-}" in
+    pc02-llamaswap/*)
+      "$SCRIPT_DIR/fm-pc02-wake.sh" ensure --host "${FM_PC02_LLAMASWAP_HOST:-pc02}" \
+        --if-managed --timeout "${FM_PC02_WAKE_TIMEOUT:-120}" --quiet \
+        || { echo "error: PC02 did not wake for the $MODEL lane; refusing to launch into an asleep host" >&2; exit 1; }
+      ;;
+  esac
+fi
+
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1
 
 # Host-memory floor: neither the dispatch cap nor the PC02 lane guard knows

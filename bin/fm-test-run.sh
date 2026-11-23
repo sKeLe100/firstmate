@@ -978,7 +978,7 @@ tests/fm-claude-stop-autoarm-live-e2e.test.sh 184
 tests/fm-claude-stop-autoarm.test.sh 61189
 tests/fm-claude-stop-autostow.test.sh 8594
 tests/fm-claude-trust.test.sh 12010
-tests/fm-cmux-claude-composer-live-e2e.test.sh 99
+tests/fm-cmux-claude-composer-live-e2e.test.sh 361
 tests/fm-codex-continuity-live-e2e.test.sh 108
 tests/fm-codex-hook-layer-live-e2e.test.sh 108
 tests/fm-codex-usage.test.sh 61912

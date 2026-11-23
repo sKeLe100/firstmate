@@ -281,6 +281,19 @@ note_unavailable() {  # <source> <reason>
   printf '%s\t%s\t%s\n' "$1" "$(clean_field "$2")" "$read_iso" >> "$TMP/unavailable.tsv"
 }
 
+pc02_unavailable_reason() {  # <host> <fallback>: asleep is a designed posture, not death
+  local host=$1 fallback=$2 state
+  state=
+  if [ -x "$SCRIPT_DIR/fm-pc02-wake.sh" ]; then
+    state=$("$SCRIPT_DIR/fm-pc02-wake.sh" status --host "$host" --if-managed --quiet 2>/dev/null || true)
+  fi
+  if [ "$state" = asleep ]; then
+    printf 'PC02 asleep (wakeable)'
+  else
+    printf '%s' "$fallback"
+  fi
+}
+
 iso_utc() {  # <epoch>
   date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '%s' "$read_iso"
 }
@@ -670,7 +683,7 @@ collect_remote() {
         ' > "$TMP/workers_remote.tsv"
       else
         fm_timed_out "$rc" && mark_budget "workers:$host"
-        note_unavailable "workers:$host" "remote worker read failed (status $rc)"
+        note_unavailable "workers:$host" "$(pc02_unavailable_reason "$host" "remote worker read failed (status $rc)")"
       fi
     fi
   fi
@@ -706,7 +719,7 @@ collect_remote() {
     cat "$TMP/remote_drives.tsv" >> "$TMP/drives.tsv"
   else
     fm_timed_out "$rc" && mark_budget "pc02:$host"
-    note_unavailable "pc02:$host" "remote host read failed (status $rc)"
+    note_unavailable "pc02:$host" "$(pc02_unavailable_reason "$host" "remote host read failed (status $rc)")"
   fi
 
   [ -n "${FM_RESOURCE_ANDROID_FIXTURE:-}" ] && return 0

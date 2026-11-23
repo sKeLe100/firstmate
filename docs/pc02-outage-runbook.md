@@ -301,7 +301,12 @@ It does not cover:
 - **PC02 host unreachable** (no SSH): this is the fallback strategy boundary
   from `docs/pc02-duty-officer.md` section 3. There is no further recovery
   path - this is a hardware limitation.
-- **PC02 is asleep, powered off, or tied up running another model:** only one
+- **PC02 is asleep:** this is not an outage. Automatic idle sleep is off unless
+  the `config/pc02-sleep-auto-arm` opt-in file exists, but PC02 can still be
+  asleep after a manual sleep. Firstmate wakes it over Wi-Fi before dispatch;
+  see `bin/fm-pc02-wake.sh` (an SSH no-answer reads as `asleep`, wakeable) and
+  `bin/fm-pc02-sleep-arming.sh`.
+- **PC02 is powered off, or tied up running another model:** only one
   model is resident on PC02 at a time. Wait for the current model to finish
   or use cloud fallback.
 - **Neither cloud nor PC02 works:** there is no offline answer. Same conclusion
