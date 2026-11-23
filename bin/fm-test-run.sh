@@ -690,6 +690,7 @@ family_for_basename() {
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
     fm-procevent-extension-errors.test.sh|fm-procevent-quota.test.sh|fm-procevent-when.test.sh|fm-procevent.test.sh|\
+    fm-timed-dispatch.test.sh|\
     fm-live-gate.test.sh|\
     fm-project-origin.test.sh|fm-public-followup.test.sh|fm-quota-choose.test.sh|\
     fm-remote-entrypoint.test.sh|fm-remote-secondmate-parent-binding.test.sh|\
@@ -1211,7 +1212,7 @@ tests/fm-secondmate-reconcile.test.sh 100853
 tests/fm-secondmate-restart.test.sh 58986
 tests/fm-secondmate-safety.test.sh 82192
 tests/fm-secondmate-sync.test.sh 55501
-tests/fm-self-repo-role.test.sh 7363
+tests/fm-self-repo-role.test.sh 12589
 tests/fm-send-agy-confirm.test.sh 4440
 tests/fm-send-cache-stale-guard.test.sh 20398
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 185
@@ -1279,6 +1280,7 @@ tests/fm-test-tap-verify.test.sh 1000
 tests/fm-test-lib-watchdog-reap.test.sh 13409
 tests/fm-test-run-stop.test.sh 6966
 tests/fm-test-sandbox-cache-race.test.sh 13939
+tests/fm-timed-dispatch.test.sh 35556
 tests/fm-timeout-lib.test.sh 12305
 tests/fm-tmux-agent-liveness.test.sh 3991
 tests/fm-tool-update-check.test.sh 25439
@@ -2570,6 +2572,9 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-procevent.test.sh
       printf '%s\n' __script__:fm-procevent-when.test.sh
       printf '%s\n' __script__:fm-remote-reply.test.sh
+      ;;
+    bin/fm-timed-dispatch.sh)
+      printf '%s\n' "__script__:fm-timed-dispatch.test.sh"
       ;;
     bin/fm-heavy-admission-lib.sh)
       printf '%s\n' __script__:fm-heavy-admission.test.sh __script__:fm-test-run.test.sh __script__:fm-lint.test.sh

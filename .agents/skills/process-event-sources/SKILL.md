@@ -68,6 +68,9 @@ For a "do X as soon as Y is true" request whose condition AND action are both ge
 bin/fm-procevent-when.sh arm <name> --condition <argv>... --action <argv>...
 ```
 
+For a durable "wake me to dispatch <task-id> at <time or a Claude account's quota reset>", use `bin/fm-timed-dispatch.sh arm ...` instead of building the pair by hand.
+It arms a `when` watch whose check wake names the task and never dispatches on its own; the script's `--help` owns its flags and record, and the watch contract below still applies.
+
 [`docs/configuration.md`](../../../docs/configuration.md#process-to-event-sources-stateprocevent) owns the watch's operating contract, while the adapter's header and `--help` own the flags, cadence, trust binding, and outcome document.
 Eligibility is a firstmate judgment made BEFORE arming, because the scripts cannot classify an argv: the action must be safe, reversible, and exact (for example `no-mistakes update --beta`, whose own guard refuses while a validation run is active).
 Never bind an action that is destructive, irreversible, or security-sensitive, an action needing captain approval or any gate decision, or an action whose right form depends on what the condition finds - those keep the existing check-fires-then-firstmate-decides flow, for which a plain custom check or another adapter stays correct.

@@ -37,6 +37,24 @@
 #   secondmates[]  id,host,home,state,workers,account,read_utc
 #   roles[]        role,where,account,evidence,read_utc
 #   testing[]      machine,item,state,detail,read_utc
+#   android[]      machine,avd,serial,state,boot_completed,detail,read_utc
+#                  one row per AVD listed by `emulator -list-avds` plus any
+#                  adb serial with no matching AVD. state is the adb device
+#                  state (device/offline/unauthorized), `stopped` for a listed
+#                  AVD with no running emulator and a clean adb read, `unknown`
+#                  for a listed AVD when adb is missing/failing or another
+#                  emulator's AVD name is unresolved, or `none` when both probes
+#                  read cleanly and found nothing. avd is `unknown` for a
+#                  running emulator whose AVD name cannot be resolved; that
+#                  emulator renders once, not also as a stopped listing. Only
+#                  emulator-* serials are name-resolved, so a physical or other
+#                  adb device renders as its own row and never hides a stopped
+#                  AVD. boot_completed is `1`/`0` from
+#                  `getprop sys.boot_completed`, `unknown` when empty,
+#                  `stale`/`failed` when that probe did not answer, or `-` for a
+#                  non-running device. A missing adb or emulator is an
+#                  unavailable[] row with its reason, never zero devices.
+#                  Probes are read-only: no emulator is ever started or wiped.
 #   compute[]      rung,account,plan,used,allowance,reset,status,runs,read_utc
 #   unavailable[]  source,reason,read_utc
 #
@@ -62,7 +80,8 @@
 # Per-source bounds (seconds, env-overridable): quota 8, each herdr call 5,
 # pc02 host batch 10, remote worker read 20, local fleet reads 15, roles 10,
 # collie 5, local crew-state 8, context band 5, local host probe 5, testing 10
-# per network source. A bound hit produces an unavailable row (or a
+# per network source, each Android probe 8, PC02 Android batch 20. A bound hit
+# produces an unavailable row (or a
 # `stale`/`unknown` figure) and never a hang. Collectors run in parallel in
 # isolated subshells; exit 0 when any section rendered, 1 only when nothing
 # rendered.
@@ -94,6 +113,10 @@
 #                                 mate_account} replaces every PC02 read
 #   FM_RESOURCE_TESTING_FIXTURE   JSON {testing:[...],compute:[...]} replaces
 #                                 every live testing and compute probe
+#   FM_RESOURCE_ANDROID_FIXTURE   JSON {android:[...],unavailable:[...]}
+#                                 replaces every live Android probe on both hosts
+#   FM_RESOURCE_ADB               explicit adb path (empty means adb is absent)
+#   FM_RESOURCE_EMULATOR          explicit emulator path (empty means absent)
 #   FM_RESOURCE_CONTEXT_FIXTURE   JSON object mapping task id to ctx_band
 #   FM_RESOURCE_<KEY>             override one config key (see below)
 #   QUOTA_AXI_SNAPSHOT            passed through to quota-axi (its own seam)
@@ -181,6 +204,8 @@ CONTEXT_TIMEOUT=$(bound FM_RESOURCE_CONTEXT_TIMEOUT 5)
 ROLES_TIMEOUT=$(bound FM_RESOURCE_ROLES_TIMEOUT 10)
 COLLIE_TIMEOUT=$(bound FM_RESOURCE_COLLIE_TIMEOUT 5)
 TESTING_TIMEOUT=$(bound FM_RESOURCE_TESTING_TIMEOUT 10)
+ANDROID_TIMEOUT=$(bound FM_RESOURCE_ANDROID_TIMEOUT 8)
+ANDROID_REMOTE_TIMEOUT=$(bound FM_RESOURCE_ANDROID_REMOTE_TIMEOUT 20)
 CAP_WORKERS=$(bound FM_RESOURCE_CAP_WORKERS 40)
 CAP_PANES=$(bound FM_RESOURCE_CAP_PANES 60)
 CAP_STRAYS=$(bound FM_RESOURCE_CAP_STRAYS 40)
@@ -219,6 +244,10 @@ trap 'exit 143' TERM
 : > "$TMP/roles.tsv"
 : > "$TMP/testing.tsv"
 : > "$TMP/compute.tsv"
+: > "$TMP/android.tsv"
+: > "$TMP/android_local.tsv"
+: > "$TMP/android_remote.tsv"
+: > "$TMP/android_probe.tsv"
 : > "$TMP/remote_records.tsv"
 : > "$TMP/remote_sessions.tsv"
 : > "$TMP/mate_account.txt"
@@ -541,6 +570,16 @@ done
 REMOTE
 }
 
+remote_android_script() {
+  printf '%s\n' 'set -u'
+  declare -f android_find_tool android_passthru android_boot_completed android_probe_host
+  cat <<'REMOTE'
+adb=$(android_find_tool adb) || adb=''
+emu=$(android_find_tool emulator) || emu=''
+android_probe_host "$adb" "$emu" android_passthru 0
+REMOTE
+}
+
 run_remote() {  # <host> <timeout> <script-text> <arg>...
   local host=$1 timeout=$2 script=$3 runner stdin_file
   shift 3
@@ -572,6 +611,8 @@ collect_remote() {
     jq -r '.workers[]? | ["PC02", .home_lane, .task, (.kind // "unknown"), (.model // "unknown"), (.spend_lane // "unknown"), (.stage // "unknown"), (.age // "-"), (.last_active // "-"), (.ctx_band // "n/a"), (.pr // "-"), (.read_utc // "-")] | @tsv' \
       "$FM_RESOURCE_REMOTE_FIXTURE" > "$TMP/workers_remote.tsv"
     jq -r '(.mate_account // "")' "$FM_RESOURCE_REMOTE_FIXTURE" > "$TMP/mate_account.txt"
+    jq -r '.android[]? | ["PC02", (.avd // "-"), (.serial // "-"), (.state // "unknown"), (.boot_completed // "-"), (.detail // "-"), (.read_utc // "-")] | @tsv' \
+      "$FM_RESOURCE_REMOTE_FIXTURE" > "$TMP/android_remote.tsv"
     jq -r '.unavailable[]? | [.source, .reason, (.read_utc // "-")] | @tsv' \
       "$FM_RESOURCE_REMOTE_FIXTURE" >> "$TMP/unavailable.tsv"
     return 0
@@ -653,6 +694,24 @@ collect_remote() {
   else
     fm_timed_out "$rc" && mark_budget "pc02:$host"
     note_unavailable "pc02:$host" "remote host read failed (status $rc)"
+  fi
+
+  [ -n "${FM_RESOURCE_ANDROID_FIXTURE:-}" ] && return 0
+  raw=$(run_remote "$host" "$ANDROID_REMOTE_TIMEOUT" "$(remote_android_script)" 2>/dev/null)
+  rc=$?
+  : > "$TMP/android_remote.tsv"
+  if [ "$rc" -eq 0 ]; then
+    while IFS=$'\t' read -r tag a b c d e; do
+      case "$tag" in
+        A) printf 'PC02\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(clean_field "$a")" "$(clean_field "$b")" \
+             "$(clean_field "$c")" "$(clean_field "$d")" "$(clean_field "$e")" "$read_iso" \
+             >> "$TMP/android_remote.tsv" ;;
+        N) note_unavailable 'android:PC02' "$a" ;;
+      esac
+    done <<< "$raw"
+  else
+    fm_timed_out "$rc" && mark_budget "android:$host"
+    note_unavailable "android:$host" "remote Android read failed (status $rc)"
   fi
 }
 
@@ -951,6 +1010,215 @@ build_roles() {
       done
 }
 
+# --- Android emulators ------------------------------------------------------
+# These four helpers are also shipped verbatim to PC02 through `declare -f`
+# and executed under `bash -s`, so they must not call this script's local
+# helpers (fm_run_timed, clean_field, note_unavailable, ...).
+android_find_tool() {  # <adb|emulator> -> path, else status 1
+  local name=$1 c root f
+  for c in "$name" "$name.exe"; do
+    c=$(command -v "$c" 2>/dev/null) && [ -n "$c" ] && { printf '%s\n' "$c"; return 0; }
+  done
+  local -a roots=()
+  for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" \
+    "$HOME/Android/Sdk" "$HOME/android-sdk" /usr/lib/android-sdk; do
+    [ -n "$root" ] && roots+=("$root")
+  done
+  for root in /mnt/*/Android /mnt/*/Android/Sdk; do
+    [ -d "$root" ] && roots+=("$root")
+  done
+  for root in "${roots[@]}"; do
+    case "$name" in
+      adb)
+        for f in "$root/platform-tools/adb" "$root/platform-tools/adb.exe"; do
+          [ -x "$f" ] && { printf '%s\n' "$f"; return 0; }
+        done ;;
+      emulator)
+        for f in "$root/emulator/emulator" "$root/emulator/emulator.exe"; do
+          [ -x "$f" ] && { printf '%s\n' "$f"; return 0; }
+        done ;;
+    esac
+  done
+  return 1
+}
+
+# shellcheck disable=SC2329 # shipped to PC02 through declare -f and invoked there
+android_passthru() {  # remote probe runner: the ssh call is already bounded
+  shift
+  "$@"
+}
+
+android_boot_completed() {  # <adb> <serial> <runner> <timeout>
+  local out rc line
+  out=$("$3" "$4" "$1" -s "$2" shell getprop sys.boot_completed 2>/dev/null </dev/null)
+  rc=$?
+  case "$rc" in
+    124) printf 'stale'; return ;;
+    0) ;;
+    *) printf 'failed'; return ;;
+  esac
+  line=${out%%$'\n'*}
+  line=${line//$'\r'/}
+  line=${line//[[:space:]]/}
+  case "$line" in
+    1) printf 1 ;;
+    0) printf 0 ;;
+    *) printf unknown ;;
+  esac
+}
+
+android_probe_host() {  # <adb> <emulator> <runner> <timeout>
+  local adb=$1 emu=$2 runner=$3 timeout=$4
+  local out rc line serial state avd boot detail
+  local -a avds=() serials=() states=() serial_avds=() matched=()
+  local adb_clean=1 emu_clean=1 unresolved_running=0 unresolved_other=0 found i j
+  if [ -z "$adb" ]; then printf 'N\t%s\n' 'adb not found'; adb_clean=0; fi
+  if [ -z "$emu" ]; then printf 'N\t%s\n' 'emulator not found'; emu_clean=0; fi
+  if [ -n "$emu" ]; then
+    out=$("$runner" "$timeout" "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
+    out=${out//$'\r'/}
+    case "$rc" in
+      124) printf 'N\t%s\n' 'emulator -list-avds timed out'; emu_clean=0 ;;
+      0)
+        while IFS= read -r line; do
+          line=${line//$'\r'/}
+          [ -n "$line" ] || continue
+          case "$line" in \#*|'*'*) continue ;; esac
+          avds+=("$line")
+        done <<< "$out" ;;
+      *) printf 'N\t%s\n' "emulator -list-avds failed (status $rc)"; emu_clean=0 ;;
+    esac
+  fi
+  if [ -n "$adb" ]; then
+    out=$("$runner" "$timeout" "$adb" devices 2>/dev/null </dev/null); rc=$?
+    out=${out//$'\r'/}
+    case "$rc" in
+      124) printf 'N\t%s\n' 'adb devices timed out'; adb_clean=0 ;;
+      0)
+        while IFS=$'\t ' read -r serial state _; do
+          [ -n "$serial" ] || continue
+          case "$serial" in List|'*'*) continue ;; esac
+          [ -n "$state" ] || continue
+          serials+=("$serial"); states+=("$state")
+        done <<< "$out" ;;
+      *) printf 'N\t%s\n' "adb devices failed (status $rc)"; adb_clean=0 ;;
+    esac
+  fi
+  for j in "${!serials[@]}"; do
+    serial_avds[j]=-
+    # Only an emulator host serial can resolve to an AVD; a physical or other
+    # adb device renders as its own row and never makes a listed AVD unknown.
+    case "${serials[$j]}" in emulator-*) ;; *) continue ;; esac
+    case "${states[$j]}" in device) ;; *) continue ;; esac
+    out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" emu avd name 2>/dev/null </dev/null); rc=$?
+    if [ "$rc" -eq 0 ]; then
+      while IFS= read -r line; do
+        line=${line//$'\r'/}
+        [ -n "$line" ] || continue
+        case "$line" in OK) continue ;; esac
+        serial_avds[j]=$line
+        break
+      done <<< "$out"
+    fi
+    # Some adb builds answer `emu avd name` with no name; the guest property
+    # names the same AVD and keeps the running row attached to its AVD.
+    if [ "${serial_avds[$j]}" = - ]; then
+      out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" shell getprop ro.boot.qemu.avd_name 2>/dev/null </dev/null); rc=$?
+      [ "$rc" -eq 0 ] || continue
+      out=${out//$'\r'/}
+      out=${out%%$'\n'*}
+      out=${out//[[:space:]]/}
+      [ -z "$out" ] || serial_avds[j]=$out
+    fi
+  done
+  for j in "${!serials[@]}"; do
+    case "${serials[$j]}" in
+      emulator-*)
+        [ "${serial_avds[$j]}" = - ] || continue
+        case "${states[$j]}" in
+          device) unresolved_running=$((unresolved_running + 1)) ;;
+          *) unresolved_other=$((unresolved_other + 1)) ;;
+        esac ;;
+    esac
+  done
+  for i in "${!avds[@]}"; do
+    avd=${avds[$i]}
+    serial=- state=stopped boot=- detail='AVD listed; no running emulator' found=0
+    for j in "${!serials[@]}"; do
+      [ "${serial_avds[$j]}" = "$avd" ] || continue
+      serial=${serials[$j]}; state=${states[$j]}; detail='running emulator'
+      [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout")
+      matched[j]=1; found=1
+      break
+    done
+    if [ "$found" -eq 0 ]; then
+      if [ "$adb_clean" -eq 0 ]; then
+        state=unknown; detail='adb unavailable; running state unread'
+      elif [ "$unresolved_running" -gt 0 ]; then
+        # The running emulator whose AVD name is unknown renders once below.
+        continue
+      elif [ "$unresolved_other" -gt 0 ]; then
+        state=unknown; detail='AVD listed; an emulator serial has no resolved AVD name'
+      fi
+    fi
+    printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" "$detail"
+  done
+  for j in "${!serials[@]}"; do
+    [ -z "${matched[$j]:-}" ] || continue
+    serial=${serials[$j]}; state=${states[$j]}; avd=${serial_avds[$j]}
+    boot=-
+    [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout")
+    case "$serial" in
+      emulator-*)
+        if [ "$avd" = - ]; then
+          if [ "$state" = device ]; then
+            avd=unknown; detail='running emulator; AVD name unresolved'
+          else
+            avd=-; detail='emulator serial; AVD name unresolved'
+          fi
+        else
+          detail='running emulator'
+        fi ;;
+      *) avd=-; detail='adb device' ;;
+    esac
+    printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" "$detail"
+  done
+  if [ "$adb_clean" -eq 1 ] && [ "$emu_clean" -eq 1 ] \
+    && [ "${#avds[@]}" -eq 0 ] && [ "${#serials[@]}" -eq 0 ]; then
+    printf 'A\t-\t-\t%s\t-\t%s\n' none 'no AVDs and no running emulators'
+  fi
+}
+
+collect_android_local() {
+  local tag a b c d e adb='' emu=''
+  [ -z "${FM_RESOURCE_ANDROID_FIXTURE:-}" ] || return 0
+  if [ "${FM_RESOURCE_ADB+x}" = x ]; then adb=$FM_RESOURCE_ADB
+  else adb=$(android_find_tool adb 2>/dev/null) || adb=''; fi
+  if [ "${FM_RESOURCE_EMULATOR+x}" = x ]; then emu=$FM_RESOURCE_EMULATOR
+  else emu=$(android_find_tool emulator 2>/dev/null) || emu=''; fi
+  android_probe_host "$adb" "$emu" fm_run_timed "$ANDROID_TIMEOUT" > "$TMP/android_probe.tsv"
+  : > "$TMP/android_local.tsv"
+  while IFS=$'\t' read -r tag a b c d e; do
+    case "$tag" in
+      A) printf 'PC01\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(clean_field "$a")" "$(clean_field "$b")" \
+           "$(clean_field "$c")" "$(clean_field "$d")" "$(clean_field "$e")" "$read_iso" \
+           >> "$TMP/android_local.tsv" ;;
+      N) note_unavailable 'android:PC01' "$a" ;;
+    esac
+  done < "$TMP/android_probe.tsv"
+}
+
+collect_android() {
+  if [ -n "${FM_RESOURCE_ANDROID_FIXTURE:-}" ] && [ -f "$FM_RESOURCE_ANDROID_FIXTURE" ]; then
+    jq -r '.android[]? | [.machine, (.avd // "-"), (.serial // "-"), (.state // "unknown"), (.boot_completed // "-"), (.detail // "-"), (.read_utc // "-")] | @tsv' \
+      "$FM_RESOURCE_ANDROID_FIXTURE" > "$TMP/android.tsv"
+    jq -r '.unavailable[]? | [.source, .reason, (.read_utc // "-")] | @tsv' \
+      "$FM_RESOURCE_ANDROID_FIXTURE" >> "$TMP/unavailable.tsv"
+    return
+  fi
+  cat "$TMP/android_local.tsv" "$TMP/android_remote.tsv" > "$TMP/android.tsv"
+}
+
 # --- testing environments and compute accounts ------------------------------
 testing_row() {  # <machine> <item> <state> <detail>
   printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$(clean_field "$3")" "$(clean_field "$4")" "$read_iso" \
@@ -976,7 +1244,6 @@ collect_local_testing() {
   runs=$(ps -eo args= 2>/dev/null | grep -E 'fm-test-run\.sh|fm-test-compute\.sh' | grep -v grep)
   count=$(printf '%s\n' "$runs" | awk 'NF { n++ } END { print n + 0 }')
   testing_row PC01 test-runs "$count running" "$(printf '%s' "$runs" | head -3 | tr '\n' ' ' | cut -c1-180)"
-  note_unavailable 'android' 'no reader for Android emulator availability'
 }
 
 collect_forgejo() {
@@ -1174,7 +1441,7 @@ render_toon() {  # <model-json-file>
 
 build_model() {
   local host_json drive_json quota_json worker_json pane_json stray_json sm_json role_json
-  local test_json compute_json un_json gen_et nw np ns
+  local test_json android_json compute_json un_json gen_et nw np ns
 
   if [ -n "${FM_RESOURCE_HOSTS_JSON:-}" ] && [ -f "$FM_RESOURCE_HOSTS_JSON" ]; then
     jq -r '.hosts[]? | [.machine, (.load1 // "unknown"), (.cores // "unknown"), (.mem_free_pct // "unknown"), (.disk_free_gb // "-"), (.disk_path // "-"), (.uptime // "unknown"), (.read_utc // "-")] | @tsv' \
@@ -1194,6 +1461,7 @@ build_model() {
   sm_json=$TMP/secondmates.json
   role_json=$TMP/roles.json
   test_json=$TMP/testing.json
+  android_json=$TMP/android.json
   compute_json=$TMP/compute.json
   un_json=$TMP/unavailable.json
 
@@ -1214,6 +1482,8 @@ build_model() {
     '["role","where","account","evidence","read_utc"]' > "$role_json"
   tsv_to_json "$TMP/testing.tsv" \
     '["machine","item","state","detail","read_utc"]' > "$test_json"
+  tsv_to_json "$TMP/android.tsv" \
+    '["machine","avd","serial","state","boot_completed","detail","read_utc"]' > "$android_json"
   tsv_to_json "$TMP/compute.tsv" \
     '["rung","account","plan","used","allowance","reset","status","runs","read_utc"]' > "$compute_json"
   tsv_to_json "$TMP/unavailable.tsv" \
@@ -1232,7 +1502,8 @@ build_model() {
     --slurpfile hosts "$host_json" --slurpfile drives "$drive_json" --slurpfile quota "$quota_json" \
     --slurpfile workers "$worker_json" --slurpfile panes "$pane_json" --slurpfile strays "$stray_json" \
     --slurpfile secondmates "$sm_json" --slurpfile roles "$role_json" \
-    --slurpfile testing "$test_json" --slurpfile compute "$compute_json" \
+    --slurpfile testing "$test_json" --slurpfile android "$android_json" \
+    --slurpfile compute "$compute_json" \
     --slurpfile unavailable "$un_json" --slurpfile budget "$TMP/budget.json" \
     --argjson capw "$CAP_WORKERS" --argjson capp "$CAP_PANES" --argjson caps "$CAP_STRAYS" \
     --argjson nw "$nw" --argjson np "$np" --argjson ns "$ns" \
@@ -1254,6 +1525,7 @@ build_model() {
       secondmates: ($secondmates[0] // []),
       roles: ($roles[0] // []),
       testing: ($testing[0] // []),
+      android: ($android[0] // []),
       compute: ($compute[0] // []),
       unavailable: ($unavailable[0] // [])
     }
@@ -1281,6 +1553,7 @@ fi
 ( collect_quota ) &
 ( collect_verify ) &
 ( collect_local_workers ) &
+( collect_android_local ) &
 ( collect_remote ) &
 wait
 
@@ -1289,12 +1562,13 @@ build_secondmates
 collect_herdr
 build_roles
 collect_testing_and_compute
+collect_android
 build_model
 
 if [ -s "$TMP/hosts.tsv" ] || [ -s "$TMP/drives.tsv" ] || [ -s "$TMP/quota.tsv" ] \
   || [ -s "$TMP/workers_local.tsv" ] || [ -s "$TMP/workers_remote.tsv" ] \
   || [ -s "$TMP/panes.tsv" ] || [ -s "$TMP/secondmates.tsv" ] || [ -s "$TMP/roles.tsv" ] \
-  || [ -s "$TMP/testing.tsv" ] || [ -s "$TMP/compute.tsv" ]; then
+  || [ -s "$TMP/testing.tsv" ] || [ -s "$TMP/android.tsv" ] || [ -s "$TMP/compute.tsv" ]; then
   exit 0
 fi
 exit 1
