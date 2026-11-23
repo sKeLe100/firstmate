@@ -408,7 +408,23 @@ repo_has_queued_runs() {
 idle_runner_label() {
   local labels switch
   labels=$(api "/repos/$repo/actions/runners?per_page=100" --jq '.runners[] | select(.status == "online" and (.busy | not)) | .labels[].name' 2>/dev/null) || return 1
-  grep -Fxq fm-pc02 <<< "$labels" || return 1
+  if ! grep -Fxq fm-pc02 <<< "$labels"; then
+    # The runner is offline, not merely busy, which is also how an asleep PC02
+    # appears. Wake the managed host once, then give the runner time to
+    # reconnect before giving up.
+    [ "${FM_PC02_WAKE_CI:-1}" != 0 ] || return 1
+    [ -x "$SELF_DIR/fm-pc02-wake.sh" ] || return 1
+    "$SELF_DIR/fm-pc02-wake.sh" ensure --if-managed --quiet || return 1
+    local wait=${FM_PC02_CI_RUNNER_WAIT:-90} waited=0
+    case "$wait" in '' | *[!0-9]*) wait=90 ;; esac
+    while [ "$waited" -lt "$wait" ]; do
+      labels=$(api "/repos/$repo/actions/runners?per_page=100" --jq '.runners[] | select(.status == "online" and (.busy | not)) | .labels[].name' 2>/dev/null) || return 1
+      grep -Fxq fm-pc02 <<< "$labels" && break
+      sleep 5
+      waited=$((waited + 5))
+    done
+    grep -Fxq fm-pc02 <<< "$labels" || return 1
+  fi
   switch=$(timeout "$API" "$SELF_DIR/fm-pc02-personal-use.sh" status 2>/dev/null) || return 1
   [ "$switch" = off ] || return 1
   echo fm-pc02
