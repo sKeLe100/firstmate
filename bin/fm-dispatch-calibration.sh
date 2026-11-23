@@ -89,7 +89,7 @@ result=$(jq -s '
        | select(.event_type == "dispatch" and (.from_task_id | type) == "string" and (.from_task_id | length) > 0)
        | .from_task_id ] | unique) as $redelegated
   | ([ $all[]
-       | select(.event_type == "delegation" and .had_issue == "true" and (.task_id | type) == "string")
+       | select(.event_type == "delegation" and .had_issue == "true" and .trigger != "redispatch" and (.task_id | type) == "string")
        | .task_id ] | unique) as $issue_tasks
   | [ $all[]
       | select(.event_type == "dispatch")

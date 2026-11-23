@@ -1237,7 +1237,7 @@ if [ "$DECISION_RECORD_SET" -eq 1 ]; then
     echo "error: --decision-record requires jq" >&2
     exit 1
   }
-  jq -e 'type == "object"' "$DECISION_RECORD_FILE" >/dev/null 2>&1 || {
+  jq -s -e 'length == 1 and (.[0] | type == "object")' "$DECISION_RECORD_FILE" >/dev/null 2>&1 || {
     echo "error: --decision-record file must contain one valid JSON object: $DECISION_RECORD_FILE" >&2
     exit 1
   }
