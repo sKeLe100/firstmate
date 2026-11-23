@@ -238,8 +238,8 @@ test_launch_exports_active_home() {
     : > "$HOME_DIR/config/launch-env-allowlist"
     want=$HOME_DIR
     case "$kind" in
-    ship) out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off) ;;
-    scout) out=$(run_case_spawn "$id" "$PROJ_DIR" --scout) ;;
+    ship) out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off --model gpt-5 --effort medium) ;;
+    scout) out=$(run_case_spawn "$id" "$PROJ_DIR" --scout --model gpt-5 --effort medium) ;;
     secondmate)
       sm="$CASE_DIR/secondmate-home"
       mkdir -p "$sm/bin" "$sm/data"
@@ -249,7 +249,7 @@ test_launch_exports_active_home() {
       printf '%s\n' 'projects/' 'state/' 'data/' 'config/' '.no-mistakes/' > "$sm/.gitignore"
       git -C "$sm" init -q -b main
       want=$sm
-      out=$(run_case_spawn "$id" "$sm" --secondmate)
+      out=$(run_case_spawn "$id" "$sm" --secondmate --model gpt-5 --effort medium)
       ;;
     esac
     status=$?
@@ -433,7 +433,7 @@ test_launch_preserves_literal_home_and_brief_paths() {
       mv "$HOME_DIR" "$CASE_DIR/R&D \"double\" 'single' home"
       HOME_DIR="$CASE_DIR/R&D \"double\" 'single' home"
     fi
-    out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
+    out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off --model gpt-5 --effort medium)
     status=$?
     expect_code 0 "$status" "$name path spawn should succeed: $out"
     # Capture the environment and final prompt received by the fake agent.

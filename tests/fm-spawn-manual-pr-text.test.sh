@@ -44,7 +44,7 @@ make_case() {
 run_spawn() {  # <id> <args...>
   local id=$1
   shift
-  fm_test_run_spawn "$HOME_DIR" "$POOL_DIR" "$FAKEBIN_DIR" "$id" "$PROJECT_DIR" "$@"
+  fm_test_run_spawn "$HOME_DIR" "$POOL_DIR" "$FAKEBIN_DIR" "$id" "$PROJECT_DIR" --model gpt-5 --effort medium "$@"
 }
 
 test_spawn_launches_when_brief_and_registry_agree_on_pr_text() {

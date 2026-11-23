@@ -85,7 +85,7 @@ test_afk_start_refuses_tern_supervisor_backend() {
   dir=$(make_supercase afk-start-tern-unsupported)
   state="$dir/state"
 
-  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_BACKEND=tern "$AFK_START" 2>&1)
+  out=$(FM_STATE_OVERRIDE="$state" TMUX_PANE=%0 FM_SUPERVISOR_BACKEND=tern "$AFK_START" 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || fail "fm-afk-start.sh should refuse a tern supervisor backend (away mode supports only tmux, herdr, and rex)"

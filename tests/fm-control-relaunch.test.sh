@@ -541,7 +541,7 @@ test_relaunch_accepts_a_standalone_clone_worktree() {
     "$(git -C "$dir/proj" rev-parse --path-format=absolute --git-common-dir)" ] \
     || fail "fixture broken: the clone must not share the recorded project's common git dir"
 
-  out=$(run_control "$dir" rl45 relaunch --note "continue in the clone"); rc=$?
+  out=$(run_control "$dir" rl45 relaunch --model gpt-5 --effort high --note "continue in the clone"); rc=$?
   expect_code 0 "$rc" "a standalone clone worktree should relaunch"$'\n'"$out"
   assert_contains "$out" "relaunched rl45 harness=codex" "the outcome should name the transition"
   [ "$(meta_field "$dir" rl45 worktree)" = "$dir/wt" ] \

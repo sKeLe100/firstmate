@@ -253,6 +253,10 @@ queued_wakes_carrying() {  # <state> <window> <needle>
     "$1/.wake-queue" 2>/dev/null || printf '0\n'
 }
 
+# The fork's exponential wedge re-escalation backoff is pinned flat here,
+# because upstream's escalation ladder that this file tests has no backoff.
+export FM_WEDGE_ESCALATE_MAX_SECS=240
+
 # 1. Disabled by default: FM_WEDGE_MAX_ESCALATIONS=0 leaves the cap inert,
 # and a wedged worker keeps receiving stale wakes without ever firing
 # PERMANENTLY-WEDGED.
