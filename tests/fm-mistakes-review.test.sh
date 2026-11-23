@@ -86,7 +86,42 @@ test_arm_refuses_bad_input_and_a_missing_dispatcher() {
   pass "arm refuses bad input instead of arming nothing"
 }
 
+test_arm_failure_after_cancel_restores_or_fails_loudly() {
+  local home dir stub out rc log
+  home=$(new_home failarm)
+  dir="$TMP_ROOT/failarm-bin"
+  mkdir -p "$dir" "$home/state/timed-dispatch"
+  printf 'name=dispatch-mistakes-review\ntarget_epoch=9000\n' > "$home/state/timed-dispatch/dispatch-mistakes-review.record"
+  log="$TMP_ROOT/failarm-log"
+  : > "$log"
+  stub="$dir/fake-dispatch.sh"
+  cat > "$stub" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FAKE_LOG:?}"
+[ "$1" = cancel ] && exit 0
+case "$*" in *"@${FAKE_FAIL_AT:-none}") exit 1 ;; esac
+exit 0
+EOF
+  chmod +x "$stub"
+  out=$(FAKE_LOG="$log" FAKE_FAIL_AT=5000 FM_MISTAKES_REVIEW_DISPATCH_BIN="$stub" run "$home" 1000 arm --in 4000 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "a failed arm must not exit 0"
+  assert_grep "arm mistakes-review --at @9000" "$log" "a failed arm must restore the prior future wake"
+  assert_contains "$out" "restored" "the failure must say a wake was restored"
+  : > "$log"
+  cat > "$dir/failall.sh" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = cancel ] && exit 0
+exit 1
+EOF
+  chmod +x "$dir/failall.sh"
+  out=$(FM_MISTAKES_REVIEW_DISPATCH_BIN="$dir/failall.sh" run "$home" 1000 arm 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "arm must not exit 0 when no wake can be armed"
+  assert_contains "$out" "NO review wake remains" "total failure must say no wake remains"
+  pass "a failed arm restores the cadence or fails loudly"
+}
+
 test_due_without_a_record_is_due_and_status_says_so
 test_mark_records_the_pass_and_gates_the_boundary
 test_arm_targets_the_next_pass_through_dispatch
 test_arm_refuses_bad_input_and_a_missing_dispatcher
+test_arm_failure_after_cancel_restores_or_fails_loudly

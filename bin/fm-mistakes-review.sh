@@ -71,7 +71,7 @@ last_pass() {
 }
 
 cmd_arm() {
-  local extra='' base target out
+  local extra='' base target out prior now
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --in)
@@ -102,8 +102,19 @@ cmd_arm() {
   # A fired or still-armed review wake leaves its record behind, and timed-dispatch
   # refuses a second arm while that record exists. Retire it first so a re-arm
   # after a pass replaces the schedule instead of failing; nothing armed is fine.
+  # Remember its target so a failed arm restores the cadence instead of dropping it.
+  prior=$(awk -F= '$1 == "target_epoch" { print $2; exit }' "$STATE/timed-dispatch/dispatch-$TASK.record" 2>/dev/null)
   "$DISPATCH_BIN" cancel "$TASK" >/dev/null 2>&1 || true
-  out=$("$DISPATCH_BIN" arm "$TASK" --at "@$target") || die "could not arm the mistakes review wake (target $target)"
+  if ! out=$("$DISPATCH_BIN" arm "$TASK" --at "@$target"); then
+    now=$(now_epoch)
+    case "$prior" in ''|*[!0-9]*) prior=0 ;; esac
+    [ "$prior" -gt "$now" ] || prior=$(( now + 60 ))
+    if out=$("$DISPATCH_BIN" arm "$TASK" --at "@$prior"); then
+      printf '%s\n' "$out"
+      die "could not arm the mistakes review wake for $target; restored a wake for $prior"
+    fi
+    die "could not arm the mistakes review wake for $target and could not restore one: NO review wake remains, run 'fm-mistakes-review.sh arm' again"
+  fi
   printf '%s\n' "$out"
   printf 'review: mistakes review armed for %s\n' "$target"
 }
