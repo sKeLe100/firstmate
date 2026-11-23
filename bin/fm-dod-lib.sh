@@ -423,6 +423,20 @@ fm_ask_user_escalation_block() {  # <data-dir> <task-id>
 EOF
 }
 
+# fm_bugfix_reproduce_block owns the reproduce-before-fix rule for a
+# user-visible bug. It is rendered into the `# Bug fixes` section of an ordinary
+# ship brief (bin/fm-brief.sh) and into the ship instructions a promoted scout
+# receives (bin/fm-promote.sh), so both bug-fix paths carry the same rule.
+# It deliberately stays out of fm_dod_block: delivery mechanics and bug-diagnosis
+# practice are separate contracts, and only a bug-fix task needs this paragraph.
+fm_bugfix_reproduce_block() {
+  cat <<'EOF'
+For a user-visible bug, reproduce it end-to-end on the real user path before the fix: the headless browser for web, the Android emulator for mobile.
+Record the failing check in the task, and for a frontend change record before/after screenshots at the target viewport widths.
+When the fix ships, the reproduction becomes the regression test; if a faithful reproduction is unsafe or impossible, state the limitation instead of claiming equivalence.
+EOF
+}
+
 # The forge-independent middle of the no-mistakes contract: how a worker drives
 # the pipeline, what `--intent` may carry, and the three firstmate-specific rules.
 # Written once; only the two sentences about a green PR depend on the forge,
