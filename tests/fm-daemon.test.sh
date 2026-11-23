@@ -1682,6 +1682,7 @@ test_housekeeping_overdue_queue_failure_resume_discards() {
   original_enqueue=$(declare -f escalate_add)
   for event in working paused; do
     for route in housekeeping signal stale; do
+      # shellcheck disable=SC2031 # route is only read here
       (
         dir=$(make_supercase "overdue-resume-$event-$route")
         arm_pause_ceiling "$dir"
@@ -1727,7 +1728,6 @@ test_housekeeping_overdue_queue_failure_resume_discards() {
         FM_HOME="$dir" status_open_decisions "$statusf" | grep -F "paused-overdue-$task" >/dev/null \
           && fail "resume left the overdue decision open ($event/$route)"
         grep -Fq "resolved [key=paused-overdue-$task]" "$statusf" || fail "resume did not record resolution"
-      # shellcheck disable=SC2031 # route is only read here
       ) || fail "pending resume reconciliation failed ($event/$route)"
     done
   done
