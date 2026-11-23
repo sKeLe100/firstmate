@@ -765,6 +765,15 @@ Persistent secondmates hold no lane.
 The file is a per-machine choice and is not inherited by secondmate homes.
 The script's header owns the output line, the host-constraint thresholds, and the probe fallbacks.
 
+## Underused-capacity threshold (config/underused-capacity-threshold)
+
+The optional local, gitignored `config/underused-capacity-threshold` file holds one whole percentage 0-100, the share of a spend lane's five-hour window that must remain before `bin/fm-underused-capacity.sh` reports that lane as idle capacity while a free pool slot and dispatchable work remain.
+Absent means 50.
+`FM_UNDERUSED_FIVE_HOUR_MIN` and the script's `--threshold` flag override it in that order.
+A malformed value is a usage error, never a silent default.
+The file is a home-local reporting choice and is not inherited by secondmate homes, which run their own fleet mix and quota windows.
+The script's header owns the exact lane-selection rules and output line.
+
 ## Turn-end pane-churn absorb (config/turnend-churn-absorb)
 
 The optional local, gitignored `config/turnend-churn-absorb` presence flag opts this home into a default-off third form of positive work evidence in watcher triage.

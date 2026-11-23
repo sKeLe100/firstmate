@@ -95,6 +95,10 @@ case "$out" in
   *) fail "expected count: 3, got: $out" ;;
 esac
 case "$out" in
+  *"dispatchable: 1"*) ;;
+  *) fail "expected one dispatchable item (demo-a), got: $out" ;;
+esac
+case "$out" in
   *"demo-a,fix the thing,ship,demo-proj,2,no,none,no,-,-,-,direct-PR on,autonomous-eligible,"*) ;;
   *) fail "demo-a row not autonomous-eligible on yolo-on project: $out" ;;
 esac
