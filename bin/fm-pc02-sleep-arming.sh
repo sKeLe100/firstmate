@@ -195,7 +195,7 @@ for pair in "idle-minutes:$IDLE_MINUTES" "watcher-idle-minutes:$WATCHER_IDLE_MIN
   esac
   [ "$value" -ge 1 ] || die "--$name must be at least 1"
 done
-if [ "$MODE" = install ] && auto_arm_enabled && [ "$IDLE_MINUTES" -lt 30 ]; then
+if [ "$MODE" = install ] && [ "$IDLE_MINUTES" -lt 30 ]; then
   die "install keeps the production window at 30 minutes or more; use test-sleep for a shortened test window"
 fi
 

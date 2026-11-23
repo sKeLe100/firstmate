@@ -118,7 +118,7 @@ fm_on_needs_wake() {
   esac
   return 1
 }
-if fm_on_needs_wake && [ -x "$SCRIPT_DIR/fm-pc02-wake.sh" ]; then
+if fm_on_needs_wake "$@" && [ -x "$SCRIPT_DIR/fm-pc02-wake.sh" ]; then
   "$SCRIPT_DIR/fm-pc02-wake.sh" ensure --host "$HOST" --if-managed --quiet \
     || die "remote host $HOST did not answer after a wake attempt"
 fi

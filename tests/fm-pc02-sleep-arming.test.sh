@@ -60,6 +60,14 @@ grep -q 'watcher_force_sleep=yes' <<< "$out" || fail "the opt-in must enable the
 rm -f "$FM_PC02_AUTO_ARM_FILE"
 pass "the explicit opt-in arms the 30-minute plan"
 
+rm -f "$FM_PC02_AUTO_ARM_FILE" "$FM_TEST_SSH_LOG"
+FM_TEST_ET_HOUR=12 bash "$SCRIPT" install --idle-minutes 5 >/dev/null 2>"$TMP_ROOT/err"
+rc=$?
+[ "$rc" -ne 0 ] || fail "install --idle-minutes 5 must be refused without the opt-in"
+grep -q '30 minutes' "$TMP_ROOT/err" || fail "the refusal must name the 30-minute floor: $(cat "$TMP_ROOT/err")"
+[ ! -e "$FM_TEST_SSH_LOG" ] || fail "a refused install must not touch PC02"
+pass "install refuses a sub-30-minute window regardless of the opt-in"
+
 out=$(FM_TEST_ET_HOUR=12 bash "$SCRIPT" test-sleep 2>"$TMP_ROOT/err")
 rc=$?
 [ "$rc" -eq 4 ] || fail "test-sleep must refuse without the auto-arm opt-in, got $rc: $(cat "$TMP_ROOT/err")"

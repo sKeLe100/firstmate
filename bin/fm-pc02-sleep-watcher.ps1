@@ -322,7 +322,7 @@ try {
         # The forced-suspend backstop: only after the guard has been free and
         # the console quiet for the whole window, and only with a verified RTC
         # wake backstop and a host that can enter S3 without hibernating.
-        if (-not $shouldInhibit -and $null -ne $inputIdle -and $inputIdle -ge $idleSeconds -and ($now - $lastBusyAt).TotalSeconds -ge $idleSeconds) {
+        if (-not $NoSleep -and -not $shouldInhibit -and $null -ne $inputIdle -and $inputIdle -ge $idleSeconds -and ($now - $lastBusyAt).TotalSeconds -ge $idleSeconds) {
             $sleepAllowed = $true
             try {
                 Test-S3Only
