@@ -94,6 +94,38 @@ without joining against the separate `delegation` event, while `delegation`
 records continue to carry richer context like `had_issue`, `reason`, and the
 prior harness/model.
 
+#### `decision_record` (optional dispatch decision)
+
+`bin/fm-spawn.sh --decision-record <json-file>` attaches firstmate's own
+dispatch decision to the `dispatch` event. Absent the flag the record is
+unchanged. Because `fm_llm_usage_emit` writes every field as a JSON string,
+`decision_record` carries one compact JSON object encoded as a string; a
+reader parses it with `fromjson`. The object holds firstmate's judgment at
+dispatch time, not a re-derivation:
+
+| key | type | meaning |
+|---|---|---|
+| `matched_rule` | string | the dispatch-profile or ordering rule that matched |
+| `purpose_class` | string | the purpose class the decision was made under |
+| `token_estimate` | number | firstmate's estimate of the task's prompt/token size |
+| `eligible_candidates` | array | candidates that passed the eligibility gates |
+| `skipped_candidates` | array of `{candidate, reason}` | candidates the gates excluded, with why |
+| `captain_order_key` | string | the overriding captain-order key, when one applied |
+| `chosen_profile` | string | the profile/model lane firstmate chose |
+| `reason` | string | why that choice won |
+| `confidence` | number | firstmate's confidence in the decision, `0`-`100` |
+| `weakest_input` | string | the input that most weakens that confidence |
+| `runner_up` | string | the next-best candidate, required when `confidence` is below `70` |
+| `runner_up_why_lost` | string | why the runner-up lost, required when `confidence` is below `70` |
+
+`bin/fm-spawn.sh` refuses a malformed record, a missing or out-of-range
+`confidence`, and a below-`70` record that does not name its runner-up, rather
+than archiving unusable evidence. `bin/fm-dispatch-calibration.sh` reads these
+records and joins them to the archive's own outcome signals (`outcome` events,
+a later `dispatch`'s `from_task_id`, and a relaunch `delegation` that had an issue) to
+print a reliability table by confidence band and a Brier score; it is
+read-only and never changes a record.
+
 ### `delegation` — emitted on a re-delegation
 
 The highest-value signal per the captain: whether a task changed hands
