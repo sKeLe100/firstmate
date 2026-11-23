@@ -2376,6 +2376,7 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-operational-input.test.sh
       printf '%s\n' __script__:fm-sessionstart-nudge.test.sh
       printf '%s\n' __script__:fm-turnend-guard.test.sh
+      printf '%s\n' __script__:fm-pi-watch-extension.test.sh
       printf '%s\n' __script__:fm-watch-arm.test.sh
       printf '%s\n' __script__:fm-worktree-guard.test.sh
       printf '%s\n' __script__:fm-cd-pretool-check.test.sh

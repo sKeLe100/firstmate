@@ -534,6 +534,7 @@ test_changed_opencode_plugin_selects_its_covering_tests() {
     fm-busy-state.test.sh fm-busy-adapter-wiring.test.sh \
     fm-control-relaunch.test.sh fm-operational-input.test.sh \
     fm-sessionstart-nudge.test.sh fm-turnend-guard.test.sh \
+    fm-pi-watch-extension.test.sh \
     fm-watch-arm.test.sh fm-worktree-guard.test.sh \
     fm-cd-pretool-check.test.sh fm-arm-pretool-check.test.sh \
     fm-opencode-primary-live-e2e.test.sh; do
@@ -558,6 +559,8 @@ test_changed_opencode_plugin_selects_its_covering_tests() {
     "an OpenCode plugin change selects the plugin suites"
   assert_contains "$listed" "tests/fm-operational-input.test.sh" \
     "an OpenCode plugin change selects the shared input library suite"
+  assert_contains "$listed" "tests/fm-pi-watch-extension.test.sh" \
+    "an OpenCode plugin change selects the suite that loads the real plugin files"
   git -C "$repo" add .opencode/plugins/fm-primary-cd-check.js
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm plugin-change
 
