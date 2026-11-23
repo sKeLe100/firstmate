@@ -1,0 +1,31 @@
+--- arm future
+armed: when-dispatch-task-x
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: when-dispatch-task-x
+task: task-x
+fires: 2026-11-23T05:20:29Z (in 3600s, 0s after the target)
+wake: firstmate is woken to dispatch; this never dispatches on its own
+cancel: bin/fm-timed-dispatch.sh cancel task-x
+rc=0
+--- dup
+error: a timed dispatch named dispatch-task-x is already armed; cancel it first
+rc=1
+--- past
+error: the armed time 1970-01-01T00:16:40Z is not in the future (now 2026-11-23T04:20:30Z); dispatch now or pass a future --at
+rc=1
+--- non-UTC
+error: --at must be epoch seconds, @epoch, or a UTC ISO-8601 time (ending Z or +00:00): 2030-01-01T10:00:00-05:00
+rc=1
+--- list
+  name=dispatch-task-x  task=task-x  fires=2026-11-23T05:20:29Z  kind=at  state=armed
+timed-dispatch: 1 record(s)
+--- cond
+rc=1
+rc=0
+--- cancel
+retired: when-dispatch-task-x
+retired: when-dispatch-task-x
+cancelled: when-dispatch-task-x
+rc=0
+timed-dispatch: none
