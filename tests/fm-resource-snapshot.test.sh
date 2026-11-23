@@ -943,6 +943,153 @@ PY
   pass "an opencode worker's context band comes from its session store"
 }
 
+run_compute_snapshot() {  # <home> <fakebin> [env assignments...]
+  local home=$1 fb=$2
+  shift 2
+  env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC02="$TMP_ROOT/fixture/herdr-pc02.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_SKIP_REMOTE=1 \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$@" "$SNAP" --json
+}
+
+compute_home() {  # <base> -> "<home>|<fakebin>"
+  local base=$1
+  mkdir -p "$base/home/state" "$base/home/data" "$base/home/config" "$base/bin"
+  printf '%s|%s\n' "$base/home" "$base/bin"
+}
+
+test_compute_discovers_github_and_gitlab_from_live_state() {
+  setup_fixture
+  local base rec home fb code out
+  base="$TMP_ROOT/compute-live"
+  rec=$(compute_home "$base"); home=${rec%%|*}; fb=${rec#*|}
+  code="$base/code"
+  mkdir -p "$code"
+  git -C "$code" init -q
+  git -C "$code" remote add origin https://github.com/acme-org/hello.git
+  cat > "$fb/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  'api user --jq .login') printf 'octocat\n' ;;
+  *billing/usage*) printf '%s\n' '{"usageItems":[{"product":"actions","sku":"Actions Linux","quantity":42}]}' ;;
+  */repos/acme-org/hello/actions/runs*) printf '%s\n' '{"total_count":7}' ;;
+  *) exit 1 ;;
+esac
+STUB
+  cat > "$fb/glab" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  'api user') printf '%s\n' '{"username":"acme"}' ;;
+  'api namespaces/acme') printf '%s\n' '{"ci_minutes_usage":{"total_minutes_used":12},"plan":"free"}' ;;
+  *) exit 1 ;;
+esac
+STUB
+  chmod +x "$fb/gh" "$fb/glab"
+  printf 'storage_gb_hours\t12\nallowance_gb_hours\t360\npercent\t3\nas_of\t2026-11-20\n' \
+    > "$home/state/.actions-storage-check"
+  out=$(run_compute_snapshot "$home" "$fb" FM_ROOT_OVERRIDE="$code")
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e 'any(.compute[]; .rung=="github-actions" and .account=="octocat" and .used=="42 min MTD")' \
+    "$base/out.json" >/dev/null || fail "github identity/repo discovery must read billing: $(jq -c '.compute' "$base/out.json")"
+  jq -e 'any(.compute[]; .rung=="github-runs" and .account=="octocat" and .runs=="7 runs/24h")' \
+    "$base/out.json" >/dev/null || fail "github run discovery must use the code root origin repo: $(jq -c '.compute' "$base/out.json")"
+  jq -e 'any(.compute[]; .rung=="gitlab" and .account=="acme" and .used=="12 min MTD" and .status=="ok")' \
+    "$base/out.json" >/dev/null || fail "gitlab namespace discovery must read the glab user: $(jq -c '.compute' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source=="github" or .source=="gitlab")] | length == 0' \
+    "$base/out.json" >/dev/null || fail "a discovered provider must not render a not-configured row: $(jq -c '.unavailable' "$base/out.json")"
+  pass "github and gitlab identities come from the live gh/glab and the code root origin without a config file"
+}
+
+test_compute_discovers_forgejo_from_local_instance() {
+  setup_fixture
+  local base rec home fb repo ini creds out out2
+  base="$TMP_ROOT/compute-forgejo"
+  rec=$(compute_home "$base"); home=${rec%%|*}; fb=${rec#*|}
+  repo="$base/forgejo-repositories"; ini="$base/app.ini"; creds="$base/forgejo-credentials"
+  mkdir -p "$repo/fmadmin/groundwork.git"
+  cat > "$ini" <<EOF
+[server]
+ROOT_URL = http://127.0.0.1:3000/
+[repository]
+ROOT = $repo
+EOF
+  printf 'Username: fmadmin\nPassword: secret\n' > "$creds"
+  cat > "$fb/systemctl" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in *is-active*) exit 0 ;; esac
+exit 1
+STUB
+  cat > "$fb/curl" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *"/api/v1/version"*) printf '200' ;;
+  *"/admin/actions/runners"*) printf '%s\n' '[{"name":"forgejo-pc02","status":"online"}]' ;;
+  *"/actions/runs?limit=50"*) printf '%s\n' '{"workflow_runs":[{"status":"waiting"},{"status":"running"},{"status":"completed"}]}' ;;
+  *) exit 1 ;;
+esac
+STUB
+  chmod +x "$fb/systemctl" "$fb/curl"
+  out=$(run_compute_snapshot "$home" "$fb" \
+    FM_RESOURCE_FORGEJO_INI="$ini" FM_RESOURCE_FORGEJO_REPO_ROOT="$repo" \
+    FM_RESOURCE_FORGEJO_CREDENTIALS="$creds")
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e 'any(.compute[]; .rung=="forgejo" and .account=="fmadmin" and .status=="active" and .runs=="2 queued")' \
+    "$base/out.json" >/dev/null || fail "forgejo discovery must read the local instance and its one repo: $(jq -c '.compute' "$base/out.json")"
+  jq -e 'any(.testing[]; .item=="forgejo-pc01" and .state=="active")' "$base/out.json" >/dev/null \
+    || fail "the local Forgejo unit must render without config: $(jq -c '.testing' "$base/out.json")"
+  jq -e 'any(.testing[]; .item=="forgejo-runners" and .state=="forgejo-pc02:online")' "$base/out.json" >/dev/null \
+    || fail "the registered runner must render from the admin read: $(jq -c '.testing' "$base/out.json")"
+  jq -e 'any(.testing[]; .item=="forgejo-queued" and .state=="2")' "$base/out.json" >/dev/null \
+    || fail "queued forgejo runs must render: $(jq -c '.testing' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source | startswith("forgejo"))] | length == 0' "$base/out.json" >/dev/null \
+    || fail "a fully discovered forgejo must not leave unavailable rows: $(jq -c '.unavailable' "$base/out.json")"
+
+  out2=$(run_compute_snapshot "$home" "$fb" \
+    FM_RESOURCE_FORGEJO_INI="$ini" FM_RESOURCE_FORGEJO_REPO_ROOT="$repo" \
+    FM_RESOURCE_FORGEJO_CREDENTIALS=)
+  printf '%s\n' "$out2" > "$base/out-no-creds.json"
+  jq -e 'any(.compute[]; .rung=="forgejo" and .account=="fmadmin" and .status=="active")' \
+    "$base/out-no-creds.json" >/dev/null || fail "forgejo must render the fast facts without credentials: $(jq -c '.compute' "$base/out-no-creds.json")"
+  jq -e '[.unavailable[] | select(.source=="forgejo:credentials")] | length == 1' \
+    "$base/out-no-creds.json" >/dev/null || fail "a missing credential path must be named: $(jq -c '.unavailable' "$base/out-no-creds.json")"
+  pass "forgejo url, account and repo come from the local instance without a config file"
+}
+
+test_compute_without_identity_says_why() {
+  setup_fixture
+  local base rec home fb out
+  base="$TMP_ROOT/compute-none"
+  rec=$(compute_home "$base"); home=${rec%%|*}; fb=${rec#*|}
+  mkdir -p "$base/empty-root"
+  cat > "$fb/gh" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  cat > "$fb/glab" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  chmod +x "$fb/gh" "$fb/glab"
+  out=$(run_compute_snapshot "$home" "$fb" \
+    FM_ROOT_OVERRIDE="$base/no-such-code-root" \
+    FM_RESOURCE_FORGEJO_INI="$base/no-such-app.ini" \
+    FM_RESOURCE_FORGEJO_REPO_ROOT="$base/empty-root")
+  printf '%s\n' "$out" > "$base/out.json"
+  [ "$(jq -r '.compute | length' "$base/out.json")" = 0 ] \
+    || fail "no discovered identity must render no compute rows: $(jq -c '.compute' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source=="github" and .reason=="not configured")] | length == 1' \
+    "$base/out.json" >/dev/null || fail "an unidentifiable gh must stay not configured: $(jq -c '.unavailable' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source=="gitlab" and .reason=="not configured")] | length == 1' \
+    "$base/out.json" >/dev/null || fail "an unidentifiable glab must stay not configured: $(jq -c '.unavailable' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source=="forgejo" and .reason=="not configured")] | length == 1' \
+    "$base/out.json" >/dev/null || fail "an undiscoverable forgejo must stay not configured: $(jq -c '.unavailable' "$base/out.json")"
+  pass "an undiscoverable provider keeps an honest not-configured row"
+}
+
 test_every_section_renders_and_agrees
 test_android_fixture_renders_both_hosts
 test_android_probe_reads_fake_tools
@@ -983,6 +1130,9 @@ test_android_discovery_reports_unreadable_root
 test_android_discovery_reports_missing_recorded_root
 test_android_missing_tools_is_stated_not_zero
 test_opencode_worker_gets_a_context_band
+test_compute_discovers_github_and_gitlab_from_live_state
+test_compute_discovers_forgejo_from_local_instance
+test_compute_without_identity_says_why
 test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
 test_down_pc02_keeps_pc01
