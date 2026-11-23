@@ -6685,6 +6685,18 @@ elif [ "$RELAUNCH" -eq 1 ]; then
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  # Keep out of this acquisition every slot one of this home's other task
+  # records still names, so a parked, shelved, or exited worker's kept copy is
+  # never handed to a new task. Done under the allocation lock held since
+  # capacity admission, so the reservation and this get cannot interleave with
+  # another spawn or return; bin/fm-wake-lib.sh owns the reservation itself.
+  # It runs once before the backend split, so both the Herdr lease and the
+  # interactive treehouse get are covered.
+  [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ] || {
+    echo "error: refusing to acquire a Treehouse slot without the project allocation lock held; a slot this home's task records still name could be reissued to this task" >&2
+    exit 1
+  }
+  fm_treehouse_reserve_recorded_slots "$PROJ_ABS" "$STATE" "$ID" || exit 1
   # A t3code slot was leased and validated in its target branch above.
   if [ "$BACKEND" = t3code ]; then
     :

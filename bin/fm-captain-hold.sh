@@ -258,8 +258,10 @@
 # back to an earlier `--until` is still delivered. A `hold --until` adds the
 # structured `[until=YYYY-MM-DD]` field to that line, which the parent watcher's
 # open-decision reminders read to keep the relayed key quiet until that date
-# (bin/fm-watch.sh open_decision_reminder_tick). A main home has no channel and
-# publishes nothing.
+# (bin/fm-watch.sh open_decision_reminder_tick). A restated hold whose key the
+# parent already closed (the captain answered or deferred it through fm-send
+# --resolve-key) is not appended again (status_captain_hold_reopens_closed,
+# bin/fm-classify-lib.sh). A main home has no channel and publishes nothing.
 # The hold or answer is already durable in the backlog, so a channel that
 # cannot be written is reported as `actionable:` on stderr rather than undoing
 # the record; bin/fm-inactive-reconcile.sh's diagnostics name a broken binding.
