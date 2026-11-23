@@ -172,8 +172,17 @@ fm_test_launch_git_prefix() {  # <launch>
 # the exact launch compare the rest in its one-line shape; an empty launch
 # stays empty so "nothing was sent" assertions still hold.
 fm_test_launch_unframe() {  # <launch>
-  local launch=$1 nl=$'\n' head body last
+  local launch=$1 nl=$'\n' head body last first prefix=
   [ -n "$launch" ] || return 0
+  # The fork's launch-path guard precedes the OSC 7501 frame; keep any lines
+  # before the arm line verbatim and unframe the rest.
+  while :; do
+    first=${launch%%"$nl"*}
+    [ "$first" != "$launch" ] || break
+    case "$first" in *fm-osc7501.sh*' arm --task '*) break ;; esac
+    prefix=$prefix$first$nl
+    launch=${launch#*"$nl"}
+  done
   case "$launch" in
     *fm-osc7501.sh*' arm --task '*" || true$nl"*"$nl"*fm-osc7501.sh*' disarm --state '*' || true'*) ;;
     *) fail "launch has no OSC 7501 arm/disarm frame: $launch" ;;
@@ -182,7 +191,7 @@ fm_test_launch_unframe() {  # <launch>
   body=${launch#*"$nl"}
   last=${body##*"$nl"}
   body=${body%"$nl"*}
-  printf '%s; %s%s' "${head%; *fm-osc7501.sh*}" "$body" "${last##*' || true'}"
+  printf '%s%s; %s%s' "$prefix" "${head%; *fm-osc7501.sh*}" "$body" "${last##*' || true'}"
 }
 
 # The command a pane runs after the launch's Git configuration prefix and its

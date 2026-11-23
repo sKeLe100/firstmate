@@ -3371,7 +3371,7 @@ test_claude_remote_control_off_matches_absent_launch() {
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
   status=$?
   expect_code 0 "$status" "claude spawn with claude-remote-control=off should succeed"
-  launch=$(cat "$LAUNCH_LOG")
+  launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
   expected=$(claude_expected_launch "$launch" "$HOME_DIR" "$id" --dangerously-skip-permissions)
   [ "$(canonical_launch_body "$launch")" = "$expected" ] || fail "explicit off did not reproduce the absent-file launch"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   assert_not_contains "$launch" "--remote-control" "off must never add --remote-control"
