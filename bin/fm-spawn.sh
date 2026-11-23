@@ -482,8 +482,11 @@
 #   spawn must name one declared entry with --account, chosen at intake, and
 #   that entry is checked, launched, and recorded exactly like a pin; a
 #   relaunch reuses the recorded entry unless --account moves it. Without the
-#   list, --account refuses and nothing else changes. docs/configuration.md
-#   "Several Claude accounts" owns the contract.
+#   list, --account refuses and nothing else changes. The list may declare the
+#   orchestrator account (config/claude-orchestrator-account), which then admits
+#   at most one fresh worker beside the orchestrator; a second is deferred (exit
+#   75) before any endpoint exists. docs/configuration.md "Several Claude
+#   accounts" owns the contract.
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
 #     __BRIEF__    absolute path to data/<task-id>/brief.md
 #     __CLAUDEPERMFLAG__ the claude permission flag selected by config/claude-permission-mode
@@ -3439,7 +3442,48 @@ if [ -n "$WORKER_ACCOUNT" ] && [ "$HARNESS" = claude ]; then
     unset CLAUDE_CONFIG_DIR
   fi
 fi
-
+# Worker cap beside the orchestrator (config/claude-orchestrator-account +
+# config/claude-accounts). The account the orchestrator runs on admits at most
+# one worker at a time (captain 2026-11-23: "Account 1 can handle 1 worker at a
+# time alongside orch"). A declared account list lets a ship or scout name that
+# account; this gate defers a fresh one beyond the cap before any brief,
+# endpoint, worktree, or record exists, so its backlog item stays queued. A
+# relaunch replaces a lane that already holds its place, and a secondmate is not
+# a dispatched lane, so both are exempt. Occupancy mirrors bin/fm-dispatch-quota-cap.sh:
+# this home's Claude task records on the same account root, minus a recorded PR
+# handoff, counted advisory under concurrent spawns.
+FM_ORCHESTRATOR_WORKER_CAP=1
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ] && [ -n "$WORKER_ACCOUNT" ]; then
+  CAP_RESERVED=$(fm_worker_account_orchestrator_root "$CONFIG") || exit 1
+  if [ -n "$CAP_RESERVED" ]; then
+    CAP_ROOT=${WORKER_ACCOUNT_ROOT:-${HOME:-}/.claude}
+    CAP_RESERVED=$(realpath -m -- "$CAP_RESERVED" 2>/dev/null || printf '%s\n' "$CAP_RESERVED")
+    CAP_ROOT=$(realpath -m -- "$CAP_ROOT" 2>/dev/null || printf '%s\n' "$CAP_ROOT")
+    if [ "$CAP_RESERVED" = "$CAP_ROOT" ]; then
+      CAP_COUNT=0
+      CAP_HOLDERS=
+      for cap_meta in "$STATE"/*.meta; do
+        [ -f "$cap_meta" ] && [ ! -L "$cap_meta" ] || continue
+        [ "$cap_meta" != "$STATE/$ID.meta" ] || continue
+        [ "$(fm_meta_get "$cap_meta" harness)" = claude ] || continue
+        [ "$(fm_meta_get "$cap_meta" kind)" != secondmate ] || continue
+        [ -z "$(fm_meta_get "$cap_meta" pr)" ] || continue
+        cap_account=$(fm_meta_get "$cap_meta" account)
+        [ -n "$cap_account" ] || continue
+        cap_account=$(fm_worker_account_root "$cap_account")
+        cap_account=$(realpath -m -- "$cap_account" 2>/dev/null || printf '%s\n' "$cap_account")
+        [ "$cap_account" = "$CAP_ROOT" ] || continue
+        CAP_COUNT=$((CAP_COUNT + 1))
+        cap_holder=$(basename "$cap_meta" .meta)
+        CAP_HOLDERS="${CAP_HOLDERS:+$CAP_HOLDERS, }$cap_holder"
+      done
+      if [ "$CAP_COUNT" -ge "$FM_ORCHESTRATOR_WORKER_CAP" ]; then
+        echo "deferred: Claude account $CAP_ROOT is the orchestrator account and admits at most $FM_ORCHESTRATOR_WORKER_CAP worker beside the orchestrator ($CAP_HOLDERS already holds its place); task $ID was not launched and its backlog item stays queued - dispatch it on another declared account or again once that worker finishes" >&2
+        exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+      fi
+    fi
+  fi
+fi
 
 
 model_flag_for_harness() {

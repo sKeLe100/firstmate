@@ -66,6 +66,13 @@
 # recorded as account=, which a ship or scout relaunch reuses unless an
 # explicit --account moves it. A local secondmate's agent never draws from the
 # list: it needs its own per-secondmate pin.
+#
+# The list may include the account the orchestrator runs on
+# (config/claude-orchestrator-account). A home that declares it there opts in to
+# one worker beside the orchestrator: the launch guard above admits that root
+# only because the list declares it, and bin/fm-spawn.sh defers a second live
+# worker on it. Without the declaration the guard keeps refusing the reserved
+# account outright.
 
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
@@ -333,12 +340,46 @@ fm_worker_account_orchestrator_root() {
   printf '%s\n' "$body"
 }
 
+# fm_worker_account_root <entry>
+# Prints the config root an account entry selects: `ordinary` is the vendor
+# default ($HOME/.claude for Claude), any other entry is its own absolute path.
+fm_worker_account_root() {
+  local entry=$1
+  if [ "$entry" = ordinary ]; then
+    printf '%s\n' "${HOME:-}/.claude"
+  else
+    printf '%s\n' "$entry"
+  fi
+}
+
+# fm_worker_account_orchestrator_declared <config-dir> <root>
+# Returns 0 when config/claude-accounts declares an entry that resolves to
+# <root>, so a declared list may name the account the orchestrator runs on and
+# the spawn-time worker cap in bin/fm-spawn.sh governs it. Returns 1 for an
+# absent, refused, or unrelated list, so an undeclared orchestrator account
+# keeps the strict refusal.
+fm_worker_account_orchestrator_declared() {
+  local config=$1 want=$2 listed entry eff real
+  listed=$(fm_worker_account_list claude "$config") || return 1
+  [ -n "$listed" ] || return 1
+  real=$(realpath -m -- "$want" 2>/dev/null) && want=$real
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    eff=$(fm_worker_account_root "$entry")
+    real=$(realpath -m -- "$eff" 2>/dev/null) && eff=$real
+    [ "$eff" != "$want" ] || return 0
+  done <<< "$listed"
+  return 1
+}
+
 # fm_worker_account_orchestrator_guard <config-dir> <effective-root>
-# Opt-in launch refusal: when the home has config/claude-orchestrator-account
-# (one absolute path), refuses a Claude launch whose effective config root
-# equals it, so a worker cannot spend the account the orchestrator runs on.
-# An absent file returns 0 and changes nothing. Prints one error naming the
-# file and returns 1 on a match or a malformed file.
+# Opt-in launch guard: when the home has config/claude-orchestrator-account
+# (one absolute path), a Claude launch whose effective config root equals it is
+# refused unless config/claude-accounts declares that same account, in which
+# case the spawn-time cap of one worker beside the orchestrator governs it
+# (bin/fm-spawn.sh owns that gate). An absent file returns 0 and changes
+# nothing. Prints one error naming the file and returns 1 on an undeclared
+# match or a malformed file.
 fm_worker_account_orchestrator_guard() {
   local config=$1 effective=$2 root reserved
   root=$(fm_worker_account_orchestrator_root "$config") || return 1
@@ -346,7 +387,8 @@ fm_worker_account_orchestrator_guard() {
   reserved=$(realpath -m -- "$root" 2>/dev/null) || reserved=$root
   effective=$(realpath -m -- "$effective" 2>/dev/null || printf '%s\n' "$effective")
   if [ "$reserved" = "$effective" ]; then
-    echo "error: this Claude launch would run on $effective, the orchestrator account reserved by $config/claude-orchestrator-account; pin a worker account in config/claude-account, or remove $config/claude-orchestrator-account" >&2
+    fm_worker_account_orchestrator_declared "$config" "$effective" && return 0
+    echo "error: this Claude launch would run on $effective, the orchestrator account reserved by $config/claude-orchestrator-account; declare it in config/claude-accounts to run up to one worker beside the orchestrator, choose another account, or remove $config/claude-orchestrator-account" >&2
     return 1
   fi
   return 0
