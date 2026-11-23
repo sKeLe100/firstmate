@@ -90,6 +90,17 @@ pass "status reads a silent host asleep without sending"
 
 reset
 write_config
+out=$(bash "$SCRIPT" status --if-managed --quiet)
+[ "$out" = asleep ] || fail "status --quiet must still print asleep: $out"
+: >"$FM_TEST_AWAKE_FLAG"
+out=$(bash "$SCRIPT" status --if-managed --quiet)
+[ "$out" = awake ] || fail "status --quiet must still print awake: $out"
+out=$(bash "$SCRIPT" status --host pc02.bad --if-managed --quiet)
+[ "$out" = unmanaged ] || fail "status --quiet must still print unmanaged: $out"
+pass "status --quiet keeps printing its one word"
+
+reset
+write_config
 out=$(bash "$SCRIPT" ensure --quiet) || fail "ensure must succeed after the fake magic packet wakes the host"
 [ "$out" = '' ] || fail "ensure --quiet must print nothing: $out"
 grep -Fxq 'port=9' "$FM_TEST_SEND_LOG" || fail "ensure did not send to the configured port"
@@ -123,5 +134,17 @@ grep -Fxq 'broadcast=10.0.0.255' "$CONFIG" || fail "discover did not derive the 
 grep -Fxq 'lan_ip=10.0.0.173' "$CONFIG" || fail "discover did not record the LAN address"
 grep -Fxq 'tailnet_ip=100.67.55.77' "$CONFIG" || fail "discover did not record the tailnet address"
 pass "discover caches the Wi-Fi MAC, LAN address, and broadcast"
+
+reset
+write_config
+(
+  . "$ROOT/bin/fm-secondmate-liveness-lib.sh"
+  out=$(fm_sm_live_remote_reason pc02 "probe failed")
+  case "$out" in *'asleep (wakeable)'*) ;; *) echo "liveness must report an asleep host as wakeable: $out" >&2; exit 1 ;; esac
+  : >"$FM_TEST_AWAKE_FLAG"
+  out=$(fm_sm_live_remote_reason pc02 "probe failed")
+  case "$out" in *'asleep (wakeable)'*) echo "an awake host must not read asleep: $out" >&2; exit 1 ;; esac
+) || fail "secondmate liveness must classify a silent managed host as asleep (wakeable)"
+pass "secondmate liveness reports a silent managed host as asleep, wakeable"
 
 echo "# all fm-pc02-wake tests passed"

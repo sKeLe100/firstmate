@@ -19,7 +19,8 @@
 #
 # `ensure` returns 0 as soon as SSH answers; if it had to wake PC02 it waits up
 # to --timeout seconds (default 120) and returns 4 when SSH never answers.
-# `status` never sends a packet and prints one word: awake, asleep, or unmanaged.
+# `status` never sends a packet and always prints one word, even with --quiet
+# (which only silences ensure/wake/discover output): awake, asleep, or unmanaged.
 # A host with no SSH answer prints `asleep`; the standing posture keeps PC02
 # asleep rather than powered off, so this is the "asleep, wakeable" reading
 # fleet checks must use, never dead or offline.
@@ -149,7 +150,7 @@ is_managed() {
 }
 
 if [ "$IF_MANAGED" -eq 1 ] && ! is_managed; then
-  [ "$QUIET" -eq 1 ] || printf 'unmanaged\n'
+  { [ "$QUIET" -eq 1 ] && [ "$MODE" != status ]; } || printf 'unmanaged\n'
   exit 0
 fi
 
@@ -253,9 +254,9 @@ case "$MODE" in
     ;;
   status)
     if probe; then
-      [ "$QUIET" -eq 1 ] || printf 'awake\n'
+      printf 'awake\n'
     else
-      [ "$QUIET" -eq 1 ] || printf 'asleep\n'
+      printf 'asleep\n'
     fi
     exit 0
     ;;
