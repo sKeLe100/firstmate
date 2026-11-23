@@ -33,3 +33,4 @@ These skills are not captain-invocable; load them only at their precise triggers
 - `firstmate-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Firstmate work.
 - `firstmate-coding-guidelines` - load before changing firstmate's shared, tracked material, as defined by section 1's list, whether editing directly or briefing a crewmate for a firstmate-repo task.
 - `remote-access` - load when the captain asks how to reach PC01 remotely, SSH over Tailscale, attach or detach tmux, or pair the Herdr mobile app.
+- `mistakes-review` - load for a mistakes review pass (at least every 2 days, or when the captain asks), when a ledger entry needs graduation into a rule, guard or tool fix, or when the captain calls out a mistake so it is logged the same turn.

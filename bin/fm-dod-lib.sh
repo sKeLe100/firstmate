@@ -32,6 +32,9 @@
 # captain-approved <host>/<owner>/<repo> publication scope for this one task,
 # rendered as an `upstream-consent=<scope>` suffix token on the Delivery
 # contract line so brief, spawn record, and worker instructions agree.
+# The optional seventh argument is the task's private data directory, used only
+# to print the absolute path of the task mistake receipt the worker writes
+# (fm_mistake_receipt_block); empty falls back to a repo-relative path.
 # Callers of the gate are bin/fm-crew-state.sh (current-state done),
 # bin/fm-pr-check.sh (PR registration), and bin/fm-inactive-reconcile.sh
 # (secondmate ledger-first publish of a child done). A ship `done:` is not
@@ -617,8 +620,24 @@ If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the 
 EOF
 }
 
-fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<pr>]
-  local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} pr=${7:-auto}
+# Print the task mistake-receipt contract shared by scout briefs (bin/fm-brief.sh)
+# and every ship Definition of done below. <path> is the receipt file the worker
+# writes; a worker in a project worktree cannot resolve a bare data/ path, so
+# callers pass the absolute path their brief already names as task material.
+# The receipt is a learning-loop input, not optional paperwork: a task that hit
+# no unexpected error still records `none observed`, and an unknown cause is a
+# valid entry. bin/fm-mistakes-review.sh turns these receipts into the review.
+fm_mistake_receipt_block() {  # <receipt-path>
+  # shellcheck disable=SC2016 # the backticks are literal Markdown, not substitution
+  printf 'Before reporting done, write a task mistake receipt at `%s`: one short entry per unexpected error, rejected operation, wrong assumption or escaped defect, with what happened and the evidence; write `none observed` when you hit none.\n' "$1"
+  printf 'An unknown cause is a valid entry. The receipt is part of the deliverable, not optional paperwork.\n'
+  # shellcheck disable=SC2016 # the backticks are literal Markdown, not substitution
+  printf 'Verify with `ls -la %s` that it exists before reporting done.\n' "$1"
+}
+
+fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<pr>] [<data-dir>]
+  local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} pr=${7:-auto} data=${8:-}
+  local receipt_path
   local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check adapter
   local claim_check="$FM_DOD_LIB_DIR/fm-claim-check.sh"
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
@@ -783,6 +802,13 @@ EOF
       echo "error: fm_dod_block: unknown delivery mode '$mode'" >&2
       return 1 ;;
   esac
+  if [ -n "$data" ]; then
+    receipt_path="$data/$id/mistakes.md"
+  else
+    receipt_path="data/$id/mistakes.md"
+  fi
+  printf '\n# Before your done report: task mistake receipt\n'
+  fm_mistake_receipt_block "$receipt_path"
 }
 
 # 0 when <sha> is contained in a ref under <namespace> in <repo>, ignoring

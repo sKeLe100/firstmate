@@ -735,6 +735,27 @@ test_pr_based_dod_draft_check_uses_gh_axi
 test_promotion_keeps_the_recorded_base_branch
 test_promotion_ship_instructions_reproduce_before_fix
 
+# Every ship Definition of done must require a task mistake receipt before the
+# worker reports done, and name the absolute path when the caller supplies the
+# task's data directory. A missing receipt is itself a logged mistake.
+test_dod_requires_a_task_mistake_receipt() {
+  local mode out
+  for mode in no-mistakes direct-PR local-only; do
+    out="$TMP_ROOT/dod-receipt-$mode.md"
+    fm_dod_block "$mode" receipt-task fm/receipt-task none '' '' > "$out" \
+      || fail "$mode: DoD render failed"
+    assert_grep "# Before your done report: task mistake receipt" "$out" \
+      "$mode: DoD missing the task mistake receipt section"
+    assert_grep "none observed" "$out" "$mode: DoD missing the none-observed instruction"
+    out="$TMP_ROOT/dod-receipt-path-$mode.md"
+    fm_dod_block "$mode" receipt-task fm/receipt-task none '' '' '' /srv/home/data > "$out" \
+      || fail "$mode: DoD render with a data dir failed"
+    assert_grep "/srv/home/data/receipt-task/mistakes.md" "$out" \
+      "$mode: DoD must name the absolute receipt path"
+  done
+  pass "ship definitions of done require a task mistake receipt"
+}
+
 # The launch role is the generated text a worker receives. It must keep the
 # skill name, so a session that registers the skill loads it by name, and must
 # name the skill file as the fallback for a session where the name does not

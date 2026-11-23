@@ -220,9 +220,33 @@ test_ship_modes_generate_clean_briefs() {
     assert_grep 'never a bare number such as "PR 108"' "$brief" "$id: brief missing the full-PR-URL rule"
     assert_grep "mid-task \`working:\` line (including setup complete) is nonterminal" "$brief" \
       "$id: brief missing nonterminal working:/setup-complete gate protection"
+    assert_grep "# Before your done report: task mistake receipt" "$brief" \
+      "$id: brief missing the task mistake receipt"
+    assert_grep "none observed" "$brief" "$id: brief missing the none-observed receipt instruction"
+    assert_grep "$home/data/$id/mistakes.md" "$brief" \
+      "$id: brief missing the absolute mistake receipt path"
     assert_no_grep "EOF" "$brief" "$id: brief leaked a heredoc EOF marker (unterminated heredoc)"
   done
   pass "fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly"
+}
+
+# Every ship and scout must leave a task mistake receipt before reporting done
+# (the mistakes loop). A scout may write files outside its worktree only for its
+# report, the receipt, the status file, and the browser registry, so its Rule 2
+# must explicitly authorize the receipt.
+test_scout_brief_carries_the_task_mistake_receipt() {
+  local home id brief
+  home="$TMP_ROOT/scout-receipt-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" scout-receipt some-proj --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh --scout failed for the receipt test"
+  brief="$home/data/scout-receipt/brief.md"
+  assert_grep "one short entry per unexpected error" "$brief" "scout brief missing the receipt contract"
+  assert_grep "none observed" "$brief" "scout brief missing the none-observed instruction"
+  assert_grep "$home/data/scout-receipt/mistakes.md" "$brief" "scout brief missing the absolute receipt path"
+  assert_grep "the report, the task mistake receipt, the status file" "$brief" \
+    "scout Rule 2 must authorize the task mistake receipt write"
+  pass "scout brief carries the task mistake receipt and authorizes its write"
 }
 
 # --forge forgejo is the Forgejo value of the project's registered forge binding
@@ -2135,6 +2159,7 @@ test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_scout_brief_carries_the_task_mistake_receipt
 test_forge_selection_renders_correct_cli
 test_forge_external_renders_the_review_rail
 test_ship_mode_is_required_and_closed_set
