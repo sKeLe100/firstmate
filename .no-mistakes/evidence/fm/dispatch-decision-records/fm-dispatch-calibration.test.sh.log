@@ -1,0 +1,7 @@
+ok - fm-dispatch-calibration.sh: joins outcomes to decisions and reports Brier plus reliability bands
+ok - fm-dispatch-calibration.sh: text mode prints a summary line and a reliability table
+ok - fm-dispatch-calibration.sh: decisionless and malformed records are ignored, unresolved tasks excluded
+ok - fm-dispatch-calibration.sh: defaults to FM_HOME/data and honors FM_DATA_OVERRIDE
+ok - fm-dispatch-calibration.sh: empty archives report zero; a missing archive is a clear error
+ok - fm-dispatch-calibration.sh: reads the archive without writing it
+ok - fm-dispatch-calibration.sh: a redispatched replacement is not scored as a failure
