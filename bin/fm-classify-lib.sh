@@ -621,6 +621,40 @@ status_event_recorded() {  # <status-file> <new-status-line>
   return 1
 }
 
+# 0 when <new-status-line> would REOPEN a relayed captain hold the log already
+# closed: a `needs-decision` whose key is a structured `captain-hold-<task>-<n>`
+# key (bin/fm-captain-hold.sh) that any given <status-file> already closes with
+# a resolution or a captain-held transfer. The key's <n> counts the resolution
+# records the secondmate's own body carries, so a genuine re-hold after a
+# recorded answer arrives under a NEW key; the same key returning after its
+# close is the mate republishing a hold the captain already answered or
+# deferred (a re-hold that restates the answer), and re-opening it would list a
+# settled call in OPEN DECISIONS on every drain. Both writers of a mate's
+# parent-channel lines (bin/fm-parent-channel-lib.sh and the remote mirror in
+# bin/fm-procevent-remote-reply.sh) consult this before appending, so the
+# stream stays append-only and the folds stay unchanged. Any other line, and a
+# key no given file closes, answers 1.
+status_captain_hold_reopens_closed() {  # <new-status-line> <status-file>...
+  local new=$1 file line verb key resolve held
+  shift
+  status_line_verb "$new" verb
+  [ "$verb" = needs-decision ] || return 1
+  key=$(_fm_decision_key "$new") || return 1
+  case "$key" in captain-hold-?*) ;; *) return 1 ;; esac
+  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  for file in "$@"; do
+    [ -f "$file" ] && [ -r "$file" ] && [ ! -L "$file" ] || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in *"[key=$key]"*) ;; *) continue ;; esac
+      status_line_verb "$line" verb
+      case "$verb" in "$resolve"|"$held") ;; *) continue ;; esac
+      [ "$(_fm_decision_key "$line" || true)" = "$key" ] && return 0
+    done < "$file"
+  done
+  return 1
+}
+
 # --- durable keyed decisions ------------------------------------------------
 #
 # The status stream is an append-only EVENT log. Reading it last-event-wins

@@ -53,6 +53,7 @@ A missed-reply escalation includes the complete first sighting path and line num
 
 `tests/fm-inactive-reconcile.test.sh` covers the ledger delivery against real ledgers with no harness: immediate done and failed delivery with note, PR, mode, posture, and report pointer, once-only delivery across polls, a ship `done:` withheld while its named head exists only in the worker copy, a pending one still delivered after teardown removes that copy, a line still being appended, later routine status prose not minting a fresh parent event because the inactive receipt identity binds structured fields only, the remote route, the yield of the inactive path to a terminal ledger, and the real watcher poll driving it.
 `tests/fm-captain-hold-reconcile.test.sh` covers a mate home publishing a hold, its answer, and a distinct occurrence on re-hold, and a main home publishing nothing.
+`tests/fm-captain-hold-resolved-no-reopen.test.sh` and the captain-hold block of `tests/fm-remote-reply.test.sh` cover a hold the parent already closed staying closed when the mate restates it, on the local and remote routes, while a new occurrence still opens.
 `tests/fm-pr-merge.test.sh` covers the PR-ready line at registration and the merge outcome's upward report.
 `tests/fm-teardown.test.sh` covers teardown delivering a child's final line and refusing when the channel cannot be written.
 `tests/fm-brief.test.sh` pins the charter's channel rule.
