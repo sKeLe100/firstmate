@@ -1023,7 +1023,7 @@ tests/fm-grok-continuity-live-e2e.test.sh 185
 tests/fm-grok-stop-live-e2e.test.sh 186
 tests/fm-guard-stale-banner.test.sh 18158
 tests/fm-haiku-alarm-hook.test.sh 917
-tests/fm-haiku-builder-example.test.sh 1782
+tests/fm-haiku-builder-example.test.sh 3542
 tests/fm-handoff-guard-hook.test.sh 1552
 tests/fm-harness-adapter-instructions-live-e2e.test.sh 97
 tests/fm-harness-adapter-references.test.sh 143
@@ -1237,7 +1237,7 @@ tests/fm-watch-triage-waits.test.sh 1196801
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watcher-lock.test.sh 77062
 tests/fm-worker-account-live-e2e.test.sh 3179
-tests/fm-worker-account.test.sh 87493
+tests/fm-worker-account.test.sh 133369
 tests/fm-worktree-guard.test.sh 3443
 EOF
 }

@@ -87,6 +87,7 @@ The 2026-11-21 hint-drift refresh raised the three repeated drifters `tests/fm-c
 The 2026-11-21 Claude-account relaunch cases were split out of `tests/fm-control-relaunch.test.sh` to stay under the test-size ceiling, so `tests/fm-control-relaunch-account.test.sh` carries a provisional local measurement of 14639 ms on this Linux host until the next CI refresh replaces it with an Ubuntu timing-artifact maximum.
 The 2026-11-23 hint-drift refresh from PR 321's run 45115152783 raised `tests/fm-self-repo-role.test.sh` from 7363 ms to its measured 11958 ms (repeated drift 1.62x).
 The 2026-11-23 hint-drift refresh from PR 323's run 45222983505 raised `tests/fm-cmux-claude-composer-live-e2e.test.sh` from 99 ms to its measured 361 ms (repeated drift 3.65x).
+The 2026-11-23 hint-drift refresh from PR 325's run 45220105051 raised `tests/fm-haiku-builder-example.test.sh` from 1782 ms to its measured 3542 ms (repeated drift 1.99x) and `tests/fm-worker-account.test.sh` from 87493 ms to its measured 133369 ms (repeated drift 1.52x).
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ### Provisional admission and browser cleanup hints
