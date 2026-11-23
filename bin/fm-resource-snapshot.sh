@@ -38,8 +38,16 @@
 #   roles[]        role,where,account,evidence,read_utc
 #   testing[]      machine,item,state,detail,read_utc
 #   android[]      machine,avd,serial,state,boot_completed,detail,read_utc
-#                  one row per AVD listed by `emulator -list-avds` plus any
-#                  adb serial with no matching AVD. state is the adb device
+#                  one row per AVD discovered on the host plus any adb serial
+#                  with no matching AVD. AVDs come from `emulator -list-avds`
+#                  and from each discovered AVD home's .ini files. The homes
+#                  are the recorded roots' environment.json (its
+#                  ANDROID_AVD_HOME and declared ANDROID_ADB_SERVER_PORT), a
+#                  root's Sdk/ + avd/ layout, ~/.android/avd, and a Windows
+#                  %USERPROFILE%\.android\avd; adb is read on every declared
+#                  port plus 5037. A known root that exists but cannot be read
+#                  is an unavailable[] row naming it, never `none`. state is
+#                  the adb device
 #                  state (device/offline/unauthorized), `stopped` for a listed
 #                  AVD with no running emulator and a clean adb read, `unknown`
 #                  for a listed AVD when adb is missing/failing or another
@@ -117,6 +125,11 @@
 #                                 replaces every live Android probe on both hosts
 #   FM_RESOURCE_ADB               explicit adb path (empty means adb is absent)
 #   FM_RESOURCE_EMULATOR          explicit emulator path (empty means absent)
+#   FM_RESOURCE_ANDROID_ROOTS     colon-separated Android roots to scan instead
+#                                 of the recorded default list (empty means none)
+#   FM_RESOURCE_ANDROID_HOME_DIRS colon-separated user AVD homes to scan
+#                                 instead of ~/.android/avd and the Windows
+#                                 profiles (empty means none)
 #   FM_RESOURCE_CONTEXT_FIXTURE   JSON object mapping task id to ctx_band
 #   FM_RESOURCE_<KEY>             override one config key (see below)
 #   QUOTA_AXI_SNAPSHOT            passed through to quota-axi (its own seam)
@@ -572,11 +585,11 @@ REMOTE
 
 remote_android_script() {
   printf '%s\n' 'set -u'
-  declare -f android_find_tool android_passthru android_boot_completed android_probe_host
+  declare -f android_find_tool android_passthru android_boot_completed android_probe_host \
+    android_default_roots android_default_avd_homes android_win_to_wsl android_wsl_to_win \
+    android_is_windows_tool android_env_json
   cat <<'REMOTE'
-adb=$(android_find_tool adb) || adb=''
-emu=$(android_find_tool emulator) || emu=''
-android_probe_host "$adb" "$emu" android_passthru 0
+android_probe_host android_passthru 0 0 '' 0 '' 1
 REMOTE
 }
 
@@ -1011,9 +1024,24 @@ build_roles() {
 }
 
 # --- Android emulators ------------------------------------------------------
-# These four helpers are also shipped verbatim to PC02 through `declare -f`
-# and executed under `bash -s`, so they must not call this script's local
-# helpers (fm_run_timed, clean_field, note_unavailable, ...).
+# These helpers are also shipped verbatim to the secondmate host through
+# `declare -f` and executed under `bash -s`, so they must not call this
+# script's local helpers (fm_run_timed, clean_field, note_unavailable, ...).
+#
+# A host can hold several Android environments. The probe discovers them from
+# the recorded Android roots' environment.json (its ANDROID_AVD_HOME,
+# ANDROID_SDK_ROOT, and declared ANDROID_ADB_SERVER_PORT), a root's
+# conventional Sdk/ + avd/ layout, the WSL user home ~/.android/avd, and a
+# Windows user profile %USERPROFILE%\.android\avd. It lists AVDs from every one
+# and reads adb on every declared port plus the default 5037. Windows tools do
+# not inherit WSL environment variables unless they are named in WSLENV, so a
+# Windows adb/emulator is invoked with WSLENV set; without that an E:\Android
+# AVD home and adb port 5041 are invisible. A recorded root (or one named in
+# FM_RESOURCE_ANDROID_ROOTS/_HOME_DIRS) that is missing or cannot be read is
+# reported with its reason, never as "none"; speculative defaults that do not
+# exist are skipped silently. Probes are
+# read-only: no emulator is ever started or wiped.
+
 android_find_tool() {  # <adb|emulator> -> path, else status 1
   local name=$1 c root f
   for c in "$name" "$name.exe"; do
@@ -1030,11 +1058,13 @@ android_find_tool() {  # <adb|emulator> -> path, else status 1
   for root in "${roots[@]}"; do
     case "$name" in
       adb)
-        for f in "$root/platform-tools/adb" "$root/platform-tools/adb.exe"; do
+        for f in "$root/platform-tools/adb" "$root/platform-tools/adb.exe" \
+          "$root/Sdk/platform-tools/adb" "$root/Sdk/platform-tools/adb.exe"; do
           [ -x "$f" ] && { printf '%s\n' "$f"; return 0; }
         done ;;
       emulator)
-        for f in "$root/emulator/emulator" "$root/emulator/emulator.exe"; do
+        for f in "$root/emulator/emulator" "$root/emulator/emulator.exe" \
+          "$root/Sdk/emulator/emulator" "$root/Sdk/emulator/emulator.exe"; do
           [ -x "$f" ] && { printf '%s\n' "$f"; return 0; }
         done ;;
     esac
@@ -1042,15 +1072,82 @@ android_find_tool() {  # <adb|emulator> -> path, else status 1
   return 1
 }
 
-# shellcheck disable=SC2329 # shipped to PC02 through declare -f and invoked there
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
 android_passthru() {  # remote probe runner: the ssh call is already bounded
   shift
   "$@"
 }
 
-android_boot_completed() {  # <adb> <serial> <runner> <timeout>
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_default_roots() {  # the recorded host/root list, one per line
+  if [ "${FM_RESOURCE_ANDROID_ROOTS+x}" = x ]; then
+    printf '%s\n' "$FM_RESOURCE_ANDROID_ROOTS" | tr ':' '\n'
+    return
+  fi
+  local r
+  for r in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" \
+    /mnt/c/Android /mnt/d/Android /mnt/e/Android \
+    "$HOME/Android/Sdk" "$HOME/android-sdk" /usr/lib/android-sdk; do
+    [ -n "$r" ] && printf '%s\n' "$r"
+  done
+  for r in /mnt/*/Android; do
+    [ -d "$r" ] && printf '%s\n' "$r"
+  done
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_default_avd_homes() {  # user AVD homes, one per line
+  if [ "${FM_RESOURCE_ANDROID_HOME_DIRS+x}" = x ]; then
+    printf '%s\n' "$FM_RESOURCE_ANDROID_HOME_DIRS" | tr ':' '\n'
+    return
+  fi
+  printf '%s\n' "$HOME/.android/avd"
+  local d
+  for d in /mnt/*/Users/*/.android/avd; do
+    [ -d "$d" ] && printf '%s\n' "$d"
+  done
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_win_to_wsl() {  # <path>; a Windows drive path becomes /mnt/<d>/...
+  local p=$1 d rest
+  case "$p" in
+    [A-Za-z]:[\\/]*)
+      d=$(printf '%s' "${p%%:*}" | tr '[:upper:]' '[:lower:]')
+      rest=${p#*:}
+      rest=${rest//\\//}
+      printf '/mnt/%s%s' "$d" "$rest" ;;
+    *) printf '%s' "$p" ;;
+  esac
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_wsl_to_win() {  # <path>; a Windows drive path is returned unchanged
+  local p=$1
+  case "$p" in
+    [A-Za-z]:[\\/]*) printf '%s' "$p" ;;
+    *)
+      if command -v wslpath >/dev/null 2>&1; then wslpath -w "$p" 2>/dev/null || printf '%s' "$p"
+      else printf '%s' "$p"; fi ;;
+  esac
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_is_windows_tool() { case "$1" in *.exe|*.EXE) return 0 ;; *) return 1 ;; esac; }
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_env_json() {  # <file> <key> -> flat JSON string value, empty when absent
+  local v
+  v=$(sed -n 's/^[[:space:]]*"'"$2"'"[[:space:]]*:[[:space:]]*"\(.*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' "$1" 2>/dev/null | head -1)
+  printf '%s' "${v//\\\\/\\}"
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_boot_completed() {  # <adb> <serial> <runner> <timeout> <port>
   local out rc line
-  out=$("$3" "$4" "$1" -s "$2" shell getprop sys.boot_completed 2>/dev/null </dev/null)
+  local -a args=()
+  [ "$5" = 5037 ] || args=(-P "$5")
+  out=$("$3" "$4" "$1" ${args[@]+"${args[@]}"} -s "$2" shell getprop sys.boot_completed 2>/dev/null </dev/null)
   rc=$?
   case "$rc" in
     124) printf 'stale'; return ;;
@@ -1067,50 +1164,148 @@ android_boot_completed() {  # <adb> <serial> <runner> <timeout>
   esac
 }
 
-android_probe_host() {  # <adb> <emulator> <runner> <timeout>
-  local adb=$1 emu=$2 runner=$3 timeout=$4
-  local out rc line serial state avd boot detail
-  local -a avds=() serials=() states=() serial_avds=() matched=()
-  local adb_clean=1 emu_clean=1 unresolved_running=0 unresolved_other=0 found i j
-  if [ -z "$adb" ]; then printf 'N\t%s\n' 'adb not found'; adb_clean=0; fi
-  if [ -z "$emu" ]; then printf 'N\t%s\n' 'emulator not found'; emu_clean=0; fi
-  if [ -n "$emu" ]; then
-    out=$("$runner" "$timeout" "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
-    out=${out//$'\r'/}
-    case "$rc" in
-      124) printf 'N\t%s\n' 'emulator -list-avds timed out'; emu_clean=0 ;;
-      0)
-        while IFS= read -r line; do
-          line=${line//$'\r'/}
-          [ -n "$line" ] || continue
-          case "$line" in \#*|'*'*) continue ;; esac
-          avds+=("$line")
-        done <<< "$out" ;;
-      *) printf 'N\t%s\n' "emulator -list-avds failed (status $rc)"; emu_clean=0 ;;
-    esac
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_probe_host() {  # <runner> <timeout> <adb-explicit> <adb> <emu-explicit> <emu> <defaults>
+  local runner=$1 timeout=$2 adb_explicit=$3 adb=$4 emu_explicit=$5 emu=$6 defaults=$7
+  local root avd json sdk ports out rc line p a e serial state boot detail found reason seen
+  local -a roots=() homes=()
+  local -a s_avd_u=() s_avd_w=() s_sdk_u=() s_sdk_w=() s_ports=() unread=() seen_reason=()
+  local -a avds=() serials=() states=() sport=() serial_avds=() matched=() ports_list=()
+  local -a uniq=() seen_avd=()
+  local i j adb_clean=1 emu_clean=1 unresolved_running=0 unresolved_other=0
+  local roots_recorded=0 homes_recorded=0
+
+  if [ "${FM_RESOURCE_ANDROID_ROOTS+x}" = x ]; then
+    roots_recorded=1
+    while IFS= read -r root; do [ -n "$root" ] && roots+=("$root"); done \
+      < <(printf '%s\n' "$FM_RESOURCE_ANDROID_ROOTS" | tr ':' '\n')
+  elif [ "$defaults" = 1 ]; then
+    while IFS= read -r root; do [ -n "$root" ] && roots+=("$root"); done < <(android_default_roots)
   fi
-  if [ -n "$adb" ]; then
-    out=$("$runner" "$timeout" "$adb" devices 2>/dev/null </dev/null); rc=$?
-    out=${out//$'\r'/}
-    case "$rc" in
-      124) printf 'N\t%s\n' 'adb devices timed out'; adb_clean=0 ;;
-      0)
-        while IFS=$'\t ' read -r serial state _; do
-          [ -n "$serial" ] || continue
-          case "$serial" in List|'*'*) continue ;; esac
-          [ -n "$state" ] || continue
-          serials+=("$serial"); states+=("$state")
-        done <<< "$out" ;;
-      *) printf 'N\t%s\n' "adb devices failed (status $rc)"; adb_clean=0 ;;
-    esac
+  if [ "${FM_RESOURCE_ANDROID_HOME_DIRS+x}" = x ]; then
+    homes_recorded=1
+    while IFS= read -r avd; do [ -n "$avd" ] && homes+=("$avd"); done \
+      < <(printf '%s\n' "$FM_RESOURCE_ANDROID_HOME_DIRS" | tr ':' '\n')
+  elif [ "$defaults" = 1 ]; then
+    while IFS= read -r avd; do [ -n "$avd" ] && homes+=("$avd"); done < <(android_default_avd_homes)
   fi
+
+  for root in "${roots[@]}"; do
+    if [ ! -e "$root" ]; then
+      [ "$roots_recorded" = 1 ] && unread+=("Android root $root is missing")
+      continue
+    fi
+    if [ ! -d "$root" ] || [ ! -r "$root" ] || [ ! -x "$root" ]; then
+      unread+=("Android root $root is unreadable"); continue
+    fi
+    json=$root/environment.json
+    if [ -e "$json" ]; then
+      if [ ! -f "$json" ] || [ ! -r "$json" ]; then
+        unread+=("$root/environment.json is unreadable"); continue
+      fi
+      sdk=$(android_env_json "$json" ANDROID_SDK_ROOT)
+      [ -n "$sdk" ] || sdk=$(android_env_json "$json" ANDROID_HOME)
+      avd=$(android_env_json "$json" ANDROID_AVD_HOME)
+      ports=$(android_env_json "$json" ANDROID_ADB_SERVER_PORT)
+      [ -n "$sdk" ] || sdk=$root/Sdk
+      [ -n "$avd" ] || avd=$root/avd
+      [ -n "$ports" ] || ports=5037
+      s_sdk_w+=("$sdk"); s_sdk_u+=("$(android_win_to_wsl "$sdk")")
+      s_avd_w+=("$avd"); s_avd_u+=("$(android_win_to_wsl "$avd")")
+      s_ports+=("$ports")
+      continue
+    fi
+    if [ -d "$root/Sdk" ]; then sdk=$root/Sdk; else sdk=$root; fi
+    if [ -d "$sdk/platform-tools" ] || [ -d "$sdk/emulator" ]; then
+      s_sdk_u+=("$sdk"); s_sdk_w+=("$(android_wsl_to_win "$sdk")")
+      if [ -d "$root/avd" ]; then
+        s_avd_u+=("$root/avd"); s_avd_w+=("$(android_wsl_to_win "$root/avd")")
+      else
+        s_avd_u+=(""); s_avd_w+=("")
+      fi
+      s_ports+=("5037")
+    fi
+  done
+
+  for avd in "${homes[@]}"; do
+    if [ ! -e "$avd" ]; then
+      [ "$homes_recorded" = 1 ] && unread+=("AVD home $avd is missing")
+      continue
+    fi
+    if [ ! -d "$avd" ] || [ ! -r "$avd" ] || [ ! -x "$avd" ]; then
+      unread+=("AVD home $avd is unreadable"); continue
+    fi
+    s_avd_u+=("$avd"); s_avd_w+=("$(android_wsl_to_win "$avd")")
+    s_sdk_u+=(""); s_sdk_w+=("")
+    s_ports+=("5037")
+  done
+
+  if [ "$adb_explicit" = 1 ]; then
+    :
+  else
+    for i in "${!s_sdk_u[@]}"; do
+      [ -z "$adb" ] && [ -n "${s_sdk_u[$i]}" ] || continue
+      a=${s_sdk_u[$i]}/platform-tools/adb
+      if [ -x "$a.exe" ]; then adb=$a.exe; elif [ -x "$a" ]; then adb=$a; fi
+    done
+    [ -n "$adb" ] || adb=$(android_find_tool adb 2>/dev/null) || adb=''
+  fi
+  if [ "$emu_explicit" = 1 ]; then
+    :
+  else
+    for i in "${!s_sdk_u[@]}"; do
+      [ -z "$emu" ] && [ -n "${s_sdk_u[$i]}" ] || continue
+      e=${s_sdk_u[$i]}/emulator/emulator
+      if [ -x "$e.exe" ]; then emu=$e.exe; elif [ -x "$e" ]; then emu=$e; fi
+    done
+    [ -n "$emu" ] || emu=$(android_find_tool emulator 2>/dev/null) || emu=''
+  fi
+
+  ports_list=(5037)
+  for i in "${!s_ports[@]}"; do
+    for p in ${s_ports[$i]}; do
+      case " ${ports_list[*]} " in
+        *" $p "*) ;;
+        *) ports_list+=("$p") ;;
+      esac
+    done
+  done
+
+  if [ -z "$adb" ]; then
+    unread+=('adb not found'); adb_clean=0
+  else
+    for p in "${ports_list[@]}"; do
+      if [ "$p" = 5037 ]; then
+        out=$("$runner" "$timeout" "$adb" devices 2>/dev/null </dev/null); rc=$?
+      else
+        out=$("$runner" "$timeout" "$adb" -P "$p" devices 2>/dev/null </dev/null); rc=$?
+      fi
+      out=${out//$'\r'/}
+      case "$rc" in
+        124) unread+=('adb devices timed out'); adb_clean=0 ;;
+        0)
+          while IFS=$'\t ' read -r serial state _; do
+            [ -n "$serial" ] || continue
+            case "$serial" in List|'*'*) continue ;; esac
+            [ -n "$state" ] || continue
+            case " ${serials[*]:-} " in *" $serial "*) continue ;; esac
+            serials+=("$serial"); states+=("$state"); sport+=("$p")
+          done <<< "$out" ;;
+        *) unread+=("adb devices failed (status $rc)"); adb_clean=0 ;;
+      esac
+    done
+  fi
+
   for j in "${!serials[@]}"; do
     serial_avds[j]=-
-    # Only an emulator host serial can resolve to an AVD; a physical or other
-    # adb device renders as its own row and never makes a listed AVD unknown.
     case "${serials[$j]}" in emulator-*) ;; *) continue ;; esac
     case "${states[$j]}" in device) ;; *) continue ;; esac
-    out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" emu avd name 2>/dev/null </dev/null); rc=$?
+    p=${sport[$j]}
+    if [ "$p" = 5037 ]; then
+      out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" emu avd name 2>/dev/null </dev/null); rc=$?
+    else
+      out=$("$runner" "$timeout" "$adb" -P "$p" -s "${serials[$j]}" emu avd name 2>/dev/null </dev/null); rc=$?
+    fi
     if [ "$rc" -eq 0 ]; then
       while IFS= read -r line; do
         line=${line//$'\r'/}
@@ -1123,7 +1318,11 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
     # Some adb builds answer `emu avd name` with no name; the guest property
     # names the same AVD and keeps the running row attached to its AVD.
     if [ "${serial_avds[$j]}" = - ]; then
-      out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" shell getprop ro.boot.qemu.avd_name 2>/dev/null </dev/null); rc=$?
+      if [ "$p" = 5037 ]; then
+        out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" shell getprop ro.boot.qemu.avd_name 2>/dev/null </dev/null); rc=$?
+      else
+        out=$("$runner" "$timeout" "$adb" -P "$p" -s "${serials[$j]}" shell getprop ro.boot.qemu.avd_name 2>/dev/null </dev/null); rc=$?
+      fi
       [ "$rc" -eq 0 ] || continue
       out=${out//$'\r'/}
       out=${out%%$'\n'*}
@@ -1141,13 +1340,92 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
         esac ;;
     esac
   done
-  for i in "${!avds[@]}"; do
-    avd=${avds[$i]}
+
+  # The default listing preserves the old behavior for a host whose tools see
+  # their AVD home without an environment override.
+  if [ -z "$emu" ]; then
+    unread+=('emulator not found'); emu_clean=0
+  else
+    out=$("$runner" "$timeout" "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
+    out=${out//$'\r'/}
+    case "$rc" in
+      124) unread+=('emulator -list-avds timed out'); emu_clean=0 ;;
+      0)
+        while IFS= read -r line; do
+          line=${line//$'\r'/}
+          [ -n "$line" ] || continue
+          case "$line" in \#*|'*'*) continue ;; esac
+          avds+=("$line")
+        done <<< "$out" ;;
+      *) unread+=("emulator -list-avds failed (status $rc)"); emu_clean=0 ;;
+    esac
+  fi
+
+  # Each discovered AVD home is listed with its own environment, which is what
+  # reaches an E:\Android home when the default listing does not. The home's
+  # .ini files are also read directly so a WSL-only AVD is seen even without an
+  # emulator binary for it.
+  for i in "${!s_avd_u[@]}"; do
+    avd=${s_avd_u[$i]}
+    [ -n "$avd" ] || continue
+    case " ${seen_avd[*]:-} " in *" $avd "*) continue ;; esac
+    seen_avd+=("$avd")
+    if [ -e "$avd" ] && { [ ! -d "$avd" ] || [ ! -r "$avd" ] || [ ! -x "$avd" ]; }; then
+      unread+=("AVD home $avd is unreadable")
+    fi
+    if [ -n "$emu" ]; then
+      if android_is_windows_tool "$emu"; then
+        out=$("$runner" "$timeout" env "ANDROID_AVD_HOME=${s_avd_w[$i]}" \
+          "ANDROID_SDK_ROOT=${s_sdk_w[$i]}" "ANDROID_HOME=${s_sdk_w[$i]}" \
+          WSLENV=ANDROID_AVD_HOME:ANDROID_SDK_ROOT:ANDROID_HOME \
+          "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
+      else
+        out=$("$runner" "$timeout" env "ANDROID_AVD_HOME=$avd" \
+          "ANDROID_SDK_ROOT=${s_sdk_u[$i]}" "ANDROID_HOME=${s_sdk_u[$i]}" \
+          "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
+      fi
+      out=${out//$'\r'/}
+      case "$rc" in
+        124) unread+=('emulator -list-avds timed out'); emu_clean=0 ;;
+        0)
+          while IFS= read -r line; do
+            line=${line//$'\r'/}
+            [ -n "$line" ] || continue
+            case "$line" in \#*|'*'*) continue ;; esac
+            avds+=("$line")
+          done <<< "$out" ;;
+        *) unread+=("emulator -list-avds failed (status $rc)"); emu_clean=0 ;;
+      esac
+    fi
+    if [ -d "$avd" ] && [ -r "$avd" ] && [ -x "$avd" ]; then
+      for a in "$avd"/*.ini; do
+        [ -e "$a" ] || continue
+        line=$(basename "$a" .ini)
+        [ -d "$avd/$line.avd" ] || continue
+        avds+=("$line")
+      done
+    fi
+  done
+
+  for a in "${avds[@]}"; do
+    case " ${uniq[*]:-} " in *" $a "*) ;; *) uniq+=("$a") ;; esac
+  done
+  avds=("${uniq[@]}")
+
+  for reason in "${unread[@]}"; do
+    seen=0
+    for i in "${!seen_reason[@]}"; do [ "${seen_reason[$i]}" = "$reason" ] && seen=1; done
+    [ "$seen" -eq 1 ] && continue
+    seen_reason+=("$reason")
+    printf 'N\t%s\n' "$reason"
+  done
+
+  for a in "${avds[@]}"; do
     serial=- state=stopped boot=- detail='AVD listed; no running emulator' found=0
     for j in "${!serials[@]}"; do
-      [ "${serial_avds[$j]}" = "$avd" ] || continue
+      [ "${serial_avds[$j]}" = "$a" ] || continue
       serial=${serials[$j]}; state=${states[$j]}; detail='running emulator'
-      [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout")
+      [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout" "${sport[$j]}")
       matched[j]=1; found=1
       break
     done
@@ -1161,13 +1439,13 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
         state=unknown; detail='AVD listed; an emulator serial has no resolved AVD name'
       fi
     fi
-    printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" "$detail"
+    printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$a" "$serial" "$state" "$boot" "$detail"
   done
   for j in "${!serials[@]}"; do
     [ -z "${matched[$j]:-}" ] || continue
     serial=${serials[$j]}; state=${states[$j]}; avd=${serial_avds[$j]}
     boot=-
-    [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout")
+    [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout" "${sport[$j]}")
     case "$serial" in
       emulator-*)
         if [ "$avd" = - ]; then
@@ -1184,19 +1462,19 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
     printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" "$detail"
   done
   if [ "$adb_clean" -eq 1 ] && [ "$emu_clean" -eq 1 ] \
-    && [ "${#avds[@]}" -eq 0 ] && [ "${#serials[@]}" -eq 0 ]; then
+    && [ "${#avds[@]}" -eq 0 ] && [ "${#serials[@]}" -eq 0 ] \
+    && [ "${#seen_reason[@]}" -eq 0 ]; then
     printf 'A\t-\t-\t%s\t-\t%s\n' none 'no AVDs and no running emulators'
   fi
 }
 
 collect_android_local() {
-  local tag a b c d e adb='' emu=''
+  local tag a b c d e adb='' emu='' adb_seam=0 emu_seam=0 defaults=1
   [ -z "${FM_RESOURCE_ANDROID_FIXTURE:-}" ] || return 0
-  if [ "${FM_RESOURCE_ADB+x}" = x ]; then adb=$FM_RESOURCE_ADB
-  else adb=$(android_find_tool adb 2>/dev/null) || adb=''; fi
-  if [ "${FM_RESOURCE_EMULATOR+x}" = x ]; then emu=$FM_RESOURCE_EMULATOR
-  else emu=$(android_find_tool emulator 2>/dev/null) || emu=''; fi
-  android_probe_host "$adb" "$emu" fm_run_timed "$ANDROID_TIMEOUT" > "$TMP/android_probe.tsv"
+  if [ "${FM_RESOURCE_ADB+x}" = x ]; then adb=$FM_RESOURCE_ADB; adb_seam=1; defaults=0; fi
+  if [ "${FM_RESOURCE_EMULATOR+x}" = x ]; then emu=$FM_RESOURCE_EMULATOR; emu_seam=1; defaults=0; fi
+  android_probe_host fm_run_timed "$ANDROID_TIMEOUT" "$adb_seam" "$adb" "$emu_seam" "$emu" "$defaults" \
+    > "$TMP/android_probe.tsv"
   : > "$TMP/android_local.tsv"
   while IFS=$'\t' read -r tag a b c d e; do
     case "$tag" in

@@ -617,7 +617,7 @@ exit 255
 EOF
   chmod +x "$fake/adb" "$fake/emulator" "$fake/ssh"
   env PATH="$fake:$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" FM_SSH_BIN="$fake/ssh" \
-    FM_RESOURCE_ANDROID_FIXTURE= \
+    FM_RESOURCE_ANDROID_FIXTURE= FM_RESOURCE_ANDROID_ROOTS= FM_RESOURCE_ANDROID_HOME_DIRS= \
     FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
     FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
     FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
@@ -683,6 +683,101 @@ test_pc02_android_live_failure_is_stated() {
     "$TMP_ROOT/pc02-android-down.json" >/dev/null \
     || fail "PC02 Android failure must be stated: $(jq -c '.unavailable' "$TMP_ROOT/pc02-android-down.json")"
   pass "a failed PC02 Android read is an unavailable row, never zero devices"
+}
+
+run_android_discovery() {  # <name> <env assignments...> -> JSON
+  local name=$1
+  shift
+  local rec home fb
+  rec=$(make_home "android-disc-$name" fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_ANDROID_FIXTURE= \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/remote.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$@" "$SNAP" --json 2>&1
+}
+
+test_android_discovery_reads_environment_json_and_port() {
+  local root fake marker out
+  root="$TMP_ROOT/android-root-pc02/Android"
+  fake="$TMP_ROOT/android-root-pc02/fake"
+  marker="$TMP_ROOT/android-root-pc02/port-5041-seen"
+  mkdir -p "$root/Sdk/platform-tools" "$root/Sdk/emulator" "$root/avd/pt_pixel8pro.avd" "$fake"
+  cat > "$root/environment.json" <<EOF
+{
+  "ANDROID_SDK_ROOT": "$root/Sdk",
+  "ANDROID_AVD_HOME": "$root/avd",
+  "ANDROID_ADB_SERVER_PORT": "5041"
+}
+EOF
+  cat > "$root/Sdk/platform-tools/adb" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  devices) printf 'List of devices attached\n\n' ;;
+  "-P 5041 devices") : > "$marker"; printf 'List of devices attached\n\n' ;;
+  *) exit 1 ;;
+esac
+EOF
+  cat > "$root/Sdk/emulator/emulator" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = "-list-avds" ] || exit 1
+[ -n "${ANDROID_AVD_HOME:-}" ] && printf 'pt_pixel8pro
+'
+exit 0
+EOF
+  chmod +x "$root/Sdk/platform-tools/adb" "$root/Sdk/emulator/emulator"
+  out=$(run_android_discovery env-json     FM_RESOURCE_ANDROID_ROOTS="$root" FM_RESOURCE_ANDROID_HOME_DIRS=)
+  printf '%s\n' "$out" > "$TMP_ROOT/android-discovery-env.json"
+  [ -e "$marker" ] || fail "adb must be read on the environment.json declared port 5041"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro") | .state] == ["stopped"]'     "$TMP_ROOT/android-discovery-env.json" >/dev/null     || fail "an AVD home from environment.json must render stopped: $(jq -c '.android' "$TMP_ROOT/android-discovery-env.json")"
+  jq -e '[.unavailable[] | select(.source | startswith("android"))] | length == 0'     "$TMP_ROOT/android-discovery-env.json" >/dev/null     || fail "a readable environment.json root must not leave unavailable: $(jq -c '.unavailable' "$TMP_ROOT/android-discovery-env.json")"
+  pass "an environment.json AVD home and declared adb port 5041 are discovered and read"
+}
+
+test_android_discovery_reads_wsl_only_avd_home() {
+  local avd fake out
+  avd="$TMP_ROOT/android-wsl-home/.android/avd"
+  fake="$TMP_ROOT/android-wsl-home/fake"
+  mkdir -p "$avd/foo.avd" "$fake"
+  printf 'avd.ini.encoding=UTF-8\npath=%s/foo.avd\n' "$avd" > "$avd/foo.ini"
+  cat > "$fake/adb" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in devices) printf 'List of devices attached\n\n' ;; *) exit 1 ;; esac
+EOF
+  chmod +x "$fake/adb"
+  out=$(run_android_discovery wsl-home     FM_RESOURCE_ANDROID_ROOTS= FM_RESOURCE_ANDROID_HOME_DIRS="$avd"     FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR=)
+  printf '%s\n' "$out" > "$TMP_ROOT/android-discovery-wsl.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "foo") | .state] == ["stopped"]'     "$TMP_ROOT/android-discovery-wsl.json" >/dev/null     || fail "a WSL-only AVD home must render its AVD as stopped: $(jq -c '.android' "$TMP_ROOT/android-discovery-wsl.json")"
+  pass "a WSL-only ~/.android/avd AVD is discovered without an emulator binary"
+}
+
+test_android_discovery_reports_unreadable_root() {
+  local root fake out
+  root="$TMP_ROOT/android-unreadable/Android"
+  fake="$TMP_ROOT/android-unreadable/fake"
+  mkdir -p "$root/environment.json" "$fake"
+  cat > "$fake/adb" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in devices) printf 'List of devices attached
+
+' ;; *) exit 1 ;; esac
+EOF
+  cat > "$fake/emulator" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = "-list-avds" ] && exit 0
+exit 1
+EOF
+  chmod +x "$fake/adb" "$fake/emulator"
+  out=$(run_android_discovery unreadable     FM_RESOURCE_ANDROID_ROOTS="$root" FM_RESOURCE_ANDROID_HOME_DIRS=     FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR="$fake/emulator")
+  printf '%s\n' "$out" > "$TMP_ROOT/android-discovery-unreadable.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .state == "none")] | length == 0'     "$TMP_ROOT/android-discovery-unreadable.json" >/dev/null     || fail "an unreadable known root must never render none: $(jq -c '.android' "$TMP_ROOT/android-discovery-unreadable.json")"
+  jq -e '[.unavailable[] | select(.source == "android:PC01") | .reason] | any(test("unreadable"))'     "$TMP_ROOT/android-discovery-unreadable.json" >/dev/null     || fail "an unreadable known root must be stated: $(jq -c '.unavailable' "$TMP_ROOT/android-discovery-unreadable.json")"
+  pass "an unreadable known root is reported with its reason, never as none"
 }
 
 test_android_missing_tools_is_stated_not_zero() {
@@ -857,9 +952,35 @@ test_android_probe_failures_are_stated_not_zero
 test_android_empty_clean_reads_render_none
 test_android_boot_completed_variants
 test_android_physical_device_does_not_hide_stopped_avd
+test_android_discovery_reports_missing_recorded_root() {
+  local fake out base
+  base="$TMP_ROOT/android-missing"
+  fake="$base/fake"
+  mkdir -p "$fake"
+  cat > "$fake/adb" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in devices) printf 'List of devices attached\n\n' ;; *) exit 1 ;; esac
+STUB
+  cat > "$fake/emulator" <<'STUB'
+#!/usr/bin/env bash
+[ "$*" = "-list-avds" ] && exit 0
+exit 1
+STUB
+  chmod +x "$fake/adb" "$fake/emulator"
+  out=$(run_android_discovery missing FM_RESOURCE_ANDROID_ROOTS="$base/E/Android" FM_RESOURCE_ANDROID_HOME_DIRS="$base/E/avd" FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR="$fake/emulator")
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .state == "none")] | length == 0' "$base/out.json" >/dev/null || fail "a missing recorded root must never render none: $(jq -c '.android' "$base/out.json")"
+  jq -e --arg r "$base/E/Android" --arg h "$base/E/avd" '[.unavailable[] | select(.source == "android:PC01") | .reason] | (any(contains($r) and contains("missing"))) and (any(contains($h) and contains("missing")))' "$base/out.json" >/dev/null || fail "a missing recorded root and AVD home must be named: $(jq -c '.unavailable' "$base/out.json")"
+  pass "a missing recorded root or AVD home is reported with its path, never as none"
+}
+
 test_android_probe_timeouts_are_stated
 test_pc02_android_live_read
 test_pc02_android_live_failure_is_stated
+test_android_discovery_reads_environment_json_and_port
+test_android_discovery_reads_wsl_only_avd_home
+test_android_discovery_reports_unreadable_root
+test_android_discovery_reports_missing_recorded_root
 test_android_missing_tools_is_stated_not_zero
 test_opencode_worker_gets_a_context_band
 test_failed_quota_is_labelled_not_zero
