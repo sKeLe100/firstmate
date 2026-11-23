@@ -1669,7 +1669,7 @@ collect_forgejo() {
 }
 
 collect_github() {
-  local usage minutes runs since ghuser ghrepo slug
+  local usage minutes runs since ghuser ghrepo slug ghowner
   ghuser=$(cfg github_user); ghrepo=$(cfg github_repo)
   if [ -z "$ghuser" ] || [ -z "$ghrepo" ]; then
     slug=$(github_origin_slug)
@@ -1677,8 +1677,9 @@ collect_github() {
       ghuser=$(github_login)
       [ -n "$ghuser" ] || ghuser=${slug%%/*}
     fi
-    if [ -z "$ghrepo" ] && [ -n "$slug" ]; then ghrepo=${slug#*/}; fi
+    if [ -z "$ghrepo" ] && [ -n "$slug" ]; then ghrepo=${slug#*/}; ghowner=${slug%%/*}; fi
   fi
+  ghowner=${ghowner:-$ghuser}
   if [ -z "$ghuser" ] || [ -z "$ghrepo" ]; then
     if ! command -v gh >/dev/null 2>&1; then
       note_unavailable 'github' 'gh not found'
@@ -1729,7 +1730,7 @@ collect_github() {
   fi
   since=$(jq -rn --argjson t "$NOW" '($t - 86400) | todate')
   runs=$(fm_run_timed "$TESTING_TIMEOUT" gh api \
-    "/repos/$ghuser/$ghrepo/actions/runs?created=%3E%3D${since}&per_page=1" 2>/dev/null </dev/null \
+    "/repos/$ghowner/$ghrepo/actions/runs?created=%3E%3D${since}&per_page=1" 2>/dev/null </dev/null \
     | jq -r '.total_count // empty' 2>/dev/null)
   [ -z "$runs" ] || compute_row github-runs "$ghuser" free - - - ok "${runs} runs/24h"
 }
