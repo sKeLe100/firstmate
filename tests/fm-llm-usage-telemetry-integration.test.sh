@@ -46,6 +46,15 @@ print(obj.get(sys.argv[2], ""))
 ' "$1" "$2"
 }
 
+decision_field() {  # <json-line> <key> -> prints a key from the nested decision_record
+  python3 -c '
+import json, sys
+obj = json.loads(sys.argv[1])
+inner = json.loads(obj["decision_record"])
+print(inner.get(sys.argv[2], ""))
+' "$1" "$2"
+}
+
 # --- fixed fake tmux: enough for spawn, relaunch, and teardown -------------
 
 make_tmux_stub() {  # <dir>
@@ -273,6 +282,134 @@ test_fresh_spawn_without_redelegation_omits_from_task_id() {
   done < <(archive_records "$home")
   [ "$found" -eq 1 ] || fail "no dispatch record was written for an ordinary fm-spawn.sh run"
   pass "fm-spawn.sh: a fresh spawn without --redelegated-from omits from_task_id from its dispatch record"
+}
+
+test_fresh_spawn_records_decision_record() {
+  local dir home proj wt out rc task_id line found=0
+  dir="$TMP_ROOT/spawn-decision-$RANDOM"
+  home="$dir/home"; proj="$dir/proj"; wt="$dir/wt"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+  task_id=spawn-decision
+  fm_git_worktree "$proj" "$wt" "task-$task_id"
+  mkdir -p "$home/data/$task_id"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  printf '%s' "$wt" > "$dir/fake/cwd"
+  cat > "$dir/decision.json" <<'JSON'
+{"matched_rule":"code-high","purpose_class":"code","token_estimate":42000,"eligible_candidates":["opus","sonnet"],"skipped_candidates":[{"candidate":"go","reason":"session cap exhausted"}],"captain_order_key":"use-1-1120","chosen_profile":"opus","reason":"best reasoning headroom","confidence":85,"weakest_input":"token estimate"}
+JSON
+
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 \
+    "$SPAWN" "$task_id" "$proj" --mode no-mistakes --yolo off --purpose code \
+      --harness claude --decision-record "$dir/decision.json" --backend tmux 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "spawn with --decision-record failed: $out"
+
+  require_python3
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$(field "$line" event_type)" = dispatch ] || continue
+    [ "$(field "$line" task_id)" = "$task_id" ] || continue
+    [ -n "$(field "$line" decision_record)" ] || fail "dispatch record is missing decision_record: $line"
+    [ "$(decision_field "$line" confidence)" = 85 ] || fail "decision_record confidence was not preserved: $line"
+    [ "$(decision_field "$line" chosen_profile)" = opus ] || fail "decision_record chosen_profile was not preserved: $line"
+    [ "$(decision_field "$line" captain_order_key)" = use-1-1120 ] || fail "decision_record captain_order_key was not preserved: $line"
+    found=1
+  done < <(archive_records "$home")
+  [ "$found" -eq 1 ] || fail "no dispatch record with a decision_record was written"
+  pass "fm-spawn.sh: --decision-record attaches the decision to the dispatch event as parseable JSON"
+}
+
+test_fresh_spawn_without_decision_record_omits_it() {
+  local dir home proj wt out rc task_id line found=0
+  dir="$TMP_ROOT/spawn-no-decision-$RANDOM"
+  home="$dir/home"; proj="$dir/proj"; wt="$dir/wt"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+  task_id=spawn-no-decision
+  fm_git_worktree "$proj" "$wt" "task-$task_id"
+  mkdir -p "$home/data/$task_id"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  printf '%s' "$wt" > "$dir/fake/cwd"
+
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 \
+    "$SPAWN" "$task_id" "$proj" --mode no-mistakes --yolo off --purpose code \
+      --harness claude --backend tmux 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "spawn without --decision-record failed: $out"
+
+  require_python3
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$(field "$line" event_type)" = dispatch ] || continue
+    [ "$(field "$line" task_id)" = "$task_id" ] || continue
+    [ -z "$(field "$line" decision_record)" ] \
+      || fail "dispatch record gained a decision_record without the flag: $line"
+    found=1
+  done < <(archive_records "$home")
+  [ "$found" -eq 1 ] || fail "no dispatch record was written for an ordinary spawn"
+  pass "fm-spawn.sh: without --decision-record the dispatch record is unchanged"
+}
+
+test_fresh_spawn_refuses_malformed_decision_record() {
+  local dir home proj out rc task_id
+  dir="$TMP_ROOT/spawn-bad-decision-$RANDOM"
+  home="$dir/home"; proj="$dir/proj"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+  task_id=spawn-bad-decision
+  fm_git_worktree "$proj" "$dir/wt" "task-$task_id"
+  mkdir -p "$home/data/$task_id"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  printf '%s' "$dir/wt" > "$dir/fake/cwd"
+  printf '{"confidence":' > "$dir/decision.json"
+
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 \
+    "$SPAWN" "$task_id" "$proj" --mode no-mistakes --yolo off --purpose code \
+      --harness claude --decision-record "$dir/decision.json" --backend tmux 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "fm-spawn.sh accepted a malformed --decision-record: $out"
+  assert_contains "$out" "--decision-record" "the refusal did not name the offending flag"
+  [ ! -e "$home/state/$task_id.meta" ] || fail "a malformed decision record still published a task record"
+  if [ -f "$home/data/llm-usage/firstmate.jsonl" ] \
+    && grep -q "\"task_id\":\"$task_id\"" "$home/data/llm-usage/firstmate.jsonl"; then
+    fail "a malformed decision record still archived a dispatch record"
+  fi
+  pass "fm-spawn.sh: a malformed --decision-record is refused before any task record or dispatch event"
+}
+
+test_fresh_spawn_refuses_low_confidence_without_runner_up() {
+  local dir home proj out rc task_id
+  dir="$TMP_ROOT/spawn-low-decision-$RANDOM"
+  home="$dir/home"; proj="$dir/proj"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+  task_id=spawn-low-decision
+  fm_git_worktree "$proj" "$dir/wt" "task-$task_id"
+  mkdir -p "$home/data/$task_id"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  printf '%s' "$dir/wt" > "$dir/fake/cwd"
+  printf '{"confidence":40,"chosen_profile":"go"}' > "$dir/decision.json"
+
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 \
+    "$SPAWN" "$task_id" "$proj" --mode no-mistakes --yolo off --purpose code \
+      --harness claude --decision-record "$dir/decision.json" --backend tmux 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "fm-spawn.sh accepted a below-70 confidence record without a runner-up: $out"
+  assert_contains "$out" "runner_up" "the refusal did not explain the missing runner-up"
+  pass "fm-spawn.sh: a below-70 confidence decision record must name its runner-up and why it lost"
 }
 
 test_fresh_spawn_rejects_path_traversal_redelegated_from() {
@@ -639,6 +776,10 @@ test_teardown_archives_into_the_overridden_data_dir() {
 test_fresh_spawn_records_purpose_in_meta_and_dispatch_event
 test_fresh_spawn_with_redelegation_records_delegation_event
 test_fresh_spawn_without_redelegation_omits_from_task_id
+test_fresh_spawn_records_decision_record
+test_fresh_spawn_without_decision_record_omits_it
+test_fresh_spawn_refuses_malformed_decision_record
+test_fresh_spawn_refuses_low_confidence_without_runner_up
 test_fresh_spawn_rejects_path_traversal_redelegated_from
 test_spawn_isolates_from_the_live_herdr_session
 test_real_relaunch_records_delegation_event
