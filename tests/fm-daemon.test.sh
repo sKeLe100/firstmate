@@ -1700,12 +1700,14 @@ test_housekeeping_overdue_queue_failure_resume_discards() {
         fixture() { PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
           FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_PAUSE_UNDATED_MAX_SECS=$undated FM_ESCALATE_BATCH_SECS=999999 "$@"; }
         original_append=$(declare -f fm_wake_status_append_self_announced)
+        # shellcheck disable=SC2329 # invoked indirectly
         escalate_add() { return 1; }
         fixture housekeeping "$state"
         [ -e "$state/.paused-overdue-$task" ] || fail "failed queue lost the overdue marker"
         undated=86400
         printf '%s: worker changed wait\n' "$event" >> "$statusf"
         eval "$original_enqueue"
+        # shellcheck disable=SC2329 # invoked indirectly
         fm_wake_status_append_self_announced() { return 2; }
         case "$route" in
           housekeeping) fixture housekeeping "$state" ;;
@@ -1725,6 +1727,7 @@ test_housekeeping_overdue_queue_failure_resume_discards() {
         FM_HOME="$dir" status_open_decisions "$statusf" | grep -F "paused-overdue-$task" >/dev/null \
           && fail "resume left the overdue decision open ($event/$route)"
         grep -Fq "resolved [key=paused-overdue-$task]" "$statusf" || fail "resume did not record resolution"
+      # shellcheck disable=SC2031 # route is only read here
       ) || fail "pending resume reconciliation failed ($event/$route)"
     done
   done

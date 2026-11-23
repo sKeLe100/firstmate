@@ -1226,7 +1226,7 @@ fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state
   if [ "$#" -gt 8 ]; then
     for token in "${@:9}"; do
       case "$token" in
-        meta-locked) meta_locked=meta-locked ;;
+        meta-locked) meta_locked='meta-locked' ;;
         require-pr) require_pr=1 ;;
         *)
           printf '%s\n' "unknown fm_dod_accept_ship_done option: $token"

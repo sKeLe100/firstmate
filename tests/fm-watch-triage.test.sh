@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # tests/fm-watch-triage.test.sh - the classifier predicates and the watcher's
 # triage of signals, stale panes, gone endpoints, cleanup, busy turns, and
 # declared-wait churn, from the cases in tests/fm-watch-triage-lib.sh. Wedge

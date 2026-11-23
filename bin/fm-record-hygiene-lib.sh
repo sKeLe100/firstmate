@@ -9,6 +9,7 @@ record_hygiene_report() {
   [ -d "$STATE" ] || return 0
   exclude=$(status_scan_parent_channel_exclude "$STATE")
 
+# shellcheck disable=SC2167 # the lazily sourced fm-wake-lib.sh only defines functions; their loops use local vars
   for file in "$STATE"/*.status; do
     [ -f "$file" ] && [ ! -L "$file" ] || continue
     [ "$file" = "$exclude" ] && continue

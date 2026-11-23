@@ -1869,7 +1869,7 @@ fm_backend_herdr_workspace_find() {  # <session>
 #       degrading to a label search.
 fm_backend_herdr_launcher_identity() {  # <session>
   local session=$1 pane=${HERDR_PANE_ID:-} claimed_session claimed_socket session_socket
-  local pane_out tab_out list pane_identity tab workspace
+  local pane_out tab_out list tab workspace
   FM_BACKEND_HERDR_LAUNCHER_PANE_ID=""
   FM_BACKEND_HERDR_LAUNCHER_TAB_ID=""
   FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=""

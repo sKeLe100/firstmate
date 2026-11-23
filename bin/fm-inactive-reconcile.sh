@@ -645,7 +645,7 @@ task_holds_live_work() { # <id> <meta> <timeout> <last-status-line>; 0 when the 
 }
 
 reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeout>
-  local id=$1 meta=$2 self=${3:-} timeout=$4 status turn last age state_line state pr incarnation fingerprint outcome_key payload kind state_rc=0 started left
+  local id=$1 meta=$2 self=${3:-} timeout=$4 status last age state_line state pr incarnation fingerprint outcome_key payload kind state_rc=0 started left
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
   kind=$(meta_field "$meta" kind)
   [ "$kind" = secondmate ] && return 0
