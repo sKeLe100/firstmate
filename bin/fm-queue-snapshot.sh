@@ -120,6 +120,10 @@
 # escapes stay unambiguous - so every item stays on exactly one LF-terminated
 # line):
 #   count: <n>
+#   dispatchable: <n>
+#     -- the number of rows in the FULL queued set whose derived `gate` is
+#     "dispatchable", counted before --limit cuts the rendered rows, so a
+#     trimmed listing never understates the work waiting on a free lane.
 #   total_queued: <n>
 #     -- present ONLY when --limit truncated the full queued set (count is
 #     smaller than the total number of queued items tasks-axi returned), so a
@@ -559,6 +563,7 @@ for rank, (r, repo, posture, autonomy, reason, gate, rot) in enumerate(
     ])
 
 print(f"count: {len(out_rows)}")
+print(f"dispatchable: {sum(1 for e in enriched if e[5] == 'dispatchable')}")
 if len(out_rows) < len(rows):
     print(f"total_queued: {len(rows)}")
 if out_rows:
