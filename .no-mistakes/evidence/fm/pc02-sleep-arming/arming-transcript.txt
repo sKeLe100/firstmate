@@ -1,0 +1,18 @@
+### install --dry-run, no opt-in
+fm-pc02-sleep-arming.sh: install keeps the production window at 30 minutes or more; use test-sleep for a shortened test window
+rc=1
+### test-sleep, no opt-in
+fm-pc02-sleep-arming.sh: refusing a remote sleep test while /tmp/fm-lab.Wf9CbZ/config/pc02-sleep-auto-arm is absent; create that file to opt in to automatic idle sleep
+rc=4
+### install --dry-run, opted in, 5 min
+fm-pc02-sleep-arming.sh: install keeps the production window at 30 minutes or more; use test-sleep for a shortened test window
+rc=1
+### install --dry-run, opted in, 30 min
+auto_arm=on opt_in=/tmp/fm-lab.Wf9CbZ/config/pc02-sleep-auto-arm standby_ac_minutes=30 watcher_force_sleep=yes
+rc=0
+### FM_PC02_WAKE=0 wake
+awake
+rc=0
+### install --dry-run, no opt-in, 30 min
+auto_arm=off opt_in=/tmp/fm-lab.7zfwK2/config/pc02-sleep-auto-arm standby_ac_minutes=0 watcher_force_sleep=no
+rc=0
