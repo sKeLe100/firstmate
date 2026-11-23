@@ -952,12 +952,35 @@ test_android_probe_failures_are_stated_not_zero
 test_android_empty_clean_reads_render_none
 test_android_boot_completed_variants
 test_android_physical_device_does_not_hide_stopped_avd
+test_android_discovery_reports_missing_recorded_root() {
+  local fake out base
+  base="$TMP_ROOT/android-missing"
+  fake="$base/fake"
+  mkdir -p "$fake"
+  cat > "$fake/adb" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in devices) printf 'List of devices attached\n\n' ;; *) exit 1 ;; esac
+STUB
+  cat > "$fake/emulator" <<'STUB'
+#!/usr/bin/env bash
+[ "$*" = "-list-avds" ] && exit 0
+exit 1
+STUB
+  chmod +x "$fake/adb" "$fake/emulator"
+  out=$(run_android_discovery missing FM_RESOURCE_ANDROID_ROOTS="$base/E/Android" FM_RESOURCE_ANDROID_HOME_DIRS="$base/E/avd" FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR="$fake/emulator")
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .state == "none")] | length == 0' "$base/out.json" >/dev/null || fail "a missing recorded root must never render none: $(jq -c '.android' "$base/out.json")"
+  jq -e --arg r "$base/E/Android" --arg h "$base/E/avd" '[.unavailable[] | select(.source == "android:PC01") | .reason] | (any(contains($r) and contains("missing"))) and (any(contains($h) and contains("missing")))' "$base/out.json" >/dev/null || fail "a missing recorded root and AVD home must be named: $(jq -c '.unavailable' "$base/out.json")"
+  pass "a missing recorded root or AVD home is reported with its path, never as none"
+}
+
 test_android_probe_timeouts_are_stated
 test_pc02_android_live_read
 test_pc02_android_live_failure_is_stated
 test_android_discovery_reads_environment_json_and_port
 test_android_discovery_reads_wsl_only_avd_home
 test_android_discovery_reports_unreadable_root
+test_android_discovery_reports_missing_recorded_root
 test_android_missing_tools_is_stated_not_zero
 test_opencode_worker_gets_a_context_band
 test_failed_quota_is_labelled_not_zero

@@ -1036,8 +1036,10 @@ build_roles() {
 # and reads adb on every declared port plus the default 5037. Windows tools do
 # not inherit WSL environment variables unless they are named in WSLENV, so a
 # Windows adb/emulator is invoked with WSLENV set; without that an E:\Android
-# AVD home and adb port 5041 are invisible. A known root that exists but cannot
-# be read is reported unreadable with its reason, never as "none". Probes are
+# AVD home and adb port 5041 are invisible. A recorded root (or one named in
+# FM_RESOURCE_ANDROID_ROOTS/_HOME_DIRS) that is missing or cannot be read is
+# reported with its reason, never as "none"; speculative defaults that do not
+# exist are skipped silently. Probes are
 # read-only: no emulator is ever started or wiped.
 
 android_find_tool() {  # <adb|emulator> -> path, else status 1
@@ -1171,14 +1173,17 @@ android_probe_host() {  # <runner> <timeout> <adb-explicit> <adb> <emu-explicit>
   local -a avds=() serials=() states=() sport=() serial_avds=() matched=() ports_list=()
   local -a uniq=() seen_avd=()
   local i j adb_clean=1 emu_clean=1 unresolved_running=0 unresolved_other=0
+  local roots_recorded=0 homes_recorded=0
 
   if [ "${FM_RESOURCE_ANDROID_ROOTS+x}" = x ]; then
+    roots_recorded=1
     while IFS= read -r root; do [ -n "$root" ] && roots+=("$root"); done \
       < <(printf '%s\n' "$FM_RESOURCE_ANDROID_ROOTS" | tr ':' '\n')
   elif [ "$defaults" = 1 ]; then
     while IFS= read -r root; do [ -n "$root" ] && roots+=("$root"); done < <(android_default_roots)
   fi
   if [ "${FM_RESOURCE_ANDROID_HOME_DIRS+x}" = x ]; then
+    homes_recorded=1
     while IFS= read -r avd; do [ -n "$avd" ] && homes+=("$avd"); done \
       < <(printf '%s\n' "$FM_RESOURCE_ANDROID_HOME_DIRS" | tr ':' '\n')
   elif [ "$defaults" = 1 ]; then
@@ -1186,7 +1191,10 @@ android_probe_host() {  # <runner> <timeout> <adb-explicit> <adb> <emu-explicit>
   fi
 
   for root in "${roots[@]}"; do
-    [ -e "$root" ] || continue
+    if [ ! -e "$root" ]; then
+      [ "$roots_recorded" = 1 ] && unread+=("Android root $root is missing")
+      continue
+    fi
     if [ ! -d "$root" ] || [ ! -r "$root" ] || [ ! -x "$root" ]; then
       unread+=("Android root $root is unreadable"); continue
     fi
@@ -1220,7 +1228,10 @@ android_probe_host() {  # <runner> <timeout> <adb-explicit> <adb> <emu-explicit>
   done
 
   for avd in "${homes[@]}"; do
-    [ -e "$avd" ] || continue
+    if [ ! -e "$avd" ]; then
+      [ "$homes_recorded" = 1 ] && unread+=("AVD home $avd is missing")
+      continue
+    fi
     if [ ! -d "$avd" ] || [ ! -r "$avd" ] || [ ! -x "$avd" ]; then
       unread+=("AVD home $avd is unreadable"); continue
     fi
