@@ -884,7 +884,7 @@ test_stale_classifier_resolves_t3_thread() {
 }
 
 test_native_restart_rearms_undelivered_stale_warning() {
-  local session state home marker first out
+  local session state home marker first out host_path
   for session in completed failed; do
     t3_case "restart-unknown-$session" "$session"
     t3_unknown "$session"
@@ -904,9 +904,10 @@ test_native_restart_rearms_undelivered_stale_warning() {
       printf '%s\n' '#!/bin/sh' 'case "$*" in "list-panes -a -F #{pane_id}") echo %0 ;; *) exit 1 ;; esac' \
         > "$CASE_DIR/host-bin/tmux"
       chmod +x "$CASE_DIR/host-bin/tmux"
-      export PATH="$CASE_DIR/host-bin:$PATH" TMUX_PANE=%0
-      "$ROOT/bin/fm-afk-launch.sh" enter --words 'supervise pending work' >/dev/null \
-        && "$ROOT/bin/fm-afk-launch.sh" start-native || exit 1
+      export TMUX_PANE=%0
+      host_path="$CASE_DIR/host-bin:$PATH"
+      PATH="$host_path" "$ROOT/bin/fm-afk-launch.sh" enter --words 'supervise pending work' >/dev/null \
+        && PATH="$host_path" "$ROOT/bin/fm-afk-launch.sh" start-native || exit 1
       t3_run '
         . "$0/bin/fm-supervise-daemon.sh"
         _now() { printf 1000; }
@@ -919,24 +920,24 @@ test_native_restart_rearms_undelivered_stale_warning() {
       # The native daemon has stopped without delivering its buffer. Stop keeps
       # the delivery buffer for the return/catch-up path but ends the session's
       # per-task episode state: the stale clock and its report marker are gone.
-      "$ROOT/bin/fm-afk-launch.sh" stop || exit 1
+      PATH="$host_path" "$ROOT/bin/fm-afk-launch.sh" stop || exit 1
       [ -s "$state/.subsuper-escalations" ] || exit 1
       [ ! -e "$state/.subsuper-reported-stale-worker" ] || exit 1
       [ ! -e "$marker" ] || exit 1
       # A warning already delivered for another condition is the same
       # session-scoped episode state; the next entry clears it too.
       printf 900 > "$state/.subsuper-reported-stale-delivered"
-      "$ROOT/bin/fm-afk-launch.sh" enter --words 'supervise pending work' >/dev/null || exit 1
+      PATH="$host_path" "$ROOT/bin/fm-afk-launch.sh" enter --words 'supervise pending work' >/dev/null || exit 1
       first=$(cat "$state/.subsuper-escalations")
       # Failed startup must restore both the queue and the markers it captured.
-      bash -c '
+      PATH="$host_path" bash -c '
         . "$0/bin/fm-afk-launch.sh"
         fm_afk_launch_record_write() { return 1; }
         ! fm_afk_launch_main start-native
       ' "$ROOT" || exit 1
       [ "$(cat "$state/.subsuper-escalations")" = "$first" ] || exit 1
       [ -f "$state/.subsuper-reported-stale-delivered" ] || exit 1
-      "$ROOT/bin/fm-afk-launch.sh" start-native || exit 1
+      PATH="$host_path" "$ROOT/bin/fm-afk-launch.sh" start-native || exit 1
       assert_absent "$state/.subsuper-escalations" "fresh startup must discard the old queue"
       assert_absent "$state/.subsuper-reported-stale-worker" "discarding an undelivered warning must re-arm reporting"
       assert_absent "$state/.subsuper-reported-stale-delivered" "startup must drop the prior session's suppression markers"
