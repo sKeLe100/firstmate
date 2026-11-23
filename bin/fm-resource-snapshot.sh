@@ -727,7 +727,8 @@ collect_pc01_drive_health() {
   finished=$(jq -r '.finished_at // empty' "$file" 2>/dev/null)
   status=$(jq -r '.status // "unknown"' "$file" 2>/dev/null)
   error=$(jq -r '.error // empty' "$file" 2>/dev/null)
-  epoch=$(date -u -d "$finished" +%s 2>/dev/null) || epoch=''
+  epoch=''
+  [ -z "$finished" ] || epoch=$(date -u -d "$finished" +%s 2>/dev/null) || epoch=''
   case "$epoch" in ''|*[!0-9]*) epoch='' ;; esac
   if [ -n "$epoch" ]; then
     finished_iso=$(iso_utc "$epoch")
@@ -782,6 +783,8 @@ if [ ! -x "$smartctl" ]; then
   exit 0
 fi
 scan=$("$smartctl" --scan 2>&1 </dev/null); rc=$?
+scan=$(printf '%s\n' "$scan" | tr -d '\r')
+set -f
 if [ "$rc" -ne 0 ]; then
   printf 'X\tfailed\t%s\n' "smartctl --scan failed (status $rc)"
   exit 0
@@ -806,7 +809,7 @@ while IFS= read -r line; do
   else
     out=$("$smartctl" -i -H -A "$dev" 2>&1 </dev/null); rc=$?
   fi
-  parsed=$(printf '%s\n' "$out" | smartctl_fields)
+  parsed=$(printf '%s\n' "$out" | tr -d '\r' | smartctl_fields)
   IFS=$'\t' read -r model health realloc pending uncorr temp poh nvuse media <<EOF
 $parsed
 EOF

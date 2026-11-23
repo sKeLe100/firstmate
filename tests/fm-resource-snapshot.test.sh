@@ -1338,6 +1338,94 @@ test_drive_health_pc02_missing_tool_and_unreachable() {
   pass "missing-tool and unreachable PC02 reads are labelled with reason, never zero or healthy"
 }
 
+test_drive_health_pc02_crlf_and_failed_output() {
+  local fake out
+  fake="$TMP_ROOT/pc02-dh-crlf-tools"
+  mkdir -p "$fake"
+  cat > "$fake/smartctl" <<'SMART'
+#!/usr/bin/env bash
+case "$*" in
+  *--scan*) printf '/dev/sda -d sat\r\n/dev/sdb -d ata # /dev/sdb, ATA device\r\n/dev/sdc -d ata [SAT]\r\n' ;;
+  *"/dev/sda"*) sed 's/$/\r/' "$SDA_TEXT" ;;
+  *"/dev/sdb"*) sed 's/PASSED/FAILED!/; s/^\(197.*-       \)0/\1 8/' "$SDA_TEXT" | sed 's/$/\r/'; exit 8 ;;
+  *"/dev/sdc"*) printf 'Smartctl open device: /dev/sdc failed\r\n'; exit 2 ;;
+  *) exit 1 ;;
+esac
+SMART
+  chmod +x "$fake/smartctl"
+  out=$(run_pc02_drive_health crlf "$fake/smartctl")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc02-crlf.json"
+  jq -e '.drive_health[] | select(.disk == "/dev/sda")
+    | .model == "ST8000DM004-2CX188" and .smart == "PASSED" and .reallocated == "0"
+      and .power_on_hours == "14711" and .reason == "-"' \
+    "$TMP_ROOT/dh-pc02-crlf.json" >/dev/null \
+    || fail "CRLF scan line without a comment and CRLF health output must parse: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-crlf.json")"
+  jq -e '.drive_health[] | select(.disk == "/dev/sdb")
+    | (.smart | test("^FAILED")) and (.smart | test("\r") | not) and .pending == "8"' \
+    "$TMP_ROOT/dh-pc02-crlf.json" >/dev/null \
+    || fail "a FAILED verdict with a non-zero exit must keep its verdict and counts: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-crlf.json")"
+  jq -e '.drive_health[] | select(.disk == "/dev/sdc")
+    | .smart == "failed" and (.reason | test("no health verdict")) and (.reason | test("exit 2"))' \
+    "$TMP_ROOT/dh-pc02-crlf.json" >/dev/null \
+    || fail "a device with no verdict must be failed, never healthy: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-crlf.json")"
+  pass "PC02 parses CRLF smartctl.exe output, real FAILED verdicts, and verdict-less devices"
+}
+
+test_drive_health_pc01_snapshot_fallbacks_and_failures() {
+  setup_fixture
+  local f out
+  f="$TMP_ROOT/pc01-dh-disks.json"
+  write_pc01_snapshot "$TMP_ROOT/pc01-dh-base.json" ok 2026-11-19T20:50:00Z
+  jq 'del(.smart.devices)' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-disks.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 2
+    and all(.[]; .smart == "Healthy" and .reallocated == "-" and (.reason | test("SMART unavailable")))
+    and (.[] | select(.disk == "/dev/pd2") | .temp_c == "45" and .nvme_used_pct == "13")' \
+    "$TMP_ROOT/dh-pc01-disks.json" >/dev/null \
+    || fail "without SMART output, Windows HealthStatus rows must say so: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-disks.json")"
+
+  jq 'del(.smart.devices, .disks) | .smart.error = "elevation denied"' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-nodisk.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 1
+    and .[0].smart == "unavailable" and (.[0].reason | test("no disk data: elevation denied"))' \
+    "$TMP_ROOT/dh-pc01-nodisk.json" >/dev/null \
+    || fail "a snapshot with no disk data must be unavailable: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-nodisk.json")"
+
+  printf '{ not json' > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-badjson.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 1
+    and .[0].smart == "failed" and (.[0].reason | test("not valid JSON"))' \
+    "$TMP_ROOT/dh-pc01-badjson.json" >/dev/null \
+    || fail "invalid JSON must be failed: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-badjson.json")"
+
+  jq 'del(.finished_at)' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-nofinish.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 1
+    and .[0].smart == "failed" and (.[0].reason | test("finished_at"))' \
+    "$TMP_ROOT/dh-pc01-nofinish.json" >/dev/null \
+    || fail "a missing finished_at must not render healthy: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-nofinish.json")"
+
+  jq '.smart.devices[0] |= (.output = "" | .health = null | .exit_code = 5)' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-noverdict.json"
+  jq -e '.drive_health[] | select(.disk == "/dev/pd0")
+    | .smart == "failed" and (.reason | test("no health verdict \\(exit 5\\)"))' \
+    "$TMP_ROOT/dh-pc01-noverdict.json" >/dev/null \
+    || fail "a device without a verdict must be failed: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-noverdict.json")"
+
+  jq '.smart.devices[0] |= (.health = "FAILED!" | .exit_code = 8)' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-hfail.json"
+  jq -e '.drive_health[] | select(.disk == "/dev/pd0") | .smart == "FAILED!"' \
+    "$TMP_ROOT/dh-pc01-hfail.json" >/dev/null \
+    || fail "a FAILED verdict must be shown: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-hfail.json")"
+  pass "PC01 snapshot fallbacks and failures are labelled, never healthy"
+}
+
 test_every_section_renders_and_agrees
 test_android_fixture_renders_both_hosts
 test_android_probe_reads_fake_tools
@@ -1385,6 +1473,8 @@ test_drive_health_pc01_snapshot_reads_smart
 test_drive_health_pc01_stale_missing_failed_labelled
 test_drive_health_pc02_reads_smartctl
 test_drive_health_pc02_missing_tool_and_unreachable
+test_drive_health_pc02_crlf_and_failed_output
+test_drive_health_pc01_snapshot_fallbacks_and_failures
 test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
 test_down_pc02_keeps_pc01
