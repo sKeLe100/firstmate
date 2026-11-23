@@ -16,12 +16,13 @@ This is a resource and worker inventory, not a resume digest: use `bearings` for
 
 1. **Gather with one deterministic command.**
    Run `bin/fm-resource-snapshot.sh` at invocation time and read its TOON output.
-   It is the single bounded, read-only source for hosts, drives, quota lanes, workers, Herdr panes and strays, secondmates, orchestrator/role assignment, testing environments, Android emulator availability, and connected compute accounts.
+   It is the single bounded, read-only source for hosts, drives and per-disk SMART health, quota lanes, workers, Herdr panes and strays, secondmates, orchestrator/role assignment, testing environments, Android emulator availability, and connected compute accounts.
    Its header and `--help` output own the exact sections, fields, bounds, and fixture seams.
    Do not substitute a second fleet-state reader, a raw `/bearings` projection, or ad-hoc `gh`, `glab`, `ssh`, or `herdr` queries for what it already reports.
 
 2. **Render the sections the captain asked for.**
    Lead with the host and drive state, then quota lanes with every window in the order given, then the worker table with machine, lane, task, model, stage, age, context band, and PR, then panes and strays, then secondmates and roles, then testing environments and Android emulator availability, then compute accounts.
+   For drive health, report each disk's `smart` verdict with its `reason`: `stale`, `failed`, `unavailable`, `missing-tool`, and `not-set-up` are read states, never a healthy verdict or a zero count.
    For Android, name each host's AVDs, serials, adb device state, and boot completion: a `stopped` AVD exists but is not running, `none` means the probes read cleanly and found no emulator, and a missing adb or emulator, or a recorded Android root or AVD home that is missing or unreadable, is stated with its reason rather than reported as zero devices.
    Name the orchestrator, the supervision host and engine, and each secondmate explicitly so "who is orchestrating" is answered without inference.
    A `stale` or `failed` figure says so with its reason and read time; never restate it as zero or as current.

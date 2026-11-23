@@ -24,6 +24,24 @@
 #                  uptime,read_utc
 #   drives[]       machine,mount,total_gb,free_gb,pct_used,warn,read_utc
 #                  warn=low under 20 GB, watch under 40 GB, ok otherwise
+#   drive_health[] machine,disk,model,smart,reallocated,pending,uncorrectable,
+#                  temp_c,power_on_hours,nvme_used_pct,media_errors,read_utc,
+#                  reason
+#                  one row per physical disk. smart is the SMART overall-health
+#                  verdict (PASSED/FAILED), or the read state when there is no
+#                  healthy/failing read to report: stale, failed, unavailable,
+#                  missing-tool, or not-set-up. When a PC01 snapshot carries no
+#                  SMART data, Windows HealthStatus stands in for the verdict
+#                  and the reason says so. A healthy/failing row carries
+#                  reason "-"; every other state names its reason. read_utc is
+#                  when that reading was taken (the PC01 snapshot's own
+#                  finished_at, or this run for PC02). PC01 reads the
+#                  FirstmateDriveHealth snapshot at
+#                  /mnt/c/ProgramData/FirstmateOps/logs/drive-health.latest.json
+#                  and calls it stale past FM_RESOURCE_DRIVE_HEALTH_MAX_AGE;
+#                  PC02 runs smartctl.exe --scan then -i -H -A per device over
+#                  ssh. A stale, failed, or unreachable read is never rendered
+#                  as a zero count or a healthy verdict.
 #   quota[]        lane,account,plan,window,pct_remaining,resets_et,pace,state,
 #                  read_utc,reading_utc,reason
 #                  reading_utc is when quota-axi itself took the reading (the
@@ -82,13 +100,15 @@
 # records are read through one bounded ssh batch using the remote checkout's
 # existing fm-crew-state.sh and fm-context-usage.sh. PC02 host headroom, drives,
 # herdr sessions, offload slots, personal-use switch, runner unit, and its
-# pinned account come from one separate ssh batch. The parent secondmate ledger
-# is never consulted.
+# pinned account come from one separate ssh batch, and PC02 drive health from
+# its own bounded smartctl batch. The parent secondmate ledger is never
+# consulted.
 #
 # Per-source bounds (seconds, env-overridable): quota 8, each herdr call 5,
 # pc02 host batch 10, remote worker read 20, local fleet reads 15, roles 10,
 # collie 5, local crew-state 8, context band 5, local host probe 5, testing 10
-# per network source, each Android probe 8, PC02 Android batch 20. A bound hit
+# per network source, each Android probe 8, PC02 Android batch 20, PC02 drive
+# health 45. A bound hit
 # produces an unavailable row (or a
 # `stale`/`unknown` figure) and never a hang. Collectors run in parallel in
 # isolated subshells; exit 0 when any section rendered, 1 only when nothing
@@ -127,6 +147,16 @@
 #   FM_RESOURCE_DATA_DIR          override the home's data directory
 #   FM_RESOURCE_HOSTS_JSON        {"hosts":[...],"drives":[...]} replaces live PC01 host
 #                                 and drive probes; PC02 rows come from the remote fixture
+#   FM_RESOURCE_DRIVE_HEALTH_FIXTURE
+#                                 JSON {drive_health:[...],unavailable:[...]}
+#                                 replaces every drive-health probe on both hosts
+#   FM_RESOURCE_PC01_DRIVE_HEALTH_FILE
+#                                 PC01 FirstmateDriveHealth snapshot to read
+#                                 instead of the ProgramData default
+#   FM_RESOURCE_PC02_SMARTCTL     PC02 smartctl executable path (default
+#                                 /mnt/c/Program Files/smartmontools/bin/smartctl.exe)
+#   FM_RESOURCE_DRIVE_HEALTH_MAX_AGE
+#                                 seconds before a PC01 snapshot is stale (default 86400)
 #   FM_RESOURCE_HERDR_JSON_PC01   {"sessions":[],"workspaces":[],"panes":[]}
 #   FM_RESOURCE_HERDR_JSON_PC02   same shape for PC02
 #   FM_RESOURCE_ROLES_FILE        JSON array used verbatim as roles[]
@@ -312,6 +342,8 @@ COLLIE_TIMEOUT=$(bound FM_RESOURCE_COLLIE_TIMEOUT 5)
 TESTING_TIMEOUT=$(bound FM_RESOURCE_TESTING_TIMEOUT 10)
 ANDROID_TIMEOUT=$(bound FM_RESOURCE_ANDROID_TIMEOUT 8)
 ANDROID_REMOTE_TIMEOUT=$(bound FM_RESOURCE_ANDROID_REMOTE_TIMEOUT 20)
+DRIVE_HEALTH_TIMEOUT=$(bound FM_RESOURCE_DRIVE_HEALTH_TIMEOUT 45)
+DRIVE_HEALTH_MAX_AGE=$(bound FM_RESOURCE_DRIVE_HEALTH_MAX_AGE 86400)
 CAP_WORKERS=$(bound FM_RESOURCE_CAP_WORKERS 40)
 CAP_PANES=$(bound FM_RESOURCE_CAP_PANES 60)
 CAP_STRAYS=$(bound FM_RESOURCE_CAP_STRAYS 40)
@@ -345,6 +377,7 @@ trap 'exit 143' TERM
 : > "$TMP/strays.tsv"
 : > "$TMP/hosts.tsv"
 : > "$TMP/drives.tsv"
+: > "$TMP/drive_health.tsv"
 : > "$TMP/quota.tsv"
 : > "$TMP/secondmates.tsv"
 : > "$TMP/roles.tsv"
@@ -548,6 +581,313 @@ collect_local_drives() {
   drive_one PC01 / /
   drive_one PC01 'C:' /mnt/c
   drive_one PC01 'G:' /mnt/g
+}
+
+# --- drive health -----------------------------------------------------------
+# PC01 reads the read-only FirstmateDriveHealth snapshot written by its
+# pre-approved elevated scheduled task; PC02 runs smartctl.exe over ssh. A read
+# that is stale, failed, unavailable, missing its tool, or not set up renders
+# one labelled row with its reason and read time, never a zero count and never
+# a healthy verdict.
+
+drive_health_row() {  # <machine> <disk> <model> <smart> <realloc> <pending> <uncorr> <temp> <poh> <nvme> <media> <read_utc> <reason>
+  local machine=$1 disk=$2 model=$3 smart=$4 realloc=$5 pending=$6 uncorr=$7
+  local temp=$8 poh=$9 nvme=${10} media=${11} read=${12} reason=${13}
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(clean_field "$machine")" "$(clean_field "$disk")" "$(clean_field "$model")" \
+    "$(clean_field "$smart")" "$(clean_field "$realloc")" "$(clean_field "$pending")" \
+    "$(clean_field "$uncorr")" "$(clean_field "$temp")" "$(clean_field "$poh")" \
+    "$(clean_field "$nvme")" "$(clean_field "$media")" "$(clean_field "$read")" \
+    "$(clean_field "$reason")" >> "$TMP/drive_health.tsv"
+}
+
+smartctl_fields() {  # smartctl -i -H -A output on stdin -> 9 TSV fields
+  awk '
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+    function num(s) { gsub(/,/, "", s); if (match(s, /[0-9]+/)) return substr(s, RSTART, RLENGTH); return "-" }
+    BEGIN {
+      model="-"; health="-"; realloc="-"; pending="-"; uncorr="-"; reported="-"
+      temp="-"; poh="-"; nvuse="-"; media="-"; strong=0
+    }
+    {
+      line=$0
+      if (line ~ /SMART overall-health self-assessment test result:/) {
+        h=line; sub(/^.*result:[ \t]*/, "", h); health=trim(h)
+      } else if (line ~ /^(Device Model|Model Number|Product|Model Family):/) {
+        k=line; sub(/:.*/, "", k)
+        v=line; sub(/^[^:]*:[ \t]*/, "", v); v=trim(v)
+        if (k == "Device Model" || k == "Model Number") { model=v; strong=1 }
+        else if (!strong && model == "-") model=v
+      } else if (line ~ /^[ \t]*[0-9]+[ \t]/) {
+        n=split(trim(line), a, /[ \t]+/)
+        name=a[2]; raw=a[10]
+        for (j=11; j<=n; j++) raw=raw " " a[j]
+        if (name == "Reallocated_Sector_Ct") realloc=num(raw)
+        else if (name == "Current_Pending_Sector") pending=num(raw)
+        else if (name == "Offline_Uncorrectable") uncorr=num(raw)
+        else if (name == "Reported_Uncorrect" && reported == "-") reported=num(raw)
+        else if (name == "Temperature_Celsius" && temp == "-") temp=num(raw)
+        else if (name == "Airflow_Temperature_Cel" && temp == "-") temp=num(raw)
+        else if (name == "Power_On_Hours" && poh == "-") poh=num(raw)
+      } else if (line ~ /^Power On Hours:/) { poh=num(line) }
+      else if (line ~ /^Percentage Used:/) { nvuse=num(line) }
+      else if (line ~ /^Media and Data Integrity Errors:/) { media=num(line) }
+      else if (line ~ /^Temperature:/) { temp=num(line) }
+    }
+    END {
+      if (uncorr == "-" && reported != "-") uncorr=reported
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", model, health, realloc, pending, uncorr, temp, poh, nvuse, media
+    }
+  '
+}
+
+drive_health_snapshot_device() {  # <snapshot-file> <index> <read_utc>
+  local file=$1 i=$2 read=$3
+  local device friendly exit_code health out parsed model phealth realloc pending uncorr temp poh nvuse media
+  local rel_temp rel_poh rel_wear smart reason
+  IFS=$'\t' read -r device friendly exit_code health <<< "$(jq -r --argjson i "$i" \
+    '[ (.smart.devices[$i].device // "-"), (.smart.devices[$i].friendly_name // "-"),
+       ((.smart.devices[$i].exit_code // "-") | tostring), (.smart.devices[$i].health // "-") ] | @tsv' \
+    "$file" 2>/dev/null)"
+  out=$(jq -r --argjson i "$i" '.smart.devices[$i].output // ""' "$file" 2>/dev/null)
+  parsed=$(printf '%s\n' "$out" | smartctl_fields)
+  IFS=$'\t' read -r model phealth realloc pending uncorr temp poh nvuse media <<< "$parsed"
+  IFS=$'\t' read -r rel_temp rel_poh rel_wear <<< "$(jq -r --arg d "$friendly" \
+    '[.reliability[]? | select(.disk == $d)][0] // {} | [ (.temperature_c // "-"), (.power_on_hours // "-"), (.wear // "-") ] | @tsv' \
+    "$file" 2>/dev/null)"
+  case "$temp" in ''|-) temp=$rel_temp ;; esac
+  case "$poh" in ''|-) poh=$rel_poh ;; esac
+  case "$nvuse" in ''|-) nvuse=$rel_wear ;; esac
+  [ -n "$model" ] || model=$friendly
+  [ -n "$model" ] || model=-
+  smart=$health
+  if [ -z "$smart" ] || [ "$smart" = - ]; then smart=$phealth; fi
+  reason='-'
+  if [ -z "$smart" ] || [ "$smart" = - ]; then
+    smart=failed
+    reason="smartctl produced no health verdict (exit $exit_code)"
+  fi
+  drive_health_row PC01 "$device" "$model" "$smart" "$realloc" "$pending" "$uncorr" \
+    "$temp" "$poh" "$nvuse" "$media" "$read" "$reason"
+}
+
+drive_health_snapshot_disks() {  # <snapshot-file> <read_utc>
+  local file=$1 read=$2
+  local n i row num name hstatus temp poh wear device err
+  n=$(jq -r '(.disks? // []) | if type == "array" then length else 0 end' "$file" 2>/dev/null)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  if [ "$n" -eq 0 ]; then
+    err=$(jq -r '.smart.error // .error // empty' "$file" 2>/dev/null)
+    drive_health_row PC01 - - unavailable - - - - - - - "$read" "snapshot has no disk data${err:+: $err}"
+    return 0
+  fi
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    row=$(jq -r --argjson i "$i" '
+      .disks[$i] as $d
+      | ([.reliability[]? | select(.disk == $d.FriendlyName)][0] // {}) as $r
+      | [ ($d.Number // "-"), ($d.FriendlyName // "-"), ($d.HealthStatus // "unknown"),
+          ($r.temperature_c // "-"), ($r.power_on_hours // "-"), ($r.wear // "-") ] | @tsv
+    ' "$file" 2>/dev/null)
+    IFS=$'\t' read -r num name hstatus temp poh wear <<< "$row"
+    case "$num" in ''|*[!0-9]*) device='-' ;; *) device="/dev/pd$num" ;; esac
+    [ -n "$name" ] || name=-
+    [ -n "$hstatus" ] || hstatus=unknown
+    [ -n "$temp" ] || temp=-
+    [ -n "$poh" ] || poh=-
+    [ -n "$wear" ] || wear=-
+    drive_health_row PC01 "$device" "$name" "$hstatus" - - - "$temp" "$poh" "$wear" - \
+      "$read" 'Windows HealthStatus (SMART unavailable)'
+    i=$((i + 1))
+  done
+}
+
+collect_pc01_drive_health() {
+  local file=${FM_RESOURCE_PC01_DRIVE_HEALTH_FILE:-/mnt/c/ProgramData/FirstmateOps/logs/drive-health.latest.json}
+  local finished epoch age status error finished_iso n i
+  if [ -n "${FM_RESOURCE_HOSTS_JSON:-}" ] && [ -f "$FM_RESOURCE_HOSTS_JSON" ] \
+    && [ -z "${FM_RESOURCE_PC01_DRIVE_HEALTH_FILE:-}" ]; then
+    return 0
+  fi
+  if [ ! -e "$file" ]; then
+    drive_health_row PC01 - - not-set-up - - - - - - - "$read_iso" \
+      "FirstmateDriveHealth snapshot not found at $file; the scheduled task is not set up yet"
+    return 0
+  fi
+  if [ ! -r "$file" ]; then
+    drive_health_row PC01 - - unavailable - - - - - - - "$read_iso" \
+      "FirstmateDriveHealth snapshot is not readable at $file"
+    return 0
+  fi
+  if ! jq -e . "$file" >/dev/null 2>&1; then
+    drive_health_row PC01 - - failed - - - - - - - "$read_iso" \
+      "FirstmateDriveHealth snapshot is not valid JSON at $file"
+    return 0
+  fi
+  finished=$(jq -r '.finished_at // empty' "$file" 2>/dev/null)
+  status=$(jq -r '.status // "unknown"' "$file" 2>/dev/null)
+  error=$(jq -r '.error // empty' "$file" 2>/dev/null)
+  epoch=''
+  [ -z "$finished" ] || epoch=$(date -u -d "$finished" +%s 2>/dev/null) || epoch=''
+  case "$epoch" in ''|*[!0-9]*) epoch='' ;; esac
+  if [ -n "$epoch" ]; then
+    finished_iso=$(iso_utc "$epoch")
+    age=$((NOW - epoch))
+    if [ "$age" -lt 0 ]; then age=0; fi
+  else
+    finished_iso=$read_iso
+    age=''
+  fi
+  if [ "$status" != ok ]; then
+    drive_health_row PC01 - - failed - - - - - - - "$finished_iso" \
+      "FirstmateDriveHealth job status is $status${error:+: $error}"
+    return 0
+  fi
+  if [ -z "$age" ]; then
+    drive_health_row PC01 - - failed - - - - - - - "$read_iso" \
+      'FirstmateDriveHealth snapshot has no usable finished_at timestamp'
+    return 0
+  fi
+  if [ "$age" -gt "$DRIVE_HEALTH_MAX_AGE" ]; then
+    drive_health_row PC01 - - stale - - - - - - - "$finished_iso" \
+      "snapshot is $(human_age "$age") old; max $(human_age "$DRIVE_HEALTH_MAX_AGE")"
+    return 0
+  fi
+  n=$(jq -r '(.smart.devices? // []) | if type == "array" then length else 0 end' "$file" 2>/dev/null)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  if [ "$n" -gt 0 ]; then
+    i=0
+    while [ "$i" -lt "$n" ]; do
+      drive_health_snapshot_device "$file" "$i" "$finished_iso"
+      i=$((i + 1))
+    done
+  else
+    drive_health_snapshot_disks "$file" "$finished_iso"
+  fi
+}
+
+remote_drive_health_script() {
+  declare -f smartctl_fields
+  cat <<'REMOTE'
+# fm-drive-health
+smartctl=${1:-${FM_RESOURCE_PC02_SMARTCTL:-}}
+if [ -z "$smartctl" ]; then
+  smartctl='/mnt/c/Program Files/smartmontools/bin/smartctl.exe'
+  if [ ! -x "$smartctl" ]; then
+    alt=$(command -v smartctl.exe 2>/dev/null || command -v smartctl 2>/dev/null)
+    [ -n "$alt" ] && smartctl=$alt
+  fi
+fi
+if [ ! -x "$smartctl" ]; then
+  printf 'X\tmissing-tool\t%s\n' 'smartctl.exe not found; smartmontools is not installed'
+  exit 0
+fi
+scan=$("$smartctl" --scan 2>&1 </dev/null); rc=$?
+scan=$(printf '%s\n' "$scan" | tr -d '\r')
+set -f
+if [ "$rc" -ne 0 ]; then
+  printf 'X\tfailed\t%s\n' "smartctl --scan failed (status $rc)"
+  exit 0
+fi
+if [ -z "$scan" ]; then
+  printf 'X\tfailed\t%s\n' 'smartctl --scan found no devices'
+  exit 0
+fi
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  set -- $line
+  dev=$1
+  case "$dev" in /dev/*) ;; *) continue ;; esac
+  shift
+  dtype=''
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = '-d' ] && [ "$#" -ge 2 ]; then dtype=$2; shift; fi
+    shift
+  done
+  if [ -n "$dtype" ]; then
+    out=$("$smartctl" -i -H -A -d "$dtype" "$dev" 2>&1 </dev/null); rc=$?
+  else
+    out=$("$smartctl" -i -H -A "$dev" 2>&1 </dev/null); rc=$?
+  fi
+  parsed=$(printf '%s\n' "$out" | tr -d '\r' | smartctl_fields)
+  IFS=$'\t' read -r model health realloc pending uncorr temp poh nvuse media <<EOF
+$parsed
+EOF
+  if [ -z "$health" ] || [ "$health" = '-' ]; then
+    verdict=failed
+    reason="smartctl produced no health verdict (exit $rc)"
+  else
+    verdict=$health
+    reason=-
+  fi
+  [ -n "$model" ] || model=-
+  printf 'D\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$dev" "$(printf '%s' "$model" | tr '\t' ' ')" "$verdict" "$realloc" "$pending" \
+    "$uncorr" "$temp" "$poh" "$nvuse" "$media" "$(printf '%s' "$reason" | tr '\t' ' ')"
+done <<EOF
+$scan
+EOF
+REMOTE
+}
+
+collect_pc02_drive_health() {
+  local host raw rc smartctl_path tag a b c d e f g h i j k reason
+  if [ -n "${FM_RESOURCE_REMOTE_FIXTURE:-}" ] && [ -f "$FM_RESOURCE_REMOTE_FIXTURE" ]; then
+    jq -r '.drive_health[]? | [ "PC02", (.disk // "-"), (.model // "-"), (.smart // "unknown"),
+      (.reallocated // "-"), (.pending // "-"), (.uncorrectable // "-"), (.temp_c // "-"),
+      (.power_on_hours // "-"), (.nvme_used_pct // "-"), (.media_errors // "-"),
+      (.read_utc // "-"), (.reason // "-") ] | @tsv' \
+      "$FM_RESOURCE_REMOTE_FIXTURE" >> "$TMP/drive_health.tsv"
+    return 0
+  fi
+  remote_records > "$TMP/dh_remote_records.tsv" 2>/dev/null || : > "$TMP/dh_remote_records.tsv"
+  [ -s "$TMP/dh_remote_records.tsv" ] || return 0
+  [ "${FM_RESOURCE_SKIP_REMOTE:-0}" = 1 ] && return 0
+  host=$(awk -F'\t' 'NR == 1 { print $2 }' "$TMP/dh_remote_records.tsv")
+  case "$host" in
+    ''|-*|*[!A-Za-z0-9._-]*)
+      drive_health_row PC02 - - unavailable - - - - - - - "$read_iso" 'secondmate host is unsafe or empty'
+      return 0 ;;
+  esac
+  smartctl_path=${FM_RESOURCE_PC02_SMARTCTL:-$(cfg pc02_smartctl)}
+  raw=$(run_remote "$host" "$DRIVE_HEALTH_TIMEOUT" "$(remote_drive_health_script)" "$smartctl_path" 2>/dev/null)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if fm_timed_out "$rc"; then
+      mark_budget "drive-health:$host"
+      reason="remote drive health read timed out after ${DRIVE_HEALTH_TIMEOUT}s"
+    else
+      reason="remote drive health read failed (status $rc)"
+    fi
+    drive_health_row PC02 - - unreachable - - - - - - - "$read_iso" "$reason"
+    return 0
+  fi
+  if [ -z "$raw" ]; then
+    drive_health_row PC02 - - unavailable - - - - - - - "$read_iso" 'remote drive health read returned nothing'
+    return 0
+  fi
+  while IFS=$'\t' read -r tag a b c d e f g h i j k; do
+    case "$tag" in
+      D) drive_health_row PC02 "$a" "$b" "$c" "$d" "$e" "$f" "$g" "$h" "$i" "$j" "$read_iso" "${k:--}" ;;
+      X) drive_health_row PC02 - - "$a" - - - - - - - "$read_iso" "$b" ;;
+    esac
+  done <<< "$raw"
+}
+
+collect_drive_health() {
+  local fixture=${FM_RESOURCE_DRIVE_HEALTH_FIXTURE:-}
+  if [ -n "$fixture" ] && [ -f "$fixture" ]; then
+    jq -r '.drive_health[]? | [ (.machine // "-"), (.disk // "-"), (.model // "-"), (.smart // "unknown"),
+      (.reallocated // "-"), (.pending // "-"), (.uncorrectable // "-"), (.temp_c // "-"),
+      (.power_on_hours // "-"), (.nvme_used_pct // "-"), (.media_errors // "-"),
+      (.read_utc // "-"), (.reason // "-") ] | @tsv' \
+      "$fixture" >> "$TMP/drive_health.tsv"
+    jq -r '.unavailable[]? | [.source, .reason, (.read_utc // "-")] | @tsv' \
+      "$fixture" >> "$TMP/unavailable.tsv"
+    return 0
+  fi
+  collect_pc01_drive_health
+  collect_pc02_drive_health
 }
 
 # --- local workers ----------------------------------------------------------
@@ -1859,7 +2199,7 @@ render_toon() {  # <model-json-file>
 }
 
 build_model() {
-  local host_json drive_json quota_json worker_json pane_json stray_json sm_json role_json
+  local host_json drive_json drive_health_json quota_json worker_json pane_json stray_json sm_json role_json
   local test_json android_json compute_json un_json gen_et nw np ns
 
   if [ -n "${FM_RESOURCE_HOSTS_JSON:-}" ] && [ -f "$FM_RESOURCE_HOSTS_JSON" ]; then
@@ -1873,6 +2213,7 @@ build_model() {
 
   host_json=$TMP/hosts.json
   drive_json=$TMP/drives.json
+  drive_health_json=$TMP/drive_health.json
   quota_json=$TMP/quota.json
   worker_json=$TMP/workers.json
   pane_json=$TMP/panes.json
@@ -1888,6 +2229,8 @@ build_model() {
     '["machine","load1","cores","mem_free_pct","disk_free_gb","disk_path","uptime","read_utc"]' > "$host_json"
   tsv_to_json "$TMP/drives.tsv" \
     '["machine","mount","total_gb","free_gb","pct_used","warn","read_utc"]' > "$drive_json"
+  tsv_to_json "$TMP/drive_health.tsv" \
+    '["machine","disk","model","smart","reallocated","pending","uncorrectable","temp_c","power_on_hours","nvme_used_pct","media_errors","read_utc","reason"]' > "$drive_health_json"
   tsv_to_json_quota "$TMP/quota.tsv" > "$quota_json"
   tsv_to_json "$TMP/workers.tsv" \
     '["machine","home_lane","task","kind","model","spend_lane","stage","age","last_active","ctx_band","pr","read_utc"]' > "$worker_json"
@@ -1919,6 +2262,7 @@ build_model() {
     --arg schema "$SCHEMA" --arg generated "$read_iso" --arg generated_et "$gen_et" \
     --arg home "$FM_HOME" \
     --slurpfile hosts "$host_json" --slurpfile drives "$drive_json" --slurpfile quota "$quota_json" \
+    --slurpfile drive_health "$drive_health_json" \
     --slurpfile workers "$worker_json" --slurpfile panes "$pane_json" --slurpfile strays "$stray_json" \
     --slurpfile secondmates "$sm_json" --slurpfile roles "$role_json" \
     --slurpfile testing "$test_json" --slurpfile android "$android_json" \
@@ -1937,6 +2281,7 @@ build_model() {
                 strays: (if $ns > $caps then ($ns - $caps) else 0 end)},
       hosts: ($hosts[0] // []),
       drives: ($drives[0] // []),
+      drive_health: ($drive_health[0] // []),
       quota: ($quota[0] // []),
       workers: (($workers[0] // [])[0:$capw]),
       panes: (($panes[0] // [])[0:$capp]),
@@ -1969,6 +2314,7 @@ fi
 ( collect_collie ) &
 ( collect_local_host ) &
 ( collect_local_drives ) &
+( collect_drive_health ) &
 ( collect_quota ) &
 ( collect_verify ) &
 ( collect_local_workers ) &
@@ -1985,6 +2331,7 @@ collect_android
 build_model
 
 if [ -s "$TMP/hosts.tsv" ] || [ -s "$TMP/drives.tsv" ] || [ -s "$TMP/quota.tsv" ] \
+  || [ -s "$TMP/drive_health.tsv" ] \
   || [ -s "$TMP/workers_local.tsv" ] || [ -s "$TMP/workers_remote.tsv" ] \
   || [ -s "$TMP/panes.tsv" ] || [ -s "$TMP/secondmates.tsv" ] || [ -s "$TMP/roles.tsv" ] \
   || [ -s "$TMP/testing.tsv" ] || [ -s "$TMP/android.tsv" ] || [ -s "$TMP/compute.tsv" ]; then
