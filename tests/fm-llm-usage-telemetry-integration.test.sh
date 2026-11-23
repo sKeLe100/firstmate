@@ -387,6 +387,36 @@ test_fresh_spawn_refuses_malformed_decision_record() {
   pass "fm-spawn.sh: a malformed --decision-record is refused before any task record or dispatch event"
 }
 
+test_fresh_spawn_refuses_multi_object_decision_record() {
+  local dir home proj out rc task_id
+  dir="$TMP_ROOT/spawn-multi-decision-$RANDOM"
+  home="$dir/home"; proj="$dir/proj"
+  mkdir -p "$home/state" "$home/data" "$dir/fake"
+  make_tmux_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+  task_id=spawn-multi-decision
+  fm_git_worktree "$proj" "$dir/wt" "task-$task_id"
+  mkdir -p "$home/data/$task_id"
+  printf '# Task\n## Captain'"'"'s intent\nbrief for %s\n\n## Firstmate spec\nExercise the spawn behavior under test.\n' "$task_id" > "$home/data/$task_id/brief.md"
+  printf '%s' "$dir/wt" > "$dir/fake/cwd"
+  printf '{"confidence":90}\n{"confidence":10}\n' > "$dir/decision.json"
+
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 \
+    "$SPAWN" "$task_id" "$proj" --mode no-mistakes --yolo off --purpose code \
+      --harness claude --decision-record "$dir/decision.json" --backend tmux 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "fm-spawn.sh accepted a multi-object --decision-record: $out"
+  assert_contains "$out" "--decision-record" "the refusal did not name the offending flag"
+  [ ! -e "$home/state/$task_id.meta" ] || fail "a multi-object decision record still published a task record"
+  if [ -f "$home/data/llm-usage/firstmate.jsonl" ] \
+    && grep -q "\"task_id\":\"$task_id\"" "$home/data/llm-usage/firstmate.jsonl"; then
+    fail "a multi-object decision record still archived a dispatch record"
+  fi
+  pass "fm-spawn.sh: a multi-object --decision-record is refused before any task record or dispatch event"
+}
+
 test_fresh_spawn_refuses_low_confidence_without_runner_up() {
   local dir home proj out rc task_id
   dir="$TMP_ROOT/spawn-low-decision-$RANDOM"
@@ -779,6 +809,7 @@ test_fresh_spawn_without_redelegation_omits_from_task_id
 test_fresh_spawn_records_decision_record
 test_fresh_spawn_without_decision_record_omits_it
 test_fresh_spawn_refuses_malformed_decision_record
+test_fresh_spawn_refuses_multi_object_decision_record
 test_fresh_spawn_refuses_low_confidence_without_runner_up
 test_fresh_spawn_rejects_path_traversal_redelegated_from
 test_spawn_isolates_from_the_live_herdr_session

@@ -153,9 +153,34 @@ test_is_read_only() {
   pass "fm-dispatch-calibration.sh: reads the archive without writing it"
 }
 
+test_redispatched_replacement_is_not_scored_as_failed() {
+  require_python3
+  local dir out
+  dir="$TMP_ROOT/redispatch-$RANDOM"
+  mkdir -p "$dir"
+  cat > "$dir/archive.jsonl" <<'EOF2'
+{"schema_version":1,"ts":"2026-11-01T00:00:00Z","source":"firstmate","event_type":"dispatch","task_id":"a","decision_record":"{\"confidence\":70}"}
+{"schema_version":1,"ts":"2026-11-01T01:00:00Z","source":"firstmate","event_type":"dispatch","task_id":"b","from_task_id":"a","decision_record":"{\"confidence\":90}"}
+{"schema_version":1,"ts":"2026-11-01T01:00:00Z","source":"firstmate","event_type":"delegation","task_id":"b","from_task_id":"a","had_issue":"true","trigger":"redispatch"}
+EOF2
+
+  out=$("$HELPER" --archive "$dir/archive.jsonl" --json) || fail "helper failed on a redispatch archive"
+  python3 - "$out" <<'PY' || fail "the in-flight replacement was scored or the failed original was not"
+import json, sys
+got = json.loads(sys.argv[1])
+# a failed (redelegated, observed 0); b is in flight and must stay unresolved.
+assert got["decisions"] == 2, got
+assert got["resolved"] == 1, got
+assert got["unresolved"] == 1, got
+assert abs(got["brier"] - 0.49) < 1e-9, got["brier"]
+PY
+  pass "fm-dispatch-calibration.sh: a redispatched replacement is not scored as a failure"
+}
+
 test_reports_brier_and_reliability_bands
 test_text_output_is_human_readable
 test_unresolved_and_decisionless_records_are_excluded
 test_defaults_to_the_overridden_data_dir
 test_empty_and_missing_archives
 test_is_read_only
+test_redispatched_replacement_is_not_scored_as_failed
