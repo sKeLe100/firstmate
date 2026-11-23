@@ -1,0 +1,23 @@
+ok - every section renders and JSON/TOON share the same model
+ok - the Android fixture renders one row per host and clears the unavailable row
+ok - adb serials, AVD list, and boot_completed come from the bounded probes
+ok - an unnamed running emulator renders once as avd unknown, never also as a stopped AVD
+ok - a failed adb read renders the AVD unknown with its reason, never stopped
+ok - failed adb and emulator probes render as stated reasons, never as zero devices
+ok - clean empty Android reads render a none row
+ok - boot_completed renders 0, unknown for empty, and failed for an unanswered probe
+ok - a non-emulator adb serial leaves a stopped AVD rendered stopped
+ok - timed-out adb and emulator probes render as stated reasons
+ok - the shipped PC02 Android probe returns rows over the ssh boundary
+ok - a failed PC02 Android read is an unavailable row, never zero devices
+ok - missing adb and emulator render as stated reasons, never as zero devices
+ok - an opencode worker's context band comes from its session store
+ok - a failed quota read is labelled and never rendered as zero
+ok - a rate-limited quota read shows state and retry, never 0 percent
+ok - a down PC02 yields unavailable rows and keeps PC01 complete
+ok - the remote fixture alone supplies PC02 hosts, drives, and the running session
+ok - worker-lane accounts follow the lane classification, not the orchestrator role
+ok - row caps hold and the omitted counts report the cut rows
+ok - the command creates no file and leaves fixture mtimes unchanged
+ok - home-only renders just one home's workers for the remote call
+skip: live: opt-in; set FM_FLEET_LIVE=1 to run
