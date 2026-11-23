@@ -3768,7 +3768,7 @@ test_claude_account_display_degrades_to_unknown_rows() {
     (.claude_accounts | length) == 3
       and ([.claude_accounts[] | select(.label == "good")][0].status) == "ok"
       and ([.claude_accounts[] | select(.label == "config/claude-accounts:1")][0]
-           | .status == "unknown" and (.reason | contains("not label:dir")))
+           | .status == "unknown" and (.reason | contains("absolute path")))
       and ([.claude_accounts[] | select(.label == "config/claude-accounts:3")][0]
            | .status == "unknown" and (.reason | contains("empty dir")))
   ' >/dev/null || fail "malformed account lines were silently dropped: $json"
@@ -3840,6 +3840,37 @@ test_ordinary_claude_account_uses_the_ambient_read() {
   pass "an ordinary account reads ambient quota with CLAUDE_CONFIG_DIR unset"
 }
 
+test_plain_account_lines_read_the_documented_format() {
+  local home fakebin json toon accounts_root
+  home=$(make_home claude-plain-accounts)
+  fakebin=$(make_fakebin "$home")
+  accounts_root="$TMP_ROOT/claude-plain-accounts-dirs"
+  install_quota_fixture "$fakebin" "$accounts_root"
+  mkdir -p "$home/config"
+  printf 'ordinary\n%s\n' "$accounts_root/cc-one" > "$home/config/claude-accounts"
+
+  json=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two" --json)
+  printf '%s' "$json" | jq -e --arg root "$accounts_root" '
+    (.claude_accounts | length) == 2
+      and ([.claude_accounts[] | select(.label == "ordinary")][0] as $o
+        | $o.status == "ok"
+          and $o.five_hour_percent_remaining == 66
+          and $o.seven_day_percent_remaining == 77)
+      and ([.claude_accounts[] | select(.label == "cc-one")][0] as $p
+        | $p.dir == ($root + "/cc-one")
+          and $p.status == "ok"
+          and $p.five_hour_percent_remaining == 37
+          and $p.seven_day_percent_remaining == 88)
+  ' >/dev/null || fail "the documented one-entry-per-line account list did not read its accounts: $json"
+
+  toon=$(run_claude_quota_bearings "$home" "$fakebin" "$accounts_root/cc-two")
+  printf '%s\n' "$toon" | grep -q '^claude_accounts\[2\]{' \
+    || fail "default TOON lost the claude_accounts table for plain account lines: $toon"
+  printf '%s\n' "$toon" | grep -q '^  cc-one,.*,37,.*,88,' \
+    || fail "a plain absolute-path line was not labeled by its basename: $toon"
+  pass "config/claude-accounts plain lines (ordinary, absolute path) are read in their documented format"
+}
+
 test_default_login_path_account_uses_the_ambient_read() {
   local home fakebin json accounts_root fake_home
   home=$(make_home claude-default-login-path)
@@ -3863,6 +3894,7 @@ test_default_login_path_account_uses_the_ambient_read() {
 
 fm_test_run \
   test_claude_accounts_display_every_configured_account \
+  test_plain_account_lines_read_the_documented_format \
   test_default_login_path_account_uses_the_ambient_read \
   test_claude_account_display_degrades_to_unknown_rows \
   test_claude_account_cap_discloses_unread_accounts \
