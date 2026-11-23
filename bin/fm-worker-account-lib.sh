@@ -352,6 +352,43 @@ fm_worker_account_root() {
   fi
 }
 
+# fm_worker_account_orchestrator_cap_check <state-dir> <config-dir> <root> <task-id>
+# The launch of <task-id> onto Claude config root <root> (empty selects
+# $HOME/.claude). The orchestrator account admits at most one other live lane
+# (captain 2026-11-23: "Account 1 can handle 1 worker at a time alongside
+# orch"). Returns 0 when the root is not that account or has room; prints the
+# deferral reason and returns 1 when it is held; returns 2 on a malformed
+# config/claude-orchestrator-account. Counts this home's non-secondmate Claude
+# records on the root, minus a recorded PR handoff and the task's own record,
+# advisory under concurrent launches.
+fm_worker_account_orchestrator_cap_check() {
+  local state=$1 config=$2 root=${3:-${HOME:-}/.claude} id=$4
+  local cap=1 reserved count=0 holders= meta account
+  reserved=$(fm_worker_account_orchestrator_root "$config") || return 2
+  [ -n "$reserved" ] || return 0
+  reserved=$(realpath -m -- "$reserved" 2>/dev/null || printf '%s\n' "$reserved")
+  root=$(realpath -m -- "$root" 2>/dev/null || printf '%s\n' "$root")
+  [ "$reserved" = "$root" ] || return 0
+  for meta in "$state"/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    [ "$meta" != "$state/$id.meta" ] || continue
+    [ "$(fm_meta_get "$meta" harness)" = claude ] || continue
+    [ "$(fm_meta_get "$meta" kind)" != secondmate ] || continue
+    [ -z "$(fm_meta_get "$meta" pr)" ] || continue
+    account=$(fm_meta_get "$meta" account)
+    [ -n "$account" ] || continue
+    account=$(fm_worker_account_root "$account")
+    account=$(realpath -m -- "$account" 2>/dev/null || printf '%s\n' "$account")
+    [ "$account" = "$root" ] || continue
+    count=$((count + 1))
+    holders="${holders:+$holders, }$(basename "$meta" .meta)"
+  done
+  [ "$count" -ge "$cap" ] || return 0
+  printf 'deferred: Claude account %s is the orchestrator account and admits at most %s worker beside the orchestrator (%s already holds its place); task %s was not launched and its backlog item stays queued - dispatch it on another declared account or again once that worker finishes\n' \
+    "$root" "$cap" "$holders" "$id"
+  return 1
+}
+
 # fm_worker_account_orchestrator_declared <config-dir> <root>
 # Returns 0 when config/claude-accounts declares an entry that resolves to
 # <root>, so a declared list may name the account the orchestrator runs on and
