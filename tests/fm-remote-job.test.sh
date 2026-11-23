@@ -939,7 +939,9 @@ done
 ! ( FM_REMOTE_JOB_STATE_ROOT="$LOST_STATE"; fm_remote_job_probe "$LOST_HOME" ) \
   || fail "a worker without its ownership lock kept readiness fresh"
 assert_absent "$LOST_STATE/worker.lock" "the ownership lock reappeared before TERM"
-kill -TERM "$LOST_TERM_PID"
+# Losing ownership now stops the serving loop on its own, so TERM here is only
+# a safeguard: tolerate a loop that has already exited cleanly.
+kill -TERM "$LOST_TERM_PID" 2>/dev/null || true
 for _ in $(seq 1 100); do
   kill -0 "$LOST_TERM_PID" 2>/dev/null || break
   sleep 0.05

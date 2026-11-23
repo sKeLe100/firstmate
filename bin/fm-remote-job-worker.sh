@@ -34,7 +34,9 @@
 # The heartbeat recreates a missing ready file with the serving process's PID
 # and mode 0600 after verifying ownership, without waiting for the serving loop.
 # Losing lock ownership stops heartbeat refresh; losing the heartbeat process
-# while still owning the lock stops the serving loop on its next pass.
+# while still owning the lock stops the serving loop on its next pass. A serving
+# loop that loses the lock itself also stops on its next pass, so a replaced
+# worker can never keep claiming or reclaiming the replacement owner's jobs.
 # The stale sweep, whose state preparation also re-applies the queue directories' 0700
 # modes, runs at startup and then at most every 60 seconds, never more rarely
 # than the shortest record reap age.
@@ -1231,6 +1233,17 @@ main() {
   WORKER_FAST_REMAINING=0
   WORKER_ACTIVITY=1
   while :; do
+    # A serving loop that no longer owns the published lock is a stale
+    # generation: a replacement reclaimed it, so this loop must never claim or
+    # reclaim the replacement's jobs. The heartbeat check below cannot catch
+    # this case, because it only fires for the recorded owner, so a stale
+    # non-owner with a dead heartbeat would otherwise serve forever beside the
+    # owner - the PC02 duplicate-worker race that intermittently aborted every
+    # remote read through the queue with exit 125.
+    if ! worker_shutdown_owns_lock; then
+      worker_error "lost worker lock ownership; stopping this stale serving loop"
+      worker_exit_lost_lock
+    fi
     # The independent heartbeat keeps readiness fresh through slow serving
     # passes while ownership remains verifiable.
     if ! kill -0 "$WORKER_HEARTBEAT_PID" 2>/dev/null &&
