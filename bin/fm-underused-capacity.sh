@@ -22,8 +22,8 @@
 #   1. its five-hour window (window `five_hour`, else the `rolling` window
 #      opencode-go publishes) has a fresh reading at or above the threshold;
 #   2. its weekly window (window `seven_day`, `weekly`, or `window:<h>h` with
-#      at least 168 hours) is not behind pace - a missing weekly window is not
-#      treated as behind;
+#      at least 168 hours) is not ahead of pace (ahead means burning faster than the
+#      clock) - a lane behind pace, or with no weekly window, qualifies;
 #   3. the pool has a free slot (or no configured cap);
 #   4. the queue has at least one dispatchable item.
 #
@@ -235,7 +235,7 @@ jq -r --argjson threshold "$THRESHOLD" '
       | select($short != null)
       | ($short.pct_remaining | tonumber) as $pct
       | select($pct >= $threshold)
-      | select($week == null or ((($week.pace // "-") | ascii_downcase) | contains("behind") | not))
+      | select($week == null or ((($week.pace // "-") | ascii_downcase) | contains("ahead") | not))
       | ([ $root.workers[] | select(.spend_lane == $lane)
            | select(((.stage // "") == "done" or (.stage // "") == "failed") | not)
          ] | length) as $live
