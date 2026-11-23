@@ -41,7 +41,8 @@
 #                  one row per AVD listed by `emulator -list-avds` plus any
 #                  adb serial with no matching AVD. state is the adb device
 #                  state (device/offline/unauthorized), `stopped` for a
-#                  listed AVD with no running emulator, or `none` when both
+#                  listed AVD with no running emulator, `unknown` for a listed
+#                  AVD while an adb serial's AVD name is unresolved, or `none` when both
 #                  probes read cleanly and found nothing. boot_completed is
 #                  `1`/`0` from `getprop sys.boot_completed`, `unknown` when
 #                  empty, `stale`/`failed` when that probe did not answer, or
@@ -1121,9 +1122,14 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
       [ -z "$out" ] || serial_avds[j]=$out
     fi
   done
+  local unresolved=0
+  for j in "${!serials[@]}"; do
+    [ "${serial_avds[$j]}" != - ] || unresolved=$((unresolved + 1))
+  done
   for i in "${!avds[@]}"; do
     avd=${avds[$i]}
     serial=- state=stopped boot=- detail='AVD listed; no running emulator'
+    [ "$unresolved" -eq 0 ] || { state=unknown; detail='AVD listed; an adb serial has no resolved AVD name'; }
     for j in "${!serials[@]}"; do
       [ "${serial_avds[$j]}" = "$avd" ] || continue
       serial=${serials[$j]}; state=${states[$j]}; detail='running emulator'

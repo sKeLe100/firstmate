@@ -490,13 +490,90 @@ EOF
   jq -e '.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro")
     | .serial == "emulator-5554" and .state == "device" and .boot_completed == "1"' \
     "$TMP_ROOT/android-probe.json" >/dev/null || fail "running AVD row: $(jq -c '.android' "$TMP_ROOT/android-probe.json")"
-  jq -e '[.android[] | select(.machine == "PC01" and .avd == "other_avd") | .state] == ["stopped"]' \
-    "$TMP_ROOT/android-probe.json" >/dev/null || fail "a listed but stopped AVD must render stopped, not zero"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "other_avd") | .state] == ["unknown"]' \
+    "$TMP_ROOT/android-probe.json" >/dev/null || fail "a listed AVD must not render stopped while an unnamed offline serial exists"
   jq -e '[.android[] | select(.serial == "emulator-5556") | .state] == ["offline"]' \
     "$TMP_ROOT/android-probe.json" >/dev/null || fail "an offline adb serial must keep its state"
   jq -e '[.unavailable[] | select(.source | startswith("android"))] | length == 0' \
     "$TMP_ROOT/android-probe.json" >/dev/null || fail "a successful Android probe must clear unavailable"
   pass "adb serials, AVD list, and boot_completed come from the bounded probes"
+}
+
+run_android_probe() {  # <name> <adb-script-body> <emulator-script-body> -> JSON on stdout
+  local name=$1 rec home fb fake
+  rec=$(make_home "android-$name" fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  fake="$TMP_ROOT/android-fake-$name"
+  mkdir -p "$fake"
+  printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/adb"
+  printf '#!/usr/bin/env bash\n%s\n' "$3" > "$fake/emulator"
+  chmod +x "$fake/adb" "$fake/emulator"
+  env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_ANDROID_FIXTURE= FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR="$fake/emulator" \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/remote.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1
+}
+
+test_android_unresolved_name_is_not_stopped() {
+  local out
+  out=$(run_android_probe unresolved \
+    'case "$*" in devices) printf "List of devices attached\nemulator-5554\tdevice\n" ;; *) exit 1 ;; esac' \
+    '[ "$*" = "-list-avds" ] && { printf "pt_pixel8pro\n"; exit 0; }; exit 1')
+  printf '%s\n' "$out" > "$TMP_ROOT/android-unresolved.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro") | .state] == ["unknown"]' \
+    "$TMP_ROOT/android-unresolved.json" >/dev/null \
+    || fail "an AVD with an unnamed running serial must not render stopped: $(jq -c '.android' "$TMP_ROOT/android-unresolved.json")"
+  jq -e '[.android[] | select(.machine == "PC01" and .serial == "emulator-5554") | .boot_completed] == ["failed"]' \
+    "$TMP_ROOT/android-unresolved.json" >/dev/null || fail "unanswered boot probe must render failed: $(jq -c .android "$TMP_ROOT/android-unresolved.json")"
+  pass "a running emulator with an unresolved AVD name never leaves its AVD rendered stopped"
+}
+
+test_android_probe_failures_are_stated_not_zero() {
+  local out
+  out=$(run_android_probe failing 'exit 1' 'exit 1')
+  printf '%s\n' "$out" > "$TMP_ROOT/android-failing.json"
+  jq -e '[.android[] | select(.machine == "PC01")] | length == 0' "$TMP_ROOT/android-failing.json" >/dev/null \
+    || fail "failing probes must not render a zero-device row"
+  jq -e '[.unavailable[] | select(.source == "android:PC01") | .reason] | sort == ["adb devices failed (status 1)","emulator -list-avds failed (status 1)"]' \
+    "$TMP_ROOT/android-failing.json" >/dev/null \
+    || fail "probe failures must be stated: $(jq -c '.unavailable' "$TMP_ROOT/android-failing.json")"
+  pass "failed adb and emulator probes render as stated reasons, never as zero devices"
+}
+
+test_android_empty_clean_reads_render_none() {
+  local out
+  out=$(run_android_probe empty \
+    'case "$*" in devices) printf "List of devices attached\n\n" ;; *) exit 1 ;; esac' \
+    '[ "$*" = "-list-avds" ] && exit 0; exit 1')
+  printf '%s\n' "$out" > "$TMP_ROOT/android-empty.json"
+  jq -e '[.android[] | select(.machine == "PC01") | .state] == ["none"]' "$TMP_ROOT/android-empty.json" >/dev/null \
+    || fail "clean empty reads must render one none row: $(jq -c '.android' "$TMP_ROOT/android-empty.json")"
+  pass "clean empty Android reads render a none row"
+}
+
+test_android_boot_completed_variants() {
+  local out
+  out=$(run_android_probe boot \
+    'case "$*" in
+  devices) printf "List of devices attached\nemulator-5554\tdevice\nemulator-5556\tdevice\nemulator-5558\tdevice\n" ;;
+  "-s emulator-5554 emu avd name") printf "avd_a\nOK\n" ;;
+  "-s emulator-5556 emu avd name") printf "avd_b\nOK\n" ;;
+  "-s emulator-5558 emu avd name") printf "avd_c\nOK\n" ;;
+  "-s emulator-5554 shell getprop sys.boot_completed") printf "0\r\n" ;;
+  "-s emulator-5556 shell getprop sys.boot_completed") printf "\r\n" ;;
+  *) exit 1 ;;
+esac' \
+    '[ "$*" = "-list-avds" ] && { printf "avd_a\navd_b\navd_c\n"; exit 0; }; exit 1')
+  printf '%s\n' "$out" > "$TMP_ROOT/android-boot.json"
+  jq -e '[.android[] | select(.machine == "PC01") | {(.avd): .boot_completed}] | add == {"avd_a":"0","avd_b":"unknown","avd_c":"failed"}' \
+    "$TMP_ROOT/android-boot.json" >/dev/null \
+    || fail "boot_completed variants: $(jq -c '.android' "$TMP_ROOT/android-boot.json")"
+  pass "boot_completed renders 0, unknown for empty, and failed for an unanswered probe"
 }
 
 test_android_missing_tools_is_stated_not_zero() {
@@ -665,6 +742,10 @@ PY
 test_every_section_renders_and_agrees
 test_android_fixture_renders_both_hosts
 test_android_probe_reads_fake_tools
+test_android_unresolved_name_is_not_stopped
+test_android_probe_failures_are_stated_not_zero
+test_android_empty_clean_reads_render_none
+test_android_boot_completed_variants
 test_android_missing_tools_is_stated_not_zero
 test_opencode_worker_gets_a_context_band
 test_failed_quota_is_labelled_not_zero
