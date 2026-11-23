@@ -22,7 +22,7 @@ This is a resource and worker inventory, not a resume digest: use `bearings` for
 
 2. **Render the sections the captain asked for.**
    Lead with the host and drive state, then quota lanes with every window in the order given, then the worker table with machine, lane, task, model, stage, age, context band, and PR, then panes and strays, then secondmates and roles, then testing environments and Android emulator availability, then compute accounts.
-   For Android, name each host's AVDs, serials, adb device state, and boot completion: a `stopped` AVD exists but is not running, `none` means the probes read cleanly and found no emulator, and a missing adb or emulator is stated with its reason rather than reported as zero devices.
+   For Android, name each host's AVDs, serials, adb device state, and boot completion: a `stopped` AVD exists but is not running, `none` means the probes read cleanly and found no emulator, and a missing adb or emulator, or a recorded Android root or AVD home that is missing or unreadable, is stated with its reason rather than reported as zero devices.
    Name the orchestrator, the supervision host and engine, and each secondmate explicitly so "who is orchestrating" is answered without inference.
    A `stale` or `failed` figure says so with its reason and read time; never restate it as zero or as current.
    Convert `read_utc` times to US Eastern when speaking to the captain.
