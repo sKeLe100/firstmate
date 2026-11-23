@@ -1,0 +1,5 @@
+== BASE ==
+rc=0
+== FIXED ==
+rc=0
+windows shim: 2.1.221 ; native: 2.1.330 ; both base and fixed check silent (rc=0) here; unit test test_windows_interop_copy_is_never_a_candidate passes
