@@ -3448,18 +3448,27 @@ fi
 # time alongside orch"). A declared account list lets a ship or scout name that
 # account; this gate defers a fresh one beyond the cap before any brief,
 # endpoint, worktree, or record exists, so its backlog item stays queued. A
-# relaunch replaces a lane that already holds its place, and a secondmate is not
-# a dispatched lane, so both are exempt. Occupancy mirrors bin/fm-dispatch-quota-cap.sh:
+# relaunch of a lane whose own record already holds the place is exempt, one
+# moved onto the account is gated, and a secondmate is not a dispatched lane. Occupancy mirrors bin/fm-dispatch-quota-cap.sh:
 # this home's Claude task records on the same account root, minus a recorded PR
 # handoff, counted advisory under concurrent spawns.
 FM_ORCHESTRATOR_WORKER_CAP=1
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ] && [ -n "$WORKER_ACCOUNT" ]; then
+if [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ] && [ -n "$WORKER_ACCOUNT" ]; then
   CAP_RESERVED=$(fm_worker_account_orchestrator_root "$CONFIG") || exit 1
   if [ -n "$CAP_RESERVED" ]; then
     CAP_ROOT=${WORKER_ACCOUNT_ROOT:-${HOME:-}/.claude}
     CAP_RESERVED=$(realpath -m -- "$CAP_RESERVED" 2>/dev/null || printf '%s\n' "$CAP_RESERVED")
     CAP_ROOT=$(realpath -m -- "$CAP_ROOT" 2>/dev/null || printf '%s\n' "$CAP_ROOT")
-    if [ "$CAP_RESERVED" = "$CAP_ROOT" ]; then
+    CAP_HOLDS_PLACE=0
+    if [ "$RELAUNCH" -eq 1 ] && [ -z "$(fm_meta_get "$RELAUNCH_META" pr)" ]; then
+      cap_own=$(fm_meta_get "$RELAUNCH_META" account)
+      if [ -n "$cap_own" ]; then
+        cap_own=$(fm_worker_account_root "$cap_own")
+        cap_own=$(realpath -m -- "$cap_own" 2>/dev/null || printf '%s\n' "$cap_own")
+        [ "$cap_own" != "$CAP_RESERVED" ] || CAP_HOLDS_PLACE=1
+      fi
+    fi
+    if [ "$CAP_RESERVED" = "$CAP_ROOT" ] && [ "$CAP_HOLDS_PLACE" -eq 0 ]; then
       CAP_COUNT=0
       CAP_HOLDERS=
       for cap_meta in "$STATE"/*.meta; do
