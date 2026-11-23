@@ -525,12 +525,35 @@ test_android_unresolved_name_is_not_stopped() {
     'case "$*" in devices) printf "List of devices attached\nemulator-5554\tdevice\n" ;; *) exit 1 ;; esac' \
     '[ "$*" = "-list-avds" ] && { printf "pt_pixel8pro\n"; exit 0; }; exit 1')
   printf '%s\n' "$out" > "$TMP_ROOT/android-unresolved.json"
-  jq -e '[.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro") | .state] == ["unknown"]' \
+  jq -e '[.android[] | select(.machine == "PC01")] | length == 1' \
     "$TMP_ROOT/android-unresolved.json" >/dev/null \
-    || fail "an AVD with an unnamed running serial must not render stopped: $(jq -c '.android' "$TMP_ROOT/android-unresolved.json")"
-  jq -e '[.android[] | select(.machine == "PC01" and .serial == "emulator-5554") | .boot_completed] == ["failed"]' \
-    "$TMP_ROOT/android-unresolved.json" >/dev/null || fail "unanswered boot probe must render failed: $(jq -c .android "$TMP_ROOT/android-unresolved.json")"
-  pass "a running emulator with an unresolved AVD name never leaves its AVD rendered stopped"
+    || fail "an unnamed running emulator must render exactly one row: $(jq -c '.android' "$TMP_ROOT/android-unresolved.json")"
+  jq -e '[.android[] | select(.machine == "PC01") | .avd] == ["unknown"]' \
+    "$TMP_ROOT/android-unresolved.json" >/dev/null \
+    || fail "an unnamed running emulator must render avd unknown, never a stopped listing: $(jq -c '.android' "$TMP_ROOT/android-unresolved.json")"
+  jq -e '.android[] | select(.machine == "PC01" and .serial == "emulator-5554")
+    | .state == "device" and .boot_completed == "failed" and (.detail | test("unresolved"))' \
+    "$TMP_ROOT/android-unresolved.json" >/dev/null || fail "unresolved running emulator row: $(jq -c .android "$TMP_ROOT/android-unresolved.json")"
+  pass "an unnamed running emulator renders once as avd unknown, never also as a stopped AVD"
+}
+
+test_android_adb_failure_keeps_avd_unknown_not_stopped() {
+  local out
+  out=$(run_android_probe adb-fail 'exit 1' \
+    '[ "$*" = "-list-avds" ] && { printf "pt_pixel8pro\n"; exit 0; }; exit 1')
+  printf '%s\n' "$out" > "$TMP_ROOT/android-adb-fail.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro") | .state] == ["unknown"]' \
+    "$TMP_ROOT/android-adb-fail.json" >/dev/null \
+    || fail "a listed AVD must render unknown, not stopped, when adb fails: $(jq -c '.android' "$TMP_ROOT/android-adb-fail.json")"
+  jq -e '.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro") | (.detail | test("adb"))' \
+    "$TMP_ROOT/android-adb-fail.json" >/dev/null \
+    || fail "the unknown AVD row must state the adb reason: $(jq -c '.android' "$TMP_ROOT/android-adb-fail.json")"
+  jq -e '[.android[] | select(.state == "stopped")] | length == 0' \
+    "$TMP_ROOT/android-adb-fail.json" >/dev/null || fail "a failed adb read must never claim a stopped AVD"
+  jq -e '[.unavailable[] | select(.source == "android:PC01") | .reason] == ["adb devices failed (status 1)"]' \
+    "$TMP_ROOT/android-adb-fail.json" >/dev/null \
+    || fail "the failed adb probe must be stated: $(jq -c '.unavailable' "$TMP_ROOT/android-adb-fail.json")"
+  pass "a failed adb read renders the AVD unknown with its reason, never stopped"
 }
 
 test_android_probe_failures_are_stated_not_zero() {
@@ -612,6 +635,12 @@ test_android_physical_device_does_not_hide_stopped_avd() {
   jq -e '[.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro") | .state] == ["stopped"]' \
     "$TMP_ROOT/android-physical.json" >/dev/null \
     || fail "a physical adb device must not hide a stopped AVD: $(jq -c '.android' "$TMP_ROOT/android-physical.json")"
+  jq -e '.android[] | select(.machine == "PC01" and .serial == "R58M12ABC")
+    | .avd == "-" and .state == "device" and .detail == "adb device"' \
+    "$TMP_ROOT/android-physical.json" >/dev/null \
+    || fail "a physical adb serial must render as its own row: $(jq -c '.android' "$TMP_ROOT/android-physical.json")"
+  jq -e '[.android[] | select(.machine == "PC01" and .state == "unknown")] | length == 0' \
+    "$TMP_ROOT/android-physical.json" >/dev/null || fail "a physical device must never turn a listed AVD unknown"
   pass "a non-emulator adb serial leaves a stopped AVD rendered stopped"
 }
 
@@ -823,6 +852,7 @@ test_every_section_renders_and_agrees
 test_android_fixture_renders_both_hosts
 test_android_probe_reads_fake_tools
 test_android_unresolved_name_is_not_stopped
+test_android_adb_failure_keeps_avd_unknown_not_stopped
 test_android_probe_failures_are_stated_not_zero
 test_android_empty_clean_reads_render_none
 test_android_boot_completed_variants

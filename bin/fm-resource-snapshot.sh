@@ -40,14 +40,20 @@
 #   android[]      machine,avd,serial,state,boot_completed,detail,read_utc
 #                  one row per AVD listed by `emulator -list-avds` plus any
 #                  adb serial with no matching AVD. state is the adb device
-#                  state (device/offline/unauthorized), `stopped` for a
-#                  listed AVD with no running emulator, `unknown` for a listed
-#                  AVD while an adb serial's AVD name is unresolved, or `none` when both
-#                  probes read cleanly and found nothing. boot_completed is
-#                  `1`/`0` from `getprop sys.boot_completed`, `unknown` when
-#                  empty, `stale`/`failed` when that probe did not answer, or
-#                  `-` for a non-running device. A missing adb or emulator is
-#                  an unavailable[] row with its reason, never zero devices.
+#                  state (device/offline/unauthorized), `stopped` for a listed
+#                  AVD with no running emulator and a clean adb read, `unknown`
+#                  for a listed AVD when adb is missing/failing or another
+#                  emulator's AVD name is unresolved, or `none` when both probes
+#                  read cleanly and found nothing. avd is `unknown` for a
+#                  running emulator whose AVD name cannot be resolved; that
+#                  emulator renders once, not also as a stopped listing. Only
+#                  emulator-* serials are name-resolved, so a physical or other
+#                  adb device renders as its own row and never hides a stopped
+#                  AVD. boot_completed is `1`/`0` from
+#                  `getprop sys.boot_completed`, `unknown` when empty,
+#                  `stale`/`failed` when that probe did not answer, or `-` for a
+#                  non-running device. A missing adb or emulator is an
+#                  unavailable[] row with its reason, never zero devices.
 #                  Probes are read-only: no emulator is ever started or wiped.
 #   compute[]      rung,account,plan,used,allowance,reset,status,runs,read_utc
 #   unavailable[]  source,reason,read_utc
@@ -1065,14 +1071,14 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
   local adb=$1 emu=$2 runner=$3 timeout=$4
   local out rc line serial state avd boot detail
   local -a avds=() serials=() states=() serial_avds=() matched=()
-  local clean=1 i j
-  if [ -z "$adb" ]; then printf 'N\t%s\n' 'adb not found'; clean=0; fi
-  if [ -z "$emu" ]; then printf 'N\t%s\n' 'emulator not found'; clean=0; fi
+  local adb_clean=1 emu_clean=1 unresolved_running=0 unresolved_other=0 found i j
+  if [ -z "$adb" ]; then printf 'N\t%s\n' 'adb not found'; adb_clean=0; fi
+  if [ -z "$emu" ]; then printf 'N\t%s\n' 'emulator not found'; emu_clean=0; fi
   if [ -n "$emu" ]; then
     out=$("$runner" "$timeout" "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
     out=${out//$'\r'/}
     case "$rc" in
-      124) printf 'N\t%s\n' 'emulator -list-avds timed out'; clean=0 ;;
+      124) printf 'N\t%s\n' 'emulator -list-avds timed out'; emu_clean=0 ;;
       0)
         while IFS= read -r line; do
           line=${line//$'\r'/}
@@ -1080,14 +1086,14 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
           case "$line" in \#*|'*'*) continue ;; esac
           avds+=("$line")
         done <<< "$out" ;;
-      *) printf 'N\t%s\n' "emulator -list-avds failed (status $rc)"; clean=0 ;;
+      *) printf 'N\t%s\n' "emulator -list-avds failed (status $rc)"; emu_clean=0 ;;
     esac
   fi
   if [ -n "$adb" ]; then
     out=$("$runner" "$timeout" "$adb" devices 2>/dev/null </dev/null); rc=$?
     out=${out//$'\r'/}
     case "$rc" in
-      124) printf 'N\t%s\n' 'adb devices timed out'; clean=0 ;;
+      124) printf 'N\t%s\n' 'adb devices timed out'; adb_clean=0 ;;
       0)
         while IFS=$'\t ' read -r serial state _; do
           [ -n "$serial" ] || continue
@@ -1095,11 +1101,14 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
           [ -n "$state" ] || continue
           serials+=("$serial"); states+=("$state")
         done <<< "$out" ;;
-      *) printf 'N\t%s\n' "adb devices failed (status $rc)"; clean=0 ;;
+      *) printf 'N\t%s\n' "adb devices failed (status $rc)"; adb_clean=0 ;;
     esac
   fi
   for j in "${!serials[@]}"; do
     serial_avds[j]=-
+    # Only an emulator host serial can resolve to an AVD; a physical or other
+    # adb device renders as its own row and never makes a listed AVD unknown.
+    case "${serials[$j]}" in emulator-*) ;; *) continue ;; esac
     case "${states[$j]}" in device) ;; *) continue ;; esac
     out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" emu avd name 2>/dev/null </dev/null); rc=$?
     if [ "$rc" -eq 0 ]; then
@@ -1122,32 +1131,60 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
       [ -z "$out" ] || serial_avds[j]=$out
     fi
   done
-  local unresolved=0
   for j in "${!serials[@]}"; do
-    case "${serials[$j]}" in emulator-*) [ "${serial_avds[$j]}" != - ] || unresolved=$((unresolved + 1)) ;; esac
+    case "${serials[$j]}" in
+      emulator-*)
+        [ "${serial_avds[$j]}" = - ] || continue
+        case "${states[$j]}" in
+          device) unresolved_running=$((unresolved_running + 1)) ;;
+          *) unresolved_other=$((unresolved_other + 1)) ;;
+        esac ;;
+    esac
   done
   for i in "${!avds[@]}"; do
     avd=${avds[$i]}
-    serial=- state=stopped boot=- detail='AVD listed; no running emulator'
-    [ "$unresolved" -eq 0 ] || { state=unknown; detail='AVD listed; an adb serial has no resolved AVD name'; }
+    serial=- state=stopped boot=- detail='AVD listed; no running emulator' found=0
     for j in "${!serials[@]}"; do
       [ "${serial_avds[$j]}" = "$avd" ] || continue
       serial=${serials[$j]}; state=${states[$j]}; detail='running emulator'
       [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout")
-      matched[j]=1
+      matched[j]=1; found=1
       break
     done
+    if [ "$found" -eq 0 ]; then
+      if [ "$adb_clean" -eq 0 ]; then
+        state=unknown; detail='adb unavailable; running state unread'
+      elif [ "$unresolved_running" -gt 0 ]; then
+        # The running emulator whose AVD name is unknown renders once below.
+        continue
+      elif [ "$unresolved_other" -gt 0 ]; then
+        state=unknown; detail='AVD listed; an emulator serial has no resolved AVD name'
+      fi
+    fi
     printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" "$detail"
   done
   for j in "${!serials[@]}"; do
     [ -z "${matched[$j]:-}" ] || continue
-    serial=${serials[$j]}; state=${states[$j]}
-    avd=${serial_avds[$j]}; [ -n "$avd" ] || avd=-
+    serial=${serials[$j]}; state=${states[$j]}; avd=${serial_avds[$j]}
     boot=-
     [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout")
-    printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" 'adb serial without AVD match'
+    case "$serial" in
+      emulator-*)
+        if [ "$avd" = - ]; then
+          if [ "$state" = device ]; then
+            avd=unknown; detail='running emulator; AVD name unresolved'
+          else
+            avd=-; detail='emulator serial; AVD name unresolved'
+          fi
+        else
+          detail='running emulator'
+        fi ;;
+      *) avd=-; detail='adb device' ;;
+    esac
+    printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" "$detail"
   done
-  if [ "$clean" -eq 1 ] && [ "${#avds[@]}" -eq 0 ] && [ "${#serials[@]}" -eq 0 ]; then
+  if [ "$adb_clean" -eq 1 ] && [ "$emu_clean" -eq 1 ] \
+    && [ "${#avds[@]}" -eq 0 ] && [ "${#serials[@]}" -eq 0 ]; then
     printf 'A\t-\t-\t%s\t-\t%s\n' none 'no AVDs and no running emulators'
   fi
 }
