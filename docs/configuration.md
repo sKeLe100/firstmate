@@ -2739,6 +2739,13 @@ A repo update that fast-forwards an in-repo action's bytes in place would otherw
 Every failure path - a mutated spec or action executable, a condition error past its budget, an expired deadline, a failed action, or an earlier fire whose outcome was never captured - produces a terminal captured outcome that wakes firstmate rather than a silent retry, and a durable single-fire marker claimed before the action makes restarts and re-polls unable to fire it twice.
 The adapter automates only the exact deterministic subset: anything needing judgment, and anything destructive, irreversible, or security-sensitive, keeps the ordinary check-fires-then-firstmate-decides flow, and the adapter's header and `--help` own its commands, flags, and outcome document.
 
+**Wake to dispatch a queued task at a time or quota reset**
+
+`bin/fm-timed-dispatch.sh arm <task-id> --at <time>` or `... --account <dir> [--window <id>]` records a durable "wake me to dispatch this task" and arms it as a `when` watch whose check wake names the task.
+The target is either an explicit UTC time or the named Claude account's own quota window reset, read once at arm time through `quota-axi --provider claude --profile-only --json`.
+The watch survives a firstmate restart through the ordinary process-event reconciliation and never spawns on its own, so the eventual spawn still passes firstmate's normal dispatch checks.
+`list` shows armed wakes and `cancel` retires one; the script's header and `--help` own its flags and its private arm record.
+
 **Capture and publish results**
 
 This section is the single owner of the runner's operating contract.

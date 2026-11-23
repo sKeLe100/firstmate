@@ -249,3 +249,4 @@ The fork also removed the macOS stock Bash job (the workflow's own comment owns 
 A passing coverage guard does not establish a healthy job duration; refresh the healthy figures above from the lanes' uploaded timing artifacts.
 
 The suspected mechanism behind the wedged script that motivated the per-script bound above is a rare bash async-signal/trap race in `bin/fm-wake-lib.sh`'s lock-wait/handoff path (`_fm_lock_acquire_wait_handoff`, `fm_lock_acquire_wait_bounded`) under external process-group kill; it has not been reproduced locally and `fm-wake-lib.sh` is safety-critical, so no fix has been attempted there pending real reproduction.
+The 2026-11-23 hint-drift refresh from PR 320's run 45127152954 raised `tests/fm-self-repo-role.test.sh` from 7363 ms to its measured 12589 ms (repeated drift 1.71x).
