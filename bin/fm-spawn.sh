@@ -812,6 +812,12 @@
 #   a NEW task id; both are optional but must be given together, and are
 #   refused on --relaunch, whose own delegation event is recorded by
 #   bin/fm-control.sh instead.
+#   --decision-record <json-file> attaches firstmate's decision record to this
+#   fresh ship/scout dispatch's telemetry event (docs/llm-usage-telemetry.md
+#   "dispatch"); the file must hold one JSON object and, when its confidence
+#   is below 70, also the runner-up and why it lost. Optional; absent keeps
+#   the record unchanged. Refused on --relaunch (no dispatch event is written)
+#   and on --secondmate (secondmate spawns record no dispatch event).
 set -eu
 
 # Template replacements must stay literal on Bash 5.2+ and stock macOS Bash.
@@ -1096,6 +1102,7 @@ TRACEPARENT_ARG=
 PURPOSE=
 REDELEGATED_FROM=
 REDELEGATION_REASON=
+DECISION_RECORD_FILE=
 HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
@@ -1113,6 +1120,7 @@ TRACEPARENT_SET=0
 PURPOSE_SET=0
 REDELEGATED_FROM_SET=0
 REDELEGATION_REASON_SET=0
+DECISION_RECORD_SET=0
 ACCOUNT_ARG=
 ACCOUNT_SET=0
 RELAUNCH=0
@@ -1194,6 +1202,10 @@ for a in "$@"; do
       REDELEGATION_REASON=$a
       REDELEGATION_REASON_SET=1
       ;;
+    decision-record)
+      DECISION_RECORD_FILE=$a
+      DECISION_RECORD_SET=1
+      ;;
     account)
       ACCOUNT_ARG=$a
       ACCOUNT_SET=1
@@ -1233,6 +1245,11 @@ for a in "$@"; do
   --redelegation-reason=*)
     REDELEGATION_REASON=${a#--redelegation-reason=}
     REDELEGATION_REASON_SET=1
+    ;;
+  --decision-record) want_value=decision-record ;;
+  --decision-record=*)
+    DECISION_RECORD_FILE=${a#--decision-record=}
+    DECISION_RECORD_SET=1
     ;;
   --herdr-resume-lock-wait) HERDR_RESUME_LOCK_WAIT=1 ;;
   --harness) want_value=harness ;;
@@ -1395,6 +1412,55 @@ if [ "$REDELEGATED_FROM_SET" -eq 1 ] || [ "$REDELEGATION_REASON_SET" -eq 1 ]; th
     echo "error: --redelegated-from must be a task id, not a path" >&2
     exit 1
   }
+fi
+# --decision-record attaches firstmate's dispatch decision (rule, purpose,
+# token estimate, eligible and skipped candidates, chosen profile, confidence)
+# to this fresh ship/scout dispatch's telemetry event. It is refused where no
+# dispatch event is written, and a malformed or incomplete record is refused
+# rather than archived as unreadable evidence.
+if [ "$DECISION_RECORD_SET" -eq 1 ]; then
+  [ "$RELAUNCH" -eq 0 ] || {
+    echo "error: --decision-record applies only to a fresh spawn; a relaunch writes no dispatch event" >&2
+    exit 1
+  }
+  [ "$KIND" != secondmate ] || {
+    echo "error: --decision-record applies only to ship and scout spawns; secondmate spawns write no dispatch event" >&2
+    exit 1
+  }
+  [ -n "$DECISION_RECORD_FILE" ] || {
+    echo "error: --decision-record requires a file path" >&2
+    exit 1
+  }
+  [ -f "$DECISION_RECORD_FILE" ] || {
+    echo "error: --decision-record file not found: $DECISION_RECORD_FILE" >&2
+    exit 1
+  }
+  [ -r "$DECISION_RECORD_FILE" ] || {
+    echo "error: --decision-record file is unreadable: $DECISION_RECORD_FILE" >&2
+    exit 1
+  }
+  command -v jq >/dev/null 2>&1 || {
+    echo "error: --decision-record requires jq" >&2
+    exit 1
+  }
+  jq -s -e 'length == 1 and (.[0] | type == "object")' "$DECISION_RECORD_FILE" >/dev/null 2>&1 || {
+    echo "error: --decision-record file must contain one valid JSON object: $DECISION_RECORD_FILE" >&2
+    exit 1
+  }
+  jq -e '(.confidence | type) == "number" and .confidence >= 0 and .confidence <= 100' "$DECISION_RECORD_FILE" >/dev/null 2>&1 || {
+    echo "error: --decision-record confidence must be a number from 0 to 100" >&2
+    exit 1
+  }
+  jq -e '((.eligible_candidates == null) or ((.eligible_candidates | type) == "array")) and ((.skipped_candidates == null) or ((.skipped_candidates | type) == "array"))' "$DECISION_RECORD_FILE" >/dev/null 2>&1 || {
+    echo "error: --decision-record eligible_candidates and skipped_candidates must be arrays when present" >&2
+    exit 1
+  }
+  if jq -e '.confidence < 70' "$DECISION_RECORD_FILE" >/dev/null 2>&1; then
+    jq -e '((.runner_up | type) == "string" and (.runner_up | length) > 0) and ((.runner_up_why_lost | type) == "string" and (.runner_up_why_lost | length) > 0)' "$DECISION_RECORD_FILE" >/dev/null 2>&1 || {
+      echo "error: --decision-record with confidence below 70 must name runner_up and runner_up_why_lost" >&2
+      exit 1
+    }
+  fi
 fi
 
 if [ "$RELAUNCH" -eq 0 ] && [ "$RELAUNCH_MOVE_SESSION" -eq 1 ]; then
@@ -8240,11 +8306,17 @@ fi
 # recorded by bin/fm-control.sh instead, once the replacement is confirmed
 # alive, so it is not duplicated here. Best-effort: never blocks the spawn.
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+  decision_record_fields=()
+  if [ -n "$DECISION_RECORD_FILE" ]; then
+    decision_record_json=$(jq -c . "$DECISION_RECORD_FILE" 2>/dev/null) || decision_record_json=
+    [ -n "$decision_record_json" ] && decision_record_fields=("decision_record=$decision_record_json")
+  fi
   fm_llm_usage_emit "$DATA" "$STATE" dispatch \
     "task_id=$ID" "kind=$KIND" "purpose=${PURPOSE:-unspecified}" \
     "harness=$HARNESS" "model=${MODEL:-default}" "effort=${EFFORT:-default}" \
     "backend=${BACKEND:-tmux}" "mode=${MODE:-}" "project=${PROJ_ABS:-}" \
-    "from_task_id=${REDELEGATED_FROM:-}" || true
+    "from_task_id=${REDELEGATED_FROM:-}" \
+    ${decision_record_fields[@]+"${decision_record_fields[@]}"} || true
   if [ "$REDELEGATED_FROM_SET" -eq 1 ]; then
     prior_meta="$STATE/$REDELEGATED_FROM.meta"
     prior_harness=$(fm_meta_get "$prior_meta" harness)

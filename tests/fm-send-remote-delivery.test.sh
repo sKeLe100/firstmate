@@ -795,6 +795,37 @@ test_local_pending_reports_delivered_unconfirmed() {
   pass "fm-send local: an unconfirmed submit exits 3 with an honest non-error report"
 }
 
+test_remote_local_path_warns() {
+  local dir fb ssh_log home rhome rc err rec count
+  dir="$TMP_ROOT/remote-local-path"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); ssh_log="$dir/ssh.log"; : > "$ssh_log"
+  rhome=$(setup_remote_secondmate_home remote-local-path)
+  home=$(setup_remote_parent_home remote-local-path "$rhome")
+  mkdir -p "$home/data" "$rhome/data"
+  printf 'local report\n' > "$home/data/report.md"
+  printf 'remote report\n' > "$rhome/data/report.md"
+
+  rc=0
+  send_env "$fb" "$home" "$ssh_log" \
+    "$SEND" rsm "read $home/data/report.md and $rhome/data/report.md; $home/data/report.md again" \
+    >"$dir/out" 2>"$dir/err" || rc=$?
+  err=$(cat "$dir/err")
+  expect_code 0 "$rc" "a steer naming a sender-home path must still be delivered: $err"
+  assert_contains "$err" "warning: the steer names '$home/data/report.md'" \
+    "the steer must warn about the sender-home path it names"
+  assert_contains "$err" "cannot read it" \
+    "the warning must say the remote mate cannot read the path"
+  assert_not_contains "$err" "$rhome/data/report.md" \
+    "a path outside this home must not be warned about"
+  count=$(printf '%s\n' "$err" | grep -cF "warning: the steer names '$home/data/report.md'" || true)
+  [ "$count" = 1 ] || fail "a repeated sender-home path must warn once, got $count"
+  rec=$(remote_inbox_records "$rhome" | head -1)
+  [ -n "$rec" ] || fail "the warned steer must still land in the remote steering inbox"
+  assert_grep "read $home/data/report.md" "$rec" \
+    "the remote record must still carry the full steer text"
+  pass "fm-send remote: a sender-home path in a remote steer warns and still delivers"
+}
+
 test_local_pending_does_not_close_resolve_key() {
   local dir fb log home rc out
   dir="$TMP_ROOT/local-pending-key"; mkdir -p "$dir"
@@ -834,6 +865,7 @@ test_remote_real_failure_still_fails
 test_remote_exit3_no_longer_delivered
 test_remote_transport_loss_preserves_expectation
 test_remote_send_budget_bounds_busy_lane
+test_remote_local_path_warns
 test_local_pending_reports_delivered_unconfirmed
 test_local_pending_does_not_close_resolve_key
 test_local_secondmate_pending_keeps_expectation_armed

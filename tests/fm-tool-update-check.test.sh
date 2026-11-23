@@ -222,6 +222,30 @@ test_a_failing_probe_still_reports_its_version() {
   pass "a version probe that exits non-zero still reports its version"
 }
 
+test_windows_interop_copy_is_never_a_candidate() {
+  local home native win mntroot out report
+  # WSL appends the Windows PATH, so a Windows-interop copy of a tool can sit
+  # under /mnt/<drive>/ and cannot answer --version. It is not a tool this host
+  # runs, so it must neither fail the check nor count as an installed copy. The
+  # mount root is redirected to a fixture because /mnt/<drive> is not writable
+  # everywhere this test runs.
+  home=$(make_home wsl-interop)
+  native="$TMP_ROOT/wsl-interop/local/bin"
+  mntroot="$TMP_ROOT/wsl-interop/mnt"
+  win="$mntroot/c/Users/sean/AppData/Roaming/npm"
+  make_copy "$native" "$TOOL" 'herdr 0.8.2'
+  make_copy "$win" "$TOOL" 'no version here'
+  write_config "$home" "{\"tools\":[{\"name\":\"herdr\",\"command\":\"$TOOL\"}]}"
+  out="$home/out.txt"
+  # The interop copy is first on PATH, so without the skip it is the copy PATH
+  # resolves and its silence becomes the failure line.
+  run_check "$home" "$(fixture_path "$win:$native")" "$out" FM_TOOL_UPDATE_WSL_MNT_ROOT="$mntroot"
+  report=$(cat "$out")
+  assert_not_contains "$report" "check failed" "a Windows-interop copy under /mnt/<drive> failed the check"
+  [ ! -s "$out" ] || fail "a Windows-interop copy under /mnt/<drive> produced a report: $report"
+  pass "a Windows-interop copy under /mnt/<drive> is never probed or counted"
+}
+
 test_missing_command_is_reported() {
   local home out
   home=$(make_home absent)
@@ -1590,6 +1614,7 @@ test_identical_versions_are_silent
 test_one_copy_reached_twice_is_probed_once
 test_unreadable_version_is_a_failure_not_a_pass
 test_a_failing_probe_still_reports_its_version
+test_windows_interop_copy_is_never_a_candidate
 test_missing_command_is_reported
 test_announced_update_is_reported_from_the_tool_itself
 test_announced_update_already_installed_is_not_double_reported

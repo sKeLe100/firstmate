@@ -685,7 +685,7 @@ family_for_basename() {
     fm-classify-corr-token.test.sh|\
     fm-claude-account-quota.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
-    fm-dispatch-resolve.test.sh|\
+    fm-dispatch-resolve.test.sh|fm-dispatch-calibration.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
@@ -1055,6 +1055,7 @@ tests/fm-cursor-primary.test.sh 69845
 tests/fm-daemon.test.sh 50984
 tests/fm-devin-harness.test.sh 5066
 tests/fm-devin-signals-live-e2e.test.sh 306
+tests/fm-dispatch-calibration.test.sh 5000
 tests/fm-dispatch-quota-cap.test.sh 11272
 tests/fm-dispatch-resolve.test.sh 11875
 tests/fm-documentation-audiences.test.sh 1746
@@ -2481,6 +2482,13 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-capacity-auto.test.sh"
       printf '%s\n' "__script__:fm-lane-capacity-integration.test.sh"
       ;;
+    bin/fm-dispatch-calibration.sh)
+      printf '%s\n' "__script__:fm-dispatch-calibration.test.sh"
+      ;;
+    bin/fm-llm-usage-lib.sh)
+      printf '%s\n' "__script__:fm-llm-usage-lib.test.sh"
+      printf '%s\n' "__script__:fm-llm-usage-telemetry-integration.test.sh"
+      ;;
     bin/fm-env-lib.sh)
       # The one .env accessor, sourced by bin/fm-x-lib.sh (Relay token) and
       # bin/fm-dispatch-resolve.sh (TYPESAFE_API_KEY).
@@ -2611,6 +2619,7 @@ families_for_changed_path() {
     bin/fm-peek.sh|bin/fm-composer*)
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
+      printf '%s\n' "__script__:fm-llm-usage-telemetry-integration.test.sh"
       ;;
     bin/fm-primary-herdr.sh)
       printf '%s\n' __script__:fm-primary-herdr.test.sh

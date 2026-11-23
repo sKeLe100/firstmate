@@ -1155,6 +1155,15 @@ Keep the export root private and never serve it directly.
 The schema is versioned for compatible readers, but it is not a Firstmate command API and no Firstmate reader consumes it.
 [`architecture.md`](architecture.md#read-only-record-exports) describes the mechanism boundary; [`bin/fm-record-export.sh`](../bin/fm-record-export.sh) owns the exact allowlist, schema, path checks, publication, and retention mechanics.
 
+## Underused-capacity threshold (config/underused-capacity-threshold)
+
+The optional local, gitignored `config/underused-capacity-threshold` file holds one whole percentage 0-100, the share of a spend lane's five-hour window that must remain before `bin/fm-underused-capacity.sh` reports that lane as idle capacity while a free pool slot and dispatchable work remain.
+Absent means 50.
+`FM_UNDERUSED_FIVE_HOUR_MIN` and the script's `--threshold` flag override it in that order.
+A malformed value is a usage error, never a silent default.
+The file is a home-local reporting choice and is not inherited by secondmate homes, which run their own fleet mix and quota windows.
+The script's header owns the exact lane-selection rules and output line.
+
 ## Turn-end pane-churn absorb (config/turnend-churn-absorb)
 
 The optional local, gitignored `config/turnend-churn-absorb` presence flag opts this home into a default-off third form of positive work evidence in watcher triage.
@@ -2950,7 +2959,7 @@ The second condition is the reason the check exists.
 An update can install correctly and stay inert because an earlier `PATH` entry still holds an older copy, and a check that only asks whether a newer version is published reports that host as up to date.
 
 The script therefore runs every copy of a watched command found on `PATH` and asks it for its own version, rather than trusting one lookup or reading a version out of a directory name.
-It only reports; it never installs or updates tools, fetches into a watched git repository, or changes `PATH` or a version manager.
+The script therefore runs every copy of a watched command found on `PATH` (skipping WSL Windows-interop copies under `/mnt/<drive>/`) and asks it for its own version, rather than trusting one lookup or reading a version out of a directory name.
 
 This section is the single owner of the canonical schema.
 `bin/fm-tool-update-check.sh` owns probe mechanics, cadence, and the report record.

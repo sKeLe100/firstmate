@@ -496,6 +496,9 @@ A routed request is delivered as a durable record in the remote home's steering 
 It is never delivered by typing the payload into the pane.
 Exit 0 means the record durably exists.
 
+A routed request that names an absolute path under the sender's `FM_HOME` gets a stderr warning naming that path, because the remote home is a different directory on another host and cannot read it.
+The warning is advisory and the steer is still delivered; inline the content or use a path that exists on the remote host instead.
+
 ### Retries and safe resends
 
 Every remote transport attempt is bounded by `FM_SEND_REMOTE_BUDGET`.
