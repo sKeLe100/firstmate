@@ -105,8 +105,21 @@
 #                                      "Password: ..." lines; there is no default
 #                                      path, and the secret is only ever piped to
 #                                      curl on stdin, never in argv or output
-# A collector whose keys are absent renders one unavailable row with reason
-# "not configured"; the rest of the snapshot still renders.
+# A key that is absent from both the environment and the file is discovered
+# from the live state the tool itself uses, so a home with authenticated CLIs
+# still reports its compute accounts without a hand-written file:
+#   github_user   the authenticated `gh api user` login, else the owner in the
+#                 code root's github.com origin
+#   github_repo   the repository in the code root's github.com origin
+#   gitlab_namespace the authenticated `glab api user` username
+#   forgejo_url   ROOT_URL in the local Forgejo app.ini
+#   forgejo_owner,forgejo_repo
+#                 the one repository under the Forgejo repository root, when it
+#                 holds exactly one; never guessed when the instance has several
+# The explicit config values always win. A collector that still cannot identify
+# its source renders one unavailable row with reason "not configured" (or
+# "gh not found"/"glab not found" when the CLI is absent), and the rest of the
+# snapshot still renders.
 #
 # Fixture seams, for tests and for deterministic replay:
 #   FM_RESOURCE_NOW               epoch seconds or ISO time to report as now
@@ -131,6 +144,10 @@
 #                                 instead of ~/.android/avd and the Windows
 #                                 profiles (empty means none)
 #   FM_RESOURCE_CONTEXT_FIXTURE   JSON object mapping task id to ctx_band
+#   FM_RESOURCE_FORGEJO_INI       Forgejo app.ini read for URL and repo root
+#                                 (default $HOME/forgejo/custom/conf/app.ini)
+#   FM_RESOURCE_FORGEJO_REPO_ROOT Forgejo repository directory used for account
+#                                 discovery instead of app.ini's repository root
 #   FM_RESOURCE_<KEY>             override one config key (see below)
 #   QUOTA_AXI_SNAPSHOT            passed through to quota-axi (its own seam)
 #   FM_RESOURCE_SKIP_REMOTE=1     skip PC02 collection entirely
@@ -185,6 +202,82 @@ cfg() {  # <key> -> env override FM_RESOURCE_<KEY>, else config/resource-snapsho
     v=$(awk -F= -v k="$key" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$CONFIG/resource-snapshot" 2>/dev/null)
   fi
   printf '%s' "$v"
+}
+
+# The discovery helpers below only fill keys an explicit config left absent.
+# They never override a configured identity and never guess a repository from
+# more than one candidate.
+
+# github_origin_slug: owner/repo from the code root's github.com origin.
+github_origin_slug() {
+  local remote slug
+  remote=$(git -C "$FM_ROOT" remote get-url origin 2>/dev/null) || return 0
+  case "$remote" in
+    https://github.com/*)    slug=${remote#https://github.com/} ;;
+    http://github.com/*)     slug=${remote#http://github.com/} ;;
+    git@github.com:*)        slug=${remote#git@github.com:} ;;
+    ssh://git@github.com/*)  slug=${remote#ssh://git@github.com/} ;;
+    *) return 0 ;;
+  esac
+  slug=${slug%.git}
+  case "$slug" in */*) printf '%s' "$slug" ;; esac
+}
+
+# github_login: the authenticated gh login, empty when gh is absent or refused.
+github_login() {
+  command -v gh >/dev/null 2>&1 || return 0
+  fm_run_timed "$TESTING_TIMEOUT" gh api user --jq .login 2>/dev/null </dev/null
+}
+
+# gitlab_user: the authenticated glab username, empty when glab is absent.
+gitlab_user() {
+  command -v glab >/dev/null 2>&1 || return 0
+  fm_run_timed "$TESTING_TIMEOUT" glab api user 2>/dev/null </dev/null \
+    | jq -r '.username // empty' 2>/dev/null
+}
+
+forgejo_ini() {
+  printf '%s' "${FM_RESOURCE_FORGEJO_INI:-$HOME/forgejo/custom/conf/app.ini}"
+}
+
+# forgejo_ini_value <key>: one bare value from the app.ini, trimmed.
+forgejo_ini_value() {
+  local ini
+  ini=$(forgejo_ini)
+  [ -f "$ini" ] || return 0
+  awk -F'=' -v k="$1" '
+    { key = $1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", key) }
+    key == k { value = $2; sub(/^[^=]*=/, "", value); gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); print value; exit }
+  ' "$ini" 2>/dev/null
+}
+
+forgejo_repo_root() {
+  local root
+  root=$(forgejo_ini_value ROOT)
+  printf '%s' "${FM_RESOURCE_FORGEJO_REPO_ROOT:-${root:-$HOME/forgejo/data/forgejo-repositories}}"
+}
+
+# forgejo_discovered_url: the local instance's own ROOT_URL.
+forgejo_discovered_url() {
+  local url
+  url=$(forgejo_ini_value ROOT_URL)
+  [ -z "$url" ] || printf '%s' "${url%/}"
+}
+
+# forgejo_discovered_slug: owner/repo only when the repository root holds
+# exactly one repository, so a multi-repository instance is never guessed.
+forgejo_discovered_slug() {
+  local root hit='' d count=0 owner repo
+  root=$(forgejo_repo_root)
+  for d in "$root"/*/*.git; do
+    [ -d "$d" ] || continue
+    count=$((count + 1))
+    hit=$d
+  done
+  [ "$count" -eq 1 ] || return 0
+  owner=${hit%/*}; owner=${owner##*/}
+  repo=${hit##*/}; repo=${repo%.git}
+  [ -n "$owner" ] && [ -n "$repo" ] && printf '%s/%s' "$owner" "$repo"
 }
 
 # slot_busy <lockfile>: true when some process holds a lock on the file, read
@@ -1525,9 +1618,17 @@ collect_local_testing() {
 }
 
 collect_forgejo() {
-  local state queued='-' runners='-' user pass code url owner repo cred
+  local state queued='-' runners='-' user='' pass='' code url owner repo cred slug runs='-'
   url=$(cfg forgejo_url); owner=$(cfg forgejo_owner); repo=$(cfg forgejo_repo); cred=$(cfg forgejo_credentials)
-  if [ -z "$url" ] || [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$cred" ]; then
+  [ -n "$url" ] || url=$(forgejo_discovered_url)
+  if [ -z "$owner" ] || [ -z "$repo" ]; then
+    slug=$(forgejo_discovered_slug)
+    if [ -n "$slug" ]; then
+      [ -n "$owner" ] || owner=${slug%%/*}
+      [ -n "$repo" ] || repo=${slug#*/}
+    fi
+  fi
+  if [ -z "$url" ]; then
     note_unavailable 'forgejo' 'not configured'
     return
   fi
@@ -1536,33 +1637,54 @@ collect_forgejo() {
   if [ "$state" = active ]; then
     code=$(fm_run_timed 3 curl -sS -m 3 -o /dev/null -w '%{http_code}' "$url/api/v1/version" 2>/dev/null </dev/null)
     testing_row PC01 forgejo-api "${code:-failed}" 'GET /api/v1/version'
-    user=$(awk -F': *' '/^Username:/{print $2; exit}' "$cred" 2>/dev/null)
-    pass=$(awk -F': *' '/^Password:/{print $2; exit}' "$cred" 2>/dev/null)
+    if [ -n "$cred" ] && [ -r "$cred" ]; then
+      user=$(awk -F': *' '/^Username:/{print $2; exit}' "$cred" 2>/dev/null)
+      pass=$(awk -F': *' '/^Password:/{print $2; exit}' "$cred" 2>/dev/null)
+    fi
     if [ -n "$user" ] && [ -n "$pass" ]; then
       runners=$(printf 'user = "%s:%s"\n' "$user" "$pass" \
         | fm_run_timed "$TESTING_TIMEOUT" curl -sS -m "$TESTING_TIMEOUT" -K - \
           "$url/api/v1/admin/actions/runners" 2>/dev/null \
         | jq -r '[.[]? | .name + ":" + (.status // "unknown")] | join(",")' 2>/dev/null)
-      queued=$(printf 'user = "%s:%s"\n' "$user" "$pass" \
-        | fm_run_timed "$TESTING_TIMEOUT" curl -sS -m "$TESTING_TIMEOUT" -K - \
-          "$url/api/v1/repos/$owner/$repo/actions/runs?limit=50" 2>/dev/null \
-        | jq -r '[.workflow_runs[]? | select(.status == "waiting" or .status == "running" or .status == "queued")] | length' 2>/dev/null)
-    else
+      if [ -n "$owner" ] && [ -n "$repo" ]; then
+        queued=$(printf 'user = "%s:%s"\n' "$user" "$pass" \
+          | fm_run_timed "$TESTING_TIMEOUT" curl -sS -m "$TESTING_TIMEOUT" -K - \
+            "$url/api/v1/repos/$owner/$repo/actions/runs?limit=50" 2>/dev/null \
+          | jq -r '[.workflow_runs[]? | select(.status == "waiting" or .status == "running" or .status == "queued")] | length' 2>/dev/null)
+      else
+        note_unavailable 'forgejo:runs' 'repository not configured'
+      fi
+    elif [ -n "$cred" ]; then
       note_unavailable 'forgejo' 'credential file unreadable'
+    else
+      note_unavailable 'forgejo:credentials' 'credential file not configured'
     fi
   fi
   [ -n "$runners" ] || runners='unavailable'
   [ -n "$queued" ] || queued='unavailable'
+  case "$queued" in ''|*[!0-9]*) ;; *) runs="${queued} queued" ;; esac
   testing_row PC01 forgejo-runners "${runners:-unavailable}" 'PC02 runner registered to PC01 Forgejo'
   testing_row PC01 forgejo-queued "${queued:-unavailable}" 'waiting+running workflow runs'
-  compute_row forgejo "$owner" self-hosted - - - "$state" "${queued} queued"
+  compute_row forgejo "${owner:--}" self-hosted - - - "$state" "$runs"
 }
 
 collect_github() {
-  local usage minutes runs since ghuser ghrepo
+  local usage minutes runs since ghuser ghrepo slug
   ghuser=$(cfg github_user); ghrepo=$(cfg github_repo)
   if [ -z "$ghuser" ] || [ -z "$ghrepo" ]; then
-    note_unavailable 'github' 'not configured'
+    slug=$(github_origin_slug)
+    if [ -z "$ghuser" ]; then
+      ghuser=$(github_login)
+      [ -n "$ghuser" ] || ghuser=${slug%%/*}
+    fi
+    if [ -z "$ghrepo" ] && [ -n "$slug" ]; then ghrepo=${slug#*/}; fi
+  fi
+  if [ -z "$ghuser" ] || [ -z "$ghrepo" ]; then
+    if ! command -v gh >/dev/null 2>&1; then
+      note_unavailable 'github' 'gh not found'
+    else
+      note_unavailable 'github' 'not configured'
+    fi
     return
   fi
   if ! command -v gh >/dev/null 2>&1; then
@@ -1615,8 +1737,13 @@ collect_github() {
 collect_gitlab() {
   local usage used plan reset status ns
   ns=$(cfg gitlab_namespace)
+  [ -n "$ns" ] || ns=$(gitlab_user)
   if [ -z "$ns" ]; then
-    note_unavailable 'gitlab' 'not configured'
+    if ! command -v glab >/dev/null 2>&1; then
+      note_unavailable 'gitlab' 'glab not found'
+    else
+      note_unavailable 'gitlab' 'not configured'
+    fi
     return
   fi
   if ! command -v glab >/dev/null 2>&1; then
