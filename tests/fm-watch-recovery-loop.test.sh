@@ -343,47 +343,91 @@ test_undrainable_queue_resurface_is_bounded() {
   pass "an acknowledgement, a new wake, or a session restart restores ordinary resurface delivery, but a presentation-only drain does not"
 }
 
-# T4: a stale pane that re-announces while its wake stays undrained must count
-# toward the resurface bound instead of resetting it with every new row. Each
-# repeat carries a fresh epoch/sequence and an updated idle-age payload, so only
-# collapsing the repeated stale key keeps the fingerprint stable.
-test_repeated_stale_wake_counts_toward_bound() {
-  local dir state
-  dir=$(make_case repeated-stale-resurface)
+# T3: a row appended after the predecessor closes but before its handling
+# successor can inspect the queue must survive the handoff and reach main.
+test_handling_successor_resurfaces_a_row_appended_during_startup() {
+  local dir home state fakebin child blocker now out
+  dir=$(make_case recovery-startup-append)
+  home="$dir/home"
   state="$dir/state"
-  mkdir -p "$dir/home/data"
-  append_wake "$state" stale 'fm-remote:demo:p1' \
-    'stale: fm-remote:demo:p1 (idle 10s, possible wedge, escalation 1)' \
-    || fail "could not seed the first stale wake"
-  expect_resurface_close "$dir" "$dir/s1.out" 'check: rearm-resurface' "stale cycle 1"
-  ! grep -qF 'stalled' "$dir/s1.out" || fail "stale cycle 1 escalated before the bound: $(cat "$dir/s1.out")"
-  [ "$(streak_count "$state")" = 1 ] \
-    || fail "stale cycle 1 streak is $(streak_count "$state"), expected 1"
+  fakebin="$dir/fakebin"
+  mkdir -p "$home/data"
+  printf 'pending:downtime:later.1.aaa\n' > "$state/.watcher-down"
+  chmod 600 "$state/.watcher-down"
+  printf '%s\t1\tstale\tfm-demo\tstale: fm-demo (the delivered wake)\n' "$(date +%s)" > "$state/.wake-queue"
+  printf '1\n' > "$state/.wake-queue.seq"
+  out="$dir/watch.out"
 
-  append_wake "$state" stale 'fm-remote:demo:p1' \
-    'stale: fm-remote:demo:p1 (idle 20s, possible wedge, escalation 2)' \
-    || fail "could not append the repeated stale wake"
-  expect_resurface_close "$dir" "$dir/s2.out" 'check: rearm-resurface' "stale cycle 2"
-  ! grep -qF 'stalled' "$dir/s2.out" || fail "stale cycle 2 escalated before the bound: $(cat "$dir/s2.out")"
-  [ "$(streak_count "$state")" = 2 ] \
-    || fail "a repeated stale wake for the same pane reset the streak to $(streak_count "$state") instead of counting it"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || exit 1
+    : > "$2/queue-held"
+    while [ ! -e "$2/append-now" ]; do sleep 0.02; done
+    fm_wake_append_locked check inbox:n1 "check: captain inbox note n1 - from Basecamp" || exit 1
+    fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$state" &
+  blocker=$!
+  now=0
+  while [ "$now" -lt 100 ] && [ ! -e "$state/queue-held" ]; do
+    sleep 0.02
+    now=$((now + 1))
+  done
+  [ -e "$state/queue-held" ] || { kill "$blocker" 2>/dev/null || true; fail "fixture: queue lock was not held"; }
 
-  append_wake "$state" stale 'fm-remote:demo:p1' \
-    'stale: fm-remote:demo:p1 (idle 30s, possible wedge, escalation 3)' \
-    || fail "could not append the third stale wake"
-  expect_resurface_close "$dir" "$dir/s3.out" 'check: rearm-resurface stalled' "stale cycle 3"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 "$WATCH" > "$out" 2>&1 &
+  child=$!
+  now=0
+  while [ "$now" -lt 40 ]; do
+    [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$child" ] && break
+    sleep 0.1
+    now=$((now + 1))
+  done
+  [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$child" ] \
+    || { kill -TERM "$child" "$blocker" 2>/dev/null || true; fail "handling successor did not take the watcher lock"; }
+  : > "$state/append-now"
+  wait "$blocker" || { kill -TERM "$child" 2>/dev/null || true; fail "fixture: startup append failed"; }
+  now=0
+  while [ "$now" -lt 40 ] && [ ! -e "$state/.last-watcher-beat" ]; do
+    sleep 0.1
+    now=$((now + 1))
+  done
+  [ -e "$state/.last-watcher-beat" ] \
+    || { kill -TERM "$child" 2>/dev/null || true; fail "fixture: handling successor never finished startup"; }
+  FM_HOME="$home" FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_recovery_marker_begin_handling "$2/.watcher-down" later.1.aaa || exit 1
+    fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || exit 1
+    awk -F "\t" "\$2 != 1" "$FM_WAKE_QUEUE" > "$FM_WAKE_QUEUE.tmp" \
+      && mv -f "$FM_WAKE_QUEUE.tmp" "$FM_WAKE_QUEUE" || exit 1
+    fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+    fm_recovery_marker_handling_settled "$2/.watcher-down"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$state" \
+    || { kill -TERM "$child" 2>/dev/null || true; fail "fixture: handled-turn settlement failed"; }
 
-  # An unrelated new wake still changes the fingerprint and resumes ordinary
-  # delivery, so the collapse is scoped to repeated stale rows alone.
-  append_wake "$state" check unrelated 'check: an unrelated condition changed' \
-    || fail "could not append an unrelated wake"
-  expect_resurface_close "$dir" "$dir/s4.out" 'check: rearm-resurface' "after an unrelated wake"
-  ! grep -qF 'stalled' "$dir/s4.out" \
-    || fail "an unrelated new wake did not reset the stale streak: $(cat "$dir/s4.out")"
-  pass "a repeated stale wake for the same pane counts toward the resurface bound, and an unrelated wake still resumes ordinary delivery"
+  now=0
+  while [ "$now" -lt 40 ] && kill -0 "$child" 2>/dev/null; do
+    sleep 0.25
+    now=$((now + 1))
+  done
+  if kill -0 "$child" 2>/dev/null; then
+    kill -TERM "$child" 2>/dev/null || true
+    wait "$child" 2>/dev/null || true
+    fail "handling successor never resurfaced the startup-window row: $(cat "$out"; cat "$state/.watcher-down")"
+  fi
+  wait "$child" 2>/dev/null || true
+  [ "$(grep -c '^check: rearm-resurface$' "$out")" -eq 1 ] \
+    || fail "handling successor did not close once with the recovery wake: $(cat "$out")"
+  grep "$(printf '\tcheck\tinbox:n1\t')" "$state/.wake-queue" >/dev/null \
+    || fail "the resurfaced inbox row must stay queued for main"
+  grep -E '^(pending|announced):downtime:' "$state/.watcher-down" >/dev/null \
+    || fail "the resurfaced close must leave a deliverable downtime episode: $(cat "$state/.watcher-down")"
+  pass "a handling successor resurfaces a row appended during startup"
 }
 
 test_handling_successor_does_not_go_blind
+test_handling_successor_resurfaces_a_row_appended_during_startup
 test_unacknowledged_recovery_is_announced_once_per_generation
 test_undrainable_queue_resurface_is_bounded
 test_repeated_stale_wake_counts_toward_bound

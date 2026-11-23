@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Steer a task by durable record: write the message into the task's steering
-# inbox and ring a constant doorbell line into its terminal, best-effort.
+# inbox and ring a constant doorbell through its backend endpoint, best-effort.
 # Usage: fm-send.sh <target> [--resolve-key <key>]... [--fire-and-forget <delivery-id>]
 #            [--steer-stale] <text...>
 #   <target> may be an exact task id, a legacy fm-<id> task label resolved
@@ -14,12 +14,13 @@
 #   deliberately resume it anyway. docs/configuration.md "Prompt-cache steer
 #   guard" owns the threshold and its config/cache-ttl-seconds override.
 # The text must be nonempty: an empty or whitespace-only message is refused
-# before anything is marked, recorded, or typed, because an empty marked
+# before anything is marked, recorded, or submitted, because an empty marked
 # secondmate request delivers only marker and correlation bytes and leaves the
 # parent waiting on a reply to nothing.
 # Special keys instead of text: fm-send.sh <target> --key Enter
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
-# Orca currently supports Enter and C-c only, and rejects Escape.
+# Orca supports Enter and C-c only; T3 Code maps Escape and C-c to a native
+# turn interrupt and treats Enter as a no-op.
 #
 # Two data planes:
 #
@@ -27,8 +28,9 @@
 # remote alike. The message is appended as a durable sequenced record under
 # the task's steering inbox (newlines are legal) - state/<id>.inbox/ for a
 # local task, or the remote home's host-local inbox reached through fm-on.sh
-# for a remote secondmate - and the terminal receives only one short constant
-# self-describing doorbell line plus Enter, best-effort. The durable record IS
+# for a remote secondmate - and the endpoint receives only one short constant
+# self-describing doorbell, best-effort. Pane backends type its line plus Enter;
+# T3 Code starts one native turn. The durable record IS
 # the delivery, so the record's fate alone governs the exit: 0 = the steer is
 # durably sent (recorded); nonzero = nothing was confirmed delivered and a
 # resend is appropriate (unresolvable target, an endpoint that cannot be
@@ -56,23 +58,24 @@
 # ordinary record by the worker's acknowledgement move into handled/.
 # bin/fm-task-inbox-lib.sh owns the record format, doorbell line, and retry and
 # escalation policy for ordinary and fire-and-forget records.
-# The composer pre-check before the ring is ADVISORY only: when
+# On pane backends, the composer pre-check before the ring is ADVISORY only: when
 # the composer visibly holds pending text the ring is skipped with a notice and
 # the watcher re-rings an ordinary record later; no composer verdict is
 # delivery proof on this plane, and a failed ring never fails the send.
 #
-# TYPED - the LOCAL text that must reach the terminal itself: a harness-native
-# invocation (a leading "/", or a leading "$" to a codex target) must reach
-# the harness's own parser, and an explicit backend target names an endpoint,
-# not a task, so it stays typed even when local metadata happens to match it
-# (the same boundary that keeps it unmarked and outside --resolve-key). These
-# type the literal
-# text through the target backend's verified submit core: typed ONCE, then
-# Enter retried (never retyped) until the backend confirms a submit or reports
-# an inconclusive send. Typed-plane exit contract: 0 = submit confirmed;
-# 3 = the text was typed into the live endpoint and
-# Enter was sent, but the submit read-back stayed unconfirmed (verify the pane
-# before any resend, and never re-type blindly; a marked request's
+# TYPED - the LOCAL text submitted directly instead of through the inbox. On a
+# pane backend, a harness-native invocation (a leading "/", or a leading "$" to
+# a codex target) must reach the harness's own parser. An explicit backend
+# target names an endpoint, not a task, so it stays on this plane even when
+# local metadata happens to match it (the same boundary that keeps it unmarked
+# and outside --resolve-key). Pane backends type the literal text ONCE, then
+# retry Enter without retyping; T3 Code starts one native turn. Typed-plane exit
+# contract: 0 = submit confirmed; 3 = the text reached the live endpoint and
+# submission was attempted, but the read-back stayed unconfirmed, or an API
+# backend's outcome is unproven: a lost reply or an error that can follow a
+# commit (verify the endpoint
+# before any resend, and never submit blindly; docs/t3code-backend.md owns
+# T3 Code's request-id retention and retry policy; a marked request's
 # pending-reply expectation stays armed because this outcome is not a proven
 # failure); any other nonzero = the send failed and nothing may be assumed
 # delivered. Submission dispatches through the target's recorded backend; the
@@ -85,8 +88,7 @@
 # every remote text steer rides the inbox (a marked secondmate request already
 # reaches the harness as marker-prefixed chat rather than a parser command, so
 # routing a remote "/..." or "$..." through the record changes nothing the
-# parser would have seen); only --key still crosses to the remote pane as a
-# keystroke.
+# parser would have seen); only --key still crosses to the remote endpoint.
 #
 # Stage-1 compatibility boundary: classification uses the original pre-marker
 # text, but secondmate marking still precedes every typed submission. Therefore
@@ -237,6 +239,15 @@
 # path do not pay it.
 set -eu
 
+# Print the header comment as usage before any FM_HOME check or target
+# resolution, so the contract this header owns is reachable through --help.
+case "${1:-}" in
+  --help)
+    awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
+    exit 0
+    ;;
+esac
+
 FM_SEND_ORIGINAL_ARGS=("$@")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -262,28 +273,22 @@ if [ ! -d "$STATE" ]; then
   exit 1
 fi
 
-# shellcheck source=bin/fm-backend.sh
-. "$SCRIPT_DIR/fm-backend.sh"
+# Pending replies load the backend, marker, classifier, and timeout helpers.
+# Reuse those imports before loading the control and inbox helpers.
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-cache-ttl-lib.sh
 . "$SCRIPT_DIR/fm-cache-ttl-lib.sh"  # fm_cache_ttl_seconds: the shared TTL knob
-# shellcheck source=bin/fm-control-lib.sh
-. "$SCRIPT_DIR/fm-control-lib.sh"
-# shellcheck source=bin/fm-marker-lib.sh
-. "$SCRIPT_DIR/fm-marker-lib.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
-# shellcheck source=bin/fm-classify-lib.sh
-. "$SCRIPT_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/fm-control-lib.sh
+. "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-line-cap-lib.sh
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
-. "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the requested message WILL still be sent.' "$SCRIPT_DIR/fm-guard.sh" || true
 
@@ -360,6 +365,32 @@ fm_send_count_colons() { # <string>
   local s=$1 no_colons
   no_colons=${s//:/}
   printf '%s' $((${#s} - ${#no_colons}))
+}
+
+# When an explicit outside-home target has no recorded harness, detect kiro
+# from the live pane's foreground process group so the kiro-only composer
+# rules apply (fm_composer_kiro_scope). The live e2e guard owns why this
+# reads the foreground group through fm-harness.sh ancestry rather than
+# #{pane_current_command}: a toolbox wrapper can rename the tmux field
+# while comm still reads kiro-cli. Any other (or unreadable) process leaves
+# TARGET_HARNESS empty, which is the pre-kiro default and keeps the
+# non-kiro typed path - including the unknown-harness `$` settle - unchanged.
+fm_send_detect_kiro_from_live_target() {
+  local pid verdict
+  [ -n "$TARGET_HARNESS" ] && return 0
+  [ "$TARGET_BACKEND" = tmux ] || return 0
+  [ -n "$RESOLVED_TARGET" ] || return 0
+  fm_backend_source tmux || return 0
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    case "$pid" in *[!0-9]*) continue ;; esac
+    verdict=$("$SCRIPT_DIR/fm-harness.sh" ancestry "$pid" 2>/dev/null || true)
+    [ "$verdict" = "comm kiro" ] || continue
+    TARGET_HARNESS=kiro
+    return 0
+  done <<EOF
+$(fm_backend_tmux_foreground_pids "$RESOLVED_TARGET" 2>/dev/null || true)
+EOF
 }
 
 fm_send_resolve_target() { # <raw-target>
@@ -469,6 +500,12 @@ fm_send_resolve_target() { # <raw-target>
 RAW_TARGET=$1
 fm_send_resolve_target "$RAW_TARGET" || exit 1
 T=$RESOLVED_TARGET
+fm_send_detect_kiro_from_live_target
+# The recorded harness, or kiro detected from a meta-less explicit target's
+# live pane, scopes the kiro-only composer rules for every composer read this
+# send makes (fm_composer_kiro_scope in bin/fm-composer-lib.sh).
+# shellcheck disable=SC2034
+FM_COMPOSER_HARNESS=$TARGET_HARNESS
 shift
 
 # Supervision lease guard: a steer is overlap territory between the two Pi
@@ -855,10 +892,12 @@ fm_send_feed_resolved_holds() { # <answer-text>
   fi
 }
 
-# Resolve the target's harness from its meta (recorded by fm-spawn), used only to
-# scope the codex `$<skill>` popup-settle below. A task selector carries
-# meta; an explicit backend-target escape hatch has none, so its harness is
-# unknown and treated as non-codex (the safe default that keeps the fast path).
+# Resolve the target's harness from its meta (recorded by fm-spawn), used to
+# scope the codex `$<skill>` popup-settle below and the kiro composer rules
+# above. A task selector carries meta. An explicit backend-target escape hatch
+# has none, so its harness stays unknown and is treated as non-codex (the safe
+# default that keeps the `$` fast path) unless the live pane's foreground
+# process group is kiro (fm_send_detect_kiro_from_live_target).
 # The target's BACKEND comes from selector meta, from matching an explicit target
 # back to recorded meta, or from strict explicit-target shape validation.
 # Do not add a separate passive liveness preflight here. Active send paths own
@@ -1144,8 +1183,20 @@ else
       # unsupported stat) fails open the same way, because a steer must never
       # be blocked on a signal that cannot be read.
     fi
-    INBOX_META_LOCK=$(fm_meta_lock_path "$TARGET_META") || exit 1
+    INBOX_DELIVERY_LOCK=$(fm_task_inbox_delivery_lock_path "$STATE" "$INBOX_TASK_ID")
+    if ! fm_task_inbox_lock_acquire "$INBOX_DELIVERY_LOCK"; then
+      if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
+        fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
+      fi
+      echo "error: steer not sent to $INBOX_TASK_ID: its inbox delivery lock could not be acquired" >&2
+      exit 1
+    fi
+    INBOX_META_LOCK=$(fm_meta_lock_path "$TARGET_META") || {
+      fm_lock_release "$INBOX_DELIVERY_LOCK"
+      exit 1
+    }
     if ! fm_task_inbox_lock_acquire "$INBOX_META_LOCK"; then
+      fm_lock_release "$INBOX_DELIVERY_LOCK"
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       fi
@@ -1166,6 +1217,7 @@ else
         [ "$CURRENT_INBOX_SPAWN_GEN" != "$FM_SEND_EXPECTED_SPAWN_GEN" ]; } ||
       [ -n "$(fm_meta_get "$TARGET_META" remote_host)" ]; then
       fm_lock_release "$INBOX_META_LOCK"
+      fm_lock_release "$INBOX_DELIVERY_LOCK"
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       fi
@@ -1181,6 +1233,7 @@ else
     fi
     if [ "${inbox_write_rc:-0}" -ne 0 ]; then
       fm_lock_release "$INBOX_META_LOCK"
+      fm_lock_release "$INBOX_DELIVERY_LOCK"
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       fi
@@ -1188,6 +1241,7 @@ else
       exit 1
     fi
     fm_lock_release "$INBOX_META_LOCK"
+    fm_lock_release "$INBOX_DELIVERY_LOCK"
     # Enqueue IS durable delivery to the task's record: mark the pending
     # expectation delivered now, without resolving it - only a correlated
     # parent report acknowledges the request.
@@ -1311,6 +1365,23 @@ else
     # surfaces through the library's own reconciliation
     # (bin/fm-pending-reply-lib.sh).
     echo "fm-send: text delivered to $T but submission is unconfirmed (verdict=pending; tried $RESOLUTION_TRIED); do not retype or blindly resend - verify with fm-peek.sh, then re-send '--key Enter' only if the composer still holds the text" >&2
+    exit 3
+    ;;
+  unconfirmed)
+    # An API backend's outcome is unproven: a lost reply or an error that can
+    # follow a commit (T3 Code commits a send before it answers). Like
+    # pending, delivery is unproven
+    # rather than refused, so the pending-reply expectation stays armed; the
+    # adapter retains the logical delivery's request id under the retry policy
+    # in docs/t3code-backend.md. A marked secondmate request is the exception:
+    # a plain rerun mints a new
+    # correlation, so its text and request id differ, and the armed attempt
+    # refuses a resend of this one.
+    if [ -n "$PENDING_REPLY_CORR" ]; then
+      echo "fm-send: delivery to $T is unconfirmed (verdict=unconfirmed: the $TARGET_BACKEND outcome is unproven, a lost reply or an error that can follow a commit; tried $RESOLUTION_TRIED); do not resend - a rerun mints a new pending-reply correlation and would deliver twice; correlation $PENDING_REPLY_CORR stays armed, so verify with fm-peek.sh and let its reply or the watcher's reconciliation settle it" >&2
+    else
+      echo "fm-send: delivery to $T is unconfirmed (verdict=unconfirmed: the $TARGET_BACKEND outcome is unproven, a lost reply or an error that can follow a commit; tried $RESOLUTION_TRIED); verify with fm-peek.sh, and resend only the identical text, which reuses its request id" >&2
+    fi
     exit 3
     ;;
   *)

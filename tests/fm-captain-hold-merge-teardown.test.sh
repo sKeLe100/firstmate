@@ -249,6 +249,7 @@ test_retained_row_artifacts_survive_captain_answers() {
     "project=$local_repo" "harness=codex" "kind=ship" "mode=local-only" \
     "spawn_gen=fixture-$local_id"
   printf 'done: local merge ready\n' > "$home/state/$local_id.status"
+  printf 'local_done_head=%s\n' "$(git -C "$local_wt" rev-parse HEAD)" >> "$home/state/$local_id.meta"
   run_captain "$home" hold "$local_id" --reason "captain local merge approval pending" \
     >/dev/null || fail "could not hold the released local merge"
   printf 'Land the approved change locally.\n' > "$home/local-answer.txt"
@@ -868,6 +869,7 @@ test_local_merge_entrypoint_refuses_a_captain_held_task() {
     "window=firstmate:fm-$local_id" "endpoint_task_id=$local_id" "worktree=$local_wt" \
     "project=$local_repo" "harness=codex" "kind=ship" "mode=local-only" \
     "spawn_gen=fixture-$local_id"
+  printf 'local_done_head=%s\n' "$(git -C "$local_wt" rev-parse HEAD)" >> "$home/state/$local_id.meta"
   run_captain "$home" hold "$local_id" --reason "captain local merge approval pending" \
     >/dev/null || fail "could not hold the local entrypoint fixture"
   before=$(git -C "$local_repo" rev-parse main)
@@ -938,6 +940,7 @@ test_local_merge_entrypoint_separates_an_unreadable_record_from_an_absent_one() 
     "window=firstmate:fm-$id" "endpoint_task_id=$id" "worktree=$wt" \
     "project=$repo" "harness=codex" "kind=ship" "mode=local-only" \
     "spawn_gen=fixture-$id"
+  printf 'local_done_head=%s\n' "$(git -C "$wt" rev-parse HEAD)" >> "$home/state/$id.meta"
   before=$(git -C "$repo" rev-parse main)
 
   # Unreadable authority record: refuse, and leave the default branch where it was.

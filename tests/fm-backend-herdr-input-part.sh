@@ -279,6 +279,73 @@ test_composer_state_real_text_is_pending() {
   pass "fm_backend_herdr_composer_state: real composer text reads pending"
 }
 
+# A titled rounded top rule reads as a composer only for a pane whose native
+# agent probe names cortex; the identical capture under any other agent, or no
+# agent record, keeps the ambiguous verdict every harness reads. The probe
+# (`agent get`) is asked for only when the classifier reports the identity
+# matters - a titled rounded box with an agent prompt glyph - so every other
+# pane keeps the single capture call it always had.
+cortex_composer_case() {  # <dir-suffix> <capture-body> <agent-json-or-error-body>
+  local dir="$TMP_ROOT/composer-titled-$1" resp log fb
+  mkdir -p "$dir/responses"; resp="$dir/responses"; log="$dir/log"; : > "$log"
+  printf '%b' "$2" > "$resp/1.out"
+  printf '%s\n' "$3" > "$resp/2.out"
+  printf '%s\n' "$3" > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p2' "$ROOT"
+}
+
+cortex_agent_get_calls() {  # <dir-suffix>
+  grep -c "$(printf '\037agent\037get\037')" "$TMP_ROOT/composer-titled-$1/log" || true
+}
+
+test_composer_state_titled_box_requires_cortex_identity() {
+  local out calls titled
+  titled='╭────────────── New Session ──╮\n│ ❯                           │\n╰─────────────────────────────╯\n\n>> bypass safeguards  |  teams: off  |  plan: off\n'
+  out=$(cortex_composer_case cortex "$titled" '{"result":{"agent":{"agent":"cortex","agent_status":"idle"}}}')
+  [ "$out" = empty ] || fail "a titled box under a cortex agent probe should read empty, got '$out'"
+  calls=$(cortex_agent_get_calls cortex)
+  [ "$calls" = 1 ] || fail "a titled box should resolve Cortex with exactly one agent get, saw $calls"
+  out=$(cortex_composer_case other "$titled" '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}')
+  [ "$out" = unknown ] || [ "$out" = pending-unproven ] \
+    || fail "a titled box under a non-cortex agent must stay ambiguous, got '$out'"
+  calls=$(cortex_agent_get_calls other)
+  [ "$calls" = 1 ] || fail "a titled box under another agent should ask for the identity once, saw $calls"
+  out=$(cortex_composer_case absent "$titled" '{"error":{"code":"agent_not_found"}}')
+  [ "$out" = unknown ] || [ "$out" = pending-unproven ] \
+    || fail "a titled box with no agent record must stay ambiguous, got '$out'"
+  pass "fm_backend_herdr_composer_state: titled rounded top rule is a composer only under a cortex agent probe"
+}
+
+# A pane that never shows a titled rounded composer box never pays a second
+# identity read, whatever its verdict: a plain idle box, a plain draft, and
+# titled boxes the Cortex tolerance cannot accept (no prompt glyph row, a
+# non-ASCII title) all keep the one capture call, even under a cortex agent.
+test_composer_state_non_cortex_panes_skip_identity_probe() {
+  local agent='{"result":{"agent":{"agent":"cortex","agent_status":"idle"}}}' out calls name expect body
+  while IFS='|' read -r name expect body; do
+    out=$(cortex_composer_case "$name" "$body" "$agent")
+    case "$expect" in
+      ambiguous)
+        case "$out" in
+          unknown|pending-unproven) ;;
+          *) fail "$name: expected an ambiguous verdict, got '$out'" ;;
+        esac
+        ;;
+      *) [ "$out" = "$expect" ] || fail "$name: expected '$expect', got '$out'" ;;
+    esac
+    calls=$(cortex_agent_get_calls "$name")
+    [ "$calls" = 0 ] || fail "$name: a pane with no titled composer box must not probe identity, saw $calls agent get calls"
+  done <<'CASES'
+plain-empty|empty|  ╭────────────────────────╮\n  │ ❯                      │\n  ╰────────────────────────╯\n
+plain-draft|pending|  ╭────────────────────────╮\n  │ ❯ hello captain        │\n  ╰────────────────────────╯\n
+titled-glyphless|ambiguous|╭────────── Select a model ──╮\n│ ○ Auto                      │\n╰─────────────────────────────╯\n
+titled-nonascii|ambiguous|╭────────────── Nüw Session ──╮\n│ ❯                           │\n╰─────────────────────────────╯\n
+CASES
+  pass "fm_backend_herdr_composer_state: panes without a titled composer box make no second agent get call"
+}
+
 # Issue #3436: Grok 1.0.5's real bottom border is three columns wider than
 # the aligned top and content rows. Herdr has no cursor anchor, so the old
 # geometry verdict was unknown even when this composer was genuinely idle.
@@ -363,7 +430,7 @@ test_composer_state_inactive_session_fails_fast_without_server_autostart() {
 # shellcheck disable=SC2016
 test_composer_state_piped_reader_does_not_hang() {
   local out rc=0
-  out=$( timeout 3s bash -c '. "$0/bin/fm-backend.sh"; ( fm_backend_composer_state herdr nonexistent-session:p2 ) 2>&1 | head -20' "$ROOT" ) || rc=$?
+  out=$( fm_run_timed 3 bash -c '. "$0/bin/fm-backend.sh"; ( fm_backend_composer_state herdr nonexistent-session:p2 ) 2>&1 | head -20' "$ROOT" ) || rc=$?
   [ "$rc" -eq 0 ] || fail "piped composer probe on bad target hung or failed with rc=$rc"
   [ "$out" = unknown ] || fail "piped composer probe should print unknown, got '$out'"
   pass "fm_backend_composer_state (herdr): piped probe on bad target does not hang EOF-sensitive readers"
@@ -1290,7 +1357,9 @@ herdr_wrapped_composer() {  # <text> <width> <drop>
 # sits inside a solid-rule pair (rule above, rule below), exactly as live
 # Claude draws it, with the menu rows below the closing rule; the rules are
 # structural edge rows, so the composer's content block ends there and the
-# menu rows never read as typed text.
+# unmarked menu rows never read as typed text. Claude Code 2.1.291 marks the
+# popup's selected row with a `❯` of its own, which is a different shape; the
+# real captures under tests/captures/claude-2.1.291-slash-popup cover it.
 herdr_popup_composer_screen() {  # <typed-text>
   local i typed=$1 rule
   rule=$(printf '%0.s\xe2\x94\x80' $(seq 1 60))
@@ -1533,6 +1602,98 @@ test_send_text_submit_claude_slash_popup_composer_is_still_proven_and_submitted(
     || fail "the payload proof must use the visible viewport"
   [ "$(grep -c $'\x1f''--lines' "$log")" -eq 0 ] || fail "no composer read may be a bounded --lines tail"
   pass "fm_backend_herdr_send_text_submit: a typed slash command hidden behind its popup is still proven and submitted"
+}
+
+# Claude Code 2.1.291 draws the selected row of its slash-command popup with the
+# same `❯` marker as its composer, so that row was read as a second composer and
+# the popup list as the typed command: fm-control exit and every slash command
+# sent through fm-send judged the payload unsent, cleared it, and reported
+# send-failed. The screens are real captures (Herdr 0.8.2, Haiku 4.5).
+herdr_popup_capture() {  # <name>
+  cat "$ROOT/tests/captures/claude-2.1.291-slash-popup/$1.ansi"
+}
+
+# herdr_popup_capture_with_composer: the real capture <name> with its composer
+# row replaced by <composer-text>, the popup rows below it left exactly as
+# captured. Used for the refusals that must hold while a popup is on screen.
+herdr_popup_capture_with_composer() {  # <name> <composer-text>
+  local name=$1 text=$2
+  {
+    herdr_popup_capture "$name" | sed -n 1p
+    printf '\xe2\x9d\xaf\xc2\xa0%s\n' "$text"
+    herdr_popup_capture "$name" | sed -n '3,$p'
+  }
+}
+
+test_composer_content_claude_2_1_291_marked_popup_row_is_not_the_composer() {
+  local dir log resp fb out pair name want
+  for pair in exit-typed:/exit exit-typed-with-notice:/exit no-mistakes-typed:/no-mistakes; do
+    name=${pair%%:*}
+    want=${pair#*:}
+    dir="$TMP_ROOT/composer-claude-2-1-291-popup-$name"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+    herdr_popup_capture "$name" > "$resp/1.out"
+    fb=$(make_herdr_fakebin "$dir")
+    out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+      bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_content default:w1:p2' "$ROOT" )
+    [ "$out" = "$want" ] || fail "$name: the composer read must be '$want', not the popup list, got '$out'"
+    printf '%s\n' "$out" | grep -F 'Exit the CLI' >/dev/null && fail "$name: the popup list leaked into the composer read"
+    dir="$TMP_ROOT/composer-state-claude-2-1-291-popup-$name"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+    herdr_popup_capture "$name" > "$resp/1.out"
+    fb=$(make_herdr_fakebin "$dir")
+    out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+      bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p2' "$ROOT" )
+    [ "$out" = pending ] || fail "$name: a typed command above its popup must read pending, got '$out'"
+  done
+  pass "fm_backend_herdr_composer_content: Claude 2.1.291's marked popup row is not read as the typed command"
+}
+
+test_send_text_submit_claude_2_1_291_marked_popup_row_is_proven_and_submitted() {
+  local dir log resp fb out enter_count pair name text
+  for pair in exit-typed:/exit exit-typed-with-notice:/exit no-mistakes-typed:/no-mistakes; do
+    name=${pair%%:*}
+    text=${pair#*:}
+    dir="$TMP_ROOT/submit-claude-2-1-291-popup-$name"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+    herdr_submit_claude_prefix "$resp" "$text"
+    printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/5.out"
+    printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/7.out"
+    herdr_popup_capture "$name" > "$resp/4.out"
+    fb=$(make_herdr_fakebin "$dir")
+    out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+      bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
+    [ "$out" = empty ] || fail "$name: a typed $text proven above its marked popup row must be submitted, got '$out'"
+    enter_count=$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")
+    [ "$enter_count" -eq 1 ] || fail "$name: the proven typed command should be submitted once, sent $enter_count Enter(s)"
+    [ "$(herdr_ctrl_u_count "$log")" -eq 0 ] || fail "$name: a proven composer must not be cleared"
+  done
+  pass "fm_backend_herdr_send_text_submit: a slash command behind Claude 2.1.291's marked popup row is proven and submitted"
+}
+
+# The marked popup row must not weaken the head-truncation protection: a
+# composer holding only a suffix, a paste placeholder followed by a literal
+# remainder, or only a prefix of the payload is still refused and cleared while
+# the same popup is on screen.
+test_send_text_submit_claude_2_1_291_popup_still_refuses_a_partial_payload() {
+  local dir log resp fb out enter_count name capture text composer
+  while IFS='|' read -r name capture text composer; do
+    dir="$TMP_ROOT/submit-claude-2-1-291-popup-refuse-$name"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+    herdr_submit_claude_prefix "$resp" "$text"
+    herdr_popup_capture_with_composer "$capture" "$composer" > "$resp/4.out"
+    printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
+    printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/7.out"
+    fb=$(make_herdr_fakebin "$dir")
+    out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+      bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
+    [ "$out" = send-failed ] || fail "$name: a partial payload ('$composer') under the popup must report send-failed, got '$out'"
+    enter_count=$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")
+    [ "$enter_count" -eq 0 ] || fail "$name: a partial payload must not be submitted, sent $enter_count Enter(s)"
+    [ "$(herdr_ctrl_u_count "$log")" -eq 1 ] || fail "$name: the refused partial payload should be cleared with one Ctrl+U"
+  done <<'EOF'
+suffix|no-mistakes-typed|/no-mistakes|mistakes
+placeholder-remainder|no-mistakes-typed|/no-mistakes|[Pasted text #1] mistakes
+prefix|no-mistakes-typed|/no-mistakes now|/no-mistakes
+popup-suffix|exit-typed|/exit|xit
+EOF
+  pass "fm_backend_herdr_send_text_submit: with Claude 2.1.291's popup on screen a suffix, a placeholder plus remainder, or a prefix is still refused and cleared"
 }
 
 # Live Claude Code 2.1.283 draws a recognized typed slash command in muted

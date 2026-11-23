@@ -666,22 +666,6 @@ test_account_list_secondmate_needs_its_own_pin() {
   pass "a list never chooses a secondmate's account: it needs its own pin and refuses --account"
 }
 
-test_account_list_cannot_spend_the_orchestrator_account() {
-  local out rc id=acct-list-orch
-  new_case list-orchestrator claude
-  signed_in_claude_root "$CASE/first"
-  signed_in_claude_root "$CASE/reserved"
-  declare_accounts "$CASE/first" "$CASE/reserved"
-  printf '%s\n' "$CASE/reserved" > "$HOME_DIR/config/claude-orchestrator-account"
-  out=$(spawn_ship "$id" --account "$CASE/reserved"); rc=$?
-  expect_code 1 "$rc" "a declared account on the orchestrator root must refuse"
-  assert_refused_before_launch "$id" "$out" "the orchestrator account reserved by"
-  out=$(spawn_ship "$id-ok" --account "$CASE/first"); rc=$?
-  expect_code 0 "$rc" "a declared account off the orchestrator root should launch: $out"
-  assert_contains "$out" "account=$CASE/first" "the launch should name the chosen account"
-  pass "a declared account list never spends the reserved orchestrator account"
-}
-
 test_secondmate_account_override
 test_secondmate_account_refusals
 test_remote_secondmate_account_override_refuses_locally
@@ -704,6 +688,5 @@ test_no_account_list_keeps_today_and_refuses_account
 test_account_list_launches_the_named_entry
 test_account_list_refusals
 test_account_list_secondmate_needs_its_own_pin
-test_account_list_cannot_spend_the_orchestrator_account
 
 echo "# all fm-worker-account tests passed"

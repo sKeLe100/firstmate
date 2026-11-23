@@ -47,6 +47,139 @@ COVERAGE_REPORT=$("$RUNNER" --check-coverage) \
 ALL_SUITE_LIST=$("$RUNNER" --list --all)
 PURE_CONTRACT_LIST=$("$RUNNER" --list --family pure-contract-unit)
 HERDR_FAMILY_LIST=$("$RUNNER" --list --family real-herdr-gated)
+test_changed_remote_inheritance_selects_generation_contract() {
+  local tmp repo listed source
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-inheritance.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  printf '#!/usr/bin/env bash\n' >"$repo/tests/fm-remote-inherit-generation.test.sh"
+  chmod +x "$repo/tests/fm-remote-inherit-generation.test.sh"
+  for source in fm-remote-inherit-push.sh fm-remote-inherit.sh fm-secondmate-nudge-lib.sh; do
+    : >"$repo/bin/$source"
+  done
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm inheritance-fixture
+  for source in fm-remote-inherit-push.sh fm-remote-inherit.sh fm-secondmate-nudge-lib.sh; do
+    printf '\n' >>"$repo/bin/$source"
+    listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+    assert_contains "$listed" "tests/fm-remote-inherit-generation.test.sh" \
+      "$source change must select the generation regression"
+    assert_contains "$listed" "tests/fm-secondmate-safety.test.sh" \
+      "$source change must retain secondmate coverage"
+    assert_not_contains "$listed" "tests/fm-ask-user-authority.test.sh" \
+      "$source change must not select the whole pure-contract-unit family"
+    git -C "$repo" checkout -q -- "bin/$source"
+  done
+  rm -rf "$tmp"
+  pass "changed inheritance sender, receiver and counter select the focused generation contract"
+}
+
+test_tern_family_selection() {
+  local listed families
+  families=$("$RUNNER" --list-families)
+  printf '%s\n' "$families" | grep -qx tern || fail "--list-families must name the tern family"
+  listed=$("$RUNNER" --list --family tern)
+  assert_contains "$listed" "tests/fm-backend-tern.test.sh" "family tern must select the fake-CLI suite"
+  assert_contains "$listed" "tests/fm-backend-tern-smoke.test.sh" "family tern must select the real-binary smoke test"
+  assert_not_contains "$listed" "tests/tern-test-safety.sh" "the safety helper is a shared library, not a runnable suite"
+  assert_not_contains "$listed" "tests/fm-backend-cmux.test.sh" "family tern must not absorb the cmux suite"
+  # The scripts are real members of the portable lanes, so the coverage guard
+  # (every tests/*.test.sh belongs to exactly one lane) sees them.
+  "$RUNNER" --list-lanes >/dev/null || fail "--list-lanes failed with the tern scripts present"
+  pass "fm-test-run: family tern selects the tern suite and smoke test, and the lane coverage guard accepts them"
+}
+
+test_portable_serial_packing_budget_boundary() {
+  local tmp repo script weight out rc
+  tmp=$(fm_test_tmproot fm-test-run-packing-boundary)
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  # Preserve the real inventory and packing policy without executing suites.
+  # Give every inventory member a fixture hint so an unmeasured real script
+  # cannot take the default weight and join the at-budget shard.
+  while IFS= read -r script; do
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$repo/$script"
+  done < <("$RUNNER" --list --all)
+
+  for weight in 1200000 1200001; do
+    cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+    python3 - "$repo/bin/fm-test-run.sh" "$weight" <<'PY' \
+      || fail "could not seed the fixture's measured timing input"
+from pathlib import Path
+import re, sys
+runner = Path(sys.argv[1])
+weight = sys.argv[2]
+text = runner.read_text()
+scripts = sorted(
+    f"tests/{path.name}" for path in (runner.parent.parent / "tests").glob("*.test.sh")
+)
+if "tests/fm-watch-triage.test.sh" not in scripts:
+    sys.exit("fixture inventory lost tests/fm-watch-triage.test.sh")
+# Longest real serial member stays at the budget boundary; every other script
+# gets 1ms so longest-processing-time packing cannot fill that shard.
+lines = [
+    f"{script} {weight if script == 'tests/fm-watch-triage.test.sh' else '1'}"
+    for script in scripts
+]
+table = "\n".join(lines)
+new, n = re.subn(
+    r"(portable_serial_weight_hints\(\) \{\n  cat <<'EOF'\n).*?(\nEOF\n)",
+    lambda match: match.group(1) + table + match.group(2),
+    text,
+    count=1,
+    flags=re.S,
+)
+if n != 1:
+    sys.exit("serial hint table not found")
+runner.write_text(new)
+PY
+    out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage 2>&1) && rc=0 || rc=$?
+    if [ "$weight" -eq 1200000 ]; then
+      expect_code 0 "$rc" "packing exactly at the budget must be accepted"
+      assert_contains "$out" "FM_TEST_COVERAGE ok" "boundary coverage did not pass"
+      assert_contains "$out" "serial_max_ms=1200000" "fixture did not pack exactly at the budget"
+      assert_contains "$out" "serial_budget_ms=1200000" "fixture changed the packing budget"
+    else
+      expect_code 1 "$rc" "packing one millisecond above the budget must be refused"
+      assert_contains "$out" "largest portable serial shard packs 1200001ms above the 1200000ms target" \
+        "over-budget refusal did not explain the modeled excess"
+      assert_not_contains "$out" "FM_TEST_COVERAGE ok" "over-budget packing reported success"
+    fi
+  done
+  pass "serial packing accepts the exact budget and refuses one millisecond above it"
+}
+
+test_changed_t3_sources_select_their_readers() {
+  local tmp repo listed
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-t3.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  mkdir -p "$repo/bin/backends"
+  : >"$repo/bin/backends/t3code.sh"
+  : >"$repo/tests/t3-fake-lib.sh"
+  printf '#!/usr/bin/env bash\n# tests/lib.sh\n. tests/t3-fake-lib.sh\n' >"$repo/tests/fm-secondmate-restart.test.sh"
+  chmod +x "$repo/tests/fm-secondmate-restart.test.sh"
+  printf '# bin/backends/t3code.sh\n' >>"$repo/bin/fm-supervisor-target-lib.sh"
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm t3
+
+  printf '\n' >>"$repo/tests/t3-fake-lib.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-secondmate-restart.test.sh" \
+    "a changed T3 fake selects the suite that sources it"
+  git -C "$repo" checkout -q -- tests/t3-fake-lib.sh
+
+  printf '\n' >>"$repo/bin/backends/t3code.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-backend.test.sh" \
+    "a changed T3 adapter still selects backend-dispatch"
+  assert_contains "$listed" "tests/fm-daemon.test.sh" \
+    "a changed T3 adapter selects the curated family of a script that consumes it"
+
+  rm -rf "$tmp"
+  pass "a changed T3 fake or adapter selects the suites that read it beyond backend-dispatch"
+}
+
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
@@ -56,6 +189,7 @@ test_task_marker_refuses_the_primary_checkout
 test_changed_runner_surfaces_select_their_family
 test_shell_line_ending_policy_selects_runner_contract
 test_quarantine_list_change_selects_runner_contract
+test_changed_remote_inheritance_selects_generation_contract
 test_changed_dependency_selection_and_unmapped_failure
 test_changed_bin_reference_selects_per_script_not_per_family
 test_changed_reference_closure
@@ -75,6 +209,7 @@ test_fail_on_gate_skip_token
 test_exclude_family
 test_exclude_quarantined
 test_quarantine_diagnostics
+test_tern_family_selection
 test_list_scheduled_proven_isolated_uses_serial_weights
 test_list_scheduled_non_lane_selections_use_serial_weights
 test_portable_shard_union_and_coverage_guard
@@ -87,6 +222,7 @@ test_jobs_requires_proven_isolated
 test_jobs_admits_a_concurrent_safe_family
 test_unmapped_new_test_never_inherits_family_concurrency
 test_changed_shared_fixture_selects_its_readers
+test_changed_t3_sources_select_their_readers
 test_concurrent_runs_are_ordered_longest_first
 test_per_script_timeout_bounds_a_hang
 test_changed_bound_gives_slow_watcher_suites_headroom

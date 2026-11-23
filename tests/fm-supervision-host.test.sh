@@ -596,6 +596,59 @@ test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main() {
   pass "host: an attended wake the branch may take is handled on the engine, and its routine outcome never wakes main"
 }
 
+
+# A TERM that lands just after a handled wake, while the host settles its
+# successor handoff under the queue and marker locks, must not leave the host
+# waiting in its own exit cleanup on the queue lock it still holds: that wedged
+# the host (and every later queue append) instead of exiting.
+
+test_host_stopped_right_after_a_handled_wake_exits_and_frees_the_queue() {
+  local home pid
+  home=$(make_home handled-then-term attended)
+  echo hold-marker > "$home/stub-mode"
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "handled then TERM: the host never started a watcher cycle"
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 \
+    || fail "handled then TERM: the wake was not handled on the engine: $(cat "$home/state/.supervision-host.log")"
+  pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
+  [ -n "$pid" ] || fail "fixture: no host record after the handled wake"
+  kill -TERM "$pid" 2>/dev/null || true
+  wait_until 100 bash -c '! kill -0 "$1" 2>/dev/null' _ "$pid" \
+    || fail "handled then TERM: the host did not exit within 10s of TERM after a handled wake"
+  FM_HOME="$home" timeout 10 bash -c '. "$1"; fm_wake_append check probe "check: probe"' _ "$ROOT/bin/fm-wake-lib.sh" \
+    || fail "handled then TERM: the stopped host left the wake queue lock held"
+  stop_home_processes "$home"
+  pass "host: a host stopped right after a handled wake exits and leaves the wake queue usable"
+}
+
+
+# A wrapper may launch the engine in another time zone than the host's (one
+# observed wrapper exports a TZ the main session's hooks never see). The
+# process-table identity that ties the branch grant to the host must read the
+# same from both, or the engine's drain discards the grant as stale, refuses,
+# and leaves every granted row for main. The proc root is hidden so Linux takes
+# the same process-table path as macOS.
+
+test_engine_in_another_time_zone_handles_its_granted_rows() {
+  local home no_proc
+  home=$(make_home engine-tz attended)
+  no_proc="$TMP_ROOT/engine-tz-no-proc"
+  [ "$(TZ=UTC0 LC_ALL=C ps -p $$ -o lstart=)" != "$(TZ=ENG-9 LC_ALL=C ps -p $$ -o lstart=)" ] \
+    || fail "fixture: ps renders the same start time in both time zones, so the case would prove nothing"
+  printf 'ENG-9\n' > "$home/stub-tz"
+  TZ=UTC0 FM_PROC_ROOT_OVERRIDE="$no_proc" start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "engine tz: the host never started a watcher cycle: $(cat "$home/host.out")"
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 \
+    || fail "engine tz: the turn did not end handled: $(cat "$home/state/.supervision-host.log"; cat "$home"/engine-drain.* 2>/dev/null)"
+  assert_no_re '	failed	' "$home/state/.supervision-host.log" "engine tz: a turn that reported for its granted rows must not fail"
+  assert_no_grep 'no branch-eligible row snapshot' "$home/engine-drain.1" "engine tz: the engine's drain discarded the host's grant"
+  assert_no_grep 'demo.status' "$home/state/.wake-queue" "engine tz: the engine's acknowledgement did not consume the wake"
+  [ ! -s "$home/host.rc" ] || fail "engine tz: the handled wake reached main: $(cat "$home/host.out")"
+  pass "host: an engine in another time zone than the host drains, reports, and acknowledges its granted rows"
+}
+
 test_attended_captain_outcome_reaches_main_through_branch_outcomes() {
   local home drained
   home=$(make_home attended-captain attended)
@@ -603,7 +656,7 @@ test_attended_captain_outcome_reaches_main_through_branch_outcomes() {
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "captain: the host never started a watcher cycle"
   append_status "$home" 'ready for review'
-  wait_until 250 host_exited "$home" || fail "captain: the captain outcome did not wake main: $(cat "$home/state/.supervision-host.log")"
+  wait_until_deadline 60 host_exited "$home" || fail "captain: the captain outcome did not wake main: $(cat "$home/state/.supervision-host.log")"
   expect_code 0 "$(cat "$home/host.rc")" "a captain-outcome exit must exit 0 for the owner to deliver"
   assert_re '^supervision-host: branch-outcome: .*\(store rows 1\); run bin/fm-wake-drain.sh' "$home/host.out" \
     "the exit must name the captain outcome's store row and send main to its drain"
@@ -646,10 +699,12 @@ test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return() {
   pass "host: a captain outcome recorded after the captain left waits for the return, then reaches main's drain"
 }
 
+
 # A quiet record left without its daemon (no state/.afk) is a present captain,
 # not an away one: the host runs attended beside it, so a captain outcome wakes
 # main and reaches its drain instead of waiting for a return that never comes,
 # and a decision close reaches main as the plain arm delivers it.
+
 test_quiet_record_without_its_daemon_is_a_present_captain() {
   local home drained
   home=$(make_home quiet-captain quiet)
@@ -657,7 +712,7 @@ test_quiet_record_without_its_daemon_is_a_present_captain() {
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "quiet: the host never started a watcher cycle"
   append_status "$home" 'ready for review'
-  wait_until 250 host_exited "$home" || fail "quiet: the captain outcome did not wake the present captain's main: $(cat "$home/state/.supervision-host.log")"
+  wait_until_deadline 60 host_exited "$home" || fail "quiet: the captain outcome did not wake the present captain's main: $(cat "$home/state/.supervision-host.log")"
   assert_re '	handled	turn=[^	]*	posture=attended	' "$home/state/.supervision-host.log" "a quiet record must leave the host's turn attended"
   assert_no_re '^POSTURE: AWAY' "$home/engine-call.1" "a turn beside a quiet record must carry no away tail"
   assert_re 'MAIN DIALOG MIRROR' "$home/engine-call.1" "a turn beside a quiet record must carry the captain's dialog"
@@ -673,7 +728,7 @@ test_quiet_record_without_its_daemon_is_a_present_captain() {
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "quiet main-only: the host never started a watcher cycle"
   append_status "$home" 'which export format?' needs-decision
-  wait_until 250 host_exited "$home" || fail "quiet main-only: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
+  wait_until_deadline 60 host_exited "$home" || fail "quiet main-only: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
   assert_re '^signal: .*demo.status' "$home/host.out" "the decision close must reach main as the arm printed it"
   [ "$(engine_calls "$home")" -eq 0 ] || fail "quiet main-only: the engine took a decision close from a present captain"
   assert_re '	pass-through	attended	main-only	signal:' "$home/state/.supervision-host.log" "the ledger must record the attended main-only pass-through"
@@ -686,7 +741,7 @@ test_attended_main_only_close_passes_straight_to_main() {
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "main-only: the host never started a watcher cycle"
   append_status "$home" 'which export format?' needs-decision
-  wait_until 250 host_exited "$home" || fail "main-only: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
+  wait_until_deadline 60 host_exited "$home" || fail "main-only: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
   expect_code 0 "$(cat "$home/host.rc")" "a main-only close must exit 0"
   assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
   assert_no_re '^supervision-host' "$home/host.out" "a main-only close must reach main exactly as the arm printed it"
@@ -696,9 +751,11 @@ test_attended_main_only_close_passes_straight_to_main() {
   pass "host: an attended decision close stays main's exactly as the plain arm delivers it"
 }
 
+
 # The file is read at every wake (docs/configuration.md "Supervision host"), so
 # an off written while the host is parked sends the next attended close to main
 # exactly as the arm printed it, with the ledger naming the opt-out.
+
 test_off_written_while_parked_passes_the_next_attended_close_to_main() {
   local home
   home=$(make_home attended-off-while-parked attended)
@@ -706,7 +763,7 @@ test_off_written_while_parked_passes_the_next_attended_close_to_main() {
   wait_until 150 watcher_live "$home" || fail "off while parked: the host never started a watcher cycle"
   : > "$home/config/supervision-host-off"
   append_status "$home" 'step one'
-  wait_until 250 host_exited "$home" || fail "off while parked: the close did not reach main: $(cat "$home/state/.supervision-host.log")"
+  wait_until_deadline 60 host_exited "$home" || fail "off while parked: the close did not reach main: $(cat "$home/state/.supervision-host.log")"
   expect_code 0 "$(cat "$home/host.rc")" "a close on a home that opted out must exit 0"
   assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
   assert_no_re '^supervision-host' "$home/host.out" "the close must reach main exactly as the arm printed it"
@@ -717,17 +774,19 @@ test_off_written_while_parked_passes_the_next_attended_close_to_main() {
   pass "host: an off written while the host is parked sends the next attended close to main, naming the opt-out"
 }
 
+
 # The live failure this guards: a main-only pass-through used to exit without
 # a watcher, so nothing restarted short-lived listeners until the session
 # armed again. The close still reaches main unchanged, and the successor
 # cycle stays up for the session's next arm to attach to.
+
 test_main_only_pass_through_leaves_the_successor_watcher_running() {
   local home pid
   home=$(make_home main-only-successor attended)
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "successor: the host never started a watcher cycle"
   append_status "$home" 'which export format?' needs-decision
-  wait_until 250 host_exited "$home" || fail "successor: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
+  wait_until_deadline 60 host_exited "$home" || fail "successor: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
   expect_code 0 "$(cat "$home/host.rc")" "a main-only close must exit 0"
   assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
   assert_no_re '^supervision-host' "$home/host.out" "a main-only close must reach main exactly as the arm printed it"
@@ -742,9 +801,11 @@ test_main_only_pass_through_leaves_the_successor_watcher_running() {
   pass "host: a main-only pass-through leaves the successor watcher running and the close undelivered for main"
 }
 
+
 # The session-lock holder's process identity cannot be read (its proc entry
 # is truncated), so no main-session key exists: the close reaches main exactly
 # as the arm printed it, before any mirror feed or engine turn.
+
 test_attended_close_with_unidentified_main_session_passes_to_main() {
   local home
   home=$(make_home attended-unidentified attended)
@@ -761,7 +822,7 @@ test_attended_close_with_unidentified_main_session_passes_to_main() {
     ' "$HOST" 2>> "$home/claude.err" &
   wait_until 150 watcher_live "$home" || fail "unidentified: the host never started a watcher cycle: $(cat "$home/host.out")"
   append_status "$home" 'step one'
-  wait_until 250 host_exited "$home" || fail "unidentified: the close did not reach main: $(cat "$home/state/.supervision-host.log")"
+  wait_until_deadline 60 host_exited "$home" || fail "unidentified: the close did not reach main: $(cat "$home/state/.supervision-host.log")"
   expect_code 0 "$(cat "$home/host.rc")" "a close for an unidentified main session must exit 0"
   assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
   assert_no_re '^supervision-host' "$home/host.out" "the close must reach main exactly as the arm printed it"
@@ -1076,6 +1137,7 @@ test_pass_through_successor_survives_the_hook_process_group_teardown() {
 # The captain returns after the loop accepted a decision close away but before
 # its turn starts: the turn meets the attended rule, so the close still reaches
 # main exactly as the arm printed it instead of being scoped to nothing.
+
 test_close_accepted_away_that_turns_attended_passes_to_main() {
   local home real_mktemp
   home=$(make_home away-then-attended away)
@@ -1096,7 +1158,7 @@ SH
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "away-then-attended: the host never started a watcher cycle"
   append_status "$home" 'which export format?' needs-decision
-  wait_until 250 host_exited "$home" || fail "away-then-attended: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
+  wait_until_deadline 60 host_exited "$home" || fail "away-then-attended: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
   assert_absent "$home/state/.afk-contract" "fixture: the captain did not return before the turn"
   expect_code 0 "$(cat "$home/host.rc")" "the close must exit 0"
   assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
@@ -1134,43 +1196,47 @@ SH
   stop_home_processes "$home"
   pass "host: parked child-exit sampling uses ordinary half-second sleeps"
 }
-test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
-test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn
-test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails
-test_claude_stop_hook_notifies_when_closed_announced_successor_downtime_restore_fails
-test_park_exit_probe_uses_half_second_child_sleeps
-test_report_surface_enforces_actor_turn_and_scope
-test_report_after_the_return_is_queued_for_main
-test_dispatch_entry_scopes_rows_and_renders_the_away_tail
-test_branch_outcomes_only_on_a_host_home_off_pi
-test_branch_outcomes_put_captain_first_and_collapse_routine_overflow
-test_branch_outcomes_collapse_repeated_captain_outcomes_per_task
-test_branch_outcomes_present_a_long_away_window_once
-test_branch_outcomes_budgets_count_bytes
-test_branch_outcomes_stay_unread_when_a_projection_fails
-test_branch_outcomes_stay_unread_without_jq
-test_branch_outcomes_stay_unread_when_the_drain_cannot_print
-test_branch_outcomes_date_a_legacy_backlog_without_adopting_it
-test_branch_ack_keeps_older_keyed_decision_open
-test_branch_outcomes_date_an_outcome_carried_across_a_switch_off_pi
-test_branch_outcomes_keep_an_unshown_outcome_until_acknowledged
-test_branch_outcomes_keep_a_drain_presented_outcome_across_a_switch_to_pi
-test_branch_outcomes_keep_a_drain_presented_outcome_across_an_index_repair
-test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main
-test_attended_captain_outcome_reaches_main_through_branch_outcomes
-test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return
-test_quiet_record_without_its_daemon_is_a_present_captain
-test_attended_main_only_close_passes_straight_to_main
-test_off_written_while_parked_passes_the_next_attended_close_to_main
-test_main_only_pass_through_leaves_the_successor_watcher_running
-test_attended_close_with_unidentified_main_session_passes_to_main
-test_close_accepted_away_that_turns_attended_passes_to_main
-test_attended_close_that_turns_main_only_before_its_turn_passes_to_main
-test_claude_stop_hook_delivers_a_main_only_pass_through
-test_claude_stop_hook_rewakes_a_present_captain_beside_a_quiet_record
-test_claude_stop_hook_requires_opt_in_and_off_opts_out
-test_claude_stop_hook_delivers_a_close_that_turns_main_only_at_its_turn
-test_successor_left_at_the_turn_survives_the_hook_process_group_teardown
-test_claude_stop_hook_notifies_when_at_turn_downtime_write_fails
-test_successor_close_during_main_turn_is_delivered_at_the_next_turn_end
-test_pass_through_successor_survives_the_hook_process_group_teardown
+
+fm_test_run \
+  test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main \
+  test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn \
+  test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails \
+  test_claude_stop_hook_notifies_when_closed_announced_successor_downtime_restore_fails \
+  test_park_exit_probe_uses_half_second_child_sleeps \
+  test_report_surface_enforces_actor_turn_and_scope \
+  test_report_after_the_return_is_queued_for_main \
+  test_dispatch_entry_scopes_rows_and_renders_the_away_tail \
+  test_branch_outcomes_only_on_a_host_home_off_pi \
+  test_branch_outcomes_put_captain_first_and_collapse_routine_overflow \
+  test_branch_outcomes_collapse_repeated_captain_outcomes_per_task \
+  test_branch_outcomes_present_a_long_away_window_once \
+  test_branch_outcomes_budgets_count_bytes \
+  test_branch_outcomes_stay_unread_when_a_projection_fails \
+  test_branch_outcomes_stay_unread_without_jq \
+  test_branch_outcomes_stay_unread_when_the_drain_cannot_print \
+  test_branch_outcomes_date_a_legacy_backlog_without_adopting_it \
+  test_branch_ack_keeps_older_keyed_decision_open \
+  test_branch_outcomes_date_an_outcome_carried_across_a_switch_off_pi \
+  test_branch_outcomes_keep_an_unshown_outcome_until_acknowledged \
+  test_branch_outcomes_keep_a_drain_presented_outcome_across_a_switch_to_pi \
+  test_branch_outcomes_keep_a_drain_presented_outcome_across_an_index_repair \
+  test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main \
+  test_attended_captain_outcome_reaches_main_through_branch_outcomes \
+  test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return \
+  test_quiet_record_without_its_daemon_is_a_present_captain \
+  test_attended_main_only_close_passes_straight_to_main \
+  test_off_written_while_parked_passes_the_next_attended_close_to_main \
+  test_main_only_pass_through_leaves_the_successor_watcher_running \
+  test_attended_close_with_unidentified_main_session_passes_to_main \
+  test_close_accepted_away_that_turns_attended_passes_to_main \
+  test_attended_close_that_turns_main_only_before_its_turn_passes_to_main \
+  test_claude_stop_hook_delivers_a_main_only_pass_through \
+  test_claude_stop_hook_rewakes_a_present_captain_beside_a_quiet_record \
+  test_claude_stop_hook_requires_opt_in_and_off_opts_out \
+  test_claude_stop_hook_delivers_a_close_that_turns_main_only_at_its_turn \
+  test_successor_left_at_the_turn_survives_the_hook_process_group_teardown \
+  test_claude_stop_hook_notifies_when_at_turn_downtime_write_fails \
+  test_successor_close_during_main_turn_is_delivered_at_the_next_turn_end \
+  test_pass_through_successor_survives_the_hook_process_group_teardown \
+  test_host_stopped_right_after_a_handled_wake_exits_and_frees_the_queue \
+  test_engine_in_another_time_zone_handles_its_granted_rows
