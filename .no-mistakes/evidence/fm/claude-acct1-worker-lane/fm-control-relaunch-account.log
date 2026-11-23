@@ -1,0 +1,5 @@
+ok - fm-control relaunch: a declared account list keeps the account the task records
+ok - fm-control relaunch: only an explicit --account moves a task to another declared account
+ok - fm-control relaunch: undeclared, newline-split, signed-out, unrecorded, retired, and wrong-runner accounts refuse before the old agent stops
+ok - fm-spawn relaunch: moving onto the orchestrator account obeys the worker cap; staying on it is admitted
+# all fm-control-relaunch-account tests passed
