@@ -1,0 +1,8 @@
+ok - fm-brief.sh: ship brief requires reproduce-before-fix with evidence and a stated limitation
+ok - fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible
+ok - fm-brief.sh: relative directory inputs ignore CDPATH, render stable absolute charter paths, or fail loudly
+ok - fm-brief.sh: ship brief carries the retry-loop failsafe rule with its ceilings and key
+ok - fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed
+ok - a failed refresh still refuses and says the verdict used the last-known refs
+ok - a hanging remote in a standalone copy cannot take the project clone's refresh; its origin's head is accepted and failed remotes name their repository
+ok - promotion renders the reproduce-before-fix rule into ship instructions
