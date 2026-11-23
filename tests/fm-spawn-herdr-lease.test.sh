@@ -147,7 +147,7 @@ run_lease_spawn() {  # <case-dir> <id> [extra spawn args...]
 test_fresh_spawn_leases_and_moves_the_top_level_shell() {
   local id=lease-top-level dir out status
   dir=$(make_lease_case "$id")
-  out=$(run_lease_spawn "$dir" "$id")
+  out=$(run_lease_spawn "$dir" "$id" --model zai/glm-5.3-flash --effort low)
   status=$?
   expect_code 0 "$status" "spawn should succeed"$'\n'"$out"
   assert_grep "get --lease --lease-holder $id" "$dir/fake/treehouse-log" \
@@ -165,7 +165,7 @@ test_failed_lease_refuses_without_a_record() {
   local id=lease-refused dir out status
   dir=$(make_lease_case "$id")
   : > "$dir/fake/lease-fails"
-  out=$(run_lease_spawn "$dir" "$id")
+  out=$(run_lease_spawn "$dir" "$id" --model zai/glm-5.3-flash --effort low)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn went on without a leased copy"$'\n'"$out"
   assert_contains "$out" "treehouse get --lease failed" "the refusal did not name the failed lease"
@@ -178,7 +178,7 @@ test_aborted_spawn_names_the_lease_it_keeps() {
   local id=lease-aborted dir out status
   dir=$(make_lease_case "$id")
   echo dirty >> "$dir/slot/README.md"
-  out=$(run_lease_spawn "$dir" "$id")
+  out=$(run_lease_spawn "$dir" "$id" --model zai/glm-5.3-flash --effort low)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched into a dirty leased copy"$'\n'"$out"
   [ ! -e "$dir/home/state/$id.meta" ] || fail "refused spawn published task metadata"
@@ -192,7 +192,7 @@ test_rolled_back_spawn_after_launch_names_the_lease_it_keeps() {
   local id=lease-after-launch dir out status
   dir=$(make_lease_case "$id")
   : > "$dir/fake/launch-send-fails"
-  out=$(run_lease_spawn "$dir" "$id")
+  out=$(run_lease_spawn "$dir" "$id" --model zai/glm-5.3-flash --effort low)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn succeeded although its launch was not delivered"$'\n'"$out"
   [ ! -e "$dir/home/state/$id.meta" ] || fail "the failed spawn kept its task record"
@@ -256,7 +256,7 @@ test_delayed_worktree_entry() {
   local id=lease-delayed-cd dir out status
   dir=$(make_lease_case "$id")
   printf 25 > "$dir/fake/delay-reads"
-  out=$(run_lease_spawn "$dir" "$id"); status=$?
+  out=$(run_lease_spawn "$dir" "$id" --model zai/glm-5.3-flash --effort low); status=$?
   expect_code 0 "$status" "delayed cwd should settle after the old 20-read limit"$'\n'"$out"
   [ "$(cat "$dir/fake/reads")" -ge 25 ] || fail "the delay was not exercised"
   [ "$(cat "$dir/fake/cd-sends")" = 2 ] || fail "cd was not resent exactly once"
@@ -267,7 +267,7 @@ test_dropped_worktree_entry() {
   local id=lease-dropped-cd dir out status
   dir=$(make_lease_case "$id")
   : > "$dir/fake/drop-first-cd"
-  out=$(run_lease_spawn "$dir" "$id"); status=$?
+  out=$(run_lease_spawn "$dir" "$id" --model zai/glm-5.3-flash --effort low); status=$?
   expect_code 0 "$status" "a dropped first cd should recover"$'\n'"$out"
   [ "$(cat "$dir/fake/cd-sends")" = 2 ] || fail "cd was not resent exactly once"
   pass "Herdr recovers a dropped initial cd with one resend"
@@ -277,7 +277,7 @@ test_never_moving_worktree_entry() {
   local id=lease-stuck-cd dir out status
   dir=$(make_lease_case "$id")
   : > "$dir/fake/never-moves"
-  out=$(run_lease_spawn "$dir" "$id"); status=$?
+  out=$(run_lease_spawn "$dir" "$id" --model zai/glm-5.3-flash --effort low); status=$?
   [ "$status" -ne 0 ] || fail "a pane that never moves was accepted"
   assert_contains "$out" "not its recorded worktree" "wrong cwd did not refuse"
   assert_contains "$out" "Herdr pane 'default:%9'" "refusal did not identify the pane"
