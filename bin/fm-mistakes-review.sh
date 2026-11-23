@@ -19,8 +19,9 @@
 #        overrides it, so `arm --in 60` bootstraps the first pass. The arm goes
 #        through `bin/fm-timed-dispatch.sh arm mistakes-review --at @<epoch>`,
 #        which wakes firstmate to run the review and never dispatches a worker
-#        itself. It cancels any prior review wake first, so re-arming after a
-#        pass replaces it instead of stacking a second or refusing a stale one.
+#        itself. It rejects a zero delay before cancelling any prior review wake, so a bad
+#        request never drops the existing wake; re-arming after a pass replaces
+#        the old wake instead of stacking a second or refusing a stale one.
 # mark   Record that a pass completed at <epoch> (default: now). This is the
 #        transcript-scan cursor the review reads for "since the last pass".
 # due    Exit 0 when a pass is due (no completed pass yet, or the recorded pass
@@ -92,8 +93,10 @@ cmd_arm() {
   base=$INTERVAL
   if [ -n "$extra" ]; then
     nonneg_int "$extra" || die "--in must be a whole number of seconds: $extra"
+    [ "$extra" -gt 0 ] || die "--in must be at least 1 second so the wake lands in the future: $extra"
     base=$extra
   fi
+  [ "$base" -gt 0 ] || die "the review interval must be at least 1 second: $base"
   [ -x "$DISPATCH_BIN" ] || die "timed-dispatch executable not found or not runnable: $DISPATCH_BIN"
   target=$(( $(now_epoch) + base ))
   # A fired or still-armed review wake leaves its record behind, and timed-dispatch

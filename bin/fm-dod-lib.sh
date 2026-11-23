@@ -626,7 +626,8 @@ EOF
 # callers pass the absolute path their brief already names as task material.
 # The receipt is a learning-loop input, not optional paperwork: a task that hit
 # no unexpected error still records `none observed`, and an unknown cause is a
-# valid entry. bin/fm-mistakes-review.sh turns these receipts into the review.
+# valid entry. The mistakes-review skill turns these receipts into the review;
+# bin/fm-mistakes-review.sh only owns its clock.
 fm_mistake_receipt_block() {  # <receipt-path>
   # shellcheck disable=SC2016 # the backticks are literal Markdown, not substitution
   printf 'Before reporting done, write a task mistake receipt at `%s`: one short entry per unexpected error, rejected operation, wrong assumption or escaped defect, with what happened and the evidence; write `none observed` when you hit none.\n' "$1"
