@@ -80,7 +80,7 @@ fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" \
   || fail "staging the pre-loss job failed: $FM_REMOTE_JOB_ERROR"
 JOB_ID=$FM_REMOTE_JOB_ID
 for _ in $(seq 1 400); do
-  [ "$(fm_remote_job_read_state "$STATE_ROOT/jobs/$JOB_ID" 2>/dev/null || true)" = done ] && break
+  [ "$(fm_remote_job_read_state "$STATE_ROOT/jobs/$JOB_ID" 2>/dev/null || true)" = "done" ] && break
   sleep 0.05
 done
 assert_present "$TOUCHED" "the worker never served its first job"
