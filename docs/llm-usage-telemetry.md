@@ -122,7 +122,7 @@ dispatch time, not a re-derivation:
 `confidence`, and a below-`70` record that does not name its runner-up, rather
 than archiving unusable evidence. `bin/fm-dispatch-calibration.sh` reads these
 records and joins them to the archive's own outcome signals (`outcome` events,
-a later `dispatch`'s `from_task_id`, and an issue-triggered `delegation`) to
+a later `dispatch`'s `from_task_id`, and a relaunch `delegation` that had an issue) to
 print a reliability table by confidence band and a Brier score; it is
 read-only and never changes a record.
 
