@@ -90,6 +90,21 @@ pass "status reads a silent host asleep without sending"
 
 reset
 write_config
+for mode in ensure wake; do
+  out=$(FM_PC02_WAKE=0 bash "$SCRIPT" $mode --timeout 1)
+  rc=$?
+  [ "$rc" -eq 4 ] || fail "$mode with FM_PC02_WAKE=0 on a silent host must return 4, got $rc"
+  [ "$out" = asleep ] || fail "$mode with FM_PC02_WAKE=0 must report asleep: $out"
+  [ ! -e "$FM_TEST_SEND_LOG" ] || fail "$mode with FM_PC02_WAKE=0 must send no packet"
+done
+out=$(FM_PC02_WAKE=0 bash "$SCRIPT" status)
+[ "$out" = asleep ] || fail "status must still report asleep with FM_PC02_WAKE=0: $out"
+: >"$FM_TEST_AWAKE_FLAG"
+FM_PC02_WAKE=0 bash "$SCRIPT" ensure >/dev/null || fail "ensure with FM_PC02_WAKE=0 must still succeed on an awake host"
+pass "FM_PC02_WAKE=0 disables the wake packet for ensure and wake"
+
+reset
+write_config
 out=$(bash "$SCRIPT" status --if-managed --quiet)
 [ "$out" = asleep ] || fail "status --quiet must still print asleep: $out"
 : >"$FM_TEST_AWAKE_FLAG"

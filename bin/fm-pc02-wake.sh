@@ -41,7 +41,11 @@
 #   FM_PC02_WAKE_PORT       magic-packet UDP port (default: 9)
 #   FM_PC02_WAKE_PACKETS    packet count (default: 3)
 #   FM_PC02_WAKE_DRY_RUN    1 prints the packet destinations and sends nothing
-#   FM_PC02_WAKE=0          disables any wake attempt (callers also honor it)
+#   FM_PC02_WAKE=0          ensure and wake send no packet: they probe, print
+#                           awake/asleep, and return 4 when not awake (status and
+#                           discover are unaffected). Per-path switches also exist:
+#                           FM_PC02_WAKE_OFFLOAD (test offload), FM_PC02_WAKE_CI (CI
+#                           routing), and FM_PC02_WAKE (fm-spawn lane dispatch).
 #
 # Exit status: 0 success/awake/status answered; 4 not awake after `ensure`
 # or `wake`; 2 usage; 1 a missing config, missing python3, or failed discovery.
@@ -265,6 +269,10 @@ case "$MODE" in
       [ "$QUIET" -eq 1 ] || printf 'awake\n'
       exit 0
     fi
+    if [ "${FM_PC02_WAKE:-1}" = 0 ]; then
+      [ "$QUIET" -eq 1 ] || printf 'asleep\n'
+      exit 4
+    fi
     send_packets
     [ "$QUIET" -eq 1 ] || printf 'waking\n'
     exit 0
@@ -273,6 +281,10 @@ case "$MODE" in
     if probe; then
       [ "$QUIET" -eq 1 ] || printf 'awake\n'
       exit 0
+    fi
+    if [ "${FM_PC02_WAKE:-1}" = 0 ]; then
+      [ "$QUIET" -eq 1 ] || printf 'asleep\n'
+      exit 4
     fi
     send_packets
     deadline=$(( $(date +%s) + TIMEOUT ))
