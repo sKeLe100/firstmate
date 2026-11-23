@@ -5,7 +5,6 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-GUARD="$ROOT/bin/fm-stow-guard.sh"
 TMP_ROOT=$(fm_test_tmproot fm-stow-guard)
 PRIMARY="$TMP_ROOT/primary"
 OUT="$TMP_ROOT/out"
@@ -17,6 +16,15 @@ git -C "$PRIMARY" init -q
 git -C "$PRIMARY" config user.name fixture
 git -C "$PRIMARY" config user.email fixture@example.test
 git -C "$PRIMARY" config commit.gpgsign false
+
+# The fork's primary-scope check (bin/fm-primary-scope-lib.sh) keys on the
+# guard's physical location, so each fixture root runs its own staged copy.
+stage_guard() {  # <root>
+  mkdir -p "$1/bin"
+  cp "$ROOT/bin/fm-stow-guard.sh" "$ROOT/bin/fm-primary-scope-lib.sh" "$1/bin/"
+}
+stage_guard "$PRIMARY"
+GUARD="$PRIMARY/bin/fm-stow-guard.sh"
 
 # invoke_guard <root> <state> <config> [env assignments...]
 # The hook payload is on stdin. Prints nothing. The exit status is the hook's.
@@ -30,7 +38,7 @@ invoke_guard() {
     FM_ROOT_OVERRIDE="$root" FM_HOME="$root" \
     FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$config" \
     "$@" \
-    "$GUARD" >"$OUT" 2>"$ERR"
+    "$root/bin/fm-stow-guard.sh" >"$OUT" 2>"$ERR"
 }
 
 prepare_case() {
@@ -211,6 +219,7 @@ test_crew_worktree_is_silent() {
   git -C "$PRIMARY" worktree add -q -b fixture-child "$child"
   prepare_case crew
   mkdir -p "$child/bin" "$child/state" "$child/config"
+  stage_guard "$child"
   printf 'tokens=1000\n' > "$child/config/stow-guard"
   write_usage 900000
   payload | invoke_guard "$child" "$child/state" "$child/config" || rc=$?
@@ -228,6 +237,7 @@ test_secondmate_home_is_silent() {
   fi
   git -C "$PRIMARY" worktree add -q -b fixture-second "$second"
   mkdir -p "$second/bin" "$second/state" "$second/config"
+  stage_guard "$second"
   printf '# fixture\n' > "$second/AGENTS.md"
   printf 'sm-fixture\n' > "$second/.fm-secondmate-home"
   printf 'tokens=1000\n' > "$second/config/stow-guard"
