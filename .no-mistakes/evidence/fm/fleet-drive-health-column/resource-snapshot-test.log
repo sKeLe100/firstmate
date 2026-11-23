@@ -1,0 +1,33 @@
+ok - every section renders and JSON/TOON share the same model
+ok - the Android fixture renders one row per host and clears the unavailable row
+ok - adb serials, AVD list, and boot_completed come from the bounded probes
+ok - an unnamed running emulator renders once as avd unknown, never also as a stopped AVD
+ok - a failed adb read renders the AVD unknown with its reason, never stopped
+ok - failed adb and emulator probes render as stated reasons, never as zero devices
+ok - clean empty Android reads render a none row
+ok - boot_completed renders 0, unknown for empty, and failed for an unanswered probe
+ok - a non-emulator adb serial leaves a stopped AVD rendered stopped
+ok - timed-out adb and emulator probes render as stated reasons
+ok - the shipped PC02 Android probe returns rows over the ssh boundary
+ok - a failed PC02 Android read is an unavailable row, never zero devices
+ok - an environment.json AVD home and declared adb port 5041 are discovered and read
+ok - a WSL-only ~/.android/avd AVD is discovered without an emulator binary
+ok - an unreadable known root is reported with its reason, never as none
+ok - a missing recorded root or AVD home is reported with its path, never as none
+ok - missing adb and emulator render as stated reasons, never as zero devices
+ok - an opencode worker's context band comes from its session store
+ok - a PC01 snapshot renders per-disk SMART counts, NVMe usage, and its own read time
+ok - stale, missing, and failed PC01 snapshots are labelled with reason and read time, never zero or healthy
+ok - the shipped PC02 smartctl probe parses ATA and NVMe health over the ssh boundary
+ok - missing-tool and unreachable PC02 reads are labelled with reason, never zero or healthy
+ok - PC02 parses CRLF smartctl.exe output, real FAILED verdicts, and verdict-less devices
+ok - PC01 snapshot fallbacks and failures are labelled, never healthy
+ok - a failed quota read is labelled and never rendered as zero
+ok - a rate-limited quota read shows state and retry, never 0 percent
+ok - a down PC02 yields unavailable rows and keeps PC01 complete
+ok - the remote fixture alone supplies PC02 hosts, drives, and the running session
+ok - worker-lane accounts follow the lane classification, not the orchestrator role
+ok - row caps hold and the omitted counts report the cut rows
+ok - the command creates no file and leaves fixture mtimes unchanged
+ok - home-only renders just one home's workers for the remote call
+skip: live: opt-in; set FM_FLEET_LIVE=1 to run
