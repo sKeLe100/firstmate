@@ -1,0 +1,7 @@
+ok - an armed clock wake gates on its target, fires once, and the wake names the task
+ok - a firstmate restart restarts the armed watch and it still fires exactly once
+ok - a quota account resolves its own window reset and wakes naming the task
+ok - an unusable quota reading is refused and leaves nothing armed
+ok - bad and past clock targets are refused before anything is armed
+ok - list, cancel, duplicate refusal, grace, and the --name override all behave
+all fm-timed-dispatch tests passed
