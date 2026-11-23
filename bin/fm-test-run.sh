@@ -1145,7 +1145,7 @@ tests/fm-secondmate-reconcile.test.sh 100853
 tests/fm-secondmate-restart.test.sh 58986
 tests/fm-secondmate-safety.test.sh 82192
 tests/fm-secondmate-sync.test.sh 55501
-tests/fm-self-repo-role.test.sh 11958
+tests/fm-self-repo-role.test.sh 12589
 tests/fm-send-agy-confirm.test.sh 4440
 tests/fm-send-cache-stale-guard.test.sh 20398
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 185
