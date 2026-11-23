@@ -95,8 +95,43 @@ test_account_list_relaunch_refusals_happen_before_stop() {
   pass "fm-control relaunch: undeclared, newline-split, signed-out, unrecorded, retired, and wrong-runner accounts refuse before the old agent stops"
 }
 
+test_account_list_relaunch_onto_orchestrator_account_obeys_the_cap() {
+  local dir out rc id=rl-orch holder=rl-orch-holder
+  dir=$(new_case list-orch-cap "$id")
+  add_listed_task "$dir" "$id" "$dir/second"
+  printf '%s\n' "$dir/first" > "$dir/home/config/claude-orchestrator-account"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "account=$dir/first"
+  } > "$dir/home/state/$holder.meta"
+  cp "$dir/home/state/$id.meta" "$dir/meta-before"
+  out=$(run_control "$dir" "$id" relaunch --account "$dir/first" --note "move onto held orchestrator account"); rc=$?
+  [ "$rc" -ne 0 ] || fail "fm-control must refuse a move onto the full orchestrator account"$'\n'"$out"
+  assert_contains "$out" "$holder already holds its place" "the preflight refusal should name the holder"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "the refusal must happen before the running agent stops"
+  [ ! -s "$dir/fake/literal" ] || fail "the refusal must send no lifecycle input"
+  cmp -s "$dir/meta-before" "$dir/home/state/$id.meta" || fail "the refusal must leave the task record untouched"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" "$id" --relaunch --account "$dir/first"); rc=$?
+  expect_code 75 "$rc" "moving a task onto the full orchestrator account must defer"$'\n'"$out"
+  assert_contains "$out" "$holder already holds its place" "the deferral should name the holder"
+  cmp -s "$dir/meta-before" "$dir/home/state/$id.meta" || fail "a deferred move must leave the task record untouched"
+  [ "$(meta_field "$dir" "$id" account)" = "$dir/second" ] || fail "a deferred move must keep the recorded account"
+  # A task already recorded on the orchestrator account is admitted as the only lane.
+  dir=$(new_case list-orch-same "$id")
+  add_listed_task "$dir" "$id" "$dir/first"
+  printf '%s\n' "$dir/first" > "$dir/home/config/claude-orchestrator-account"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" "$id" --relaunch); rc=$?
+  expect_code 0 "$rc" "a same-account relaunch must stay admitted"$'\n'"$out"
+  assert_contains "$out" "account=$dir/first" "the relaunch should keep the orchestrator account"
+  pass "fm-spawn relaunch: moving onto the orchestrator account obeys the worker cap; staying on it is admitted"
+}
+
 test_account_list_relaunch_reuses_the_recorded_account
 test_account_list_relaunch_moves_only_on_explicit_account
 test_account_list_relaunch_refusals_happen_before_stop
+test_account_list_relaunch_onto_orchestrator_account_obeys_the_cap
 
 echo "# all fm-control-relaunch-account tests passed"

@@ -482,8 +482,11 @@
 #   spawn must name one declared entry with --account, chosen at intake, and
 #   that entry is checked, launched, and recorded exactly like a pin; a
 #   relaunch reuses the recorded entry unless --account moves it. Without the
-#   list, --account refuses and nothing else changes. docs/configuration.md
-#   "Several Claude accounts" owns the contract.
+#   list, --account refuses and nothing else changes. The list may declare the
+#   orchestrator account (config/claude-orchestrator-account), which then admits
+#   at most one worker beside the orchestrator; a second is deferred (exit
+#   75) before any endpoint exists. docs/configuration.md "Several Claude
+#   accounts" owns the contract.
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
 #     __BRIEF__    absolute path to data/<task-id>/brief.md
 #     __CLAUDEPERMFLAG__ the claude permission flag selected by config/claude-permission-mode
@@ -3439,7 +3442,23 @@ if [ -n "$WORKER_ACCOUNT" ] && [ "$HARNESS" = claude ]; then
     unset CLAUDE_CONFIG_DIR
   fi
 fi
-
+# Worker cap beside the orchestrator: fm_worker_account_orchestrator_cap_check
+# (bin/fm-worker-account-lib.sh) owns the rule and fm-control's relaunch
+# preflight asks it too. A deferred launch happens before any brief, endpoint,
+# worktree, or record exists, so its backlog item stays queued. A secondmate is
+# not a dispatched lane and is exempt.
+if [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ] && [ -n "$WORKER_ACCOUNT" ]; then
+  cap_rc=0
+  cap_msg=$(fm_worker_account_orchestrator_cap_check "$STATE" "$CONFIG" "$WORKER_ACCOUNT_ROOT" "$ID") || cap_rc=$?
+  case "$cap_rc" in
+  0) ;;
+  1)
+    echo "$cap_msg" >&2
+    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    ;;
+  *) exit 1 ;;
+  esac
+fi
 
 
 model_flag_for_harness() {
