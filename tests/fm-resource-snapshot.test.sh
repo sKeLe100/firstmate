@@ -150,6 +150,9 @@ write_fixtures() {  # <name>
       {"home_lane":"pc02-mate","task":"delta","kind":"ship","model":"opencode-go/deepseek-v4.1-flash","spend_lane":"opencode-go","stage":"state: working · source: pane","age":"5m","last_active":"2026-11-20T00:00:00Z","ctx_band":"n/a","pr":"-","read_utc":"2026-11-20T00:00:00Z"},
       {"home_lane":"pc02-mate","task":"epsilon","kind":"ship","model":"claude-haiku-5-5","spend_lane":"claude#2","stage":"state: done · source: status-log","age":"1h","last_active":"-","ctx_band":"ok(10%)","pr":"-","read_utc":"2026-11-20T00:00:00Z"}
     ],
+    "android":[
+      {"avd":"pt_pixel8pro","serial":"emulator-5554","state":"device","boot_completed":"1","detail":"running emulator","read_utc":"2026-11-20T00:00:00Z"}
+    ],
     "mate_account":"/home/test/.claude-secondary"
   }'
   write_json "$dir/roles.json" '[
@@ -166,6 +169,12 @@ write_fixtures() {  # <name>
       {"rung":"gitlab","account":"example-group","plan":"free","used":"443 min MTD","allowance":"400 min/mo","reset":"2026-12-01","status":"exhausted","runs":"relay rung","read_utc":"2026-11-20T00:00:00Z"},
       {"rung":"github-storage","account":"example-user","plan":"free","used":"120 GB-h","allowance":"360 GB-h","reset":"month rollover","status":"ok","runs":"-","read_utc":"2026-11-20T00:00:00Z"}
     ]}'
+  write_json "$dir/android.json" '{
+    "android":[
+      {"machine":"PC01","avd":"pt_pixel8pro","serial":"emulator-5554","state":"device","boot_completed":"1","detail":"running emulator","read_utc":"2026-11-20T00:00:00Z"},
+      {"machine":"PC02","avd":"-","serial":"-","state":"none","boot_completed":"-","detail":"no AVDs and no running emulators","read_utc":"2026-11-20T00:00:00Z"}
+    ]}'
+  export FM_RESOURCE_ANDROID_FIXTURE="$dir/android.json"
   write_json "$dir/hosts-pc01.json" '{
     "hosts":[{"machine":"PC01","load1":0.5,"cores":16,"mem_free_pct":80,"disk_free_gb":850.0,"disk_path":"/home/test","uptime":1000,"read_utc":"2026-11-20T00:00:00Z"}],
     "drives":[{"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"read_utc":"2026-11-20T00:00:00Z"},
@@ -224,7 +233,7 @@ test_every_section_renders_and_agrees() {
   expect_code 0 "$rc" "full fixture render"
   printf '%s\n' "$out" > "$TMP_ROOT/model.json"
   local section
-  for section in hosts drives quota workers panes strays secondmates roles testing compute unavailable; do
+  for section in hosts drives quota workers panes strays secondmates roles testing android compute unavailable; do
     jq -e "has(\"$section\")" "$TMP_ROOT/model.json" >/dev/null || fail "missing section $section"
   done
   [ "$(count_json "$TMP_ROOT/model.json" '.hosts')" = 2 ] || fail "hosts count"
@@ -236,6 +245,9 @@ test_every_section_renders_and_agrees() {
   [ "$(count_json "$TMP_ROOT/model.json" '.secondmates')" = 1 ] || fail "secondmates count"
   [ "$(count_json "$TMP_ROOT/model.json" '.roles')" = 3 ] || fail "roles fixture count"
   [ "$(count_json "$TMP_ROOT/model.json" '.testing')" = 2 ] || fail "testing count"
+  [ "$(count_json "$TMP_ROOT/model.json" '.android')" = 2 ] || fail "android count"
+  jq -e '[.unavailable[] | select(.source | startswith("android"))] | length == 0' \
+    "$TMP_ROOT/model.json" >/dev/null || fail "a readable Android probe must leave unavailable"
   [ "$(count_json "$TMP_ROOT/model.json" '.compute')" = 2 ] || fail "compute count"
   jq -e '.drives[] | select(.machine == "PC02" and .mount == "C:") | .free_gb == "23.0" and .warn == "watch"' \
     "$TMP_ROOT/model.json" >/dev/null || fail "PC02 C: must be watch at 23 GB"
@@ -425,6 +437,90 @@ test_home_only_renders_workers_only() {
   pass "home-only renders just one home's workers for the remote call"
 }
 
+test_android_fixture_renders_both_hosts() {
+  setup_fixture
+  local out rc
+  out=$(run_snapshot "$HOME_DIR" "$FB" --json 2>&1); rc=$?
+  expect_code 0 "$rc" "android fixture render"
+  printf '%s\n' "$out" > "$TMP_ROOT/android-fixture.json"
+  [ "$(count_json "$TMP_ROOT/android-fixture.json" '.android')" = 2 ] || fail "android fixture row count"
+  jq -e '.android[] | select(.machine == "PC01") | .avd == "pt_pixel8pro" and .serial == "emulator-5554" and .state == "device" and .boot_completed == "1"' \
+    "$TMP_ROOT/android-fixture.json" >/dev/null || fail "PC01 Android row: $(jq -c '.android' "$TMP_ROOT/android-fixture.json")"
+  jq -e '[.unavailable[] | select(.source | startswith("android"))] | length == 0' \
+    "$TMP_ROOT/android-fixture.json" >/dev/null || fail "a readable Android section must not stay unavailable"
+  out=$(run_snapshot "$HOME_DIR" "$FB" 2>&1); rc=$?
+  expect_code 0 "$rc" "android fixture TOON render"
+  assert_contains "$out" 'android[2]{machine,avd,serial,state,boot_completed,detail,read_utc}:' \
+    "TOON must render the Android table"
+  pass "the Android fixture renders one row per host and clears the unavailable row"
+}
+
+test_android_probe_reads_fake_tools() {
+  local rec home fb out rc fake
+  rec=$(make_home android-probe fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  fake="$TMP_ROOT/android-fake"
+  mkdir -p "$fake"
+  cat > "$fake/adb" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  devices) printf 'List of devices attached\nemulator-5554\tdevice\nemulator-5556\toffline\n\n' ;;
+  "-s emulator-5554 emu avd name") printf 'pt_pixel8pro\r\r\nOK\r\r\n' ;;
+  "-s emulator-5554 shell getprop sys.boot_completed") printf '1\r\n' ;;
+  *) exit 1 ;;
+esac
+EOF
+  cat > "$fake/emulator" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = "-list-avds" ] && { printf 'pt_pixel8pro\nother_avd\n'; exit 0; }
+exit 1
+EOF
+  chmod +x "$fake/adb" "$fake/emulator"
+  out=$(env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_ANDROID_FIXTURE= FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR="$fake/emulator" \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/remote.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1); rc=$?
+  expect_code 0 "$rc" "Android probe render"
+  printf '%s\n' "$out" > "$TMP_ROOT/android-probe.json"
+  jq -e '.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro")
+    | .serial == "emulator-5554" and .state == "device" and .boot_completed == "1"' \
+    "$TMP_ROOT/android-probe.json" >/dev/null || fail "running AVD row: $(jq -c '.android' "$TMP_ROOT/android-probe.json")"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "other_avd") | .state] == ["stopped"]' \
+    "$TMP_ROOT/android-probe.json" >/dev/null || fail "a listed but stopped AVD must render stopped, not zero"
+  jq -e '[.android[] | select(.serial == "emulator-5556") | .state] == ["offline"]' \
+    "$TMP_ROOT/android-probe.json" >/dev/null || fail "an offline adb serial must keep its state"
+  jq -e '[.unavailable[] | select(.source | startswith("android"))] | length == 0' \
+    "$TMP_ROOT/android-probe.json" >/dev/null || fail "a successful Android probe must clear unavailable"
+  pass "adb serials, AVD list, and boot_completed come from the bounded probes"
+}
+
+test_android_missing_tools_is_stated_not_zero() {
+  local rec home fb out rc
+  rec=$(make_home android-missing fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  out=$(env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_ANDROID_FIXTURE= FM_RESOURCE_ADB= FM_RESOURCE_EMULATOR= \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/remote.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1); rc=$?
+  expect_code 0 "$rc" "missing Android tools render"
+  printf '%s\n' "$out" > "$TMP_ROOT/android-missing.json"
+  jq -e '[.android[] | select(.machine == "PC01")] | length == 0' \
+    "$TMP_ROOT/android-missing.json" >/dev/null || fail "missing tools must not render a zero-device row"
+  jq -e '[.unavailable[] | select(.source == "android:PC01") | .reason] | sort == ["adb not found","emulator not found"]' \
+    "$TMP_ROOT/android-missing.json" >/dev/null || fail "missing tools must be stated: $(jq -c '.unavailable' "$TMP_ROOT/android-missing.json")"
+  pass "missing adb and emulator render as stated reasons, never as zero devices"
+}
+
 test_live_reconciliation() {
   fm_live_gate opt-in FM_FLEET_LIVE ssh quota-axi herdr glab systemctl
   local live_home=${FM_RESOURCE_LIVE_HOME:-${FM_HOME:-$HOME/firstmate}}
@@ -567,6 +663,9 @@ PY
 }
 
 test_every_section_renders_and_agrees
+test_android_fixture_renders_both_hosts
+test_android_probe_reads_fake_tools
+test_android_missing_tools_is_stated_not_zero
 test_opencode_worker_gets_a_context_band
 test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
