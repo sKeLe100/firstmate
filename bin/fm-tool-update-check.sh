@@ -30,8 +30,11 @@
 # self-installs into ~/.local/bin while a version manager keeps its own older
 # copy earlier on PATH looks fully up to date to anything that asks only "is a
 # newer version published". So PATH skew is measured, never inferred: every
-# executable copy on PATH is asked for its own version, and those answers are
-# compared. A directory name is never read as a version, because a version
+# executable copy on PATH outside a WSL Windows-interop mount is asked for its
+# own version, and those answers are compared. A Windows-interop copy under
+# /mnt/<drive>/ comes from the Windows PATH WSL appends and is not a tool this
+# host runs, so it is never a candidate and never fails the check. A directory
+# name is never read as a version, because a version
 # manager's "latest" directory can hold an older build. A copy that will not
 # report a version is reported as a check failure rather than assumed current.
 #
@@ -53,6 +56,9 @@
 # and stays silent in between. Each probe is bounded by
 # FM_TOOL_UPDATE_PROBE_SECS (default 5, valid 1..30) and a whole sweep by
 # FM_TOOL_UPDATE_BUDGET_SECS (default 20, valid 1..120).
+#
+# FM_TOOL_UPDATE_WSL_MNT_ROOT overrides the /mnt mount root under which
+# Windows-interop copies are skipped (tests only).
 #
 # The sweep has to finish inside the watcher's own per check bound, because a run
 # the watcher kills prints nothing and writes no record, so it would repeat that
@@ -390,13 +396,29 @@ config_records() {
 
 # --- PATH probes ------------------------------------------------------------
 
+# WSL appends the Windows PATH, whose tools live under /mnt/<drive>/. Those are
+# Windows-interop copies, not the tools this host runs, so they are never asked
+# for a version and never counted as an installed copy. The mount root is
+# overridable for tests only, the same way fm-remote-readiness-lib.sh does it.
+WSL_MNT_ROOT=${FM_TOOL_UPDATE_WSL_MNT_ROOT:-/mnt}
+
+# is_windows_interop_path <path>: true for a path under a WSL Windows-interop
+# mount, /mnt/<drive> or below.
+is_windows_interop_path() {
+  case "$1" in
+    "$WSL_MNT_ROOT"/[A-Za-z]|"$WSL_MNT_ROOT"/[A-Za-z]/*) return 0 ;;
+  esac
+  return 1
+}
+
 # Every executable copy of <command> on PATH, in PATH order, deduplicated by
 # device and inode so one copy reached through two PATH entries is not read as
-# two installs.
+# two installs. Windows-interop copies are left out entirely.
 path_hits() {
   local command_name=$1 dir candidate identity seen=''
   while IFS= read -r dir; do
     [ -n "$dir" ] || continue
+    is_windows_interop_path "$dir" && continue
     candidate="$dir/$command_name"
     [ -f "$candidate" ] && [ -x "$candidate" ] || continue
     identity=$(fm_pr_file_identity "$candidate" 2>/dev/null) || identity=

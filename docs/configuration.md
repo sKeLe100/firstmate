@@ -2140,7 +2140,7 @@ The second condition is the reason the check exists.
 An update can install correctly and stay inert because an earlier `PATH` entry still holds an older copy, and a check that only asks whether a newer version is published reports that host as up to date.
 
 The script therefore runs every copy of a watched command found on `PATH` and asks it for its own version, rather than trusting one lookup or reading a version out of a directory name.
-It only reports; it never installs or updates tools, fetches into a watched git repository, or changes `PATH` or a version manager.
+The script therefore runs every copy of a watched command found on `PATH` (skipping WSL Windows-interop copies under `/mnt/<drive>/`) and asks it for its own version, rather than trusting one lookup or reading a version out of a directory name.
 
 This section is the single owner of the canonical schema.
 `bin/fm-tool-update-check.sh` owns probe mechanics, cadence, and the report record.
