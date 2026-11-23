@@ -1,0 +1,16 @@
+## S1 stopped, root recorded
+{"android":[{"machine":"PC01","avd":"pt_pixel8pro","serial":"-","state":"stopped","boot_completed":"-","detail":"AVD listed; no running emulator","read_utc":"2026-11-23T13:16:30Z"}],"unavailable":[]}
+## S2 running on 5041
+{"android":[{"machine":"PC01","avd":"pt_pixel8pro","serial":"-","state":"stopped","boot_completed":"-","detail":"AVD listed; no running emulator","read_utc":"2026-11-23T13:16:32Z"}],"unavailable":[]}
+## S3 missing root only, no tools
+{"android":[],"unavailable":[{"source":"android:PC01","reason":"Android root /mnt/zz/Android is missing","read_utc":"2026-11-23T13:16:34Z"},{"source":"android:PC01","reason":"adb not found","read_utc":"2026-11-23T13:16:34Z"},{"source":"android:PC01","reason":"emulator not found","read_utc":"2026-11-23T13:16:34Z"}]}
+## S4 missing root only, tools present
+{"android":[{"machine":"PC01","avd":"pt_pixel8pro","serial":"-","state":"stopped","boot_completed":"-","detail":"AVD listed; no running emulator","read_utc":"2026-11-23T13:16:36Z"}],"unavailable":[{"source":"android:PC01","reason":"Android root /var/tmp/nm-daemon-tmp/tmp.AySdvilfwJ/nonexistent is missing","read_utc":"2026-11-23T13:16:36Z"}]}
+## S5 unreadable root
+{"android":[],"unavailable":[{"source":"android:PC01","reason":"Android root /var/tmp/nm-daemon-tmp/tmp.AySdvilfwJ/ur is unreadable","read_utc":"2026-11-23T13:16:38Z"},{"source":"android:PC01","reason":"adb not found","read_utc":"2026-11-23T13:16:38Z"},{"source":"android:PC01","reason":"emulator not found","read_utc":"2026-11-23T13:16:38Z"}]}
+## S6 no roots at all
+{"android":[{"machine":"PC01","avd":"pt_pixel8pro","serial":"-","state":"stopped","boot_completed":"-","detail":"AVD listed; no running emulator","read_utc":"2026-11-23T13:16:39Z"}],"unavailable":[]}
+## S1 stopped, root with environment.json (port 5041), tools autodiscovered from root/Sdk
+{"android":[{"machine":"PC01","avd":"pt_pixel8pro","serial":"-","state":"stopped","boot_completed":"-","detail":"AVD listed; no running emulator","read_utc":"2026-11-23T13:16:57Z"}],"unavailable":[]}
+## S2 running emulator visible only on declared port 5041
+{"android":[{"machine":"PC01","avd":"pt_pixel8pro","serial":"emulator-5554","state":"device","boot_completed":"1","detail":"running emulator","read_utc":"2026-11-23T13:16:59Z"}],"unavailable":[]}
