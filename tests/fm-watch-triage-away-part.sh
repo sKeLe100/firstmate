@@ -1023,7 +1023,7 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
   else touch -m -d "@$back" "$statusf"; fi
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-afk-held_status"
   date '+%s' > "$state/.afk"
-  key=$(printf '%s' "$window" | tr '.:/' '___')
+  key=$(watch_window_key "$window")
 
   # Deliberately do not seed .hash-*: this is the changed-pane path that used to
   # call handle_paused_stale before AFK's one-shot daemon handoff.
@@ -1078,7 +1078,7 @@ test_captain_held_never_rechecked_while_away_record_exists() {
   if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
   else touch -m -d "@$back" "$statusf"; fi
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-secondmate-hold_status"
-  key=$(printf '%s' "$window" | tr '.:/' '___')
+  key=$(watch_window_key "$window")
   pane_hash=$(hash_text "idle awaiting the captain")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
@@ -1135,7 +1135,7 @@ test_captain_held_rechecked_under_a_quiet_record() {
   if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
   else touch -m -d "@$back" "$statusf"; fi
   printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-secondmate-hold_status"
-  key=$(printf '%s' "$window" | tr '.:/' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text "idle awaiting the captain")" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   write_quiet_record "$state"
@@ -1159,7 +1159,7 @@ test_captain_held_rechecked_under_a_quiet_record() {
   printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/held-afk.meta"
   printf 'captain-held [key=route]: tracked by task-decision-route\n' > "$statusf"
   printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-held-afk_status"
-  key=$(printf '%s' "$window" | tr '.:/' '___')
+  key=$(watch_window_key "$window")
   printf 'quiet\n' > "$state/.afk"
   write_quiet_record "$state"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
@@ -1182,7 +1182,7 @@ test_live_captain_held_first_sight_silenced_by_away_record() {
   printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/held-live.meta"
   printf 'captain-held [key=route]: tracked by task-decision-route\n' > "$statusf"
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held-live_status"
-  key=$(printf '%s' "$window" | tr '.:/' '___')
+  key=$(watch_window_key "$window")
   write_away_record "$state"
   # A LIVE agent at the gate: without the record pause_state_class answers none
   # and the first sight surfaces (test_exited_declared_pause_is_bounded_but_live_gate_surfaces).
@@ -1229,7 +1229,7 @@ test_afk_one_shot_never_hands_off_captain_held_under_away_record() {
   printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/held-afk.meta"
   printf 'captain-held [key=route]: tracked by task-decision-route\n' > "$statusf"
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held-afk_status"
-  key=$(printf '%s' "$window" | tr '.:/' '___')
+  key=$(watch_window_key "$window")
   date '+%s' > "$state/.afk"
   write_away_record "$state"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
@@ -1263,7 +1263,7 @@ paused_until_fixture() {  # <name> <until-epoch> <status-age-secs>
   if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
   else touch -m -d "@$back" "$statusf"; fi
   printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-until_status"
-  key=$(printf '%s' "$window" | tr '.:/' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text 'idle, waiting for the reset')" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   printf '%s\n' "$dir"
@@ -1390,7 +1390,7 @@ test_paused_bg_job_until_timeout_rechecks_after_the_job_ends() {
   [ "$(bg_job_stale_wakes "$state")" -eq 1 ] || fail "the passed timeout queued the wrong number of rechecks"
   awk -F '\t' '$3 == "stale" && $5 == "stale: test:fm-parked" { found = 1 } END { exit !found }' \
     "$state/.wake-queue" || fail "the recheck carried an unexpected reason: $(cat "$state/.wake-queue")"
-  case "$(cat "$state/.paused-resurfaced-test_fm-parked" 2>/dev/null)" in
+  case "$(cat "$state/.paused-resurfaced-$(watch_window_key test:fm-parked)" 2>/dev/null)" in
     *:due) ;;
     *) fail "the recheck was not recorded as the passed declared time" ;;
   esac
