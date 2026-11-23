@@ -970,13 +970,13 @@ test_compute_discovers_github_and_gitlab_from_live_state() {
   code="$base/code"
   mkdir -p "$code"
   git -C "$code" init -q
-  git -C "$code" remote add origin https://github.com/octocat/hello.git
+  git -C "$code" remote add origin https://github.com/acme-org/hello.git
   cat > "$fb/gh" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
   'api user --jq .login') printf 'octocat\n' ;;
   *billing/usage*) printf '%s\n' '{"usageItems":[{"product":"actions","sku":"Actions Linux","quantity":42}]}' ;;
-  */repos/octocat/hello/actions/runs*) printf '%s\n' '{"total_count":7}' ;;
+  */repos/acme-org/hello/actions/runs*) printf '%s\n' '{"total_count":7}' ;;
   *) exit 1 ;;
 esac
 STUB
