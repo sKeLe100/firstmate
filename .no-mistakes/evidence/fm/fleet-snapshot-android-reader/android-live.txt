@@ -1,0 +1,24 @@
+=== running+booted
+android[1]{machine,avd,serial,state,boot_completed,detail,read_utc}:
+  PC01,Pixel_7,emulator-5554,device,"1",running emulator,"2026-11-23T04:19:32Z"
+=== running booting
+android[1]{machine,avd,serial,state,boot_completed,detail,read_utc}:
+  PC01,Pixel_7,emulator-5554,device,"0",running emulator,"2026-11-23T04:19:34Z"
+=== stopped AVD
+android[1]{machine,avd,serial,state,boot_completed,detail,read_utc}:
+  PC01,Pixel_7,"-",stopped,"-",AVD listed; no running emulator,"2026-11-23T04:19:35Z"
+=== physical phone only, AVD listed
+android[2]{machine,avd,serial,state,boot_completed,detail,read_utc}:
+  PC01,Pixel_7,"-",stopped,"-",AVD listed; no running emulator,"2026-11-23T04:19:37Z"
+  PC01,"-",R5CT123,device,unknown,adb serial without AVD match,"2026-11-23T04:19:37Z"
+=== running emulator unresolvable name
+android[2]{machine,avd,serial,state,boot_completed,detail,read_utc}:
+  PC01,Pixel_7,"-",unknown,"-",AVD listed; an adb serial has no resolved AVD name,"2026-11-23T04:19:38Z"
+  PC01,"-",emulator-5554,device,unknown,adb serial without AVD match,"2026-11-23T04:19:38Z"
+=== tools absent
+30:  PC01,default,"└ fleet-snapshot-android-reader · p:1DzD9XRHj1rBdDUz_ActRg","wPJ:t2","wPJ:p2",opencode,working,"-",~/firstmate,OC | Android emulator reader in fleet snap…,"2026-11-23T04:19:43Z"
+39:  PC01,pc01-test-slot,free,pid=403856 start=starttime=3439731 task=fleet-snapshot-android-reader run=lint,"2026-11-23T04:19:43Z"
+41:android: []
+43:unavailable[5]{source,reason,read_utc}:
+44:  "android:PC01",adb not found,"2026-11-23T04:19:43Z"
+45:  "android:PC01",emulator not found,"2026-11-23T04:19:43Z"
