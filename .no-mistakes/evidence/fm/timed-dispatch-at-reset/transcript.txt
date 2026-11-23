@@ -1,0 +1,50 @@
+## arm past (fires soon)
+armed: when-dispatch-task-past
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: when-dispatch-task-past
+task: task-past
+fires: 2026-11-23T06:37:15Z (in 3s, 0s after the target)
+wake: firstmate is woken to dispatch; this never dispatches on its own
+cancel: bin/fm-timed-dispatch.sh cancel task-past
+rc=0
+## arm future
+armed: when-dispatch-task-fut
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: when-dispatch-task-fut
+task: task-fut
+fires: 2026-11-24T06:37:42Z (in 86430s, 30s after the target)
+wake: firstmate is woken to dispatch; this never dispatches on its own
+cancel: bin/fm-timed-dispatch.sh cancel task-fut
+rc=0
+## non-UTC refused
+error: --at must be epoch seconds, @epoch, or a UTC ISO-8601 time (ending Z or +00:00): 2026-11-23T15:09:00-05:00
+rc=1
+## both at+account refused
+error: give exactly one of --at or --account
+rc=1
+## neither
+error: arm needs --at or --account
+rc=1
+## list
+  name=dispatch-task-fut  task=task-fut  fires=2026-11-24T06:37:42Z  kind=at  state=armed
+  name=dispatch-task-past  task=task-past  fires=2026-11-23T06:37:15Z  kind=at  state=armed
+timed-dispatch: 1 record(s)
+## condition
+rc=0
+rc=1
+rc=3
+## cancel
+retired: when-dispatch-task-fut
+retired: when-dispatch-task-fut
+cancelled: when-dispatch-task-fut
+rc=0
+  name=dispatch-task-past  task=task-past  fires=2026-11-23T06:37:15Z  kind=at  state=armed
+timed-dispatch: 1 record(s)
+## wake queue
+cat: /tmp/td-home.qi1U/state/.wake-queue: No such file or directory
+ls: cannot access '/tmp/td-home.qi1U/state/procevent-inbox': No such file or directory
+## account arm
+error: quota-axi reports claude for ordinary as rate_limited: Claude quota endpoint rate limited
+rc=0
