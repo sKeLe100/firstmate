@@ -157,6 +157,10 @@
 # FM_SEND_EXPECTED_REMOTE_HOST to require that sampled identity to still match
 # during the final locked remote-route validation; unset or empty guards do not
 # change ordinary sends.
+# A remote steer that names an absolute path under this home's FM_HOME draws a
+# stderr warning naming each such path, because the remote home is a different
+# directory on another host and cannot read it. The warning is advisory: the
+# record is still delivered, and local steers are never scanned.
 #
 # Decision closure (answerer-closes): pass --resolve-key <key> (repeatable,
 # before the message) when this send answers an open keyed needs-decision: or
@@ -342,6 +346,41 @@ fm_send_record_interrupt() { # <key>
     echo "error: key '$key' reached $T, but the Claude interrupt state could not be recorded for $id" >&2
     return 1
   }
+}
+
+# fm_send_warn_remote_local_paths <text>: warn (stderr) when a steer bound for
+# a REMOTE secondmate names an absolute path under THIS home. The remote home
+# is a different directory on another host, so such a path is local to the
+# sender and the mate cannot read it. Advisory only: the record is still
+# delivered, and local steers never call this. Absolute paths elsewhere (the
+# remote home's own paths, shared mounts) are left alone.
+fm_send_warn_remote_local_paths() { # <text>
+  local text=$1 home home_real candidate path seen=' '
+  home=${FM_HOME%/}
+  [ -n "$home" ] || return 0
+  home_real=$(CDPATH='' cd -- "$FM_HOME" 2>/dev/null && pwd -P) || home_real=$home
+  home_real=${home_real%/}
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    path=$candidate
+    # A path inside prose often carries glued sentence punctuation; strip it
+    # from the tail so the named path is the one the sender wrote.
+    while :; do
+      case "$path" in
+      *.) path=${path%?} ;;
+      *, | *';' | *: | *'!' | *'?') path=${path%?} ;;
+      *')' | *']' | *'}' | *'"' | *"'") path=${path%?} ;;
+      *) break ;;
+      esac
+    done
+    case "$path" in
+    "$home" | "$home"/* | "$home_real" | "$home_real"/*) ;;
+    *) continue ;;
+    esac
+    case "$seen" in *" $path "*) continue ;; esac
+    seen="$seen$path "
+    echo "warning: the steer names '$path', a path under this home ($FM_HOME); remote secondmate $TARGET_REMOTE_ID runs in a different home on another host and cannot read it. Inline the content or use a path that exists on the remote host." >&2
+  done < <(printf '%s\n' "$text" | grep -oE '/[^[:space:]]+' || true)
 }
 
 fm_send_meta_for_key_value() { # <state-dir> <key> <value>
@@ -1039,6 +1078,7 @@ else
       echo "error: steer not sent to remote secondmate $TARGET_REMOTE_ID: its parent task retired or changed route during target resolution" >&2
       exit 1
     fi
+    fm_send_warn_remote_local_paths "$RESOLVE_ANSWER_TEXT"
     remote_rc=0
     remote_completion_unknown=0
     REMOTE_SEND_ARGS=("$TARGET_REMOTE_ID")
