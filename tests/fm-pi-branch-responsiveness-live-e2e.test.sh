@@ -155,9 +155,14 @@ console.log(`ALL_MS=${delays.map((delay) => delay.toFixed(0)).join(",")}`);
 JS
 
 wait_for_pane_text() {
-  local expected=$1 attempts=${2:-120} i=0
+  local expected=$1 attempts=${2:-120} i=0 abbreviated
+  # Pi draws a path under $HOME with a leading ~, so either spelling is a match.
+  abbreviated=$expected
+  case "$expected" in
+    "$HOME"/*) abbreviated="~${expected#"$HOME"}" ;;
+  esac
   while [ "$i" -lt "$attempts" ]; do
-    if "$TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION" 2>/dev/null | grep -Fq "$expected"; then
+    if "$TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION" 2>/dev/null | grep -Fq -e "$expected" -e "$abbreviated"; then
       return 0
     fi
     sleep 0.25
