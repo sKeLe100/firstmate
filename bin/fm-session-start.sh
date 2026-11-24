@@ -175,10 +175,14 @@
 # compaction) is the post-clear digest, and it is deliberately slim because
 # that process already reconciled the fleet once. It keeps the same readiness
 # safety sections but bounds two otherwise unbounded bulks:
-#   - the backlog listing keeps only active rows - every in-flight and held
-#     row one line each, the blocked queued rows, and only the top of the
+#   - the backlog listing keeps only active rows - every in-flight row one
+#     line each, the blocked queued rows, and only the top of the
 #     dispatchable queue (default 5; FM_SESSION_START_QUEUED_LIMIT still
-#     overrides both startup defaults).
+#     overrides both startup defaults). The held group is the reminder form:
+#     shelved and parked rows are counted rather than listed, and each
+#     remaining row is one short line capped by FM_SESSION_START_HOLD_ROW_LIMIT
+#     (default 220), because a held-row block was the largest bulk a clear
+#     re-read.
 #   - each in-flight task is ONE line (id, endpoint verdict, last status line)
 #     plus the full status-log path, not its whole meta block and status tail.
 #   - CONTEXT prints one line per data/projects.md project entry and does not
@@ -740,6 +744,91 @@ dedupe_held_against_in_flight() {
   '
 }
 
+# The post-clear re-emit already reconciled the fleet once, so its held block
+# is a reminder rather than a recovery read: it names each still-actionable
+# held row on one short line and drops the shelved and parked rows, whose count
+# it discloses (captain intent: start-digest-held-rows, 2026-11-23). The full
+# startup digest keeps every held row whole, because that is the first read of
+# a session that has not yet taken the helm.
+HOLD_ROW_CHAR_LIMIT=${FM_SESSION_START_HOLD_ROW_LIMIT:-220}
+case "$HOLD_ROW_CHAR_LIMIT" in ''|*[!0-9]*|0) HOLD_ROW_CHAR_LIMIT=220 ;; esac
+
+# cap_held_row_lines: apply the shared per-line digest cap to each summarized
+# held row (bin/fm-line-cap-lib.sh owns the cut and its marker).
+cap_held_row_lines() {
+  local line
+  while IFS= read -r line; do
+    fm_cap_line "$line" "$HOLD_ROW_CHAR_LIMIT"
+  done
+}
+
+# summarize_held_rows_reemit: reads a decoded tasks-axi held listing
+# (BACKLOG_FIELDS order: id,state,kind,repo,title,blocked_by,hold_kind,
+# hold_reason) and prints one short line per still-actionable row. A row is
+# dropped when its hold_kind is `parked` or its hold reason is a captain
+# shelving marker ("Shelved ..."); parked rows are the paused PC02-style defer
+# and shelved ones were explicitly parked by the captain, so neither needs a
+# line on every post-clear read. The dropped count is disclosed with the full
+# record lookup, so nothing is hidden: `bin/fm-tasks-axi.sh show <id> --full`.
+summarize_held_rows_reemit() {
+  awk '
+    function unquote(v,   out, i, n, c) {
+      if (substr(v, 1, 1) != "\"") return v
+      v = substr(v, 2, length(v) - 2)
+      out = ""
+      n = length(v)
+      for (i = 1; i <= n; i++) {
+        c = substr(v, i, 1)
+        if (c == "\\" && i < n) {
+          i++
+          c = substr(v, i, 1)
+          if (c == "n" || c == "t" || c == "r") c = " "
+        }
+        out = out c
+      }
+      return out
+    }
+    /^count: / { next }
+    /^tasks\[[0-9]+\]\{/ { next }
+    /^  / {
+      body = $0
+      sub(/^[[:space:]]+/, "", body)
+      n = length(body)
+      commas = 0
+      inq = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(body, i, 1)
+        if (c == "\"") inq = !inq
+        else if (c == "," && !inq) { commas++; if (commas <= 7) pos[commas] = i }
+      }
+      if (commas < 7) { print $0; next }
+      id = unquote(substr(body, 1, pos[1] - 1))
+      title = unquote(substr(body, pos[4] + 1, pos[5] - pos[4] - 1))
+      kind = unquote(substr(body, pos[6] + 1, pos[7] - pos[6] - 1))
+      reason = unquote(substr(body, pos[7] + 1))
+      # tasks-axi already truncated a long title and closed it with its own
+      # pointer; this one-line summary carries the pointer once, at its end.
+      sub(/ \.\.\. \(truncated, [0-9]+ chars total - use show .*--full to see complete text\)$/, "", title)
+      sub(/[[:space:]]+$/, "", reason)
+      if (tolower(kind) == "parked") { parked++; next }
+      if (tolower(reason) ~ /^shelved([^a-z]|$)/) { shelved++; next }
+      shown++
+      line = "  " id " [" kind "]"
+      if (title != "") line = line " " title
+      if (reason != "" && reason != "-") line = line " - " reason
+      print line
+      next
+    }
+    { print }
+    END {
+      printf "  (%d held row(s) shown", shown
+      if (parked > 0) printf "; %d parked omitted", parked
+      if (shelved > 0) printf "; %d shelved omitted", shelved
+      printf "; bin/fm-tasks-axi.sh show <id> --full for one row'"'"'s full record)\n"
+    }
+  '
+}
+
 print_backlog_tasks_axi_compact() {
   local path=$1 in_flight held blocked ready err in_flight_ids
   if ! in_flight=$(tasks-axi list --file "$path" --state in_flight --fields "$BACKLOG_FIELDS" 2>&1); then
@@ -751,13 +840,24 @@ print_backlog_tasks_axi_compact() {
   elif ! ready=$(tasks-axi ready --file "$path" 2>&1); then
     err=$ready
   else
-    printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown once with hold fields capped to %s chars; ready queued bounded to %s; task bodies omitted)\n' \
-      "$HOLD_REASON_CHAR_LIMIT" "$QUEUED_LIMIT"
+    if [ "$REEMIT" -eq 1 ]; then
+      printf 'compact backlog listing (tasks-axi; done rows omitted; in-flight and blocked rows shown once, held rows one short line each with shelved and parked rows counted; ready queued bounded to %s; task bodies omitted)\n' \
+        "$QUEUED_LIMIT"
+    else
+      printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown once with hold fields capped to %s chars; ready queued bounded to %s; task bodies omitted)\n' \
+        "$HOLD_REASON_CHAR_LIMIT" "$QUEUED_LIMIT"
+    fi
     in_flight_ids=$(printf '%s\n' "$in_flight" | awk '/^  / { id = $0; sub(/^[[:space:]]+/, "", id); sub(/,.*$/, "", id); print id }')
     printf '\nin flight:\n'
     printf '%s\n' "$in_flight" | fm_hold_reason_decode_stream | strip_axi_help | cap_hold_reason_field
-    printf '\nheld (captain- or time-gated; an in-flight item that is also held is listed once, above):\n'
-    dedupe_held_against_in_flight "$in_flight_ids" "$(printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help)" | cap_hold_reason_field
+    if [ "$REEMIT" -eq 1 ]; then
+      printf '\nheld (captain- or time-gated; one short line each; an in-flight item that is also held is listed once, above; shelved and parked rows are counted, not listed):\n'
+      dedupe_held_against_in_flight "$in_flight_ids" "$(printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help)" \
+        | summarize_held_rows_reemit | cap_held_row_lines
+    else
+      printf '\nheld (captain- or time-gated; an in-flight item that is also held is listed once, above):\n'
+      dedupe_held_against_in_flight "$in_flight_ids" "$(printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help)" | cap_hold_reason_field
+    fi
     printf '\nblocked queued:\n'
     printf '%s\n' "$blocked" | fm_hold_reason_decode_stream | strip_axi_help | cap_hold_reason_field
     printf '\nready queued (dispatchable now):\n'
@@ -1140,7 +1240,8 @@ section "READ-ONCE CONTRACT"
 if [ "$REEMIT" -eq 1 ]; then
   cat <<'EOF'
 This post-clear digest is deliberately slim: it carries only the active
-data/backlog.md rows (in flight, held, and the top dispatchable queue), one
+data/backlog.md rows (in flight, held one short line each with shelved and
+parked rows counted instead of listed, and the top dispatchable queue), one
 line per task in state/*.meta, and one line per project in data/projects.md.
 Every task's full status log path is printed with its line.
 Do NOT bulk-read data/backlog.md or state/*.status: query one record when it

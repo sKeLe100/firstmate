@@ -660,3 +660,62 @@ EOF
 
   pass "manual backlog rendering drops done rows, keeps every held or blocked title line, and bounds the rest"
 }
+
+# The post-clear digest is a reminder, not a recovery read: its held block
+# omits the shelved and parked rows and renders each still-actionable row as
+# one short line. The full startup digest keeps every held row whole.
+test_reemit_omits_shelved_and_parked_held_rows() {
+  local rec root home fakebin normal reemit long_line
+  rec=$(new_world reemit-held-classes)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_tasks_axi_held_classes "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' '# Backlog' '' '## Queued' > "$home/data/backlog.md"
+
+  normal=$(FM_FAKE_HARNESS_PID=$$ run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  reemit=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_FAKE_HARNESS_PID=$$ \
+    PATH="$fakebin:$BASE_PATH" env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    "$SESSION_START" --reemit)
+
+  # The full startup digest still prints every held row whole.
+  assert_contains "$normal" "held-parked,queued,scout,firstmate,Parked row,none,parked,Captain paused model testing" \
+    "the startup digest stopped printing a parked held row whole"
+  assert_contains "$normal" "held-shelved,queued,ship,firstmate,Shelved row,none,captain,Shelved by captain 2026-10-05; revisit only if needed" \
+    "the startup digest stopped printing a shelved held row whole"
+
+  # The post-clear digest omits them and discloses the counts.
+  assert_not_contains "$reemit" "held-parked" "the post-clear digest listed a parked held row"
+  assert_not_contains "$reemit" "held-shelved" "the post-clear digest listed a shelved held row"
+  assert_contains "$reemit" "1 parked omitted" "the post-clear digest did not disclose the omitted parked row"
+  assert_contains "$reemit" "1 shelved omitted" "the post-clear digest did not disclose the omitted shelved row"
+  assert_not_contains "$reemit" "tasks[5]{" "the post-clear digest still printed the raw tasks-axi held table"
+  assert_contains "$reemit" "bin/fm-tasks-axi.sh show <id> --full for one row's full record" \
+    "the post-clear held block lost its full-record lookup pointer"
+
+  # Every still-actionable held row stays, one short line with its hold kind.
+  assert_contains "$reemit" "held-captain [captain] Captain decision row - Choose the deployment target" \
+    "the post-clear digest dropped or malformed a captain held row"
+  assert_contains "$reemit" "held-future [future] Future row - Start after the release" \
+    "the post-clear digest dropped a time-gated held row outside its parked/shelved scope"
+
+  # The one-line bound applies, with the shared truncation marker, and the
+  # bound is configurable.
+  long_line=$(printf '%s\n' "$reemit" | grep 'held-long')
+  [ -n "$long_line" ] || fail "the post-clear digest dropped the long captain held row"
+  [ "${#long_line}" -le 220 ] \
+    || fail "a held row line was ${#long_line} characters, past the 220 default: $long_line"
+  assert_contains "$long_line" "[truncated]" \
+    "a bounded held row line lost the shared truncation marker"
+
+  reemit=$(FM_SESSION_START_HOLD_ROW_LIMIT=80 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_FAKE_HARNESS_PID=$$ \
+    PATH="$fakebin:$BASE_PATH" env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    "$SESSION_START" --reemit)
+  long_line=$(printf '%s\n' "$reemit" | grep 'held-long')
+  [ "${#long_line}" -le 80 ] \
+    || fail "FM_SESSION_START_HOLD_ROW_LIMIT=80 did not bound the row: ${#long_line} chars"
+
+  pass "the post-clear digest omits shelved and parked held rows and bounds the rest to one short line"
+}

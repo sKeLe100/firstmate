@@ -268,6 +268,68 @@ SH
   chmod +x "$fakebin/tasks-axi"
 }
 
+# make_fake_tasks_axi_held_classes <fakebin>: the five held-row classes the
+# post-clear digest must tell apart - a captain decision, a parked defer, a
+# captain-shelved row, a time-gated future row, and a row whose title and
+# reason both exceed the one-line cap.
+make_fake_tasks_axi_held_classes() {
+  local fakebin=$1
+  cat > "$fakebin/tasks-axi" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  --version|-v|-V)
+    printf '%s\n' '0.2.6'
+    exit 0
+    ;;
+  update)
+    if [ "${2:-}" = --help ]; then
+      printf '%s\n' 'usage: tasks-axi update <id> [--archive-body]'
+      exit 0
+    fi
+    ;;
+  mv)
+    if [ "${2:-}" = --help ]; then
+      printf '%s\n' 'usage: tasks-axi mv <dest> [<id>...]'
+      exit 0
+    fi
+    ;;
+  list)
+    case "$*" in
+      *'--state in_flight'*)
+        printf 'tasks[0]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
+        ;;
+      *'--state held'*)
+        printf 'count: 5\n'
+        printf 'tasks[5]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
+        printf '  held-captain,queued,ship,firstmate,Captain decision row,none,captain,Choose the deployment target\n'
+        printf '  held-parked,queued,scout,firstmate,Parked row,none,parked,Captain paused model testing\n'
+        printf '  held-shelved,queued,ship,firstmate,Shelved row,none,captain,Shelved by captain 2026-10-05; revisit only if needed\n'
+        printf '  held-future,queued,ship,firstmate,Future row,none,future,Start after the release\n'
+        printf '  held-long,queued,ship,firstmate,%s,none,captain,%s\n' \
+          "$(printf 'T%.0s' $(seq 1 200))" "$(printf 'y%.0s' $(seq 1 200))"
+        ;;
+      *'--state queued'*'--blocked'*)
+        printf 'tasks[0]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n'
+        ;;
+      *)
+        exit 9
+        ;;
+    esac
+    exit 0
+    ;;
+  ready)
+    printf 'count: 0\n'
+    printf 'ready[0]{id,state,kind,repo,title}:\n'
+    printf 'ready_public_followups: 0 delivery-ready obligations\n'
+    exit 0
+    ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/tasks-axi"
+}
+
 # make_fake_ps_claude <fakebin>: harness_pid()/holder_alive() (fm-lock.sh) walk
 # `ps` output looking for a harness command name; this fake reports EVERY
 # queried pid as a live `claude` harness unless a stable harness pid is set.
@@ -2100,8 +2162,8 @@ EOF
   # Active backlog rows survive, each on its own line.
   assert_contains "$reemit" "compact-startup,in_flight,ship,firstmate,Compact startup digest,none,captain,captain choice pending" \
     "the post-clear digest dropped an in-flight row"
-  assert_contains "$reemit" "held-queued,queued,ship,firstmate,Held queued work,none,captain,captain choice pending" \
-    "the post-clear digest dropped a held row"
+  assert_contains "$reemit" "held-queued [captain] Held queued work - captain choice pending" \
+    "the post-clear digest dropped or malformed a held row"
   assert_not_contains "$reemit" "DONE-ROW-LINE" "the post-clear digest listed a done row"
   assert_contains "$reemit" "ready-5,queued" "the post-clear digest did not show its top dispatchable queue"
   assert_not_contains "$reemit" "ready-6,queued" "the post-clear digest did not bound the dispatchable queue to the top"
@@ -2833,6 +2895,7 @@ test_non_pi_session_start_leaves_branch_state_untouched
 test_session_start_seeds_the_outcome_display_tail_while_away
 test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
 test_backlog_compact_dedupes_held_and_caps_hold_reason
+test_reemit_omits_shelved_and_parked_held_rows
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_declared_next_session_priority_is_called_out
