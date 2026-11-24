@@ -673,6 +673,38 @@ EOF
   pass "promotion keeps a scout's recorded base branch and refuses local-only for it"
 }
 
+# A promoted scout becomes a ship, so its ship instructions carry the same
+# reproduce-before-fix rule an ordinary ship brief's `# Bug fixes` section does.
+test_promotion_ship_instructions_reproduce_before_fix() {
+  local home id meta out status
+  home="$TMP_ROOT/promote-reproduce-home"
+  id="promote-reproduce-fix"
+  meta="$home/state/$id.meta"
+  mkdir -p "$home/state" "$home/data/$id"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  cat > "$home/data/$id/brief.md" <<'EOF'
+# Task
+## Captain's intent
+Fix the hub bug.
+
+## Firstmate spec
+Reproduce it first.
+
+# Setup
+This is a SCOUT task: the deliverable is a written report, not a PR.
+EOF
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$ROOT/bin/fm-promote.sh" "$id" --mode direct-PR --yolo off 2>&1)
+  status=$?
+  expect_code 0 "$status" "promoting a scout should succeed"$'\n'"$out"
+  assert_grep "reproduce it end-to-end on the real user path before the fix" "$home/data/$id/ship-instructions.md" \
+    "promoted ship instructions lost the reproduce-before-fix rule"
+  assert_grep "the headless browser for web" "$home/data/$id/ship-instructions.md" \
+    "promoted ship instructions lost the web reproduction target"
+  assert_grep "the reproduction becomes the regression test" "$home/data/$id/ship-instructions.md" \
+    "promoted ship instructions lost the regression-test rule"
+  pass "promotion renders the reproduce-before-fix rule into ship instructions"
+}
+
 test_scout_done_is_not_gated
 test_unpushed_ship_done_is_refused
 test_no_mistakes_prevalidation_done_is_not_gated
@@ -701,6 +733,7 @@ test_non_done_lines_are_not_gated
 test_fenced_and_indented_captain_lines_are_not_intent
 test_pr_based_dod_draft_check_uses_gh_axi
 test_promotion_keeps_the_recorded_base_branch
+test_promotion_ship_instructions_reproduce_before_fix
 
 # The launch role is the generated text a worker receives. It must keep the
 # skill name, so a session that registers the skill loads it by name, and must
