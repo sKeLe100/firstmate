@@ -29,8 +29,31 @@ TMP_ROOT=$(fm_test_tmproot fm-calm-claude-mod)
 
 command -v node >/dev/null 2>&1 || { echo "skip: node not found for the Claude Code Calm mod checks"; exit 0; }
 
+# Claude Code 2.1.331's strict validator rejects explicit .ts import specifiers, so the
+# mod's modules import each other without an extension; this test's own node processes
+# still need one, so the preload teaches node to try the .ts file before giving up.
+cat >"$TMP_ROOT/ts-extensionless-loader.mjs" <<'JS'
+import { registerHooks } from "node:module";
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    try {
+      return nextResolve(specifier, context);
+    } catch (error) {
+      if (specifier.startsWith(".") && !/\.[cm]?[jt]sx?$/.test(specifier)) {
+        try {
+          return nextResolve(`${specifier}.ts`, context);
+        } catch {
+          throw error;
+        }
+      }
+      throw error;
+    }
+  },
+});
+JS
+
 run_node() {  # <script-file>
-  node --input-type=module <"$1"
+  node --import "$TMP_ROOT/ts-extensionless-loader.mjs" --input-type=module <"$1"
 }
 
 # js_string <value>: a JavaScript string literal for a shell value, for the
