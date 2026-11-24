@@ -558,6 +558,33 @@ test_published_version_equal_to_path_is_silent() {
   pass "a version_url that matches the PATH version is silent"
 }
 
+test_npm_published_update_is_reported_for_a_cli_that_never_announces() {
+  local home dir out report body
+  # On 2026-11-23 PC01 ran opencode 1.19.5 while npm published 1.19.6, and the
+  # check said nothing. opencode never announces its own update, so a
+  # version_args entry alone watches PATH skew only; naming the registry's
+  # latest document is what makes a published release visible. Both halves are
+  # pinned here, so that source-less silence reads as the documented contract
+  # rather than as a detector that is silently dead.
+  home=$(make_home npm-latest)
+  dir="$TMP_ROOT/npm-latest/bin"
+  make_copy "$dir" opencode-fixture '1.19.5'
+  body='{"os":["linux"],"bin":{"opencode":"bin/opencode"},"dist":{"tarball":"https://registry.example.invalid/opencode-ai/-/opencode-ai-1.19.6.tgz"},"version":"1.19.6"}'
+  out="$home/out.txt"
+
+  write_config "$home" '{"tools":[{"name":"opencode","command":"opencode-fixture"}]}'
+  run_check "$home" "$(fixture_path "$dir")" "$out"
+  [ ! -s "$out" ] || fail "an entry with no update source reported a published update, so the incident no longer reproduces: $(cat "$out")"
+
+  make_curl_fixture "$dir" "$body"
+  rm -f "$home/state/.tool-updates"
+  write_config "$home" '{"tools":[{"name":"opencode","command":"opencode-fixture","version_url":"https://registry.example.invalid/opencode-ai/latest"}]}'
+  run_check "$home" "$(fixture_path "$dir")" "$out"
+  report=$(cat "$out")
+  assert_contains "$report" "opencode update available: 1.19.6 published at https://registry.example.invalid/opencode-ai/latest, PATH resolves 1.19.5" "an npm-style published version was not reported for a CLI that never announces its own update"
+  pass "an npm-published update is reported once the entry names the registry's latest document"
+}
+
 test_unreadable_version_url_is_a_failure_not_a_pass() {
   local home dir out
   home=$(make_home version-url-dead)
@@ -1628,6 +1655,7 @@ test_quiet_tool_with_announce_pattern_is_silent
 test_published_version_newer_than_installed_is_reported
 test_published_version_already_installed_is_not_double_reported
 test_published_version_equal_to_path_is_silent
+test_npm_published_update_is_reported_for_a_cli_that_never_announces
 test_unreadable_version_url_is_a_failure_not_a_pass
 test_missing_curl_is_a_failure_not_a_pass
 test_version_url_must_be_https_with_a_command
