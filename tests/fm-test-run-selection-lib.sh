@@ -834,8 +834,11 @@ test_changed_real_inventory_selection_bounds() {
   for path in "${recorded_paths[@]}"; do printf '\n' >>"$repo/$path"; done
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
-  [ "$count" -ge 25 ] && [ "$count" -le 110 ] \
-    || fail "recorded feature expected 25-110 scripts, below the original 196 and 306: got $count: $listed"
+  # The ceiling scales with the suite inventory: 110 of 353 scripts when this
+  # case was recorded, 132 of the 424 after the upstream catch-up merge added
+  # tests that read these files.
+  [ "$count" -ge 25 ] && [ "$count" -le 132 ] \
+    || fail "recorded feature expected 25-132 scripts, below the original 196 and 306: got $count: $listed"
   for path in fm-context-usage fm-crew-state fm-primary-watchdog fm-returning-session-check fm-watch-triage fm-watch-triage-waits; do
     assert_contains "$listed" "tests/$path.test.sh" "recorded feature retains $path behavior"
   done
@@ -1629,10 +1632,10 @@ test_portable_parallel_lanes_stay_duration_balanced() {
 
 test_portable_serial_shards_partition_the_serial_lane() {
   local listed
-  # The exhaustive real-inventory coverage guard checks all sixteen shards for
+  # The exhaustive real-inventory coverage guard checks all nineteen shards for
   # nonempty, disjoint membership and exact union. Exercise the public valid
   # shard-list path once here; invalid shard names are checked below.
-  listed=$("$RUNNER" --list --lane portable-serial-1of16)
+  listed=$("$RUNNER" --list --lane portable-serial-1of19)
   [ -n "$listed" ] || fail "portable serial shard 1 of 11 selected no tests"
   pass "portable serial shard listing is backed by the exhaustive coverage guard"
 }
@@ -1713,7 +1716,7 @@ test_portable_serial_shard_lane_refusals() {
   local RUNNER="$FIXTURE_RUNNER"
   local tmp count rc other
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-shard-lane.XXXXXX")
-  count=16
+  count=19
   other=$((count + 1))
 
   # A lane built for a different shard count must refuse rather than run a
