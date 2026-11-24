@@ -5338,6 +5338,17 @@ EOF
   pass "second-mate signal rows route by their new span while crewmate and stale routing stay unchanged"
 }
 
+# Print where npm installed a dependency of the Pi package: nested inside it, or
+# hoisted beside it when the dependency is itself a global top-level install.
+pi_dependency_dir() {
+  local package_dir=$1 dependency=$2
+  if [ -d "$package_dir/node_modules/$dependency" ]; then
+    printf '%s\n' "$package_dir/node_modules/$dependency"
+  else
+    printf '%s\n' "${package_dir%/@earendil-works/pi-coding-agent}/$dependency"
+  fi
+}
+
 # The model picker's bounded scrolling and its search ranking are Pi's own
 # SelectList and fuzzyFilter, so the guarantee only holds while the installed
 # Pi still exports them and still bounds what it renders. Stubs cannot answer
@@ -5357,7 +5368,7 @@ test_real_pi_picker_primitives_stay_bounded_and_searchable() {
   mkdir -p "$fixture/lib" "$fixture/node_modules/@earendil-works"
   cp "$ROOT/.pi/extensions/lib/fm-branch-model-picker.ts" "$fixture/lib/fm-branch-model-picker.ts"
   ln -s "$package_dir" "$fixture/node_modules/@earendil-works/pi-coding-agent"
-  ln -s "$package_dir/node_modules/@earendil-works/pi-tui" "$fixture/node_modules/@earendil-works/pi-tui"
+  ln -s "$(pi_dependency_dir "$package_dir" @earendil-works/pi-tui)" "$fixture/node_modules/@earendil-works/pi-tui"
   original_dir=$PWD
   cd "$fixture" || fail "could not enter the Pi picker primitives fixture"
   LIB="$fixture/lib/fm-branch-model-picker.ts" PI_VERSION_FILE="$package_dir/package.json" \
@@ -5524,9 +5535,9 @@ test_outcomes_tool_uses_stock_execution_and_export_consumers() {
   cp "$ROOT/.pi/extensions/lib/fm-calm-visibility.ts" "$fixture/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$fixture/.pi/extensions/lib/fm-operational-input.ts"
   ln -s "$package_dir" "$fixture/node_modules/@earendil-works/pi-coding-agent"
-  ln -s "$package_dir/node_modules/@earendil-works/pi-tui" "$fixture/node_modules/@earendil-works/pi-tui"
-  ln -s "$package_dir/node_modules/@earendil-works/pi-ai" "$fixture/node_modules/@earendil-works/pi-ai"
-  ln -s "$package_dir/node_modules/typebox" "$fixture/node_modules/typebox"
+  ln -s "$(pi_dependency_dir "$package_dir" @earendil-works/pi-tui)" "$fixture/node_modules/@earendil-works/pi-tui"
+  ln -s "$(pi_dependency_dir "$package_dir" @earendil-works/pi-ai)" "$fixture/node_modules/@earendil-works/pi-ai"
+  ln -s "$(pi_dependency_dir "$package_dir" typebox)" "$fixture/node_modules/typebox"
 
   out=$(cd "$fixture" && EXT="$fixture/.pi/extensions/fm-branch-supervision.ts" PI_PACKAGE_DIR="$package_dir" node --input-type=module 2>&1 <<'JS'
 import { pathToFileURL } from "node:url";

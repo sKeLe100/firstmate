@@ -3746,11 +3746,15 @@ reap_run_fixture_watchdogs() {
 # cleanup failure under set -e replace the suite's aggregate exit status.
 # shellcheck disable=SC2329
 cleanup_run() {
-  reap_run_fixture_watchdogs
+  # A stop signal runs this trap from inside bash's signal handling, where a
+  # command substitution can hang past the caller's kill deadline.
+  RUN_TMP="$RUN_TMP" "$BASH" -c "$REAP_PROGRAM" || true
   chmod -R u+w "$RUN_TMP" 2>/dev/null || true
   rm -rf "$RUN_TMP" 2>/dev/null || true
 }
 
+REAP_PROGRAM="$(declare -f run_fixture_watchdog_pids reap_run_fixture_watchdogs)
+reap_run_fixture_watchdogs"
 trap cleanup_run EXIT
 
 RUN_ID="fm-test-run-${RUN_STARTED_MS}-$$"
