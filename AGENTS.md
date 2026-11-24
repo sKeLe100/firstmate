@@ -192,6 +192,9 @@ Classify the deliverable:
 - A diagnostic request, report, recommendation, or implementation-ready finding is evidence, not authorization to change code.
 - Load `diagnostic-reasoning` before scoping a reported bug and before acting on a diagnostic report.
 
+At intake, before drafting a brief, search open backlog items and the home's mistakes index (`data/mistakes-index.md`) for findings in the requested scope, and name the matches (or "none") in the brief's Known facts.
+Every scout or review finding that needs action becomes its own backlog item the same turn, with `--repo` and `--priority`; a report is not complete while an actionable finding has no item.
+
 Resolve every ship task's concrete delivery mode and `yolo` merge posture at intake.
 Pass the mode explicitly to the brief, and pass both values explicitly to the spawn and any scout promotion; each command refuses to guess the values it consumes.
 Also resolve a purpose class (code, planning, review, summarize, mechanical, investigation, search, web-research, research, design, writing, incident) for every dispatch and pass it to `fm-spawn.sh --purpose`, and when a fresh spawn replaces a failed attempt on the same backlog item, pass `--redelegated-from`/`--redelegation-reason` too, so the LLM usage telemetry archive stays complete (`docs/llm-usage-telemetry.md`).

@@ -661,6 +661,42 @@ test_ship_brief_teaches_fix_at_producer() {
   pass "fm-brief.sh: ship brief tells bug-fix tasks to fix at the producer and justify throw-site guards"
 }
 
+# A bug-fix task must reproduce a user-visible bug end-to-end on the real user
+# path before fixing it, record the failing check, capture before/after
+# screenshots for a frontend change, turn the reproduction into the regression
+# test, and state the limitation when a faithful reproduction is impossible.
+test_ship_brief_reproduce_before_fix() {
+  local home id brief
+  home="$TMP_ROOT/reproduce-before-fix-home"
+  mkdir -p "$home/data"
+  id="brief-reproduce-before-fix-f1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "reproduce it end-to-end on the real user path before the fix" "$brief" \
+    "ship brief does not require reproducing a user-visible bug before fixing"
+  assert_grep "the headless browser for web" "$brief" \
+    "ship brief does not name the headless browser for a web reproduction"
+  assert_grep "the Android emulator for mobile" "$brief" \
+    "ship brief does not name the Android emulator for a mobile reproduction"
+  assert_grep "before/after screenshots at the target viewport widths" "$brief" \
+    "ship brief does not require before/after screenshots for a frontend change"
+  assert_grep "the reproduction becomes the regression test" "$brief" \
+    "ship brief does not turn the reproduction into the regression test"
+  assert_grep "state the limitation instead of claiming equivalence" "$brief" \
+    "ship brief does not ask for a stated limitation when reproduction is impossible"
+
+  local scout_id scout_brief
+  scout_id="brief-reproduce-before-fix-scout"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$scout_id" some-proj --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh scout scaffold exited non-zero"
+  scout_brief="$home/data/$scout_id/brief.md"
+  assert_no_grep "reproduce it end-to-end on the real user path" "$scout_brief" \
+    "scout brief received the ship-only reproduce-before-fix rule"
+  pass "fm-brief.sh: ship brief requires reproduce-before-fix with evidence and a stated limitation"
+}
+
 # The project-memory section bounds crewmate edits of a project's AGENTS.md or
 # CLAUDE.md to corrections of factually wrong information - including wrong
 # information the task itself introduced - and never invites additions of
@@ -2111,6 +2147,7 @@ test_pr_based_dod_requires_non_draft
 test_ask_user_escalation_format
 test_ship_project_memory_wording
 test_ship_brief_teaches_fix_at_producer
+test_ship_brief_reproduce_before_fix
 test_herdr_lab_contract_is_explicit_and_complete
 test_perspective_flag_inserts_catalog_fragment_and_marker
 test_repowise_opt_in_inserts_repository_context_only_for_enabled_project
