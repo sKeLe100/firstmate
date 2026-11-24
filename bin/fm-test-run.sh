@@ -1030,7 +1030,7 @@ tests/fm-claude-stop-autoarm.test.sh 61189
 tests/fm-claude-tool-exclude-live.test.sh 458
 tests/fm-claude-stop-autostow.test.sh 8594
 tests/fm-claude-trust.test.sh 12010
-tests/fm-cmux-claude-composer-live-e2e.test.sh 99
+tests/fm-cmux-claude-composer-live-e2e.test.sh 361
 tests/fm-codex-continuity-live-e2e.test.sh 108
 tests/fm-codex-hook-layer-live-e2e.test.sh 479
 tests/fm-codex-stop-park.test.sh 35000
@@ -1078,7 +1078,7 @@ tests/fm-grok-continuity-live-e2e.test.sh 185
 tests/fm-grok-stop-live-e2e.test.sh 186
 tests/fm-guard-stale-banner.test.sh 18158
 tests/fm-haiku-alarm-hook.test.sh 917
-tests/fm-haiku-builder-example.test.sh 1782
+tests/fm-haiku-builder-example.test.sh 3542
 tests/fm-handoff-guard-hook.test.sh 1552
 tests/fm-harness-adapter-instructions-live-e2e.test.sh 451
 tests/fm-harness-adapter-references.test.sh 599
@@ -1316,7 +1316,7 @@ tests/fm-watch-wedge-cap.test.sh 374225
 tests/fm-watch-wedge-cap-live.test.sh 368
 tests/fm-watcher-lock.test.sh 133845
 tests/fm-worker-account-live-e2e.test.sh 3179
-tests/fm-worker-account.test.sh 87493
+tests/fm-worker-account.test.sh 133369
 tests/fm-worktree-guard.test.sh 3443
 EOF
 }

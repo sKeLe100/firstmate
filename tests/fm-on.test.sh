@@ -552,4 +552,40 @@ set -e
 [ "$(grep -c mutation "$REMOTE_HOME/mutations")" -eq 1 ] || fail "ambiguous mutation did not execute exactly once"
 pass "unreachable and ambiguous transport failures are surfaced without retry"
 
+WAKE_ROOT="$TMP_ROOT/wake-root"
+WAKE_LOG="$TMP_ROOT/wake.log"
+mkdir -p "$WAKE_ROOT/bin"
+cp "$ROOT/bin/fm-on.sh" "$ROOT/bin/fm-secondmate-registry-lib.sh" "$WAKE_ROOT/bin/"
+for stub in fm-remote-secondmate-control.sh fm-remote-file.sh fm-backlog-receive.sh; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$WAKE_ROOT/bin/$stub"
+done
+cat > "$WAKE_ROOT/bin/fm-pc02-wake.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_WAKE_LOG"
+SH
+chmod +x "$WAKE_ROOT"/bin/*.sh
+git -C "$WAKE_ROOT" init -q -b main
+git -C "$WAKE_ROOT" config user.email test@example.com
+git -C "$WAKE_ROOT" config user.name Test
+git -C "$WAKE_ROOT" add bin
+git -C "$WAKE_ROOT" commit -qm 'wake fixture'
+
+wake_count_for() {
+  : > "$WAKE_LOG"
+  FM_TEST_WAKE_LOG="$WAKE_LOG" FM_HOME="$LOCAL_HOME" FM_ROOT_OVERRIDE="$WAKE_ROOT" \
+    FM_SSH_BIN=true "$WAKE_ROOT/bin/fm-on.sh" ios "$@" >/dev/null 2>&1 || true
+  grep -c . "$WAKE_LOG" || true
+}
+for verb in send send-stdin key launch relaunch; do
+  [ "$(wake_count_for fm-remote-secondmate-control.sh "$verb" x)" -eq 1 ] \
+    || fail "mutating verb $verb did not wake the host first"
+done
+[ "$(wake_count_for fm-remote-file.sh put x)" -eq 1 ] || fail "remote file put did not wake the host first"
+for verb in state route observe capture; do
+  [ "$(wake_count_for fm-remote-secondmate-control.sh "$verb" x)" -eq 0 ] \
+    || fail "read-only verb $verb woke the host"
+done
+[ "$(wake_count_for fm-remote-file.sh get x)" -eq 0 ] || fail "remote file get woke the host"
+pass "mutating remote commands wake the host first and read-only ones do not"
+
 echo "ALL TESTS PASSED"

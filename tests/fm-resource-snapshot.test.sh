@@ -124,6 +124,12 @@ write_fixtures() {  # <name>
       {"machine":"PC01","mount":"/","total_gb":1000.0,"free_gb":850.0,"pct_used":15,"read_utc":"2026-11-20T00:00:00Z"},
       {"machine":"PC01","mount":"C:","total_gb":500.0,"free_gb":88.0,"pct_used":82,"read_utc":"2026-11-20T00:00:00Z"}
     ]}'
+  write_json "$dir/drive-health.json" '{
+    "drive_health":[
+      {"machine":"PC01","disk":"/dev/pd0","model":"ST8000DM004-2CX188","smart":"PASSED","reallocated":"0","pending":"0","uncorrectable":"0","temp_c":"31","power_on_hours":"14711","media_errors":"-","reason":"-","read_utc":"2026-11-20T00:00:00Z"},
+      {"machine":"PC02","disk":"/dev/sdc","model":"Force MP510","smart":"PASSED","reallocated":"-","pending":"-","uncorrectable":"-","temp_c":"45","power_on_hours":"14682","nvme_used_pct":"13","media_errors":"0","reason":"-","read_utc":"2026-11-20T00:00:00Z"},
+      {"machine":"PC02","disk":"/dev/sdb","model":"WDC WD140EFGX-68B0GN0","smart":"FAILED","reallocated":"8","pending":"2","uncorrectable":"1","temp_c":"41","power_on_hours":"7100","media_errors":"-","reason":"SMART self-assessment FAILED","read_utc":"2026-11-20T00:00:00Z"}
+    ]}'
   write_json "$dir/herdr-pc01.json" '{
     "sessions":[{"name":"default","status":"running"}],
     "workspaces":[{"workspace_id":"wA","label":"└ alpha · p:x"},{"workspace_id":"wZ","label":"firstmate"}],
@@ -195,6 +201,7 @@ run_snapshot() {  # <home> <fakebin> [args...]
   shift 2
   env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
     FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts.json" \
+    FM_RESOURCE_DRIVE_HEALTH_FIXTURE="$TMP_ROOT/fixture/drive-health.json" \
     FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
     FM_RESOURCE_HERDR_JSON_PC02="$TMP_ROOT/fixture/herdr-pc02.json" \
     FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/remote.json" \
@@ -233,11 +240,12 @@ test_every_section_renders_and_agrees() {
   expect_code 0 "$rc" "full fixture render"
   printf '%s\n' "$out" > "$TMP_ROOT/model.json"
   local section
-  for section in hosts drives quota workers panes strays secondmates roles testing android compute unavailable; do
+  for section in hosts drives drive_health quota workers panes strays secondmates roles testing android compute unavailable; do
     jq -e "has(\"$section\")" "$TMP_ROOT/model.json" >/dev/null || fail "missing section $section"
   done
   [ "$(count_json "$TMP_ROOT/model.json" '.hosts')" = 2 ] || fail "hosts count"
   [ "$(count_json "$TMP_ROOT/model.json" '.drives')" = 7 ] || fail "drives count"
+  [ "$(count_json "$TMP_ROOT/model.json" '.drive_health')" = 3 ] || fail "drive health count: $(jq -c '.drive_health' "$TMP_ROOT/model.json")"
   [ "$(count_json "$TMP_ROOT/model.json" '.quota')" = 8 ] || fail "quota rows: $(jq -c '.quota' "$TMP_ROOT/model.json")"
   [ "$(count_json "$TMP_ROOT/model.json" '.workers')" = 5 ] || fail "workers must union both homes"
   [ "$(count_json "$TMP_ROOT/model.json" '.panes')" = 4 ] || fail "panes count"
@@ -251,6 +259,15 @@ test_every_section_renders_and_agrees() {
   [ "$(count_json "$TMP_ROOT/model.json" '.compute')" = 2 ] || fail "compute count"
   jq -e '.drives[] | select(.machine == "PC02" and .mount == "C:") | .free_gb == "23.0" and .warn == "watch"' \
     "$TMP_ROOT/model.json" >/dev/null || fail "PC02 C: must be watch at 23 GB"
+  jq -e '.drive_health[] | select(.machine == "PC02" and .disk == "/dev/sdb")
+    | .smart == "FAILED" and .reallocated == "8" and .pending == "2"
+      and .uncorrectable == "1" and .temp_c == "41" and .reason != "-"' \
+    "$TMP_ROOT/model.json" >/dev/null \
+    || fail "a failing drive must keep its SMART counts and verdict: $(jq -c '.drive_health' "$TMP_ROOT/model.json")"
+  jq -e '.drive_health[] | select(.machine == "PC02" and .disk == "/dev/sdc")
+    | .smart == "PASSED" and .nvme_used_pct == "13" and .media_errors == "0" and .reason == "-"' \
+    "$TMP_ROOT/model.json" >/dev/null \
+    || fail "an NVMe row must carry percentage used and media errors: $(jq -c '.drive_health' "$TMP_ROOT/model.json")"
   jq -e '.quota | map(.lane) | .[0] == "claude#1" and .[2] == "claude#2" and .[4] == "opencode-go" and .[7] == "codex"' \
     "$TMP_ROOT/model.json" >/dev/null || fail "quota lane order must be Claude #1, Claude #2, OpenCode Go, Codex"
   jq -e '.quota[] | select(.lane == "claude#1" and .window == "five_hour")
@@ -617,7 +634,7 @@ exit 255
 EOF
   chmod +x "$fake/adb" "$fake/emulator" "$fake/ssh"
   env PATH="$fake:$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" FM_SSH_BIN="$fake/ssh" \
-    FM_RESOURCE_ANDROID_FIXTURE= \
+    FM_RESOURCE_ANDROID_FIXTURE= FM_RESOURCE_ANDROID_ROOTS= FM_RESOURCE_ANDROID_HOME_DIRS= \
     FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
     FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
     FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
@@ -683,6 +700,101 @@ test_pc02_android_live_failure_is_stated() {
     "$TMP_ROOT/pc02-android-down.json" >/dev/null \
     || fail "PC02 Android failure must be stated: $(jq -c '.unavailable' "$TMP_ROOT/pc02-android-down.json")"
   pass "a failed PC02 Android read is an unavailable row, never zero devices"
+}
+
+run_android_discovery() {  # <name> <env assignments...> -> JSON
+  local name=$1
+  shift
+  local rec home fb
+  rec=$(make_home "android-disc-$name" fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_ANDROID_FIXTURE= \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/remote.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$@" "$SNAP" --json 2>&1
+}
+
+test_android_discovery_reads_environment_json_and_port() {
+  local root fake marker out
+  root="$TMP_ROOT/android-root-pc02/Android"
+  fake="$TMP_ROOT/android-root-pc02/fake"
+  marker="$TMP_ROOT/android-root-pc02/port-5041-seen"
+  mkdir -p "$root/Sdk/platform-tools" "$root/Sdk/emulator" "$root/avd/pt_pixel8pro.avd" "$fake"
+  cat > "$root/environment.json" <<EOF
+{
+  "ANDROID_SDK_ROOT": "$root/Sdk",
+  "ANDROID_AVD_HOME": "$root/avd",
+  "ANDROID_ADB_SERVER_PORT": "5041"
+}
+EOF
+  cat > "$root/Sdk/platform-tools/adb" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  devices) printf 'List of devices attached\n\n' ;;
+  "-P 5041 devices") : > "$marker"; printf 'List of devices attached\n\n' ;;
+  *) exit 1 ;;
+esac
+EOF
+  cat > "$root/Sdk/emulator/emulator" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = "-list-avds" ] || exit 1
+[ -n "${ANDROID_AVD_HOME:-}" ] && printf 'pt_pixel8pro
+'
+exit 0
+EOF
+  chmod +x "$root/Sdk/platform-tools/adb" "$root/Sdk/emulator/emulator"
+  out=$(run_android_discovery env-json     FM_RESOURCE_ANDROID_ROOTS="$root" FM_RESOURCE_ANDROID_HOME_DIRS=)
+  printf '%s\n' "$out" > "$TMP_ROOT/android-discovery-env.json"
+  [ -e "$marker" ] || fail "adb must be read on the environment.json declared port 5041"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "pt_pixel8pro") | .state] == ["stopped"]'     "$TMP_ROOT/android-discovery-env.json" >/dev/null     || fail "an AVD home from environment.json must render stopped: $(jq -c '.android' "$TMP_ROOT/android-discovery-env.json")"
+  jq -e '[.unavailable[] | select(.source | startswith("android"))] | length == 0'     "$TMP_ROOT/android-discovery-env.json" >/dev/null     || fail "a readable environment.json root must not leave unavailable: $(jq -c '.unavailable' "$TMP_ROOT/android-discovery-env.json")"
+  pass "an environment.json AVD home and declared adb port 5041 are discovered and read"
+}
+
+test_android_discovery_reads_wsl_only_avd_home() {
+  local avd fake out
+  avd="$TMP_ROOT/android-wsl-home/.android/avd"
+  fake="$TMP_ROOT/android-wsl-home/fake"
+  mkdir -p "$avd/foo.avd" "$fake"
+  printf 'avd.ini.encoding=UTF-8\npath=%s/foo.avd\n' "$avd" > "$avd/foo.ini"
+  cat > "$fake/adb" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in devices) printf 'List of devices attached\n\n' ;; *) exit 1 ;; esac
+EOF
+  chmod +x "$fake/adb"
+  out=$(run_android_discovery wsl-home     FM_RESOURCE_ANDROID_ROOTS= FM_RESOURCE_ANDROID_HOME_DIRS="$avd"     FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR=)
+  printf '%s\n' "$out" > "$TMP_ROOT/android-discovery-wsl.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .avd == "foo") | .state] == ["stopped"]'     "$TMP_ROOT/android-discovery-wsl.json" >/dev/null     || fail "a WSL-only AVD home must render its AVD as stopped: $(jq -c '.android' "$TMP_ROOT/android-discovery-wsl.json")"
+  pass "a WSL-only ~/.android/avd AVD is discovered without an emulator binary"
+}
+
+test_android_discovery_reports_unreadable_root() {
+  local root fake out
+  root="$TMP_ROOT/android-unreadable/Android"
+  fake="$TMP_ROOT/android-unreadable/fake"
+  mkdir -p "$root/environment.json" "$fake"
+  cat > "$fake/adb" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in devices) printf 'List of devices attached
+
+' ;; *) exit 1 ;; esac
+EOF
+  cat > "$fake/emulator" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = "-list-avds" ] && exit 0
+exit 1
+EOF
+  chmod +x "$fake/adb" "$fake/emulator"
+  out=$(run_android_discovery unreadable     FM_RESOURCE_ANDROID_ROOTS="$root" FM_RESOURCE_ANDROID_HOME_DIRS=     FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR="$fake/emulator")
+  printf '%s\n' "$out" > "$TMP_ROOT/android-discovery-unreadable.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .state == "none")] | length == 0'     "$TMP_ROOT/android-discovery-unreadable.json" >/dev/null     || fail "an unreadable known root must never render none: $(jq -c '.android' "$TMP_ROOT/android-discovery-unreadable.json")"
+  jq -e '[.unavailable[] | select(.source == "android:PC01") | .reason] | any(test("unreadable"))'     "$TMP_ROOT/android-discovery-unreadable.json" >/dev/null     || fail "an unreadable known root must be stated: $(jq -c '.unavailable' "$TMP_ROOT/android-discovery-unreadable.json")"
+  pass "an unreadable known root is reported with its reason, never as none"
 }
 
 test_android_missing_tools_is_stated_not_zero() {
@@ -848,6 +960,472 @@ PY
   pass "an opencode worker's context band comes from its session store"
 }
 
+run_compute_snapshot() {  # <home> <fakebin> [env assignments...]
+  local home=$1 fb=$2
+  shift 2
+  env PATH="$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC02="$TMP_ROOT/fixture/herdr-pc02.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_SKIP_REMOTE=1 \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$@" "$SNAP" --json
+}
+
+compute_home() {  # <base> -> "<home>|<fakebin>"
+  local base=$1
+  mkdir -p "$base/home/state" "$base/home/data" "$base/home/config" "$base/bin"
+  printf '%s|%s\n' "$base/home" "$base/bin"
+}
+
+test_compute_discovers_github_and_gitlab_from_live_state() {
+  setup_fixture
+  local base rec home fb code out
+  base="$TMP_ROOT/compute-live"
+  rec=$(compute_home "$base"); home=${rec%%|*}; fb=${rec#*|}
+  code="$base/code"
+  mkdir -p "$code"
+  git -C "$code" init -q
+  git -C "$code" remote add origin https://github.com/acme-org/hello.git
+  cat > "$fb/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  'api user --jq .login') printf 'octocat\n' ;;
+  *billing/usage*) printf '%s\n' '{"usageItems":[{"product":"actions","sku":"Actions Linux","quantity":42}]}' ;;
+  */repos/acme-org/hello/actions/runs*) printf '%s\n' '{"total_count":7}' ;;
+  *) exit 1 ;;
+esac
+STUB
+  cat > "$fb/glab" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  'api user') printf '%s\n' '{"username":"acme"}' ;;
+  'api namespaces/acme') printf '%s\n' '{"ci_minutes_usage":{"total_minutes_used":12},"plan":"free"}' ;;
+  *) exit 1 ;;
+esac
+STUB
+  chmod +x "$fb/gh" "$fb/glab"
+  printf 'storage_gb_hours\t12\nallowance_gb_hours\t360\npercent\t3\nas_of\t2026-11-20\n' \
+    > "$home/state/.actions-storage-check"
+  out=$(run_compute_snapshot "$home" "$fb" FM_ROOT_OVERRIDE="$code")
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e 'any(.compute[]; .rung=="github-actions" and .account=="octocat" and .used=="42 min MTD")' \
+    "$base/out.json" >/dev/null || fail "github identity/repo discovery must read billing: $(jq -c '.compute' "$base/out.json")"
+  jq -e 'any(.compute[]; .rung=="github-runs" and .account=="octocat" and .runs=="7 runs/24h")' \
+    "$base/out.json" >/dev/null || fail "github run discovery must use the code root origin repo: $(jq -c '.compute' "$base/out.json")"
+  jq -e 'any(.compute[]; .rung=="gitlab" and .account=="acme" and .used=="12 min MTD" and .status=="ok")' \
+    "$base/out.json" >/dev/null || fail "gitlab namespace discovery must read the glab user: $(jq -c '.compute' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source=="github" or .source=="gitlab")] | length == 0' \
+    "$base/out.json" >/dev/null || fail "a discovered provider must not render a not-configured row: $(jq -c '.unavailable' "$base/out.json")"
+  pass "github and gitlab identities come from the live gh/glab and the code root origin without a config file"
+}
+
+test_compute_discovers_forgejo_from_local_instance() {
+  setup_fixture
+  local base rec home fb repo ini creds out out2
+  base="$TMP_ROOT/compute-forgejo"
+  rec=$(compute_home "$base"); home=${rec%%|*}; fb=${rec#*|}
+  repo="$base/forgejo-repositories"; ini="$base/app.ini"; creds="$base/forgejo-credentials"
+  mkdir -p "$repo/fmadmin/groundwork.git"
+  cat > "$ini" <<EOF
+[server]
+ROOT_URL = http://127.0.0.1:3000/
+[repository]
+ROOT = $repo
+EOF
+  printf 'Username: fmadmin\nPassword: secret\n' > "$creds"
+  cat > "$fb/systemctl" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in *is-active*) exit 0 ;; esac
+exit 1
+STUB
+  cat > "$fb/curl" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *"/api/v1/version"*) printf '200' ;;
+  *"/admin/actions/runners"*) printf '%s\n' '[{"name":"forgejo-pc02","status":"online"}]' ;;
+  *"/actions/runs?limit=50"*) printf '%s\n' '{"workflow_runs":[{"status":"waiting"},{"status":"running"},{"status":"completed"}]}' ;;
+  *) exit 1 ;;
+esac
+STUB
+  chmod +x "$fb/systemctl" "$fb/curl"
+  out=$(run_compute_snapshot "$home" "$fb" \
+    FM_RESOURCE_FORGEJO_INI="$ini" FM_RESOURCE_FORGEJO_REPO_ROOT="$repo" \
+    FM_RESOURCE_FORGEJO_CREDENTIALS="$creds")
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e 'any(.compute[]; .rung=="forgejo" and .account=="fmadmin" and .status=="active" and .runs=="2 queued")' \
+    "$base/out.json" >/dev/null || fail "forgejo discovery must read the local instance and its one repo: $(jq -c '.compute' "$base/out.json")"
+  jq -e 'any(.testing[]; .item=="forgejo-pc01" and .state=="active")' "$base/out.json" >/dev/null \
+    || fail "the local Forgejo unit must render without config: $(jq -c '.testing' "$base/out.json")"
+  jq -e 'any(.testing[]; .item=="forgejo-runners" and .state=="forgejo-pc02:online")' "$base/out.json" >/dev/null \
+    || fail "the registered runner must render from the admin read: $(jq -c '.testing' "$base/out.json")"
+  jq -e 'any(.testing[]; .item=="forgejo-queued" and .state=="2")' "$base/out.json" >/dev/null \
+    || fail "queued forgejo runs must render: $(jq -c '.testing' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source | startswith("forgejo"))] | length == 0' "$base/out.json" >/dev/null \
+    || fail "a fully discovered forgejo must not leave unavailable rows: $(jq -c '.unavailable' "$base/out.json")"
+
+  out2=$(run_compute_snapshot "$home" "$fb" \
+    FM_RESOURCE_FORGEJO_INI="$ini" FM_RESOURCE_FORGEJO_REPO_ROOT="$repo" \
+    FM_RESOURCE_FORGEJO_CREDENTIALS=)
+  printf '%s\n' "$out2" > "$base/out-no-creds.json"
+  jq -e 'any(.compute[]; .rung=="forgejo" and .account=="fmadmin" and .status=="active")' \
+    "$base/out-no-creds.json" >/dev/null || fail "forgejo must render the fast facts without credentials: $(jq -c '.compute' "$base/out-no-creds.json")"
+  jq -e '[.unavailable[] | select(.source=="forgejo:credentials")] | length == 1' \
+    "$base/out-no-creds.json" >/dev/null || fail "a missing credential path must be named: $(jq -c '.unavailable' "$base/out-no-creds.json")"
+  pass "forgejo url, account and repo come from the local instance without a config file"
+}
+
+test_compute_without_identity_says_why() {
+  setup_fixture
+  local base rec home fb out
+  base="$TMP_ROOT/compute-none"
+  rec=$(compute_home "$base"); home=${rec%%|*}; fb=${rec#*|}
+  mkdir -p "$base/empty-root"
+  cat > "$fb/gh" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  cat > "$fb/glab" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  chmod +x "$fb/gh" "$fb/glab"
+  out=$(run_compute_snapshot "$home" "$fb" \
+    FM_ROOT_OVERRIDE="$base/no-such-code-root" \
+    FM_RESOURCE_FORGEJO_INI="$base/no-such-app.ini" \
+    FM_RESOURCE_FORGEJO_REPO_ROOT="$base/empty-root")
+  printf '%s\n' "$out" > "$base/out.json"
+  [ "$(jq -r '.compute | length' "$base/out.json")" = 0 ] \
+    || fail "no discovered identity must render no compute rows: $(jq -c '.compute' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source=="github" and .reason=="not configured")] | length == 1' \
+    "$base/out.json" >/dev/null || fail "an unidentifiable gh must stay not configured: $(jq -c '.unavailable' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source=="gitlab" and .reason=="not configured")] | length == 1' \
+    "$base/out.json" >/dev/null || fail "an unidentifiable glab must stay not configured: $(jq -c '.unavailable' "$base/out.json")"
+  jq -e '[.unavailable[] | select(.source=="forgejo" and .reason=="not configured")] | length == 1' \
+    "$base/out.json" >/dev/null || fail "an undiscoverable forgejo must stay not configured: $(jq -c '.unavailable' "$base/out.json")"
+  pass "an undiscoverable provider keeps an honest not-configured row"
+}
+
+write_pc01_snapshot() {  # <path> <status> <finished_at> [error]
+  local path=$1 status=$2 finished=$3 error=${4:-} sda nvme
+  sda=$(cat <<'SDA'
+=== START OF READ SMART DATA SECTION ===
+SMART overall-health self-assessment test result: PASSED
+
+Device Model:     ST8000DM004-2CX188
+Serial Number:    ZCT2KA1Y
+  5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  Always       -       0
+  9 Power_On_Hours          0x0032   084   084   000    Old_age   Always       -       14711h+54m+35.898s
+194 Temperature_Celsius     0x0022   031   059   000    Old_age   Always       -       31 (0 15 0 0 0)
+197 Current_Pending_Sector  0x0012   100   100   000    Old_age   Always       -       0
+198 Offline_Uncorrectable   0x0010   100   100   000    Old_age   Offline      -       0
+SDA
+)
+  nvme=$(cat <<'NVME'
+=== START OF SMART DATA SECTION ===
+SMART overall-health self-assessment test result: PASSED
+
+Model Number:                       Force MP510
+Temperature:                        45 Celsius
+Percentage Used:                    13%
+Power On Hours:                     14,682
+Media and Data Integrity Errors:    0
+NVME
+)
+  jq -n --arg status "$status" --arg finished "$finished" --arg error "$error" \
+    --arg sda "$sda" --arg nvme "$nvme" '
+    {
+      job: "drive-health",
+      status: $status,
+      error: (if $error == "" then null else $error end),
+      started_at: $finished,
+      finished_at: $finished,
+      disks: [
+        {Number: 0, FriendlyName: "ST8000DM004-2CX188", HealthStatus: "Healthy"},
+        {Number: 2, FriendlyName: "Force MP510", HealthStatus: "Healthy"}
+      ],
+      reliability: [
+        {disk: "ST8000DM004-2CX188", temperature_c: 31, power_on_hours: 14711},
+        {disk: "Force MP510", temperature_c: 45, power_on_hours: 14682, wear: 13}
+      ],
+      smart: {
+        available: true,
+        devices: [
+          {device: "/dev/pd0", friendly_name: "ST8000DM004-2CX188", exit_code: 0, health: "PASSED", output: $sda},
+          {device: "/dev/pd2", friendly_name: "Force MP510", exit_code: 0, health: "PASSED", output: $nvme}
+        ]
+      }
+    }' > "$path"
+}
+
+run_pc01_drive_health() {  # <snapshot-file> -> JSON
+  local file=$1
+  env PATH="$FB:$BASE_PATH" FM_HOME="$HOME_DIR" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_DRIVE_HEALTH_FIXTURE= \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_PC01_DRIVE_HEALTH_FILE="$file" \
+    FM_RESOURCE_REMOTE_FIXTURE="$TMP_ROOT/fixture/down.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FM_RESOURCE_ANDROID_FIXTURE="$TMP_ROOT/fixture/android.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1
+}
+
+test_drive_health_pc01_snapshot_reads_smart() {
+  setup_fixture
+  local f out
+  f="$TMP_ROOT/pc01-drive-health.json"
+  write_pc01_snapshot "$f" ok 2026-11-19T20:50:00Z
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-ok.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 2' \
+    "$TMP_ROOT/dh-pc01-ok.json" >/dev/null \
+    || fail "PC01 snapshot must render one row per smart device: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-ok.json")"
+  jq -e '.drive_health[] | select(.disk == "/dev/pd0")
+    | .model == "ST8000DM004-2CX188" and .smart == "PASSED"
+      and .reallocated == "0" and .pending == "0" and .uncorrectable == "0"
+      and .temp_c == "31" and .power_on_hours == "14711"
+      and .reason == "-" and .read_utc == "2026-11-19T20:50:00Z"' \
+    "$TMP_ROOT/dh-pc01-ok.json" >/dev/null \
+    || fail "PC01 ATA attributes: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-ok.json")"
+  jq -e '.drive_health[] | select(.disk == "/dev/pd2")
+    | .model == "Force MP510" and .smart == "PASSED"
+      and .nvme_used_pct == "13" and .media_errors == "0"
+      and .temp_c == "45" and .power_on_hours == "14682"' \
+    "$TMP_ROOT/dh-pc01-ok.json" >/dev/null \
+    || fail "PC01 NVMe percentage used and media errors: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-ok.json")"
+  pass "a PC01 snapshot renders per-disk SMART counts, NVMe usage, and its own read time"
+}
+
+test_drive_health_pc01_stale_missing_failed_labelled() {
+  setup_fixture
+  local f out
+  f="$TMP_ROOT/pc01-drive-health-stale.json"
+  write_pc01_snapshot "$f" ok 2026-11-01T00:00:00Z
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-stale.json"
+  jq -e '.drive_health[] | .machine == "PC01" and .smart == "stale"
+    and .reallocated == "-" and .pending == "-" and .uncorrectable == "-"
+    and (.reason | test("old")) and .read_utc == "2026-11-01T00:00:00Z"' \
+    "$TMP_ROOT/dh-pc01-stale.json" >/dev/null \
+    || fail "a stale snapshot must be labelled stale, not healthy: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-stale.json")"
+
+  out=$(run_pc01_drive_health "$TMP_ROOT/pc01-drive-health-absent.json")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-missing.json"
+  jq -e '.drive_health[] | .machine == "PC01" and .smart == "not-set-up"
+    and .reallocated == "-" and (.reason | test("not set up"))' \
+    "$TMP_ROOT/dh-pc01-missing.json" >/dev/null \
+    || fail "a missing snapshot must say not set up: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-missing.json")"
+
+  f="$TMP_ROOT/pc01-drive-health-failed.json"
+  write_pc01_snapshot "$f" error 2026-11-19T20:50:00Z "Get-Disk failed"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-failed.json"
+  jq -e '.drive_health[] | .machine == "PC01" and .smart == "failed"
+    and .reallocated == "-" and (.reason | test("status is error"))
+    and (.reason | test("Get-Disk failed"))' \
+    "$TMP_ROOT/dh-pc01-failed.json" >/dev/null \
+    || fail "a failed snapshot must name its error: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-failed.json")"
+  pass "stale, missing, and failed PC01 snapshots are labelled with reason and read time, never zero or healthy"
+}
+
+run_pc02_drive_health() {  # <name> <smartctl-path> [ssh-mode: run|down] -> JSON
+  local name=$1 smartctl_path=$2 mode=${3:-run} rec home fb fake
+  rec=$(make_home "pc02-dh-$name" fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  fake="$TMP_ROOT/pc02-dh-$name"
+  mkdir -p "$fake"
+  cat > "$fake/sda.txt" <<'SDA'
+=== START OF READ SMART DATA SECTION ===
+SMART overall-health self-assessment test result: PASSED
+
+Device Model:     ST8000DM004-2CX188
+  5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  Always       -       0
+  9 Power_On_Hours          0x0032   084   084   000    Old_age   Always       -       14711h+54m+35.898s
+194 Temperature_Celsius     0x0022   031   059   000    Old_age   Always       -       31 (0 15 0 0 0)
+197 Current_Pending_Sector  0x0012   100   100   000    Old_age   Always       -       0
+198 Offline_Uncorrectable   0x0010   100   100   000    Old_age   Offline      -       0
+SDA
+  cat > "$fake/nvme.txt" <<'NVME'
+=== START OF SMART DATA SECTION ===
+SMART overall-health self-assessment test result: PASSED
+
+Model Number:                       Force MP510
+Temperature:                        45 Celsius
+Percentage Used:                    13%
+Power On Hours:                     14,682
+Media and Data Integrity Errors:    0
+NVME
+  cat > "$fake/ssh" <<SSH
+#!/usr/bin/env bash
+script=\$(cat)
+case "\$script" in
+  *fm-drive-health*) [ "$mode" = run ] && { printf '%s\n' "\$script" | bash; exit \$?; } ;;
+esac
+exit 255
+SSH
+  chmod +x "$fake/ssh"
+  env PATH="$fake:$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_SSH_BIN="$fake/ssh" FM_RESOURCE_PC02_SMARTCTL="$smartctl_path" \
+    FM_RESOURCE_DRIVE_HEALTH_FIXTURE= FM_RESOURCE_REMOTE_FIXTURE= \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC02="$TMP_ROOT/fixture/herdr-pc02.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FM_RESOURCE_ANDROID_FIXTURE="$TMP_ROOT/fixture/android.json" \
+    SDA_TEXT="$fake/sda.txt" NVME_TEXT="$fake/nvme.txt" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1
+}
+
+test_drive_health_pc02_reads_smartctl() {
+  local fake out
+  fake="$TMP_ROOT/pc02-dh-tools"
+  mkdir -p "$fake"
+  cat > "$fake/smartctl" <<'SMART'
+#!/usr/bin/env bash
+case "$*" in
+  *--scan*) printf '/dev/sda -d ata # /dev/sda, ATA device\n/dev/sdc -d nvme # /dev/sdc, NVMe device\n' ;;
+  *"/dev/sda"*) cat "$SDA_TEXT" ;;
+  *"/dev/sdc"*) cat "$NVME_TEXT" ;;
+  *) exit 1 ;;
+esac
+SMART
+  chmod +x "$fake/smartctl"
+  out=$(run_pc02_drive_health ok "$fake/smartctl")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc02-ok.json"
+  jq -e '[.drive_health[] | select(.machine == "PC02")] | length == 2' \
+    "$TMP_ROOT/dh-pc02-ok.json" >/dev/null \
+    || fail "PC02 smartctl scan must render one row per device: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-ok.json")"
+  jq -e '.drive_health[] | select(.disk == "/dev/sda")
+    | .model == "ST8000DM004-2CX188" and .smart == "PASSED"
+      and .reallocated == "0" and .pending == "0" and .uncorrectable == "0"
+      and .temp_c == "31" and .power_on_hours == "14711" and .reason == "-"
+      and .read_utc == "2026-11-19T21:20:00Z"' \
+    "$TMP_ROOT/dh-pc02-ok.json" >/dev/null \
+    || fail "PC02 ATA row: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-ok.json")"
+  jq -e '.drive_health[] | select(.disk == "/dev/sdc")
+    | .model == "Force MP510" and .smart == "PASSED"
+      and .nvme_used_pct == "13" and .media_errors == "0"' \
+    "$TMP_ROOT/dh-pc02-ok.json" >/dev/null \
+    || fail "PC02 NVMe row: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-ok.json")"
+  pass "the shipped PC02 smartctl probe parses ATA and NVMe health over the ssh boundary"
+}
+
+test_drive_health_pc02_missing_tool_and_unreachable() {
+  local out
+  out=$(run_pc02_drive_health missing /nonexistent/smartctl)
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc02-missing.json"
+  jq -e '[.drive_health[] | select(.machine == "PC02")] | length == 1
+    and .[0].smart == "missing-tool" and .[0].reallocated == "-"
+    and (.[0].reason | test("smartmontools"))' \
+    "$TMP_ROOT/dh-pc02-missing.json" >/dev/null \
+    || fail "a missing smartctl must be stated, not zero: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-missing.json")"
+
+  out=$(run_pc02_drive_health down /nonexistent/smartctl down)
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc02-down.json"
+  jq -e '[.drive_health[] | select(.machine == "PC02")] | length == 1
+    and .[0].smart == "unreachable" and .[0].reallocated == "-"
+    and (.[0].reason | test("status 255"))' \
+    "$TMP_ROOT/dh-pc02-down.json" >/dev/null \
+    || fail "an unreachable host must be stated, not zero or healthy: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-down.json")"
+  pass "missing-tool and unreachable PC02 reads are labelled with reason, never zero or healthy"
+}
+
+test_drive_health_pc02_crlf_and_failed_output() {
+  local fake out
+  fake="$TMP_ROOT/pc02-dh-crlf-tools"
+  mkdir -p "$fake"
+  cat > "$fake/smartctl" <<'SMART'
+#!/usr/bin/env bash
+case "$*" in
+  *--scan*) printf '/dev/sda -d sat\r\n/dev/sdb -d ata # /dev/sdb, ATA device\r\n/dev/sdc -d ata [SAT]\r\n' ;;
+  *"/dev/sda"*) sed 's/$/\r/' "$SDA_TEXT" ;;
+  *"/dev/sdb"*) sed 's/PASSED/FAILED!/; s/^\(197.*-       \)0/\1 8/' "$SDA_TEXT" | sed 's/$/\r/'; exit 8 ;;
+  *"/dev/sdc"*) printf 'Smartctl open device: /dev/sdc failed\r\n'; exit 2 ;;
+  *) exit 1 ;;
+esac
+SMART
+  chmod +x "$fake/smartctl"
+  out=$(run_pc02_drive_health crlf "$fake/smartctl")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc02-crlf.json"
+  jq -e '.drive_health[] | select(.disk == "/dev/sda")
+    | .model == "ST8000DM004-2CX188" and .smart == "PASSED" and .reallocated == "0"
+      and .power_on_hours == "14711" and .reason == "-"' \
+    "$TMP_ROOT/dh-pc02-crlf.json" >/dev/null \
+    || fail "CRLF scan line without a comment and CRLF health output must parse: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-crlf.json")"
+  jq -e '.drive_health[] | select(.disk == "/dev/sdb")
+    | (.smart | test("^FAILED")) and (.smart | test("\r") | not) and .pending == "8"' \
+    "$TMP_ROOT/dh-pc02-crlf.json" >/dev/null \
+    || fail "a FAILED verdict with a non-zero exit must keep its verdict and counts: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-crlf.json")"
+  jq -e '.drive_health[] | select(.disk == "/dev/sdc")
+    | .smart == "failed" and (.reason | test("no health verdict")) and (.reason | test("exit 2"))' \
+    "$TMP_ROOT/dh-pc02-crlf.json" >/dev/null \
+    || fail "a device with no verdict must be failed, never healthy: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc02-crlf.json")"
+  pass "PC02 parses CRLF smartctl.exe output, real FAILED verdicts, and verdict-less devices"
+}
+
+test_drive_health_pc01_snapshot_fallbacks_and_failures() {
+  setup_fixture
+  local f out
+  f="$TMP_ROOT/pc01-dh-disks.json"
+  write_pc01_snapshot "$TMP_ROOT/pc01-dh-base.json" ok 2026-11-19T20:50:00Z
+  jq 'del(.smart.devices)' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-disks.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 2
+    and all(.[]; .smart == "Healthy" and .reallocated == "-" and (.reason | test("SMART unavailable")))
+    and (.[] | select(.disk == "/dev/pd2") | .temp_c == "45" and .nvme_used_pct == "13")' \
+    "$TMP_ROOT/dh-pc01-disks.json" >/dev/null \
+    || fail "without SMART output, Windows HealthStatus rows must say so: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-disks.json")"
+
+  jq 'del(.smart.devices, .disks) | .smart.error = "elevation denied"' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-nodisk.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 1
+    and .[0].smart == "unavailable" and (.[0].reason | test("no disk data: elevation denied"))' \
+    "$TMP_ROOT/dh-pc01-nodisk.json" >/dev/null \
+    || fail "a snapshot with no disk data must be unavailable: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-nodisk.json")"
+
+  printf '{ not json' > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-badjson.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 1
+    and .[0].smart == "failed" and (.[0].reason | test("not valid JSON"))' \
+    "$TMP_ROOT/dh-pc01-badjson.json" >/dev/null \
+    || fail "invalid JSON must be failed: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-badjson.json")"
+
+  jq 'del(.finished_at)' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-nofinish.json"
+  jq -e '[.drive_health[] | select(.machine == "PC01")] | length == 1
+    and .[0].smart == "failed" and (.[0].reason | test("finished_at"))' \
+    "$TMP_ROOT/dh-pc01-nofinish.json" >/dev/null \
+    || fail "a missing finished_at must not render healthy: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-nofinish.json")"
+
+  jq '.smart.devices[0] |= (.output = "" | .health = null | .exit_code = 5)' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-noverdict.json"
+  jq -e '.drive_health[] | select(.disk == "/dev/pd0")
+    | .smart == "failed" and (.reason | test("no health verdict \\(exit 5\\)"))' \
+    "$TMP_ROOT/dh-pc01-noverdict.json" >/dev/null \
+    || fail "a device without a verdict must be failed: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-noverdict.json")"
+
+  jq '.smart.devices[0] |= (.health = "FAILED!" | .exit_code = 8)' "$TMP_ROOT/pc01-dh-base.json" > "$f"
+  out=$(run_pc01_drive_health "$f")
+  printf '%s\n' "$out" > "$TMP_ROOT/dh-pc01-hfail.json"
+  jq -e '.drive_health[] | select(.disk == "/dev/pd0") | .smart == "FAILED!"' \
+    "$TMP_ROOT/dh-pc01-hfail.json" >/dev/null \
+    || fail "a FAILED verdict must be shown: $(jq -c '.drive_health' "$TMP_ROOT/dh-pc01-hfail.json")"
+  pass "PC01 snapshot fallbacks and failures are labelled, never healthy"
+}
+
 test_every_section_renders_and_agrees
 test_android_fixture_renders_both_hosts
 test_android_probe_reads_fake_tools
@@ -857,11 +1435,46 @@ test_android_probe_failures_are_stated_not_zero
 test_android_empty_clean_reads_render_none
 test_android_boot_completed_variants
 test_android_physical_device_does_not_hide_stopped_avd
+test_android_discovery_reports_missing_recorded_root() {
+  local fake out base
+  base="$TMP_ROOT/android-missing"
+  fake="$base/fake"
+  mkdir -p "$fake"
+  cat > "$fake/adb" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in devices) printf 'List of devices attached\n\n' ;; *) exit 1 ;; esac
+STUB
+  cat > "$fake/emulator" <<'STUB'
+#!/usr/bin/env bash
+[ "$*" = "-list-avds" ] && exit 0
+exit 1
+STUB
+  chmod +x "$fake/adb" "$fake/emulator"
+  out=$(run_android_discovery missing FM_RESOURCE_ANDROID_ROOTS="$base/E/Android" FM_RESOURCE_ANDROID_HOME_DIRS="$base/E/avd" FM_RESOURCE_ADB="$fake/adb" FM_RESOURCE_EMULATOR="$fake/emulator")
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e '[.android[] | select(.machine == "PC01" and .state == "none")] | length == 0' "$base/out.json" >/dev/null || fail "a missing recorded root must never render none: $(jq -c '.android' "$base/out.json")"
+  jq -e --arg r "$base/E/Android" --arg h "$base/E/avd" '[.unavailable[] | select(.source == "android:PC01") | .reason] | (any(contains($r) and contains("missing"))) and (any(contains($h) and contains("missing")))' "$base/out.json" >/dev/null || fail "a missing recorded root and AVD home must be named: $(jq -c '.unavailable' "$base/out.json")"
+  pass "a missing recorded root or AVD home is reported with its path, never as none"
+}
+
 test_android_probe_timeouts_are_stated
 test_pc02_android_live_read
 test_pc02_android_live_failure_is_stated
+test_android_discovery_reads_environment_json_and_port
+test_android_discovery_reads_wsl_only_avd_home
+test_android_discovery_reports_unreadable_root
+test_android_discovery_reports_missing_recorded_root
 test_android_missing_tools_is_stated_not_zero
 test_opencode_worker_gets_a_context_band
+test_compute_discovers_github_and_gitlab_from_live_state
+test_compute_discovers_forgejo_from_local_instance
+test_compute_without_identity_says_why
+test_drive_health_pc01_snapshot_reads_smart
+test_drive_health_pc01_stale_missing_failed_labelled
+test_drive_health_pc02_reads_smartctl
+test_drive_health_pc02_missing_tool_and_unreachable
+test_drive_health_pc02_crlf_and_failed_output
+test_drive_health_pc01_snapshot_fallbacks_and_failures
 test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
 test_down_pc02_keeps_pc01

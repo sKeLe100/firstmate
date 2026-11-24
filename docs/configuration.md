@@ -2113,6 +2113,7 @@ When it is present, a Claude launch whose effective config root equals that path
 The effective root is the `config/claude-account` pin, else `$CLAUDE_CONFIG_DIR` (including one set in the launch command), else `$HOME/.claude`; `ordinary` resolves to `$HOME/.claude`.
 A malformed file refuses too.
 Without the file, launches are unchanged.
+The one exception is a home that also declares that same account in [`config/claude-accounts`](#several-claude-accounts-configclaude-accounts), which opts in to one worker beside the orchestrator instead of the refusal; that section owns the cap.
 
 The same file is the orchestrator's own account pin: a Claude primary launch from `bin/fm-primary-herdr.sh` exports that absolute root into the pane as `CLAUDE_CONFIG_DIR` before starting the agent, so the boot launch runs on the orchestrator account rather than an ambient or worker login.
 It never reads `config/claude-account`, which pins workers away from this account.
@@ -2141,6 +2142,13 @@ ordinary
 A final newline is optional; a blank line, a relative path, a repeated entry, or a control character refuses.
 The list is opt-in: without it, every launch, including the single pin above, behaves exactly as before, and `--account` refuses.
 A home keeps either the list or `config/claude-account`, never both; with both present, every Claude launch refuses.
+
+The list may include the account the orchestrator runs on (see [Orchestrator account guard](#orchestrator-account-guard-configclaude-orchestrator-account)).
+Declaring it there is the explicit opt-in to run one worker beside the orchestrator: `bin/fm-spawn.sh` admits the first worker on that account and defers a second with a clear reason (exit 75), so the account is never left unusable and never oversubscribed.
+The cap counts this home's other live non-secondmate Claude tasks recorded on that account, excluding any with a recorded PR handoff.
+A fresh spawn and a relaunch that moves a task onto the account with `--account` are both gated, and `bin/fm-control.sh <id> relaunch` runs the same check before it stops the running worker; a relaunch that keeps the task on its recorded account is not re-gated.
+The allowance is derived from `config/claude-orchestrator-account`, not hardcoded to a file position or a host: whichever account that file names carries the one-worker cap, so a swap day changes both the orchestrator and its allowance at once.
+A list that omits the orchestrator account leaves the reserved-account refusal in place.
 
 While the list is present, every Claude ship or scout spawn must name one declared entry with `--account <entry>`.
 Firstmate chooses that entry at dispatch intake under the [`quota-array-dispatch`](../.agents/skills/quota-array-dispatch/SKILL.md) procedure, and [`bin/fm-claude-account-quota.sh`](../bin/fm-claude-account-quota.sh) measures each entry for it by running `quota-axi --provider claude --profile-only` under that entry's own config directory (`~/.claude` for `ordinary`).

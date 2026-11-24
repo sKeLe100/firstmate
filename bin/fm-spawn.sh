@@ -563,8 +563,11 @@
 #   spawn must name one declared entry with --account, chosen at intake, and
 #   that entry is checked, launched, and recorded exactly like a pin; a
 #   relaunch reuses the recorded entry unless --account moves it. Without the
-#   list, --account refuses and nothing else changes. docs/configuration.md
-#   "Several Claude accounts" owns the contract.
+#   list, --account refuses and nothing else changes. The list may declare the
+#   orchestrator account (config/claude-orchestrator-account), which then admits
+#   at most one worker beside the orchestrator; a second is deferred (exit
+#   75) before any endpoint exists. docs/configuration.md "Several Claude
+#   accounts" owns the contract.
 # Per-secondmate omp profile (config/secondmate-accounts/<id>/omp-profile):
 #   Opt-in, and read only for a local secondmate's own omp agent;
 #   bin/fm-omp-profile-lib.sh owns the file and its refusals. A pinned launch
@@ -4057,7 +4060,23 @@ if [ -n "$WORKER_ACCOUNT" ] && [ "$HARNESS" = claude ]; then
     unset CLAUDE_CONFIG_DIR
   fi
 fi
-
+# Worker cap beside the orchestrator: fm_worker_account_orchestrator_cap_check
+# (bin/fm-worker-account-lib.sh) owns the rule and fm-control's relaunch
+# preflight asks it too. A deferred launch happens before any brief, endpoint,
+# worktree, or record exists, so its backlog item stays queued. A secondmate is
+# not a dispatched lane and is exempt.
+if [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ] && [ -n "$WORKER_ACCOUNT" ]; then
+  cap_rc=0
+  cap_msg=$(fm_worker_account_orchestrator_cap_check "$STATE" "$CONFIG" "$WORKER_ACCOUNT_ROOT" "$ID") || cap_rc=$?
+  case "$cap_rc" in
+  0) ;;
+  1)
+    echo "$cap_msg" >&2
+    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    ;;
+  *) exit 1 ;;
+  esac
+fi
 
 
 model_flag_for_harness() {
@@ -4253,6 +4272,19 @@ if [ "$HARNESS" = codex ] && [ "$RAW_LAUNCH" -eq 0 ]; then
     echo "error: codex requires an explicit --effort that codex itself accepts; '${EFFORT:-<none>}' reaches no codex launch flag, so the spawn would silently fall through to Codex CLI's own default reasoning effort rather than firstmate's choice. $codex_remedy" >&2
     exit 1
   fi
+fi
+
+# A pc02-llamaswap/* lane is served by PC02's llama-swap, so PC02 must be
+# awake before the worker starts. bin/fm-pc02-wake.sh owns the wake; a host
+# this home does not manage is a no-op, preserving other model lanes.
+if [ "${FM_PC02_WAKE:-1}" != 0 ] && [ -x "$SCRIPT_DIR/fm-pc02-wake.sh" ]; then
+  case "${MODEL:-}" in
+    pc02-llamaswap/*)
+      "$SCRIPT_DIR/fm-pc02-wake.sh" ensure --host "${FM_PC02_LLAMASWAP_HOST:-pc02}" \
+        --if-managed --timeout "${FM_PC02_WAKE_TIMEOUT:-120}" --quiet \
+        || { echo "error: PC02 did not wake for the $MODEL lane; refusing to launch into an asleep host" >&2; exit 1; }
+      ;;
+  esac
 fi
 
 pc02_lane_guard "$ID" "${MODEL:-}" || exit 1

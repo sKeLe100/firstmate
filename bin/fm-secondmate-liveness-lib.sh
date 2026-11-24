@@ -139,6 +139,22 @@ fm_secondmate_liveness_recent_attempts() {  # <id> <window-secs>
 #
 # The caller must hold fm_secondmate_liveness_lock for <id> whenever a
 # relaunchable verdict could be acted on.
+# A failed SSH probe to a managed host may simply mean PC02 is asleep in its
+# designed posture. Read the power helper's classification so liveness reports
+# "asleep, wakeable" instead of an unavailable host; the helper never wakes.
+fm_sm_live_remote_reason() {  # <host> <tail>
+  local host=$1 tail=$2 state
+  state=
+  if [ -x "$FM_SM_LIVE_LIB_DIR/fm-pc02-wake.sh" ]; then
+    state=$("$FM_SM_LIVE_LIB_DIR/fm-pc02-wake.sh" status --host "$host" --if-managed --quiet 2>/dev/null || true)
+  fi
+  if [ "$state" = asleep ]; then
+    printf 'remote host asleep (wakeable); %s on %s' "$tail" "$host"
+  else
+    printf 'remote host unavailable or endpoint state unknown; %s on %s' "$tail" "$host"
+  fi
+}
+
 fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
   local meta=$1 id=$2 mode=$3
   FM_SM_LIVE_STATUS=skipped FM_SM_LIVE_STATE=unknown FM_SM_LIVE_KILL=0 FM_SM_LIVE_RESUME=0
@@ -157,7 +173,7 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
       remote_rc=0
       fm_remote_readiness_ensure "$FM_SM_LIVE_LIB_DIR" "$id" "$expected_remote_backend" || remote_rc=$?
       if [ "$remote_rc" -eq 255 ]; then
-        FM_SM_LIVE_REASON="remote host unavailable or endpoint state unknown; route preserved on $remote_host"
+        FM_SM_LIVE_REASON=$(fm_sm_live_remote_reason "$remote_host" 'route preserved')
         return 0
       fi
       if [ "$remote_rc" -ne 0 ]; then
@@ -175,7 +191,7 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
       remote_rc=$?
     fi
     if [ "$remote_rc" -eq 255 ]; then
-      FM_SM_LIVE_REASON="remote host unavailable or endpoint state unknown; route preserved on $remote_host"
+      FM_SM_LIVE_REASON=$(fm_sm_live_remote_reason "$remote_host" 'route preserved')
       return 0
     fi
     if [ "$remote_rc" -ne 0 ]; then
@@ -193,7 +209,7 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
             remote_rc=$?
           fi
           if [ "$remote_rc" -eq 255 ]; then
-            FM_SM_LIVE_REASON="remote host unavailable or endpoint route unknown; route preserved on $remote_host"
+            FM_SM_LIVE_REASON=$(fm_sm_live_remote_reason "$remote_host" 'endpoint route unknown; route preserved')
             return 0
           fi
           if [ "$remote_rc" -ne 0 ]; then

@@ -493,6 +493,14 @@ stop_personal_use() {
 command -v ssh >/dev/null 2>&1 || run_local "ssh not available on PC01"
 command -v rsync >/dev/null 2>&1 || run_local "rsync not available on PC01"
 
+# PC02 may be asleep. Wake it before the bounded readiness probe; the helper
+# returns immediately when SSH already answers and is a no-op for a host this
+# home does not manage.
+if [ "${FM_PC02_WAKE_OFFLOAD:-1}" != 0 ] && [ -x "$SELF_DIR/fm-pc02-wake.sh" ]; then
+  "$SELF_DIR/fm-pc02-wake.sh" ensure --host "$HOST" --if-managed --quiet \
+    || run_local "PC02 is asleep and did not answer a wake attempt"
+fi
+
 # 1. Is PC02 personally in use, tool-ready, and reachable? One bounded ssh
 # call answers it so a stuck or slow probe cannot hang this script past
 # PROBE_TIMEOUT seconds. The captain's manual switch is the only thing that

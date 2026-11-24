@@ -1177,8 +1177,15 @@ resolve_relaunch_profile() {
   [ "$KIND" != secondmate ] || account_mate=$ID
   TARGET_ACCOUNT=$(fm_worker_account_relaunch_request "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$PRIOR_HARNESS" "$(fm_meta_get "$META" account)" "$NEW_ACCOUNT" "$account_mate") || return 1
-  fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
-    "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT" >/dev/null || return 1
+  local account_pick account_root cap_msg cap_rc=0
+  account_pick=$(fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
+    "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT") || return 1
+  if [ "$KIND" != secondmate ] && [ "$TARGET_HARNESS" = claude ] && [ -n "$account_pick" ]; then
+    account_root=${account_pick#*$'\t'}
+    account_root=${account_root%%$'\t'*}
+    cap_msg=$(fm_worker_account_orchestrator_cap_check "$STATE" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$account_root" "$ID") || cap_rc=$?
+    [ "$cap_rc" -eq 0 ] || die "${cap_msg:-config/claude-orchestrator-account is malformed}"
+  fi
   fm_omp_profile_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_mate" >/dev/null || return 1
   # Likewise polytoken's launch profile and wiring refusals

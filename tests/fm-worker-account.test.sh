@@ -666,20 +666,41 @@ test_account_list_secondmate_needs_its_own_pin() {
   pass "a list never chooses a secondmate's account: it needs its own pin and refuses --account"
 }
 
-test_account_list_cannot_spend_the_orchestrator_account() {
+test_account_list_caps_the_orchestrator_account_at_one_worker() {
   local out rc id=acct-list-orch
   new_case list-orchestrator claude
   signed_in_claude_root "$CASE/first"
   signed_in_claude_root "$CASE/reserved"
   declare_accounts "$CASE/first" "$CASE/reserved"
   printf '%s\n' "$CASE/reserved" > "$HOME_DIR/config/claude-orchestrator-account"
-  out=$(spawn_ship "$id" --account "$CASE/reserved"); rc=$?
-  expect_code 1 "$rc" "a declared account on the orchestrator root must refuse"
-  assert_refused_before_launch "$id" "$out" "the orchestrator account reserved by"
-  out=$(spawn_ship "$id-ok" --account "$CASE/first"); rc=$?
+  # Declaring the orchestrator account opts in to one worker beside it.
+  out=$(spawn_ship "$id-one" --account "$CASE/reserved"); rc=$?
+  expect_code 0 "$rc" "the first declared worker on the orchestrator root should launch: $out"
+  assert_contains "$out" "account=$CASE/reserved" "the launch should name the chosen orchestrator account"
+  assert_grep "account=$CASE/reserved" "$HOME_DIR/state/$id-one.meta" "the task record should carry the chosen account"
+  # A second live worker on that account is deferred before it launches.
+  out=$(spawn_ship "$id-two" --account "$CASE/reserved"); rc=$?
+  expect_code 75 "$rc" "a second worker on the orchestrator root must defer"
+  assert_refused_before_launch "$id-two" "$out" "is the orchestrator account and admits at most 1 worker beside the orchestrator"
+  assert_contains "$out" "$id-one already holds its place" "the deferral should name the live worker"
+  # Another declared account is unaffected by the orchestrator cap.
+  out=$(spawn_ship "$id-three" --account "$CASE/first"); rc=$?
   expect_code 0 "$rc" "a declared account off the orchestrator root should launch: $out"
   assert_contains "$out" "account=$CASE/first" "the launch should name the chosen account"
-  pass "a declared account list never spends the reserved orchestrator account"
+
+  # The orchestrator account is usually spelled `ordinary` for ~/.claude, and
+  # the cap must follow the resolved root rather than the exact token.
+  new_case list-orchestrator-ordinary claude
+  signed_in_claude_root "$HOME_DIR/user-home/.claude"
+  signed_in_claude_root "$CASE/second"
+  declare_accounts ordinary "$CASE/second"
+  printf '%s\n' "$HOME_DIR/user-home/.claude" > "$HOME_DIR/config/claude-orchestrator-account"
+  out=$(spawn_ship "$id-ord-one" --account ordinary); rc=$?
+  expect_code 0 "$rc" "an ordinary worker on the ~/.claude orchestrator root should launch: $out"
+  out=$(spawn_ship "$id-ord-two" --account ordinary); rc=$?
+  expect_code 75 "$rc" "a second ordinary worker on the orchestrator root must defer"
+  assert_refused_before_launch "$id-ord-two" "$out" "is the orchestrator account and admits at most 1 worker beside the orchestrator"
+  pass "a declared account list caps the orchestrator account at one worker beside the orchestrator"
 }
 
 test_secondmate_account_override
@@ -704,6 +725,6 @@ test_no_account_list_keeps_today_and_refuses_account
 test_account_list_launches_the_named_entry
 test_account_list_refusals
 test_account_list_secondmate_needs_its_own_pin
-test_account_list_cannot_spend_the_orchestrator_account
+test_account_list_caps_the_orchestrator_account_at_one_worker
 
 echo "# all fm-worker-account tests passed"

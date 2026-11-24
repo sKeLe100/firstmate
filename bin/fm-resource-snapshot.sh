@@ -24,6 +24,24 @@
 #                  uptime,read_utc
 #   drives[]       machine,mount,total_gb,free_gb,pct_used,warn,read_utc
 #                  warn=low under 20 GB, watch under 40 GB, ok otherwise
+#   drive_health[] machine,disk,model,smart,reallocated,pending,uncorrectable,
+#                  temp_c,power_on_hours,nvme_used_pct,media_errors,read_utc,
+#                  reason
+#                  one row per physical disk. smart is the SMART overall-health
+#                  verdict (PASSED/FAILED), or the read state when there is no
+#                  healthy/failing read to report: stale, failed, unavailable,
+#                  missing-tool, or not-set-up. When a PC01 snapshot carries no
+#                  SMART data, Windows HealthStatus stands in for the verdict
+#                  and the reason says so. A healthy/failing row carries
+#                  reason "-"; every other state names its reason. read_utc is
+#                  when that reading was taken (the PC01 snapshot's own
+#                  finished_at, or this run for PC02). PC01 reads the
+#                  FirstmateDriveHealth snapshot at
+#                  /mnt/c/ProgramData/FirstmateOps/logs/drive-health.latest.json
+#                  and calls it stale past FM_RESOURCE_DRIVE_HEALTH_MAX_AGE;
+#                  PC02 runs smartctl.exe --scan then -i -H -A per device over
+#                  ssh. A stale, failed, or unreachable read is never rendered
+#                  as a zero count or a healthy verdict.
 #   quota[]        lane,account,plan,window,pct_remaining,resets_et,pace,state,
 #                  read_utc,reading_utc,reason
 #                  reading_utc is when quota-axi itself took the reading (the
@@ -38,8 +56,16 @@
 #   roles[]        role,where,account,evidence,read_utc
 #   testing[]      machine,item,state,detail,read_utc
 #   android[]      machine,avd,serial,state,boot_completed,detail,read_utc
-#                  one row per AVD listed by `emulator -list-avds` plus any
-#                  adb serial with no matching AVD. state is the adb device
+#                  one row per AVD discovered on the host plus any adb serial
+#                  with no matching AVD. AVDs come from `emulator -list-avds`
+#                  and from each discovered AVD home's .ini files. The homes
+#                  are the recorded roots' environment.json (its
+#                  ANDROID_AVD_HOME and declared ANDROID_ADB_SERVER_PORT), a
+#                  root's Sdk/ + avd/ layout, ~/.android/avd, and a Windows
+#                  %USERPROFILE%\.android\avd; adb is read on every declared
+#                  port plus 5037. A known root that exists but cannot be read
+#                  is an unavailable[] row naming it, never `none`. state is
+#                  the adb device
 #                  state (device/offline/unauthorized), `stopped` for a listed
 #                  AVD with no running emulator and a clean adb read, `unknown`
 #                  for a listed AVD when adb is missing/failing or another
@@ -74,13 +100,15 @@
 # records are read through one bounded ssh batch using the remote checkout's
 # existing fm-crew-state.sh and fm-context-usage.sh. PC02 host headroom, drives,
 # herdr sessions, offload slots, personal-use switch, runner unit, and its
-# pinned account come from one separate ssh batch. The parent secondmate ledger
-# is never consulted.
+# pinned account come from one separate ssh batch, and PC02 drive health from
+# its own bounded smartctl batch. The parent secondmate ledger is never
+# consulted.
 #
 # Per-source bounds (seconds, env-overridable): quota 8, each herdr call 5,
 # pc02 host batch 10, remote worker read 20, local fleet reads 15, roles 10,
 # collie 5, local crew-state 8, context band 5, local host probe 5, testing 10
-# per network source, each Android probe 8, PC02 Android batch 20. A bound hit
+# per network source, each Android probe 8, PC02 Android batch 20, PC02 drive
+# health 45. A bound hit
 # produces an unavailable row (or a
 # `stale`/`unknown` figure) and never a hang. Collectors run in parallel in
 # isolated subshells; exit 0 when any section rendered, 1 only when nothing
@@ -97,8 +125,21 @@
 #                                      "Password: ..." lines; there is no default
 #                                      path, and the secret is only ever piped to
 #                                      curl on stdin, never in argv or output
-# A collector whose keys are absent renders one unavailable row with reason
-# "not configured"; the rest of the snapshot still renders.
+# A key that is absent from both the environment and the file is discovered
+# from the live state the tool itself uses, so a home with authenticated CLIs
+# still reports its compute accounts without a hand-written file:
+#   github_user   the authenticated `gh api user` login, else the owner in the
+#                 code root's github.com origin
+#   github_repo   the repository in the code root's github.com origin
+#   gitlab_namespace the authenticated `glab api user` username
+#   forgejo_url   ROOT_URL in the local Forgejo app.ini
+#   forgejo_owner,forgejo_repo
+#                 the one repository under the Forgejo repository root, when it
+#                 holds exactly one; never guessed when the instance has several
+# The explicit config values always win. A collector that still cannot identify
+# its source renders one unavailable row with reason "not configured" (or
+# "gh not found"/"glab not found" when the CLI is absent), and the rest of the
+# snapshot still renders.
 #
 # Fixture seams, for tests and for deterministic replay:
 #   FM_RESOURCE_NOW               epoch seconds or ISO time to report as now
@@ -106,6 +147,16 @@
 #   FM_RESOURCE_DATA_DIR          override the home's data directory
 #   FM_RESOURCE_HOSTS_JSON        {"hosts":[...],"drives":[...]} replaces live PC01 host
 #                                 and drive probes; PC02 rows come from the remote fixture
+#   FM_RESOURCE_DRIVE_HEALTH_FIXTURE
+#                                 JSON {drive_health:[...],unavailable:[...]}
+#                                 replaces every drive-health probe on both hosts
+#   FM_RESOURCE_PC01_DRIVE_HEALTH_FILE
+#                                 PC01 FirstmateDriveHealth snapshot to read
+#                                 instead of the ProgramData default
+#   FM_RESOURCE_PC02_SMARTCTL     PC02 smartctl executable path (default
+#                                 /mnt/c/Program Files/smartmontools/bin/smartctl.exe)
+#   FM_RESOURCE_DRIVE_HEALTH_MAX_AGE
+#                                 seconds before a PC01 snapshot is stale (default 86400)
 #   FM_RESOURCE_HERDR_JSON_PC01   {"sessions":[],"workspaces":[],"panes":[]}
 #   FM_RESOURCE_HERDR_JSON_PC02   same shape for PC02
 #   FM_RESOURCE_ROLES_FILE        JSON array used verbatim as roles[]
@@ -117,7 +168,16 @@
 #                                 replaces every live Android probe on both hosts
 #   FM_RESOURCE_ADB               explicit adb path (empty means adb is absent)
 #   FM_RESOURCE_EMULATOR          explicit emulator path (empty means absent)
+#   FM_RESOURCE_ANDROID_ROOTS     colon-separated Android roots to scan instead
+#                                 of the recorded default list (empty means none)
+#   FM_RESOURCE_ANDROID_HOME_DIRS colon-separated user AVD homes to scan
+#                                 instead of ~/.android/avd and the Windows
+#                                 profiles (empty means none)
 #   FM_RESOURCE_CONTEXT_FIXTURE   JSON object mapping task id to ctx_band
+#   FM_RESOURCE_FORGEJO_INI       Forgejo app.ini read for URL and repo root
+#                                 (default $HOME/forgejo/custom/conf/app.ini)
+#   FM_RESOURCE_FORGEJO_REPO_ROOT Forgejo repository directory used for account
+#                                 discovery instead of app.ini's repository root
 #   FM_RESOURCE_<KEY>             override one config key (see below)
 #   QUOTA_AXI_SNAPSHOT            passed through to quota-axi (its own seam)
 #   FM_RESOURCE_SKIP_REMOTE=1     skip PC02 collection entirely
@@ -174,6 +234,82 @@ cfg() {  # <key> -> env override FM_RESOURCE_<KEY>, else config/resource-snapsho
   printf '%s' "$v"
 }
 
+# The discovery helpers below only fill keys an explicit config left absent.
+# They never override a configured identity and never guess a repository from
+# more than one candidate.
+
+# github_origin_slug: owner/repo from the code root's github.com origin.
+github_origin_slug() {
+  local remote slug
+  remote=$(git -C "$FM_ROOT" remote get-url origin 2>/dev/null) || return 0
+  case "$remote" in
+    https://github.com/*)    slug=${remote#https://github.com/} ;;
+    http://github.com/*)     slug=${remote#http://github.com/} ;;
+    git@github.com:*)        slug=${remote#git@github.com:} ;;
+    ssh://git@github.com/*)  slug=${remote#ssh://git@github.com/} ;;
+    *) return 0 ;;
+  esac
+  slug=${slug%.git}
+  case "$slug" in */*) printf '%s' "$slug" ;; esac
+}
+
+# github_login: the authenticated gh login, empty when gh is absent or refused.
+github_login() {
+  command -v gh >/dev/null 2>&1 || return 0
+  fm_run_timed "$TESTING_TIMEOUT" gh api user --jq .login 2>/dev/null </dev/null
+}
+
+# gitlab_user: the authenticated glab username, empty when glab is absent.
+gitlab_user() {
+  command -v glab >/dev/null 2>&1 || return 0
+  fm_run_timed "$TESTING_TIMEOUT" glab api user 2>/dev/null </dev/null \
+    | jq -r '.username // empty' 2>/dev/null
+}
+
+forgejo_ini() {
+  printf '%s' "${FM_RESOURCE_FORGEJO_INI:-$HOME/forgejo/custom/conf/app.ini}"
+}
+
+# forgejo_ini_value <key>: one bare value from the app.ini, trimmed.
+forgejo_ini_value() {
+  local ini
+  ini=$(forgejo_ini)
+  [ -f "$ini" ] || return 0
+  awk -F'=' -v k="$1" '
+    { key = $1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", key) }
+    key == k { value = $2; sub(/^[^=]*=/, "", value); gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); print value; exit }
+  ' "$ini" 2>/dev/null
+}
+
+forgejo_repo_root() {
+  local root
+  root=$(forgejo_ini_value ROOT)
+  printf '%s' "${FM_RESOURCE_FORGEJO_REPO_ROOT:-${root:-$HOME/forgejo/data/forgejo-repositories}}"
+}
+
+# forgejo_discovered_url: the local instance's own ROOT_URL.
+forgejo_discovered_url() {
+  local url
+  url=$(forgejo_ini_value ROOT_URL)
+  [ -z "$url" ] || printf '%s' "${url%/}"
+}
+
+# forgejo_discovered_slug: owner/repo only when the repository root holds
+# exactly one repository, so a multi-repository instance is never guessed.
+forgejo_discovered_slug() {
+  local root hit='' d count=0 owner repo
+  root=$(forgejo_repo_root)
+  for d in "$root"/*/*.git; do
+    [ -d "$d" ] || continue
+    count=$((count + 1))
+    hit=$d
+  done
+  [ "$count" -eq 1 ] || return 0
+  owner=${hit%/*}; owner=${owner##*/}
+  repo=${hit##*/}; repo=${repo%.git}
+  [ -n "$owner" ] && [ -n "$repo" ] && printf '%s/%s' "$owner" "$repo"
+}
+
 # slot_busy <lockfile>: true when some process holds a lock on the file, read
 # from /proc/locks without ever taking the lock; falls back to fuser, then lsof.
 slot_busy() {
@@ -206,6 +342,8 @@ COLLIE_TIMEOUT=$(bound FM_RESOURCE_COLLIE_TIMEOUT 5)
 TESTING_TIMEOUT=$(bound FM_RESOURCE_TESTING_TIMEOUT 10)
 ANDROID_TIMEOUT=$(bound FM_RESOURCE_ANDROID_TIMEOUT 8)
 ANDROID_REMOTE_TIMEOUT=$(bound FM_RESOURCE_ANDROID_REMOTE_TIMEOUT 20)
+DRIVE_HEALTH_TIMEOUT=$(bound FM_RESOURCE_DRIVE_HEALTH_TIMEOUT 45)
+DRIVE_HEALTH_MAX_AGE=$(bound FM_RESOURCE_DRIVE_HEALTH_MAX_AGE 86400)
 CAP_WORKERS=$(bound FM_RESOURCE_CAP_WORKERS 40)
 CAP_PANES=$(bound FM_RESOURCE_CAP_PANES 60)
 CAP_STRAYS=$(bound FM_RESOURCE_CAP_STRAYS 40)
@@ -239,6 +377,7 @@ trap 'exit 143' TERM
 : > "$TMP/strays.tsv"
 : > "$TMP/hosts.tsv"
 : > "$TMP/drives.tsv"
+: > "$TMP/drive_health.tsv"
 : > "$TMP/quota.tsv"
 : > "$TMP/secondmates.tsv"
 : > "$TMP/roles.tsv"
@@ -266,6 +405,19 @@ mark_budget() {  # <source>
 
 note_unavailable() {  # <source> <reason>
   printf '%s\t%s\t%s\n' "$1" "$(clean_field "$2")" "$read_iso" >> "$TMP/unavailable.tsv"
+}
+
+pc02_unavailable_reason() {  # <host> <fallback>: asleep is a designed posture, not death
+  local host=$1 fallback=$2 state
+  state=
+  if [ -x "$SCRIPT_DIR/fm-pc02-wake.sh" ]; then
+    state=$("$SCRIPT_DIR/fm-pc02-wake.sh" status --host "$host" --if-managed --quiet 2>/dev/null || true)
+  fi
+  if [ "$state" = asleep ]; then
+    printf 'PC02 asleep (wakeable)'
+  else
+    printf '%s' "$fallback"
+  fi
 }
 
 iso_utc() {  # <epoch>
@@ -431,6 +583,313 @@ collect_local_drives() {
   drive_one PC01 'G:' /mnt/g
 }
 
+# --- drive health -----------------------------------------------------------
+# PC01 reads the read-only FirstmateDriveHealth snapshot written by its
+# pre-approved elevated scheduled task; PC02 runs smartctl.exe over ssh. A read
+# that is stale, failed, unavailable, missing its tool, or not set up renders
+# one labelled row with its reason and read time, never a zero count and never
+# a healthy verdict.
+
+drive_health_row() {  # <machine> <disk> <model> <smart> <realloc> <pending> <uncorr> <temp> <poh> <nvme> <media> <read_utc> <reason>
+  local machine=$1 disk=$2 model=$3 smart=$4 realloc=$5 pending=$6 uncorr=$7
+  local temp=$8 poh=$9 nvme=${10} media=${11} read=${12} reason=${13}
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(clean_field "$machine")" "$(clean_field "$disk")" "$(clean_field "$model")" \
+    "$(clean_field "$smart")" "$(clean_field "$realloc")" "$(clean_field "$pending")" \
+    "$(clean_field "$uncorr")" "$(clean_field "$temp")" "$(clean_field "$poh")" \
+    "$(clean_field "$nvme")" "$(clean_field "$media")" "$(clean_field "$read")" \
+    "$(clean_field "$reason")" >> "$TMP/drive_health.tsv"
+}
+
+smartctl_fields() {  # smartctl -i -H -A output on stdin -> 9 TSV fields
+  awk '
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+    function num(s) { gsub(/,/, "", s); if (match(s, /[0-9]+/)) return substr(s, RSTART, RLENGTH); return "-" }
+    BEGIN {
+      model="-"; health="-"; realloc="-"; pending="-"; uncorr="-"; reported="-"
+      temp="-"; poh="-"; nvuse="-"; media="-"; strong=0
+    }
+    {
+      line=$0
+      if (line ~ /SMART overall-health self-assessment test result:/) {
+        h=line; sub(/^.*result:[ \t]*/, "", h); health=trim(h)
+      } else if (line ~ /^(Device Model|Model Number|Product|Model Family):/) {
+        k=line; sub(/:.*/, "", k)
+        v=line; sub(/^[^:]*:[ \t]*/, "", v); v=trim(v)
+        if (k == "Device Model" || k == "Model Number") { model=v; strong=1 }
+        else if (!strong && model == "-") model=v
+      } else if (line ~ /^[ \t]*[0-9]+[ \t]/) {
+        n=split(trim(line), a, /[ \t]+/)
+        name=a[2]; raw=a[10]
+        for (j=11; j<=n; j++) raw=raw " " a[j]
+        if (name == "Reallocated_Sector_Ct") realloc=num(raw)
+        else if (name == "Current_Pending_Sector") pending=num(raw)
+        else if (name == "Offline_Uncorrectable") uncorr=num(raw)
+        else if (name == "Reported_Uncorrect" && reported == "-") reported=num(raw)
+        else if (name == "Temperature_Celsius" && temp == "-") temp=num(raw)
+        else if (name == "Airflow_Temperature_Cel" && temp == "-") temp=num(raw)
+        else if (name == "Power_On_Hours" && poh == "-") poh=num(raw)
+      } else if (line ~ /^Power On Hours:/) { poh=num(line) }
+      else if (line ~ /^Percentage Used:/) { nvuse=num(line) }
+      else if (line ~ /^Media and Data Integrity Errors:/) { media=num(line) }
+      else if (line ~ /^Temperature:/) { temp=num(line) }
+    }
+    END {
+      if (uncorr == "-" && reported != "-") uncorr=reported
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", model, health, realloc, pending, uncorr, temp, poh, nvuse, media
+    }
+  '
+}
+
+drive_health_snapshot_device() {  # <snapshot-file> <index> <read_utc>
+  local file=$1 i=$2 read=$3
+  local device friendly exit_code health out parsed model phealth realloc pending uncorr temp poh nvuse media
+  local rel_temp rel_poh rel_wear smart reason
+  IFS=$'\t' read -r device friendly exit_code health <<< "$(jq -r --argjson i "$i" \
+    '[ (.smart.devices[$i].device // "-"), (.smart.devices[$i].friendly_name // "-"),
+       ((.smart.devices[$i].exit_code // "-") | tostring), (.smart.devices[$i].health // "-") ] | @tsv' \
+    "$file" 2>/dev/null)"
+  out=$(jq -r --argjson i "$i" '.smart.devices[$i].output // ""' "$file" 2>/dev/null)
+  parsed=$(printf '%s\n' "$out" | smartctl_fields)
+  IFS=$'\t' read -r model phealth realloc pending uncorr temp poh nvuse media <<< "$parsed"
+  IFS=$'\t' read -r rel_temp rel_poh rel_wear <<< "$(jq -r --arg d "$friendly" \
+    '[.reliability[]? | select(.disk == $d)][0] // {} | [ (.temperature_c // "-"), (.power_on_hours // "-"), (.wear // "-") ] | @tsv' \
+    "$file" 2>/dev/null)"
+  case "$temp" in ''|-) temp=$rel_temp ;; esac
+  case "$poh" in ''|-) poh=$rel_poh ;; esac
+  case "$nvuse" in ''|-) nvuse=$rel_wear ;; esac
+  [ -n "$model" ] || model=$friendly
+  [ -n "$model" ] || model=-
+  smart=$health
+  if [ -z "$smart" ] || [ "$smart" = - ]; then smart=$phealth; fi
+  reason='-'
+  if [ -z "$smart" ] || [ "$smart" = - ]; then
+    smart=failed
+    reason="smartctl produced no health verdict (exit $exit_code)"
+  fi
+  drive_health_row PC01 "$device" "$model" "$smart" "$realloc" "$pending" "$uncorr" \
+    "$temp" "$poh" "$nvuse" "$media" "$read" "$reason"
+}
+
+drive_health_snapshot_disks() {  # <snapshot-file> <read_utc>
+  local file=$1 read=$2
+  local n i row num name hstatus temp poh wear device err
+  n=$(jq -r '(.disks? // []) | if type == "array" then length else 0 end' "$file" 2>/dev/null)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  if [ "$n" -eq 0 ]; then
+    err=$(jq -r '.smart.error // .error // empty' "$file" 2>/dev/null)
+    drive_health_row PC01 - - unavailable - - - - - - - "$read" "snapshot has no disk data${err:+: $err}"
+    return 0
+  fi
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    row=$(jq -r --argjson i "$i" '
+      .disks[$i] as $d
+      | ([.reliability[]? | select(.disk == $d.FriendlyName)][0] // {}) as $r
+      | [ ($d.Number // "-"), ($d.FriendlyName // "-"), ($d.HealthStatus // "unknown"),
+          ($r.temperature_c // "-"), ($r.power_on_hours // "-"), ($r.wear // "-") ] | @tsv
+    ' "$file" 2>/dev/null)
+    IFS=$'\t' read -r num name hstatus temp poh wear <<< "$row"
+    case "$num" in ''|*[!0-9]*) device='-' ;; *) device="/dev/pd$num" ;; esac
+    [ -n "$name" ] || name=-
+    [ -n "$hstatus" ] || hstatus=unknown
+    [ -n "$temp" ] || temp=-
+    [ -n "$poh" ] || poh=-
+    [ -n "$wear" ] || wear=-
+    drive_health_row PC01 "$device" "$name" "$hstatus" - - - "$temp" "$poh" "$wear" - \
+      "$read" 'Windows HealthStatus (SMART unavailable)'
+    i=$((i + 1))
+  done
+}
+
+collect_pc01_drive_health() {
+  local file=${FM_RESOURCE_PC01_DRIVE_HEALTH_FILE:-/mnt/c/ProgramData/FirstmateOps/logs/drive-health.latest.json}
+  local finished epoch age status error finished_iso n i
+  if [ -n "${FM_RESOURCE_HOSTS_JSON:-}" ] && [ -f "$FM_RESOURCE_HOSTS_JSON" ] \
+    && [ -z "${FM_RESOURCE_PC01_DRIVE_HEALTH_FILE:-}" ]; then
+    return 0
+  fi
+  if [ ! -e "$file" ]; then
+    drive_health_row PC01 - - not-set-up - - - - - - - "$read_iso" \
+      "FirstmateDriveHealth snapshot not found at $file; the scheduled task is not set up yet"
+    return 0
+  fi
+  if [ ! -r "$file" ]; then
+    drive_health_row PC01 - - unavailable - - - - - - - "$read_iso" \
+      "FirstmateDriveHealth snapshot is not readable at $file"
+    return 0
+  fi
+  if ! jq -e . "$file" >/dev/null 2>&1; then
+    drive_health_row PC01 - - failed - - - - - - - "$read_iso" \
+      "FirstmateDriveHealth snapshot is not valid JSON at $file"
+    return 0
+  fi
+  finished=$(jq -r '.finished_at // empty' "$file" 2>/dev/null)
+  status=$(jq -r '.status // "unknown"' "$file" 2>/dev/null)
+  error=$(jq -r '.error // empty' "$file" 2>/dev/null)
+  epoch=''
+  [ -z "$finished" ] || epoch=$(date -u -d "$finished" +%s 2>/dev/null) || epoch=''
+  case "$epoch" in ''|*[!0-9]*) epoch='' ;; esac
+  if [ -n "$epoch" ]; then
+    finished_iso=$(iso_utc "$epoch")
+    age=$((NOW - epoch))
+    if [ "$age" -lt 0 ]; then age=0; fi
+  else
+    finished_iso=$read_iso
+    age=''
+  fi
+  if [ "$status" != ok ]; then
+    drive_health_row PC01 - - failed - - - - - - - "$finished_iso" \
+      "FirstmateDriveHealth job status is $status${error:+: $error}"
+    return 0
+  fi
+  if [ -z "$age" ]; then
+    drive_health_row PC01 - - failed - - - - - - - "$read_iso" \
+      'FirstmateDriveHealth snapshot has no usable finished_at timestamp'
+    return 0
+  fi
+  if [ "$age" -gt "$DRIVE_HEALTH_MAX_AGE" ]; then
+    drive_health_row PC01 - - stale - - - - - - - "$finished_iso" \
+      "snapshot is $(human_age "$age") old; max $(human_age "$DRIVE_HEALTH_MAX_AGE")"
+    return 0
+  fi
+  n=$(jq -r '(.smart.devices? // []) | if type == "array" then length else 0 end' "$file" 2>/dev/null)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  if [ "$n" -gt 0 ]; then
+    i=0
+    while [ "$i" -lt "$n" ]; do
+      drive_health_snapshot_device "$file" "$i" "$finished_iso"
+      i=$((i + 1))
+    done
+  else
+    drive_health_snapshot_disks "$file" "$finished_iso"
+  fi
+}
+
+remote_drive_health_script() {
+  declare -f smartctl_fields
+  cat <<'REMOTE'
+# fm-drive-health
+smartctl=${1:-${FM_RESOURCE_PC02_SMARTCTL:-}}
+if [ -z "$smartctl" ]; then
+  smartctl='/mnt/c/Program Files/smartmontools/bin/smartctl.exe'
+  if [ ! -x "$smartctl" ]; then
+    alt=$(command -v smartctl.exe 2>/dev/null || command -v smartctl 2>/dev/null)
+    [ -n "$alt" ] && smartctl=$alt
+  fi
+fi
+if [ ! -x "$smartctl" ]; then
+  printf 'X\tmissing-tool\t%s\n' 'smartctl.exe not found; smartmontools is not installed'
+  exit 0
+fi
+scan=$("$smartctl" --scan 2>&1 </dev/null); rc=$?
+scan=$(printf '%s\n' "$scan" | tr -d '\r')
+set -f
+if [ "$rc" -ne 0 ]; then
+  printf 'X\tfailed\t%s\n' "smartctl --scan failed (status $rc)"
+  exit 0
+fi
+if [ -z "$scan" ]; then
+  printf 'X\tfailed\t%s\n' 'smartctl --scan found no devices'
+  exit 0
+fi
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  set -- $line
+  dev=$1
+  case "$dev" in /dev/*) ;; *) continue ;; esac
+  shift
+  dtype=''
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = '-d' ] && [ "$#" -ge 2 ]; then dtype=$2; shift; fi
+    shift
+  done
+  if [ -n "$dtype" ]; then
+    out=$("$smartctl" -i -H -A -d "$dtype" "$dev" 2>&1 </dev/null); rc=$?
+  else
+    out=$("$smartctl" -i -H -A "$dev" 2>&1 </dev/null); rc=$?
+  fi
+  parsed=$(printf '%s\n' "$out" | tr -d '\r' | smartctl_fields)
+  IFS=$'\t' read -r model health realloc pending uncorr temp poh nvuse media <<EOF
+$parsed
+EOF
+  if [ -z "$health" ] || [ "$health" = '-' ]; then
+    verdict=failed
+    reason="smartctl produced no health verdict (exit $rc)"
+  else
+    verdict=$health
+    reason=-
+  fi
+  [ -n "$model" ] || model=-
+  printf 'D\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$dev" "$(printf '%s' "$model" | tr '\t' ' ')" "$verdict" "$realloc" "$pending" \
+    "$uncorr" "$temp" "$poh" "$nvuse" "$media" "$(printf '%s' "$reason" | tr '\t' ' ')"
+done <<EOF
+$scan
+EOF
+REMOTE
+}
+
+collect_pc02_drive_health() {
+  local host raw rc smartctl_path tag a b c d e f g h i j k reason
+  if [ -n "${FM_RESOURCE_REMOTE_FIXTURE:-}" ] && [ -f "$FM_RESOURCE_REMOTE_FIXTURE" ]; then
+    jq -r '.drive_health[]? | [ "PC02", (.disk // "-"), (.model // "-"), (.smart // "unknown"),
+      (.reallocated // "-"), (.pending // "-"), (.uncorrectable // "-"), (.temp_c // "-"),
+      (.power_on_hours // "-"), (.nvme_used_pct // "-"), (.media_errors // "-"),
+      (.read_utc // "-"), (.reason // "-") ] | @tsv' \
+      "$FM_RESOURCE_REMOTE_FIXTURE" >> "$TMP/drive_health.tsv"
+    return 0
+  fi
+  remote_records > "$TMP/dh_remote_records.tsv" 2>/dev/null || : > "$TMP/dh_remote_records.tsv"
+  [ -s "$TMP/dh_remote_records.tsv" ] || return 0
+  [ "${FM_RESOURCE_SKIP_REMOTE:-0}" = 1 ] && return 0
+  host=$(awk -F'\t' 'NR == 1 { print $2 }' "$TMP/dh_remote_records.tsv")
+  case "$host" in
+    ''|-*|*[!A-Za-z0-9._-]*)
+      drive_health_row PC02 - - unavailable - - - - - - - "$read_iso" 'secondmate host is unsafe or empty'
+      return 0 ;;
+  esac
+  smartctl_path=${FM_RESOURCE_PC02_SMARTCTL:-$(cfg pc02_smartctl)}
+  raw=$(run_remote "$host" "$DRIVE_HEALTH_TIMEOUT" "$(remote_drive_health_script)" "$smartctl_path" 2>/dev/null)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if fm_timed_out "$rc"; then
+      mark_budget "drive-health:$host"
+      reason="remote drive health read timed out after ${DRIVE_HEALTH_TIMEOUT}s"
+    else
+      reason="remote drive health read failed (status $rc)"
+    fi
+    drive_health_row PC02 - - unreachable - - - - - - - "$read_iso" "$reason"
+    return 0
+  fi
+  if [ -z "$raw" ]; then
+    drive_health_row PC02 - - unavailable - - - - - - - "$read_iso" 'remote drive health read returned nothing'
+    return 0
+  fi
+  while IFS=$'\t' read -r tag a b c d e f g h i j k; do
+    case "$tag" in
+      D) drive_health_row PC02 "$a" "$b" "$c" "$d" "$e" "$f" "$g" "$h" "$i" "$j" "$read_iso" "${k:--}" ;;
+      X) drive_health_row PC02 - - "$a" - - - - - - - "$read_iso" "$b" ;;
+    esac
+  done <<< "$raw"
+}
+
+collect_drive_health() {
+  local fixture=${FM_RESOURCE_DRIVE_HEALTH_FIXTURE:-}
+  if [ -n "$fixture" ] && [ -f "$fixture" ]; then
+    jq -r '.drive_health[]? | [ (.machine // "-"), (.disk // "-"), (.model // "-"), (.smart // "unknown"),
+      (.reallocated // "-"), (.pending // "-"), (.uncorrectable // "-"), (.temp_c // "-"),
+      (.power_on_hours // "-"), (.nvme_used_pct // "-"), (.media_errors // "-"),
+      (.read_utc // "-"), (.reason // "-") ] | @tsv' \
+      "$fixture" >> "$TMP/drive_health.tsv"
+    jq -r '.unavailable[]? | [.source, .reason, (.read_utc // "-")] | @tsv' \
+      "$fixture" >> "$TMP/unavailable.tsv"
+    return 0
+  fi
+  collect_pc01_drive_health
+  collect_pc02_drive_health
+}
+
 # --- local workers ----------------------------------------------------------
 worker_row_local() {  # <meta> <home_lane>
   local meta=$1 lane=$2 id kind harness model account wt spawn pr pane stage ctx spend last
@@ -572,11 +1031,11 @@ REMOTE
 
 remote_android_script() {
   printf '%s\n' 'set -u'
-  declare -f android_find_tool android_passthru android_boot_completed android_probe_host
+  declare -f android_find_tool android_passthru android_boot_completed android_probe_host \
+    android_default_roots android_default_avd_homes android_win_to_wsl android_wsl_to_win \
+    android_is_windows_tool android_env_json
   cat <<'REMOTE'
-adb=$(android_find_tool adb) || adb=''
-emu=$(android_find_tool emulator) || emu=''
-android_probe_host "$adb" "$emu" android_passthru 0
+android_probe_host android_passthru 0 0 '' 0 '' 1
 REMOTE
 }
 
@@ -657,7 +1116,7 @@ collect_remote() {
         ' > "$TMP/workers_remote.tsv"
       else
         fm_timed_out "$rc" && mark_budget "workers:$host"
-        note_unavailable "workers:$host" "remote worker read failed (status $rc)"
+        note_unavailable "workers:$host" "$(pc02_unavailable_reason "$host" "remote worker read failed (status $rc)")"
       fi
     fi
   fi
@@ -693,7 +1152,7 @@ collect_remote() {
     cat "$TMP/remote_drives.tsv" >> "$TMP/drives.tsv"
   else
     fm_timed_out "$rc" && mark_budget "pc02:$host"
-    note_unavailable "pc02:$host" "remote host read failed (status $rc)"
+    note_unavailable "pc02:$host" "$(pc02_unavailable_reason "$host" "remote host read failed (status $rc)")"
   fi
 
   [ -n "${FM_RESOURCE_ANDROID_FIXTURE:-}" ] && return 0
@@ -1011,9 +1470,24 @@ build_roles() {
 }
 
 # --- Android emulators ------------------------------------------------------
-# These four helpers are also shipped verbatim to PC02 through `declare -f`
-# and executed under `bash -s`, so they must not call this script's local
-# helpers (fm_run_timed, clean_field, note_unavailable, ...).
+# These helpers are also shipped verbatim to the secondmate host through
+# `declare -f` and executed under `bash -s`, so they must not call this
+# script's local helpers (fm_run_timed, clean_field, note_unavailable, ...).
+#
+# A host can hold several Android environments. The probe discovers them from
+# the recorded Android roots' environment.json (its ANDROID_AVD_HOME,
+# ANDROID_SDK_ROOT, and declared ANDROID_ADB_SERVER_PORT), a root's
+# conventional Sdk/ + avd/ layout, the WSL user home ~/.android/avd, and a
+# Windows user profile %USERPROFILE%\.android\avd. It lists AVDs from every one
+# and reads adb on every declared port plus the default 5037. Windows tools do
+# not inherit WSL environment variables unless they are named in WSLENV, so a
+# Windows adb/emulator is invoked with WSLENV set; without that an E:\Android
+# AVD home and adb port 5041 are invisible. A recorded root (or one named in
+# FM_RESOURCE_ANDROID_ROOTS/_HOME_DIRS) that is missing or cannot be read is
+# reported with its reason, never as "none"; speculative defaults that do not
+# exist are skipped silently. Probes are
+# read-only: no emulator is ever started or wiped.
+
 android_find_tool() {  # <adb|emulator> -> path, else status 1
   local name=$1 c root f
   for c in "$name" "$name.exe"; do
@@ -1030,11 +1504,13 @@ android_find_tool() {  # <adb|emulator> -> path, else status 1
   for root in "${roots[@]}"; do
     case "$name" in
       adb)
-        for f in "$root/platform-tools/adb" "$root/platform-tools/adb.exe"; do
+        for f in "$root/platform-tools/adb" "$root/platform-tools/adb.exe" \
+          "$root/Sdk/platform-tools/adb" "$root/Sdk/platform-tools/adb.exe"; do
           [ -x "$f" ] && { printf '%s\n' "$f"; return 0; }
         done ;;
       emulator)
-        for f in "$root/emulator/emulator" "$root/emulator/emulator.exe"; do
+        for f in "$root/emulator/emulator" "$root/emulator/emulator.exe" \
+          "$root/Sdk/emulator/emulator" "$root/Sdk/emulator/emulator.exe"; do
           [ -x "$f" ] && { printf '%s\n' "$f"; return 0; }
         done ;;
     esac
@@ -1042,15 +1518,82 @@ android_find_tool() {  # <adb|emulator> -> path, else status 1
   return 1
 }
 
-# shellcheck disable=SC2329 # shipped to PC02 through declare -f and invoked there
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
 android_passthru() {  # remote probe runner: the ssh call is already bounded
   shift
   "$@"
 }
 
-android_boot_completed() {  # <adb> <serial> <runner> <timeout>
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_default_roots() {  # the recorded host/root list, one per line
+  if [ "${FM_RESOURCE_ANDROID_ROOTS+x}" = x ]; then
+    printf '%s\n' "$FM_RESOURCE_ANDROID_ROOTS" | tr ':' '\n'
+    return
+  fi
+  local r
+  for r in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" \
+    /mnt/c/Android /mnt/d/Android /mnt/e/Android \
+    "$HOME/Android/Sdk" "$HOME/android-sdk" /usr/lib/android-sdk; do
+    [ -n "$r" ] && printf '%s\n' "$r"
+  done
+  for r in /mnt/*/Android; do
+    [ -d "$r" ] && printf '%s\n' "$r"
+  done
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_default_avd_homes() {  # user AVD homes, one per line
+  if [ "${FM_RESOURCE_ANDROID_HOME_DIRS+x}" = x ]; then
+    printf '%s\n' "$FM_RESOURCE_ANDROID_HOME_DIRS" | tr ':' '\n'
+    return
+  fi
+  printf '%s\n' "$HOME/.android/avd"
+  local d
+  for d in /mnt/*/Users/*/.android/avd; do
+    [ -d "$d" ] && printf '%s\n' "$d"
+  done
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_win_to_wsl() {  # <path>; a Windows drive path becomes /mnt/<d>/...
+  local p=$1 d rest
+  case "$p" in
+    [A-Za-z]:[\\/]*)
+      d=$(printf '%s' "${p%%:*}" | tr '[:upper:]' '[:lower:]')
+      rest=${p#*:}
+      rest=${rest//\\//}
+      printf '/mnt/%s%s' "$d" "$rest" ;;
+    *) printf '%s' "$p" ;;
+  esac
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_wsl_to_win() {  # <path>; a Windows drive path is returned unchanged
+  local p=$1
+  case "$p" in
+    [A-Za-z]:[\\/]*) printf '%s' "$p" ;;
+    *)
+      if command -v wslpath >/dev/null 2>&1; then wslpath -w "$p" 2>/dev/null || printf '%s' "$p"
+      else printf '%s' "$p"; fi ;;
+  esac
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_is_windows_tool() { case "$1" in *.exe|*.EXE) return 0 ;; *) return 1 ;; esac; }
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_env_json() {  # <file> <key> -> flat JSON string value, empty when absent
+  local v
+  v=$(sed -n 's/^[[:space:]]*"'"$2"'"[[:space:]]*:[[:space:]]*"\(.*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' "$1" 2>/dev/null | head -1)
+  printf '%s' "${v//\\\\/\\}"
+}
+
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_boot_completed() {  # <adb> <serial> <runner> <timeout> <port>
   local out rc line
-  out=$("$3" "$4" "$1" -s "$2" shell getprop sys.boot_completed 2>/dev/null </dev/null)
+  local -a args=()
+  [ "$5" = 5037 ] || args=(-P "$5")
+  out=$("$3" "$4" "$1" ${args[@]+"${args[@]}"} -s "$2" shell getprop sys.boot_completed 2>/dev/null </dev/null)
   rc=$?
   case "$rc" in
     124) printf 'stale'; return ;;
@@ -1067,50 +1610,148 @@ android_boot_completed() {  # <adb> <serial> <runner> <timeout>
   esac
 }
 
-android_probe_host() {  # <adb> <emulator> <runner> <timeout>
-  local adb=$1 emu=$2 runner=$3 timeout=$4
-  local out rc line serial state avd boot detail
-  local -a avds=() serials=() states=() serial_avds=() matched=()
-  local adb_clean=1 emu_clean=1 unresolved_running=0 unresolved_other=0 found i j
-  if [ -z "$adb" ]; then printf 'N\t%s\n' 'adb not found'; adb_clean=0; fi
-  if [ -z "$emu" ]; then printf 'N\t%s\n' 'emulator not found'; emu_clean=0; fi
-  if [ -n "$emu" ]; then
-    out=$("$runner" "$timeout" "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
-    out=${out//$'\r'/}
-    case "$rc" in
-      124) printf 'N\t%s\n' 'emulator -list-avds timed out'; emu_clean=0 ;;
-      0)
-        while IFS= read -r line; do
-          line=${line//$'\r'/}
-          [ -n "$line" ] || continue
-          case "$line" in \#*|'*'*) continue ;; esac
-          avds+=("$line")
-        done <<< "$out" ;;
-      *) printf 'N\t%s\n' "emulator -list-avds failed (status $rc)"; emu_clean=0 ;;
-    esac
+# shellcheck disable=SC2329 # shipped to the secondmate host through declare -f
+android_probe_host() {  # <runner> <timeout> <adb-explicit> <adb> <emu-explicit> <emu> <defaults>
+  local runner=$1 timeout=$2 adb_explicit=$3 adb=$4 emu_explicit=$5 emu=$6 defaults=$7
+  local root avd json sdk ports out rc line p a e serial state boot detail found reason seen
+  local -a roots=() homes=()
+  local -a s_avd_u=() s_avd_w=() s_sdk_u=() s_sdk_w=() s_ports=() unread=() seen_reason=()
+  local -a avds=() serials=() states=() sport=() serial_avds=() matched=() ports_list=()
+  local -a uniq=() seen_avd=()
+  local i j adb_clean=1 emu_clean=1 unresolved_running=0 unresolved_other=0
+  local roots_recorded=0 homes_recorded=0
+
+  if [ "${FM_RESOURCE_ANDROID_ROOTS+x}" = x ]; then
+    roots_recorded=1
+    while IFS= read -r root; do [ -n "$root" ] && roots+=("$root"); done \
+      < <(printf '%s\n' "$FM_RESOURCE_ANDROID_ROOTS" | tr ':' '\n')
+  elif [ "$defaults" = 1 ]; then
+    while IFS= read -r root; do [ -n "$root" ] && roots+=("$root"); done < <(android_default_roots)
   fi
-  if [ -n "$adb" ]; then
-    out=$("$runner" "$timeout" "$adb" devices 2>/dev/null </dev/null); rc=$?
-    out=${out//$'\r'/}
-    case "$rc" in
-      124) printf 'N\t%s\n' 'adb devices timed out'; adb_clean=0 ;;
-      0)
-        while IFS=$'\t ' read -r serial state _; do
-          [ -n "$serial" ] || continue
-          case "$serial" in List|'*'*) continue ;; esac
-          [ -n "$state" ] || continue
-          serials+=("$serial"); states+=("$state")
-        done <<< "$out" ;;
-      *) printf 'N\t%s\n' "adb devices failed (status $rc)"; adb_clean=0 ;;
-    esac
+  if [ "${FM_RESOURCE_ANDROID_HOME_DIRS+x}" = x ]; then
+    homes_recorded=1
+    while IFS= read -r avd; do [ -n "$avd" ] && homes+=("$avd"); done \
+      < <(printf '%s\n' "$FM_RESOURCE_ANDROID_HOME_DIRS" | tr ':' '\n')
+  elif [ "$defaults" = 1 ]; then
+    while IFS= read -r avd; do [ -n "$avd" ] && homes+=("$avd"); done < <(android_default_avd_homes)
   fi
+
+  for root in "${roots[@]}"; do
+    if [ ! -e "$root" ]; then
+      [ "$roots_recorded" = 1 ] && unread+=("Android root $root is missing")
+      continue
+    fi
+    if [ ! -d "$root" ] || [ ! -r "$root" ] || [ ! -x "$root" ]; then
+      unread+=("Android root $root is unreadable"); continue
+    fi
+    json=$root/environment.json
+    if [ -e "$json" ]; then
+      if [ ! -f "$json" ] || [ ! -r "$json" ]; then
+        unread+=("$root/environment.json is unreadable"); continue
+      fi
+      sdk=$(android_env_json "$json" ANDROID_SDK_ROOT)
+      [ -n "$sdk" ] || sdk=$(android_env_json "$json" ANDROID_HOME)
+      avd=$(android_env_json "$json" ANDROID_AVD_HOME)
+      ports=$(android_env_json "$json" ANDROID_ADB_SERVER_PORT)
+      [ -n "$sdk" ] || sdk=$root/Sdk
+      [ -n "$avd" ] || avd=$root/avd
+      [ -n "$ports" ] || ports=5037
+      s_sdk_w+=("$sdk"); s_sdk_u+=("$(android_win_to_wsl "$sdk")")
+      s_avd_w+=("$avd"); s_avd_u+=("$(android_win_to_wsl "$avd")")
+      s_ports+=("$ports")
+      continue
+    fi
+    if [ -d "$root/Sdk" ]; then sdk=$root/Sdk; else sdk=$root; fi
+    if [ -d "$sdk/platform-tools" ] || [ -d "$sdk/emulator" ]; then
+      s_sdk_u+=("$sdk"); s_sdk_w+=("$(android_wsl_to_win "$sdk")")
+      if [ -d "$root/avd" ]; then
+        s_avd_u+=("$root/avd"); s_avd_w+=("$(android_wsl_to_win "$root/avd")")
+      else
+        s_avd_u+=(""); s_avd_w+=("")
+      fi
+      s_ports+=("5037")
+    fi
+  done
+
+  for avd in "${homes[@]}"; do
+    if [ ! -e "$avd" ]; then
+      [ "$homes_recorded" = 1 ] && unread+=("AVD home $avd is missing")
+      continue
+    fi
+    if [ ! -d "$avd" ] || [ ! -r "$avd" ] || [ ! -x "$avd" ]; then
+      unread+=("AVD home $avd is unreadable"); continue
+    fi
+    s_avd_u+=("$avd"); s_avd_w+=("$(android_wsl_to_win "$avd")")
+    s_sdk_u+=(""); s_sdk_w+=("")
+    s_ports+=("5037")
+  done
+
+  if [ "$adb_explicit" = 1 ]; then
+    :
+  else
+    for i in "${!s_sdk_u[@]}"; do
+      [ -z "$adb" ] && [ -n "${s_sdk_u[$i]}" ] || continue
+      a=${s_sdk_u[$i]}/platform-tools/adb
+      if [ -x "$a.exe" ]; then adb=$a.exe; elif [ -x "$a" ]; then adb=$a; fi
+    done
+    [ -n "$adb" ] || adb=$(android_find_tool adb 2>/dev/null) || adb=''
+  fi
+  if [ "$emu_explicit" = 1 ]; then
+    :
+  else
+    for i in "${!s_sdk_u[@]}"; do
+      [ -z "$emu" ] && [ -n "${s_sdk_u[$i]}" ] || continue
+      e=${s_sdk_u[$i]}/emulator/emulator
+      if [ -x "$e.exe" ]; then emu=$e.exe; elif [ -x "$e" ]; then emu=$e; fi
+    done
+    [ -n "$emu" ] || emu=$(android_find_tool emulator 2>/dev/null) || emu=''
+  fi
+
+  ports_list=(5037)
+  for i in "${!s_ports[@]}"; do
+    for p in ${s_ports[$i]}; do
+      case " ${ports_list[*]} " in
+        *" $p "*) ;;
+        *) ports_list+=("$p") ;;
+      esac
+    done
+  done
+
+  if [ -z "$adb" ]; then
+    unread+=('adb not found'); adb_clean=0
+  else
+    for p in "${ports_list[@]}"; do
+      if [ "$p" = 5037 ]; then
+        out=$("$runner" "$timeout" "$adb" devices 2>/dev/null </dev/null); rc=$?
+      else
+        out=$("$runner" "$timeout" "$adb" -P "$p" devices 2>/dev/null </dev/null); rc=$?
+      fi
+      out=${out//$'\r'/}
+      case "$rc" in
+        124) unread+=('adb devices timed out'); adb_clean=0 ;;
+        0)
+          while IFS=$'\t ' read -r serial state _; do
+            [ -n "$serial" ] || continue
+            case "$serial" in List|'*'*) continue ;; esac
+            [ -n "$state" ] || continue
+            case " ${serials[*]:-} " in *" $serial "*) continue ;; esac
+            serials+=("$serial"); states+=("$state"); sport+=("$p")
+          done <<< "$out" ;;
+        *) unread+=("adb devices failed (status $rc)"); adb_clean=0 ;;
+      esac
+    done
+  fi
+
   for j in "${!serials[@]}"; do
     serial_avds[j]=-
-    # Only an emulator host serial can resolve to an AVD; a physical or other
-    # adb device renders as its own row and never makes a listed AVD unknown.
     case "${serials[$j]}" in emulator-*) ;; *) continue ;; esac
     case "${states[$j]}" in device) ;; *) continue ;; esac
-    out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" emu avd name 2>/dev/null </dev/null); rc=$?
+    p=${sport[$j]}
+    if [ "$p" = 5037 ]; then
+      out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" emu avd name 2>/dev/null </dev/null); rc=$?
+    else
+      out=$("$runner" "$timeout" "$adb" -P "$p" -s "${serials[$j]}" emu avd name 2>/dev/null </dev/null); rc=$?
+    fi
     if [ "$rc" -eq 0 ]; then
       while IFS= read -r line; do
         line=${line//$'\r'/}
@@ -1123,7 +1764,11 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
     # Some adb builds answer `emu avd name` with no name; the guest property
     # names the same AVD and keeps the running row attached to its AVD.
     if [ "${serial_avds[$j]}" = - ]; then
-      out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" shell getprop ro.boot.qemu.avd_name 2>/dev/null </dev/null); rc=$?
+      if [ "$p" = 5037 ]; then
+        out=$("$runner" "$timeout" "$adb" -s "${serials[$j]}" shell getprop ro.boot.qemu.avd_name 2>/dev/null </dev/null); rc=$?
+      else
+        out=$("$runner" "$timeout" "$adb" -P "$p" -s "${serials[$j]}" shell getprop ro.boot.qemu.avd_name 2>/dev/null </dev/null); rc=$?
+      fi
       [ "$rc" -eq 0 ] || continue
       out=${out//$'\r'/}
       out=${out%%$'\n'*}
@@ -1141,13 +1786,92 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
         esac ;;
     esac
   done
-  for i in "${!avds[@]}"; do
-    avd=${avds[$i]}
+
+  # The default listing preserves the old behavior for a host whose tools see
+  # their AVD home without an environment override.
+  if [ -z "$emu" ]; then
+    unread+=('emulator not found'); emu_clean=0
+  else
+    out=$("$runner" "$timeout" "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
+    out=${out//$'\r'/}
+    case "$rc" in
+      124) unread+=('emulator -list-avds timed out'); emu_clean=0 ;;
+      0)
+        while IFS= read -r line; do
+          line=${line//$'\r'/}
+          [ -n "$line" ] || continue
+          case "$line" in \#*|'*'*) continue ;; esac
+          avds+=("$line")
+        done <<< "$out" ;;
+      *) unread+=("emulator -list-avds failed (status $rc)"); emu_clean=0 ;;
+    esac
+  fi
+
+  # Each discovered AVD home is listed with its own environment, which is what
+  # reaches an E:\Android home when the default listing does not. The home's
+  # .ini files are also read directly so a WSL-only AVD is seen even without an
+  # emulator binary for it.
+  for i in "${!s_avd_u[@]}"; do
+    avd=${s_avd_u[$i]}
+    [ -n "$avd" ] || continue
+    case " ${seen_avd[*]:-} " in *" $avd "*) continue ;; esac
+    seen_avd+=("$avd")
+    if [ -e "$avd" ] && { [ ! -d "$avd" ] || [ ! -r "$avd" ] || [ ! -x "$avd" ]; }; then
+      unread+=("AVD home $avd is unreadable")
+    fi
+    if [ -n "$emu" ]; then
+      if android_is_windows_tool "$emu"; then
+        out=$("$runner" "$timeout" env "ANDROID_AVD_HOME=${s_avd_w[$i]}" \
+          "ANDROID_SDK_ROOT=${s_sdk_w[$i]}" "ANDROID_HOME=${s_sdk_w[$i]}" \
+          WSLENV=ANDROID_AVD_HOME:ANDROID_SDK_ROOT:ANDROID_HOME \
+          "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
+      else
+        out=$("$runner" "$timeout" env "ANDROID_AVD_HOME=$avd" \
+          "ANDROID_SDK_ROOT=${s_sdk_u[$i]}" "ANDROID_HOME=${s_sdk_u[$i]}" \
+          "$emu" -list-avds 2>/dev/null </dev/null); rc=$?
+      fi
+      out=${out//$'\r'/}
+      case "$rc" in
+        124) unread+=('emulator -list-avds timed out'); emu_clean=0 ;;
+        0)
+          while IFS= read -r line; do
+            line=${line//$'\r'/}
+            [ -n "$line" ] || continue
+            case "$line" in \#*|'*'*) continue ;; esac
+            avds+=("$line")
+          done <<< "$out" ;;
+        *) unread+=("emulator -list-avds failed (status $rc)"); emu_clean=0 ;;
+      esac
+    fi
+    if [ -d "$avd" ] && [ -r "$avd" ] && [ -x "$avd" ]; then
+      for a in "$avd"/*.ini; do
+        [ -e "$a" ] || continue
+        line=$(basename "$a" .ini)
+        [ -d "$avd/$line.avd" ] || continue
+        avds+=("$line")
+      done
+    fi
+  done
+
+  for a in "${avds[@]}"; do
+    case " ${uniq[*]:-} " in *" $a "*) ;; *) uniq+=("$a") ;; esac
+  done
+  avds=("${uniq[@]}")
+
+  for reason in "${unread[@]}"; do
+    seen=0
+    for i in "${!seen_reason[@]}"; do [ "${seen_reason[$i]}" = "$reason" ] && seen=1; done
+    [ "$seen" -eq 1 ] && continue
+    seen_reason+=("$reason")
+    printf 'N\t%s\n' "$reason"
+  done
+
+  for a in "${avds[@]}"; do
     serial=- state=stopped boot=- detail='AVD listed; no running emulator' found=0
     for j in "${!serials[@]}"; do
-      [ "${serial_avds[$j]}" = "$avd" ] || continue
+      [ "${serial_avds[$j]}" = "$a" ] || continue
       serial=${serials[$j]}; state=${states[$j]}; detail='running emulator'
-      [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout")
+      [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout" "${sport[$j]}")
       matched[j]=1; found=1
       break
     done
@@ -1161,13 +1885,13 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
         state=unknown; detail='AVD listed; an emulator serial has no resolved AVD name'
       fi
     fi
-    printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" "$detail"
+    printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$a" "$serial" "$state" "$boot" "$detail"
   done
   for j in "${!serials[@]}"; do
     [ -z "${matched[$j]:-}" ] || continue
     serial=${serials[$j]}; state=${states[$j]}; avd=${serial_avds[$j]}
     boot=-
-    [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout")
+    [ "$state" = device ] && boot=$(android_boot_completed "$adb" "$serial" "$runner" "$timeout" "${sport[$j]}")
     case "$serial" in
       emulator-*)
         if [ "$avd" = - ]; then
@@ -1184,19 +1908,19 @@ android_probe_host() {  # <adb> <emulator> <runner> <timeout>
     printf 'A\t%s\t%s\t%s\t%s\t%s\n' "$avd" "$serial" "$state" "$boot" "$detail"
   done
   if [ "$adb_clean" -eq 1 ] && [ "$emu_clean" -eq 1 ] \
-    && [ "${#avds[@]}" -eq 0 ] && [ "${#serials[@]}" -eq 0 ]; then
+    && [ "${#avds[@]}" -eq 0 ] && [ "${#serials[@]}" -eq 0 ] \
+    && [ "${#seen_reason[@]}" -eq 0 ]; then
     printf 'A\t-\t-\t%s\t-\t%s\n' none 'no AVDs and no running emulators'
   fi
 }
 
 collect_android_local() {
-  local tag a b c d e adb='' emu=''
+  local tag a b c d e adb='' emu='' adb_seam=0 emu_seam=0 defaults=1
   [ -z "${FM_RESOURCE_ANDROID_FIXTURE:-}" ] || return 0
-  if [ "${FM_RESOURCE_ADB+x}" = x ]; then adb=$FM_RESOURCE_ADB
-  else adb=$(android_find_tool adb 2>/dev/null) || adb=''; fi
-  if [ "${FM_RESOURCE_EMULATOR+x}" = x ]; then emu=$FM_RESOURCE_EMULATOR
-  else emu=$(android_find_tool emulator 2>/dev/null) || emu=''; fi
-  android_probe_host "$adb" "$emu" fm_run_timed "$ANDROID_TIMEOUT" > "$TMP/android_probe.tsv"
+  if [ "${FM_RESOURCE_ADB+x}" = x ]; then adb=$FM_RESOURCE_ADB; adb_seam=1; defaults=0; fi
+  if [ "${FM_RESOURCE_EMULATOR+x}" = x ]; then emu=$FM_RESOURCE_EMULATOR; emu_seam=1; defaults=0; fi
+  android_probe_host fm_run_timed "$ANDROID_TIMEOUT" "$adb_seam" "$adb" "$emu_seam" "$emu" "$defaults" \
+    > "$TMP/android_probe.tsv"
   : > "$TMP/android_local.tsv"
   while IFS=$'\t' read -r tag a b c d e; do
     case "$tag" in
@@ -1247,9 +1971,17 @@ collect_local_testing() {
 }
 
 collect_forgejo() {
-  local state queued='-' runners='-' user pass code url owner repo cred
+  local state queued='-' runners='-' user='' pass='' code url owner repo cred slug runs='-'
   url=$(cfg forgejo_url); owner=$(cfg forgejo_owner); repo=$(cfg forgejo_repo); cred=$(cfg forgejo_credentials)
-  if [ -z "$url" ] || [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$cred" ]; then
+  [ -n "$url" ] || url=$(forgejo_discovered_url)
+  if [ -z "$owner" ] || [ -z "$repo" ]; then
+    slug=$(forgejo_discovered_slug)
+    if [ -n "$slug" ]; then
+      [ -n "$owner" ] || owner=${slug%%/*}
+      [ -n "$repo" ] || repo=${slug#*/}
+    fi
+  fi
+  if [ -z "$url" ]; then
     note_unavailable 'forgejo' 'not configured'
     return
   fi
@@ -1258,33 +1990,55 @@ collect_forgejo() {
   if [ "$state" = active ]; then
     code=$(fm_run_timed 3 curl -sS -m 3 -o /dev/null -w '%{http_code}' "$url/api/v1/version" 2>/dev/null </dev/null)
     testing_row PC01 forgejo-api "${code:-failed}" 'GET /api/v1/version'
-    user=$(awk -F': *' '/^Username:/{print $2; exit}' "$cred" 2>/dev/null)
-    pass=$(awk -F': *' '/^Password:/{print $2; exit}' "$cred" 2>/dev/null)
+    if [ -n "$cred" ] && [ -r "$cred" ]; then
+      user=$(awk -F': *' '/^Username:/{print $2; exit}' "$cred" 2>/dev/null)
+      pass=$(awk -F': *' '/^Password:/{print $2; exit}' "$cred" 2>/dev/null)
+    fi
     if [ -n "$user" ] && [ -n "$pass" ]; then
       runners=$(printf 'user = "%s:%s"\n' "$user" "$pass" \
         | fm_run_timed "$TESTING_TIMEOUT" curl -sS -m "$TESTING_TIMEOUT" -K - \
           "$url/api/v1/admin/actions/runners" 2>/dev/null \
         | jq -r '[.[]? | .name + ":" + (.status // "unknown")] | join(",")' 2>/dev/null)
-      queued=$(printf 'user = "%s:%s"\n' "$user" "$pass" \
-        | fm_run_timed "$TESTING_TIMEOUT" curl -sS -m "$TESTING_TIMEOUT" -K - \
-          "$url/api/v1/repos/$owner/$repo/actions/runs?limit=50" 2>/dev/null \
-        | jq -r '[.workflow_runs[]? | select(.status == "waiting" or .status == "running" or .status == "queued")] | length' 2>/dev/null)
-    else
+      if [ -n "$owner" ] && [ -n "$repo" ]; then
+        queued=$(printf 'user = "%s:%s"\n' "$user" "$pass" \
+          | fm_run_timed "$TESTING_TIMEOUT" curl -sS -m "$TESTING_TIMEOUT" -K - \
+            "$url/api/v1/repos/$owner/$repo/actions/runs?limit=50" 2>/dev/null \
+          | jq -r '[.workflow_runs[]? | select(.status == "waiting" or .status == "running" or .status == "queued")] | length' 2>/dev/null)
+      else
+        note_unavailable 'forgejo:runs' 'repository not configured'
+      fi
+    elif [ -n "$cred" ]; then
       note_unavailable 'forgejo' 'credential file unreadable'
+    else
+      note_unavailable 'forgejo:credentials' 'credential file not configured'
     fi
   fi
   [ -n "$runners" ] || runners='unavailable'
   [ -n "$queued" ] || queued='unavailable'
+  case "$queued" in ''|*[!0-9]*) ;; *) runs="${queued} queued" ;; esac
   testing_row PC01 forgejo-runners "${runners:-unavailable}" 'PC02 runner registered to PC01 Forgejo'
   testing_row PC01 forgejo-queued "${queued:-unavailable}" 'waiting+running workflow runs'
-  compute_row forgejo "$owner" self-hosted - - - "$state" "${queued} queued"
+  compute_row forgejo "${owner:--}" self-hosted - - - "$state" "$runs"
 }
 
 collect_github() {
-  local usage minutes runs since ghuser ghrepo
+  local usage minutes runs since ghuser ghrepo slug ghowner
   ghuser=$(cfg github_user); ghrepo=$(cfg github_repo)
   if [ -z "$ghuser" ] || [ -z "$ghrepo" ]; then
-    note_unavailable 'github' 'not configured'
+    slug=$(github_origin_slug)
+    if [ -z "$ghuser" ]; then
+      ghuser=$(github_login)
+      [ -n "$ghuser" ] || ghuser=${slug%%/*}
+    fi
+    if [ -z "$ghrepo" ] && [ -n "$slug" ]; then ghrepo=${slug#*/}; ghowner=${slug%%/*}; fi
+  fi
+  ghowner=${ghowner:-$ghuser}
+  if [ -z "$ghuser" ] || [ -z "$ghrepo" ]; then
+    if ! command -v gh >/dev/null 2>&1; then
+      note_unavailable 'github' 'gh not found'
+    else
+      note_unavailable 'github' 'not configured'
+    fi
     return
   fi
   if ! command -v gh >/dev/null 2>&1; then
@@ -1329,7 +2083,7 @@ collect_github() {
   fi
   since=$(jq -rn --argjson t "$NOW" '($t - 86400) | todate')
   runs=$(fm_run_timed "$TESTING_TIMEOUT" gh api \
-    "/repos/$ghuser/$ghrepo/actions/runs?created=%3E%3D${since}&per_page=1" 2>/dev/null </dev/null \
+    "/repos/$ghowner/$ghrepo/actions/runs?created=%3E%3D${since}&per_page=1" 2>/dev/null </dev/null \
     | jq -r '.total_count // empty' 2>/dev/null)
   [ -z "$runs" ] || compute_row github-runs "$ghuser" free - - - ok "${runs} runs/24h"
 }
@@ -1337,8 +2091,13 @@ collect_github() {
 collect_gitlab() {
   local usage used plan reset status ns
   ns=$(cfg gitlab_namespace)
+  [ -n "$ns" ] || ns=$(gitlab_user)
   if [ -z "$ns" ]; then
-    note_unavailable 'gitlab' 'not configured'
+    if ! command -v glab >/dev/null 2>&1; then
+      note_unavailable 'gitlab' 'glab not found'
+    else
+      note_unavailable 'gitlab' 'not configured'
+    fi
     return
   fi
   if ! command -v glab >/dev/null 2>&1; then
@@ -1440,7 +2199,7 @@ render_toon() {  # <model-json-file>
 }
 
 build_model() {
-  local host_json drive_json quota_json worker_json pane_json stray_json sm_json role_json
+  local host_json drive_json drive_health_json quota_json worker_json pane_json stray_json sm_json role_json
   local test_json android_json compute_json un_json gen_et nw np ns
 
   if [ -n "${FM_RESOURCE_HOSTS_JSON:-}" ] && [ -f "$FM_RESOURCE_HOSTS_JSON" ]; then
@@ -1454,6 +2213,7 @@ build_model() {
 
   host_json=$TMP/hosts.json
   drive_json=$TMP/drives.json
+  drive_health_json=$TMP/drive_health.json
   quota_json=$TMP/quota.json
   worker_json=$TMP/workers.json
   pane_json=$TMP/panes.json
@@ -1469,6 +2229,8 @@ build_model() {
     '["machine","load1","cores","mem_free_pct","disk_free_gb","disk_path","uptime","read_utc"]' > "$host_json"
   tsv_to_json "$TMP/drives.tsv" \
     '["machine","mount","total_gb","free_gb","pct_used","warn","read_utc"]' > "$drive_json"
+  tsv_to_json "$TMP/drive_health.tsv" \
+    '["machine","disk","model","smart","reallocated","pending","uncorrectable","temp_c","power_on_hours","nvme_used_pct","media_errors","read_utc","reason"]' > "$drive_health_json"
   tsv_to_json_quota "$TMP/quota.tsv" > "$quota_json"
   tsv_to_json "$TMP/workers.tsv" \
     '["machine","home_lane","task","kind","model","spend_lane","stage","age","last_active","ctx_band","pr","read_utc"]' > "$worker_json"
@@ -1500,6 +2262,7 @@ build_model() {
     --arg schema "$SCHEMA" --arg generated "$read_iso" --arg generated_et "$gen_et" \
     --arg home "$FM_HOME" \
     --slurpfile hosts "$host_json" --slurpfile drives "$drive_json" --slurpfile quota "$quota_json" \
+    --slurpfile drive_health "$drive_health_json" \
     --slurpfile workers "$worker_json" --slurpfile panes "$pane_json" --slurpfile strays "$stray_json" \
     --slurpfile secondmates "$sm_json" --slurpfile roles "$role_json" \
     --slurpfile testing "$test_json" --slurpfile android "$android_json" \
@@ -1518,6 +2281,7 @@ build_model() {
                 strays: (if $ns > $caps then ($ns - $caps) else 0 end)},
       hosts: ($hosts[0] // []),
       drives: ($drives[0] // []),
+      drive_health: ($drive_health[0] // []),
       quota: ($quota[0] // []),
       workers: (($workers[0] // [])[0:$capw]),
       panes: (($panes[0] // [])[0:$capp]),
@@ -1550,6 +2314,7 @@ fi
 ( collect_collie ) &
 ( collect_local_host ) &
 ( collect_local_drives ) &
+( collect_drive_health ) &
 ( collect_quota ) &
 ( collect_verify ) &
 ( collect_local_workers ) &
@@ -1566,6 +2331,7 @@ collect_android
 build_model
 
 if [ -s "$TMP/hosts.tsv" ] || [ -s "$TMP/drives.tsv" ] || [ -s "$TMP/quota.tsv" ] \
+  || [ -s "$TMP/drive_health.tsv" ] \
   || [ -s "$TMP/workers_local.tsv" ] || [ -s "$TMP/workers_remote.tsv" ] \
   || [ -s "$TMP/panes.tsv" ] || [ -s "$TMP/secondmates.tsv" ] || [ -s "$TMP/roles.tsv" ] \
   || [ -s "$TMP/testing.tsv" ] || [ -s "$TMP/android.tsv" ] || [ -s "$TMP/compute.tsv" ]; then

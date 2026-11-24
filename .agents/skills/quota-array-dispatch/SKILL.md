@@ -53,6 +53,7 @@ Apply the three gates below to each account's rows, taking a projected runway's 
 A genuine tie or no rankable account is the same terminal case as below: decide in the open from the rows or ask the captain, never by file order.
 Account for every declared account in the rationale, including unmeasured ones.
 A typed-resolver `clear` profile for Claude still needs this step's `--account`.
+When the list includes the account `config/claude-orchestrator-account` names, that account admits at most one live worker beside the orchestrator, and `bin/fm-spawn.sh` defers a second (exit 75); account for a live lane on it when ranking and prefer another eligible declared account unless it is the only fit, rather than spending the spawn on a deferral.
 The account is chosen once, at intake: a relaunch keeps the recorded one, and only an explicit `--account` relaunch moves a task ([`docs/configuration.md`](../../../docs/configuration.md#several-claude-accounts-configclaude-accounts) owns the contract).
 
 ## Read the default TOON

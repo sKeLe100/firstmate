@@ -100,6 +100,29 @@ for configured_path in "$ROOT" "$HOME_PATH"; do
   case "$configured_path" in *'//'*) die "configured remote root or home contains an empty path component" ;; esac
 done
 
+# A configured power-managed host (PC02) may be asleep, and this command is
+# about to change something on it: wake it first. Read-only observations stay
+# wake-free so fleet liveness never defeats the idle-sleep posture.
+fm_on_needs_wake() {
+  [ "${FM_ON_WAKE:-1}" != 0 ] || return 1
+  case "$COMMAND" in
+    fm-remote-secondmate-control.sh)
+      case "${1:-}" in
+        send | send-stdin | key | launch | relaunch) return 0 ;;
+      esac
+      ;;
+    fm-backlog-receive.sh) return 0 ;;
+    fm-remote-file.sh)
+      case "${1:-}" in put) return 0 ;; esac
+      ;;
+  esac
+  return 1
+}
+if fm_on_needs_wake "$@" && [ -x "$SCRIPT_DIR/fm-pc02-wake.sh" ]; then
+  "$SCRIPT_DIR/fm-pc02-wake.sh" ensure --host "$HOST" --if-managed --quiet \
+    || die "remote host $HOST did not answer after a wake attempt"
+fi
+
 ROOT_B64=$(printf '%s' "$ROOT" | encode_base64)
 HOME_B64=$(printf '%s' "$HOME_PATH" | encode_base64)
 ARGV_B64=$(printf '%s\0' "$COMMAND" "$@" | encode_base64)
