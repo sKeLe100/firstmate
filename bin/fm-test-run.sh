@@ -2810,7 +2810,7 @@ families_for_changed_path() {
       # behavior are exercised by the runner's own contract test.
       printf '%s\n' "__script__:fm-test-run.test.sh"
       ;;
-    tests/*.py)
+    tests/*.py|tests/*.mjs|tests/assets/*)
       # A python repro/driver is selected by the suites that name it.
       scripts_for_path_reference "$path" \
         || printf '%s\n' "__unmapped__:$path"

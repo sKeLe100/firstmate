@@ -520,6 +520,39 @@ test_changed_dependency_selection_and_unmapped_failure() {
 # checkout - must select the suites that exercise the plugins instead of dying
 # with "no changed-test mapping". That gap forced a Test-step override on the
 # upstream catch-up PR, so this is the regression that keeps it closed.
+test_changed_test_asset_and_mjs_driver_select_their_readers() {
+  local tmp repo listed
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-test-asset.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests/assets"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-heavy-admission-lib.sh" "$repo/bin/"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  : >"$repo/tests/lib.sh"
+  printf '#!/usr/bin/env bash\n# tests/lib.sh\n# assets/board-render-harness.mjs\n' \
+    >"$repo/tests/fm-board-render.test.sh"
+  printf '#!/usr/bin/env bash\n# tests/lib.sh\n# fm-driver-live.mjs\n' \
+    >"$repo/tests/fm-driver-live-e2e.test.sh"
+  chmod +x "$repo/tests/"*.test.sh
+  printf 'export {};\n' >"$repo/tests/assets/board-render-harness.mjs"
+  printf 'export {};\n' >"$repo/tests/fm-driver-live.mjs"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+
+  printf '// change\n' >>"$repo/tests/assets/board-render-harness.mjs"
+  printf '// change\n' >>"$repo/tests/fm-driver-live.mjs"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD 2>&1) \
+    || fail "test asset/.mjs driver change failed closed: $listed"
+  assert_contains "$listed" "tests/fm-board-render.test.sh" \
+    "a tests/assets harness selects the suite that names it"
+  assert_contains "$listed" "tests/fm-driver-live-e2e.test.sh" \
+    "a tests/*.mjs driver selects the suite that names it"
+  rm -rf "$tmp"
+  pass "a tests/assets harness or tests/*.mjs driver selects its readers instead of failing closed"
+}
+
 test_changed_opencode_plugin_selects_its_covering_tests() {
   local tmp repo listed script
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-opencode-plugin.XXXXXX")
