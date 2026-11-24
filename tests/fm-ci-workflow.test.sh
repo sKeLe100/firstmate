@@ -725,7 +725,8 @@ test_lint_aggregate_fails_unless_every_partition_succeeded() {
   # shellcheck disable=SC2016 # the ${{ }} below is Ruby text, not a shell expansion
   ruby -ryaml -e '
 job = YAML.load_file(ARGV[0]).fetch("jobs").fetch("lint-aggregate")
-raise "the aggregate must be named Lint" unless job.fetch("name") == "Lint"
+name = job.fetch("name")
+raise "the aggregate must be named Lint, with only the label-skip prefix" unless name == "Lint" || (name.start_with?("${{ (github.event.action == ") && name.include?("Not run for label - ") && name.end_with?("}}Lint"))
 raise "the aggregate must need every lint partition" unless Array(job.fetch("needs")) == ["lint"]
 steps = job.fetch("steps")
 raise "the aggregate needs exactly one step" unless steps.length == 1

@@ -116,12 +116,12 @@ jobs:
   # every partition succeeded, so a failed, cancelled, or skipped partition
   # fails this check instead of leaving it green or never reporting.
   lint-aggregate:
-    name: Lint
+    name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Lint
     runs-on: ubuntu-latest
     # Fast tier: the aggregate only reads the partitions' result.
     timeout-minutes: 5
     needs: lint
-    if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
+    if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
     steps:
       - name: Require every lint partition to succeed
         env:
