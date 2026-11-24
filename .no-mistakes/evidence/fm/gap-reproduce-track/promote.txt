@@ -1,0 +1,5 @@
+12-4. Carry over only the intended fix changes. Leave scratch commits, debug edits, and experiment files behind.
+13:5. For a user-visible bug, reproduce it end-to-end on the real user path before the fix: the headless browser for web, the Android emulator for mobile.
+14-Record the failing check in the task, and for a frontend change record before/after screenshots at the target viewport widths.
+15-When the fix ships, the reproduction becomes the regression test; if a faithful reproduction is unsafe or impossible, state the limitation instead of claiming equivalence.
+16-6. Treat the scout-time Firstmate spec and any unmarked legacy `# Task` text as investigation context, not captain intent or current ship-time instructions.

@@ -1,0 +1,12 @@
+== ship brief Bug fixes section
+# Bug fixes
+When this task fixes a bug, read and follow `{run-worktree}/.agents/skills/diagnostic-reasoning/SKILL.md`, which owns the bug-diagnosis reasoning procedure.
+Fix the defect at its producer - the code that creates the bad value or state - rather than only guarding the throw site where the symptom surfaces.
+If a throw-site guard is still the right fix, justify in your report why the producer cannot be fixed directly.
+For a user-visible bug, reproduce it end-to-end on the real user path before the fix: the headless browser for web, the Android emulator for mobile.
+Record the failing check in the task, and for a frontend change record before/after screenshots at the target viewport widths.
+When the fix ships, the reproduction becomes the regression test; if a faithful reproduction is unsafe or impossible, state the limitation instead of claiming equivalence.
+
+# Project memory
+== scout brief matches:
+0
