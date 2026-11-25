@@ -293,8 +293,6 @@ Handle actionable wakes as follows:
    A `check: secondmate <id> auto-relaunched` wake records a recovery that already completed - reconcile the mate's current state rather than relaunching again, and treat a repeat or a paused-bound wake as the signal to investigate why the mate keeps exiting.
    When the note needs a durable answer the submitter can read, publish it with `bin/fm-inbox.sh reply <id>` (the script header owns the reply contract) rather than leaving the answer only in this transcript.
 4. For `heartbeat:`, review the whole fleet from the structured fleet view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged fleet as progress.
-   In the same review, refill idle capacity by dispatching `gate: dispatchable` rows from `bin/fm-queue-snapshot.sh` and `idle capacity:` lanes from `bin/fm-underused-capacity.sh`, and re-read `data/captain.md` as the `autonomous` skill's step 0 does.
-   Also act on each worker's `bin/fm-context-usage.sh` and `bin/fm-retry-pressure.sh` bands per `docs/configuration.md` "Session context thresholds" and "Retry-loop thresholds", closing the retry-loop key as that section prescribes.
 
 Load the `autonomous` skill when the captain invokes `/autonomous`, mentions standing orders or autonomous dispatch, or when a silent-invocation point fires (12:30/17:30 fleet-dispatch-points); it owns the dispatch-pass procedure and is captain-invocable, unlike section 13's agent-only reference skills.
 
@@ -432,12 +430,6 @@ Load `agent-skill-trigger-index` only when auditing or maintaining the complete 
 ## 14. Relay
 
 When Relay is enabled, load `fmx-respond` for its activation, authority, mention, follow-up, and public-loop contract.
-
-## Third-party skill precedence
-
-Where an installed third-party or plugin skill covers ground firstmate's own skills, lifecycle, delivery path, or merge authority already own, the firstmate-owned contract wins and the third-party skill does not fire in its place.
-The recurring overlap areas are review, bug diagnosis, session handoff, intake and task shaping, captain questions, context restoration, and agent spawning; each has a firstmate owner named elsewhere in this file, and each skill's description or the relevant operating section is the single owner of exactly which skill to load.
-This is not a ban: a third-party skill remains the right tool for work firstmate does not own.
 
 ## Captain instruction precedence
 
