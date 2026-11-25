@@ -1436,8 +1436,8 @@ start_inherited_flock() {  # <lockfile> -> prints the surviving holder pid
   ' _ "$1"
 }
 
-run_pc02_slots_live() {  # <name> <remote-home> <host-out-file> -> JSON
-  local name=$1 remote_home=$2 host_out=$3 rec home fb fake
+run_pc02_slots_live() {  # <name> <remote-home> <host-out-file> <proc-root> -> JSON
+  local name=$1 remote_home=$2 host_out=$3 proc_root=$4 rec home fb fake
   rec=$(make_home "pc02-slots-$name" fresh); home=${rec%%|*}; fb=${rec#*|}
   write_fixtures fixture
   fake="$TMP_ROOT/pc02-slots-$name"
@@ -1457,6 +1457,7 @@ SSH
   chmod +x "$fake/ssh"
   env PATH="$fake:$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
     FM_SSH_BIN="$fake/ssh" FM_RESOURCE_REMOTE_FIXTURE= \
+    FM_RESOURCE_PROC_ROOT="$proc_root" \
     FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
     FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
     FM_RESOURCE_HERDR_JSON_PC02="$TMP_ROOT/fixture/herdr-pc02.json" \
@@ -1470,22 +1471,26 @@ SSH
 }
 
 test_pc02_offload_slots_counts_inherited_flock() {
-  local remote_home lock holder ino host_out
+  local remote_home lock holder host_out proc_root fd found=
   if [ ! -r /proc/locks ] || ! command -v flock >/dev/null 2>&1; then
     pass "inherited-flock slot detection needs Linux /proc and flock; skipped here"
     return 0
   fi
   remote_home="$TMP_ROOT/pc02-slots-inherited/remote-home"
-  mkdir -p "$remote_home/.config/firstmate"
+  mkdir -p "$remote_home/.config/firstmate" "$TMP_ROOT/pc02-slots-inherited/fakeproc"
   printf '3\n' > "$remote_home/.config/firstmate/pc02-offload-slots"
   lock="$remote_home/.fm-pc02-test-slot-1.lock"
   : > "$lock"
   host_out="$TMP_ROOT/pc02-slots-inherited.host.out"
+  proc_root="$TMP_ROOT/pc02-slots-inherited/fakeproc"
+  : > "$proc_root/locks"
   holder=$(start_inherited_flock "$lock")
-  ino=$(stat -c %i "$lock")
-  awk -v i="$ino" '{ n = split($6, a, ":"); if (a[n] == i) { found = 1 } } END { exit !found }' /proc/locks \
-    && fail "setup: the inherited flock must not appear in /proc/locks"
-  run_pc02_slots_live inherited "$remote_home" "$host_out" >/dev/null 2>&1
+  for fd in /proc/"$holder"/fd/*; do
+    [ "$(readlink "$fd" 2>/dev/null)" = "$lock" ] || continue
+    grep -q '^lock:' "/proc/$holder/fdinfo/${fd##*/}" 2>/dev/null && { found=1; break; }
+  done
+  [ -n "$found" ] || fail "setup: the surviving holder must name the inherited lock in fdinfo"
+  run_pc02_slots_live inherited "$remote_home" "$host_out" "$proc_root" >/dev/null 2>&1
   kill "$holder" 2>/dev/null || true
   awk -F'\t' '$1 == "T" && $2 == "pc02-offload-slots" && $3 == "1/3" { found = 1 } END { exit !found }' "$host_out" \
     || fail "a flock inherited by a child after its locker exits must read busy: $(awk -F'\t' '$2 == "pc02-offload-slots"' "$host_out")"

@@ -173,6 +173,8 @@
 #   FM_RESOURCE_ANDROID_HOME_DIRS colon-separated user AVD homes to scan
 #                                 instead of ~/.android/avd and the Windows
 #                                 profiles (empty means none)
+#   FM_RESOURCE_PROC_ROOT         procfs root for slot lock reads (default
+#                                 /proc; a test can point it at a fake root)
 #   FM_RESOURCE_CONTEXT_FIXTURE   JSON object mapping task id to ctx_band
 #   FM_RESOURCE_FORGEJO_INI       Forgejo app.ini read for URL and repo root
 #                                 (default $HOME/forgejo/custom/conf/app.ini)
@@ -318,11 +320,11 @@ forgejo_discovered_slug() {
 # remote_host_script injects this function with `declare -f` rather than keeping
 # a second copy that could drift.
 slot_locked() {
-  local f=$1 ino pids pid fd n
+  local f=$1 ino pids pid fd n proc=${FM_RESOURCE_PROC_ROOT:-/proc}
   [ -e "$f" ] || return 1
   ino=$(stat -c %i "$f" 2>/dev/null) || return 1
   [ -n "$ino" ] || return 1
-  if [ -r /proc/locks ] && awk -v i="$ino" '{ n = split($6, a, ":"); if (a[n] == i) { found = 1 } } END { exit !found }' /proc/locks; then
+  if [ -r "$proc/locks" ] && awk -v i="$ino" '{ n = split($6, a, ":"); if (a[n] == i) { found = 1 } } END { exit !found }' "$proc/locks"; then
     return 0
   fi
   pids=''
