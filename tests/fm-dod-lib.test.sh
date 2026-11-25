@@ -885,5 +885,6 @@ test_external_review_done_without_backup_is_accepted_on_the_url
 test_external_review_done_with_backup_needs_the_copy
 
 test_worker_role_names_skill_and_fallback_file
+test_dod_requires_a_task_mistake_receipt
 
 echo "all fm-dod-lib tests passed"
