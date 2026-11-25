@@ -1,0 +1,105 @@
+parent: child-a -> epic-a
+unparent: child-a
+--- epic-a after unparent
+task:
+  id: epic-a
+  title: t epic-a
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-24
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+issue-layer:
+  parent: none
+  blockers (open): none
+  links: none
+  log: none
+parent: child-a -> epic-b
+--- epic-a after reparent
+task:
+  id: epic-a
+  title: t epic-a
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-24
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+issue-layer:
+  parent: none
+  blockers (open): none
+  links: none
+  log: none
+--- epic-b
+task:
+  id: epic-b
+  title: t epic-b
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-24
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+issue-layer:
+  parent: none
+  epic: 0/1 children done, 1 open
+    - child-a [queued] t child-a
+  blockers (open): none
+  links: none
+  log: none
+--- child-a
+task:
+  id: child-a
+  title: t child-a
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-24
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+issue-layer:
+  parent: epic-b [queued] t epic-b
+  blockers (open): none
+  links: none
+  log: none
