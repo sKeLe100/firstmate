@@ -1,0 +1,19 @@
+alive: big:alive mid:alive tiny:alive sm:alive 
+-- pass1 host ok, rss-stop=70 (big 90M over)
+fm-worker-memory-guard: stopped big: process tree over the 70 MiB per-worker limit
+big:STOPPED mid:alive tiny:alive sm:alive 
+-- pass1 repeat (stop once per generation)
+1
+-- pass2 host LOW
+fm-worker-memory-guard: stopped mid: host memory low - 97MiB < 3072MiB
+big:STOPPED mid:STOPPED tiny:alive sm:alive 
+-- pass3 host LOW again (tiny<host-stop-min, sm never)
+big:STOPPED mid:STOPPED tiny:alive sm:alive 
+ctl log:
+big exit
+mid exit
+status events:
+big.status: blocked [at=1795596185] [key=memory-guard]: worker stopped by the memory guard (process tree over the 70 MiB per-worker limit; process tree 99 MiB); worktree and uncommitted work kept, review before relaunch
+mid.status: blocked [at=1795596187] [key=memory-guard]: worker stopped by the memory guard (host memory low - 97MiB < 3072MiB; process tree 59 MiB); worktree and uncommitted work kept, review before relaunch
+-- guard=off
+big2 still alive under guard=off

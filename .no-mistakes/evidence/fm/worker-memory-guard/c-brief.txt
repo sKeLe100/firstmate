@@ -1,0 +1,25 @@
+1 install in repo:
+error: brief names an install inside the working copy; a runaway install can exhaust the host (2026-11-24). Rewrite it to build under ~/fm-scratch/<task-id>/ instead:
+  Run npm install inside the working copy so the tests do not fail
+  -> exit 5
+2 clone in worktree:
+error: brief names an install inside the working copy; a runaway install can exhaust the host (2026-11-24). Rewrite it to build under ~/fm-scratch/<task-id>/ instead:
+  git clone the dataset into the worktree
+  -> exit 5
+3 scratch ok:
+  -> exit 0
+4 negated:
+  -> exit 0
+5 no destination:
+warning: brief names an install without a destination; installs and clones belong under ~/fm-scratch/<task-id>/, never the working copy:
+  pip install requests
+  -> exit 0
+6 escape hatch:
+warning: brief names an install inside the working copy (allowed by FM_ALLOW_WORKTREE_INSTALL=1):
+  npm install inside the repo
+  -> exit 0
+7 install only in scaffold (ignored):
+  -> exit 0
+== scaffold text ==
+bin/fm-brief.sh:945:Never install packages, clone repositories, or unpack archives inside the worktree (a runaway install there can exhaust the host); build such scratch trees under \`~/fm-scratch/$ID/\`, one heavy job at a time, and delete them when done.
+bin/fm-brief.sh:1064:   Never install packages, clone repositories, or unpack archives inside the worktree beyond the project's own documented build; scratch trees belong under \`~/fm-scratch/$ID/\`, one heavy job at a time.

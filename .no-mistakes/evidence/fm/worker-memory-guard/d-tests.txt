@@ -1,0 +1,38 @@
+== fm-spawn-host-memory
+ok - fm-spawn.sh: the host-memory floor does not refuse a --relaunch
+ok - fm-spawn.sh: a ship or scout launch runs inside a per-worker memory scope
+ok - fm-spawn.sh: a scoped launch runs the original command when the pane has no user bus
+ok - fm-spawn.sh: with no usable scope the launch proceeds and says so
+ok - fm-spawn.sh: a brief naming an install inside the working copy is refused
+# all fm-spawn-host-memory tests passed
+exit=0
+== fm-worker-memory-guard
+ok - fm-worker-memory-guard.sh: tiny workers and secondmates are never stopped
+ok - fm-worker-memory-guard.sh: a failed stop is reported once and retried
+ok - fm-worker-memory-guard.sh: guard=off disables the stop
+ok - fm-worker-memory-guard.sh: brief-check refuses worktree installs and warns on bare ones
+ok - fm-brief.sh: scaffolds direct installs to ~/fm-scratch and no longer invite them in the worktree
+# all fm-worker-memory-guard tests passed
+exit=0
+== fm-brief
+ok - fm-brief.sh: --branch-prefix value is validated against embedded spaces and a leading dash
+Switched to a new branch '$(touch${IFS}/var/tmp/nm-daemon-tmp/fm-brief.VqIdll/branch-prefix-shell-safe-marker)brief-branch-safe-g3'
+ok - fm-brief.sh: ref-format-valid shell metacharacters stay literal in generated branch commands
+ok - fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool
+ok - fm-dod-lib.sh: task slot lines alone do not count as a Firstmate spec
+ok - ship and scout browser instructions register exact identities with shell-safe paths
+exit=0
+== fm-spawn-dispatch-profile
+ok - secondmate launch inherits the allowlist for subsequent worker launches
+ok - local inheritance preserves the allowlist on source errors and mirrors proven absence
+ok - remote inheritance preserves the allowlist on source errors and mirrors proven absence
+ok - Codex absent, bypass, and restricted modes preserve flags for ships, scouts, and secondmates
+ok - invalid Codex permission files refuse spawns and relaunches before mutation
+ok - Codex restricted mode leaves other harness launch flags unchanged
+exit=124
+dispatch-profile exit=0
+ok - codex refuses max effort instead of launching on its own default reasoning effort
+ok - codex refuses a model-less spawn instead of silently launching on its own default model
+ok - codex refuses an effort-less spawn instead of silently launching on its own default reasoning effort
+ok - a codex crewmate requests no hook layer and keeps its turn-end signal
+ok - a codex secondmate keeps its project hooks and uses automatic approval review

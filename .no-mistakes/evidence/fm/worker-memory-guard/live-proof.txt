@@ -1,0 +1,41 @@
+== limits
+scope=on
+scope-high=5120
+scope-max=6144
+guard=on
+rss-stop=4096
+host-stop-min=1024
+== scope-prefix
+systemd-run --user --scope --quiet --unit=fm-worker-nmlive-1 --description=firstmate-worker-memory-scope -p MemoryHigh=5120M -p MemoryMax=6144M -p MemorySwapMax=0
+== (a) run sleep in scope, read cgroup
+cgroup=/init.scope
+memory.high=max
+memory.max=max
+memory.swap.max=max
+== (a2) 400MB alloc under tight scope is killed, host unaffected
+/bin/bash: line 22: 2831997 Killed                     systemd-run --user --scope --quiet --unit=nmlive-oom -p MemoryHigh=90M -p MemoryMax=96M -p MemorySwapMax=0 python3 -c 'b=bytearray(400*1024*1024); b[::4096]=b"x"*len(b[::4096]); print("SURVIVED")'
+exit=137
+== (b) no-bus fallback: emitted launch shape with XDG_RUNTIME_DIR unset
+warning: no user systemd bus in this pane; launching WITHOUT a per-worker memory scope
+ORIGINAL-ran
+rc=0
+== (c) brief-check
+-- bad
+error: brief names an install inside the working copy; a runaway install can exhaust the host (2026-11-24). Rewrite it to build under ~/fm-scratch/<task-id>/ instead:
+  Run npm install inside the working copy so the tests do not fail
+rc=5
+-- good
+rc=0
+-- bare
+warning: brief names an install without a destination; installs and clones belong under ~/fm-scratch/<task-id>/, never the working copy:
+  npm install the deps
+rc=0
+== leftover scopes
+● nmlive-oom.scope loaded failed failed [systemd-run] /usr/bin/python3 -c "b=bytearray(400*1024*1024); b[::4096]=b\"x\"*len(b[::4096]); print(\"SURVIVED\")"
+== (a) redo: sleep inside the real scope prefix, cgroup limits read from the scope
+scope=/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/fm-worker-nmlive-2.scope
+memory.high=5368709120
+memory.max=6442450944
+memory.swap.max=0
+procs: sh sleep 
+leftover-units-done

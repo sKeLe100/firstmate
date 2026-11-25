@@ -1,0 +1,12 @@
+== A. real systemd scope, scope-max=96M high=95M, python alloc ==
+rc=0
+/bin/bash: line 10: 1070711 Killed                     timeout 60 $P -- python3 -c 'b=bytearray(400*1024*1024); b[::4096]=b"x"*len(b[::4096]); print("SURVIVED")'
+alloc 400M exit=137 (137=killed in scope)
+30M ok
+30M exit=0
+== no user bus ==
+fm-worker-memory-guard: scope unavailable: systemd-run --user --scope failed (no user systemd manager on this host)
+rc=3
+== scope=off ==
+fm-worker-memory-guard: worker memory scope disabled by config (scope=off)
+rc=4
