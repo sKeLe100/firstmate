@@ -1,0 +1,16 @@
+ok - the review is due until a pass is recorded
+ok - mark gates the 2-day interval from the completed pass
+ok - arm schedules the next pass through timed-dispatch
+ok - arm refuses bad input instead of arming nothing
+ok - a failed arm restores the cadence or fails loudly
+exit=0
+ok - worker role names the skill and its fallback skill file
+ok - ship definitions of done require a task mistake receipt
+all fm-dod-lib tests passed
+exit=0
+/var/tmp/nm-daemon-tmp/fm-brief.oKa8Rh/heredoc-in-substitution.sh:2
+Switched to a new branch '$(touch${IFS}/var/tmp/nm-daemon-tmp/fm-brief.oKa8Rh/branch-prefix-shell-safe-marker)brief-branch-safe-g3'
+ok - fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool
+ok - fm-dod-lib.sh: task slot lines alone do not count as a Firstmate spec
+ok - ship and scout browser instructions register exact identities with shell-safe paths
+exit=0

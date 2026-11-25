@@ -1,0 +1,42 @@
+$ status
+last_pass: none
+next_due: now (no pass recorded)
+due: yes
+rc=0
+$ due
+rc=0
+$ mark
+marked: mistakes review pass completed at 1795598626
+rc=0
+$ status
+last_pass: 1795598626
+next_due: 1795771426
+due: no
+rc=0
+$ due
+rc=1
+$ arm --in 0
+error: --in must be at least 1 second so the wake lands in the future: 0
+rc=1
+$ arm --in 3600
+armed: when-dispatch-mistakes-review
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: when-dispatch-mistakes-review
+task: mistakes-review
+fires: 2026-11-25T10:24:16Z (in 3630s, 30s after the target)
+wake: firstmate is woken to dispatch; this never dispatches on its own
+cancel: bin/fm-timed-dispatch.sh cancel mistakes-review
+review: mistakes review armed for 1795602226
+rc=0
+$ arm --in 7200
+armed: when-dispatch-mistakes-review
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: when-dispatch-mistakes-review
+task: mistakes-review
+fires: 2026-11-25T11:24:17Z (in 7230s, 30s after the target)
+wake: firstmate is woken to dispatch; this never dispatches on its own
+cancel: bin/fm-timed-dispatch.sh cancel mistakes-review
+review: mistakes review armed for 1795605827
+rc=0
