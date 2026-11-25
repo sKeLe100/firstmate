@@ -1,0 +1,48 @@
+## synthetic screen 'floorless' printed into a real herdr pane
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  Press ctrl+p commands
+
+base composer: unknown   target composer: unknown
+## synthetic screen 'version' printed into a real herdr pane
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  /tmp/p   50.8K  ctrl+p commands    • OpenCode 1.19.5
+
+base composer: unknown   target composer: empty
+## synthetic screen 'stale' printed into a real herdr pane
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  /tmp/p   50.8K  ctrl+p commands
+
+  error: transcript line after the rail
+
+base composer: unknown   target composer: empty
+## synthetic screen 'legacy'
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  tab agents ctrl+p commands
+
+  error: transcript line after the rail
+
+base composer: empty   target composer: empty
+## synthetic screen 'adjacent'
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  /tmp/p   50.8K  ctrl+p commands
+  x
+
+base composer: unknown   target composer: empty

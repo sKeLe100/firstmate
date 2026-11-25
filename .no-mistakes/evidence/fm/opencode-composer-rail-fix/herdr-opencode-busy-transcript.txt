@@ -1,0 +1,25 @@
+## BUSY pane (long-running turn)
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ■■■■■■⬝⬝  esc interrupt                                      16.2K (8%)  ctrl+p commands
+"agent_status":"working"
+base composer: unknown
+target composer: empty
+## TARGET: fm-control.sh ocw exit while busy
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+stopped ocw harness=opencode backend=herdr endpoint=fm-lab-ocrail-1057387-29938:w2:p1 worktree=/tmp/ocrail-work.mVhe1s
+rc=0
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1168442,"foreground_processes":[{"argv":["/bin/bash"],"cmdline":"/bin/bash","cwd":"/tmp/ocrail-work.mVhe1s","name":"bash","pid":1168442}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK-only reply request
+  Continue  opencode -s ses_deb740b8cffenA0LZyzPmyMqjz
+sean_@SeansMiniPC:/tmp/ocrail-work.mVhe1s$

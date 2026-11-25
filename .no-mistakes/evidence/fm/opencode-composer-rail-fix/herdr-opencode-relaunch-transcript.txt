@@ -1,0 +1,98 @@
+## relaunch: idle OpenCode worker
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/ocrail-work.mVhe1s                                      16.2K (8%)  ctrl+p commands
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1184354,"foreground_processes":[{"cwd":"/tmp/ocrail-work.mVhe1s","name":"opencode","pid":1184354}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+## BASE relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+error: task ocw's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'relaunch'
+error: relaunch of ocw failed while stopping the old agent, which is still running; its original instructions were restored
+rc=1
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1184354,"foreground_processes":[{"cwd":"/tmp/ocrail-work.mVhe1s","name":"opencode","pid":1184354}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+## TARGET relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: task ocw's recorded worktree '/tmp/ocrail-work.mVhe1s' is the primary home or checkout (the recorded project repository's primary checkout), not an isolated task worktree; refusing to relaunch a worker there
+error: the replacement agent for ocw could not be launched on opencode
+error: ocw's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /tmp/ocrail-work.mVhe1s
+rc=1
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1168442,"foreground_processes":[{"argv":["/bin/bash"],"cmdline":"/bin/bash","cwd":"/tmp/ocrail-work.mVhe1s","name":"bash","pid":1168442}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK-only reply request
+  Continue  opencode -s ses_deb740b8cffenA0LZyzPmyMqjz
+sean_@SeansMiniPC:/tmp/ocrail-work.mVhe1s$
+
+## relaunch from an isolated task worktree
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/ocrail-work.mVhe1s-wt                                   17.5K (9%)  ctrl+p commands
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1188203,"foreground_processes":[{"cwd":"/tmp/ocrail-work.mVhe1s-wt","name":"opencode","pid":1188203}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+## TARGET relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: /tmp/fm-lab.hbJS8c/data/ocw/brief.md must contain nonempty ## Captain's intent and ## Firstmate spec subsections (or a nonempty legacy # Task body) before spawn
+error: the replacement agent for ocw could not be launched on opencode
+error: ocw's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /tmp/ocrail-work.mVhe1s-wt
+rc=1
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1168442,"foreground_processes":[{"argv":["/bin/bash"],"cmdline":"/bin/bash","cwd":"/tmp/ocrail-work.mVhe1s-wt","name":"bash","pid":1168442}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK-only reply request
+  Continue  opencode -s ses_deb6f4cd3ffe3hbMoOEJekVBTR
+sean_@SeansMiniPC:/tmp/ocrail-work.mVhe1s-wt$
+
+## relaunch with a well-formed lab brief
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/ocrail-work.mVhe1s-wt                                   17.5K (9%)  ctrl+p commands
+## TARGET relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+relaunched ocw harness=opencode from=opencode model=opencode/big-pickle effort=default backend=herdr endpoint=fm-lab-ocrail-1057387-29938:w2:p1 worktree=/tmp/ocrail-work.mVhe1s-wt
+rc=0
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1192914,"foreground_processes":[{"argv":["/bin/sh","-c","unset TRACEPARENT; export COMPACT_ADVISER_DISABLE=1; export FM_TASK_INBOX='/tmp/fm-lab.hbJS8c/state/ocw.inbox'; '{run-worktree}/bin/fm-osc7501.sh' arm --task 'ocw' --harness 'opencode' --backend 'herdr' --kind 'scout' --state '/tmp/fm-lab.hbJS8c/state' --config '/tmp/fm-lab.hbJS8c/config' --target 'fm-lab-ocrail-1057387-29938:w2:p1' --agent-bin 'opencode' >/dev/null || true\n'{run-worktree}/bin/fm-git-strip-ai-trailers.sh' env-file '/tmp/fm-lab.hbJS8c/state/ocw.git-hooks' '/tmp/fm-ocw+3d655eeffd499a6f5ef4124d75fad60cba775da4aee752c4662957aeb4766df1/git-config.s1795641433.1191576.20806.sh' && . '/tmp/fm-ocw+3d655eeffd499a6f5ef4124d75fad60cba775da4aee752c4662957aeb4766df1/git-config.s1795641433.1191576.20806.sh' || return 1 2>/dev/null || exit 1; export FM_HOME='/tmp/fm-lab.hbJS8c'; env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI -u FM_CREW_STATE_META_OVERRIDE -u FM_CREW_STATE_STATUS_OVERRIDE OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' '~/.npm-global/bin/opencode' --model 'opencode/big-pickle' --prompt \"$('{run-worktree}/bin/fm-operational-input.sh' encode launch-brief < '/tmp/fm-lab.hbJS8c/data/ocw/launch-brief.md')\"\n'{run-worktree}/bin/fm-osc7501.sh' disarm --state '/tmp/fm-lab.hbJS8c/state' >/dev/null 2>/dev/null || true"],"cmdline":"/bin/sh -c unset TRACEPARENT; export COMPACT_ADVISER_DISABLE=1; export FM_TASK_INBOX='/tmp/fm-lab.hbJS8c/state/ocw.inbox'; '{run-worktree}/bin/fm-osc7501.sh' arm --task 'ocw' --harness 'opencode' --backend 'herdr' --kind 'scout' --state '/tmp/fm-lab.hbJS8c/state' --config '/tmp/fm-lab.hbJS8c/config' --target 'fm-lab-ocrail-1057387-29938:w2:p1' --agent-bin 'opencode' >/dev/null || true\n'{run-worktree}/bin/fm-git-strip-ai-trailers.sh' env-file '/tmp/fm-lab.hbJS8c/state/ocw.git-hooks' '/tmp/fm-ocw+3d655eeffd499a6f5ef4124d75fad60cba775da4aee752c4662957aeb4766df1/git-config.s1795641433.1191576.20806.sh' && . '/tmp/fm-ocw+3d655eeffd499a6f5ef4124d75fad60cba775da4aee752c4662957aeb4766df1/git-config.s1795641433.1191576.20806.sh' || return 1 2>/dev/null || exit 1; export FM_HOME='/tmp/fm-lab.hbJS8c'; env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI -u FM_CREW_STATE_META_OVERRIDE -u FM_CREW_STATE_STATUS_OVERRIDE OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' '~/.npm-global/bin/opencode' --model 'opencode/big-pickle' --prompt \"$('{run-worktree}/bin/fm-operational-input.sh' encode launch-brief < '/tmp/fm-lab.hbJS8c/data/ocw/launch-brief.md')\"\n'{run-worktree}/bin/fm-osc7501.sh' disarm --state '/tmp/fm-lab.hbJS8c/state' >/dev/null 2>/dev/null || true","cwd":"/tmp/ocrail-work.mVhe1s-wt","name":"sh","pid":1192914},{"cwd":"/tmp/ocrail-work.mVhe1s-wt","name":"opencode","pid":1192985}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+  ┃  each message in numeric order, then mv each handled file into
+  ┃  '/tmp/fm-lab.hbJS8c/state/ocw.inbox/handled/'. A steer sent before the relaunch
+  ┃  survives there.
+  ┃
+  ┃  lab relaunch
+  ┃
+     + Thought: 3.5s
+     OK
+     ▣  Build · Big Pickle · 10.0s
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/ocrail-work.mVhe1s-wt                                   18.7K (9%)  ctrl+p commands

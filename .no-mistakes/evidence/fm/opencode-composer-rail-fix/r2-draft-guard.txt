@@ -1,0 +1,29 @@
+# opencode 1.19.5, herdr 0.9.5, lab fm-lab-ocr3-1499473-15606; real fm-park.sh/fm-control.sh; only the forge (gh) is a synthetic stub
+## idle composer: base=unknown target=empty
+## draft typed: target=pending
+
+
+  ┃
+  ┃  unsent draft keep me
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/octest.UK8Vv6/wt                                                                  17.5K (9%)  ctrl+p commands
+
+## target: park with draft
+fm-park: refusing to park ocw: the agent is not idle (unknown missing)
+rc=1
+## target: exit with draft
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.cQuTfQ
+error: task ocw's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+rc=1
+agent: ["opencode"]
+
+
+  ┃
+  ┃  unsent draft keep me
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/octest.UK8Vv6/wt                                                                  17.5K (9%)  ctrl+p commands
+

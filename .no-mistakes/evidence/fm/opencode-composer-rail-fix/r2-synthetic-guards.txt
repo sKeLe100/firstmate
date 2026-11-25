@@ -1,0 +1,32 @@
+## synthetic screen 'floorless' printed into a real herdr pane
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  Press ctrl+p commands
+
+base=unknown target=unknown
+## synthetic screen 'adjacent' printed into a real herdr pane
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀
+  /tmp/p  50.8K  ctrl+p commands
+  x
+
+base=unknown target=empty
+## synthetic screen 'draftver' printed into a real herdr pane
+  ┃
+  ┃  my unsent words
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀
+  /tmp/p  50.8K  ctrl+p commands    • OpenCode 1.19.5
+
+base=unknown target=pending
+## synthetic screen 'version' printed into a real herdr pane
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀
+  /tmp/p  50.8K  ctrl+p commands    • OpenCode 1.19.5
+
+base=unknown target=empty

@@ -1,0 +1,42 @@
+## park of an idle finished worker (real opencode; synthetic gh PR JSON and local bare origin)
+     ▣  Build · Big Pickle · 10.7s
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/octest.UK8Vv6/wt                                                                  18.4K (9%)  ctrl+p commands
+
+## BASE 6ea43c63: fm-park.sh park
+fm-park: refusing to park ocw: the agent could not be stopped: error: task ocw's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'; the next tick settles its pending park record
+rc=1
+agent: ["sh","opencode"]
+record:
+pr=https://github.com/example/repo/pull/7
+head=1aea355af9ff64a6d6e17b42f880a912a2264193
+parked_at=1795643046
+slot_leased=no
+pending=1
+
+## TARGET: fm-park.sh park
+parked ocw: PR https://github.com/example/repo/pull/7 clean at 1aea355af9ff; agent stopped
+rc=0
+agent: ["bash"]
+record:
+pr=https://github.com/example/repo/pull/7
+head=1aea355af9ff64a6d6e17b42f880a912a2264193
+parked_at=1795643050
+slot_leased=no
+status:
+done [at=1]: PR https://github.com/example/repo/pull/7 checks green
+paused [at=1795643053]: parked on review: PR https://github.com/example/repo/pull/7 clean at 1aea355af9ff; agent stopped, relaunches on review activity
+pane:
+7/launch.s1795643009.1600979.15089.sh'
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK-only reply task
+  Continue  opencode -s ses_deb55dc99ffeGSiVo1yIALVWja
+sean_@SeansMiniPC:/tmp/octest.UK8Vv6/wt$

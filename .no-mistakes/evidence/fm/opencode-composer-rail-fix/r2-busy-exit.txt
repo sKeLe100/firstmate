@@ -1,0 +1,21 @@
+## busy worker (long generation)
+base composer=unknown target composer=empty
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ⬝⬝⬝⬝⬝⬝⬝⬝  esc interrupt                                                                tab agents  ctrl+p commands
+
+## TARGET: fm-control.sh ocw exit while busy
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.cQuTfQ
+stopped ocw harness=opencode backend=herdr endpoint=fm-lab-ocr3-1499473-15606:w1:p1 worktree=/tmp/octest.UK8Vv6/wt
+rc=0
+agent: ["bash"]
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   New session - 2026-11-25T21:44:24.168Z
+  Continue  opencode -s ses_deb554097ffeKspDsqUjcgUqEb
+sean_@SeansMiniPC:/tmp/octest.UK8Vv6/wt$

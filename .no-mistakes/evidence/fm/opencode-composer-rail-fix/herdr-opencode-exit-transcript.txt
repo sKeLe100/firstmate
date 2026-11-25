@@ -1,0 +1,92 @@
+# opencode 1.19.5, herdr 0.9.5, lab session fm-lab-ocrail-1057387-29938
+## idle pane composer state: base 6ea43c63
+unknown
+## idle pane composer state: target
+empty
+## draft typed, not submitted
+target composer: pending
+## target: fm-control.sh ocw exit with draft
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+REFUSED: legacy Herdr endpoint metadata for task ocw lacks an exact task binding; preserving task state.
+rc=1
+
+
+
+  ┃
+  ┃  unsent draft keep me
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/ocrail-work.mVhe1s                                      16.2K (8%)  ctrl+p commands
+## draft cleared; target composer: empty
+
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/ocrail-work.mVhe1s                                      16.2K (8%)  ctrl+p commands
+## BASE: fm-control.sh ocw exit (idle)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+REFUSED: legacy Herdr endpoint metadata for task ocw lacks an exact task binding; preserving task state.
+rc=1
+agent after base:
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1168500,"foreground_processes":[{"cwd":"/tmp/ocrail-work.mVhe1s","name":"opencode","pid":1168500}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+## TARGET: fm-control.sh ocw exit (idle)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+REFUSED: legacy Herdr endpoint metadata for task ocw lacks an exact task binding; preserving task state.
+rc=1
+agent after target:
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1168500,"foreground_processes":[{"cwd":"/tmp/ocrail-work.mVhe1s","name":"opencode","pid":1168500}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+     OK
+     ▣  Build · Big Pickle · 4.5s
+  ┃
+  ┃
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/ocrail-work.mVhe1s                                      16.2K (8%)  ctrl+p commands
+
+######## fm-control.sh runs (lab FM_HOME, task meta bound to the live pane)
+## draft typed, not submitted
+target composer: pending
+## TARGET: fm-control.sh ocw exit with draft
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+error: task ocw's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+rc=1
+
+
+
+  ┃
+  ┃  unsent draft keep me
+  ┃
+  ┃  Build · Big Pickle OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/ocrail-work.mVhe1s                                      16.2K (8%)  ctrl+p commands
+## draft cleared; base composer: unknown; target composer: empty
+## BASE: fm-control.sh ocw exit (idle)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+error: task ocw's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+rc=1
+agent after base:
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1168500,"foreground_processes":[{"cwd":"/tmp/ocrail-work.mVhe1s","name":"opencode","pid":1168500}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+## TARGET: fm-control.sh ocw exit (idle)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.hbJS8c
+stopped ocw harness=opencode backend=herdr endpoint=fm-lab-ocrail-1057387-29938:w2:p1 worktree=/tmp/ocrail-work.mVhe1s
+rc=0
+agent after target:
+{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":1168442,"foreground_processes":[{"argv":["/bin/bash"],"cmdline":"/bin/bash","cwd":"/tmp/ocrail-work.mVhe1s","name":"bash","pid":1168442}],"pane_id":"w2:p1","shell_pid":1168442},"type":"pane_process_info"}}
+
+sean_@SeansMiniPC:/tmp/ocrail-work.mVhe1s$ opencode -m opencode/big-pickle
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK-only reply request
+  Continue  opencode -s ses_deb740b8cffenA0LZyzPmyMqjz
+sean_@SeansMiniPC:/tmp/ocrail-work.mVhe1s$

@@ -1,0 +1,13 @@
+## relaunch of the idle worker, BASE 6ea43c63
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.cQuTfQ
+error: task ocw's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'relaunch'
+error: relaunch of ocw failed while stopping the old agent, which is still running; its original instructions were restored
+rc=1
+agent: ["opencode"]
+## relaunch of the idle worker, TARGET
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.cQuTfQ
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.cQuTfQ
+warning: /tmp/fm-lab.cQuTfQ/data/ocw/launch-brief.md records no ship branch; defaulting to legacy branch fm/ocw
+relaunched ocw harness=opencode from=opencode model=opencode/big-pickle effort=default backend=herdr endpoint=fm-lab-ocr3-1499473-15606:w1:p1 worktree=/tmp/octest.UK8Vv6/wt
+rc=0
+agent: ["sh","opencode"]
