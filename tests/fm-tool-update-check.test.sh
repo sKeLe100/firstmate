@@ -559,30 +559,29 @@ test_published_version_equal_to_path_is_silent() {
 }
 
 test_npm_published_update_is_reported_for_a_cli_that_never_announces() {
-  local home dir out report body
+  local home dir out
   # On 2026-11-23 PC01 ran opencode 1.19.5 while npm published 1.19.6, and the
-  # check said nothing. opencode never announces its own update, so a
-  # version_args entry alone watches PATH skew only; naming the registry's
-  # latest document is what makes a published release visible. Both halves are
-  # pinned here, so that source-less silence reads as the documented contract
-  # rather than as a detector that is silently dead.
+  # check said nothing. opencode never announces its own update, so an entry
+  # with no announce_pattern and no published source watches PATH skew only;
+  # naming the npm package is what makes a published release visible. The
+  # registry document carries an earlier unrelated dotted number, so the JSON
+  # version field, not the first number in the body, is what gets compared.
   home=$(make_home npm-latest)
-  dir="$TMP_ROOT/npm-latest/bin"
-  make_copy "$dir" opencode-fixture '1.19.5'
-  body='{"os":["linux"],"bin":{"opencode":"bin/opencode"},"dist":{"tarball":"https://registry.example.invalid/opencode-ai/-/opencode-ai-1.19.6.tgz"},"version":"1.19.6"}'
+  dir="$home/bin"
   out="$home/out.txt"
+  make_release_transport "$dir"
+  make_copy "$dir" "$TOOL" '1.19.5'
+  printf '%s\n' '{"engines":{"node":">=18.0.0"},"version":"1.19.6"}' > "$home/response"
 
-  write_config "$home" '{"tools":[{"name":"opencode","command":"opencode-fixture"}]}'
-  run_check "$home" "$(fixture_path "$dir")" "$out"
+  jq -n --arg command "$TOOL" '{tools: [{name: "opencode", command: $command}]}' > "$home/config/watched-tools.json"
+  run_check "$home" "$(fixture_path "$dir")" "$out" FM_RELEASE_RESPONSE="$home/response" FM_RELEASE_LOG="$home/http.log"
   [ ! -s "$out" ] || fail "an entry with no update source reported a published update, so the incident no longer reproduces: $(cat "$out")"
 
-  make_curl_fixture "$dir" "$body"
-  rm -f "$home/state/.tool-updates"
-  write_config "$home" '{"tools":[{"name":"opencode","command":"opencode-fixture","version_url":"https://registry.example.invalid/opencode-ai/latest"}]}'
-  run_check "$home" "$(fixture_path "$dir")" "$out"
-  report=$(cat "$out")
-  assert_contains "$report" "opencode update available: 1.19.6 published at https://registry.example.invalid/opencode-ai/latest, PATH resolves 1.19.5" "an npm-style published version was not reported for a CLI that never announces its own update"
-  pass "an npm-published update is reported once the entry names the registry's latest document"
+  write_release_config "$home" opencode npm opencode-ai
+  run_check "$home" "$(fixture_path "$dir")" "$out" FM_RELEASE_RESPONSE="$home/response" FM_RELEASE_LOG="$home/http.log"
+  assert_contains "$(cat "$out")" "opencode update available: installed 1.19.5, published 1.19.6" "the npm-published opencode update was not reported"
+  assert_not_contains "$(cat "$out")" "18.0.0" "an unrelated dotted number was read as the published version"
+  pass "an npm-published update is reported once the entry names the npm package"
 }
 
 test_unreadable_version_url_is_a_failure_not_a_pass() {

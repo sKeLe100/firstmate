@@ -42,8 +42,10 @@
     {
       "name": "opencode",
       "command": "opencode",
-      "version_args": ["--version"],
-      "version_url": "https://registry.npmjs.org/opencode-ai/latest"
+      "published": {
+        "source": "npm",
+        "package": "opencode-ai"
+      }
     },
     {
       "name": "no-mistakes",
