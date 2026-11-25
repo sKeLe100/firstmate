@@ -121,6 +121,8 @@ test_parent_refuses_cycles_second_parents_and_done_parents() {
 
   issue "$home" unparent child-a >/dev/null || fail "unparent refused"
   issue "$home" parent child-a epic-b >/dev/null || fail "parent refused after unparent"
+  out=$(issue "$home" show epic-a) || fail "show failed on the old parent"
+  case "$out" in *child-a*) fail "old parent still lists the reparented child" ;; esac
   pass "parent refuses cycles, second parents and done parents"
 }
 

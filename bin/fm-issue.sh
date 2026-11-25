@@ -155,9 +155,9 @@ parent_of() {  # <child>
 children_of() {  # <parent>
   [ -f "$SIDECAR" ] || return 0
   awk -F'\t' -v id="$1" '
-    $1 == "link" && $2 == "parent" && $4 == id { c[$3] = 1 }
-    $1 == "unlink" && $2 == "parent" && $4 == id { delete c[$3] }
-    END { for (x in c) print x }
+    $1 == "link" && $2 == "parent" { p[$3] = $4 }
+    $1 == "unlink" && $2 == "parent" { p[$3] = "" }
+    END { for (x in p) if (p[x] == id) print x }
   ' "$SIDECAR" | LC_ALL=C sort
 }
 
