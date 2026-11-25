@@ -16,6 +16,8 @@
 #   link	<parent|related|discovered-from>	<a>	<b>	<utc>
 #   unlink	<parent|related|discovered-from>	<a>	<b>	<utc>
 #   log	<entry-type>	<id>	-	<utc>	<single-line text>
+# `unparent` writes `unlink parent <child> -`: a parent unlink clears the child's
+# parent whatever it was, and the latest parent record per child wins.
 # Every record is appended under data/.issue-index.lock, so several writers
 # cannot lose each other's writes and the log stays append-only. Tombstones
 # (`unlink`) are also append-only; the sidecar is never rewritten. Readers
