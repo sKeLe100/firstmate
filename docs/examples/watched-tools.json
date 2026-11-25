@@ -40,6 +40,14 @@
       "version_url": "https://downloads.claude.ai/claude-code-releases/latest"
     },
     {
+      "name": "opencode",
+      "command": "opencode",
+      "published": {
+        "source": "npm",
+        "package": "opencode-ai"
+      }
+    },
+    {
       "name": "no-mistakes",
       "command": "no-mistakes",
       "version_args": ["--version"],

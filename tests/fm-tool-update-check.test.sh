@@ -558,6 +558,32 @@ test_published_version_equal_to_path_is_silent() {
   pass "a version_url that matches the PATH version is silent"
 }
 
+test_npm_published_update_is_reported_for_a_cli_that_never_announces() {
+  local home dir out
+  # On 2026-11-23 PC01 ran opencode 1.19.5 while npm published 1.19.6, and the
+  # check said nothing. opencode never announces its own update, so an entry
+  # with no announce_pattern and no published source watches PATH skew only;
+  # naming the npm package is what makes a published release visible. The
+  # registry document carries an earlier unrelated dotted number, so the JSON
+  # version field, not the first number in the body, is what gets compared.
+  home=$(make_home npm-latest)
+  dir="$home/bin"
+  out="$home/out.txt"
+  make_release_transport "$dir"
+  make_copy "$dir" "$TOOL" '1.19.5'
+  printf '%s\n' '{"engines":{"node":">=18.0.0"},"version":"1.19.6"}' > "$home/response"
+
+  jq -n --arg command "$TOOL" '{tools: [{name: "opencode", command: $command}]}' > "$home/config/watched-tools.json"
+  run_check "$home" "$(fixture_path "$dir")" "$out" FM_RELEASE_RESPONSE="$home/response" FM_RELEASE_LOG="$home/http.log"
+  [ ! -s "$out" ] || fail "an entry with no update source reported a published update, so the incident no longer reproduces: $(cat "$out")"
+
+  write_release_config "$home" opencode npm opencode-ai
+  run_check "$home" "$(fixture_path "$dir")" "$out" FM_RELEASE_RESPONSE="$home/response" FM_RELEASE_LOG="$home/http.log"
+  assert_contains "$(cat "$out")" "opencode update available: installed 1.19.5, published 1.19.6" "the npm-published opencode update was not reported"
+  assert_not_contains "$(cat "$out")" "18.0.0" "an unrelated dotted number was read as the published version"
+  pass "an npm-published update is reported once the entry names the npm package"
+}
+
 test_unreadable_version_url_is_a_failure_not_a_pass() {
   local home dir out
   home=$(make_home version-url-dead)
@@ -1628,6 +1654,7 @@ test_quiet_tool_with_announce_pattern_is_silent
 test_published_version_newer_than_installed_is_reported
 test_published_version_already_installed_is_not_double_reported
 test_published_version_equal_to_path_is_silent
+test_npm_published_update_is_reported_for_a_cli_that_never_announces
 test_unreadable_version_url_is_a_failure_not_a_pass
 test_missing_curl_is_a_failure_not_a_pass
 test_version_url_must_be_https_with_a_command

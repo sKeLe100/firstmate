@@ -2966,7 +2966,6 @@ When it is present and the check is armed, [`bin/fm-tool-update-check.sh`](../bi
 The second condition is the reason the check exists.
 An update can install correctly and stay inert because an earlier `PATH` entry still holds an older copy, and a check that only asks whether a newer version is published reports that host as up to date.
 
-The script therefore runs every copy of a watched command found on `PATH` and asks it for its own version, rather than trusting one lookup or reading a version out of a directory name.
 The script therefore runs every copy of a watched command found on `PATH` (skipping WSL Windows-interop copies under `/mnt/<drive>/`) and asks it for its own version, rather than trusting one lookup or reading a version out of a directory name.
 
 This section is the single owner of the canonical schema.
@@ -3007,6 +3006,8 @@ This section is the single owner of the canonical schema.
 - A tool whose CLI never announces its own updates (Claude Code is one) can add `version_url` to its `command` entry: one HTTPS URL without whitespace or control characters whose response body carries the newest published version.
 - It is fetched read-only with curl inside the same probe bound; the first dotted numeric version in the body is compared with the newest installed copy found.
 - `update available` is reported only when the published version is newer than every installed copy found; a failed request, a body without a readable version, or a missing curl is reported as that tool's own check failure.
+- A `command` entry with neither `announce_pattern` nor a published source (`published` or `version_url`) watches PATH skew only: it can never report `<tool> update available`, so its silence says nothing about whether a newer release is published. Add one of those sources for any tool whose updates you expect to hear about.
+- An npm-installed CLI can use the `published` npm source, such as `{"source": "npm", "package": "opencode-ai"}`, which reads only the JSON `version` field of the package's `latest` document, so an earlier dotted number such as `engines.node` is never mistaken for the version (a `version_url` probe has no such guard: it takes the first dotted number in the body, so point it only at a body that leads with the version). It follows the same dist-tag the install command resolves rather than the repository's newest release tag: on 2026-11-23 OpenCode published GitHub `v2.4.x` releases for its separate OpenCode 2 line while the installable `opencode-ai` npm package still tracked `1.19.6`, so the npm `latest` tag is the line an installed `opencode` CLI is actually offered.
 - An `announce_pattern` that is not a usable extended regular expression stops `arm`, and during a sweep it is reported as that one tool's own check failure so one broken pattern never stops the other watched tools from being checked.
 - A `git` entry reports how many commits the local clone is behind its remote branch, and stays silent when the clone is current or ahead.
 - An omitted `branch` uses the remote's default branch, taken from the clone's own record of it and otherwise asked of the remote directly, so a `--single-branch` clone still resolves.
