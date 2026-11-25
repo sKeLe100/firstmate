@@ -190,7 +190,9 @@ storage_alert is a bounded local read of this home's state/.actions-storage-chec
   record, written by bin/fm-actions-storage-check.sh; bearings makes no network
   call for it and shows nothing while that record reports no warning.
 claude_accounts reads up to four accounts (FM_BEARINGS_CLAUDE_ACCOUNTS_MAX; the rest are unknown rows) listed in config/claude-accounts
-  (`label:dir` lines, where dir `ordinary` or $HOME/.claude is the ordinary login;
+  (one `ordinary` or absolute path per line, its documented format, plus `label:dir`
+  lines where dir `ordinary` or $HOME/.claude is the ordinary login; a plain line's
+  label is `ordinary` or its basename;
   an absent file falls back to the current CLAUDE_CONFIG_DIR; an unparseable line
   becomes an unknown row naming the file and line) in parallel under one shared FM_BEARINGS_CLAUDE_TIMEOUT budget (default 20s).
   A slow, failed, or unauthenticated read is an unknown row with its reason,
@@ -361,7 +363,8 @@ fi
 # --- Claude account quota display (local quota-axi, shared budget) ----------
 # quota-axi reads only the ambient CLAUDE_CONFIG_DIR, so a bearings digest built
 # from one read is blind to the other Claude accounts the fleet spends. Read every
-# account listed in config/claude-accounts (`label:dir` lines; an absent file
+# account listed in config/claude-accounts (one `ordinary` or absolute path per
+# line, the documented format, plus `label:dir` lines; an absent file
 # falls back to the current CLAUDE_CONFIG_DIR) in parallel under one bounded
 # budget, and project only the five-hour and weekly percent remaining with their
 # reset times. A failed, slow, or unauthenticated read becomes an unknown row
@@ -511,8 +514,16 @@ if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -e "$BEARINGS_ACCOUNTS_FILE" ]; then
       aline=$(bearings_trim "$aline")
       [ -n "$aline" ] || continue
       case "$aline" in
+        ordinary|/*)
+          adir=$aline
+          if [ "$aline" = ordinary ]; then
+            alabel=ordinary
+          else
+            alabel=$(basename -- "$aline")
+          fi
+          ;;
         *:*) alabel=$(bearings_trim "${aline%%:*}"); adir=$(bearings_trim "${aline#*:}") ;;
-        *) bearings_bad_account_line "$alineno" "line is not label:dir, so this account was not read"; continue ;;
+        *) bearings_bad_account_line "$alineno" "line is not 'ordinary', an absolute path, or label:dir, so this account was not read"; continue ;;
       esac
       if [ -z "$adir" ]; then
         bearings_bad_account_line "$alineno" "line has an empty dir, so this account was not read"
@@ -529,7 +540,7 @@ if [ -n "$BEARINGS_ACCOUNTS_FILE" ] && [ -e "$BEARINGS_ACCOUNTS_FILE" ]; then
       ACCOUNT_AMBIENT+=("$acct_ambient")
     done < "$BEARINGS_ACCOUNTS_FILE"
     if [ ${#ACCOUNT_DIRS[@]} -eq 0 ] && [ "$ACCOUNT_BAD_ROWS" = '[]' ]; then
-      ACCOUNTS_PROBLEM="config/claude-accounts has no usable label:dir lines"
+      ACCOUNTS_PROBLEM="config/claude-accounts has no usable account lines"
     fi
   fi
 fi
