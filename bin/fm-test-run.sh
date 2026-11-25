@@ -1313,7 +1313,7 @@ tests/fm-watch-retry-band.test.sh 13391
 tests/fm-watch-triage-waits.test.sh 1196801
 tests/fm-watch-triage.test.sh 593600
 tests/fm-watch-wedge-cap.test.sh 488040
-tests/fm-watch-wedge-cap-live.test.sh 368
+tests/fm-watch-wedge-cap-live.test.sh 654
 tests/fm-watcher-lock.test.sh 152739
 tests/fm-worker-account-live-e2e.test.sh 4346
 tests/fm-worker-account.test.sh 136656
