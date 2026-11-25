@@ -1,0 +1,4 @@
+diff of section 8 handler block: upstream kunchenguid/firstmate AGENTS.md (<) vs target (>)
+9a10,11
+> Load the `autonomous` skill when the captain invokes `/autonomous`, mentions standing orders or autonomous dispatch, or when a silent-invocation point fires (12:30/17:30 fleet-dispatch-points); it owns the dispatch-pass procedure and is captain-invocable, unlike section 13's agent-only reference skills.
+> 

@@ -1,0 +1,17 @@
+== tests/fm-watch-retry-band.test.sh
+ok - a halt-band task makes an otherwise-quiet heartbeat actionable and is named in the reason
+ok - an undrained halt survives a later heartbeat that takes no retry read
+ok - an unchanged halt reading stays silent; only a new reading re-surfaces
+ok - a non-halt retry band leaves the no-change heartbeat absorbed as before
+ok - a poll cycle stops a runaway worker through the control plane and records it
+# all fm-watch-retry-band tests passed
+exit=0
+== tests/fm-underused-capacity.test.sh
+fm-underused-capacity.test.sh: ok
+exit=0
+== tests/fm-agentsmd-size.test.sh
+ok - passes when AGENTS.md (53952 bytes) is under the 100KB ceiling
+ok - fails (1) with diagnostic when AGENTS.md (108188 bytes) exceeds 100KB
+ok - fails when AGENTS.md is missing
+ok - output includes both actual size (53952) and ceiling (102400)
+exit=0
