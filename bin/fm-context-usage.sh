@@ -8,7 +8,11 @@
 # Every Claude Code transcript line for an assistant turn carries a usage
 # object whose input_tokens + cache_creation_input_tokens +
 # cache_read_input_tokens sum is the context size actually sent for that turn,
-# which is the same total the /context command displays.
+# which is the same total the /context command displays. An advisor turn instead
+# records each API call under usage.iterations and sums them into those
+# top-level fields, so its top-level sum double-counts the advisor's own call;
+# for such a turn the reading comes from the last iteration (the final message
+# call's real context), not the summed top-level fields.
 #
 # Usage: fm-context-usage.sh [transcript.jsonl]
 #   With no argument, reads the Claude project directory for this home:
@@ -270,8 +274,18 @@ if last is None:
     sys.stderr.write("fm-context-usage: no assistant usage record in %s\n" % path)
     sys.exit(1)
 
+# An advisor turn records every API call it made under usage.iterations and
+# sums them into the top-level token fields, so the top-level fields describe
+# the whole turn (orchestrator calls plus the advisor's own call) rather than
+# the context actually sent on the turn's final call. Read the last iteration
+# instead; a turn without iterations keeps its top-level usage.
+usage = last
+iterations = last.get("iterations")
+if isinstance(iterations, list) and iterations and isinstance(iterations[-1], dict):
+    usage = iterations[-1]
+
 total = sum(
-    int(last.get(k) or 0)
+    int(usage.get(k) or 0)
     for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 )
 age = max(0, int(time.time() - os.path.getmtime(path)))
