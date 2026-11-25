@@ -306,6 +306,28 @@ test_launch_runs_inside_a_memory_scope() {
 }
 test_launch_runs_inside_a_memory_scope
 
+test_scoped_launch_falls_back_when_the_pane_has_no_user_bus() {
+  spawn_scope_case scope-nobus hostmem-scope-nobus ok
+  local nobus ldir rc=0
+  # Run the emitted launch where no user bus exists: the original command (a
+  # stub harness) must still run, with the loud warning, and the scope never.
+  nobus=$(mktemp -d)
+  mkdir -p "$nobus/bin"
+  printf '#!/bin/sh\necho ORIGINAL-LAUNCH-RAN\n' > "$nobus/bin/claude"
+  chmod +x "$nobus/bin/claude"
+  printf '%s\n' "$LAUNCH_TEXT" > "$nobus/launch.sh"
+  # The launch refers to its (already cleaned-up) private staging directory.
+  ldir=$(printf '%s' "$LAUNCH_TEXT" | grep -o '/tmp/fm-hostmem-scope-nobus+[0-9a-f]*' | head -1)
+  [ -z "$ldir" ] || mkdir -p "$ldir"
+  OUT2=$(env -i PATH="$nobus/bin:/usr/bin:/bin" HOME="$nobus" XDG_RUNTIME_DIR="$nobus" /bin/sh "$nobus/launch.sh" 2>&1) || rc=$?
+  rm -rf "$nobus" /tmp/fm-hostmem-scope-nobus+*
+  assert_contains "$OUT2" "ORIGINAL-LAUNCH-RAN" "the original launch runs without a user bus: $OUT2"
+  assert_contains "$OUT2" "launching WITHOUT a per-worker memory scope" "a pane without a user bus says so"
+  assert_not_contains "$OUT2" "Failed to connect to user scope bus" "the scoped branch is not attempted without a bus"
+  pass "fm-spawn.sh: a scoped launch runs the original command when the pane has no user bus"
+}
+test_scoped_launch_falls_back_when_the_pane_has_no_user_bus
+
 test_launch_without_scope_is_loud() {
   spawn_scope_case scope-none hostmem-scope-none fail
   assert_contains "$OUT" "WITHOUT a per-worker memory scope" "the missing scope is disclosed, never silent: $OUT"

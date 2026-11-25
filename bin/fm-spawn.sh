@@ -8876,7 +8876,10 @@ fi
 # still launches, loudly, with only the watcher's RSS guard as containment.
 if [ "$KIND" != secondmate ] && [ "$BACKEND" != t3code ]; then
   if SCOPE_PREFIX=$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$FM_ROOT/bin/fm-worker-memory-guard.sh" scope-prefix "$ID" "$SPAWN_GEN"); then
-    LAUNCH="$SCOPE_PREFIX /bin/sh -c $(shell_quote "$LAUNCH")"
+    # A pane without a user systemd bus would fail the scoped launch outright;
+    # decide at pane runtime and fall back to the plain launch, loudly.
+    # shellcheck disable=SC2016
+    LAUNCH='if [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; then '"$SCOPE_PREFIX /bin/sh -c $(shell_quote "$LAUNCH")"'; else echo '"'warning: no user systemd bus in this pane; launching WITHOUT a per-worker memory scope'"' >&2; '"$LAUNCH"'; fi'
   else
     scope_rc=$?
     case "$scope_rc" in

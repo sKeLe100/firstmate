@@ -120,6 +120,8 @@ load_config() {
 cmd_scope_prefix() {
   local id=${1:-} gen=${2:-} unit name probe want got
   [ "$SCOPE" = on ] || { echo "fm-worker-memory-guard: worker memory scope disabled by config (scope=off)" >&2; return 4; }
+  # Test seam: tests never reach the real systemd-run unless they name a fake.
+  [ "${FM_TEST_SEAM:-}" = 1 ] && [ -z "${FM_SYSTEMD_RUN:-}" ] && return 4
   command -v "$SYSTEMD_RUN" >/dev/null 2>&1 || { echo "fm-worker-memory-guard: scope unavailable: systemd-run not found" >&2; return 3; }
   want=$(( SCOPE_MAX * 1048576 ))
   # shellcheck disable=SC2016
