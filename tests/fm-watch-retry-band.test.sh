@@ -213,4 +213,40 @@ test_heartbeat_ok_band_still_absorbs() {
 }
 test_heartbeat_ok_band_still_absorbs
 
+# --- runaway-worker memory guard at every poll -------------------------------
+# bin/fm-watch.sh starts a detached bin/fm-worker-memory-guard.sh check each
+# poll cycle, so a worker whose process tree is over its limit is stopped
+# through the control plane without waiting for a heartbeat. The helper's own
+# contract lives in tests/fm-worker-memory-guard.test.sh.
+test_poll_stops_a_runaway_worker() {
+  local dir state fakebin out pid proc wt i calls
+  dir=$(make_case memguard); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; proc="$dir/proc"; wt="$dir/wt"
+  mkdir -p "$proc/100" "$wt" "$dir/config"
+  printf 'working: routine progress\n' > "$state/grinder.status"
+  printf 'kind=scout\nworktree=%s\nspawn_gen=g1\nbackend=tmux\n' "$wt" > "$state/grinder.meta"
+  printf '%s' "$(seen_sig "$state/grinder.status")" > "$state/.seen-grinder_status"
+  # One process holding 6000 MiB, cwd inside the worker's worktree.
+  printf '100 (agent) S 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1536000\n' > "$proc/100/stat"
+  ln -sfn "$wt" "$proc/100/cwd"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$dir" > "$fakebin/fm-control.sh"
+  chmod +x "$fakebin/fm-control.sh"
+  printf 'MemTotal: 22000000 kB\nMemAvailable: 16000000 kB\n' > "$dir/meminfo"
+  printf 'blocked: needs a decision\n' >> "$state/grinder.status"
+  printf '%s' "$(seen_sig "$state/grinder.status")" > "$state/.seen-grinder_status"
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" FM_POLL=1 \
+    FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 FM_WORKER_MEMORY_GUARD_EVERY=1 \
+    FM_PROC_ROOT_OVERRIDE="$proc" FM_MEMINFO_OVERRIDE="$dir/meminfo" \
+    FM_WORKER_MEMORY_GUARD_CONTROL_BIN="$fakebin/fm-control.sh" "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || reap "$pid"
+  calls="$dir/calls"
+  i=0
+  while [ ! -s "$calls" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  assert_equals "grinder exit" "$(cat "$calls" 2>/dev/null)" "the poll must stop the runaway worker through the exit verb"
+  assert_grep "key=memory-guard" "$state/grinder.status" "the stop must leave a durable status event"
+  pass "a poll cycle stops a runaway worker through the control plane and records it"
+}
+test_poll_stops_a_runaway_worker
+
 printf '# all fm-watch-retry-band tests passed\n'
