@@ -941,7 +941,8 @@ $UPSTREAM_SYNC_SECTION
 # Setup
 $SETUP_BASE
 This is a SCOUT task: the deliverable is a written report, not a PR.
-The worktree is your laboratory - install, run, edit, and make scratch commits freely; all of it is discarded at teardown.
+The worktree is your laboratory - run, edit, and make scratch commits freely; all of it is discarded at teardown.
+Never install packages, clone repositories, or unpack archives inside the worktree (a runaway install there can exhaust the host); build such scratch trees under \`~/fm-scratch/$ID/\`, one heavy job at a time, and delete them when done.
 The report is the only thing that survives, so anything worth keeping must be in it.
 
 # Rules
@@ -1060,6 +1061,7 @@ If the top-level path is the primary checkout or not the worktree you were launc
 # Rules
 $RULE1
 2. Keep project edits inside this worktree; keep proof and scratch output outside it, under \`$DATA/$ID/\` or a temporary directory.
+   Never install packages, clone repositories, or unpack archives inside the worktree beyond the project's own documented build; scratch trees belong under \`~/fm-scratch/$ID/\`, one heavy job at a time.
    Outside the worktree, write only that task material, the status and steering-inbox records, and the browser identity registry named below.
    Leave the worktree clean before reporting done.
    The padded-countdown token counter (the <total_tokens> block) in claude's UI is unreliable and can stick at 0 for a whole session; use /context or $FM_ROOT/bin/fm-context-usage.sh for actual context numbers.

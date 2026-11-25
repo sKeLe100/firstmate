@@ -158,6 +158,7 @@ config/codex-context-thresholds  Codex-side session-context thresholds (separate
 config/working-hours  captain attention-window schedule for proactive contact; NOT inherited; see "Captain attention windows (config/working-hours)"
 config/dispatch-cap  concurrent autonomous lane cap, reduced by quota ladder; inherited; see "Concurrent autonomous dispatch cap and quota ladder (config/dispatch-cap)"
 config/host-memory-floor  free-memory MiB floor below which lanes are refused; primary-authoritative; see "Host memory floor (config/host-memory-floor)"
+config/worker-memory-guard  per-worker memory scope and runaway-worker stop settings, key=value lines; local; see "Worker memory guard (config/worker-memory-guard)"
 config/retry-thresholds  retry-loop relaunch/round ceilings; inherited; see "Retry-loop thresholds (config/retry-thresholds)"
 config/herdr-presentation-spaces  Herdr visual projection on/off opt-in; inherited; see docs/herdr-backend.md "Presentation spaces"
 config/herdr-session  named Herdr session for the primary launcher (absent → default); NOT inherited; see "Primary Herdr session (config/herdr-session)"
@@ -1536,6 +1537,38 @@ The bound is fixed rather than configurable, and a host reporting no swap adds n
 Exit 2 - an unreadable `/proc/meminfo` or a malformed floor - means the reading could not be taken: the script itself still exits 2 and never reports `free`, and its callers treat that as disclosed uncertainty rather than pressure, noting the reason and proceeding. Only a `low` reading (exit 1) blocks a dispatch or a launch.
 Two callers enforce it: the [`/autonomous`](../.agents/skills/autonomous/SKILL.md) pass's step 3 defers new dispatch while the host reads low, and `bin/fm-spawn.sh` refuses a local launch on a low reading so a dispatch that bypassed the pass is still caught, except for `--relaunch`, which is exempt: a same-task replacement is net-neutral rather than new usage, and the reading there would be taken while the agent being replaced still holds its memory.
 A remote secondmate launch is not gated by it, because this reading says nothing about the host that launch lands on.
+
+## Worker memory guard (config/worker-memory-guard)
+
+One worker's memory must not take down the host: on 2026-11-24 a single OpenCode scout that installed npm trees inside its working copy grew to 15.7 GB and the kernel kill took down WSL and every pane.
+`bin/fm-worker-memory-guard.sh` owns three layers against that, each documented in its header.
+
+- **Scope.** `bin/fm-spawn.sh` launches every ship and scout worker (fresh and relaunch, never a secondmate or a T3 thread) inside `systemd-run --user --scope` with `MemoryHigh`, `MemoryMax`, and `MemorySwapMax=0`; it needs no root.
+  The swap cap is load-bearing: measured on PC01, a 400 MB allocation under `MemoryMax=96M` only swapped and survived, and was killed (exit 137) once swap was capped.
+  The scope is proven before it is used: a probe scope must report the requested `memory.max`.
+  When no scope can be proven (no user systemd manager, no delegated memory controller) the worker still launches, `fm-spawn.sh` prints a `WITHOUT a per-worker memory scope` warning naming the reason, and only the stop below limits it.
+- **Stop.** `bin/fm-watch.sh` starts one detached `bin/fm-worker-memory-guard.sh check` every 30 seconds (`FM_WORKER_MEMORY_GUARD_EVERY`).
+  A ship or scout whose process tree, attributed by worktree, holds more RSS than `rss-stop` is stopped, and when `bin/fm-host-memory.sh` reads low (`MemAvailable` under `config/host-memory-floor`, or swap nearly full) the single largest worker at or above `host-stop-min` is stopped, one per pass.
+  A stop is `bin/fm-control.sh <task> exit`: it keeps the worktree and every uncommitted change and is never teardown or discard.
+  It then appends a `blocked [key=memory-guard]` status event so firstmate reconciles it, once per launch generation; a failed stop is reported once and retried every two minutes.
+  The stop ends the agent only; a leftover child process in the worktree keeps its memory until firstmate removes it, and the scope still bounds it.
+- **Brief check.** `bin/fm-brief.sh` scaffolds tell a worker never to install packages, clone repositories, or unpack archives inside its worktree and to use `~/fm-scratch/<task-id>/` instead.
+  `bin/fm-spawn.sh` runs `brief-check` on a fresh ship or scout brief's `# Task` section: an install line that says it happens in the worktree, working copy, checkout, or repo and names no `~/fm-scratch` path refuses the spawn, and an install line with no destination only warns.
+  `FM_ALLOW_WORKTREE_INSTALL=1` downgrades the refusal to a warning for a task that truly needs it.
+
+`config/worker-memory-guard` is optional and local, one `key=value` per line with blank lines and `#` comments; a malformed file is rejected loudly and a spawn refuses rather than launching on guessed limits.
+
+| key | default | meaning |
+| --- | --- | --- |
+| `scope` | `on` | `off` launches without a cgroup scope |
+| `scope-high` | `5120` | `MemoryHigh` in MiB; keep it close under `scope-max`, because a worker held between a low `MemoryHigh` and `MemoryMax` is throttled forever instead of killed |
+| `scope-max` | `6144` | `MemoryMax` in MiB, at least `scope-high` |
+| `guard` | `on` | `off` disables the watcher's stop |
+| `rss-stop` | `4096` | per-worker process-tree RSS in MiB that stops it |
+| `host-stop-min` | `1024` | smallest worker in MiB a low host reading may stop |
+
+Secondmates are never measured or stopped.
+RSS sums every attributed process, so pages shared between a worker's processes count more than once; that errs toward stopping early.
 
 ## Session context thresholds (config/context-thresholds)
 

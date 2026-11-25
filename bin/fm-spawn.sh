@@ -4826,6 +4826,14 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   echo "error: spawn refused: project $PROJ_ABS has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C $PROJ_ABS commit --allow-empty -m \"chore: initial commit\"', then spawn again" >&2
   exit 1
 fi
+# A brief that names an install inside the working copy is refused before any
+# endpoint or worktree exists (bin/fm-worker-memory-guard.sh brief-check owns the
+# rule); a destination-less install line is a warning.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ -f "$BRIEF" ]; then
+  BRIEF_CHECK_RC=0
+  FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-worker-memory-guard.sh" brief-check "$BRIEF" || BRIEF_CHECK_RC=$?
+  [ "$BRIEF_CHECK_RC" -eq 0 ] || { echo "error: spawn refused: $BRIEF" >&2; exit 1; }
+fi
 # Claude 5-hour runway admission (bin/fm-dispatch-quota-cap.sh owns the rule):
 # a fresh Claude worker or scout whose bound account is projected to exhaust
 # its five-hour window before the reset, or is under 40% remaining with a live
@@ -8859,6 +8867,24 @@ if [ "$LAUNCH_ENV_ENABLED" = 1 ]; then
     LAUNCH_ENV_PREFIX="$LAUNCH_ENV_PREFIX "'${TRACEPARENT+"TRACEPARENT=$TRACEPARENT"}'
   fi
   LAUNCH="$LAUNCH_ENV_PREFIX /bin/sh -c $(shell_quote "$LAUNCH")"
+fi
+# Per-worker memory scope (bin/fm-worker-memory-guard.sh): a ship or scout
+# worker runs inside a systemd user scope with MemoryHigh and MemoryMax so one
+# runaway worker is killed inside its own cgroup instead of taking the host.
+# Wrapped outside the launch-env-allowlist `env -i` boundary because systemd-run
+# needs the pane's own XDG_RUNTIME_DIR. When no scope can be proven the worker
+# still launches, loudly, with only the watcher's RSS guard as containment.
+if [ "$KIND" != secondmate ] && [ "$BACKEND" != t3code ]; then
+  if SCOPE_PREFIX=$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$FM_ROOT/bin/fm-worker-memory-guard.sh" scope-prefix "$ID" "$SPAWN_GEN"); then
+    LAUNCH="$SCOPE_PREFIX /bin/sh -c $(shell_quote "$LAUNCH")"
+  else
+    scope_rc=$?
+    case "$scope_rc" in
+      4) ;;
+      3) echo "warning: launching $ID WITHOUT a per-worker memory scope (see the reason above); only the watcher's memory guard limits it" >&2 ;;
+      *) echo "error: config/worker-memory-guard is invalid; refusing to launch $ID" >&2; exit 1 ;;
+    esac
+  fi
 fi
 # A previous launch's failure record never describes this one.
 rm -f "$STATE_REAL/$ID.launch-failure" 2>/dev/null || true

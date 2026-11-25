@@ -3967,6 +3967,26 @@ EOF
 # surfaced when it wakes firstmate, this normally finds nothing and the heartbeat
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
+# worker_memory_guard_tick: starts one detached pass of bin/fm-worker-memory-guard.sh
+# at most every FM_WORKER_MEMORY_GUARD_EVERY seconds (default 30). The pass
+# measures each ship and scout worker's process tree and the host's free memory
+# and STOPS a runaway worker through bin/fm-control.sh exit, never teardown; a
+# runaway can fill a 22 GB host far faster than the heartbeat cadence, so this
+# rides every poll. Detached and time-bounded so a slow control call never
+# stalls the poll; config/worker-memory-guard guard=off disables the pass itself.
+worker_memory_guard_tick() {
+  local helper="$SCRIPT_DIR/fm-worker-memory-guard.sh" stamp="$STATE/.last-worker-memory-guard" every
+  [ -x "$helper" ] || return 0
+  every=${FM_WORKER_MEMORY_GUARD_EVERY:-30}
+  case "$every" in ''|*[!0-9]*) every=30 ;; esac
+  [ "$(age_of "$stamp")" -ge "$every" ] || return 0
+  touch "$stamp"
+  (
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+      fm_run_timed 180 "$helper" check >> "$STATE/.worker-memory-guard.log" 2>&1 </dev/null
+  ) >/dev/null 2>&1 &
+}
+
 # retry_pressure_read: one time-bounded invocation of the retry-pressure helper.
 retry_pressure_read() {  # <reader> <task>
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
@@ -4631,6 +4651,9 @@ while :; do
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.
   [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" capture || true
+  # Runaway-worker memory guard (bin/fm-worker-memory-guard.sh): stops a worker
+  # whose process tree, or a host whose free memory, crosses its floor.
+  worker_memory_guard_tick || true
   # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups"):
   # display-only tags and agents view, never a wake. Off costs one file test.
   [ ! -e "$CONFIG/herdr-project-groups" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-herdr-groups.sh" sync || true
