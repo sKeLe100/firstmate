@@ -1216,7 +1216,19 @@ ok - opencode idle absolute cwd rail on a 300-column pane reads empty
 not ok - mid-turn absolute cwd rail read 'pending', want empty
 ```
 
-The cursorless backends still defer: on a cursorless read (Herdr and Zellij) a full-pane capture of this version answers `unknown` because the status rail below the composer floor row is contiguous non-blank content the selector refuses to outrank, which is the strict posture and not this defect; and very narrow panes where the cwd rail starts in the left half of the row defer the same way.
+Verified on 2026-11-25 on Linux against the OpenCode 1.18.31 captures in `tests/fixtures/opencode-1.18.31-cwd/`: a cursorless read treats the status rail directly below the composer floor row as furniture, so all four full-pane captures answer `empty` under the Herdr, Zellij, and plain capability profiles.
+A rail with leading cwd or stats text and no floor row above it stays `unknown`.
+`test_matrix_opencode_11831_status_rail` covers both cases:
+
+```sh
+bash tests/fm-composer-lib.test.sh
+```
+
+```text
+ok - matrix: opencode 1.18.31's status rail below the floor reads empty on cursorless backends
+```
+
+Very narrow panes where the cwd rail starts in the left half of the row are a separate limitation: the fragment is not recognised as furniture, so the composer does not read `empty`.
 
 ## Steering-inbox doorbell
 
