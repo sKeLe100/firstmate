@@ -1,0 +1,6 @@
+== adv
+context_tokens=282513 window=1000000 percent=28.3 warn_tokens=150000 restart_tokens=250000 band=restart transcript=/var/tmp/nm-daemon-tmp/tmp.CymhdlupT0/adv.jsonl age_seconds=0
+== plain
+context_tokens=5000 window=1000000 percent=0.5 warn_tokens=150000 restart_tokens=250000 band=ok transcript=/var/tmp/nm-daemon-tmp/tmp.CymhdlupT0/plain.jsonl age_seconds=0
+PASS fm-context-usage.test.sh
+context_tokens=563125 window=1000000 percent=56.3 warn_tokens=150000 restart_tokens=250000 band=restart transcript=/var/tmp/nm-daemon-tmp/tmp.yS3ZOyUqDA/adv.jsonl age_seconds=0
