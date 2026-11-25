@@ -1183,6 +1183,10 @@ test_matrix_opencode_11831_status_rail() {
   typed=$'  ┃\n  ┃  '"${ESC}[38;2;255;255;255mreply with OK.${ESC}[0m"$'\n  ┃\n  ┃  Build · gpt-oss-120b Internal OVHcloud\n  ╹▀▀▀▀▀▀▀▀\n  '"${ESC}[38;2;128;128;128m/Users/kheimel/project${ESC}[0m"'  50.8K  ctrl+p commands    • OpenCode 1.18.31'
   assert_screen "opencode 1.18.31 rail below an unsent draft stays pending" pending "$CAPS_STYLED" "$typed"
   assert_screen "opencode 1.18.31 rail below an unsent draft defers unstyled" unknown "$CAPS_PLAIN" "$typed"
+  # Safety: without the floor row, free text ending like the rail is transcript.
+  typed=$'  ┃\n  ┃\n  ┃  Build · gpt-oss-120b Internal OVHcloud\n  Press ctrl+p commands'
+  assert_screen "opencode free-prefix rail without a floor row stays unknown" unknown "$CAPS_STYLED" "$typed"
+  assert_screen "opencode free-prefix rail without a floor row stays unknown unstyled" unknown "$CAPS_PLAIN" "$typed"
   pass "matrix: opencode 1.18.31's status rail below the floor reads empty on cursorless backends"
 }
 
