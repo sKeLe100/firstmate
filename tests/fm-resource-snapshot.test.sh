@@ -1541,6 +1541,77 @@ test_drive_health_pc01_snapshot_fallbacks_and_failures() {
   pass "PC01 snapshot fallbacks and failures are labelled, never healthy"
 }
 
+start_inherited_flock() {  # <lockfile> -> prints the surviving holder pid
+  bash -c '
+    exec 9>"$1"
+    flock -x 9
+    sleep 300 </dev/null >/dev/null 2>&1 &
+    printf "%s" "$!"
+    exit 0
+  ' _ "$1"
+}
+
+run_pc02_slots_live() {  # <name> <remote-home> <host-out-file> <proc-root> -> JSON
+  local name=$1 remote_home=$2 host_out=$3 proc_root=$4 rec home fb fake
+  rec=$(make_home "pc02-slots-$name" fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures fixture
+  fake="$TMP_ROOT/pc02-slots-$name"
+  mkdir -p "$fake"
+  cat > "$fake/ssh" <<SSH
+#!/usr/bin/env bash
+script=\$(cat)
+case "\$script" in
+  *pc02-offload-slots*)
+    printf '%s\n' "\$script" | HOME='$remote_home' bash -s -- '$remote_home' '$remote_home' > '$host_out' 2>/dev/null
+    cat '$host_out'
+    exit 0
+    ;;
+esac
+exit 255
+SSH
+  chmod +x "$fake/ssh"
+  env PATH="$fake:$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_SSH_BIN="$fake/ssh" FM_RESOURCE_REMOTE_FIXTURE= \
+    FM_RESOURCE_PROC_ROOT="$proc_root" \
+    FM_RESOURCE_HOSTS_JSON="$TMP_ROOT/fixture/hosts-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$TMP_ROOT/fixture/herdr-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC02="$TMP_ROOT/fixture/herdr-pc02.json" \
+    FM_RESOURCE_ROLES_FILE="$TMP_ROOT/fixture/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$TMP_ROOT/fixture/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$TMP_ROOT/fixture/context.json" \
+    FM_RESOURCE_ANDROID_FIXTURE="$TMP_ROOT/fixture/android.json" \
+    FM_RESOURCE_DRIVE_HEALTH_FIXTURE="$TMP_ROOT/fixture/drive-health.json" \
+    FAKE_QUOTA_JSON="$TMP_ROOT/fixture/quota.json" \
+    "$SNAP" --json 2>&1
+}
+
+test_pc02_offload_slots_counts_inherited_flock() {
+  local remote_home lock holder host_out proc_root fd found=
+  if [ ! -r /proc/locks ] || ! command -v flock >/dev/null 2>&1; then
+    pass "inherited-flock slot detection needs Linux /proc and flock; skipped here"
+    return 0
+  fi
+  remote_home="$TMP_ROOT/pc02-slots-inherited/remote-home"
+  mkdir -p "$remote_home/.config/firstmate" "$TMP_ROOT/pc02-slots-inherited/fakeproc"
+  printf '3\n' > "$remote_home/.config/firstmate/pc02-offload-slots"
+  lock="$remote_home/.fm-pc02-test-slot-1.lock"
+  : > "$lock"
+  host_out="$TMP_ROOT/pc02-slots-inherited.host.out"
+  proc_root="$TMP_ROOT/pc02-slots-inherited/fakeproc"
+  : > "$proc_root/locks"
+  holder=$(start_inherited_flock "$lock")
+  for fd in /proc/"$holder"/fd/*; do
+    [ "$(readlink "$fd" 2>/dev/null)" = "$lock" ] || continue
+    grep -q '^lock:' "/proc/$holder/fdinfo/${fd##*/}" 2>/dev/null && { found=1; break; }
+  done
+  [ -n "$found" ] || fail "setup: the surviving holder must name the inherited lock in fdinfo"
+  run_pc02_slots_live inherited "$remote_home" "$host_out" "$proc_root" >/dev/null 2>&1
+  kill "$holder" 2>/dev/null || true
+  awk -F'\t' '$1 == "T" && $2 == "pc02-offload-slots" && $3 == "1/3" { found = 1 } END { exit !found }' "$host_out" \
+    || fail "a flock inherited by a child after its locker exits must read busy: $(awk -F'\t' '$2 == "pc02-offload-slots"' "$host_out")"
+  pass "a flock inherited by a child after its locker exits is read as a busy slot"
+}
+
 test_every_section_renders_and_agrees
 test_android_fixture_renders_both_hosts
 test_android_probe_reads_fake_tools
@@ -1590,6 +1661,7 @@ test_drive_health_pc02_reads_smartctl
 test_drive_health_pc02_missing_tool_and_unreachable
 test_drive_health_pc02_crlf_and_failed_output
 test_drive_health_pc01_snapshot_fallbacks_and_failures
+test_pc02_offload_slots_counts_inherited_flock
 test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
 test_down_pc02_keeps_pc01

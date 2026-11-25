@@ -175,6 +175,8 @@
 #   FM_RESOURCE_ANDROID_HOME_DIRS colon-separated user AVD homes to scan
 #                                 instead of ~/.android/avd and the Windows
 #                                 profiles (empty means none)
+#   FM_RESOURCE_PROC_ROOT         procfs root for slot lock reads (default
+#                                 /proc; a test can point it at a fake root)
 #   FM_RESOURCE_CONTEXT_FIXTURE   JSON object mapping task id to ctx_band
 #   FM_RESOURCE_FORGEJO_INI       Forgejo app.ini read for URL and repo root
 #                                 (default $HOME/forgejo/custom/conf/app.ini)
@@ -312,20 +314,48 @@ forgejo_discovered_slug() {
   [ -n "$owner" ] && [ -n "$repo" ] && printf '%s/%s' "$owner" "$repo"
 }
 
-# slot_busy <lockfile>: true when some process holds a lock on the file, read
-# from /proc/locks without ever taking the lock; falls back to fuser, then lsof.
-slot_busy() {
-  local f=$1 inode
+# slot_locked <lockfile>: true when the file's inode still carries a live lock,
+# read without ever taking the lock. /proc/locks names a lock only while its
+# original holder lives: a flock inherited by a child outlives its locker's exit
+# and leaves no /proc/locks line, but the surviving holder's fdinfo still names
+# the lock on that inode. The remote slot loop needs the same detector, so
+# remote_host_script injects this function with `declare -f` rather than keeping
+# a second copy that could drift.
+slot_locked() {
+  local f=$1 ino pids pid fd n proc=${FM_RESOURCE_PROC_ROOT:-/proc}
   [ -e "$f" ] || return 1
-  inode=$(stat -c %i "$f" 2>/dev/null)
-  if [ -n "$inode" ] && [ -r /proc/locks ]; then
-    awk -v i="$inode" '{ n = split($6, a, ":"); if (a[n] == i) { found = 1 } } END { exit !found }' /proc/locks
-    return
+  ino=$(stat -c %i "$f" 2>/dev/null) || return 1
+  [ -n "$ino" ] || return 1
+  if [ -r "$proc/locks" ] && awk -v i="$ino" '{ n = split($6, a, ":"); if (a[n] == i) { found = 1 } } END { exit !found }' "$proc/locks"; then
+    return 0
   fi
-  if command -v fuser >/dev/null 2>&1; then fuser "$f" >/dev/null 2>&1; return; fi
-  if command -v lsof >/dev/null 2>&1; then lsof -- "$f" >/dev/null 2>&1; return; fi
+  pids=''
+  if command -v fuser >/dev/null 2>&1; then pids=$(fuser "$f" 2>/dev/null); fi
+  if [ -z "$pids" ] && command -v lsof >/dev/null 2>&1; then pids=$(lsof -t -- "$f" 2>/dev/null); fi
+  if [ -n "$pids" ]; then
+    for pid in $pids; do
+      for fd in /proc/"$pid"/fd/*; do
+        [ "$(readlink "$fd" 2>/dev/null)" = "$f" ] || continue
+        n=${fd##*/}
+        grep -q '^lock:' "/proc/$pid/fdinfo/$n" 2>/dev/null && return 0
+      done
+    done
+    return 1
+  fi
+  if command -v fuser >/dev/null 2>&1 || command -v lsof >/dev/null 2>&1; then
+    return 1
+  fi
+  for fd in /proc/[0-9]*/fd/*; do
+    [ "$(readlink "$fd" 2>/dev/null)" = "$f" ] || continue
+    pid=${fd#/proc/}; pid=${pid%%/*}
+    n=${fd##*/}
+    grep -q '^lock:' "/proc/$pid/fdinfo/$n" 2>/dev/null && return 0
+  done
   return 1
 }
+
+# slot_busy <lockfile>: true when some process holds a lock on the file.
+slot_busy() { slot_locked "$1"; }
 
 bound() {  # <name> <default>
   local v
@@ -1003,6 +1033,7 @@ remote_records() {  # print "<id>\t<host>\t<root>\t<home>" per remote mate
 }
 
 remote_host_script() {
+  declare -f slot_locked
   cat <<'REMOTE'
 root=$1
 home=$2
@@ -1028,8 +1059,7 @@ used=0
 i=1
 while [ "$i" -le "$slots" ]; do
   f="$HOME/.fm-pc02-test-slot-$i.lock"
-  ino=$(stat -c %i "$f" 2>/dev/null)
-  if [ -n "$ino" ] && awk -v i="$ino" '{ n = split($6, a, ":"); if (a[n] == i) found = 1 } END { exit !found }' /proc/locks 2>/dev/null; then used=$((used + 1)); fi
+  slot_locked "$f" && used=$((used + 1))
   i=$((i + 1))
 done
 printf 'T\tpc02-offload-slots\t%s/%s\tlocked slots under ~/.fm-pc02-test-slot-*.lock\n' "$used" "$slots"
