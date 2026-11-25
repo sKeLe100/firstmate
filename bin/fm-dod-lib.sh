@@ -32,7 +32,7 @@
 # captain-approved <host>/<owner>/<repo> publication scope for this one task,
 # rendered as an `upstream-consent=<scope>` suffix token on the Delivery
 # contract line so brief, spawn record, and worker instructions agree.
-# The optional seventh argument is the task's private data directory, used only
+# The optional eighth argument is the task's private data directory, used only
 # to print the absolute path of the task mistake receipt the worker writes
 # (fm_mistake_receipt_block); empty falls back to a repo-relative path.
 # Callers of the gate are bin/fm-crew-state.sh (current-state done),
