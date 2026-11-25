@@ -27,6 +27,14 @@
 # live one - and an unreachable remote host is never evidence of death, so a
 # remote route is never replaced by a local endpoint.
 #
+# A recorded off state (the presence marker `<state>/<id>.off`) overrides the
+# probe entirely: an operator who turns a mate off deliberately expects no
+# probe, readiness repair, or automatic relaunch until that marker is removed.
+# The sweep reports the mate as `off`, distinct from a failed relaunch. This
+# probe is the single place the automatic recovery paths (the session-start
+# sweep and the watcher tick) observe the marker, so neither can resurrect a
+# mate an operator has parked.
+#
 # Replacement relaunch goes through `bin/fm-spawn.sh <id> --secondmate` with
 # FM_SPAWN_NO_GUARD=1, the same guarded path every recovery uses. A local mate
 # is pinned to its recorded backend. That path re-resolves placement from the
@@ -91,6 +99,22 @@ fm_sm_live_first_line() {
   printf '%s\n' "$1" | sed -n '1s/[[:space:]]\{1,\}/ /g;1p'
 }
 
+# Presence marker recording that an operator turned this mate off. It lives
+# beside the mate's metadata, so a probe needs no extra home lookup: a
+# state/<id>.meta record has its off marker at state/<id>.off.
+fm_secondmate_liveness_off_marker() {  # <meta>
+  case "$1" in
+    *.meta) printf '%s.off\n' "${1%.meta}" ;;
+    *) return 1 ;;
+  esac
+}
+
+fm_secondmate_liveness_off() {  # <meta>
+  local marker
+  marker=$(fm_secondmate_liveness_off_marker "$1") || return 1
+  [ -e "$marker" ] || [ -L "$marker" ]
+}
+
 # One line per relaunch attempt and one per outcome, keyed by epoch, plus a
 # `rearmed` row when a live probe lifts a parked mate. The watcher bound counts
 # `attempt` rows inside its window and after the last `rearmed` row; the whole
@@ -121,8 +145,8 @@ fm_secondmate_liveness_recent_attempts() {  # <id> <window-secs>
 #
 # Read-only probe of one registered secondmate's recorded endpoint. Populates:
 #
-#   FM_SM_LIVE_STATUS  silent | alive | relaunchable | skipped
-#   FM_SM_LIVE_STATE   the raw classifier/state word
+#   FM_SM_LIVE_STATUS  silent | alive | relaunchable | skipped | off
+#   FM_SM_LIVE_STATE   the raw classifier/state word, or `off`
 #   FM_SM_LIVE_KILL    1 when relaunch must first kill a confirmed-dead local
 #                      endpoint (its shell husk occupies the name)
 #   FM_SM_LIVE_RESUME  1 when relaunch continues the endpoint in place instead
@@ -160,6 +184,12 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
   FM_SM_LIVE_STATUS=skipped FM_SM_LIVE_STATE=unknown FM_SM_LIVE_KILL=0 FM_SM_LIVE_RESUME=0
   FM_SM_LIVE_CAUSE='' FM_SM_LIVE_WHERE='' FM_SM_LIVE_REASON='' FM_SM_LIVE_LINE=''
   local window harness remote_host remote_rc out agent_state readiness_reason route_out remote_backend expected_remote_backend
+  if fm_secondmate_liveness_off "$meta"; then
+    FM_SM_LIVE_STATUS=off
+    FM_SM_LIVE_STATE=off
+    FM_SM_LIVE_REASON="recorded off by $(fm_secondmate_liveness_off_marker "$meta")"
+    return 0
+  fi
   window=$(fm_meta_get "$meta" window)
   [ -n "$window" ] || { FM_SM_LIVE_STATUS=silent; return 0; }
   harness=$(fm_meta_get "$meta" harness)
