@@ -1,0 +1,40 @@
+ok - bearings displays five-hour and weekly percent remaining for every configured Claude account
+ok - config/claude-accounts plain lines (ordinary, absolute path) are read in their documented format
+ok - an explicit $HOME/.claude account reads the ambient login, not a pinned profile
+ok - an unauthenticated account and malformed account lines are explicit unknown rows
+ok - accounts beyond the cap are disclosed as unknown rows
+ok - Claude account reads share one bounded budget and a timeout degrades only its own row
+ok - an ordinary account reads ambient quota with CLAUDE_CONFIG_DIR unset
+ok - full captain questions survive local and generated secondmate projections
+ok - supplied secondmate questions preserve text with missing optional fields
+ok - task teardown during metadata capture is omitted without aborting the snapshot
+ok - current state and decision hints share one captured status observation
+ok - reused live state is discarded when task generation changes
+ok - large local snapshot overlaps local reads with byte-identical serial and concurrent projections
+ok - remote ledgers collect concurrently under one budget, reuse aged cache, and cancel wedged collectors
+ok - a missing remote ledger stays explicitly unreadable without remote summary computation
+ok - Domain Alpha structured state overrides a stale parent Phase 7 event
+ok - GNU stat file reads select -c without BSD filesystem-report pollution
+ok - parent activity evidence is bounded and disclosed
+ok - Bearings excludes a status-only child decision
+ok - a structured child captain hold reaches Captain's Call
+ok - missing, invalid, unreadable, malformed, and unavailable-child homes stay explicit unknowns
+ok - oversized ledgers stay strict unknown
+ok - secondmate and per-home child counts are bounded, disclosed, and explicitly expandable
+ok - a stale secondmate ledger is age-labeled, warned once, and names unknown child ids in full
+ok - parent decisions remain untrusted contradiction evidence
+ok - parent evidence reconciliation distinguishes matching holds, blocks, and decisions
+ok - nonprogressing child states are explicit and inconsistent terminal rows invalidate
+ok - registry unavailability and bounded truncation remain explicit
+ok - repeated snapshots keep the same current landed baseline and ignore prior reports
+ok - default output is bounded, local-only, and marks omitted surfaces
+ok - TOON and JSON are parity representations of the same model
+ok - default TOON renders a scalar string array as an inline primitive array
+ok - bearings surfaces the artifact-storage warning from its local record only
+ok - landed includes secondmate-managed merges alongside main-home merges
+ok - landed accepts only kind-owned delivery artifacts while answered questions stay out
+ok - kind fallback matches tasks-axi word boundaries and preserves scout deliveries
+ok - kindless v1 summaries retain report artifacts from fresh and cached ledgers
+ok - default landed selection balances one dominant home with sparse homes
+ok - landed selection refills capacity after sparse homes exhaust
+ok - landed selection uses deterministic home order when homes exceed the cap
