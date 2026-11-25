@@ -1159,6 +1159,18 @@ Keep the export root private and never serve it directly.
 The schema is versioned for compatible readers, but it is not a Firstmate command API and no Firstmate reader consumes it.
 [`architecture.md`](architecture.md#read-only-record-exports) describes the mechanism boundary; [`bin/fm-record-export.sh`](../bin/fm-record-export.sh) owns the exact allowlist, schema, path checks, publication, and retention mechanics.
 
+## Fleet resource snapshot (bin/fm-resource-snapshot.sh)
+
+The `/fleet` skill reads one bounded, read-only snapshot from [`bin/fm-resource-snapshot.sh`](../bin/fm-resource-snapshot.sh), whose header owns the complete section list, fields, source bounds, and fixture seams.
+The `quota[]` table has the fields `lane,account,plan,window,pct_remaining,resets_et,pace,state,read_utc,reading_utc,reason,spent_usd,stop_usd,remaining_usd,calls,spent_24h_usd,spent_7d_usd`.
+Provider-window rows leave the six spend fields empty.
+
+One `lane: google-api` row summarises the paid Google Gemini API ledger at `data/tools/gemini-spend.tsv` (the private caller `data/tools/gemini-ask.py` appends its columns `epoch,time_et,model,in,out,thinking,usd,note`).
+`spent_usd` is the ledger total, `calls` counts logged calls, `spent_24h_usd` and `spent_7d_usd` sum the last 24 hours and 7 days, and `remaining_usd` is the stop minus spend.
+`stop_usd` is read from the sibling `data/tools/gemini-stop-usd` file when it holds a positive number, else the 8 USD default.
+`pace` is `ahead`, `behind`, or `on_pace` against an even burn to the stop over 30 days from the first logged call, allowing 5% of the stop as tolerance.
+An absent ledger renders no row and no error; the snapshot never reads or prints the API key and never changes the ledger format.
+
 ## Underused-capacity threshold (config/underused-capacity-threshold)
 
 The optional local, gitignored `config/underused-capacity-threshold` file holds one whole percentage 0-100, the share of a spend lane's five-hour window that must remain before `bin/fm-underused-capacity.sh` reports that lane as idle capacity while a free pool slot and dispatchable work remain.

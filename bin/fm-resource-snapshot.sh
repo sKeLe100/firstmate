@@ -43,10 +43,22 @@
 #                  ssh. A stale, failed, or unreachable read is never rendered
 #                  as a zero count or a healthy verdict.
 #   quota[]        lane,account,plan,window,pct_remaining,resets_et,pace,state,
-#                  read_utc,reading_utc,reason
+#                  read_utc,reading_utc,reason,spent_usd,stop_usd,
+#                  remaining_usd,calls,spent_24h_usd,spent_7d_usd
 #                  reading_utc is when quota-axi itself took the reading (the
 #                  provider's refreshedAt, else the document's generatedAt);
-#                  no projection is ever rendered as a fact.
+#                  no projection is ever rendered as a fact. The six spend
+#                  fields are empty on every provider-window row.
+#                  One `lane: google-api` row summarises the paid Google Gemini
+#                  ledger at <data>/tools/gemini-spend.tsv (columns epoch,
+#                  time_et, model, in, out, thinking, usd, note): spent_usd,
+#                  stop_usd, remaining_usd, calls, spend over the last 24 hours
+#                  and 7 days, and pace=on_pace/ahead/behind against an even
+#                  burn to the stop over 30 days from the first logged call.
+#                  stop_usd comes from <data>/tools/gemini-stop-usd when that
+#                  sibling file holds a positive number, else 8. No row is
+#                  rendered when the ledger file is absent. The key is never
+#                  read or printed and the ledger format is never changed.
 #   workers[]      machine,home_lane,task,kind,model,spend_lane,stage,age,
 #                  last_active,ctx_band,pr,read_utc
 #   panes[]        machine,session,workspace,tab,pane,agent,agent_status,task,
@@ -84,7 +96,8 @@
 #   compute[]      rung,account,plan,used,allowance,reset,status,runs,read_utc
 #   unavailable[]  source,reason,read_utc
 #
-# "Lane" always means the spend lane: claude#1, claude#2, opencode-go, codex
+# "Lane" always means the spend lane: claude#1, claude#2, opencode-go, codex,
+# google-api
 # (other models report `unknown`, which the model column still explains).
 # ctx_band is the worker's own harness context band as `<band>(<pct>%)`:
 # bin/fm-context-usage.sh reads a Claude transcript and
@@ -411,6 +424,7 @@ trap 'exit 143' TERM
 : > "$TMP/drives.tsv"
 : > "$TMP/drive_health.tsv"
 : > "$TMP/quota.tsv"
+: > "$TMP/google_spend.tsv"
 : > "$TMP/secondmates.tsv"
 : > "$TMP/roles.tsv"
 : > "$TMP/testing.tsv"
@@ -1334,15 +1348,75 @@ collect_quota() {
     | ($p.state.refreshedAt // $gen // "-") as $reading
     | ($p | stateof) as $state
     | if (($p.windows // []) | length) == 0 or ($state != "fresh" and $state != "stale") then
-        [$lane, $account, ($p.plan // "-"), "-", "", "-", "-", $state, $read, $reading, ($p | reasonof)] | @tsv
+        [$lane, $account, ($p.plan // "-"), "-", "", "-", "-", $state, $read, $reading, ($p | reasonof),
+         "", "", "", "", "", ""] | @tsv
       else
         ($p.windows | sort_by(winorder[.id] // 9) | .[]) as $w
         | [$lane, $account, ($p.plan // "-"),
            ($w.id | sub("^window:"; "")), (($w.percentRemaining // "") | tostring),
            ($w.resetsAt | et), ($w.pace.status // "-"), $state, $read, $reading,
-           (if $state == "stale" then "cached reading" else "-" end)] | @tsv
+           (if $state == "stale" then "cached reading" else "-" end),
+           "", "", "", "", "", ""] | @tsv
       end
   ' > "$TMP/quota.tsv"
+}
+
+# --- google api spend -------------------------------------------------------
+# The paid Google Gemini lane keeps its own append-only ledger beside the
+# private caller, with one row per paid call. This summarises that ledger; it
+# never reads the API key, never changes the ledger, and renders nothing when
+# the ledger is absent.
+collect_google_spend() {
+  local ledger stop_file stop stats calls total day week remaining pct last pace reading
+  ledger="$DATA/tools/gemini-spend.tsv"
+  [ -f "$ledger" ] || return 0
+  stop_file="$DATA/tools/gemini-stop-usd"
+  stop=8
+  if [ -f "$stop_file" ]; then
+    stop=$(awk -v d=8 '
+      NR == 1 {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
+        if ($0 ~ /^[0-9]+([.][0-9]+)?$/) v = $0 + 0
+        exit
+      }
+      END { if (v > 0) print v; else print d }
+    ' "$stop_file" 2>/dev/null)
+  fi
+  case "$stop" in ''|*[!0-9.]*) stop=8 ;; esac
+  stats=$(awk -F'\t' -v now="$NOW" -v stop="$stop" '
+    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    {
+      e = trim($1); u = trim($7)
+      if (e == "epoch") next
+      if (e !~ /^[0-9]+$/ || u !~ /^-?[0-9]+([.][0-9]+)?$/) next
+      t = e + 0; cost = u + 0
+      if (n == 0 || t < first) first = t
+      if (n == 0 || t > last) last = t
+      total += cost; n++
+      if (t >= now - 86400) day += cost
+      if (t >= now - 604800) week += cost
+    }
+    END {
+      if (n == 0) exit 0
+      elapsed = now - first
+      if (elapsed < 0) elapsed = 0
+      expected = (elapsed >= 2592000) ? stop : stop * elapsed / 2592000
+      tol = stop * 0.05
+      diff = total - expected
+      pace = (diff > tol) ? "ahead" : ((diff < -tol) ? "behind" : "on_pace")
+      remaining = stop - total
+      pct = remaining / stop * 100
+      if (pct < 0) pct = 0
+      if (pct > 100) pct = 100
+      printf "%d\t%.4f\t%.4f\t%.4f\t%.4f\t%.2f\t%d\t%s\n", n, total, day, week, remaining, pct, last, pace
+    }
+  ' "$ledger" 2>/dev/null)
+  [ -n "$stats" ] || return 0
+  IFS=$'\t' read -r calls total day week remaining pct last pace <<< "$stats"
+  reading=$(iso_utc "$last")
+  printf 'google-api\t-\t-\t30d\t%s\t-\t%s\tfresh\t%s\t%s\t-\t%.4f\t%.4f\t%.4f\t%s\t%.4f\t%.4f\n' \
+    "$pct" "$pace" "$read_iso" "$reading" "$total" "$stop" "$remaining" "$calls" "$day" "$week" \
+    >> "$TMP/google_spend.tsv"
 }
 
 # --- herdr panes ------------------------------------------------------------
@@ -2244,11 +2318,15 @@ tsv_to_json() {  # <tsv> <fields-json-array-literal>
 
 tsv_to_json_quota() {  # <tsv>
   jq -R -s '
+    def num: if . == null or . == "" then null else (tonumber? // .) end;
     split("\n") | map(select(length > 0)) | map(split("\t") |
       {lane: .[0], account: .[1], plan: .[2], window: .[3],
-       pct_remaining: (if (.[4] // "") == "" then null else (.[4] | tonumber? // .[4]) end),
+       pct_remaining: (.[4] | num),
        resets_et: .[5], pace: .[6], state: .[7], read_utc: .[8],
-       reading_utc: .[9], reason: .[10]})
+       reading_utc: .[9], reason: .[10],
+       spent_usd: (.[11] | num), stop_usd: (.[12] | num),
+       remaining_usd: (.[13] | num), calls: (.[14] | num),
+       spent_24h_usd: (.[15] | num), spent_7d_usd: (.[16] | num)})
   ' "$1"
 }
 
@@ -2321,7 +2399,8 @@ build_model() {
     '["machine","mount","total_gb","free_gb","pct_used","warn","read_utc"]' > "$drive_json"
   tsv_to_json "$TMP/drive_health.tsv" \
     '["machine","disk","model","smart","reallocated","pending","uncorrectable","temp_c","power_on_hours","nvme_used_pct","media_errors","read_utc","reason"]' > "$drive_health_json"
-  tsv_to_json_quota "$TMP/quota.tsv" > "$quota_json"
+  cat "$TMP/quota.tsv" "$TMP/google_spend.tsv" > "$TMP/quota_all.tsv"
+  tsv_to_json_quota "$TMP/quota_all.tsv" > "$quota_json"
   tsv_to_json "$TMP/workers.tsv" \
     '["machine","home_lane","task","kind","model","spend_lane","stage","age","last_active","ctx_band","pr","read_utc"]' > "$worker_json"
   tsv_to_json "$TMP/panes.tsv" \
@@ -2406,6 +2485,7 @@ fi
 ( collect_local_drives ) &
 ( collect_drive_health ) &
 ( collect_quota ) &
+( collect_google_spend ) &
 ( collect_verify ) &
 ( collect_local_workers ) &
 ( collect_android_local ) &
@@ -2421,6 +2501,7 @@ collect_android
 build_model
 
 if [ -s "$TMP/hosts.tsv" ] || [ -s "$TMP/drives.tsv" ] || [ -s "$TMP/quota.tsv" ] \
+  || [ -s "$TMP/google_spend.tsv" ] \
   || [ -s "$TMP/drive_health.tsv" ] \
   || [ -s "$TMP/workers_local.tsv" ] || [ -s "$TMP/workers_remote.tsv" ] \
   || [ -s "$TMP/panes.tsv" ] || [ -s "$TMP/secondmates.tsv" ] || [ -s "$TMP/roles.tsv" ] \

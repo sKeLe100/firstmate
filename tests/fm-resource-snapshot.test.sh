@@ -315,6 +315,80 @@ test_rate_limited_quota_is_not_zero() {
   pass "a rate-limited quota read shows state and retry, never 0 percent"
 }
 
+test_google_api_spend_row() {
+  local rec home fb out rc expected_reading
+  rec=$(make_home google-spend fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures google-spend
+  mkdir -p "$home/data/tools"
+  {
+    printf 'epoch\ttime_et\tmodel\tin\tout\tthinking\tusd\tnote\n'
+    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t1.0000\tolder\n' "$((NOW - 864000))"
+    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t0.5000\tmiddle\n' "$((NOW - 172800))"
+    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t0.2500\trecent\n' "$((NOW - 3600))"
+  } > "$home/data/tools/gemini-spend.tsv"
+  out=$(run_snapshot "$home" "$fb" --json 2>&1); rc=$?
+  expect_code 0 "$rc" "google spend render"
+  printf '%s\n' "$out" > "$TMP_ROOT/google.json"
+  expected_reading=$(date -u -d "@$((NOW - 3600))" +%Y-%m-%dT%H:%M:%SZ)
+  [ "$(count_json "$TMP_ROOT/google.json" '[.quota[] | select(.lane == "google-api")]')" = 1 ] \
+    || fail "the Google ledger must add exactly one google-api row: $(jq -c '.quota' "$TMP_ROOT/google.json")"
+  jq -e --arg reading "$expected_reading" '
+    .quota[] | select(.lane == "google-api")
+    | .account == "-" and .plan == "-" and .window == "30d" and .state == "fresh"
+      and .calls == 3 and .spent_usd == 1.75 and .stop_usd == 8
+      and ((.remaining_usd - 6.25) | fabs) < 0.0001
+      and ((.spent_24h_usd - 0.25) | fabs) < 0.0001
+      and ((.spent_7d_usd - 0.75) | fabs) < 0.0001
+      and .pace == "behind"
+      and ((.pct_remaining - 78.13) | fabs) < 0.01
+      and .reading_utc == $reading
+  ' "$TMP_ROOT/google.json" >/dev/null \
+    || fail "google-api row must carry spend, stop, remaining, calls, windows, and pace: $(jq -c '.quota[] | select(.lane == "google-api")' "$TMP_ROOT/google.json")"
+  jq -e '.quota[] | select(.lane == "claude#1" and .window == "five_hour") | .spent_usd == null and .calls == null' \
+    "$TMP_ROOT/google.json" >/dev/null \
+    || fail "provider-window rows must leave the Google spend fields empty"
+  pass "a Google ledger becomes one google-api row with spend, calls, windows, and pace"
+}
+
+test_google_api_absent_ledger_is_silent() {
+  local rec home fb out rc
+  rec=$(make_home google-absent fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures google-absent
+  out=$(run_snapshot "$home" "$fb" --json 2>&1); rc=$?
+  expect_code 0 "$rc" "absent google ledger render"
+  printf '%s\n' "$out" > "$TMP_ROOT/google-absent.json"
+  jq -e '[.quota[] | select(.lane == "google-api")] | length == 0' "$TMP_ROOT/google-absent.json" >/dev/null \
+    || fail "an absent Google ledger must render no google-api row"
+  jq -e '[.unavailable[] | select((.source | test("google|gemini"; "i")) or (.reason | test("google|gemini|spend"; "i")))] | length == 0' \
+    "$TMP_ROOT/google-absent.json" >/dev/null \
+    || fail "an absent Google ledger must render no error: $(jq -c '.unavailable' "$TMP_ROOT/google-absent.json")"
+  pass "an absent Google ledger renders no row and no error"
+}
+
+test_google_api_stop_file_drives_budget() {
+  local rec home fb out rc
+  rec=$(make_home google-stop fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures google-stop
+  mkdir -p "$home/data/tools"
+  printf '2\n' > "$home/data/tools/gemini-stop-usd"
+  {
+    printf 'epoch\ttime_et\tmodel\tin\tout\tthinking\tusd\tnote\n'
+    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t1.0000\tolder\n' "$((NOW - 864000))"
+    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t0.5000\tmiddle\n' "$((NOW - 172800))"
+    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t0.2500\trecent\n' "$((NOW - 3600))"
+  } > "$home/data/tools/gemini-spend.tsv"
+  out=$(run_snapshot "$home" "$fb" --json 2>&1); rc=$?
+  expect_code 0 "$rc" "google stop-file render"
+  printf '%s\n' "$out" > "$TMP_ROOT/google-stop.json"
+  jq -e '
+    .quota[] | select(.lane == "google-api")
+    | .stop_usd == 2 and ((.remaining_usd - 0.25) | fabs) < 0.0001
+      and ((.pct_remaining - 12.5) | fabs) < 0.01 and .pace == "ahead"
+  ' "$TMP_ROOT/google-stop.json" >/dev/null \
+    || fail "the ledger-side stop file must drive stop, remaining, percent, and pace: $(jq -c '.quota[] | select(.lane == "google-api")' "$TMP_ROOT/google-stop.json")"
+  pass "a ledger-side stop file replaces the 8 USD default"
+}
+
 test_down_pc02_keeps_pc01() {
   local rec home fb out rc
   rec=$(make_home down fresh); home=${rec%%|*}; fb=${rec#*|}
@@ -1664,6 +1738,9 @@ test_drive_health_pc01_snapshot_fallbacks_and_failures
 test_pc02_offload_slots_counts_inherited_flock
 test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
+test_google_api_spend_row
+test_google_api_absent_ledger_is_silent
+test_google_api_stop_file_drives_budget
 test_down_pc02_keeps_pc01
 test_remote_fixture_alone_supplies_pc02_rows
 test_worker_lane_account_follows_lane_not_role
