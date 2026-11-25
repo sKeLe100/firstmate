@@ -1,0 +1,4 @@
+/proc/locks lines for inode: 0
+inherited: BUSY
+after release: FREE
+missing: FREE

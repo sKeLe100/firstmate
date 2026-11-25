@@ -1,0 +1,15 @@
+ok - stale, missing, and failed PC01 snapshots are labelled with reason and read time, never zero or healthy
+ok - the shipped PC02 smartctl probe parses ATA and NVMe health over the ssh boundary
+ok - missing-tool and unreachable PC02 reads are labelled with reason, never zero or healthy
+ok - PC02 parses CRLF smartctl.exe output, real FAILED verdicts, and verdict-less devices
+ok - PC01 snapshot fallbacks and failures are labelled, never healthy
+ok - a flock inherited by a child after its locker exits is read as a busy slot
+ok - a failed quota read is labelled and never rendered as zero
+ok - a rate-limited quota read shows state and retry, never 0 percent
+ok - a down PC02 yields unavailable rows and keeps PC01 complete
+ok - the remote fixture alone supplies PC02 hosts, drives, and the running session
+ok - worker-lane accounts follow the lane classification, not the orchestrator role
+ok - row caps hold and the omitted counts report the cut rows
+ok - the command creates no file and leaves fixture mtimes unchanged
+ok - home-only renders just one home's workers for the remote call
+skip: live: opt-in; set FM_FLEET_LIVE=1 to run
