@@ -10,6 +10,8 @@
 # projected model. The projection is view-specific: it DROPS fields from the bearings
 # output, it never removes them from - or otherwise weakens - the canonical snapshot,
 # which stays complete.
+# Open decision rows retain a bounded summary for overview use and a full question
+# for decision presentation, including all options recorded in the hold reason.
 #
 # By default the canonical snapshot performs bounded concurrent remote-ledger reads
 # for registered remote homes under one shared collection budget and may atomically
@@ -156,7 +158,7 @@ Default fields: schema, home, generated, prs,
   in_flight{id,kind,state,repo,name,doing},
   secondmates{id,state,doing,provenance,freshness,stale,invalid_ids,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
-  decisions_open{id,key,verb,summary,owner,declared_priority,since,created_at},
+  decisions_open{id,key,verb,summary,question,owner,declared_priority,since,created_at},
   landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner,deferred_since,filed}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty),
@@ -164,6 +166,8 @@ Default fields: schema, home, generated, prs,
   (only when the local artifact-storage warning record reports one), omitted{surface,reveal}.
 Default gates are selected newest filed first before their bound; undated gates
   retain input order after dated gates.
+Decision presentation uses question, the full title and hold reason; summary
+  remains a bounded overview and must not substitute for the question/options.
 landed merges this home's Done with registered secondmate homes' Done, bounded by
   a per-home cap (FM_BEARINGS_LANDED_PER_HOME) and an overall cap (FM_BEARINGS_LANDED),
   with omitted[] disclosure. Default selection is balanced across deterministic home
@@ -901,7 +905,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | select(.structured and .hold_bucket != null)
          | select(($all_decisions == 1) or live_captain_call)
          | {id,key:.id,verb:"captain-hold",
-            summary:hold_summary(.title; .hold_reason),owner:"(main)",
+            summary:hold_summary(.title; .hold_reason),
+            question:(.title + ": " + .hold_reason),owner:"(main)",
             declared_priority:is_declared_next_session_priority,
             since:((.held_since // .since) // null),
             created_at:((.hold_set // .held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
@@ -911,7 +916,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
               | select(($all_decisions == 1) or live_captain_call)
               | {id:($m.id + "/" + .id),key,verb,
                  summary:hold_summary((.summary // .id);
-                                      (.reason // "captain decision pending")),owner:$m.id,
+                                      (.reason // "captain decision pending")),
+                 question:(.question // ((.summary // .id) + ": " + (.reason // "captain decision pending"))),owner:$m.id,
                  declared_priority:(.declared_priority // false),
                  since:((.held_since // .since) // null),
                  created_at:((.hold_set // .held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ]
@@ -924,7 +930,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
                          | index($id) | not)
                 | {id:($m.id + "/" + .id),key:.id,verb:"captain-hold",
                    summary:hold_summary((.title // .id);
-                                        (.hold_reason // "captain decision pending")),owner:$m.id,
+                                        (.hold_reason // "captain decision pending")),
+                   question:(.question // ((.title // .id) + ": " + (.hold_reason // "captain decision pending"))),owner:$m.id,
                    declared_priority:(.declared_priority // false),
                    since:((.held_since // .since) // null),
                    created_at:((.hold_set // .held_since // .since) as $since | if $since then (try ($since | fromdateiso8601) catch (try ($since | strptime("%Y-%m-%d") | mktime) catch null)) else null end)} ])[] ]

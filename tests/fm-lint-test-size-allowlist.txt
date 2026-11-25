@@ -8,16 +8,21 @@
 # the fork's upstream-sync branch: they merged in from upstream before #121
 # added the guard, so grandfathering them here is that same one-time landing
 # exemption, not a new oversized file created after the guard existed.
+# fm-control-relaunch/fm-pr-check-security/fm-spawn-dispatch-profile/fm-wake-queue were grandfathered by the 2026-11 upstream catch-up merge; each still needs a split, tracked as a follow-up.
 fm-backlog-atomicity.test.sh
 fm-bearings-snapshot.test.sh
 fm-calm-pi-extension.test.sh
+fm-control-relaunch.test.sh
 fm-crew-state.test.sh
 fm-daemon.test.sh
 fm-pi-branch-extension.test.sh
 fm-pi-watch-extension.test.sh
+fm-pr-check-security.test.sh
 fm-pr-merge.test.sh
 fm-procevent.test.sh
 fm-public-followup.test.sh
 fm-secondmate-safety.test.sh
+fm-spawn-dispatch-profile.test.sh
 fm-voice-relay.test.sh
+fm-wake-queue.test.sh
 fm-x-mode.test.sh

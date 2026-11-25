@@ -9,6 +9,9 @@
 #   tests/fm-remote-secondmate-lifecycle-supervision-e2e.test.sh liveness, startup, retirement
 # A part sources tests/lib.sh and tests/remote-herdr-fixture.sh before this file.
 
+# shellcheck source=tests/rex-fake-fixture.sh
+. "$(dirname "${BASH_SOURCE[0]}")/rex-fake-fixture.sh"
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 TMP_ROOT=$(fm_test_tmproot fm-remote-secondmate-e2e)
@@ -23,6 +26,8 @@ SSH_COUNT="$TMP_ROOT/ssh.count"
 DOCTOR_LOG="$TMP_ROOT/doctor.log"
 HERDR_STATE="$TMP_ROOT/remote-herdr.state"
 HERDR_LOG="$TMP_ROOT/remote-herdr.log"
+# shellcheck disable=SC2034 # read by the parts that source this file
+REX_FAKE="$TMP_ROOT/remote-rex"
 TMUX_LOG="$TMP_ROOT/remote-tmux.log"
 TMUX_STATE="$TMP_ROOT/remote-tmux.state"
 # One fixture value names the remote route's steering-inbox surface, so the
@@ -191,6 +196,11 @@ if [ "$command_name" = fm-remote-doctor.sh ]; then
       printf 'error: this host is not ready for a remote second mate; unresolved: gui-session\n' >&2
       exit 1
       ;;
+    doctor-old)
+      # A remote still on the herdr-only doctor exits 2 on the unknown
+      # --backend flag; bare calls answer like the normal readiness probe.
+      case "${_command_action:-}:${command_rel:-}" in *--backend*) exit 2 ;; esac
+      ;;
     doctor-fixable)
       # Red until --fix runs on this host, green on every later read-only run.
       if [ "${_command_action:-}" = --fix ]; then
@@ -232,6 +242,26 @@ case "${FM_FAKE_SSH_MODE:-normal}:$command_name:$command_rel" in
     printf 'backend=herdr\n'
     printf 'target=default:w1:p2\n'
     printf 'herdr_session=default\n'
+    printf 'harness=codex\n'
+    exit 0
+    ;;
+  launch-rex-bad-server-route:fm-remote-secondmate-control.sh:*)
+    [ "$_command_action" = launch ] || exit 93
+    printf 'schema=fm-remote-secondmate-control.v1\n'
+    printf 'backend=rex\n'
+    printf 'target=00000001-0000-7000-8000-000000000002:00000002-0000-7000-8000-000000000003\n'
+    printf 'rex_session_id=session:00000001-0000-7000-8000-000000000002\n'
+    printf 'rex_server=tcp://127.0.0.1:7299\n'
+    printf 'harness=codex\n'
+    exit 0
+    ;;
+  launch-rex-mismatched-route:fm-remote-secondmate-control.sh:*)
+    [ "$_command_action" = launch ] || exit 93
+    printf 'schema=fm-remote-secondmate-control.v1\n'
+    printf 'backend=rex\n'
+    printf 'target=99999999-0000-7000-8000-000000000009:00000002-0000-7000-8000-000000000003\n'
+    printf 'rex_session_id=session:00000001-0000-7000-8000-000000000002\n'
+    printf 'rex_server=unix:///tmp/fake-rex.sock\n'
     printf 'harness=codex\n'
     exit 0
     ;;

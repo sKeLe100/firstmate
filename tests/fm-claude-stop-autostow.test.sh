@@ -26,6 +26,7 @@ AUTOSTOW_SCRIPTS=(
   fm-supervision-lib.sh fm-wake-lib.sh fm-path-lib.sh fm-session-lock-lib.sh
   fm-cursor-lib.sh fm-hook-host-lib.sh fm-lock.sh fm-afk-contract.sh
   fm-classify-lib.sh fm-timeout-lib.sh fm-supervision-engine-lib.sh
+  fm-omp-process-lib.sh
 )
 
 install_hook() {

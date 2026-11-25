@@ -4471,6 +4471,51 @@ EOF
   pass "branch activates on a cold start once the lock is acquired, never before"
 }
 
+# On Windows the session lock may hold a tagged win:<pid> (bin/fm-session-lock-lib.sh),
+# and native Node sees that Windows pid directly. The branch activates for its own
+# tagged lock and never for a malformed tag or for any tag off Windows. Each run
+# sets the platform for the whole process so every host exercises both sides.
+test_branch_activates_for_a_windows_tagged_session_lock() {
+  local repo home platform out status
+  for platform in win32 linux; do
+    repo="$TMP_ROOT/tagged-lock-$platform-root"
+    home="$TMP_ROOT/tagged-lock-$platform-home"
+    mkdir -p "$home/state" "$home/config"
+    install_pi_branch_extension_fixture "$repo"
+    PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+      FM_TEST_SKIP_LOCK=1 FM_TEST_PLATFORM="$platform" DRIVER_PRELUDE="$DRIVER_PRELUDE" \
+      node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+import { existsSync, writeFileSync } from "node:fs";
+const platform = Object.getOwnPropertyDescriptor(process, "platform");
+Object.defineProperty(process, "platform", { ...platform, value: process.env.FM_TEST_PLATFORM });
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, home, defaultSessionCtx }; })()`);
+const { fire, dispatch, settle, home, defaultSessionCtx } = globalThis.__t;
+const marker = `${home}/state/.pi-branch-extension-loaded`;
+
+writeFileSync(`${home}/state/.lock`, `win:${process.pid}x\n`);
+await fire("session_start", {}, defaultSessionCtx);
+if (dispatch("signal: malformed tag").accepted) throw new Error("branch accepted a wake under a malformed tagged lock");
+writeFileSync(`${home}/state/.lock`, `win:${process.pid}\n`);
+await fire("turn_end", {}, defaultSessionCtx);
+const accepted = dispatch("signal: tagged lock").accepted;
+if (process.platform !== "win32") {
+  if (accepted) throw new Error("branch accepted a wake under a tagged lock off Windows");
+  if (existsSync(marker)) throw new Error("branch wrote its marker under a tagged lock off Windows");
+  process.exit(0);
+}
+if (!accepted) throw new Error("branch refused a wake under its own Windows-tagged lock");
+await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "tagged-lock branch wake prompt");
+if (!existsSync(marker)) throw new Error("owned tagged activation did not write the diagnostic marker");
+process.exit(0);
+EOF
+    status=$?
+    out=$(cat "$TMP_ROOT/node-output")
+    expect_code 0 "$status" "branch must read a Windows-tagged session lock only on Windows ($platform): $out"
+  done
+  pass "branch activates for its own Windows-tagged session lock only on Windows, never for a malformed tag"
+}
+
 test_queued_actions_recheck_lock_ownership() {
   local repo home out status
   repo="$TMP_ROOT/queued-ownership-root"
@@ -5293,6 +5338,17 @@ EOF
   pass "second-mate signal rows route by their new span while crewmate and stale routing stay unchanged"
 }
 
+# Print where npm installed a dependency of the Pi package: nested inside it, or
+# hoisted beside it when the dependency is itself a global top-level install.
+pi_dependency_dir() {
+  local package_dir=$1 dependency=$2
+  if [ -d "$package_dir/node_modules/$dependency" ]; then
+    printf '%s\n' "$package_dir/node_modules/$dependency"
+  else
+    printf '%s\n' "${package_dir%/@earendil-works/pi-coding-agent}/$dependency"
+  fi
+}
+
 # The model picker's bounded scrolling and its search ranking are Pi's own
 # SelectList and fuzzyFilter, so the guarantee only holds while the installed
 # Pi still exports them and still bounds what it renders. Stubs cannot answer
@@ -5312,7 +5368,7 @@ test_real_pi_picker_primitives_stay_bounded_and_searchable() {
   mkdir -p "$fixture/lib" "$fixture/node_modules/@earendil-works"
   cp "$ROOT/.pi/extensions/lib/fm-branch-model-picker.ts" "$fixture/lib/fm-branch-model-picker.ts"
   ln -s "$package_dir" "$fixture/node_modules/@earendil-works/pi-coding-agent"
-  ln -s "$package_dir/node_modules/@earendil-works/pi-tui" "$fixture/node_modules/@earendil-works/pi-tui"
+  ln -s "$(pi_dependency_dir "$package_dir" @earendil-works/pi-tui)" "$fixture/node_modules/@earendil-works/pi-tui"
   original_dir=$PWD
   cd "$fixture" || fail "could not enter the Pi picker primitives fixture"
   LIB="$fixture/lib/fm-branch-model-picker.ts" PI_VERSION_FILE="$package_dir/package.json" \
@@ -5479,9 +5535,9 @@ test_outcomes_tool_uses_stock_execution_and_export_consumers() {
   cp "$ROOT/.pi/extensions/lib/fm-calm-visibility.ts" "$fixture/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$fixture/.pi/extensions/lib/fm-operational-input.ts"
   ln -s "$package_dir" "$fixture/node_modules/@earendil-works/pi-coding-agent"
-  ln -s "$package_dir/node_modules/@earendil-works/pi-tui" "$fixture/node_modules/@earendil-works/pi-tui"
-  ln -s "$package_dir/node_modules/@earendil-works/pi-ai" "$fixture/node_modules/@earendil-works/pi-ai"
-  ln -s "$package_dir/node_modules/typebox" "$fixture/node_modules/typebox"
+  ln -s "$(pi_dependency_dir "$package_dir" @earendil-works/pi-tui)" "$fixture/node_modules/@earendil-works/pi-tui"
+  ln -s "$(pi_dependency_dir "$package_dir" @earendil-works/pi-ai)" "$fixture/node_modules/@earendil-works/pi-ai"
+  ln -s "$(pi_dependency_dir "$package_dir" typebox)" "$fixture/node_modules/typebox"
 
   out=$(cd "$fixture" && EXT="$fixture/.pi/extensions/fm-branch-supervision.ts" PI_PACKAGE_DIR="$package_dir" node --input-type=module 2>&1 <<'JS'
 import { pathToFileURL } from "node:url";
@@ -6231,6 +6287,7 @@ test_supervision_model_command_picks_effort_after_the_model
 test_unusable_model_pin_falls_back_to_main
 test_replacement_activation_cleans_leases_and_retries_failure
 test_cold_start_activates_after_lock_acquisition
+test_branch_activates_for_a_windows_tagged_session_lock
 test_queued_actions_recheck_lock_ownership
 test_stale_generation_boundaries_are_side_effect_free
 test_secondary_session_stays_inert

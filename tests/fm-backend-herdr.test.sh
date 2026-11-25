@@ -16,6 +16,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/herdr-test-safety.sh"
 # shellcheck source=tests/herdr-client-pair-fixture.sh
 . "$(dirname "${BASH_SOURCE[0]}")/herdr-client-pair-fixture.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$ROOT/bin/fm-timeout-lib.sh"
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the herdr adapter)"; exit 0; }
 
@@ -163,6 +165,49 @@ case "${1:-}" in
 esac
 SH
   chmod +x "$fb/herdr"
+  printf '%s\n' "$fb"
+}
+
+# make_herdr_owned_server_fakebin: a stateful server stub for the ownership
+# markers. `status` reports its socket in $FM_HERDR_SESSION_DIR, reports running while $FM_HERDR_SERVER_MARKER exists and counts each
+# read in $FM_HERDR_STATUS_COUNT, and `server` records its launch in
+# $FM_HERDR_START_LOG. A `sleep` stub returns at once and counts each wait in
+# $FM_HERDR_SLEEP_COUNT; when $FM_HERDR_FLIP_AFTER is set, the wait with that
+# number applies $FM_HERDR_FLIP: `up` brings the server up and ends the
+# replacement, `clear` only ends the replacement, mimicking an owner that
+# finishes its work while Firstmate waits.
+make_herdr_owned_server_fakebin() {  # <dir> -> echoes fakebin dir
+  local dir=$1 fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat > "$fb/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-} ${2:-}" in
+  "status --json")
+    echo $(( $(cat "$FM_HERDR_STATUS_COUNT" 2>/dev/null || echo 0) + 1 )) > "$FM_HERDR_STATUS_COUNT"
+    if [ -e "$FM_HERDR_SERVER_MARKER" ]; then
+      printf '{"server":{"running":true,"socket":"%s/herdr.sock"}}\n' "$FM_HERDR_SESSION_DIR"
+    else
+      printf '{"server":{"running":false,"socket":"%s/herdr.sock"}}\n' "$FM_HERDR_SESSION_DIR"
+    fi
+    ;;
+  server*)
+    echo started >> "$FM_HERDR_START_LOG"
+    : > "$FM_HERDR_SERVER_MARKER"
+    ;;
+esac
+SH
+  cat > "$fb/sleep" <<'SH'
+#!/usr/bin/env bash
+set -u
+n=$(( $(cat "$FM_HERDR_SLEEP_COUNT" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$FM_HERDR_SLEEP_COUNT"
+if [ -n "${FM_HERDR_FLIP_AFTER:-}" ] && [ "$n" -eq "$FM_HERDR_FLIP_AFTER" ]; then
+  rm -f "$FM_HERDR_SESSION_DIR/firstmate-server-replacing"
+  [ "${FM_HERDR_FLIP:-}" != up ] || : > "$FM_HERDR_SERVER_MARKER"
+fi
+SH
+  chmod +x "$fb/herdr" "$fb/sleep"
   printf '%s\n' "$fb"
 }
 
@@ -320,6 +365,7 @@ test_stale_registration_ignores_status_and_reads_the_process
 test_pane_agent_session_ref_reports_a_resumable_reference_with_its_agent
 test_pane_agent_session_ref_degrades_to_nothing_when_not_resumable
 test_registered_agent_with_a_live_foreground_process_stays_alive
+test_pane_owns_session_proves_the_foreground_occupant
 test_registered_agent_with_a_non_shell_foreground_process_stays_alive
 test_transient_prompt_helper_settles_into_stale_agent
 test_exhausted_settle_window_keeps_a_non_shell_foreground_live
@@ -327,7 +373,12 @@ test_registered_agent_with_an_agent_descendant_outside_the_foreground_stays_aliv
 test_agent_descendant_under_a_spaced_install_path_stays_alive
 test_registered_agent_with_an_unreadable_process_view_is_unknown
 test_registered_agent_with_an_empty_foreground_over_a_real_shell_settles_via_descendant_walk
+test_process_state_reads_every_foreground_process_with_args_intact
+test_process_state_tolerates_missing_and_malformed_process_fields
+test_process_state_shell_verdict_survives_several_shell_processes
+test_process_state_jq_calls_do_not_grow_with_foreground_processes
 test_projection_reclaim_rollback_refuses_a_stale_registration
+test_projection_cleanup_exact_succeeds_only_when_the_task_pane_closed
 test_busy_state_never_reports_a_shell_only_pane_busy
 test_cli_caches_the_selected_client_within_a_process
 test_cli_scopes_the_selected_client_to_its_session
@@ -341,6 +392,7 @@ test_launcher_identity_refuses_a_pane_from_another_session_name
 test_launcher_identity_refuses_a_missing_server_socket
 test_launcher_identity_refuses_a_pane_from_another_server_socket
 test_launcher_identity_refuses_an_unreadable_pane
+test_launcher_identity_refuses_a_stale_pane_id
 test_launcher_identity_refuses_a_pane_and_tab_that_disagree
 test_launcher_identity_refuses_a_workspace_missing_from_the_session
 test_workspace_ensure_prefers_the_launcher_over_the_first_label_match
@@ -349,6 +401,13 @@ test_workspace_ensure_other_home_ignores_the_launcher_identity
 test_container_ensure_refuses_an_ambiguous_home_label
 test_container_ensure_starts_server_and_workspace
 test_server_ensure_scrubs_home_and_harness_identity
+test_server_ensure_starts_a_firstmate_owned_server
+test_server_ensure_never_starts_an_externally_managed_server
+test_server_ensure_uses_a_running_externally_managed_server
+test_server_ensure_waits_out_a_server_replacement
+test_server_ensure_holds_callers_off_a_running_server_during_a_replacement
+test_server_ensure_resumes_ownership_after_a_replacement_clears
+test_server_ensure_reports_a_replacement_that_never_ends
 test_container_ensure_reuses_existing_workspace
 test_container_ensure_creates_with_no_focus_flag
 test_container_ensure_uses_secondmate_home_label
@@ -450,6 +509,8 @@ test_busy_state_unknown_on_no_agent
 test_composer_state_bare_prompt_is_empty
 test_composer_state_styled_placeholder_draft_is_pending
 test_composer_state_real_text_is_pending
+test_composer_state_titled_box_requires_cortex_identity
+test_composer_state_non_cortex_panes_skip_identity_probe
 test_composer_state_grok_oversized_title_preserves_safe_verdicts
 test_composer_state_popup_placeholder_fill_is_pending
 test_composer_state_unknown_on_capture_failure
@@ -513,6 +574,9 @@ test_send_text_submit_accepts_marked_payloads_whose_read_back_drops_u2063
 test_send_text_submit_refuses_marked_digest_missing_its_head
 test_composer_state_claude_slash_popup_pushes_composer_above_tail_window
 test_send_text_submit_claude_slash_popup_composer_is_still_proven_and_submitted
+test_composer_content_claude_2_1_291_marked_popup_row_is_not_the_composer
+test_send_text_submit_claude_2_1_291_marked_popup_row_is_proven_and_submitted
+test_send_text_submit_claude_2_1_291_popup_still_refuses_a_partial_payload
 test_send_text_submit_claude_grey_slash_command_is_proven_and_submitted
 test_send_text_submit_claude_wrapped_doorbell_under_titled_rule_is_submitted
 test_send_text_submit_lone_paste_placeholder_submits_the_long_payload
@@ -546,3 +610,6 @@ test_agent_state_unparseable_server_probe_is_unreadable
 test_agent_state_running_server_with_live_agent_is_alive
 test_pane_agent_state_unknown_status_with_bare_idle_shell_is_dead
 test_pane_agent_state_unknown_status_without_bare_shell_proof_stays_unknown
+test_canonical_socket_path_folds_a_windows_drive_letter_spelling
+test_canonical_socket_path_refuses_a_failed_cygpath
+test_canonical_socket_path_refuses_empty_cygpath_output
