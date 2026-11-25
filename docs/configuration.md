@@ -115,7 +115,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - The empty presence marker `state/<id>.off` records that a secondmate is deliberately off.
-  No script creates or removes it: whoever operates the home creates it by hand (`touch state/<id>.off`) when the captain turns the mate off, and removes it when the captain turns the mate on.
+  The operator writes and removes it by hand (`touch state/<id>.off`, `rm state/<id>.off`); no script creates or removes it, and Firstmate does not do so either.
   While it exists, the automatic secondmate liveness probe reports the mate as off and never probes or relaunches it.
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
