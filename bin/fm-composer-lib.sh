@@ -656,7 +656,13 @@ FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
 
 # OpenCode keeps this keyboard-shortcut chrome immediately below its left-bar
 # composer floor. It is part of the same idle surface, not transcript activity.
-FM_COMPOSER_LEFTBAR_CHROME_RE_DEFAULT='^tab[[:space:]]+agents[[:space:]]+ctrl\+p[[:space:]]+commands$'
+# Since 1.18.31 the chrome shares its row with the left-aligned cwd and the
+# right-aligned context/cost cells, and idle panes append the version segment
+# (`<cwd>  50.8K  ctrl+p commands    • OpenCode 1.18.31`; busy panes lead with
+# `esc interrupt` and their stats instead). The row is matched only as the
+# chrome row DIRECTLY below a selected left-bar composer whose floor row it
+# follows, so the free-text prefix is harness furniture, never composer input.
+FM_COMPOSER_LEFTBAR_CHROME_RE_DEFAULT='^.*ctrl\+p[[:space:]]+commands([[:space:]]+•[[:space:]]+OpenCode[[:space:]]+[0-9][0-9.]*)?$'
 # omp (Oh My Pi) draws a one-row status line directly BELOW its borderless
 # composer: an identity or spinner cell, then middle-dot separated model, path,
 # git, and context cells. Verified live through Herdr on omp 18.1.11:
