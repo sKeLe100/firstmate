@@ -929,6 +929,7 @@ if "$SCRIPT_DIR/fm-bootstrap.sh" lavish-compatible >/dev/null 2>&1; then
 else
   LAVISH_LINE='Lavish is unavailable (lavish-axi is missing or below its supported version floor), so deliver your findings as a text report without Lavish, even for a visual deliverable.'
 fi
+MISTAKE_RECEIPT=$(fm_mistake_receipt_block "$DATA/$ID/mistakes.md")
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
@@ -946,7 +947,7 @@ The report is the only thing that survives, so anything worth keeping must be in
 
 # Rules
 1. Never push to any remote and never open a PR.
-2. Stay inside this worktree; outside it, write only the report, the status file, and the browser identity registry named below, except for the task's empty-inventory attestation through \`fm-captain-hold.sh complete --none\`, exactly as specified under Definition of done.
+2. Stay inside this worktree; outside it, write only the report, the task mistake receipt, the status file, and the browser identity registry named below, except for the task's empty-inventory attestation through \`fm-captain-hold.sh complete --none\`, exactly as specified under Definition of done.
 $SHARED_CONTEXT_LINES
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 $CREWMATE_BROWSER_INSTRUCTIONS
@@ -981,6 +982,7 @@ After writing it, verify with \`ls -la $DATA/$ID/report.md\` that the report exi
 exact path with recent content before continuing; if it doesn't, the write landed somewhere
 else, and that is itself a \`blocked:\` condition to report.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
+$MISTAKE_RECEIPT
 $LAVISH_LINE
 Before reporting done, read and follow \`$FM_ROOT/.agents/skills/captain-hold-lifecycle/SKILL.md\` and pass its shared completion gate for the report and any visual review.
 Only when the reviewed inventory is empty, run \`FM_HOME=$(shell_quote "$FM_HOME") bash $(shell_quote "$FM_ROOT/bin/fm-captain-hold.sh") complete $(shell_quote "$ID") --none\`.
@@ -1014,7 +1016,7 @@ case "$MODE" in
     ;;
 esac
 RULE1=$(fm_ship_rule_one "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
-DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
+DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT" "$DATA") || exit 1
 
 # The tracker-entry law: pt-tracker requires a planning-surface entry and
 # ROADMAP execution prompt BEFORE dispatch. This is a literal, non-negotiable
