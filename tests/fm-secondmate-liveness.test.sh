@@ -739,6 +739,34 @@ test_sweep_leaves_alive_secondmate_untouched() {
   pass "sweep: an already-live secondmate is untouched and distinguishable in verbose diagnostics"
 }
 
+test_sweep_honors_recorded_off_marker() {
+  local w fb tmuxfb log out
+  w=$(new_world sweep-off)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  : > "$w/home/state/sm1.off"
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+
+  # A genuinely missing endpoint would otherwise be relaunched; the recorded
+  # off state must win, be reported as off (not as a failed respawn), and leave
+  # the endpoint untouched.
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" missing "$log")
+
+  assert_contains "$out" "SECONDMATE_LIVENESS: secondmate sm1: off" \
+    "a mate with a state/<id>.off marker should be reported as off"
+  assert_not_contains "$out" "respawn failed" \
+    "an off mate must never be reported as a failed relaunch"
+  [ ! -s "$log" ] || fail "an off mate must never be killed or respawned: $(cat "$log")"
+
+  # Removing the marker turns the mate back on: the same missing endpoint is
+  # now recovered normally.
+  rm -f "$w/home/state/sm1.off"
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" missing "$log")
+  assert_contains "$(cat "$log")" "new-window" \
+    "removing the off marker should resume ordinary relaunch recovery"
+  pass "sweep: a recorded off marker suppresses recovery and reports off until removed"
+}
+
 test_sweep_respawns_authoritatively_missing_pi_secondmate() {
   local w fb tmuxfb log out
   w=$(new_world sweep-missing-pi)
@@ -989,6 +1017,24 @@ test_remote_poll_probe_unreachable_preserves_route() {
   pass "poll probe: unreachable or inconclusive remote reads preserve the route"
 }
 
+test_remote_probe_honors_recorded_off_marker() {
+  local w out expected
+  w=$(make_remote_probe_world probe-off)
+  : > "$w/home/state/rsm1.off"
+  expected="off|off|0|||recorded off by $w/home/state/rsm1.off"
+
+  # Either probe mode returns off before any remote readiness or state call, so
+  # an off remote mate cannot be woken or relaunched from this home.
+  out=$(probe_remote "$w" poll FM_FAKE_REMOTE_REPLY=missing)
+  [ "$out" = "$expected" ] || fail "a poll-mode probe should honor the off marker, got: $out"
+  [ ! -e "$w/ssh.log" ] || fail "an off mate must not reach the remote host: $(cat "$w/ssh.log")"
+
+  out=$(probe_remote "$w" full FM_FAKE_REMOTE_REPLY=missing)
+  [ "$out" = "$expected" ] || fail "a full-mode probe should honor the off marker, got: $out"
+  [ ! -e "$w/ssh.log" ] || fail "an off mate must not run readiness repair on the remote host: $(cat "$w/ssh.log")"
+  pass "remote probe: a recorded off marker short-circuits every automatic probe"
+}
+
 # make_remote_probe_world_rex <name>: the same remote probe world on a rex
 # route, whose fake ssh answers the doctor, the state verb, and the route verb
 # separately so a full-mode probe exercises readiness plus the route re-check.
@@ -1137,6 +1183,7 @@ test_sweep_recovers_the_durable_secondmate_account
 test_sweep_serializes_distinct_secondmate_relaunches
 test_sweep_keeps_tmux_best_effort_kill_when_close_fails
 test_sweep_leaves_alive_secondmate_untouched
+test_sweep_honors_recorded_off_marker
 test_sweep_respawns_authoritatively_missing_pi_secondmate
 test_sweep_respawns_authoritatively_missing_pi_signed_secondmate
 test_sweep_never_acts_on_ambiguous_existing_process
@@ -1151,6 +1198,7 @@ test_relaunch_waits_for_other_mates_relaunch_lock
 test_sweep_refuses_relaunch_on_ledger_errors
 test_remote_poll_probe_maps_states
 test_remote_poll_probe_unreachable_preserves_route
+test_remote_probe_honors_recorded_off_marker
 test_remote_full_probe_rex_route
 test_remote_full_probe_rex_backend_drift
 test_remote_full_probe_rex_readiness_verdicts

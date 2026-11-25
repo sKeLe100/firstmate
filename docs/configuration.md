@@ -114,6 +114,9 @@ Each effective `FM_HOME` contains private operational directories.
 - Private secondmate config-reread generations with their retry and quarantine state.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
+- The empty presence marker `state/<id>.off` records that a secondmate is deliberately off.
+  The operator writes and removes it by hand (`touch state/<id>.off`, `rm state/<id>.off`); no script creates or removes it, and Firstmate does not do so either.
+  While it exists, the automatic secondmate liveness probe reports the mate as off and never probes or relaunches it.
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -2890,7 +2893,7 @@ Local routes use direct guarded filesystem operations, while remote routes deleg
 - It emits `SECONDMATE_SYNC:` only when a home was skipped for an actionable sync reason, inheritance failed, or a divergent shared captain-preference copy was quarantined.
 - When a running home advances and its loaded instruction surface (`AGENTS.md`, `bin/`, or `.agents/skills/`) changed, bootstrap sends the re-read nudge itself through the stable `fm-<id>` selector and reports the exact completed send as `BOOTSTRAP_INFO:`.
 - If that send fails, bootstrap keeps an idempotent retry marker and emits `NUDGE_SECONDMATES:` with the failure reason.
-- The same bootstrap run emits `SECONDMATE_LIVENESS:` only when a registered secondmate is skipped or its relaunch fails; already-live and successfully relaunched secondmates are handled silently.
+- The same bootstrap run emits `SECONDMATE_LIVENESS:` only when a registered secondmate is skipped, its relaunch fails, or an operator has parked it with `state/<id>.off` (reported as `off`); already-live and successfully relaunched secondmates are handled silently.
 
 **Push inherited configuration during a session**
 
