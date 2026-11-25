@@ -69,7 +69,7 @@ jobs:
           bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-          npm install -g tasks-axi @earendil-works/pi-coding-agent@1.2.0
+          npm install -g tasks-axi @earendil-works/pi-coding-agent@1.6.0
       - name: Execute canonical partition and record receipt
         env:
           PARTITION: ${{ matrix.partition }}

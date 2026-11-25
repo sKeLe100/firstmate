@@ -231,7 +231,10 @@ fm_busy_gen_path() {  # <state-dir> <id>
 # watchers. Missing, malformed, locked, idle, foreign, or stale evidence conveys
 # no model-phase observation, leaving the general busy bound applicable.
 fm_busy_pi_stream_version_supported() {
-  [ "${1:-}" = 1.2.0 ]
+  case "${1:-}" in
+    1.2.0|1.6.0) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 fm_busy_stream_seconds() {  # <configured seconds>; off/invalid prints 0
