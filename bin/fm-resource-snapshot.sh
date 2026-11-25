@@ -50,15 +50,18 @@
 #                  no projection is ever rendered as a fact. The six spend
 #                  fields are empty on every provider-window row.
 #                  One `lane: google-api` row summarises the paid Google Gemini
-#                  ledger at <data>/tools/gemini-spend.tsv (columns epoch,
-#                  time_et, model, in, out, thinking, usd, note): spent_usd,
-#                  stop_usd, remaining_usd, calls, spend over the last 24 hours
-#                  and 7 days, and pace=on_pace/ahead/behind against an even
-#                  burn to the stop over 30 days from the first logged call.
+#                  ledger at <data>/tools/gemini-spend.tsv, appended by the
+#                  private caller tools/gemini-ask.py (columns epoch, time_et,
+#                  model, in, out, thinking, usd, note): spent_usd (ledger
+#                  total), stop_usd, remaining_usd, calls, spend over the last
+#                  24 hours and 7 days, and pace=on_pace/ahead/behind against an
+#                  even burn to the stop over 30 days from the first logged
+#                  call, with a tolerance of 5% of the stop.
 #                  stop_usd is the fixed 8 USD stop. No row is rendered when
-#                  the ledger file is absent; unreadable or unparseable rows
-#                  are reported in unavailable[] as a spend lower bound. The key is never
-#                  read or printed and the ledger format is never changed.
+#                  the ledger file is absent. An unreadable ledger or
+#                  unparseable rows are reported in unavailable[]; any spend
+#                  still shown is then a lower bound. The key is never read or
+#                  printed and the ledger format is never changed.
 #   workers[]      machine,home_lane,task,kind,model,spend_lane,stage,age,
 #                  last_active,ctx_band,pr,read_utc
 #   panes[]        machine,session,workspace,tab,pane,agent,agent_status,task,
