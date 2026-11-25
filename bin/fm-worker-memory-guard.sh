@@ -249,8 +249,8 @@ cmd_brief_check() {
     !in_task { next }
     {
       l = tolower($0)
-      if (l ~ /(^|[^a-z])(not|never|no|don.t|without|avoid|forbid|forbidden|refuse|instead of|out of scope)([^a-z]|$)/) next
-      if (l !~ /((npm|pnpm|yarn|bun)[ ]+(install|i|ci|add)([^a-z]|$)|pip3? install|git clone|cargo install|go install|uv (pip|sync)|composer install|bundle install|install(s|ing)? .*(node_modules|dependencies|packages|npm))/) next
+      if (!match(l, /((npm|pnpm|yarn|bun)[ ]+(install|i|ci|add)([^a-z]|$)|pip3? install|git clone|cargo install|go install|uv (pip|sync)|composer install|bundle install|install(s|ing)? .*(node_modules|dependencies|packages|npm))/)) next
+      if (substr(l, 1, RSTART - 1) ~ /(^|[^a-z])(not|never|no|don.t|without|avoid|forbid|forbidden|refuse|instead of|out of scope)([^a-z]|$)/) next
       if (l ~ /fm-scratch/) next
       kind = (l ~ /(in|into|inside|within|under)( the| your| this)? (task |working |disposable )?(worktree|working copy|checkout|repo)/) ? "refuse" : "warn"
       print kind "\t" $0

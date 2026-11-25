@@ -253,6 +253,12 @@ test_brief_check() {
   out=$(guard "$home" brief-check "$brief" 2>&1); status=$?
   expect_code 0 "$status" "a negated line passes: $out"
   assert_equals "" "$out" "the scaffold's own prohibition and negated task lines are silent"
+  write_brief "$brief" "Run npm install inside the working copy so the tests do not fail."
+  out=$(guard "$home" brief-check "$brief" 2>&1); status=$?
+  expect_code 5 "$status" "a later unrelated negation does not exempt the install: $out"
+  write_brief "$brief" "npm install in the repo; there is no lockfile."
+  out=$(guard "$home" brief-check "$brief" 2>&1); status=$?
+  expect_code 5 "$status" "a trailing 'no' clause does not exempt the install: $out"
   pass "fm-worker-memory-guard.sh: brief-check refuses worktree installs and warns on bare ones"
 }
 test_brief_check
