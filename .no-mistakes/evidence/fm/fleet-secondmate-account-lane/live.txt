@@ -1,0 +1,3 @@
+acct=~/.claude-secondary lane=claude#2
+acct=ordinary lane=claude#1
+rc=1
