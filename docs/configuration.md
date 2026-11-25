@@ -1167,9 +1167,9 @@ Provider-window rows leave the six spend fields empty.
 
 One `lane: google-api` row summarises the paid Google Gemini API ledger at `data/tools/gemini-spend.tsv` (the private caller `data/tools/gemini-ask.py` appends its columns `epoch,time_et,model,in,out,thinking,usd,note`).
 `spent_usd` is the ledger total, `calls` counts logged calls, `spent_24h_usd` and `spent_7d_usd` sum the last 24 hours and 7 days, and `remaining_usd` is the stop minus spend.
-`stop_usd` is read from the sibling `data/tools/gemini-stop-usd` file when it holds a positive number, else the 8 USD default.
+`stop_usd` is the fixed 8 USD stop.
 `pace` is `ahead`, `behind`, or `on_pace` against an even burn to the stop over 30 days from the first logged call, allowing 5% of the stop as tolerance.
-An absent ledger renders no row and no error; the snapshot never reads or prints the API key and never changes the ledger format.
+An absent ledger renders no row and no error; an unreadable ledger or unparseable rows are listed under `unavailable` because spend is then only a lower bound; the snapshot never reads or prints the API key and never changes the ledger format.
 
 ## Underused-capacity threshold (config/underused-capacity-threshold)
 

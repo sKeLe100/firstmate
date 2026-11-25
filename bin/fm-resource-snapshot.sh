@@ -55,9 +55,9 @@
 #                  stop_usd, remaining_usd, calls, spend over the last 24 hours
 #                  and 7 days, and pace=on_pace/ahead/behind against an even
 #                  burn to the stop over 30 days from the first logged call.
-#                  stop_usd comes from <data>/tools/gemini-stop-usd when that
-#                  sibling file holds a positive number, else 8. No row is
-#                  rendered when the ledger file is absent. The key is never
+#                  stop_usd is the fixed 8 USD stop. No row is rendered when
+#                  the ledger file is absent; unreadable or unparseable rows
+#                  are reported in unavailable[] as a spend lower bound. The key is never
 #                  read or printed and the ledger format is never changed.
 #   workers[]      machine,home_lane,task,kind,model,spend_lane,stage,age,
 #                  last_active,ctx_band,pr,read_utc
@@ -1367,29 +1367,17 @@ collect_quota() {
 # never reads the API key, never changes the ledger, and renders nothing when
 # the ledger is absent.
 collect_google_spend() {
-  local ledger stop_file stop stats calls total day week remaining pct last pace reading
+  local ledger stop stats skipped calls total day week remaining pct last pace reading
   ledger="$DATA/tools/gemini-spend.tsv"
   [ -f "$ledger" ] || return 0
-  stop_file="$DATA/tools/gemini-stop-usd"
   stop=8
-  if [ -f "$stop_file" ]; then
-    stop=$(awk -v d=8 '
-      NR == 1 {
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
-        if ($0 ~ /^[0-9]+([.][0-9]+)?$/) v = $0 + 0
-        exit
-      }
-      END { if (v > 0) print v; else print d }
-    ' "$stop_file" 2>/dev/null)
-  fi
-  case "$stop" in ''|*[!0-9.]*) stop=8 ;; esac
   stats=$(awk -F'\t' -v now="$NOW" -v stop="$stop" '
     function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     {
       e = trim($1); u = trim($7)
-      if (e == "epoch") next
-      if (e !~ /^[0-9]+$/ || u !~ /^-?[0-9]+([.][0-9]+)?$/) next
-      t = e + 0; cost = u + 0
+      if (e == "epoch" || (e == "" && trim($0) == "")) next
+      if (e !~ /^[0-9]+([.][0-9]+)?$/ || u !~ /^-?[0-9]+([.][0-9]+)?$/) { skipped++; next }
+      t = int(e); cost = u + 0
       if (n == 0 || t < first) first = t
       if (n == 0 || t > last) last = t
       total += cost; n++
@@ -1397,7 +1385,7 @@ collect_google_spend() {
       if (t >= now - 604800) week += cost
     }
     END {
-      if (n == 0) exit 0
+      if (n == 0) { printf "0\t%d\n", skipped; exit 0 }
       elapsed = now - first
       if (elapsed < 0) elapsed = 0
       expected = (elapsed >= 2592000) ? stop : stop * elapsed / 2592000
@@ -1408,11 +1396,21 @@ collect_google_spend() {
       pct = remaining / stop * 100
       if (pct < 0) pct = 0
       if (pct > 100) pct = 100
-      printf "%d\t%.4f\t%.4f\t%.4f\t%.4f\t%.2f\t%d\t%s\n", n, total, day, week, remaining, pct, last, pace
+      printf "%d\t%d\t%.4f\t%.4f\t%.4f\t%.4f\t%.2f\t%d\t%s\n", n, skipped, total, day, week, remaining, pct, last, pace
     }
-  ' "$ledger" 2>/dev/null)
-  [ -n "$stats" ] || return 0
-  IFS=$'\t' read -r calls total day week remaining pct last pace <<< "$stats"
+  ' "$ledger" 2>/dev/null) || stats=
+  if [ -z "$stats" ]; then
+    note_unavailable google-api "ledger unreadable, spend not counted"
+    return 0
+  fi
+  calls=${stats%%$'\t'*}
+  if [ "$calls" = 0 ]; then
+    skipped=${stats#*$'\t'}
+    [ "$skipped" -gt 0 ] && note_unavailable google-api "$skipped ledger rows unparseable, spend not counted"
+    return 0
+  fi
+  IFS=$'\t' read -r calls skipped total day week remaining pct last pace <<< "$stats"
+  [ "$skipped" -gt 0 ] && note_unavailable google-api "$skipped ledger rows unparseable, spend is a lower bound"
   reading=$(iso_utc "$last")
   printf 'google-api\t-\t-\t30d\t%s\t-\t%s\tfresh\t%s\t%s\t-\t%.4f\t%.4f\t%.4f\t%s\t%.4f\t%.4f\n' \
     "$pct" "$pace" "$read_iso" "$reading" "$total" "$stop" "$remaining" "$calls" "$day" "$week" \

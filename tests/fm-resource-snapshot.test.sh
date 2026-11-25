@@ -365,28 +365,50 @@ test_google_api_absent_ledger_is_silent() {
   pass "an absent Google ledger renders no row and no error"
 }
 
-test_google_api_stop_file_drives_budget() {
+test_google_api_bad_rows_are_reported() {
   local rec home fb out rc
-  rec=$(make_home google-stop fresh); home=${rec%%|*}; fb=${rec#*|}
-  write_fixtures google-stop
+  rec=$(make_home google-bad fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures google-bad
   mkdir -p "$home/data/tools"
-  printf '2\n' > "$home/data/tools/gemini-stop-usd"
   {
     printf 'epoch\ttime_et\tmodel\tin\tout\tthinking\tusd\tnote\n'
-    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t1.0000\tolder\n' "$((NOW - 864000))"
-    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t0.5000\tmiddle\n' "$((NOW - 172800))"
-    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t100\t10\t5\t0.2500\trecent\n' "$((NOW - 3600))"
+    printf '%s.5\t2026-11-20 00:00\tgemini-4-neon\t1\t1\t1\t1.0000\tfractional epoch\n' "$((NOW - 3600))"
+    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t1\t1\t1\tn/a\tbad usd\n' "$((NOW - 3600))"
+    printf '%s\t2026-11-20 00:00\tgemini-4-neon\t1\t1\t1\t0.5000\r\tcrlf\n' "$((NOW - 3600))"
   } > "$home/data/tools/gemini-spend.tsv"
   out=$(run_snapshot "$home" "$fb" --json 2>&1); rc=$?
-  expect_code 0 "$rc" "google stop-file render"
-  printf '%s\n' "$out" > "$TMP_ROOT/google-stop.json"
+  expect_code 0 "$rc" "google bad-row render"
+  printf '%s\n' "$out" > "$TMP_ROOT/google-bad.json"
   jq -e '
-    .quota[] | select(.lane == "google-api")
-    | .stop_usd == 2 and ((.remaining_usd - 0.25) | fabs) < 0.0001
-      and ((.pct_remaining - 12.5) | fabs) < 0.01 and .pace == "ahead"
-  ' "$TMP_ROOT/google-stop.json" >/dev/null \
-    || fail "the ledger-side stop file must drive stop, remaining, percent, and pace: $(jq -c '.quota[] | select(.lane == "google-api")' "$TMP_ROOT/google-stop.json")"
-  pass "a ledger-side stop file replaces the 8 USD default"
+    (.quota[] | select(.lane == "google-api") | .calls == 2 and .spent_usd == 1.5)
+    and ([.unavailable[] | select(.source == "google-api" and (.reason | test("1 ledger rows unparseable")))] | length == 1)
+  ' "$TMP_ROOT/google-bad.json" >/dev/null \
+    || fail "fractional epochs and CRLF must count, a bad usd must be reported: $(jq -c '[.quota[] | select(.lane == "google-api")], .unavailable' "$TMP_ROOT/google-bad.json")"
+  pass "bad Google ledger rows are reported as a spend lower bound"
+}
+
+test_google_api_unreadable_ledger_is_reported() {
+  local rec home fb out rc
+  rec=$(make_home google-unreadable fresh); home=${rec%%|*}; fb=${rec#*|}
+  write_fixtures google-unreadable
+  mkdir -p "$home/data/tools"
+  printf 'epoch\ttime_et\tmodel\tin\tout\tthinking\tusd\tnote\n%s\tx\tm\t1\t1\t1\t1.0\tn\n' "$NOW" \
+    > "$home/data/tools/gemini-spend.tsv"
+  chmod 000 "$home/data/tools/gemini-spend.tsv"
+  if [ -r "$home/data/tools/gemini-spend.tsv" ]; then
+    chmod 600 "$home/data/tools/gemini-spend.tsv"
+    pass "unreadable Google ledger check skipped (file stays readable for this user)"
+    return
+  fi
+  out=$(run_snapshot "$home" "$fb" --json 2>&1); rc=$?
+  chmod 600 "$home/data/tools/gemini-spend.tsv"
+  expect_code 0 "$rc" "google unreadable render"
+  printf '%s\n' "$out" > "$TMP_ROOT/google-unreadable.json"
+  jq -e '([.quota[] | select(.lane == "google-api")] | length == 0)
+    and ([.unavailable[] | select(.source == "google-api")] | length == 1)' \
+    "$TMP_ROOT/google-unreadable.json" >/dev/null \
+    || fail "an unreadable Google ledger must be reported: $(jq -c '.unavailable' "$TMP_ROOT/google-unreadable.json")"
+  pass "an unreadable Google ledger is reported, not silent"
 }
 
 test_down_pc02_keeps_pc01() {
@@ -1740,7 +1762,8 @@ test_failed_quota_is_labelled_not_zero
 test_rate_limited_quota_is_not_zero
 test_google_api_spend_row
 test_google_api_absent_ledger_is_silent
-test_google_api_stop_file_drives_budget
+test_google_api_bad_rows_are_reported
+test_google_api_unreadable_ledger_is_reported
 test_down_pc02_keeps_pc01
 test_remote_fixture_alone_supplies_pc02_rows
 test_worker_lane_account_follows_lane_not_role
