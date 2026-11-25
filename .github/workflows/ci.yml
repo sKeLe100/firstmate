@@ -180,13 +180,15 @@ jobs:
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
-          # Pinned to the last version the Pi extension renderers and export
-          # assertions were verified against: Pi 0.99 (2026-09-29) changed the
-          # stock tool-call renderer to inline the call arguments and began
-          # rendering display:false custom messages into the export DOM, which
-          # breaks fm-pi-branch-extension and fm-calm-pi-extension. Bump only
-          # with a deliberate Pi 0.99 compatibility migration.
-          npm install -g @earendil-works/pi-coding-agent@1.2.0
+          # Pinned to the Pi release the extension renderers and export
+          # assertions are verified against: 1.6.0 (extension render() returns
+          # readonly string[], handled by the calm operational layout). Pi 0.99
+          # (2026-09-29) changed the stock tool-call renderer to inline the call
+          # arguments and began rendering display:false custom messages into the
+          # export DOM; that contract still holds and is covered by
+          # fm-pi-branch-extension and fm-calm-pi-extension. Bump only with a
+          # deliberate Pi compatibility migration.
+          npm install -g @earendil-works/pi-coding-agent@1.6.0
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
       - name: Run portable parallel shard 1
         run: |
@@ -304,14 +306,13 @@ jobs:
       # The Pi extension tests read the installed Pi package's own types and
       # runtime, so without it they gate-skip and pass silently. It is a public
       # npm package and needs no credential, so CI can hold the real thing.
-      # Pinned to the last version the Pi extension renderers and export
-      # assertions were verified against (see the parallel-1 install step for
-      # the Pi 0.99 drift that forced the pin); bump only with a deliberate
-      # Pi 0.99 compatibility migration.
+      # Pinned to the Pi release the extension renderers and export
+      # assertions are verified against (see the parallel-1 install step);
+      # bump only with a deliberate Pi compatibility migration.
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
-          npm install -g @earendil-works/pi-coding-agent@1.2.0
+          npm install -g @earendil-works/pi-coding-agent@1.6.0
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
       - name: Run portable serial shard ${{ matrix.shard }}
         env:

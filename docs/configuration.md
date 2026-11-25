@@ -3996,7 +3996,7 @@ It must be present in the environment that launches both the worker and its watc
 The interval includes foreground request preparation; the existing wedge delay and declared-wait deferrals still apply before an inspection notification, and no worker is interrupted or restarted.
 Background provider/cache warming is excluded, and observation closes at assistant message completion, tool execution start, or settled idle state.
 Changed nonempty text, thinking, or tool-call content refreshes stream evidence at most once per second and supplies a separate progress anchor for the general busy bound; empty or unchanged snapshots do not.
-New instrumentation is version-gated to Pi 1.2.0 and takes effect on launch or relaunch; stream observation stays off on every unverified version until verified, with a warning and the general busy bound retained.
+New instrumentation is version-gated to Pi 1.2.0 and 1.6.0 and takes effect on launch or relaunch; stream observation stays off on every unverified version until verified, with a warning and the general busy bound retained.
 Observation writes have a five-second subprocess deadline and one-second termination grace; a failed write reports an instrumentation warning while Pi continues.
 Unset, empty, zero, negative, malformed, and values longer than nine decimal digits disable the option, including its separate normal-model progress anchor.
 `bin/fm-busy-lib.sh` owns stream evidence and ordering; the [real-Pi verification guard](verification/runtime-backends.md#pi-worker-model-stream-observation) refreshes the vendor evidence.

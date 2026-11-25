@@ -81,7 +81,7 @@ EOF
 
 test_pi_stream_extension_activation_and_lifecycle() {
   local rec id=stream-pi state ext out version option enabled label
-  for label in disabled zero negative malformed leading maximum overflow verified newer malformed-version older; do
+  for label in disabled zero negative malformed leading maximum overflow verified newest newer malformed-version older; do
     version=1.2.0 option=300 enabled=1
     case "$label" in
       disabled) option='' enabled=0 ;;
@@ -91,6 +91,7 @@ test_pi_stream_extension_activation_and_lifecycle() {
       leading) option=00300 ;;
       maximum) option=999999999 ;;
       overflow) option=1000000000 enabled=0 ;;
+      newest) version=1.6.0 ;;
       newer) version=1.3.0 enabled=0 ;;
       malformed-version) version=not-a-version enabled=0 ;;
       older) version=0.82.0 enabled=0 ;;
@@ -107,7 +108,7 @@ SH
     expect_code 0 $? "stream spawn should succeed: $out"
     case "$label" in
       newer|older|malformed-version)
-        printf '%s\n' "$out" | grep -Fx "warning: pi model-stream observation unavailable for version $version; verified version: 1.2.0; existing busy bound remains active" >/dev/null || fail "missing exact version warning"
+        printf '%s\n' "$out" | grep -Fx "warning: pi model-stream observation unavailable for version $version; verified versions: 1.2.0, 1.6.0; existing busy bound remains active" >/dev/null || fail "missing exact version warning"
         ;;
     esac
     state="$HOME_DIR/state"

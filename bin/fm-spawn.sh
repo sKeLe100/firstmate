@@ -7668,7 +7668,7 @@ EOF
       if fm_busy_pi_stream_version_supported "$pi_stream_version"; then
         pi_stream_monitoring=true
       else
-        echo "warning: $HARNESS model-stream observation unavailable for version ${pi_stream_version:-unknown}; verified version: 1.2.0; existing busy bound remains active" >&2
+        echo "warning: $HARNESS model-stream observation unavailable for version ${pi_stream_version:-unknown}; verified versions: 1.2.0, 1.6.0; existing busy bound remains active" >&2
       fi
     fi
     cat >"$STATE/$ID.pi-ext.ts" <<EOF
