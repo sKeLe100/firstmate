@@ -1,0 +1,8 @@
+# Real claude session, '/fleet show the quota lanes only', disposable lab home, synthetic Google ledger (1.00+0.50+0.25 USD, one 'n/a' row).
+# Rows from the machine's real provider quota are omitted.
+❯ /fleet show the quota lanes only
+  │    Lane     │   Account    │     Plan     │ Window  │ Remaining │   Resets (ET)   │ Burn vs. even pace │
+  │ google-api  │ not reported │ not reported │ 30d     │ 78.12%    │ not reported    │ behind (slower)    │
+  Google API spend: at least $1.75 of the $8.00 budget, leaving at most $6.25, across at least 3 calls. That includes at least $0.25 in the last 24 hours and $0.75 in the last 7 days. One ledger row could not be parsed,
+  so spend is a lower bound and the true remaining percentage and pace could be worse than shown.
+

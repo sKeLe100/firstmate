@@ -1,44 +1,57 @@
-### S1 default TOON (what /fleet reads): 3 calls 1.00/0.50/0.25 at 10d/2d/1h
-quota[3]{lane,account,plan,window,pct_remaining,resets_et,pace,state,read_utc,reading_utc,reason,spent_usd,stop_usd,remaining_usd,calls,spent_24h_usd,spent_7d_usd}:
-  claude#1,~/.claude,pro,five_hour,71,"2026-11-25 11:00 EST",behind,fresh,"2026-11-25T15:29:51Z","2026-11-25T11:59:00Z","-",null,null,null,null,null,null
-  opencode-go,"-",OpenCode Go,weekly,86,"2026-11-29 19:00 EST",behind,fresh,"2026-11-25T15:29:51Z","2026-11-25T11:59:00Z","-",null,null,null,null,null,null
-  google-api,"-","-",30d,78.12,"-",behind,fresh,"2026-11-25T15:29:51Z","2026-11-25T14:29:51Z","-",1.7500,8.0000,6.2500,3,0.2500,0.7500
-workers: []
-unavailable: []
-{"rc":"ok","google":[{"window":"30d","pct_remaining":78.12,"pace":"behind","state":"fresh","reading_utc":"2026-11-25T14:29:51Z","spent_usd":1.7500,"stop_usd":8.0000,"remaining_usd":6.2500,"calls":3,"spent_24h_usd":0.2500,"spent_7d_usd":0.7500}],"unavailable":[]}
+=== worked example
 exit=0
-ledger unchanged: yes
-### pace ahead (6.00 total, first call 3d ago)
-{"rc":"ok","google":[{"window":"30d","pct_remaining":25.00,"pace":"ahead","state":"fresh","reading_utc":"2026-11-22T15:29:51Z","spent_usd":6.0000,"stop_usd":8.0000,"remaining_usd":2.0000,"calls":1,"spent_24h_usd":0.0000,"spent_7d_usd":6.0000}],"unavailable":[]}
+{"google":[{"window":"30d","pct_remaining":78.12,"pace":"behind","state":"fresh","reading_utc":"2026-11-19T20:20:00Z","spent_usd":1.7500,"stop_usd":8.0000,"remaining_usd":6.2500,"calls":3,"spent_24h_usd":0.2500,"spent_7d_usd":0.7500}],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","google-api","opencode-go"]}
+=== TOON (default /fleet read)
+quota[9]{lane,account,plan,window,pct_remaining,resets_et,pace,state,read_utc,reading_utc,reason,spent_usd,stop_usd,remaining_usd,calls,spent_24h_usd,spent_7d_usd}:
+  claude#1,~/.claude,pro,five_hour,71,"2026-11-20 01:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  claude#1,~/.claude,pro,seven_day,8,"2026-11-22 19:00 EST",ahead,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  claude#2,~/.claude-secondary,pro,five_hour,83,"2026-11-20 03:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  claude#2,~/.claude-secondary,pro,seven_day,46,"2026-11-22 19:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  opencode-go,"-",OpenCode Go,rolling,99,"2026-11-20 04:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  opencode-go,"-",OpenCode Go,weekly,86,"2026-11-22 19:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  opencode-go,"-",OpenCode Go,monthly,93,"2026-12-15 19:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  codex,"-",free,720h,0,"2026-12-05 19:00 EST",ahead,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  google-api,"-","-",30d,78.12,"-",behind,fresh,"2026-11-19T21:20:00Z","2026-11-19T20:20:00Z","-",1.7500,8.0000,6.2500,3,0.2500,0.7500
+workers[5]{machine,home_lane,task,kind,model,spend_lane,stage,age,last_active,ctx_band,pr,read_utc}:
+/tmp/gspend.GzNOKb/mk/home/data/tools/gemini-spend.tsv: OK
+=== --home pointed at same home, FM_HOME elsewhere
+[1.7500]
+=== 15d total 4.41 (even=4.00 tol=0.40)
 exit=0
-### pace on_pace (4.00 total, first call 15d ago)
-{"rc":"ok","google":[{"window":"30d","pct_remaining":50.00,"pace":"on_pace","state":"fresh","reading_utc":"2026-11-10T15:29:51Z","spent_usd":4.0000,"stop_usd":8.0000,"remaining_usd":4.0000,"calls":1,"spent_24h_usd":0.0000,"spent_7d_usd":0.0000}],"unavailable":[]}
+{"google":[{"window":"30d","pct_remaining":44.88,"pace":"ahead","state":"fresh","reading_utc":"2026-11-04T21:20:00Z","spent_usd":4.4100,"stop_usd":8.0000,"remaining_usd":3.5900,"calls":1,"spent_24h_usd":0.0000,"spent_7d_usd":0.0000}],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","google-api","opencode-go"]}
+=== 15d total 4.39 (even=4.00 tol=0.40)
 exit=0
-### over the stop (9.50)
-{"rc":"ok","google":[{"window":"30d","pct_remaining":0.00,"pace":"ahead","state":"fresh","reading_utc":"2026-11-25T15:28:11Z","spent_usd":9.5000,"stop_usd":8.0000,"remaining_usd":-1.5000,"calls":1,"spent_24h_usd":9.5000,"spent_7d_usd":9.5000}],"unavailable":[]}
+{"google":[{"window":"30d","pct_remaining":45.13,"pace":"on_pace","state":"fresh","reading_utc":"2026-11-04T21:20:00Z","spent_usd":4.3900,"stop_usd":8.0000,"remaining_usd":3.6100,"calls":1,"spent_24h_usd":0.0000,"spent_7d_usd":0.0000}],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","google-api","opencode-go"]}
+=== 15d total 3.61 (even=4.00 tol=0.40)
 exit=0
-### appended call without trailing newline is counted
-{"rc":"ok","google":[{"window":"30d","pct_remaining":87.50,"pace":"ahead","state":"fresh","reading_utc":"2026-11-25T15:29:51Z","spent_usd":1.0001,"stop_usd":8.0000,"remaining_usd":6.9999,"calls":2,"spent_24h_usd":1.0001,"spent_7d_usd":1.0001}],"unavailable":[]}
+{"google":[{"window":"30d","pct_remaining":54.88,"pace":"on_pace","state":"fresh","reading_utc":"2026-11-04T21:20:00Z","spent_usd":3.6100,"stop_usd":8.0000,"remaining_usd":4.3900,"calls":1,"spent_24h_usd":0.0000,"spent_7d_usd":0.0000}],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","google-api","opencode-go"]}
+=== 15d total 3.59 (even=4.00 tol=0.40)
 exit=0
-### mixed: fractional epoch, CRLF, n/a usd, empty usd, 5e-05, truncated row
-{"rc":"ok","google":[{"window":"30d","pct_remaining":81.25,"pace":"ahead","state":"fresh","reading_utc":"2026-11-25T15:29:51Z","spent_usd":1.5000,"stop_usd":8.0000,"remaining_usd":6.5000,"calls":2,"spent_24h_usd":1.5000,"spent_7d_usd":1.5000}],"unavailable":["4 ledger rows unparseable, spend is a lower bound"]}
+{"google":[{"window":"30d","pct_remaining":55.12,"pace":"behind","state":"fresh","reading_utc":"2026-11-04T21:20:00Z","spent_usd":3.5900,"stop_usd":8.0000,"remaining_usd":4.4100,"calls":1,"spent_24h_usd":0.0000,"spent_7d_usd":0.0000}],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","google-api","opencode-go"]}
+=== over the 8 USD stop (8.50)
 exit=0
-### all rows bad
-{"rc":"ok","google":[],"unavailable":["1 ledger rows unparseable, spend not counted"]}
+{"google":[{"window":"30d","pct_remaining":0.00,"pace":"ahead","state":"fresh","reading_utc":"2026-11-19T21:19:00Z","spent_usd":8.5000,"stop_usd":8.0000,"remaining_usd":-0.5000,"calls":2,"spent_24h_usd":1.5000,"spent_7d_usd":1.5000}],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","google-api","opencode-go"]}
+=== 1000 calls of 0.0001
 exit=0
-### unreadable ledger
-1000
-{"rc":"ok","google":[],"unavailable":["ledger unreadable, spend not counted"]}
+{"google":[{"window":"30d","pct_remaining":98.75,"pace":"on_pace","state":"fresh","reading_utc":"2026-11-19T21:19:59Z","spent_usd":0.1000,"stop_usd":8.0000,"remaining_usd":7.9000,"calls":1000,"spent_24h_usd":0.1000,"spent_7d_usd":0.1000}],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","google-api","opencode-go"]}
+=== absent ledger
 exit=0
-unavailable[1]{source,reason,read_utc}:
-  google-api,"ledger unreadable, spend not counted","2026-11-25T15:29:54Z"
-### header only
-{"rc":"ok","google":[],"unavailable":[]}
+{"google":[],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","opencode-go"]}
+=== header-only ledger
 exit=0
-### old stop file is ignored
-{"rc":"ok","google":[{"window":"30d","pct_remaining":87.50,"pace":"ahead","state":"fresh","reading_utc":"2026-11-25T15:29:51Z","spent_usd":1.0000,"stop_usd":8.0000,"remaining_usd":7.0000,"calls":1,"spent_24h_usd":1.0000,"spent_7d_usd":1.0000}],"unavailable":[]}
+{"google":[],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","opencode-go"]}
+=== empty ledger
 exit=0
-### absent ledger
-{"rc":"ok","google":[],"unavailable":[]}
+{"google":[],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","opencode-go"]}
+=== mixed: 3 good (1.75), 5 bad
 exit=0
-0
+{"google":[{"window":"30d","pct_remaining":78.12,"pace":"ahead","state":"fresh","reading_utc":"2026-11-19T21:20:00Z","spent_usd":1.7500,"stop_usd":8.0000,"remaining_usd":6.2500,"calls":3,"spent_24h_usd":1.7500,"spent_7d_usd":1.7500}],"unavailable":[{"source":"google-api","reason":"5 ledger rows unparseable, spend is a lower bound"}],"quota_lanes":["claude#1","claude#2","codex","google-api","opencode-go"]}
+=== every row bad
+exit=0
+{"google":[],"unavailable":[{"source":"google-api","reason":"1 ledger rows unparseable, spend not counted"}],"quota_lanes":["claude#1","claude#2","codex","opencode-go"]}
+=== unreadable ledger
+exit=0
+{"google":[],"unavailable":[{"source":"google-api","reason":"ledger unreadable, spend not counted"}],"quota_lanes":["claude#1","claude#2","codex","opencode-go"]}
+=== ledger path is a directory
+exit=0
+{"google":[],"unavailable":[],"quota_lanes":["claude#1","claude#2","codex","opencode-go"]}

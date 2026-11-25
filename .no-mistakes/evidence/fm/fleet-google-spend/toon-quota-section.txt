@@ -1,0 +1,11 @@
+quota[9]{lane,account,plan,window,pct_remaining,resets_et,pace,state,read_utc,reading_utc,reason,spent_usd,stop_usd,remaining_usd,calls,spent_24h_usd,spent_7d_usd}:
+  claude#1,~/.claude,pro,five_hour,71,"2026-11-20 01:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  claude#1,~/.claude,pro,seven_day,8,"2026-11-22 19:00 EST",ahead,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  claude#2,~/.claude-secondary,pro,five_hour,83,"2026-11-20 03:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  claude#2,~/.claude-secondary,pro,seven_day,46,"2026-11-22 19:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  opencode-go,"-",OpenCode Go,rolling,99,"2026-11-20 04:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  opencode-go,"-",OpenCode Go,weekly,86,"2026-11-22 19:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  opencode-go,"-",OpenCode Go,monthly,93,"2026-12-15 19:00 EST",behind,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  codex,"-",free,720h,0,"2026-12-05 19:00 EST",ahead,fresh,"2026-11-19T21:20:00Z","2026-11-20T00:00:00Z","-",null,null,null,null,null,null
+  google-api,"-","-",30d,78.12,"-",behind,fresh,"2026-11-19T21:20:00Z","2026-11-19T20:20:00Z","-",1.7500,8.0000,6.2500,3,0.2500,0.7500
+workers[5]{machine,home_lane,task,kind,model,spend_lane,stage,age,last_active,ctx_band,pr,read_utc}:
