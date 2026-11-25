@@ -303,8 +303,8 @@ PYFIX
     "the cursor row must be 0-based within the derived viewport"
   rm -f "$dir/fake/cursor/$u"
   out=$(rex_env "$dir" "fm_backend_composer_state rex '$t'")
-  [ "$out" != empty ] && [ "$out" != pending ] \
-    || fail "the same screen read cursorless must not claim a definite verdict, got $out"
+  assert_equals empty "$out" \
+    "the same idle screen read cursorless must read empty: the status rail below the floor is composer chrome"
   printf '99;1' >"$dir/fake/cursor/$u"
   assert_equals "$out" "$(rex_env "$dir" "fm_backend_composer_state rex '$t'")" \
     "a cursor outside the viewport must be ignored, falling back to the cursorless read"
