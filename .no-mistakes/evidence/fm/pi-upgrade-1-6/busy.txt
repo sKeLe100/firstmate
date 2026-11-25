@@ -1,0 +1,4 @@
+ok - failed close invalidates observation before persistence and denies late replay
+ok - codex classifies unknown until a semantic source passes its verification gate
+ok - Pi stream gate accepts only the verified releases (1.2.0, 1.6.0), rejects newer, older, prerelease, and malformed
+all fm-busy-state tests passed
