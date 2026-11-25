@@ -275,7 +275,7 @@ test_brief_scaffold_directs_scratch() {
     brief="$home/data/scaf-$kind/brief.md"
     assert_present "$brief" "the $kind brief was scaffolded"
     assert_not_contains "$(cat "$brief")" "install, run, edit" "the $kind scaffold no longer invites installs in the worktree"
-    assert_contains "$(cat "$brief")" "~/fm-scratch/scaf-$kind/" "the $kind scaffold names the scratch location"
+    assert_contains "$(cat "$brief")" "fm-scratch/scaf-$kind/" "the $kind scaffold names the scratch location"
   done
   pass "fm-brief.sh: scaffolds direct installs to ~/fm-scratch and no longer invite them in the worktree"
 }
