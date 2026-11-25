@@ -470,36 +470,40 @@ worker_live_account() {  # <task-id> <worktree> <pane-id>
   # no matching Claude process can be read. The task marker, the recorded Herdr
   # pane, and the worktree are matched in that order, so an unrecorded account
   # comes from the running process instead of a guessed home pin.
-  local id=${1-} wt=${2-} pane=${3-} d pid env match want cwd cmdline cmd0 comm line found=0
+  local id=${1-} wt=${2-} pane=${3-} d pid match want cwd cmd0 comm line cfg found=0
   want=
   if [ -n "$wt" ]; then want=$(CDPATH='' cd -- "$wt" 2>/dev/null && pwd -P) || want=$wt; fi
   for d in /proc/[0-9]*; do
     [ -r "$d/environ" ] || continue
     pid=${d#/proc/}
     [ "$pid" != "$$" ] || continue
-    comm=$(cat "$d/comm" 2>/dev/null) || comm=
+    comm=
+    read -r comm < "$d/comm" 2>/dev/null || true
     case "$comm" in
       claude|claude-*) ;;
       *)
-        cmdline=$(tr '\0' '\n' < "$d/cmdline" 2>/dev/null) || continue
-        cmd0=${cmdline%%$'\n'*}
+        cmd0=
+        IFS= read -r -d '' cmd0 < "$d/cmdline" 2>/dev/null || true
         cmd0=${cmd0##*/}
         case "$cmd0" in claude|claude-*) ;; *) continue ;; esac
         ;;
     esac
-    env=$(tr '\0' '\n' < "$d/environ" 2>/dev/null) || continue
     match=0
-    if [ -n "$id" ] && printf '%s\n' "$env" | grep -qxF "FM_TASK_ID=$id"; then
-      match=1
-    elif [ -n "$pane" ] && printf '%s\n' "$env" | grep -qxF "HERDR_PANE_ID=$pane"; then
-      match=1
-    elif [ -n "$want" ]; then
+    cfg=
+    while IFS= read -r -d '' line || [ -n "$line" ]; do
+      case "$line" in
+        CLAUDE_CONFIG_DIR=*) cfg=${line#CLAUDE_CONFIG_DIR=} ;;
+        FM_TASK_ID=*) [ -n "$id" ] && [ "${line#FM_TASK_ID=}" = "$id" ] && match=1 ;;
+        HERDR_PANE_ID=*) [ -n "$pane" ] && [ "${line#HERDR_PANE_ID=}" = "$pane" ] && match=1 ;;
+      esac
+      line=
+    done 2>/dev/null < "$d/environ"
+    if [ "$match" -eq 0 ] && [ -n "$want" ]; then
       cwd=$(readlink "$d/cwd" 2>/dev/null) || cwd=
       [ "$cwd" = "$want" ] && match=1
     fi
     [ "$match" -eq 1 ] || continue
-    line=$(printf '%s\n' "$env" | sed -n 's/^CLAUDE_CONFIG_DIR=//p' | tail -1)
-    if [ -n "$line" ]; then printf '%s\n' "$line"; return 0; fi
+    if [ -n "$cfg" ]; then printf '%s\n' "$cfg"; return 0; fi
     found=1
   done
   [ "$found" -eq 0 ] || { printf 'ordinary\n'; return 0; }
