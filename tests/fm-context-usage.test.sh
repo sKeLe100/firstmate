@@ -2,7 +2,8 @@
 # tests/fm-context-usage.test.sh - behavior tests for bin/fm-context-usage.sh.
 # Exercises the helper only through its executable interface with synthetic
 # transcript files: the reported total must be the last NON-sidechain
-# assistant turn's input + cache_creation + cache_read sum, missing inputs must
+# assistant turn's input + cache_creation + cache_read sum (for an advisor turn,
+# the last iteration of that turn rather than the summed top-level fields), missing inputs must
 # fail loudly, a self-read must bind to the calling session's own transcript
 # through the trusted session-id gate (or disclose that it fell back to the
 # newest one), auto-discovery must read the session's own CLAUDE_CONFIG_DIR or
@@ -26,6 +27,13 @@ mk_line() {
   # mk_line <type> <sidechain:true|false> <input> <cache_create> <cache_read>
   printf '{"type":"%s","isSidechain":%s,"message":{"usage":{"input_tokens":%d,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":10,"server_tool_use":{"web_search_requests":0}}}}\n' \
     "$1" "$2" "$3" "$4" "$5"
+}
+
+mk_advisor_line() {
+  # An advisor turn as Claude Code records it (fixture from the 11-24 9:41 PM
+  # fc6a4d1a turn): the top-level fields sum every iteration to 563125, while
+  # the final message iteration (the real context sent) is 282513.
+  printf '{"type":"assistant","isSidechain":false,"timestamp":"2026-11-25T02:41:59.509Z","message":{"usage":{"input_tokens":4,"cache_creation_input_tokens":2863,"cache_read_input_tokens":560258,"output_tokens":341,"iterations":[{"input_tokens":2,"output_tokens":341,"cache_creation_input_tokens":962,"cache_read_input_tokens":279648,"type":"message"},{"input_tokens":284154,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"type":"advisor_message"},{"input_tokens":2,"output_tokens":341,"cache_creation_input_tokens":1901,"cache_read_input_tokens":280610,"type":"message"}]}}}\n'
 }
 
 # 1. Explicit path: last non-sidechain assistant usage wins; a later sidechain
@@ -393,6 +401,27 @@ out="$(CLAUDE_CONFIG_DIR="$tmp/bind_store" HOME="$tmp/claude_home" FM_HOME="$bin
 case "$out" in
   *"transcript=$bind_proj/other.jsonl"*" pick=newest"*) ;;
   *) fail "expected a path-shaped session id to be ignored, got: $out" ;;
+esac
+
+# 29. An advisor turn records usage.iterations and sums them into its top-level
+#     token fields. The reading must be the last iteration's real context
+#     (282513), never that inflated sum (563125), and a later plain assistant
+#     turn must still win as the latest turn.
+adv_t="$tmp/advisor.jsonl"
+mk_advisor_line > "$adv_t"
+out="$(FM_HOME="$tmp/no_config_home" scrubbed "$bin" "$adv_t")"
+case "$out" in
+  *"context_tokens=282513 "*) ;;
+  *) fail "expected the advisor turn's last iteration (282513), got: $out" ;;
+esac
+case "$out" in
+  *"context_tokens=563125"*) fail "an advisor turn's summed top-level usage must not be reported, got: $out" ;;
+esac
+mk_line assistant false 2 100 200 >> "$adv_t"
+out="$(FM_HOME="$tmp/no_config_home" scrubbed "$bin" "$adv_t")"
+case "$out" in
+  *"context_tokens=302 "*) ;;
+  *) fail "expected a later plain assistant turn to remain the reading, got: $out" ;;
 esac
 
 echo "PASS fm-context-usage.test.sh"
