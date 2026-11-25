@@ -101,8 +101,10 @@
 # existing fm-crew-state.sh and fm-context-usage.sh. PC02 host headroom, drives,
 # herdr sessions, offload slots, personal-use switch, runner unit, and its
 # pinned account come from one separate ssh batch, and PC02 drive health from
-# its own bounded smartctl batch. The parent secondmate ledger is never
-# consulted.
+# its own bounded smartctl batch. A remote worker row with no recorded account
+# reads the live Claude process's own CLAUDE_CONFIG_DIR, then the remote home's
+# launch pin, and reports unknown when neither is readable instead of assuming
+# the default account. The parent secondmate ledger is never consulted.
 #
 # Per-source bounds (seconds, env-overridable): quota 8, each herdr call 5,
 # pc02 host batch 10, remote worker read 20, local fleet reads 15, roles 10,
@@ -460,6 +462,52 @@ spend_lane() {  # <harness> <model> <account>
     return
   fi
   printf 'unknown'
+}
+
+worker_live_account() {  # <task-id> <worktree> <pane-id>
+  # Print the config root a live worker's own Claude process was launched with,
+  # the word ordinary when that process runs the default login, or nothing when
+  # no matching Claude process can be read. The task marker, the recorded Herdr
+  # pane, and the worktree are matched in that order, so an unrecorded account
+  # comes from the running process instead of a guessed home pin.
+  local id=${1-} wt=${2-} pane=${3-} d pid match want cwd cmd0 comm line cfg found=0
+  want=
+  if [ -n "$wt" ]; then want=$(CDPATH='' cd -- "$wt" 2>/dev/null && pwd -P) || want=$wt; fi
+  for d in /proc/[0-9]*; do
+    [ -r "$d/environ" ] || continue
+    pid=${d#/proc/}
+    [ "$pid" != "$$" ] || continue
+    comm=
+    read -r comm < "$d/comm" 2>/dev/null || true
+    case "$comm" in
+      claude|claude-*) ;;
+      *)
+        cmd0=
+        IFS= read -r -d '' cmd0 < "$d/cmdline" 2>/dev/null || true
+        cmd0=${cmd0##*/}
+        case "$cmd0" in claude|claude-*) ;; *) continue ;; esac
+        ;;
+    esac
+    match=0
+    cfg=
+    while IFS= read -r -d '' line || [ -n "$line" ]; do
+      case "$line" in
+        CLAUDE_CONFIG_DIR=*) cfg=${line#CLAUDE_CONFIG_DIR=} ;;
+        FM_TASK_ID=*) [ -n "$id" ] && [ "${line#FM_TASK_ID=}" = "$id" ] && match=1 ;;
+        HERDR_PANE_ID=*) [ -n "$pane" ] && [ "${line#HERDR_PANE_ID=}" = "$pane" ] && match=1 ;;
+      esac
+      line=
+    done 2>/dev/null < "$d/environ"
+    if [ "$match" -eq 0 ] && [ -n "$want" ]; then
+      cwd=$(readlink "$d/cwd" 2>/dev/null) || cwd=
+      [ "$cwd" = "$want" ] && match=1
+    fi
+    [ "$match" -eq 1 ] || continue
+    if [ -n "$cfg" ]; then printf '%s\n' "$cfg"; return 0; fi
+    found=1
+  done
+  [ "$found" -eq 0 ] || { printf 'ordinary\n'; return 0; }
+  return 1
 }
 
 collie_last_active() {  # <pane>
@@ -898,19 +946,26 @@ worker_row_local() {  # <meta> <home_lane>
   kind=$(meta_get "$meta" kind); kind=${kind:-unknown}
   harness=$(meta_get "$meta" harness); harness=${harness:-unknown}
   model=$(meta_get "$meta" model); model=${model:-unknown}
+  wt=$(meta_get "$meta" worktree)
+  pane=$(meta_get "$meta" herdr_pane_id)
   account=$(meta_get "$meta" account)
+  if [ -z "$account" ] && [ "$HOME_ONLY" -eq 1 ] && [ "$harness" = claude ]; then
+    account=$(worker_live_account "$id" "$wt" "$pane") || account=
+  fi
   if [ -z "$account" ] && [ -f "$CONFIG/claude-account" ]; then
     account=$(sed -n '1p' "$CONFIG/claude-account" 2>/dev/null)
   fi
-  wt=$(meta_get "$meta" worktree)
   spawn=$(meta_get "$meta" spawn_gen)
   pr=$(meta_get "$meta" pr); pr=${pr:--}
-  pane=$(meta_get "$meta" herdr_pane_id)
   stage=$(fm_run_timed "$CREW_STATE_TIMEOUT" env FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" \
     "$SCRIPT_DIR/fm-crew-state.sh" "$id" 2>/dev/null </dev/null | head -1)
   stage=$(clean_field "${stage:-unknown}")
   ctx=$(context_band "$id" "$harness" "$wt" "$account")
-  spend=$(spend_lane "$harness" "$model" "$account")
+  if [ "$HOME_ONLY" -eq 1 ] && [ -z "$account" ] && [ "$harness" = claude ]; then
+    spend=unknown
+  else
+    spend=$(spend_lane "$harness" "$model" "$account")
+  fi
   last=$(collie_last_active "$pane")
   printf 'PC01\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(clean_field "$lane")" "$(clean_field "$id")" "$(clean_field "$kind")" \
@@ -989,6 +1044,7 @@ REMOTE
 }
 
 remote_worker_script() {
+  declare -f worker_live_account
   cat <<'REMOTE'
 root=$1
 home=$2
@@ -1000,12 +1056,15 @@ for m in "$home"/state/*.meta; do
   kind=$(sed -n 's/^kind=//p' "$m" | tail -1)
   harness=$(sed -n 's/^harness=//p' "$m" | tail -1)
   model=$(sed -n 's/^model=//p' "$m" | tail -1)
-  account=$(sed -n 's/^account=//p' "$m" | tail -1)
-  if [ -z "$account" ]; then account=$(head -1 "$home/config/claude-account" 2>/dev/null); fi
   wt=$(sed -n 's/^worktree=//p' "$m" | tail -1)
+  pane=$(sed -n 's/^herdr_pane_id=//p' "$m" | tail -1)
+  account=$(sed -n 's/^account=//p' "$m" | tail -1)
+  if [ -z "$account" ] && [ "$harness" = claude ]; then
+    account=$(worker_live_account "$id" "$wt" "$pane") || account=
+  fi
+  if [ -z "$account" ]; then account=$(head -1 "$home/config/claude-account" 2>/dev/null); fi
   spawn=$(sed -n 's/^spawn_gen=//p' "$m" | tail -1)
   pr=$(sed -n 's/^pr=//p' "$m" | tail -1)
-  pane=$(sed -n 's/^herdr_pane_id=//p' "$m" | tail -1)
   raw=${spawn#s}; epoch=${raw%%.*}
   case "$epoch" in ''|*[!0-9]*) age=- ;; *)
     d=$((now - epoch))
@@ -1107,7 +1166,8 @@ collect_remote() {
             if (m ~ /codex/ || h == "codex") return "codex"
             if (h == "claude" || m ~ /^claude-/) {
               if (a ~ /claude-secondary/) return "claude#2"
-              if (a == "" || a == "auto" || a == "ordinary" || a ~ /\/\.claude$/) return "claude#1"
+              if (a == "") return "unknown"
+              if (a == "auto" || a == "ordinary" || a ~ /\/\.claude$/) return "claude#1"
               n = a; sub(/.*\//, "", n); return "claude:" (n == "" ? "unknown" : n)
             }
             return "unknown"

@@ -402,6 +402,121 @@ EOF
   pass "worker-lane accounts follow the lane classification, not the orchestrator role"
 }
 
+LIVE_CLAUDE_PID=
+start_fake_claude() {  # <pane-id> <account-path-or-empty>
+  local pane=$1 account=${2-} i=0
+  if [ -n "$account" ]; then
+    env CLAUDE_CONFIG_DIR="$account" HERDR_PANE_ID="$pane" bash -c 'exec -a claude sleep 30' &
+  else
+    env HERDR_PANE_ID="$pane" bash -c 'exec -a claude sleep 30' &
+  fi
+  LIVE_CLAUDE_PID=$!
+  while [ "$i" -lt 100 ] && [ ! -r "/proc/$LIVE_CLAUDE_PID/cmdline" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+}
+
+stop_fake_claude() {
+  [ -n "${LIVE_CLAUDE_PID:-}" ] || return 0
+  kill "$LIVE_CLAUDE_PID" 2>/dev/null || true
+  wait "$LIVE_CLAUDE_PID" 2>/dev/null || true
+  LIVE_CLAUDE_PID=
+}
+
+write_unrecorded_remote_home() {  # <base> -> prints remote home path
+  local base=$1 home=$1/home
+  mkdir -p "$home/state" "$home/config" "$home/data" "$base/wt"
+  cat > "$home/state/zeta.meta" <<EOF
+endpoint_task_id=zeta
+kind=ship
+harness=claude
+model=claude-sonnet-5-5
+worktree=$base/wt
+herdr_pane_id=wZ:p7
+spawn_gen=s$((NOW - 60)).1.1
+EOF
+  printf '%s\n' "$home"
+}
+
+test_remote_home_worker_reads_live_claude_account() {
+  local base home cfix out
+  base="$TMP_ROOT/remote-live-account"
+  home=$(write_unrecorded_remote_home "$base")
+  printf 'ordinary\n' > "$home/config/claude-account"
+  cfix="$base/context.json"
+  printf '%s\n' '{"zeta":"ok(5%)"}' > "$cfix"
+  start_fake_claude wZ:p7 /home/test/.claude-secondary
+  out=$(env PATH="$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$cfix" "$SNAP" --home-only --json 2>&1)
+  stop_fake_claude
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e '.workers[] | select(.task == "zeta") | .spend_lane == "claude#2"' "$base/out.json" >/dev/null \
+    || fail "an unrecorded remote worker must read claude#2 from its live process, not the ordinary pin: $(jq -c '.workers' "$base/out.json")"
+  pass "a remote worker with no recorded account reads the live Claude process lane"
+}
+
+test_remote_home_worker_account_falls_back_to_pin_then_unknown() {
+  local base home cfix out
+  base="$TMP_ROOT/remote-pin-account"
+  home=$(write_unrecorded_remote_home "$base")
+  cfix="$base/context.json"
+  printf '%s\n' '{"zeta":"ok(5%)"}' > "$cfix"
+  printf '/home/test/.claude-secondary\n' > "$home/config/claude-account"
+  out=$(env PATH="$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$cfix" "$SNAP" --home-only --json 2>&1)
+  printf '%s\n' "$out" > "$base/pin.json"
+  jq -e '.workers[] | select(.task == "zeta") | .spend_lane == "claude#2"' "$base/pin.json" >/dev/null \
+    || fail "an unreadable worker process must fall back to the remote launch pin: $(jq -c '.workers' "$base/pin.json")"
+  rm -f "$home/config/claude-account"
+  out=$(env PATH="$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$cfix" "$SNAP" --home-only --json 2>&1)
+  printf '%s\n' "$out" > "$base/unknown.json"
+  jq -e '.workers[] | select(.task == "zeta") | .spend_lane == "unknown"' "$base/unknown.json" >/dev/null \
+    || fail "an account with neither a live process nor a pin must render unknown, never claude#1: $(jq -c '.workers' "$base/unknown.json")"
+  pass "the remote launch pin is the fallback, and an unreadable account renders unknown"
+}
+
+test_remote_worker_ssh_reads_live_claude_account() {
+  local rec home fb fake base rhome out
+  rec=$(make_home ssh-live-account fresh); home=${rec%%|*}; fb=${rec#*|}
+  base="$TMP_ROOT/ssh-live-account"
+  write_fixtures ssh-live-account
+  fake="$base/bin"
+  mkdir -p "$fake"
+  rhome=$(write_unrecorded_remote_home "$base/remote")
+  printf 'ordinary\n' > "$rhome/config/claude-account"
+  cat > "$home/data/secondmates.md" <<EOF
+- pc02-mate - fixture mate (host: pc02; root: $ROOT; home: $rhome; scope: fixture; projects: ; added 2026-11-01)
+EOF
+  cat > "$fake/ssh" <<'EOF'
+#!/usr/bin/env bash
+script=$(cat)
+case "$script" in
+  *'/state/*.meta'*) printf '%s\n' "$script" | bash -s -- "${@: -2}"; exit $? ;;
+esac
+exit 255
+EOF
+  chmod +x "$fake/ssh"
+  start_fake_claude wZ:p7 /home/test/.claude-secondary
+  out=$(env PATH="$fake:$fb:$BASE_PATH" FM_HOME="$home" FM_RESOURCE_NOW="$NOW" FM_SSH_BIN="$fake/ssh" \
+    FM_RESOURCE_HOSTS_JSON="$base/hosts.json" \
+    FM_RESOURCE_HERDR_JSON_PC01="$base/herdr-pc01.json" \
+    FM_RESOURCE_HERDR_JSON_PC02="$base/herdr-pc02.json" \
+    FM_RESOURCE_ROLES_FILE="$base/roles.json" \
+    FM_RESOURCE_TESTING_FIXTURE="$base/testing.json" \
+    FM_RESOURCE_CONTEXT_FIXTURE="$base/context.json" \
+    FM_RESOURCE_ANDROID_FIXTURE="$base/android.json" \
+    FM_RESOURCE_DRIVE_HEALTH_FIXTURE="$base/drive-health.json" \
+    FAKE_QUOTA_JSON="$base/quota.json" \
+    "$SNAP" --json 2>&1)
+  stop_fake_claude
+  printf '%s\n' "$out" > "$base/out.json"
+  jq -e '[.workers[] | select(.task == "zeta" and .spend_lane == "claude#2")] | length == 1' "$base/out.json" >/dev/null \
+    || fail "the ssh remote worker read must take claude#2 from the live process: $(jq -c '.workers' "$base/out.json")"
+  pass "the ssh remote worker read reports the live Claude process lane"
+}
+
 test_row_caps_and_omitted() {
   local rec home fb out rc
   rec=$(make_home caps fresh); home=${rec%%|*}; fb=${rec#*|}
@@ -1480,6 +1595,9 @@ test_rate_limited_quota_is_not_zero
 test_down_pc02_keeps_pc01
 test_remote_fixture_alone_supplies_pc02_rows
 test_worker_lane_account_follows_lane_not_role
+test_remote_home_worker_reads_live_claude_account
+test_remote_home_worker_account_falls_back_to_pin_then_unknown
+test_remote_worker_ssh_reads_live_claude_account
 test_row_caps_and_omitted
 test_read_only_leaves_fixture_untouched
 test_home_only_renders_workers_only
