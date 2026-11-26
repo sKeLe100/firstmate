@@ -377,8 +377,10 @@ A later in-process `clear` re-emits only when this lock owner completed a full s
 ### Antigravity (agy)
 
 Antigravity CLI is a run-tier harness.
-`.agents/hooks.json` registers `SessionStart`, anchored to the project root with a 30s timeout, invoking `bin/fm-sessionstart-agy.sh`.
-The wrapper drains stdin for the payload's `source` and delegates to `bin/fm-sessionstart-run.sh`, which owns primary or persistent secondmate home scope, source routing, and the digest.
+`.agents/hooks.json` registers `SessionStart`, anchored to the project root with a 180s timeout, invoking `bin/fm-sessionstart-agy.sh`.
+The timeout outlasts `bin/fm-session-start.sh`'s own 120s runtime bound, so a slow digest reports its truncation instead of agy killing the wrapper mid-startup (a 30s value did exactly that in a real session).
+The wrapper drains stdin for the payload's `source` and `conversationId` and delegates to `bin/fm-sessionstart-run.sh`, which owns primary or persistent secondmate home scope, source routing, and the digest.
+`agy` can fire `SessionStart` again mid-conversation (for example after a Stop-hook park), so the run wrapper records the conversation its completed startup served and stays silent for a repeated startup with the same `conversationId` on the same live process, while a new conversation under that process gets the `--reemit` digest.
 In linked crewmate worktrees or foreign checkouts, `bin/fm-sessionstart-run.sh` stands down silently and the wrapper emits `{}`.
 In primary or secondmate homes, the wrapper emits the captured digest as `{injectSteps:[{systemMessage:{systemMessage:$digest}}]}` on stdout with exit 0.
 Native stdout context injection gates the ordered digest into model context before the first agent turn.

@@ -11,12 +11,22 @@
 # discretion - the helm is taken before the model's first turn, whatever the
 # first turn is.
 #
-# Usage: fm-sessionstart-run.sh [--source <source>] [--pi-prerequisite]
+# Usage: fm-sessionstart-run.sh [--source <source>] [--conversation-id <id>] [--pi-prerequisite]
 #   --source  The harness's own session-open source. When omitted, the source is
 #             read from a Claude/Codex-shaped JSON hook payload on stdin
 #             (the `source` field). An unreadable or unrecognized source is
 #             treated as `startup`, because taking the helm redundantly is
 #             cheap and idempotent while not taking it is the whole bug.
+#   --conversation-id
+#             The harness conversation this open belongs to, when its transport
+#             carries one (Antigravity's SessionStart payload does). It makes a
+#             repeated `startup` on an ALREADY-COMPLETED live session idempotent:
+#             a hook may re-fire mid-conversation (for example after a Stop-hook
+#             park) without a new conversation, and re-running the whole startup
+#             would inject a second full digest into an open context. The id is
+#             recorded beside the completion proof, and a startup whose id
+#             differs is a new conversation on the same live session, so it gets
+#             the `--reemit` digest instead of another full one.
 #   --pi-prerequisite
 #             Internal Pi extension mode. An intentional gate/scope stand-down
 #             exits 3 so provider preflight can distinguish it from an eligible
@@ -24,7 +34,10 @@
 #             invocation retains the always-zero compatibility contract below.
 #
 # Source routing (see docs/sessionstart-nudge.md for the per-harness names):
-#   startup, new            full digest - this process has not taken the helm
+#   startup, new            full digest - this process has not taken the helm.
+#                           With --conversation-id and a completed startup for
+#                           this live session: silent for the same conversation,
+#                           a `--reemit` digest for a new one.
 #   clear, compact          `--reemit` digest only when this lock owner recorded
 #                           a completed full startup; otherwise a full digest,
 #                           so a startup killed mid-sweep is finished first
@@ -52,6 +65,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 COMPLETION_FILE="$STATE/.session-start-complete"
+CONVERSATION_FILE="$STATE/.session-start-conversation"
 
 # shellcheck source=bin/fm-gate-refuse-lib.sh
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
@@ -63,6 +77,7 @@ COMPLETION_FILE="$STATE/.session-start-complete"
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
 
 SOURCE=
+CONVERSATION_ID=
 PI_PREREQUISITE=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -73,6 +88,11 @@ while [ $# -gt 0 ]; do
       if [ $# -ge 2 ]; then shift 2; else shift; fi
       ;;
     --source=*) SOURCE=${1#--source=}; shift ;;
+    --conversation-id)
+      CONVERSATION_ID=${2:-}
+      if [ $# -ge 2 ]; then shift 2; else shift; fi
+      ;;
+    --conversation-id=*) CONVERSATION_ID=${1#--conversation-id=}; shift ;;
     --pi-prerequisite) PI_PREREQUISITE=1; shift ;;
     *) shift ;;
   esac
@@ -108,6 +128,29 @@ session_start_completed() {
   completion_pid=$(cat "$COMPLETION_FILE" 2>/dev/null) || return 1
   fm_session_pid_valid "$lock_pid" || return 1
   [ "$completion_pid" = "$lock_pid" ]
+}
+
+# True when this already-completed live session delivered its full digest for
+# conversation $1. Both halves matter: the completion proof keeps a stale marker
+# from a previous harness process from silencing a genuinely new session, and a
+# missing or unreadable marker keeps startup conservative (a redundant digest is
+# cheap, a missing one is the bug this transport exists to prevent).
+conversation_started() {  # <conversation-id>
+  local recorded
+  [ -n "$1" ] || return 1
+  [ -f "$CONVERSATION_FILE" ] && [ ! -L "$CONVERSATION_FILE" ] || return 1
+  recorded=$(cat "$CONVERSATION_FILE" 2>/dev/null) || return 1
+  [ "$recorded" = "$1" ]
+}
+
+# Record the conversation this live session just served after a full startup or
+# a re-emit. Only a session that still proves it owns the completed startup
+# records, so a read-only or stood-down run never writes a marker for someone
+# else's session.
+record_conversation() {
+  [ -n "$CONVERSATION_ID" ] || return 0
+  session_start_completed || return 0
+  printf '%s\n' "$CONVERSATION_ID" > "$CONVERSATION_FILE" 2>/dev/null || true
 }
 
 if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
@@ -147,9 +190,23 @@ case "$SOURCE" in
     else
       "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
     fi
+    record_conversation
     ;;
   *)
-    "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
+    # A mid-conversation SessionStart re-fire on a live session whose full
+    # startup already completed has its digest in model context already, so it
+    # must stay silent rather than inject a second one.
+    if session_start_completed && conversation_started "$CONVERSATION_ID"; then
+      exit 0
+    fi
+    if [ -n "$CONVERSATION_ID" ] && session_start_completed; then
+      # Same live session, new conversation (for example /clear created one
+      # without a clear source). Re-emit instead of repeating the full startup.
+      "$SCRIPT_DIR/fm-session-start.sh" --reemit --source "$SOURCE" || true
+    else
+      "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
+    fi
+    record_conversation
     ;;
 esac
 exit 0

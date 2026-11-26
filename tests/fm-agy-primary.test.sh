@@ -96,6 +96,15 @@ FM_HOME="${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 printf '%s\n' "$*" >> "$FM_HOME/state/digest-args"
 "$SCRIPT_DIR/fm-lock.sh" || true
 "$SCRIPT_DIR/fm-supervision-instructions.sh"
+case " $* " in
+  *" --reemit "*) ;;
+  *)
+    # Mirror the real startup: only a full locked startup publishes the
+    # completion proof, keyed to the lock-owning harness pid.
+    completion_pid=$(cat "$FM_HOME/state/.lock" 2>/dev/null || true)
+    [ -z "$completion_pid" ] || printf '%s\n' "$completion_pid" > "$FM_HOME/state/.session-start-complete"
+    ;;
+esac
 SH
   chmod +x "$dir/bin/fm-session-start.sh"
 }
@@ -214,6 +223,11 @@ test_agents_hooks_json_registration_and_cwd_contract() {
     || fail ".agents/hooks.json must be agy named hook specs with flat SessionStart/Stop and grouped PreToolUse handlers"
   jq -e '[.[] | .Stop // empty | .[].timeout] | length > 0 and all(. == 28800)' "$reg" >/dev/null 2>&1 \
     || fail ".agents/hooks.json Stop must allow the park the 28800s hook budget Cursor and Claude use"
+  # fm-session-start.sh bounds itself at 120s by default, so the hook timeout
+  # must outlast that bound or agy kills the wrapper before the digest can
+  # report a truncation - the 30s value did exactly that on 2026-11-26.
+  jq -e '[.[] | .SessionStart // empty | .[].timeout] | length > 0 and all(. > 120)' "$reg" >/dev/null 2>&1 \
+    || fail ".agents/hooks.json SessionStart must outlast the digest's 120s runtime bound"
 
   dir=$(make_primary_dir "$TMP_ROOT/hooks-cwd")
   install_digest_fixture "$dir"
@@ -288,6 +302,72 @@ test_sessionstart_agy_primary_secondmate_and_worktree_scope() {
   [ ! -e "$wt/state/.lock" ] || fail "crewmate worktree must not create state/.lock"
 
   pass "fm-sessionstart-agy: runs in primary and seeded secondmate homes, stands down with {} in crewmate worktree"
+}
+
+test_sessionstart_agy_dedupes_a_mid_conversation_refire() {
+  local dir p1 p2 p3
+  dir=$(make_primary_dir "$TMP_ROOT/session-dedupe")
+  install_digest_fixture "$dir"
+  p1=$(printf '{"sessionId":"s-1","conversationId":"c-1","workspacePaths":["%s"],"source":"new"}' "$dir")
+  p2=$p1
+  p3=$(printf '{"sessionId":"s-1","conversationId":"c-2","workspacePaths":["%s"],"source":"new"}' "$dir")
+
+  # All three opens must share ONE live agy process: a mid-conversation re-fire
+  # keeps the harness pid, and the dedupe proof is keyed to it.
+  AGY_CHILD_CMD='
+    h="$FM_HOME/bin/fm-sessionstart-agy.sh"
+    printf "%s" "$P1" | "$h" > "$FM_HOME/state/out1"
+    cp "$FM_HOME/state/.session-start-conversation" "$FM_HOME/state/conv1" 2>/dev/null || true
+    printf "%s" "$P2" | "$h" > "$FM_HOME/state/out2"
+    printf "%s" "$P3" | "$h" > "$FM_HOME/state/out3"
+    cp "$FM_HOME/state/.session-start-conversation" "$FM_HOME/state/conv3" 2>/dev/null || true
+  '
+  printf '' | run_under_agy FM_HOME="$dir" P1="$p1" P2="$p2" P3="$p3" 2>/dev/null
+
+  jq -e '.injectSteps[0].systemMessage.systemMessage | length > 0' "$dir/state/out1" >/dev/null 2>&1 \
+    || fail "the first conversation startup did not inject a digest: $(cat "$dir/state/out1")"
+  [ "$(cat "$dir/state/conv1")" = c-1 ] \
+    || fail "the completed startup did not record its conversation id"
+  [ "$(wc -l < "$dir/state/digest-args")" -eq 2 ] \
+    || fail "the digest ran an unexpected number of times: $(cat "$dir/state/digest-args")"
+
+  assert_equals "{}" "$(cat "$dir/state/out2")" \
+    "a repeated SessionStart for the same conversation must inject nothing"
+  [ "$(wc -l < "$dir/state/digest-args")" -eq 2 ] \
+    || fail "the deduplicated re-fire still ran fm-session-start.sh"
+
+  jq -e '.injectSteps[0].systemMessage.systemMessage | length > 0' "$dir/state/out3" >/dev/null 2>&1 \
+    || fail "a new conversation under the same live agy did not inject a digest: $(cat "$dir/state/out3")"
+  assert_contains "$(tail -1 "$dir/state/digest-args")" "--reemit" \
+    "a new conversation under the same live agy must re-emit instead of repeating startup sweeps"
+  [ "$(cat "$dir/state/conv3")" = c-2 ] \
+    || fail "the re-emit did not record the new conversation id"
+  pass "fm-sessionstart-agy: a mid-conversation re-fire for the same conversation is silent, a new one re-emits"
+}
+
+test_agy_hook_transport_depth_resolves_agy() {
+  local dir out
+  dir=$(make_primary_dir "$TMP_ROOT/harness-depth")
+  cat > "$dir/bin/depth-probe.sh" <<'SH'
+#!/usr/bin/env bash
+n=${1:-0}
+if [ "$n" -gt 0 ]; then
+  bash "$0" $((n - 1))
+  exit $?
+fi
+exec "$FM_HOME/bin/fm-harness.sh"
+SH
+  chmod +x "$dir/bin/depth-probe.sh"
+  # The real SessionStart chain sits much deeper than a bare harness child:
+  # hooks.json sh -> agy adapter -> command-substitution subshell -> run wrapper
+  # -> fm-session-start.sh's runtime-bound timeout/bash -c child -> fm-harness.sh.
+  # Ten nested shells pin that depth against the ancestry walk shaping to it.
+  AGY_CHILD_CMD='"$FM_HOME/bin/depth-probe.sh" 10'
+  out=$(printf '{"sessionId":"s-1","conversationId":"c-1","source":"startup"}' \
+    | run_under_agy FM_HOME="$dir" 2>/dev/null)
+  assert_equals "agy" "$out" \
+    "fm-harness.sh must still resolve agy through the agy SessionStart transport depth"
+  pass "fm-harness.sh: resolves agy through the full SessionStart transport ancestry depth"
 }
 
 # --- 3. bin/fm-turnend-guard-agy.sh & bin/fm-turnend-guard.sh --agy ----------
@@ -617,6 +697,8 @@ test_session_lock_agy_ancestry_and_supervision_model() {
 fm_test_run \
   test_agents_hooks_json_registration_and_cwd_contract \
   test_sessionstart_agy_primary_secondmate_and_worktree_scope \
+  test_sessionstart_agy_dedupes_a_mid_conversation_refire \
+  test_agy_hook_transport_depth_resolves_agy \
   test_turnend_guard_agy_actionable_wake_followup \
   test_turnend_guard_agy_supervision_host_park \
   test_turnend_guard_agy_park_timeout_rearms \

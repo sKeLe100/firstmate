@@ -29,6 +29,7 @@ fi
 unset NO_MISTAKES_GATE
 
 TMP_ROOT=$(fm_test_tmproot fm-sessionstart-nudge)
+PI_FIXTURE="$TMP_ROOT/pi-harness"
 RUN="$ROOT/bin/fm-sessionstart-run.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-operational-input.sh"
@@ -259,8 +260,23 @@ run_hook() {  # <root> [args...]
 run_hook_pi() {  # <root> [args...]
   local root=$1
   shift
-  env -u CLAUDECODE -u GROK_AGENT PI_CODING_AGENT=true FM_PI_HARNESS=pi \
-    FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$RUN_PATH" "$root/bin/fm-sessionstart-run.sh" "$@"
+  # Run through a `pi`-named process so the hook sits under a real Pi ancestor,
+  # as it does in a live Pi session. The suite's outer codex fixture is only a
+  # stand-in for "some harness ancestor"; with the full ancestry depth a Pi
+  # marker must still be backed by a nearer Pi process, exactly as production
+  # precedence requires.
+  [ -x "$PI_FIXTURE/pi" ] || {
+    mkdir -p "$PI_FIXTURE"
+    ln -s /bin/bash "$PI_FIXTURE/pi"
+  }
+  # shellcheck disable=SC2016 # Expand inside the fixture shell, not this parent.
+  "$PI_FIXTURE/pi" -c '
+    root=$1; run_path=$2; shift 2
+    env -u CLAUDECODE -u GROK_AGENT PI_CODING_AGENT=true FM_PI_HARNESS=pi \
+      FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$run_path" "$@"
+    rc=$?
+    exit "$rc"
+  ' _ "$root" "$RUN_PATH" "$root/bin/fm-sessionstart-run.sh" "$@"
 }
 
 # Every run-tier assertion keys off the digest banner, which fm-session-start.sh
@@ -306,15 +322,32 @@ test_run_rebuild_forwards_source_to_drifted_instruction_refresh() {
   local root="$TMP_ROOT/run-instruction-refresh" baseline compact_out clear_out resume_out
   make_run_primary "$root"
   printf '%s\n' 'RUN_TIER_AGENTS=original' > "$root/AGENTS.md"
-  run_hook_pi "$root" --source startup </dev/null >/dev/null
+  # One long-lived Pi process owns this session, so startup and the later
+  # rebuild hooks share the same harness ancestor (and therefore the lock).
+  [ -x "$PI_FIXTURE/pi" ] || {
+    mkdir -p "$PI_FIXTURE"
+    ln -s /bin/bash "$PI_FIXTURE/pi"
+  }
+  # shellcheck disable=SC2016 # Expand inside the fixture shell, not this parent.
+  "$PI_FIXTURE/pi" -c '
+    root=$1; run_path=$2; runner=$3
+    hook() {
+      env -u CLAUDECODE -u GROK_AGENT PI_CODING_AGENT=true FM_PI_HARNESS=pi \
+        FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$run_path" "$runner" "$@"
+    }
+    hook --source startup > "$root/state/startup.out"
+    printf "%s\n" "RUN_TIER_AGENTS=updated" > "$root/AGENTS.md"
+    hook --source compact > "$root/state/compact.out"
+    hook --source clear > "$root/state/clear.out"
+    hook --source resume > "$root/state/resume.out"
+  ' _ "$root" "$RUN_PATH" "$root/bin/fm-sessionstart-run.sh"
   assert_present "$root/state/.session-start-agents-baseline" \
     "run-tier startup did not record an instruction baseline"
   baseline=$(cat "$root/state/.session-start-agents-baseline")
 
-  printf '%s\n' 'RUN_TIER_AGENTS=updated' > "$root/AGENTS.md"
-  compact_out=$(run_hook_pi "$root" --source compact </dev/null)
-  clear_out=$(run_hook_pi "$root" --source clear </dev/null)
-  resume_out=$(run_hook_pi "$root" --source resume </dev/null)
+  compact_out=$(cat "$root/state/compact.out")
+  clear_out=$(cat "$root/state/clear.out")
+  resume_out=$(cat "$root/state/resume.out")
 
   assert_contains "$compact_out" "RUN_TIER_AGENTS=updated" \
     "the compact run wrapper did not forward its source to instruction refresh"
@@ -1042,6 +1075,66 @@ test_run_unknown_source_takes_the_helm() {
   pass "run wrapper: an unrecognized or absent source takes the helm rather than skipping it"
 }
 
+test_run_repeat_startup_for_the_same_conversation_stays_silent() {
+  local root="$TMP_ROOT/run-conversation-repeat" out status=0 previous_pid
+  make_run_primary "$root"
+  out=$(run_hook "$root" --source startup --conversation-id conv-1 </dev/null) || status=$?
+  expect_code 0 "$status" "first conversation startup"
+  assert_contains "$out" "$FULL_BANNER$root" "the first conversation startup did not run the full digest"
+  [ "$(cat "$root/state/.session-start-conversation")" = conv-1 ] \
+    || fail "the completed startup did not record its conversation id"
+
+  status=0
+  out=$(run_hook "$root" --source startup --conversation-id conv-1 </dev/null) || status=$?
+  expect_code 0 "$status" "repeated conversation startup"
+  [ -z "$out" ] \
+    || fail "a repeated startup for the same conversation must stay silent, got: $out"
+
+  # The completion proof is load-bearing: a marker left by a previous session
+  # must never silence the live session.
+  sleep 0 &
+  previous_pid=$!
+  wait "$previous_pid"
+  printf '%s\n' "$previous_pid" > "$root/state/.session-start-complete"
+  status=0
+  out=$(run_hook "$root" --source startup --conversation-id conv-1 </dev/null) || status=$?
+  expect_code 0 "$status" "startup after a previous owner's completion"
+  assert_contains "$out" "$FULL_BANNER$root" \
+    "a previous session's completion silenced a live startup for the same conversation"
+  pass "run wrapper: a repeated startup for the same completed conversation is silent, and only for the live owner"
+}
+
+test_run_new_conversation_on_a_live_session_reemits() {
+  local root="$TMP_ROOT/run-conversation-new" out source status=0
+  make_run_primary "$root"
+  run_hook "$root" --source startup --conversation-id conv-1 </dev/null >/dev/null
+
+  for source in startup clear; do
+    if [ "$source" = clear ]; then
+      # A clear re-emits and records the new conversation just like a startup
+      # that observes the id moved.
+      status=0
+      out=$(run_hook "$root" --source clear --conversation-id conv-2 </dev/null) || status=$?
+      expect_code 0 "$status" "clear for a new conversation"
+      assert_contains "$out" "$REEMIT_BANNER$root" "clear for a new conversation did not re-emit"
+      [ "$(cat "$root/state/.session-start-conversation")" = conv-2 ] \
+        || fail "clear did not record the new conversation id"
+      continue
+    fi
+    status=0
+    out=$(run_hook "$root" --source "$source" --conversation-id conv-3 </dev/null) || status=$?
+    expect_code 0 "$status" "startup for a new conversation"
+    assert_contains "$out" "$REEMIT_BANNER$root" \
+      "a startup whose conversation moved did not re-emit instead of repeating startup sweeps"
+    [ "$(cat "$root/state/.session-start-conversation")" = conv-3 ] \
+      || fail "the re-emit did not record the new conversation id"
+    status=0
+    out=$(run_hook "$root" --source "$source" --conversation-id conv-3 </dev/null) || status=$?
+    [ -z "$out" ] || fail "the new conversation's repeat startup was not silent, got: $out"
+  done
+  pass "run wrapper: a new conversation under the same live session re-emits once and is then silent"
+}
+
 test_run_gate_and_scope_are_silent() {
   local root="$TMP_ROOT/run-gate" base="$TMP_ROOT/run-linked-base" linked="$TMP_ROOT/run-linked"
   local out status=0
@@ -1144,6 +1237,8 @@ test_run_clear_rejects_previous_owner_completion
 test_run_resume_delegates_to_the_nudge
 test_run_reads_source_from_the_hook_payload
 test_run_unknown_source_takes_the_helm
+test_run_repeat_startup_for_the_same_conversation_stays_silent
+test_run_new_conversation_on_a_live_session_reemits
 test_run_gate_and_scope_are_silent
 test_run_creates_missing_state_on_a_fresh_primary
 test_run_reports_a_state_dir_it_cannot_create
