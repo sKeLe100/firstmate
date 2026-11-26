@@ -238,6 +238,23 @@ test_an_underway_identifier_label_is_not_replaced_by_run_status() {
   pass "an underway identifier label is not replaced by run status"
 }
 
+test_an_underway_row_shows_the_lane_label() {
+  local home out
+  home=$(make_home underway-lane)
+  out=$(render_board "$home" '[
+    {"id":"fm-board-lane-r1","repo":"firstmate","name":"Show lane labels on the board",
+     "state":"working","kind":"ship","doing":"no-mistakes: review round 2",
+     "lane":"opencode-go/deepseek-v4.1-flash"}
+  ]' '[]')
+  printf '%s' "$out" | jq -e '
+    (.underway | length) == 1
+      and (.underway[0]
+        | (.sub | startswith("opencode-go/deepseek-v4.1-flash · "))
+          and (.sub | test("no-mistakes: review round 2")))
+  ' >/dev/null || fail "an underway row did not render its lane label: $out"
+  pass "an underway row renders the mechanical lane label"
+}
+
 test_charted_next_reads_newest_filed_first() {
   local home out
   home=$(make_home charted-order)
@@ -298,6 +315,7 @@ EOF
 test_full_snapshot_question_reaches_the_rendered_decision
 test_an_underway_row_leads_with_the_task_name_and_keeps_its_run_status
 test_an_underway_identifier_label_is_not_replaced_by_run_status
+test_an_underway_row_shows_the_lane_label
 test_charted_next_reads_newest_filed_first
 test_charted_rows_without_a_filed_date_follow_the_dated_rows_in_payload_order
 test_a_warning_row_reads_as_a_repair_not_as_queued_work
