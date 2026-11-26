@@ -305,11 +305,25 @@ PYFIX
   out=$(rex_env "$dir" "fm_backend_composer_state rex '$t'")
   assert_equals empty "$out" \
     "the same idle screen read cursorless must read empty: the status rail below the floor is composer chrome"
+  python3 - "$dir/fake/capture/$u.vt" <<'PYFIX'
+import sys
+rows = open(sys.argv[1], 'rb').read().split(b'\n')
+rail = [i for i, row in enumerate(rows) if b'commands' in row]
+assert len(rail) == 1, rail
+rows[rail[0]] = b'an unrelated transcript row\r'
+open(sys.argv[1], 'wb').write(b'\n'.join(rows))
+PYFIX
+  printf '45;6' >"$dir/fake/cursor/$u"
+  assert_equals empty "$(rex_env "$dir" "fm_backend_composer_state rex '$t'")" \
+    "the composer under the cursor must read empty despite transcript activity below it"
+  rm -f "$dir/fake/cursor/$u"
+  assert_equals unknown "$(rex_env "$dir" "fm_backend_composer_state rex '$t'")" \
+    "the same screen read cursorless must read unknown: transcript activity below the floor makes the composer stale"
   printf '99;1' >"$dir/fake/cursor/$u"
-  assert_equals "$out" "$(rex_env "$dir" "fm_backend_composer_state rex '$t'")" \
+  assert_equals unknown "$(rex_env "$dir" "fm_backend_composer_state rex '$t'")" \
     "a cursor outside the viewport must be ignored, falling back to the cursorless read"
   printf '1;1' >"$dir/fake/cursor/$u"
-  assert_equals "$out" "$(rex_env "$dir" "fm_backend_composer_state rex '$t'")" \
+  assert_equals unknown "$(rex_env "$dir" "fm_backend_composer_state rex '$t'")" \
     "a cursor parked outside any composer must fall back to the cursorless read"
   pass "fm_backend_composer_state rex: the composer holding the cursor decides; a cursor outside any composer falls back to the cursorless read"
 }
