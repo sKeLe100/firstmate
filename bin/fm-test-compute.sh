@@ -221,10 +221,10 @@ if [ "$mode" = worker ]; then
   export FM_TEST_COMPUTE_DISABLE=1
   # A job on a PC02 self-hosted runner claims a slot through the offload owner
   # and re-execs this worker under it. Only the exact fm-pc02 label claims:
-  # other self-hosted runners must not take PC02 slots. The re-exec marker
-  # stops this branch from claiming a second slot.
-  if [ "${FM_TEST_COMPUTE_RUNNER_LABEL:-}" = fm-pc02 ] && [ "${FM_PC02_SLOT_CLAIMED:-}" != 1 ]; then
-    FM_PC02_SLOT_CLAIMED=1 exec "$SELF_DIR/fm-pc02-test-offload.sh" --runner-slot \
+  # other self-hosted runners must not take PC02 slots.
+  # FM_PC02_OFFLOAD_REMOTE=1 means this run already holds a slot.
+  if [ "${FM_TEST_COMPUTE_RUNNER_LABEL:-}" = fm-pc02 ] && [ "${FM_PC02_OFFLOAD_REMOTE:-}" != 1 ]; then
+    exec "$SELF_DIR/fm-pc02-test-offload.sh" --runner-slot \
       "$SELF_DIR/fm-test-compute.sh" worker "$partition" "$output" "$payload"
   fi
   lint_count=0

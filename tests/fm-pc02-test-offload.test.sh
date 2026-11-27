@@ -1566,6 +1566,13 @@ test_pc02_slot_file_is_the_only_slot_count() {
     status=$?
     expect_code 2 "$status" "PC02 slot file '$value' must be a configuration error: $out"
     assert_contains "$out" "$slots_file" "the refusal did not name PC02's slot file: $out"
+    case "$value" in
+      missing) assert_contains "$out" 'cannot read' "a missing slot file was not reported as unreadable: $out" ;;
+      0|17) assert_contains "$out" "must be between 1 and 16, got '$value'" \
+        "the refusal did not state the range and the rejected value: $out" ;;
+      *) assert_contains "$out" "must be a positive integer, got '$value'" \
+        "the refusal did not ask for an integer and name the rejected value: $out" ;;
+    esac
     assert_not_contains "$out" "running tests remotely" "slot file '$value' still ran remotely: $out"
     assert_not_contains "$out" "$LOCAL_PROOF_OUT" "slot file '$value' still ran the suite: $out"
   done

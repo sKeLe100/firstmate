@@ -659,7 +659,7 @@ PY
 pass 'worker captures actual test exit and exact script evidence'
 # A hosted or other self-hosted worker keeps the one-heavy-run admission of
 # fm-test-run.sh; only the exact fm-pc02 runner label claims a PC02 slot.
-slot_env=(env -u FM_PC02_OFFLOAD_REMOTE -u FM_PC02_SLOT_CLAIMED -u RUNNER_ENVIRONMENT -u FM_TEST_COMPUTE_RUNNER_LABEL)
+slot_env=(env -u FM_PC02_OFFLOAD_REMOTE -u RUNNER_ENVIRONMENT -u FM_TEST_COMPUTE_RUNNER_LABEL)
 for label in '' ubuntu-latest fm-pc01; do
   : > "$TMP_ROOT/slot-trace"
   : > "$TMP_ROOT/remote-trace"

@@ -1069,17 +1069,26 @@ done
 herdr session list 2>/dev/null | awk 'NR > 1 && NF >= 2 { print "S\t" $1 "\t" $2 }'
 acct=$(cat "$home/config/claude-account" 2>/dev/null | head -1)
 [ -n "$acct" ] && printf 'A\t%s\n' "$acct"
-slots=2
-sf="$HOME/.config/firstmate/pc02-offload-slots"
-if [ -f "$sf" ]; then v=$(head -1 "$sf" 2>/dev/null); case "$v" in ''|*[!0-9]*) ;; *) slots=$v ;; esac; fi
-used=0
-i=1
-while [ "$i" -le "$slots" ]; do
-  f="$HOME/.fm-pc02-test-slot-$i.lock"
-  slot_locked "$f" && used=$((used + 1))
-  i=$((i + 1))
-done
-printf 'T\tpc02-offload-slots\t%s/%s\tlocked slots under ~/.fm-pc02-test-slot-*.lock\n' "$used" "$slots"
+sf="${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots"
+slots=
+if [ -e "$sf" ]; then
+  IFS= read -r slots 2>/dev/null < "$sf"
+  case "$slots" in ''|*[!0-9]*) state=invalid ;; *) if [ "$slots" -ge 1 ] && [ "$slots" -le 16 ]; then state=; else state=invalid; fi ;; esac
+else
+  state=missing
+fi
+if [ -z "$state" ]; then
+  used=0
+  i=1
+  while [ "$i" -le "$slots" ]; do
+    f="$HOME/.fm-pc02-test-slot-$i.lock"
+    slot_locked "$f" && used=$((used + 1))
+    i=$((i + 1))
+  done
+  printf 'T\tpc02-offload-slots\t%s/%s\tlocked slots under ~/.fm-pc02-test-slot-*.lock\n' "$used" "$slots"
+else
+  printf 'T\tpc02-offload-slots\t%s\tneeds one integer from 1 to 16 in %s\n' "$state" "$sf"
+fi
 pu=off
 [ -e "$HOME/.fm-pc02-personal-use" ] && pu=on
 printf 'T\tpc02-personal-use\t%s\t-\n' "$pu"
