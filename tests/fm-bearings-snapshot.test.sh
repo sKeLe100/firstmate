@@ -2778,6 +2778,7 @@ test_in_flight_rows_carry_mechanical_lane_labels() {
 - [ ] codex-task - Codex work (repo: firstmate) (kind: ship)
 - [ ] opencode-task - OpenCode Go work (repo: firstmate) (kind: ship)
 - [ ] bare-task - No recorded model (repo: firstmate) (kind: ship)
+- [ ] default-task - Unspecified spawn model (repo: firstmate) (kind: ship)
 
 ## Queued
 
@@ -2798,7 +2799,10 @@ EOF
   fm_write_meta "$home/state/bare-task.meta" \
     "window=firstmate:fm-bare-task" "worktree=$home/projects/lane-wt" "project=firstmate" \
     "harness=claude" "kind=ship" "mode=no-mistakes"
-  for id in pc02-task claude-task codex-task opencode-task bare-task; do
+  fm_write_meta "$home/state/default-task.meta" \
+    "window=firstmate:fm-default-task" "worktree=$home/projects/lane-wt" "project=firstmate" \
+    "harness=codex" "model=default" "kind=ship" "mode=no-mistakes"
+  for id in pc02-task claude-task codex-task opencode-task bare-task default-task; do
     record_claude_state "$home/state" "$id" busy
     printf 'working: lane fixture %s\n' "$id" > "$home/state/$id.status"
   done
@@ -2810,6 +2814,7 @@ EOF
       and ([.in_flight[] | select(.id == "codex-task") | .lane] == ["codex/gpt-5.5"])
       and ([.in_flight[] | select(.id == "opencode-task") | .lane] == ["opencode-go/deepseek-v4.1-flash"])
       and ([.in_flight[] | select(.id == "bare-task") | .lane] == ["claude"])
+      and ([.in_flight[] | select(.id == "default-task") | .lane] == ["codex"])
   ' >/dev/null || fail "in_flight lane derivation is wrong: $json"
   pass "in_flight rows derive mechanical lane labels from harness and model"
 }

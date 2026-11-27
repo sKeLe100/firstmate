@@ -761,7 +761,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   def lane_of($harness; $model):
     ($harness // "") as $h
     | ($model // "") as $m
-    | if $m == "" then (if $h == "" then null else $h end)
+    | if $m == "" or $m == "default" then (if $h == "" then null else $h end)
       elif ($m | startswith("pc02-llamaswap/")) then "pc02"
       else short_model($h; $m) as $short
         | if ($m | startswith("opencode-go/")) then ("opencode-go/" + $short)
