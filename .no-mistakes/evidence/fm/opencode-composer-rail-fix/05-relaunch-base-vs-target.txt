@@ -1,0 +1,40 @@
+# idle OpenCode worker
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · labmodel Lab
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.mCsGxJ/projects/lane                             50.8K (25%)  ctrl+p commands
+
+$ [base] fm-control.sh oc1 relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.mCsGxJ
+error: task oc1's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'relaunch'
+error: relaunch of oc1 failed while stopping the old agent, which is still running; its original instructions were restored
+exit=1
+agent after: idle
+
+$ [target] fm-control.sh oc1 relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.mCsGxJ
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.mCsGxJ
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: legacy mixed # Task brief has no provenance-marked captain words for no-mistakes --intent; add [captain] lines or migrate to ## Captain's intent and ## Firstmate spec
+error: the replacement agent for oc1 could not be launched on opencode
+error: oc1's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /tmp/fm-lab.mCsGxJ/projects/lane
+exit=1
+{"error":{"code":"agent_not_found","message":"agent target w1:p1 not found"},"id":"cli:agent:get"}
+agent after: 
+--- pane after relaunch
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK.
+  Continue  opencode -s ses_de143f813ffecsnUeh8qFS0TSk
+sean_@SeansMiniPC:/tmp/fm-lab.mCsGxJ/projects/lane$

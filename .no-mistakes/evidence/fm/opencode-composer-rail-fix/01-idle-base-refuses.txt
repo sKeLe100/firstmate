@@ -1,0 +1,48 @@
+# idle finished OpenCode 1.19.5 worker, herdr pane (visible)
+
+  ┃
+  ┃  say OK
+  ┃
+
+     OK.
+
+     ▣  Build · labmodel · 3.1s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · labmodel Lab
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.mCsGxJ/projects/demo                             50.8K (25%)  ctrl+p commands
+
+base 963c4f27 composer state: unknown
+target 92dbe13f composer state: empty
+
+$ [base] fm-control.sh oc1 exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.mCsGxJ
+error: task oc1's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit=1
+agent after: idle

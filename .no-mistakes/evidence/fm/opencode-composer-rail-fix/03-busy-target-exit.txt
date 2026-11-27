@@ -1,0 +1,27 @@
+# busy turn, empty composer
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · labmodel Lab
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ⬝⬝⬝⬝⬝⬝⬝⬝  esc interrupt                                      50.8K (25%)  ctrl+p commands
+agent: working
+base composer state: unknown
+target composer state: empty
+$ [target] fm-control.sh oc1 exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.mCsGxJ
+stopped oc1 harness=opencode backend=herdr endpoint=fm-lab-rail2-3219917-18078:w1:p1 worktree=/tmp/fm-lab.mCsGxJ/projects/demo
+exit=0
+{"error":{"code":"agent_not_found","message":"agent target w1:p1 not found"},"id":"cli:agent:get"}
+agent after: 
+--- pane after
+_AUTOUPDATE=1 opencode --prompt 'say OK'
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK.
+  Continue  opencode -s ses_de1459ca4ffeQwrWzS9RsVnSY6
+sean_@SeansMiniPC:/tmp/fm-lab.mCsGxJ/projects/demo$

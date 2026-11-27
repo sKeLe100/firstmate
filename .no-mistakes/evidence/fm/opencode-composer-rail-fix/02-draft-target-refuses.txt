@@ -1,0 +1,55 @@
+# same worker with an unsent draft
+
+  ┃
+  ┃  say OK
+  ┃
+
+     OK.
+
+     ▣  Build · labmodel · 3.1s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃  unsent draft about the next step
+  ┃
+  ┃  Build · labmodel Lab
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.mCsGxJ/projects/demo                             50.8K (25%)  ctrl+p commands
+
+target composer state: pending
+$ [target] fm-control.sh oc1 exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.mCsGxJ
+error: task oc1's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+exit=1
+agent after: idle
+--- pane after (draft must be untouched)
+
+
+  ┃
+  ┃  unsent draft about the next step
+  ┃
+  ┃  Build · labmodel Lab
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.mCsGxJ/projects/demo                             50.8K (25%)  ctrl+p commands

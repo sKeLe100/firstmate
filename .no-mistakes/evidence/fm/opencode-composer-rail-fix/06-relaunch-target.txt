@@ -1,0 +1,49 @@
+# [target] idle OpenCode worker, relaunch
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · labmodel Lab
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.mCsGxJ/projects/lane                             50.8K (25%)  ctrl+p commands
+$ fm-control.sh oc1 relaunch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.mCsGxJ
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.mCsGxJ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+warning: /tmp/fm-lab.mCsGxJ/data/oc1/launch-brief.md records no ship branch; relaunching on the task's recorded branch fm/lane
+warning: /tmp/fm-lab.mCsGxJ/data/oc1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+notice: oc1 ships branch=fm/lane while demo registers the ship-branch prefix 'fm/' (branch fm/oc1) - the task's branch and PR will read as firstmate-authored; proceed only on a current explicit captain instruction or an intake judgment you can state
+relaunched oc1 harness=opencode from=opencode model=default effort=default backend=herdr endpoint=fm-lab-rail2-3219917-18078:w1:p1 worktree=/tmp/fm-lab.mCsGxJ/projects/lane
+exit=0
+agent after: idle
+--- pane after relaunch
+  ┃  '/tmp/fm-lab.mCsGxJ/state/oc1.inbox/handled/'. A steer sent before the relaunch
+  ┃  survives there.
+  ┃
+  ┃  continue
+  ┃
+  ┃  # Current no-mistakes intent contract
+  ┃  This section supersedes every earlier brief instruction about constructing `--intent`,
+  ┃  but not later clarifications actually supplied by the captain.
+  ┃  Use everything under `## Captain intent authorized for --intent` through the end of
+  ┃  this brief, including any nested subheadings but excluding that heading, plus any
+  ┃  later words the captain actually supplied as `--intent`; never include Firstmate
+  ┃  specification or other mixed Task content.
+  ┃  Preserve those words without adding speaker labels or direct address.
+  ┃  Firstmate-authored constraints, acceptance criteria, implementation details, decisions,
+  ┃   and tradeoffs are specification, not captain intent.
+  ┃  The Definition of done's rule that `--intent` must be self-sufficient still governs
+  ┃  the string you pass: resolve any report, decision, or PR the intent below refers to
+  ┃  into its substance rather than passing the pointer.
+  ┃
+  ┃  ## Captain intent authorized for --intent
+  ┃  say OK
+  ┃
+     OK.
+     ▣  Build · labmodel · 3.8s
+  ┃
+  ┃
+  ┃
+  ┃  Build · labmodel Lab
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.mCsGxJ/projects/lane                             50.8K (25%)  ctrl+p commands

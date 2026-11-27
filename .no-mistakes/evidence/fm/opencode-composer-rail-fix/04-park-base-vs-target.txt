@@ -1,0 +1,31 @@
+# idle finished ship lane (forge faked by a local gh stub; idle busy record hand-written)
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · labmodel Lab
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.mCsGxJ/projects/lane                             50.8K (25%)  ctrl+p commands
+
+$ [base] fm-park.sh park oc1
+fm-park: refusing to park oc1: the agent could not be stopped: error: task oc1's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'; the next tick settles its pending park record
+exit=1
+agent after: idle
+
+$ [target] fm-park.sh park oc1
+parked oc1: PR https://github.com/example/demo/pull/1 clean at 104d97574d7f; agent stopped
+exit=0
+{"error":{"code":"agent_not_found","message":"agent target w1:p1 not found"},"id":"cli:agent:get"}
+agent after: 
+--- park record
+pr=https://github.com/example/demo/pull/1
+head=104d97574d7f3210cfedbed3dbbc5215edd5c1ca
+parked_at=1795811954
+slot_leased=no
+--- status
+paused [at=1795811958]: parked on review: PR https://github.com/example/demo/pull/1 clean at 104d97574d7f; agent stopped, relaunches on review activity
+--- pane
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK.
+  Continue  opencode -s ses_de1449776ffeOpp73K508Jho4M
+sean_@SeansMiniPC:/tmp/fm-lab.mCsGxJ/projects/lane$
