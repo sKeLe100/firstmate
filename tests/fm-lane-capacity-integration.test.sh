@@ -10,8 +10,9 @@
 # unit suites use, so they pass on any host whatever its free memory: on macOS
 # a fake sysctl answers hw.memsize and kern.memorystatus_level (every other key
 # goes to the real sysctl), and on Linux FM_PROC_ROOT_OVERRIDE points at a tree
-# whose meminfo is a fixture and whose other entries link to the real /proc
-# (process ids are left out, so identity checks fall back to ps), and a failing
+# whose meminfo and pressure stall files are fixtures and whose other entries
+# link to the real /proc (process ids are left out, so identity checks fall back
+# to ps), and a failing
 # powershell.exe keeps a WSL2 run off the live Windows host view. They also
 # drive power through a fake pmset and a fixture /sys power_supply, and fake
 # getconf (64 cores, so this host's own load never binds) and df (a fixed free
@@ -150,9 +151,14 @@ SH
   if [ -d /proc ] && [ -r /proc/loadavg ]; then
     for e in /proc/*; do
       n=${e##*/}
-      case "$n" in meminfo|*[!0-9]*) [ "$n" = meminfo ] || ln -s "$e" "$case_dir/proc/$n" 2>/dev/null ;; esac
+      case "$n" in meminfo|*[!0-9]*) [ "$n" = meminfo ] || [ "$n" = pressure ] || ln -s "$e" "$case_dir/proc/$n" 2>/dev/null ;; esac
     done
   fi
+  # Quiet stall readings, so this host's own I/O or memory stall never closes a gate.
+  mkdir -p "$case_dir/proc/pressure"
+  for n in cpu memory io; do
+    printf '%s avg10=0.00 avg60=0.00 avg300=0.00 total=0\n' some full > "$case_dir/proc/pressure/$n"
+  done
   set_mem "$case_dir" 13
   set_power "$case_dir" ac
   printf '%s\n' "$case_dir"

@@ -1027,9 +1027,9 @@ test_matrix_opencode_leftbar_cwd_furniture() {
   # left-bar read is the verdict the tmux adapter supplies.
   assert_screen "opencode 1.18.31 idle cwd:branch furniture on tmux" empty "$CAPS_TMUX" "$screen" 14
   # Cursorless profiles see the same furniture through the plain, style-free
-  # recognition, until the version's separate status rail below the floor row
-  # (which the classifier does not own here) invalidates the shape on a full
-  # capture; the cropped composer tail pins the furniture verdict itself.
+  # recognition. The cropped composer tail pins the furniture verdict itself,
+  # while the 1.18.31 status rail on the row below the floor is covered by
+  # test_matrix_opencode_11831_status_rail.
   composer=$(printf '%s\n' "$screen" | tail -n 9 | head -n 6)
   assert_screen "opencode 1.18.31 cwd furniture on herdr" empty "$CAPS_STYLED" "$composer"
   assert_screen "opencode 1.18.31 cwd furniture on zellij" empty "$CAPS_STYLED_NOID" "$composer"
@@ -1156,6 +1156,38 @@ test_matrix_opencode_leftbar_cwd_furniture() {
   typed="$(head -n 2 <<< "$composer")"$'\n'"${typed_row}"$'\n'"$(tail -n 3 <<< "$composer")"
   assert_screen "opencode lone slash typed above the short cwd rail stays pending on tmux" pending "$CAPS_TMUX" "$typed" 2
   pass "matrix: opencode 1.18.31's right-aligned cwd:branch furniture reads empty; left-edge text stays pending"
+}
+
+test_matrix_opencode_11831_status_rail() {
+  # Regression (opencode-composer-rail-fix): OpenCode 1.18.31+ draws its
+  # keyboard-shortcut and version status rail on the row directly below the
+  # composer floor, sharing that row with the left-aligned cwd and the
+  # right-aligned context/cost cells. A cursorless classifier treated that rail
+  # as stale text below the selected left bar, answered `unknown`, and
+  # fm-park.sh park plus fm-control.sh exit then refused to stop or relaunch an
+  # idle finished worker. Every fixture below is a real 1.18.31 worker-pane tail
+  # (tests/fixtures/opencode-1.18.31-cwd/): idle with a wide, short, and
+  # outside-$HOME cwd, plus the busy twin whose rail leads with `esc interrupt`.
+  local f screen typed
+  for f in \
+    "$ROOT/tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi" \
+    "$ROOT/tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-short-cwd.ansi" \
+    "$ROOT/tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-wide-abs-cwd.ansi" \
+    "$ROOT/tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-busy-wide-abs-cwd.ansi"; do
+    screen=$(<"$f")
+    assert_screen "opencode 1.18.31 rail, ${f##*/} on herdr" empty "$CAPS_STYLED" "$screen"
+    assert_screen "opencode 1.18.31 rail, ${f##*/} on zellij" empty "$CAPS_STYLED_NOID" "$screen"
+    assert_screen "opencode 1.18.31 rail, ${f##*/} on cmux/orca" empty "$CAPS_PLAIN" "$screen"
+  done
+  # Safety: the rail must not buy a false `empty` over an unsent draft above it.
+  typed=$'  ┃\n  ┃  '"${ESC}[38;2;255;255;255mreply with OK.${ESC}[0m"$'\n  ┃\n  ┃  Build · gpt-oss-120b Internal OVHcloud\n  ╹▀▀▀▀▀▀▀▀\n  '"${ESC}[38;2;128;128;128m/Users/kheimel/project${ESC}[0m"'  50.8K  ctrl+p commands    • OpenCode 1.18.31'
+  assert_screen "opencode 1.18.31 rail below an unsent draft stays pending" pending "$CAPS_STYLED" "$typed"
+  assert_screen "opencode 1.18.31 rail below an unsent draft defers unstyled" unknown "$CAPS_PLAIN" "$typed"
+  # Safety: without the floor row, free text ending like the rail is transcript.
+  typed=$'  ┃\n  ┃\n  ┃  Build · gpt-oss-120b Internal OVHcloud\n  Press ctrl+p commands'
+  assert_screen "opencode free-prefix rail without a floor row stays unknown" unknown "$CAPS_STYLED" "$typed"
+  assert_screen "opencode free-prefix rail without a floor row stays unknown unstyled" unknown "$CAPS_PLAIN" "$typed"
+  pass "matrix: opencode 1.18.31's status rail below the floor reads empty on cursorless backends"
 }
 
 test_matrix_opencode_leftbar_abs_cwd_furniture() {
@@ -1833,6 +1865,7 @@ test_matrix_pi_separated_needs_identity
 test_matrix_pi_dollar_status_footer_is_empty
 test_matrix_opencode_leftbar_signals
 test_matrix_opencode_leftbar_cwd_furniture
+test_matrix_opencode_11831_status_rail
 test_matrix_opencode_leftbar_abs_cwd_furniture
 test_matrix_grok_titled_bottom_border
 test_matrix_claude_titled_top_rule

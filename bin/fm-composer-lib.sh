@@ -657,6 +657,13 @@ FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
 # OpenCode keeps this keyboard-shortcut chrome immediately below its left-bar
 # composer floor. It is part of the same idle surface, not transcript activity.
 FM_COMPOSER_LEFTBAR_CHROME_RE_DEFAULT='^tab[[:space:]]+agents[[:space:]]+ctrl\+p[[:space:]]+commands$'
+# Since 1.18.31 the chrome shares its row with the left-aligned cwd and the
+# right-aligned context/cost cells, and idle panes append the version segment
+# (`<cwd>  50.8K  ctrl+p commands    • OpenCode 1.18.31`; busy panes lead with
+# `esc interrupt` and their stats instead). This free-prefix form is matched only
+# on the row DIRECTLY below a selected left-bar composer's floor row, so the
+# prefix is harness furniture, never composer input.
+FM_COMPOSER_LEFTBAR_RAIL_RE_DEFAULT='^.*ctrl\+p[[:space:]]+commands([[:space:]]+•[[:space:]]+OpenCode[[:space:]]+[0-9][0-9.]*)?$'
 # omp (Oh My Pi) draws a one-row status line directly BELOW its borderless
 # composer: an identity or spinner cell, then middle-dot separated model, path,
 # git, and context cells. Verified live through Herdr on omp 18.1.11:
@@ -2106,6 +2113,7 @@ _fm_composer_select_cursorless() {  # <plain-screen> <screen> <styled>
   if [ "$FM_COMPOSER_SELECTED_KIND" = box ] \
      || [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ]; then
     boundary=$FM_COMPOSER_SELECTED_LAST
+    chrome_re=$FM_COMPOSER_LEFTBAR_CHROME_RE_DEFAULT
     if [ "$FM_COMPOSER_SELECTED_KIND" = box ]; then
       boundary=$FM_COMPOSER_SCAN_BOX_BOTTOM
     else
@@ -2115,6 +2123,7 @@ _fm_composer_select_cursorless() {  # <plain-screen> <screen> <styled>
       fm_composer_normalize_trim_var trimmed
       if _fm_composer_leftbar_floor_row "$trimmed"; then
         boundary=$next
+        chrome_re=$FM_COMPOSER_LEFTBAR_RAIL_RE_DEFAULT
       fi
     fi
     # The same footer zone, read from the other side: rows this envelope's own
@@ -2128,7 +2137,7 @@ _fm_composer_select_cursorless() {  # <plain-screen> <screen> <styled>
     trimmed=$raw
     fm_composer_normalize_trim_var trimmed
     if [ -n "$trimmed" ] && ! fm_composer_row_has_edge "$trimmed"; then
-      chrome_re=${FM_COMPOSER_LEFTBAR_CHROME_RE:-$FM_COMPOSER_LEFTBAR_CHROME_RE_DEFAULT}
+      chrome_re=${FM_COMPOSER_LEFTBAR_CHROME_RE:-$chrome_re}
       if [ "$FM_COMPOSER_SELECTED_KIND" != leftbar ] \
         || ! fm_composer_idle_matches "$trimmed" "$chrome_re" insensitive; then
         FM_COMPOSER_SELECTED_KIND=
