@@ -25,7 +25,7 @@ Each fragment is `references/<slug>.md`, inserted with its HTML maintainer comme
 | `architect` | planning | Blueprint only: boundaries, data flow, migration order, failure modes, test seams, reserved decisions. |
 | `researcher` | investigation | Primary sources, versions, citations; sourced fact kept apart from inference. |
 | `validator` | review | Run the gate, probe boundaries, reproduce; report severity and suspected location; never fix. |
-| `independent-reviewer` | review | Read-only; cite file:line; recount every checkable claim with method; unprompted observations; zero findings is inconclusive; ends ship / ship-with-changes / rethink. |
+| `independent-reviewer` | review | Read-only; cite file:line; recount every checkable claim with method; unprompted observations; zero findings is inconclusive; recommends escalation when inconclusive, high-risk, or architecturally ambiguous; ends ship / ship-with-changes / rethink. |
 | `reaction-review` | review | Five generic lenses, each naming and classifying a real downside; simulated reactions are disclaimed. |
 | `parallel-review-seat` | review | One of two independent seats on the same subject and question, never sees the other's output, agreement is never a pass; findings with file:line, recounts with method, unprompted observations, unverifiable items; opens with its model family and model name and ends ship / ship-with-changes / rethink. |
 
