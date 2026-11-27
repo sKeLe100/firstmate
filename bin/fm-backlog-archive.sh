@@ -2,10 +2,9 @@
 # fm-backlog-archive.sh - park open backlog items in a second tasks-axi
 # markdown backlog and bring them back later, byte-exact.
 #
-# Usage: fm-backlog-archive.sh archive [--parked] [<id>...]
-#        fm-backlog-archive.sh archive --list      (same as list)
-#        fm-backlog-archive.sh unarchive <id>...   (alias: restore)
-#        fm-backlog-archive.sh list                (alias: archived, archive-list)
+# Usage: fm-backlog-archive.sh archive <id>...
+#        fm-backlog-archive.sh unarchive <id>...
+#        fm-backlog-archive.sh archived
 #        fm-backlog-archive.sh --help
 #
 # Why this exists: `tasks-axi prune` is a one-way, positional bulk trim of a
@@ -21,34 +20,36 @@
 # Addressing matches bin/fm-backlog-transition-lib.sh's
 # fm_backlog_tasks_axi_addressing (the same resolution bin/fm-tasks-axi.sh
 # uses), so the live backlog is the home's configured one from any working
-# directory. The archive defaults to `backlog-archive.md` beside that backlog
-# and can be overridden with FM_BACKLOG_ARCHIVE_FILE. Only the markdown backend
-# is supported.
+# directory. The archive is always `backlog-archive.md` beside that backlog.
+# Only the markdown backend is supported.
 #
 # Semantics:
-#   archive   Move open `## Queued` / `## In flight` items into the archive,
-#             preserving their section. `--parked` selects every live row that
-#             carries `(hold-kind: parked)`. Done history is refused: it belongs
-#             to tasks-axi's configured Done archive.
-#   unarchive Restore archived items to the live `## Queued` section.
-#   list      Run `tasks-axi list` against the archive.
+#   archive   Move the named open `## Queued` items into the archive's
+#             `## Queued` section.
+#   unarchive Restore the named archived items to the live `## Queued` section.
+#   archived  Run `tasks-axi list` against the archive.
 #
-# Refusals preserve tasks-axi `mv`'s safety intent only where it protects live
-# work: archiving refuses when a remaining live task still blocks on a moved id.
-# A moved row's own blocked-by target may legitimately stay live or already be
-# pruned, as the paused PC02 cluster's are, so that link is carried as-is rather
-# than refusing the move. An absent id, an id already at the destination, and a
-# noncanonical (single-space or tab) body continuation are refused too. Nothing
-# moves when any refusal fires.
-# Both files are rewritten through a temp file and rename under tasks-axi's own
-# sidecar lock protocol (`.lock` files, same stale/wait release shape), with
-# backups restored if the second write or the post-write read-back fails.
+# Refusals (nothing moves when any fires):
+#   - an absent id, or an id already at the destination;
+#   - a Done item, which belongs to tasks-axi's configured Done archive;
+#   - archiving an `## In flight` item or one with a `state/<id>.meta` record in
+#     this home (FM_STATE_OVERRIDE, else $FM_HOME/state);
+#   - archiving a row that a remaining live task still depends on;
+#   - unarchiving a row whose blocked-by target is still open in the archive and
+#     is neither selected in the same call nor already live. A target that is
+#     live or absent from the archive (pruned or finished) is allowed;
+#   - a noncanonical (single-space or tab) body continuation.
+# Selection, refusals, and the move all run under tasks-axi's own sidecar lock
+# protocol (`.lock` files, same stale/wait release shape). Both files are
+# rewritten through a temp file and rename that keeps their modes, with backups
+# restored if any write or the post-write read-back fails.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backlog-transition-lib.sh disable=SC1091
@@ -125,29 +126,28 @@ backlog_key_noncanonical_body_lines() {  # <file> <key>
   ' "$file"
 }
 
-backlog_stranding_dependents() {  # <file> <space-separated moved ids>
-  local file=$1 moved=$2
-  awk -v moved="$moved" '
-    BEGIN {
-      n = split(moved, ids, " ")
-      for (i = 1; i <= n; i++) if (ids[i] != "") want[ids[i]] = 1
-    }
-    function check(rest,    m, i) {
-      i = 1
-      while (match(rest, /(blocked-by|parent|discovered-from):[ \t]+[A-Za-z0-9][A-Za-z0-9._-]*/)) {
+# Prints "owner<TAB>type<TAB>target" for every open row's dependency edge.
+backlog_open_edges() {  # <file>
+  local file=$1
+  awk '
+    function edges(rest,    m, type) {
+      while (match(rest, /(blocked-by|parent|discovered-from):[ \t]*[A-Za-z0-9][A-Za-z0-9._-]*/)) {
         m = substr(rest, RSTART, RLENGTH)
-        sub(/^[^:]*:[ \t]+/, "", m)
-        if (m in want) print owner "\t" m
         rest = substr(rest, RSTART + RLENGTH)
+        type = m
+        sub(/:.*/, "", type)
+        sub(/^[^:]*:[ \t]*/, "", m)
+        print owner "\t" type "\t" m
       }
     }
     /^## / { section = $0; next }
+    section == "## Done" { next }
     /^- \[[ x]\] / {
       rest = $0
       sub(/^- \[[ x]\] +/, "", rest)
       owner = rest
       sub(/[ \t].*/, "", owner)
-      if (!(owner in want) && section != "## Done") check(rest)
+      edges(rest)
       next
     }
     /^- \*\*/ {
@@ -155,25 +155,17 @@ backlog_stranding_dependents() {  # <file> <space-separated moved ids>
       sub(/^- \*\*/, "", rest)
       owner = rest
       sub(/\*\*.*/, "", owner)
-      if (!(owner in want) && section != "## Done") check(rest)
+      edges(rest)
     }
   ' "$file"
 }
 
-backlog_parked_ids() {  # <file>
-  local file=$1
-  awk '
-    BEGIN { section = "## Queued" }
-    /^## / { section = $0; next }
-    section == "## Done" { next }
-    /^- \[ \] / && /\(hold-kind: parked\)/ {
-      rest = $0
-      sub(/^- \[ \] +/, "", rest)
-      id = rest
-      sub(/[ \t].*/, "", id)
-      print id
-    }
-  ' "$file"
+is_selected() {  # <id>
+  local selected
+  for selected in ${TO_MOVE[@]+"${TO_MOVE[@]}"}; do
+    [ "$selected" = "$1" ] && return 0
+  done
+  return 1
 }
 
 # --- argument parsing -------------------------------------------------------
@@ -184,58 +176,35 @@ case "$MODE" in
     usage
     exit 0
     ;;
-  archive | unarchive | restore | list | archived | archive-list) ;;
+  archive | unarchive | archived) ;;
   '')
     usage >&2
     exit 2
     ;;
   *)
-    fail "unknown command '$MODE'; use archive, unarchive, restore, list, or --help"
+    fail "unknown command '$MODE'; use archive, unarchive, archived, or --help"
     ;;
 esac
 shift
 
-PARKED=0
-LIST_ARCHIVE=0
 IDS=()
-case "$MODE" in
-  archive)
-    for arg in "$@"; do
-      case "$arg" in
-        --parked) PARKED=1 ;;
-        --list) LIST_ARCHIVE=1 ;;
-        --parked=*)
-          fail "--parked does not take a value"
-          ;;
-        -h | --help)
-          usage
-          exit 0
-          ;;
-        -*)
-          fail "unknown archive flag '$arg'"
-          ;;
-        *) IDS+=("$arg") ;;
-      esac
-    done
-    ;;
-  unarchive | restore)
-    for arg in "$@"; do
-      case "$arg" in
-        -h | --help)
-          usage
-          exit 0
-          ;;
-        -*)
-          fail "unknown unarchive flag '$arg'"
-          ;;
-        *) IDS+=("$arg") ;;
-      esac
-    done
-    ;;
-  list | archived | archive-list)
-    [ "$#" -eq 0 ] || fail "$MODE takes no arguments"
-    ;;
-esac
+for arg in "$@"; do
+  case "$arg" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -*)
+      fail "unknown $MODE flag '$arg'"
+      ;;
+    *) IDS+=("$arg") ;;
+  esac
+done
+if [ "$MODE" = archived ]; then
+  [ "${#IDS[@]}" -eq 0 ] || fail "archived takes no arguments"
+else
+  [ "${#IDS[@]}" -gt 0 ] || fail "no task ids given"
+fi
 
 for id in ${IDS[@]+"${IDS[@]}"}; do
   case "$id" in
@@ -256,155 +225,31 @@ fi
 [ -n "$FM_BACKLOG_AXI_FILE" ] || fail "the parked archive requires the markdown backlog backend"
 
 BACKLOG="$FM_BACKLOG_AXI_FILE"
-CALLER_DIR=$(pwd)
-if [ -n "${FM_BACKLOG_ARCHIVE_FILE:-}" ]; then
-  case "$FM_BACKLOG_ARCHIVE_FILE" in
-    /*) ARCHIVE="$FM_BACKLOG_ARCHIVE_FILE" ;;
-    *) ARCHIVE="$CALLER_DIR/$FM_BACKLOG_ARCHIVE_FILE" ;;
-  esac
-else
-  case "$BACKLOG" in
-    */*) ARCHIVE="${BACKLOG%/*}/backlog-archive.md" ;;
-    *) ARCHIVE="backlog-archive.md" ;;
-  esac
-fi
+ARCHIVE="${BACKLOG%/*}/backlog-archive.md"
 
 [ -e "$BACKLOG" ] || fail "no markdown backlog at $BACKLOG"
 [ -L "$BACKLOG" ] && fail "$BACKLOG is a symlink; make it this home's real file"
 [ -L "$ARCHIVE" ] && fail "$ARCHIVE is a symlink; make it this home's real file"
-case "$ARCHIVE" in
-  "$BACKLOG") fail "the archive path must differ from the live backlog" ;;
-esac
-
-if [ "$MODE" = list ] || [ "$MODE" = archived ] || [ "$MODE" = archive-list ] ||
-  { [ "$MODE" = archive ] && [ "$LIST_ARCHIVE" = 1 ]; }; then
-  [ "${#IDS[@]}" -eq 0 ] || fail "--list takes no task ids"
-  [ "$PARKED" = 0 ] || fail "--list does not combine with --parked"
-  ( cd "$FM_BACKLOG_AXI_ROOT" && exec tasks-axi list --file "$ARCHIVE" )
-  exit $?
-fi
 
 case "$MODE" in
+  archived)
+    ( cd "$FM_BACKLOG_AXI_ROOT" && exec tasks-axi list --file "$ARCHIVE" )
+    exit $?
+    ;;
   archive)
     SRC_FILE="$BACKLOG"
     DST_FILE="$ARCHIVE"
-    FORCE_SECTION=
     ACTION=archived
     ;;
-  unarchive | restore)
+  unarchive)
     SRC_FILE="$ARCHIVE"
     DST_FILE="$BACKLOG"
-    FORCE_SECTION="## Queued"
     ACTION=unarchived
     ;;
 esac
 
-# --- selection --------------------------------------------------------------
-
-if [ "$PARKED" = 1 ]; then
-  [ "$MODE" = archive ] || fail "--parked is only valid with archive"
-  while IFS= read -r id; do
-    [ -n "$id" ] || continue
-    IDS+=("$id")
-  done < <(backlog_parked_ids "$BACKLOG")
-fi
-
-if [ "${#IDS[@]}" -eq 0 ]; then
-  if [ "$PARKED" = 1 ]; then
-    fail "no parked rows found in $BACKLOG"
-  fi
-  fail "no task ids given"
-fi
-
-# Drop duplicate ids after their first occurrence.
-UNIQUE=()
-for id in ${IDS[@]+"${IDS[@]}"}; do
-  duplicate=0
-  for seen in ${UNIQUE[@]+"${UNIQUE[@]}"}; do
-    [ "$seen" = "$id" ] && duplicate=1 && break
-  done
-  [ "$duplicate" = 1 ] || UNIQUE+=("$id")
-done
-
-# --- classification ---------------------------------------------------------
-
-TO_MOVE=()
-ALREADY=()
-MISSING=()
-DONE=()
-for id in ${UNIQUE[@]+"${UNIQUE[@]}"}; do
-  if backlog_key_section "$DST_FILE" "$id" >/dev/null; then
-    ALREADY+=("$id")
-    continue
-  fi
-  if section=$(backlog_key_section "$SRC_FILE" "$id"); then
-    case "$section" in
-      "## Done")
-        DONE+=("$id")
-        ;;
-      *)
-        TO_MOVE+=("$id")
-        ;;
-    esac
-  else
-    MISSING+=("$id")
-  fi
-done
-
-FAILED=0
-if [ "${#MISSING[@]}" -gt 0 ]; then
-  printf 'fm-backlog-archive: no item matched these ids in %s: %s\n' "$SRC_FILE" "${MISSING[*]}" >&2
-  FAILED=1
-fi
-if [ "${#ALREADY[@]}" -gt 0 ]; then
-  printf 'fm-backlog-archive: already in %s: %s\n' "$DST_FILE" "${ALREADY[*]}" >&2
-  FAILED=1
-fi
-if [ "${#DONE[@]}" -gt 0 ]; then
-  printf 'fm-backlog-archive: refusing Done (historical) items: %s; Done history belongs to tasks-axi'"'"'s configured Done archive\n' "${DONE[*]}" >&2
-  FAILED=1
-fi
-if [ "$FAILED" -ne 0 ]; then
-  printf 'fm-backlog-archive: nothing was moved\n' >&2
-  exit 2
-fi
-
-if [ "${#TO_MOVE[@]}" -eq 0 ]; then
-  printf 'nothing to move\n'
-  exit 0
-fi
-
-for id in "${TO_MOVE[@]}"; do
-  while IFS= read -r line; do
-    printf 'fm-backlog-archive: refusing %s: non-2-space continuation line: %s\n' "$id" "$line" >&2
-    FAILED=1
-  done < <(backlog_key_noncanonical_body_lines "$SRC_FILE" "$id")
-done
-if [ "$FAILED" -ne 0 ]; then
-  printf 'fm-backlog-archive: nothing was moved\n' >&2
-  exit 2
-fi
-
-if [ "$MODE" = archive ]; then
-  moved_space=${TO_MOVE[*]}
-  STRANDED=$(backlog_stranding_dependents "$BACKLOG" "$moved_space")
-  if [ -n "$STRANDED" ]; then
-    while IFS=$'\t' read -r dependent blocker; do
-      [ -n "$dependent" ] || continue
-      printf 'fm-backlog-archive: refusing %s: live task %s is still blocked by it; archive or move the dependent too\n' "$blocker" "$dependent" >&2
-    done <<< "$STRANDED"
-    printf 'fm-backlog-archive: nothing was moved\n' >&2
-    exit 2
-  fi
-fi
-
 # --- lock both files with tasks-axi's sidecar protocol ----------------------
 
-LOCK_PATHS=()
-for candidate in "$SRC_FILE" "$DST_FILE"; do
-  LOCK_PATHS+=("$candidate.lock")
-done
-SORTED_LOCKS=$(printf '%s\n' "${LOCK_PATHS[@]}" | LC_ALL=C sort)
 HELD_LOCKS=()
 release_locks() {
   local entry path token observed
@@ -444,33 +289,127 @@ acquire_lock() {  # <path>
   done
 }
 
-while IFS= read -r lock_path; do
-  [ -n "$lock_path" ] || continue
+for lock_path in "$ARCHIVE.lock" "$BACKLOG.lock"; do
   acquire_lock "$lock_path" || exit 2
-done <<< "$SORTED_LOCKS"
+done
+
+# --- selection --------------------------------------------------------------
+
+# Drop duplicate ids after their first occurrence.
+UNIQUE=()
+for id in "${IDS[@]}"; do
+  duplicate=0
+  for seen in ${UNIQUE[@]+"${UNIQUE[@]}"}; do
+    [ "$seen" = "$id" ] && duplicate=1 && break
+  done
+  [ "$duplicate" = 1 ] || UNIQUE+=("$id")
+done
+
+# --- classification ---------------------------------------------------------
+
+TO_MOVE=()
+ALREADY=()
+MISSING=()
+DONE=()
+ACTIVE=()
+for id in ${UNIQUE[@]+"${UNIQUE[@]}"}; do
+  if backlog_key_section "$DST_FILE" "$id" >/dev/null; then
+    ALREADY+=("$id")
+    continue
+  fi
+  if section=$(backlog_key_section "$SRC_FILE" "$id"); then
+    case "$section" in
+      "## Done")
+        DONE+=("$id")
+        ;;
+      *)
+        if [ "$MODE" = archive ] && { [ "$section" = "## In flight" ] || [ -e "$STATE/$id.meta" ]; }; then
+          ACTIVE+=("$id")
+        else
+          TO_MOVE+=("$id")
+        fi
+        ;;
+    esac
+  else
+    MISSING+=("$id")
+  fi
+done
+
+FAILED=0
+if [ "${#MISSING[@]}" -gt 0 ]; then
+  printf 'fm-backlog-archive: no item matched these ids in %s: %s\n' "$SRC_FILE" "${MISSING[*]}" >&2
+  FAILED=1
+fi
+if [ "${#ALREADY[@]}" -gt 0 ]; then
+  printf 'fm-backlog-archive: already in %s: %s\n' "$DST_FILE" "${ALREADY[*]}" >&2
+  FAILED=1
+fi
+if [ "${#DONE[@]}" -gt 0 ]; then
+  printf 'fm-backlog-archive: refusing Done (historical) items: %s; Done history belongs to tasks-axi'"'"'s configured Done archive\n' "${DONE[*]}" >&2
+  FAILED=1
+fi
+if [ "${#ACTIVE[@]}" -gt 0 ]; then
+  printf 'fm-backlog-archive: refusing In flight items or items with a task record: %s\n' "${ACTIVE[*]}" >&2
+  FAILED=1
+fi
+if [ "$FAILED" -ne 0 ]; then
+  printf 'fm-backlog-archive: nothing was moved\n' >&2
+  exit 2
+fi
+
+for id in "${TO_MOVE[@]}"; do
+  while IFS= read -r line; do
+    printf 'fm-backlog-archive: refusing %s: non-2-space continuation line: %s\n' "$id" "$line" >&2
+    FAILED=1
+  done < <(backlog_key_noncanonical_body_lines "$SRC_FILE" "$id")
+done
+if [ "$FAILED" -ne 0 ]; then
+  printf 'fm-backlog-archive: nothing was moved\n' >&2
+  exit 2
+fi
+
+while IFS=$'\t' read -r owner type target; do
+  if [ "$MODE" = archive ]; then
+    if is_selected "$target" && ! is_selected "$owner"; then
+      printf 'fm-backlog-archive: refusing %s: live task %s is still blocked by it; archive or move the dependent too\n' "$target" "$owner" >&2
+      FAILED=1
+    fi
+  elif [ "$type" = blocked-by ] && is_selected "$owner" && ! is_selected "$target" &&
+    section=$(backlog_key_section "$ARCHIVE" "$target") && [ "$section" != "## Done" ] &&
+    ! backlog_key_section "$BACKLOG" "$target" >/dev/null; then
+    printf 'fm-backlog-archive: refusing %s: its blocker %s is still parked; unarchive both together\n' "$owner" "$target" >&2
+    FAILED=1
+  fi
+done < <(backlog_open_edges "$SRC_FILE")
+if [ "$FAILED" -ne 0 ]; then
+  printf 'fm-backlog-archive: nothing was moved\n' >&2
+  exit 2
+fi
 
 # --- move -------------------------------------------------------------------
 
 DST_EXISTED=0
 [ -e "$DST_FILE" ] && DST_EXISTED=1
-SRC_DIR=$(dirname "$SRC_FILE")
-DST_DIR=$(dirname "$DST_FILE")
-mkdir -p "$SRC_DIR" "$DST_DIR"
-KEYS_FILE=$(mktemp "$SRC_DIR/.fm-backlog-archive-keys.XXXXXX")
-MOVED_FILE=$(mktemp "$SRC_DIR/.fm-backlog-archive-moved.XXXXXX")
-KEPT_FILE=$(mktemp "$SRC_DIR/.fm-backlog-archive-kept.XXXXXX")
-DST_TMP=$(mktemp "$DST_DIR/.fm-backlog-archive-dst.XXXXXX")
-SRC_BAK=$(mktemp "$SRC_DIR/.fm-backlog-archive-src-bak.XXXXXX")
-DST_BAK=$(mktemp "$DST_DIR/.fm-backlog-archive-dst-bak.XXXXXX")
+DATA_DIR=${BACKLOG%/*}
+KEYS_FILE=
+MOVED_FILE=
+KEPT_FILE=
+DST_TMP=
+SRC_BAK=
+DST_BAK=
 CHANGES_STARTED=0
 COMMITTED=0
 cleanup_files() {
   if [ "$CHANGES_STARTED" -eq 1 ] && [ "$COMMITTED" -eq 0 ]; then
-    cp "$SRC_BAK" "$SRC_FILE" 2>/dev/null || true
-    if [ "$DST_EXISTED" -eq 1 ]; then
-      cp "$DST_BAK" "$DST_FILE" 2>/dev/null || true
-    else
+    if ! mv "$SRC_BAK" "$SRC_FILE"; then
+      printf 'fm-backlog-archive: could not restore %s; its backup is %s\n' "$SRC_FILE" "$SRC_BAK" >&2
+      SRC_BAK=
+    fi
+    if [ "$DST_EXISTED" -eq 0 ]; then
       rm -f "$DST_FILE"
+    elif ! mv "$DST_BAK" "$DST_FILE"; then
+      printf 'fm-backlog-archive: could not restore %s; its backup is %s\n' "$DST_FILE" "$DST_BAK" >&2
+      DST_BAK=
     fi
   fi
   rm -f "$KEYS_FILE" "$MOVED_FILE" "$KEPT_FILE" "$DST_TMP" "$SRC_BAK" "$DST_BAK"
@@ -478,163 +417,142 @@ cleanup_files() {
 trap 'cleanup_files; release_locks' EXIT
 trap 'exit 2' HUP INT TERM
 
-printf '%s\n' "${TO_MOVE[@]}" > "$KEYS_FILE"
-cp "$SRC_FILE" "$SRC_BAK"
-[ "$DST_EXISTED" -eq 1 ] && cp "$DST_FILE" "$DST_BAK"
+make_temp() {  # <label>
+  mktemp "$DATA_DIR/.fm-backlog-archive-$1.XXXXXX" || fail "cannot create a temporary file in $DATA_DIR; nothing was moved"
+}
+KEYS_FILE=$(make_temp keys) || exit 2
+MOVED_FILE=$(make_temp moved) || exit 2
+KEPT_FILE=$(make_temp kept) || exit 2
+DST_TMP=$(make_temp dst) || exit 2
+SRC_BAK=$(make_temp src-bak) || exit 2
+DST_BAK=$(make_temp dst-bak) || exit 2
+
+printf '%s\n' "${TO_MOVE[@]}" > "$KEYS_FILE" || fail "cannot record the selected ids; nothing was moved"
+cp -p "$SRC_FILE" "$SRC_BAK" || fail "cannot back up $SRC_FILE; nothing was moved"
+if [ "$DST_EXISTED" -eq 1 ]; then
+  cp -p "$DST_FILE" "$DST_BAK" || fail "cannot back up $DST_FILE; nothing was moved"
+fi
 CHANGES_STARTED=1
 
 if [ "$DST_EXISTED" -eq 0 ]; then
-  mkdir -p "$DST_DIR"
-  printf '# Backlog\n\n## In flight\n\n## Queued\n\n## Done\n' > "$DST_FILE"
+  printf '# Backlog\n\n## In flight\n\n## Queued\n\n## Done\n' > "$DST_FILE" || fail "cannot create $DST_FILE"
 fi
 
-: > "$MOVED_FILE"
+# Copying first gives each replacement its original's mode before the rewrite.
+cp -p "$SRC_FILE" "$KEPT_FILE" || fail "cannot prepare the rewrite of $SRC_FILE"
+: > "$KEPT_FILE" || fail "cannot prepare the rewrite of $SRC_FILE"
+cp -p "$DST_FILE" "$DST_TMP" || fail "cannot prepare the rewrite of $DST_FILE"
+
 SRC_FINAL_LF=0
 file_ends_with_lf "$SRC_FILE" && SRC_FINAL_LF=1
 awk -v keysfile="$KEYS_FILE" -v movedfile="$MOVED_FILE" -v keptfile="$KEPT_FILE" \
-  -v final_lf="$SRC_FINAL_LF" -v force_section="$FORCE_SECTION" '
+  -v final_lf="$SRC_FINAL_LF" '
   function emit_kept(rec) {
     if (have_kept) print pending_kept > keptfile
     pending_kept = rec
     have_kept = 1
+    last = "kept"
   }
   function emit_moved(rec) {
     if (have_moved) print pending_moved > movedfile
     pending_moved = rec
     have_moved = 1
+    last = "moved"
   }
-  function move_section() {
-    return force_section != "" ? force_section : section
+  function release_blanks(to_moved,    i) {
+    for (i = 1; i <= blanks; i++) {
+      if (to_moved) emit_moved(blank[i])
+      else emit_kept(blank[i])
+    }
+    blanks = 0
+  }
+  function bullet(id) {
+    moving = (id in want)
+    if (moving) emit_moved($0)
+    else emit_kept($0)
   }
   BEGIN {
     while ((getline k < keysfile) > 0) { if (k != "") want[k] = 1 }
-    section = "## Queued"
-    moving = 0
   }
+  moving && /^[ \t]*$/ { blank[++blanks] = $0; next }
+  { release_blanks(!/^## /) }
   /^## / {
     moving = 0
-    section = $0
     emit_kept($0)
-    last_source_kept = 1
-    last_source_moved = 0
     next
   }
   /^- \[[ x]\] / {
     rest = $0
     sub(/^- \[[ x]\] +/, "", rest)
-    id = rest
-    sub(/[ \t].*/, "", id)
-    if (id in want) {
-      emit_moved(move_section() "\t" $0)
-      moving = 1
-      last_source_kept = 0
-      last_source_moved = 1
-      next
-    }
-    moving = 0
-    emit_kept($0)
-    last_source_kept = 1
-    last_source_moved = 0
+    sub(/[ \t].*/, "", rest)
+    bullet(rest)
     next
   }
   /^- \*\*/ {
     rest = $0
     sub(/^- \*\*/, "", rest)
-    id = rest
-    sub(/\*\*.*/, "", id)
-    if (id in want) {
-      emit_moved(move_section() "\t" $0)
-      moving = 1
-      last_source_kept = 0
-      last_source_moved = 1
-      next
-    }
-    moving = 0
-    emit_kept($0)
-    last_source_kept = 1
-    last_source_moved = 0
+    sub(/\*\*.*/, "", rest)
+    bullet(rest)
     next
   }
-  moving && /^([ \t].*)?$/ {
-    emit_moved(move_section() "\t" $0)
-    last_source_kept = 0
-    last_source_moved = 1
-    next
-  }
+  moving && /^[ \t]/ { emit_moved($0); next }
   {
     moving = 0
     emit_kept($0)
-    last_source_kept = 1
-    last_source_moved = 0
   }
   END {
+    release_blanks(0)
     if (have_kept) {
-      if (last_source_kept && !final_lf) printf "%s", pending_kept > keptfile
+      if (last == "kept" && !final_lf) printf "%s", pending_kept > keptfile
       else print pending_kept > keptfile
     }
     if (have_moved) {
-      if (last_source_moved && !final_lf) printf "%s", pending_moved > movedfile
+      if (last == "moved" && !final_lf) printf "%s", pending_moved > movedfile
       else print pending_moved > movedfile
     }
   }
-' "$SRC_FILE"
+' "$SRC_FILE" || fail "cannot rewrite $SRC_FILE"
 
 MOVED_FINAL_LF=0
 file_ends_with_lf "$MOVED_FILE" && MOVED_FINAL_LF=1
 awk -v movedfile="$MOVED_FILE" -v moved_final_lf="$MOVED_FINAL_LF" '
-  function add_record(rec, eol,    tab, sec, line) {
-    tab = index(rec, "\t")
-    if (tab == 0) return
-    sec = substr(rec, 1, tab - 1)
-    line = substr(rec, tab + 1)
-    if (!(sec in items)) { order[++nsec] = sec }
-    items[sec] = items[sec] line eol
+  function release_blanks(    i) {
+    for (i = 1; i <= blanks; i++) print blank[i]
+    blanks = 0
   }
-  function flush(sec, needs_separator) {
-    if (sec != "" && (sec in items) && !(sec in flushed)) {
-      printf "%s", items[sec]
-      if (needs_separator && items[sec] !~ /\n$/) printf "\n"
-      flushed[sec] = 1
-    }
+  function insert(followed) {
+    printf "%s", items
+    if (followed && !moved_final_lf) printf "\n"
+    inserted = 1
   }
   BEGIN {
-    nsec = 0
-    have_pending = 0
-    while ((getline rec < movedfile) > 0) {
-      if (have_pending) add_record(pending, "\n")
-      pending = rec
-      have_pending = 1
-    }
-    if (have_pending) {
-      add_record(pending, moved_final_lf ? "\n" : "")
-    }
-    cur = ""
+    while ((getline rec < movedfile) > 0) items = items (count++ ? "\n" : "") rec
+    if (moved_final_lf) items = items "\n"
   }
-  /^## / { flush(cur, 1); cur = $0; print; next }
-  { print }
+  queued && /^[ \t]*$/ { blank[++blanks] = $0; next }
+  /^## / {
+    if (queued) insert(1)
+    release_blanks()
+    queued = !inserted && $0 == "## Queued"
+    print
+    next
+  }
+  {
+    release_blanks()
+    print
+  }
   END {
-    needs_separator = 0
-    for (i = 1; i <= nsec; i++) {
-      if (!(order[i] in flushed) && order[i] != cur) {
-        needs_separator = 1
-        break
-      }
-    }
-    flush(cur, needs_separator)
-    for (i = 1; i <= nsec; i++) {
-      s = order[i]
-      if (!(s in flushed)) {
-        print ""
-        print s
-        printf "%s", items[s]
-        flushed[s] = 1
-      }
+    if (queued) insert(blanks)
+    release_blanks()
+    if (!inserted) {
+      printf "\n## Queued\n"
+      insert(0)
     }
   }
-' "$DST_FILE" > "$DST_TMP"
+' "$DST_FILE" > "$DST_TMP" || fail "cannot rewrite $DST_FILE"
 
-mv "$DST_TMP" "$DST_FILE"
-mv "$KEPT_FILE" "$SRC_FILE"
+mv "$DST_TMP" "$DST_FILE" || fail "cannot replace $DST_FILE"
+mv "$KEPT_FILE" "$SRC_FILE" || fail "cannot replace $SRC_FILE"
 
 # Read-back proves every moved id is readable at the destination and the live
 # file still parses. A failure restores both backups before reporting.

@@ -654,13 +654,14 @@ Bootstrap reports a code-root `data/backlog.md` or `data/done-archive.md` that i
 
 ### Parked archive
 
-`bin/fm-tasks-axi.sh archive <id>...` moves open parked or stale rows out of the live backlog into `data/backlog-archive.md`, and `bin/fm-tasks-axi.sh unarchive <id>...` (alias `restore`) brings them back.
-`bin/fm-tasks-axi.sh archive --parked` selects every live row that carries `(hold-kind: parked)`, and `bin/fm-tasks-axi.sh archived` (aliases `archive-list` and `archive --list`) lists what is parked.
+`bin/fm-tasks-axi.sh archive <id>...` moves open parked or stale rows out of the live backlog into `data/backlog-archive.md`, and `bin/fm-tasks-axi.sh unarchive <id>...` brings them back.
+`bin/fm-tasks-axi.sh archived` lists what is parked.
 Each move reproduces the item block byte-exact, so holds, hold reasons, bodies, and `blocked-by` links survive the round trip; `tasks-axi list|show --file data/backlog-archive.md` reads the result as an ordinary markdown backlog.
 Archived rows disappear from every live queue read, including the session-start digest and `bin/fm-queue-snapshot.sh`, so restore one before recording a decision on it.
-The archive defaults to `backlog-archive.md` beside the live backlog and `FM_BACKLOG_ARCHIVE_FILE` overrides that path.
-`Done` history is refused because it belongs to tasks-axi's configured `archive` path, and archiving refuses to leave a live task blocked by a moved id.
-A moved row's own `blocked-by` target may stay live or already be pruned, so the link is carried as-is.
+The archive is always `backlog-archive.md` beside the live backlog.
+`Done` history is refused because it belongs to tasks-axi's configured `archive` path.
+Archiving also refuses an In flight row, a row with a `state/<id>.meta` task record, and any move that would leave a live task blocked by a moved id.
+Unarchiving refuses a row whose `blocked-by` target is still open in the parked archive unless that target is restored in the same call or is already live; a pruned or finished target does not block the restore.
 [`bin/fm-backlog-archive.sh`](../bin/fm-backlog-archive.sh) owns the exact selection, refusal, lock, and atomic-write mechanics.
 
 ## Runtime backend (config/backend / FM_BACKEND)
@@ -1140,7 +1141,7 @@ Exporter-owned directories use mode `0750`, and exported files use mode `0640`.
 Run `bin/fm-record-export.sh sync` to publish the currently present allowlisted files through `<export-root>/live/`:
 
 ```text
-data/{projects.md,backlog.md,done-archive.md}
+data/{projects.md,backlog.md,backlog-archive.md,done-archive.md}
 data/<task>/{brief.md,report.md,status*.log}
 state/fleet-ledger.jsonl
 state/<task>.{meta,status}

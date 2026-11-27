@@ -6,10 +6,12 @@
 # The point of the path is a byte-exact round trip: a parked row leaves the
 # live backlog with its hold, hold reason, body, and blocked-by links intact,
 # stays readable as an ordinary tasks-axi markdown backlog, and comes back
-# unchanged. The suite also pins the refusals that keep the two files from
-# silently split dependencies: an unknown or Done id, an id already at the
-# destination, archiving a row that still blocks live work, and unarchiving a
-# row whose dependency would dangle in the live queue.
+# unchanged, with file modes and section layout stable across cycles. The suite
+# also pins the refusals: an unknown or Done id, an id already at the
+# destination, an In flight id or one with a task record, archiving a row that
+# still blocks live work, unarchiving a row whose blocker is still open in the
+# archive (a pruned blocker is allowed), a held or stale lock, a noncanonical
+# body, and the restore of both files after a failed rename or read-back.
 set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
@@ -50,13 +52,13 @@ EOF
 run_archive() {  # <home> <args...>
   local home=$1
   shift
-  ( cd "$TMP_ROOT" && FM_DATA_OVERRIDE="$home/data" "$ARCHIVE" "$@" )
+  ( cd "$TMP_ROOT" && FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" "$ARCHIVE" "$@" )
 }
 
 run_wrapper() {  # <home> <args...>
   local home=$1
   shift
-  ( cd "$TMP_ROOT" && FM_DATA_OVERRIDE="$home/data" "$WRAPPER" "$@" )
+  ( cd "$TMP_ROOT" && FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" "$WRAPPER" "$@" )
 }
 
 show_archived() {  # <home> <id>
@@ -117,23 +119,6 @@ test_unarchive_round_trips_byte_exact() {
   pass "unarchive restores the row byte-exact with its hold and blocked-by link"
 }
 
-test_archive_parked_selects_only_parked_rows() {
-  local home
-  home=$(make_home parked-only)
-  ( cd "$home" && tasks-axi add parked-q1 "second parked" --kind ship --repo x >/dev/null ) || fail "add parked-q1 failed"
-  ( cd "$home" && tasks-axi hold parked-q1 --reason "waiting on hardware" --kind parked >/dev/null ) || fail "hold parked-q1 failed"
-  ( cd "$home" && tasks-axi add captain-c2 "captain call" --kind captain --repo x >/dev/null ) || fail "add captain-c2 failed"
-  ( cd "$home" && tasks-axi hold captain-c2 --reason "awaiting the captain" --kind captain >/dev/null ) || fail "hold captain-c2 failed"
-
-  run_archive "$home" archive --parked >/dev/null || fail "--parked failed"
-
-  assert_grep "parked-q1" "$home/data/backlog-archive.md" "--parked missed a parked-kind row"
-  assert_grep "parked-p3" "$home/data/backlog-archive.md" "--parked missed the blocker-linked parked row"
-  assert_no_grep "captain-c2" "$home/data/backlog-archive.md" "--parked archived a captain hold"
-  assert_grep "captain-c2" "$home/data/backlog.md" "--parked removed a captain hold from the live backlog"
-  pass "--parked selects only hold-kind parked rows"
-}
-
 test_refusals_leave_both_files_unchanged() {
   local home before live_before out rc
   home=$(make_home refusals)
@@ -181,18 +166,126 @@ test_archive_refuses_a_live_dependent() {
   pass "archive refuses to leave a live task blocked by an archived id"
 }
 
-test_unarchive_preserves_a_dangling_dependency() {
-  local home out after
-  home=$(make_home dangling-dep)
+test_unarchive_refuses_a_parked_blocker() {
+  local home before live_before out rc
+  home=$(make_home parked-blocker)
   run_archive "$home" archive parked-p3 >/dev/null || fail "archiving the dependent failed"
   run_archive "$home" archive blocker-b1 >/dev/null || fail "archiving the blocker failed"
+  before=$(cat "$home/data/backlog-archive.md")
+  live_before=$(cat "$home/data/backlog.md")
 
-  out=$(run_archive "$home" unarchive parked-p3 2>&1) || fail "unarchiving a row whose blocker stayed archived failed: $out"
-  assert_grep "parked-p3" "$home/data/backlog.md" "the dependent did not return to the live backlog"
-  after=$(show_live "$home" parked-p3)
-  assert_contains "$after" 'deps: "blocked-by:blocker-b1"' "the dangling blocked-by link was not carried back"
-  assert_contains "$after" "hold_kind: parked" "the restored row lost its hold kind"
-  pass "unarchive carries a blocked-by link whose target stays archived, matching the pruned-blocker case"
+  out=$(run_archive "$home" unarchive parked-p3 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "unarchive with a parked blocker"
+  assert_contains "$out" "blocker blocker-b1 is still parked" "the refusal did not name the parked blocker"
+  assert_equals "$before" "$(cat "$home/data/backlog-archive.md")" "the refused unarchive changed the archive"
+  assert_equals "$live_before" "$(cat "$home/data/backlog.md")" "the refused unarchive changed the live backlog"
+
+  out=$(run_archive "$home" unarchive parked-p3 blocker-b1 2>&1) || fail "restoring both together failed: $out"
+  assert_contains "$(show_live "$home" parked-p3)" "blocked: yes" "the restored row is no longer blocked"
+  pass "unarchive refuses a row whose blocker stays parked and accepts both together"
+}
+
+test_unarchive_allows_a_pruned_blocker() {
+  local home out
+  home=$(make_home pruned-blocker)
+  run_archive "$home" archive parked-p3 >/dev/null || fail "archive failed"
+  ( cd "$home" && tasks-axi rm blocker-b1 >/dev/null ) || fail "removing the blocker failed"
+  out=$(run_archive "$home" unarchive parked-p3 2>&1) || fail "unarchive with a pruned blocker failed: $out"
+  assert_contains "$(show_live "$home" parked-p3)" 'deps: "blocked-by:blocker-b1"' "the blocked-by link was not carried back"
+  pass "unarchive carries a link to a blocker that is no longer anywhere"
+}
+
+test_archive_refuses_active_work() {
+  local home before out rc
+  home=$(make_home active)
+  mkdir -p "$home/state"
+  : > "$home/state/other-o4.meta"
+  ( cd "$home" && tasks-axi add flying-f6 "running" --kind ship --repo x >/dev/null &&
+    tasks-axi start flying-f6 >/dev/null ) || fail "starting flying-f6 failed"
+  before=$(cat "$home/data/backlog.md")
+  for id in flying-f6 other-o4; do
+    out=$(run_archive "$home" archive "$id" 2>&1)
+    rc=$?
+    expect_code 2 "$rc" "archive of active $id"
+    assert_contains "$out" "task record: $id" "the active-work refusal did not name $id"
+  done
+  assert_equals "$before" "$(cat "$home/data/backlog.md")" "a refused archive changed the live backlog"
+  assert_absent "$home/data/backlog-archive.md" "a refused archive created an archive file"
+  pass "archive refuses In flight rows and rows with a task record"
+}
+
+test_round_trips_keep_layout_and_modes() {
+  local home first
+  home=$(make_home layout)
+  printf '# Backlog\n\n## In flight\n\n## Queued\n- [ ] a1 - one\n  body\n\n  more\n- [ ] b2 - two\n\n## Done\n' > "$home/data/backlog.md"
+  first=$(cat "$home/data/backlog.md")
+  chmod 0640 "$home/data/backlog.md"
+  for _ in 1 2 3; do
+    ( umask 022 && run_archive "$home" archive b2 >/dev/null ) || fail "archive failed"
+    run_archive "$home" unarchive b2 >/dev/null || fail "unarchive failed"
+    assert_equals "$first" "$(cat "$home/data/backlog.md")" "a round trip changed the live bytes"
+    assert_equals "$(printf '# Backlog\n\n## In flight\n\n## Queued\n\n## Done')" \
+      "$(cat "$home/data/backlog-archive.md")" "a round trip changed the empty archive layout"
+  done
+  assert_equals 640 "$(stat -c %a "$home/data/backlog.md" 2>/dev/null || stat -f %Lp "$home/data/backlog.md")" "the live mode changed"
+  assert_equals 644 "$(stat -c %a "$home/data/backlog-archive.md" 2>/dev/null || stat -f %Lp "$home/data/backlog-archive.md")" "the new archive ignored the umask"
+  pass "repeated round trips keep bytes, section separators, and file modes"
+}
+
+test_lock_and_body_refusals() {
+  local home before out rc
+  home=$(make_home locks)
+  before=$(cat "$home/data/backlog.md")
+  printf 'other\n' > "$home/data/backlog.md.lock"
+  out=$(run_archive "$home" archive parked-p3 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "held lock"
+  assert_contains "$out" "locked by another process" "the held lock was not reported"
+  touch -t 202001010000 "$home/data/backlog.md.lock"
+  out=$(run_archive "$home" archive parked-p3 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "stale lock"
+  assert_contains "$out" "looks stale" "the stale lock was not reported"
+  assert_equals other "$(cat "$home/data/backlog.md.lock")" "a foreign lock was disturbed"
+  assert_absent "$home/data/backlog-archive.md.lock" "our own lock was left behind"
+  assert_equals "$before" "$(cat "$home/data/backlog.md")" "a locked call changed the live backlog"
+  rm "$home/data/backlog.md.lock"
+
+  printf '# Backlog\n\n## Queued\n- [ ] tab-t1 - tabbed\n\tbad line\n' > "$home/data/backlog.md"
+  before=$(cat "$home/data/backlog.md")
+  out=$(run_archive "$home" archive tab-t1 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "noncanonical body"
+  assert_contains "$out" "non-2-space continuation" "the body refusal did not explain itself"
+  assert_equals "$before" "$(cat "$home/data/backlog.md")" "the body refusal changed the live backlog"
+  pass "held locks, stale locks, and noncanonical bodies are refused"
+}
+
+test_failed_writes_restore_both_files() {
+  local home before out rc shim tool real
+  for tool in mv tasks-axi; do
+    home=$(make_home "restore-$tool")
+    before=$(cat "$home/data/backlog.md")
+    shim="$home/shim"
+    mkdir -p "$shim"
+    real=$(command -v "$tool")
+    if [ "$tool" = mv ]; then
+      # Fail only the second rename, after the destination was replaced.
+      # shellcheck disable=SC2016
+      printf '#!/usr/bin/env bash\necho x >> "%s/calls"\n[ "$(wc -l < "%s/calls")" -ne 2 ] || exit 1\nexec "%s" "$@"\n' "$shim" "$shim" "$real" > "$shim/$tool"
+    else
+      # shellcheck disable=SC2016
+      printf '#!/usr/bin/env bash\n[ "$1" != show ] || exit 1\nexec "%s" "$@"\n' "$real" > "$shim/$tool"
+    fi
+    chmod +x "$shim/$tool"
+    out=$(PATH="$shim:$PATH" run_archive "$home" archive parked-p3 2>&1)
+    rc=$?
+    expect_code 2 "$rc" "failing $tool: $out"
+    assert_equals "$before" "$(cat "$home/data/backlog.md")" "failing $tool left the live backlog changed"
+    assert_absent "$home/data/backlog-archive.md" "failing $tool left a new archive behind"
+  done
+  pass "a failed rename or read-back restores both files"
 }
 
 test_wrapper_delegates_and_keeps_tasks_axi_reads() {
@@ -213,10 +306,14 @@ test_wrapper_delegates_and_keeps_tasks_axi_reads() {
 
 test_archive_preserves_hold_links_and_body
 test_unarchive_round_trips_byte_exact
-test_archive_parked_selects_only_parked_rows
 test_refusals_leave_both_files_unchanged
 test_archive_refuses_a_live_dependent
-test_unarchive_preserves_a_dangling_dependency
+test_unarchive_refuses_a_parked_blocker
+test_unarchive_allows_a_pruned_blocker
+test_archive_refuses_active_work
+test_round_trips_keep_layout_and_modes
+test_lock_and_body_refusals
+test_failed_writes_restore_both_files
 test_wrapper_delegates_and_keeps_tasks_axi_reads
 
 echo "PASS fm-backlog-archive.test.sh"
