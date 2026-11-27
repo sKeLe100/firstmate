@@ -470,7 +470,7 @@ Main can read the durable outcome store on demand through its `fm_branch_outcome
 ## Heartbeat routing
 
 While attended, the cheap bash-level heartbeat scan absorbs a genuinely no-op pass before it reaches Pi, unchanged from before.
-Under the away-posture record it absorbs nothing: every heartbeat is forwarded, because the away session's fleet-review and lane-refill beats are those heartbeats.
+Under the away-posture record it absorbs nothing: every heartbeat is forwarded, because the away session's fleet-review beats are those heartbeats.
 Only a scan already flagged as possibly captain-relevant emits the bare `heartbeat` wake.
 `.pi/extensions/fm-primary-pi-watch.ts` flags that offer `heartbeat: true`.
 The branch accepts it without a project only when every branch-ownable row observed in the unread-queue eligibility check is one of these:
