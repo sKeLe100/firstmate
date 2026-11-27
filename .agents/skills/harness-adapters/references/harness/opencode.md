@@ -33,6 +33,8 @@ An earlier read treated those fragments as unsent typed input, which made every 
 OpenCode 1.19.0 also draws the mode/model/branch footer row de-emphasised, with its mode word and middle-dot separators under `fm_composer_strip_ghost`'s luminance threshold, so that furniture is gone from the row the ghost-stripped read sees and the classifier proves it from the ANSI-stripped form of the row instead; the dated capture, the safe plain-form argument, and the regression pointers are in [runtime-backends.md](../../../../../docs/verification/runtime-backends.md).
 Since 2026-11-25, a cursorless read also treats the OpenCode 1.18.31+ status rail (`... ctrl+p commands`, optionally followed by `• OpenCode <version>`) as furniture when it sits directly below the composer floor row, so an otherwise proven-idle composer reads `empty`.
 Without that floor row, a rail with leading cwd or stats text stays `unknown`; the dated record is in [runtime-backends.md](../../../../../docs/verification/runtime-backends.md).
+OpenCode 1.19.5 draws the wrapped cwd:branch label's final fragment ON the floor row itself (`╹▀▀…▀    firstmate:fm/<branch>`), so the floor test now consumes the leading block run and allows only an empty remainder or that whitespace-separated trailing label; a row whose blocks run straight into text is still not a floor.
+The dated 1.19.5 capture and its regression coverage are in [runtime-backends.md](../../../../../docs/verification/runtime-backends.md).
 
 ## Free-usage retry banner
 

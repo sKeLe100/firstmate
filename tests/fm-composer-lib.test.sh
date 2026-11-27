@@ -1190,6 +1190,40 @@ test_matrix_opencode_11831_status_rail() {
   pass "matrix: opencode 1.18.31's status rail below the floor reads empty on cursorless backends"
 }
 
+test_matrix_opencode_1195_floor_branch_rail() {
+  # Regression (opencode-composer-unknown-1195): OpenCode 1.19.5 moved the
+  # right-aligned cwd:branch furniture onto the composer FLOOR row, so that row
+  # is no longer a pure `╹▀▀…▀` block run
+  # (`╹▀▀…▀    firstmate:fm/<branch>`). The floor recogniser rejected it, the
+  # provider treated that row as stale text under the left bar, and
+  # fm-control.sh exit plus fm-park.sh again answered `unknown` for every idle
+  # 1.19.5 lane. Every fixture below is a real 1.19.5 worker-pane tail
+  # (tests/fixtures/opencode-1.19.5-floor-branch/): the branch label intact on
+  # the floor, and the wrapped twin whose label tail lands on the floor.
+  local f screen bar typed
+  for f in \
+    "$ROOT/tests/fixtures/opencode-1.19.5-floor-branch/opencode-1.19.5-idle-floor-branch.ansi" \
+    "$ROOT/tests/fixtures/opencode-1.19.5-floor-branch/opencode-1.19.5-idle-floor-branch-wrapped.ansi"; do
+    screen=$(<"$f")
+    assert_screen "opencode 1.19.5 floor label, ${f##*/} on herdr" empty "$CAPS_STYLED" "$screen"
+    assert_screen "opencode 1.19.5 floor label, ${f##*/} on zellij" empty "$CAPS_STYLED_NOID" "$screen"
+    assert_screen "opencode 1.19.5 floor label, ${f##*/} on cmux/orca" empty "$CAPS_PLAIN" "$screen"
+  done
+  # Safety: the accepted floor must not buy a false `empty` over an unsent draft
+  # in the bar above it. Insert the draft right under the first blank bar row.
+  screen=$(<"$ROOT/tests/fixtures/opencode-1.19.5-floor-branch/opencode-1.19.5-idle-floor-branch.ansi")
+  bar=$(printf '%s\n' "$screen" | sed -n '13p')
+  typed=${screen/"$bar"/"$bar"$'\n'"  ┃  ${ESC}[38;2;255;255;255mreply with OK.${ESC}[0m"}
+  assert_screen "opencode 1.19.5 draft above the labelled floor stays pending" pending "$CAPS_STYLED" "$typed"
+  assert_screen "opencode 1.19.5 draft above the labelled floor defers unstyled" unknown "$CAPS_PLAIN" "$typed"
+  # Safety: the trailing label needs the whitespace gap 1.19.5 draws. A row
+  # whose blocks run straight into text is not a floor, so the rail beneath it
+  # cannot prove the pane idle.
+  typed=$'  ┃\n  ┃\n  ┃  Build · DeepSeek V4.1 Flash 1017 OpenCode Go\n  ╹▀▀▀▀not-a-floor\n   /home/sean_/project  155.3K (16%) · $0.07 ctrl+p commands'
+  assert_screen "opencode blocks glued to text are not a floor" unknown "$CAPS_STYLED" "$typed"
+  pass "matrix: opencode 1.19.5's branch label on the floor reads empty; a draft above it stays pending"
+}
+
 test_matrix_opencode_leftbar_abs_cwd_furniture() {
   # Real OpenCode 1.18.31 worker pane captured read-only on 2026-10-14 through
   # the tmux adapter's capture (308 columns, #{cursor_y} 62 = 14 in the 20-row
@@ -1866,6 +1900,7 @@ test_matrix_pi_dollar_status_footer_is_empty
 test_matrix_opencode_leftbar_signals
 test_matrix_opencode_leftbar_cwd_furniture
 test_matrix_opencode_11831_status_rail
+test_matrix_opencode_1195_floor_branch_rail
 test_matrix_opencode_leftbar_abs_cwd_furniture
 test_matrix_grok_titled_bottom_border
 test_matrix_claude_titled_top_rule

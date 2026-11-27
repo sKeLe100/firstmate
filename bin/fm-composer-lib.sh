@@ -1844,12 +1844,26 @@ _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
 }
 
 _fm_composer_leftbar_floor_row() {  # <trimmed-row>
-  local row=$1 blocks
+  local row=$1 blocks rest
   case "$row" in
     '╹▀'*) blocks=${row#╹} ;;
     *) return 1 ;;
   esac
-  [ -z "${blocks//▀/}" ]
+  # Since 1.19.5 the floor row no longer ends at the block run: OpenCode appends
+  # its right-aligned cwd:branch label after the blocks
+  # (`╹▀▀▀…▀    firstmate:fm/<branch>`), often wrapped from the composer footer.
+  # Consume the leading block run, then allow only the empty remainder this
+  # function has always accepted or that whitespace-separated trailing label.
+  # Typed input sits ABOVE the footer, never on the bottom border row, so this
+  # can only widen a floor this harness itself drew.
+  rest=$blocks
+  while [ "${rest#▀}" != "$rest" ]; do rest=${rest#▀}; done
+  [ "$rest" != "$blocks" ] || return 1
+  [ -z "$rest" ] && return 0
+  case "$rest" in
+    ' '*[![:space:]]*) return 0 ;;
+  esac
+  return 1
 }
 
 # _fm_composer_row_is_composer_furniture: 0 when <trimmed-row> is DEMONSTRABLY
