@@ -10,12 +10,33 @@
 # worktree without .fm-secondmate-home, fm-sessionstart-run.sh stands down
 # silently and this wrapper prints empty JSON ({}).
 #
+# agy can fire SessionStart again mid-conversation (for example after a
+# Stop-hook park), and re-injecting the full digest would repeat it in an
+# already-open context. The payload's `conversationId` is forwarded to
+# fm-sessionstart-run.sh, which stays silent for a repeated startup on a live
+# session whose completed startup already served that same conversation. A new
+# conversation gets the full digest.
+#
 # Every path exits 0 and prints valid JSON.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Print the first string value for key $2 in the JSON payload $1. Parsed without
+# jq so routing and dedupe still happen on a host that lacks it (output then
+# falls back to {} below, which is the pre-existing compatibility contract).
+json_string_field() {  # <payload> <key>
+  printf '%s' "$1" | awk -v key="$2" '
+    BEGIN { RS = "\"" }
+    seen == 2 { print; exit }
+    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
+    seen == 1 { seen = 0 }
+    $0 == key { seen = 1 }
+  '
+}
+
 SOURCE=
+CONVERSATION_ID=
 while [ $# -gt 0 ]; do
   case "$1" in
     --source)
@@ -27,18 +48,18 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
+if [ ! -t 0 ]; then
   PAYLOAD=$(cat 2>/dev/null || true)
-  SOURCE=$(printf '%s' "$PAYLOAD" | awk '
-    BEGIN { RS = "\"" }
-    seen == 2 { print; exit }
-    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
-    seen == 1 { seen = 0 }
-    $0 == "source" { seen = 1 }
-  ')
+  if [ -z "$SOURCE" ]; then
+    SOURCE=$(json_string_field "$PAYLOAD" source)
+  fi
+  CONVERSATION_ID=$(json_string_field "$PAYLOAD" conversationId)
 fi
 
-DIGEST=$("$SCRIPT_DIR/fm-sessionstart-run.sh" --source "${SOURCE:-startup}" </dev/null 2>/dev/null || true)
+RUN_ARGS=(--source "${SOURCE:-startup}")
+[ -z "$CONVERSATION_ID" ] || RUN_ARGS+=(--conversation-id "$CONVERSATION_ID")
+
+DIGEST=$("$SCRIPT_DIR/fm-sessionstart-run.sh" "${RUN_ARGS[@]}" </dev/null 2>/dev/null || true)
 if [ -z "$DIGEST" ] || ! command -v jq >/dev/null 2>&1; then
   printf '{}\n'
   exit 0

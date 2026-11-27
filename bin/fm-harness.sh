@@ -313,9 +313,18 @@ harness_process_verdict() {  # <pid>
 # Print the verdict for the NEAREST harness process in the parent chain, or
 # nothing when the walk finds none. The nearest match wins, so a worker nested
 # inside another harness resolves to its own harness.
+#
+# Up to 16 hops, matching bin/fm-session-lock-lib.sh's walk. A session-open hook
+# does not run directly under its harness: the tracked transport can sit several
+# shells below it (hooks.json `sh -c` -> the adapter -> a command-substitution
+# subshell -> the run wrapper -> fm-session-start.sh's own `fm_run_timed`
+# timeout/bash -c child). Antigravity's recorded hook chain puts agy about ten
+# hops up, past the old eight-hop bound, which made fm-harness.sh report
+# `unknown` while fm-session-lock-lib.sh still found the same agy process and
+# acquired the lock; the two walks must agree on how deep a real session is.
 harness_ancestry() {  # [<pid>]
   local pid=${1:-$$} verdict
-  for _ in 1 2 3 4 5 6 7 8; do
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
     verdict=$(harness_process_verdict "$pid")
     [ -z "$verdict" ] || { echo "$verdict"; return; }
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
@@ -335,8 +344,9 @@ harness_ancestry() {  # [<pid>]
 # Print the pids on the UPWARD path between the deepest descendant of <root> and
 # <root> itself, deepest first. Optional <eligible-leaf-pid> values restrict which
 # descendants may be chosen as that deepest one; with none given every descendant
-# is eligible. Bounded to the same eight levels harness_ancestry climbs, so a deep
-# or pathological tree cannot make this walk unbounded.
+# is eligible. Bounded to eight levels of its own so a deep or pathological tree
+# cannot make this walk unbounded; this is independent of how far
+# harness_ancestry climbs from a chosen vantage.
 process_descent_path() {  # <root> [<eligible-leaf-pid>...]
   local root=${1:-$$} eligible any hit pairs frontier next pid child parent verdict
   local parents='' depth=0 best best_depth=0 best_strength='' hops=0
