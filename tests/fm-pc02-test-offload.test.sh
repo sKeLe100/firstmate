@@ -402,6 +402,14 @@ while [ "\$#" -gt 0 ]; do
   shift
 done
 "$real_rsync" "\${args[@]}" || exit \$?
+dest="\${args[\${#args[@]}-1]}"
+if [ -n "\${FM_FAKE_RSYNC_MANIFEST:-}" ]; then
+  case "\$dest" in
+    */worktree/)
+      ( cd "\$dest" && find . \\( -type f -o -type l \\) -print | sed 's#^\\./##' | LC_ALL=C sort ) > "\$FM_FAKE_RSYNC_MANIFEST"
+      ;;
+  esac
+fi
 if [ -n "\${FM_FAKE_CAPTURE_RUNNER:-}" ] && [ -d "\${args[\${#args[@]}-1]}/bin" ]; then
   cat > "\${args[\${#args[@]}-1]}/bin/fm-test-run.sh" <<'RUNNER'
 #!/usr/bin/env bash
@@ -638,6 +646,39 @@ test_remote_run_passes_through_green_suite_and_json() {
     || fail "the fake PC02 path should emit one environment record: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the per-run PC02 mirror was left behind: $out"
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
+}
+
+test_mirror_carries_only_the_git_visible_tree() {
+  local dir fakebin out status ignored untracked
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/mirror-payload"
+  fakebin=$(fake_pc02 "$dir")
+  printf '#!/usr/bin/env bash\necho "ok - fixture"\n' > "$dir/green.test.sh"
+  chmod +x "$dir/green.test.sh"
+  # A git-ignored artifact at the worktree root must never travel, while an
+  # untracked but not ignored file with unlanded work must still travel. A
+  # whole-tree transfer of ignored content is what pushed real mirrors past
+  # the sync bound (a primary checkout held 13.5 GiB / 317k files of it).
+  ignored="scratchpad-offload-payload-$$"
+  untracked=".fm-pc02-offload-untracked-$$"
+  printf 'ignored payload\n' > "$ROOT/$ignored"
+  printf 'unlanded work\n' > "$ROOT/$untracked"
+  out=$(PATH="$fakebin:$PATH" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    FM_FAKE_RSYNC_MANIFEST="$dir/mirror-manifest" \
+    "$SCRIPT" "$dir/green.test.sh" 2>&1)
+  status=$?
+  rm -f "$ROOT/$ignored" "$ROOT/$untracked"
+  expect_code 0 "$status" "the mirror payload case must pass: $out"
+  [ -f "$dir/mirror-manifest" ] || fail "the fake sync recorded no mirror manifest: $out"
+  grep -qx 'AGENTS.md' "$dir/mirror-manifest" \
+    || fail "the mirror dropped a tracked file: $(cat "$dir/mirror-manifest")"
+  grep -qxF "$untracked" "$dir/mirror-manifest" \
+    || fail "the mirror dropped an untracked, non-ignored file: $(cat "$dir/mirror-manifest")"
+  ! grep -qxF "$ignored" "$dir/mirror-manifest" \
+    || fail "the mirror carried git-ignored content: $(cat "$dir/mirror-manifest")"
+  pass "the PC02 mirror carries tracked and untracked-but-not-ignored files and skips git-ignored payload"
 }
 
 test_remote_lint_runs_local_lint_and_propagates_exit() {
@@ -2014,6 +2055,7 @@ test_remote_run_stops_when_personal_use_turns_on
 test_personal_use_flip_during_sync_stops_before_the_suite_runs
 test_personal_use_flip_while_waiting_for_a_slot_stops_the_run
 test_remote_run_passes_through_green_suite_and_json
+test_mirror_carries_only_the_git_visible_tree
 test_remote_lint_runs_local_lint_and_propagates_exit
 test_lint_local_fallback_runs_changed_file_lint
 test_remote_invocation_inherits_fm_test_run_scheduler
