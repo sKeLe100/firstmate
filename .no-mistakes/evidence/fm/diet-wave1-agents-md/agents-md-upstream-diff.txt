@@ -1,0 +1,12 @@
+$ diff upstream(kunchenguid/firstmate main) vs HEAD: numbered wake-handler list, lines "1." through "4."
+upstream lines=6 head=6 base=8
+HEAD identical to upstream
+--- upstream vs base (for contrast)
+6a7,8
+>    In the same review, refill idle capacity by dispatching `gate: dispatchable` rows from `bin/fm-queue-snapshot.sh` and `idle capacity:` lanes from `bin/fm-underused-capacity.sh`, and re-read `data/captain.md` as the `autonomous` skill's step 0 does.
+>    Also act on each worker's `bin/fm-context-usage.sh` and `bin/fm-retry-pressure.sh` bands per `docs/configuration.md` "Session context thresholds" and "Retry-loop thresholds", closing the retry-loop key as that section prescribes.
+--- headings removed (base -> HEAD)
+24d23
+< ## Third-party skill precedence
+--- bytes
+base 55527 head 54720

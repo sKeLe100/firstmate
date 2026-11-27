@@ -1,0 +1,36 @@
+$ claude -p (fresh session in run worktree, FM_HOME=lab, no tools, hooks off)
+PROMPT:
+Answer only from the project instructions already loaded in your context; do not use tools. 
+1) A `heartbeat:` wake arrives and one long-running worker is now in context band `restart`. List every action your instructions require in this heartbeat.
+2) List your numbered wake handlers (1-4) verbatim.
+3) Do your loaded project instructions contain a section titled "Third-party skill precedence"? Answer yes or no, then list the level-2 heading that comes immediately before "Captain instruction precedence".
+
+REPLY:
+Captain, answers below, drawn only from the loaded instructions. I used no tools, as you asked.
+
+**1) Heartbeat with one worker in the `restart` context band**
+
+- **Drain first.** Drain the durable wake queue before peeking at, steering, or starting anything.
+- **Reconcile the drain output.** Handle any `OPEN DECISIONS` and read any `UNREAD STATUS` that the drain shows. If a `RECORD DIVERGENCE` appears, load `captain-hold-lifecycle`.
+- **Review the whole fleet.** Use the structured fleet view, reconcile suspicious tasks and PR state, and update the backlog. Never report an unchanged fleet as progress.
+- **Refill idle capacity.** Use `bin/fm-queue-snapshot.sh`'s `gate: dispatchable` rows and `bin/fm-underused-capacity.sh`, within `config/project-capacity` limits.
+- **Act on each worker's bands.** Check every worker's `bin/fm-context-usage.sh` and `bin/fm-retry-pressure.sh` bands per `docs/configuration.md` "Session context thresholds" and "Retry-loop thresholds". Close the retry-loop key as that section prescribes.
+- **Handle the `restart` worker.**
+  - [line redacted: cites operator-level user configuration unrelated to this change]
+  - Never switch its model or effort in the live session. Redelegate by relaunching a fresh session with a carryover note.
+  - Pass `--redelegated-from`/`--redelegation-reason` on that respawn.
+- **Re-evaluate queued work.** Dependencies, time gates, and capacity are re-checked after every heartbeat.
+- **Refresh merged clones.** If any notification reports a merged PR for a cloned project, refresh that clone through guarded fleet sync.
+- **Acknowledge.** Run the exact `WAKE_ACK_REQUIRED` `--ack-through` command, once only.
+- **Keep supervision running.** Keep exactly one live supervision cycle, and never end the turn blind.
+
+**2) Wake handlers, verbatim**
+
+1. For `signal:`, read the listed event lines first, then reconcile current state only where action depends on it.
+2. For `stale:`, inspect the recorded endpoint and load `stuck-crewmate-recovery` for a stopped, looping, confused, or unresponsive worker; a deep-inspection reason also requires current-state and validation-log inspection.
+3. For `check:`, act on the named poll result, including merges, contribution signals, Relay events, process-to-event source results, and captain inbox notes; a handled inbox note is also acknowledged with `bin/fm-inbox.sh drain --ack <id>`, or it stays counted as still waiting for firstmate.
+4. For `heartbeat:`, review the whole fleet from the structured fleet view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged fleet as progress.
+
+Item 3 also has two continuation sentences: one on `check: secondmate <id> auto-relaunched`, and one on `bin/fm-inbox.sh reply <id>`.
+
+**3)** No, there is no "Third-party skill precedence" section. The level-2 heading immediately before "Captain instruction precedence" is `## 14. Relay`.
