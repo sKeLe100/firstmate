@@ -34,8 +34,9 @@
 # label instead of having to substitute run status. Each row's lane is a
 # mechanical machine-and-model label derived from the recorded harness and model
 # (opencode-go/* -> opencode-go/<short-model>, pc02-llamaswap/* -> pc02,
-# otherwise <harness>/<short-model>), falling back to the bare harness when no
-# model was recorded; lane is null when neither harness nor model is recorded.
+# otherwise <harness>/<short-model>), falling back to the bare harness when the
+# recorded model is absent or `default`; lane is null when that fallback has no
+# recorded harness.
 # A home classified
 # captain_decision because it has an open
 # captain hold still contributes each working child as its own Underway row;
