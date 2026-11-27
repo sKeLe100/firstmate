@@ -294,6 +294,8 @@ Handle actionable wakes as follows:
    When the note needs a durable answer the submitter can read, publish it with `bin/fm-inbox.sh reply <id>` (the script header owns the reply contract) rather than leaving the answer only in this transcript.
 4. For `heartbeat:`, review the whole fleet from the structured fleet view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged fleet as progress.
 
+In the same review, refill idle capacity from `bin/fm-queue-snapshot.sh`'s `gate: dispatchable` rows and `bin/fm-underused-capacity.sh`, and act on each worker's `bin/fm-context-usage.sh` and `bin/fm-retry-pressure.sh` bands per `docs/configuration.md` "Session context thresholds" and "Retry-loop thresholds", closing the retry-loop key as that section prescribes.
+
 Load the `autonomous` skill when the captain invokes `/autonomous`, mentions standing orders or autonomous dispatch, or when a silent-invocation point fires (12:30/17:30 fleet-dispatch-points); it owns the dispatch-pass procedure and is captain-invocable, unlike section 13's agent-only reference skills.
 
 Load `bearings` on a contributions check wake or when filing work linked to an upstream issue; its contribution-follow-up section owns triage and exact signal acknowledgement.
