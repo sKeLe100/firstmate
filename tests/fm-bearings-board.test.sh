@@ -296,6 +296,15 @@ test_build_refuses_malformed_payloads_before_touching_the_board() {
   set +e; out=$(run_board "$home" build "$data" 2>&1); rc=$?; set -e
   [ "$rc" -ne 0 ] || fail "an underway row without an explicit name marker was accepted"
 
+  for invalid_lane in '5' '{"model":"gpt-5.5"}'; do
+    write_valid_payload "$data"
+    jq --argjson lane "$invalid_lane" '.underway = [{"id":"sample-task","repo":"sample",
+      "name":"Sample task","state":"working","kind":"ship","doing":"implementing",
+      "lane":$lane}]' "$data" > "$data.tmp" && mv "$data.tmp" "$data"
+    set +e; out=$(run_board "$home" build "$data" 2>&1); rc=$?; set -e
+    [ "$rc" -ne 0 ] || fail "a non-string underway lane was accepted: $invalid_lane"
+  done
+
   for invalid_filed in "last Tuesday" "2026-13-01" "2026-08-14T99:30:00Z" "2026-02-29"; do
     write_valid_payload "$data"
     jq --arg filed "$invalid_filed" '.charted[0].filed = $filed' "$data" > "$data.tmp" \
