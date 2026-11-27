@@ -1159,6 +1159,11 @@ Keep the export root private and never serve it directly.
 The schema is versioned for compatible readers, but it is not a Firstmate command API and no Firstmate reader consumes it.
 [`architecture.md`](architecture.md#read-only-record-exports) describes the mechanism boundary; [`bin/fm-record-export.sh`](../bin/fm-record-export.sh) owns the exact allowlist, schema, path checks, publication, and retention mechanics.
 
+## Fleet resource snapshot (bin/fm-resource-snapshot.sh)
+
+The `/fleet` skill reads one bounded, read-only snapshot from [`bin/fm-resource-snapshot.sh`](../bin/fm-resource-snapshot.sh), whose header owns the complete section list, fields, source bounds, and fixture seams.
+That includes the paid Google Gemini API spend row, its source ledger, and its fixed stop.
+
 ## Underused-capacity threshold (config/underused-capacity-threshold)
 
 The optional local, gitignored `config/underused-capacity-threshold` file holds one whole percentage 0-100, the share of a spend lane's five-hour window that must remain before `bin/fm-underused-capacity.sh` reports that lane as idle capacity while a free pool slot and dispatchable work remain.

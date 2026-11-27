@@ -1118,7 +1118,7 @@ tests/fm-llm-usage-lib.test.sh 2046
 tests/fm-llm-usage-telemetry-integration.test.sh 51680
 tests/fm-mail-check.test.sh 9338
 tests/fm-mail.test.sh 13791
-tests/fm-mistakes-review.test.sh 290
+tests/fm-mistakes-review.test.sh 820
 tests/fm-muse-harness.test.sh 63424
 tests/fm-muse-signals-live-e2e.test.sh 491
 tests/fm-nm-test-contract.test.sh 853

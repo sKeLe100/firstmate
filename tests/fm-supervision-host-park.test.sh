@@ -87,7 +87,7 @@ test_compaction_abandoned_at_the_park_boundary_is_not_marked_done() {
   echo 10 > "$home/park-clock"
   wait_until 150 test -e "$home/engine-call.1" || fail "warm-compact-abandon: the compaction never started"
   echo 3000 > "$home/park-clock"
-  wait_until 300 host_exited "$home" || fail "warm-compact-abandon: the host did not end its park"
+  wait_until_deadline 60 host_exited "$home" || fail "warm-compact-abandon: the host did not end its park"
   ! grep -q '^compacted=' "$home/state/.supervision-host-engine" || fail "warm-compact-abandon: an abandoned compaction was marked done"
   stop_home_processes "$home"
   pass "host: a compaction abandoned at the park boundary is not marked done"
