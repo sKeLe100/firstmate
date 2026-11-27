@@ -23,6 +23,21 @@ Verified as a full Firstmate harness (Primary, Secondmate, and Crewmate/Scout).
 | Effort | `--effort low\|medium\|high`; `xhigh` and `max` stay in task metadata under the record-and-omit contract. |
 | Composer | Borderless bare `>` row, which the shared classifier reads as `unknown` under the dead-shell rule, never `empty`; steering confirms delivery through native agent-state and the delivery footer instead, the cursor precedent. |
 
+## Sandbox and host-level scripts
+
+The `run_command` tool runs commands in agy's sandbox by default and accepts a `BypassSandbox` argument.
+Host-level Firstmate scripts need the host's IPC, Herdr, and treehouse state, so a sandboxed run does not fail fast: it returns a large wrong snapshot (`quota-axi not found`, every task `worktree gone (torn down?)`) and dumps that output into context before the retry.
+Run these scripts with `BypassSandbox: true` on the first try, never sandboxed and then retried:
+
+- `bin/fm-session-start.sh`
+- `bin/fm-wake-drain.sh`
+- `bin/fm-bearings-snapshot.sh`
+- `bin/fm-resource-snapshot.sh`
+- `bin/fm-crew-state.sh`
+- `quota-axi`
+
+Ordinary project commands keep the default sandbox.
+
 ## Trust, and where the decision persists
 
 Every task worktree is a path agy has never seen, so an unregistered launch stops on `Do you trust the contents of this project?` with the safe choice `Yes, I trust this folder` preselected, and an unanswered dialog sends the turn into agy's scratch directory instead of the worktree.
