@@ -1,0 +1,50 @@
+
+      ▄▀▀▄        Antigravity CLI 1.5.18
+     ▀▀▀▀▀▀       [redacted-account] (Google AI Pro)
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (Low)
+   ▄▀▀    ▀▀▄     /tmp/fm-agyv.HLARaG/head
+  ▄▀▀      ▀▀▄
+
+────────────────────────────────────────────────────────────
+> Reply with exactly: LAB_OK. Do not run any tool.
+
+  LAB_OK
+
+────────────────────────────────────────────────────────────
+> Reply with exactly: LAB_OK. Do not run any tool.
+
+  LAB_OK
+
+● ! /tmp/fm-agyv.HLARaG/refire.sh /tmp/fm-agyv.HLARaG/head-slow/p1.json /tmp/fm-agyv.HLARaG/head-slow/refire-resumed.json
+  ⎿  rc=0 bytes=102782
+
+● ! /tmp/fm-agyv.HLARaG/refire.sh /tmp/fm-agyv.HLARaG/head-slow/p1.json /tmp/fm-agyv.HLARaG/head-slow/refire-resumed-repeat.json
+  ⎿  rc=0 bytes=3
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 🤖 Gemini 3.8 Flash (Low)                                                               💾 •••••••••••• 44.2K/1.0M (4.2%)                                                              🌿 master 
+ ⏳ ••••••●••••• 35.7% rem │ 🔄 Reset: 2hr 16m                                                                                                          📅 •●•••••••••• 33.8% rem │ 🔄 Reset: 6d 9h 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

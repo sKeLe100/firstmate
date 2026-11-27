@@ -1,0 +1,42 @@
+Real agy 1.5.18 primaries in disposable lab homes (synthetic data). base=6ea43c63 head=f1c120b9
+
+## base-fast: agy transcript (SystemMessage = SessionStart injection)
+{"step_index":0,"type":"USER_INPUT","created_at":"2026-11-27T01:35:53Z","chars":468,"first":null}
+{"step_index":1,"type":"SYSTEM_MESSAGE","created_at":"2026-11-27T01:35:59Z","chars":49311,"first":["SESSION START - /tmp/fm-agyv.HLARaG/base-fast","primary harness: unknown"]}
+{"step_index":2,"type":"PLANNER_RESPONSE","created_at":"2026-11-27T01:35:59Z","chars":6,"first":null}
+
+## base-slow: agy transcript (SystemMessage = SessionStart injection)
+20:35:54 stall start
+20:36:39 stall end
+{"step_index":0,"type":"USER_INPUT","created_at":"2026-11-27T01:35:53Z","chars":468,"first":null}
+{"step_index":1,"type":"PLANNER_RESPONSE","created_at":"2026-11-27T01:36:24Z","chars":6,"first":null}
+
+## head-slow: agy transcript (SystemMessage = SessionStart injection)
+20:35:55 stall start
+20:36:40 stall end
+{"step_index":0,"type":"USER_INPUT","created_at":"2026-11-27T01:35:54Z","chars":468,"first":null}
+{"step_index":1,"type":"SYSTEM_MESSAGE","created_at":"2026-11-27T01:36:46Z","chars":49311,"first":["SESSION START - /tmp/fm-agyv.HLARaG/head-slow","primary harness: agy"]}
+{"step_index":2,"type":"PLANNER_RESPONSE","created_at":"2026-11-27T01:36:46Z","chars":6,"first":null}
+
+## head-hang: agy transcript (SystemMessage = SessionStart injection)
+20:35:55 stall start
+{"step_index":0,"type":"USER_INPUT","created_at":"2026-11-27T01:35:54Z","chars":468,"first":null}
+{"step_index":1,"type":"SYSTEM_MESSAGE","created_at":"2026-11-27T01:37:54Z","chars":924,"first":["SESSION START HIT ITS 120s RUNTIME BOUND"]}
+{"step_index":2,"type":"PLANNER_RESPONSE","created_at":"2026-11-27T01:37:54Z","chars":7,"first":null}
+
+## same-conversation SessionStart replayed through the real adapter inside the live agy session (stdout bytes; 3 = {})
+ 99795 base-fast/refire-same.json
+     3 lab/refire-same.json
+  9363 lab/refire-new.json
+     3 lab/refire-new-repeat.json
+102782 head-slow/refire-resumed.json
+     3 head-slow/refire-resumed-repeat.json
+211949 total
+lab = head session, first conversation c5eef024; refire-new = different conversationId; refire-resumed = new agy process (--conversation resume) over a stale completion marker
+
+## agy's own /clear in one process fired SessionStart again with a new conversationId
+{"hookEventName":"SessionStart","conversationId":"c5eef024-9975-453a-8a0d-0e5311dbc7be"}
+{"hookEventName":"SessionStart","conversationId":"ea4f59f1-2d80-4649-8c99-09ae165adf74"}
+{"step_index":0,"type":"USER_INPUT","created_at":"2026-11-27T01:34:21Z","chars":472,"first":null}
+{"step_index":1,"type":"SYSTEM_MESSAGE","created_at":"2026-11-27T01:34:27Z","chars":9385,"first":["SESSION START - /tmp/fm-agyv.HLARaG/lab","primary harness: agy"]}
+{"step_index":2,"type":"PLANNER_RESPONSE","created_at":"2026-11-27T01:34:27Z","chars":20,"first":null}
