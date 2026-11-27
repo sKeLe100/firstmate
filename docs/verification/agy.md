@@ -164,6 +164,14 @@ In primary and secondmate homes, watcher commands are classified by the shared a
 Supervision continuity uses synchronous Stop-hook parking via `bin/fm-turnend-guard-agy.sh`, running `bin/fm-watch-arm.sh` (or the supervision host) which waits under the 28800s hook timeout until woken by an incoming event (bounded only when the optional `FM_AGY_PARK_TIMEOUT` is set) and falls back to bounded repair nagging via `bin/fm-turnend-guard.sh --agy`.
 Session lock verification recognizes `agy` process ancestry via `bin/fm-session-lock-lib.sh`.
 
+## Sandbox: host-level scripts need bypass
+
+Observed 2026-11-26 on `agy 1.5.18` (`agy --version`, binary `/home/sean/.local/bin/agy`), Linux x64 through the Herdr backend in a `~/.treehouse` task worktree.
+`bin/fm-bearings-snapshot.sh` was invoked through agy's `run_command` tool with `BypassSandbox: false`.
+The sandboxed command did not fail fast: it exited 0 but produced 17037 bytes of wrong output.
+Its `claude_accounts` rows read `quota-axi not found` and its `in_flight` rows read `worktree gone (torn down?)`, because the sandbox hid the host's tree, Herdr, and IPC state.
+The same command retried with `BypassSandbox: true` returned the correct snapshot, with `quota-axi` status `ok` and real backend targets.
+
 ## What is still unproven
 
 The unauthenticated failure mode was never observed; this host's agy runs signed in, so any auth prompt is a fail-loud credential blocker, not a handled dialog.
