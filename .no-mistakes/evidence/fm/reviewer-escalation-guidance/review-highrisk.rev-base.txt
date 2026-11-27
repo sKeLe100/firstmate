@@ -1,0 +1,43 @@
+# Review: `change.diff` → `auth.py` (`can_access`)
+
+## TL;DR
+**Verdict: rethink.** The diff does change only one function, `can_access`, but that understates its effect. The new code saves each yes/no access answer in a shared `CACHE` dict keyed only by `account.id`. The first user checked against an account fixes the answer for every later user of that account. Separately, the tenant check is deleted, and nothing in this tree replaces it. Together these are a cross-user and cross-tenant authorization bypass.
+
+**Highest-leverage change:** restore `user.tenant_id == account.tenant_id`. Then either drop the cache, or key it by `(user.id, tenant_id, account.id)` and give it a way to invalidate entries. Don't remove the tenant check until the gateway check actually exists.
+
+## Findings
+
+1. **Material: the cache key leaves out the user.** `auth.py:5-7`. The answer for `account.id` comes from whichever user is checked first, and every later user gets that same answer.
+   - If user A owns account X and is checked first, `CACHE[X] = True`. User B, who has no rights to X, then gets `True`. That is privilege escalation.
+   - The reverse also happens: if an unauthorized user is checked first, `CACHE[X] = False` and every legitimate user is denied.
+   - The result depends on request order, so it is non-deterministic.
+2. **Material: tenant isolation is removed.** `auth.py:6` compared with the old line `diff:5`. The `user.tenant_id == account.tenant_id` condition is gone. The comment says ownership "moves to the gateway (planned)". "Planned" means it isn't there yet, and no gateway code exists in this tree. Today, nothing enforces tenant isolation.
+3. **Material: cached answers never expire.** `auth.py:1,5-6`. No code ever removes an entry from `CACHE`, so revoking a user's access to an account has no effect until the process restarts. The dict also grows without limit, one entry per account ever checked.
+4. **Minor: the check-then-set is not atomic.** `auth.py:5-6`. Under threads, two requests can race to fill the same entry. The race doesn't make finding 1 worse, but it does mean the answer that "sticks" is unpredictable.
+5. **Minor: the diff is malformed or incomplete.** `change.diff:3` has a bare `@@` hunk header with no line ranges, so standard tools such as `git apply` and `patch` would reject it. The diff also never shows where `CACHE` is defined (`auth.py:1`). Either `CACHE` already existed, or the diff left out a module-level addition (see the unverifiable items below).
+6. **Minor: the comment hides the risk.** `auth.py:4`. It records a security change as a caching tweak with a "(planned)" dependency. A reviewer reading only the comment would miss that tenant isolation has been removed.
+
+## Recounts
+| Claim | Measured | Method |
+|---|---|---|
+| "touches one function" | **1 function** (`can_access`). The hunk spans `change.diff:4-10`, and every `-`/`+` line is inside `def can_access`. | Read the whole diff and counted `def` lines among the changed lines: 1 removed, 1 re-added, same name. |
+| Implied: change is local to that function | **Disagrees.** The behaviour now depends on module-level mutable state (`CACHE`, `auth.py:1`) that persists across calls and across users. | Read `auth.py` in full (8 lines). |
+| Implied: diff matches the tree | **Partly.** Lines 3-7 of `auth.py` match the `+` lines exactly. Line 1 (`CACHE = {}`) is not in the diff. | Compared `auth.py` with the `+` lines of the diff. |
+
+The function count agrees with the claim. That still isn't a pass: the claim is literally true and misleading about scope.
+
+## Unprompted observations
+- The old code had three properties: no state, the same answer for the same input every time, and an explicit tenant check. The new code has none of them. The cache saves only a single tuple membership test (`account.id in user.account_ids`), which is cheap already, so the speed gain is negligible and the security cost is high.
+- The cache stores a boolean for each account but ignores `user.account_ids` once an entry exists. Even if the key were fixed, the cache would still need invalidation whenever a user's permissions change.
+- There are no tests in the tree. A test with two users and one account would catch finding 1 immediately.
+
+## Could not verify
+- **Whether `CACHE` existed before this change:** there is no git history (the directory isn't a repo) and no copy of the old file. All I have is `change.diff` and the already-patched `auth.py`.
+- **Who calls `can_access` and in what concurrency model:** only these two files exist, so how much damage finding 1 does in practice is inferred, not observed.
+- **Whether a gateway ownership check exists anywhere:** it isn't in this tree. If it exists elsewhere, finding 2 would be less severe but finding 1 would not.
+- **Runtime behaviour:** my tools here are read-only, so I didn't run anything. Findings 1 and 3 come from reading the code. They are direct consequences of lines 5-7, not guesses.
+
+## Process note
+The spec says this review is read-only and the report is my final reply. So I did not write `report.md` or `mistakes.md`, did not append to the status file, and did not run the captain-hold completion step. Firstmate needs to save this reply and close the task. Mistakes receipt: none observed, apart from the malformed hunk header (finding 5).
+
+**rethink**

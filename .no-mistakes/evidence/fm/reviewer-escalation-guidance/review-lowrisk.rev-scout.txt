@@ -1,0 +1,39 @@
+# Review: README.md typo fix (`change.diff`)
+
+**TL;DR:** Both claims check out. The diff changes exactly one line, and the `test` target it names exists in `Makefile:1`. The README wording itself is correct. My verdict is **ship-with-changes**, but the issues are small and none of them are in the README line. Every claim matching while the only findings are minor counts as **inconclusive, not a pass**, so read the verdict with that in mind.
+
+**About the deliverable:** The firstmate spec said this review was read-only, should come back as my final reply, and must write no files or status lines. My tools could only read anyway. So I did **not** write `report.md`, `mistakes.md` or the status file, and I did not run `fm-captain-hold.sh complete`, even though the scaffold's Definition of done asks for all of these. Firstmate needs to save this reply and attest completion itself.
+
+## Findings
+
+1. **Minor: the diff isn't a valid patch.** `change.diff:3` is a bare `@@` with no `-a,b +c,d` line ranges, so `git apply` and `patch` would reject it. It reads fine for review, but it can't be re-applied or checked mechanically against the README.
+2. **Minor: `make test` doesn't run any tests.** The recipe at `Makefile:2` is only `@echo ok`. After the fix, `README.md:3` says the command will "run the tests", which doesn't match what the target does. The change didn't cause this, but it does put a correctly spelled claim on top of a placeholder target.
+3. **Minor: no `.PHONY: test`** in `Makefile`. If a file or directory named `test` is ever created, make will treat the target as up to date and skip the recipe. That's harmless today because only three files exist.
+
+## Recounts
+
+| Claim | Measured | Method |
+|---|---|---|
+| Changes one line | 1 line removed (`change.diff:4`), 1 added (`change.diff:5`), no other hunks | Read the whole diff (5 lines) |
+| Change is applied to README.md | Yes: `README.md:3` matches the `+` line exactly, and the `-` line is gone | Read README.md (3 lines) |
+| Only change is the typo | `tets` → `tests`; the rest of the line is the same | Compared the two lines character by character |
+| Named make target exists | `test:` at `Makefile:1`; recipe line starts with a real tab | Read the Makefile; grep `^\t@echo ok$` gave 1 match |
+| Nothing else touched | The tree has only `change.diff`, `Makefile`, `README.md` | Glob `**/*` |
+
+## Things I noticed that weren't asked about
+
+- The working directory isn't a git repository, so there's no history to show what README.md looked like before the change. I inferred "applied" from the current text, not from a before/after comparison.
+- The scaffold says "disposable git worktree … detached HEAD", but this directory isn't a git repo. The setup description doesn't match the environment.
+- The scaffold's instructions to write files and status lines conflict with the spec's "write no files" and with my read-only tools. I followed the spec (see the note at the top).
+
+## Could not verify
+
+- **That `make test` runs and prints `ok`.** I can't execute anything here, so this comes from reading the recipe, not from running it.
+- **That the pre-change README held the `-` line.** Without git history there's nothing to compare against, so this is taken from the diff.
+- **Other references to `make test`, such as CI configs.** None exist in this tree. Anything outside it is unknown.
+
+## Escalation
+
+None needed. The change is a low-risk one-word docs fix, and nothing about it needs a senior reviewer. A second pass would only add something if someone runs `make test` to confirm it works.
+
+**Verdict: ship-with-changes.** The most useful change is to make `make test` actually run tests, or reword `README.md:3` to say what the target really does. Without that, the corrected sentence is still misleading.

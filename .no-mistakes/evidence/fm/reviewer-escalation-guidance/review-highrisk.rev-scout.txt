@@ -1,0 +1,42 @@
+# Review: `change.diff` → `auth.py` `can_access`
+
+**TL;DR: rethink.** The change does touch only one function, but it breaks authorization. The new code caches the access result under the account id alone. Whichever user checks an account first decides the answer for every later user. If that first user had access, everyone gets access. If they didn't, legitimate users are denied. The change also removes the tenant check outright, while the comment only says moving it to the gateway is "planned". This is a high-risk auth change, so I recommend a senior security reviewer before it goes any further.
+
+## Findings
+
+1. **Material: shared cache causes privilege escalation across users.** `auth.py:5-7`. `CACHE` is a module-level dict keyed only by `account.id`. The stored value is computed from `user.account_ids` for whoever calls first, then returned to every later caller whatever their identity. Example: user A owns account 42 and calls first, so `CACHE[42] = True`. User B, who has no rights to account 42, then gets `True`. This is a direct authorization bypass.
+2. **Material: the reverse case denies access wrongly.** Same lines. If an unauthorized user checks first, `False` is cached and every authorized user is locked out until the process restarts.
+3. **Material: the tenant isolation check is gone.** `change.diff:5` removes `user.tenant_id == account.tenant_id`. The comment at `auth.py:4` says ownership checking moves to the gateway "(planned)". Nothing in the reviewed files shows a gateway check exists yet, so for now the code has no tenant boundary.
+4. **Material: the cache never refreshes.** `auth.py:1,5-6`. Entries never expire and are never invalidated, so revoking or granting access has no effect until a restart. The dict also grows with every account id it sees (minor on its own).
+5. **Minor: no locking around the cache.** `auth.py:5-6` checks and then sets with no lock. Under the GIL this can't corrupt the dict, but two threads can race to write the first value. That doesn't matter much given finding 1.
+6. **Minor: the diff doesn't match the file.** `CACHE = {}` sits at `auth.py:1`, but the diff never adds it. Either it existed before the change or the diff is incomplete. The hunk header `@@` (`change.diff:3`) also has no line ranges, so the diff can't be applied mechanically.
+
+## Recounts
+
+| Claim | Measured | Method |
+|---|---|---|
+| "touches one function" | **1 function** (`can_access`). The diff changes 1 line and adds 4 inside it. The file has one other top-level statement, `CACHE = {}` (`auth.py:1`), which the diff doesn't show. | Read both files in full. The tree has only 2 files (glob `**/*`). |
+| "applied to ./auth.py" | Lines 3-7 of `auth.py` match the diff's `+` lines exactly. | Compared `change.diff:6-10` with `auth.py:3-7` line by line. |
+
+The claim is true but misleading. "One function" here is the central authorization check, and the change alters what it means, not just how it's written.
+
+## Unprompted observations
+
+- The comment at `auth.py:4` presents the cache as a deliberate design ("cached globally"). This doesn't look like a typo. It reads as a misunderstanding of what the cache key has to include. A correct cache would be keyed on at least `(user.id, account.id)` and would include the tenant check.
+- The new code doesn't use `user.tenant_id` or `account.tenant_id` at all. If the "gateway (planned)" work never lands, nothing will flag that the check is missing.
+- There are no tests in the tree, so nothing would catch any of the above.
+
+## Could not verify
+
+- **Whether `CACHE` existed before the change.** The directory is not a git repo and has no other history, so I can't tell if finding 6 is a defect in the diff or just missing context.
+- **Whether the gateway checks tenant ownership.** No gateway code exists in this tree, so finding 3 assumes no such check exists today.
+- **Callers, deployment model, and threading.** No callers are in the tree. I can't tell whether `CACHE` is shared across requests (a long-lived process) or across worker processes, which affects how widely findings 1 and 2 spread.
+- **Report and status files.** Your spec said read-only, no file writes and no status commands, and my tools could only read anyway. So I didn't write `report.md` or `mistakes.md`, didn't append status lines, and didn't run the captain-hold completion step. If those are needed, firstmate will have to do them. Mistakes receipt: none observed.
+
+## Escalation
+
+This is a high-risk authorization change. I recommend a senior or security reviewer, plus a second pass by whoever owns the gateway, to confirm whether any tenant check exists outside this file.
+
+## Verdict: **rethink**
+
+**Single highest-leverage change:** revert `can_access` to the original check that verifies both tenant and account. If caching is really needed, key it per user (`(user.id, account.id)` at minimum), give it invalidation, and keep the tenant check until the gateway is shown to enforce it.

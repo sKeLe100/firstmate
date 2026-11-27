@@ -1,0 +1,37 @@
+# Review: change.diff → retry.py. Claim: "the new attempt count is never above 3"
+
+## TL;DR
+**Inconclusive, and the claim isn't supported.** The diff swaps the literal `MAX_ATTEMPTS = 3` for `MAX_ATTEMPTS = vendor_limits.safe_attempts()`. `vendor_limits` is a closed-source package that isn't in this tree or in `/usr/lib`, so I can't measure the new value from anything I can read. Nothing in the code limits the result to 3 or less. **I recommend a second pass from someone who can see `vendor_limits` (a senior reviewer or the vendor contract owner).** Closing word: **rethink**.
+
+## Findings
+1. **Material: the "≤ 3" limit is not enforced anywhere** (`retry.py:3`). The value now comes entirely from `vendor_limits.safe_attempts()`. There's no `min(…, 3)`, no assert and no range check, so any return value is accepted, including values above 3.
+2. **Material: the return type and value are unchecked** (`retry.py:3`). `safe_attempts()` could return 0, a negative number, `None`, a float or a string. Any of these could make a retry loop skip every attempt, crash, or run without stopping. I can't see the code that uses `MAX_ATTEMPTS` (finding 5), so this is a risk, not a demonstrated bug.
+3. **Material: the module now calls the vendor package when it is imported** (`retry.py:1,3`). Before, importing `retry` had no side effects. Now it fails with ImportError if the package is missing, and anything `safe_attempts()` raises happens at import time, which can break every module that imports `retry`. The value is also fixed once at import, so if the vendor limit changes at runtime, `retry` won't see it.
+4. **Minor: the diff header has no line numbers** (`change.diff:3`). The hunk header is a bare `@@`, so the diff doesn't show where the line sits or that the `import vendor_limits` on `retry.py:1` existed before. The import may be new and missing from the diff.
+5. **Minor: no code in this tree uses `MAX_ATTEMPTS`.** A grep finds only the definition, so I can't check how the value is consumed or how far a bad value would spread.
+
+## Recounts (claim, measured value, method)
+| Claim | Measured | Method |
+|---|---|---|
+| New attempt count ≤ 3 | **Could not measure.** The old value was the literal 3 (`change.diff:4`). The new value is whatever `safe_attempts()` returns (`retry.py:3`), and there's no source to read for it. | Read the diff and `retry.py`. Grepped `safe_attempts\|vendor_limits\|MAX_ATTEMPTS` across `/var/tmp/nm-daemon-tmp/fm-persp.B55LwP`: only these 2 files match. Globbed `**/vendor_limits*` in that directory and in `/usr/lib`: 0 results. |
+| Diff applies to `retry.py` | Agrees: `retry.py:3` matches the `+` line exactly | Compared the two files side by side |
+
+## Unprompted observations
+- The comment at `retry.py:1` says outright that the package is closed-source and not in this tree. So nobody can verify the ≤ 3 claim from this repository. The claim depends on what the vendor documents, and I found no vendor documentation or pinned version here.
+- The change removes a fixed limit that was easy to audit and replaces it with one that can't be audited. Unless there's a reason the vendor value has to win, clamping it would keep the behavior the claim describes.
+- I found no tests in the tree: the only files are `change.diff` and `retry.py`.
+
+## Could not verify (and why)
+- What `safe_attempts()` returns (value, type, range, whether it's deterministic): the source isn't available, and with read-only tools I can't import or run it.
+- Whether `import vendor_limits` was added by this change or already existed: the hunk has no context lines.
+- How retry code uses `MAX_ATTEMPTS`: there are no consumers in the tree.
+- Findings 2 and 3 are labeled as risks because their impact depends on code I couldn't find.
+
+## Process note
+The firstmate spec says to write no files and run no status commands, and my tools are read-only. So I didn't write `report.md` or `mistakes.md`, didn't append to the status file, and didn't run `fm-captain-hold.sh`. This reply is the whole deliverable. Firstmate needs to record the result and run the completion gate.
+Mistakes receipt: none observed.
+
+## Verdict
+No finding confirms the claim, and the one recount is unmeasurable, so this pass is **inconclusive, not a pass**. Escalate to a reviewer who has the `vendor_limits` source or its contract.
+
+**Closing word: rethink.** Highest-leverage change: `MAX_ATTEMPTS = max(1, min(int(vendor_limits.safe_attempts()), 3))`, or an explicit validated check, so the ≤ 3 guarantee is enforced in this repo instead of assumed from the vendor.
