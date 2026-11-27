@@ -169,7 +169,6 @@ Observed 2026-11-26 on `agy 1.5.18` (`agy --version`, binary `/home/sean/.local/
 The sandboxed command did not fail fast: it exited 0 but produced 17037 bytes of wrong output.
 Its `claude_accounts` rows read `quota-axi not found` and its `in_flight` rows read `worktree gone (torn down?)`, because the sandbox hid the host's tree, Herdr, and IPC state.
 The same command retried with `BypassSandbox: true` returned the correct snapshot, with `quota-axi` status `ok` and real backend targets.
-Host-level Firstmate scripts need host IPC, Herdr, and treehouse access, so an agy session runs them with `BypassSandbox: true` on the first try instead of paying the double run.
 
 ## What is still unproven
 
