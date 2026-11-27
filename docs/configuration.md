@@ -179,6 +179,7 @@ config/watched-tools.json  watched tool updates list; NOT inherited; see "Watche
 config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; see "Relay (.env)"
 data/                personal fleet records; LOCAL, gitignored as a whole
   backlog.md         task queue, dependencies, history; see "Backlog backend (.tasks.toml / config/backlog-backend)"
+  backlog-archive.md parked open backlog items, created on first archive; see "Parked archive"
   captain.md         domain-local captain preferences and working style; LOCAL, gitignored; see "Captain Preferences (data/captain.md / data/captain-shared.md)"
   captain-shared.md  main-authoritative shared captain preferences for secondmate inheritance; see "Captain Preferences (data/captain.md / data/captain-shared.md)"
   learnings.md       fleet-local operational facts and gotchas; see "Operational learnings (data/learnings.md)"
@@ -650,6 +651,17 @@ Linking the code-root copy into the home therefore forks the queue on the first 
 Run every routine Firstmate backlog command through [`bin/fm-tasks-axi.sh`](../bin/fm-tasks-axi.sh).
 Like lifecycle transitions, it addresses this home's backlog and archive from any working directory.
 Bootstrap reports a code-root `data/backlog.md` or `data/done-archive.md` that is not this home's own file as a `BACKLOG_RECONCILE: code-root ...` line, even in a read-only session.
+
+### Parked archive
+
+`bin/fm-tasks-axi.sh archive <id>...` moves open parked or stale rows out of the live backlog into `data/backlog-archive.md`, and `bin/fm-tasks-axi.sh unarchive <id>...` (alias `restore`) brings them back.
+`bin/fm-tasks-axi.sh archive --parked` selects every live row that carries `(hold-kind: parked)`, and `bin/fm-tasks-axi.sh archived` (aliases `archive-list` and `archive --list`) lists what is parked.
+Each move reproduces the item block byte-exact, so holds, hold reasons, bodies, and `blocked-by` links survive the round trip; `tasks-axi list|show --file data/backlog-archive.md` reads the result as an ordinary markdown backlog.
+Archived rows disappear from every live queue read, including the session-start digest and `bin/fm-queue-snapshot.sh`, so restore one before recording a decision on it.
+The archive defaults to `backlog-archive.md` beside the live backlog and `FM_BACKLOG_ARCHIVE_FILE` overrides that path.
+`Done` history is refused because it belongs to tasks-axi's configured `archive` path, and archiving refuses to leave a live task blocked by a moved id.
+A moved row's own `blocked-by` target may stay live or already be pruned, so the link is carried as-is.
+[`bin/fm-backlog-archive.sh`](../bin/fm-backlog-archive.sh) owns the exact selection, refusal, lock, and atomic-write mechanics.
 
 ## Runtime backend (config/backend / FM_BACKEND)
 

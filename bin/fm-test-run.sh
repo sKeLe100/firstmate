@@ -994,6 +994,7 @@ tests/fm-backend-tmux-smoke.test.sh 1392
 tests/fm-backend-zellij-smoke.test.sh 38
 tests/fm-backend-zellij.test.sh 13794
 tests/fm-backend.test.sh 33285
+tests/fm-backlog-archive.test.sh 4510
 tests/fm-backlog-atomicity.test.sh 285816
 tests/fm-backlog-handoff.test.sh 70279
 tests/fm-backlog-read-bound.test.sh 26229

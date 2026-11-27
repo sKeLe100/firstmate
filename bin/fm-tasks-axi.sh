@@ -18,6 +18,12 @@
 # through bin/fm-hold-reason-lib.sh, which owns the field-only decoding contract.
 # Decoded reasons use quoted strings so embedded line breaks remain intact.
 #
+# `archive`, `unarchive` (alias `restore`), and `archived` (alias `archive-list`)
+# move open parked/stale items between this home's live backlog and its parked
+# archive instead of reaching tasks-axi, which has no such verb; they are
+# delegated to bin/fm-backlog-archive.sh, whose header owns the format and
+# safety contract.
+#
 # Why it exists: a bare `tasks-axi` resolves the tracked `.tasks.toml` paths
 # against its working directory, so from the code root it forks the queue
 # whenever the home lives elsewhere; docs/configuration.md ("Backlog backend")
@@ -82,6 +88,9 @@ case "${1:-}" in
   -h|--help)
     usage
     exit 0
+    ;;
+  archive|unarchive|restore|archived|archive-list)
+    exec "$SCRIPT_DIR/fm-backlog-archive.sh" "$@"
     ;;
 esac
 
