@@ -660,8 +660,9 @@ Each move reproduces the item block byte-exact, so holds, hold reasons, bodies, 
 Archived rows disappear from every live queue read, including the session-start digest and `bin/fm-queue-snapshot.sh`, so restore one before recording a decision on it.
 The archive is always `backlog-archive.md` beside the live backlog.
 `Done` history is refused because it belongs to tasks-axi's configured `archive` path.
-Archiving also refuses an In flight row, a row with a `state/<id>.meta` task record, and any move that would leave a live task blocked by a moved id.
-Unarchiving refuses a row whose `blocked-by` target is still open in the parked archive unless that target is restored in the same call or is already live; a pruned or finished target does not block the restore.
+Archiving also refuses an In flight row, a row with a `state/<id>.meta` task record, and any move that would leave an open live task with a trailing `blocked-by:` edge to a moved id.
+Unarchiving refuses a row whose trailing `blocked-by:` target is still open in the parked archive unless that target is restored in the same call or is already live; a pruned or finished target does not block the restore.
+Only trailing `blocked-by:` edges are considered, as tasks-axi parses them: `parent`, `discovered-from`, and `blocked-by:` text in title or hold prose never refuse a move.
 [`bin/fm-backlog-archive.sh`](../bin/fm-backlog-archive.sh) owns the exact selection, refusal, lock, and atomic-write mechanics.
 
 ## Runtime backend (config/backend / FM_BACKEND)

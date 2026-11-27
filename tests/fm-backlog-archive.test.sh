@@ -9,7 +9,8 @@
 # unchanged, with file modes and section layout stable across cycles. The suite
 # also pins the refusals: an unknown or Done id, an id already at the
 # destination, an In flight id or one with a task record, archiving a row that
-# still blocks live work, unarchiving a row whose blocker is still open in the
+# still blocks live work (only trailing blocked-by edges count, under any
+# heading spelling tasks-axi accepts), unarchiving a row whose blocker is still open in the
 # archive (a pruned blocker is allowed), a held or stale lock, a noncanonical
 # body, and the restore of both files after a failed rename or read-back.
 set -u
@@ -160,10 +161,49 @@ test_archive_refuses_a_live_dependent() {
   out=$(run_archive "$home" archive parked-p3 2>&1)
   rc=$?
   expect_code 2 "$rc" "archive with a live dependent"
-  assert_contains "$out" "other-o4 is still blocked by it" "the stranding refusal did not name the dependent"
+  assert_contains "$out" "other-o4 still has a trailing blocked-by edge to it" "the stranding refusal did not name the dependent"
   assert_equals "$before" "$(cat "$home/data/backlog.md")" "the refused archive changed the live backlog"
   assert_absent "$home/data/backlog-archive.md" "the refused archive created an archive file"
   pass "archive refuses to leave a live task blocked by an archived id"
+}
+
+test_only_trailing_blocked_by_edges_refuse() {
+  local home out
+  home=$(make_home non-blocking)
+  cat > "$home/data/backlog.md" <<'EOF'
+# Backlog
+
+## Queued
+- [ ] base-b1 - base
+- [ ] child-c2 - child parent: base-b1 discovered-from: base-b1
+- [ ] prose-p3 - drop the blocked-by: base-b1 wording later (repo: x)
+- [ ] held-h4 - held thing (hold: was blocked-by: base-b1) (hold-kind: parked)
+
+## Done
+EOF
+  out=$(run_archive "$home" archive base-b1 2>&1) || fail "a non-blocking mention refused the archive: $out"
+  out=$(run_archive "$home" archive child-c2 prose-p3 held-h4 2>&1) || fail "archiving the mentioning rows failed: $out"
+  out=$(run_archive "$home" unarchive child-c2 prose-p3 held-h4 2>&1) || fail "a non-blocking mention refused the unarchive: $out"
+  pass "parent, discovered-from, and prose blocked-by mentions never refuse a move"
+}
+
+test_heading_variants_match_tasks_axi() {
+  local home out rc
+  home=$(make_home headings)
+  printf '# Backlog\n\n## in Flight\n- [ ] fly-f1 - running\n\n## queued\n- [ ] park-p2 - parked\n\n## Done (recent)\n- [x] done-d3 - finished blocked-by: park-p2\n' > "$home/data/backlog.md"
+  out=$(run_archive "$home" archive fly-f1 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "archive under a case-varied In flight heading"
+  assert_contains "$out" "task record: fly-f1" "the case-varied In flight row was not refused as active"
+  out=$(run_archive "$home" archive done-d3 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "archive under a suffixed Done heading"
+  assert_contains "$out" "Done (historical)" "the suffixed Done row was not refused as Done"
+  out=$(run_archive "$home" archive park-p2 2>&1) || fail "a finished dependent refused the archive: $out"
+  out=$(run_archive "$home" unarchive park-p2 2>&1) || fail "unarchive into a lowercase queued heading failed: $out"
+  assert_equals 1 "$(grep -ci '^## queued' "$home/data/backlog.md")" "a second Queued section was appended"
+  assert_contains "$(show_live "$home" park-p2)" "state: queued" "the restored row is not queued"
+  pass "case-varied and suffixed headings are read and reused as tasks-axi reads them"
 }
 
 test_unarchive_refuses_a_parked_blocker() {
@@ -177,7 +217,7 @@ test_unarchive_refuses_a_parked_blocker() {
   out=$(run_archive "$home" unarchive parked-p3 2>&1)
   rc=$?
   expect_code 2 "$rc" "unarchive with a parked blocker"
-  assert_contains "$out" "blocker blocker-b1 is still parked" "the refusal did not name the parked blocker"
+  assert_contains "$out" "target blocker-b1 is still parked" "the refusal did not name the parked blocker"
   assert_equals "$before" "$(cat "$home/data/backlog-archive.md")" "the refused unarchive changed the archive"
   assert_equals "$live_before" "$(cat "$home/data/backlog.md")" "the refused unarchive changed the live backlog"
 
@@ -308,6 +348,8 @@ test_archive_preserves_hold_links_and_body
 test_unarchive_round_trips_byte_exact
 test_refusals_leave_both_files_unchanged
 test_archive_refuses_a_live_dependent
+test_only_trailing_blocked_by_edges_refuse
+test_heading_variants_match_tasks_axi
 test_unarchive_refuses_a_parked_blocker
 test_unarchive_allows_a_pruned_blocker
 test_archive_refuses_active_work

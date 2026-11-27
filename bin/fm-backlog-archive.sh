@@ -34,11 +34,15 @@
 #   - a Done item, which belongs to tasks-axi's configured Done archive;
 #   - archiving an `## In flight` item or one with a `state/<id>.meta` record in
 #     this home (FM_STATE_OVERRIDE, else $FM_HOME/state);
-#   - archiving a row that a remaining live task still depends on;
-#   - unarchiving a row whose blocked-by target is still open in the archive and
-#     is neither selected in the same call nor already live. A target that is
+#   - archiving a row that a remaining open live task has a trailing
+#     `blocked-by:` edge to;
+#   - unarchiving a row whose trailing `blocked-by:` target is still open in the
+#     archive and is neither selected in the same call nor already live. A target that is
 #     live or absent from the archive (pruned or finished) is allowed;
 #   - a noncanonical (single-space or tab) body continuation.
+# Task state and dependency edges are read through `tasks-axi list`, so section
+# headings and trailing tags mean what they mean to tasks-axi. `parent`,
+# `discovered-from`, and `blocked-by:` text in title or hold prose never refuse.
 # Selection, refusals, and the move all run under tasks-axi's own sidecar lock
 # protocol (`.lock` files, same stale/wait release shape). Both files are
 # rewritten through a temp file and rename that keeps their modes, with backups
@@ -75,29 +79,26 @@ file_ends_with_lf() {
   [ "$last_byte" = "0a" ]
 }
 
-backlog_key_section() {  # <file> <key>
-  local file=$1 key=$2
-  [ -f "$file" ] || return 1
-  awk -v key="$key" '
-    BEGIN { section = "## Queued" }
-    /^## / { section = $0; next }
-    /^- \[[ x]\] / {
-      rest = $0
-      sub(/^- \[[ x]\] +/, "", rest)
-      id = rest
-      sub(/[ \t].*/, "", id)
-      if (id == key) { print section; found = 1; exit }
-      next
+# Prints "id<TAB>state<TAB>deps" per task as tasks-axi itself parses the file,
+# so heading variants and trailing dependency tags mean what they mean there.
+backlog_rows() {  # <file>
+  local listing
+  [ -f "$1" ] || return 0
+  listing=$(cd "$FM_BACKLOG_AXI_ROOT" && tasks-axi list --file "$1" --fields deps) || return 1
+  printf '%s\n' "$listing" | awk '
+    /^  / && match($0, /,("[^"]*"|none)$/) {
+      deps = substr($0, RSTART + 1)
+      split($0, field, ",")
+      id = substr(field[1], 3)
+      gsub(/"/, "", id)
+      gsub(/"/, "", deps)
+      if (field[2] ~ /^(queued|in_flight|done)$/) print id "\t" field[2] "\t" deps
     }
-    /^- \*\*/ {
-      rest = $0
-      sub(/^- \*\*/, "", rest)
-      id = rest
-      sub(/\*\*.*/, "", id)
-      if (id == key) { print section; found = 1; exit }
-    }
-    END { exit found ? 0 : 1 }
-  ' "$file"
+  '
+}
+
+row_state() {  # <rows> <id>
+  awk -F '\t' -v id="$2" '$1 == id { print $2; found = 1; exit } END { exit found ? 0 : 1 }' <<< "$1"
 }
 
 backlog_key_noncanonical_body_lines() {  # <file> <key>
@@ -123,40 +124,6 @@ backlog_key_noncanonical_body_lines() {  # <file> <key>
     }
     capturing && /^##[[:space:]]+/ { exit }
     capturing && /^[[:space:]]/ && !/^  / && /[^[:space:]]/ { print }
-  ' "$file"
-}
-
-# Prints "owner<TAB>type<TAB>target" for every open row's dependency edge.
-backlog_open_edges() {  # <file>
-  local file=$1
-  awk '
-    function edges(rest,    m, type) {
-      while (match(rest, /(blocked-by|parent|discovered-from):[ \t]*[A-Za-z0-9][A-Za-z0-9._-]*/)) {
-        m = substr(rest, RSTART, RLENGTH)
-        rest = substr(rest, RSTART + RLENGTH)
-        type = m
-        sub(/:.*/, "", type)
-        sub(/^[^:]*:[ \t]*/, "", m)
-        print owner "\t" type "\t" m
-      }
-    }
-    /^## / { section = $0; next }
-    section == "## Done" { next }
-    /^- \[[ x]\] / {
-      rest = $0
-      sub(/^- \[[ x]\] +/, "", rest)
-      owner = rest
-      sub(/[ \t].*/, "", owner)
-      edges(rest)
-      next
-    }
-    /^- \*\*/ {
-      rest = $0
-      sub(/^- \*\*/, "", rest)
-      owner = rest
-      sub(/\*\*.*/, "", owner)
-      edges(rest)
-    }
   ' "$file"
 }
 
@@ -312,24 +279,21 @@ ALREADY=()
 MISSING=()
 DONE=()
 ACTIVE=()
+SRC_ROWS=$(backlog_rows "$SRC_FILE") || fail "tasks-axi cannot read $SRC_FILE; nothing was moved"
+DST_ROWS=$(backlog_rows "$DST_FILE") || fail "tasks-axi cannot read $DST_FILE; nothing was moved"
 for id in ${UNIQUE[@]+"${UNIQUE[@]}"}; do
-  if backlog_key_section "$DST_FILE" "$id" >/dev/null; then
+  if row_state "$DST_ROWS" "$id" >/dev/null; then
     ALREADY+=("$id")
     continue
   fi
-  if section=$(backlog_key_section "$SRC_FILE" "$id"); then
-    case "$section" in
-      "## Done")
-        DONE+=("$id")
-        ;;
-      *)
-        if [ "$MODE" = archive ] && { [ "$section" = "## In flight" ] || [ -e "$STATE/$id.meta" ]; }; then
-          ACTIVE+=("$id")
-        else
-          TO_MOVE+=("$id")
-        fi
-        ;;
-    esac
+  if state=$(row_state "$SRC_ROWS" "$id"); then
+    if [ "$state" = "done" ]; then
+      DONE+=("$id")
+    elif [ "$MODE" = archive ] && { [ "$state" = in_flight ] || [ -e "$STATE/$id.meta" ]; }; then
+      ACTIVE+=("$id")
+    else
+      TO_MOVE+=("$id")
+    fi
   else
     MISSING+=("$id")
   fi
@@ -368,19 +332,26 @@ if [ "$FAILED" -ne 0 ]; then
   exit 2
 fi
 
-while IFS=$'\t' read -r owner type target; do
-  if [ "$MODE" = archive ]; then
-    if is_selected "$target" && ! is_selected "$owner"; then
-      printf 'fm-backlog-archive: refusing %s: live task %s is still blocked by it; archive or move the dependent too\n' "$target" "$owner" >&2
+while IFS=$'\t' read -r owner state deps; do
+  [ "$state" != "done" ] || continue
+  for dep in ${deps//,/ }; do
+    case "$dep" in
+      blocked-by:*) target=${dep#blocked-by:} ;;
+      *) continue ;;
+    esac
+    if [ "$MODE" = archive ]; then
+      if is_selected "$target" && ! is_selected "$owner"; then
+        printf 'fm-backlog-archive: refusing %s: live task %s still has a trailing blocked-by edge to it; archive the dependent too\n' "$target" "$owner" >&2
+        FAILED=1
+      fi
+    elif is_selected "$owner" && ! is_selected "$target" &&
+      target_state=$(row_state "$SRC_ROWS" "$target") && [ "$target_state" != "done" ] &&
+      ! row_state "$DST_ROWS" "$target" >/dev/null; then
+      printf 'fm-backlog-archive: refusing %s: its trailing blocked-by target %s is still parked; unarchive both together\n' "$owner" "$target" >&2
       FAILED=1
     fi
-  elif [ "$type" = blocked-by ] && is_selected "$owner" && ! is_selected "$target" &&
-    section=$(backlog_key_section "$ARCHIVE" "$target") && [ "$section" != "## Done" ] &&
-    ! backlog_key_section "$BACKLOG" "$target" >/dev/null; then
-    printf 'fm-backlog-archive: refusing %s: its blocker %s is still parked; unarchive both together\n' "$owner" "$target" >&2
-    FAILED=1
-  fi
-done < <(backlog_open_edges "$SRC_FILE")
+  done
+done <<< "$SRC_ROWS"
 if [ "$FAILED" -ne 0 ]; then
   printf 'fm-backlog-archive: nothing was moved\n' >&2
   exit 2
@@ -475,8 +446,8 @@ awk -v keysfile="$KEYS_FILE" -v movedfile="$MOVED_FILE" -v keptfile="$KEPT_FILE"
     while ((getline k < keysfile) > 0) { if (k != "") want[k] = 1 }
   }
   moving && /^[ \t]*$/ { blank[++blanks] = $0; next }
-  { release_blanks(!/^## /) }
-  /^## / {
+  { release_blanks(!/^##[ \t]/) }
+  /^##[ \t]/ {
     moving = 0
     emit_kept($0)
     next
@@ -530,10 +501,12 @@ awk -v movedfile="$MOVED_FILE" -v moved_final_lf="$MOVED_FINAL_LF" '
     if (moved_final_lf) items = items "\n"
   }
   queued && /^[ \t]*$/ { blank[++blanks] = $0; next }
-  /^## / {
+  /^##[ \t]/ {
     if (queued) insert(1)
     release_blanks()
-    queued = !inserted && $0 == "## Queued"
+    heading = tolower($0)
+    gsub(/^##[ \t]+|[ \t\r]+$/, "", heading)
+    queued = !inserted && heading == "queued"
     print
     next
   }
