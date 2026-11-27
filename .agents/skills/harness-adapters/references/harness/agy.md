@@ -27,15 +27,7 @@ Verified as a full Firstmate harness (Primary, Secondmate, and Crewmate/Scout).
 
 The `run_command` tool runs commands in agy's sandbox by default and accepts a `BypassSandbox` argument.
 Host-level Firstmate scripts need the host's IPC, Herdr, and treehouse state, so a sandboxed run does not fail fast: it returns a large wrong snapshot (`quota-axi not found`, every task `worktree gone (torn down?)`) and dumps that output into context before the retry.
-Run these scripts with `BypassSandbox: true` on the first try, never sandboxed and then retried:
-
-- `bin/fm-session-start.sh`
-- `bin/fm-wake-drain.sh`
-- `bin/fm-bearings-snapshot.sh`
-- `bin/fm-resource-snapshot.sh`
-- `bin/fm-crew-state.sh`
-- `quota-axi`
-
+`../../../../../AGENTS.md` section 4 owns which scripts run with `BypassSandbox: true`.
 Ordinary project commands keep the default sandbox.
 
 ## Trust, and where the decision persists
