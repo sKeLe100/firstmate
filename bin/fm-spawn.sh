@@ -427,6 +427,7 @@
 #   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo
 #   applies to every pair. A ship batch therefore carries one delivery contract, and each
 #   pair still checks it against its own brief; a batch spanning modes is two invocations.
+#   --over-pace is single-task only and a batch carrying it is refused (exit 2).
 #   If config/crew-dispatch.json exists, shared --harness is required for crewmate
 #   and scout batches. The loop lives here, in bash, so callers never hand-write a
 #   multi-task shell loop (the tool shell is zsh, which does not word-split unquoted
@@ -569,13 +570,15 @@
 #   75) before any endpoint exists. docs/configuration.md "Several Claude
 #   accounts" owns the contract.
 #   --over-pace <reason> is the captain's explicit approval to launch ONE fresh
-#   Claude ship or scout over its account's five-hour pace projection. It skips
-#   only the per-account Claude runway admission below for this spawn; the
+#   Claude ship or scout over its account's five-hour pace projection. The
+#   runway reading is still taken, and only the projected-exhaustion deferral is
+#   skipped: an exhausted five-hour window or weekly allowance and the under-40%
+#   live-lane cap still defer, an unevaluable reading still refuses, and the
 #   orchestrator worker cap, project capacity, lane capacity, and every other
 #   gate still apply. The reason is required and is recorded as over_pace= with
 #   over_pace_at= in state/<id>.meta, then dropped by a later relaunch so it
 #   never becomes standing authority. It is refused on --relaunch (already
-#   exempt), on --secondmate, and on any non-Claude harness.
+#   exempt), on --secondmate, in a batch, and on any non-Claude harness.
 # Per-secondmate omp profile (config/secondmate-accounts/<id>/omp-profile):
 #   Opt-in, and read only for a local secondmate's own omp agent;
 #   bin/fm-omp-profile-lib.sh owns the file and its refusals. A pinned launch
@@ -2543,6 +2546,10 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   if [ "$KIND" != secondmate ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
+  fi
+  if [ "$OVER_PACE_SET" -eq 1 ]; then
+    echo "error: batch dispatch does not support --over-pace; the approval covers one spawn, so dispatch that task on its own" >&2
+    exit 2
   fi
   rc=0
   shared_args=()
@@ -4888,19 +4895,19 @@ fi
 # dispatched lane, so both are exempt. Non-Claude harnesses never reach this
 # gate. The FM_DISPATCH_QUOTA_JSON seam lets tests supply the reading; under
 # the ordinary suite seam without it the gate stays off so no test reaches the
-# network. A captain's explicit --over-pace approval skips only this gate for
-# this one spawn and prints one override line; every other gate still runs.
+# network. A captain's explicit --over-pace approval drops only the pace
+# projection from this reading for this one spawn and prints one override line.
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ]; then
   CLAUDE_RUNWAY_ACCOUNT=${WORKER_ACCOUNT_DECLARED:-ordinary}
   [ -n "$CLAUDE_RUNWAY_ACCOUNT" ] || CLAUDE_RUNWAY_ACCOUNT=ordinary
-  if [ "$OVER_PACE_SET" -eq 1 ]; then
-    echo "note: Claude five-hour runway gate overridden for task $ID on account $CLAUDE_RUNWAY_ACCOUNT by the captain's --over-pace approval: $OVER_PACE_REASON" >&2
-  elif [ -z "${FM_DISPATCH_QUOTA_JSON:-}" ] && [ "${FM_TEST_SEAM:-}" = 1 ]; then
+  if [ -z "${FM_DISPATCH_QUOTA_JSON:-}" ] && [ "${FM_TEST_SEAM:-}" = 1 ]; then
     echo "note: claude runway gate not enforced under the test seam (set FM_DISPATCH_QUOTA_JSON to exercise it)" >&2
   else
+    CLAUDE_RUNWAY_ARGS=(--claude-account "$CLAUDE_RUNWAY_ACCOUNT")
+    [ "$OVER_PACE_SET" -eq 0 ] || CLAUDE_RUNWAY_ARGS+=(--over-pace)
     CLAUDE_RUNWAY_RC=0
     CLAUDE_RUNWAY_OUT=$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" FM_STATE_OVERRIDE="$STATE" \
-      "$SCRIPT_DIR/fm-dispatch-quota-cap.sh" --claude-account "$CLAUDE_RUNWAY_ACCOUNT" 2>&1) || CLAUDE_RUNWAY_RC=$?
+      "$SCRIPT_DIR/fm-dispatch-quota-cap.sh" "${CLAUDE_RUNWAY_ARGS[@]}" 2>&1) || CLAUDE_RUNWAY_RC=$?
     if [ "$CLAUDE_RUNWAY_RC" -ne 0 ]; then
       echo "error: spawn refused: the Claude five-hour runway reading for $CLAUDE_RUNWAY_ACCOUNT could not be evaluated ($CLAUDE_RUNWAY_OUT); refusing rather than launching on an unknown quota" >&2
       exit 1
@@ -4912,6 +4919,8 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ]
         exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
         ;;
     esac
+    [ "$OVER_PACE_SET" -eq 0 ] ||
+      echo "note: Claude five-hour pace projection overridden for task $ID on account $CLAUDE_RUNWAY_ACCOUNT by the captain's --over-pace approval: $OVER_PACE_REASON" >&2
   fi
 fi
 
