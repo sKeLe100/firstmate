@@ -1314,8 +1314,8 @@ write_resolution_record() {  # <task-id> <mode> <shown-body>
 # release ages from the new call. It lives in the sidecar rather than the backlog row because
 # tasks-axi owns the row's trailing metadata block: it already writes its own
 # `since` word (the task's creation date) and its parser rejects any word it
-# does not know. Marks for task ids no longer present in backlog.md are pruned
-# lazily on each write.
+# does not know. Marks for task ids no longer present in backlog.md or its
+# parked archive are pruned lazily on each write.
 stamp_since() {
   local id=$1 ts=$2
   mark_set "$id" held-since "$ts"
@@ -1375,17 +1375,21 @@ mark_clear() {  # <id> [<key>]
 }
 
 # Emit the sidecar's surviving lines: those whose task id still appears as a
-# structured row in backlog.md.
+# structured row in backlog.md or in its parked archive. An archived row stays
+# out of the live backlog until it is unarchived, so pruning against backlog.md
+# alone would silently drop its held-since/deferred-since marks and a restore
+# would age the call from the wrong moment.
 mark_prune_to() {  # <marks-file>
-  local marks=$1 file="$DATA/backlog.md"
+  local marks=$1 file="$DATA/backlog.md" parked="$DATA/backlog-archive.md"
   [ -f "$marks" ] || return 0
-  if [ ! -f "$file" ]; then
+  if [ ! -f "$file" ] && [ ! -f "$parked" ]; then
     cat "$marks"
     return 0
   fi
-  awk -F'\t' -v backlog="$file" '
-    BEGIN {
-      while ((getline line < backlog) > 0) {
+  awk -F'\t' -v backlog="$file" -v parked="$parked" '
+    function collect(path,    line, row) {
+      if (path == "") return
+      while ((getline line < path) > 0) {
         if (match(line, /^[-*][[:space:]]+\[[ xX]\][[:space:]]+[^[:space:]]+/) ||
             match(line, /^[-*][[:space:]]+\*\*[^*]+\*\*/)) {
           row = substr(line, RSTART, RLENGTH)
@@ -1395,8 +1399,9 @@ mark_prune_to() {  # <marks-file>
           live[row] = 1
         }
       }
-      close(backlog)
+      close(path)
     }
+    BEGIN { collect(backlog); collect(parked) }
     $1 in live { print }
   ' "$marks"
 }

@@ -101,31 +101,8 @@ row_state() {  # <rows> <id>
   awk -F '\t' -v id="$2" '$1 == id { print $2; found = 1; exit } END { exit found ? 0 : 1 }' <<< "$1"
 }
 
-backlog_key_noncanonical_body_lines() {  # <file> <key>
-  local file=$1 key=$2
-  awk -v key="$key" '
-    /^- \[[ x]\] / {
-      rest = $0
-      sub(/^- \[[ x]\] +/, "", rest)
-      id = rest
-      sub(/[ \t].*/, "", id)
-      if (capturing) exit
-      if (id == key) { capturing = 1 }
-      next
-    }
-    /^- \*\*/ {
-      rest = $0
-      sub(/^- \*\*/, "", rest)
-      id = rest
-      sub(/\*\*.*/, "", id)
-      if (capturing) exit
-      if (id == key) { capturing = 1 }
-      next
-    }
-    capturing && /^##[[:space:]]+/ { exit }
-    capturing && /^[[:space:]]/ && !/^  / && /[^[:space:]]/ { print }
-  ' "$file"
-}
+# backlog_key_noncanonical_body_lines is shared with the secondmate backlog
+# handoff through bin/fm-tasks-axi-lib.sh.
 
 is_selected() {  # <id>
   local selected

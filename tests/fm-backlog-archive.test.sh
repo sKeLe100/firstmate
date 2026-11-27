@@ -6,7 +6,8 @@
 # The point of the path is a byte-exact round trip: a parked row leaves the
 # live backlog with its hold, hold reason, body, and blocked-by links intact,
 # stays readable as an ordinary tasks-axi markdown backlog, and comes back
-# unchanged, with file modes and section layout stable across cycles. The suite
+# unchanged, with file modes, section layout, and the task-marks sidecar's
+# held-since/deferred-since values stable across cycles. The suite
 # also pins the refusals: an unknown or Done id, an id already at the
 # destination, an In flight id or one with a task record, archiving a row that
 # still blocks live work (only trailing blocked-by edges count, under any
@@ -60,6 +61,13 @@ run_wrapper() {  # <home> <args...>
   local home=$1
   shift
   ( cd "$TMP_ROOT" && FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" "$WRAPPER" "$@" )
+}
+
+run_mark() {  # <home> <args...>
+  local home=$1
+  shift
+  FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" \
+    "$ROOT/bin/fm-captain-hold.sh" mark "$@"
 }
 
 show_archived() {  # <home> <id>
@@ -328,6 +336,32 @@ test_failed_writes_restore_both_files() {
   pass "a failed rename or read-back restores both files"
 }
 
+test_archive_keeps_task_marks() {
+  local home out
+  home=$(make_home marks)
+  printf 'parked-p3\theld-since\t2026-10-02\nother-o4\tdeferred-since\t2026-10-03\n' > "$home/data/task-marks.tsv"
+
+  run_archive "$home" archive parked-p3 >/dev/null || fail "archive failed"
+  out=$(run_mark "$home" set blocker-b1 held-since 2026-10-01 2>&1) || fail "mark set after archive failed: $out"
+  assert_grep "$(printf 'parked-p3\theld-since\t2026-10-02')" "$home/data/task-marks.tsv" \
+    "archiving dropped the task's held-since mark on the next write"
+  assert_grep "$(printf 'other-o4\tdeferred-since\t2026-10-03')" "$home/data/task-marks.tsv" \
+    "a live task mark was pruned"
+
+  out=$(run_mark "$home" get parked-p3 held-since 2>&1) || fail "mark get failed: $out"
+  assert_equals "2026-10-02" "$out" "the archived task lost its held-since value"
+
+  run_archive "$home" unarchive parked-p3 >/dev/null || fail "unarchive failed"
+  out=$(run_mark "$home" get parked-p3 held-since 2>&1) || fail "mark get after unarchive failed: $out"
+  assert_equals "2026-10-02" "$out" "the restored task lost its held-since value"
+
+  ( cd "$home" && tasks-axi rm other-o4 >/dev/null ) || fail "removing other-o4 failed"
+  out=$(run_mark "$home" set blocker-b1 deferred-since 2026-10-04 2>&1) || fail "second mark set failed: $out"
+  assert_no_grep "other-o4" "$home/data/task-marks.tsv" \
+    "a mark for a task absent from both the backlog and the archive was not pruned"
+  pass "task marks survive archiving and restore but are pruned once the task is gone"
+}
+
 test_wrapper_delegates_and_keeps_tasks_axi_reads() {
   local home out
   home=$(make_home wrapper)
@@ -356,6 +390,7 @@ test_archive_refuses_active_work
 test_round_trips_keep_layout_and_modes
 test_lock_and_body_refusals
 test_failed_writes_restore_both_files
+test_archive_keeps_task_marks
 test_wrapper_delegates_and_keeps_tasks_axi_reads
 
 echo "PASS fm-backlog-archive.test.sh"

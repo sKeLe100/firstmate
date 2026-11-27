@@ -656,7 +656,7 @@ Bootstrap reports a code-root `data/backlog.md` or `data/done-archive.md` that i
 
 `bin/fm-tasks-axi.sh archive <id>...` moves open parked or stale rows out of the live backlog into `data/backlog-archive.md`, and `bin/fm-tasks-axi.sh unarchive <id>...` brings them back.
 `bin/fm-tasks-axi.sh archived` lists what is parked.
-Each move reproduces the item block byte-exact, so holds, hold reasons, bodies, and `blocked-by` links survive the round trip; `tasks-axi list|show --file data/backlog-archive.md` reads the result as an ordinary markdown backlog.
+Each move reproduces the item block byte-exact, so holds, hold reasons, bodies, and `blocked-by` links survive the round trip, and the `data/task-marks.tsv` timestamps for an archived id are retained until the id leaves both files; `tasks-axi list|show --file data/backlog-archive.md` reads the result as an ordinary markdown backlog.
 Archived rows disappear from every live queue read, including the session-start digest and `bin/fm-queue-snapshot.sh`, so restore one before recording a decision on it.
 The archive is always `backlog-archive.md` beside the live backlog.
 `Done` history is refused because it belongs to tasks-axi's configured `archive` path.

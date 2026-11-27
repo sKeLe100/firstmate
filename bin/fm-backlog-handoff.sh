@@ -302,22 +302,7 @@ backlog_key_section() {
   ' "$file"
 }
 
-backlog_key_noncanonical_body_lines() {
-  local file=$1 key=$2
-  awk -v key="$key" '
-    /^- \[[ x]\] / {
-      rest = $0
-      sub(/^- \[[ x]\] +/, "", rest)
-      id = rest
-      sub(/[ \t].*/, "", id)
-      if (capturing) exit
-      if (id == key) { capturing = 1 }
-      next
-    }
-    capturing && /^##[[:space:]]+/ { exit }
-    capturing && /^[[:space:]]/ && !/^  / && /[^[:space:]]/ { print }
-  ' "$file"
-}
+# backlog_key_noncanonical_body_lines is shared through bin/fm-tasks-axi-lib.sh.
 
 seed_backlog_scaffold() { # <path>
   mkdir -p "$(dirname "$1")"
