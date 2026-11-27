@@ -96,15 +96,10 @@ FM_HOME="${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 printf '%s\n' "$*" >> "$FM_HOME/state/digest-args"
 "$SCRIPT_DIR/fm-lock.sh" || true
 "$SCRIPT_DIR/fm-supervision-instructions.sh"
-case " $* " in
-  *" --reemit "*) ;;
-  *)
-    # Mirror the real startup: only a full locked startup publishes the
-    # completion proof, keyed to the lock-owning harness pid.
-    completion_pid=$(cat "$FM_HOME/state/.lock" 2>/dev/null || true)
-    [ -z "$completion_pid" ] || printf '%s\n' "$completion_pid" > "$FM_HOME/state/.session-start-complete"
-    ;;
-esac
+# Mirror the real startup: a full locked startup publishes the completion proof,
+# keyed to the lock-owning harness pid.
+completion_pid=$(cat "$FM_HOME/state/.lock" 2>/dev/null || true)
+[ -z "$completion_pid" ] || printf '%s\n' "$completion_pid" > "$FM_HOME/state/.session-start-complete"
 SH
   chmod +x "$dir/bin/fm-session-start.sh"
 }
@@ -338,11 +333,11 @@ test_sessionstart_agy_dedupes_a_mid_conversation_refire() {
 
   jq -e '.injectSteps[0].systemMessage.systemMessage | length > 0' "$dir/state/out3" >/dev/null 2>&1 \
     || fail "a new conversation under the same live agy did not inject a digest: $(cat "$dir/state/out3")"
-  assert_contains "$(tail -1 "$dir/state/digest-args")" "--reemit" \
-    "a new conversation under the same live agy must re-emit instead of repeating startup sweeps"
+  assert_not_contains "$(tail -1 "$dir/state/digest-args")" "--reemit" \
+    "a new conversation under the same live agy must get the full digest"
   [ "$(cat "$dir/state/conv3")" = c-2 ] \
-    || fail "the re-emit did not record the new conversation id"
-  pass "fm-sessionstart-agy: a mid-conversation re-fire for the same conversation is silent, a new one re-emits"
+    || fail "the new conversation's startup did not record its id"
+  pass "fm-sessionstart-agy: a mid-conversation re-fire for the same conversation is silent, a new one gets the full digest"
 }
 
 test_agy_hook_transport_depth_resolves_agy() {

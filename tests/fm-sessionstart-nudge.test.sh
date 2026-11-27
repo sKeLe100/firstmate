@@ -1104,35 +1104,23 @@ test_run_repeat_startup_for_the_same_conversation_stays_silent() {
   pass "run wrapper: a repeated startup for the same completed conversation is silent, and only for the live owner"
 }
 
-test_run_new_conversation_on_a_live_session_reemits() {
-  local root="$TMP_ROOT/run-conversation-new" out source status=0
+test_run_new_conversation_on_a_live_session_gets_the_full_digest() {
+  local root="$TMP_ROOT/run-conversation-new" out status=0
   make_run_primary "$root"
   run_hook "$root" --source startup --conversation-id conv-1 </dev/null >/dev/null
 
-  for source in startup clear; do
-    if [ "$source" = clear ]; then
-      # A clear re-emits and records the new conversation just like a startup
-      # that observes the id moved.
-      status=0
-      out=$(run_hook "$root" --source clear --conversation-id conv-2 </dev/null) || status=$?
-      expect_code 0 "$status" "clear for a new conversation"
-      assert_contains "$out" "$REEMIT_BANNER$root" "clear for a new conversation did not re-emit"
-      [ "$(cat "$root/state/.session-start-conversation")" = conv-2 ] \
-        || fail "clear did not record the new conversation id"
-      continue
-    fi
-    status=0
-    out=$(run_hook "$root" --source "$source" --conversation-id conv-3 </dev/null) || status=$?
-    expect_code 0 "$status" "startup for a new conversation"
-    assert_contains "$out" "$REEMIT_BANNER$root" \
-      "a startup whose conversation moved did not re-emit instead of repeating startup sweeps"
-    [ "$(cat "$root/state/.session-start-conversation")" = conv-3 ] \
-      || fail "the re-emit did not record the new conversation id"
-    status=0
-    out=$(run_hook "$root" --source "$source" --conversation-id conv-3 </dev/null) || status=$?
-    [ -z "$out" ] || fail "the new conversation's repeat startup was not silent, got: $out"
-  done
-  pass "run wrapper: a new conversation under the same live session re-emits once and is then silent"
+  out=$(run_hook "$root" --source startup --conversation-id conv-2 </dev/null) || status=$?
+  expect_code 0 "$status" "startup for a new conversation"
+  assert_contains "$out" "$FULL_BANNER$root" "a new conversation did not get the full digest"
+  assert_not_contains "$out" "$REEMIT_BANNER$root" "a new conversation got the slim re-emit"
+  [ "$(cat "$root/state/.session-start-conversation")" = conv-2 ] \
+    || fail "the startup did not record the new conversation id"
+
+  status=0
+  out=$(run_hook "$root" --source startup --conversation-id conv-2 </dev/null) || status=$?
+  expect_code 0 "$status" "repeated startup for the new conversation"
+  [ -z "$out" ] || fail "the new conversation's repeat startup was not silent, got: $out"
+  pass "run wrapper: a new conversation under the same live session gets the full digest once and is then silent"
 }
 
 test_run_gate_and_scope_are_silent() {
@@ -1238,7 +1226,7 @@ test_run_resume_delegates_to_the_nudge
 test_run_reads_source_from_the_hook_payload
 test_run_unknown_source_takes_the_helm
 test_run_repeat_startup_for_the_same_conversation_stays_silent
-test_run_new_conversation_on_a_live_session_reemits
+test_run_new_conversation_on_a_live_session_gets_the_full_digest
 test_run_gate_and_scope_are_silent
 test_run_creates_missing_state_on_a_fresh_primary
 test_run_reports_a_state_dir_it_cannot_create

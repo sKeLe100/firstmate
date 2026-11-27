@@ -25,8 +25,7 @@
 #             park) without a new conversation, and re-running the whole startup
 #             would inject a second full digest into an open context. The id is
 #             recorded beside the completion proof, and a startup whose id
-#             differs is a new conversation on the same live session, so it gets
-#             the `--reemit` digest instead of another full one.
+#             differs is a new conversation, so it gets the full digest.
 #   --pi-prerequisite
 #             Internal Pi extension mode. An intentional gate/scope stand-down
 #             exits 3 so provider preflight can distinguish it from an eligible
@@ -35,9 +34,9 @@
 #
 # Source routing (see docs/sessionstart-nudge.md for the per-harness names):
 #   startup, new            full digest - this process has not taken the helm.
-#                           With --conversation-id and a completed startup for
-#                           this live session: silent for the same conversation,
-#                           a `--reemit` digest for a new one.
+#                           Silent only when --conversation-id names the
+#                           conversation this live session's completed startup
+#                           already served.
 #   clear, compact          `--reemit` digest only when this lock owner recorded
 #                           a completed full startup; otherwise a full digest,
 #                           so a startup killed mid-sweep is finished first
@@ -92,7 +91,6 @@ while [ $# -gt 0 ]; do
       CONVERSATION_ID=${2:-}
       if [ $# -ge 2 ]; then shift 2; else shift; fi
       ;;
-    --conversation-id=*) CONVERSATION_ID=${1#--conversation-id=}; shift ;;
     --pi-prerequisite) PI_PREREQUISITE=1; shift ;;
     *) shift ;;
   esac
@@ -143,8 +141,8 @@ conversation_started() {  # <conversation-id>
   [ "$recorded" = "$1" ]
 }
 
-# Record the conversation this live session just served after a full startup or
-# a re-emit. Only a session that still proves it owns the completed startup
+# Record the conversation this live session just served after a full startup.
+# Only a session that still proves it owns the completed startup
 # records, so a read-only or stood-down run never writes a marker for someone
 # else's session.
 record_conversation() {
@@ -190,7 +188,6 @@ case "$SOURCE" in
     else
       "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
     fi
-    record_conversation
     ;;
   *)
     # A mid-conversation SessionStart re-fire on a live session whose full
@@ -199,13 +196,7 @@ case "$SOURCE" in
     if session_start_completed && conversation_started "$CONVERSATION_ID"; then
       exit 0
     fi
-    if [ -n "$CONVERSATION_ID" ] && session_start_completed; then
-      # Same live session, new conversation (for example /clear created one
-      # without a clear source). Re-emit instead of repeating the full startup.
-      "$SCRIPT_DIR/fm-session-start.sh" --reemit --source "$SOURCE" || true
-    else
-      "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
-    fi
+    "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
     record_conversation
     ;;
 esac

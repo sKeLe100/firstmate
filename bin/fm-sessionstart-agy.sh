@@ -14,8 +14,8 @@
 # Stop-hook park), and re-injecting the full digest would repeat it in an
 # already-open context. The payload's `conversationId` is forwarded to
 # fm-sessionstart-run.sh, which stays silent for a repeated startup on a live
-# session whose completed startup already served that same conversation, and
-# re-emits for a new conversation under the same live process.
+# session whose completed startup already served that same conversation. A new
+# conversation gets the full digest.
 #
 # Every path exits 0 and prints valid JSON.
 set -u
