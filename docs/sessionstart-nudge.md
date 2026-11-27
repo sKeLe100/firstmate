@@ -68,10 +68,17 @@ A re-emit (`--reemit`) reprints the digest for a process that already has the he
 
 | Source | Action | Why |
 | --- | --- | --- |
-| `startup`, `new` | Full digest | This is a true session start that has not taken the helm; Pi CLI continuations are refined to `resume` by the adapter before reaching this boundary. |
+| `startup`, `new` | Full digest, except a [repeated conversation](#repeated-startup-for-one-conversation) | This is a true session start that has not taken the helm; Pi CLI continuations are refined to `resume` by the adapter before reaching this boundary. |
 | `clear`, `compact` | `--reemit` after a proven complete startup, otherwise full digest | This process normally has the helm and lost only its context, but an earlier hook may have been truncated after acquiring the lock. |
 | `resume`, `reload`, `fork` | Delegate to the nudge wrapper | Prior context is restored, so re-running is redundant when the lock is still ours and an instruction is enough when a new process resumed an old session. |
 | unreadable or unrecognized | Full digest | Taking the helm redundantly is cheap and idempotent; not taking it is the bug this tier exists to fix. |
+
+### Repeated startup for one conversation
+
+A harness can fire its session-open hook again mid-conversation, for example Antigravity after a Stop-hook park.
+When the adapter passes `--conversation-id`, the run wrapper records that id in `state/.session-start-conversation` after a completed full startup.
+A later startup stays silent only when the id matches that record and this lock owner still has its completion record.
+A different conversation gets the full digest.
 
 ### Change from the previous nudge matcher
 
@@ -378,9 +385,9 @@ A later in-process `clear` re-emits only when this lock owner completed a full s
 
 Antigravity CLI is a run-tier harness.
 `.agents/hooks.json` registers `SessionStart`, anchored to the project root with a 180s timeout, invoking `bin/fm-sessionstart-agy.sh`.
-The timeout outlasts `bin/fm-session-start.sh`'s own 120s runtime bound, so a slow digest reports its truncation instead of agy killing the wrapper mid-startup (a 30s value did exactly that in a real session).
+The timeout outlasts `bin/fm-session-start.sh`'s own 120s runtime bound, so a slow digest reports its truncation instead of agy killing the wrapper mid-startup.
 The wrapper drains stdin for the payload's `source` and `conversationId` and delegates to `bin/fm-sessionstart-run.sh`, which owns primary or persistent secondmate home scope, source routing, and the digest.
-`agy` can fire `SessionStart` again mid-conversation (for example after a Stop-hook park), so the run wrapper records the conversation its completed startup served and stays silent for a repeated startup with the same `conversationId` on the same live process, while a new conversation gets the full digest.
+The `conversationId` drives the [repeated-startup rule](#repeated-startup-for-one-conversation).
 In linked crewmate worktrees or foreign checkouts, `bin/fm-sessionstart-run.sh` stands down silently and the wrapper emits `{}`.
 In primary or secondmate homes, the wrapper emits the captured digest as `{injectSteps:[{systemMessage:{systemMessage:$digest}}]}` on stdout with exit 0.
 Native stdout context injection gates the ordered digest into model context before the first agent turn.
