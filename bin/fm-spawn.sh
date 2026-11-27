@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--keep-mcp] [--code-mode] [--herdr-resume-lock-wait]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--keep-mcp] [--code-mode] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--keep-mcp] [--code-mode] [--over-pace <reason>] [--herdr-resume-lock-wait]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--keep-mcp] [--code-mode] [--over-pace <reason>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -568,6 +568,14 @@
 #   at most one worker beside the orchestrator; a second is deferred (exit
 #   75) before any endpoint exists. docs/configuration.md "Several Claude
 #   accounts" owns the contract.
+#   --over-pace <reason> is the captain's explicit approval to launch ONE fresh
+#   Claude ship or scout over its account's five-hour pace projection. It skips
+#   only the per-account Claude runway admission below for this spawn; the
+#   orchestrator worker cap, project capacity, lane capacity, and every other
+#   gate still apply. The reason is required and is recorded as over_pace= with
+#   over_pace_at= in state/<id>.meta, then dropped by a later relaunch so it
+#   never becomes standing authority. It is refused on --relaunch (already
+#   exempt), on --secondmate, and on any non-Claude harness.
 # Per-secondmate omp profile (config/secondmate-accounts/<id>/omp-profile):
 #   Opt-in, and read only for a local secondmate's own omp agent;
 #   bin/fm-omp-profile-lib.sh owns the file and its refusals. A pinned launch
@@ -1126,6 +1134,10 @@ REDELEGATION_REASON_SET=0
 DECISION_RECORD_SET=0
 ACCOUNT_ARG=
 ACCOUNT_SET=0
+# Opt-in only: the captain's per-spawn approval to launch over the Claude
+# account's five-hour pace projection. See the header.
+OVER_PACE_REASON=
+OVER_PACE_SET=0
 RELAUNCH=0
 # Opt-in only: keep MCP servers for a Haiku claude task worker. See the header.
 KEEP_MCP=0
@@ -1212,6 +1224,10 @@ for a in "$@"; do
     account)
       ACCOUNT_ARG=$a
       ACCOUNT_SET=1
+      ;;
+    over-pace)
+      OVER_PACE_REASON=$a
+      OVER_PACE_SET=1
       ;;
     *)
       echo "error: internal parser state for --$want_value" >&2
@@ -1314,6 +1330,11 @@ for a in "$@"; do
     ACCOUNT_ARG=${a#--account=}
     ACCOUNT_SET=1
     ;;
+  --over-pace) want_value=over-pace ;;
+  --over-pace=*)
+    OVER_PACE_REASON=${a#--over-pace=}
+    OVER_PACE_SET=1
+    ;;
   *) POS+=("$a") ;;
   esac
 done
@@ -1363,6 +1384,21 @@ fi
 }
 [ "$ACCOUNT_SET" -eq 0 ] || [ -n "$ACCOUNT_ARG" ] || {
   echo "error: --account requires a non-empty value" >&2
+  exit 1
+}
+[ "$OVER_PACE_SET" -eq 0 ] || [ -n "${OVER_PACE_REASON//[[:space:]]/}" ] || {
+  echo "error: --over-pace requires the captain's approval words, not an empty reason" >&2
+  exit 1
+}
+# The approval is per dispatch, never standing authority: a relaunch already
+# replaces a lane and is exempt from the runway gate, and a secondmate is not a
+# dispatched lane, so neither may pass it.
+[ "$OVER_PACE_SET" -eq 0 ] || [ "$RELAUNCH" -eq 0 ] || {
+  echo "error: --over-pace applies only to a fresh spawn; a relaunch already replaces a lane" >&2
+  exit 1
+}
+[ "$OVER_PACE_SET" -eq 0 ] || [ "$KIND" != secondmate ] || {
+  echo "error: --over-pace applies only to a Claude ship or scout, never a secondmate" >&2
   exit 1
 }
 # A secondmate, local or remote, launches on its own per-mate pin, so --account
@@ -3692,6 +3728,15 @@ case "$ARG3" in
   ;;
 esac
 
+# --over-pace is the captain's approval of the Claude five-hour runway
+# projection, so it applies only to a Claude launch; the harness is resolved
+# above this point. Another harness never reaches that gate, so the flag there
+# would be a silent no-op and is refused instead.
+[ "$OVER_PACE_SET" -eq 0 ] || [ "$HARNESS" = claude ] || {
+  echo "error: --over-pace applies only to a Claude ship or scout launch (this launch resolved to '${HARNESS:-none}')" >&2
+  exit 1
+}
+
 # The adapters whose launch names a bare executable resolved through the pane's
 # PATH get the launch-path guard. Every other adapter's binary is already
 # substituted as an absolute path below, so it cannot depend on the pane's
@@ -4843,11 +4888,14 @@ fi
 # dispatched lane, so both are exempt. Non-Claude harnesses never reach this
 # gate. The FM_DISPATCH_QUOTA_JSON seam lets tests supply the reading; under
 # the ordinary suite seam without it the gate stays off so no test reaches the
-# network.
+# network. A captain's explicit --over-pace approval skips only this gate for
+# this one spawn and prints one override line; every other gate still runs.
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ]; then
   CLAUDE_RUNWAY_ACCOUNT=${WORKER_ACCOUNT_DECLARED:-ordinary}
   [ -n "$CLAUDE_RUNWAY_ACCOUNT" ] || CLAUDE_RUNWAY_ACCOUNT=ordinary
-  if [ -z "${FM_DISPATCH_QUOTA_JSON:-}" ] && [ "${FM_TEST_SEAM:-}" = 1 ]; then
+  if [ "$OVER_PACE_SET" -eq 1 ]; then
+    echo "note: Claude five-hour runway gate overridden for task $ID on account $CLAUDE_RUNWAY_ACCOUNT by the captain's --over-pace approval: $OVER_PACE_REASON" >&2
+  elif [ -z "${FM_DISPATCH_QUOTA_JSON:-}" ] && [ "${FM_TEST_SEAM:-}" = 1 ]; then
     echo "note: claude runway gate not enforced under the test seam (set FM_DISPATCH_QUOTA_JSON to exercise it)" >&2
   else
     CLAUDE_RUNWAY_RC=0
@@ -8093,7 +8141,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness hermes_profile hermes_home kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id hc_session hc_terminal home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
+      split("window endpoint_task_id worktree project harness hermes_profile hermes_home kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile over_pace over_pace_at busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id hc_session hc_terminal home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -8127,6 +8175,13 @@ preserve_relaunch_meta() {
   # Written only on a fresh spawn that opted in; a relaunch carries it forward.
   if [ "$KEEP_MCP" -eq 1 ] && [ "$RELAUNCH" -eq 0 ]; then echo "keep_mcp=1"; fi
   if [ "$CODE_MODE" -eq 1 ] && [ "$RELAUNCH" -eq 0 ]; then echo "code_mode=1"; fi
+  # The captain's per-spawn over-pace approval: recorded on the fresh spawn that
+  # carried it and dropped by a relaunch (a preserve_relaunch_meta owned key), so
+  # it never becomes standing authority. Flattened to one line for the record.
+  if [ "$OVER_PACE_SET" -eq 1 ] && [ "$RELAUNCH" -eq 0 ]; then
+    printf 'over_pace=%s\n' "${OVER_PACE_REASON//$'\n'/ }"
+    printf 'over_pace_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
   [ -z "$DISPATCH_OVERRIDE" ] || printf 'dispatch_override=%s\n' "$DISPATCH_OVERRIDE"
   # The detected OpenCode major, recorded so fm-control sends the exit key this
   # agent's TUI understands. Written only when a version was resolved, so a

@@ -56,8 +56,9 @@ SH
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
 }
 
-run_spawn() {  # <home> <proj> <wt> <fakebin> <id> <quota-json>
+run_spawn() {  # <home> <proj> <wt> <fakebin> <id> <quota> [extra spawn args...]
   local home=$1 proj=$2 wt=$3 fakebin=$4 id=$5 quota=$6
+  shift 6
   FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -65,7 +66,7 @@ run_spawn() {  # <home> <proj> <wt> <fakebin> <id> <quota-json>
     CLAUDE_CONFIG_DIR='' PATH="$fakebin:$PATH" \
     FM_DISPATCH_QUOTA_JSON="$quota" \
     FM_MEMINFO_OVERRIDE="$home/meminfo" \
-    "$SPAWN" "$id" "$proj" --mode no-mistakes --yolo off 2>&1
+    "$SPAWN" "$id" "$proj" --mode no-mistakes --yolo off "$@" 2>&1
 }
 
 write_meminfo() {  # <file>
@@ -264,5 +265,89 @@ EOF2
   pass "fm-spawn.sh: a fresh account whose five-hour window has not started is admitted"
 }
 test_unstarted_five_hour_window_still_spawns
+
+test_projected_exhaustion_over_pace_approval_admits() {
+  local rec id out status quota meta
+  id=runway-over-pace
+  rec=$(make_case over-pace "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  write_meminfo "$HOME_DIR/meminfo"
+  quota="$CASE_DIR/quota-projected.json"
+  # Same projected-exhaustion reading that defers without the flag: 89% left
+  # but exhaustion an hour before the reset.
+  quota_fixture "$quota" 89 4 3
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$quota" \
+    --over-pace "captain approved going over pace for this dispatch")
+  status=$?
+  expect_code 0 "$status" "the captain's over-pace approval must admit the lane: $out"
+  assert_contains "$out" "runway gate overridden" \
+    "the override must print one line naming the runway gate: $out"
+  meta="$HOME_DIR/state/$id.meta"
+  [ -f "$meta" ] || fail "the admitted lane published no task record: $out"
+  grep -qxF 'over_pace=captain approved going over pace for this dispatch' "$meta" \
+    || fail "the task record must carry the approval text: $(cat "$meta")"
+  grep -q '^over_pace_at=' "$meta" \
+    || fail "the task record must carry the approval timestamp: $(cat "$meta")"
+  pass "fm-spawn.sh: a projected-exhaustion deferral is overridden by --over-pace and recorded"
+}
+test_projected_exhaustion_over_pace_approval_admits
+
+test_over_pace_empty_reason_is_refused() {
+  local rec id out status quota
+  id=runway-over-pace-empty
+  rec=$(make_case over-pace-empty "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  write_meminfo "$HOME_DIR/meminfo"
+  quota="$CASE_DIR/quota-projected.json"
+  quota_fixture "$quota" 89 4 3
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$quota" \
+    --over-pace "")
+  status=$?
+  expect_code 1 "$status" "an empty --over-pace reason must refuse: $out"
+  assert_contains "$out" "requires the captain's approval words" \
+    "the refusal must name the missing approval words: $out"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must publish no task record"
+  pass "fm-spawn.sh: an empty --over-pace reason is refused"
+}
+test_over_pace_empty_reason_is_refused
+
+test_over_pace_does_not_bypass_orchestrator_lane_cap() {
+  local rec id out status quota orch meta
+  id=runway-orch-second
+  rec=$(make_case orch-cap "$id")
+  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF2
+$rec
+EOF2
+  write_meminfo "$HOME_DIR/meminfo"
+  orch="$CASE_DIR/orch-claude"
+  mkdir -p "$orch"
+  printf '%s\n' "$orch" > "$HOME_DIR/config/claude-accounts"
+  printf '%s\n' "$orch" > "$HOME_DIR/config/claude-orchestrator-account"
+  fm_fake_exit0 "$FAKEBIN_DIR" claude
+  # One live worker already sits beside the orchestrator on that account.
+  meta="$HOME_DIR/state/other-lane.meta"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "account=$orch"
+  } > "$meta"
+  quota="$CASE_DIR/quota-projected.json"
+  quota_fixture "$quota" 89 4 3
+  # Even with the captain's over-pace approval, the orchestrator account still
+  # admits at most one worker beside the orchestrator.
+  out=$(run_spawn "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$quota" \
+    --account "$orch" --over-pace "captain approved going over pace")
+  status=$?
+  expect_code 75 "$status" "the orchestrator lane cap must still defer a second worker: $out"
+  assert_contains "$out" "is the orchestrator account and admits at most 1 worker" \
+    "the deferral must name the orchestrator lane cap: $out"
+  assert_absent "$HOME_DIR/state/$id.meta" "a deferred spawn must publish no task record"
+  pass "fm-spawn.sh: --over-pace does not bypass the orchestrator lane cap"
+}
+test_over_pace_does_not_bypass_orchestrator_lane_cap
 
 printf '# all fm-spawn-claude-runway tests passed\n'
