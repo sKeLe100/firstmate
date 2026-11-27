@@ -291,6 +291,11 @@ SH
   pass "an absent, empty, or zero PC02 thread count routes the run local with a diagnostic"
 }
 
+pc02_slots() {  # <dir> <count>
+  mkdir -p "$1/home/.config/firstmate"
+  printf '%s\n' "$2" > "$1/home/.config/firstmate/pc02-offload-slots"
+}
+
 # fake_pc02 <dir> [threads] builds a fakebin whose ssh and rsync treat
 # <dir>/home as PC02's home: the readiness probe reports an idle, tool-ready
 # host, and every other remote command (mkdir, retarget, HEAD check, the real
@@ -305,6 +310,7 @@ fake_pc02() {
   fakebin=$(fm_fakebin "$dir")
   mkdir -p "$dir/home"
   install_cache_chrome "$dir/home" direct >/dev/null
+  pc02_slots "$dir" 2
   cat > "$fakebin/ssh" <<SH
 #!/usr/bin/env bash
 while [ "\$#" -gt 0 ]; do
@@ -315,6 +321,7 @@ while [ "\$#" -gt 0 ]; do
   esac
 done
 shift
+export XDG_CONFIG_HOME="$dir/home/.config"
 if [ -n "\${FM_FAKE_SSH_NOFILE_HARD:-}" ]; then
   ulimit -S -n "\${FM_FAKE_SSH_NOFILE_SOFT:-\$FM_FAKE_SSH_NOFILE_HARD}" 2>/dev/null || exit 255
   ulimit -H -n "\$FM_FAKE_SSH_NOFILE_HARD" 2>/dev/null || exit 255
@@ -586,6 +593,7 @@ test_personal_use_flip_while_waiting_for_a_slot_stops_the_run() {
   fixture="$dir/never.test.sh"
   printf '#!/usr/bin/env bash\ntouch %q\n' "$dir/suite-ran" > "$fixture"
   chmod +x "$fixture"
+  pc02_slots "$dir" 1
   flock "$dir/home/.fm-pc02-test-slot-1.lock" sleep 30 &
   holder=$!
   for _ in $(seq 1 50); do
@@ -593,7 +601,7 @@ test_personal_use_flip_while_waiting_for_a_slot_stops_the_run() {
     sleep 0.1
   done
   ( sleep 2; : > "$dir/home/.fm-pc02-personal-use" ) &
-  out=$(PATH="$fakebin:$PATH" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=1 \
+  out=$(PATH="$fakebin:$PATH" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     FM_PC02_OFFLOAD_SLOT_WAIT_SECS=30 FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
     timeout 60 "$SCRIPT" "$fixture" 2>&1)
   status=$?
@@ -650,9 +658,10 @@ test_remote_lint_runs_local_lint_and_propagates_exit() {
   # min(slots, threads / 2) = 2 partitions.
   assert_contains "$out" "lint_parallel=2" "remote lint did not pass the slot/worker bound: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "remote lint left a mirror behind: $out"
+  pc02_slots "$dir" 6
   out=$(PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$TMP_ROOT/empty-state" \
     FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_FAKE_CAPTURE_COMPUTE=1 \
-    FM_PC02_OFFLOAD_SLOTS=6 "$SCRIPT" --lint-partitions 2>&1)
+    "$SCRIPT" --lint-partitions 2>&1)
   status=$?
   expect_code 0 "$status" "a six-slot lint run must still succeed: $out"
   assert_contains "$out" "lint_parallel=6" "six configured slots did not raise the lint fan-out: $out"
@@ -800,8 +809,9 @@ test_remote_jobs_and_script_bound() {
     assert_contains "$out" 'remote=1' "remote suite did not carry the offload admission marker: $out"
   done
   # One slot may use the whole machine: the cap is the remote thread count.
+  pc02_slots "$dir" 1
   out=$(PATH="$fakebin:$PATH" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=1 \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     "$SCRIPT" --all --jobs 9999 2>&1)
   status=$?
   expect_code 0 "$status" "single-slot jobs fixture failed: $out"
@@ -812,8 +822,9 @@ test_remote_jobs_and_script_bound() {
   local default_dir="$TMP_ROOT/remote-jobs-default-cap"
   local default_fakebin
   default_fakebin=$(fake_pc02 "$default_dir" 16)
+  pc02_slots "$default_dir" 3
   out=$(PATH="$default_fakebin:$PATH" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=3 \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     env -u FM_PC02_OFFLOAD_JOBS "$SCRIPT" --all 2>&1)
   status=$?
   expect_code 0 "$status" "default jobs cap fixture failed: $out"
@@ -865,7 +876,7 @@ test_environment_parity_match_allows_offload() {
   status=$?
   expect_code 0 "$status" "matching PC01/PC02 test surfaces should permit offload: $out"
   assert_contains "$out" "running tests remotely" "matching parity did not proceed remotely: $out"
-  assert_contains "$out" "claimed PC02 slot 1 of 2" "default slot count was not two: $out"
+  assert_contains "$out" "claimed PC02 slot 1 of 2" "the claim did not report PC02's two slots: $out"
   pass "matching PC01 and PC02 parity admits the default two-slot offload"
 }
 
@@ -1192,33 +1203,6 @@ test_all_slots_busy_falls_back_locally() {
   pass "busy PC02 slots are waited on up to the bound, then the suite runs locally"
 }
 
-test_malformed_slot_count_is_a_configuration_error() {
-  local dir fakebin out status value
-  dir="$TMP_ROOT/slots-invalid"
-  fakebin=$(fake_pc02 "$dir")
-  for value in 0 abc 17; do
-    out=$(PATH="$fakebin:$PATH" \
-      FM_PC02_OFFLOAD_SLOTS="$value" "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
-    status=$?
-    expect_code 2 "$status" "FM_PC02_OFFLOAD_SLOTS=$value must be a configuration error: $out"
-    case "$value" in
-      abc) assert_contains "$out" "must be a positive integer" \
-        "the refusal did not ask for an integer: $out" ;;
-      *) assert_contains "$out" "must be between 1 and 16" \
-        "the refusal did not state the accepted range: $out" ;;
-    esac
-    assert_contains "$out" "FM_PC02_OFFLOAD_SLOTS" \
-      "the refusal did not name the rejected setting: $out"
-    assert_contains "$out" "got '$value'" "the refusal omitted the rejected slot count: $out"
-    assert_not_contains "$out" "running tests remotely" \
-      "FM_PC02_OFFLOAD_SLOTS=$value still ran the suite remotely: $out"
-    assert_not_contains "$out" "$LOCAL_PROOF_OUT" \
-      "FM_PC02_OFFLOAD_SLOTS=$value still ran the suite: $out"
-  done
-  [ ! -e "$dir/ssh.log" ] || fail "a malformed slot count still reached PC02: $(cat "$dir/ssh.log")"
-  pass "a malformed FM_PC02_OFFLOAD_SLOTS exits 2 and runs no tests"
-}
-
 test_single_slot_mode_keeps_the_old_fallback() {
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
@@ -1228,18 +1212,19 @@ test_single_slot_mode_keeps_the_old_fallback() {
   fakebin=$(fake_pc02 "$dir")
   hold_slot "$dir" 1 "$dir/slot-1-held"
   first=$HOLD_SLOT_PID
+  pc02_slots "$dir" 1
   out=$(PATH="$fakebin:$PATH" \
-    FM_PC02_OFFLOAD_SLOTS=1 FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
     FM_PC02_OFFLOAD_SLOT_WAIT_SECS=0 \
     "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
   status=$?
   release_slot "$first"
-  expect_code 0 "$status" "FM_PC02_OFFLOAD_SLOTS=1 with wait 0 must keep the single-slot fallback: $out"
+  expect_code 0 "$status" "one PC02 slot with wait 0 must keep the single-slot fallback: $out"
   assert_contains "$out" "all 1 PC02 test slots are busy; running locally" \
     "the single-slot fallback did not name its limit: $out"
   assert_not_contains "$out" "waiting up to" "a zero wait still announced a wait: $out"
   [ "$(remote_runs_left "$dir")" = 0 ] || fail "the single busy slot received a new remote run"
-  pass "FM_PC02_OFFLOAD_SLOTS=1 with a zero wait keeps the immediate single-slot fallback"
+  pass "one PC02 slot with a zero wait keeps the immediate single-slot fallback"
 }
 
 test_default_wait_bound_is_ten_minutes() {
@@ -1536,20 +1521,21 @@ test_busy_slots_wait_for_a_free_slot() {
   pass "a fully busy PC02 is waited on and the run takes the first slot that frees"
 }
 
-test_slot_file_and_env_precedence() {
+test_pc02_slot_file_is_the_only_slot_count() {
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
   fi
   local dir fakebin config slots_file out status
   dir="$TMP_ROOT/slot-file"
   fakebin=$(fake_pc02 "$dir" 16)
-  config="$dir/config"
+  config="$dir/pc01-config"
   mkdir -p "$config/firstmate"
-  slots_file="$config/firstmate/pc02-offload-slots"
+  printf '8\n' > "$config/firstmate/pc02-offload-slots"
+  slots_file="$dir/home/.config/firstmate/pc02-offload-slots"
   export FM_FAKE_CAPTURE_RUNNER=1
   printf '4\n' > "$slots_file"
   out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash env -u FM_PC02_OFFLOAD_SLOTS "$SCRIPT" --all 2>&1)
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=8 "$SCRIPT" --all 2>&1)
   status=$?
   expect_code 0 "$status" "a machine slot file of 4 must run: $out"
   assert_contains "$out" 'auto_jobs=4' \
@@ -1557,7 +1543,7 @@ test_slot_file_and_env_precedence() {
   # The same file is read again for the next run: no daemon restart needed.
   printf '2\n' > "$slots_file"
   out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash env -u FM_PC02_OFFLOAD_SLOTS "$SCRIPT" --all 2>&1)
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=8 "$SCRIPT" --all 2>&1)
   status=$?
   expect_code 0 "$status" "the changed machine slot file must apply to the next run: $out"
   assert_contains "$out" 'auto_jobs=8' \
@@ -1565,37 +1551,31 @@ test_slot_file_and_env_precedence() {
   # A value written without its trailing newline (printf 6 > file) is still read.
   printf '6' > "$slots_file"
   out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash env -u FM_PC02_OFFLOAD_SLOTS "$SCRIPT" --all 2>&1)
+    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=8 "$SCRIPT" --all 2>&1)
   status=$?
   expect_code 0 "$status" "a slot file without a trailing newline must still apply: $out"
   assert_contains "$out" 'auto_jobs=2' \
     "a slot file without a trailing newline was not read (16/6=2): $out"
-  # The environment wins over the file.
-  out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" \
-    FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash FM_PC02_OFFLOAD_SLOTS=4 "$SCRIPT" --all 2>&1)
-  status=$?
-  expect_code 0 "$status" "an environment slot override must run: $out"
-  assert_contains "$out" 'auto_jobs=4' \
-    "the environment did not override the machine slot file: $out"
   unset FM_FAKE_CAPTURE_RUNNER
 
-  local bad badfake badconfig value
-  bad="$TMP_ROOT/slot-file-invalid"
-  badfake=$(fake_pc02 "$bad" 16)
-  badconfig="$bad/config"
-  mkdir -p "$badconfig/firstmate"
-  for value in abc 17 ''; do
-    printf '%s\n' "$value" > "$badconfig/firstmate/pc02-offload-slots"
-    out=$(PATH="$badfake:$PATH" XDG_CONFIG_HOME="$badconfig" \
-      FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash env -u FM_PC02_OFFLOAD_SLOTS "$SCRIPT" --all 2>&1)
+  local value
+  for value in 0 abc 17 '' missing; do
+    if [ "$value" = missing ]; then rm "$slots_file"; else printf '%s\n' "$value" > "$slots_file"; fi
+    out=$(PATH="$fakebin:$PATH" XDG_CONFIG_HOME="$config" \
+      FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash "$SCRIPT" "${LOCAL_PROOF_ARGS[@]}" 2>&1)
     status=$?
-    expect_code 2 "$status" "a malformed machine slot file '$value' must be a configuration error: $out"
-    assert_contains "$out" "$badconfig/firstmate/pc02-offload-slots" \
-      "the refusal did not name the machine slot file: $out"
-    assert_contains "$out" "got '$value'" "the refusal omitted the rejected value: $out"
+    expect_code 2 "$status" "PC02 slot file '$value' must be a configuration error: $out"
+    assert_contains "$out" "$slots_file" "the refusal did not name PC02's slot file: $out"
+    assert_not_contains "$out" "running tests remotely" "slot file '$value' still ran remotely: $out"
+    assert_not_contains "$out" "$LOCAL_PROOF_OUT" "slot file '$value' still ran the suite: $out"
   done
-  [ ! -e "$bad/ssh.log" ] || fail "a malformed machine slot file still reached PC02: $(cat "$bad/ssh.log")"
-  pass "the machine slot file is read every run, the environment overrides it, and malformed values exit 2"
+  [ "$(remote_runs_left "$dir")" = 0 ] || fail "a slot configuration error left a PC02 mirror behind"
+  pass "PC02's slot file alone sets the count, is read every run, and exits 2 when missing or malformed"
+}
+
+runner_slots() {  # <config home> <count>
+  mkdir -p "$1/firstmate"
+  printf '%s\n' "$2" > "$1/firstmate/pc02-offload-slots"
 }
 
 test_runner_slot_claims_and_marks_the_partition() {
@@ -1605,8 +1585,9 @@ test_runner_slot_claims_and_marks_the_partition() {
   local home out status
   home="$TMP_ROOT/runner-slot-claim/home"
   mkdir -p "$home"
+  runner_slots "$TMP_ROOT/runner-slot-claim/xdg" 3
   # shellcheck disable=SC2016 # Evaluated by the claimed runner partition.
-  out=$(HOME="$home" XDG_CONFIG_HOME="$TMP_ROOT/runner-slot-claim/xdg" FM_PC02_OFFLOAD_SLOTS=3 \
+  out=$(HOME="$home" XDG_CONFIG_HOME="$TMP_ROOT/runner-slot-claim/xdg" \
     "$SCRIPT" --runner-slot bash -c '
       printf "remote=%s\n" "${FM_PC02_OFFLOAD_REMOTE:-unset}"
       if flock -n "$HOME/.fm-pc02-test-slot-1.lock" true 2>/dev/null; then echo slot-free; else echo slot-held; fi
@@ -1629,9 +1610,10 @@ test_runner_slot_waits_for_a_free_slot() {
   dir="$TMP_ROOT/runner-slot-wait"
   home="$dir/home"
   mkdir -p "$home"
+  runner_slots "$dir/xdg" 1
   hold_slot "$dir" 1 "$dir/held"
   holder=$HOLD_SLOT_PID
-  HOME="$home" XDG_CONFIG_HOME="$dir/xdg" FM_PC02_OFFLOAD_SLOTS=1 \
+  HOME="$home" XDG_CONFIG_HOME="$dir/xdg" \
     FM_PC02_OFFLOAD_SLOT_WAIT_SECS=30 FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
     "$SCRIPT" --runner-slot bash -c 'echo runner-ran' > "$dir/out.log" 2>&1 &
   pid=$!
@@ -1662,8 +1644,9 @@ test_runner_slot_stops_on_personal_use() {
   local home out status
   home="$TMP_ROOT/runner-slot-personal/home"
   mkdir -p "$home"
+  runner_slots "$TMP_ROOT/runner-slot-personal/xdg" 3
   : > "$home/.fm-pc02-personal-use"
-  out=$(HOME="$home" XDG_CONFIG_HOME="$TMP_ROOT/runner-slot-personal/xdg" FM_PC02_OFFLOAD_SLOTS=3 \
+  out=$(HOME="$home" XDG_CONFIG_HOME="$TMP_ROOT/runner-slot-personal/xdg" \
     "$SCRIPT" --runner-slot bash -c 'echo SHOULD-NOT-RUN' 2>&1)
   status=$?
   expect_code 75 "$status" "personal use must stop a runner partition as no verdict: $out"
@@ -1680,8 +1663,9 @@ test_runner_slot_exits_75_when_all_slots_stay_busy() {
   dir="$TMP_ROOT/runner-slot-busy"
   home="$dir/home"
   mkdir -p "$home"
+  runner_slots "$dir/xdg" 1
   hold_slot "$dir" 1 "$dir/held"
-  out=$(HOME="$home" XDG_CONFIG_HOME="$dir/xdg" FM_PC02_OFFLOAD_SLOTS=1 \
+  out=$(HOME="$home" XDG_CONFIG_HOME="$dir/xdg" \
     FM_PC02_OFFLOAD_SLOT_WAIT_SECS=1 FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
     "$SCRIPT" --runner-slot bash -c 'echo SHOULD-NOT-RUN' 2>&1)
   status=$?
@@ -1690,6 +1674,45 @@ test_runner_slot_exits_75_when_all_slots_stay_busy() {
   assert_contains "$out" 'stayed busy through the 1s wait bound' "the runner partition busy wait was not reported: $out"
   assert_not_contains "$out" 'SHOULD-NOT-RUN' "a runner partition overlapped a held slot: $out"
   pass "a self-hosted runner partition exits no-verdict instead of overlapping a full slot set"
+}
+
+test_runner_slot_refuses_without_a_slot_file() {
+  local home out status
+  home="$TMP_ROOT/runner-slot-nofile/home"
+  mkdir -p "$home"
+  out=$(HOME="$home" XDG_CONFIG_HOME="$TMP_ROOT/runner-slot-nofile/xdg" \
+    "$SCRIPT" --runner-slot bash -c 'echo SHOULD-NOT-RUN' 2>&1)
+  status=$?
+  expect_code 2 "$status" "a missing slot file must refuse a runner partition: $out"
+  assert_contains "$out" "$TMP_ROOT/runner-slot-nofile/xdg/firstmate/pc02-offload-slots" \
+    "the refusal did not name the slot file: $out"
+  assert_not_contains "$out" 'SHOULD-NOT-RUN' "a runner partition ran without a slot count: $out"
+  pass "a self-hosted runner partition refuses to run without PC02's slot file"
+}
+
+test_runner_slot_default_wait_is_150_minutes() {
+  if ! command -v flock >/dev/null 2>&1; then
+    pass "skip: runner-slot fixture needs flock"; return
+  fi
+  local dir pid holder _
+  dir="$TMP_ROOT/runner-slot-default-wait"
+  mkdir -p "$dir/home"
+  runner_slots "$dir/xdg" 1
+  hold_slot "$dir" 1 "$dir/held"
+  holder=$HOLD_SLOT_PID
+  env -u FM_PC02_OFFLOAD_SLOT_WAIT_SECS HOME="$dir/home" XDG_CONFIG_HOME="$dir/xdg" \
+    FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
+    "$SCRIPT" --runner-slot true > "$dir/out.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 600); do
+    grep -q "waiting up to" "$dir/out.log" 2>/dev/null && break
+    sleep 0.1
+  done
+  release_slot "$holder"
+  wait "$pid" || fail "the runner partition did not run after the slot freed: $(cat "$dir/out.log")"
+  assert_contains "$(cat "$dir/out.log")" 'waiting up to 9000s for a free slot' \
+    "the runner partition did not default to a 150 minute wait: $(cat "$dir/out.log")"
+  pass "a self-hosted runner partition waits up to 150 minutes by default"
 }
 
 test_dead_owner_and_timeout_release_claim() {
@@ -1709,8 +1732,9 @@ test_dead_owner_and_timeout_release_claim() {
   [ -f "$dir/home/.fm-pc02-test-slot-1.lock" ] || fail "dead owner did not leave a lock file"
   printf '#!/usr/bin/env bash\nsleep 60\n' > "$dir/timeout.test.sh"
   chmod +x "$dir/timeout.test.sh"
+  pc02_slots "$dir" 1
   out=$(PATH="$fakebin:$PATH" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    FM_PC02_OFFLOAD_SLOTS=1 FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS=2 "$SCRIPT" "$dir/timeout.test.sh" 2>&1)
+    FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS=2 "$SCRIPT" "$dir/timeout.test.sh" 2>&1)
   status=$?
   expect_code 124 "$status" "dead owner's slot must be reclaimed and suite timeout preserved: $out"
   assert_contains "$out" 'running tests remotely' "dead lock file blocked the run: $out"
@@ -1938,9 +1962,8 @@ test_help_prints_the_whole_documented_contract() {
   assert_contains "$out" "FM_PC02_OFFLOAD_DISABLE=1" "--help omitted the disable override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_PERSONAL_USE_FLAG" "--help omitted the personal-use switch override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS" "--help omitted the run-timeout override: $out"
-  assert_contains "$out" "FM_PC02_OFFLOAD_SLOTS" "--help omitted the concurrent-slot override: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_SLOT_WAIT_SECS" "--help omitted the slot-wait override: $out"
-  assert_contains "$out" "pc02-offload-slots" "--help omitted the per-machine slot file: $out"
+  assert_contains "$out" "pc02-offload-slots" "--help omitted the PC02 slot file: $out"
   assert_contains "$out" "FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS" "--help omitted the parity-probe timeout override: $out"
   assert_contains "$out" "integer from 1 to 16" "--help omitted the slot range and integer requirement: $out"
   assert_contains "$out" "exits 2" "--help omitted the configuration-error exit: $out"
@@ -2004,12 +2027,13 @@ test_chromium_wrapper_compares_resolved_sonames
 test_one_of_two_busy_slots_still_runs_remotely
 test_busy_slots_wait_for_a_free_slot
 test_all_slots_busy_falls_back_locally
-test_slot_file_and_env_precedence
+test_pc02_slot_file_is_the_only_slot_count
 test_runner_slot_claims_and_marks_the_partition
 test_runner_slot_waits_for_a_free_slot
 test_runner_slot_stops_on_personal_use
 test_runner_slot_exits_75_when_all_slots_stay_busy
-test_malformed_slot_count_is_a_configuration_error
+test_runner_slot_refuses_without_a_slot_file
+test_runner_slot_default_wait_is_150_minutes
 test_single_slot_mode_keeps_the_old_fallback
 test_default_wait_bound_is_ten_minutes
 test_caller_wall_budget_skips_the_pc02_wait

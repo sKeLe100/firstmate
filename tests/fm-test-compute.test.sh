@@ -657,18 +657,24 @@ import json,sys
 r=json.load(open(sys.argv[1])); assert r['exit']==7 and r['scripts']==['tests/sample.test.sh']
 PY
 pass 'worker captures actual test exit and exact script evidence'
-# A hosted worker keeps the one-heavy-run admission of fm-test-run.sh; only a
-# workflow-declared self-hosted runner label claims a PC02 slot.
+# A hosted or other self-hosted worker keeps the one-heavy-run admission of
+# fm-test-run.sh; only the exact fm-pc02 runner label claims a PC02 slot.
+slot_env=(env -u FM_PC02_OFFLOAD_REMOTE -u FM_PC02_SLOT_CLAIMED -u RUNNER_ENVIRONMENT -u FM_TEST_COMPUTE_RUNNER_LABEL)
+for label in '' ubuntu-latest fm-pc01; do
+  : > "$TMP_ROOT/slot-trace"
+  : > "$TMP_ROOT/remote-trace"
+  extra=()
+  [ -z "$label" ] || extra=("FM_TEST_COMPUTE_RUNNER_LABEL=$label")
+  [ "$label" != fm-pc01 ] || extra+=(RUNNER_ENVIRONMENT=self-hosted)
+  "${slot_env[@]}" ${extra[@]+"${extra[@]}"} SLOT_TRACE="$TMP_ROOT/slot-trace" REMOTE_TRACE="$TMP_ROOT/remote-trace" \
+    "$router" worker portable-parallel-1 "$TMP_ROOT/hosted-worker-$label" "$TMP_ROOT/payload.json" > "$TMP_ROOT/hosted-worker.log" 2>&1
+  [ ! -s "$TMP_ROOT/slot-trace" ] || fail "a worker labelled '$label' claimed a PC02 slot"
+  assert_contains "$(cat "$TMP_ROOT/remote-trace")" 'remote=unset' "a worker labelled '$label' was marked as PC02-slot governed"
+done
+pass 'only a PC02 runner worker claims a PC02 slot'
 : > "$TMP_ROOT/slot-trace"
 : > "$TMP_ROOT/remote-trace"
-SLOT_TRACE="$TMP_ROOT/slot-trace" REMOTE_TRACE="$TMP_ROOT/remote-trace" \
-  "$router" worker portable-parallel-1 "$TMP_ROOT/hosted-worker" "$TMP_ROOT/payload.json" > "$TMP_ROOT/hosted-worker.log" 2>&1
-[ ! -s "$TMP_ROOT/slot-trace" ] || fail 'a hosted worker claimed a PC02 slot'
-assert_contains "$(cat "$TMP_ROOT/remote-trace")" 'remote=unset' 'a hosted worker was marked as PC02-slot governed'
-pass 'a hosted worker never claims a PC02 slot'
-: > "$TMP_ROOT/slot-trace"
-: > "$TMP_ROOT/remote-trace"
-RUNNER_ENVIRONMENT=self-hosted SLOT_TRACE="$TMP_ROOT/slot-trace" REMOTE_TRACE="$TMP_ROOT/remote-trace" \
+"${slot_env[@]}" FM_TEST_COMPUTE_RUNNER_LABEL=fm-pc02 SLOT_TRACE="$TMP_ROOT/slot-trace" REMOTE_TRACE="$TMP_ROOT/remote-trace" \
   "$router" worker portable-parallel-1 "$TMP_ROOT/self-hosted-worker" "$TMP_ROOT/payload.json" > "$TMP_ROOT/self-hosted-worker.log" 2>&1
 assert_contains "$(cat "$TMP_ROOT/slot-trace")" 'runner-slot' 'a self-hosted worker did not claim a PC02 slot'
 assert_contains "$(cat "$TMP_ROOT/remote-trace")" 'remote=1' 'a self-hosted worker was not marked as PC02-slot governed'

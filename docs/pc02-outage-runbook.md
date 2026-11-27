@@ -194,6 +194,13 @@ runner gate ever needs to be redeployed (safe to re-run).
 ### Parallel runner instances
 
 The saturation fallback dispatches only to the `fm-pc02` label, so register one self-hosted runner instance per PC02 slot (`pc02-offload-slots`, currently 3) to let that job's matrix partitions run in parallel.
+The slot count lives only on PC02, and both local offloads and runner jobs exit 2 while the file is missing, so write it before using either:
+
+```bash
+ssh pc02 'mkdir -p ~/.config/firstmate && echo 3 > ~/.config/firstmate/pc02-offload-slots'
+```
+
+A runner job waits up to 150 minutes for a free slot (`FM_PC02_OFFLOAD_SLOT_WAIT_SECS` overrides).
 Each instance is an independent registration with its own runner directory and its own `actions.runner.*` user unit, all sharing the extra label `fm-pc02`.
 A partition dispatched to any of them claims a PC02 slot lock before it runs (`bin/fm-pc02-test-offload.sh --runner-slot` through `bin/fm-test-compute.sh worker`), so the GitHub jobs and local offloads share the `pc02-offload-slots` cap instead of overlapping.
 Register an instance with a fresh token from the repository (never reuse another instance's `.credentials`), then install the same user unit shape the existing instance uses:
