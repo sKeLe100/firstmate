@@ -1,0 +1,15 @@
+Excerpt of bin/fm-resource-snapshot.sh output as agy received it (host/fleet rows omitted).
+
+== before-sandbox1
+workers: []
+panes: []
+  PC01,forgejo-pc01,down,forgejo.service (user unit),"2026-11-27T01:21:24Z"
+  collie,collie sessions failed (status 1),"2026-11-27T01:21:24Z"
+  "android:PC01",adb devices failed (status 1),"2026-11-27T01:21:24Z"
+  "herdr:pc01",herdr pane read failed,"2026-11-27T01:21:24Z"
+  "herdr:pc02",herdr pane read failed,"2026-11-27T01:21:24Z"
+
+== after-sandbox1
+workers: []
+panes[7]{machine,session,workspace,tab,pane,agent,agent_status,task,cwd,title,read_utc}:
+  PC01,forgejo-pc01,active,forgejo.service (user unit),"2026-11-27T01:21:16Z"

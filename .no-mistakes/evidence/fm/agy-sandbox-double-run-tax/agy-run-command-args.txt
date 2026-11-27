@@ -1,0 +1,35 @@
+agy 1.5.18, print mode with --sandbox. run_command arguments in call order, from agy's own transcript.
+
+== before-sandbox1 (before = base 6ea43c63, after = target 7026700f; model gemini-3.8-flash-medium)
+{"CommandLine":"bin/fm-bearings-snapshot.sh","BypassSandbox":"omitted"}
+{"CommandLine":"bin/fm-resource-snapshot.sh","BypassSandbox":"omitted"}
+{"CommandLine":"quota-axi","BypassSandbox":"omitted"}
+{"CommandLine":"git log -1 --oneline","BypassSandbox":"omitted"}
+
+== before-sandbox2 (before = base 6ea43c63, after = target 7026700f; model gemini-3.8-flash-medium)
+{"CommandLine":"bin/fm-bearings-snapshot.sh","BypassSandbox":"omitted"}
+{"CommandLine":"bin/fm-resource-snapshot.sh","BypassSandbox":"omitted"}
+{"CommandLine":"quota-axi","BypassSandbox":"omitted"}
+{"CommandLine":"git log -1 --oneline","BypassSandbox":"omitted"}
+
+== after-sandbox1 (before = base 6ea43c63, after = target 7026700f; model gemini-3.8-flash-medium)
+{"CommandLine":"bin/fm-bearings-snapshot.sh","BypassSandbox":true}
+{"CommandLine":"bin/fm-resource-snapshot.sh","BypassSandbox":true}
+{"CommandLine":"quota-axi","BypassSandbox":true}
+{"CommandLine":"git log -1 --oneline","BypassSandbox":"omitted"}
+
+== after-sandbox2 (before = base 6ea43c63, after = target 7026700f; model gemini-3.8-flash-medium)
+{"CommandLine":"bin/fm-bearings-snapshot.sh","BypassSandbox":true}
+{"CommandLine":"bin/fm-resource-snapshot.sh","BypassSandbox":true}
+{"CommandLine":"quota-axi","BypassSandbox":true}
+{"CommandLine":"git log -1 --oneline","BypassSandbox":false}
+
+== after, remaining listed scripts (target tree copy, those six scripts stubbed; default model)
+{"CommandLine":"bin/fm-session-start.sh","BypassSandbox":true}
+{"CommandLine":"bin/fm-wake-drain.sh","BypassSandbox":true}
+{"CommandLine":"bin/fm-crew-state.sh demo-task","BypassSandbox":true}
+{"CommandLine":"bin/fm-fleet-snapshot.sh","BypassSandbox":true}
+{"CommandLine":"bin/fm-fleet-view.sh","BypassSandbox":true}
+{"CommandLine":"bin/fm-queue-snapshot.sh","BypassSandbox":true}
+{"CommandLine":"ls docs/verification","BypassSandbox":false}
+{"CommandLine":"git status --short","BypassSandbox":false}
