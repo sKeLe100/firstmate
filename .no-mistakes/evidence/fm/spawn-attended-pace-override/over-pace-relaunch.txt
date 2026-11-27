@@ -1,0 +1,35 @@
+## relaunch refuses the flag
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --over-pace applies only to a fresh spawn; a relaunch already replaces a lane
+[exit 1]
+over_pace=captain: approved over pace for op-first
+over_pace_at=2026-11-27T21:00:29Z
+
+## stop the worker, relaunch without the flag
+bash bash
+fm-op-first sh
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: task op-first's endpoint reads 'alive'; a relaunch requires a positively agent-free endpoint (stop the agent first with bin/fm-control.sh op-first exit)
+[exit 1]
+--- over_pace lines in record after relaunch:
+2
+harness=claude
+account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+spawn_gen=s1795813229.3712946.20406
+
+## agent stopped (pane replaced by a bare shell), relaunch without the flag
+bash bash
+fm-op-first bash
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+warning: /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/data/op-first/launch-brief.md records no ship branch; defaulting to legacy branch fm/op-first
+warning: /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/data/op-first/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode local-only - confirm its definition of done matches
+notice: op-first ships mode=local-only while the standing posture for demo is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned op-first harness=claude kind=ship mode=local-only yolo=off window=firstmate:fm-op-first worktree=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/home/.treehouse/demo-dc750d/1/demo account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+[exit 0]
+--- over_pace lines in record after relaunch: 0
+harness=claude
+account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+spawn_gen=s1795813277.3728306.28075

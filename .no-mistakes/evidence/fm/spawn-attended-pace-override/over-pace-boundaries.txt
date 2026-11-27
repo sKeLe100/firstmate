@@ -1,0 +1,115 @@
+## scout (review lane) on the orchestrator account with --over-pace= form
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+note: Claude five-hour pace projection overridden for task op-scout on account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct by the captain's --over-pace approval: captain approved the review lane
+spawned op-scout harness=claude kind=scout window=firstmate:fm-op-scout worktree=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/home/.treehouse/demo-dc750d/1/demo account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+[exit 0]
+kind=scout
+over_pace=captain approved the review lane
+over_pace_at=2026-11-27T21:01:32Z
+account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+bash bash
+fm-op-scout sh
+
+## the approval does not carry to the next spawn (scout removed, no flag)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+deferred: Claude account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct has no headroom for a new lane (est. exhaustion 2026-11-27T23:59:18+00:00 is before the reset 2026-11-28T00:59:18+00:00 minus 20m); task op-second was not launched and its backlog item stays queued - dispatch it again once the five-hour window resets or a live lane finishes
+[exit 75]
+
+## --over-pace, reading: empty
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+deferred: Claude account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct has no headroom for a new lane (0% left; five-hour window already exhausted); task op-second was not launched and its backlog item stays queued - dispatch it again once the five-hour window resets or a live lane finishes
+[exit 75]
+
+## --over-pace, reading: exhausted-now
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+deferred: Claude account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct has no headroom for a new lane (89% left; five-hour window already exhausted); task op-second was not launched and its backlog item stays queued - dispatch it again once the five-hour window resets or a live lane finishes
+[exit 75]
+
+## --over-pace, reading: weekly
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+deferred: Claude account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct has no headroom for a new lane (weekly allowance is exhausted (0% left)); task op-second was not launched and its backlog item stays queued - dispatch it again once the five-hour window resets or a live lane finishes
+[exit 75]
+
+## --over-pace, reading: schema
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: spawn refused: the Claude five-hour runway reading for /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct could not be evaluated (fm-dispatch-quota-cap: expected quota-axi schemaVersion 5, got: 4); refusing rather than launching on an unknown quota
+[exit 1]
+
+## --over-pace, 30% left with one live lane (orchestrator cap file removed)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+deferred: Claude account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct has no headroom for a new lane (30% left (< 40); one implementing lane allowed on this account); task op-second was not launched and its backlog item stays queued - dispatch it again once the five-hour window resets or a live lane finishes
+[exit 75]
+
+## argument refusals
+# empty
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: --over-pace requires the captain's approval words, not an empty reason
+[exit 1]
+# whitespace
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: --over-pace requires the captain's approval words, not an empty reason
+[exit 1]
+# = with nothing
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: --over-pace requires the captain's approval words, not an empty reason
+[exit 1]
+# trailing, no value
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: --over-pace requires a value
+[exit 1]
+# next token is a flag
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: --over-pace requires a value
+[exit 1]
+# codex
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: --over-pace applies only to a Claude ship or scout launch (this launch resolved to 'codex')
+[exit 1]
+# secondmate
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: --over-pace applies only to a Claude ship or scout, never a secondmate
+[exit 1]
+# batch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+error: batch dispatch does not support --over-pace; the approval covers one spawn, so dispatch that task on its own
+[exit 2]
+
+records/windows left behind:
+bash
+
+## multi-line reason cannot inject task-record fields
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+note: Claude five-hour pace projection overridden for task op-second on account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct by the captain's --over-pace approval: captain ok
+kind=secondmate
+over_pace=x
+warning: /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/data/op-second/launch-brief.md records no ship branch; defaulting to legacy branch fm/op-second
+warning: /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/data/op-second/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode local-only - confirm its definition of done matches
+notice: op-second ships mode=local-only while the standing posture for demo is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned op-second harness=claude kind=ship mode=local-only yolo=off window=firstmate:fm-op-second worktree=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/home/.treehouse/demo-dc750d/1/demo account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+[exit 0]
+window=firstmate:fm-op-second
+endpoint_task_id=op-second
+worktree=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/home/.treehouse/demo-dc750d/1/demo
+project=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/projects/demo
+harness=claude
+approval_mode=bypass
+kind=ship
+mode=local-only
+yolo=off
+branch=fm/op-second
+tasktmp=/tmp/fm-op-second
+model=default
+effort=default
+over_pace=captain ok kind=secondmate over_pace=x
+over_pace_at=2026-11-27T21:02:01Z
+account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+busy_gen=g1795813320.3748252.15228
+spawn_gen=s1795813321.3747146.26544
+purpose=unspecified

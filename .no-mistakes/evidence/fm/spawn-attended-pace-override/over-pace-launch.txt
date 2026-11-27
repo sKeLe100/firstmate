@@ -1,0 +1,101 @@
+## 1. no flag, projected exhaustion (89% left, runs out 1h before reset)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+deferred: Claude account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct has no headroom for a new lane (est. exhaustion 2026-11-27T23:59:18+00:00 is before the reset 2026-11-28T00:59:18+00:00 minus 20m); task op-first was not launched and its backlog item stays queued - dispatch it again once the five-hour window resets or a live lane finishes
+[exit 75]
+ls: cannot access '/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/state/op-first.meta': No such file or directory
+
+## 2. same reading with --over-pace
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+note: Claude five-hour pace projection overridden for task op-first on account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct by the captain's --over-pace approval: captain: approved over pace for op-first
+warning: /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/data/op-first/launch-brief.md records no ship branch; defaulting to legacy branch fm/op-first
+warning: /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/data/op-first/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode local-only - confirm its definition of done matches
+notice: op-first ships mode=local-only while the standing posture for demo is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned op-first harness=claude kind=ship mode=local-only yolo=off window=firstmate:fm-op-first worktree=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/home/.treehouse/demo-dc750d/1/demo account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+[exit 0]
+--- task record
+window=firstmate:fm-op-first
+endpoint_task_id=op-first
+worktree=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/home/.treehouse/demo-dc750d/1/demo
+project=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/projects/demo
+harness=claude
+approval_mode=bypass
+kind=ship
+mode=local-only
+yolo=off
+branch=fm/op-first
+tasktmp=/tmp/fm-op-first
+model=default
+effort=default
+over_pace=captain: approved over pace for op-first
+over_pace_at=2026-11-27T21:00:29Z
+account=/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct
+busy_gen=g1795813229.3714021.19663
+spawn_gen=s1795813229.3712946.20406
+purpose=unspecified
+--- lab tmux windows
+firstmate:bash bash
+firstmate:fm-op-first sh
+--- worker pane
+This message is shown once a day. To disable it please create the
+/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/home/.hushlogin file.
+sean_@SeansMiniPC:/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/projects/demo$ treehouse get
+🌳 Setting up worktree...
+🌳 Entered worktree at ~/.treehouse/demo-dc750d/1/demo. Type 'exit' to return.
+sean_@SeansMiniPC:~/.treehouse/demo-dc750d/1/demo$ cd -- '/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/home/.treehouse/demo-dc750d/1/demo'
+sean_@SeansMiniPC:~/.treehouse/demo-dc750d/1/demo$ export GOTMPDIR=/tmp/fm-op-first/gotmp
+export COMPACT_ADVISER_DISABLE=1
+export FM_TASK_ID=op-first
+sean_@SeansMiniPC:~/.treehouse/demo-dc750d/1/demo$ export COMPACT_ADVISER_DISABLE=1
+sean_@SeansMiniPC:~/.treehouse/demo-dc750d/1/demo$ export FM_TASK_ID=op-first
+sean_@SeansMiniPC:~/.treehouse/demo-dc750d/1/demo$ . '/tmp/fm-op-first+010582e3fb2309406619908ae96ce59db56183fcb83348d2fea63c49b0ddf465/launch.s1795813229.3712946.20406.sh'
+Welcome to Claude Code v2.1.332
+..........................................................
+
+     *                                       █████▓▓░
+                                 *         ███▓░     ░░
+            ░░░░░░                        ███▓░
+    ░░░   ░░░░░░░░░░                      ███▓░
+   ░░░░░░░░░░░░░░░░░░░    *                ██▓░░      ▓
+                                             ░▓▓███▓▓░
+ *                                 ░░░░
+                                 ░░░░░░░░
+                               ░░░░░░░░░░░░░░░░
+       █████████                                        *
+      ██▄█████▄██                        *
+       █████████      *
+.......█ █   █ █..........................................
+
+ Let's get started.
+
+ Choose the text style that looks best with your terminal
+ To change this later, run /theme
+
+ ❯ ✔ Auto (match terminal)
+     Dark mode
+     Light mode
+     Dark mode (colorblind-friendly)
+     Light mode (colorblind-friendly)
+     Dark mode (ANSI colors only)
+     Light mode (ANSI colors only)
+
+ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  1  function greet() {
+  2 -  console.log("Hello, World!");
+  2 +  console.log("Hello, Claude!");
+  3  }
+ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  Syntax theme: Monokai Extended (ctrl+t to disable)
+
+
+## 3. second worker on the orchestrator account, also with --over-pace
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+deferred: Claude account /var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/acct is the orchestrator account and admits at most 1 worker beside the orchestrator (op-first already holds its place); task op-second was not launched and its backlog item stays queued - dispatch it on another declared account or again once that worker finishes
+[exit 75]
+ls: cannot access '/var/tmp/nm-daemon-tmp/fm-lab.VQMFRn/state/op-second.meta': No such file or directory
