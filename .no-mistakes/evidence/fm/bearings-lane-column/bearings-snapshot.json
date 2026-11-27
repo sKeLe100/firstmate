@@ -1,0 +1,194 @@
+{
+  "schema": "fm-bearings.v1",
+  "home": "nm-daemon-tmp/fm-lab.s1Uhil",
+  "generated": "2026-11-27T02:13:08Z",
+  "prs": "not_requested (run: /bearings include PRs)",
+  "claude_accounts": [
+    {
+      "label": "default",
+      "dir": "~/.claude-secondary",
+      "status": "unknown",
+      "reason": "quota-axi reported no claude provider",
+      "five_hour_percent_remaining": null,
+      "five_hour_resets_at": null,
+      "seven_day_percent_remaining": null,
+      "seven_day_resets_at": null,
+      "read_at": null
+    }
+  ],
+  "contributions": {
+    "scope": "owned contributions per home",
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "complete": true,
+    "proven_clear": true,
+    "unmeasured_homes": 0,
+    "unreadable_records": 0,
+    "unmeasured": 0,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "captain_omitted": 0,
+    "captain": []
+  },
+  "in_flight": [
+    {
+      "id": "claude-task",
+      "kind": "ship",
+      "state": "working",
+      "repo": "sample",
+      "name": "claude lane work",
+      "doing": "harness busy (claude-hook)",
+      "lane": "claude/sonnet-5-5"
+    },
+    {
+      "id": "codex-task",
+      "kind": "ship",
+      "state": "unknown",
+      "repo": "sample",
+      "name": "codex lane work",
+      "doing": "harness state unavailable (unknown codex-unverified)",
+      "lane": "codex/gpt-5.5"
+    },
+    {
+      "id": "default-task",
+      "kind": "ship",
+      "state": "unknown",
+      "repo": "sample",
+      "name": "default lane work",
+      "doing": "harness state unavailable (unknown codex-unverified)",
+      "lane": "codex"
+    },
+    {
+      "id": "neither-task",
+      "kind": "ship",
+      "state": "unknown",
+      "repo": "sample",
+      "name": "neither lane work",
+      "doing": "harness state unavailable (unknown source-mismatch)",
+      "lane": null
+    },
+    {
+      "id": "noharness-task",
+      "kind": "ship",
+      "state": "unknown",
+      "repo": "sample",
+      "name": "noharness lane work",
+      "doing": "harness state unavailable (unknown source-mismatch)",
+      "lane": "gpt-5.5"
+    },
+    {
+      "id": "nomodel-task",
+      "kind": "ship",
+      "state": "working",
+      "repo": "sample",
+      "name": "nomodel lane work",
+      "doing": "harness busy (claude-hook)",
+      "lane": "claude"
+    },
+    {
+      "id": "ocgo-task",
+      "kind": "ship",
+      "state": "unknown",
+      "repo": "sample",
+      "name": "ocgo lane work",
+      "doing": "harness state unavailable (unknown source-mismatch)",
+      "lane": "opencode-go/deepseek-v4.1-flash"
+    },
+    {
+      "id": "other-task",
+      "kind": "ship",
+      "state": "unknown",
+      "repo": "sample",
+      "name": "other lane work",
+      "doing": "harness state unavailable (unknown source-mismatch)",
+      "lane": "pi/some-model"
+    },
+    {
+      "id": "pc02-task",
+      "kind": "ship",
+      "state": "unknown",
+      "repo": "sample",
+      "name": "pc02 lane work",
+      "doing": "harness state unavailable (unknown source-mismatch)",
+      "lane": "pc02"
+    },
+    {
+      "id": "labmate/c1",
+      "kind": "ship",
+      "state": "working",
+      "repo": "sample",
+      "name": "Mate claude child",
+      "doing": "harness busy (claude-hook)",
+      "lane": "claude/opus-5-5"
+    },
+    {
+      "id": "labmate/c2",
+      "kind": "ship",
+      "state": "working",
+      "repo": "sample",
+      "name": "Mate pc02 child",
+      "doing": "harness busy (claude-hook)",
+      "lane": "pc02"
+    }
+  ],
+  "secondmates": [
+    {
+      "id": "labmate",
+      "state": "active_child_work",
+      "doing": "c1: harness busy (claude-hook); c2: harness busy (claude-hook)",
+      "provenance": "structured-home",
+      "freshness": "fresh",
+      "stale": false,
+      "invalid_ids": "",
+      "age_seconds": 1,
+      "contradiction": false,
+      "reason": "-"
+    }
+  ],
+  "secondmate_reconcile": [
+    {
+      "id": "labmate",
+      "spawn_gen": null,
+      "host": null,
+      "kind": null,
+      "ids": []
+    }
+  ],
+  "decisions_open": [],
+  "landed": [],
+  "gates": [],
+  "reports": [],
+  "recorded_prs": [],
+  "omitted": [
+    {
+      "surface": "backlog item bodies",
+      "reveal": "--fields bodies"
+    },
+    {
+      "surface": "task paths",
+      "reveal": "--fields paths"
+    },
+    {
+      "surface": "watch/steer actions",
+      "reveal": "--fields actions"
+    },
+    {
+      "surface": "healthy endpoint detail",
+      "reveal": "--fields endpoints"
+    },
+    {
+      "surface": "full scout-report inventory",
+      "reveal": "--all-reports"
+    },
+    {
+      "surface": "live PR discovery + checks",
+      "reveal": "--include-prs"
+    }
+  ]
+}

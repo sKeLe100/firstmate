@@ -1,0 +1,5 @@
+lane=5 rc=1 fm-bearings-board: board data does not satisfy fm-bearings-board.v1: /var/tmp/nm-daemon-tmp/fm-lab.s1Uhil/bad.json
+lane={"a":1} rc=1 fm-bearings-board: board data does not satisfy fm-bearings-board.v1: /var/tmp/nm-daemon-tmp/fm-lab.s1Uhil/bad.json
+lane=["x"] rc=1 fm-bearings-board: board data does not satisfy fm-bearings-board.v1: /var/tmp/nm-daemon-tmp/fm-lab.s1Uhil/bad.json
+lane=true rc=1 fm-bearings-board: board data does not satisfy fm-bearings-board.v1: /var/tmp/nm-daemon-tmp/fm-lab.s1Uhil/bad.json
+lane=false rc=1 fm-bearings-board: board data does not satisfy fm-bearings-board.v1: /var/tmp/nm-daemon-tmp/fm-lab.s1Uhil/bad.json

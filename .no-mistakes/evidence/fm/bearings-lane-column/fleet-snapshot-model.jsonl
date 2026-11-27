@@ -1,0 +1,9 @@
+{"id":"claude-task","harness":"claude","model":"claude-sonnet-5-5"}
+{"id":"codex-task","harness":"codex","model":"gpt-5.5"}
+{"id":"default-task","harness":"codex","model":"default"}
+{"id":"neither-task","harness":"","model":""}
+{"id":"noharness-task","harness":"","model":"gpt-5.5"}
+{"id":"nomodel-task","harness":"claude","model":""}
+{"id":"ocgo-task","harness":"opencode","model":"opencode-go/deepseek-v4.1-flash"}
+{"id":"other-task","harness":"pi","model":"openrouter/vendor/some-model"}
+{"id":"pc02-task","harness":"opencode","model":"pc02-llamaswap/qwen3.6-35b-a3b-dispatch"}
