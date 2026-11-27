@@ -124,6 +124,14 @@
 #     or process name is harmless. The remote suite carries
 #     FM_PC02_OFFLOAD_REMOTE=1, so it is governed by these slot locks rather
 #     than PC01's one-heavy-run admission.
+#     A GitHub-dispatched partition on a PC02 self-hosted runner enters this
+#     same pool through --runner-slot: it claims one local slot lock, sets the
+#     same FM_PC02_OFFLOAD_REMOTE marker, and runs the worker under it. So a
+#     self-hosted job and a local offload can never exceed the slot count
+#     together, and two GitHub partitions run in parallel once two slots are
+#     free. It waits under the same bound and exits 75 (no verdict) when every
+#     slot stays busy, because a runner job has no local fallback; the
+#     personal-use flag exits 75 at once.
 #   - The remote fm-test-run.sh prints its own environment record before its
 #     first test, so an offloaded run records PC02's PATH and the limits the
 #     suite actually runs with.
@@ -181,6 +189,11 @@
 # Usage:
 #   fm-pc02-test-offload.sh <fm-test-run.sh args...>
 #   fm-pc02-test-offload.sh --lint-partitions
+#   fm-pc02-test-offload.sh --runner-slot <command...>   (PC02 self-hosted
+#     runner only: claim a local slot lock, then exec the command with
+#     FM_PC02_OFFLOAD_REMOTE=1 so a GitHub-dispatched partition shares the same
+#     slot pool as a local offload instead of taking the one-heavy-run
+#     admission)
 # The lint mode routes every canonical lint partition to PC02 under the same
 # admission lock and whole-run timeout, with no test-runner-only arguments.
 # When PC02 cannot be used, PC01's last-resort lint runs bin/fm-lint.sh with
@@ -416,6 +429,57 @@ esac
 [ "$SLOT_WAIT_INTERVAL" -ge 1 ] \
   || { echo "fm-pc02-test-offload: FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS must be a positive integer, got '$SLOT_WAIT_INTERVAL'" >&2; exit 2; }
 [ "$CALLER_WALL_BUDGET" -eq 0 ] || SLOT_WAIT=0
+
+# A self-hosted GitHub Actions partition runs on PC02 itself and claims a local
+# slot here, so it shares the pool with any offload. bin/fm-test-compute.sh
+# reaches this mode on a self-hosted runner; the worker is re-exec'd under the
+# claimed slot with FM_PC02_OFFLOAD_REMOTE=1, so the slot locks (not the
+# one-heavy-run admission) govern it. A runner job has no local fallback, so a
+# full slot set waits under the same bound and then exits 75 (no verdict)
+# rather than overlapping another run; the personal-use flag exits 75 at once.
+if [ "${1:-}" = --runner-slot ]; then
+  shift
+  [ "$#" -ge 1 ] || { echo "fm-pc02-test-offload: --runner-slot requires a command to run" >&2; exit 2; }
+  runner_flag="$HOME/$PERSONAL_USE_FLAG"
+  runner_held=
+  runner_deadline=$(( $(date +%s) + SLOT_WAIT ))
+  runner_wait_notice=0
+  while [ -z "$runner_held" ]; do
+    [ ! -f "$runner_flag" ] || {
+      echo "fm-pc02-test-offload: PC02 personal-use switch is on; not running a runner partition" >&2
+      exit 75
+    }
+    runner_slot=1
+    while [ "$runner_slot" -le "$SLOTS" ]; do
+      exec 8>"$HOME/.fm-pc02-test-slot-$runner_slot.lock" || {
+        echo "fm-pc02-test-offload: cannot open PC02 slot lock $HOME/.fm-pc02-test-slot-$runner_slot.lock" >&2
+        exit 2
+      }
+      if flock -n 8; then runner_held=$runner_slot; break; fi
+      exec 8>&-
+      runner_slot=$((runner_slot + 1))
+    done
+    [ -n "$runner_held" ] && break
+    runner_now=$(date +%s)
+    if [ "$SLOT_WAIT" -le 0 ] || [ "$runner_now" -ge "$runner_deadline" ]; then
+      echo "fm-pc02-test-offload: all $SLOTS PC02 test slots stayed busy through the ${SLOT_WAIT}s wait bound; not running a runner partition" >&2
+      exit 75
+    fi
+    runner_pause=$((runner_deadline - runner_now))
+    [ "$runner_pause" -gt "$SLOT_WAIT_INTERVAL" ] && runner_pause=$SLOT_WAIT_INTERVAL
+    if [ "$runner_wait_notice" -eq 0 ]; then
+      echo "fm-pc02-test-offload: all $SLOTS PC02 test slots are busy; waiting up to ${SLOT_WAIT}s for a free slot" >&2
+      runner_wait_notice=1
+    fi
+    sleep "$runner_pause"
+  done
+  [ ! -f "$runner_flag" ] || {
+    echo "fm-pc02-test-offload: stopped: personal use" >&2
+    exit 75
+  }
+  echo "fm-pc02-test-offload: runner partition claimed PC02 slot $runner_held" >&2
+  FM_PC02_OFFLOAD_REMOTE=1 exec "$@"
+fi
 
 # A malformed hygiene bound is the same kind of configuration error: refuse
 # rather than silently skipping a floor.

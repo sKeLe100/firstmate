@@ -99,6 +99,18 @@
 #   FM_TEST_COMPUTE_API_SECS    per API request bound (default 30)
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
+#   FM_TEST_COMPUTE_RUNNER_LABEL the workflow's resolved runs-on label, set by
+#                              the GitHub workflow on a worker job. Any value
+#                              other than ubuntu-latest means a self-hosted
+#                              PC02 runner, so the worker claims one of the
+#                              PC02 test/lint slot locks before its partition
+#                              runs and marks the run FM_PC02_OFFLOAD_REMOTE=1.
+#                              RUNNER_ENVIRONMENT=self-hosted (GitHub's own
+#                              marker) is the equivalent signal. Either puts a
+#                              self-hosted job in the same slot pool as a local
+#                              offload, so the two never exceed the per-host
+#                              slot count; unset keeps a worker exactly as
+#                              before.
 # Exit: 0 proven success; 1 failed hosted evidence, a failed hosted receipt, or
 # an unreadable canonical lint partition count; 2 usage error; 77 indeterminate
 # hosted outcome that is never a test or lint verdict (GitHub discovery,
@@ -209,6 +221,20 @@ if [ "$mode" = worker ]; then
   partition=$1; output=$2; payload=$3
   mkdir -p "$output" || exit 1
   export FM_TEST_COMPUTE_DISABLE=1
+  # A job routed to a self-hosted PC02 runner shares the PC02 slot pool with a
+  # local offload instead of taking the one-heavy-run admission: claim a slot
+  # through the offload owner and re-exec this worker under it with
+  # FM_PC02_OFFLOAD_REMOTE=1. RUNNER_ENVIRONMENT is GitHub's own self-hosted
+  # marker, and FM_TEST_COMPUTE_RUNNER_LABEL is the workflow's resolved
+  # runs-on input; either non-hosted signal claims, while ubuntu-latest and
+  # GitLab (both unset) never do. The re-exec marker stops this branch from
+  # claiming a second slot.
+  if { [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] \
+    || { [ -n "${FM_TEST_COMPUTE_RUNNER_LABEL:-}" ] && [ "${FM_TEST_COMPUTE_RUNNER_LABEL}" != ubuntu-latest ]; }; } \
+    && [ "${FM_PC02_SLOT_CLAIMED:-}" != 1 ]; then
+    FM_PC02_SLOT_CLAIMED=1 exec "$SELF_DIR/fm-pc02-test-offload.sh" --runner-slot \
+      "$SELF_DIR/fm-test-compute.sh" worker "$partition" "$output" "$payload"
+  fi
   lint_count=0
   case "$partition" in
     lint-*) lint_count=$(lint_partition_count) || { echo 'fm-test-compute: canonical lint partition count unavailable' >&2; exit 1; } ;;

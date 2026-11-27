@@ -1598,6 +1598,100 @@ test_slot_file_and_env_precedence() {
   pass "the machine slot file is read every run, the environment overrides it, and malformed values exit 2"
 }
 
+test_runner_slot_claims_and_marks_the_partition() {
+  if ! command -v flock >/dev/null 2>&1; then
+    pass "skip: runner-slot fixture needs flock"; return
+  fi
+  local home out status
+  home="$TMP_ROOT/runner-slot-claim/home"
+  mkdir -p "$home"
+  # shellcheck disable=SC2016 # Evaluated by the claimed runner partition.
+  out=$(HOME="$home" XDG_CONFIG_HOME="$TMP_ROOT/runner-slot-claim/xdg" FM_PC02_OFFLOAD_SLOTS=3 \
+    "$SCRIPT" --runner-slot bash -c '
+      printf "remote=%s\n" "${FM_PC02_OFFLOAD_REMOTE:-unset}"
+      if flock -n "$HOME/.fm-pc02-test-slot-1.lock" true 2>/dev/null; then echo slot-free; else echo slot-held; fi
+    ' 2>&1)
+  status=$?
+  expect_code 0 "$status" "a free slot must admit a runner partition: $out"
+  assert_contains "$out" 'remote=1' "the runner partition was not marked as slot-governed: $out"
+  assert_contains "$out" 'slot-held' "the runner partition did not hold its slot while it ran: $out"
+  assert_contains "$out" 'claimed PC02 slot' "the claim was not reported: $out"
+  flock -n "$home/.fm-pc02-test-slot-1.lock" true \
+    || fail "the runner partition did not release its slot on exit"
+  pass "a self-hosted runner partition claims a PC02 slot, marks the run, and releases it on exit"
+}
+
+test_runner_slot_waits_for_a_free_slot() {
+  if ! command -v flock >/dev/null 2>&1; then
+    pass "skip: runner-slot fixture needs flock"; return
+  fi
+  local dir home out status pid holder _
+  dir="$TMP_ROOT/runner-slot-wait"
+  home="$dir/home"
+  mkdir -p "$home"
+  hold_slot "$dir" 1 "$dir/held"
+  holder=$HOLD_SLOT_PID
+  HOME="$home" XDG_CONFIG_HOME="$dir/xdg" FM_PC02_OFFLOAD_SLOTS=1 \
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=30 FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
+    "$SCRIPT" --runner-slot bash -c 'echo runner-ran' > "$dir/out.log" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 600); do
+    grep -q "waiting up to 30s" "$dir/out.log" 2>/dev/null && break
+    sleep 0.1
+  done
+  if ! grep -q "waiting up to 30s" "$dir/out.log" 2>/dev/null; then
+    release_slot "$holder"
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "a busy slot never announced the runner partition wait: $(cat "$dir/out.log")"
+  fi
+  release_slot "$holder"
+  wait "$pid"
+  status=$?
+  out=$(cat "$dir/out.log")
+  expect_code 0 "$status" "a runner partition did not run after the slot freed: $out"
+  assert_contains "$out" 'claimed PC02 slot' "the waiter never took the freed slot: $out"
+  assert_contains "$out" 'runner-ran' "the runner partition command did not run after the wait: $out"
+  pass "a self-hosted runner partition waits for a free PC02 slot instead of overlapping"
+}
+
+test_runner_slot_stops_on_personal_use() {
+  if ! command -v flock >/dev/null 2>&1; then
+    pass "skip: runner-slot fixture needs flock"; return
+  fi
+  local home out status
+  home="$TMP_ROOT/runner-slot-personal/home"
+  mkdir -p "$home"
+  : > "$home/.fm-pc02-personal-use"
+  out=$(HOME="$home" XDG_CONFIG_HOME="$TMP_ROOT/runner-slot-personal/xdg" FM_PC02_OFFLOAD_SLOTS=3 \
+    "$SCRIPT" --runner-slot bash -c 'echo SHOULD-NOT-RUN' 2>&1)
+  status=$?
+  expect_code 75 "$status" "personal use must stop a runner partition as no verdict: $out"
+  assert_contains "$out" 'personal-use switch is on' "the personal-use stop was not explained: $out"
+  assert_not_contains "$out" 'SHOULD-NOT-RUN' "a runner partition ran while personal use was on: $out"
+  pass "a self-hosted runner partition refuses to run while the personal-use switch is on"
+}
+
+test_runner_slot_exits_75_when_all_slots_stay_busy() {
+  if ! command -v flock >/dev/null 2>&1; then
+    pass "skip: runner-slot fixture needs flock"; return
+  fi
+  local dir home out status
+  dir="$TMP_ROOT/runner-slot-busy"
+  home="$dir/home"
+  mkdir -p "$home"
+  hold_slot "$dir" 1 "$dir/held"
+  out=$(HOME="$home" XDG_CONFIG_HOME="$dir/xdg" FM_PC02_OFFLOAD_SLOTS=1 \
+    FM_PC02_OFFLOAD_SLOT_WAIT_SECS=1 FM_PC02_OFFLOAD_SLOT_WAIT_INTERVAL_SECS=1 \
+    "$SCRIPT" --runner-slot bash -c 'echo SHOULD-NOT-RUN' 2>&1)
+  status=$?
+  release_slot "$HOLD_SLOT_PID"
+  expect_code 75 "$status" "a busy host must not overlap a runner partition: $out"
+  assert_contains "$out" 'stayed busy through the 1s wait bound' "the runner partition busy wait was not reported: $out"
+  assert_not_contains "$out" 'SHOULD-NOT-RUN' "a runner partition overlapped a held slot: $out"
+  pass "a self-hosted runner partition exits no-verdict instead of overlapping a full slot set"
+}
+
 test_dead_owner_and_timeout_release_claim() {
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
@@ -1911,6 +2005,10 @@ test_one_of_two_busy_slots_still_runs_remotely
 test_busy_slots_wait_for_a_free_slot
 test_all_slots_busy_falls_back_locally
 test_slot_file_and_env_precedence
+test_runner_slot_claims_and_marks_the_partition
+test_runner_slot_waits_for_a_free_slot
+test_runner_slot_stops_on_personal_use
+test_runner_slot_exits_75_when_all_slots_stay_busy
 test_malformed_slot_count_is_a_configuration_error
 test_single_slot_mode_keeps_the_old_fallback
 test_default_wait_bound_is_ten_minutes

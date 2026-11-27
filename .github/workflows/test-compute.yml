@@ -73,6 +73,9 @@ jobs:
       - name: Execute canonical partition and record receipt
         env:
           PARTITION: ${{ matrix.partition }}
+          # A self-hosted PC02 partition claims a PC02 test/lint slot so it
+          # shares the pool with local offloads; hosted runners ignore this.
+          FM_TEST_COMPUTE_RUNNER_LABEL: ${{ inputs.runner }}
         run: bin/fm-test-compute.sh worker "$PARTITION" "$RUNNER_TEMP/result" "$RUNNER_TEMP/snapshot.json"
       - name: Upload evidence even on failure
         if: always()
