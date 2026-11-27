@@ -1142,7 +1142,7 @@ tests/fm-pc02-hygiene.test.sh 10268
 tests/fm-pc02-personal-use.test.sh 989
 tests/fm-pc02-test-offload-live-e2e.test.sh 403
 tests/fm-pc02-test-offload.test.sh 344886
-tests/fm-peek-remote.test.sh 1558
+tests/fm-peek-remote.test.sh 2385
 tests/fm-pending-reply.test.sh 61975
 tests/fm-pi-branch-extension.test.sh 139896
 tests/fm-pi-branch-live-e2e.test.sh 408
@@ -1289,7 +1289,7 @@ tests/fm-trace-context-lib.test.sh 692
 tests/fm-trace-context-spawn.test.sh 78531
 tests/fm-turnend-foreign-owner-arm-fix.test.sh 7204
 tests/fm-turnend-guard.test.sh 104307
-tests/fm-update.test.sh 18181
+tests/fm-update.test.sh 28258
 tests/fm-upstream-batch.test.sh 3500
 tests/fm-upstream-behind-check.test.sh 27230
 tests/fm-upstream-sync-item.test.sh 13801
