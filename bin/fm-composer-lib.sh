@@ -1858,7 +1858,6 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
   # can only widen a floor this harness itself drew.
   rest=$blocks
   while [ "${rest#▀}" != "$rest" ]; do rest=${rest#▀}; done
-  [ "$rest" != "$blocks" ] || return 1
   [ -z "$rest" ] && return 0
   case "$rest" in
     ' '*[![:space:]]*) return 0 ;;
