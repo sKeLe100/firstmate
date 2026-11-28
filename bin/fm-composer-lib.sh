@@ -2032,6 +2032,8 @@ _fm_composer_bare_rule_sandwich() {  # <plain-screen> <row>
 # wrapped onto two rows, as 1.19.5 draws it for a long project path: the first
 # row ends at `ctrl+p` and the very next one completes it with `commands`.
 _fm_composer_leftbar_wrapped_rail() {  # <plain-screen> <row>
+  # Accepted narrow-pane limitation: a three-row rail (seen at 121 columns with
+  # a 31-character project name) is not matched, so it reads `unknown`.
   local head tail
   head=$(_fm_composer_screen_row "$2" "$1")
   fm_composer_normalize_trim_var head
