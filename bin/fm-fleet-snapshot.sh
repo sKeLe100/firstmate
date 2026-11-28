@@ -774,12 +774,12 @@ cache_near_expiry() {  # <idle-secs> <ttl-secs>
 
 # True when a local task is near expiry. Quota is probed only when the overage
 # cap would change that answer, and never for the bounded home summary.
-cache_task_expiring() {  # <idle-secs> <harness> <model>
+cache_task_expiring() {  # <idle-secs> <harness> <model> <account> <secondmate-id>
   local idle=$1 ttl=$CACHE_TTL_SECONDS configured=0 capped=0
   if [ "$OUTPUT_MODE" != secondmate-home-summary ] && [ "$ttl" -gt "$FM_CACHE_TTL_OVERAGE_SECONDS" ]; then
     ! cache_near_expiry "$idle" "$ttl" || configured=1
     ! cache_near_expiry "$idle" "$FM_CACHE_TTL_OVERAGE_SECONDS" || capped=1
-    [ "$configured" = "$capped" ] || ttl=$(fm_cache_ttl_seconds "$CONFIG" "$2" "$3")
+    [ "$configured" = "$capped" ] || ttl=$(fm_cache_ttl_seconds "$CONFIG" "$2" "$3" "$4" "$5")
   fi
   cache_near_expiry "$idle" "$ttl"
 }
@@ -789,7 +789,7 @@ task_json_row() {  # <captured-meta> <id>
   local meta=$1 id=$2 original_meta kind harness mode yolo project worktree home projects spawn_gen branch backend target status_log report_path
   local remote_host remote_root current_file endpoint_file observation_line
   local pr pr_source event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
-  local idle_secs cache_expiring
+  local idle_secs cache_expiring cache_mate
   local last_event_raw current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
 
@@ -878,10 +878,13 @@ task_json_row() {  # <captured-meta> <id>
   done < "$endpoint_file" || return 1
   idle_secs=
   cache_expiring=0
+  cache_mate=
+  [ "$kind" != secondmate ] || cache_mate=$id
   if [ -z "$remote_host" ]; then
     idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$id" "$SNAPSHOT_EPOCH" || printf '')
     if [ -n "$idle_secs" ] && [ "$endpoint_exists" = true ] &&
-      cache_task_expiring "$idle_secs" "$harness" "$(meta_value "$meta" model)"; then
+      cache_task_expiring "$idle_secs" "$harness" "$(meta_value "$meta" model)" \
+        "$(meta_value "$meta" account)" "$cache_mate"; then
       cache_expiring=1
     fi
   fi

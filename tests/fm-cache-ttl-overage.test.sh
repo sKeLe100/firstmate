@@ -15,8 +15,9 @@
 #   4. A missing, unreadable, invalid, or failing quota read leaves it alone.
 #   5. A configured value below 300 stays in force, and a disabled TTL stays
 #      disabled.
-#   6. The probe measures the account config/claude-account pins, or the
-#      ambient login, and ignores ambient quota-axi lane overrides.
+#   6. The probe measures the target's recorded account, else its secondmate or
+#      home pin, else the ambient login, and ignores ambient quota-axi lane
+#      overrides.
 #   7. Only a Claude target is capped, and only by an applicable scope.
 set -u
 
@@ -58,6 +59,7 @@ cat > "$FAKEBIN/quota-axi" <<'SH'
 printf '%s|%s|%s%s%s|%s\n' "${CLAUDE_CONFIG_DIR-unset}" "${CLAUDE_CODE_OAUTH_TOKEN-unset}" \
   "${QUOTA_AXI_SNAPSHOT-}" "${QUOTA_AXI_CLAUDE_PROFILES-}" "${QUOTA_AXI_CLAUDE_SWAP-}" "$*" >> "$FAKE_READS"
 [ -n "${FAKE_DOC-}" ] || exit 1
+if [ -f "${CLAUDE_CONFIG_DIR-}/quota.json" ]; then FAKE_DOC=$CLAUDE_CONFIG_DIR/quota.json; fi
 cat -- "$FAKE_DOC"
 SH
 chmod +x "$FAKEBIN/quota-axi"
@@ -67,8 +69,8 @@ export PATH="$FAKEBIN:$PATH"
 read_ttl() {  # <config-dir> <snapshot> [harness] [model] -> echoes the effective TTL
   : > "$FAKE_READS"
   # shellcheck disable=SC2016  # the program reads its own positional parameters
-  FAKE_DOC=$2 bash -c '. "$0"; fm_cache_ttl_seconds "$1" "$2" "$3"' \
-    "$LIB" "$1" "${3:-claude}" "${4:-default}"
+  FAKE_DOC=$2 bash -c '. "$0"; fm_cache_ttl_seconds "$1" "$2" "$3" "$4" "$5"' \
+    "$LIB" "$1" "${3:-claude}" "${4:-default}" "${5-}" "${6-}"
 }
 
 snapshot() {  # <name> <percent> <runway-status> [scope] -> echoes a snapshot path
@@ -116,6 +118,10 @@ test_only_affected_targets_are_capped() {
   [ ! -s "$FAKE_READS" ] || fail "a non-Claude target must not read quota"
   [ "$(read_ttl "$config" "$scoped" claude sonnet)" = 3600 ] || fail "another model's window must not cap"
   [ "$(read_ttl "$config" "$scoped" claude opus)" = 300 ] || fail "the target's own model window must cap"
+  [ "$(read_ttl "$config" "$scoped" claude claude-opus-5-5)" = 300 ] ||
+    fail "a family window must cap a full model id"
+  [ "$(read_ttl "$config" "$scoped" claude 'opus[1m]')" = 300 ] ||
+    fail "a family window must cap a suffixed alias"
   pass "cache TTL overage: only affected Claude targets are capped"
 }
 
@@ -171,6 +177,35 @@ test_probe_reads_the_selected_account() {
   pass "cache TTL overage: the probe measures the selected account"
 }
 
+test_target_account_wins_over_home_pin() {
+  local config healthy home_root target_root
+  config=$(new_config target-account)
+  healthy=$(snapshot target-healthy 42 through_reset)
+  home_root="$TMP_ROOT/home-account"
+  target_root="$TMP_ROOT/target-account-root"
+  mkdir -p "$home_root" "$target_root" "$config/secondmate-accounts/ios"
+  printf '%s\n' "$home_root" > "$config/claude-account"
+  printf '%s\n' "$target_root" > "$config/secondmate-accounts/ios/claude-account"
+
+  doc 0 exhausted_now > "$home_root/quota.json"
+  [ "$(read_ttl "$config" "$healthy" claude default "$target_root")" = 3600 ] ||
+    fail "an exhausted home account must not cap a target on a healthy account"
+  [ "$(read_ttl "$config" "$healthy" claude default '' ios)" = 3600 ] ||
+    fail "an exhausted home account must not cap a separately pinned secondmate"
+  [ "$(read_ttl "$config" "$healthy" claude default '' other)" = 300 ] ||
+    fail "a secondmate without its own pin must follow the home pin"
+
+  rm "$home_root/quota.json"
+  doc 0 exhausted_now > "$target_root/quota.json"
+  [ "$(read_ttl "$config" "$healthy" claude default "$target_root")" = 300 ] ||
+    fail "the target's recorded account must cap it"
+  [ "$(read_ttl "$config" "$healthy" claude default '' ios)" = 300 ] ||
+    fail "a secondmate's own pin must cap it"
+  [ "$(read_ttl "$config" "$healthy" claude default "$home_root" ios)" = 3600 ] ||
+    fail "a recorded account must win over the secondmate pin"
+  pass "cache TTL overage: the target's account is measured, not the home's"
+}
+
 test_idle_age_gates_the_probe() {
   local config exhausted idle want
   config=$(new_config idle)
@@ -192,6 +227,7 @@ test_quota_read_failure_keeps_ttl
 test_only_affected_targets_are_capped
 test_tighter_and_disabled_config_skip_the_probe
 test_probe_reads_the_selected_account
+test_target_account_wins_over_home_pin
 test_idle_age_gates_the_probe
 
 echo "# all fm-cache-ttl-overage tests passed"

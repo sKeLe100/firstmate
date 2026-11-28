@@ -24,10 +24,9 @@
 # fails, times out, or returns invalid JSON leaves the configured TTL
 # unchanged. A configured value below the cap stays in force (the episode
 # never loosens a tighter local setting), and a disabled TTL (<= 0) stays
-# disabled. The account read is the one config/claude-account pins, or the
-# process's ambient Claude login when the home pins none; a home with
-# config/claude-accounts is out of scope here because it has no single current
-# account, so the ambient login answers for the home-wide guard.
+# disabled. The account read is the target's recorded account=, else a
+# secondmate's own pin, else the one config/claude-account pins, else the
+# process's ambient Claude login.
 
 FM_CACHE_TTL_DEFAULT_SECONDS=3600
 FM_CACHE_TTL_OVERAGE_SECONDS=300
@@ -59,13 +58,19 @@ fm_cache_configured_ttl_seconds() {  # <config-dir> -> echoes the configured TTL
   printf '%s' "$FM_CACHE_TTL_DEFAULT_SECONDS"
 }
 
-# The Claude account the overage probe measures: `ambient` when the home pins
-# none, else the `ordinary` or absolute root config/claude-account pins.
-# The pin parser is bin/fm-worker-account-lib.sh's single owner; an unreadable
-# or malformed pin is not a quota read failure to guess around, so it returns 1
-# and the caller keeps the configured TTL.
-fm_cache_claude_account_root() {  # <config-dir> -> echoes ambient, ordinary, or an absolute root
-  local config=$1 selection declared
+# The Claude account the overage probe measures: the target's recorded account,
+# else the `ordinary` or absolute root its secondmate or home pin names, else
+# `ambient`. The pin parser is bin/fm-worker-account-lib.sh's single owner; an
+# unreadable or malformed account is not a quota read failure to guess around,
+# so it returns 1 and the caller keeps the configured TTL.
+fm_cache_claude_account_root() {  # <config-dir> <recorded-account> <secondmate-id> -> echoes ambient, ordinary, or an absolute root
+  local config=$1 declared=$2 mate=$3 selection
+  case "$declared" in
+    '') ;;
+    ordinary|/*) printf '%s' "$declared"; return 0 ;;
+    *) return 1 ;;
+  esac
+  config=$(fm_worker_account_config claude "$config" "$mate") || return 1
   if [ ! -e "$config/claude-account" ]; then
     printf 'ambient'
     return 0
@@ -78,13 +83,13 @@ fm_cache_claude_account_root() {  # <config-dir> -> echoes ambient, ordinary, or
   esac
 }
 
-# True when the current Claude account reports an exhausted window that bounds
+# True when the target's Claude account reports an exhausted window that bounds
 # <model>. Every failure mode - no quota-axi, no jq, an unreadable pin, a
 # timeout, a nonzero exit, invalid JSON - returns nonzero so the caller keeps
 # the configured TTL. The 60s reuse window applies only to the ambient and
 # `ordinary` reads; --profile-only has no cache.
-fm_cache_quota_overage_active() {  # <config-dir> <model> -> 0 when exhausted
-  local config=$1 model=${2##*/} doc root dir name
+fm_cache_quota_overage_active() {  # <config-dir> <model> <recorded-account> <secondmate-id> -> 0 when exhausted
+  local config=$1 model=${2##*/} account=$3 mate=$4 doc root dir name
   local -a scrub read_args
   command -v quota-axi >/dev/null 2>&1 || return 1
   command -v jq >/dev/null 2>&1 || return 1
@@ -93,7 +98,7 @@ fm_cache_quota_overage_active() {  # <config-dir> <model> -> 0 when exhausted
   . "$dir/fm-worker-account-lib.sh"
   # shellcheck source=bin/fm-timeout-lib.sh
   . "$dir/fm-timeout-lib.sh"
-  root=$(fm_cache_claude_account_root "$config") || return 1
+  root=$(fm_cache_claude_account_root "$config" "$account" "$mate") || return 1
   scrub=(-u QUOTA_AXI_SNAPSHOT -u QUOTA_AXI_CLAUDE_PROFILES -u QUOTA_AXI_CLAUDE_SWAP)
   read_args=(--no-credential-refresh --max-age "$FM_CACHE_TTL_QUOTA_MAX_AGE")
   if [ "$root" != ambient ]; then
@@ -111,13 +116,20 @@ fm_cache_quota_overage_active() {  # <config-dir> <model> -> 0 when exhausted
     quota-axi --provider claude --json "${read_args[@]}" 2>/dev/null </dev/null) || return 1
   [ -n "$doc" ] || return 1
   printf '%s' "$doc" | jq -e --arg model "$model" '
+    ($model | ascii_downcase) as $lane |
+    def binds_model:
+      startswith("model:") and
+        ((ltrimstr("model:") | ascii_downcase) as $token |
+          $token == $lane or
+            (($token | IN("opus", "sonnet", "haiku", "fable")) and
+              any($lane | splits("[^a-z0-9]+"); . == $token)));
     any(.providers[]? | select(.provider == "claude");
       ((.state.status // "fresh") != "stale") and
       ((.state.stale // false) == false) and
       any(.quotaSemantics.effectiveAvailability[]?;
         (.scope == "all_models" or
           ($model != "" and $model != "default" and
-            (.scope == ("model:" + $model) or .scope == ("product:" + $model)))) and
+            (.scope == ("product:" + $model) or (.scope | binds_model)))) and
         (((.runway.status // "") == "exhausted_now") or
           ((.status // "") == "known" and ((.effectivePercentRemaining // 1) <= 0)))
       )
@@ -127,13 +139,13 @@ fm_cache_quota_overage_active() {  # <config-dir> <model> -> 0 when exhausted
 
 # The effective TTL for one target: the configured value, capped at the overage
 # value while a Claude target's account reports an exhausted window.
-fm_cache_ttl_seconds() {  # <config-dir> <harness> <model> -> echoes the effective TTL
-  local config=$1 harness=$2 model=$3 ttl
+fm_cache_ttl_seconds() {  # <config-dir> <harness> <model> [recorded-account] [secondmate-id] -> echoes the effective TTL
+  local config=$1 harness=$2 model=$3 account=${4-} mate=${5-} ttl
   ttl=$(fm_cache_configured_ttl_seconds "$config")
   case "$harness" in
     claude*)
       if [ "$ttl" -gt "$FM_CACHE_TTL_OVERAGE_SECONDS" ] &&
-        fm_cache_quota_overage_active "$config" "$model"; then
+        fm_cache_quota_overage_active "$config" "$model" "$account" "$mate"; then
         ttl=$FM_CACHE_TTL_OVERAGE_SECONDS
       fi
       ;;
@@ -144,11 +156,11 @@ fm_cache_ttl_seconds() {  # <config-dir> <harness> <model> -> echoes the effecti
 # The TTL to judge an idle age against: quota is probed only when the age is
 # past the overage cap but still within the configured TTL, the one range where
 # the cap changes whether the session reads as cold.
-fm_cache_ttl_for_idle() {  # <config-dir> <idle-secs> <harness> <model> -> echoes the TTL
+fm_cache_ttl_for_idle() {  # <config-dir> <idle-secs> <harness> <model> [recorded-account] [secondmate-id] -> echoes the TTL
   local config=$1 idle=$2 ttl
   ttl=$(fm_cache_configured_ttl_seconds "$config")
   if [ "$idle" -gt "$FM_CACHE_TTL_OVERAGE_SECONDS" ] && [ "$idle" -le "$ttl" ]; then
-    ttl=$(fm_cache_ttl_seconds "$config" "$3" "$4")
+    ttl=$(fm_cache_ttl_seconds "$config" "$3" "$4" "${5-}" "${6-}")
   fi
   printf '%s' "$ttl"
 }
