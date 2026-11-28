@@ -99,6 +99,14 @@
 #   FM_TEST_COMPUTE_API_SECS    per API request bound (default 30)
 #   FM_TEST_COMPUTE_GITLAB_PROJECT existing dedicated GitLab project
 #                              (default sean.morden1993/firstmate-ci)
+#   FM_TEST_COMPUTE_RUNNER_LABEL the workflow's resolved runs-on label, set by
+#                              the GitHub workflow on a worker job. Exactly
+#                              fm-pc02 means a PC02 self-hosted runner, so the
+#                              worker claims one of the PC02 test/lint slot
+#                              locks before its partition runs and marks the
+#                              run FM_PC02_OFFLOAD_REMOTE=1, sharing the slot
+#                              pool with local offloads. Any other value or
+#                              unset keeps a worker exactly as before.
 # Exit: 0 proven success; 1 failed hosted evidence, a failed hosted receipt, or
 # an unreadable canonical lint partition count; 2 usage error; 77 indeterminate
 # hosted outcome that is never a test or lint verdict (GitHub discovery,
@@ -109,7 +117,9 @@
 # admission: Test and remote lint return the executed command's status, while
 # PC01's last-resort lint returns bin/fm-lint.sh's changed-file status. An
 # unreadable count is the exception: local-lint, lint dispatch, and lint workers
-# fail closed instead of running only some of the canonical partitions.
+# fail closed instead of running only some of the canonical partitions. A PC02
+# self-hosted worker that gets no slot exits 75 (no verdict), or 2 on a slot
+# configuration error, without writing result.json.
 # Exit 77 means no verdict: never approve or override a Test or Lint gate over it.
 set -u
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -209,6 +219,14 @@ if [ "$mode" = worker ]; then
   partition=$1; output=$2; payload=$3
   mkdir -p "$output" || exit 1
   export FM_TEST_COMPUTE_DISABLE=1
+  # A job on a PC02 self-hosted runner claims a slot through the offload owner
+  # and re-execs this worker under it. Only the exact fm-pc02 label claims:
+  # other self-hosted runners must not take PC02 slots.
+  # FM_PC02_OFFLOAD_REMOTE=1 means this run already holds a slot.
+  if [ "${FM_TEST_COMPUTE_RUNNER_LABEL:-}" = fm-pc02 ] && [ "${FM_PC02_OFFLOAD_REMOTE:-}" != 1 ]; then
+    exec "$SELF_DIR/fm-pc02-test-offload.sh" --runner-slot \
+      "$SELF_DIR/fm-test-compute.sh" worker "$partition" "$output" "$payload"
+  fi
   lint_count=0
   case "$partition" in
     lint-*) lint_count=$(lint_partition_count) || { echo 'fm-test-compute: canonical lint partition count unavailable' >&2; exit 1; } ;;

@@ -191,6 +191,39 @@ A flip that lands while the gate is already running is picked up by a re-check a
 Re-run `bin/fm-pc02-personal-use.sh install-toggle` if the shortcut or the
 runner gate ever needs to be redeployed (safe to re-run).
 
+### Parallel runner instances
+
+The saturation fallback dispatches only to the `fm-pc02` label, so register one self-hosted runner instance per PC02 slot (`pc02-offload-slots`, currently 3) to let that job's matrix partitions run in parallel.
+The slot count lives only on PC02, and both local offloads and runner jobs exit 2 while the file is missing, so write it before using either:
+
+```bash
+ssh pc02 'mkdir -p ~/.config/firstmate && echo 3 > ~/.config/firstmate/pc02-offload-slots'
+```
+
+Each instance is an independent registration with its own runner directory and its own `actions.runner.*` user unit, all sharing the extra label `fm-pc02`.
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns how runner jobs share the slot pool with local offloads, including their slot wait.
+Register an instance with a fresh token from the repository (never reuse another instance's `.credentials`), then install the same user unit shape the existing instance uses:
+
+```bash
+# On PC01: get a short-lived registration token.
+token=$(gh-axi api -X POST /repos/sKeLe100/firstmate/actions/runners/registration-token --jq '.token')
+
+# On PC02: install the pinned runner and register the new instance.
+ssh pc02 'bash -lc "
+  set -eu
+  dir=\$HOME/actions-runner-firstmate-2
+  mkdir -p \"\$dir\" && cd \"\$dir\"
+  curl -fsSL -o runner.tar.gz https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz
+  tar xzf runner.tar.gz
+  ./config.sh --url https://github.com/sKeLe100/firstmate --token '"$token"' \
+    --name seansdesktop-pc02-2 --labels fm-pc02 --work _work --unattended
+"'
+```
+
+Create `~/.config/systemd/user/actions.runner.sKeLe100-firstmate.seansdesktop-pc02-2.service` with the same body as the existing `seansdesktop-pc02` unit but pointing at `actions-runner-firstmate-2`, then `systemctl --user daemon-reload` and `systemctl --user enable --now` it.
+Repeat with `-3` for the third slot, then re-run `bin/fm-pc02-personal-use.sh install-toggle` so each new instance gets its reboot drop-in.
+`systemctl --user list-units 'actions.runner.*'` and `gh-axi api /repos/sKeLe100/firstmate/actions/runners` should both show every instance online with the `fm-pc02` label.
+
 ### Reclaiming leaked test roots
 
 `bin/fm-pc02-hygiene.sh` is an ssh wrapper, so run it where the checkout lives

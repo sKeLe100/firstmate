@@ -1100,13 +1100,13 @@ test_live_reconciliation() {
   # PC02 offload slots and personal-use switch equal their raw files.
   if [ -n "$host" ]; then
     local raw_slots raw_personal
-    raw_slots=$(ssh "$host" 'slots=2; sf="$HOME/.config/firstmate/pc02-offload-slots"; [ -f "$sf" ] && slots=$(head -1 "$sf"); printf "0/%s" "$slots"' 2>/dev/null)
+    raw_slots=$(ssh "$host" 'head -1 "${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots"' 2>/dev/null)
     actual=$(jq -r '[.testing[] | select(.item=="pc02-offload-slots") | .state][0] // "missing"' "$model")
     # The used count is a live sample and may move between the two reads; the
     # configured slot total and the row's shape must still agree.
     if [ -n "$raw_slots" ]; then
       [ "$actual" != missing ] || fail "PC02 slots row missing (read $gen)"
-      [ "${actual##*/}" = "${raw_slots##*/}" ] || fail "PC02 slot total: expected ${raw_slots##*/}, actual ${actual##*/} (read $gen)"
+      [ "${actual##*/}" = "$raw_slots" ] || fail "PC02 slot total: expected $raw_slots, actual ${actual##*/} (read $gen)"
       [ "${actual%%/*}" -le "${actual##*/}" ] 2>/dev/null || fail "PC02 used slots exceed the total: $actual (read $gen)"
     fi
     raw_personal=$(ssh "$host" 'if [ -e "$HOME/.fm-pc02-personal-use" ]; then echo on; else echo off; fi' 2>/dev/null)
@@ -1658,7 +1658,7 @@ run_pc02_slots_live() {  # <name> <remote-home> <host-out-file> <proc-root> -> J
 script=\$(cat)
 case "\$script" in
   *pc02-offload-slots*)
-    printf '%s\n' "\$script" | HOME='$remote_home' bash -s -- '$remote_home' '$remote_home' > '$host_out' 2>/dev/null
+    printf '%s\n' "\$script" | XDG_CONFIG_HOME="\${FM_FAKE_REMOTE_XDG:-}" HOME='$remote_home' bash -s -- '$remote_home' '$remote_home' > '$host_out' 2>/dev/null
     cat '$host_out'
     exit 0
     ;;
@@ -1708,6 +1708,25 @@ test_pc02_offload_slots_counts_inherited_flock() {
   pass "a flock inherited by a child after its locker exits is read as a busy slot"
 }
 
+test_pc02_offload_slots_reports_missing_or_invalid_count() {
+  local remote_home host_out proc_root value expected
+  remote_home="$TMP_ROOT/pc02-slots-count/remote-home"
+  proc_root="$TMP_ROOT/pc02-slots-count/fakeproc"
+  host_out="$TMP_ROOT/pc02-slots-count.host.out"
+  mkdir -p "$remote_home/xdg/firstmate" "$proc_root"
+  : > "$proc_root/locks"
+  for value in missing abc 0 17 3; do
+    [ "$value" = missing ] || printf '%s\n' "$value" > "$remote_home/xdg/firstmate/pc02-offload-slots"
+    case "$value" in missing) expected=missing ;; 3) expected=0/3 ;; *) expected=invalid ;; esac
+    FM_FAKE_REMOTE_XDG="$remote_home/xdg" \
+      run_pc02_slots_live "count-$value" "$remote_home" "$host_out" "$proc_root" >/dev/null 2>&1
+    awk -F'\t' -v want="$expected" '$1 == "T" && $2 == "pc02-offload-slots" && $3 == want { found = 1 } END { exit !found }' "$host_out" \
+      || fail "slot file '$value' must read $expected: $(awk -F'\t' '$2 == "pc02-offload-slots"' "$host_out")"
+  done
+  pass "PC02 slot count is reported missing or invalid instead of assumed"
+}
+
+test_pc02_offload_slots_reports_missing_or_invalid_count
 test_every_section_renders_and_agrees
 test_android_fixture_renders_both_hosts
 test_android_probe_reads_fake_tools
