@@ -48,6 +48,7 @@ test_sync_copies_only_the_v1_allowlist() {
   printf 'projects\n' > "$home/data/projects.md"
   printf 'backlog\n' > "$home/data/backlog.md"
   printf 'done archive\n' > "$home/data/done-archive.md"
+  printf 'parked archive\n' > "$home/data/backlog-archive.md"
   printf 'brief\n' > "$home/data/task-a/brief.md"
   printf 'report\n' > "$home/data/task-a/report.md"
   printf 'status zero\n' > "$home/data/task-a/status.log"
@@ -65,7 +66,7 @@ test_sync_copies_only_the_v1_allowlist() {
   run_export "$home" sync > "$home/stdout" 2> "$home/stderr" || rc=$?
   expect_code 0 "$rc" "allowlisted live sync: $(cat "$home/stderr")"
   for rel in \
-    data/projects.md data/backlog.md data/done-archive.md \
+    data/projects.md data/backlog.md data/backlog-archive.md data/done-archive.md \
     data/task-a/brief.md data/task-a/report.md data/task-a/status.log data/task-a/status.1.log \
     state/fleet-ledger.jsonl state/task-a.meta state/task-a.status \
     state/task-a.inbox/001.msg state/task-a.inbox/handled/002.msg; do

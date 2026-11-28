@@ -260,3 +260,37 @@ fm_tasks_axi_backend_available() {
   fm_backlog_backend_manual "$config_dir" && return 1
   fm_tasks_axi_compatible
 }
+
+# Emit the continuation lines of task <key> in <file> that a tasks-axi markdown
+# row cannot carry byte-exact: indented body lines that are not the canonical
+# two-space continuation. Both the parked-archive move and the secondmate
+# backlog handoff refuse such a row before touching either file, so a moved
+# block cannot be re-read with different body semantics. Heading variants and
+# both bullet spellings (`- [ ] id` and `- **id**`) are recognized the way the
+# rest of the archive path recognizes them.
+backlog_key_noncanonical_body_lines() {  # <file> <key>
+  local file=$1 key=$2
+  [ -f "$file" ] || return 0
+  awk -v key="$key" '
+    /^- \[[ xX]\] / {
+      rest = $0
+      sub(/^- \[[ xX]\] +/, "", rest)
+      id = rest
+      sub(/[ \t].*/, "", id)
+      if (capturing) exit
+      if (id == key) { capturing = 1 }
+      next
+    }
+    /^- \*\*/ {
+      rest = $0
+      sub(/^- \*\*/, "", rest)
+      id = rest
+      sub(/\*\*.*/, "", id)
+      if (capturing) exit
+      if (id == key) { capturing = 1 }
+      next
+    }
+    capturing && /^##[[:space:]]+/ { exit }
+    capturing && /^[[:space:]]/ && !/^  / && /[^[:space:]]/ { print }
+  ' "$file"
+}

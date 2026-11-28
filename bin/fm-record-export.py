@@ -368,10 +368,10 @@ def add_source(sources: list[Source], parent_fd: int, name: str, relative: str, 
 
 def collect_data_sources(data_fd: int) -> list[Source]:
     sources: list[Source] = []
-    for name in ("projects.md", "backlog.md", "done-archive.md"):
+    for name in ("projects.md", "backlog.md", "backlog-archive.md", "done-archive.md"):
         add_source(sources, data_fd, name, f"data/{name}", f"data/{name}")
     for task in sorted(os.listdir(data_fd)):
-        if task in {"projects.md", "backlog.md", "done-archive.md"}:
+        if task in {"projects.md", "backlog.md", "backlog-archive.md", "done-archive.md"}:
             continue
         try:
             info = os.stat(task, dir_fd=data_fd, follow_symlinks=False)
@@ -537,7 +537,7 @@ def live_directory_allowed(relative: str) -> bool:
 
 
 def live_file_allowed(relative: str) -> bool:
-    if relative in {"data/projects.md", "data/backlog.md", "data/done-archive.md", "state/fleet-ledger.jsonl"}:
+    if relative in {"data/projects.md", "data/backlog.md", "data/backlog-archive.md", "data/done-archive.md", "state/fleet-ledger.jsonl"}:
         return True
     parts = relative.split("/")
     if len(parts) == 3 and parts[0] == "data" and SAFE_COMPONENT.fullmatch(parts[1]):

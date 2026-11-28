@@ -144,6 +144,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-lock-lib.sh`         | Shared "is this git lock provably abandoned?" proof used by teardown and fleet-sync   |
 | `fm-config-inherit-lib.sh` | Shared primary-to-secondmate inherited local-material propagation and config-reread delivery |
 | `fm-tasks-axi.sh`        | Run `tasks-axi` against this home's backlog from any working directory               |
+| `fm-backlog-archive.sh`  | Move open parked/stale items between the live backlog and a parked archive, byte-exact |
 | `fm-tasks-axi-lib.sh`    | Shared backlog-backend selector and `tasks-axi` compatibility probe                  |
 | `fm-crew-dispatch-lib.sh` | Single owner of `config/crew-dispatch.json`'s validity contract, shared by the bootstrap diagnostic and the queue snapshot |
 | `fm-backlog-transition-lib.sh` | Pair task-record changes with their backlog transitions and replay interrupted closes |
