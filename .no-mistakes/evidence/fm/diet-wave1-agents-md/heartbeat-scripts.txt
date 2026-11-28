@@ -1,0 +1,64 @@
+$ bin/fm-queue-snapshot.sh
+count: 0
+dispatchable: 0
+priority_analysis: priority_meaningful: no (0/0 items have priority, 0%)
+dispatch_config: absent
+hierarchy_lanes: unavailable (dispatch_config: absent)
+live_slots: 0
+exit=0
+$ bin/fm-underused-capacity.sh
+exit=0
+$ bin/fm-context-usage.sh --help
+bin/fm-context-usage.sh - report a Claude session's real context usage from
+the harness's own durable transcript records.
+
+Why: the agent cannot run the terminal-side /context command itself, and the
+padded-countdown token reminder can stick at 0 for a whole session, so any
+captain-facing context number must come from a durable source instead.
+Every Claude Code transcript line for an assistant turn carries a usage
+object whose input_tokens + cache_creation_input_tokens +
+cache_read_input_tokens sum is the context size actually sent for that turn,
+which is the same total the /context command displays. An advisor turn instead
+records each API call under usage.iterations and sums them into those
+top-level fields, so its top-level sum double-counts the advisor's own call;
+for such a turn the reading comes from the last iteration (the final message
+call's real context), not the summed top-level fields.
+
+Usage: fm-context-usage.sh [transcript.jsonl]
+  With no argument, reads the Claude project directory for this home:
+    <store>/projects/<home path with every non-alphanumeric character
+    replaced by ->, home = FM_HOME or the current directory.
+  A self-read binds to the calling session's own transcript, the file named by
+  the trusted session id from bin/fm-session-lock-lib.sh, and falls back to the
+  newest *.jsonl with pick=newest only when it has no trusted id or no resolved
+  store holds that session's transcript. A targeted read (FM_CLAUDE_STORE set)
+  takes the newest *.jsonl in the named store.
+  <store> is the one the TARGET session writes, resolved in this order:
+exit=0
+$ bin/fm-retry-pressure.sh --help
+bin/fm-retry-pressure.sh - report a task's retry-loop pressure from durable
+records, as a data-only sibling of bin/fm-context-usage.sh.
+
+Why: the context-threshold mechanism senses context SIZE only. The
+session-retry-failsafe-design scout (data/session-retry-failsafe-design/
+report.md, 2026-09-01) showed a repetition-driven failure mode it cannot
+catch: repeated relaunches, review-gate rounds, and fix no-ops that each pay
+a full cold context reload before the size band ever fires. This helper
+counts that repetition so supervision can act proactively; it reads and
+reports only, and never relaunches, holds, or steers anything itself.
+
+Usage: fm-retry-pressure.sh <task-id>
+  Reads, under FM_HOME (default: current directory), honoring the same
+  FM_STATE_OVERRIDE and FM_DATA_OVERRIDE directory overrides its writers use:
+  - data/llm-usage/firstmate.jsonl delegation events for this task_id since
+    its last landed/completed outcome event (relaunch count). Only a
+    delegation the relauncher wrote after confirming a live agent counts.
+  - state/<task-id>.status keyed retry-loop reports, when the status file
+    exists: the `[key=retry-loop]` decision counts only while the shared fold
+    in bin/fm-classify-lib.sh still reads it open, under either opening verb
+    that fold recognizes (`blocked` or `needs-decision`), so a later resolving
+    or captain-held line closes it exactly as it does for every other reader
+    of the status protocol.
+  - cumulative `review_rounds: <reviewer>=<n> run=<id>` status evidence from
+    the generated brief's per-reviewer PR cap protocol. Counts are maxima,
+exit=0
