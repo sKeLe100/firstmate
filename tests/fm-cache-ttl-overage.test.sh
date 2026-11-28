@@ -110,10 +110,13 @@ test_quota_read_failure_keeps_ttl() {
 }
 
 test_only_affected_targets_are_capped() {
-  local config all scoped
+  local config all scoped products
   config=$(new_config affected)
   all=$(snapshot affected-all 0 exhausted_now)
   scoped=$(snapshot affected-model 0 exhausted_now model:opus)
+  products=$(snapshot affected-products 0 exhausted_now all_products)
+  [ "$(read_ttl "$config" "$products" claude sonnet)" = 300 ] ||
+    fail "an account-wide all_products window must cap"
   [ "$(read_ttl "$config" "$all" codex)" = 3600 ] || fail "a non-Claude target must keep its TTL"
   [ ! -s "$FAKE_READS" ] || fail "a non-Claude target must not read quota"
   [ "$(read_ttl "$config" "$scoped" claude sonnet)" = 3600 ] || fail "another model's window must not cap"

@@ -15,7 +15,7 @@
 # Overage episode: an exhausted Claude window silently drops every session to
 # a five-minute prompt-cache TTL, so while quota-axi reports the current Claude
 # account exhausted (effective remaining 0, or runway exhausted_now) for
-# all_models or the target's own model/product scope, a Claude target's
+# all_models, all_products, or the target's own model/product scope, a Claude target's
 # effective TTL is capped at FM_CACHE_TTL_OVERAGE_SECONDS for as long as that
 # reading holds. Non-Claude targets keep the configured TTL, and callers probe
 # only where the cap can change their outcome. The cap is computed at read time from quota state, never by
@@ -127,7 +127,7 @@ fm_cache_quota_overage_active() {  # <config-dir> <model> <recorded-account> <se
       ((.state.status // "fresh") != "stale") and
       ((.state.stale // false) == false) and
       any(.quotaSemantics.effectiveAvailability[]?;
-        (.scope == "all_models" or
+        (.scope == "all_models" or .scope == "all_products" or
           ($model != "" and $model != "default" and
             (.scope == ("product:" + $model) or (.scope | binds_model)))) and
         (((.runway.status // "") == "exhausted_now") or

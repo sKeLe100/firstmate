@@ -1592,7 +1592,7 @@ Its first non-empty, non-comment line is the TTL in seconds; an absent, unreadab
 ### Overage episode
 
 An exhausted Claude window silently drops that account's sessions to a five-minute prompt-cache TTL, so a 60-minute guard would keep allowing steers into a cold cache exactly when burn control matters most.
-While `quota-axi` reports the target's Claude account exhausted - a known effective remaining of zero, or an effective runway of `exhausted_now` - for `all_models` or the target's own `model:` or `product:` scope (a `model:opus`, `model:sonnet`, `model:haiku`, or `model:fable` scope also covers a model id containing that family name as a whole segment), a Claude target's effective TTL is capped at 300 seconds.
+While `quota-axi` reports the target's Claude account exhausted - a known effective remaining of zero, or an effective runway of `exhausted_now` - for `all_models`, `all_products`, or the target's own `model:` or `product:` scope (a `model:opus`, `model:sonnet`, `model:haiku`, or `model:fable` scope also covers a model id containing that family name as a whole segment), a Claude target's effective TTL is capped at 300 seconds.
 Non-Claude targets keep the configured TTL.
 The cap is computed at read time from quota state, never by rewriting `config/cache-ttl-seconds`, so the configured value (or the absent 3600s default) returns by itself when the window recovers.
 A configured value below 300 stays in force, because the episode only tightens the guard and never loosens a stricter local setting; a disabled TTL stays disabled.
