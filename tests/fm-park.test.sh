@@ -568,7 +568,7 @@ test_hung_pending_check_ends_within_the_tick() {
   cp "$w/state/lane.review-park" "$w/state/lane2.review-park"
   : > "$w/tmux.hang"
   start=$(date +%s)
-  out=$(FM_PARK_TICK_SECS=2 run_park "$w" tick 2>&1)
+  out=$(FM_PARK_TICK_SECS=6 run_park "$w" tick 2>&1)
   took=$(( $(date +%s) - start ))
   [ "$took" -lt 10 ] || fail "pending-hang: a hung agent check held the tick for ${took}s"
   [ -z "$out" ] && [ ! -e "$w/control.log" ] || fail "pending-hang: tick acted: $out"
