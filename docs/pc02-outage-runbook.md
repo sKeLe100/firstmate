@@ -200,9 +200,8 @@ The slot count lives only on PC02, and both local offloads and runner jobs exit 
 ssh pc02 'mkdir -p ~/.config/firstmate && echo 3 > ~/.config/firstmate/pc02-offload-slots'
 ```
 
-A runner job waits up to 150 minutes for a free slot (`FM_PC02_OFFLOAD_SLOT_WAIT_SECS` overrides).
 Each instance is an independent registration with its own runner directory and its own `actions.runner.*` user unit, all sharing the extra label `fm-pc02`.
-A partition dispatched to any of them claims a PC02 slot lock before it runs (`bin/fm-pc02-test-offload.sh --runner-slot` through `bin/fm-test-compute.sh worker`), so the GitHub jobs and local offloads share the `pc02-offload-slots` cap instead of overlapping.
+[`bin/fm-pc02-test-offload.sh`](../bin/fm-pc02-test-offload.sh)'s header owns how runner jobs share the slot pool with local offloads, including their slot wait.
 Register an instance with a fresh token from the repository (never reuse another instance's `.credentials`), then install the same user unit shape the existing instance uses:
 
 ```bash
@@ -222,7 +221,7 @@ ssh pc02 'bash -lc "
 ```
 
 Create `~/.config/systemd/user/actions.runner.sKeLe100-firstmate.seansdesktop-pc02-2.service` with the same body as the existing `seansdesktop-pc02` unit but pointing at `actions-runner-firstmate-2`, then `systemctl --user daemon-reload` and `systemctl --user enable --now` it.
-Repeat with `-3` for the third slot; a new instance is gated by the personal-use switch once `install-toggle` writes its reboot drop-in, so re-run `bin/fm-pc02-personal-use.sh install-toggle` after registering.
+Repeat with `-3` for the third slot, then re-run `bin/fm-pc02-personal-use.sh install-toggle` so each new instance gets its reboot drop-in.
 `systemctl --user list-units 'actions.runner.*'` and `gh-axi api /repos/sKeLe100/firstmate/actions/runners` should both show every instance online with the `fm-pc02` label.
 
 ### Reclaiming leaked test roots

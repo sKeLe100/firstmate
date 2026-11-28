@@ -1019,7 +1019,7 @@ else
   # No --jobs is forced: fm-test-run.sh's own scheduler admits only
   # proven-concurrent work, exactly as a local run does; only its worker
   # ceiling and the per-script bound are pinned. An explicit caller --jobs is
-  # capped above so two concurrent slots together stay within PC02's thread
+  # capped above so all the slots together stay within PC02's thread
   # count.
   remote_suite_cmd="$remote_suite_cmd --per-script-timeout-secs $(printf '%q' "$SCRIPT_TIMEOUT")"
 fi
