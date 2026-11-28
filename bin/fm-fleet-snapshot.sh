@@ -47,7 +47,9 @@
 #     omitted[]; --all-decisions reveals every captain hold available within the
 #     bounded snapshot.
 #   tasks[]: one row per task metadata record captured at snapshot start, sorted
-#     by id. A record removed before capture is omitted. If a captured task's
+#     by id. Each row exposes the recorded harness and model strings (empty when
+#     the metadata records none) alongside the existing launch fields. A record
+#     removed before capture is omitted. If a captured task's
 #     generation changes while observations run, its selected metadata remains
 #     but mutable current-state, status, report, and endpoint evidence is discarded
 #     rather than attributed to the replacement generation.
@@ -786,7 +788,7 @@ cache_task_expiring() {  # <idle-secs> <harness> <model> <account> <secondmate-i
 
 # Compose one task row from the observations its own worker captured.
 task_json_row() {  # <captured-meta> <id>
-  local meta=$1 id=$2 original_meta kind harness mode yolo project worktree home projects spawn_gen branch backend target status_log report_path
+  local meta=$1 id=$2 original_meta kind harness model mode yolo project worktree home projects spawn_gen branch backend target status_log report_path
   local remote_host remote_root current_file endpoint_file observation_line
   local pr pr_source event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
   local idle_secs cache_expiring cache_mate
@@ -797,6 +799,7 @@ task_json_row() {  # <captured-meta> <id>
   kind=$(meta_value "$meta" kind)
   [ -n "$kind" ] || kind=ship
   harness=$(meta_value "$meta" harness)
+  model=$(meta_value "$meta" model)
   mode=$(meta_value "$meta" mode)
   yolo=$(meta_value "$meta" yolo)
   project=$(meta_value "$meta" project)
@@ -906,6 +909,7 @@ task_json_row() {  # <captured-meta> <id>
     --arg id "$id" \
     --arg kind "$kind" \
     --arg harness "$harness" \
+    --arg model "$model" \
     --arg mode "$mode" \
     --arg yolo "$yolo" \
     --arg branch "$branch" \
@@ -941,6 +945,7 @@ task_json_row() {  # <captured-meta> <id>
       id:$id,
       kind:$kind,
       harness:($harness // ""),
+      model:($model // ""),
       mode:($mode // ""),
       yolo:($yolo // ""),
       branch:($branch | if . == "" then null else . end),
@@ -1121,6 +1126,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | {id,kind,state:.current_state.state,
             repo:(($work.repo // .project // null) | if . == null then null else trunc(120) end),
             name:(($work.title // null) | if . == null then null else trunc(70) end),
+            harness:(.harness // ""),model:(.model // ""),
             source:.current_state.source,
             doing:((.current_state.detail // "") | trunc(120))} ]) as $active_all
     | ($captain_holds_all

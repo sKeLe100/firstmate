@@ -1529,9 +1529,44 @@ EOF
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
 }
 
+test_tasks_json_exposes_model_metadata() {
+  local home fakebin out
+  home=$(make_home model-metadata)
+  mkdir -p "$home/projects/model-wt"
+  fm_write_meta "$home/state/with-model.meta" \
+    "window=firstmate:fm-with-model" \
+    "worktree=$home/projects/model-wt" \
+    "project=alpha" \
+    "harness=opencode" \
+    "model=opencode-go/deepseek-v4.1-flash" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  fm_write_meta "$home/state/without-model.meta" \
+    "window=firstmate:fm-without-model" \
+    "worktree=$home/projects/model-wt" \
+    "project=alpha" \
+    "harness=claude" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  fakebin=$(make_fakebin "$home")
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .tasks[] | select(.id == "with-model")
+    | .model == "opencode-go/deepseek-v4.1-flash"
+      and .harness == "opencode"
+      and .kind == "ship"
+  ' >/dev/null || fail "a recorded model was not exposed on its tasks row: $out"
+  printf '%s' "$out" | jq -e '
+    .tasks[] | select(.id == "without-model")
+    | .model == "" and .harness == "claude"
+  ' >/dev/null || fail "an absent model must stay explicitly empty: $out"
+  pass "tasks rows expose the recorded model additively and stay empty when absent"
+}
+
 fm_test_run \
   test_empty_fleet_json \
   test_fixture_snapshot_json \
+  test_tasks_json_exposes_model_metadata \
   test_home_summary_excludes_secondmate_from_child_inventory \
   test_undated_captain_hold_phrasing_and_aging \
   test_hold_buckets_are_total_and_text_blind \

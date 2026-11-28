@@ -117,6 +117,8 @@ Compose the payload from the same snapshot with the same ranking judgment as the
 - `charted_more` counts omitted queued rows only, while `charted_warning_more` counts omitted warning rows only; keep both counts separate whenever the board payload truncates Charted Next.
 - Every Underway row copies the task-identifying `in_flight.name` from the snapshot into an explicit `name` field, which the board leads with while keeping the run status on its second line.
   The snapshot command's header owns its durable-title-or-id normalization; never replace the projected label with run status or invent another label.
+- Every Underway row also copies `in_flight.lane` into an explicit `lane` field so the board shows the machine and spend lane mechanically beside the run status.
+  Never recompute the label in the board or infer it from worktree, repository, or prose.
 - Every Charted Next row copies the snapshot gate's durable filed date into `filed`, and the board orders the section by it, newest filed first.
   Follow `bin/fm-bearings-board.sh`'s payload contract for the accepted format.
   Omit it or pass null for a row with no durable filed date - the main-inventory or return-catchup warning, an unavailable secondmate home, or a queued row filed before dates were recorded - and the board keeps those rows in payload order after every dated row.
@@ -165,6 +167,7 @@ Every `/bearings` chat response renders EXACTLY these four sections, in THIS ord
 2. **Recently Landed** - the bounded current recent-completions baseline: merged PRs, completed scouts, and finished local-only merges across the main fleet and every registered secondmate home.
    Empty-state: "No recent completions are in the current baseline."
 3. **Underway** - live work progressing on its own, one line of current state per direct report.
+   Name each row's machine and lane from its `in_flight.lane` label, such as `pc02`, `claude/sonnet-5-5`, `codex/gpt-5.5`, or `opencode-go/deepseek-v4.1-flash`, so that surface is visible without reading status prose.
    Empty-state: "Nothing is underway."
 4. **Charted Next** - queued or gated work waiting on the fleet or a date, deferred or aged captain-hold safety gates, plus action-free fleet-integrity warnings.
    Render one line per `claude_accounts` entry: the account label with its five-hour and weekly windows both as percent remaining and their reset times, or unknown with its reason.

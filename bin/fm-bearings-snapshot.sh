@@ -31,7 +31,13 @@
 # from every readable secondmate ledger, independently of that home's
 # bearings_state. Each row's name is the durable task title when nonblank and
 # its durable task id otherwise, so renderers always receive a task-identifying
-# label instead of having to substitute run status. A home classified
+# label instead of having to substitute run status. Each row's lane is a
+# mechanical machine-and-model label derived from the recorded harness and model
+# (opencode-go/* -> opencode-go/<short-model>, pc02-llamaswap/* -> pc02,
+# otherwise <harness>/<short-model>), falling back to the bare harness when the
+# recorded model is absent or `default`; lane is null when that fallback has no
+# recorded harness.
+# A home classified
 # captain_decision because it has an open
 # captain hold still contributes each working child as its own Underway row;
 # the home row on secondmates[] keeps the decision and gate classification.
@@ -155,7 +161,7 @@ remote homes under one shared snapshot budget and may refresh the parent-side ca
 Default fields: schema, home, generated, prs,
   claude_accounts{label,dir,status,reason,five_hour_percent_remaining,
   five_hour_resets_at,seven_day_percent_remaining,seven_day_resets_at,read_at},
-  in_flight{id,kind,state,repo,name,doing},
+  in_flight{id,kind,state,repo,name,doing,lane},
   secondmates{id,state,doing,provenance,freshness,stale,invalid_ids,age_seconds,contradiction,reason},
   secondmate_reconcile{id,spawn_gen,host,kind,ids},
   decisions_open{id,key,verb,summary,question,owner,declared_priority,since,created_at},
@@ -749,6 +755,21 @@ MODEL=$(printf '%s' "$SNAP" | jq \
     elif $s < 3600 then (((($s / 60) + 0.5) | floor) | tostring) + "m"
     elif $s < 86400 then (((($s / 3600) + 0.5) | floor) | tostring) + "h"
     else (((($s / 86400) + 0.5) | floor) | tostring) + "d" end;
+  def short_model($harness; $model):
+    ($model | tostring | split("/") | last) as $base
+    | if $harness == "claude" and ($base | startswith("claude-"))
+      then ($base | ltrimstr("claude-"))
+      else $base end;
+  def lane_of($harness; $model):
+    ($harness // "") as $h
+    | ($model // "") as $m
+    | if $m == "" or $m == "default" then (if $h == "" then null else $h end)
+      elif ($m | startswith("pc02-llamaswap/")) then "pc02"
+      else short_model($h; $m) as $short
+        | if ($m | startswith("opencode-go/")) then ("opencode-go/" + $short)
+          elif $h != "" then ($h + "/" + $short)
+          else $short end
+      end;
   def stale_ledger($bound):
     .freshness.status == "fresh"
     and (.freshness.age_seconds != null)
@@ -896,7 +917,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
         name:((.backlog.title // "") as $name
               | (if ($name | test("[^[:space:]]")) then $name else .id end) | trunc(70)),
         doing: ((.current_state.detail // "") as $d
-                | (if $d != "" then $d else (.hints.last_event_text // "") end) | trunc(90))
+                | (if $d != "" then $d else (.hints.last_event_text // "") end) | trunc(90)),
+        lane: lane_of(.harness; .model)
       } ]
      + [ $secondmate_views[] as $m
          | $m.active_children[]?
@@ -907,7 +929,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             name:((.name // "") as $name
                   | (if (($name | type) == "string" and ($name | test("[^[:space:]]")))
                      then $name else ($m.id + "/" + .id) end) | trunc(70)),
-            doing:((.doing // .state) | trunc(90))} ]) as $in_flight_all
+            doing:((.doing // .state) | trunc(90)),
+            lane: lane_of(.harness; .model)} ]) as $in_flight_all
   | def is_declared_next_session_priority:
       (.priority // null) == "0"
       and ((.hold_reason // "") | test("^NEXT-SESSION PRIORITY:"));

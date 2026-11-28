@@ -633,8 +633,11 @@ __FM_BEARINGS_BOARD_DATA__
     main.appendChild(el("div", "bb-row__title", t.name));
     /* captain-facing rows name the repo; the internal task id shows only when
        no repo is known */
+    /* the snapshot's mechanical lane label leads the second line so machine and
+       spend lane are visible without reading run prose */
+    var surface = t.lane ? t.lane + " · " : "";
     main.appendChild(el("div", "bb-row__sub",
-      t.doing + " · " + t.kind + " · " + (t.repo || t.id)));
+      surface + t.doing + " · " + t.kind + " · " + (t.repo || t.id)));
     row.appendChild(main);
     uw.appendChild(row);
   });

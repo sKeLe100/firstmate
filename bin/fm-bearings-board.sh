@@ -73,7 +73,8 @@
 # existing board is touched.
 #
 # Every Underway row likewise carries a non-empty `name`: the durable task name
-# when known, otherwise its durable identifier.
+# when known, otherwise its durable identifier. It MAY carry `lane`, the
+# snapshot's machine-and-model label, as a string or null.
 # A Charted Next row MAY carry `filed`, the durable filed date (YYYY-MM-DD, or
 # that date with a UTC timestamp) the template orders the section by, newest
 # first; a row with no comparable date keeps its payload order after every dated
@@ -171,7 +172,8 @@ validate_payload() {  # <data.json>
       and (if .type == "merge" then (.risk | nonempty_string) else true end);
     def underway_item:
       type == "object" and repo_marker and name_marker and (.id | nonempty_string)
-      and (.state | nonempty_string) and (.doing | nonempty_string) and (.kind | nonempty_string);
+      and (.state | nonempty_string) and (.doing | nonempty_string) and (.kind | nonempty_string)
+      and (.lane == null or (.lane | type == "string"));
     def landed_item:
       type == "object" and repo_marker and (.id | nonempty_string)
       and (.what | nonempty_string) and (.owner | nonempty_string)

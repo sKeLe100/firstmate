@@ -2754,16 +2754,69 @@ EOF
     (.in_flight | any(.id == "main-ship"
       and .name == "Rename the fleet board rows"
       and (.doing | type == "string") and (.doing | length) > 0
-      and .doing != .name))
+      and .doing != .name and .lane == "claude"))
       and (.in_flight | any(.id == "named-mate/mate-child"
         and .name == "Tighten the ledger contract"
         and (.doing | type == "string") and (.doing | length) > 0
-        and .doing != .name))
+        and .doing != .name and .lane == "claude"))
       and (.gates | any(.id == "newer-gate" and .filed == "2026-07-10"))
       and (.gates | any(.id == "older-gate" and .filed == "2026-07-01"))
       and (.gates | any(.id == "undated-gate" and .filed == null))
   ' >/dev/null || fail "durable Underway names or gate filed dates are missing: $json"
   pass "Underway rows carry the durable task name and gates carry their filed date"
+}
+
+test_in_flight_rows_carry_mechanical_lane_labels() {
+  local home fakebin json
+  home=$(make_home lane-labels)
+  : > "$home/data/secondmates.md"
+  mkdir -p "$home/projects/lane-wt"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] pc02-task - Local model work (repo: firstmate) (kind: ship)
+- [ ] claude-task - Claude work (repo: firstmate) (kind: ship)
+- [ ] codex-task - Codex work (repo: firstmate) (kind: ship)
+- [ ] opencode-task - OpenCode Go work (repo: firstmate) (kind: ship)
+- [ ] bare-task - No recorded model (repo: firstmate) (kind: ship)
+- [ ] default-task - Unspecified spawn model (repo: firstmate) (kind: ship)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/pc02-task.meta" \
+    "window=firstmate:fm-pc02-task" "worktree=$home/projects/lane-wt" "project=firstmate" \
+    "harness=opencode" "model=pc02-llamaswap/qwen3.6-35b-a3b-dispatch" "kind=ship" "mode=no-mistakes"
+  fm_write_meta "$home/state/claude-task.meta" \
+    "window=firstmate:fm-claude-task" "worktree=$home/projects/lane-wt" "project=firstmate" \
+    "harness=claude" "model=claude-sonnet-5-5" "kind=ship" "mode=no-mistakes"
+  fm_write_meta "$home/state/codex-task.meta" \
+    "window=firstmate:fm-codex-task" "worktree=$home/projects/lane-wt" "project=firstmate" \
+    "harness=codex" "model=gpt-5.5" "kind=ship" "mode=no-mistakes"
+  fm_write_meta "$home/state/opencode-task.meta" \
+    "window=firstmate:fm-opencode-task" "worktree=$home/projects/lane-wt" "project=firstmate" \
+    "harness=opencode" "model=opencode-go/deepseek-v4.1-flash" "kind=ship" "mode=no-mistakes"
+  fm_write_meta "$home/state/bare-task.meta" \
+    "window=firstmate:fm-bare-task" "worktree=$home/projects/lane-wt" "project=firstmate" \
+    "harness=claude" "kind=ship" "mode=no-mistakes"
+  fm_write_meta "$home/state/default-task.meta" \
+    "window=firstmate:fm-default-task" "worktree=$home/projects/lane-wt" "project=firstmate" \
+    "harness=codex" "model=default" "kind=ship" "mode=no-mistakes"
+  for id in pc02-task claude-task codex-task opencode-task bare-task default-task; do
+    record_claude_state "$home/state" "$id" busy
+    printf 'working: lane fixture %s\n' "$id" > "$home/state/$id.status"
+  done
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    ([.in_flight[] | select(.id == "pc02-task") | .lane] == ["pc02"])
+      and ([.in_flight[] | select(.id == "claude-task") | .lane] == ["claude/sonnet-5-5"])
+      and ([.in_flight[] | select(.id == "codex-task") | .lane] == ["codex/gpt-5.5"])
+      and ([.in_flight[] | select(.id == "opencode-task") | .lane] == ["opencode-go/deepseek-v4.1-flash"])
+      and ([.in_flight[] | select(.id == "bare-task") | .lane] == ["claude"])
+      and ([.in_flight[] | select(.id == "default-task") | .lane] == ["codex"])
+  ' >/dev/null || fail "in_flight lane derivation is wrong: $json"
+  pass "in_flight rows derive mechanical lane labels from harness and model"
 }
 
 test_mixed_secondmate_roles_partial_state_and_captain_readiness() {
@@ -3947,6 +4000,7 @@ fm_test_run \
   test_nameless_legacy_summary_uses_its_durable_identifier \
   test_newest_filed_gates_are_selected_before_snapshot_bounds \
   test_underway_and_gate_rows_carry_the_durable_name_and_filed_date \
+  test_in_flight_rows_carry_mechanical_lane_labels \
   test_mixed_secondmate_roles_partial_state_and_captain_readiness \
   test_main_captain_readiness_matches_secondmate_projection \
   test_completed_scout_report_not_pending \
