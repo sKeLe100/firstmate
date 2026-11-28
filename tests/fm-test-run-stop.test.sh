@@ -74,6 +74,18 @@ wait_cmdline() {
   return 1
 }
 
+# wait_sleeping <pid>: waits until a child of <pid> has exec'd sleep. Bash drops
+# a TERM that reaches a forked child before its exec, so a stop sent earlier
+# escalates to KILL.
+wait_sleeping() {
+  local i
+  for ((i = 0; i < 100; i++)); do
+    pgrep -P "$1" -x sleep >/dev/null && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
 # detach <command...>: starts the command in the background from a subshell that
 # exits at once, so the command is reparented and this shell never reports its
 # termination. Sets LAST_PID to the command's pid, and records it for cleanup.
@@ -93,13 +105,14 @@ write_run_script() {
 }
 
 # start_run <run-dir> <body>: writes the script and starts it from <run-dir> in
-# its own session, so its pid is also its process group. Sets LAST_PID.
+# its own session, so its pid is also its process group. <body> ends in a
+# foreground sleep, which is running on return. Sets LAST_PID.
 start_run() {
   local dir=$1
   write_run_script "$dir" "$2"
   # shellcheck disable=SC2016 # The single quotes pass $1 to the launched shell.
   detach setsid bash -c 'cd "$1" && exec bash "$1/bin/fm-test-run.sh"' _ "$dir"
-  wait_cmdline "$LAST_PID" 'fm-test-run.sh' || fail "fixture in $dir did not start"
+  wait_sleeping "$LAST_PID" || fail "fixture in $dir did not start"
 }
 
 # Answers the run overview and each run's status from the fixture case files.
@@ -272,6 +285,8 @@ SH
   wait_cmdline "$leader" 'fm-test-run.sh' || fail "fixture leader did not start the test run"
   wait_file "$RUNA/tmp/ssh.pid" || fail "fixture run did not start its fake ssh"
   sshpid=$(cat "$RUNA/tmp/ssh.pid")
+  wait_cmdline "$sshpid" '^ssh ' || fail "fixture fake ssh did not exec"
+  wait_sleeping "$leader" || fail "fixture leader did not reach its sleep"
   FIXTURE_PIDS+=("$leader" "$sshpid")
   proc_live "$daemon" || fail "fixture daemon is not live"
   proc_live "$agent" || fail "fixture test agent is not live"
@@ -313,7 +328,7 @@ SH
   wait_file "$CASE_DIR/agent.pid" || fail "fixture daemon did not start the test agent"
   agent=$(cat "$CASE_DIR/agent.pid")
   FIXTURE_PIDS+=("$child" "$agent")
-  wait_cmdline "$child" 'fm-test-run.sh' || fail "fixture run did not start"
+  wait_sleeping "$child" || fail "fixture run did not start"
   assert_equals "$daemon" "$(proc_pgid "$child")" "the run shares the daemon's process group"
   assert_equals "$daemon" "$(proc_pgid "$agent")" "the test agent shares the daemon's process group"
 
@@ -384,6 +399,7 @@ test_stops_orphans_of_the_run_group() {
   local victim=$LAST_PID orphan
   wait_file "$RUNA/orphan.pid" || fail "fixture orphan did not start"
   orphan=$(cat "$RUNA/orphan.pid")
+  wait_cmdline "$orphan" '^sleep ' || fail "fixture orphan did not exec"
   FIXTURE_PIDS+=("$orphan")
   proc_live "$orphan" || fail "fixture orphan is not live"
   assert_equals "$victim" "$(proc_pgid "$orphan")" "the orphan stayed in the run's group"
@@ -403,6 +419,12 @@ test_stops_a_run_led_by_a_shell_wrapper() {
   detach setsid sh -c 'cd "$1" && bash "$1/bin/fm-test-run.sh" ; echo finished' _ "$RUNA"
   local victim=$LAST_PID
   wait_cmdline "$victim" 'fm-test-run.sh' || fail "shell-wrapped fixture did not start"
+  local i inner=
+  for ((i = 0; i < 100; i++)); do
+    inner=$(pgrep -P "$victim" -x bash) && break
+    sleep 0.05
+  done
+  wait_sleeping "$inner" || fail "shell-wrapped fixture did not reach its sleep"
   run_stop task-a --host pc01
   expect_code 0 "$RC" "stop of a shell-wrapped run"
   assert_equals "pc01 group=$victim stopped=3 signal=TERM mode=group" "$(first_line "$OUT")" "the wrapper, the run and its child form the group"
