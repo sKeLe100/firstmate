@@ -14,7 +14,7 @@
 # Usage: fm-dispatch-quota-cap.sh [--quota-json <file>]
 #                                 [--claude-account <ordinary|/path>]
 #                                 [--accounts-jsonl <file>]
-#                                 [--state-dir <dir>]
+#                                 [--state-dir <dir>] [--over-pace]
 #   --quota-json <file>  read the `quota-axi --json` document from <file>
 #                        instead of running quota-axi; the test seam and
 #                        offline replay use this. The file must carry
@@ -33,6 +33,10 @@
 #                        environment. A --quota-json given with it supplies
 #                        only the codex provider.
 #   --state-dir <dir>    count live lanes in <dir> instead of $FM_HOME/state.
+#   --over-pace          the captain's one-spawn approval, passed by
+#                        bin/fm-spawn.sh: the projected-exhaustion row below
+#                        does not apply, and an exhausted seven_day allowance
+#                        is cap 0. Every other row still applies.
 #
 # Bound account: without --claude-account or a --quota-json fixture, the
 # account is the one config/claude-account pins (read the way
@@ -151,6 +155,7 @@ fi
 QUOTA_JSON=${FM_DISPATCH_QUOTA_JSON:-}
 ACCOUNTS_JSONL=${FM_DISPATCH_ACCOUNTS_JSONL:-}
 CLAUDE_ACCOUNT=
+OVER_PACE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --quota-json)
@@ -176,6 +181,10 @@ while [ $# -gt 0 ]; do
     --state-dir)
       STATE="${2:?--state-dir needs a value}"
       shift 2
+      ;;
+    --over-pace)
+      OVER_PACE=1
+      shift
       ;;
     *)
       echo "fm-dispatch-quota-cap: unknown argument: $1" >&2
@@ -280,7 +289,7 @@ fi
 FM_CAP_BASE="$base" FM_CAP_DOC="$DOC" FM_CAP_CLAUDE_DOC="$CLAUDE_DOC" \
   FM_CAP_CODEX_DOC="$CODEX_DOC" FM_CAP_FIXTURE="$FIXTURE" \
   FM_CAP_ACCOUNT="$CLAUDE_ACCOUNT" FM_CAP_STATE="$STATE" \
-  FM_CAP_MULTI="$MULTI" FM_CAP_LISTED="$LISTED" FM_CAP_ACCOUNTS_DOC="$ACCOUNTS_DOC" python3 <<'PY'
+  FM_CAP_OVER_PACE="$OVER_PACE" FM_CAP_MULTI="$MULTI" FM_CAP_LISTED="$LISTED" FM_CAP_ACCOUNTS_DOC="$ACCOUNTS_DOC" python3 <<'PY'
 import glob
 import json
 import os
@@ -293,6 +302,7 @@ state = os.environ["FM_CAP_STATE"]
 bound_account = os.environ["FM_CAP_ACCOUNT"]
 fixture = os.environ["FM_CAP_FIXTURE"] == "1"
 multi = os.environ["FM_CAP_MULTI"] == "1"
+over_pace = os.environ["FM_CAP_OVER_PACE"] == "1"
 
 def refuse(msg):
     print(f"fm-dispatch-quota-cap: {msg}", file=sys.stderr)
@@ -515,13 +525,17 @@ def evaluate(account, claude, source_doc, strict):
             early = confidence == "early"
             exhausted_now = five_pct <= 0 or pace.get("status") == "exhausted_now"
             projected_first = (
-                projected is not None
+                not over_pace
+                and projected is not None
                 and not early
                 and projected < resets - timedelta(minutes=20)
             )
             if exhausted_now:
                 runway_cap = 0
                 reason = f"{five_pct:g}% left; five-hour window already exhausted"
+            elif over_pace and seven_exhausted():
+                runway_cap = 0
+                reason = f"weekly allowance is exhausted ({seven_pct:g}% left)"
             elif projected_first:
                 runway_cap = 0
                 reason = (
