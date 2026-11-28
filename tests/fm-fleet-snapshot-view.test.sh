@@ -1370,6 +1370,8 @@ test_cache_expiring_follows_configured_ttl() {
   local home fakebin out view stamp
   home=$(make_home cache-expiring)
   fakebin=$(make_fakebin "$home")
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/quota-axi"
+  chmod +x "$fakebin/quota-axi"
   fm_write_meta "$home/state/warm-task.meta" \
     "window=firstmate:fm-warm-task" "project=alpha" "harness=claude" \
     "kind=ship" "mode=ship"

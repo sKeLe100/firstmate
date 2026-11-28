@@ -18,6 +18,9 @@
 #      exempt.
 #   7. A stale turn-ended marker on a task whose OTHER activity markers are
 #      fresh, and a task classified busy (mid-turn), are never refused.
+#   8. While quota-axi reports the target's recorded Claude account exhausted
+#      for its model, a Claude target idle past 300s is refused; a target on a
+#      healthy account, or a non-Claude target, is not.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -88,6 +91,38 @@ run_send() {  # <case-dir> <err-file> [env...] -- <fm-send args...>
     FM_ROOT_OVERRIDE="$dir/home" FM_HOME="$dir/home" FM_SEND_SETTLE=0 \
     ${envs[@]+"${envs[@]}"} \
     "$SEND" "$@" >/dev/null 2>"$err"
+}
+
+test_overage_caps_only_the_exhausted_claude_target() {
+  local name harness account want dir err rc
+  while read -r name harness account want; do
+    dir=$(setup_case "overage-$name"); err="$dir/send.err"
+    mkdir -p "$dir/home/config" "$dir/exhausted" "$dir/healthy"
+    printf '%s\n' "$dir/exhausted" > "$dir/home/config/claude-account"
+    printf '%s\n' '{"providers":[{"provider":"claude","state":{"status":"fresh"},"quotaSemantics":{"effectiveAvailability":[{"scope":"model:opus","status":"known","effectivePercentRemaining":0}]}}]}' \
+      > "$dir/exhausted/quota.json"
+    cat > "$dir/fakebin/quota-axi" <<'SH'
+#!/usr/bin/env bash
+cat -- "$CLAUDE_CONFIG_DIR/quota.json"
+SH
+    chmod +x "$dir/fakebin/quota-axi"
+    sed 's/"effectivePercentRemaining":0/"effectivePercentRemaining":42/' \
+      "$dir/exhausted/quota.json" > "$dir/healthy/quota.json"
+    fm_write_meta "$dir/home/state/t1.meta" "window=sess:fm-t1" "kind=ship" \
+      "harness=$harness" "model=claude-opus-5-5" "account=$dir/$account"
+    age_activity "$dir" 600
+    run_send "$dir" "$err" -- t1 "ordinary steer"; rc=$?
+    expect_code "$want" "$rc" "overage case $name"$'\n'"$(cat "$err")"
+    if [ "$want" = 1 ]; then
+      assert_contains "$(cat "$err")" "300s prompt-cache TTL" \
+        "the overage refusal must report the capped TTL"
+    fi
+  done <<'CASES'
+exhausted claude exhausted 1
+healthy claude healthy 0
+non-claude codex exhausted 0
+CASES
+  pass "fm-send cache-stale guard: a Claude overage caps only the exhausted Claude target"
 }
 
 test_unreadable_idle_signal_fails_open() {
@@ -244,3 +279,4 @@ test_busy_session_never_refused
 test_internal_wake_ignores_guard
 test_fire_and_forget_ignores_guard
 test_resolve_key_answer_ignores_guard
+test_overage_caps_only_the_exhausted_claude_target

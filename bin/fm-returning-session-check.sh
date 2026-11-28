@@ -64,7 +64,9 @@
 # The verdict is restart-with-carryover when band=restart, OR when band=warn
 # AND the session has sat idle past the effective prompt-cache TTL of the
 # home that owns those activity markers (cache-ttl-seconds in the config/
-# directory beside <state-dir>, else the shared 3600s default): a warn-band session that has gone cold pays the same return-tax
+# directory beside <state-dir>, else the shared 3600s default, capped
+# during a Claude overage as docs/configuration.md "Prompt-cache steer guard"
+# describes): a warn-band session that has gone cold pays the same return-tax
 # re-read a restart-band session does, so a bare resume just walks it
 # straight into the restart band on the very first turn back. band=ok never
 # restarts regardless of idle time, and idle_seconds=unknown (no state-dir/
@@ -91,7 +93,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,90p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,92p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -178,7 +180,17 @@ if [ -n "$state_dir" ] && [ -n "$task_id" ]; then
 fi
 ttl_seconds="n/a"
 if [ -n "$state_dir" ]; then
-  ttl_seconds="$(fm_cache_ttl_seconds "$(dirname -- "$state_dir")/config")"
+  ttl_config="$(dirname -- "$state_dir")/config"
+  if [ "$band" = "warn" ] && [ "$idle_seconds" != "unknown" ]; then
+    cache_mate=
+    [ "$(fm_meta_get "$state_dir/$task_id.meta" kind)" != secondmate ] || cache_mate=$task_id
+    ttl_seconds="$(fm_cache_ttl_for_idle "$ttl_config" "$idle_seconds" \
+      "$(fm_meta_get "$state_dir/$task_id.meta" harness)" \
+      "$(fm_meta_get "$state_dir/$task_id.meta" model)" \
+      "$(fm_meta_get "$state_dir/$task_id.meta" account)" "$cache_mate")"
+  else
+    ttl_seconds="$(fm_cache_configured_ttl_seconds "$ttl_config")"
+  fi
 fi
 
 if [ "$band" = "restart" ]; then
