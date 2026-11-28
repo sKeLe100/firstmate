@@ -648,37 +648,82 @@ test_remote_run_passes_through_green_suite_and_json() {
   pass "a green remote run exits 0, returns its --json artifact, and removes its mirror"
 }
 
+# mirror_fixture_repo <dir>: a throwaway checkout carrying this tree's bin/, so
+# mirror cases can dirty the working tree without touching the real one.
+mirror_fixture_repo() {
+  local repo=$1
+  mkdir -p "$repo/gone-dir" "$repo/now-file" "$repo/now-link"
+  cp -R "$ROOT/bin" "$repo/bin"
+  printf 'ignored-payload\n' > "$repo/.gitignore"
+  printf 'kept\n' > "$repo/tracked"
+  printf 'doomed\n' > "$repo/deleted"
+  printf 'doomed\n' > "$repo/gone-dir/f"
+  printf 'old\n' > "$repo/now-file/f"
+  printf 'old\n' > "$repo/now-link/f"
+  git -C "$repo" init -q -b main
+  git -C "$repo" add -A
+  git -C "$repo" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -qm initial
+}
+
 test_mirror_carries_only_the_git_visible_tree() {
-  local dir fakebin out status ignored untracked
+  local dir repo fakebin out status path
   if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
     pass "skip: remote fixture needs rsync and flock"; return
   fi
   dir="$TMP_ROOT/mirror-payload"
+  repo="$dir/repo"
   fakebin=$(fake_pc02 "$dir")
-  printf '#!/usr/bin/env bash\necho "ok - fixture"\n' > "$dir/green.test.sh"
-  chmod +x "$dir/green.test.sh"
-  # A git-ignored artifact at the worktree root must never travel, while an
-  # untracked but not ignored file with unlanded work must still travel. A
-  # whole-tree transfer of ignored content is what pushed real mirrors past
-  # the sync bound (a primary checkout held 13.5 GiB / 317k files of it).
-  ignored="scratchpad-offload-payload-$$"
-  untracked=".fm-pc02-offload-untracked-$$"
-  printf 'ignored payload\n' > "$ROOT/$ignored"
-  printf 'unlanded work\n' > "$ROOT/$untracked"
+  mirror_fixture_repo "$repo"
+  printf 'ignored payload\n' > "$repo/ignored-payload"
+  printf 'unlanded work\n' > "$repo/untracked"
+  rm -rf "$repo/deleted" "$repo/gone-dir" "$repo/now-file" "$repo/now-link"
+  printf 'new\n' > "$repo/now-file"
+  mkdir "$repo/link-target"
+  printf 'new\n' > "$repo/link-target/f"
+  ln -s link-target "$repo/now-link"
   out=$(PATH="$fakebin:$PATH" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
-    FM_FAKE_RSYNC_MANIFEST="$dir/mirror-manifest" \
-    "$SCRIPT" "$dir/green.test.sh" 2>&1)
+    FM_FAKE_CAPTURE_RUNNER=1 FM_FAKE_RSYNC_MANIFEST="$dir/mirror-manifest" \
+    "$repo/bin/fm-pc02-test-offload.sh" fixture.test.sh 2>&1)
   status=$?
-  rm -f "$ROOT/$ignored" "$ROOT/$untracked"
   expect_code 0 "$status" "the mirror payload case must pass: $out"
+  assert_contains "$out" "remote=1" "the dirty tree did not run on PC02: $out"
   [ -f "$dir/mirror-manifest" ] || fail "the fake sync recorded no mirror manifest: $out"
-  grep -qx 'AGENTS.md' "$dir/mirror-manifest" \
-    || fail "the mirror dropped a tracked file: $(cat "$dir/mirror-manifest")"
-  grep -qxF "$untracked" "$dir/mirror-manifest" \
-    || fail "the mirror dropped an untracked, non-ignored file: $(cat "$dir/mirror-manifest")"
-  ! grep -qxF "$ignored" "$dir/mirror-manifest" \
-    || fail "the mirror carried git-ignored content: $(cat "$dir/mirror-manifest")"
-  pass "the PC02 mirror carries tracked and untracked-but-not-ignored files and skips git-ignored payload"
+  for path in tracked untracked now-file now-link link-target/f; do
+    grep -qxF "$path" "$dir/mirror-manifest" \
+      || fail "the mirror dropped $path: $(cat "$dir/mirror-manifest")"
+  done
+  for path in ignored-payload deleted gone-dir/f now-file/f now-link/f; do
+    ! grep -qxF "$path" "$dir/mirror-manifest" \
+      || fail "the mirror carried $path: $(cat "$dir/mirror-manifest")"
+  done
+  pass "the PC02 mirror matches the git-visible working tree through deletions and type changes"
+}
+
+test_failed_mirror_listing_falls_back_to_local() {
+  local dir repo fakebin real_git out status
+  if ! command -v rsync >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
+    pass "skip: remote fixture needs rsync and flock"; return
+  fi
+  dir="$TMP_ROOT/mirror-list-failure"
+  repo="$dir/repo"
+  fakebin=$(fake_pc02 "$dir")
+  mirror_fixture_repo "$repo"
+  printf '#!/usr/bin/env bash\necho local-runner-ran\n' > "$repo/bin/fm-test-run.sh"
+  real_git=$(command -v git)
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+case "\$*" in *'ls-files -z') exit 128 ;; esac
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fakebin/git"
+  out=$(PATH="$fakebin:$PATH" FM_PC02_OFFLOAD_REQUIRED_TOOLS=bash \
+    "$repo/bin/fm-pc02-test-offload.sh" fixture.test.sh 2>&1)
+  status=$?
+  expect_code 0 "$status" "a failed file listing must still run the suite locally: $out"
+  assert_contains "$out" "could not list the working tree" "the listing failure was not reported: $out"
+  assert_contains "$out" "local-runner-ran" "the local runner did not run: $out"
+  pass "a failed tracked-file listing routes the run local"
 }
 
 test_remote_lint_runs_local_lint_and_propagates_exit() {
@@ -2056,6 +2101,7 @@ test_personal_use_flip_during_sync_stops_before_the_suite_runs
 test_personal_use_flip_while_waiting_for_a_slot_stops_the_run
 test_remote_run_passes_through_green_suite_and_json
 test_mirror_carries_only_the_git_visible_tree
+test_failed_mirror_listing_falls_back_to_local
 test_remote_lint_runs_local_lint_and_propagates_exit
 test_lint_local_fallback_runs_changed_file_lint
 test_remote_invocation_inherits_fm_test_run_scheduler

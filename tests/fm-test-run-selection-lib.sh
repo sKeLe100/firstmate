@@ -81,7 +81,7 @@ test_environment_record_is_compact_safe_and_emitted_once() {
   done
 
   fakebin=$(fm_fakebin "$tmp_root/env-record-path")
-  for tool in tr cut df awk stat uname ps basename head mktemp rm timeout env; do
+  for tool in tr cut df awk stat uname ps basename dirname head mktemp rm timeout env; do
     local found
     found=$(command -v "$tool")
     [ -n "$found" ] && ln -sf "$found" "$fakebin/$tool"

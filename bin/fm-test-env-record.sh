@@ -7,18 +7,15 @@
 # `chromium` first reported a false startup failure on a display-less host,
 # where a full Chrome build never writes --dump-dom but the suite's headless
 # shell does.
-_env_record_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-if [ -r "$_env_record_dir/fm-test-chrome.sh" ]; then
-  # shellcheck source=bin/fm-test-chrome.sh
-  . "$_env_record_dir/fm-test-chrome.sh"
-fi
+# shellcheck source=bin/fm-test-chrome.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-test-chrome.sh"
 
 clean_value() {
   printf '%s' "$1" | tr '\r\n\t' '   ' | cut -c1-240
 }
 
 fm_test_env_record_main() {
-  local tmp_fs=unknown tmpdir_path process_model subreaper chrome candidate chrome_tmp
+  local tmp_fs=unknown tmpdir_path process_model subreaper chrome chrome_tmp
   tmpdir_path=${TMPDIR:-/tmp}
   if command -v df >/dev/null 2>&1; then
     tmp_fs=$(df -PT "$tmpdir_path" 2>/dev/null | awk 'NR==2 {print $2}')
@@ -73,15 +70,7 @@ fm_test_env_record_main() {
   fm_test_env_tool_record rsync --version
   fm_test_env_tool_record no-mistakes --version
 
-  chrome=
-  if declare -F find_chrome >/dev/null 2>&1; then
-    chrome=$(find_chrome 2>/dev/null || true)
-  else
-    for candidate in chromium chromium-browser google-chrome google-chrome-stable; do
-      chrome=$(type -P "$candidate" 2>/dev/null || true)
-      [ -z "$chrome" ] || break
-    done
-  fi
+  chrome=$(find_chrome 2>/dev/null || true)
   if [ -z "$chrome" ]; then
     printf 'chrome_startup=missing\n'
   elif ! type -P timeout >/dev/null 2>&1; then

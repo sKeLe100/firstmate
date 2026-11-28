@@ -355,8 +355,8 @@ done
 
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
-# rsync's remote shell gets the same non-interactive, bounded connection every
-# other ssh call here uses. A bare `-e ssh` can sit on a host-key or
+# rsync's remote shell gets the same non-interactive, bounded connect as the
+# readiness probe. A bare `-e ssh` can sit on a host-key or
 # authentication prompt (exit 124 under the timeout) or fail with rsync's 255
 # when the transport drops, instead of failing fast like this script's probes.
 RSYNC_SSH="ssh -o BatchMode=yes -o ConnectTimeout=$PROBE_TIMEOUT -o ConnectionAttempts=1"
@@ -521,6 +521,18 @@ trap 'remove_remote_run; release_claim' EXIT
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 trap 'on_signal 129' HUP
+
+keep_real_parents() {  # NUL-separated $ROOT-relative paths on stdin
+  local entry parent
+  while IFS= read -r -d '' entry; do
+    parent=$entry
+    while [[ $parent == */* ]]; do
+      parent=${parent%/*}
+      [ -d "$ROOT/$parent" ] && [ ! -L "$ROOT/$parent" ] || continue 2
+    done
+    printf '%s\0' "$entry" || return 1
+  done
+}
 
 run_local() {  # <reason>
   echo "fm-pc02-test-offload: $1; running on PC01" >&2
@@ -898,8 +910,11 @@ git_dir=$(fm_resolve_git_path "$ROOT" --git-dir) || run_local "could not resolve
 git_common_dir=$(fm_resolve_git_path "$ROOT" --git-common-dir) || run_local "could not resolve this worktree's git-common-dir"
 
 mirror_list=$(mktemp "${TMPDIR:-/tmp}/fm-pc02-mirror.XXXXXX") || run_local "could not create the mirror file list"
-{ git -C "$ROOT" ls-files -z; git -C "$ROOT" ls-files -z --others --exclude-standard; } > "$mirror_list" \
-  || run_local "could not list the working tree for the PC02 mirror"
+(
+  set -o pipefail
+  { git -C "$ROOT" ls-files -z && git -C "$ROOT" ls-files -z --others --exclude-standard; } \
+    | keep_real_parents > "$mirror_list"
+) || run_local "could not list the working tree for the PC02 mirror"
 
 mkdir_cmd="mkdir -p $(printf '%q' "$REMOTE_WORKTREE") $(printf '%q' "$REMOTE_COMMON") $(printf '%q' "$REMOTE_TMP")"
 REMOTE_RUN_CREATED=1
