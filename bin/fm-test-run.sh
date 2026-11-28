@@ -1175,7 +1175,7 @@ tests/fm-queue-snapshot.test.sh 33266
 tests/fm-quota-array-dispatch-live-e2e.test.sh 410
 tests/fm-quota-choose.test.sh 4154
 tests/fm-read-repetition-live.test.sh 1192
-tests/fm-read-repetition.test.sh 1270
+tests/fm-read-repetition.test.sh 760
 tests/fm-remote-backlog-handoff.test.sh 152340
 tests/fm-remote-delta-read.test.sh 6496
 tests/fm-remote-doctor.test.sh 37506
