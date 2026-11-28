@@ -1,0 +1,17 @@
+--- idle pane
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Fake Model Fake Local                                                          /tmp/fm-lab.Ddop0P/t/firstmate-0c6912/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    36/firstmate:fm/startup-hang-timeout
+   /tmp/fm-lab.Ddop0P/t/firstmate-0c6912/36/        155.3K (16%) · $0.07 ctrl+p commands
+   firstmate                                                                                • OpenCode 1.19.5
+herdr agent get: {"agent":"opencode","agent_status":"idle"}
+
+$ [BASE 1f268e51] fm-control.sh oc-lane exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.Ddop0P
+error: task oc-lane's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+herdr agent get: {"agent":"opencode","agent_status":"idle"}

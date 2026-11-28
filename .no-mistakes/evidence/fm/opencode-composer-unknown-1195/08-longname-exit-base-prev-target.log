@@ -1,0 +1,104 @@
+=== oc-a idle pane
+
+
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.O9qv9G/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                          collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/    155.3K (16%) · $ ctrl+p
+   walky-talky-collector                                                     commands       • OpenCode 1.19.5
+agent: {"agent":"opencode","agent_status":"idle"}
+$ [BASE 1f268e51] fm-control.sh oc-a exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-a's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+$ [PREV 66f2a926] fm-control.sh oc-a exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-a's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+$ [TARGET c969a270] fm-control.sh oc-a exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+stopped oc-a harness=opencode backend=herdr endpoint=fm-lab-oc95c-1520883-8168:w2:p1 worktree=/tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/walky-talky-collector
+exit status: 0
+{"error":{"code":"agent_not_found","message":"agent target w2:p1 not found"},"id":"cli:agent:get"}
+agent: 
+--- pane after (endpoint preserved)
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK. The work is finished.
+  Continue  opencode -s ses_ddff9cf66ffeknnZtKw5Os5vvc
+sean_@SeansMiniPC:/tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/walky-talky-collector$
+$ [TARGET again] fm-control.sh oc-a exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+already-stopped oc-a harness=opencode backend=herdr endpoint=fm-lab-oc95c-1520883-8168:w2:p1 worktree=/tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/walky-talky-collector
+exit status: 0
+=== oc-b idle pane
+
+
+  ┃
+  ┃                                                                                         /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+agent: {"agent":"opencode","agent_status":"idle"}
+$ [BASE 1f268e51] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-b's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+$ [PREV 66f2a926] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-b's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+$ [TARGET c969a270] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+stopped oc-b harness=opencode backend=herdr endpoint=fm-lab-oc95c-1520883-8168:w3:p1 worktree=/tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-0c6912/36/customer-onboarding-service-api
+exit status: 0
+{"error":{"code":"agent_not_found","message":"agent target w3:p1 not found"},"id":"cli:agent:get"}
+agent: 
+--- pane after (endpoint preserved)
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK. The work is finished.
+  Continue  opencode -s ses_ddff93ac7ffejjmz55brWP0iqg
+sean_@SeansMiniPC:/tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-0c6912/36/customer-onboarding-service-api$
+$ [TARGET again] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+already-stopped oc-b harness=opencode backend=herdr endpoint=fm-lab-oc95c-1520883-8168:w3:p1 worktree=/tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-0c6912/36/customer-onboarding-service-api
+exit status: 0
+=== oc-c idle pane
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Fake Model Fake Local                                                          /tmp/fm-lab.O9qv9G/t/firstmate-0c6912/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    36/firstmate:fm/startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/firstmate-0c6912/36/        155.3K (16%) · $0.07 ctrl+p commands
+   firstmate                                                                                • OpenCode 1.19.5
+agent: {"agent":"opencode","agent_status":"idle"}
+$ [BASE 1f268e51] fm-control.sh oc-c exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-c's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+$ [TARGET c969a270] fm-control.sh oc-c exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+stopped oc-c harness=opencode backend=herdr endpoint=fm-lab-oc95c-1520883-8168:w4:p1 worktree=/tmp/fm-lab.O9qv9G/t/firstmate-0c6912/36/firstmate
+exit status: 0
+{"error":{"code":"agent_not_found","message":"agent target w4:p1 not found"},"id":"cli:agent:get"}
+agent: 
+--- pane after (endpoint preserved)
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   OK. The work is finished.
+  Continue  opencode -s ses_ddff8fc0fffeCqDK5uefn1Jo8A
+sean_@SeansMiniPC:/tmp/fm-lab.O9qv9G/t/firstmate-0c6912/36/firstmate$
+$ [TARGET again] fm-control.sh oc-c exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+already-stopped oc-c harness=opencode backend=herdr endpoint=fm-lab-oc95c-1520883-8168:w4:p1 worktree=/tmp/fm-lab.O9qv9G/t/firstmate-0c6912/36/firstmate
+exit status: 0

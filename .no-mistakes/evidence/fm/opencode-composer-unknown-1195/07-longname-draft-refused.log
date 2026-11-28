@@ -1,0 +1,116 @@
+--- draft: unsent draft do not lose
+
+
+
+
+  ┃
+  ┃  unsent draft do not lose                                                               /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+$ [TARGET] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-b's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+exit status: 1
+agent: {"agent":"opencode","agent_status":"idle"}
+--- pane after refusal
+
+
+
+
+  ┃
+  ┃  unsent draft do not lose                                                               /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+--- draft: commands
+
+
+
+
+  ┃
+  ┃  commands                                                                               /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+$ [TARGET] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-b's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+exit status: 1
+agent: {"agent":"opencode","agent_status":"idle"}
+--- pane after refusal
+
+
+
+
+  ┃
+  ┃  commands                                                                               /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+--- draft: please press ctrl+p
+
+
+
+
+  ┃
+  ┃  please press ctrl+p                                                                    /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+$ [TARGET] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-b's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+exit status: 1
+agent: {"agent":"opencode","agent_status":"idle"}
+--- pane after refusal
+
+
+
+
+  ┃
+  ┃  please press ctrl+p                                                                    /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+--- draft: long draft long draft long draft long draft long draft long 
+
+
+  ┃
+  ┃  long draft long draft long draft long draft long draft long draft long draft
+  ┃  long draft long draft long draft long draft long draft long draft long draft
+  ┃  long draft long draft long draft long draft long draft long draft                      /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+$ [TARGET] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.O9qv9G
+error: task oc-b's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+exit status: 1
+agent: {"agent":"opencode","agent_status":"idle"}
+--- pane after refusal
+
+
+  ┃
+  ┃  long draft long draft long draft long draft long draft long draft long draft
+  ┃  long draft long draft long draft long draft long draft long draft long draft
+  ┃  long draft long draft long draft long draft long draft long draft                      /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5

@@ -1,0 +1,56 @@
+=== oc-d idle pane (synthetic local gh forge, stub treehouse lease, idle busy record)
+"width":132
+
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.P6KP7f/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                          collector-park-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector-park:fm/startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/walky-talky-collector-park-0c6912/36/ 155.3K (16%) · ctrl+p
+   walky-talky-collector-park                                                commands       • OpenCode 1.19.5
+$ [BASE 1f268e51] fm-park.sh park oc-d
+fm-park: refusing to park oc-d: the agent could not be stopped: error: task oc-d's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'; the next tick settles its pending park record
+exit status: 1
+agent: "agent_status":"idle"
+oc-d.busy-gen
+oc-d.busy-state
+oc-d.check.sh
+oc-d.meta
+oc-d.review-park
+oc-d.status
+$ [TARGET c5cbd6c4] fm-park.sh park oc-d
+fm-park: refusing to park oc-d: already parked
+exit status: 1
+agent: "agent_status":"idle"
+$ [TARGET] fm-park.sh list
+oc-d	PR https://github.com/example/repo/pull/7	head e40ac4007bcf	parked 2026-11-28T03:19Z	parking; stop not yet confirmed
+exit status: 0
+"width":132
+
+
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.P6KP7f/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                          collector-park-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector-park:fm/startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/walky-talky-collector-park-0c6912/36/ 155.3K (16%) · ctrl+p
+   walky-talky-collector-park                                                commands       • OpenCode 1.19.5
+--- reset: removing the pending park record left by the BASE attempt (lab state only)
+done [at=1]: PR https://github.com/example/repo/pull/7 checks green
+$ [TARGET c5cbd6c4] fm-park.sh park oc-d
+parked oc-d: PR https://github.com/example/repo/pull/7 clean at e40ac4007bcf; agent stopped
+exit status: 0
+agent: agent_not_found
+$ [TARGET] fm-park.sh list
+oc-d	PR https://github.com/example/repo/pull/7	head e40ac4007bcf	parked 2026-11-28T03:19Z
+exit status: 0
+"width":132
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+  Session   OK. The work is finished.
+  Continue  opencode -s ses_ddfd848afffeZ8YYeEFz78pHJL
+
+sean_@SeansMiniPC:/tmp/fm-lab.P6KP7f/t/walky-talky-collector-park-0c6912/36/walky-talky-collector-park$

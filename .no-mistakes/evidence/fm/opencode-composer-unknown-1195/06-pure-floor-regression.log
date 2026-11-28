@@ -1,0 +1,18 @@
+=== narrow pane (no sidebar, pure floor row)
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Fake Model Fake Local
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.Ddop0P/projects/firstmate                                             tab agents  ctrl+p commands
+base: empty  target: empty
+--- with draft
+
+  ┃
+  ┃  unsent draft
+  ┃
+  ┃  Build · Fake Model Fake Local
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.Ddop0P/projects/firstmate                                             tab agents  ctrl+p commands
+base: pending  target: pending

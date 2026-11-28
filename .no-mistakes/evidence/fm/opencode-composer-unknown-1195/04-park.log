@@ -1,0 +1,8 @@
+$ [BASE 1f268e51] fm-park.sh park oc-lane
+fm-park: refusing to park oc-lane: the agent could not be stopped: error: task oc-lane's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'; the next tick settles its pending park record
+exit status: 1
+herdr agent get: {"agent":"opencode","agent_status":"idle"}
+$ [TARGET 66f2a926] fm-park.sh park oc-lane
+parked oc-lane: PR https://github.com/example/repo/pull/7 clean at 36b82e508100; agent stopped
+exit status: 0
+herdr agent get: {"agent":null,"agent_status":null}

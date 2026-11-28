@@ -1,0 +1,280 @@
+### width=121 lane=sw1 api  base: sw1=unknown   target: sw1=empty 
+  ┃
+  ┃
+  ┃
+  ┃  Build · Fake Model Fake Local                                               /tmp/fm-lab.O9qv9G/t/api-0c6912/36/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    api:fm/startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/api-0c6912/36/api55.3K (16%) · $0.07 ctrl+p commands
+                                                                                 • OpenCode 1.19.5
+### width=121 lane=sw2 no-mistakes  base: sw2=unknown   target: sw2=empty 
+  ┃
+  ┃
+  ┃                                                                              /tmp/fm-lab.O9qv9G/t/no-mistakes-
+  ┃  Build · Fake Model Fake Local                                               0c6912/36/no-mistakes:fm/startup-hang-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    timeout
+   /tmp/fm-lab.O9qv9G/t/no-mistakes-0c6912/36/ 155.3K (16%) · $0 ctrl+p
+   no-mistakes                                                   commands        • OpenCode 1.19.5
+### width=121 lane=sw3 quota-axi-server  base: sw3=unknown   target: sw3=empty 
+  ┃
+  ┃
+  ┃                                                                              /tmp/fm-lab.O9qv9G/t/quota-axi-server-
+  ┃  Build · Fake Model Fake Local                                               0c6912/36/quota-axi-server:fm/startup-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    hang-timeout
+   /tmp/fm-lab.O9qv9G/t/quota-axi-server-0c6912/  155.3K (16%) · $ctrl+p
+   36/quota-axi-server                                            commands       • OpenCode 1.19.5
+### width=121 lane=sw4 walky-talky-collector  base: sw4=unknown   target: sw4=empty 
+  ┃
+  ┃
+  ┃                                                                              /tmp/fm-lab.O9qv9G/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                               collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/55.3K (16%) ·ctrl+p
+   36/walky-talky-collector                                       commands       • OpenCode 1.19.5
+### width=121 lane=sw5 customer-onboarding-service-api  base: sw5=unknown   target: sw5=unknown 
+  ┃
+  ┃                                                                              /tmp/fm-lab.O9qv9G/t/customer-
+  ┃  Build · Fake Model Fake Local                                               onboarding-service-api-0c6912/36/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    customer-onboarding-service-api:fm/
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-155.3K (16%) · ctrl+p        startup-hang-timeout
+   api-0c6912/36/customer-onboarding-service-api                   commands
+                                                                                 • OpenCode 1.19.5
+### width=126 lane=sw1 api  base: sw1=empty   target: sw1=empty 
+
+  ┃
+  ┃
+  ┃                                                                                   /tmp/fm-lab.O9qv9G/t/api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                    api:fm/startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/api-0c6912/36/api    155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=126 lane=sw2 no-mistakes  base: sw2=unknown   target: sw2=empty 
+  ┃
+  ┃
+  ┃                                                                                   /tmp/fm-lab.O9qv9G/t/no-mistakes-
+  ┃  Build · Fake Model Fake Local                                                    0c6912/36/no-mistakes:fm/startup-hang-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    timeout
+   /tmp/fm-lab.O9qv9G/t/no-mistakes-0c6912/36/no- 155.3K (16%) · $0.0ctrl+p
+   mistakes                                                          commands         • OpenCode 1.19.5
+### width=126 lane=sw3 quota-axi-server  base: sw3=unknown   target: sw3=empty 
+  ┃
+  ┃
+  ┃                                                                                   /tmp/fm-lab.O9qv9G/t/quota-axi-server-
+  ┃  Build · Fake Model Fake Local                                                    0c6912/36/quota-axi-server:fm/startup-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    hang-timeout
+   /tmp/fm-lab.O9qv9G/t/quota-axi-server-0c6912/36/  155.3K (16%) · $ ctrl+p
+   quota-axi-server                                                   commands        • OpenCode 1.19.5
+### width=126 lane=sw4 walky-talky-collector  base: sw4=unknown   target: sw4=empty 
+  ┃
+  ┃
+  ┃                                                                                   /tmp/fm-lab.O9qv9G/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                    collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/155.3K (16%) · ctrl+p
+   walky-talky-collector                                               commands       • OpenCode 1.19.5
+### width=126 lane=sw5 customer-onboarding-service-api  base: sw5=unknown   target: sw5=empty 
+  ┃
+  ┃                                                                                   /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                   onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                    customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-55.3K (16%) ·  ctrl+p
+   0c6912/36/customer-onboarding-service-api                           commands       • OpenCode 1.19.5
+### width=132 lane=sw1 api  base: sw1=empty   target: sw1=empty 
+
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.O9qv9G/t/api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          api:fm/startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/api-0c6912/36/api          155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=132 lane=sw2 no-mistakes  base: sw2=unknown   target: sw2=empty 
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.O9qv9G/t/no-mistakes-
+  ┃  Build · Fake Model Fake Local                                                          0c6912/36/no-mistakes:fm/startup-hang-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    timeout
+   /tmp/fm-lab.O9qv9G/t/no-mistakes-0c6912/36/no-    155.3K (16%) · $0.07ctrl+p
+   mistakes                                                              commands           • OpenCode 1.19.5
+### width=132 lane=sw3 quota-axi-server  base: sw3=unknown   target: sw3=empty 
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.O9qv9G/t/quota-axi-server-
+  ┃  Build · Fake Model Fake Local                                                          0c6912/36/quota-axi-server:fm/startup-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    hang-timeout
+   /tmp/fm-lab.O9qv9G/t/quota-axi-server-0c6912/36/quota-155.3K (16%) · $0.ctrl+p
+   axi-server                                                              commands         • OpenCode 1.19.5
+### width=132 lane=sw4 walky-talky-collector  base: sw4=unknown   target: sw4=empty 
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.O9qv9G/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                          collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/    155.3K (16%) · $ ctrl+p
+   walky-talky-collector                                                     commands       • OpenCode 1.19.5
+### width=132 lane=sw5 customer-onboarding-service-api  base: sw5=unknown   target: sw5=empty 
+  ┃
+  ┃                                                                                         /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-      155.3K (16%) ·  ctrl+p
+   0c6912/36/customer-onboarding-service-api                                  commands      • OpenCode 1.19.5
+### width=140 lane=sw1 api  base: sw1=empty   target: sw1=empty 
+
+  ┃
+  ┃
+  ┃                                                                                                 /tmp/fm-lab.O9qv9G/t/api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                                  api:fm/startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/api-0c6912/36/api                  155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=140 lane=sw2 no-mistakes  base: sw2=empty   target: sw2=empty 
+
+  ┃
+  ┃                                                                                                 /tmp/fm-lab.O9qv9G/t/no-mistakes-
+  ┃                                                                                                 0c6912/36/no-mistakes:fm/startup-hang-
+  ┃  Build · Fake Model Fake Local                                                                  timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/no-mistakes-0c6912/36/no-mistakes  155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=140 lane=sw3 quota-axi-server  base: sw3=unknown   target: sw3=empty 
+  ┃
+  ┃
+  ┃                                                                                                 /tmp/fm-lab.O9qv9G/t/quota-axi-server-
+  ┃  Build · Fake Model Fake Local                                                                  0c6912/36/quota-axi-server:fm/startup-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    hang-timeout
+   /tmp/fm-lab.O9qv9G/t/quota-axi-server-0c6912/36/quota-axi- 155.3K (16%) · $0.07ctrl+p
+   server                                                                         commands          • OpenCode 1.19.5
+### width=140 lane=sw4 walky-talky-collector  base: sw4=unknown   target: sw4=empty 
+  ┃
+  ┃
+  ┃                                                                                                 /tmp/fm-lab.O9qv9G/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                                  collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/walky-   155.3K (16%) · $0 ctrl+p
+   talky-collector                                                                 commands         • OpenCode 1.19.5
+### width=140 lane=sw5 customer-onboarding-service-api  base: sw5=unknown   target: sw5=empty 
+  ┃
+  ┃                                                                                                 /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                                 onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                                  customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-0c6912/36/   155.3K (16%) ·  ctrl+p
+   customer-onboarding-service-api                                                   commands       • OpenCode 1.19.5
+### width=150 lane=sw1 api  base: sw1=empty   target: sw1=empty 
+
+  ┃
+  ┃
+  ┃                                                                                                           /tmp/fm-lab.O9qv9G/t/api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                                            api:fm/startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/api-0c6912/36/api                            155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=150 lane=sw2 no-mistakes  base: sw2=empty   target: sw2=empty 
+
+  ┃
+  ┃                                                                                                           /tmp/fm-lab.O9qv9G/t/no-mistakes-
+  ┃                                                                                                           0c6912/36/no-mistakes:fm/startup-hang-
+  ┃  Build · Fake Model Fake Local                                                                            timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/no-mistakes-0c6912/36/no-mistakes            155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=150 lane=sw3 quota-axi-server  base: sw3=empty   target: sw3=empty 
+
+  ┃
+  ┃                                                                                                           /tmp/fm-lab.O9qv9G/t/quota-axi-server-
+  ┃                                                                                                           0c6912/36/quota-axi-server:fm/startup-
+  ┃  Build · Fake Model Fake Local                                                                            hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/quota-axi-server-0c6912/36/quota-axi-server  155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=150 lane=sw4 walky-talky-collector  base: sw4=unknown   target: sw4=empty 
+  ┃
+  ┃
+  ┃                                                                                                           /tmp/fm-lab.O9qv9G/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                                            collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/walky-talky-    155.3K (16%) · $0.07ctrl+p
+   collector                                                                                commands          • OpenCode 1.19.5
+### width=150 lane=sw5 customer-onboarding-service-api  base: sw5=unknown   target: sw5=empty 
+  ┃
+  ┃                                                                                                           /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                                           onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                                            customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-0c6912/36/customer-  155.3K (16%) · $0ctrl+p
+   onboarding-service-api                                                                     commands        • OpenCode 1.19.5
+### width=165 lane=sw1 api  base: sw1=empty   target: sw1=empty 
+
+  ┃
+  ┃
+  ┃                                                                                                                          /tmp/fm-lab.O9qv9G/t/api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                                                           api:fm/startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/api-0c6912/36/api                                           155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=165 lane=sw2 no-mistakes  base: sw2=empty   target: sw2=empty 
+
+  ┃
+  ┃                                                                                                                          /tmp/fm-lab.O9qv9G/t/no-mistakes-
+  ┃                                                                                                                          0c6912/36/no-mistakes:fm/startup-hang-
+  ┃  Build · Fake Model Fake Local                                                                                           timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/no-mistakes-0c6912/36/no-mistakes                           155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=165 lane=sw3 quota-axi-server  base: sw3=empty   target: sw3=empty 
+
+  ┃
+  ┃                                                                                                                          /tmp/fm-lab.O9qv9G/t/quota-axi-server-
+  ┃                                                                                                                          0c6912/36/quota-axi-server:fm/startup-
+  ┃  Build · Fake Model Fake Local                                                                                           hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/quota-axi-server-0c6912/36/quota-axi-server                 155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=165 lane=sw4 walky-talky-collector  base: sw4=empty   target: sw4=empty 
+
+  ┃
+  ┃                                                                                                                          /tmp/fm-lab.O9qv9G/t/walky-talky-
+  ┃                                                                                                                          collector-0c6912/36/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                                                           collector:fm/startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/walky-talky-collector       155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=165 lane=sw5 customer-onboarding-service-api  base: sw5=unknown   target: sw5=empty 
+  ┃
+  ┃                                                                                                                          /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                                                          onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                                                           customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-0c6912/36/customer-onboarding-  155.3K (16%) · $0.0ctrl+p
+   service-api                                                                                             commands          • OpenCode 1.19.5
+### width=180 lane=sw1 api  base: sw1=empty   target: sw1=empty 
+
+  ┃
+  ┃
+  ┃                                                                                                                                         /tmp/fm-lab.O9qv9G/t/api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                                                                          api:fm/startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/api-0c6912/36/api                                                          155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=180 lane=sw2 no-mistakes  base: sw2=empty   target: sw2=empty 
+
+  ┃
+  ┃                                                                                                                                         /tmp/fm-lab.O9qv9G/t/no-mistakes-
+  ┃                                                                                                                                         0c6912/36/no-mistakes:fm/startup-hang-
+  ┃  Build · Fake Model Fake Local                                                                                                          timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/no-mistakes-0c6912/36/no-mistakes                                          155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=180 lane=sw3 quota-axi-server  base: sw3=empty   target: sw3=empty 
+
+  ┃
+  ┃                                                                                                                                         /tmp/fm-lab.O9qv9G/t/quota-axi-server-
+  ┃                                                                                                                                         0c6912/36/quota-axi-server:fm/startup-
+  ┃  Build · Fake Model Fake Local                                                                                                          hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/quota-axi-server-0c6912/36/quota-axi-server                                155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=180 lane=sw4 walky-talky-collector  base: sw4=empty   target: sw4=empty 
+
+  ┃
+  ┃                                                                                                                                         /tmp/fm-lab.O9qv9G/t/walky-talky-
+  ┃                                                                                                                                         collector-0c6912/36/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                                                                          collector:fm/startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/walky-talky-collector-0c6912/36/walky-talky-collector                      155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5
+### width=180 lane=sw5 customer-onboarding-service-api  base: sw5=empty   target: sw5=empty 
+
+  ┃                                                                                                                                         /tmp/fm-lab.O9qv9G/t/customer-
+  ┃                                                                                                                                         onboarding-service-api-0c6912/36/
+  ┃                                                                                                                                         customer-onboarding-service-api:fm/
+  ┃  Build · Fake Model Fake Local                                                                                                          startup-hang-timeout
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.O9qv9G/t/customer-onboarding-service-api-0c6912/36/customer-onboarding-service-api  155.3K (16%) · $0.07  ctrl+p commands    • OpenCode 1.19.5

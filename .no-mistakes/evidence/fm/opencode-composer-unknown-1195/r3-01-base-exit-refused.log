@@ -1,0 +1,45 @@
+=== oc-a idle pane
+"width":132
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Fake Model Fake Local                                                          /tmp/fm-lab.P6KP7f/t/firstmate-0c6912/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    36/firstmate:fm/startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/firstmate-0c6912/36/        155.3K (16%) · $0.07 ctrl+p commands
+   firstmate                                                                                • OpenCode 1.19.5
+$ [BASE 1f268e51] fm-control.sh oc-a exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+error: task oc-a's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+agent: "agent_status":"idle"
+=== oc-b idle pane
+"width":132
+
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.P6KP7f/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                          collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/walky-talky-collector-0c6912/36/    155.3K (16%) · $ ctrl+p
+   walky-talky-collector                                                     commands       • OpenCode 1.19.5
+$ [BASE 1f268e51] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+error: task oc-b's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+agent: "agent_status":"idle"
+=== oc-c idle pane
+"width":132
+
+  ┃
+  ┃                                                                                         /tmp/fm-lab.P6KP7f/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/customer-onboarding-service-api-      155.3K (16%) ·  ctrl+p
+   0c6912/36/customer-onboarding-service-api                                  commands      • OpenCode 1.19.5
+$ [BASE 1f268e51] fm-control.sh oc-c exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+error: task oc-c's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+agent: "agent_status":"idle"

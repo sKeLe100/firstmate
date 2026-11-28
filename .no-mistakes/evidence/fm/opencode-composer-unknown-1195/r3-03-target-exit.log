@@ -1,0 +1,90 @@
+=== oc-a idle (draft cleared)
+"width":132
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Fake Model Fake Local                                                          /tmp/fm-lab.P6KP7f/t/firstmate-0c6912/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    36/firstmate:fm/startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/firstmate-0c6912/36/        155.3K (16%) · $0.07 ctrl+p commands
+   firstmate                                                                                • OpenCode 1.19.5
+$ [TARGET c5cbd6c4] fm-control.sh oc-a exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+stopped oc-a harness=opencode backend=herdr endpoint=fm-lab-oc95r3-2201969-17355:w2:p1 worktree=/tmp/fm-lab.P6KP7f/t/firstmate-0c6912/36/firstmate
+exit status: 0
+agent: agent_not_found
+--- pane after (endpoint preserved)
+"width":132
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+  Session   OK. The work is finished.
+  Continue  opencode -s ses_ddfd847d3ffebAAY4W3CI1TVZJ
+
+sean_@SeansMiniPC:/tmp/fm-lab.P6KP7f/t/firstmate-0c6912/36/firstmate$
+$ [TARGET again] fm-control.sh oc-a exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+already-stopped oc-a harness=opencode backend=herdr endpoint=fm-lab-oc95r3-2201969-17355:w2:p1 worktree=/tmp/fm-lab.P6KP7f/t/firstmate-0c6912/36/firstmate
+exit status: 0
+=== oc-b idle (draft cleared)
+"width":132
+
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.P6KP7f/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                          collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/walky-talky-collector-0c6912/36/    155.3K (16%) · $ ctrl+p
+   walky-talky-collector                                                     commands       • OpenCode 1.19.5
+$ [TARGET c5cbd6c4] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+stopped oc-b harness=opencode backend=herdr endpoint=fm-lab-oc95r3-2201969-17355:w3:p1 worktree=/tmp/fm-lab.P6KP7f/t/walky-talky-collector-0c6912/36/walky-talky-collector
+exit status: 0
+agent: agent_not_found
+--- pane after (endpoint preserved)
+"width":132
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+  Session   OK. The work is finished.
+  Continue  opencode -s ses_ddfd84865ffe7BCr9r5i7KarBJ
+
+sean_@SeansMiniPC:/tmp/fm-lab.P6KP7f/t/walky-talky-collector-0c6912/36/walky-talky-collector$
+$ [TARGET again] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+already-stopped oc-b harness=opencode backend=herdr endpoint=fm-lab-oc95r3-2201969-17355:w3:p1 worktree=/tmp/fm-lab.P6KP7f/t/walky-talky-collector-0c6912/36/walky-talky-collector
+exit status: 0
+=== oc-c idle (draft cleared)
+"width":132
+
+  ┃
+  ┃                                                                                         /tmp/fm-lab.P6KP7f/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/customer-onboarding-service-api-      155.3K (16%) ·  ctrl+p
+   0c6912/36/customer-onboarding-service-api                                  commands      • OpenCode 1.19.5
+$ [TARGET c5cbd6c4] fm-control.sh oc-c exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+stopped oc-c harness=opencode backend=herdr endpoint=fm-lab-oc95r3-2201969-17355:w4:p1 worktree=/tmp/fm-lab.P6KP7f/t/customer-onboarding-service-api-0c6912/36/customer-onboarding-service-api
+exit status: 0
+agent: agent_not_found
+--- pane after (endpoint preserved)
+"width":132
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+  Session   OK. The work is finished.
+  Continue  opencode -s ses_ddfd84943ffeFRK0GqYEqpQCro
+
+sean_@SeansMiniPC:/tmp/fm-lab.P6KP7f/t/customer-onboarding-service-api-0c6912/36/customer-onboarding-service-api$
+$ [TARGET again] fm-control.sh oc-c exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+already-stopped oc-c harness=opencode backend=herdr endpoint=fm-lab-oc95r3-2201969-17355:w4:p1 worktree=/tmp/fm-lab.P6KP7f/t/customer-onboarding-service-api-0c6912/36/customer-onboarding-service-api
+exit status: 0

@@ -1,0 +1,51 @@
+=== 121 columns, customer-onboarding-service-api (documented three-row-rail limitation: must refuse)
+"width":121
+
+  ┃
+  ┃
+  ┃                                                                              /tmp/fm-lab.P6KP7f/t/customer-
+  ┃  Build · Fake Model Fake Local                                               onboarding-service-api-0c6912/36/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    customer-onboarding-service-api:fm/
+   /tmp/fm-lab.P6KP7f/t/customer-onboarding-service-155.3K (16%) · ctrl+p        startup-hang-timeout
+   api-0c6912/36/customer-onboarding-service-api                   commands
+                                                                                 • OpenCode 1.19.5
+$ [TARGET] fm-control.sh oc-c exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+error: task oc-c's composer state is 'unknown', not proven empty; refusing to type the /exit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'
+exit status: 1
+agent: "agent_status":"idle"
+=== 121 columns, firstmate (two-row rail)
+"width":121
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Fake Model Fake Local                                               /tmp/fm-lab.P6KP7f/t/firstmate-0c6912/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    36/firstmate:fm/startup-hang-timeout
+   /tmp/fm-lab.P6KP7f/t/firstmate-0c6912/36/  155.3K (16%) · $0.ctrl+p
+   firstmate                                                    commands         • OpenCode 1.19.5
+$ [TARGET] fm-control.sh oc-a exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+stopped oc-a harness=opencode backend=herdr endpoint=fm-lab-oc95r3-2201969-17355:w2:p1 worktree=/tmp/fm-lab.P6KP7f/t/firstmate-0c6912/36/firstmate
+exit status: 0
+agent: agent_not_found
+=== narrow pane without sidebar, walky-talky-collector
+"width":94
+
+
+
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Fake Model Fake Local
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/fm-lab.P6KP7f/t/walky-talky-collector-0c6912/36/walky-155.3K (16%) · $0ctrl+p
+   talky-collector                                                             commands
+$ [TARGET] fm-control.sh oc-b exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.P6KP7f
+stopped oc-b harness=opencode backend=herdr endpoint=fm-lab-oc95r3-2201969-17355:w3:p1 worktree=/tmp/fm-lab.P6KP7f/t/walky-talky-collector-0c6912/36/walky-talky-collector
+exit status: 0
+agent: agent_not_found

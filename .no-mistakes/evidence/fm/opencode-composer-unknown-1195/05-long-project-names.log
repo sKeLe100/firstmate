@@ -1,0 +1,22 @@
+=== idle lane, project walky-talky-collector (pane w4:p1)
+  ┃
+  ┃
+  ┃                                                                                         /tmp/fm-lab.Ddop0P/t/walky-talky-
+  ┃  Build · Fake Model Fake Local                                                          collector-0c6912/36/walky-talky-
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    collector:fm/startup-hang-timeout
+   /tmp/fm-lab.Ddop0P/t/walky-talky-collector-0c6912/36/    155.3K (16%) · $ ctrl+p
+   walky-talky-collector                                                     commands       • OpenCode 1.19.5
+base: unknown  target: unknown
+=== idle lane, project customer-onboarding-service-api (pane w5:p1)
+  ┃
+  ┃                                                                                         /tmp/fm-lab.Ddop0P/t/customer-
+  ┃                                                                                         onboarding-service-api-0c6912/36/
+  ┃  Build · Fake Model Fake Local                                                          customer-onboarding-service-api:fm/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    startup-hang-timeout
+   /tmp/fm-lab.Ddop0P/t/customer-onboarding-service-api-      155.3K (16%) · ctrl+p
+   0c6912/36/customer-onboarding-service-api                                 commands       • OpenCode 1.19.5
+base: unknown  target: unknown
+longname-customer-onboarding-service-api.ansi: live tail=unknown  same tail with status rail below floor removed=unknown
+longname-walky-talky-collector.ansi: live tail=unknown  same tail with status rail below floor removed=unknown
+longname-customer-onboarding-service-api.ansi: bar-rows-right-text-removed+rail=unknown  bar-rows-right-text-removed,no-rail=empty
+longname-walky-talky-collector.ansi: bar-rows-right-text-removed+rail=unknown  bar-rows-right-text-removed,no-rail=empty

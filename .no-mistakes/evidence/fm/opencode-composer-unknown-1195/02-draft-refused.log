@@ -1,0 +1,25 @@
+--- pane with unsent draft
+
+
+  ┃
+  ┃  unsent draft do not lose
+  ┃
+  ┃  Build · Fake Model Fake Local                                                          /tmp/fm-lab.Ddop0P/t/firstmate-0c6912/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    36/firstmate:fm/startup-hang-timeout
+   /tmp/fm-lab.Ddop0P/t/firstmate-0c6912/36/        155.3K (16%) · $0.07 ctrl+p commands
+   firstmate                                                                                • OpenCode 1.19.5
+$ [TARGET 66f2a926] fm-control.sh oc-lane exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.Ddop0P
+error: task oc-lane's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+exit status: 1
+herdr agent get: {"agent":"opencode","agent_status":"idle"}
+--- pane after
+
+
+  ┃
+  ┃  unsent draft do not lose
+  ┃
+  ┃  Build · Fake Model Fake Local                                                          /tmp/fm-lab.Ddop0P/t/firstmate-0c6912/
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    36/firstmate:fm/startup-hang-timeout
+   /tmp/fm-lab.Ddop0P/t/firstmate-0c6912/36/        155.3K (16%) · $0.07 ctrl+p commands
+   firstmate                                                                                • OpenCode 1.19.5
