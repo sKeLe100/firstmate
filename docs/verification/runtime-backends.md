@@ -1244,6 +1244,9 @@ ok - matrix: opencode 1.19.5's branch label on the floor reads empty; a draft ab
 
 Live check: `bin/fm-control.sh startup-hang-timeout exit` reported `stopped … endpoint=default:wTG:p2` and Herdr's agent lookup then answered `agent not found`.
 
+Longer project paths in 132-column 1.19.5 Herdr lab panes also wrap the status rail below the floor, splitting `ctrl+p` from `commands` across two rows.
+`_fm_composer_leftbar_wrapped_rail` accepts exactly that adjacent pair; the lab captures are `opencode-1.19.5-idle-wrapped-rail-*.ansi` in the same fixture directory, covered by `test_matrix_opencode_1195_wrapped_status_rail`.
+
 ## Steering-inbox doorbell
 
 The steering channel's one behavioral assumption - a real worker agent follows the constant self-describing doorbell line (list the inbox, read and act on its records in numeric order, then `mv` each into `handled/`) - was verified on 2026-08-23 against every installed verified harness, on tmux 3.6a, macOS arm64, on an isolated private socket, driving the REAL `bin/fm-send.sh` end to end (durable record plus doorbell, with one mid-wait re-ring playing the watcher's role).

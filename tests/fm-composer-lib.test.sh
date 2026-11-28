@@ -1224,6 +1224,25 @@ test_matrix_opencode_1195_floor_branch_rail() {
   pass "matrix: opencode 1.19.5's branch label on the floor reads empty; a draft above it stays pending"
 }
 
+test_matrix_opencode_1195_wrapped_status_rail() {
+  # Real 1.19.5 panes (132 columns, Herdr lab) with longer project paths: the
+  # status rail below the floor wraps onto two rows, splitting `ctrl+p` from
+  # `commands`. Both idle lanes must still prove empty.
+  local name screen typed bar
+  for name in walky-talky-collector customer-onboarding-service-api; do
+    screen=$(<"$ROOT/tests/fixtures/opencode-1.19.5-floor-branch/opencode-1.19.5-idle-wrapped-rail-$name.ansi")
+    assert_screen "opencode 1.19.5 wrapped rail, $name styled" empty "$CAPS_STYLED" "$screen"
+    assert_screen "opencode 1.19.5 wrapped rail, $name unstyled" empty "$CAPS_PLAIN" "$screen"
+    bar=$(printf '%s\n' "$screen" | grep -m1 '┃')
+    typed=${screen/"$bar"/"$bar"$'\n'"  ┃  ${ESC}[38;2;255;255;255mreply with OK.${ESC}[0m"}
+    assert_screen "opencode 1.19.5 draft above a wrapped rail, $name" pending "$CAPS_STYLED" "$typed"
+  done
+  # A row ending in ctrl+p proves nothing unless `commands` completes it.
+  typed=$'  ┃\n  ┃\n  ┃  Build · DeepSeek V4.1 Flash 1017 OpenCode Go\n  ╹▀▀▀▀\n   /home/sean_/project  155.3K (16%) · ctrl+p\n   Working on request...'
+  assert_screen "opencode half a rail is not chrome" unknown "$CAPS_STYLED" "$typed"
+  pass "matrix: opencode 1.19.5's wrapped status rail reads empty; a draft stays pending"
+}
+
 test_matrix_opencode_leftbar_abs_cwd_furniture() {
   # Real OpenCode 1.18.31 worker pane captured read-only on 2026-10-14 through
   # the tmux adapter's capture (308 columns, #{cursor_y} 62 = 14 in the 20-row
@@ -1901,6 +1920,7 @@ test_matrix_opencode_leftbar_signals
 test_matrix_opencode_leftbar_cwd_furniture
 test_matrix_opencode_11831_status_rail
 test_matrix_opencode_1195_floor_branch_rail
+test_matrix_opencode_1195_wrapped_status_rail
 test_matrix_opencode_leftbar_abs_cwd_furniture
 test_matrix_grok_titled_bottom_border
 test_matrix_claude_titled_top_rule

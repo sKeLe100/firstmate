@@ -2028,6 +2028,20 @@ _fm_composer_bare_rule_sandwich() {  # <plain-screen> <row>
   _fm_composer_titled_rule_row "$above" "${below//─/ }"
 }
 
+# _fm_composer_leftbar_wrapped_rail: 0 when the status rail starting at <row>
+# wrapped onto two rows, as 1.19.5 draws it for a long project path: the first
+# row ends at `ctrl+p` and the very next one completes it with `commands`.
+_fm_composer_leftbar_wrapped_rail() {  # <plain-screen> <row>
+  local head tail
+  head=$(_fm_composer_screen_row "$2" "$1")
+  fm_composer_normalize_trim_var head
+  tail=$(_fm_composer_screen_row "$(($2 + 1))" "$1")
+  fm_composer_normalize_trim_var tail
+  fm_composer_idle_matches "$head" 'ctrl\+p$' insensitive \
+    && fm_composer_idle_matches "$tail" \
+      '^(.*[[:space:]])?commands([[:space:]]+•[[:space:]]+OpenCode[[:space:]]+[0-9][0-9.]*)?$' insensitive
+}
+
 _fm_composer_select_cursorless() {  # <plain-screen> <screen> <styled>
   local plain=$1 screen=$2 styled=$3 generic=-1 next boundary raw trimmed glyph bare footer=0 chrome_re
   FM_COMPOSER_SELECTED_KIND=
@@ -2152,7 +2166,9 @@ _fm_composer_select_cursorless() {  # <plain-screen> <screen> <styled>
     if [ -n "$trimmed" ] && ! fm_composer_row_has_edge "$trimmed"; then
       chrome_re=${FM_COMPOSER_LEFTBAR_CHROME_RE:-$chrome_re}
       if [ "$FM_COMPOSER_SELECTED_KIND" != leftbar ] \
-        || ! fm_composer_idle_matches "$trimmed" "$chrome_re" insensitive; then
+        || { ! fm_composer_idle_matches "$trimmed" "$chrome_re" insensitive \
+             && ! { [ "$chrome_re" = "$FM_COMPOSER_LEFTBAR_RAIL_RE_DEFAULT" ] \
+                    && _fm_composer_leftbar_wrapped_rail "$plain" "$next"; }; }; then
         FM_COMPOSER_SELECTED_KIND=
         return 1
       fi
