@@ -1,7 +1,7 @@
 
 =================== S1 round trip: paused PC02 test + long-idle idea, holds, reasons, blocked-by, body ===================
 
-$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog.md
+$ cat /var/tmp/nm-daemon-tmp/fm-park.7PlJya/main/data/backlog.md
 # Backlog
 
 ## In flight
@@ -23,7 +23,7 @@ archived 2 item(s) via <lab>/main/data/backlog-archive.md: pc02-b2 idea-c3
   live backlog: <lab>/main/data/backlog.md
 [exit 0]
 
-$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog.md
+$ cat /var/tmp/nm-daemon-tmp/fm-park.7PlJya/main/data/backlog.md
 # Backlog
 
 ## In flight
@@ -35,7 +35,7 @@ $ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog.md
 ## Done
 [exit 0]
 
-$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog-archive.md
+$ cat /var/tmp/nm-daemon-tmp/fm-park.7PlJya/main/data/backlog-archive.md
 # Backlog
 
 ## In flight
@@ -60,7 +60,7 @@ help[2]:
   - Run `tasks-axi ready --file=<lab>/main/data/backlog-archive.md` to see unblocked queued work
 [exit 0]
 
-$ tasks-axi show pc02-b2 --file /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog-archive.md --full
+$ tasks-axi show pc02-b2 --file /var/tmp/nm-daemon-tmp/fm-park.7PlJya/main/data/backlog-archive.md --full
 task:
   id: pc02-b2
   title: "PC02 testing, paused"
@@ -81,7 +81,7 @@ task:
   body: "Line one.\n\nLine three after a blank."
 [exit 0]
 
-$ tasks-axi show idea-c3 --file /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog-archive.md
+$ tasks-axi show idea-c3 --file /var/tmp/nm-daemon-tmp/fm-park.7PlJya/main/data/backlog-archive.md
 task:
   id: idea-c3
   title: "long idle idea, with commas, and unicode ✓"
@@ -165,10 +165,10 @@ task:
 $ diff /dev/fd/63 /dev/fd/62
 [exit 0]
 
-$ diff /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/block.orig /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/block.after
+$ diff /var/tmp/nm-daemon-tmp/fm-park.7PlJya/block.orig /var/tmp/nm-daemon-tmp/fm-park.7PlJya/block.after
 [exit 0]
 
-$ diff /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/orig.md /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog.md
+$ diff /var/tmp/nm-daemon-tmp/fm-park.7PlJya/orig.md /var/tmp/nm-daemon-tmp/fm-park.7PlJya/main/data/backlog.md
 7a8
 > - [ ] keep-d4 - stays live (repo: firstmate) (since 2026-11-28)
 13d13
@@ -195,7 +195,7 @@ task:
   closed: "-"
   deps: none
   links: none
-  body: "Captain hold set: 2026-11-28T07:03:45Z"
+  body: "Captain hold set: 2026-11-28T08:17:38Z"
 [exit 0]
 
 $ t archive call-e5
@@ -206,8 +206,8 @@ archived 1 item(s) via <lab>/captain/data/backlog-archive.md: call-e5
 $ {run-worktree}/bin/fm-captain-hold.sh mark set other-f6 held-since 2026-11-01
 [exit 0]
 
-$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/captain/data/task-marks.tsv
-call-e5	held-since	2026-11-28T07:03:48Z
+$ cat /var/tmp/nm-daemon-tmp/fm-park.7PlJya/captain/data/task-marks.tsv
+call-e5	held-since	2026-11-28T08:17:41Z
 other-f6	held-since	2026-11-01
 [exit 0]
 
@@ -234,11 +234,11 @@ task:
   closed: "-"
   deps: none
   links: none
-  body: "Captain hold set: 2026-11-28T07:03:45Z"
+  body: "Captain hold set: 2026-11-28T08:17:38Z"
 [exit 0]
 
 $ {run-worktree}/bin/fm-captain-hold.sh mark get call-e5 held-since
-2026-11-28T07:03:48Z
+2026-11-28T08:17:41Z
 [exit 0]
 
 $ {run-worktree}/bin/fm-captain-hold.sh open call-e5
@@ -414,27 +414,33 @@ failures:
   blocked_by: none
   blocked: no
   blocked_by: none
-error: backlog is locked by another tasks-axi process
-add n7 failed
-error: backlog is locked by another tasks-axi process
-add n11 failed
-error: backlog is locked by another tasks-axi process
-add n10 failed
-fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
+archive p7 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
+archive p12 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
 archive p5 failed
-fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
-archive p10 failed
-fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
-archive p3 failed
-fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
-fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
-fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
-fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
-archive p6 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
 archive p11 failed
-archive p1 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
+archive p9 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
+archive p6 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
 archive p4 failed
-live p=7 n=9 archived p=5
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
+archive p8 failed
+archive p10 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.7PlJya/race/data/backlog-archive.md.lock
+archive p2 failed
+live p=10 n=12 archived p=2
 backlog-archive.md
 backlog.md
 
@@ -458,7 +464,7 @@ c588cd9f72d5dae2e2d624ddf3977ef23c53e4e67df0757a451f1aa8d83df1e0  <lab>/body/dat
 $ {run-worktree}/bin/fm-record-export.sh sync
 [exit 0]
 
-$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/exported/live/data/backlog-archive.md
+$ cat /var/tmp/nm-daemon-tmp/fm-park.7PlJya/exported/live/data/backlog-archive.md
 # Backlog
 
 ## In flight
@@ -486,7 +492,7 @@ unarchived 1 item(s) via <lab>/edge/data/backlog-archive.md: z-9
   live backlog: <lab>/edge/data/backlog.md
 [exit 0]
 
-$ cmp /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/edge.orig /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/edge/data/backlog.md
+$ cmp /var/tmp/nm-daemon-tmp/fm-park.7PlJya/edge.orig /var/tmp/nm-daemon-tmp/fm-park.7PlJya/edge/data/backlog.md
 cmp: EOF on ‘<lab>/edge.orig’ after byte 69, in line 5
 [exit 1]
 
@@ -504,7 +510,7 @@ fm-backlog-archive: no item matched these ids in <lab>/edge/data/backlog.md: bol
 fm-backlog-archive: nothing was moved
 [exit 2]
 
-$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/edge/data/backlog.md
+$ cat /var/tmp/nm-daemon-tmp/fm-park.7PlJya/edge/data/backlog.md
 # Backlog
 
 ## Queued
@@ -519,7 +525,7 @@ $ t archive c-2
 fm-backlog-archive: <lab>/edge/data/backlog-archive.md is a symlink; make it this home's real file
 [exit 2]
 
-$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/edge.orig
+$ cat /var/tmp/nm-daemon-tmp/fm-park.7PlJya/edge.orig
 # Backlog
 
 ## Queued

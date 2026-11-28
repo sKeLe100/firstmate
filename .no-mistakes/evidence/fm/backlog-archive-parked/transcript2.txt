@@ -1,0 +1,142 @@
+
+=================== S9 public-followup obligation: refused while owed, parkable once Captain waives ===================
+
+$ t archive owed-f1
+fm-backlog-archive: refusing active public-followup obligations: owed-f1; record a posted receipt or Captain-approved waiver first
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archived
+count: 0
+tasks: 0 tasks in this backlog
+help[2]:
+  - "Run `tasks-axi add <id> \"<title>\" --file=<lab>/pf/data/backlog-archive.md` to add a task"
+  - Run `tasks-axi list --state done --file=<lab>/pf/data/backlog-archive.md` to see completed work
+[exit 0]
+
+$ t archive owed-f1
+fm-backlog-archive: refusing Done (historical) items: owed-f1; Done history belongs to tasks-axi's configured Done archive
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+=================== S10 CRLF backlog, body with a blank paragraph break (byte compare) ===================
+
+$ t archive park-p2
+archived 1 item(s) via <lab>/crlf/data/backlog-archive.md: park-p2
+  live backlog: <lab>/crlf/data/backlog.md
+[exit 0]
+
+$ od -c data/backlog.md
+0000000   #       B   a   c   k   l   o   g  \r  \n  \r  \n   #   #    
+0000020   Q   u   e   u   e   d  \r  \n   -       [       ]       k   e
+0000040   e   p   -   k   1       -       k   e   p   t  \r  \n  \r  \n
+0000060   #   #       D   o   n   e  \r  \n
+0000071
+[exit 0]
+
+$ cat -A data/backlog-archive.md
+# Backlog$
+$
+## In flight$
+$
+## Queued$
+- [ ] park-p2 - parked (hold: wait) (hold-kind: parked)^M$
+  para one^M$
+^M$
+  para two^M$
+$
+## Done$
+[exit 0]
+
+$ t unarchive park-p2
+unarchived 1 item(s) via <lab>/crlf/data/backlog-archive.md: park-p2
+  live backlog: <lab>/crlf/data/backlog.md
+[exit 0]
+
+$ cmp orig data/backlog.md
+[exit 0]
+
+=================== S11 heading variant, title-prose and parent edges ===================
+
+$ t archive fly-a
+fm-backlog-archive: refusing In flight items or items with a task record: fly-a
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archive old-e
+fm-backlog-archive: refusing Done (historical) items: old-e; Done history belongs to tasks-axi's configured Done archive
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archive base-b
+archived 1 item(s) via <lab>/heads/data/backlog-archive.md: base-b
+  live backlog: <lab>/heads/data/backlog.md
+[exit 0]
+
+$ t unarchive base-b
+unarchived 1 item(s) via <lab>/heads/data/backlog-archive.md: base-b
+  live backlog: <lab>/heads/data/backlog.md
+[exit 0]
+
+$ cat data/backlog.md
+# Backlog
+
+## In Flight
+- [ ] fly-a - running
+
+## queued
+- [ ] prose-c - mentions blocked-by: base-b in the title only
+- [ ] kid-d - child parent: base-b
+- [ ] base-b - base
+
+## Done (recent)
+- [x] old-e - old
+[exit 0]
+
+=================== S12 held and stale locks, file modes, unwritable data dir ===================
+
+$ t archive a-1
+fm-backlog-archive: backlog is locked by another process: <lab>/lk/data/backlog.md.lock
+[exit 2]
+
+$ t archive a-1
+fm-backlog-archive: backlog lock looks stale: <lab>/lk/data/backlog.md.lock
+[exit 2]
+
+$ cat data/backlog.md.lock
+other
+[exit 0]
+
+$ t archive a-1
+archived 1 item(s) via <lab>/lk/data/backlog-archive.md: a-1
+  live backlog: <lab>/lk/data/backlog.md
+[exit 0]
+
+$ stat -c %a %n data/backlog.md data/backlog-archive.md
+640 data/backlog.md
+644 data/backlog-archive.md
+[exit 0]
+
+$ t unarchive a-1
+unarchived 1 item(s) via <lab>/lk/data/backlog-archive.md: a-1
+  live backlog: <lab>/lk/data/backlog.md
+[exit 0]
+
+$ stat -c %a %n data/backlog.md data/backlog-archive.md
+640 data/backlog.md
+644 data/backlog-archive.md
+[exit 0]
+
+$ t archive b-2
+fm-backlog-archive: backlog is locked by another process: <lab>/lk/data/backlog-archive.md.lock
+[exit 2]
+
+$ sha256sum -c /var/tmp/nm-daemon-tmp/fm-park2.ZW9C3r/sums
+data/backlog-archive.md: OK
+data/backlog.md: OK
+[exit 0]
+
+$ ls -A data
+backlog-archive.md
+backlog.md
+[exit 0]
