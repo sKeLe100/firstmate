@@ -282,7 +282,7 @@ fi
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-cache-ttl-lib.sh
-. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"  # fm_cache_ttl_seconds: the shared TTL knob
+. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"  # fm_cache_ttl_for_idle: the shared TTL knob
 # shellcheck source=bin/fm-pending-reply-lib.sh
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
 # shellcheck source=bin/fm-control-lib.sh
@@ -1203,10 +1203,10 @@ else
       # local idle age both settle the steer without any backend probe, so
       # the busy classification only runs when its verdict can still change
       # the outcome.
-      cache_ttl=$(fm_cache_ttl_seconds "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}")
-      if [ "$cache_ttl" -gt 0 ] &&
-        idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$INBOX_TASK_ID") &&
-        [ "$idle_secs" -gt "$cache_ttl" ]; then
+      if idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$INBOX_TASK_ID") &&
+        cache_ttl=$(fm_cache_ttl_for_idle "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$idle_secs" \
+          "$TARGET_HARNESS" "$(fm_meta_get "$TARGET_META" model)") &&
+        [ "$cache_ttl" -gt 0 ] && [ "$idle_secs" -gt "$cache_ttl" ]; then
         busy_verdict=$(fm_busy_classify_meta "$TARGET_META" "$INBOX_TASK_ID" "$STATE" 2>/dev/null || printf 'unknown error')
         if [ "${busy_verdict%% *}" != busy ]; then
           if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then

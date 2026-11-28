@@ -91,14 +91,6 @@ unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_SOCKET_PATH 
 # against an ambient override sets TASKS_AXI_FILE itself.
 unset TASKS_AXI_FILE TASKS_AXI_BACKEND
 
-# Keep the prompt-cache TTL fixture-hermetic. bin/fm-cache-ttl-lib.sh caps the
-# effective TTL at 300s while quota-axi reports the current Claude account
-# exhausted, so without a seam every suite that reads that knob would depend on
-# the host's live account state. An unreadable fixture is a read failure, which
-# leaves the configured TTL unchanged; a case that tests the overage episode
-# sets its own FM_CACHE_TTL_QUOTA_JSON after sourcing this library.
-export FM_CACHE_TTL_QUOTA_JSON="${FM_CACHE_TTL_QUOTA_JSON:-/dev/null}"
-
 # Clear the Rex block identity an operator's terminal exports. Run directly
 # inside a Rex block, the suite would otherwise auto-detect the rex backend
 # (bin/fm-backend.sh's fm_backend_detect) and place fixture tasks into the

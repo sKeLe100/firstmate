@@ -1592,16 +1592,17 @@ Its first non-empty, non-comment line is the TTL in seconds; an absent, unreadab
 ### Overage episode
 
 An exhausted Claude window silently drops that account's sessions to a five-minute prompt-cache TTL, so a 60-minute guard would keep allowing steers into a cold cache exactly when burn control matters most.
-While `quota-axi` reports the current Claude account's window exhausted - a known effective remaining of zero, or an effective runway of `exhausted_now` - the effective TTL is capped at 300 seconds.
+While `quota-axi` reports the current Claude account exhausted - a known effective remaining of zero, or an effective runway of `exhausted_now` - for `all_models` or the target's own `model:` or `product:` scope, a Claude target's effective TTL is capped at 300 seconds.\nNon-Claude targets keep the configured TTL.
 The cap is computed at read time from quota state, never by rewriting `config/cache-ttl-seconds`, so the configured value (or the absent 3600s default) returns by itself when the window recovers.
 A configured value below 300 stays in force, because the episode only tightens the guard and never loosens a stricter local setting; a disabled TTL stays disabled.
-The current account is the one `config/claude-account` pins, or the process's ambient Claude login when the home pins none.
+The current account is the one `config/claude-account` pins (`ordinary` means `CLAUDE_CONFIG_DIR` unset), or the process's ambient Claude login when the home pins none.
 A home that declares `config/claude-accounts` has no single current account, so the ambient login answers for that home-wide guard; per-account episodes on those homes are not distinguished.
 `bin/fm-claude-account-quota.sh` remains the owner for judging per-account dispatch eligibility.
 
-A quota-axi read that is missing, times out (10 seconds by default, `FM_CACHE_TTL_QUOTA_TIMEOUT`), exits nonzero, or returns invalid JSON leaves the configured TTL unchanged.
-The probe reuses a quota reading younger than 60 seconds by default (`FM_CACHE_TTL_QUOTA_MAX_AGE`) and memoizes its answer for the life of one process, so a caller that reads both the TTL and the near-expiry threshold runs at most one probe.
-`FM_CACHE_TTL_QUOTA_JSON` points the probe at a captured `quota-axi --json` document instead of running quota-axi, for tests and offline replay.
+A quota-axi read that is missing, times out (10 seconds), exits nonzero, or returns invalid JSON leaves the configured TTL unchanged.
+The ambient and `ordinary` reads reuse a quota reading younger than 60 seconds; an absolute-path pin is read with `--profile-only`, which has no cache, so each of its probes asks the vendor.
+Quota is probed only where the cap can change the outcome, so never for a configured TTL of 300 seconds or less: the steer guard and the returning-session check probe only for an idle age above 300 seconds and within the configured TTL (the latter only in the `warn` band), and otherwise report the configured TTL.
+The fleet snapshot probes per task only when the cap would change its near-expiry flag, and never for `--help` or `--secondmate-home-summary`.
 
 ## Session context thresholds (config/context-thresholds)
 
@@ -4078,8 +4079,6 @@ FM_HOME_SUMMARY_FAILURE_REPORT=2   # recorded publication failures since the led
 FM_SNAPSHOT_CREW_STATE_TIMEOUT=10   # seconds bounding each local per-task current-state read inside bin/fm-fleet-snapshot.sh; remote endpoint liveness is not probed on the snapshot path
 FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=8   # maximum local tasks whose current-state and endpoint observations, status-history fold, and row composition run concurrently during snapshot composition; also the batch bound for the wake drain's per-ship crew-state reads in its STALLED WAITS section
 FM_SNAPSHOT_BUDGET=5                # one total seconds budget for all concurrent remote home-ledger reads
-FM_CACHE_TTL_QUOTA_TIMEOUT=10       # seconds bounding the prompt-cache overage probe's quota-axi read (bin/fm-cache-ttl-lib.sh); a timeout leaves the configured TTL unchanged
-FM_CACHE_TTL_QUOTA_MAX_AGE=60s      # quota-axi reuse window for that probe; an older reading is fetched from the vendor
 FM_SNAPSHOT_CACHE_DIR=$FM_HOME/state/secondmate-summary-cache   # private parent-side cache of successfully fetched remote home ledgers
 FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=14  # floored elapsed-day threshold at which an undated captain hold (no hold-until; age from its UTC hold-set timestamp, falling back to since for legacy unstamped holds) is projected as a Charted Next gate instead of a live Captain's Call; 0 applies once the computed age is non-negative
 FM_RECONCILE_REQUEST_MAX_BYTES=1048576   # maximum captured Bearings or fleet snapshot accepted for durable reconcile-notify request publication

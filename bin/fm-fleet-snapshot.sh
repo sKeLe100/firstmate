@@ -227,7 +227,7 @@ esac
 . "$SCRIPT_DIR/fm-ff-lib.sh"  # validate_secondmate_home: shared seeded-home boundary checks
 # shellcheck source=bin/fm-cache-ttl-lib.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"  # fm_cache_near_expiry_seconds: the shared TTL knob
+. "$SCRIPT_DIR/fm-cache-ttl-lib.sh"  # fm_cache_ttl_seconds: the shared TTL knob
 # shellcheck source=bin/fm-landed-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-landed-lib.sh"  # FM_LANDED_JQ_DEFS: the shared landed selector
@@ -236,8 +236,7 @@ esac
 # shellcheck source=bin/fm-hold-reason-lib.sh
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 
-CACHE_TTL_SECONDS=$(fm_cache_ttl_seconds "$CONFIG")
-CACHE_NEAR_EXPIRY_SECONDS=$(fm_cache_near_expiry_seconds "$CONFIG")
+CACHE_TTL_SECONDS=$(fm_cache_configured_ttl_seconds "$CONFIG")
 
 usage() {
   cat <<'EOF'
@@ -767,6 +766,24 @@ prefetch_task_current_states() {
   fi
 }
 
+cache_near_expiry() {  # <idle-secs> <ttl-secs>
+  local near
+  near=$(fm_cache_near_expiry_seconds "$2")
+  [ "$near" -gt 0 ] && [ "$1" -ge "$near" ] && [ "$1" -lt "$2" ]
+}
+
+# True when a local task is near expiry. Quota is probed only when the overage
+# cap would change that answer, and never for the bounded home summary.
+cache_task_expiring() {  # <idle-secs> <harness> <model>
+  local idle=$1 ttl=$CACHE_TTL_SECONDS configured=0 capped=0
+  if [ "$OUTPUT_MODE" != secondmate-home-summary ] && [ "$ttl" -gt "$FM_CACHE_TTL_OVERAGE_SECONDS" ]; then
+    ! cache_near_expiry "$idle" "$ttl" || configured=1
+    ! cache_near_expiry "$idle" "$FM_CACHE_TTL_OVERAGE_SECONDS" || capped=1
+    [ "$configured" = "$capped" ] || ttl=$(fm_cache_ttl_seconds "$CONFIG" "$2" "$3")
+  fi
+  cache_near_expiry "$idle" "$ttl"
+}
+
 # Compose one task row from the observations its own worker captured.
 task_json_row() {  # <captured-meta> <id>
   local meta=$1 id=$2 original_meta kind harness mode yolo project worktree home projects spawn_gen branch backend target status_log report_path
@@ -864,9 +881,7 @@ task_json_row() {  # <captured-meta> <id>
   if [ -z "$remote_host" ]; then
     idle_secs=$(fm_cache_activity_age_seconds "$STATE" "$id" "$SNAPSHOT_EPOCH" || printf '')
     if [ -n "$idle_secs" ] && [ "$endpoint_exists" = true ] &&
-      [ "$CACHE_NEAR_EXPIRY_SECONDS" -gt 0 ] &&
-      [ "$idle_secs" -ge "$CACHE_NEAR_EXPIRY_SECONDS" ] &&
-      [ "$idle_secs" -lt "$CACHE_TTL_SECONDS" ]; then
+      cache_task_expiring "$idle_secs" "$harness" "$(meta_value "$meta" model)"; then
       cache_expiring=1
     fi
   fi

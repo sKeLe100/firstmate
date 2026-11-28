@@ -14,9 +14,11 @@
 #
 # Overage episode: an exhausted Claude window silently drops every session to
 # a five-minute prompt-cache TTL, so while quota-axi reports the current Claude
-# account exhausted (effective remaining 0, or runway exhausted_now) the
+# account exhausted (effective remaining 0, or runway exhausted_now) for
+# all_models or the target's own model/product scope, a Claude target's
 # effective TTL is capped at FM_CACHE_TTL_OVERAGE_SECONDS for as long as that
-# reading holds. The cap is computed at read time from quota state, never by
+# reading holds. Non-Claude targets keep the configured TTL, and callers probe
+# only where the cap can change their outcome. The cap is computed at read time from quota state, never by
 # rewriting config/cache-ttl-seconds, so the prior value (or the absent
 # default) returns by itself when the window recovers. A quota-axi read that
 # fails, times out, or returns invalid JSON leaves the configured TTL
@@ -26,15 +28,11 @@
 # process's ambient Claude login when the home pins none; a home with
 # config/claude-accounts is out of scope here because it has no single current
 # account, so the ambient login answers for the home-wide guard.
-#
-# FM_CACHE_TTL_QUOTA_JSON names a captured quota-axi --json document instead of
-# running quota-axi (the test seam and offline replay). An unreadable or
-# invalid file is a read failure, so the TTL stays unchanged.
 
 FM_CACHE_TTL_DEFAULT_SECONDS=3600
 FM_CACHE_TTL_OVERAGE_SECONDS=300
-FM_CACHE_TTL_QUOTA_TIMEOUT=${FM_CACHE_TTL_QUOTA_TIMEOUT:-10}
-FM_CACHE_TTL_QUOTA_MAX_AGE=${FM_CACHE_TTL_QUOTA_MAX_AGE:-60s}
+FM_CACHE_TTL_QUOTA_TIMEOUT=10
+FM_CACHE_TTL_QUOTA_MAX_AGE=60s
 
 # A configured value keeps its base-10 meaning everywhere: 0600 is 600 seconds
 # to the [ -gt ] comparisons AND to the near-expiry arithmetic, which would
@@ -61,109 +59,106 @@ fm_cache_configured_ttl_seconds() {  # <config-dir> -> echoes the configured TTL
   printf '%s' "$FM_CACHE_TTL_DEFAULT_SECONDS"
 }
 
-# The Claude config root the overage probe measures: the one
-# config/claude-account pins, or `ordinary` for the process's ambient login.
+# The Claude account the overage probe measures: `ambient` when the home pins
+# none, else the `ordinary` or absolute root config/claude-account pins.
 # The pin parser is bin/fm-worker-account-lib.sh's single owner; an unreadable
 # or malformed pin is not a quota read failure to guess around, so it returns 1
 # and the caller keeps the configured TTL.
-fm_cache_claude_account_root() {  # <config-dir> -> echoes ordinary or an absolute root
-  local config=$1 lib selection declared
+fm_cache_claude_account_root() {  # <config-dir> -> echoes ambient, ordinary, or an absolute root
+  local config=$1 selection declared
   if [ ! -e "$config/claude-account" ]; then
-    printf 'ordinary'
+    printf 'ambient'
     return 0
   fi
-  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-worker-account-lib.sh"
-  # shellcheck source=bin/fm-worker-account-lib.sh
-  . "$lib"
   selection=$(fm_worker_account_resolve claude "$config" "config/claude-account" 2>/dev/null) || return 1
   declared=${selection%%$'\t'*}
   case "$declared" in
-    ordinary) printf 'ordinary' ;;
-    /*) printf '%s' "$declared" ;;
+    ordinary|/*) printf '%s' "$declared" ;;
     *) return 1 ;;
   esac
 }
 
-# True when the current Claude account reports an exhausted/overage window.
-# Reads quota-axi's own --json document with a hard bound and a short reuse
-# window, or FM_CACHE_TTL_QUOTA_JSON when that seam is set. Every failure mode -
-# no quota-axi, no jq, an unreadable pin, a timeout, a nonzero exit, invalid
-# JSON - returns nonzero so the caller keeps the configured TTL.
-fm_cache_quota_overage_active() {  # <config-dir> -> 0 when exhausted/overage
-  local config=$1 doc root lib
-  if [ -n "${FM_CACHE_TTL_QUOTA_JSON:-}" ]; then
-    doc=$(cat -- "$FM_CACHE_TTL_QUOTA_JSON" 2>/dev/null) || return 1
-  else
-    command -v quota-axi >/dev/null 2>&1 || return 1
-    command -v jq >/dev/null 2>&1 || return 1
-    root=$(fm_cache_claude_account_root "$config") || return 1
-    lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
-    # shellcheck source=bin/fm-timeout-lib.sh
-    . "$lib"
+# True when the current Claude account reports an exhausted window that bounds
+# <model>. Every failure mode - no quota-axi, no jq, an unreadable pin, a
+# timeout, a nonzero exit, invalid JSON - returns nonzero so the caller keeps
+# the configured TTL. The 60s reuse window applies only to the ambient and
+# `ordinary` reads; --profile-only has no cache.
+fm_cache_quota_overage_active() {  # <config-dir> <model> -> 0 when exhausted
+  local config=$1 model=${2##*/} doc root dir name
+  local -a scrub read_args
+  command -v quota-axi >/dev/null 2>&1 || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck source=bin/fm-worker-account-lib.sh
+  . "$dir/fm-worker-account-lib.sh"
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$dir/fm-timeout-lib.sh"
+  root=$(fm_cache_claude_account_root "$config") || return 1
+  scrub=(-u QUOTA_AXI_SNAPSHOT -u QUOTA_AXI_CLAUDE_PROFILES -u QUOTA_AXI_CLAUDE_SWAP)
+  read_args=(--no-credential-refresh --max-age "$FM_CACHE_TTL_QUOTA_MAX_AGE")
+  if [ "$root" != ambient ]; then
+    for name in $FM_WORKER_ACCOUNT_CLAUDE_SHED; do
+      scrub+=(-u "$name")
+    done
     if [ "$root" = ordinary ]; then
-      doc=$(fm_run_timed "$FM_CACHE_TTL_QUOTA_TIMEOUT" \
-        quota-axi --provider claude --json --no-credential-refresh \
-        --max-age "$FM_CACHE_TTL_QUOTA_MAX_AGE" 2>/dev/null) || return 1
+      scrub+=(-u CLAUDE_CONFIG_DIR)
     else
-      doc=$(CLAUDE_CONFIG_DIR="$root" fm_run_timed "$FM_CACHE_TTL_QUOTA_TIMEOUT" \
-        quota-axi --provider claude --profile-only --json 2>/dev/null) || return 1
+      scrub+=("CLAUDE_CONFIG_DIR=$root")
+      read_args=(--profile-only)
     fi
   fi
+  doc=$(fm_run_timed "$FM_CACHE_TTL_QUOTA_TIMEOUT" env "${scrub[@]}" \
+    quota-axi --provider claude --json "${read_args[@]}" 2>/dev/null </dev/null) || return 1
   [ -n "$doc" ] || return 1
-  printf '%s' "$doc" | jq -e '
+  printf '%s' "$doc" | jq -e --arg model "$model" '
     any(.providers[]? | select(.provider == "claude");
       ((.state.status // "fresh") != "stale") and
       ((.state.stale // false) == false) and
       any(.quotaSemantics.effectiveAvailability[]?;
-        ((.runway.status // "") == "exhausted_now") or
-        ((.status // "") == "known" and ((.effectivePercentRemaining // 1) <= 0))
+        (.scope == "all_models" or
+          ($model != "" and $model != "default" and
+            (.scope == ("model:" + $model) or .scope == ("product:" + $model)))) and
+        (((.runway.status // "") == "exhausted_now") or
+          ((.status // "") == "known" and ((.effectivePercentRemaining // 1) <= 0)))
       )
     )
   ' >/dev/null 2>&1
 }
 
-# The effective TTL: the configured value, capped at the overage value while a
-# Claude overage episode is reported. Memoized per process so a caller that
-# reads both the TTL and the near-expiry threshold runs at most one probe.
-_fm_cache_ttl_memo_config=
-_fm_cache_ttl_memo_value=
-_fm_cache_overage_memo_config=
-_fm_cache_overage_memo_rc=
-
-fm_cache_ttl_overage_active() {  # <config-dir> -> 0 active; memoized
-  local config=$1 rc=0
-  if [ "$config" = "${_fm_cache_overage_memo_config:-}" ]; then
-    return "${_fm_cache_overage_memo_rc:-1}"
-  fi
-  fm_cache_quota_overage_active "$config" || rc=$?
-  _fm_cache_overage_memo_config=$config
-  _fm_cache_overage_memo_rc=$rc
-  return "$rc"
+# The effective TTL for one target: the configured value, capped at the overage
+# value while a Claude target's account reports an exhausted window.
+fm_cache_ttl_seconds() {  # <config-dir> <harness> <model> -> echoes the effective TTL
+  local config=$1 harness=$2 model=$3 ttl
+  ttl=$(fm_cache_configured_ttl_seconds "$config")
+  case "$harness" in
+    claude*)
+      if [ "$ttl" -gt "$FM_CACHE_TTL_OVERAGE_SECONDS" ] &&
+        fm_cache_quota_overage_active "$config" "$model"; then
+        ttl=$FM_CACHE_TTL_OVERAGE_SECONDS
+      fi
+      ;;
+  esac
+  printf '%s' "$ttl"
 }
 
-fm_cache_ttl_seconds() {  # <config-dir> -> echoes the effective TTL
-  local config=$1 ttl
-  if [ "$config" = "${_fm_cache_ttl_memo_config:-}" ] && [ -n "${_fm_cache_ttl_memo_value:-}" ]; then
-    printf '%s' "$_fm_cache_ttl_memo_value"
-    return 0
-  fi
+# The TTL to judge an idle age against: quota is probed only when the age is
+# past the overage cap but still within the configured TTL, the one range where
+# the cap changes whether the session reads as cold.
+fm_cache_ttl_for_idle() {  # <config-dir> <idle-secs> <harness> <model> -> echoes the TTL
+  local config=$1 idle=$2 ttl
   ttl=$(fm_cache_configured_ttl_seconds "$config")
-  if [ "$ttl" -gt 0 ] && fm_cache_ttl_overage_active "$config" &&
-    [ "$ttl" -gt "$FM_CACHE_TTL_OVERAGE_SECONDS" ]; then
-    ttl=$FM_CACHE_TTL_OVERAGE_SECONDS
+  if [ "$idle" -gt "$FM_CACHE_TTL_OVERAGE_SECONDS" ] && [ "$idle" -le "$ttl" ]; then
+    ttl=$(fm_cache_ttl_seconds "$config" "$3" "$4")
   fi
-  _fm_cache_ttl_memo_config=$config
-  _fm_cache_ttl_memo_value=$ttl
   printf '%s' "$ttl"
 }
 
 # Near-expiry lead: flag a session once it has burned ~83% of the TTL, so the
-# heartbeat can catch it before the cache lapses. Derived from the same
-# effective TTL rather than a second literal. A disabled (<= 0) TTL has no
-# near-expiry window, so this echoes 0 and callers flag nothing.
-fm_cache_near_expiry_seconds() {  # <config-dir> -> echoes the near-expiry threshold
-  local ttl
-  ttl=$(fm_cache_ttl_seconds "$1")
+# heartbeat can catch it before the cache lapses. Derived from the TTL the
+# caller already read rather than a second literal or read. A disabled (<= 0)
+# TTL has no near-expiry window, so this echoes 0 and callers flag nothing.
+fm_cache_near_expiry_seconds() {  # <ttl-seconds> -> echoes the near-expiry threshold
+  local ttl=$1
   if [ "$ttl" -le 0 ]; then
     printf '0'
     return 0

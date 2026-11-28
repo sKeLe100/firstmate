@@ -178,7 +178,14 @@ if [ -n "$state_dir" ] && [ -n "$task_id" ]; then
 fi
 ttl_seconds="n/a"
 if [ -n "$state_dir" ]; then
-  ttl_seconds="$(fm_cache_ttl_seconds "$(dirname -- "$state_dir")/config")"
+  ttl_config="$(dirname -- "$state_dir")/config"
+  if [ "$band" = "warn" ] && [ "$idle_seconds" != "unknown" ]; then
+    ttl_seconds="$(fm_cache_ttl_for_idle "$ttl_config" "$idle_seconds" \
+      "$(fm_meta_get "$state_dir/$task_id.meta" harness)" \
+      "$(fm_meta_get "$state_dir/$task_id.meta" model)")"
+  else
+    ttl_seconds="$(fm_cache_configured_ttl_seconds "$ttl_config")"
+  fi
 fi
 
 if [ "$band" = "restart" ]; then

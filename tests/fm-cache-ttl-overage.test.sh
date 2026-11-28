@@ -15,7 +15,9 @@
 #   4. A missing, unreadable, invalid, or failing quota read leaves it alone.
 #   5. A configured value below 300 stays in force, and a disabled TTL stays
 #      disabled.
-#   6. The probe measures the account config/claude-account pins.
+#   6. The probe measures the account config/claude-account pins, or the
+#      ambient login, and ignores ambient quota-axi lane overrides.
+#   7. Only a Claude target is capped, and only by an applicable scope.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -24,8 +26,8 @@ set -u
 LIB="$ROOT/bin/fm-cache-ttl-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-cache-ttl-overage)
 
-doc() {  # <percent> <runway-status> -> a schema 5 claude snapshot on stdout
-  jq -n --argjson pct "$1" --arg runway "$2" '{
+doc() {  # <percent> <runway-status> [scope] -> a schema 5 claude snapshot on stdout
+  jq -n --argjson pct "$1" --arg runway "$2" --arg scope "${3:-all_models}" '{
     schemaVersion: 5,
     providers: [{
       provider: "claude",
@@ -33,7 +35,7 @@ doc() {  # <percent> <runway-status> -> a schema 5 claude snapshot on stdout
       quotaSemantics: {
         status: "known",
         effectiveAvailability: [{
-          scope: "all_models",
+          scope: $scope,
           status: "known",
           effectivePercentRemaining: $pct,
           runway: {status: $runway}
@@ -43,183 +45,153 @@ doc() {  # <percent> <runway-status> -> a schema 5 claude snapshot on stdout
   }'
 }
 
-new_config() {  # <name> -> echoes a config dir, optionally with a TTL value
+new_config() {  # <name> -> echoes a config dir
   local dir="$TMP_ROOT/$1"
   mkdir -p "$dir"
   printf '%s' "$dir"
 }
 
-read_ttl() {  # <config-dir> [env...] -> echoes the effective TTL
-  local config=$1
-  shift
+FAKEBIN="$TMP_ROOT/fakebin"
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s|%s|%s%s%s|%s\n' "${CLAUDE_CONFIG_DIR-unset}" "${CLAUDE_CODE_OAUTH_TOKEN-unset}" \
+  "${QUOTA_AXI_SNAPSHOT-}" "${QUOTA_AXI_CLAUDE_PROFILES-}" "${QUOTA_AXI_CLAUDE_SWAP-}" "$*" >> "$FAKE_READS"
+[ -n "${FAKE_DOC-}" ] || exit 1
+cat -- "$FAKE_DOC"
+SH
+chmod +x "$FAKEBIN/quota-axi"
+export FAKE_READS="$TMP_ROOT/reads"
+export PATH="$FAKEBIN:$PATH"
+
+read_ttl() {  # <config-dir> <snapshot> [harness] [model] -> echoes the effective TTL
+  : > "$FAKE_READS"
   # shellcheck disable=SC2016  # the program reads its own positional parameters
-  env "$@" bash -c '. "$0"; fm_cache_ttl_seconds "$1"' "$LIB" "$config"
+  FAKE_DOC=$2 bash -c '. "$0"; fm_cache_ttl_seconds "$1" "$2" "$3"' \
+    "$LIB" "$1" "${3:-claude}" "${4:-default}"
 }
 
-read_near() {  # <config-dir> [env...] -> echoes the near-expiry threshold
-  local config=$1
-  shift
-  # shellcheck disable=SC2016  # the program reads its own positional parameters
-  env "$@" bash -c '. "$0"; fm_cache_near_expiry_seconds "$1"' "$LIB" "$config"
+snapshot() {  # <name> <percent> <runway-status> [scope] -> echoes a snapshot path
+  doc "$2" "$3" "${4:-all_models}" > "$TMP_ROOT/$1.json"
+  printf '%s' "$TMP_ROOT/$1.json"
 }
 
-test_healthy_window_keeps_configured_ttl() {
-  local config snap
-  config=$(new_config healthy)
-  snap="$TMP_ROOT/healthy.json"
-  doc 42 through_reset > "$snap"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 3600 ] \
-    || fail "an absent knob and a healthy window must keep the 3600s default"
+test_window_state_drives_the_cap_and_recovery() {
+  local config healthy exhausted zero
+  config=$(new_config episode)
+  healthy=$(snapshot healthy 42 through_reset)
+  exhausted=$(snapshot exhausted 0 exhausted_now)
+  zero=$(snapshot zero 0 through_reset)
+  [ "$(read_ttl "$config" "$healthy")" = 3600 ] || fail "a healthy window must keep the default"
+  [ "$(read_ttl "$config" "$exhausted")" = 300 ] || fail "an exhausted window must cap the default"
   printf '1200\n' > "$config/cache-ttl-seconds"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 1200 ] \
-    || fail "a healthy window must keep the configured TTL"
-  [ "$(read_near "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 1000 ] \
-    || fail "near-expiry must derive from the configured TTL: $(read_near "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")"
-  pass "cache TTL overage: a healthy window keeps the configured TTL"
-}
-
-test_exhausted_window_caps_at_300() {
-  local config snap
-  config=$(new_config exhausted)
-  snap="$TMP_ROOT/exhausted.json"
-  doc 0 exhausted_now > "$snap"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 300 ] \
-    || fail "an exhausted window must cap the default TTL at 300s"
-  [ "$(read_near "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 250 ] \
-    || fail "near-expiry must derive from the 300s overage TTL"
-  printf '1200\n' > "$config/cache-ttl-seconds"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 300 ] \
-    || fail "an exhausted window must cap a configured TTL at 300s"
-  pass "cache TTL overage: an exhausted window caps the effective TTL at 300s"
-}
-
-test_zero_remaining_counts_as_exhausted() {
-  local config snap
-  config=$(new_config zero)
-  snap="$TMP_ROOT/zero.json"
-  doc 0 through_reset > "$snap"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 300 ] \
-    || fail "a known zero remaining window must be an overage episode even when its runway is through_reset"
-  pass "cache TTL overage: a known zero remaining window is an overage episode"
-}
-
-test_recovery_restores_configured_ttl() {
-  local config exhausted healthy
-  config=$(new_config recovered)
-  printf '1200\n' > "$config/cache-ttl-seconds"
-  exhausted="$TMP_ROOT/recovered-exhausted.json"
-  healthy="$TMP_ROOT/recovered-healthy.json"
-  doc 0 exhausted_now > "$exhausted"
-  doc 55 through_reset > "$healthy"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$exhausted")" = 300 ] \
-    || fail "the episode must start at 300s"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$healthy")" = 1200 ] \
-    || fail "a recovered window must restore the configured TTL"
-  pass "cache TTL overage: recovery restores the configured TTL"
+  [ "$(read_ttl "$config" "$zero")" = 300 ] || fail "a known zero remaining must cap a configured TTL"
+  [ "$(read_ttl "$config" "$healthy")" = 1200 ] || fail "recovery must restore the configured TTL"
+  pass "cache TTL overage: the cap follows the window and recovery restores the TTL"
 }
 
 test_quota_read_failure_keeps_ttl() {
-  local config invalid empty
+  local config invalid empty stale
   config=$(new_config failures)
   printf '1200\n' > "$config/cache-ttl-seconds"
   invalid="$TMP_ROOT/invalid.json"
   empty="$TMP_ROOT/empty.json"
+  stale="$TMP_ROOT/stale.json"
   printf 'not json\n' > "$invalid"
   : > "$empty"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$TMP_ROOT/does-not-exist.json")" = 1200 ] \
-    || fail "a missing quota document must leave the TTL unchanged"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$invalid")" = 1200 ] \
-    || fail "invalid JSON must leave the TTL unchanged"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$empty")" = 1200 ] \
-    || fail "an empty quota document must leave the TTL unchanged"
-
-  local stale="$TMP_ROOT/stale.json"
-  jq -n '{
-    schemaVersion: 5,
-    providers: [{
-      provider: "claude",
-      state: {status: "stale", stale: true},
-      quotaSemantics: {
-        status: "known",
-        effectiveAvailability: [{
-          scope: "all_models",
-          status: "known",
-          effectivePercentRemaining: 0,
-          runway: {status: "exhausted_now"}
-        }]
-      }
-    }]
-  }' > "$stale"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$stale")" = 1200 ] \
-    || fail "a stale quota reading must not start an overage episode"
-
-  local fakebin="$TMP_ROOT/failure-bin"
-  mkdir -p "$fakebin"
-  cat > "$fakebin/quota-axi" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-  chmod +x "$fakebin/quota-axi"
-  [ "$(read_ttl "$config" -u FM_CACHE_TTL_QUOTA_JSON PATH="$fakebin:$PATH")" = 1200 ] \
-    || fail "a failing quota-axi must leave the TTL unchanged"
+  doc 0 exhausted_now | jq '.providers[0].state = {status: "stale", stale: true}' > "$stale"
+  [ "$(read_ttl "$config" '')" = 1200 ] || fail "a failing quota-axi must leave the TTL unchanged"
+  [ "$(read_ttl "$config" "$invalid")" = 1200 ] || fail "invalid JSON must leave the TTL unchanged"
+  [ "$(read_ttl "$config" "$empty")" = 1200 ] || fail "an empty document must leave the TTL unchanged"
+  [ "$(read_ttl "$config" "$stale")" = 1200 ] || fail "a stale reading must not start an episode"
   pass "cache TTL overage: a quota read failure leaves the TTL unchanged"
 }
 
-test_tighter_and_disabled_config_win() {
-  local config snap
-  config=$(new_config tighter)
-  snap="$TMP_ROOT/tighter.json"
-  doc 0 exhausted_now > "$snap"
-  printf '60\n' > "$config/cache-ttl-seconds"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 60 ] \
-    || fail "the episode must never loosen a configured value below 300s"
-  printf '0\n' > "$config/cache-ttl-seconds"
-  [ "$(read_ttl "$config" FM_CACHE_TTL_QUOTA_JSON="$snap")" = 0 ] \
-    || fail "a disabled TTL must stay disabled during an episode"
-  pass "cache TTL overage: a tighter configured TTL and a disabled TTL win"
+test_only_affected_targets_are_capped() {
+  local config all scoped
+  config=$(new_config affected)
+  all=$(snapshot affected-all 0 exhausted_now)
+  scoped=$(snapshot affected-model 0 exhausted_now model:opus)
+  [ "$(read_ttl "$config" "$all" codex)" = 3600 ] || fail "a non-Claude target must keep its TTL"
+  [ ! -s "$FAKE_READS" ] || fail "a non-Claude target must not read quota"
+  [ "$(read_ttl "$config" "$scoped" claude sonnet)" = 3600 ] || fail "another model's window must not cap"
+  [ "$(read_ttl "$config" "$scoped" claude opus)" = 300 ] || fail "the target's own model window must cap"
+  pass "cache TTL overage: only affected Claude targets are capped"
 }
 
-test_probe_reads_the_pinned_account() {
-  local config fakebin pinned
-  config=$(new_config pinned)
+test_tighter_and_disabled_config_skip_the_probe() {
+  local config exhausted value
+  config=$(new_config tighter)
+  exhausted=$(snapshot tighter 0 exhausted_now)
+  for value in 60 300 0; do
+    printf '%s\n' "$value" > "$config/cache-ttl-seconds"
+    [ "$(read_ttl "$config" "$exhausted")" = "$value" ] || fail "TTL $value must stay in force"
+    [ ! -s "$FAKE_READS" ] || fail "TTL $value cannot change, so quota must not be read"
+  done
+  pass "cache TTL overage: a tighter or disabled TTL never probes"
+}
+
+test_probe_reads_the_selected_account() {
+  local config exhausted pinned
+  exhausted=$(snapshot account 0 exhausted_now)
   pinned="$TMP_ROOT/pinned-root"
   mkdir -p "$pinned"
+  export CLAUDE_CONFIG_DIR="$TMP_ROOT/supervisor" CLAUDE_CODE_OAUTH_TOKEN=supervisor-token
+  export QUOTA_AXI_SNAPSHOT=x QUOTA_AXI_CLAUDE_PROFILES=y QUOTA_AXI_CLAUDE_SWAP=1
+
+  config=$(new_config unpinned)
+  [ "$(read_ttl "$config" "$exhausted")" = 300 ] || fail "the unpinned read must see exhaustion"
+  assert_contains "$(cat "$FAKE_READS")" "$TMP_ROOT/supervisor|supervisor-token||--provider claude" \
+    "no pin must read the ambient login without lane overrides"
+
+  config=$(new_config accounts-list)
+  printf 'ordinary\n' > "$config/claude-accounts"
+  [ "$(read_ttl "$config" "$exhausted")" = 300 ] || fail "an account list must use the ambient login"
+  assert_contains "$(cat "$FAKE_READS")" "$TMP_ROOT/supervisor|" "an account list reads the ambient login"
+
+  config=$(new_config pinned-ordinary)
+  printf 'ordinary\n' > "$config/claude-account"
+  [ "$(read_ttl "$config" "$exhausted")" = 300 ] || fail "the ordinary pin must see exhaustion"
+  assert_contains "$(cat "$FAKE_READS")" "unset|unset||--provider claude" \
+    "an ordinary pin must read with CLAUDE_CONFIG_DIR unset"
+
+  config=$(new_config pinned-path)
   printf '%s\n' "$pinned" > "$config/claude-account"
-  fakebin="$TMP_ROOT/pinned-bin"
-  mkdir -p "$fakebin"
-  cat > "$fakebin/quota-axi" <<SH
-#!/usr/bin/env bash
-printf '%s %s\n' "\${CLAUDE_CONFIG_DIR-unset}" "\$*" >> '$TMP_ROOT/pinned-reads'
-[ "\${CLAUDE_CONFIG_DIR-}" = '$pinned' ] || { echo 'wrong account' >&2; exit 1; }
-case "\$*" in *--profile-only*) ;; *) echo 'missing --profile-only' >&2; exit 1 ;; esac
-printf '%s' '$(doc 0 exhausted_now)'
-SH
-  chmod +x "$fakebin/quota-axi"
-  [ "$(read_ttl "$config" -u FM_CACHE_TTL_QUOTA_JSON PATH="$fakebin:$PATH")" = 300 ] \
-    || fail "the probe must measure the pinned account and read its exhaustion"
-  [ -s "$TMP_ROOT/pinned-reads" ] || fail "the probe must invoke quota-axi"
-  assert_contains "$(cat "$TMP_ROOT/pinned-reads")" "$pinned --provider claude --profile-only --json" \
-    "the probe must pass the pinned root with --profile-only"
-  pass "cache TTL overage: the probe measures the account config/claude-account pins"
-}
+  [ "$(read_ttl "$config" "$exhausted")" = 300 ] || fail "the pinned root must see exhaustion"
+  assert_contains "$(cat "$FAKE_READS")" "$pinned|unset||--provider claude --json --profile-only" \
+    "a path pin must read that root with --profile-only"
 
-test_pinned_malformed_keeps_ttl() {
-  local config
   config=$(new_config malformed-pin)
-  printf '1200\n' > "$config/cache-ttl-seconds"
   printf 'not-a-path\n' > "$config/claude-account"
-  [ "$(read_ttl "$config")" = 1200 ] \
-    || fail "an unreadable pin must leave the TTL unchanged rather than guess an account"
-  pass "cache TTL overage: an unreadable pin leaves the TTL unchanged"
+  [ "$(read_ttl "$config" "$exhausted")" = 3600 ] || fail "a malformed pin must keep the TTL"
+  [ ! -s "$FAKE_READS" ] || fail "a malformed pin must not fall back to another account"
+
+  unset CLAUDE_CONFIG_DIR CLAUDE_CODE_OAUTH_TOKEN
+  unset QUOTA_AXI_SNAPSHOT QUOTA_AXI_CLAUDE_PROFILES QUOTA_AXI_CLAUDE_SWAP
+  pass "cache TTL overage: the probe measures the selected account"
 }
 
-test_healthy_window_keeps_configured_ttl
-test_exhausted_window_caps_at_300
-test_zero_remaining_counts_as_exhausted
-test_recovery_restores_configured_ttl
+test_idle_age_gates_the_probe() {
+  local config exhausted idle want
+  config=$(new_config idle)
+  exhausted=$(snapshot idle 0 exhausted_now)
+  for idle in 300 3601; do
+    : > "$FAKE_READS"
+    # shellcheck disable=SC2016  # the program reads its own positional parameters
+    want=$(FAKE_DOC=$exhausted bash -c '. "$0"; fm_cache_ttl_for_idle "$1" "$2" claude default' "$LIB" "$config" "$idle")
+    [ "$want" = 3600 ] && [ ! -s "$FAKE_READS" ] || fail "idle $idle cannot change outcome, so no probe"
+  done
+  # shellcheck disable=SC2016  # the program reads its own positional parameters
+  want=$(FAKE_DOC=$exhausted bash -c '. "$0"; fm_cache_ttl_for_idle "$1" 301 claude default' "$LIB" "$config")
+  [ "$want" = 300 ] || fail "idle just past 300s must be judged against the cap"
+  pass "cache TTL overage: quota is probed only when idle age makes it matter"
+}
+
+test_window_state_drives_the_cap_and_recovery
 test_quota_read_failure_keeps_ttl
-test_tighter_and_disabled_config_win
-test_probe_reads_the_pinned_account
-test_pinned_malformed_keeps_ttl
+test_only_affected_targets_are_capped
+test_tighter_and_disabled_config_skip_the_probe
+test_probe_reads_the_selected_account
+test_idle_age_gates_the_probe
 
 echo "# all fm-cache-ttl-overage tests passed"
