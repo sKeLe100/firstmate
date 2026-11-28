@@ -32,6 +32,8 @@
 # Refusals (nothing moves when any fires):
 #   - an absent id, or an id already at the destination;
 #   - a Done item, which belongs to tasks-axi's configured Done archive;
+#   - archiving a public-followup obligation whose delivery is neither posted
+#     nor waived, as `tasks-axi rm` refuses to remove one;
 #   - archiving an `## In flight` item or one with a `state/<id>.meta` record in
 #     this home (FM_STATE_OVERRIDE, else $FM_HOME/state);
 #   - archiving a row that a remaining open live task has a trailing
@@ -79,20 +81,23 @@ file_ends_with_lf() {
   [ "$last_byte" = "0a" ]
 }
 
-# Prints "id<TAB>state<TAB>deps" per task as tasks-axi itself parses the file,
+# Prints "id<TAB>state<TAB>deps<TAB>delivery" per task as tasks-axi parses it,
 # so heading variants and trailing dependency tags mean what they mean there.
 backlog_rows() {  # <file>
   local listing
   [ -f "$1" ] || return 0
-  listing=$(cd "$FM_BACKLOG_AXI_ROOT" && tasks-axi list --file "$1" --fields deps) || return 1
+  listing=$(cd "$FM_BACKLOG_AXI_ROOT" && tasks-axi list --file "$1" --fields delivery_state,deps) || return 1
   printf '%s\n' "$listing" | awk '
-    /^  / && match($0, /,("[^"]*"|none)$/) {
-      deps = substr($0, RSTART + 1)
+    /^  / && match($0, /,[^,]*,("[^"]*"|none)$/) {
+      split(substr($0, RSTART + 1), tail, ",")
+      delivery = tail[1]
+      deps = substr($0, RSTART + length(delivery) + 2)
       split($0, field, ",")
       id = substr(field[1], 3)
       gsub(/"/, "", id)
       gsub(/"/, "", deps)
-      if (field[2] ~ /^(queued|in_flight|done)$/) print id "\t" field[2] "\t" deps
+      gsub(/"/, "", delivery)
+      if (field[2] ~ /^(queued|in_flight|done)$/) print id "\t" field[2] "\t" deps "\t" delivery
     }
   '
 }
@@ -103,6 +108,10 @@ row_state() {  # <rows> <id>
 
 # backlog_key_noncanonical_body_lines is shared with the secondmate backlog
 # handoff through bin/fm-tasks-axi-lib.sh.
+
+owes_public_reply() {  # <rows> <id>
+  awk -F '\t' -v id="$2" '$1 == id && $4 !~ /^(-|posted|waived)$/ { owed = 1 } END { exit owed ? 0 : 1 }' <<< "$1"
+}
 
 is_selected() {  # <id>
   local selected
@@ -256,6 +265,7 @@ ALREADY=()
 MISSING=()
 DONE=()
 ACTIVE=()
+OWED=()
 SRC_ROWS=$(backlog_rows "$SRC_FILE") || fail "tasks-axi cannot read $SRC_FILE; nothing was moved"
 DST_ROWS=$(backlog_rows "$DST_FILE") || fail "tasks-axi cannot read $DST_FILE; nothing was moved"
 for id in ${UNIQUE[@]+"${UNIQUE[@]}"}; do
@@ -268,6 +278,8 @@ for id in ${UNIQUE[@]+"${UNIQUE[@]}"}; do
       DONE+=("$id")
     elif [ "$MODE" = archive ] && { [ "$state" = in_flight ] || [ -e "$STATE/$id.meta" ]; }; then
       ACTIVE+=("$id")
+    elif [ "$MODE" = archive ] && owes_public_reply "$SRC_ROWS" "$id"; then
+      OWED+=("$id")
     else
       TO_MOVE+=("$id")
     fi
@@ -293,6 +305,10 @@ if [ "${#ACTIVE[@]}" -gt 0 ]; then
   printf 'fm-backlog-archive: refusing In flight items or items with a task record: %s\n' "${ACTIVE[*]}" >&2
   FAILED=1
 fi
+if [ "${#OWED[@]}" -gt 0 ]; then
+  printf 'fm-backlog-archive: refusing active public-followup obligations: %s; record a posted receipt or Captain-approved waiver first\n' "${OWED[*]}" >&2
+  FAILED=1
+fi
 if [ "$FAILED" -ne 0 ]; then
   printf 'fm-backlog-archive: nothing was moved\n' >&2
   exit 2
@@ -309,7 +325,7 @@ if [ "$FAILED" -ne 0 ]; then
   exit 2
 fi
 
-while IFS=$'\t' read -r owner state deps; do
+while IFS=$'\t' read -r owner state deps _; do
   [ "$state" != "done" ] || continue
   for dep in ${deps//,/ }; do
     case "$dep" in
@@ -422,7 +438,7 @@ awk -v keysfile="$KEYS_FILE" -v movedfile="$MOVED_FILE" -v keptfile="$KEPT_FILE"
   BEGIN {
     while ((getline k < keysfile) > 0) { if (k != "") want[k] = 1 }
   }
-  moving && /^[ \t]*$/ { blank[++blanks] = $0; next }
+  moving && /^[ \t\r]*$/ { blank[++blanks] = $0; next }
   { release_blanks(!/^##[ \t]/) }
   /^##[ \t]/ {
     moving = 0
@@ -477,7 +493,7 @@ awk -v movedfile="$MOVED_FILE" -v moved_final_lf="$MOVED_FINAL_LF" '
     while ((getline rec < movedfile) > 0) items = items (count++ ? "\n" : "") rec
     if (moved_final_lf) items = items "\n"
   }
-  queued && /^[ \t]*$/ { blank[++blanks] = $0; next }
+  queued && /^[ \t\r]*$/ { blank[++blanks] = $0; next }
   /^##[ \t]/ {
     if (queued) insert(1)
     release_blanks()

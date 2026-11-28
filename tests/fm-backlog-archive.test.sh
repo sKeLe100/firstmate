@@ -9,7 +9,8 @@
 # unchanged, with file modes, section layout, and the task-marks sidecar's
 # held-since/deferred-since values stable across cycles. The suite
 # also pins the refusals: an unknown or Done id, an id already at the
-# destination, an In flight id or one with a task record, archiving a row that
+# destination, an In flight id or one with a task record, an active
+# public-followup obligation, archiving a row that
 # still blocks live work (only trailing blocked-by edges count, under any
 # heading spelling tasks-axi accepts), unarchiving a row whose blocker is still open in the
 # archive (a pruned blocker is allowed), a held or stale lock, a noncanonical
@@ -281,6 +282,53 @@ test_round_trips_keep_layout_and_modes() {
   pass "repeated round trips keep bytes, section separators, and file modes"
 }
 
+test_crlf_round_trip_keeps_blank_paragraphs() {
+  local home original
+  home=$(make_home crlf)
+  original="$home/original.md"
+  printf '%s\r\n' '# Backlog' '' '## Queued' '- [ ] keep-k1 - kept' '- [ ] park-p2 - parked' \
+    '  para one' '' '  para two' '' '## Done' > "$home/data/backlog.md"
+  cp "$home/data/backlog.md" "$original"
+  printf '%s\r\n' '# Backlog' '' '## Queued' '- [ ] old-o3 - parked earlier' '' '## Done' \
+    > "$home/data/backlog-archive.md"
+
+  run_archive "$home" archive park-p2 >/dev/null || fail "CRLF archive failed"
+  printf '%s\r\n' '# Backlog' '' '## Queued' '- [ ] keep-k1 - kept' '' '## Done' > "$home/expected-live.md"
+  printf '%s\r\n' '# Backlog' '' '## Queued' '- [ ] old-o3 - parked earlier' '- [ ] park-p2 - parked' \
+    '  para one' '' '  para two' '' '## Done' > "$home/expected-archive.md"
+  cmp "$home/expected-live.md" "$home/data/backlog.md" || fail "part of the CRLF item stayed live"
+  cmp "$home/expected-archive.md" "$home/data/backlog-archive.md" || fail "the CRLF item or separator moved wrongly"
+
+  run_archive "$home" unarchive park-p2 >/dev/null || fail "CRLF unarchive failed"
+  cmp "$original" "$home/data/backlog.md" || fail "the CRLF round trip changed the live bytes"
+  pass "a CRLF item with a blank paragraph break moves whole and round-trips"
+}
+
+test_archive_refuses_an_owed_public_reply() {
+  local home before out rc
+  home=$(make_home owed-reply)
+  jq -n '{request_id:"req-r1", platform:"discord",
+    context_binding:{version:"ctx1", value:"ctx1_req-r1"}, public_safe_summary:"owed reply",
+    received_at:"2026-10-01T10:00:00Z", followup_expires_at:"2099-01-01T00:00:00Z",
+    reservation_expires_at:"2099-01-01T00:00:00Z"}' > "$home/request.json"
+  jq -n '{type:"pr-merged", project:"firstmate", required_deliverables:["pr_url"],
+    completion_policy:"all-required"}' > "$home/expected.json"
+  ( cd "$home" && tasks-axi public-followup add owed-f1 --request-context-file request.json \
+    --purpose promised-final --expected-final-file expected.json \
+    --expires-at 2099-02-01T00:00:00Z >/dev/null ) || fail "creating the obligation failed"
+  before=$(cat "$home/data/backlog.md")
+
+  out=$(run_archive "$home" archive other-o4 owed-f1 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "archive of an owed public reply: $out"
+  assert_contains "$out" "active public-followup obligations: owed-f1" "the refusal did not name the obligation"
+  assert_equals "$before" "$(cat "$home/data/backlog.md")" "the refused archive changed the live backlog"
+  assert_absent "$home/data/backlog-archive.md" "the refused archive created an archive file"
+
+  run_archive "$home" archive other-o4 >/dev/null || fail "an ordinary row was refused beside an obligation"
+  pass "archive refuses a public-followup obligation whose reply is still owed"
+}
+
 test_lock_and_body_refusals() {
   local home before out rc
   home=$(make_home locks)
@@ -388,6 +436,8 @@ test_unarchive_refuses_a_parked_blocker
 test_unarchive_allows_a_pruned_blocker
 test_archive_refuses_active_work
 test_round_trips_keep_layout_and_modes
+test_crlf_round_trip_keeps_blank_paragraphs
+test_archive_refuses_an_owed_public_reply
 test_lock_and_body_refusals
 test_failed_writes_restore_both_files
 test_archive_keeps_task_marks
