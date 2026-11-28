@@ -11,7 +11,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
 | Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [several Claude accounts](#several-claude-accounts-configclaude-accounts), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), [startup memory budget](#startup-memory-budget-configstartup-memory-budget), and [stow guard](#stow-guard-configstow-guard) |
-| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [primary Herdr session](#primary-herdr-session-configherdr-session), [Codex native Stop park](#codex-native-stop-park-configcodex-stop-park), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), and [Calm preference](#calm-preference-configcalm) |
+| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [primary Herdr session](#primary-herdr-session-configherdr-session), [Codex native Stop park](#codex-native-stop-park-configcodex-stop-park), [prompt-cache steer guard](#prompt-cache-steer-guard-configcache-ttl-seconds), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Optional repository context through RepoWise | [RepoWise integration](repowise.md) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
@@ -1582,6 +1582,26 @@ One worker's memory must not take down the host: on 2026-11-24 a single OpenCode
 
 Secondmates are never measured or stopped.
 RSS sums every attributed process, so pages shared between a worker's processes count more than once; that errs toward stopping early.
+
+## Prompt-cache steer guard (config/cache-ttl-seconds)
+
+`config/cache-ttl-seconds` is an optional local, gitignored knob for the prompt-cache steer guard and its sibling readers: `bin/fm-send.sh` refuses an ordinary local steer to a session idle past the effective TTL, `bin/fm-fleet-snapshot.sh` flags a session near expiry, `bin/fm-inactive-reconcile.sh` folds the same idle age, and `bin/fm-returning-session-check.sh` reports the same TTL with its idle verdict.
+Its first non-empty, non-comment line is the TTL in seconds; an absent, unreadable, or non-numeric file keeps the built-in 3600s default, and a value at or below zero disables the guard rather than refusing every steer.
+`bin/fm-cache-ttl-lib.sh` is the single owner of the knob and of the activity-age fold every reader uses.
+
+### Overage episode
+
+An exhausted Claude window silently drops that account's sessions to a five-minute prompt-cache TTL, so a 60-minute guard would keep allowing steers into a cold cache exactly when burn control matters most.
+While `quota-axi` reports the current Claude account's window exhausted - a known effective remaining of zero, or an effective runway of `exhausted_now` - the effective TTL is capped at 300 seconds.
+The cap is computed at read time from quota state, never by rewriting `config/cache-ttl-seconds`, so the configured value (or the absent 3600s default) returns by itself when the window recovers.
+A configured value below 300 stays in force, because the episode only tightens the guard and never loosens a stricter local setting; a disabled TTL stays disabled.
+The current account is the one `config/claude-account` pins, or the process's ambient Claude login when the home pins none.
+A home that declares `config/claude-accounts` has no single current account, so the ambient login answers for that home-wide guard; per-account episodes on those homes are not distinguished.
+`bin/fm-claude-account-quota.sh` remains the owner for judging per-account dispatch eligibility.
+
+A quota-axi read that is missing, times out (10 seconds by default, `FM_CACHE_TTL_QUOTA_TIMEOUT`), exits nonzero, or returns invalid JSON leaves the configured TTL unchanged.
+The probe reuses a quota reading younger than 60 seconds by default (`FM_CACHE_TTL_QUOTA_MAX_AGE`) and memoizes its answer for the life of one process, so a caller that reads both the TTL and the near-expiry threshold runs at most one probe.
+`FM_CACHE_TTL_QUOTA_JSON` points the probe at a captured `quota-axi --json` document instead of running quota-axi, for tests and offline replay.
 
 ## Session context thresholds (config/context-thresholds)
 
@@ -4058,6 +4078,8 @@ FM_HOME_SUMMARY_FAILURE_REPORT=2   # recorded publication failures since the led
 FM_SNAPSHOT_CREW_STATE_TIMEOUT=10   # seconds bounding each local per-task current-state read inside bin/fm-fleet-snapshot.sh; remote endpoint liveness is not probed on the snapshot path
 FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=8   # maximum local tasks whose current-state and endpoint observations, status-history fold, and row composition run concurrently during snapshot composition; also the batch bound for the wake drain's per-ship crew-state reads in its STALLED WAITS section
 FM_SNAPSHOT_BUDGET=5                # one total seconds budget for all concurrent remote home-ledger reads
+FM_CACHE_TTL_QUOTA_TIMEOUT=10       # seconds bounding the prompt-cache overage probe's quota-axi read (bin/fm-cache-ttl-lib.sh); a timeout leaves the configured TTL unchanged
+FM_CACHE_TTL_QUOTA_MAX_AGE=60s      # quota-axi reuse window for that probe; an older reading is fetched from the vendor
 FM_SNAPSHOT_CACHE_DIR=$FM_HOME/state/secondmate-summary-cache   # private parent-side cache of successfully fetched remote home ledgers
 FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=14  # floored elapsed-day threshold at which an undated captain hold (no hold-until; age from its UTC hold-set timestamp, falling back to since for legacy unstamped holds) is projected as a Charted Next gate instead of a live Captain's Call; 0 applies once the computed age is non-negative
 FM_RECONCILE_REQUEST_MAX_BYTES=1048576   # maximum captured Bearings or fleet snapshot accepted for durable reconcile-notify request publication

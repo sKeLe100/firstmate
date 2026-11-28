@@ -168,7 +168,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-busy-lib.sh`         | Single owner of the semantic busy-state contract: verdicts, source attribution, per-harness sources, and the optional Pi model-stream evidence and ordering contract |
 | `fm-codex-axes-lib.sh`   | Single owner of which model/effort values a codex launch actually receives, shared by the spawn refusal, the pre-stop relaunch check, and the crew-dispatch config validator |
 | `fm-busy-event.sh`       | The only writer of task busy and progress evidence under the contract in `fm-busy-lib.sh`; its header and help own lifecycle and optional stream operations |
-| `fm-cache-ttl-lib.sh`    | Single owner of the prompt-cache TTL knob and the activity-age fold shared by fm-send's steer guard, the fleet snapshot's near-expiry flag, and the inactivity reconciler |
+| `fm-cache-ttl-lib.sh`    | Single owner of the prompt-cache TTL knob (including the 300s Claude overage cap) and the activity-age fold shared by fm-send's steer guard, the fleet snapshot's near-expiry flag, and the inactivity reconciler |
 | `fm-tmux-lib.sh`         | Shared tmux pane primitives for composer capture, verified submit, and the submit-time busy check |
 | `fm-peek.sh`             | Print a bounded tail of a crewmate endpoint                                          |
 | `fm-check-register.sh`   | Bind an intentional custom watcher check to its current bytes                       |
