@@ -12,21 +12,10 @@
 # non-numeric file keeps the 3600s default. A value of 0 or below means the
 # guard is DISABLED (steers always allowed), never a refuse-everything state.
 #
-# Overage episode: an exhausted Claude window silently drops every session to
-# a five-minute prompt-cache TTL, so while quota-axi reports the current Claude
-# account exhausted (effective remaining 0, or runway exhausted_now) for
-# all_models, all_products, or the target's own model/product scope, a Claude target's
-# effective TTL is capped at FM_CACHE_TTL_OVERAGE_SECONDS for as long as that
-# reading holds. Non-Claude targets keep the configured TTL, and callers probe
-# only where the cap can change their outcome. The cap is computed at read time from quota state, never by
-# rewriting config/cache-ttl-seconds, so the prior value (or the absent
-# default) returns by itself when the window recovers. A quota-axi read that
-# fails, times out, or returns invalid JSON leaves the configured TTL
-# unchanged. A configured value below the cap stays in force (the episode
-# never loosens a tighter local setting), and a disabled TTL (<= 0) stays
-# disabled. The account read is the target's recorded account=, else a
-# secondmate's own pin, else the one config/claude-account pins, else the
-# process's ambient Claude login.
+# Overage episode: a Claude target's effective TTL can be capped from live quota
+# state; docs/configuration.md "Prompt-cache steer guard" owns that policy. The
+# cap is computed at read time and never rewrites config/cache-ttl-seconds, and
+# a failed quota read must leave the configured TTL unchanged.
 
 FM_CACHE_TTL_DEFAULT_SECONDS=3600
 FM_CACHE_TTL_OVERAGE_SECONDS=300
