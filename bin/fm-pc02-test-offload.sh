@@ -523,6 +523,9 @@ trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 trap 'on_signal 129' HUP
 
+# The index can still list paths below a directory that is now a file or a
+# symlink. Passing them to rsync --files-from either fails the transfer or
+# recreates a symlinked directory as a real one on PC02, so drop them.
 keep_real_parents() {  # NUL-separated $ROOT-relative paths on stdin
   local entry parent
   while IFS= read -r -d '' entry; do
