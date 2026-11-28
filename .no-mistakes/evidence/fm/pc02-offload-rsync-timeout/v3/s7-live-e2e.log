@@ -1,0 +1,6 @@
+$ env FM_PC02_OFFLOAD_LIVE_E2E=1 bash tests/fm-pc02-test-offload-live-e2e.test.sh
+ok - a real PC02 offload runs the suite remotely and returns its markers and --json artifact
+ok - a failing remote-offloaded script returns its real exit code, not a wrapper success
+ok - an orphaned background process on PC02 times out rather than hanging the offload forever
+# all fm-pc02-test-offload-live-e2e tests passed
+rc=0 secs=1151
