@@ -207,8 +207,9 @@
 #                                      PC02 check
 #   FM_PC02_OFFLOAD_HOST                ssh target (default: pc02)
 #   FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS  bound for the reachability/personal-use/
-#                                      tool probe and the post-sync HEAD check
-#                                      (default: 15)
+#                                      tool probe and the post-sync HEAD check,
+#                                      and the ssh ConnectTimeout of each rsync
+#                                      transfer (default: 15)
 #   FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS bound for the PC01/PC02 environment
 #                                      parity probe on either host (default:
 #                                      300). Its per-command deadlines (twelve
@@ -356,9 +357,9 @@ done
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
 # rsync's remote shell gets the same non-interactive, bounded connect as the
-# readiness probe. A bare `-e ssh` can sit on a host-key or
-# authentication prompt (exit 124 under the timeout) or fail with rsync's 255
-# when the transport drops, instead of failing fast like this script's probes.
+# readiness probe. A bare `-e ssh` can sit on a host-key or authentication
+# prompt, or on an unanswered connect, until the transfer timeout kills it
+# (exit 124) instead of failing fast like this script's probes.
 RSYNC_SSH="ssh -o BatchMode=yes -o ConnectTimeout=$PROBE_TIMEOUT -o ConnectionAttempts=1"
 PARITY_TIMEOUT="${FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS:-300}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
