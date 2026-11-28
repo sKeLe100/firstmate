@@ -1167,7 +1167,7 @@ tests/fm-procevent-quota.test.sh 2459
 tests/fm-procevent-when.test.sh 30175
 tests/fm-procevent.test.sh 292297
 tests/fm-project-capacity.test.sh 98481
-tests/fm-project-mode.test.sh 615
+tests/fm-project-mode.test.sh 968
 tests/fm-project-origin.test.sh 490
 tests/fm-public-followup.test.sh 381564
 tests/fm-questionnaire-refill-source.test.sh 534
@@ -1234,7 +1234,7 @@ tests/fm-spawn-compact-adviser-disable-remote.test.sh 112218
 tests/fm-spawn-compact-adviser-disable.test.sh 47785
 tests/fm-spawn-dispatch-profile.test.sh 693418
 tests/fm-spawn-external-review.test.sh 8881
-tests/fm-spawn-host-memory.test.sh 22430
+tests/fm-spawn-host-memory.test.sh 36224
 tests/fm-spawn-orca-worktree.test.sh 77580
 tests/fm-spawn-pc02-lane-guard.test.sh 18053
 tests/fm-spawn-pool-base-freshen.test.sh 173224
