@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # fm-test-chrome.sh - single owner of which headless browser the test suite
-# uses, shared by tests/fm-calm-pi-extension.test.sh and
-# bin/fm-pc02-test-offload.sh's PC01/PC02 environment parity probe.
+# uses, shared by tests/fm-calm-pi-extension.test.sh,
+# bin/fm-pc02-test-offload.sh's PC01/PC02 environment parity probe and
+# bin/fm-test-env-record.sh's chrome_startup record.
 #
 # The selection order is a contract, not a preference:
 #   - FM_CHROME_BIN wins when set and executable.

@@ -207,8 +207,9 @@
 #                                      PC02 check
 #   FM_PC02_OFFLOAD_HOST                ssh target (default: pc02)
 #   FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS  bound for the reachability/personal-use/
-#                                      tool probe and the post-sync HEAD check
-#                                      (default: 15)
+#                                      tool probe and the post-sync HEAD check,
+#                                      and the ssh ConnectTimeout of each rsync
+#                                      transfer (default: 15)
 #   FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS bound for the PC01/PC02 environment
 #                                      parity probe on either host (default:
 #                                      300). Its per-command deadlines (twelve
@@ -218,7 +219,12 @@
 #                                      hang tripwire rather than a deadline
 #                                      that cuts a slow-but-identical host.
 #   FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS   bound for each rsync transfer
-#                                      (default: 180)
+#                                      (default: 180). The working-tree
+#                                      transfer carries only the tree git sees
+#                                      (tracked plus untracked-but-not-ignored
+#                                      files), so git-ignored caches, private
+#                                      data and project clones never inflate
+#                                      the payload past this bound.
 #   (the PC02 slot file)                ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/pc02-offload-slots
 #                                      on PC02 holds one integer from 1 to
 #                                      16, the number of concurrent test
@@ -350,6 +356,11 @@ done
 
 HOST="${FM_PC02_OFFLOAD_HOST:-pc02}"
 PROBE_TIMEOUT="${FM_PC02_OFFLOAD_PROBE_TIMEOUT_SECS:-15}"
+# rsync's remote shell gets the same non-interactive, bounded connect as the
+# readiness probe. A bare `-e ssh` can sit on a host-key or authentication
+# prompt, or on an unanswered connect, until the transfer timeout kills it
+# (exit 124) instead of failing fast like this script's probes.
+RSYNC_SSH="ssh -o BatchMode=yes -o ConnectTimeout=$PROBE_TIMEOUT -o ConnectionAttempts=1"
 PARITY_TIMEOUT="${FM_PC02_OFFLOAD_PARITY_TIMEOUT_SECS:-300}"
 SYNC_TIMEOUT="${FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS:-180}"
 RUN_TIMEOUT="${FM_PC02_OFFLOAD_RUN_TIMEOUT_SECS:-7200}"
@@ -367,6 +378,7 @@ REMOTE_RUN_CREATED=0
 claim_pid=
 claim_open=0
 claim_tmp=
+mirror_list=
 PERSONAL_USE_FLAG="${FM_PC02_OFFLOAD_PERSONAL_USE_FLAG:-.fm-pc02-personal-use}"
 CLEANUP_TIMEOUT="${FM_PC02_OFFLOAD_CLEANUP_TIMEOUT_SECS:-120}"
 TMP_ROOT="${FM_PC02_OFFLOAD_TMP_ROOT:-/tmp}"
@@ -488,6 +500,7 @@ release_claim() {
     claim_pid=
   fi
   if [ -n "$claim_tmp" ]; then rm -rf "$claim_tmp"; claim_tmp=; fi
+  if [ -n "$mirror_list" ]; then rm -f "$mirror_list"; mirror_list=; fi
 }
 
 remove_remote_run() {
@@ -509,6 +522,21 @@ trap 'remove_remote_run; release_claim' EXIT
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 trap 'on_signal 129' HUP
+
+# The index can still list paths below a directory that is now a file or a
+# symlink. Passing them to rsync --files-from either fails the transfer or
+# recreates a symlinked directory as a real one on PC02, so drop them.
+keep_real_parents() {  # NUL-separated $ROOT-relative paths on stdin
+  local entry parent
+  while IFS= read -r -d '' entry; do
+    parent=$entry
+    while [[ $parent == */* ]]; do
+      parent=${parent%/*}
+      [ -d "$ROOT/$parent" ] && [ ! -L "$ROOT/$parent" ] || continue 2
+    done
+    printf '%s\0' "$entry" || return 1
+  done
+}
 
 run_local() {  # <reason>
   echo "fm-pc02-test-offload: $1; running on PC01" >&2
@@ -861,16 +889,36 @@ if [ -z "${FM_PC02_OFFLOAD_JOBS:-}" ] && [ "$REMOTE_JOBS" -gt "$jobs_cap" ]; the
   REMOTE_JOBS=$jobs_cap
 fi
 
-# 3. Mirror the current worktree onto PC02: working-tree files, this
-# worktree's own per-worktree git-dir (HEAD, index, refs, logs), and the
+# 3. Mirror the current worktree onto PC02: the working tree as git sees it,
+# this worktree's own per-worktree git-dir (HEAD, index, refs, logs), and the
 # shared object/ref store it points at (fm-primary-scope-lib.sh's
 # fm_resolve_git_path handles both a linked task worktree and a plain
 # checkout, where git-dir and git-common-dir are the same path). The mirror
 # is a real, self-contained repo on PC02, not a copy of the ".git" pointer
 # file a linked worktree actually has, so its own commondir is rewritten to
 # point at the mirrored common store below.
+#
+# The working-tree transfer is listed from git (tracked files plus untracked
+# files git does not ignore) instead of walking the whole directory. A
+# worktree can accumulate multi-gigabyte git-ignored content - a primary
+# home's data/ and projects/, node_modules, tool caches, scratch stores - and
+# a whole-tree transfer of that exceeds FM_PC02_OFFLOAD_SYNC_TIMEOUT_SECS and
+# falls back locally (observed: 13.5 GiB / 317k files for a primary checkout
+# versus 33 MiB / 1.2k files for the same checkout's git-visible tree). Tests
+# never read ignored content, and it must not leave PC01, so the mirror
+# carries only what git sees; the explicit file list also skips the walk of
+# those trees entirely. A file deleted from the working tree is still in the
+# index, so --ignore-missing-args keeps that a skip like the old whole-tree
+# walk, not a sync failure.
 git_dir=$(fm_resolve_git_path "$ROOT" --git-dir) || run_local "could not resolve this worktree's git-dir"
 git_common_dir=$(fm_resolve_git_path "$ROOT" --git-common-dir) || run_local "could not resolve this worktree's git-common-dir"
+
+mirror_list=$(mktemp "${TMPDIR:-/tmp}/fm-pc02-mirror.XXXXXX") || run_local "could not create the mirror file list"
+(
+  set -o pipefail
+  { git -C "$ROOT" ls-files -z && git -C "$ROOT" ls-files -z --others --exclude-standard; } \
+    | keep_real_parents > "$mirror_list"
+) || run_local "could not list the working tree for the PC02 mirror"
 
 mkdir_cmd="mkdir -p $(printf '%q' "$REMOTE_WORKTREE") $(printf '%q' "$REMOTE_COMMON") $(printf '%q' "$REMOTE_TMP")"
 REMOTE_RUN_CREATED=1
@@ -881,18 +929,18 @@ if [ "$mkdir_rc" -ne 0 ]; then
   run_local "could not create PC02 mirror directories (exit $mkdir_rc)"
 fi
 
-sync_log=$(timeout "$SYNC_TIMEOUT" rsync -az --delete -e ssh --exclude='/.git' \
-  "$ROOT/" "$HOST:$REMOTE_WORKTREE/" 2>&1)
+sync_log=$(timeout "$SYNC_TIMEOUT" rsync -az --delete --from0 --files-from="$mirror_list" \
+  --ignore-missing-args -e "$RSYNC_SSH" "$ROOT/" "$HOST:$REMOTE_WORKTREE/" 2>&1)
 sync_rc=$?
 if [ "$sync_rc" -eq 0 ]; then
-  sync_log2=$(timeout "$SYNC_TIMEOUT" rsync -az --delete -e ssh --exclude=commondir --exclude=gitdir \
+  sync_log2=$(timeout "$SYNC_TIMEOUT" rsync -az --delete -e "$RSYNC_SSH" --exclude=commondir --exclude=gitdir \
     "$git_dir/" "$HOST:$REMOTE_WORKTREE/.git/" 2>&1)
   sync_rc=$?
   sync_log="$sync_log
 $sync_log2"
 fi
 if [ "$sync_rc" -eq 0 ]; then
-  sync_log3=$(timeout "$SYNC_TIMEOUT" rsync -az --delete -e ssh --exclude=worktrees \
+  sync_log3=$(timeout "$SYNC_TIMEOUT" rsync -az --delete -e "$RSYNC_SSH" --exclude=worktrees \
     "$git_common_dir/" "$HOST:$REMOTE_COMMON/" 2>&1)
   sync_rc=$?
   sync_log="$sync_log
@@ -1102,7 +1150,7 @@ if [ -n "$json_path" ]; then
     *) remote_json="$REMOTE_WORKTREE/$json_path"; local_json="$ROOT/$json_path" ;;
   esac
   mkdir -p "$(dirname "$local_json")" 2>/dev/null || true
-  timeout "$SYNC_TIMEOUT" rsync -az -e ssh "$HOST:$remote_json" "$local_json" >/dev/null 2>&1 \
+  timeout "$SYNC_TIMEOUT" rsync -az -e "$RSYNC_SSH" "$HOST:$remote_json" "$local_json" >/dev/null 2>&1 \
     || echo "fm-pc02-test-offload: could not retrieve --json artifact from PC02 ($json_path)" >&2
 fi
 

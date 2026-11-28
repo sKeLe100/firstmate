@@ -2,12 +2,20 @@
 # fm-test-env-record.sh - print a bounded, secret-free snapshot of the shell
 # context that is about to execute the behavior suite.
 
+# Record the browser the suite will actually run. bin/fm-test-chrome.sh owns
+# that selection and prefers Playwright's cached headless shell; probing a PATH
+# `chromium` first reported a false startup failure on a display-less host,
+# where a full Chrome build never writes --dump-dom but the suite's headless
+# shell does.
+# shellcheck source=bin/fm-test-chrome.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-test-chrome.sh"
+
 clean_value() {
   printf '%s' "$1" | tr '\r\n\t' '   ' | cut -c1-240
 }
 
 fm_test_env_record_main() {
-  local tmp_fs=unknown tmpdir_path process_model subreaper chrome candidate chrome_tmp
+  local tmp_fs=unknown tmpdir_path process_model subreaper chrome chrome_tmp
   tmpdir_path=${TMPDIR:-/tmp}
   if command -v df >/dev/null 2>&1; then
     tmp_fs=$(df -PT "$tmpdir_path" 2>/dev/null | awk 'NR==2 {print $2}')
@@ -62,11 +70,7 @@ fm_test_env_record_main() {
   fm_test_env_tool_record rsync --version
   fm_test_env_tool_record no-mistakes --version
 
-  chrome=
-  for candidate in chromium chromium-browser google-chrome google-chrome-stable; do
-    chrome=$(type -P "$candidate" 2>/dev/null || true)
-    [ -z "$chrome" ] || break
-  done
+  chrome=$(find_chrome 2>/dev/null || true)
   if [ -z "$chrome" ]; then
     printf 'chrome_startup=missing\n'
   elif ! type -P timeout >/dev/null 2>&1; then
