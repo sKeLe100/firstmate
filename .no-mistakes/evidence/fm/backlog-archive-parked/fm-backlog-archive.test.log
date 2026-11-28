@@ -1,0 +1,15 @@
+ok - archive keeps the hold, hold reason, blocked-by link, and multi-paragraph body while leaving everything else in place
+ok - unarchive restores the row byte-exact with its hold and blocked-by link
+ok - unknown, Done, already-archived, and already-live refusals change nothing
+ok - archive refuses to leave a live task blocked by an archived id
+ok - parent, discovered-from, and prose blocked-by mentions never refuse a move
+ok - case-varied and suffixed headings are read and reused as tasks-axi reads them
+ok - unarchive refuses a row whose blocker stays parked and accepts both together
+ok - unarchive carries a link to a blocker that is no longer anywhere
+ok - archive refuses In flight rows and rows with a task record
+ok - repeated round trips keep bytes, section separators, and file modes
+ok - held locks, stale locks, and noncanonical bodies are refused
+ok - a failed rename or read-back restores both files
+ok - task marks survive archiving and restore but are pruned once the task is gone
+ok - fm-tasks-axi.sh delegates archive and archived while ordinary reads still see only live work
+PASS fm-backlog-archive.test.sh

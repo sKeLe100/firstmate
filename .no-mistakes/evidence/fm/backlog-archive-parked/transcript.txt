@@ -1,0 +1,527 @@
+
+=================== S1 round trip: paused PC02 test + long-idle idea, holds, reasons, blocked-by, body ===================
+
+$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog.md
+# Backlog
+
+## In flight
+
+## Queued
+- [ ] infra-a1 - restore PC02 host (repo: firstmate) (kind: ship) (since 2026-11-28)
+
+- [ ] pc02-b2 - PC02 testing, paused blocked-by: infra-a1 (repo: firstmate) (kind: ship) (since 2026-11-28) (hold: PC02 testing paused until host returns) (hold-kind: parked)
+  Line one.
+
+  Line three after a blank.
+- [ ] idea-c3 - long idle idea, with commas, and unicode ✓ (repo: firstmate) (kind: scout) (since 2026-11-28) (hold: revisit later) (hold-kind: future) (hold-until: 2027-03-01)
+- [ ] keep-d4 - stays live (repo: firstmate) (since 2026-11-28)
+## Done
+[exit 0]
+
+$ t archive pc02-b2 idea-c3
+archived 2 item(s) via <lab>/main/data/backlog-archive.md: pc02-b2 idea-c3
+  live backlog: <lab>/main/data/backlog.md
+[exit 0]
+
+$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog.md
+# Backlog
+
+## In flight
+
+## Queued
+- [ ] infra-a1 - restore PC02 host (repo: firstmate) (kind: ship) (since 2026-11-28)
+
+- [ ] keep-d4 - stays live (repo: firstmate) (since 2026-11-28)
+## Done
+[exit 0]
+
+$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog-archive.md
+# Backlog
+
+## In flight
+
+## Queued
+- [ ] pc02-b2 - PC02 testing, paused blocked-by: infra-a1 (repo: firstmate) (kind: ship) (since 2026-11-28) (hold: PC02 testing paused until host returns) (hold-kind: parked)
+  Line one.
+
+  Line three after a blank.
+- [ ] idea-c3 - long idle idea, with commas, and unicode ✓ (repo: firstmate) (kind: scout) (since 2026-11-28) (hold: revisit later) (hold-kind: future) (hold-until: 2027-03-01)
+
+## Done
+[exit 0]
+
+$ t archived
+count: 2
+tasks[2]{id,state,kind,repo,title}:
+  pc02-b2,queued,ship,firstmate,"PC02 testing, paused"
+  idea-c3,queued,scout,firstmate,"long idle idea, with commas, and unicode ✓"
+help[2]:
+  - Run `tasks-axi show <id> --file=<lab>/main/data/backlog-archive.md` for full notes on a task
+  - Run `tasks-axi ready --file=<lab>/main/data/backlog-archive.md` to see unblocked queued work
+[exit 0]
+
+$ tasks-axi show pc02-b2 --file /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog-archive.md --full
+task:
+  id: pc02-b2
+  title: "PC02 testing, paused"
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: yes
+  hold_reason: PC02 testing paused until host returns
+  hold_kind: parked
+  hold_until: "-"
+  kind: ship
+  repo: firstmate
+  priority: "-"
+  created: 2026-11-28
+  closed: "-"
+  deps: "blocked-by:infra-a1"
+  links: none
+  body: "Line one.\n\nLine three after a blank."
+[exit 0]
+
+$ tasks-axi show idea-c3 --file /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog-archive.md
+task:
+  id: idea-c3
+  title: "long idle idea, with commas, and unicode ✓"
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: yes
+  hold_reason: revisit later
+  hold_kind: future
+  hold_until: 2027-03-01
+  kind: scout
+  repo: firstmate
+  priority: "-"
+  created: 2026-11-28
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+[exit 0]
+
+$ t ready
+count: 2
+ready[2]{id,state,kind,repo,title}:
+  infra-a1,queued,ship,firstmate,restore PC02 host
+  keep-d4,queued,task,firstmate,stays live
+ready_public_followups: 0 delivery-ready obligations
+help[1]:
+  - Run `tasks-axi start <id>` to dispatch one of these
+[exit 0]
+
+$ t unarchive pc02-b2 idea-c3
+unarchived 2 item(s) via <lab>/main/data/backlog-archive.md: pc02-b2 idea-c3
+  live backlog: <lab>/main/data/backlog.md
+[exit 0]
+
+$ t show pc02-b2 --full
+task:
+  id: pc02-b2
+  title: "PC02 testing, paused"
+  state: queued
+  blocked: yes
+  blocked_by: infra-a1
+  held: yes
+  hold_reason: PC02 testing paused until host returns
+  hold_kind: parked
+  hold_until: "-"
+  kind: ship
+  repo: firstmate
+  priority: "-"
+  created: 2026-11-28
+  closed: "-"
+  deps: "blocked-by:infra-a1"
+  links: none
+  body: "Line one.\n\nLine three after a blank."
+help[2]:
+  - Run `tasks-axi unblock pc02-b2 --by <other>` to clear a blocker
+  - Run `tasks-axi start pc02-b2` to move it to in flight
+[exit 0]
+
+$ t show idea-c3
+task:
+  id: idea-c3
+  title: "long idle idea, with commas, and unicode ✓"
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: yes
+  hold_reason: revisit later
+  hold_kind: future
+  hold_until: 2027-03-01
+  kind: scout
+  repo: firstmate
+  priority: "-"
+  created: 2026-11-28
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+[exit 0]
+
+$ diff /dev/fd/63 /dev/fd/62
+[exit 0]
+
+$ diff /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/block.orig /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/block.after
+[exit 0]
+
+$ diff /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/orig.md /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/main/data/backlog.md
+7a8
+> - [ ] keep-d4 - stays live (repo: firstmate) (since 2026-11-28)
+13d13
+< - [ ] keep-d4 - stays live (repo: firstmate) (since 2026-11-28)
+[exit 1]
+
+=================== S2 captain hold and its age mark survive parking and a later mark write ===================
+
+$ t show call-e5
+task:
+  id: call-e5
+  title: vendor call
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: yes
+  hold_reason: "choose the vendor (A or B), see notes"
+  hold_kind: captain
+  hold_until: "-"
+  kind: captain
+  repo: firstmate
+  priority: "-"
+  created: 2026-11-28
+  closed: "-"
+  deps: none
+  links: none
+  body: "Captain hold set: 2026-11-28T07:03:45Z"
+[exit 0]
+
+$ t archive call-e5
+archived 1 item(s) via <lab>/captain/data/backlog-archive.md: call-e5
+  live backlog: <lab>/captain/data/backlog.md
+[exit 0]
+
+$ {run-worktree}/bin/fm-captain-hold.sh mark set other-f6 held-since 2026-11-01
+[exit 0]
+
+$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/captain/data/task-marks.tsv
+call-e5	held-since	2026-11-28T07:03:48Z
+other-f6	held-since	2026-11-01
+[exit 0]
+
+$ t unarchive call-e5
+unarchived 1 item(s) via <lab>/captain/data/backlog-archive.md: call-e5
+  live backlog: <lab>/captain/data/backlog.md
+[exit 0]
+
+$ t show call-e5
+task:
+  id: call-e5
+  title: vendor call
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: yes
+  hold_reason: "choose the vendor (A or B), see notes"
+  hold_kind: captain
+  hold_until: "-"
+  kind: captain
+  repo: firstmate
+  priority: "-"
+  created: 2026-11-28
+  closed: "-"
+  deps: none
+  links: none
+  body: "Captain hold set: 2026-11-28T07:03:45Z"
+[exit 0]
+
+$ {run-worktree}/bin/fm-captain-hold.sh mark get call-e5 held-since
+2026-11-28T07:03:48Z
+[exit 0]
+
+$ {run-worktree}/bin/fm-captain-hold.sh open call-e5
+[exit 0]
+
+=================== S3 dependency guards (adversarial) ===================
+1b4a777fef0f31b833775889ba3cbe9fd8f2af6b09773ead0fe854cfed36e84c  <lab>/deps/data/backlog.md
+
+$ t archive base-a
+fm-backlog-archive: refusing base-a: live task child-b still has a trailing blocked-by edge to it; archive the dependent too
+fm-backlog-archive: nothing was moved
+[exit 2]
+1b4a777fef0f31b833775889ba3cbe9fd8f2af6b09773ead0fe854cfed36e84c  <lab>/deps/data/backlog.md
+
+$ t archive base-a child-b
+archived 2 item(s) via <lab>/deps/data/backlog-archive.md: base-a child-b
+  live backlog: <lab>/deps/data/backlog.md
+[exit 0]
+
+$ t unarchive child-b
+fm-backlog-archive: refusing child-b: its trailing blocked-by target base-a is still parked; unarchive both together
+fm-backlog-archive: nothing was moved
+[exit 2]
+73b62851ddecbad2f9a430b73db6bf4a6812fafd4a89863c961f437421f532e4  <lab>/deps/data/backlog-archive.md
+738e3308f11b2ebaf118ebfa9e09af35bab400b5f19cd8ddb4f038447bdb18a0  <lab>/deps/data/backlog.md
+
+$ t unarchive child-b base-a
+unarchived 2 item(s) via <lab>/deps/data/backlog-archive.md: child-b base-a
+  live backlog: <lab>/deps/data/backlog.md
+[exit 0]
+
+$ t show child-b
+task:
+  id: child-b
+  title: child
+  state: queued
+  blocked: yes
+  blocked_by: base-a
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-28
+  closed: "-"
+  deps: "blocked-by:base-a"
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi unblock child-b --by <other>` to clear a blocker
+  - Run `tasks-axi start child-b` to move it to in flight
+[exit 0]
+
+$ t ready
+count: 2
+ready[2]{id,state,kind,repo,title}:
+  other-c,queued,task,"-",other
+  base-a,queued,task,"-",base
+ready_public_followups: 0 delivery-ready obligations
+help[1]:
+  - Run `tasks-axi start <id>` to dispatch one of these
+[exit 0]
+
+=================== S3b large backlog: dependent beyond row 400 is still seen ===================
+
+$ t archive t350
+fm-backlog-archive: refusing t350: live task dep-z still has a trailing blocked-by edge to it; archive the dependent too
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archive t400
+archived 1 item(s) via <lab>/big/data/backlog-archive.md: t400
+  live backlog: <lab>/big/data/backlog.md
+[exit 0]
+
+=================== S4 refusals: running work, task record, Done, unknown, already-moved, mixed batch ===================
+17f2a6138fc96afca1209416dbc219456bb99a718ddcf88b99a3e1d2be30f181  <lab>/refuse/data/backlog.md
+
+$ t archive run-a
+fm-backlog-archive: refusing In flight items or items with a task record: run-a
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archive meta-b
+fm-backlog-archive: refusing In flight items or items with a task record: meta-b
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archive fin-c
+fm-backlog-archive: refusing Done (historical) items: fin-c; Done history belongs to tasks-axi's configured Done archive
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archive nope-x
+fm-backlog-archive: no item matched these ids in <lab>/refuse/data/backlog.md: nope-x
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archive ../etc
+fm-backlog-archive: unsafe task id '../etc'
+[exit 2]
+
+$ t archive ok-d run-a
+fm-backlog-archive: refusing In flight items or items with a task record: run-a
+fm-backlog-archive: nothing was moved
+[exit 2]
+17f2a6138fc96afca1209416dbc219456bb99a718ddcf88b99a3e1d2be30f181  <lab>/refuse/data/backlog.md
+
+$ t archive ok-d
+archived 1 item(s) via <lab>/refuse/data/backlog-archive.md: ok-d
+  live backlog: <lab>/refuse/data/backlog.md
+[exit 0]
+
+$ t archive ok-d
+fm-backlog-archive: already in <lab>/refuse/data/backlog-archive.md: ok-d
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t unarchive meta-b
+fm-backlog-archive: already in <lab>/refuse/data/backlog.md: meta-b
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t add ok-d reuse of a parked id
+ok: added ok-d -> Queued
+task:
+  id: ok-d
+  title: reuse of a parked id
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-28
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start ok-d` to move it to in flight
+  - Run `tasks-axi block ok-d --by <other>` to record a dependency
+[exit 0]
+
+$ t unarchive ok-d
+fm-backlog-archive: already in <lab>/refuse/data/backlog.md: ok-d
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+=================== S5 concurrency: parallel archive and tasks-axi writes lose nothing ===================
+failures:
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+  blocked: no
+  blocked_by: none
+error: backlog is locked by another tasks-axi process
+add n7 failed
+error: backlog is locked by another tasks-axi process
+add n11 failed
+error: backlog is locked by another tasks-axi process
+add n10 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
+archive p5 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
+archive p10 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
+archive p3 failed
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
+fm-backlog-archive: backlog is locked by another process: /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/race/data/backlog-archive.md.lock
+archive p6 failed
+archive p11 failed
+archive p1 failed
+archive p4 failed
+live p=7 n=9 archived p=5
+backlog-archive.md
+backlog.md
+
+=================== S6 noncanonical body and bold bullet, shared check with secondmate handoff ===================
+c588cd9f72d5dae2e2d624ddf3977ef23c53e4e67df0757a451f1aa8d83df1e0  <lab>/body/data/backlog.md
+
+$ t archive tab-a
+fm-backlog-archive: refusing tab-a: non-2-space continuation line: 	bad line
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ t archive bold-b
+fm-backlog-archive: no item matched these ids in <lab>/body/data/backlog.md: bold-b
+fm-backlog-archive: nothing was moved
+[exit 2]
+c588cd9f72d5dae2e2d624ddf3977ef23c53e4e67df0757a451f1aa8d83df1e0  <lab>/body/data/backlog.md
+
+=================== S7 record export publishes the parked archive ===================
+(export sync)
+
+$ {run-worktree}/bin/fm-record-export.sh sync
+[exit 0]
+
+$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/exported/live/data/backlog-archive.md
+# Backlog
+
+## In flight
+
+## Queued
+- [ ] parked-x - parked for export (since 2026-11-28)
+
+## Done
+[exit 0]
+
+$ t unarchive parked-x
+unarchived 1 item(s) via <lab>/export/data/backlog-archive.md: parked-x
+  live backlog: <lab>/export/data/backlog.md
+[exit 0]
+
+=================== S8 edge shapes: no trailing newline, legacy bold row, symlinked archive, signal-free byte check ===================
+
+$ t archive z-9
+archived 1 item(s) via <lab>/edge/data/backlog-archive.md: z-9
+  live backlog: <lab>/edge/data/backlog.md
+[exit 0]
+
+$ t unarchive z-9
+unarchived 1 item(s) via <lab>/edge/data/backlog-archive.md: z-9
+  live backlog: <lab>/edge/data/backlog.md
+[exit 0]
+
+$ cmp /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/edge.orig /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/edge/data/backlog.md
+cmp: EOF on ‘<lab>/edge.orig’ after byte 69, in line 5
+[exit 1]
+
+$ t list
+count: 1
+tasks[1]{id,state,kind,repo,title}:
+  c-2,queued,task,"-",two
+help[2]:
+  - Run `tasks-axi show <id>` for full notes on a task
+  - Run `tasks-axi ready` to see unblocked queued work
+[exit 0]
+
+$ t archive bold-b
+fm-backlog-archive: no item matched these ids in <lab>/edge/data/backlog.md: bold-b
+fm-backlog-archive: nothing was moved
+[exit 2]
+
+$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/edge/data/backlog.md
+# Backlog
+
+## Queued
+- **bold-b** - legacy bold row
+  its body
+- [ ] c-2 - two
+
+## Done
+[exit 0]
+
+$ t archive c-2
+fm-backlog-archive: <lab>/edge/data/backlog-archive.md is a symlink; make it this home's real file
+[exit 2]
+
+$ cat /var/tmp/nm-daemon-tmp/fm-park.NFM4yX/edge.orig
+# Backlog
+
+## Queued
+- [ ] a-1 - one
+- [ ] z-9 - last without newline[exit 0]
