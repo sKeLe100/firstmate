@@ -1,0 +1,29 @@
+## S6 ambient login (no pin) and 'ordinary' pin; 60s reading reuse; ambient lane overrides ignored
+- unpinned, ambient login exhausted                              idle=600   rc=1 queued=0 usage_reads=1 secs=1.0 idle 601s (> 300s prompt-cache TTL)
+- unpinned, recovered <60s ago (reading reused)                  idle=600   rc=1 queued=0 usage_reads=0 secs=0.9 idle 601s (> 300s prompt-cache TTL)
+- unpinned, recovered, after 62s                                 idle=600   rc=0 queued=1 usage_reads=1 secs=3.2 
+- ordinary pin: ambient exhausted, ~/.claude healthy             idle=600   rc=0 queued=1 usage_reads=1 secs=3.6 
+- ordinary pin: ~/.claude exhausted, ambient healthy             idle=600   rc=1 queued=0 usage_reads=1 secs=1.3 idle 601s (> 300s prompt-cache TTL)
+
+## S7 fm-returning-session-check (warn band)
+[healthy idle=600] verdict=resume band=warn context_tokens=180000 restart_tokens=250000 idle_seconds=600 ttl_seconds=3600
+[weekly-exhausted idle=600] verdict=restart-with-carryover band=warn context_tokens=180000 restart_tokens=250000 idle_seconds=600 ttl_seconds=300
+[weekly-exhausted idle=200] verdict=resume band=warn context_tokens=180000 restart_tokens=250000 idle_seconds=200 ttl_seconds=3600
+[healthy idle=600] verdict=resume band=warn context_tokens=180000 restart_tokens=250000 idle_seconds=600 ttl_seconds=3600
+[http500 idle=600] verdict=resume band=warn context_tokens=180000 restart_tokens=250000 idle_seconds=600 ttl_seconds=3600
+
+## S8 fm-fleet-snapshot cache_expiring
+[healthy idle=270] {"exists":true,"cache_expiring":false} usage_reads=1
+[weekly-exhausted idle=270] {"exists":true,"cache_expiring":true} usage_reads=1
+[weekly-exhausted idle=100] {"exists":true,"cache_expiring":false} usage_reads=0
+[weekly-exhausted idle=3100] {"exists":true,"cache_expiring":false} usage_reads=1
+[healthy idle=3100] {"exists":true,"cache_expiring":true} usage_reads=1
+[http500 idle=270] {"exists":true,"cache_expiring":false} usage_reads=1
+[healthy idle=270] {"exists":true,"cache_expiring":false} usage_reads=1
+[exhausted codex idle=270] {"exists":true,"cache_expiring":false} usage_reads=0
+[--help] rc=0 usage_reads=0
+-- rendered fleet view, exhausted vs healthy, idle 270
+[weekly-exhausted]
+| t1 | unknown / none | ship | alpha | tmux | present (cache expiring) | - | - | bin/fm-peek.sh fm-t1 |
+[healthy]
+| t1 | unknown / none | ship | alpha | tmux | present | - | - | bin/fm-peek.sh fm-t1 |

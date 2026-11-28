@@ -1,0 +1,36 @@
+## S1 episode and recovery, TTL file absent
+- healthy window                                                 idle=600   rc=0 queued=1 usage_reads=1 secs=2.9 
+- 5h window exhausted                                            idle=600   rc=1 queued=0 usage_reads=1 secs=0.9 idle 601s (> 300s prompt-cache TTL)
+- weekly window exhausted                                        idle=600   rc=1 queued=0 usage_reads=1 secs=0.9 idle 601s (> 300s prompt-cache TTL)
+- weekly 100% with extra usage (overage) enabled                 idle=600   rc=1 queued=0 usage_reads=1 secs=1.0 idle 601s (> 300s prompt-cache TTL)
+- exhausted, idle under cap                                      idle=200   rc=0 queued=1 usage_reads=0 secs=2.7 
+  cache-ttl-seconds during episode: <absent>
+- recovered                                                      idle=600   rc=0 queued=1 usage_reads=1 secs=3.0 
+- recovered, past default                                        idle=3700  rc=1 queued=0 usage_reads=0 secs=0.7 idle 3700s (> 3600s prompt-cache TTL)
+## S2 configured TTL 1200 restored; tighter/disabled untouched
+- cfg 1200, exhausted                                            idle=600   rc=1 queued=0 usage_reads=1 secs=0.9 idle 601s (> 300s prompt-cache TTL)
+- cfg 1200, recovered                                            idle=600   rc=0 queued=1 usage_reads=1 secs=3.0 
+- cfg 1200, recovered, past 1200                                 idle=1300  rc=1 queued=0 usage_reads=0 secs=0.7 idle 1301s (> 1200s prompt-cache TTL)
+  cache-ttl-seconds after episode: 1200
+- cfg 120, exhausted (stays 120)                                 idle=200   rc=1 queued=0 usage_reads=0 secs=0.7 idle 201s (> 120s prompt-cache TTL)
+- cfg 0, exhausted (stays disabled)                              idle=5000  rc=0 queued=1 usage_reads=0 secs=2.7 
+## S3 quota read failures leave TTL unchanged
+- usage endpoint http500                                         idle=600   rc=0 queued=1 usage_reads=1 secs=3.0 
+- usage endpoint badjson                                         idle=600   rc=0 queued=1 usage_reads=1 secs=3.2 
+- usage endpoint hang                                            idle=600   rc=0 queued=1 usage_reads=1 secs=13.1 
+- usage endpoint http500, past default                           idle=3700  rc=1 queued=0 usage_reads=0 secs=0.8 idle 3700s (> 3600s prompt-cache TTL)
+- credential file missing                                        idle=600   rc=0 queued=1 usage_reads=0 secs=3.1 
+- network unreachable                                            idle=600   rc=0 queued=1 usage_reads=0 secs=12.9 
+## S4 only affected targets
+- opus-only exhausted, model=claude-opus-5-5                     idle=600   rc=1 queued=0 usage_reads=1 secs=1.0 idle 600s (> 300s prompt-cache TTL)
+- opus-only exhausted, model=opus[1m]                            idle=600   rc=1 queued=0 usage_reads=1 secs=1.1 idle 600s (> 300s prompt-cache TTL)
+- opus-only exhausted, model=sonnet                              idle=600   rc=0 queued=1 usage_reads=1 secs=3.1 
+- account exhausted, codex target                                idle=600   rc=0 queued=1 usage_reads=0 secs=2.7 
+## S5 target's account, not the home's
+- home pin exhausted, target account healthy                     idle=600   rc=0 queued=1 usage_reads=1 secs=2.9 
+- home pin healthy, target account exhausted                     idle=600   rc=1 queued=0 usage_reads=1 secs=0.9 idle 601s (> 300s prompt-cache TTL)
+- no account=, healthy home pin                                  idle=600   rc=0 queued=1 usage_reads=1 secs=3.0 
+- no account=, exhausted home pin                                idle=600   rc=1 queued=0 usage_reads=1 secs=1.1 idle 601s (> 300s prompt-cache TTL)
+- secondmate own pin healthy, home exhausted                     idle=600   rc=0 queued=1 usage_reads=1 secs=3.3 
+- secondmate own pin exhausted, home healthy                     idle=600   rc=1 queued=0 usage_reads=1 secs=1.1 idle 600s (> 300s prompt-cache TTL)
+- malformed home pin (no fallback)                               idle=600   rc=0 queued=1 usage_reads=0 secs=2.8 
