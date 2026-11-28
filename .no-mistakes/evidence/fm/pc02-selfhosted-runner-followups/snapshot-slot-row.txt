@@ -1,0 +1,10 @@
+--- XDG slot file: missing
+{"machine":"PC02","item":"pc02-offload-slots","state":"missing","detail":"needs one integer from 1 to 16 in <pc02-home>/xdg/firstmate/pc02-offload-slots","read_utc":"2026-11-19T21:20:00Z"}
+--- XDG slot file: abc
+{"machine":"PC02","item":"pc02-offload-slots","state":"invalid","detail":"needs one integer from 1 to 16 in <pc02-home>/xdg/firstmate/pc02-offload-slots","read_utc":"2026-11-19T21:20:00Z"}
+--- XDG slot file: 17
+{"machine":"PC02","item":"pc02-offload-slots","state":"invalid","detail":"needs one integer from 1 to 16 in <pc02-home>/xdg/firstmate/pc02-offload-slots","read_utc":"2026-11-19T21:20:00Z"}
+--- XDG slot file: 3
+{"machine":"PC02","item":"pc02-offload-slots","state":"0/3","detail":"locked slots under ~/.fm-pc02-test-slot-*.lock","read_utc":"2026-11-19T21:20:00Z"}
+--- XDG slot file: 3-held
+{"machine":"PC02","item":"pc02-offload-slots","state":"1/3","detail":"locked slots under ~/.fm-pc02-test-slot-*.lock","read_utc":"2026-11-19T21:20:00Z"}

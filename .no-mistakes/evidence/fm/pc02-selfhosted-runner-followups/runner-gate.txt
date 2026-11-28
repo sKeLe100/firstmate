@@ -1,0 +1,15 @@
+## three fm-pc02 runner units (systemctl stand-in), switch off
+fm-pc02-personal-use-runners.sh: started actions.runner.sKeLe100-firstmate.seansdesktop-pc02.service (personal use off)
+fm-pc02-personal-use-runners.sh: started actions.runner.sKeLe100-firstmate.seansdesktop-pc02-2.service (personal use off)
+fm-pc02-personal-use-runners.sh: started actions.runner.sKeLe100-firstmate.seansdesktop-pc02-3.service (personal use off)
+-> exit=0 active units=3
+## switch on
+fm-pc02-personal-use-runners.sh: stopped actions.runner.sKeLe100-firstmate.seansdesktop-pc02.service (personal use on)
+fm-pc02-personal-use-runners.sh: stopped actions.runner.sKeLe100-firstmate.seansdesktop-pc02-2.service (personal use on)
+fm-pc02-personal-use-runners.sh: stopped actions.runner.sKeLe100-firstmate.seansdesktop-pc02-3.service (personal use on)
+-> exit=0 active units=0
+## switch off
+fm-pc02-personal-use-runners.sh: started actions.runner.sKeLe100-firstmate.seansdesktop-pc02.service (personal use off)
+fm-pc02-personal-use-runners.sh: started actions.runner.sKeLe100-firstmate.seansdesktop-pc02-2.service (personal use off)
+fm-pc02-personal-use-runners.sh: started actions.runner.sKeLe100-firstmate.seansdesktop-pc02-3.service (personal use off)
+-> exit=0 active units=3

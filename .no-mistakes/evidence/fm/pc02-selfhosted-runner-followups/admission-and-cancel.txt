@@ -1,0 +1,17 @@
+## host one-heavy-run admission lock held by a live holder
+--- label=fm-pc02
+-> exit=0
+fm-pc02-test-offload: runner partition claimed PC02 slot 1 of 1
+suite starts so far: 1
+--- label=ubuntu-latest
+-> exit=0
+suite starts so far: 2
+--- label=fm-pc01
+-> exit=0
+suite starts so far: 3
+
+## cancelled runner job (its whole session terminated) releases its slot
+while running: slot held
+worker exit=143
+after cancel: slot free
+suite finished normally: 0; leftover session procs: 0

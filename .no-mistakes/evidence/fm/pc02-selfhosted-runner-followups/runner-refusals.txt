@@ -1,0 +1,26 @@
+## personal-use switch ON before the job
+fm-pc02-test-offload: PC02 personal-use switch is on; not running a runner partition
+-> exit=75 result.json=none
+probe ran: 0
+
+## switch flips ON while the job waits for a slot (count=1, slot held)
+fm-pc02-test-offload: all 1 PC02 test slots are busy; waiting up to 9000s for a free slot
+fm-pc02-test-offload: PC02 personal-use switch is on; not running a runner partition
+-> exit=75 result.json=none
+probe ran: 0
+
+## slots busy past the wait bound (bound overridden to 3s)
+fm-pc02-test-offload: all 1 PC02 test slots are busy; waiting up to 3s for a free slot
+fm-pc02-test-offload: all 1 PC02 test slots stayed busy through the 3s wait bound; not running a runner partition
+-> exit=75 result.json=none
+probe ran: 0
+
+## slot file missing / out of range
+fm-pc02-test-offload: cannot read the PC02 slot file /tmp/pc02-e2e.NgZDB2/pc02home/.config/firstmate/pc02-offload-slots (put one integer from 1 to 16)
+-> exit=2 result.json=none
+fm-pc02-test-offload: /tmp/pc02-e2e.NgZDB2/pc02home/.config/firstmate/pc02-offload-slots must be between 1 and 16, got '17'
+-> exit=2 result.json=none
+local offload with the file still bad:
+fm-pc02-test-offload: /tmp/pc02-e2e.NgZDB2/pc02home/.config/firstmate/pc02-offload-slots must be between 1 and 16, got '17'
+-> exit=2
+probe ran: 0

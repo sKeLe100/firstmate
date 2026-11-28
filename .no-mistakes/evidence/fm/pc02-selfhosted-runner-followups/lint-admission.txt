@@ -1,0 +1,13 @@
+## lint partition workers while another live run holds the host one-heavy-run lock (wait bound 3s)
+--- label=ubuntu-latest
+-> exit=1 (124 = still linting when stopped at 25s)
+heavy admission: refused lint after 3s: slot-busy; holder=pid=2044622 start=starttime=31537738
+heavy admission: waiting 1s for lint: slot-busy; holder=pid=2044622 start=starttime=31537738
+--- label=fm-pc01
+-> exit=1 (124 = still linting when stopped at 25s)
+heavy admission: refused lint after 3s: slot-busy; holder=pid=2044622 start=starttime=31537738
+heavy admission: waiting 1s for lint: slot-busy; holder=pid=2044622 start=starttime=31537738
+--- label=fm-pc02
+-> exit=124 (124 = still linting when stopped at 25s)
+fm-pc02-test-offload: runner partition claimed PC02 slot 1 of 1
+heavy admission: admitted lint on PC02 offload; offload slots govern concurrency
