@@ -2,9 +2,12 @@
 # fm-underused-capacity.sh - report spend lanes that have quota headroom while
 # dispatchable work waits.
 #
-# Why: bin/fm-queue-snapshot.sh shows eligible work but does not compare the
-# per-account quota windows with the standing order to keep an account's workers
-# filled. This script is that comparison made deterministic and read-only.
+# Why: the heartbeat review already refills idle capacity from
+# bin/fm-queue-snapshot.sh, but nothing compared the per-account quota windows
+# with the standing order to keep an account's workers filled. A fleet could sit
+# nearly idle beside an eligible queue while one account's five-hour window held
+# headroom, and only the captain noticed. This script is that comparison made
+# deterministic and read-only.
 #
 # It reads three existing owners and adds no fleet-state reader of its own:
 #   - bin/fm-resource-snapshot.sh --json for each spend lane's quota windows

@@ -3996,9 +3996,12 @@ retry_pressure_read() {  # <reader> <task>
 # retry_halt_tasks: names every task bin/fm-retry-pressure.sh currently reports
 # at retry_band=halt whose reading has not been surfaced yet, one per line.
 #
-# Why here: retry pressure is the repetition-driven failure the context band
-# cannot sense, and without a reader in this watcher a task past its relaunch
-# ceiling stays invisible until someone thinks to run the helper by hand.
+# Why here: the context band already reaches supervision on its own through this
+# watcher, while retry pressure - the repetition-driven failure the context band
+# cannot sense - was specified as a heartbeat duty in AGENTS.md with no reader
+# anywhere in the tree, so a task past its relaunch ceiling stayed invisible
+# until someone thought to run the helper by hand. This is that reader, beside
+# the context-band read it mirrors.
 #
 # Surfacing is per reading, not per poll: the marker holds the relaunch count
 # that was surfaced, so one halt reports once and reports again only when the
@@ -5659,7 +5662,7 @@ EOF
     # without exiting); the away-mode daemon, when present, owns triage and wants
     # every heartbeat. A supervision host's away session owns triage the same way
     # and never writes the daemon flag state/.afk, so an away record forwards too:
-    # heartbeats are its fleet-review beats, and absorbing them
+    # heartbeats are its fleet-review and lane-refill beats, and absorbing them
     # here starves it for the whole away window.
     if afk_present || away_record_present; then
       retry_halt_collect

@@ -856,7 +856,7 @@ test_away_record_heartbeat_forwarded() {
   dir=$(make_case away-record-heartbeat); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; drain_out="$dir/drain.out"
   # A supervision-host home's away session owns triage and wants every heartbeat
-  # (fleet review), but that home never writes the away daemon's
+  # (fleet review and lane refill), but that home never writes the away daemon's
   # flag state/.afk: the away record is the only signal that the captain is away.
   write_away_record "$state"
   [ ! -e "$state/.afk" ] || fail "fixture: the supervision-host home must not write the daemon flag"
